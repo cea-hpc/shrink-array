@@ -1,0 +1,145 @@
+/*
+ * Copyright 2024-2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#pragma once
+
+#include <vector> // std::vector (les listes de reuse per-rank)
+
+#include "chunk/PMP_CHUNK.h"
+#include "chunk/chunk_std.h" // self-contained: needs Chunk<T>::manager_chunk
+
+// Function templates over the per-thread reuse lists. Only the OpenMP manager
+// (ManagerChunkParallelImpl<..., true>) instantiates them, and a serial build
+// never does: no preprocessor guard is needed around templates whose every
+// list access is a dependent name.
+//
+// They are defined `inline` HERE, and that is what every caller instantiates
+// from. chunk_std.cpp used to carry seven explicit instantiations of
+// load_balance_list_block_free_thr<T> to hand out the symbol; they were dead
+// weight (the list did not even cover float or unsigned char, which the library
+// supports) and have been removed. If a caller ever sees only the forward
+// declaration in manager_chunk_inline.h and not this definition, the fix is to
+// make this header visible there -- not to re-add an instantiation list that
+// has to be kept in step with the element types by hand.
+
+namespace shrink_array
+{
+template <typename T>
+inline bool need_load_balance_list_block_free_thr()
+{
+    const int max_thr = CHUNK_PMP_MAX_THREADS;
+
+    int lg = 0;
+
+    for (const auto& elm : Chunk<T>::manager_chunk::get_list_block_free_thr())
+    {
+        lg += elm.list.size();
+    }
+
+    if (!lg)
+        return false;
+
+    lg /= max_thr;
+
+    for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
+    {
+        // const auto& lbf = Chunk<T>::manager_chunk::get_list_block_free_thr(thr_rank);
+        const int sz = Chunk<T>::manager_chunk::get_list_block_free_thr_size(thr_rank);
+        if (sz < 0.9 * lg || sz > 1.1 * lg)
+            return true;
+    }
+
+    return false;
+}
+
+template <typename T>
+inline void load_balance_list_block_free_thr()
+{
+    int lg = 0;
+
+    const int max_thr = CHUNK_PMP_MAX_THREADS;
+
+    for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
+    {
+        lg += Chunk<T>::manager_chunk::get_list_block_free_thr(thr_rank).size();
+    }
+
+    if (!lg || lg < max_thr)
+        return;
+
+    lg /= max_thr;
+
+    std::vector<T*> ll;
+
+    for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
+    {
+        auto& lbf = Chunk<T>::manager_chunk::get_list_block_free_thr(thr_rank);
+
+        const int sz = lbf.size();
+
+        if (sz > lg)
+        {
+            const int ll_sz = ll.size();
+
+            ll.resize(ll_sz + sz - lg);
+
+            T** ll_loc = ll.data() + ll_sz - lg;
+
+            for (int i = lg; i < sz; ++i)
+            {
+                ll_loc[i] = lbf[i];
+            }
+
+            lbf.resize(lg);
+        }
+    }
+
+    for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
+    {
+        auto& lbf = Chunk<T>::manager_chunk::get_list_block_free_thr(thr_rank);
+
+        const int sz = lbf.size();
+
+        if (sz < lg)
+        {
+            lbf.resize(lbf.size() + lg - sz);
+
+            const int pp = ll.size() - (lg - sz);
+
+            T** ll_loc = ll.data() + ll.size() - lg;
+
+            for (int i = sz; i < lg; ++i)
+            {
+                lbf[i] = ll_loc[i];
+            }
+
+            if (pp == -1)
+                ll.clear();
+            else
+                ll.resize(pp);
+        }
+    }
+
+    if (!ll.empty())
+    {
+        for (unsigned int i = 0; i < ll.size(); ++i)
+        {
+            Chunk<T>::manager_chunk::get_list_block_free_thr(0).emplace_back(ll[i]);
+        }
+    }
+}
+
+} // namespace shrink_array

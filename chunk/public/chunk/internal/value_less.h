@@ -1,0 +1,70 @@
+//
+// Created by ballereaup on 28/05/25.
+//
+/*
+ * Copyright 2024-2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#pragma once
+
+#include <complex>
+#include <concepts>
+#include <cstring>     // std::memcmp
+#include <type_traits> // std::has_unique_object_representations_v
+
+#include "chunk/chunk_def.h" // ComplexType
+#include "chunk/internal/complex_less.h"
+
+namespace shrink_array
+{
+/**
+ * @brief The strict weak order chunk2 keys its second-value tables with.
+ *
+ * chunk2 (Chunk2 / Proxy2) registers each declared second value in a
+ * std::map keyed by the value -- one table of candidate chunks per value --
+ * so it needs an ordering the value type itself may not provide. In order of
+ * preference:
+ *  - std::complex: ComplexLess, real then imaginary (no operator< in std);
+ *  - a type with operator<: that one (arithmetic, enum, std::array, a struct
+ *    with a defaulted operator<=>);
+ *  - a type whose every bit is value (has_unique_object_representations: no
+ *    padding, no floating point): the order of its bytes, which is a valid
+ *    strict order that agrees with operator==;
+ *  - anything else -- a struct of doubles without operator<=> -- is refused
+ *    at compile time: its padding or NaN bits would make two equal values two
+ *    keys. Declaring `auto operator<=>(const T&) const = default;` is the fix.
+ *
+ * chunk (v1) and chunk2a do not order values (chunk2a finds each chunk's
+ * second value by scanning); the element contract there is == and T{} only.
+ */
+template <typename T>
+struct ValueLess
+{
+    bool operator()(const T& a, const T& b) const noexcept
+    {
+        if constexpr (ComplexType<T>)
+            return ComplexLess<typename T::value_type>{}(a, b);
+        else if constexpr (std::totally_ordered<T>)
+            return a < b;
+        else if constexpr (std::has_unique_object_representations_v<T>)
+            return std::memcmp(&a, &b, sizeof(T)) < 0;
+        else
+            static_assert(std::totally_ordered<T>,
+                          "chunk2 orders second values: this element type needs an operator< "
+                          "(a defaulted operator<=> will do), or no padding and no floating point");
+    }
+};
+
+} // namespace shrink_array

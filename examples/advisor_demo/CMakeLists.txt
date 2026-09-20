@@ -1,0 +1,20 @@
+# advisor_demo: the ChunkSizeAdvisor's step-0 check -- the same data built
+# at five REAL chunk sizes, then the advisor's per-size predictions (made
+# from S=256 alone) against that ground truth. Returns the number of sizes
+# whose prediction is off, so it doubles as a test. Needs the runtime
+# geometry (one array per size), hence the dyn chunk2A library only.
+if (CHUNK_BUILD_DYN)
+    add_executable(advisor_demo advisor_demo.cpp)
+    target_link_libraries(advisor_demo PRIVATE chunk_v2a_dyn)
+    target_compile_definitions(advisor_demo PRIVATE
+        CHUNK2A CHUNK_DYNAMIC DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
+    if (OMP)
+        find_package(OpenMP REQUIRED)
+        target_link_libraries(advisor_demo PUBLIC OpenMP::OpenMP_CXX)
+    endif ()
+    chunk_require_cxx20(advisor_demo PRIVATE)
+
+    add_test(NAME advisor_demo COMMAND advisor_demo)
+    set_property(TEST advisor_demo PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
+    set_property(TEST advisor_demo PROPERTY LABELS validation)
+endif ()

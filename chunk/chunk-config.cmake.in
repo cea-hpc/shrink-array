@@ -1,0 +1,10 @@
+if(NOT @CHUNK_STD_ALLOC@)
+  include(CMakeFindDependencyMacro)
+  find_dependency(fast_allocators 2.1.8)
+endif()
+
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/chunk-targets.cmake")
+
+check_required_components(chunk)

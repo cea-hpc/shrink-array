@@ -1,0 +1,6 @@
+# TSan suppressions for the LLVM OpenMP runtime (libomp is not instrumented:
+# its internal mutex init / lock and barrier code shows up as races).
+# Syntax: race:<pattern>, matched against function or module names.
+race:__kmp_*
+race:kmp_*
+race:libomp.so

@@ -1,0 +1,50 @@
+[
+  # ============================================================================
+  # IWYU mapping file for the shrink-array (chunk) project.
+  #
+  # The library uses a "facade" header pattern: a public header X.h ends with
+  #   #include "chunk/X_inline.h"
+  # so symbols are DECLARED in X.h and DEFINED in X_inline.h. Consumers must
+  # include the public facade X.h, never the *_inline.h implementation. The
+  # private->public mappings below tell IWYU to suggest the facade, not the
+  # inline impl it happens to find the definition in.
+  #
+  # NOTE: the previous version mapped every chunk/* and fast_allocators/* header
+  # to chunk/chunk.h / fast_allocators/fast_allocators.h — neither umbrella
+  # exists, so those mappings were inert/misleading. These per-facade mappings
+  # match the actual headers.
+  # ============================================================================
+
+  # --- chunk: *_inline.h implementation -> its public facade ------------------
+  { include: ["\"chunk/internal/all_type_chunk_inline.h\"",     "private", "\"chunk/all_type_chunk.h\"",        "public"] },
+  { include: ["\"chunk/internal/manager_chunk_inline.h\"",      "private", "\"chunk/internal/manager_chunk.h\"",         "public"] },
+  { include: ["\"chunk/internal/array_chunk_inline.h\"",        "private", "\"chunk/array_chunk.h\"",          "public"] },
+  { include: ["\"chunk/internal/array_chunk2_inline.h\"",       "private", "\"chunk/array_chunk2.h\"",         "public"] },
+  { include: ["\"chunk/internal/array_chunk2A_inline.h\"",      "private", "\"chunk/array_chunk2A.h\"",        "public"] },
+  { include: ["\"chunk/internal/chunk_std_inline.h\"",          "private", "\"chunk/chunk_std.h\"",            "public"] },
+  { include: ["\"chunk/internal/chunk2_std_inline.h\"",         "private", "\"chunk/chunk2_std.h\"",           "public"] },
+  { include: ["\"chunk/internal/chunk2A_std_inline.h\"",        "private", "\"chunk/chunk2A_std.h\"",          "public"] },
+  { include: ["\"chunk/internal/chunk_base_inline.h\"",         "private", "\"chunk/internal/chunk_base.h\"",           "public"] },
+  { include: ["\"chunk/internal/chunk2_base_inline.h\"",        "private", "\"chunk/internal/chunk2_base.h\"",          "public"] },
+  { include: ["\"chunk/internal/compression_manager_inline.h\"","private", "\"chunk/internal/compression_manager.h\"",  "public"] },
+  { include: ["\"chunk/internal/proxy_inline.h\"",              "private", "\"chunk/internal/proxy.h\"",                "public"] },
+  { include: ["\"chunk/internal/proxy2_inline.h\"",             "private", "\"chunk/internal/proxy2.h\"",               "public"] },
+  { include: ["\"chunk/internal/proxy2A_inline.h\"",            "private", "\"chunk/internal/proxy2A.h\"",              "public"] },
+  { include: ["\"chunk/internal/proxy_base_inline.h\"",         "private", "\"chunk/internal/proxy_base.h\"",           "public"] },
+  { include: ["\"chunk/internal/proxy2_base_inline.h\"",        "private", "\"chunk/internal/proxy2_base.h\"",          "public"] },
+
+  # --- fast_allocators: *Inline.h implementation -> its public facade ---------
+  { include: ["\"fast_allocators/internal/tc_allocator_inline.h\"",  "private", "\"fast_allocators/tc_allocator.h\"",  "public"] },
+  { include: ["\"fast_allocators/internal/static_const_array_inline.h\"", "private", "\"fast_allocators/internal/static_const_array.h\"", "public"] },
+
+  # --- Third-party ankerl (unordered_dense): internal headers -> the public one
+  # (LAST entry — no trailing comma before the closing ].)
+  { include: ["@<ankerl/.*>", "private", "<ankerl/unordered_dense.h>", "public"] }
+
+  # --- Common STL mappings --------------------------------------------------
+  # IWYU ships built-in STL mappings, so no external stl.c++.imp ref is required.
+  # If your install DOES provide one and you want it, add it back via CMake, which
+  # can locate it portably (see the IWYU block in the top-level CMakeLists.txt):
+  #   { ref: "<path>/stl.c++.imp" }
+  # (Note: the last real mapping entry above must have NO trailing comma.)
+]

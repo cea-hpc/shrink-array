@@ -1,0 +1,26 @@
+# Suppression des faux positifs liés aux appels internes d'OpenMP
+
+race:OpenMP internal fork
+fun:__kmp_fork_call
+
+race:OpenMP internal join
+fun:__kmp_join_call
+
+race:OpenMP barrier wait
+fun:__kmp_wait_barrier
+
+race:OpenMP task scheduling
+fun:__kmp_taskq_task
+
+race:OpenMP runtime thread start
+fun:__kmp_launch_thread
+
+race:OpenMP runtime thread finish
+fun:__kmp_exit_thread
+
+race:OpenMP futex wait
+fun:__kmp_futex_wait
+
+race:OpenMP futex wake
+
+

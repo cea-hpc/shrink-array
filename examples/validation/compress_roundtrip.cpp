@@ -1,0 +1,243 @@
+// ============================================================================
+// Compression round-trip harness. Variant-agnostic: tests chunk / chunk2 /
+// chunk2a depending on the compile-time macro (CHUNK / CHUNK2 / CHUNK2A), like
+// the other harnesses here.
+// ============================================================================
+//
+// Guards ONE property, at whatever thread count OMP_NUM_THREADS gives: after a
+// full compression pass and a partial re-materialisation, every element of an
+// array reads back exactly what was last written into it, and the library
+// tears down cleanly afterwards.
+//
+// WHAT IT EXERCISES
+//
+//   Per element type (double, int, bool), an array is materialised everywhere,
+//   then overwritten with a run pattern -- runs of the first constant (0), runs
+//   of a second constant, runs of varied values -- so that a compression pass
+//   has both kinds of constant block to collapse and materialised blocks to
+//   leave alone. compress() is then driven from inside a parallel region, one
+//   array per thread, the way the bench does it. A quarter of each array is
+//   rewritten afterwards, which re-materialises blocks the pass had just
+//   compressed. Every element is then compared against the expected value.
+//
+//   A second double array never declares a second value (chunk2's
+//   set_second_value): its second constant then coincides with the first, the
+//   corner every two-hypothesis scan has to handle (a run of 0 must be filed
+//   as first-constant ONLY -- compress_int used to clear it twice).
+//
+//   The teardown at the end is the library's own (reuse-list release, allocator
+//   destruction), so a buffer freed twice or a chunk left pointing at a parked
+//   buffer surfaces here rather than in the next program.
+//
+// THE PHASE PROTOCOL
+//
+//   Without OMPT (every GNU build) the library does not see region boundaries:
+//   a write can be DEFERRED to the writing thread's queue (when the chunk's
+//   candidate list is flagged dangerous), and it is the application that must
+//   drain those queues between regions -- begin_parallel_phase() by every
+//   thread inside the region, finalize_parallel_phase() outside it. Skip that
+//   and a deferred write from one region lands after a direct write of the
+//   next one: this harness lost `false` writes on chunk2a/bool at the dyn
+//   geometry and 8 threads (the only combination where the lists get flagged),
+//   at exactly the indices the previous region had written `true`. The bench
+//   has the same brackets (its *_g() wrappers). Under OMPT the callbacks do it
+//   and the calls are no-ops, as they are in a serial build.
+//
+// WHAT IT DOES NOT COVER
+//
+//   No re-chunk (rechunk_validation) and no geometry sweep
+//   (dyn_geometry_validation). One geometry, the one the executable was built
+//   with.
+//
+// Compile OMP or non-OMP, static or dyn, check. Exit 0 = every element
+// round-trips and the teardown returned.
+
+#include <cstdlib>
+#include <cstdio>
+#include <tuple>
+#include <type_traits>
+#include <unistd.h>
+
+#include "chunk/chunk_traits.h" // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"
+#include "chunk/array_chunk2.h"
+#include "chunk/array_chunk2A.h"
+#include "chunk/param_chunk.h"
+#include "chunk/config.h"    // chunk_config::use_chunk*
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h" // begin_parallel_phase / finalize_parallel_phase
+
+// Defined by every executable of the library (the fast allocator reads it).
+int __mem_page_size = 0;
+
+using namespace shrink_array;
+
+// The phase brackets, no-ops under OMPT (the callbacks do it) and serially.
+static void begin_phase()
+{
+    if constexpr (build_config::has_not_ompt)
+        shrink_array::begin_parallel_phase();
+}
+static void end_phase()
+{
+    if constexpr (build_config::has_not_ompt)
+        shrink_array::finalize_parallel_phase();
+}
+
+template <typename T>
+using Array = std::conditional_t<chunk_config::use_chunk2a, ArrayChunk2A<T>,
+              std::conditional_t<chunk_config::use_chunk2,  ArrayChunk2<T>,
+                                                            ArrayChunk<T>>>;
+
+constexpr const char* variant_name()
+{
+    if constexpr (chunk_config::use_chunk2a) return "chunk2a";
+    else if constexpr (chunk_config::use_chunk2) return "chunk2";
+    else return "chunk";
+}
+
+// set_second_value only exists on chunk2 / chunk2a; no-op elsewhere.
+template <typename Arr, typename Val>
+void maybe_set_second_value(Arr& a, const Val& v)
+{
+    if constexpr (requires(Arr x) { x.set_second_value(v); })
+        a.set_second_value(v);
+}
+
+// Runs of kRun elements: 0 -> first constant, 1 -> second constant, 2 -> varied.
+// kRun is a multiple of every geometry the harness is built at, so a run is a
+// whole number of chunks and the pass sees pure constant blocks.
+constexpr long kRun = 4096;
+
+template <typename T>
+struct Scenario
+{
+    T second;  // the second constant written in run 1
+    T refill;  // the value the first quarter is rewritten with after the pass
+    T (*varied)(long i);
+};
+
+/**
+ * @brief Materialise, pattern, compress, refill a quarter, verify.
+ * @return 0 if every element reads back as expected, 1 otherwise.
+ */
+template <typename T>
+static int round_trip(const char* label, long N, const Scenario<T>& sc, bool declare_second)
+{
+    Array<T> arr(N);
+    if (declare_second)
+        maybe_set_second_value(arr, sc.second);
+
+    // Materialise everything first, so the pattern below overwrites live blocks
+    // rather than filling fresh ones.
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for
+        for (long i = 0; i < N; ++i)
+            arr[i] = sc.varied(i);
+    }
+    end_phase();
+
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for
+        for (long i = 0; i < N; ++i)
+        {
+            const long run = (i / kRun) % 3;
+            if (run == 0) arr[i] = T(0);
+            else if (run == 1) arr[i] = sc.second;
+        }
+    }
+    end_phase();
+
+    // The pass, driven the way the bench drives it: from inside a region.
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp single
+        arr.compress();
+    }
+    end_phase();
+
+    // Re-materialise: the first quarter gets a value that is neither constant.
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for
+        for (long i = 0; i < N / 4; ++i)
+            arr[i] = sc.refill;
+    }
+    end_phase();
+
+    long bad = 0, first = -1;
+    T    got_first{}, exp_first{};
+    for (long i = 0; i < N; ++i)
+    {
+        const long run = (i / kRun) % 3;
+        T expected = sc.varied(i);
+        if (run == 0) expected = T(0);
+        else if (run == 1) expected = sc.second;
+        if (i < N / 4) expected = sc.refill;
+
+        const T got = arr[i];
+        if (got != expected)
+        {
+            if (first < 0) { first = i; got_first = got; exp_first = expected; }
+            ++bad;
+        }
+    }
+
+    const long csz = static_cast<long>(arr.chunk_size());
+    if (bad)
+    {
+        printf("[%s/%s] FAIL: %ld/%ld mismatches, first at i=%ld (chunk #%ld, offset %ld, run %ld) "
+               "got=%g expected=%g\n",
+               variant_name(), label, bad, N, first, first / csz, first % csz, (first / kRun) % 3,
+               (double) got_first, (double) exp_first);
+    }
+    else
+    {
+        printf("[%s/%s] OK: %ld elements round-trip through compress() at chunk_size=%ld\n",
+               variant_name(), label, N, csz);
+    }
+
+    arr.clear();
+    return bad ? 1 : 0;
+}
+
+int main(int argc, char** argv)
+{
+    __mem_page_size = getpagesize();
+
+    const long N = argc > 1 ? atol(argv[1]) : (1L << 20);
+
+    ParamChunk::init_indexes(true);
+
+    printf("=== compress_roundtrip [variant = %s]  N=%ld  threads=%d ===\n", variant_name(), N, CHUNK_PMP_MAX_THREADS);
+
+    int fails = 0;
+
+    const Scenario<double> sd{3.5, 9.0, [](long i) { return 1.0 + static_cast<double>(i); }};
+    const Scenario<int>    si{7, 11, [](long i) { return static_cast<int>(i); }};
+    const Scenario<bool>   sb{true, true, [](long i) { return (i % 3) == 0; }};
+
+    fails += round_trip<double>("double", N, sd, /*declare_second=*/true);
+    fails += round_trip<double>("double/no-second-value", N, sd, /*declare_second=*/false);
+    fails += round_trip<int>("int", N, si, /*declare_second=*/true);
+    fails += round_trip<bool>("bool", N, sb, /*declare_second=*/true);
+
+    // The library's own teardown: releases the reuse lists (one region, the
+    // frees shared out over the team) and the allocators. A double free or a
+    // chunk still pointing at a parked buffer aborts here.
+    // No #ifdef: release_chunk_pools() does whichever half this build needs --
+    // the per-rank lists under OpenMP, the single allocator otherwise. See
+    // ChunkPoolParallelInterface in chunk_std.h.
+    release_chunk_pools();
+    destroy_block_chunk();
+
+    printf("\n[%s] %s\n", variant_name(),
+           fails == 0 ? "=== ROUND-TRIP OK, TEARDOWN OK ===" : "=== ROUND-TRIP FAILURES ===");
+    return fails;
+}

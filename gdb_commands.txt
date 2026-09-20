@@ -1,0 +1,25 @@
+set pagination off
+set confirm off
+handle SIGSEGV stop
+handle SIGABRT stop
+handle SIGFPE stop
+handle SIGILL stop
+handle SIGBUS stop
+catch throw
+catch signal SIGSEGV
+catch signal SIGABRT
+break abort
+run
+
+define quit_on_success
+   if $_exitcode == 0
+      quit
+   end
+end
+quit_on_success
+# Si une erreur est attrapée, arrêter l'exécution
+#if $eip == 0x0
+#    bt
+#    quit
+#end
+

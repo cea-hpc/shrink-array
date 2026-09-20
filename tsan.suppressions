@@ -1,0 +1,9 @@
+
+race:shrink_array::Proxy2<double>::mark_for_compression_if_needed
+race:shrink_array::Proxy2<short>::mark_for_compression_if_needed
+race:shrink_array::Proxy2<bool>::mark_for_compression_if_needed
+race:shrink_array::Proxy2<float>::mark_for_compression_if_needed
+race:shrink_array::Proxy2<int>::mark_for_compression_if_needed
+race:shrink_array::Proxy2<unsigned char>::mark_for_compression_if_needed
+race:shrink_array::Proxy2<std::__1::complex<double>>::mark_for_compression_if_needed
+

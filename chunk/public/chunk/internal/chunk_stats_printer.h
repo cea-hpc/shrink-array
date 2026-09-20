@@ -1,0 +1,143 @@
+#pragma once
+
+#include <iomanip>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>   // std::vector
+#include <unistd.h> // Pour isatty et fileno
+
+namespace shrink_array
+{
+
+/// @brief Formatted per-array compression stats, shared by Chunk / Chunk2 /
+///        Chunk2A.
+///
+/// @param n_compressed  chunks stored in a compressed (constant) form.
+/// @param nb_chunk      total chunks in the array.
+/// @param n_t1          type-2 chunks (a distinct second constant). 0 for
+///                      plain Chunk (no second value), which suppresses the
+///                      type-2 column.
+/// @param chunk_name    "Chunk", "Chunk2" or "Chunk2A" — used in the verdict.
+/// @param n_cross       cross-variant probe: how many *materialised* (un-
+///                      compressed) blocks were in fact constant to a value the
+///                      current variant cannot capture but a richer one would
+///                      (e.g. for Chunk: blocks a Chunk2 would have compressed).
+///                      -1 means "not measured" and hides the line.
+/// @param cross_name    the richer variant the probe refers to ("Chunk2" /
+///                      "Chunk2A"). Only used when n_cross >= 0.
+inline void print_formatted_chunk_stats(std::ostream&      os,
+                                        int                num_tab,
+                                        const std::string& type_name,
+                                        int                n_compressed,
+                                        int                nb_chunk,
+                                        int                n_t1,
+                                        const std::string& chunk_name,      // ex: "Chunk", "Chunk2" ou "Chunk2A"
+                                        int                n_cross    = -1, // cross-variant probe count (-1 = none)
+                                        const std::string& cross_name = "") // richer variant the probe refers to
+{
+    if (nb_chunk == 0)
+        return;
+
+    const double pct_total = 100.0 * n_compressed / nb_chunk;
+    const double pct_t1    = 100.0 * n_t1 / nb_chunk;
+    const double pct_cross = (n_cross >= 0) ? 100.0 * n_cross / nb_chunk : 0.0;
+
+    // Automatic colour-support detection (disabled when output is redirected to a file).
+    const bool use_color = isatty(fileno(stdout));
+
+    const std::string RESET  = use_color ? "\033[0m" : "";
+    const std::string BOLD   = use_color ? "\033[1m" : "";
+    const std::string GREY   = use_color ? "\033[90m" : "";
+    const std::string RED    = use_color ? "\033[31m" : "";
+    const std::string YELLOW = use_color ? "\033[33m" : "";
+    const std::string GREEN  = use_color ? "\033[32m" : "";
+    const std::string CYAN   = use_color ? "\033[36m" : "";
+
+    // ── Verdict 1: is this variant worth it vs a plain std::vector? ───────────
+    // A std::vector stores every element; the chunk store only pays off when a
+    // material fraction of chunks collapse to a constant. Same threshold logic
+    // for all three variants.
+    std::string verdict;
+    if (n_compressed == 0)
+    {
+        verdict = RED + "no compression — plain std::vector would be lighter" + RESET;
+    }
+    else if (pct_total < 25.0)
+    {
+        verdict = YELLOW + "compression marginal vs std::vector — plain storage may be lighter" + RESET;
+    }
+    else if (chunk_name != "Chunk" && (n_t1 == 0 || pct_t1 < 10.0))
+    {
+        // Chunk2/Chunk2A carrying no, or almost no, type-2: the second value
+        // never paid.
+        verdict = GREY + chunk_name + " overkill — plain Chunk would suffice" + RESET;
+    }
+    else if (chunk_name != "Chunk" && pct_t1 < 40.0)
+    {
+        verdict = CYAN + chunk_name + " useful" + RESET;
+    }
+    else if (chunk_name != "Chunk")
+    {
+        verdict = GREEN + BOLD + chunk_name + " highly effective" + RESET;
+    }
+    else
+    {
+        // Plain Chunk: no type-2 notion; verdict is purely vs std::vector.
+        verdict = (pct_total >= 60.0) ? GREEN + BOLD + "Chunk highly effective vs std::vector" + RESET
+                                      : CYAN + "Chunk useful vs std::vector" + RESET;
+    }
+
+    // Write everything into a local stringstream first, to guarantee thread-safety.
+    std::stringstream ss;
+    const auto        sflags = ss.flags();
+    const auto        sprec  = ss.precision();
+
+    const std::string tab_label = "[tab_" + std::to_string(num_tab) + " " + type_name + "]";
+
+    // Step 1: the left-aligned prefix.
+    ss << std::left << std::setw(30) << tab_label << RESET;
+
+    // Step 2: overall compression statistics.
+    ss << std::right << std::setw(6) << n_compressed << "/" << std::setw(6) << nb_chunk << " chunks compressed ("
+       << std::fixed << std::setprecision(1) << std::setw(5) << pct_total << "%)";
+
+    // Step 3: aligned type-2 statistics.
+    if (n_t1 > 0)
+    {
+        ss << ", " << BOLD << std::setw(6) << n_t1 << RESET << " type-2 (" << std::setw(5) << pct_t1 << "%)";
+    }
+    else
+    {
+        ss << std::setw(23) << " ";
+    }
+
+    // Step 4: final verdict.
+    ss << "  →  " << verdict;
+
+    // Step 5: cross-variant probe ("a richer variant would have helped").
+    // Shown only when measured (n_cross >= 0) and non-trivial.
+    if (n_cross >= 0 && !cross_name.empty())
+    {
+        if (n_cross == 0)
+        {
+            ss << GREY << "   [" << cross_name << " would not have helped]" << RESET;
+        }
+        else
+        {
+            ss << YELLOW << "   [+" << n_cross << " blocks (" << std::fixed << std::setprecision(1) << pct_cross
+               << "%) " << cross_name << " would have compressed]" << RESET;
+        }
+    }
+
+    ss << '\n';
+
+    // Restore the local stream's state.
+    ss.flags(sflags);
+    ss.precision(sprec);
+
+    // Write it all at once (atomic with respect to other threads).
+    os << ss.str();
+}
+
+} // namespace shrink_array

@@ -1,0 +1,515 @@
+
+#pragma once
+
+/*
+ * Copyright 2024-2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PointerMapChunk2 — per-array registry of Chunk2's SECOND constant
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Chunk2 compresses a chunk to one of TWO constants. first_value is fixed for
+// the type; the second is chosen per array at run time, and every chunk that
+// folds to it stores only an index. This header holds the lookup that makes
+// that indirection work, keyed by the array's identity (a void* handle) and by
+// the value itself:
+//
+//   PointerMapChunk2<T>                  the map itself -- insert / replace /
+//                                        get_second_value / get_ind_second_value
+//                                        / find_ind_tab_cst2, plus
+//                                        report_key_not_found() for the
+//                                        diagnostic path.
+//   PointerMapChunk2InfArrayPolicy<T,B>   the inf_array side, as a policy so the
+//                                        builds that do not register inf_array
+//                                        tuples pay nothing: the <T,false>
+//                                        specialisation is all no-ops.
+//   ValueToInfTupleMapHelper<T>          picks the std::map type used for the
+//                                        value -> inf_array side, and its
+//                                        comparator: complex has no operator<,
+//                                        hence the ComplexLess specialisation
+//                                        and complex_less.h.
+//
+// Two different lookups, on purpose. The key -> value store is a LINEAR scan:
+// PointerMapChunk2 derives from PointerMapLinear over a std::deque (deque, not
+// vector, so growth never invalidates a held entry). Only the value -> inf_array
+// side is an ordered std::map.
+
+#include <cstdio> // fprintf / fflush in report_key_not_found
+#include <deque>  // FIX: share_info storage uses deque (no realloc invalidation)
+#include <map>
+#include <stdexcept>   // std::runtime_error
+#include <tuple>       // std::tuple / std::get / std::make_tuple
+#include <type_traits> // std::is_same_v
+#include <utility>     // std::swap (swap_entries), std::pair
+#include <vector>
+
+#include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk
+#include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
+#include "chunk/internal/value_less.h"
+#include "chunk/internal/map_helper.h"
+#include "chunk/internal/in_t.h"
+#include "chunk/config.h"          // build_config::any_check
+#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
+
+namespace shrink_array
+{
+
+template <typename T>
+struct ValueToInfTupleMapHelper
+{
+    using inf_array_t = std::tuple<T, int, int>;
+
+    // Keyed by the second value, ordered by ValueLess (value_less.h).
+    using type = std::map<T, inf_array_t*, ValueLess<T>>;
+};
+
+template <typename T>
+using ValueToIntMap_t = ValueToIntMapHelper<T>::type;
+
+/**
+ * @brief Policy holding the fast-block-compression-only value -> inf_array
+ *        lookup for PointerMapChunk2.
+ *
+ * @details The v1 twin of this policy lives in proxy.h as
+ *          PointerMapInfArrayPolicy; this one differs only in what an
+ *          inf_array IS -- for Chunk2 it is the `(second_value, index,
+ *          num_tab)` tuple rather than v1's plain index -- so the map is keyed
+ *          through ValueToInfTupleMapHelper instead of ValueToIntMapHelper.
+ *
+ * @tparam T       Element type PointerMapChunk2 is keyed on.
+ * @tparam Enabled Whether the map actually exists (fast-block-compression
+ *                 builds) or is a zero-overhead no-op (counter-mode builds).
+ *                 Tracks chunk_config::use_fast_block_compression, the exact
+ *                 compile-time mirror of the macro this replaces.
+ */
+template <typename T, bool Enabled>
+struct PointerMapChunk2InfArrayPolicy
+{
+    using inf_array_t = std::tuple<T, int, int>;
+
+  protected:
+    using MapType0 = ValueToInfTupleMapHelper<T>::type;
+    /// Map from a second value to its registered inf_array tuple pointer.
+    MapType0 map_inf_array;
+
+  public:
+    /**
+     * @brief All registered inf_array pointers, in map order.
+     * @return Vector of every second value's currently-registered pointer.
+     */
+    [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const
+    {
+        std::vector<inf_array_t*> values;
+
+        for (const auto& [key, v] : map_inf_array)
+        {
+            values.push_back(v);
+        }
+
+        return values;
+    }
+
+    /**
+     * @brief Register the inf_array tuple pointer for a second value.
+     * @param key Second value to register.
+     * @param ind inf_array tuple pointer to associate with @p key.
+     */
+    void insert(in_t<T> key, inf_array_t* ind)
+    {
+        map_inf_array[key] = ind;
+    }
+
+    /**
+     * @brief Look up the inf_array tuple pointer registered for a second value.
+     * @param key Second value to look up.
+     * @return The registered pointer, or nullptr if @p key is not registered.
+     */
+    [[nodiscard]] inf_array_t* find_inf_array(in_t<T> key) const
+    {
+        const auto it = map_inf_array.find(key);
+        if (it != map_inf_array.end())
+        {
+            return it->second;
+        }
+        return nullptr;
+    }
+
+    /**
+     * @brief Drop every entry still pointing at @p self_ptr.
+     *
+     * @details Called from ArrayChunk2::clear_core so a destroyed array's
+     *          inf_array MEMBER cannot dangle here: otherwise
+     *          compress_chunk_to_compress_potentially() iterates
+     *          get_all_inf_array() and dereferences the stale pointer (ASan:
+     *          stack/heap-use-after-return). Only entries this array currently
+     *          OWNS are removed -- if a later array re-registered the same
+     *          value, that entry points elsewhere and is left intact (its
+     *          content is value-identical anyway). O(n) over the map,
+     *          teardown-only.
+     *
+     * @param self_ptr Address of the departing array's inf_array member.
+     */
+    void erase_inf_array_by_ptr(const inf_array_t* self_ptr)
+    {
+        for (auto it = map_inf_array.begin(); it != map_inf_array.end();)
+        {
+            if (it->second == self_ptr)
+                it = map_inf_array.erase(it);
+            else
+                ++it;
+        }
+    }
+};
+
+/**
+ * @brief Specialization for counter-mode builds: no map, zero overhead.
+ *
+ * @details The entry points stay declared so callers need no `if constexpr`
+ *          of their own; they simply do nothing and report an empty registry.
+ */
+template <typename T>
+struct PointerMapChunk2InfArrayPolicy<T, false>
+{
+    using inf_array_t = std::tuple<T, int, int>;
+
+    /// @name No-op registry
+    /// @{
+    [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const
+    {
+        return {};
+    }
+    void                       insert(in_t<T>, inf_array_t*) {}
+    [[nodiscard]] inf_array_t* find_inf_array(in_t<T>) const
+    {
+        return nullptr;
+    }
+    void erase_inf_array_by_ptr(const inf_array_t*) {}
+    /// @}
+};
+
+/**
+ * @brief Template class managing mappings between keys and tuple values.
+ *
+ * @tparam T Type of the value associated with the key.
+ */
+
+template <typename T>
+class PointerMapChunk2
+    : public PointerMapLinear<std::tuple<T, int, int>, std::deque<std::pair<const void*, std::tuple<T, int, int>>>>,
+      public PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>
+{
+  private:
+    /// Internal alias for tuple representing a value with index and table number.
+    using inf_array_t = std::tuple<T, int, int>;
+
+    using Linear = PointerMapLinear<inf_array_t, std::deque<std::pair<const void*, inf_array_t>>>;
+    /// @brief Bring the base's storage into this class's scope.
+    /// @details The storage lives in PointerMapLinear; this `using` puts it back
+    ///          in scope here so the lookups specific to this class stay
+    ///          readable -- without it, a dependent base would force `this->vec`
+    ///          on every one of them.
+    using Linear::vec;
+
+    /// @brief Policy carrying the fast-block-compression-only inf_array map.
+    using InfArrayPolicy = PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>;
+
+    // The storage (a std::deque, NOT a std::vector) and the traversal operations
+    // now live in PointerMapLinear. The container is a template parameter there
+    // precisely to preserve what follows.
+    //
+    // FIX (share_info concurrent-realloc race): emplace_back on a vector
+    // REALLOCATES as it grows, which frees the old buffer. A reader walking the
+    // container in parallel (get_info_second_value, reached from a deferred
+    // compression's write_body on another thread) was then reading freed memory
+    // -- intermittent "Key not found" and vtable-pointer corruption (data bytes
+    // seen in an op's vptr) on aarch64 in release. std::deque::emplace_back
+    // never relocates existing elements and never invalidates references, so a
+    // concurrent reader keeps seeing valid data. (Only ITERATORS can be
+    // invalidated, not references to elements -- and the traversals below
+    // capture size() first, then index stable slots.)
+
+
+    using MapType  = ValueToIntMapHelper<T>::type;
+    using MapType0 = ValueToInfTupleMapHelper<T>::type;
+
+    /// Map from values to constant index values.
+    MapType map_ind_cst_val2;
+
+    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_not_bool = !is_bool;
+
+    // Check-build diagnostic (from the ARM lookup crash) — dump full context at a failed key lookup.
+    // The key is an array's `this`, inserted once at setup (before any parallel
+    // region), so a miss means either (a) a GARBAGE key was passed — the same
+    // corruption that SEGVs in release, now caught as a clean throw — or (b) a
+    // VALID key genuinely vanished — the container itself was raced/corrupted.
+    // Printing the searched key alongside every stored (key, num_tab) lets us
+    // tell (a) from (b) at a glance: is the bad key a near-miss / freed-block
+    // pattern, or a plausible-but-absent array pointer?
+    /// @brief Check-only: dump the searched @p key and every stored
+    ///        (key, num_tab) on stderr before a lookup from @p site throws.
+    void report_key_not_found(const void* key, const char* site) const noexcept
+    {
+        if constexpr (build_config::any_check)
+        {
+            // -1 means "outside any parallel region"; CHUNK_PMP_* already
+            // folds to that in a serial build.
+            const int    rank = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
+            const size_t n    = vec.size();
+
+            std::fprintf(stderr,
+                         "[share_info %s] KEY NOT FOUND: this=%p rank=%d searched_key=%p "
+                         "vec.size=%zu\n  valid keys:",
+                         site, static_cast<const void*>(this), rank, key, n);
+            // Bound the dump so a corrupt size can't run away.
+            const size_t lim = (n > 64u) ? 64u : n;
+            for (size_t i = 0; i < lim; ++i)
+                std::fprintf(stderr, " [%p num_tab=%d]", static_cast<const void*>(vec[i].first),
+                             std::get<2>(vec[i].second));
+            std::fprintf(stderr, "%s\n", (n > lim) ? " …(truncated)" : "");
+            std::fflush(stderr);
+        }
+    }
+
+  public:
+    /// @brief Keep the policy's insert() overload visible: this class declares
+    ///        an insert() of its own, which would otherwise HIDE it rather than
+    ///        overload with it (it was a member of this class before the policy
+    ///        split, so callers of both spellings expect one overload set).
+    using InfArrayPolicy::insert;
+
+    /**
+     * @brief Inserts a default value and table number for a given key.
+     *
+     * @param key Pointer used as a key in the vector.
+     * @param num_tab Table number associated with the key.
+     */
+    void insert_only_num_tab(void* key, int num_tab)
+    {
+        T   val{};
+        int ind = 0;
+        vec.emplace_back(key, std::make_tuple(val, ind, num_tab));
+    }
+
+    /**
+     * @brief Entries get_info_second_value() scans, and the high-water mark.
+     *
+     * @details One entry per live array of this element type, so a handful is
+     *          expected and anything more means entries outlive their arrays.
+     *          The distinction matters: perf puts 34% of a 64-thread run in
+     *          get_info_second_value() under libomp (0.37% under libgomp, same
+     *          workload), and a scan of five cannot do that -- so it is either
+     *          a hot path calling it far too often, which caching fixes, or a
+     *          list that grew, which erasing fixes.
+     */
+    [[nodiscard]] std::size_t share_info_entries() const noexcept
+    {
+        return vec.size();
+    }
+
+    /**
+     * @brief Replaces the value and index of an existing entry with the same key.
+     *
+     * @param key Pointer key to match.
+     * @param val New value to assign.
+     * @param ind New index to assign.
+     * @throws std::runtime_error If key is not found in the vector.
+     */
+    void replace_all_other_elm(void* key, T val, int ind)
+    {
+        for (auto& item : vec)
+        {
+            if (item.first == key)
+            {
+                auto& tup        = item.second;
+                std::get<0>(tup) = val;
+                std::get<1>(tup) = ind;
+                return;
+            }
+        }
+        throw std::runtime_error("Key not found in the vector!");
+    }
+
+    /**
+     * @brief Inserts a tuple (value, index, table number) for a given key.
+     *
+     * @param key Pointer key used as identifier.
+     * @param val Value to store.
+     * @param ind Index associated with the value.
+     * @param num_tab Table number where the value belongs.
+     */
+    void insert(void* key, T val, int ind, int num_tab)
+    {
+        vec.emplace_back(key, std::make_tuple(val, ind, num_tab));
+    }
+    /// @brief Record that second value @p key sits at index @p ind of the
+    ///        shared value table.
+    void insert_map_ind_cst_val2(in_t<T> key, int ind)
+    {
+        map_ind_cst_val2[key] = ind;
+    }
+
+    std::vector<T> get_all_second_value() const
+    {
+        std::vector<T> keys;
+
+        for (const auto& [key, v] : map_ind_cst_val2)
+        {
+            keys.push_back(key);
+        }
+
+        return keys;
+    }
+
+    /// @brief Index of second value @p key in the shared value table, or -1
+    ///        when it is not registered (0 for bool, which has no table).
+    [[nodiscard]] int find_ind_tab_cst2(in_t<T> key) const
+    {
+        if constexpr (is_not_bool)
+        {
+            const auto it = map_ind_cst_val2.find(key);
+            if (it != map_ind_cst_val2.end())
+            {
+                return it->second;
+            }
+            return -1;
+        }
+        else
+        {
+            return 0;
+        }
+    }
+
+    /// @brief Change the second value and its table index recorded for
+    ///        array @p key.
+    /// @throws std::runtime_error when @p key is not registered.
+    void replace(void* key, T val, int ind)
+    {
+        for (auto& item : vec)
+        {
+            if (item.first == key)
+            {
+                std::get<0>(item.second) = val;
+                std::get<1>(item.second) = ind;
+                return;
+            }
+        }
+
+        throw std::runtime_error("Key not found in the vector!");
+    }
+
+    /// @brief The second value recorded for array @p key (true for bool).
+    /// @throws std::runtime_error when @p key is not registered.
+    [[nodiscard]] T get_second_value(void* key) const
+    {
+        if constexpr (is_not_bool)
+        {
+            for (const auto& item : vec)
+            {
+                if (item.first == key)
+                {
+                    return std::get<0>(item.second);
+                }
+            }
+        }
+        else
+        {
+            return true;
+        }
+        report_key_not_found(key, "get_second_value");
+        throw std::runtime_error("Key not found in the vector!");
+    }
+    /// @brief The num_tab recorded for array @p key.
+    /// @throws std::runtime_error when @p key is not registered.
+    [[nodiscard]] int get_num_tab(void* key) const
+    {
+        for (const auto& item : vec)
+        {
+            if (item.first == key)
+            {
+                return std::get<2>(item.second);
+            }
+        }
+        report_key_not_found(key, "get_num_tab");
+        throw std::runtime_error("Key not found in the vector!");
+    }
+
+    /// @brief The whole (second value, index, num_tab) tuple recorded for
+    ///        array @p key.
+    [[nodiscard]] inf_array_t get_info_second_value(const void* key) const
+    {
+        if constexpr (is_not_bool)
+        {
+            if constexpr (build_config::any_check)
+            {
+                // Snapshot size() ONCE and index into stable deque slots. With a
+                // deque, emplace_back never relocates existing elements, so a
+                // concurrent append cannot free the slots we read here (unlike the
+                // old vector, whose realloc freed the whole buffer mid-scan). We
+                // still snapshot n so a concurrent append can't move the loop bound.
+                const size_t n = vec.size();
+
+                if (n > (1u << 30))
+                    INVARIANT_FAILED("[share_info get] corrupt vec: this={} size={} key={}",
+                                     static_cast<const void*>(this), n, key);
+
+                for (size_t i = 0; i < n; ++i)
+                {
+                    if (vec[i].first == key)
+                        return vec[i].second;
+                }
+                INVARIANT_FAILED("[share_info get] key NOT FOUND: this={} size={} key={} "
+                                 "(dangling ctx->ptr_on_array, or array destroyed while a deferred op "
+                                 "still referenced it?)",
+                                 static_cast<const void*>(this), n, key);
+            }
+            else
+            {
+                // deque: snapshot size() and index stable slots (see above).
+                const size_t n = vec.size();
+                for (size_t i = 0; i < n; ++i)
+                {
+                    if (vec[i].first == key)
+                        return vec[i].second;
+                }
+                throw std::runtime_error("Key not found in the vector!");
+            }
+        }
+        else
+        {
+            // bool: second_value is always `true`, but num_tab is PER-ARRAY. We
+            // must look the key up like the non-bool path, otherwise every bool
+            // array (including rechunk_to's fresh tmp) resolves to vec[0] — the
+            // first bool array's num_tab — and its compression-flag write indexes
+            // the wrong array's tab_is_inside_chunk_list_to_compress (heap
+            // overflow during bool re-chunk). Same "first match shadows tmp"
+            // hazard the erase() comment below describes for the non-bool path.
+            const size_t n = vec.size();
+            for (size_t i = 0; i < n; ++i)
+            {
+                if (vec[i].first == key)
+                    return vec[i].second;
+            }
+            return vec[0].second; // fallback: not registered (should not happen)
+        }
+    }
+
+
+    // erase(), swap_entries(), exists(), size() and for_each_key() come from
+    // PointerMapLinear: they were the same traversals as in PointerMapChunk.
+};
+
+} // namespace shrink_array

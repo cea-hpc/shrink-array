@@ -1,0 +1,208 @@
+/*
+ * Copyright 2024-2025 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#include <cstdlib>
+// Declaration-level guards below, so they stay directives: the registry of
+// allocator instances only exists in serial builds (an OpenMP build has no
+// synchronisation for it), and InfoFreeElt has no meaning without threads.
+#ifndef _OPENMP
+    #include <set>
+#endif
+
+#include "fast_allocators/internal/singleton.h"
+#include "fast_allocators/tc_allocator.h"
+#include "fast_allocators/internal/alloc_config.h" // constexpr mirror of STD_ALLOC
+#include "fast_allocators/internal/static_const_array.h"
+#include "fast_allocators/internal/pmp_alloc.h" // PMP_MAX_THREADS (was in static_const_array_inline.h)
+
+InfoFreeElt StaticConstArray::tab_info_free_elt;
+InfoFreeElt StaticConstArray::tab_info_free_elt_align;
+
+/// @copydoc InfoFreeElt::InfoFreeElt
+/// @note Sized by PMP_MAX_THREADS at construction, so raising the team size
+///       after the first allocation would index past these arrays.
+InfoFreeElt::InfoFreeElt() : tab_ptr(nullptr), tab_sz(nullptr), somme_sz(nullptr), compt(nullptr)
+{
+    // Serially there is no batching (freeBlock never enters the batching
+    // branch), so the 2 x 10000-entry arrays are not worth allocating.
+    if constexpr (alloc_config::use_openmp)
+    {
+        const int max_thr = PMP_MAX_THREADS;
+
+        svalloc(tab_sz, IntMaxFreeElt, max_thr);
+        svalloc(tab_ptr, VoidMaxFreeElt, max_thr);
+
+        svcalloc(compt, int, max_thr);
+        svcalloc(somme_sz, int, max_thr);
+    }
+}
+
+/// @copydoc InfoFreeElt::~InfoFreeElt
+InfoFreeElt::~InfoFreeElt()
+{
+    if (tab_ptr == nullptr)
+        return; // serial build: nothing was allocated
+    svfree(tab_ptr);
+    svfree(tab_sz);
+
+    svfree(compt);
+    svfree(somme_sz);
+}
+/// @copydoc StaticConstArray::clearInfoFreeElt(int)
+void StaticConstArray::clearInfoFreeElt(int thr_rank)
+{
+    for (int k = 0; k < tab_info_free_elt.compt[thr_rank]; ++k)
+    {
+        const int szl  = tab_info_free_elt.tab_sz[thr_rank][k];
+        void*     ptrl = tab_info_free_elt.tab_ptr[thr_rank][k];
+        freeBlockWithInt(szl, ptrl);
+    }
+}
+
+/// @copydoc StaticConstArray::clearInfoFreeEltAlign
+void StaticConstArray::clearInfoFreeEltAlign(int thr_rank)
+{
+    for (int k = 0; k < tab_info_free_elt_align.compt[thr_rank]; ++k)
+    {
+        const int szl  = tab_info_free_elt_align.tab_sz[thr_rank][k];
+        void*     ptrl = tab_info_free_elt_align.tab_ptr[thr_rank][k];
+        freeBlockWithAlignInt(szl, ptrl);
+    }
+}
+
+/// @copydoc StaticConstArray::clearInfoFreeElt()
+void StaticConstArray::clearInfoFreeElt()
+{
+    const int max_thr = PMP_MAX_THREADS;
+
+    for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
+    {
+        clearInfoFreeElt(thr_rank);
+        clearInfoFreeEltAlign(thr_rank);
+
+        tab_info_free_elt.compt[thr_rank]       = 0;
+        tab_info_free_elt_align.compt[thr_rank] = 0;
+    }
+}
+
+TCTypeAllocatorEBC<8, SIZE_BLOCK>  Allocator8;  ///< @copydoc ::Allocator8
+TCTypeAllocatorEBC<24, SIZE_BLOCK> Allocator24; ///< @copydoc ::Allocator24
+
+/**
+ * @brief Registry of the live ::TCTypeAllocator instances, for the memory report.
+ *
+ * @details They are of every element type, so they are held through the
+ *          type-erased ::VTCTypeAllocator and each one enrols itself from its
+ *          constructor.
+ *
+ * @warning Serial builds only. An OpenMP build declares no set and every
+ *          method below is a no-op, because a std::set with no lock would be
+ *          written concurrently by every rank that creates an allocator -- so
+ *          compute_sum_allocated_size_TCAlloc() reports the ladder alone there.
+ */
+class ManageTCTypeAllocator
+{
+    friend class Singleton<ManageTCTypeAllocator>;
+
+  public:
+    ManageTCTypeAllocator()  = default;
+    ~ManageTCTypeAllocator() = default;
+
+  protected:
+#ifndef _OPENMP
+    using set_allocator_t = std::set<VTCTypeAllocator*>;
+
+    set_allocator_t set_allocator;
+#endif
+
+  public:
+    /// @brief Enrol an allocator. No-op in an OpenMP build.
+    void addTCTypeAllocatorInst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
+    {
+#ifndef _OPENMP
+        set_allocator.insert(ptr_tcallocator); // not sure this is thread-safe
+#endif
+    }
+
+    /// @brief Withdraw one. No-op in an OpenMP build.
+    void removeTCTypeAllocatorInst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
+    {
+#ifndef _OPENMP
+        set_allocator.erase(ptr_tcallocator); // not sure this is thread-safe
+#endif
+    }
+
+    /// @brief Add every enrolled allocator's footprint to the totals.
+    /// @details Adds nothing in an OpenMP build; the set is empty by design.
+    void addAllocatedSize([[maybe_unused]] size_t& sum_UsedSize,
+                          [[maybe_unused]] size_t& sum_nn_ref,
+                          [[maybe_unused]] size_t& alloc_sz)
+    {
+#ifndef _OPENMP
+        for (set_allocator_t::iterator it = set_allocator.begin(); it != set_allocator.end(); ++it)
+        {
+            VTCTypeAllocator* inst = (*it);
+
+            inst->addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        }
+#else
+//        PMP_MODE_NOT_VALID;
+#endif
+    }
+};
+
+
+void add_TCTypeAllocator_inst(VTCTypeAllocator* inst)
+{
+    Singleton<ManageTCTypeAllocator>::getRef().addTCTypeAllocatorInst(inst);
+}
+
+void remove_TCTypeAllocator_inst(VTCTypeAllocator* inst)
+{
+    Singleton<ManageTCTypeAllocator>::getRef().removeTCTypeAllocatorInst(inst);
+}
+
+/// @copydoc ::compute_sum_allocated_size_TCAlloc
+void compute_sum_allocated_size_TCAlloc(size_t& sum_UsedSize, size_t& sum_nn_ref, size_t& alloc_sz)
+{
+    sum_UsedSize = 0;
+    sum_nn_ref   = 0;
+    alloc_sz     = 0;
+
+    // The ladder exists as a set of objects whatever the build, but under
+    // STD_ALLOC nothing was ever allocated from it, so there is nothing to add.
+    if constexpr (alloc_config::use_slabs)
+    {
+        StaticConstArray::_Allocator4.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::_Allocator8.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::_Allocator16.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::_Allocator32.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::_Allocator64.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::_Allocator128.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::_Allocator256.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::_Allocator512.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::_Allocator1024.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::_Allocator2048.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::_Allocator4096.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::_Allocator8192.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::_Allocator16384.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::_Allocator32768.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::_Allocator65536.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+    }
+
+    // Not part of StaticConstArray, but it's now or never to count them!
+    Singleton<ManageTCTypeAllocator>::getRef().addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+}

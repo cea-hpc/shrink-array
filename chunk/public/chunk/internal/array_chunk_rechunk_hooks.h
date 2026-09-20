@@ -1,0 +1,137 @@
+#pragma once
+
+/*
+ * Copyright 2024-2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/**
+ * @file array_chunk_rechunk_hooks.h
+ * @brief ArrayChunk's (v1) re-chunk hooks — a CHUNK_DYNAMIC-only concern,
+ *        isolated in its own mixin so they vanish from a static-geometry build.
+ *
+ * @details RechunkSupport (array_chunk_rechunk.h) carries the shared re-chunk
+ *          algorithm and calls back into the concrete array through the
+ *          rechunk_* hooks; v1 provides three of them and inherits the base
+ *          defaults for the other three. Those three only ever run under
+ *          RechunkSupport<Derived, true>::rechunk_to(), which does not exist in
+ *          a static-geometry build — they were dead weight in the class for
+ *          every reader of ArrayChunk.
+ *
+ *          RechunkHooks<Derived, chunk_dynamic> splits them the same way as the
+ *          algorithm they serve: the dynamic specialisation carries the real
+ *          bodies (unchanged), the static one keeps the signatures as no-ops so
+ *          ArrayChunk's using-declarations stay valid in both modes.
+ *
+ * @note CRTP-shaped for consistency with the rest of the family, but the bodies
+ *       are v1's: they name ManagerChunk<Chunk, value_type>'s own candidate-drop entry
+ *       point and v1's identity rule (num_tab is a member here). ArrayChunk2 and
+ *       ArrayChunk2A keep their own hooks — a different manager entry point, and
+ *       for Chunk2 an identity that must NOT be swapped.
+ *
+ * @see array_chunk_rechunk.h for the algorithm that calls these
+ * @see array_chunk_rechunk_hooks_inline.h for the bodies
+ */
+
+#include "chunk/config.h"
+#include "chunk/chunk_traits.h"
+
+namespace shrink_array
+{
+
+/**
+ * @brief v1's re-chunk hooks, present only when the geometry is a runtime value.
+ *
+ * @tparam Derived the concrete array type (only ArrayChunk today).
+ * @tparam Dynamic defaulted to build_config::chunk_dynamic; never pass it
+ *         explicitly outside of tests.
+ */
+template <typename Derived, bool Dynamic = build_config::chunk_dynamic>
+class RechunkHooks;
+
+// ── CHUNK_DYNAMIC build: the real hooks ──────────────────────────────────────
+/**
+ * @brief Dynamic specialisation: the three hooks v1 actually overrides.
+ * @copydetails RechunkHooks
+ */
+template <typename Derived>
+class RechunkHooks<Derived, true>
+{
+  public:
+    using Traits       = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using value_type   = Traits::value_type;        ///< Stored element type.
+    using proxy_type   = Traits::proxy_type;        ///< Proxy type owning the per-type array registry.
+    using manager_type = Traits::manager_type;      ///< Per-type manager owning the candidate store.
+
+    /**
+     * @brief Drop this array's queued compression candidates, by num_tab.
+     * @details Must happen at the OWNING geometry: a candidate scanned later at
+     *          another chunk size would walk past the end of its buffer.
+     */
+    void rechunk_drop_candidates();
+
+    /**
+     * @brief Drain the reuse free-list of the target geometry.
+     * @param new_size the chunk size the array is moving to
+     * @details The buffers parked there were sized for an older geometry.
+     */
+    void rechunk_drain_reuse_list(unsigned int new_size);
+
+    /**
+     * @brief Swap registry identity with the fresh array built at the new geometry.
+     * @param tmp the temporary array rechunk_to() swaps storage with
+     * @return whatever the registry swap reports
+     * @details v1 sets num_tab in pre_create_hook() and reads it in
+     *          create()/rebuild_storage(), so the member is swapped as well as
+     *          the registry entry, keeping the two consistent.
+     */
+    bool rechunk_swap_identity(Derived& tmp);
+
+  protected:
+    /** @brief CRTP down-cast: the concrete array this mixin is a base of. */
+    [[nodiscard]] Derived& self() noexcept
+    {
+        return static_cast<Derived&>(*this);
+    }
+    /** @copydoc self() */
+    [[nodiscard]] const Derived& self() const noexcept
+    {
+        return static_cast<const Derived&>(*this);
+    }
+};
+
+// ── Static-geometry build: nothing to hook ───────────────────────────────────
+/**
+ * @brief Static specialisation: the same three signatures, inert.
+ *
+ * @details Never called — RechunkSupport<Derived, false>::rechunk_to() does
+ *          nothing — but kept so ArrayChunk can pull the names in with the same
+ *          using-declarations in both modes.
+ */
+template <typename Derived>
+class RechunkHooks<Derived, false>
+{
+  public:
+    /** @brief No-op: the geometry is fixed at compile time. */
+    void rechunk_drop_candidates() noexcept {}
+    /** @brief No-op: the geometry is fixed at compile time. */
+    void rechunk_drain_reuse_list(unsigned int /*new_size*/) noexcept {}
+    /** @brief No-op: there is no temporary array to swap identities with. */
+    bool rechunk_swap_identity(Derived& /*tmp*/) noexcept
+    {
+        return true;
+    }
+};
+
+} // namespace shrink_array

@@ -1,0 +1,228 @@
+// ============================================================================
+// Pool-accounting harness. Variant-agnostic: tests chunk / chunk2 / chunk2a
+// depending on the compile-time macro (CHUNK / CHUNK2 / CHUNK2A), like the
+// other harnesses here.
+// ============================================================================
+//
+// Guards the manager's bookkeeping across an array's life: what it counts and
+// what it parks must match what is actually alive.
+//
+// WHAT IT CHECKS
+//
+//   1. somme_chunk_create tracks the chunks ALIVE: it grows by an array's chunk
+//      count at creation and comes back down by the same amount at clear().
+//      That count feeds the compression threshold
+//      (somme_chunk_create / (factor_div * threads), floored), so a count that
+//      only ever grows -- v1's did, its clear_core() never decremented -- makes
+//      the threshold climb with the program's history (390 -> ~42 000 on a v1
+//      dyn run) until compression all but stops. After every array is gone
+//      the recomputed threshold must be back at the floor.
+//   2. The buffers a cleared array held are parked for reuse, in exact number
+//      (every written chunk, none twice), and the next array takes them back.
+//      The pools are per rank and an array is filled and cleared under two
+//      different distributions of its chunks over the team, so a rank can run
+//      dry and allocate fresh while another keeps a leftover: the residue is
+//      allowed up to one buffer per thread (it is 0 at one thread). Serial
+//      builds free instead of parking, so there the pools stay empty.
+//   3. Dynamic geometry only: a rechunk_to() leaves nothing parked at the OLD
+//      geometry once its drain has run, and the count of chunks alive follows
+//      the new geometry.
+//
+// Then the library's own teardown, as compress_roundtrip does.
+//
+// Compile OMP or non-OMP, static or dyn, check. Exit 0 = every count matches.
+
+#include <cstdlib>
+#include <cstdio>
+#include <tuple>
+#include <type_traits>
+#include <unistd.h>
+
+#include "chunk/chunk_traits.h" // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"
+#include "chunk/array_chunk2.h"
+#include "chunk/array_chunk2A.h"
+#include "chunk/param_chunk.h"
+#include "chunk/config.h"      // chunk_config::use_chunk*
+#include "chunk/PMP_CHUNK.h"   // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h" // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/chunk_def.h"
+#include "chunk/chunk2_def.h"
+#include "chunk/chunk2A_def.h"
+
+// Defined by every executable of the library (the fast allocator reads it).
+int __mem_page_size = 0;
+
+using namespace shrink_array;
+
+template <typename T>
+using Array = std::conditional_t<chunk_config::use_chunk2a, ArrayChunk2A<T>,
+              std::conditional_t<chunk_config::use_chunk2,  ArrayChunk2<T>,
+                                                            ArrayChunk<T>>>;
+
+using VariantDef = std::conditional_t<chunk_config::use_chunk2a, Chunk2ADef,
+                   std::conditional_t<chunk_config::use_chunk2,  Chunk2Def, ChunkDef>>;
+
+constexpr const char* variant_name()
+{
+    if constexpr (chunk_config::use_chunk2a) return "chunk2a";
+    else if constexpr (chunk_config::use_chunk2) return "chunk2";
+    else return "chunk";
+}
+
+template <typename Arr, typename Val>
+void maybe_set_second_value(Arr& a, const Val& v)
+{
+    if constexpr (requires(Arr x) { x.set_second_value(v); })
+        a.set_second_value(v);
+}
+
+// The phase brackets (see compress_roundtrip.cpp): no-ops under OMPT and serially.
+static void begin_phase()
+{
+    if constexpr (build_config::has_not_ompt)
+        shrink_array::begin_parallel_phase();
+}
+static void end_phase()
+{
+    if constexpr (build_config::has_not_ompt)
+        shrink_array::finalize_parallel_phase();
+}
+
+// Serial builds free a cleared array's buffers outright; OpenMP parks them.
+constexpr bool parks_on_clear = build_config::use_openmp;
+
+using Manager = ArrayChunkTraits<Array<double>>::manager_type;
+
+static int  g_fails = 0;
+static void expect(bool ok, const char* what, long got, long want)
+{
+    if (ok)
+        printf("[%s] OK   %-58s %ld\n", variant_name(), what, got);
+    else
+    {
+        printf("[%s] FAIL %-58s got=%ld expected=%ld\n", variant_name(), what, got, want);
+        ++g_fails;
+    }
+}
+
+/// Materialise every chunk of @p arr with a value that is neither constant.
+static void materialise_all(Array<double>& arr, long N)
+{
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for
+        for (long i = 0; i < N; ++i)
+            arr[i] = 1.0 + static_cast<double>(i);
+    }
+    end_phase();
+}
+
+int main(int argc, char** argv)
+{
+    __mem_page_size = getpagesize();
+
+    const long N = argc > 1 ? atol(argv[1]) : (1L << 20);
+
+    ParamChunk::init_indexes(true);
+
+    printf("=== pool_accounting [variant = %s]  N=%ld  threads=%d ===\n", variant_name(), N, CHUNK_PMP_MAX_THREADS);
+
+    const long base = Manager::get_somme_chunk_create();
+    expect(Manager::reuse_pool_blocks() == 0, "pools empty at start", (long) Manager::reuse_pool_blocks(), 0);
+
+    // --- 1. count alive: two arrays, then one cleared, then both ------------
+    long chunks_a = 0, chunks_b = 0;
+    {
+        Array<double> a(N);
+        maybe_set_second_value(a, 3.5);
+        chunks_a = Manager::get_somme_chunk_create() - base;
+        expect(chunks_a > 0, "somme_chunk_create grew by a's chunks", chunks_a, chunks_a);
+
+        Array<double> b(N / 2);
+        maybe_set_second_value(b, 3.5);
+        chunks_b = Manager::get_somme_chunk_create() - base - chunks_a;
+        expect(chunks_b > 0, "somme_chunk_create grew by b's chunks", chunks_b, chunks_b);
+
+        materialise_all(a, N);
+        materialise_all(b, N / 2);
+        // The array keeps one chunk past the last element (N / csz + 1), so when
+        // N is a multiple of the chunk size that spare chunk is never written.
+        const long csz       = static_cast<long>(a.chunk_size());
+        const long covering  = (N + csz - 1) / csz;
+        const long written_a = a.get_nb_chunk_written();
+        expect(written_a == covering, "a fully materialised (written == chunks covering N)", written_a, covering);
+
+        // --- 2. parking: a's buffers go to the pools, exactly ----------------
+        // Unless a owns its slabs (per-array affinity, alloc_key() != 0): then
+        // clear() drains its lists straight back to its allocator set, whose
+        // slabs empty, and NOTHING stays parked. The default threshold keeps
+        // this harness's arrays below the line; -DCHUNK_ALLOC_AFFINITY_MIN_BYTES=1
+        // puts every array above it, and this is what the check expects then.
+        const bool a_owns_slabs = a.alloc_key() != 0;
+        a.clear();
+        expect(Manager::get_somme_chunk_create() == base + chunks_b,
+               "somme_chunk_create back down by a's chunks after a.clear()",
+               Manager::get_somme_chunk_create(), base + chunks_b);
+        const long parked      = static_cast<long>(Manager::reuse_pool_blocks());
+        const long want_parked = (parks_on_clear && !a_owns_slabs) ? written_a : 0;
+        expect(parked == want_parked,
+               a_owns_slabs   ? "a owned its slabs: nothing parked after a.clear()"
+               : parks_on_clear ? "a's written buffers parked for reuse"
+                                : "serial: nothing parked",
+               parked, want_parked);
+
+        // The next array takes them back.
+        Array<double> c(N);
+        maybe_set_second_value(c, 3.5);
+        materialise_all(c, N);
+        const long written_c    = c.get_nb_chunk_written();
+        const long parked_after = static_cast<long>(Manager::reuse_pool_blocks());
+        const long want_after   = parked > written_c ? parked - written_c : 0;
+        const long slack        = static_cast<long>(CHUNK_PMP_MAX_THREADS); // per-rank pools, see the header
+        expect(parked_after >= want_after && parked_after <= want_after + slack,
+               "pools drained by what c materialised (+/- one per rank)", parked_after, want_after);
+
+        // --- 3. re-chunk (dyn): nothing left parked at the old geometry ------
+        if constexpr (build_config::chunk_dynamic)
+        {
+            const unsigned old_size = b.chunk_size();
+            const unsigned new_size = old_size * 4 <= shrink_array::cst_buffer_size ? old_size * 4 : old_size / 2;
+            if (new_size != old_size)
+            {
+                const long before = Manager::get_somme_chunk_create();
+                b.rechunk_to(new_size);
+                expect(b.chunk_size() == new_size, "b re-chunked to the new geometry", b.chunk_size(), new_size);
+                const long at_old = static_cast<long>(Manager::reuse_pool_blocks_at(old_size));
+                expect(at_old == 0, "nothing parked at the OLD geometry after rechunk_to", at_old, 0);
+                // Chunks alive followed the geometry: fewer chunks at a larger size.
+                const long delta = Manager::get_somme_chunk_create() - before;
+                const long want  = static_cast<long>(b.get_nb_chunk_written()) - chunks_b;
+                expect(delta <= 0 && delta >= want - 1,
+                       "somme_chunk_create follows the new chunk count", delta, want);
+            }
+        }
+    } // b and c cleared here
+
+    expect(Manager::get_somme_chunk_create() == base,
+           "somme_chunk_create back to its start value once every array is gone",
+           Manager::get_somme_chunk_create(), base);
+
+    Manager::compute_size_max_number_of_chunk_to_check_compress();
+    expect(Manager::get_size_max_number_of_chunk_to_check_compress() == VariantDef::size_min_list_chunk_to_check_compress,
+           "compression threshold back at the floor with no array alive",
+           Manager::get_size_max_number_of_chunk_to_check_compress(),
+           VariantDef::size_min_list_chunk_to_check_compress);
+
+    // The library's own teardown (see compress_roundtrip.cpp).
+    // No #ifdef: release_chunk_pools() does whichever half this build needs --
+    // the per-rank lists under OpenMP, the single allocator otherwise. See
+    // ChunkPoolParallelInterface in chunk_std.h.
+    release_chunk_pools();
+    destroy_block_chunk();
+
+    printf("\n[%s] %s\n", variant_name(),
+           g_fails == 0 ? "=== POOL ACCOUNTING OK, TEARDOWN OK ===" : "=== POOL ACCOUNTING FAILURES ===");
+    return g_fails;
+}

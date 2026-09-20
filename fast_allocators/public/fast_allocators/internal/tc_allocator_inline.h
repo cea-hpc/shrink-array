@@ -1,0 +1,271 @@
+
+#include <cmath>
+#include <cstddef>                      // std::ptrdiff_t, the element offsets
+#include <cstdlib>                      // posix_memalign, std::abort
+#include <iostream>                     // std::cerr on an arena failure
+#include <cstring>                      // FIX: memset to zero posix_memalign'd slabs (not zeroed like mmap)
+#include "fast_allocators/slab_arena.h" // FIX: disjoint op/value slab arenas
+
+#include "fast_allocators/internal/next_power_of_2.h"
+
+// #define USE_POSIX_MEM_ALIGN
+
+inline void TCAllocator::alloc_block()
+{
+    BlockAllocator = NextPowerOf2(BlockAllocator);
+
+    BlockSize = static_cast<int>((BlockAllocator - sizeof(void*)) / ElementSize);
+
+#ifdef USE_CLASSIC_MALLOC
+
+    if (BlockAllocator <= 65536)
+    {
+        alloc_ptr = (char*)malloc(2 * BlockAllocator);
+
+        data = alloc_ptr + (BlockAllocator - ((size_t)alloc_ptr & (BlockAllocator - 1)));
+    }
+    else
+    {
+        alloc_ptr = 0;
+
+    #ifdef USE_POSIX_MEM_ALIGN
+        void* datal;
+
+        posix_memalign(datal, BlockAllocator, BlockAllocator);
+
+        data = (char*)datal;
+    #else
+
+        if (!__mem_page_size)
+        {
+            __mem_page_size = getpagesize();
+        }
+
+        if (((2 * BlockAllocator) % __mem_page_size == 0) && __mem_page_size)
+        {
+            use_mmap = true;
+
+            char* a = (char*)sctk_mmap(nullptr, 2 * BlockAllocator);
+
+            //	data = a + (BlockAllocator - ((size_t) a & (BlockAllocator - 1)));
+
+            data = (char*)((((unsigned long)a + (BlockAllocator - 1)) & -BlockAllocator));
+
+            munmap(a, (unsigned long)(data) - (unsigned long)(a));
+
+            unsigned long ll = (unsigned long)(a + 2 * BlockAllocator) - (unsigned long)(data + BlockAllocator);
+
+            if (ll)
+            {
+                munmap(data + BlockAllocator, ll);
+            }
+        }
+        else
+        {
+            use_mmap = false;
+
+            posix_memalign((void**)&data, BlockAllocator, BlockAllocator);
+        }
+
+    #endif
+    }
+
+#else
+
+    #ifdef USE_POSIX_MEM_ALIGN
+
+    posix_memalign((void**)&data, BlockAllocator, BlockAllocator);
+
+    #else
+    if (__mem_page_size == 0)
+    {
+        #ifdef PGI
+        __mem_page_size = 2048;
+        #else
+        __mem_page_size = getpagesize();
+        #endif
+    }
+
+    // FIX (op/value slab aliasing): allocate the op slab from the dedicated OP
+    // arena, never the glibc. Arena addresses are never returned to the OS and are
+    // disjoint from the value arena, so a freed op slab's address can never be
+    // reobtained by the value pool (the proven crash path: OP_ALLOC then
+    // VALUE_ALLOC at the same address on different tids). Recycled within the op
+    // arena's own free-list in destroy().
+    use_mmap = false;
+
+    data = static_cast<char*>(fast_alloc::arena_for(arena_kind).allocate(BlockAllocator, BlockAllocator));
+
+    if (data == nullptr) [[unlikely]]
+    {
+        std::cerr << "Fatal Error: op_arena failed to allocate " << BlockAllocator << " bytes\n";
+        std::abort();
+    }
+
+    #endif
+
+#endif
+
+    // NOTE: no slab-wide memset here. A fresh arena slab is already zero
+    // (MAP_ANONYMOUS), and a recycled slab must NOT be blanket-zeroed — doing so
+    // wipes any block the pool still considers live (seen: an entire op read back
+    // as all-zero, vptr=0, after a slab was reused). Each op is fully initialized
+    // by construct_at at its own block, so slab-wide zeroing is unnecessary.
+
+    *reinterpret_cast<TCAllocator**>(data + BlockAllocator - sizeof(void*)) = this;
+
+    firstFree = -1;
+}
+
+inline void* TCAllocator::alloc() noexcept
+{
+    ++nn_ref;
+    char* elemPtr;
+
+    if (firstFree != -1)
+    {
+        elemPtr   = data + (static_cast<std::ptrdiff_t>(firstFree) * ElementSize);
+        firstFree = *reinterpret_cast<int*>(elemPtr); // read the index stored in the first element of the array
+    }
+    else
+    {
+        elemPtr = data + (static_cast<std::ptrdiff_t>(UsedSize) * ElementSize);
+        ++UsedSize;
+    }
+    return elemPtr;
+}
+
+inline void TCAllocator::destroy()
+{
+    // FIX (op/value slab aliasing): return the op slab to the OP arena's
+    // free-list, NEVER to the glibc. This is what breaks the crash: the address
+    // stays inside the op arena and can never be handed to the value pool.
+    fast_alloc::arena_for(arena_kind).deallocate(static_cast<void*>(data), BlockAllocator);
+}
+
+inline void TCAllocator::init(int ElementSize_, uintptr_t BlockAllocator_)
+{
+    ElementSize    = ElementSize_;
+    BlockAllocator = BlockAllocator_;
+
+    Log2ElementSize = static_cast<int>(std::log2(static_cast<double>(ElementSize)) + 1.e-13);
+
+    alloc_block();
+}
+
+inline void TCAllocator::free_block(int i) noexcept
+{
+    if (i == (UsedSize - 1))
+    {
+        *reinterpret_cast<int*>(data + (static_cast<std::ptrdiff_t>(i) * ElementSize)) = -1;
+        --UsedSize;
+    }
+    else
+    {
+        // store the index in the first element of the block
+        *reinterpret_cast<int*>(data + (static_cast<std::ptrdiff_t>(i) * ElementSize)) = firstFree;
+        firstFree                                                                      = i;
+    }
+    --nn_ref;
+}
+
+inline void TCCAllocator::alloc_block()
+{
+    // The rounding rule lives in slab_bytes_for(): the owning instance applies
+    // the same one at init(), so it can resolve a pointer to its slab without
+    // a slab to ask (TCTypeCAllocator::slab_bytes_).
+    BlockAllocator = slab_bytes_for(BlockAllocator, ElementSize);
+
+    BlockSize = static_cast<int>((BlockAllocator - sizeof(void*)) / ElementSize);
+
+    if (BlockSize > first_free_init - 1)
+        BlockSize = first_free_init - 1;
+
+    tab_firstFree = new unsigned short[BlockSize];
+
+    // FIX (op/value slab aliasing): allocate the value slab from the dedicated
+    // VALUE arena (disjoint from the op arena, never returned to the OS). Value
+    // slabs live in their own address space and can never land on an op slab's
+    // address. Recycled within the value arena's own free-list in destroy().
+    data = static_cast<char*>(fast_alloc::value_arena().allocate(BlockAllocator, BlockAllocator));
+
+    if (data == nullptr) [[unlikely]]
+    {
+        std::cerr << "Fatal Error: value_arena failed to allocate " << BlockAllocator << " bytes\n";
+        std::abort();
+    }
+
+    // Arena slabs are fresh-mmap zeroed on first use, but recycled slabs may hold
+    // stale bytes; the pool relies on zero-initialized slabs, so clear it.
+    std::memset(data, 0, BlockAllocator);
+
+    *reinterpret_cast<TCCAllocator**>(data + BlockAllocator - sizeof(void*)) = this;
+
+    firstFree = first_free_init;
+}
+
+inline void TCCAllocator::destroy()
+{
+    delete[] tab_firstFree;
+
+    // FIX (op/value slab aliasing): return the value slab to the VALUE arena's
+    // free-list, never to the glibc.
+    fast_alloc::value_arena().deallocate(static_cast<void*>(data), BlockAllocator);
+}
+
+inline void TCCAllocator::init(int ElementSize_, uintptr_t BlockAllocator_)
+{
+    ElementSize    = ElementSize_;
+    BlockAllocator = BlockAllocator_;
+
+    Log2ElementSize = static_cast<int>(std::log2(static_cast<double>(ElementSize)) + 1.e-13);
+
+    alloc_block();
+}
+
+inline void* TCCAllocator::alloc() noexcept
+{
+    // A sweep may have given this slab's pages back INCLUDING the trailing
+    // back-pointer (madvise_empty_slab_full). Put it back before the block
+    // escapes: the pointer we are about to return is exactly what makes a free
+    // through this slab possible again, and free_elt() resolves it by reading
+    // that word. The store is idempotent -- every writer writes `this` -- and
+    // this runs on the slab's own rank, so no atomic is needed.
+    if (backptr_dropped) [[unlikely]]
+    {
+        *reinterpret_cast<TCCAllocator**>(data + BlockAllocator - sizeof(void*)) = this;
+        backptr_dropped                                                          = false;
+    }
+
+    ++nn_ref;
+    char* elemPtr;
+
+    if (firstFree != first_free_init)
+    {
+        elemPtr   = data + (static_cast<std::ptrdiff_t>(firstFree) * ElementSize);
+        firstFree = tab_firstFree[firstFree];
+    }
+    else
+    {
+        elemPtr = data + (static_cast<std::ptrdiff_t>(UsedSize) * ElementSize);
+        ++UsedSize;
+    }
+
+    return elemPtr;
+}
+
+inline void TCCAllocator::free_block(int i) noexcept
+{
+    if (i == (UsedSize - 1))
+    {
+        tab_firstFree[i] = first_free_init;
+        --UsedSize;
+    }
+    else
+    {
+        tab_firstFree[i] = firstFree;
+        firstFree        = i;
+    }
+
+    --nn_ref;
+}

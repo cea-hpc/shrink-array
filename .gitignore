@@ -1,0 +1,10 @@
+cmake-*/
+build*/
+.idea/
+
+*.o
+*.a
+*.so
+*~
+.aider*
+*.tofus

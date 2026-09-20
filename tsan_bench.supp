@@ -1,0 +1,21 @@
+# Suppressions TSan — bruit du BENCHMARK et du setup/teardown, PAS des bugs lib.
+# But : ne laisser visibles que les courses de la bibliothèque (chunk/public/chunk).
+
+# --- Benchmark : régions de stress omp for nowait / reductions (racy par design) ---
+race:shrink_bench.cpp
+
+# --- Setup / teardown : allocation et destruction des tableaux ---
+race:ArrayChunk2A*::resize
+race:ArrayChunk2A*::clear
+race:ManagerChunk*::clearListBlockFreeThr
+race:ArrayChunk2Base*::resize
+
+# --- Destructeurs STL pendant le teardown (vector/tuple/unique_ptr) ---
+race:std::_Vector_base
+race:std::vector
+race:std::unique_ptr
+race:std::_Tuple_impl
+race:__gnu_cxx::__normal_iterator
+
+# --- delete pendant clear/teardown ---
+race:operator delete
