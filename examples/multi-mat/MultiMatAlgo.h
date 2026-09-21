@@ -24,7 +24,7 @@ template <typename LOOPS = LoopsSimd, typename LOOPSCHUNK = Loops>
 class MultiMatAlgo
 {
     template <typename VPTR>
-    auto& getMatVecDir(const VPTR& gdr, int mat)
+    static auto& getMatVecDir(const VPTR& gdr, int mat)
     {
         using V   = std::remove_pointer_t<VPTR>;
         using T   = V::value_type;

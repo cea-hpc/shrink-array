@@ -248,7 +248,7 @@ int main()
 
     std::cout << "\n\nElapsed time  : " << elapsed_seconds.count() << "s\n\n";
 
-    struct rusage usage;
+    rusage usage;
     if (getrusage(RUSAGE_SELF, &usage) == 0)
     {
         long rss = usage.ru_maxrss; // Resident Set Size in kilobytes
