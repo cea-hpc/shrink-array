@@ -337,7 +337,7 @@ for i in range(n):
     build = builds[i % len(builds)]
     executables = list(executables_of[build])
     if build:
-        print(f"🏗️  Build {build}")
+        print(f"🏗️  Run {i + 1}/{n} on build {build} ({(i % len(builds)) + 1}/{len(builds)} of the cycle)")
 
     # Shuffle executables if requested
     if args.shuffle_exec:
@@ -355,8 +355,11 @@ for i in range(n):
         else:
             exe_threads = run_threads
 
-        print(f"🧵 Threads used for {exe}: {exe_threads}")
-        print(f"🚀 Launching {i+1}/{n} → {exe}")
+        # What the console shows for this binary: "<build>/<name>" in --builds
+        # mode (the absolute path would bury the build), the path otherwise.
+        exe_label = f"{build}/{os.path.basename(exe)}" if build else exe
+        print(f"🧵 Threads used for {exe_label}: {exe_threads}")
+        print(f"🚀 Launching {i+1}/{n} → {exe_label}")
 
         env = os.environ.copy()
         env["OMP_NUM_THREADS"] = str(exe_threads)
@@ -405,15 +408,15 @@ for i in range(n):
                 ])
 
             if returncode != 0:
-                print(f"❌ Error during run {i+1}/{n} for {exe}: return code {returncode}")
+                print(f"❌ Error during run {i+1}/{n} for {exe_label}: return code {returncode}")
                 sys.exit(returncode)
                 break
             else:
-                print(f"✅ {exe_tag} succeeded in {wall_seconds:.3f}s")
+                print(f"✅ {exe_label} succeeded in {wall_seconds:.3f}s")
 
         except Exception as e:
             wall_seconds = time.perf_counter() - t0
-            print(f"⚠️ Exception during run {i+1}/{n} for {exe}: {e} (elapsed {wall_seconds:.3f}s)")
+            print(f"⚠️ Exception during run {i+1}/{n} for {exe_label}: {e} (elapsed {wall_seconds:.3f}s)")
             with open(summary_file, "a", newline="") as csvf:
                 writer = csv.writer(csvf)
                 writer.writerow([
