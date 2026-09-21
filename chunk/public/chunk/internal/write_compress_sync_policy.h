@@ -128,8 +128,6 @@ inline void heavy_barrier() noexcept
     {
 #if defined(CHUNK_TSAN_BUILD)
         return "symmetric (fences; ThreadSanitizer build)";
-#elif !defined(CHUNK_ASYMMETRIC_DEKKER)
-        return "symmetric (fences; -DCHUNK_ASYMMETRIC_DEKKER=OFF)";
 #else
         return "symmetric (fences; no membarrier on this platform)";
 #endif

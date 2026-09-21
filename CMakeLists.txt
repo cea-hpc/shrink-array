@@ -33,19 +33,12 @@ if(CHUNK_RECLAIM_EMPTY_SLABS)
     add_definitions(-DCHUNK_RECLAIM_EMPTY_SLABS)
 endif()
 
-# The write/compress handshake (chunk_config::asymmetric_dekker, config.h).
-# ON = asymmetric where it can be: the write announces itself with a plain
-# store, the compressor / flush side pays a membarrier() for everyone. OFF =
-# symmetric: a seq_cst store + fence on every element write. The default since
-# the write engine stopped deferring every write of a "dangerous" rank (see
-# config.h for the numbers): the rare side is now a few hundred announces per
-# second, and the asymmetric shape is -7% at 6 threads on x86 where the
-# symmetric one is +7%. TSan builds are symmetric regardless, and so is any
-# run whose membarrier registration fails.
-option(CHUNK_ASYMMETRIC_DEKKER "Asymmetric write/compress handshake (plain store on writes, membarrier on the rare side)" ON)
-if(CHUNK_ASYMMETRIC_DEKKER)
-    add_definitions(-DCHUNK_ASYMMETRIC_DEKKER)
-endif()
+# The write/compress handshake (chunk_config::asymmetric_dekker, config.h) is
+# asymmetric wherever it can be, with no option: the write announces itself
+# with a plain store, the compressor / flush side pays a membarrier() for
+# everyone. The symmetric shape (a seq_cst store + fence on every element
+# write) remains for TSan builds, non-Linux, and any run whose membarrier
+# registration fails; config.h has the numbers behind the choice.
 
 # Chunk2A's per-chunk second-value table holds a 4-byte identifier instead of
 # the value for types wider than 4 bytes (double, long, complex<double>):

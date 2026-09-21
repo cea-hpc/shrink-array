@@ -403,8 +403,8 @@ inline constexpr bool use_fast_block_compression = use_openmp;
  *            FlushProcessWriteBuffers rely on; see announce_write() for the
  *            argument and heavy_barrier() for the call.
  *
- *          THE DEFAULT (-DCHUNK_ASYMMETRIC_DEKKER, CMake option of the same
- *          name, ON) since Sept '26. It was opt-in for a while, because the
+ *          THE SHAPE OF EVERY BUILD THAT CAN (no macro, no CMake option)
+ *          since Sept '26. It was opt-in for a while, because the
  *          "rare" side was not rare: a rank whose candidate list was flagged
  *          dangerous sent every write through the slow path, each of which
  *          deferred the write, flushed it back at once (an announce) and
@@ -424,12 +424,13 @@ inline constexpr bool use_fast_block_compression = use_openmp;
  *          compression's scan with nothing in return; the asymmetric one
  *          removes the fence from every write and covers it. Linux only (the
  *          syscall), never under ThreadSanitizer (it does not model membarrier
- *          and would report races that are not there). An asymmetric build
- *          still falls back to the symmetric shape AT RUN TIME if membarrier
- *          registration fails (kernel < 4.14, seccomp); print_chunk_stats()
- *          says which one ran.
+ *          and would report races that are not there): those two are the
+ *          only symmetric builds left. An asymmetric build still falls back
+ *          to the symmetric shape AT RUN TIME if membarrier registration
+ *          fails (kernel < 4.14, seccomp); print_chunk_stats() says which
+ *          one ran.
  */
-#if defined(CHUNK_ASYMMETRIC_DEKKER) && defined(__linux__) && !defined(CHUNK_TSAN_BUILD)
+#if defined(__linux__) && !defined(CHUNK_TSAN_BUILD)
 inline constexpr bool asymmetric_dekker = true;
 #else
 inline constexpr bool asymmetric_dekker = false;
