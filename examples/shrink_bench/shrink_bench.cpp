@@ -137,7 +137,7 @@ int main(int argc, char* argv[])
     // Command-line parsing: moved to bench_args.cpp.
     const BenchArgs bench_args      = parse_bench_args(argc, argv);
     const bool      no_io_v         = bench_args.no_io_v;
-    const bool      no_compress_v   = bench_args.no_compress_v;
+    const bool      compress_v      = bench_args.compress_v;
     const bool      write_trace     = bench_args.write_trace;
     const bool      read_trace      = bench_args.read_trace;
     const bool      test_stl        = bench_args.test_stl;
@@ -152,8 +152,8 @@ int main(int argc, char* argv[])
     // Example behavior based on flags
     if (no_io_v)
         std::cout << "I/O operations will be skipped.\n";
-    if (no_compress_v)
-        std::cout << "Compression is disabled.\n";
+    if (compress_v)
+        std::cout << "Compression is enabled.\n";
     if (write_trace)
         std::cout << "Trace information will be written.\n";
     if (read_trace)
@@ -172,7 +172,9 @@ int main(int argc, char* argv[])
     int io_res = input_data ? 0 : get_io_mode();
 
     const char* no_io       = no_io_v ? "1" : std::getenv("NO_IO");
-    const char* no_compress = no_compress_v ? "1" : std::getenv("NO_COMPRESS");
+    // Compression is opt-in (--compress or COMPRESS=1): the I/O layer keeps its
+    // historical no_compress flag, so the default is the non-null value.
+    const char* no_compress = (compress_v || std::getenv("COMPRESS")) ? nullptr : "1";
 
     if constexpr (input_data)
     {

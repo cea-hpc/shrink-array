@@ -1559,7 +1559,7 @@ def run_rechunk_phase(args, extra_ldpath, errors):
     actually applied ([APPLIED]) with no crash / sanitizer hit — i.e. the
     advisor -> decider -> rechunk_to pipeline works end to end in the live loop.
 
-      * --no_compress            : quiescent between-phase path (no in-loop compr).
+      * no --compress            : quiescent between-phase path (no in-loop compr).
       * CHUNK_ADVISOR_PERIOD=4    : tick often so a verdict lands within the run.
       * CHUNK_COARSEN_MIN_META_MB : the floor that decides a coarsening; 0 here
                                     so the move fires on the shrunk arrays this
@@ -1639,7 +1639,7 @@ def run_rechunk_phase(args, extra_ldpath, errors):
                 rdir = (args.output_dir if stage == "check"
                         else _run_dir(args.output_dir, "rechunk", short_config_label(cfg), var, stage))
                 ok, dur, code, err_tail, _ = run_cmd(
-                    [exe, "--no_compress"] + stage_extra_args[stage],
+                    [exe] + stage_extra_args[stage],
                     {**env_common, **san}, to,
                     extra_ld_library_path=extra_ldpath, cwd=rdir,
                     # "[APPLIED]", not "[RECHUNK-APPLY]": the library prints
@@ -1655,7 +1655,7 @@ def run_rechunk_phase(args, extra_ldpath, errors):
                 else:
                     sys.stdout.write("\r" + lead + red("FAIL") + f" (code {code})\n")
                     _entry = (
-                        f"RECHUNK_FEATURE_FAIL: {exe} --no_compress "
+                        f"RECHUNK_FEATURE_FAIL: {exe} "
                         f"{' '.join(stage_extra_args[stage])} stage={stage} code={code}\n"
                         f"  (expected '[APPLIED]'; env CHUNK_ADVISOR_PERIOD=4 "
                         f"CHUNK_COARSEN_MIN_META_MB=0 CHUNK_ADVISOR_MIN_GAIN_MB=0)\n"
@@ -2087,7 +2087,7 @@ def main():
           f"builds will be run")
     perf_exes  = {}   # (config, var) -> path
     check_exes = {}   # (config, var) -> path   (non-baseline variants)
-    baseline_check_exe = None  # (cfg, path) for vector --no_compress, run once
+    baseline_check_exe = None  # (cfg, path) for the vector baseline, run once
     missing_perf, missing_check = [], []
 
     for cfg in args.configs:
@@ -2106,7 +2106,7 @@ def main():
                     missing_perf.append((cfg, var))
 
             if var == args.baseline_variant:
-                # The baseline check (vector --no_compress) generates data_tab_*:
+                # The baseline check (vector, uncompressed) generates data_tab_*:
                 # we resolve it but handle it separately (a single conditional
                 # run, independent of the config). Keep the first one found.
                 if baseline_check_exe is None:
@@ -2232,7 +2232,7 @@ def main():
         print(f"ℹ️  {args.reps_perf} runs on thread count(s) {sorted(full_reps_tc)}; "
               f"1 run on the others (scalability).")
 
-    # The baseline check (vector --no_compress) ONLY serves to generate the
+    # The baseline check (vector, uncompressed) ONLY serves to generate the
     # reference file data_tab_* (an expensive output). We run it:
     #   - once total (not --reps_check, independent of the config),
     #   - and only if no data_tab_* already exists in the output directory.
@@ -2282,16 +2282,16 @@ def main():
     )
     if not args.skip_check and baseline_check_exe is None and not data_tab_present:
         print("\u26a0\ufe0f  No data_tab_* oracle AND no baseline "
-              f"({args.baseline_variant} --no_compress) binary built \u2192 CHECK "
+              f"({args.baseline_variant}, uncompressed) binary built \u2192 CHECK "
               "runs will abort on missing references. Build the baseline variant "
               "(vector) so the oracle can be generated.")
     if baseline_check_exe is not None and not args.skip_check:
         if data_tab_present:
             print(f"ℹ️  data_tab_* already present in {args.output_dir} → "
-                  f"check '{args.baseline_variant}' (--no_compress) SKIPPED.")
+                  f"check '{args.baseline_variant}' (uncompressed) SKIPPED.")
         else:
             print(f"ℹ️  No data_tab_* in {args.output_dir} → "
-                  f"check '{args.baseline_variant}' (--no_compress) run once "
+                  f"check '{args.baseline_variant}' (uncompressed) run once "
                   f"to generate the reference.")
 
     # --- Totals (accounting for the policies above) ----------------------
@@ -2412,14 +2412,14 @@ def main():
             print(cyan(bold(f"\n🔍 Correctness check — {args.check_threads} threads")))
 
             # 2a. Conditionally generate the data_tab_* reference via
-            #     vector --no_compress (1 run, only if absent).
+            #     vector baseline, uncompressed (1 run, only if absent).
             if run_baseline_check:
                 cfg_b, exe_b = baseline_check_exe
                 current_run_idx += 1
                 sys.stdout.write(
                     f"\r{get_progress_bar(current_run_idx, overall_runs)} "
                     f"CHECK {short_config_label(cfg_b)[:30]:30} | "
-                    f"{args.baseline_variant:10} | --no_compress (ref data_tab_*) "
+                    f"{args.baseline_variant:10} | uncompressed (ref data_tab_*) "
                 )
                 sys.stdout.flush()
                 try:
@@ -2427,7 +2427,7 @@ def main():
                 except OSError:
                     pass
                 ok, _, code, err_tail, _ = run_cmd(
-                    [exe_b, "--no_compress"],
+                    [exe_b],
                     {"OMP_NUM_THREADS": str(args.check_threads)},
                     effective_timeout(args.timeout, args.timeout_per_thread, args.check_threads),
                     extra_ld_library_path=extra_ldpath, cwd=args.output_dir
@@ -2438,13 +2438,13 @@ def main():
                     # never be mistaken for a complete one.
                     with open(os.path.join(args.output_dir,
                                            "data_tab_ORACLE_COMPLETE.marker"), "w") as _mf:
-                        _mf.write(f"generated by {exe_b} --no_compress, "
+                        _mf.write(f"generated by {exe_b} (uncompressed), "
                                   f"{time.strftime('%Y-%m-%dT%H:%M:%S')}\n")
                     sys.stdout.write(" -> ✅ reference generated\n")
                 else:
                     sys.stdout.write(f" -> ❌ failed (code {code})\n")
                     _entry = (
-                        f"BASELINE_REF_FAIL: {exe_b} --no_compress code={code}\n"
+                        f"BASELINE_REF_FAIL: {exe_b} code={code}\n"
                         f"  stderr_tail:\n    " + err_tail.replace('\n', '\n    ')
                     )
                     errors.append(_entry)

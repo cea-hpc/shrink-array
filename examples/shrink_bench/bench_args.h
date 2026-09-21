@@ -30,7 +30,10 @@
 struct BenchArgs
 {
     bool no_io_v       = false; ///< --no_io
-    bool no_compress_v = false; ///< --no_compress
+    /// --compress: bzip2 the reference files written by the vector baseline and
+    /// read the .bz2 oracle back. Off by default: the check runs work on the
+    /// plain .bin, which spares the compress / decompress round trip.
+    bool compress_v = false;
     bool write_trace   = false; ///< --write_trace
     bool read_trace    = false; ///< --read_trace
     bool test_stl      = false; ///< --test_stl: run the STL-interface self-checks

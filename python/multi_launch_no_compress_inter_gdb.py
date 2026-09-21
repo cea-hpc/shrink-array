@@ -496,7 +496,8 @@ for i in range(n):
 
         env = os.environ.copy()
         env["OMP_NUM_THREADS"] = str(exe_threads)
-        env["NO_COMPRESS"] = "1"
+        # Compression is off by default in shrink_bench (opt-in: --compress /
+        # COMPRESS=1), so nothing to set here any more.
         if no_io:
             env["NO_IO"] = "1"
 

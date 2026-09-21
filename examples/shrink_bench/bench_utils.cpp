@@ -37,7 +37,7 @@ bool __debug_flag    = false;
 // STL-interface and read-idempotence self-checks had NEVER run. Worse, the
 // binary exited 0 after printing "Unknown argument", so bench_and_test.py's STL
 // phase went green without executing anything.
-const std::vector<std::string> valid_args = {"--no_io",    "--no_compress", "--write_trace", "--read_trace",
+const std::vector<std::string> valid_args = {"--no_io",    "--compress",    "--write_trace", "--read_trace",
                                              "--multiply", "--divisor",     "--iter_max",    "--mode",
                                              "--test_stl", "--no_struct",   "--help"};
 

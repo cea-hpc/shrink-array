@@ -48,9 +48,10 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
 
 // -----------------------------------------------------------------------------
 // write_binary_file<VEC> — dump a plain std::vector to disk as raw bytes
-// alongside a companion checksum file. Compresses with bzip2 unless
-// no_compress is set.  Aborts on non-vector VEC (chunk arrays cannot be
-// written directly, they need to be materialised first — not implemented).
+// alongside a companion checksum file. Compresses with bzip2 only when
+// no_compress is null (--compress / COMPRESS=1).  Aborts on non-vector VEC
+// (chunk arrays cannot be written directly, they need to be materialised
+// first — not implemented).
 // -----------------------------------------------------------------------------
 // Compacted run-length dump of a value sequence. Runs longer than 2 elements
 // are rendered as "v ...xN... v" (N = run length — keeping the count visible
@@ -251,8 +252,8 @@ void read_check_binary_file(int                ind,
     const int sz = data_check.size();
 
     // Whether `filename` (.bin) is a decompression TEMPORARY we created here
-    // (compressed regime) or the oracle's persistent copy (a --no_compress /
-    // no-bzip2 baseline keeps the plain .bin and never writes a .bz2). Only a
+    // (compressed regime) or the oracle's persistent copy (a baseline without
+    // --compress, or without bzip2, keeps the plain .bin and never writes a .bz2). Only a
     // temporary may be unlinked after reading — deleting the persistent copy
     // would destroy the oracle's only instance for every later run.
     bool bin_is_temp = false;
@@ -261,7 +262,7 @@ void read_check_binary_file(int                ind,
     {
         // Regime-agnostic read: prefer the .bz2 when it exists (compressed
         // oracle, .bin was unlinked at write time); otherwise fall back to a
-        // plain .bin left by a --no_compress baseline. Both absent -> go
+        // plain .bin left by a baseline run without --compress. Both absent -> go
         // through decompress_file for its clear missing-source error.
         if (!no_compress && (::access(filename_gz.c_str(), F_OK) == 0 || ::access(filename.c_str(), F_OK) != 0))
         {

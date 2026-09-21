@@ -234,7 +234,8 @@ for i in range(n):
         # hammer remote memory (huge slowdown). Overridable from the outer env.
         env.setdefault("OMP_PROC_BIND", "close")
         env.setdefault("OMP_PLACES", "cores")
-        env["NO_COMPRESS"] = "1"
+        # Compression is off by default in shrink_bench (opt-in: --compress /
+        # COMPRESS=1), so nothing to set here any more.
         if no_io:
             env["NO_IO"] = "1"
 
