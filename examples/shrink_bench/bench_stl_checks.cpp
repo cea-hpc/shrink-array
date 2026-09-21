@@ -327,8 +327,12 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // Size spans many chunks (≈195 at chunk_size 512) so reads cross chunk
         // boundaries. Mixed data (mostly second_value, some distinct) exercises
         // both the cst2 read path and materialised reads — the two that can go
-        // stale. maybe_set_second_value is required on chunk2 before any write
-        // (no-op on chunk v1 / vector mode).
+        // stale. maybe_set_second_value is not required for correctness: a
+        // chunk2 array without it has T{} as second value (see
+        // insert_only_num_tab), so it writes fine but only its zeros compress.
+        // It is declared here, before the writes, so that the runs of 2.0
+        // actually reach the cst2 read path this check is about (no-op on
+        // chunk v1 / vector mode, per-chunk on chunk2A).
         const long    NR = 100000;
         Array<double> r(NR);
         maybe_set_second_value(r, second_value_d1); // second_value = 2.0
