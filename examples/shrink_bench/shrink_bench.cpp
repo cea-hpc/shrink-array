@@ -378,24 +378,13 @@ int main(int argc, char* argv[])
     else if constexpr (chunk_config::use_chunk)
         print_chunk_size.operator()<Chunk>("CHUNK");
 
-// because we use std::vector<short>...
-// Stays a directive: the four branches declare FOUR DIFFERENT TYPES, which no
-// `if constexpr` can do. `defined` on every branch -- `#elif CHUNK2` tested the
-// macro's VALUE, which only worked because -DCHUNK2 defaults it to 1.
-#if defined CHUNK
-    ArrayChunk<bool> tab_bool(sz);
-#elif defined CHUNK2
-    ArrayChunk2<bool> tab_bool(sz);
-#elif defined CHUNK2A
-    ArrayChunk2A<bool> tab_bool(sz);
-#else
-    std::vector<short> tab_bool(sz); // use short for vector of bool
-#endif
+    // Array<bool> in a shrink build, std::vector<short> in the baseline
+    // (bench_array.h says why): one alias, where four declarations under
+    // #if defined CHUNK / CHUNK2 / CHUNK2A stood.
+    BenchBoolArray tab_bool(sz);
 
-    // Handle on the fifteen arrays, passed to the extracted phases. AFTER the
-    // #endif: tab_bool has four declarations, one per variant, and the context
-    // must exist in all four. References, so main() stays the owner -- it
-    // builds them and destroys them.
+    // Handle on the fifteen arrays, passed to the extracted phases. References,
+    // so main() stays the owner -- it builds them and destroys them.
     BenchArrays bench_arrays{tab1,        tab2,      tab3,      tab4,     tab5,      tab_int,   tab_bool,
                              tab_complex, tab_float, tab_short, tab_char, tab_long,  tab_ulong, tab_quant,
                              tab_point,   tab_cell,  sz,        interval, !no_struct};

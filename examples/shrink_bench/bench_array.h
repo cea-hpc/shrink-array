@@ -31,13 +31,11 @@
 #include "bench_prelude.h"
 #include "bench_struct.h" // Point3, Cell: the aggregate element types
 
-// The bulk range API, one header per container family. Also what drags in the
+// The bulk range API: the chunked arrays' overloads (constrained on the
+// ChunkedArray concept, so they select nothing in the std::vector build) on
+// top of the std::vector fallback they include. Also what drags in the
 // ArrayChunk* definitions the alias below selects between.
-#ifdef SHRINK_ARRAY
-    #include "chunk/array_chunk_range_ops.h"
-#else
-    #include "chunk/vector_range_ops.h"
-#endif
+#include "chunk/array_chunk_range_ops.h"
 
 namespace shrink_array
 {
@@ -115,11 +113,7 @@ inline constexpr complex_double zero_complex = std::complex<double>(0., 0.);
 ///        Array<bool>; the std::vector baseline uses short, because
 ///        std::vector<bool>'s proxy is useless here. The asymmetry predates the
 ///        split -- this alias just names it so BenchArrays can hold a reference.
-#ifdef SHRINK_ARRAY
-using BenchBoolArray = Array<bool>;
-#else
-using BenchBoolArray = std::vector<short>;
-#endif
+using BenchBoolArray = std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, std::vector<short>>;
 
 /**
  * @brief The fifteen arrays the workload drives, by reference, plus their
