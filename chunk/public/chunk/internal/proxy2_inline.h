@@ -18,10 +18,21 @@
 
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
+#include <cstdlib> // std::getenv (CHUNK_PROXY2_NO_ACQ_FENCE)
 #include "chunk/internal/proxy2.h"        // the declarations these bodies belong to
 
 namespace shrink_array
 {
+
+/// Measurement switch: CHUNK_PROXY2_NO_ACQ_FENCE=1 skips the acquire fences that
+/// end set_info_second_value_ind() / set_info_on_chunk() (see
+/// apply_proxy2_acq_fence_switch.py). Read once, at load; never written after.
+/// true = fences kept = the historical behaviour.
+inline const bool g_proxy2_acq_fence = []
+{
+    const char* e = std::getenv("CHUNK_PROXY2_NO_ACQ_FENCE");
+    return !(e != nullptr && e[0] != '\0' && e[0] != '0');
+}();
 
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_info_on_chunk()
@@ -36,7 +47,8 @@ void ProxySpec2<T, Derived>::set_info_on_chunk()
         derived().set_ptr_is_inside_chunk_list_to_compress();
     }
 
-    std::atomic_thread_fence(std::memory_order_acquire);
+    if (g_proxy2_acq_fence) [[likely]]
+        std::atomic_thread_fence(std::memory_order_acquire);
 }
 
 template <typename T, typename Derived>
@@ -46,7 +58,8 @@ void ProxySpec2<T, Derived>::set_info_second_value_ind()
     second_value = std::get<0>(inf_array);
     ind          = std::get<1>(inf_array);
 
-    std::atomic_thread_fence(std::memory_order_acquire);
+    if (g_proxy2_acq_fence) [[likely]]
+        std::atomic_thread_fence(std::memory_order_acquire);
 }
 
 template <typename T, typename Derived>
@@ -76,7 +89,8 @@ void ProxySpec2<bool, Derived>::set_info_on_chunk()
         derived().set_ptr_is_inside_chunk_list_to_compress();
     }
 
-    std::atomic_thread_fence(std::memory_order_acquire);
+    if (g_proxy2_acq_fence) [[likely]]
+        std::atomic_thread_fence(std::memory_order_acquire);
 }
 
 // ── Methods only present when fast block compression is active ────────────
