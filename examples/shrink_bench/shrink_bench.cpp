@@ -31,14 +31,8 @@
 #include <utility> // std::as_const — STL self-checks
 #include <vector>
 
-// The bulk range API, one header per container family: the chunked arrays'
-// overloads for the shrink builds, the std::vector fallback for the baseline.
-// The call sites below are the same in both, which is the point.
-#ifdef SHRINK_ARRAY
-    #include "chunk/array_chunk_range_ops.h"
-#else
-    #include "chunk/vector_range_ops.h"
-#endif
+// The bulk range API (the chunked arrays' overloads or the std::vector
+// fallback) comes with bench_array.h, through bench_phases.h below.
 
 // Bench-mode configuration (mode_perf / mode_check / get_size_* / ...).
 #include "bench_config.h"
@@ -60,16 +54,12 @@
 #include "bench_stl_checks.h"
 
 
-#include "crash_backtrace.h"      // TEMPORARY (SEGV hunt): native backtrace on crash
-#include "chunk/ring_log_debug.h" // SEGV hunt: ring_init/analyze_ring_sweep decls
-#if (defined(CHUNK) || defined(CHUNK2) || defined(CHUNK2A)) && defined(CHUNK_DYNAMIC)
-    #include "chunk/chunk_size_advisor.h" // step-0 observation (dyn builds only)
-    #include "chunk/rechunk_decider.h"    // phase-3A: dry-run re-chunk decisions
-#endif
+#include "crash_backtrace.h"          // TEMPORARY (SEGV hunt): native backtrace on crash
+#include "chunk/ring_log_debug.h"     // SEGV hunt: ring_init/analyze_ring_sweep decls
+#include "chunk/chunk_size_advisor.h" // step-0 observation (acts in dyn builds only)
+#include "chunk/rechunk_decider.h"    // phase-3A: re-chunk decisions (idem)
 
-#ifdef SHRINK_ARRAY
 using namespace shrink_array;
-#endif
 
 namespace shrink_array
 {
@@ -87,8 +77,14 @@ using ActiveArray =
 
 } // namespace shrink_array
 
+/// @brief The chunk-size advisor and the re-chunk decider act in a dynamic
+///        chunked build only. The objects exist in every build so the loop
+///        reads the same; RechunkDecider::consider() is itself a no-op when
+///        !chunk_dynamic, and this flag gates the rest with `if constexpr`.
+inline constexpr bool has_advisor = chunk_config::is_shrink_enabled && build_config::chunk_dynamic;
+
 template <typename T>
-using Array = shrink_array::ActiveArray<T>;
+using Array = ActiveArray<T>;
 
 int main(int argc, char* argv[])
 {
@@ -124,7 +120,7 @@ int main(int argc, char* argv[])
         const char* e      = std::getenv("CHUNK_MALLOC_ARENAS");
         const int   arenas = e ? std::atoi(e) : 0; // 0 = leave glibc alone
         if (arenas > 0)
-            shrink_array::set_max_malloc_arenas(arenas);
+            set_max_malloc_arenas(arenas);
     }
 
     // TSan tip: unbuffer stderr with setvbuf(stderr, nullptr, _IONBF, 0) so its
@@ -171,7 +167,7 @@ int main(int argc, char* argv[])
     // longer constexpr either -- the mode is chosen at run time by --mode.
     int io_res = input_data ? 0 : get_io_mode();
 
-    const char* no_io       = no_io_v ? "1" : std::getenv("NO_IO");
+    const char* no_io = no_io_v ? "1" : std::getenv("NO_IO");
     // Compression is opt-in (--compress or COMPRESS=1): the I/O layer keeps its
     // historical no_compress flag, so the default is the non-null value.
     const char* no_compress = (compress_v || std::getenv("COMPRESS")) ? nullptr : "1";
@@ -376,11 +372,11 @@ int main(int argc, char* argv[])
     maybe_set_second_value(tab_cell, second_value_cell);
 
     if constexpr (chunk_config::use_chunk2a)
-        print_chunk_size.operator()<shrink_array::Chunk2A>("CHUNK2A");
+        print_chunk_size.operator()<Chunk2A>("CHUNK2A");
     else if constexpr (chunk_config::use_chunk2)
-        print_chunk_size.operator()<shrink_array::Chunk2>("CHUNK2");
+        print_chunk_size.operator()<Chunk2>("CHUNK2");
     else if constexpr (chunk_config::use_chunk)
-        print_chunk_size.operator()<shrink_array::Chunk>("CHUNK");
+        print_chunk_size.operator()<Chunk>("CHUNK");
 
 // because we use std::vector<short>...
 // Stays a directive: the four branches declare FOUR DIFFERENT TYPES, which no
@@ -400,12 +396,11 @@ int main(int argc, char* argv[])
     // #endif: tab_bool has four declarations, one per variant, and the context
     // must exist in all four. References, so main() stays the owner -- it
     // builds them and destroys them.
-    BenchArrays bench_arrays{tab1,      tab2,      tab3,     tab4,     tab5,      tab_int,   tab_bool, tab_complex,
-                             tab_float, tab_short, tab_char, tab_long, tab_ulong, tab_quant, tab_point,
-                             tab_cell,  sz,
-                             interval,  !no_struct};
+    BenchArrays bench_arrays{tab1,        tab2,      tab3,      tab4,     tab5,      tab_int,   tab_bool,
+                             tab_complex, tab_float, tab_short, tab_char, tab_long,  tab_ulong, tab_quant,
+                             tab_point,   tab_cell,  sz,        interval, !no_struct};
 
-    shrink_array::SingletonChk<shrink_array::GlobalStatsChunkList>::getRef().print();
+    SingletonChk<GlobalStatsChunkList>::getRef().print();
 
     auto                          end             = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;
@@ -513,7 +508,6 @@ int main(int argc, char* argv[])
         cycle_alea = dist1(rng0);
     }
 
-#if (defined(CHUNK) || defined(CHUNK2) || defined(CHUNK2A)) && defined(CHUNK_DYNAMIC)
     // ── Chunk-size advisor (STEP 0: observation only, dyn+2A builds) ────────
     // Every CHUNK_ADVISOR_PERIOD iterations (env, default 500, 0 = disabled),
     // estimate each representative array's memory across candidate chunk
@@ -547,43 +541,44 @@ int main(int argc, char* argv[])
     // advisor on the array, applies the memory + hysteresis policy, and re-chunks
     // it when worthwhile. dry_run=false makes it act (rechunk is now parallel and
     // cheap, so we gate purely on memory gain + hysteresis, not CPU cost).
-    shrink_array::RechunkDecider rechunk_decider{shrink_array::RechunkPolicy{.dry_run = false}};
-    int                          advisor_call = 0;
-    auto                         advisor_tick = [&](int k_iter)
+    RechunkDecider rechunk_decider{RechunkPolicy{.dry_run = false}};
+    int            advisor_call = 0;
+    auto           advisor_tick = [&](int k_iter)
     {
-        if (advisor_period <= 0 || (k_iter % advisor_period) != 0)
-            return;
-        const int tick = advisor_call++;
-        rechunk_decider.consider<double>(tab1, tick, k_iter, "tab1");
-        rechunk_decider.consider<double>(tab2, tick, k_iter, "tab2");
-        rechunk_decider.consider<short>(tab_short, tick, k_iter, "tab_short");
-        rechunk_decider.consider<complex_double>(tab_complex, tick, k_iter, "tab_complex");
-        if (!no_struct)
-            rechunk_decider.consider<Point3>(tab_point, tick, k_iter, "tab_point");
-    #ifdef CHUNK2A
-        if (std::getenv("CHUNK_CST2_PROBE")) // only prints when requested
+        if constexpr (has_advisor)
         {
-            // STEP B — cst2 GC mark report (read-only) : ArrayChunk2A-only API
-            // (per-chunk cst_val2 pointer registry has no equivalent on CHUNK /
-            // CHUNK2, which have no per-chunk GC-able registry to report on).
-            std::fprintf(stderr, "[cst2-gc @ iter %d]\n", k_iter);
-            ArrayChunk2A<double>::gc_mark_report();
-            ArrayChunk2A<short>::gc_mark_report();
-            ArrayChunk2A<complex_double>::gc_mark_report();
+            if (advisor_period <= 0 || (k_iter % advisor_period) != 0)
+                return;
+            const int tick = advisor_call++;
+            rechunk_decider.consider<double>(tab1, tick, k_iter, "tab1");
+            rechunk_decider.consider<double>(tab2, tick, k_iter, "tab2");
+            rechunk_decider.consider<short>(tab_short, tick, k_iter, "tab_short");
+            rechunk_decider.consider<complex_double>(tab_complex, tick, k_iter, "tab_complex");
+            if (!no_struct)
+                rechunk_decider.consider<Point3>(tab_point, tick, k_iter, "tab_point");
+            if constexpr (chunk_config::use_chunk2a)
+            {
+                if (std::getenv("CHUNK_CST2_PROBE")) // only prints when requested
+                {
+                    // STEP B — cst2 GC mark report (read-only) : ArrayChunk2A-only API
+                    // (per-chunk cst_val2 pointer registry has no equivalent on CHUNK /
+                    // CHUNK2, which have no per-chunk GC-able registry to report on).
+                    std::fprintf(stderr, "[cst2-gc @ iter %d]\n", k_iter);
+                    ArrayChunk2A<double>::gc_mark_report();
+                    ArrayChunk2A<short>::gc_mark_report();
+                    ArrayChunk2A<complex_double>::gc_mark_report();
+                }
+            }
         }
-    #endif
     };
     advisor_tick(0); // post-init snapshot before the first iteration
-#endif
 
     auto last = std::chrono::steady_clock::now();
 
     for (int k = 0; k < iter_max; ++k)
     {
-#if (defined(CHUNK) || defined(CHUNK2) || defined(CHUNK2A)) && defined(CHUNK_DYNAMIC)
         if (k > 0)
             advisor_tick(k);
-#endif
         if (k % 100 == 0)
         {
             auto now = std::chrono::steady_clock::now();
@@ -677,7 +672,7 @@ int main(int argc, char* argv[])
             // default (64), while arrays run at chunk_dyn_size (512) — grain
             // would be 16, i.e. 32 tasks per 512-chunk instead of the 4
             // documented above.
-            [[maybe_unused]] const int grain = std::max(1, static_cast<int>(shrink_array::active_chunk_size()) / 4);
+            [[maybe_unused]] const int grain = std::max(1, static_cast<int>(active_chunk_size()) / 4);
 
             bench_phase_stress_dynamic(bench_arrays, grain, beg_s, end_s);
         }
@@ -713,11 +708,11 @@ int main(int argc, char* argv[])
             // the first value (its buffer is released), a plain value
             // (materialised, then raw-stored), an int and a bool (per-element
             // path: bool keeps its state in the proxy).
-            shrink_array::fill_range(tab1, r0, r1, second_value_d, shrink_array::assume_drained);
-            shrink_array::fill_range(tab2, r0, r1, 0., shrink_array::assume_drained);
-            shrink_array::fill_range(tab3, r0, r1, 2.5, shrink_array::assume_drained);
-            shrink_array::fill_range(tab_int, r0, r1, second_value_i, shrink_array::assume_drained);
-            shrink_array::fill_range(tab_bool, r0, r1, true, shrink_array::assume_drained);
+            fill_range(tab1, r0, r1, second_value_d, assume_drained);
+            fill_range(tab2, r0, r1, 0., assume_drained);
+            fill_range(tab3, r0, r1, 2.5, assume_drained);
+            fill_range(tab_int, r0, r1, second_value_i, assume_drained);
+            fill_range(tab_bool, r0, r1, true, assume_drained);
 
             // Copies from a plain vector: one dense, one mostly the second value
             // (so the copy lands on chunks that compress right after).
@@ -725,11 +720,11 @@ int main(int argc, char* argv[])
             for (std::size_t i = 0; i < src.size(); ++i)
                 src[i] = std::sin(static_cast<double>(r0 + i) + k);
 
-            shrink_array::copy_range(tab4, r0, r1, src.begin(), shrink_array::assume_drained);
+            copy_range(tab4, r0, r1, src.begin(), assume_drained);
             for (std::size_t i = 0; i < src.size(); ++i)
                 src[i] = (i % 97 == 0) ? static_cast<double>(i) : second_value_d2;
 
-            shrink_array::copy_range(tab5, r0, r1, src.begin(), shrink_array::assume_drained);
+            copy_range(tab5, r0, r1, src.begin(), assume_drained);
         }
         // ─── END STRESS TESTS ──────────────────────────────────────────────
 
@@ -741,8 +736,8 @@ int main(int argc, char* argv[])
         // otherwise be reported against the wrong one.
         {
             const int  ksum_period = freq_ksum > 0 ? freq_ksum : std::max(1, freq_conso_mem);
-            const bool ksum_bad    = !std::isfinite(val_sum) || !std::isfinite(cv_val_sum.real()) ||
-                                  !std::isfinite(cv_val_sum.imag());
+            const bool ksum_bad =
+                !std::isfinite(val_sum) || !std::isfinite(cv_val_sum.real()) || !std::isfinite(cv_val_sum.imag());
             if (k % ksum_period == 0 || k == 0 || k == iter_max - 1 || ksum_bad)
             {
                 std::cout << "k : " << k << " val_sum = " << val_sum << " long_val_sum = " << long_val_sum
@@ -801,10 +796,8 @@ int main(int argc, char* argv[])
                     {
 #pragma omp parallel
                         {
-                            // Qualified: `using namespace shrink_array` is itself
-                            // under #ifdef SHRINK_ARRAY, and this statement is
-                            // now compiled in the std::vector build too.
-                            shrink_array::ParamChunk::force_compression();
+                            // Compiled in the std::vector build too: a no-op there.
+                            ParamChunk::force_compression();
                         }
                     }
                 }
@@ -858,19 +851,20 @@ int main(int argc, char* argv[])
 
     // Number of committed re-chunks performed during the run (dynamic builds only;
     // static builds never re-chunk, so the line is omitted entirely there).
-#if (defined(CHUNK) || defined(CHUNK2) || defined(CHUNK2A)) && defined(CHUNK_DYNAMIC)
-    // Full re-chunk report: the advisor/decider runs in every dynamic-chunked
-    // build (CHUNK / CHUNK2 / CHUNK2A), so rechunk_decider (and its per-event
-    // log) exists here for all of them. Only VECTOR mode (no chunk variant
-    // macro defined) falls through to the #else below.
-    std::cout << tc.BOLD;
-    rechunk_decider.print_rechunk_log(stdout);
-    std::cout << tc.RESET << "\n";
-#else
-    // Other dynamic builds have no advisor wired: just the committed count.
-    if constexpr (build_config::chunk_dynamic)
-        std::cout << tc.BOLD << "Re-chunks performed: " << tc.RESET << shrink_array::g_rechunk_count << "\n\n";
-#endif
+    if constexpr (has_advisor)
+    {
+        // Full re-chunk report: the advisor/decider runs in every dynamic-chunked
+        // build (CHUNK / CHUNK2 / CHUNK2A), so rechunk_decider (and its per-event
+        // log) exists here for all of them.
+        std::cout << tc.BOLD;
+        rechunk_decider.print_rechunk_log(stdout);
+        std::cout << tc.RESET << "\n";
+    }
+    else if constexpr (build_config::chunk_dynamic)
+    {
+        // A dynamic build with no advisor wired: just the committed count.
+        std::cout << tc.BOLD << "Re-chunks performed: " << tc.RESET << g_rechunk_count << "\n\n";
+    }
 
     // Self-checks, array release, final report and library shutdown: moved to
     // bench_teardown.cpp. The ORDER in there carries meaning, hence the single
