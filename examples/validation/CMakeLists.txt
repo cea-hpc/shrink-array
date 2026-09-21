@@ -38,6 +38,13 @@
 #                           per thread is deferred with no compressor in
 #                           sight, and the result must still equal a
 #                           std::vector's, bit for bit.
+#   mark_path_validation    a chunk written back to a constant everywhere is
+#                           compressed by the incremental path alone -- the
+#                           write marks it, the between-region pass compresses
+#                           it -- with no compress() call: what a perf build
+#                           keeps. Plain-then-constant, second-constant
+#                           round trips, and an array with no declared second
+#                           value, per variant.
 #
 # All sources are variant-agnostic (the array type follows the CHUNK / CHUNK2
 # / CHUNK2A macro) and depend on the library alone -- none of the shrink_bench
@@ -100,7 +107,8 @@ endif()
 # variant and geometry (the default static size and, when built, dyn). Two
 # tests per executable: the properties must not depend on the team, so they
 # are asserted at 1 thread and at 8.
-set(_rt_harnesses       compress_roundtrip pool_accounting deferred_path_validation open_types_validation)
+set(_rt_harnesses       compress_roundtrip pool_accounting deferred_path_validation open_types_validation
+                        mark_path_validation)
 set(_rt_variant_names   chunk       chunk2      chunk2a)
 set(_rt_variant_libbase chunk_v1    chunk_v2    chunk_v2a)
 set(_rt_variant_macro   CHUNK       CHUNK2      CHUNK2A)
