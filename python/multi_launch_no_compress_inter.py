@@ -1,4 +1,29 @@
 #!/usr/bin/env python3
+"""
+multi_launch_no_compress_inter.py -- stress runner: the check binaries, over
+and over, each run at a random thread count.
+
+Two ways to name the binaries:
+
+  * historical: run it INSIDE a build directory, the binaries are
+    ./shrink_bench_<variant>_<size> in the current directory;
+
+  * --builds: run it from anywhere (the python/ directory, typically) and give
+    it the builds to exercise, either inline or as a file, one name per line:
+
+        python3 multi_launch_no_compress_inter.py --builds build_arm.txt
+        python3 multi_launch_no_compress_inter.py --builds omp-llvm,omp-gnu
+
+    A name is a directory under --build-root (default: the repository, i.e.
+    the parent of this script, or $CHUNK_BUILD_ROOT); "omp-llvm" and
+    "cmake-build-omp-llvm" both name cmake-build-omp-llvm. The binaries are
+    found with bench_and_test.py's resolve_exe, so every layout it knows is
+    accepted (the CEA one with its $arch level included). The runs then
+    CYCLE through the builds: run 1 on the first, run 2 on the second, ...
+    and back to the first, so a long session spreads its draws over all of
+    them. The binaries execute in --run-dir (default: the current directory),
+    which holds the oracle files unless --no_io, and receives the outputs.
+"""
 
 import os
 import random
@@ -74,6 +99,20 @@ parser.add_argument("--all_exec", action="store_true",
                          "size declination (the full matrix of binaries present on disk)")
 parser.add_argument("--shuffle_exec", action="store_true",
                     help="Shuffle the order of executables at each run")
+parser.add_argument("--builds", default=None, metavar="LIST|FILE",
+                    help="Builds to cycle through: a comma-separated list of build names, "
+                         "or a file with one name per line ('#' comments). A name is a "
+                         "directory under --build-root, with or without the cmake-build- "
+                         "prefix. Without it, the binaries are taken from the current "
+                         "directory (historical behaviour).")
+parser.add_argument("--build-root", default=os.environ.get("CHUNK_BUILD_ROOT"),
+                    metavar="DIR",
+                    help="Where the build directories live (default: $CHUNK_BUILD_ROOT, "
+                         "else the repository this script sits in).")
+parser.add_argument("--run-dir", default=".", metavar="DIR",
+                    help="Directory the binaries run in: the oracle data_tab_* files are "
+                         "read there (unless --no_io) and the output_*/error_* files, the "
+                         "CSV and the log are written there (default: current directory).")
 
 # ⭐ Selection = VARIANTS x SIZES. Binaries are named
 #   shrink_bench_<variant>[_<size>]  with size in 64/256/1024/dyn, lance
@@ -121,6 +160,16 @@ parser.add_argument(
 
 args = parser.parse_args()
 
+# Everything below works from --run-dir: outputs, CSV, log, and the oracle the
+# check mode reads. The historical mode (no --builds) also finds its binaries
+# there, as before. The paths given on the command line are resolved first,
+# relative to where the command was typed.
+if args.builds and os.path.isfile(args.builds):
+    args.builds = os.path.abspath(args.builds)
+if args.build_root:
+    args.build_root = os.path.abspath(args.build_root)
+os.chdir(args.run_dir)
+
 # Resolve the selection. --all_exec expands both axes (unless the user
 # narrowed one explicitly, which then wins for that axis).
 if args.all_exec:
@@ -138,7 +187,8 @@ try:
     _console_log_file.write(
         f"# multi_launch_no_compress_inter.py run log — "
         f"{datetime.datetime.now().isoformat(timespec='seconds')}\n")
-    _console_log_file.write("# command: " + " ".join(sys.argv) + "\n\n")
+    _console_log_file.write("# command: " + " ".join(sys.argv) + "\n")
+    _console_log_file.write("# run dir: " + os.getcwd() + "\n\n")
     _console_log_file.flush()
     sys.stdout = _Tee(sys.stdout, _console_log_file)
     atexit.register(lambda: (_console_log_file.flush(), _console_log_file.close()))
@@ -170,20 +220,95 @@ def _binary_name(variant, size):
     suffix = "" if size == "default" else f"_{size}"
     return f"./shrink_bench_{variant}{suffix}"
 
-executables = []
-missing = []
-for v in variants:
-    for sz in sizes:
-        exe = _binary_name(v, sz)
-        (executables if os.path.isfile(exe) else missing).append(exe)
 
-if missing:
-    print(f"⚠️ {len(missing)} selected binary(ies) not found, skipped: {', '.join(missing)}")
-if not executables:
-    sys.exit("❌ No selected binary exists on disk — nothing to run "
-             f"(variants={','.join(variants)} sizes={','.join(sizes)})")
+def _read_builds(spec):
+    """--builds: a file (one name per line, blank lines and '#' comments
+    skipped) or an inline comma-separated list. Order kept, duplicates dropped."""
+    if os.path.isfile(spec):
+        with open(spec) as f:
+            names = []
+            for line in f:
+                line = line.split("#", 1)[0].strip()
+                if line:
+                    names.extend(n.strip() for n in line.split(",") if n.strip())
+    else:
+        names = [n.strip() for n in spec.split(",") if n.strip()]
+    if not names:
+        sys.exit(f"❌ --builds {spec}: no build name found")
+    return list(dict.fromkeys(names))
 
-print(f"🎯 {len(executables)} binary(ies) selected: {', '.join(e.lstrip('./') for e in executables)}")
+
+def _build_dir_name(root, name):
+    """'omp-llvm' -> 'cmake-build-omp-llvm' when that directory exists under
+    root; a name that is already a directory is kept as it is."""
+    for cand in (name, f"cmake-build-{name}"):
+        if os.path.isdir(os.path.join(root, cand)):
+            return cand
+    return None
+
+
+def _select_in_cwd():
+    """Historical mode: the binaries next to the oracle, in the current directory."""
+    found, missing = [], []
+    for v in variants:
+        for sz in sizes:
+            exe = _binary_name(v, sz)
+            (found if os.path.isfile(exe) else missing).append(exe)
+    return found, missing
+
+
+def _select_in_build(build_root, config):
+    """--builds mode: bench_and_test.py's resolve_exe knows every layout a
+    build directory may have (flat, examples/shrink_bench, the $arch level of
+    the cluster), so the selection is the same wherever this runs."""
+    found, missing = [], []
+    for v in variants:
+        for sz in sizes:
+            exe = resolve_exe(build_root, config, f"{v}@{sz}", "check")
+            if exe:
+                found.append(exe)
+            else:
+                missing.append(f"{config}/shrink_bench_{v}_{sz}")
+    return found, missing
+
+
+# builds: the list to cycle through; executables_of[build] its binaries. The
+# historical mode is one unnamed build, the current directory.
+if args.builds:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from bench_and_test import resolve_exe  # the layout logic, shared
+
+    build_root = args.build_root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    builds = []
+    executables_of = {}
+    for name in _read_builds(args.builds):
+        config = _build_dir_name(build_root, name)
+        if config is None:
+            print(f"⚠️ build '{name}': no directory {name} nor cmake-build-{name} under {build_root}, skipped")
+            continue
+        found, missing = _select_in_build(build_root, config)
+        if missing:
+            print(f"⚠️ {config}: {len(missing)} selected binary(ies) not found, skipped: {', '.join(missing)}")
+        if not found:
+            print(f"⚠️ {config}: no selected binary built, skipped")
+            continue
+        builds.append(config)
+        executables_of[config] = found
+        print(f"🎯 {config}: {len(found)} binary(ies): {', '.join(os.path.basename(e) for e in found)}")
+    if not builds:
+        sys.exit("❌ No build has a selected binary — nothing to run "
+                 f"(variants={','.join(variants)} sizes={','.join(sizes)}, root={build_root})")
+    print(f"🔁 {len(builds)} build(s), cycled run after run: {', '.join(builds)}")
+else:
+    found, missing = _select_in_cwd()
+    if missing:
+        print(f"⚠️ {len(missing)} selected binary(ies) not found, skipped: {', '.join(missing)}")
+    if not found:
+        sys.exit("❌ No selected binary exists on disk — nothing to run "
+                 f"(variants={','.join(variants)} sizes={','.join(sizes)})")
+    builds = [""]
+    executables_of = {"": found}
+    print(f"🎯 {len(found)} binary(ies) selected: {', '.join(e.lstrip('./') for e in found)}")
 
 # 📄 Summary CSV
 summary_file = "timings_summary.csv"
@@ -191,7 +316,7 @@ print(f"📄 Creating summary file: {summary_file}")
 
 with open(summary_file, "w", newline="") as csvf:
     writer = csv.writer(csvf)
-    writer.writerow(["run_index", "executable", "num_threads", "wall_seconds",
+    writer.writerow(["run_index", "build", "executable", "num_threads", "wall_seconds",
                      "returncode", "stdout_file", "stderr_file"])
 
 start_time = time.time()
@@ -207,6 +332,12 @@ for i in range(n):
         print(f"⏳ Cycle {cycle_count}: Elapsed Time: {elapsed_time:.2f}s | Estimated Time Left: {estimated_time_left:.2f}s")
 
     print("")
+
+    # The build of this run: the next one in the cycle.
+    build = builds[i % len(builds)]
+    executables = list(executables_of[build])
+    if build:
+        print(f"🏗️  Build {build}")
 
     # Shuffle executables if requested
     if args.shuffle_exec:
@@ -240,8 +371,10 @@ for i in range(n):
             env["NO_IO"] = "1"
 
         exe_tag = os.path.basename(exe)
-        stdout_file = f"output_{i + 1}_{exe_tag}.txt"
-        stderr_file = f"error_{i + 1}_{exe_tag}.txt"
+        # The build in the file names too, so two builds' runs never collide.
+        file_tag = f"{build}_{exe_tag}" if build else exe_tag
+        stdout_file = f"output_{i + 1}_{file_tag}.txt"
+        stderr_file = f"error_{i + 1}_{file_tag}.txt"
 
         t0 = time.perf_counter()
         try:
@@ -262,6 +395,7 @@ for i in range(n):
                 writer = csv.writer(csvf)
                 writer.writerow([
                     i + 1,
+                    build,
                     exe_tag,
                     exe_threads,
                     f"{wall_seconds:.6f}",
@@ -284,6 +418,7 @@ for i in range(n):
                 writer = csv.writer(csvf)
                 writer.writerow([
                     i + 1,
+                    build,
                     exe_tag,
                     exe_threads,
                     f"{wall_seconds:.6f}",
