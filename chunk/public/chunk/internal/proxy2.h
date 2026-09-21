@@ -176,10 +176,35 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
     /**
      * @brief Cached compression metadata tuple
      * @details Contains (second_value, ind, num_tab) to avoid repeated lookups.
-     *          Populated by get_info_second_value() calls.
+     *          Populated by load_inf_array().
      */
 
     inf_array_t inf_array; ///< Compression metadata associated with this proxy.
+
+    /// @brief Arm this proxy with the owning array's registry mirror
+    ///        (ArrayChunk2::registry_mirror()).
+    /// @details Called by ArrayChunkBase::operator[] / set_value. A proxy that
+    ///          is NOT armed -- a deferred-replay reconstruction, a *_from_key
+    ///          path -- keeps resolving the tuple through share_info_array.
+    /// @note The registry scan ran on EVERY write (assign_impl and
+    ///       set_info_on_chunk): deque::size(), then per entry a divide and a
+    ///       double dereference, then the tuple copy -- a third of a 64-thread
+    ///       chunk2 run. The array already knows the answer.
+    void arm_inf_array(const inf_array_t* src) const noexcept
+    {
+        inf_array_src_ = src;
+    }
+
+    /// @brief The (second_value, ind, num_tab) tuple: from the armed mirror when
+    ///        there is one, from the registry otherwise. Under any_check the
+    ///        two are compared (model: Proxy2A::set_num_tab).
+    [[nodiscard]] inf_array_t load_inf_array() const;
+
+  private:
+    /// Owning array's registry mirror; nullptr until armed.
+    mutable const inf_array_t* inf_array_src_ = nullptr;
+
+  public:
 };
 
 template <typename Derived>
@@ -195,10 +220,35 @@ struct ProxySpec2<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2<bool>
     /**
      * @brief Cached compression metadata tuple
      * @details Contains (second_value, ind, num_tab) to avoid repeated lookups.
-     *          Populated by get_info_second_value() calls.
+     *          Populated by load_inf_array().
      */
 
     inf_array_t inf_array; ///< Compression metadata associated with this proxy.
+
+    /// @brief Arm this proxy with the owning array's registry mirror
+    ///        (ArrayChunk2::registry_mirror()).
+    /// @details Called by ArrayChunkBase::operator[] / set_value. A proxy that
+    ///          is NOT armed -- a deferred-replay reconstruction, a *_from_key
+    ///          path -- keeps resolving the tuple through share_info_array.
+    /// @note The registry scan ran on EVERY write (assign_impl and
+    ///       set_info_on_chunk): deque::size(), then per entry a divide and a
+    ///       double dereference, then the tuple copy -- a third of a 64-thread
+    ///       chunk2 run. The array already knows the answer.
+    void arm_inf_array(const inf_array_t* src) const noexcept
+    {
+        inf_array_src_ = src;
+    }
+
+    /// @brief The (second_value, ind, num_tab) tuple: from the armed mirror when
+    ///        there is one, from the registry otherwise. Under any_check the
+    ///        two are compared (model: Proxy2A::set_num_tab).
+    [[nodiscard]] inf_array_t load_inf_array() const;
+
+  private:
+    /// Owning array's registry mirror; nullptr until armed.
+    mutable const inf_array_t* inf_array_src_ = nullptr;
+
+  public:
 
     using ChunkType = Chunk2<bool>;
 
@@ -245,7 +295,7 @@ struct ProxySpec2<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2<bool>
      */
     void set_info_second_value_ind()
     {
-        inf_array = derived().get_info_second_value(get_ptr_on_array());
+        inf_array = load_inf_array();
     }
 
     /**

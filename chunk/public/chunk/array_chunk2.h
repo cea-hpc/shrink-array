@@ -425,10 +425,33 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
   public:
 
-    /// This array's (second value, index, num_tab) tuple.
+    /// This array's (second value, index, num_tab) tuple: a MIRROR of its entry
+    /// in Proxy2<T>::share_info_array, complete in every build mode.
+    /// @details The registry stays the source of truth. The mirror is never
+    ///          computed, only re-read from it (sync_registry_mirror()), right
+    ///          after each of the three places that write the registry:
+    ///          create(), set_second_value() and the rechunk identity swap.
+    ///          operator[] arms every write proxy with its ADDRESS
+    ///          (registry_mirror()), which is what takes the registry scan off
+    ///          the write path.
     /// @warning map_inf_array holds a POINTER to this member, so the destructor
     ///          must erase that entry -- see its documentation.
     inf_array_t inf_array;
+
+    /// @brief Address of the registry mirror, for ArrayChunkBase to arm write
+    ///        proxies with (ProxySpec2::arm_inf_array).
+    [[nodiscard]] const inf_array_t* registry_mirror() const noexcept
+    {
+        return &inf_array;
+    }
+
+    /// @brief Re-read the mirror from the registry. Call after ANY write to
+    ///        this array's registry entry -- a missed site is caught by the
+    ///        any_check comparison in ProxySpec2::load_inf_array().
+    void sync_registry_mirror() noexcept
+    {
+        inf_array = this->get_info_second_value();
+    }
 
   private:
     /**

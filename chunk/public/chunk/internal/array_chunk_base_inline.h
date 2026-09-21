@@ -86,6 +86,17 @@ void ArrayChunkBase<Derived>::set_value(ind_type i, in_t<T> v)
     // "key NOT FOUND".
     p.set_this_and_num_chunk(&derived(), num_chunk, num_tab);
 
+    // Chunk2 only: arm the proxy with the address of this array's registry
+    // mirror, so the write path copies the (second_value, ind, num_tab)
+    // tuple instead of scanning share_info_array for it. Discriminated on
+    // the DECLARED proxy type (chunk_traits.h), not on a `requires`: a
+    // renamed member must fail to compile, not silently fall back to the
+    // registry.
+    if constexpr (std::is_same_v<proxy_type, Proxy2<T>>)
+    {
+        p.arm_inf_array(derived().registry_mirror());
+    }
+
     // Assignment triggers Proxy::operator= which handles everything internally,
     // including calling derived().get_metadata(i) if needed
     p = v;

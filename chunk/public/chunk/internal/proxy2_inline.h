@@ -40,10 +40,60 @@ inline const bool g_proxy2_acq_fence = []
     return e != nullptr && e[0] != '\0' && e[0] != '0';
 }();
 
+/// A/B switch: CHUNK_PROXY2_ARM_LEGACY=1 (read once, at load) makes every
+/// proxy resolve its tuple through share_info_array again, armed or not.
+inline const bool g_proxy2_arm_legacy = []
+{
+    const char* e = std::getenv("CHUNK_PROXY2_ARM_LEGACY");
+    return e != nullptr && e[0] != '\0' && e[0] != '0';
+}();
+
+template <typename T, typename Derived>
+typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
+{
+    if (inf_array_src_ != nullptr && !g_proxy2_arm_legacy) [[likely]]
+    {
+        if constexpr (build_config::any_check)
+        {
+            // ind and num_tab only: ind maps one-to-one to the value, and a
+            // value compare would raise a false alarm on a NaN second value.
+            const inf_array_t reg = Derived::get_info_second_value(get_ptr_on_array());
+            if (std::get<1>(reg) != std::get<1>(*inf_array_src_) || std::get<2>(reg) != std::get<2>(*inf_array_src_))
+                INVARIANT_FAILED("ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
+                                 "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
+                                 std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg),
+                                 std::get<2>(reg), static_cast<const void*>(get_ptr_on_array()));
+        }
+        return *inf_array_src_;
+    }
+    return Derived::get_info_second_value(get_ptr_on_array());
+}
+
+template <typename Derived>
+typename ProxySpec2<bool, Derived>::inf_array_t ProxySpec2<bool, Derived>::load_inf_array() const
+{
+    if (inf_array_src_ != nullptr && !g_proxy2_arm_legacy) [[likely]]
+    {
+        if constexpr (build_config::any_check)
+        {
+            // ind and num_tab only: ind maps one-to-one to the value, and a
+            // value compare would raise a false alarm on a NaN second value.
+            const inf_array_t reg = Derived::get_info_second_value(get_ptr_on_array());
+            if (std::get<1>(reg) != std::get<1>(*inf_array_src_) || std::get<2>(reg) != std::get<2>(*inf_array_src_))
+                INVARIANT_FAILED("ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
+                                 "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
+                                 std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg),
+                                 std::get<2>(reg), static_cast<const void*>(get_ptr_on_array()));
+        }
+        return *inf_array_src_;
+    }
+    return Derived::get_info_second_value(get_ptr_on_array());
+}
+
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_info_on_chunk()
 {
-    inf_array    = derived().get_info_second_value(derived().get_ptr_on_array());
+    inf_array    = load_inf_array();
     second_value = std::get<0>(inf_array);
     ind          = std::get<1>(inf_array);
     derived().set_num_tab();
@@ -60,7 +110,7 @@ void ProxySpec2<T, Derived>::set_info_on_chunk()
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_info_second_value_ind()
 {
-    inf_array    = Derived::get_info_second_value(get_ptr_on_array());
+    inf_array    = load_inf_array();
     second_value = std::get<0>(inf_array);
     ind          = std::get<1>(inf_array);
 
@@ -79,14 +129,14 @@ void ProxySpec2<T, Derived>::set_info_second_value_ind_from_key(const void* key)
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_second_value()
 {
-    inf_array    = derived().get_info_second_value(get_ptr_on_array());
+    inf_array    = load_inf_array();
     second_value = std::get<0>(inf_array);
 }
 
 template <typename Derived>
 void ProxySpec2<bool, Derived>::set_info_on_chunk()
 {
-    inf_array = derived().get_info_second_value(get_ptr_on_array());
+    inf_array = load_inf_array();
 
     derived().set_num_tab();
 

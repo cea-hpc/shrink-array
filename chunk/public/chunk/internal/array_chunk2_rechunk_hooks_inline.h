@@ -111,9 +111,17 @@ void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(Derived& tmp, const 
     }
     else
     {
-        (void)tmp;
         (void)state;
     }
+
+    // rechunk_swap_identity() swapped the two REGISTRY payloads and, on
+    // purpose, not the members. Write proxies are armed with the address of
+    // the inf_array member, so both mirrors must now be re-read from the
+    // registry: *this carries tmp's former (value, ind, num_tab), and tmp --
+    // whose teardown still goes through the registry -- carries ours. All
+    // build modes, bool included (its num_tab is per-array too).
+    self().sync_registry_mirror();
+    tmp.sync_registry_mirror();
 }
 
 } // namespace shrink_array

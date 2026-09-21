@@ -912,6 +912,17 @@ class ArrayChunkBase : public CRTPSupport<Derived>, public DirtyBitsetSupport<De
         // FOUND" aborts in Proxy2/Proxy2A check builds.
         val.set_this_and_num_chunk(&derived(), num_chunk, num_tab);
 
+        // Chunk2 only: arm the proxy with the address of this array's registry
+        // mirror, so the write path copies the (second_value, ind, num_tab)
+        // tuple instead of scanning share_info_array for it. Discriminated on
+        // the DECLARED proxy type (chunk_traits.h), not on a `requires`: a
+        // renamed member must fail to compile, not silently fall back to the
+        // registry.
+        if constexpr (std::is_same_v<proxy_type, Proxy2<T>>)
+        {
+            val.arm_inf_array(derived().registry_mirror());
+        }
+
         // P1 (CHUNK_SYNC_ON_READ): this is the ONLY non-const proxy operator[] —
         // the write entry. Under sync_on_read it no longer flushes; visibility is
         // pulled by the read entries (proxy operator T()/read_values ->

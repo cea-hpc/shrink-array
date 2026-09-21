@@ -93,6 +93,10 @@ void ArrayChunk2<T, ind_type>::create(ind_type sz)
     sh_inf.insert_only_num_tab(this, nb_tab);
     ++nb_tab;
 
+    // Registry entry written: refresh the mirror the write proxies are armed
+    // with (see ArrayChunk2::inf_array).
+    sync_registry_mirror();
+
     if constexpr (chunk_config::use_fast_block_compression)
     {
         Proxy2<T>::resize_tab_is_int(nb_tab);
@@ -368,6 +372,12 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
     {
         sh_inf.insert(sec_value, &inf_array);
     }
+
+    // Every branch above may have rewritten this array's registry entry
+    // (replace / replace_all_other_elm): refresh the mirror from it, in ALL
+    // build modes. The fast-block writes to std::get<0>/<1>(inf_array) above
+    // become a subset of this and are left as they were.
+    sync_registry_mirror();
 }
 
 // Two independent scans: the classification into n_t0 / n_t1 (compressible to
