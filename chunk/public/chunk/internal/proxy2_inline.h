@@ -24,14 +24,20 @@
 namespace shrink_array
 {
 
-/// Measurement switch: CHUNK_PROXY2_NO_ACQ_FENCE=1 skips the acquire fences that
-/// end set_info_second_value_ind() / set_info_on_chunk() (see
-/// apply_proxy2_acq_fence_switch.py). Read once, at load; never written after.
-/// true = fences kept = the historical behaviour.
+/// The acquire fences that ended set_info_second_value_ind() and the two
+/// set_info_on_chunk() are OFF by default: they followed plain (non-atomic)
+/// reads of the share_info_array registry and paired with no release. Their
+/// `dmb ishld` was the hottest instruction of assign_impl on aarch64; without
+/// them, 64 threads chunk2_256 --mode perf: 11.48 s -> 10.68 s (-7.0%).
+/// Validated: forced-deferral build at 8/16/32 threads, 10 x --mode check at
+/// 64 threads, every chunk2 validation harness at 1/8/16/64 threads.
+/// CHUNK_PROXY2_ACQ_FENCE=1 (read once, at load) restores them.
+/// TODO: once the wider validation campaign is done, remove this switch and
+///       the three guarded fences.
 inline const bool g_proxy2_acq_fence = []
 {
-    const char* e = std::getenv("CHUNK_PROXY2_NO_ACQ_FENCE");
-    return !(e != nullptr && e[0] != '\0' && e[0] != '0');
+    const char* e = std::getenv("CHUNK_PROXY2_ACQ_FENCE");
+    return e != nullptr && e[0] != '\0' && e[0] != '0';
 }();
 
 template <typename T, typename Derived>
@@ -47,7 +53,7 @@ void ProxySpec2<T, Derived>::set_info_on_chunk()
         derived().set_ptr_is_inside_chunk_list_to_compress();
     }
 
-    if (g_proxy2_acq_fence) [[likely]]
+    if (g_proxy2_acq_fence) [[unlikely]] // transition switch, see its declaration
         std::atomic_thread_fence(std::memory_order_acquire);
 }
 
@@ -58,7 +64,7 @@ void ProxySpec2<T, Derived>::set_info_second_value_ind()
     second_value = std::get<0>(inf_array);
     ind          = std::get<1>(inf_array);
 
-    if (g_proxy2_acq_fence) [[likely]]
+    if (g_proxy2_acq_fence) [[unlikely]] // transition switch, see its declaration
         std::atomic_thread_fence(std::memory_order_acquire);
 }
 
@@ -89,7 +95,7 @@ void ProxySpec2<bool, Derived>::set_info_on_chunk()
         derived().set_ptr_is_inside_chunk_list_to_compress();
     }
 
-    if (g_proxy2_acq_fence) [[likely]]
+    if (g_proxy2_acq_fence) [[unlikely]] // transition switch, see its declaration
         std::atomic_thread_fence(std::memory_order_acquire);
 }
 
