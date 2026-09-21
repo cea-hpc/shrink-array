@@ -33,8 +33,9 @@
 
 #include "chunk/param_chunk.h"
 #include "chunk/array_chunk.h"
+#include "chunk/array_chunk2.h"
 
-
+#include "MultiMatConfig.h"
 #include "MultiMatAlgo.h"
 #include "ComputeLoops.h"
 #include "Containers.h"
@@ -83,6 +84,7 @@ void Simu::createTabs()
     {
         t.create(nbmat, mesh_size);
     }
+    frac.create(nbmat, mesh_size);
 }
 
 int Simu::getNbmat() const
@@ -118,7 +120,14 @@ int main()
     const int max_thr = 1;
 #endif
 
-    std::cout << "Number of threads : " << max_thr << "\n\n";
+    std::cout << "Number of threads : " << max_thr << "\n";
+    std::cout << "Compression       : "
+              << (multi_mat::embedded_compression ? "embedded (OMPT tool of manage_ompt.cpp, no call from here)"
+                                                  : "manual (explicit compress() on the field arrays)")
+              << "\n";
+    std::cout << "Phases            : "
+              << (multi_mat::embedded_compression ? "OMPT callbacks (manage_ompt.cpp)" : "phase calls from the program")
+              << "\n\n";
 
     __mem_page_size          = getpagesize();
     constexpr int chunk_size = static_cast<int>(shrink_array::__chunk_size);
@@ -143,7 +152,7 @@ int main()
 
 
     ParamChunk::init_indexes(true);
-    
+
     ParamChunk::print_info_chunk();
     Simu simu;
 
@@ -206,6 +215,16 @@ int main()
 
                                  std::cout << "  Chunk filling rate : " << std::fixed << std::setprecision(2) << sz0
                                            << "%" << std::endl;
+
+                                 // The presence fraction, a Chunk2 array: only its
+                                 // interface chunks should be materialised, the
+                                 // interior ones are compressed to 1 and the empty
+                                 // ones to 0.
+                                 const auto&  frac_ind = get_mat_vec(simu.getFrac());
+                                 const double szf      = only_first_chunk ? frac_ind.stats_seq() : frac_ind.stats();
+
+                                 std::cout << "  Fraction chunk filling rate (Chunk2) : " << std::fixed
+                                           << std::setprecision(2) << szf << "%" << std::endl;
                              }
 
                              if (only_first_chunk)
@@ -235,6 +254,7 @@ int main()
     {
         simu.computeLoops(mm_algo, lbd_stats_chunk, value_compute);
     }
+    multi_mat::end_parallel_phase_after_region(); // manual executable only
 
     if (simu.isVerbose())
         std::cout << "\nEnd iteration\n\n";

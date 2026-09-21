@@ -23,26 +23,24 @@
 template <typename LOOPS = LoopsSimd, typename LOOPSCHUNK = Loops>
 class MultiMatAlgo
 {
-    template <typename VPTR>
-    static auto& getMatVecDir(const VPTR& gdr, int mat)
+    // The concrete array behind material `mat` of a MultiArray: the one the
+    // container names (vec_dir / vec_chunk), so a MultiArray of presence
+    // fractions hands out its VectChunk2 the same way a field hands out its
+    // VectChunk.
+    template <typename MA>
+    static auto& getMatVecDir(const MA& gdr, int mat)
     {
-        using V   = std::remove_pointer_t<VPTR>;
-        using T   = V::value_type;
-        using Vec = Vect<T>;
+        using Vec = typename MA::vec_dir;
 
         return *(static_cast<Vec*>(gdr[mat]));
     }
 
-    template <typename VPTR>
-    auto& getMatVecChunk(const VPTR& gdr, int mat)
+    template <typename MA>
+    static auto& getMatVecChunk(const MA& gdr, int mat)
     {
-        using V   = std::remove_pointer_t<VPTR>;
-        using T   = V::value_type;
-        using Vec = VectChunk<T>;
+        using Vec = typename MA::vec_chunk;
 
-        VectCom<T>* gdrm = gdr[mat];
-
-        return *(static_cast<Vec*>(gdrm));
+        return *(static_cast<Vec*>(gdr[mat]));
     }
 
     template <typename LAM>
@@ -50,9 +48,9 @@ class MultiMatAlgo
     {
         const LOOPS loops;
 
-        auto lbd_get_mat_vec = [this, mat](const auto& gdr) -> auto&
+        auto lbd_get_mat_vec = [mat](const auto& gdr) -> auto&
         {
-            return this->getMatVecDir(gdr, mat);
+            return getMatVecDir(gdr, mat);
         };
 
         lbd_loop_body(mat, lbd_get_mat_vec, loops);
@@ -63,9 +61,9 @@ class MultiMatAlgo
     {
         const LOOPSCHUNK loops;
 
-        auto lbd_get_mat_vec = [this, mat](const auto& gdr) -> auto&
+        auto lbd_get_mat_vec = [mat](const auto& gdr) -> auto&
         {
-            return this->getMatVecChunk(gdr, mat);
+            return getMatVecChunk(gdr, mat);
         };
 
         lbd_loop_body(mat, lbd_get_mat_vec, loops);

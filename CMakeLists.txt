@@ -90,6 +90,9 @@ if(OMP)
         # TSan is incompatible with OMPT instrumentation
         if(NOT SANITIZER STREQUAL "thread")
             add_definitions(-DHAVE_OMPT)
+            # For the targets that exist only with the OMPT tool
+            # (examples/multi-mat's embedded-compression executable).
+            set(CHUNK_HAVE_OMPT ON)
         endif()
         message(STATUS "Clang/IntelLLVM compiler detected")
     else()

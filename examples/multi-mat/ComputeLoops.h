@@ -28,10 +28,13 @@
 #include "MultiMatAlgo.h"
 #include "ComputeLoops.h"
 #include "Simu.h"
+#include "MultiMatConfig.h"
 
 template <typename LOOPS, typename LOOPSCHUNK>
 void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::function<void(bool)>& lbd_stats, double& value)
 {
+    multi_mat::begin_parallel_phase(); // manual executable only, see MultiMatConfig.h
+
     if (verbose)
     {
 #pragma omp single nowait
@@ -46,12 +49,14 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::fun
         auto& tab0_ind = get_mat_vec(tabs[0]);
         auto& tab1_ind = get_mat_vec(tabs[1]);
         auto& tab2_ind = get_mat_vec(tabs[2]);
+        auto& frac_ind = get_mat_vec(frac);
 
         loops.omp_for_nowait_simd(
             0, mesh_size, [&](int nn) __attribute__((always_inline)) {
                 tab0_ind[nn] = 0;
                 tab1_ind[nn] = 0;
                 tab2_ind[nn] = 0;
+                frac_ind[nn] = 0;
             });
     });
 
@@ -106,6 +111,13 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::fun
             auto& tab0_ind = get_mat_vec(tabs[0]);
             auto& tab1_ind = get_mat_vec(tabs[1]);
             auto& tab2_ind = get_mat_vec(tabs[2]);
+            auto& frac_ind = get_mat_vec(frac);
+
+            // The material's interval this iteration: ll_ind[p] == start + p,
+            // so nn - start is the position of a cell in the interval, what
+            // the presence fraction depends on.
+            const int start = tab_start[it][mat];
+            const int size  = tab_size[it][mat];
 
             if (it % freq_rtz == 0)
             {
@@ -126,6 +138,7 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::fun
                     tab0_ind[nn] = 0;
                     tab1_ind[nn] = 0;
                     tab2_ind[nn] = 0;
+                    frac_ind[nn] = 0;
                 });
             }
             else
@@ -142,11 +155,16 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::fun
                     tab0_ind[nn]   = v;
                     tab1_ind[nn]   = static_cast<double>(2 * nn) + static_cast<double>(it);
                     tab2_ind[nn]   = static_cast<double>(3 * nn) + static_cast<double>(it);
+                    // 1 inside the material, a ramp at its two interfaces:
+                    // on a chunk array the interior writes hit chunks already
+                    // compressed to 1 and return without materialising them.
+                    frac_ind[nn]   = presenceFraction(nn - start, size);
                 });
             }
         });
 
 #pragma omp barrier
+        multi_mat::barrier_phase(); // the reads below see the writes above (manual executable only)
 
         // This first lambda allows you to have a unique coding for a double implementation :
         // the first with classic direct addressing, the second with compressed addressing
@@ -159,6 +177,7 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::fun
             const auto& tab0_ind = get_mat_vec(tabs[0]);
             const auto& tab1_ind = get_mat_vec(tabs[1]);
             const auto& tab2_ind = get_mat_vec(tabs[2]);
+            const auto& frac_ind = get_mat_vec(frac);
 
             // This second lambda allows you to vectorize (1)(2) the loop on
 	    // the arrays in direct addressing and no to do it when the arrays
@@ -176,16 +195,24 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::fun
                 loops.omp_foreach_simd_red_sum(ll_ind, value,
                                                [&](int nn, double& vl)
                                                {
-                    // Gadget computation...
+                    // Gadget computation, weighted by the presence fraction
+                    // (a read through the Chunk2 array on a chunk material)
                     const double vv =
-                        std::cos(tab0_ind[nn]) + std::sin(tab1_ind[nn]) +
-		        std::tan(tab2_ind[nn]) + std::cos(val);
+                        frac_ind[nn] * (std::cos(tab0_ind[nn]) + std::sin(tab1_ind[nn]) +
+		        std::tan(tab2_ind[nn])) + std::cos(val);
                     vl += vv;
                 });
             }
         });
 
-        if (option_chunk != 2 && it % freq_compress == 0)
+        // Manual executable only: the field arrays are compressed by an
+        // explicit pass. In the embedded one the write path queued the chunks
+        // that became constant and the library compresses them itself -- in
+        // the loop when a thread's list fills, and at the end of the region
+        // through its OMPT tool -- so there is nothing to call
+        // (MultiMatConfig.h).
+        const bool manual_pass = !multi_mat::embedded_compression && option_chunk != 2 && it % freq_compress == 0;
+        if (manual_pass)
         {
             if (verbose)
             {
@@ -220,4 +247,6 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::fun
             });
         }
     }
+
+    multi_mat::end_parallel_phase_in_region(); // manual executable only
 }

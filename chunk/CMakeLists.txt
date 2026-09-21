@@ -362,8 +362,15 @@ endif()
 function(chunk_add_variant target_name variant_define size is_dyn)
   add_library(${target_name})
 
+  # NO_OMPT_TOOL (extra argument): the variant is built without the OMPT tool
+  # of private/manage_ompt.cpp, for a program that ships its own (the symbols
+  # ompt_start_tool and __global_ompt are then the program's to define).
+  set(_variant_sources ${CHUNK_SOURCES})
+  if ("NO_OMPT_TOOL" IN_LIST ARGN)
+    list(REMOVE_ITEM _variant_sources private/manage_ompt.cpp)
+  endif()
   target_sources(${target_name} PRIVATE
-          ${CHUNK_SOURCES}
+          ${_variant_sources}
           ${CHUNK_INTERNAL_HEADERS}
           ${CHUNK_PUBLIC_HEADERS}
   )
@@ -490,6 +497,15 @@ foreach(_vname IN LISTS _chunk_variant_names)
   add_library(${_vname} INTERFACE)
   target_link_libraries(${_vname} INTERFACE ${_vname}_${CHUNK_DEFAULT_SIZE})
 endforeach()
+
+# --- Two families in one program ------------------------------------------
+# examples/multi-mat keeps its field arrays in ArrayChunk<T> (v1) and its
+# presence fraction in ArrayChunk2<T>: one library with both defines, at the
+# default static size only. The registry allows it (all_type_chunk_inline.h:
+# "nothing forbids a build from selecting more than one"); what the second
+# define costs v1 is the raw fill of its range ops (raw_fillable_v). Without
+# the OMPT tool: the example carries its own (examples/multi-mat/manage_ompt.cpp).
+chunk_add_variant(chunk_v1v2_${CHUNK_DEFAULT_SIZE} "CHUNK=1;CHUNK2=1" ${CHUNK_DEFAULT_SIZE} FALSE NO_OMPT_TOOL)
 
 # VRAIE LIBRAIRIE PAR DÉFAUT (au lieu d'un simple ALIAS) pour éviter la perte des includes dans les sous-exécutables
 # Default library: no variant define, default compile-time size (__chunk_size=64), static.

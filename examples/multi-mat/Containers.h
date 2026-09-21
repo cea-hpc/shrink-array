@@ -1,6 +1,5 @@
-
 /*
-* Copyright 2024-2025 CEA (www.cea.fr)
+* Copyright 2024-2026 CEA (www.cea.fr)
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -20,6 +19,7 @@
 #include <vector>
 
 #include "chunk/array_chunk.h"
+#include "chunk/array_chunk2.h"
 #include "Dispatch.h"
 
 extern Dispatch dispatch;
@@ -42,23 +42,53 @@ class VectCom
     }
 };
 
+/// @brief A field of a "chunk" material: compressed where it is zero.
 template <typename T>
 class VectChunk : public VectCom<T>, public shrink_array::ArrayChunk<T>
 {
   public:
+    void create(int mesh_size)
+    {
+        this->resize(mesh_size);
+    }
+};
 
-    void create();
+/// @brief The presence fraction of a "chunk" material, in [0, 1]: 0 where
+///        the material is absent, 1 where the cell is pure, in between at the
+///        interfaces. Chunk2 compresses the chunks that are all 0 (the first
+///        constant) AND the ones that are all 1 (the array's second value),
+///        so only the interface chunks are ever materialised.
+template <typename T>
+class VectChunk2 : public VectCom<T>, public shrink_array::ArrayChunk2<T>
+{
+  public:
+    /// @brief The fraction of a pure cell, the second constant of the array.
+    static constexpr T full = 1;
+
+    void create(int mesh_size)
+    {
+        this->resize(mesh_size);
+        this->set_second_value(full, false);
+    }
 };
 
 template <typename T>
 class Vect : public VectCom<T>, public std::vector<T>
 {
   public:
-
-    void create();
+    void create(int mesh_size)
+    {
+        this->resize(mesh_size);
+    }
 };
 
-template <typename T>
+/**
+ * @brief One array per material, a std::vector or a chunk array as the
+ *        dispatch says.
+ * @tparam VecChunk The chunk array of the chunk materials: VectChunk<T> for a
+ *                  field, VectChunk2<T> for the presence fraction.
+ */
+template <typename T, typename VecChunk = VectChunk<T>>
 class MultiArray : public std::vector<VectCom<T>*>
 {
   public:
@@ -68,13 +98,13 @@ class MultiArray : public std::vector<VectCom<T>*>
     using BaseClass = std::vector<VectCom<T>*>;
 
     using vec_dir   = Vect<T>;
-    using vec_chunk = VectChunk<T>;
+    using vec_chunk = VecChunk;
 
     void create(int nbmat, int mesh_size);
 };
 
-template <typename T>
-void MultiArray<T>::create(int nbmat, int mesh_size)
+template <typename T, typename VecChunk>
+void MultiArray<T, VecChunk>::create(int nbmat, int mesh_size)
 {
     BaseClass::resize(nbmat, nullptr);
 
@@ -84,14 +114,14 @@ void MultiArray<T>::create(int nbmat, int mesh_size)
         {
             auto* v = new vec_chunk;
             v->setInd(k);
-            v->resize(mesh_size);
+            v->create(mesh_size);
             (*this)[k] = v;
         }
         else
         {
             auto* v = new vec_dir;
             v->setInd(k);
-            v->resize(mesh_size);
+            v->create(mesh_size);
             (*this)[k] = v;
         }
     }
