@@ -744,6 +744,9 @@ void ArrayChunk2<T, ind_type>::compress_int()
     // its OWN parallel region, so it must not be nested: guard on
     // !CHUNK_PMP_IN_PARALLEL_REGION (if compress_int ever runs inside a parallel
     // region, skip the drain -- pre-existing behaviour, no nesting).
+    // `drained` qualifies the self-heal report below: without the drain, a
+    // chunk it compresses may only have been queued.
+    bool drained = false;
     if constexpr (chunk_config::not_use_compression_with_ompt && !chunk_config::have_agressive_compression)
     {
         if (!CHUNK_PMP_IN_PARALLEL_REGION)
@@ -753,6 +756,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
             {
                 ens_type_chunk.compress_chunk_to_compress_potentially(false);
             }
+            drained = true;
         }
     }
 
@@ -859,7 +863,16 @@ void ArrayChunk2<T, ind_type>::compress_int()
     // `written` after clear_st is a real reclaim failure worth reporting; the rest
     // are dropped, so the message fires only on genuine misses. if constexpr picks
     // written(ind) (non-bool) vs written() (bool) -- both have a runtime type guard.
+    // What the reclaim DID compress is reported too. After a drain each of those
+    // is a chunk the write path left constant and unmarked -- a miss the
+    // self-heal hid until the counter bug of Sept '26 (a first value written
+    // over a cst_val2 chunk was not counted) surfaced on bool alone. Inside a
+    // parallel region (the bench compresses one array per `omp single`) the
+    // drain is skipped and a queued compression looks the same, so the report
+    // says which case it is.
     {
+        const auto scanned1 = tab_nb1.size();
+        const auto scanned2 = tab_nb2.size();
         auto still_written = [&](int jj) -> bool
         {
             if constexpr (is_not_bool)
@@ -879,6 +892,21 @@ void ArrayChunk2<T, ind_type>::compress_int()
                 keep2.push_back(jj);
         tab_nb1.swap(keep1);
         tab_nb2.swap(keep2);
+
+        const auto healed1 = scanned1 - tab_nb1.size();
+        const auto healed2 = scanned2 - tab_nb2.size();
+        if (healed1 + healed2 != 0)
+        {
+#pragma omp critical
+            {
+                std::cerr << "[compress_int self-heal] ArrayChunk2<" << type_name<T>() << ", " << type_name<ind_type>()
+                          << ">: " << healed1 << " chunk(s) at first_value, " << healed2
+                          << " at second_value, materialised and not compressed: compressed now"
+                          << (drained ? " (pending list drained first: never marked)"
+                                      : " (in a parallel region, pending list NOT drained: maybe only queued)")
+                          << "\n";
+            }
+        }
     }
 
     const auto nb1 = static_cast<int>(tab_nb1.size());
