@@ -348,7 +348,10 @@ else:
 if args.regen_ref:
     if no_io:
         print("⚠️ --regen-ref with --no_io: the runs will not read the reference just regenerated")
-    ref_threads = str(max(1, min(max_threads, os.cpu_count() or 1)))
+    # Half of --max_threads for the vector binary: it has no compression to
+    # exercise, and at the top of the range its memory bandwidth, not its
+    # thread count, is what bounds it.
+    ref_threads = str(max(1, min(max_threads // 2, os.cpu_count() or 1)))
     for build in builds:
         ref_dir = ref_dir_of[build] or os.getcwd()
         old = glob.glob(os.path.join(ref_dir, "data_tab*"))
