@@ -71,13 +71,16 @@ struct ChunkSpec2
 
     [[nodiscard]] static T* get_cst_val2(int ind) noexcept
     {
+        // An array with no second value (chunk_config::no_second_value_index)
+        // has no block: nullptr, which no chunk's `values` ever equals.
+        if (ind < 0)
+            return nullptr;
         if constexpr (build_config::any_check)
         {
             if (static_cast<size_t>(ind) >= tab_m_ptr_cst_val2.size()) [[unlikely]]
             {
-                if (ind > 0) // ind==0 with empty tab is a benign lookup
-                    INVARIANT_FAILED("[chunk] suspect get_cst_val2<{}>: ind={} size={}", typeid(T).name(), ind,
-                                     tab_m_ptr_cst_val2.size());
+                INVARIANT_FAILED("[chunk] suspect get_cst_val2<{}>: ind={} size={}", typeid(T).name(), ind,
+                                 tab_m_ptr_cst_val2.size());
                 return nullptr;
             }
         }
@@ -1230,6 +1233,16 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         {
             if (old == Base::get_cst_val1() || BaseSpec::is_cst_val2(old, ind)) [[unlikely]]
                 return nullptr;
+            // No second value declared: there is no block to compress to. The
+            // scans never file such a chunk under the second constant
+            // (scan_constants reports a run of first_value as `first` only),
+            // so this is a guard, not a path.
+            if (num_compress_value != 0 && ind < 0) [[unlikely]]
+            {
+                if constexpr (build_config::any_check)
+                    INVARIANT_FAILED("[chunk] compress to cst_val2 on an array with no second value");
+                return nullptr;
+            }
         }
 
         // We will attempt to replace 'old' with the appropriate constant pointer

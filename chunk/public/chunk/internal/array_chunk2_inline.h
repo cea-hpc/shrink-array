@@ -96,6 +96,7 @@ void ArrayChunk2<T, ind_type>::create(ind_type sz)
     if constexpr (chunk_config::use_fast_block_compression)
     {
         Proxy2<T>::resize_tab_is_int(nb_tab);
+        register_no_second_value_key();
     }
 
     // Geometry-dependent allocation is factored into rebuild_storage() so that

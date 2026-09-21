@@ -299,8 +299,10 @@ class PointerMapChunk2
      */
     void insert_only_num_tab(void* key, int num_tab)
     {
+        // No second value yet: the sentinel index, not 0 (which is the slot
+        // of whichever second value was registered first, by any array).
         T   val{};
-        int ind = 0;
+        int ind = chunk_config::no_second_value_index;
         vec.emplace_back(key, std::make_tuple(val, ind, num_tab));
     }
 

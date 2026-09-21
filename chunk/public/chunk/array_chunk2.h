@@ -431,7 +431,55 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     inf_array_t inf_array;
 
   private:
-    int ind_cst_val2; ///< index of the second value in the shared value table
+    /**
+     * @brief The (T{}, no_second_value_index) tuple every array without a
+     *        second value is drained under.
+     * @details The compression pass walks map_inf_array and drains the
+     *          candidate list keyed by each tuple's value. An array that has
+     *          declared no second value queues its chunks under T{}, so that
+     *          key needs a tuple to walk and a list per rank -- both created
+     *          by register_no_second_value_key() from create(). One static
+     *          tuple per element type, never erased: the destructor only
+     *          drops entries pointing at the dying array's own member.
+     */
+    static inline inf_array_t inf_array_none{T{}, chunk_config::no_second_value_index, 0};
+
+    /// @brief Make the T{} key drainable: its tuple in map_inf_array and a
+    ///        candidate list per rank, if this type has none yet. Idempotent;
+    ///        fast-block builds only (the serial path has no lists).
+    void register_no_second_value_key()
+    {
+        if constexpr (is_not_bool && chunk_config::use_fast_block_compression)
+        {
+            auto& sh_inf = Proxy2<T>::share_info_array;
+            if (sh_inf.find_inf_array(T{}) == nullptr)
+            {
+                sh_inf.insert(T{}, &inf_array_none);
+                // The between-phase pass asks have_chunk_to_compress() per
+                // value of THIS map before draining anything: the T{} key
+                // must be in it, at the sentinel index (find_ind_tab_cst2
+                // then reports it as unregistered, which is what
+                // set_second_value(T{}) must see to build a real block).
+                sh_inf.insert_map_ind_cst_val2(T{}, chunk_config::no_second_value_index);
+            }
+            if constexpr (build_config::use_openmp)
+            {
+                for (int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
+                {
+                    auto& slot = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr][T{}];
+                    if (!slot)
+                        slot = std::make_shared<typename std::remove_reference_t<decltype(slot)>::element_type>();
+                }
+            }
+        }
+    }
+
+  public:
+
+  private:
+    /// Index of the second value in the shared value table;
+    /// chunk_config::no_second_value_index until set_second_value().
+    int ind_cst_val2 = chunk_config::no_second_value_index;
 
   public:
     /// @brief Read-only access to the underlying chunk list.
