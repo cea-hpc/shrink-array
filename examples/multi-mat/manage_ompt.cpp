@@ -41,22 +41,19 @@
  * The library ships an equivalent tool (chunk/private/manage_ompt.cpp) in
  * every variant; the variant this example links (chunk_v1v2_<size>) is
  * built without it, so that this file is the one the runtime finds --
- * self-contained, and readable next to the loops it serves. Without OMPT,
- * or in the manual executable, the file only defines the switch the
- * library reads (`__global_ompt`, false: no callback exists).
+ * self-contained, and readable next to the loops it serves. Compiled in
+ * the embedded executable alone (CMakeLists.txt); the manual one defines
+ * the switch the library reads in ompt_off.cpp, and has no tool.
  */
 
 #include <atomic>
+#include <cstdio>
 
-#include "MultiMatConfig.h"
+#include <omp-tools.h>
+
 #include "chunk/config.h"
 #include "chunk/manage_ompt.h"
-
-#if defined(HAVE_OMPT) && defined(MULTIMAT_EMBEDDED_COMPRESSION)
-
-    #include <cstdio>
-
-    #include <omp-tools.h>
+#include "config.h"
 
 /// @brief The switch the library reads (chunk_config::OMPTcc): the callbacks
 ///        below are live.
@@ -67,12 +64,14 @@ namespace
 
 /// @brief Set while finalize_parallel_phase() runs: the regions it opens
 ///        end through on_parallel_end too, and their barriers through
-///        on_sync_region.
+///        on_sync_region. Not on_implicit_task: the threads of those
+///        regions need their rank cache like any other (a check build
+///        asserts on a stale one).
 std::atomic<bool> in_phase_end{false};
 
 void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, unsigned int, unsigned int, int)
 {
-    if (!__global_ompt || in_phase_end.load(std::memory_order_relaxed))
+    if (!__global_ompt)
         return;
     if (endpoint == ompt_scope_begin)
         shrink_array::begin_parallel_phase();
@@ -120,11 +119,3 @@ ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
     static ompt_start_tool_result_t result = {&ompt_initialize, &ompt_finalize, {0}};
     return &result;
 }
-
-#else
-
-/// @brief No tool in this executable: the manual one makes the phase calls
-///        itself, and a build without OMPT has no callbacks to offer.
-bool __global_ompt = false;
-
-#endif

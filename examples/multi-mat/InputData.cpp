@@ -1,5 +1,5 @@
 /*
-* Copyright 2024 CEA (www.cea.fr)
+* Copyright 2024-2026 CEA (www.cea.fr)
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -14,187 +14,123 @@
 * limitations under the License.
  */
 
-#include <iostream>
-#include <string>
-#include <random>
+/**
+ * @file InputData.cpp
+ * @brief Simu::inputData(): the parameters of the run and the storage of
+ *        every material.
+ *
+ * Interactive under multi_mat::interactive_input (one prompt per
+ * parameter, Enter keeps the default); the defaults of Simu.h otherwise,
+ * printed. The two paths are one function: the prompts are ordinary code
+ * behind `if constexpr`, compiled in every build.
+ */
 
+#include <iostream>
+#include <random>
+#include <string>
+#include <stdexcept>
+#include <algorithm>
+
+#include "config.h"
 #include "Simu.h"
+
+namespace
+{
+
+/**
+ * @brief One prompt on stdin: Enter keeps @p value, anything else is parsed
+ *        by @p parse and, when @p valid accepts it, stored.
+ * @param prompt  What is asked.
+ * @param name    What the value is, for the echo.
+ * @param value   The parameter, holding its default on entry.
+ * @param parse   std::stoi / std::stod, or a lambda.
+ * @param valid   Range check on the parsed value; a refusal is reported and
+ *                the default kept.
+ */
+template <typename T, typename Parse, typename Valid>
+void ask(const char* prompt, const char* name, T& value, Parse parse, Valid valid)
+{
+    std::cout << prompt << " (default " << value << ") : ";
+
+    std::string data;
+    std::getline(std::cin, data);
+
+    if (data.empty())
+    {
+        std::cout << "default : " << value << " " << name << "\n";
+        return;
+    }
+    try
+    {
+        const T v = parse(data);
+        if (!valid(v))
+            throw std::out_of_range("The value is not in the specified range.");
+        value = v;
+        std::cout << "You give : " << value << " " << name << "\n";
+    }
+    catch (const std::invalid_argument&)
+    {
+        std::cerr << "Error: Conversion failed. The string is not a valid number" << std::endl;
+    }
+    catch (const std::out_of_range& e)
+    {
+        std::cerr << "Error: " << e.what() << " default kept: " << value << std::endl;
+    }
+}
+
+/// @brief ask() for an int, any value.
+[[maybe_unused]] void ask_int(const char* prompt, const char* name, int& value)
+{
+    ask(prompt, name, value, [](const std::string& s) { return std::stoi(s); }, [](int) { return true; });
+}
+
+/// @brief ask() for a percentage, in ]0, 100[.
+[[maybe_unused]] void ask_percentage(const char* prompt, const char* name, double& value)
+{
+    constexpr double eps = 1e-10;
+    ask(prompt, name, value, [](const std::string& s) { return std::stod(s); },
+        [](double v) { return v >= eps && v <= 100 - eps; });
+}
+
+} // namespace
 
 void Simu::inputData()
 {
-#ifdef INPUT_DATA
-    std::string data; // one line of stdin, read under each prompt
-    std::cout << "Number of material (default " << nbmat << " ) :";
-    std::getline(std::cin, data);
-
-    // Checks if the user entered data or pressed Enter (carriage return)
-    if (data.empty())
+    if constexpr (multi_mat::interactive_input)
     {
-        std::cout << "default : " << nbmat << " materials\n";
-    }
-    else
-    {
-        try
+        ask_int("Number of material", "materials", nbmat);
+
+        int input_mesh_mode = 1;
+        ask_int("Input mesh mode (1 by million 2 real)", "input mesh mode", input_mesh_mode);
+        if (input_mesh_mode == 2)
         {
-            nbmat = std::stoi(data); // Convert string to integer
-            std::cout << "You give : " << nbmat << " materials\n";
+            ask_int("Mesh size", "mesh size", mesh_size);
         }
-        catch (const std::invalid_argument& e)
+        else
         {
-            std::cerr << "Error: Conversion failed. The string is not a valid number" << std::endl;
+            int millions = mesh_size / 1000000;
+            ask_int("Mesh size, in millions", "million cells", millions);
+            mesh_size = millions * 1000000;
         }
-    }
 
-    int input_mesh_mode = 1;
+        int verbose_int = verbose ? 1 : 0;
+        ask_int("verbose", "verbose", verbose_int);
+        verbose = verbose_int != 0;
 
-    std::cout << "Input mesh mode (1 by million 2 real) default 1 : ";
+        ask_int("Number of iterations", "number of iterations", iter_max);
 
-    std::getline(std::cin, data);
-
-    if (data.empty())
-    {
-        std::cout << "default : " << 1 << "\n";
-    }
-    else
-    {
-        try
-        {
-            input_mesh_mode = std::stoi(data); // Convert string to integer
-            std::cout << "You give : " << input_mesh_mode << " input mesh mode\n";
-        }
-        catch (const std::invalid_argument& e)
-        {
-            std::cerr << "Error: Conversion failed. The string is not a valid number" << std::endl;
-        }
-    }
-
-    if (input_mesh_mode == 2)
-        std::cout << "Mesh size (default 10000000) : ";
-    else
-        std::cout << "Mesh size (default 10 Millions) : ";
-
-    std::getline(std::cin, data);
-
-    if (data.empty())
-    {
-        std::cout << "default : " << mesh_size << " mesh size\n";
-    }
-    else
-    {
-        try
-        {
-            mesh_size = std::stoi(data); // Convert string to integer
-            if (input_mesh_mode == 1)
-                mesh_size *= 1000000;
-
-            std::cout << "You give : " << mesh_size << " mesh size\n";
-        }
-        catch (const std::invalid_argument& e)
-        {
-            std::cerr << "Error: Conversion failed. The string is not a valid number" << std::endl;
-        }
-    }
-
-    std::cout << "verbose (default 1) : ";
-
-    std::getline(std::cin, data);
-
-    if (data.empty())
-    {
-        std::cout << "default : " << true << "\n";
-    }
-    else
-    {
-        try
-        {
-            verbose = std::stoi(data); // Convert string to integer
-            if (verbose)
-                std::cout << "verbose : true\n";
-            else
-                std::cout << "verbose : false\n";
-        }
-        catch (const std::invalid_argument& e)
-        {
-            std::cerr << "Error: Conversion failed. The string is not a valid number" << std::endl;
-        }
-    }
-
-    std::cout << "Number of iterations (default " << iter_max << " ) : ";
-
-    std::getline(std::cin, data);
-
-    if (data.empty())
-    {
-        std::cout << "default : " << iter_max << " number of iterations\n";
-    }
-    else
-    {
-        try
-        {
-            iter_max = std::stoi(data); // Convert string to integer
-            std::cout << "You give : " << iter_max << " number of iterations\n";
-        }
-        catch (const std::invalid_argument& e)
-        {
-            std::cerr << "Error: Conversion failed. The string is not a valid number" << std::endl;
-        }
-    };
-
-
-    std::cout << "Option : \n";
-    std::cout << "   all chunk                        : 1\n";
-    std::cout << "   all vector                       : 2\n";
-    std::cout << "   random vector / chunk (default)  : 3\n";
-    std::cout << "   random vector / chunk with rate  : 4\n";
-
-    std::getline(std::cin, data);
-
-    if (data.empty())
-    {
-        std::cout << "default : " << option_chunk << "\n";
-    }
-    else
-    {
-        try
-        {
-            option_chunk = std::stoi(data); // Convert string to integer
-            std::cout << "You give : " << option_chunk << "\n\n";
-
-            if (option_chunk < 1 || option_chunk > 4)
-            {
-                throw std::out_of_range("The value_compute is not in the specified range.");
-            }
-        }
-        catch (const std::invalid_argument& e)
-        {
-            std::cerr << "Error: Conversion failed. The string is not a valid number" << std::endl;
-        }
+        std::cout << "Option : \n";
+        std::cout << "   all chunk                        : 1\n";
+        std::cout << "   all vector                       : 2\n";
+        std::cout << "   random vector / chunk (default)  : 3\n";
+        std::cout << "   random vector / chunk with rate  : 4\n";
+        ask("Option", "option", option_chunk, [](const std::string& s) { return std::stoi(s); },
+            [](int v) { return v >= 1 && v <= 4; });
 
         if (option_chunk == 4)
-        {
-            std::cout << "Pourcentage of chunk array : \n";
-            std::getline(std::cin, data);
-
-            if (data.empty())
-            {
-                std::cout << "default : " << 90 << "\n";
-            }
-            else
-            {
-                try
-                {
-                    chunk_rate = std::stoi(data); // Convert string to integer
-                    std::cout << "You give : " << chunk_rate << "\n\n";
-                }
-                catch (const std::invalid_argument& e)
-                {
-                    std::cerr << "Error: Conversion failed. The string is not a valid number" << std::endl;
-                }
-            }
-        }
+            ask_int("Pourcentage of chunk array", "% chunk", chunk_rate);
     }
 
-#endif
     dis.resize(nbmat);
 
     switch (getOptionChunk())
@@ -212,58 +148,27 @@ void Simu::inputData()
         }
         break;
         case 3:
+        case 4:
         {
-            // Initialize the random number generator
-
+            // Option 3: a 50/50 draw; option 4: chunk with probability
+            // chunk_rate %.
             std::random_device rd0;
 
             std::mt19937                    gen(rd0());
-            std::uniform_int_distribution<> distrib(0, 1);
+            std::uniform_int_distribution<> distrib(0, option_chunk == 3 ? 1 : 100);
+
+            const int threshold = option_chunk == 3 ? 1 : chunk_rate;
 
             int nb_chunk = 0;
 
-            // Loop to distribute true or false values with a 50/50 chance
             for (int m = 0; m < nbmat; ++m)
             {
-                dis[m] = distrib(gen) != 0; // 0 corresponds to false, 1 corresponds to true
+                dis[m] = distrib(gen) < threshold;
                 nb_chunk += dis[m];
-                // Shows the distributed value_compute
                 std::cout << "Material #" << m << ": " << (dis[m] ? "chunk" : "vector") << "\n";
             }
 
-            std::cout << "\nNumber of chunk array : "  << nb_chunk << " on " << nbmat << " materials \n\n";
-
-            if (nb_chunk == nbmat)
-            {
-                all_chunk = true;
-            }
-            else if (nb_chunk == 0)
-            {
-                all_vector = true;
-            }
-        }
-        break;
-
-        case 4:
-        {
-            // Initialize the random number generator
-
-            std::random_device rd0;
-
-            std::mt19937                    gen(rd0());
-            std::uniform_int_distribution<> distrib(0, 100);
-
-            int nb_chunk = 0;
-
-            // Loop to distribute true or false values with a 50/50 chance
-            for (int m = 0; m < nbmat; ++m)
-            {
-                dis[m] = distrib(gen) < chunk_rate;
-                nb_chunk += dis[m];
-                // Shows the distributed value_compute
-                std::cout << "material #" << m << ": " << (dis[m] ? "chunk" : "vector") << "\n";
-            }
-            std::cout << "\nNumber of chunk array : "  << nb_chunk << " on " << nbmat << " materials \n\n";
+            std::cout << "\nNumber of chunk array : " << nb_chunk << " on " << nbmat << " materials \n\n";
 
             if (nb_chunk == nbmat)
             {
@@ -285,121 +190,30 @@ void Simu::inputData()
 
     freq_rtz = freq_rtz_default;
 
-#ifdef INPUT_DATA
-    std::string data;
-    if (option_chunk != 2)
+    if constexpr (multi_mat::interactive_input)
     {
-        std::cout << "Compression frequency ( default " << freq_compress_default << " ) : ";
+        if (option_chunk != 2)
+            ask_int("Compression frequency", "compression frequency", freq_compress);
 
-        std::getline(std::cin, data);
+        ask_int("reset to zero frequency", "reset to zero frequency", freq_rtz);
 
-        if (data.empty())
-        {
-            std::cout << "default : " << freq_compress << " compression frequency\n";
-        }
-        else
-        {
-            try
-            {
-                freq_compress = std::stoi(data); // Convert string to integer
-                std::cout << "You give : " << freq_compress << " compression frequency\n";
-            }
-            catch (const std::invalid_argument& e)
-            {
-                std::cerr << "Error: Conversion failed. The string is not a valid number" << std::endl;
-            }
-        }
-    }
+        std::cout << "\n";
 
-    std::cout << "reset to zero frequency (default " << freq_rtz_default << " ) : ";
+        if (!all_vector)
+            ask_percentage("Average percentage occupation for chunk material", "%", pc_chunk);
 
-    std::getline(std::cin, data);
-
-    if (data.empty())
-    {
-        freq_rtz = freq_rtz_default;
-        std::cout << "default : " << freq_rtz << " reset to zero frequency\n";
+        if (!all_chunk)
+            ask_percentage("Average percentage occupation for vector material", "%", pc_vector);
     }
     else
     {
-        try
-        {
-            freq_rtz = std::stoi(data); // Convert string to integer
-            std::cout << "You give : " << freq_rtz << " reset to zero frequency\n";
-        }
-        catch (const std::invalid_argument& e)
-        {
-            std::cerr << "Error: Conversion failed. The string is not a valid number" << std::endl;
-        }
+        std::cout << nbmat << " materials\n";
+        std::cout << mesh_size << " mesh size\n";
+        std::cout << iter_max << " number of iterations\n";
+        std::cout << option_chunk << " option chunk\n";
+        std::cout << pc_chunk << "% fill rate chunk\n";
+        std::cout << pc_vector << "% fill rate vector\n";
+        std::cout << freq_rtz << " frequency reset to zero frequency\n";
+        std::cout << freq_compress << " frequency compression frequency\n";
     }
-
-    constexpr double eps = 1e-10;
-
-    std::cout << "\n";
-
-    if (!all_vector)
-    {
-        std::cout << "Average percentage occupation for chunk material ( default " << pc_chunk << " ) : ";
-
-        std::getline(std::cin, data);
-
-        if (data.empty())
-        {
-            std::cout << "default : " << pc_chunk << "%\n";
-        }
-        else
-        {
-            try
-            {
-                pc_chunk = std::stod(data); // Convert string to integer
-                std::cout << "You give : " << pc_chunk << "%\n";
-                if (pc_chunk < eps || pc_chunk > 100 - eps)
-                {
-                    throw std::out_of_range("The value_compute is not in the specified range.");
-                }
-            }
-            catch (const std::invalid_argument& e)
-            {
-                std::cerr << "Error: Conversion failed. The string is not a valid number" << std::endl;
-            }
-        }
-    }
-
-    if (!all_chunk)
-    {
-        std::cout << "Average percentage occupation for vector material ( default " << pc_vector << " ) : ";
-
-        std::getline(std::cin, data);
-
-        if (data.empty())
-        {
-            std::cout << "default : " << pc_vector << "%\n";
-        }
-        else
-        {
-            try
-            {
-                pc_vector = std::stod(data); // Convert string to integer
-                std::cout << "You give : " << pc_vector << "%\n";
-                if (pc_vector < eps || pc_vector > 100 - eps)
-                {
-                    throw std::out_of_range("The value_compute is not in the specified range.");
-                }
-            }
-            catch (const std::invalid_argument& e)
-            {
-                std::cerr << "Error: Conversion failed. The string is not a valid number" << std::endl;
-            }
-        }
-    }
-#else
-    std::cout << nbmat << " materials\n";
-    std::cout << mesh_size << " mesh size\n";
-    std::cout << iter_max << " number of iterations\n";
-    std::cout << option_chunk << " option chunk\n";
-    std::cout << pc_chunk << "% fill rate chunk\n";
-    std::cout << pc_vector << "% fill rate vector\n";
-    std::cout << freq_rtz << " frequency reset to zero frequency\n";
-    std::cout << freq_compress << " frequency compression frequency\n";
-#endif
 }

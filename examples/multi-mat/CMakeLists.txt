@@ -1,4 +1,4 @@
-# Two executables from the same sources (MultiMatConfig.h):
+# Two executables from the same sources (config.h):
 #   multi-mat           the manual version, every compiler: the program makes
 #                       the phase calls of chunk/manage_ompt.h itself (four
 #                       one-line wrappers) and compresses its field arrays by
@@ -15,11 +15,12 @@
 #                       writes.
 # Both link chunk_v1v2_<size>, a variant built WITHOUT the library's own
 # tool, so that ompt_start_tool and __global_ompt come from here.
+# The sources both executables share; each adds the file that defines the
+# OMPT switch of the library: manage_ompt.cpp (the tool) or ompt_off.cpp.
 set(_mm_sources main.cpp
         ComputeDistribution.cpp ComputeInterval.cpp InputData.cpp
-        manage_ompt.cpp
         MultiMatAlgo.h Loops.h PMP.h Containers.h Dispatch.h ComputeLoops.h Simu.h
-        MultiMatConfig.h)
+        config.h)
 
 if (OMP)
     find_package(OpenMP)
@@ -48,18 +49,18 @@ function(multi_mat_setup_target tgt)
     chunk_enable_fast_math(${tgt})
 endfunction()
 
-add_executable(multi-mat ${_mm_sources})
+add_executable(multi-mat ${_mm_sources} ompt_off.cpp)
 multi_mat_setup_target(multi-mat)
 
 add_test(NAME multi_mat COMMAND multi-mat)
 set_property(TEST multi_mat PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
 
 if (CHUNK_HAVE_OMPT)
-    add_executable(multi-mat-embedded ${_mm_sources})
+    add_executable(multi-mat-embedded ${_mm_sources} manage_ompt.cpp)
     add_test(NAME multi_mat_embedded COMMAND multi-mat-embedded)
     set_property(TEST multi_mat_embedded PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
 else ()
-    add_executable(multi-mat-embedded EXCLUDE_FROM_ALL ${_mm_sources})
+    add_executable(multi-mat-embedded EXCLUDE_FROM_ALL ${_mm_sources} manage_ompt.cpp)
     message(STATUS "multi-mat-embedded: not in `all` (no OMPT tool with ${CMAKE_CXX_COMPILER_ID}; Clang or IntelLLVM, OMP=ON)")
 endif ()
 multi_mat_setup_target(multi-mat-embedded)

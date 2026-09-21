@@ -16,6 +16,12 @@
 
 #pragma once
 
+/**
+ * @file Containers.h
+ * @brief The per-material arrays: a std::vector or a chunk array behind one
+ *        base, and the multi-material array that holds one per material.
+ */
+
 #include <vector>
 
 #include "chunk/array_chunk.h"
@@ -24,6 +30,7 @@
 
 extern Dispatch dispatch;
 
+/// @brief What every per-material array has: its material index.
 template <typename T>
 class VectCom
 {
@@ -36,6 +43,7 @@ class VectCom
     VectCom()  = default;
     ~VectCom() = default;
 
+    /// @brief The material this array belongs to.
     void setInd(int i)
     {
         ind = i;
@@ -47,17 +55,21 @@ template <typename T>
 class VectChunk : public VectCom<T>, public shrink_array::ArrayChunk<T>
 {
   public:
+    /// @brief @p mesh_size elements, all zero -- compressed.
     void create(int mesh_size)
     {
         this->resize(mesh_size);
     }
 };
 
-/// @brief The presence fraction of a "chunk" material, in [0, 1]: 0 where
-///        the material is absent, 1 where the cell is pure, in between at the
-///        interfaces. Chunk2 compresses the chunks that are all 0 (the first
-///        constant) AND the ones that are all 1 (the array's second value),
-///        so only the interface chunks are ever materialised.
+/**
+ * @brief The presence fraction of a "chunk" material, in [0, 1]: 0 where
+ *        the material is absent, 1 where the cell is pure, in between at the
+ *        interfaces.
+ * @details Chunk2 compresses the chunks that are all 0 (the first constant)
+ *          AND the ones that are all 1 (the array's second value), so only
+ *          the interface chunks are ever materialised.
+ */
 template <typename T>
 class VectChunk2 : public VectCom<T>, public shrink_array::ArrayChunk2<T>
 {
@@ -65,6 +77,8 @@ class VectChunk2 : public VectCom<T>, public shrink_array::ArrayChunk2<T>
     /// @brief The fraction of a pure cell, the second constant of the array.
     static constexpr T full = 1;
 
+    /// @brief @p mesh_size elements, all zero, and `full` registered as the
+    ///        second value.
     void create(int mesh_size)
     {
         this->resize(mesh_size);
@@ -72,10 +86,12 @@ class VectChunk2 : public VectCom<T>, public shrink_array::ArrayChunk2<T>
     }
 };
 
+/// @brief An array of a "vector" material: a plain std::vector.
 template <typename T>
 class Vect : public VectCom<T>, public std::vector<T>
 {
   public:
+    /// @brief @p mesh_size elements, all zero.
     void create(int mesh_size)
     {
         this->resize(mesh_size);
@@ -85,6 +101,7 @@ class Vect : public VectCom<T>, public std::vector<T>
 /**
  * @brief One array per material, a std::vector or a chunk array as the
  *        dispatch says.
+ * @tparam T        Element type.
  * @tparam VecChunk The chunk array of the chunk materials: VectChunk<T> for a
  *                  field, VectChunk2<T> for the presence fraction.
  */
@@ -100,6 +117,8 @@ class MultiArray : public std::vector<VectCom<T>*>
     using vec_dir   = Vect<T>;
     using vec_chunk = VecChunk;
 
+    /// @brief One array of @p mesh_size elements per material, of the kind
+    ///        the dispatch gives the material.
     void create(int nbmat, int mesh_size);
 };
 

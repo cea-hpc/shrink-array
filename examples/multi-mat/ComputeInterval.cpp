@@ -15,6 +15,12 @@
 * limitations under the License.
  */
 
+/**
+ * @file ComputeInterval.cpp
+ * @brief Simu::computeInterval(): the largest interval of a chunk and of a
+ *        vector material, from their average occupation of the mesh.
+ */
+
 #include <cmath>
 
 #include "Simu.h"

@@ -17,23 +17,36 @@
 
 #pragma once
 
+/**
+ * @file ComputeLoops.h
+ * @brief The iterations of the simulation: Simu::computeLoops().
+ *
+ * Runs on every thread of one parallel region, for the whole run. Each
+ * iteration: the indirection of every material is rebuilt from the interval
+ * drawn for it (`omp for` over materials), the fields and the presence
+ * fraction are written on that interval (or zeroed, every freq_rtz
+ * iterations), a barrier, then the gadget computation reads them back five
+ * times and reduces. In the manual executable the fields are also
+ * compressed every freq_compress iterations; the embedded one leaves that
+ * to the library (config.h).
+ */
+
 #include <iostream>
 #include <array>
 #include <vector>
 #include <cmath>
 #include <functional>
 
+#include "config.h"
 #include "Containers.h"
 #include "Dispatch.h"
 #include "MultiMatAlgo.h"
-#include "ComputeLoops.h"
 #include "Simu.h"
-#include "MultiMatConfig.h"
 
 template <typename LOOPS, typename LOOPSCHUNK>
 void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::function<void(bool)>& lbd_stats, double& value)
 {
-    multi_mat::begin_parallel_phase(); // manual executable only, see MultiMatConfig.h
+    multi_mat::begin_parallel_phase(); // manual executable only, see config.h
 
     if (verbose)
     {
@@ -210,7 +223,7 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::fun
         // that became constant and the library compresses them itself -- in
         // the loop when a thread's list fills, and at the end of the region
         // through its OMPT tool -- so there is nothing to call
-        // (MultiMatConfig.h).
+        // (config.h).
         const bool manual_pass = !multi_mat::embedded_compression && option_chunk != 2 && it % freq_compress == 0;
         if (manual_pass)
         {

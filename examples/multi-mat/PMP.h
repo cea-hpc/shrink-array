@@ -1,6 +1,5 @@
-
 /*
-* Copyright 2024 CEA (www.cea.fr)
+* Copyright 2024-2026 CEA (www.cea.fr)
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -17,24 +16,30 @@
 
 #pragma once
 
+/**
+ * @file PMP.h
+ * @brief Static partition of a loop between the threads of a team.
+ *
+ * The reduction loops of Loops.h split their index range by hand rather
+ * than through `omp for`: the SIMD reduction inside then sees a contiguous
+ * range per thread. The OpenMP queries come from config.h.
+ */
+
 #include <utility>
 
-#ifdef _OPENMP
-#include <omp.h>
+#include "config.h"
 
-#define PMP_MAX_THREADS omp_get_max_threads()
-#define PMP_THREAD_RANK omp_get_thread_num()
-#define PMP_IN_PARALLEL_REGION omp_in_parallel()
-
-#else
-
-#define PMP_MAX_THREADS 1
-#define PMP_THREAD_RANK 1
-#define PMP_IN_PARALLEL_REGION false
-
-#endif
-
-
+/**
+ * @brief The share of @p nb iterations of thread @p trank among
+ *        @p nb_max_tasks, as a half-open range.
+ * @details The first `nb % nb_max_tasks` threads take one more iteration.
+ *          Fewer iterations than threads: thread 0 takes them all.
+ * @param trank        Rank of the calling thread.
+ * @param nb_max_tasks Size of the team.
+ * @param nb           Iteration count.
+ * @param[out] kdeb    First iteration of the thread.
+ * @param[out] kfin    One past its last.
+ */
 inline void get_parallel_loop_boundaries_int(int trank, int nb_max_tasks, int nb, int& kdeb, int& kfin)
 {
     if (nb > nb_max_tasks)
@@ -68,9 +73,14 @@ inline void get_parallel_loop_boundaries_int(int trank, int nb_max_tasks, int nb
     }
 }
 
+/**
+ * @brief get_parallel_loop_boundaries_int() inside a parallel region, the
+ *        whole range outside one.
+ * @copydetails get_parallel_loop_boundaries_int
+ */
 inline void get_parallel_loop_boundaries(const int trank, const int nb_max_tasks, const int nb, int& kdeb, int& kfin)
 {
-    if (PMP_IN_PARALLEL_REGION)
+    if (multi_mat::in_parallel_region())
     {
         get_parallel_loop_boundaries_int(trank, nb_max_tasks, nb, kdeb, kfin);
     }
@@ -80,19 +90,11 @@ inline void get_parallel_loop_boundaries(const int trank, const int nb_max_tasks
         kfin = nb;
     }
 }
+
+/// @brief get_parallel_loop_boundaries() returning the pair {kdeb, kfin}.
 inline std::pair<int, int> get_parallel_loop_boundaries(const int trank, const int nb_max_tasks, const int nb)
 {
     int kdeb, kfin;
-
-    if (PMP_IN_PARALLEL_REGION)
-    {
-        get_parallel_loop_boundaries_int(trank, nb_max_tasks, nb, kdeb, kfin);
-    }
-    else
-    {
-        kdeb = 0;
-        kfin = nb;
-    }
-
+    get_parallel_loop_boundaries(trank, nb_max_tasks, nb, kdeb, kfin);
     return std::make_pair(kdeb, kfin);
 }

@@ -1,6 +1,5 @@
-
 /*
-* Copyright 2024 CEA (www.cea.fr)
+* Copyright 2024-2026 CEA (www.cea.fr)
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -17,6 +16,12 @@
 
 #pragma once
 
+/**
+ * @file Simu.h
+ * @brief The simulation: its parameters, its arrays, and the steps main()
+ *        runs in order.
+ */
+
 #include <vector>
 #include <array>
 #include <functional>
@@ -27,59 +32,69 @@
 template <typename LOOPS, typename LOOPSCHUNK>
 class MultiMatAlgo;
 
-//#define INPUT_DATA
-
+/**
+ * @brief A mock multi-material simulation: every material occupies, at
+ *        each iteration, a random interval of the mesh; its fields are
+ *        written there and read back by a gadget computation.
+ * @details Steps, in the order main() runs them: inputData() (parameters
+ *          and the storage of every material), computeInterval(),
+ *          createTabs(), computeDistribution() (the intervals of every
+ *          iteration, drawn up front), computeLoops() (the iterations, in
+ *          one parallel region).
+ */
 class Simu
 {
   public:
-    static inline int iter_max_default = 100;
-    static inline int nbmat_default    = 50;
+    static inline int iter_max_default = 100; ///< Iterations, unless asked
+    static inline int nbmat_default    = 50;  ///< Materials, unless asked
 
-    int               nbmat            = nbmat_default;
+    int nbmat = nbmat_default; ///< Materials
 
-    int mesh_size = 10000000;
+    int mesh_size = 10000000; ///< Cells
 
-    bool verbose = true;
+    bool verbose = true; ///< Per-iteration prints
 
-    int iter_max = iter_max_default;
+    int iter_max = iter_max_default; ///< Iterations
 
-    int chunk_rate = 90;
+    int chunk_rate = 90; ///< Option 4: percentage of chunk materials
 
-    double pc_chunk  = .5;
-    double pc_vector = 3;
+    double pc_chunk  = .5; ///< Average interval of a chunk material, % of the mesh
+    double pc_vector = 3;  ///< Average interval of a vector material, % of the mesh
 
-    int option_chunk     = 3;
+    int option_chunk     = 3; ///< Storage of the materials: 1 all chunk, 2 all vector, 3 random 50/50, 4 random at chunk_rate
     int freq_rtz_default = std::max(iter_max_default / 10, 5);
-    int freq_rtz;
+    int freq_rtz; ///< Every this many iterations the fields are zeroed instead of written
 
-    int freq_compress;
+    int freq_compress; ///< Manual mode: every this many iterations the fields are compressed
 
-    bool all_chunk  = false;
-    bool all_vector = false;
+    bool all_chunk  = false; ///< Every material is a chunk one
+    bool all_vector = false; ///< Every material is a vector one
 
-    int interval_chunk;
-    int interval_vector;
+    int interval_chunk;  ///< Largest interval of a chunk material, cells
+    int interval_vector; ///< Largest interval of a vector material, cells
 
     // 3 arrays multi - mat
-    std::array<MultiArray<double>, 3> tabs;
+    std::array<MultiArray<double>, 3> tabs; ///< The three fields of every material
 
-    // The presence fraction of each material, in [0, 1]: 1 inside the
-    // material's interval, a ramp of `interface_width` cells at each end, 0
-    // elsewhere. A Chunk2 array for the chunk materials, second value 1.
+    /// @brief The presence fraction of each material, in [0, 1]: 1 inside
+    ///        the material's interval, a ramp of `interface_width` cells at
+    ///        each end, 0 elsewhere. A Chunk2 array for the chunk materials,
+    ///        second value 1.
     MultiArray<double, VectChunk2<double>> frac;
 
-    // Cells of the ramp at each end of an interval: well under a chunk, so
-    // the interior of an interval is chunks of pure 1 and compresses.
+    /// @brief Cells of the ramp at each end of an interval: well under a
+    ///        chunk, so the interior of an interval is chunks of pure 1 and
+    ///        compresses.
     int interface_width = 16;
 
-    std::vector<bool> dis;
+    std::vector<bool> dis; ///< Storage of every material: true = chunk
 
     using VecInt2D = std::vector<std::vector<int>>;
 
-    VecInt2D tab_size;
-    VecInt2D tab_start;
+    VecInt2D tab_size;  ///< [iteration][material] size of the interval
+    VecInt2D tab_start; ///< [iteration][material] first cell of the interval
 
-    VecInt2D ll;
+    VecInt2D ll; ///< [material] the cells of its current interval (indirection)
 
   public:
     Simu() = default;
@@ -97,11 +112,13 @@ class Simu
         return tabs;
     }
 
+    /// @brief Field @p ind of every material.
     const MultiArray<double>& getTabs(int ind) const
     {
         return tabs[ind];
     }
 
+    /// @brief The presence fraction of every material.
     const MultiArray<double, VectChunk2<double>>& getFrac() const
     {
         return frac;
@@ -122,14 +139,28 @@ class Simu
 
     int getNbmat() const;
 
+    /// @brief The parameters -- asked on stdin under
+    ///        multi_mat::interactive_input, the defaults above otherwise --
+    ///        and the storage of every material (InputData.cpp).
     void inputData();
 
+    /// @brief The three fields and the presence fraction of every material.
     void createTabs();
 
+    /// @brief The largest intervals, from pc_chunk / pc_vector.
     void computeInterval();
 
+    /// @brief The interval of every material at every iteration, drawn now
+    ///        so the iterations need no sequential step.
     void computeDistribution();
 
+    /**
+     * @brief The iterations. Called by every thread of a parallel region.
+     * @param mm_algo   The per-material dispatch.
+     * @param lbd_stats Prints the filling rates; called on one thread now
+     *                  and then when verbose.
+     * @param value     This thread's share of the gadget result.
+     */
     template <typename LOOPS, typename LOOPSCHUNK>
     void computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::function<void(bool)>& lbd_stats, double& value);
 };

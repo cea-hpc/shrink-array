@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -15,16 +14,32 @@
  * limitations under the License.
  */
 
+/**
+ * @file main.cpp
+ * @brief multi-mat: a mock multi-material simulation on the chunk library.
+ *
+ * Every material carries three fields and a presence fraction over the whole
+ * mesh, but occupies only a random interval of it at each iteration: the
+ * fields are written there, the gadget computation reads them back, the
+ * rest of the mesh stays zero. Half the materials (by default) keep their
+ * arrays in chunk arrays -- v1 for the fields, Chunk2 for the fraction --
+ * where the untouched chunks cost nothing; the other half in std::vectors,
+ * for the comparison. The run prints the chunk filling rates, the result of
+ * the computation, the elapsed time and the peak memory.
+ *
+ * Two executables from this file (config.h): `multi-mat`, which compresses
+ * its fields by explicit calls and makes the library's phase calls itself,
+ * and `multi-mat-embedded`, which calls nothing and lets the OMPT tool of
+ * manage_ompt.cpp drive the library.
+ */
+
 #include <iomanip>
 #include <array>
 #include <random>
 #include <vector>
 #include <functional>
 #include <fstream>
-
-#ifdef __clang__
-    #include <tuple>
-#endif
+#include <tuple>
 #include <type_traits>
 #include <chrono>
 
@@ -35,7 +50,7 @@
 #include "chunk/array_chunk.h"
 #include "chunk/array_chunk2.h"
 
-#include "MultiMatConfig.h"
+#include "config.h"
 #include "MultiMatAlgo.h"
 #include "ComputeLoops.h"
 #include "Containers.h"
@@ -43,25 +58,21 @@
 
 using namespace shrink_array;
 
+/// @brief Bytes to MiB, and the figure written to memory_mo.txt for the
+///        scripts that collect it.
 double convert_memory(double memoryValue)
 {
     constexpr double BYTE_TO_KB = 1.0 / 1024;
     constexpr double KB_TO_MB   = 1.0 / 1024;
-    // const double MB_TO_GB   = 1.0 / 1024;
 
     const double kilobytes = memoryValue * BYTE_TO_KB;
     const double megabytes = kilobytes * KB_TO_MB;
-    //  double gigabytes = megabytes * MB_TO_GB;
 
     std::ofstream fichier("memory_mo.txt");
 
     if (fichier.is_open())
     {
-        // Write a scalar to the file
-
         fichier << megabytes;
-
-        // Close the file
         fichier.close();
     }
     else
@@ -72,10 +83,12 @@ double convert_memory(double memoryValue)
     return megabytes;
 }
 
+/// @brief Required by fast_allocators (one definition per executable).
 int __mem_page_size = 0;
 
 using std::vector;
 
+/// @brief The storage of every material, read by the containers.
 Dispatch dispatch;
 
 void Simu::createTabs()
@@ -114,11 +127,7 @@ const vector<bool>& Simu::getDis() const
 
 int main()
 {
-#ifdef _OPENMP
-    const int max_thr = omp_get_max_threads();
-#else
-    const int max_thr = 1;
-#endif
+    const int max_thr = multi_mat::max_threads();
 
     std::cout << "Number of threads : " << max_thr << "\n";
     std::cout << "Compression       : "
@@ -131,7 +140,6 @@ int main()
 
     __mem_page_size          = getpagesize();
     constexpr int chunk_size = static_cast<int>(shrink_array::__chunk_size);
-
 
     if constexpr (chunk_size == 0)
     {
@@ -149,7 +157,6 @@ int main()
                   << " and inferior or equal to " << ParamChunk::size_max << "\n";
         std::abort();
     }
-
 
     ParamChunk::init_indexes(true);
 
@@ -185,10 +192,13 @@ int main()
 
     start = std::chrono::steady_clock::now();
 
-#ifdef CHUNK_STATS
+    // At least one chunk material was seen: the library's counters are
+    // worth printing at exit (stats build).
     bool have_chunk = false;
-#endif
 
+    // The filling rates: of the first chunk material only (only_first_chunk,
+    // from inside the run) or of every material with its real rate (at the
+    // end).
     std::function<void(bool)> lbd_stats_chunk = [&](bool only_first_chunk)
     {
         mm_algo.loop(0, nbmat,
@@ -200,9 +210,7 @@ int main()
 
                          if (dispatch.isChunk(mat))
                          {
-#ifdef CHUNK_STATS
                              have_chunk = true;
-#endif
 
                              using CV = std::remove_reference_t<decltype(tab0_ind)>;
                              using V  = std::remove_const_t<CV>;
@@ -278,10 +286,12 @@ int main()
     {
         std::cerr << "Unable to retrieve information from memory." << std::endl;
     }
-#ifdef CHUNK_STATS
-    if (have_chunk)
+
+    if constexpr (multi_mat::chunk_stats)
     {
-        ParamChunk::ChunkStats();
+        if (have_chunk)
+        {
+            ParamChunk::ChunkStats();
+        }
     }
-#endif
 }

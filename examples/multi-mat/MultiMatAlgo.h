@@ -1,6 +1,5 @@
-
 /*
-* Copyright 2024 CEA (www.cea.fr)
+* Copyright 2024-2026 CEA (www.cea.fr)
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -17,9 +16,27 @@
 
 #pragma once
 
+/**
+ * @file MultiMatAlgo.h
+ * @brief One loop body, two storages: the dispatch of a material to its
+ *        concrete arrays and its loop policy.
+ */
+
 #include "Loops.h"
 #include "Containers.h"
 
+/**
+ * @brief Runs a loop body once per material, handing it the material's
+ *        concrete arrays and the loop policy of its storage.
+ * @details The body receives `(int& mat, get_mat_vec, loops)`: `get_mat_vec`
+ *          turns a MultiArray into the array of `mat` (a std::vector or a
+ *          chunk array), `loops` is the policy to run its loops with. One
+ *          body, written once, is therefore instantiated twice -- with the
+ *          vectorised policy on the std::vector path, the scalar one on the
+ *          chunk path.
+ * @tparam LOOPS      Policy of the std::vector materials.
+ * @tparam LOOPSCHUNK Policy of the chunk materials.
+ */
 template <typename LOOPS = LoopsSimd, typename LOOPSCHUNK = Loops>
 class MultiMatAlgo
 {
@@ -27,6 +44,8 @@ class MultiMatAlgo
     // container names (vec_dir / vec_chunk), so a MultiArray of presence
     // fractions hands out its VectChunk2 the same way a field hands out its
     // VectChunk.
+
+    /// @brief The std::vector of material @p mat in @p gdr.
     template <typename MA>
     static auto& getMatVecDir(const MA& gdr, int mat)
     {
@@ -35,6 +54,7 @@ class MultiMatAlgo
         return *(static_cast<Vec*>(gdr[mat]));
     }
 
+    /// @brief The chunk array of material @p mat in @p gdr.
     template <typename MA>
     static auto& getMatVecChunk(const MA& gdr, int mat)
     {
@@ -43,6 +63,7 @@ class MultiMatAlgo
         return *(static_cast<Vec*>(gdr[mat]));
     }
 
+    /// @brief The body on a std::vector material.
     template <typename LAM>
     void single_direct_int(int& mat, const LAM& lbd_loop_body)
     {
@@ -56,6 +77,7 @@ class MultiMatAlgo
         lbd_loop_body(mat, lbd_get_mat_vec, loops);
     }
 
+    /// @brief The body on a chunk material.
     template <typename LAM>
     void single_chunk_int(int& mat, const LAM& lbd_loop_body)
     {
@@ -69,6 +91,7 @@ class MultiMatAlgo
         lbd_loop_body(mat, lbd_get_mat_vec, loops);
     }
 
+    /// @brief The body on material @p mat, whichever its storage.
     template <typename LAM>
     void single_int(int& mat, const LAM& lbd_loop_body)
     {
@@ -85,6 +108,11 @@ class MultiMatAlgo
     }
 
   public:
+    /**
+     * @brief The body on every material of [matdeb, matfin).
+     * @note The body may set `mat` to end the loop early (the stats print
+     *       does, after the first chunk material).
+     */
     template <typename LAM>
     void loop(int matdeb, int matfin, const LAM& lbd_loop_body)
     {

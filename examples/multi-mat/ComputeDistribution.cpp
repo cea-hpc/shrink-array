@@ -15,6 +15,12 @@
 * limitations under the License.
  */
 
+/**
+ * @file ComputeDistribution.cpp
+ * @brief Simu::computeDistribution(): the interval of every material at
+ *        every iteration, drawn up front.
+ */
+
 #include <random>
 
 #include "Simu.h"
