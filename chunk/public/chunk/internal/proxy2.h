@@ -32,6 +32,7 @@
 #include "chunk/internal/chunk_size_config.h"
 
 #include "chunk/internal/proxy_operators.h"
+#include "chunk/internal/chunk2_candidate_list_check.h" // chunk2_missing_candidate_list
 #include "chunk/internal/proxy_base.h"
 #include "chunk/internal/proxy2_base.h"
 #include "chunk_stats.h"
@@ -534,9 +535,13 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     VectorTuple4ChunkInt2<Chunk2, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const
     {
         const auto second_value = get_second_value();
-        auto&      vec          = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr][second_value];
-        assert(vec != nullptr);
-        return *vec;
+        // find(), not operator[]: operator[] INSERTS a null entry for a missing
+        // key, which have_chunk_to_compress() would dereference later.
+        auto&      m            = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
+        const auto it           = m.find(second_value);
+        if (it == m.end() || it->second == nullptr) [[unlikely]]
+            chunk2_missing_candidate_list(thr);
+        return *it->second;
     }
 
     /**
@@ -549,9 +554,13 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
                                                                                                    int   thr) const
     {
         const auto second_value = get_second_value(ctx);
-        auto&      vec          = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr][second_value];
-        assert(vec != nullptr);
-        return *vec;
+        // find(), not operator[]: operator[] INSERTS a null entry for a missing
+        // key, which have_chunk_to_compress() would dereference later.
+        auto&      m            = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
+        const auto it           = m.find(second_value);
+        if (it == m.end() || it->second == nullptr) [[unlikely]]
+            chunk2_missing_candidate_list(thr);
+        return *it->second;
     }
     /**
      * @brief Checks if a value change should trigger compression consideration
@@ -723,6 +732,57 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
 
     using BaseSpec = ProxySpec2<T, Proxy2>;
     using BaseSpec::second_value;
+
+    /**
+     * @brief Chunk2's marking pre-check: a write of a constant, on an array that
+     *        has a candidate list for its second value.
+     * @details Shadows Proxy2Base::pre_check_mark_for_compression(), as
+     *          Proxy2A does. Candidate lists are keyed by second value and
+     *          created only by ArrayChunk2::set_second_value(); an array that
+     *          never declared one has none, and is not walked by the
+     *          compression pass either (it walks share_info_array's inf-array
+     *          list, filled by the same call). Such writes are rejected HERE,
+     *          before add_to_compression_list() CASes the chunk's "queued" flag
+     *          -- giving up after the CAS would leave the chunk flagged for
+     *          good. Before the widened pre-check (Sept '26) these arrays were
+     *          never queued either; the widening now applies to every array
+     *          that has a second value.
+     * @param new_value The new value to check.
+     * @param first_value The first constant value to compare against.
+     * @param second_val The second constant value to compare against.
+     * @return true if the write is worth examining further.
+     */
+    [[nodiscard]] bool
+    pre_check_mark_for_compression(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
+    {
+        return this->pre_check_mark_for_compression_strict(new_value, first_value, second_val) &&
+               has_candidate_list(second_val);
+    }
+
+    /**
+     * @brief Does the calling rank have a candidate list for @p second_val?
+     * @details Reads the rank's own map only; set_second_value() fills the maps
+     *          outside the parallel phases. Always true in builds without the
+     *          per-value lists (no OpenMP / no fast block compression).
+     */
+    [[nodiscard]] static bool has_candidate_list(in_t<T> second_val) noexcept
+    {
+        if constexpr (build_config::use_openmp && chunk_config::use_fast_block_compression)
+        {
+            const auto& per_thr = manager_chunk2::map_chunk2_to_compress_potentially_thr;
+            const int   thr     = get_thr_rank_fast();
+            if (thr < 0 || static_cast<std::size_t>(thr) >= per_thr.size()) [[unlikely]]
+                return false;
+            const auto& m  = per_thr[thr];
+            const auto  it = m.find(second_val);
+            return it != m.end() && it->second != nullptr;
+        }
+        else
+        {
+            (void)second_val;
+            return true;
+        }
+    }
 
   private:
     /// Alias for the chunk manager associated with type T.

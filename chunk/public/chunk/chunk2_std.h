@@ -33,6 +33,7 @@
 #include "chunk/internal/invariant_check.h"
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/PMP_CHUNK.h"
+#include "chunk/internal/chunk2_candidate_list_check.h" // chunk2_missing_candidate_list
 #include "chunk/internal/proxy2.h"
 #include "chunk/internal/chunk2_base.h"
 #include "chunk/internal/conditional_counter.h"
@@ -621,7 +622,12 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
     static VectorTuple4ChunkInt2<Chunk2, T>& get_vec_tuple_to_compress_potentially_thr(int     thr,
                                                                                        in_t<T> second_value) noexcept
     {
-        return *(manager_chunk2::map_chunk2_to_compress_potentially_thr[thr][second_value]);
+        // find(), not operator[]: see Proxy2::get_vec_tuple_to_compress_potentially_thr.
+        auto&      m  = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
+        const auto it = m.find(second_value);
+        if (it == m.end() || it->second == nullptr) [[unlikely]]
+            chunk2_missing_candidate_list(thr);
+        return *it->second;
     }
 
     /**
@@ -771,17 +777,15 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
      *        value, across all threads.
      * \param inf_array (second_value, ...) tuple identifying which
      *                  candidate list to drain.
-     * \param is_inside_ompt Whether this call happens from an OMPT
-     *                        barrier callback (vs an explicit application call).
+     * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress(const inf_array_t& inf_array, bool is_inside_ompt);
+    static void compress_chunk_to_compress(const inf_array_t& inf_array, bool apply);
 
     /*!
      * \brief Bool specialization of compress_chunk_to_compress().
-     * \param is_inside_ompt Whether this call happens from an OMPT barrier
-     *                        callback (vs an explicit application call).
+     * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress_bool(bool is_inside_ompt);
+    static void compress_chunk_to_compress_bool(bool apply);
 
     /*!
      * \brief Per-thread half of compress_chunk_to_compress(): drain only
@@ -789,18 +793,16 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
      * \param thr Thread whose candidate queue to drain.
      * \param inf_array (second_value, ...) tuple identifying which
      *                  candidate list to drain.
-     * \param is_inside_ompt Whether this call happens from an OMPT barrier
-     *                        callback (vs an explicit application call).
+     * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress_in_par(int thr, const inf_array_t& inf_array, bool is_inside_ompt);
+    static void compress_chunk_to_compress_in_par(int thr, const inf_array_t& inf_array, bool apply);
 
     /*!
      * \brief Bool specialization of compress_chunk_to_compress_in_par().
      * \param thr Thread whose candidate queue to drain.
-     * \param is_inside_ompt Whether this call happens from an OMPT barrier
-     *                        callback (vs an explicit application call).
+     * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress_bool_in_par(int thr, bool is_inside_ompt);
+    static void compress_chunk_to_compress_bool_in_par(int thr, bool apply);
 
     /**
      * \brief Shared body of the two compress_chunk_to_compress_in_par entry
@@ -819,29 +821,26 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
      *        compress_chunk_to_compress_in_par() while draining the
      *        candidate queue -- NOT itself a queue-draining entry point.
      *        Independently re-scans THIS chunk's live content (does not
-     *        trust the queue entry alone) and, only when called from an
-     *        OMPT context (is_inside_ompt), compresses it via
-     *        clear_int_st() if still uniform. A no-op (scan only, no
-     *        compress) when is_inside_ompt is false.
+     *        trust the queue entry alone) and, when @p apply is true,
+     *        compresses it via clear_int_st() if still uniform. A no-op
+     *        (scan only, no compress) when @p apply is false.
      * \param thr_rank Calling thread's rank (used only for the
      *                 clear_int_st() call).
      * \param inf_array (second_value, ...) tuple identifying the second
      *                  constant and index to test against.
-     * \param is_inside_ompt Whether this call happens from an OMPT barrier
-     *                        callback; the scan always runs, but
-     *                        compression only happens when this is true.
+     * \param apply The scan always runs; the compression only happens when
+     *              this is true.
      */
-    void compress(int thr_rank, const inf_array_t& inf_array, bool is_inside_ompt, unsigned int n_elems);
+    void compress(int thr_rank, const inf_array_t& inf_array, bool apply, unsigned int n_elems);
 
     /*!
      * \brief Bool specialization of compress().
      * \param thr_rank Calling thread's rank (used only for the
      *                 clear_int_st_bool() call).
-     * \param is_inside_ompt Whether this call happens from an OMPT barrier
-     *                        callback; the scan always runs, but
-     *                        compression only happens when this is true.
+     * \param apply The scan always runs; the compression only happens when
+     *              this is true.
      */
-    void compress_bool(int thr_rank, bool is_inside_ompt, unsigned int n_elems);
+    void compress_bool(int thr_rank, bool apply, unsigned int n_elems);
 
     /**
      * \brief Shared body of compress() and compress_bool(): they differ only in
@@ -852,7 +851,7 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
      */
     template <typename SecondValueFunc, typename ClearFunc>
     void
-    compress_impl(bool is_inside_ompt, unsigned int n_elems, SecondValueFunc get_second_value, ClearFunc&& clear_one);
+    compress_impl(bool apply, unsigned int n_elems, SecondValueFunc get_second_value, ClearFunc&& clear_one);
 
     /**
      * \brief Shared body of the two fill_list_chunk_to_compress_in_par entry
