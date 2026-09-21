@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <mutex>
 
 // See fast_allocators/singleton.h: mark the intentionally-immortal instance so
@@ -48,12 +49,16 @@ class SingletonChk
     // races worker-thread TLS destructors that still touch the singleton at
     // shutdown (static/TLS destruction-order data race). Leaking avoids the
     // exit-time destructor; the OS reclaims the memory at process end.
-    static inline T* unique_instance{nullptr};
+    //
+    // Atomic so that getInstance() can read it without the mutex (double-
+    // checked locking, see there).
+    static inline std::atomic<T*> unique_instance{nullptr};
 
     // Guards lazy construction. The previous version had NO lock, so two threads
     // hitting getInstance() on first use could both new the instance and the
-    // second assignment free the first → double-free. getInstance is only hit
-    // once per type at first use, never on a hot path, so the lock is free.
+    // second assignment free the first → double-free. Held only while the
+    // instance does not exist yet: getInstance() IS on a hot path (per-barrier
+    // bookkeeping, every thread), so its steady state must not lock.
     static inline std::mutex unique_instance_mutex;
 
   public:
@@ -62,14 +67,22 @@ class SingletonChk
 
     static T* getInstance()
     {
-        std::lock_guard lock(unique_instance_mutex);
-        if (unique_instance == nullptr)
-        {
-            unique_instance = new T();       // immortal: never deleted
-            SA_LSAN_IGNORE(unique_instance); // intentional leak, not a real one
-        }
+        // Fast path: one acquire load, no lock. Every call used to take the
+        // mutex, and this is reached once per thread per barrier (64 threads
+        // serialised on it at each one). The acquire pairs with the release
+        // store below: seeing the pointer implies seeing the constructed T.
+        if (T* p = unique_instance.load(std::memory_order_acquire)) [[likely]]
+            return p;
 
-        return unique_instance;
+        std::lock_guard lock(unique_instance_mutex);
+        T* p = unique_instance.load(std::memory_order_relaxed); // under the lock
+        if (p == nullptr)
+        {
+            p = new T();       // immortal: never deleted
+            SA_LSAN_IGNORE(p); // intentional leak, not a real one
+            unique_instance.store(p, std::memory_order_release);
+        }
+        return p;
     }
 
     /// @brief Delete the instance. Retained for API completeness; unused
@@ -77,8 +90,7 @@ class SingletonChk
     static void deleteInstance()
     {
         std::lock_guard lock(unique_instance_mutex);
-        delete unique_instance;
-        unique_instance = nullptr;
+        delete unique_instance.exchange(nullptr, std::memory_order_acq_rel);
     }
 
     /// @brief getInstance(), as a reference.

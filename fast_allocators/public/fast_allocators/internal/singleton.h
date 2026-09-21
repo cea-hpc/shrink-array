@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 //#include <memory>
+#include <atomic>
 #include <mutex>
 
 #if defined(__has_feature)
@@ -22,7 +23,8 @@ template <typename T>
 class Singleton
 {
   protected:
-    static inline T*         unique_instance{nullptr};
+    // Atomic: getInstance() reads it without the mutex (double-checked locking).
+    static inline std::atomic<T*> unique_instance{nullptr};
     static inline std::mutex unique_instance_mutex;
 
   public:
@@ -31,21 +33,28 @@ class Singleton
 
     static T* getInstance()
     {
-        std::lock_guard lock(unique_instance_mutex);
-        if (unique_instance == nullptr)
-        {
-            unique_instance = new T();
-            SA_LSAN_IGNORE(unique_instance);
-        }
+        // Fast path: one acquire load, no lock. Every call used to take the
+        // mutex, and this is reached once per thread per barrier (64 threads
+        // serialised on it at each one). The acquire pairs with the release
+        // store below: seeing the pointer implies seeing the constructed T.
+        if (T* p = unique_instance.load(std::memory_order_acquire)) [[likely]]
+            return p;
 
-        return unique_instance;
+        std::lock_guard lock(unique_instance_mutex);
+        T* p = unique_instance.load(std::memory_order_relaxed); // under the lock
+        if (p == nullptr)
+        {
+            p = new T();       // immortal: never deleted
+            SA_LSAN_IGNORE(p); // intentional leak, not a real one
+            unique_instance.store(p, std::memory_order_release);
+        }
+        return p;
     }
 
     static void deleteInstance()
     {
         std::lock_guard lock(unique_instance_mutex);
-        delete unique_instance;
-        unique_instance = nullptr;
+        delete unique_instance.exchange(nullptr, std::memory_order_acq_rel);
     }
 
     static T& getRef()
