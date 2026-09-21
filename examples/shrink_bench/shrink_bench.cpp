@@ -60,7 +60,6 @@
 #include "bench_stl_checks.h"
 
 
-
 #include "crash_backtrace.h"      // TEMPORARY (SEGV hunt): native backtrace on crash
 #include "chunk/ring_log_debug.h" // SEGV hunt: ring_init/analyze_ring_sweep decls
 #if (defined(CHUNK) || defined(CHUNK2) || defined(CHUNK2A)) && defined(CHUNK_DYNAMIC)
@@ -71,7 +70,6 @@
 #ifdef SHRINK_ARRAY
 using namespace shrink_array;
 #endif
-
 
 namespace shrink_array
 {
