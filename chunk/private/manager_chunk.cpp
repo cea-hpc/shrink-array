@@ -27,6 +27,8 @@
 // #include "chunk/internal/chunk_func.h"
 
 //#include "chunk/type_name.h"
+#include <cstdlib> // std::getenv (CHUNK_BARRIER_FLUSH_LEGACY)
+
 #include "chunk/internal/manager_chunk.h"
 //#include "chunk/singleton.h"
 //#include "chunk/global_stats_chunk_list.h"
@@ -35,6 +37,15 @@ namespace shrink_array
 {
 
 std::atomic<bool> __global_need_flush_deferred{true};
+
+// CHUNK_BARRIER_FLUSH_LEGACY=1: the in-region flush toggles the global flag and
+// flushes every type unconditionally, as before (A/B, bisection). Read once,
+// during static initialisation, before any thread exists; never written after.
+const bool g_barrier_flush_legacy = []
+{
+    const char* e = std::getenv("CHUNK_BARRIER_FLUSH_LEGACY");
+    return e != nullptr && e[0] != '\0' && e[0] != '0';
+}();
 
 // Template method bodies now live in chunk/manager_chunk_inline.h (included
 // transitively via chunk/manager_chunk.h). This TU keeps only the non-template

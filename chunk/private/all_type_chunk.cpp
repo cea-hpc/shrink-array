@@ -238,12 +238,17 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_pa
 {
     bool have_flushed = false;
 
+    // Only the serial flush owns the global flag (see
+    // ManagerChunkParallelImpl::flush_all_deferred).
+    const bool toggle_flag = !in_parallel || g_barrier_flush_legacy;
+
     for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
     {
         elm->flush_all_deferred(in_parallel, have_flushed);
     }
 
-    __global_need_flush_deferred.store(false, std::memory_order_relaxed);
+    if (toggle_flag)
+        __global_need_flush_deferred.store(false, std::memory_order_relaxed);
 
     // #pragma omp barrier // dead lock with ompt ?
 
@@ -254,7 +259,8 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_pa
 
     //  #pragma omp barrier // dead lock with ompt
 
-    __global_need_flush_deferred.store(true, std::memory_order_relaxed);
+    if (toggle_flag)
+        __global_need_flush_deferred.store(true, std::memory_order_relaxed);
 
     return have_flushed;
 }

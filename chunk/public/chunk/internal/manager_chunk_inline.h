@@ -87,6 +87,8 @@ namespace shrink_array
 // Defined (once) in ManagerChunk.cpp. Declared here because flush_all_deferred's
 // body now lives in this header and is compiled in TUs that lack the definition.
 extern std::atomic<bool> __global_need_flush_deferred;
+// Defined in manager_chunk.cpp: CHUNK_BARRIER_FLUSH_LEGACY, read once at load.
+extern const bool g_barrier_flush_legacy;
 /**
  * @brief Compress every compressible chunk of this type, ignoring the candidate lists.
  *
@@ -498,11 +500,25 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
     using Storage = DeferredOpsStorage<typename CHUNK_T<T>::per_thread_map>;
     auto& storage = Storage::instance();
 
-    __global_need_flush_deferred.store(false, std::memory_order_relaxed);
+    // The global flag keeps the barrier callback out of the SERIAL flush's own
+    // nested drain regions; only that flush may toggle it. When the in-region
+    // flush toggled it too, 64 threads stored into one line at every barrier,
+    // and a thread reading it mid-pass skipped its OWN flush.
+    const bool toggle_flag = !in_parallel || g_barrier_flush_legacy;
+    if (toggle_flag)
+        __global_need_flush_deferred.store(false, std::memory_order_relaxed);
     if (in_parallel)
     {
         const int thr_rank = CHUNK_PMP_THREAD_RANK;
-        have_flushed |= CompressionManager<T, CHUNK_T<T>>::flush_deferred(thr_rank);
+        // Own-rank early-out: pending_ops_rank(r) is raised by rank r's own
+        // thread in the enqueue call that inserts each new op, and lowered
+        // only after an op is drained or erased; ops are always enqueued on
+        // the writer's rank. So a zero read HERE, by rank r's thread, cannot hide an op this
+        // thread queued. A stale non-zero (a concurrent cross-rank drain) only
+        // takes the locked path below. 6.3 M flush attempts at 64 threads,
+        // none of which applied an op, is what this skips.
+        if (g_barrier_flush_legacy || CompressionManager<T, CHUNK_T<T>>::pending_ops_rank(thr_rank) != 0)
+            have_flushed |= CompressionManager<T, CHUNK_T<T>>::flush_deferred(thr_rank);
     }
     else
     {
@@ -570,7 +586,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
         storage.destroy();
     }
 
-    __global_need_flush_deferred.store(true, std::memory_order_relaxed);
+    if (toggle_flag)
+        __global_need_flush_deferred.store(true, std::memory_order_relaxed);
 }
 
 /**
