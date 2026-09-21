@@ -113,7 +113,9 @@ extern void finalize_parallel_phase_after_flush();
  * @note The barrier itself is the caller's responsibility (the OMPT path gets
  *       it from the runtime's sync-region callback, the manual path emits an
  *       `omp barrier` in its wrapper).
+ * @return True when at least one deferred op was applied (for the OMPT
+ *         sync-region statistics; callers may ignore it).
  */
-extern void finalize_barrier_phase();
+extern bool finalize_barrier_phase();
 
 } // namespace shrink_array

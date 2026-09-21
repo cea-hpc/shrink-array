@@ -144,18 +144,20 @@ void finalize_parallel_phase()
     }
 }
 
-void finalize_barrier_phase()
+bool finalize_barrier_phase()
 {
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
         // NOT const: flush_all_deferred() mutates the managers it drains.
-        auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
-        ens_type_chunk.flush_all_deferred(true);
+        auto&      ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+        const bool flushed        = ens_type_chunk.flush_all_deferred(true);
 
         // Restored: empirically load-bearing (see the checksum regression note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
         std::atomic_thread_fence(std::memory_order_seq_cst);
+        return flushed;
     }
+    return false;
 }
 
 // pushManagerChunk<CHUNK_T, T> is now defined in chunk/all_type_chunk_inline.h
@@ -232,7 +234,7 @@ void AllTypeChunkParallelInterface<Derived, true>::destroy_after_flush(bool in_p
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_parallel)
+bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_parallel)
 {
     bool have_flushed = false;
 
@@ -253,6 +255,8 @@ void AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_pa
     //  #pragma omp barrier // dead lock with ompt
 
     __global_need_flush_deferred.store(true, std::memory_order_relaxed);
+
+    return have_flushed;
 }
 
 template <typename Derived>

@@ -138,8 +138,9 @@ struct AllTypeChunkParallelInterface<Derived, true>
      * @param in_parallel True when called from inside a parallel region: each
      *        thread drains its OWN queue using its in-region rank, and the
      *        buffer reclaim is left to a later destroy_after_flush().
+     * @return True when at least one deferred op was applied.
      */
-    void flush_all_deferred(bool in_parallel);
+    bool flush_all_deferred(bool in_parallel);
 
     /**
      * @brief The per-rank structures of ONE manager, at its registration:
@@ -181,7 +182,7 @@ struct AllTypeChunkParallelInterface<Derived, false>
     /// Serial build: nothing is deferred, so there is nothing to reclaim.
     static void destroy_after_flush(bool) {}
     /// Serial build: writes are applied inline, so there is no queue to drain.
-    static void flush_all_deferred(bool) {}
+    static bool flush_all_deferred(bool) { return false; }
 
     /**
      * @brief The single allocator of ONE manager, at its registration.

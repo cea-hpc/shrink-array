@@ -33,7 +33,12 @@
  * @see chunk/manage_ompt.h for the semantics of the phase transitions.
  */
 
+#include <algorithm> // std::min (CHUNK_OMPT_STATS report)
 #include <atomic>
+#include <chrono>  // CHUNK_OMPT_STATS: time spent flushing
+#include <cstdint>
+#include <cstdio>  // CHUNK_OMPT_STATS report
+#include <cstdlib> // std::getenv
 
 #include "chunk/config.h"
 #include "chunk/singleton.h"
@@ -59,6 +64,105 @@
  * must not trigger a flush) without unregistering the tool.
  */
 bool __global_ompt = true;
+
+// ── CHUNK_OMPT_STATS: what the sync-region callback does, counted ───────────
+//
+// Measurement only. Off unless CHUNK_OMPT_STATS is set (read once, in
+// ompt_initialize, before any team exists): one load of a plain bool per
+// callback. On: each thread owns one 128-byte-aligned slot, claimed once, and
+// is its only writer -- no shared cache line, no read-modify-write, and no
+// OpenMP API call from inside a callback. Read at ompt_finalize, after the
+// runtime has shut its threads down.
+namespace
+{
+constexpr int kOmptKinds    = 11; // ompt_sync_region_t values 1..10
+constexpr int kOmptMaxSlots = 1024;
+
+bool g_ompt_stats = false;
+
+struct alignas(128) OmptSyncSlot
+{
+    // [kind][endpoint: 0 begin, 1 end]
+    std::atomic<std::uint64_t> calls[kOmptKinds][2];
+    std::atomic<std::uint64_t> flush_calls[kOmptKinds][2];
+    std::atomic<std::uint64_t> skipped_flag[kOmptKinds][2];
+    std::atomic<std::uint64_t> flushed[kOmptKinds][2];
+    std::atomic<std::uint64_t> flush_ns[kOmptKinds][2];
+};
+
+OmptSyncSlot            g_ompt_slots[kOmptMaxSlots];
+std::atomic<int>        g_ompt_next_slot{0};
+thread_local OmptSyncSlot* t_ompt_slot = nullptr;
+
+OmptSyncSlot* ompt_my_slot() noexcept
+{
+    if (t_ompt_slot == nullptr)
+    {
+        const int s = g_ompt_next_slot.fetch_add(1, std::memory_order_relaxed); // once per thread
+        if (s >= kOmptMaxSlots)
+            return nullptr;
+        t_ompt_slot = &g_ompt_slots[s];
+    }
+    return t_ompt_slot;
+}
+
+/// Single-writer increment: the slot belongs to the calling thread.
+inline void ompt_bump(std::atomic<std::uint64_t>& c, std::uint64_t v = 1) noexcept
+{
+    c.store(c.load(std::memory_order_relaxed) + v, std::memory_order_relaxed);
+}
+
+const char* ompt_kind_name(int k) noexcept
+{
+    switch (k)
+    {
+        case 1: return "barrier";
+        case 2: return "barrier_implicit";
+        case 3: return "barrier_explicit";
+        case 4: return "barrier_implementation";
+        case 5: return "taskwait";
+        case 6: return "taskgroup";
+        case 7: return "reduction";
+        case 8: return "barrier_implicit_workshare";
+        case 9: return "barrier_implicit_parallel";
+        case 10: return "barrier_teams";
+        default: return "?";
+    }
+}
+
+void ompt_finalize(ompt_data_t*)
+{
+    if (!g_ompt_stats)
+        return;
+    const int nslots = std::min(g_ompt_next_slot.load(std::memory_order_acquire), kOmptMaxSlots);
+    std::fprintf(stderr, "\n[OMPT-SYNC] %d threads seen. Per sync-region kind and endpoint, summed over threads:\n",
+                 nslots);
+    std::fprintf(stderr, "[OMPT-SYNC] %-27s %-5s %12s %12s %12s %12s %10s %10s\n", "kind", "end", "calls",
+                 "flush_tried", "skip_flag", "flushed", "flush_ms", "max_thr_ms");
+    for (int k = 0; k < kOmptKinds; ++k)
+        for (int e = 0; e < 2; ++e)
+        {
+            std::uint64_t calls = 0, tried = 0, skip = 0, fl = 0, ns = 0, ns_max = 0;
+            for (int s = 0; s < nslots; ++s)
+            {
+                const auto& sl = g_ompt_slots[s];
+                calls += sl.calls[k][e].load(std::memory_order_relaxed);
+                tried += sl.flush_calls[k][e].load(std::memory_order_relaxed);
+                skip += sl.skipped_flag[k][e].load(std::memory_order_relaxed);
+                fl += sl.flushed[k][e].load(std::memory_order_relaxed);
+                const std::uint64_t t = sl.flush_ns[k][e].load(std::memory_order_relaxed);
+                ns += t;
+                ns_max = t > ns_max ? t : ns_max;
+            }
+            if (calls == 0)
+                continue;
+            std::fprintf(stderr, "[OMPT-SYNC] %-27s %-5s %12llu %12llu %12llu %12llu %10.1f %10.1f\n", ompt_kind_name(k),
+                         e == 0 ? "begin" : "end", (unsigned long long)calls, (unsigned long long)tried,
+                         (unsigned long long)skip, (unsigned long long)fl, ns * 1e-6, ns_max * 1e-6);
+        }
+    std::fflush(stderr);
+}
+} // namespace
 
 /**
  * @brief `ompt_callback_implicit_task`: start/end of a thread's implicit task.
@@ -169,15 +273,33 @@ void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, 
  * deferred write queues through shrink_array::finalize_barrier_phase().
  * Suppressed during a rechunk rebuild for the same reason as on_parallel_end().
  */
-void on_barrier_end( // ompt_sync_region_kind_t kind,
-    ompt_data_t*,
-    const ompt_frame_t*,
-    ompt_data_t*,
-    uint32_t,
-    const void*)
+//
+// The signature is the runtime's ompt_callback_sync_region_t. It used to be
+// declared with a different parameter list (and cast at registration); it read
+// none of them, so behaviour is unchanged -- but note what the runtime does:
+// it calls this at BOTH the begin and the end of EVERY sync region, whatever
+// its kind (barriers, taskwait, taskgroup, reductions). CHUNK_OMPT_STATS
+// counts them.
+void on_barrier_end(ompt_sync_region_t    kind,
+                    ompt_scope_endpoint_t endpoint,
+                    ompt_data_t*,
+                    ompt_data_t*,
+                    const void*)
 {
     if (!__global_ompt)
         return;
+
+    OmptSyncSlot* slot = nullptr;
+    int           k    = 0;
+    int           e    = 0;
+    if (g_ompt_stats) [[unlikely]]
+    {
+        slot = ompt_my_slot();
+        k    = (static_cast<int>(kind) > 0 && static_cast<int>(kind) < kOmptKinds) ? static_cast<int>(kind) : 0;
+        e    = endpoint == ompt_scope_begin ? 0 : 1;
+        if (slot)
+            ompt_bump(slot->calls[k][e]);
+    }
 
     // Same suppression as on_parallel_end: the rechunk rebuild's own parallel
     // region ends with an implicit barrier; flushing the half-applied deferred
@@ -186,7 +308,27 @@ void on_barrier_end( // ompt_sync_region_kind_t kind,
     // reintroduced the cst2 grow loss that on_parallel_end's guard alone fixed.
     if (shrink_array::__global_need_flush_deferred && !shrink_array::g_in_rechunk_rebuild)
     {
-        shrink_array::finalize_barrier_phase();
+        if (slot) [[unlikely]]
+        {
+            const auto t0      = std::chrono::steady_clock::now();
+            const bool flushed = shrink_array::finalize_barrier_phase();
+            const auto dt      = std::chrono::steady_clock::now() - t0;
+            ompt_bump(slot->flush_calls[k][e]);
+            if (flushed)
+                ompt_bump(slot->flushed[k][e]);
+            ompt_bump(slot->flush_ns[k][e],
+                      static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(dt).count()));
+        }
+        else
+        {
+            shrink_array::finalize_barrier_phase();
+        }
+    }
+    else if (slot && !shrink_array::g_in_rechunk_rebuild) [[unlikely]]
+    {
+        // Skipped because ANOTHER thread's flush_all_deferred() had cleared
+        // the flag for the duration of its own pass.
+        ompt_bump(slot->skipped_flag[k][e]);
     }
 }
 
@@ -203,6 +345,11 @@ void on_barrier_end( // ompt_sync_region_kind_t kind,
  */
 int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
 {
+    {
+        const char* s = std::getenv("CHUNK_OMPT_STATS");
+        g_ompt_stats  = s && s[0] && s[0] != '0'; // before any team: no race
+    }
+
     auto ompt_set_callback = (ompt_set_callback_t)lookup("ompt_set_callback");
     if (ompt_set_callback)
     {
@@ -231,9 +378,14 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
  *
  * @return Pointer to a function-local static result, valid for the whole run.
  */
-ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
+// extern "C": the runtime finds the tool with dlsym("ompt_start_tool"). The
+// omp-tools.h of some LLVM releases (18 at least) does not declare it, and a
+// C++-mangled definition is then never found -- the tool stays silently
+// inert (OMP_TOOL_VERBOSE_INIT=stdout reports "Failed"). Where the header
+// does declare it extern "C", this is the same declaration.
+extern "C" ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
 {
-    static ompt_start_tool_result_t ompt_start_tool_result = {&ompt_initialize, nullptr, {0}};
+    static ompt_start_tool_result_t ompt_start_tool_result = {&ompt_initialize, &ompt_finalize, {0}};
     return &ompt_start_tool_result;
 }
 
