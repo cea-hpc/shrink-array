@@ -80,7 +80,12 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     using Hooks::rechunk_drop_candidates;
     using Hooks::rechunk_swap_identity;
 
-    explicit ArrayChunk(ind_type sz = 1)
+    /**
+     * @brief Build an array of @p sz elements.
+     * @param sz initial element count; 0 by default, as std::vector (a fresh
+     *           array is empty, so a push_back on it yields one element)
+     */
+    explicit ArrayChunk(ind_type sz = 0)
     {
         if constexpr (build_config::use_openmp)
         {

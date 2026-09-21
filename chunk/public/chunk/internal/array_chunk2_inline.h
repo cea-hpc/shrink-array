@@ -162,14 +162,16 @@ void ArrayChunk2<T, ind_type>::rebuild_storage(ind_type sz)
                 }
             }
         }
-        if constexpr (is_bool)
-        {
-            set_second_value(true, false);
-        }
     }
     else
     {
         nb_chunk = 0;
+    }
+    // Outside the `if (sz)`: an array built empty (the default) and grown by
+    // resize() or push_back() needs bool's second value registered too.
+    if constexpr (is_bool)
+    {
+        set_second_value(true, false);
     }
 
     m_size = sz;

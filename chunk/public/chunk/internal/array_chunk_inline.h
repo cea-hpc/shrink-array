@@ -427,6 +427,9 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
     manager_chunk::increm_somme_chunk_create(nb_chunk - old_nb_chunk);
     manager_chunk::compute_size_buffer_reuse();
     manager_chunk::compute_size_max_number_of_chunk_to_check_compress();
+    // An array built empty (the default) only becomes worth its own slabs
+    // here; idempotent for one that already has a key.
+    this->assign_alloc_key();
 
     if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
     {

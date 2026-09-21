@@ -45,7 +45,7 @@ and each array registers its element type when it is first constructed, from any
 
 Positional access (`operator[]`, `at`, `front`, `back`), `size`/`empty`/`capacity`/`reserve`, `resize`/`clear`/`assign`/`swap`, `push_back`/`emplace_back`/`pop_back`, const bidirectional iterators (`begin`/`end`, `rbegin`/`rend`, range-for), the `(first, last)` and `{a, b, c}` constructors, a deep copy (copy constructor and copy-assignment), `shrink_to_fit` -- which, for a container that compresses, folds every chunk that has become constant and gives the parked buffers back. A `push_back` within the capacity is one increment and one write; the one that needs a new chunk goes through `resize`, a sequential point, so `reserve` first when filling incrementally.
 
-What is not there, by construction: `data()` (no contiguous storage: a compressed chunk has no buffer), mutable iterators and `T&` on an element (the non-const `operator[]` returns a write proxy: read, build, assign -- `tab[i].x = 1` does not compile), `insert`/`erase` in the middle. A default-constructed array has one element, not zero.
+What is not there, by construction: `data()` (no contiguous storage: a compressed chunk has no buffer), mutable iterators and `T&` on an element (the non-const `operator[]` returns a write proxy: read, build, assign -- `tab[i].x = 1` does not compile), `insert`/`erase` in the middle. A default-constructed array is empty, as a `std::vector`.
 
 ## Compilation
 

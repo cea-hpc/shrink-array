@@ -303,10 +303,9 @@ int main(int argc, char** argv)
         };
         Array<Point3> pts;
         pts.reserve(10000);
-        check(pts.size() == 1 && pts.capacity() >= 10000, "reserve(10000) on a fresh array");
-        for (int i = 1; i < 10000; ++i)
+        check(pts.size() == 0 && pts.capacity() >= 10000, "reserve(10000) on a fresh (empty) array");
+        for (int i = 0; i < 10000; ++i)
             pts.emplace_back(static_cast<double>(i), 0.5, static_cast<double>(i % 3));
-        pts[0] = Point3{0., 0.5, 0.};
         bool ok = pts.size() == 10000;
         for (int i = 0; ok && i < 10000; ++i)
             ok = std::as_const(pts)[i] == Point3{static_cast<double>(i), 0.5, static_cast<double>(i % 3)};

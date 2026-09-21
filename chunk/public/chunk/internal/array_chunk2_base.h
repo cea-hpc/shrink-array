@@ -147,6 +147,9 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         manager_type::increm_somme_chunk_create(nb_chunk - old_nb_chunk);
         manager_type::compute_size_buffer_reuse();
         manager_type::compute_size_max_number_of_chunk_to_check_compress();
+        // An array built empty (the default) only becomes worth its own slabs
+        // here; idempotent for one that already has a key.
+        this->assign_alloc_key();
     }
 
     /// @brief resize(), then @p val written to the NEW elements only
