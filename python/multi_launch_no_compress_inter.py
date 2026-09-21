@@ -21,8 +21,15 @@ Two ways to name the binaries:
     accepted (the CEA one with its $arch level included). The runs then
     CYCLE through the builds: run 1 on the first, run 2 on the second, ...
     and back to the first, so a long session spreads its draws over all of
-    them. The binaries execute in --run-dir (default: the current directory),
-    which holds the oracle files unless --no_io, and receives the outputs.
+    them. A build's binaries execute in THEIR directory, where the reference
+    files (data_tab_*, the oracle a check run reads) live, as in the
+    historical mode; --run-dir (default: the current directory) receives
+    the outputs, the CSV and the log.
+
+  --regen-ref regenerates the reference before the runs, with the vector
+  (std::vector) check binary: in the current directory in the historical
+  mode, in every build's binary directory under --builds -- each build's
+  reference comes from its own compiler.
 """
 
 import os
@@ -110,9 +117,15 @@ parser.add_argument("--build-root", default=os.environ.get("CHUNK_BUILD_ROOT"),
                     help="Where the build directories live (default: $CHUNK_BUILD_ROOT, "
                          "else the repository this script sits in).")
 parser.add_argument("--run-dir", default=".", metavar="DIR",
-                    help="Directory the binaries run in: the oracle data_tab_* files are "
-                         "read there (unless --no_io) and the output_*/error_* files, the "
-                         "CSV and the log are written there (default: current directory).")
+                    help="Where the output_*/error_* files, the CSV and the log go (default: "
+                         "current directory). In the historical mode the binaries run there too "
+                         "and read the oracle data_tab_* there; under --builds each build's "
+                         "binaries run in their own directory, with their own oracle.")
+parser.add_argument("--regen-ref", action="store_true",
+                    help="Regenerate the reference files (data_tab_*) with the vector check "
+                         "binary before the runs: in the current directory (historical mode), "
+                         "or in each build's binary directory (--builds), from that build's "
+                         "own vector binary. The old data_tab_* files are removed first.")
 
 # ⭐ Selection = VARIANTS x SIZES. Binaries are named
 #   shrink_bench_<variant>[_<size>]  with size in 64/256/1024/dyn, lance
@@ -257,6 +270,9 @@ def _select_in_cwd():
     return found, missing
 
 
+VECTOR_CHECK = "./shrink_bench_vector_check"
+
+
 def _select_in_build(build_root, config):
     """--builds mode: bench_and_test.py's resolve_exe knows every layout a
     build directory may have (flat, examples/shrink_bench, the $arch level of
@@ -272,8 +288,12 @@ def _select_in_build(build_root, config):
     return found, missing
 
 
-# builds: the list to cycle through; executables_of[build] its binaries. The
-# historical mode is one unnamed build, the current directory.
+# builds: the list to cycle through; executables_of[build] its binaries,
+# ref_dir_of[build] where they run and read their oracle, vector_of[build]
+# the vector check binary --regen-ref generates it with. The historical mode
+# is one unnamed build, the current directory.
+ref_dir_of = {}
+vector_of = {}
 if args.builds:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from bench_and_test import resolve_exe  # the layout logic, shared
@@ -292,8 +312,14 @@ if args.builds:
         if not found:
             print(f"⚠️ {config}: no selected binary built, skipped")
             continue
+        vector_exe = resolve_exe(build_root, config, "vector", "check")
+        if args.regen_ref and vector_exe is None:
+            print(f"⚠️ {config}: no vector check binary to regenerate the reference with, skipped")
+            continue
         builds.append(config)
         executables_of[config] = found
+        ref_dir_of[config] = os.path.dirname(found[0])
+        vector_of[config] = vector_exe
         print(f"🎯 {config}: {len(found)} binary(ies): {', '.join(os.path.basename(e) for e in found)}")
     if not builds:
         sys.exit("❌ No build has a selected binary — nothing to run "
@@ -308,7 +334,43 @@ else:
                  f"(variants={','.join(variants)} sizes={','.join(sizes)})")
     builds = [""]
     executables_of = {"": found}
+    ref_dir_of[""] = None  # the current directory
+    vector_of[""] = VECTOR_CHECK if os.path.isfile(VECTOR_CHECK) else None
+    if args.regen_ref and vector_of[""] is None:
+        sys.exit(f"❌ --regen-ref: {VECTOR_CHECK} not found in {os.getcwd()}")
     print(f"🎯 {len(found)} binary(ies) selected: {', '.join(e.lstrip('./') for e in found)}")
+
+# 🧬 Reference regeneration: the vector (std::vector) check binary writes the
+# data_tab_* oracle the chunk binaries compare against. Once per build, in the
+# directory its binaries run in, after removing the previous files -- a check
+# run against a partial oracle aborts on the first missing dump. Not under
+# NO_IO, which would disable the very writes this is about.
+if args.regen_ref:
+    if no_io:
+        print("⚠️ --regen-ref with --no_io: the runs will not read the reference just regenerated")
+    ref_threads = str(max(1, min(max_threads, os.cpu_count() or 1)))
+    for build in builds:
+        ref_dir = ref_dir_of[build] or os.getcwd()
+        old = glob.glob(os.path.join(ref_dir, "data_tab*"))
+        for f in old:
+            os.remove(f)
+        label = build or os.path.basename(os.path.abspath(ref_dir))
+        print(f"🧬 Regenerating the reference for {label} in {ref_dir} "
+              f"({len(old)} old file(s) removed, {ref_threads} threads)...")
+        env = os.environ.copy()
+        env["OMP_NUM_THREADS"] = ref_threads
+        env.pop("NO_IO", None)
+        log_name = f"regen_ref_{build}.txt" if build else "regen_ref.txt"
+        t0 = time.perf_counter()
+        with open(log_name, "w") as log:
+            result = subprocess.run([vector_of[build]] + MODE_ARGS, check=False, stdout=log, stderr=subprocess.STDOUT,
+                                    env=env, cwd=ref_dir_of[build])
+        wall = time.perf_counter() - t0
+        if result.returncode != 0:
+            sys.exit(f"❌ Reference regeneration failed for {label} (return code {result.returncode}, "
+                     f"see {log_name})")
+        n_new = len(glob.glob(os.path.join(ref_dir, "data_tab*")))
+        print(f"✅ Reference for {label}: {n_new} file(s) in {wall:.1f}s")
 
 # 📄 Summary CSV
 summary_file = "timings_summary.csv"
@@ -381,11 +443,14 @@ for i in range(n):
 
         t0 = time.perf_counter()
         try:
+            # cwd: the build's own directory under --builds (its oracle lives
+            # there), the current directory otherwise (None).
             if no_io:
-                result = subprocess.run([exe] + MODE_ARGS, check=False, env=env)
+                result = subprocess.run([exe] + MODE_ARGS, check=False, env=env, cwd=ref_dir_of[build])
             else:
                 with open(stdout_file, "w") as stdout, open(stderr_file, "w") as stderr:
-                    result = subprocess.run([exe] + MODE_ARGS, check=False, stdout=stdout, stderr=stderr, env=env)
+                    result = subprocess.run([exe] + MODE_ARGS, check=False, stdout=stdout, stderr=stderr, env=env,
+                                            cwd=ref_dir_of[build])
 
             wall_seconds = time.perf_counter() - t0
             returncode = result.returncode
