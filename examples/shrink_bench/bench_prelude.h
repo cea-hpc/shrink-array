@@ -64,6 +64,7 @@
 #include <tuple>
 #include <type_traits>
 #include <vector>
+#include <cstdlib> // std::getenv / std::atol (BENCH_SCHED_BLOCK)
 
 #include "chunk/chunk_define.h"
 #include "chunk/term_color.h"
@@ -126,6 +127,68 @@
     #define BENCH_OMP_FOR_STATIC_NOWAIT          _Pragma("omp for simd schedule(static) nowait")
     #define BENCH_OMP_FOR_STATIC_NOWAIT_RED(...) BENCH_PRAGMA_STR(omp for simd schedule(static) nowait reduction(+ : __VA_ARGS__))
 #endif
+
+// ── Round-robin, chunk-aligned schedule for index-dependent loops ───────────
+//
+// schedule(static) hands each thread ONE contiguous slice, so a loop whose
+// work per element depends on the index (heavy only above some threshold, or
+// on the last 10%) loads a few adjacent threads. The _BLOCK_ macros deal
+// blocks of sched_blk iterations round-robin instead, over [sched_base, end):
+// sched_base is start rounded DOWN to a multiple of the block, and the loop
+// skips the indices below start, so every block boundary is a multiple of the
+// block size -- with a power of two >= the chunk size, no block straddles two
+// library chunks. Every loop of a region that reads back what another wrote
+// must use the SAME sched_blk and the SAME bounds: that is the condition under
+// which OpenMP gives a thread the same iterations in each.
+//
+// BENCH_SCHED_BLOCK (environment, read once): unset -> 256; N -> N rounded up
+// to a power of two; 0 -> the previous contiguous slices (no alignment).
+// 64 threads, chunk2_256, --mode perf: 18.33 s with 0, 15.82 s with 256.
+//
+// The macros name a local `sched_blk`; declare it with bench_sched_for().
+#define BENCH_OMP_FOR_BLOCK_NOWAIT_SCALAR          _Pragma("omp for schedule(static, sched_blk) nowait")
+#define BENCH_OMP_FOR_BLOCK_NOWAIT_RED_SCALAR(...) BENCH_PRAGMA_STR(omp for schedule(static, sched_blk) nowait reduction(+ : __VA_ARGS__))
+#ifdef SHRINK_ARRAY
+    #define BENCH_OMP_FOR_BLOCK_NOWAIT_RED(...) BENCH_PRAGMA_STR(omp for schedule(static, sched_blk) nowait reduction(+ : __VA_ARGS__))
+#else
+    #define BENCH_OMP_FOR_BLOCK_NOWAIT_RED(...) BENCH_PRAGMA_STR(omp for simd schedule(static, sched_blk) nowait reduction(+ : __VA_ARGS__))
+#endif
+
+/// @brief BENCH_SCHED_BLOCK, read once, rounded up to a power of two; 0 keeps
+///        the contiguous slices. Default 256.
+inline int bench_sched_block_env() noexcept
+{
+    static const int v = []
+    {
+        const char* e = std::getenv("BENCH_SCHED_BLOCK");
+        long        b = (e && e[0]) ? std::atol(e) : 256L;
+        if (b <= 0)
+            return 0;
+        long p = 1;
+        while (p < b && p < (1L << 30))
+            p <<= 1;
+        return static_cast<int>(p);
+    }();
+    return v;
+}
+
+/// @brief Block size and aligned start of a [start, end) worksharing loop.
+struct BenchSched
+{
+    int blk;  ///< iterations per block (the schedule's chunk size)
+    int base; ///< first iteration: start rounded down to a multiple of blk
+};
+
+/// @brief The schedule of a [start, end) loop; call it BEFORE the parallel
+///        region, so that every thread uses the same values.
+inline BenchSched bench_sched_for(int start, int end) noexcept
+{
+    const int b = bench_sched_block_env();
+    if (b > 0)
+        return {b, start - start % b};
+    const int t = CHUNK_PMP_MAX_THREADS;
+    return {std::max(1, (end - start + t - 1) / t), start}; // contiguous slices
+}
 
 // No longer gated on CHECK: there is no CHECK macro any more, the mode is a
 // runtime flag (--mode, see bench_config.h). A debug build therefore always

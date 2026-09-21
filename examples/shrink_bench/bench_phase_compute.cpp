@@ -26,44 +26,6 @@
 #include "bench_phases.h"
 #include "bench_utils.h" // linear_correlation, exponential_correlation
 
-// ── Worksharing of the [start0, end0) loops (see bench_phase_compute) ───────
-//
-// schedule(static, sched_blk) over [sched_base, end0), in ALL four loops that
-// iterate [start0, end0): same iteration count and same chunk size in each, so
-// OpenMP gives every thread the same iterations in every one of them -- the
-// "each thread reads back only what it wrote" guarantee the region relies on.
-// These pragmas cannot be `if constexpr`'d, hence the directive mirroring the
-// SHRINK_ARRAY split of bench_prelude.h.
-#define BENCH_OMP_FOR_BLOCK_NOWAIT_SCALAR          _Pragma("omp for schedule(static, sched_blk) nowait")
-#define BENCH_OMP_FOR_BLOCK_NOWAIT_RED_SCALAR(...) BENCH_PRAGMA_STR(omp for schedule(static, sched_blk) nowait reduction(+ : __VA_ARGS__))
-#ifdef SHRINK_ARRAY
-    #define BENCH_OMP_FOR_BLOCK_NOWAIT_RED(...) BENCH_PRAGMA_STR(omp for schedule(static, sched_blk) nowait reduction(+ : __VA_ARGS__))
-#else
-    #define BENCH_OMP_FOR_BLOCK_NOWAIT_RED(...) BENCH_PRAGMA_STR(omp for simd schedule(static, sched_blk) nowait reduction(+ : __VA_ARGS__))
-#endif
-
-namespace
-{
-/// @brief BENCH_SCHED_BLOCK from the environment, read once: the block size of
-///        the compute loops' round-robin schedule, rounded up to a power of
-///        two; 0 selects the previous contiguous slices. Default 256.
-int bench_sched_block_env() noexcept
-{
-    static const int v = []
-    {
-        const char* e = std::getenv("BENCH_SCHED_BLOCK");
-        long        b = (e && e[0]) ? std::atol(e) : 256L;
-        if (b <= 0)
-            return 0;
-        long p = 1;
-        while (p < b && p < (1L << 30))
-            p <<= 1;
-        return static_cast<int>(p);
-    }();
-    return v;
-}
-} // namespace
-
 // Distinct second values the unsigned long array may register, as a mask over
 // the index. CHUNK_BENCH_ULONG_BANDS sets the count (default 4096, the order a
 // real workload reaches); 0 means no bound, i.e. one value per 256-index band
@@ -126,13 +88,13 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 // `for simd` accepts on the std::vector baseline. A reduction on a nowait
 // loop is complete for the thread at the end of its own portion; the value
 // is whole after the region's barrier, which is where it is read.
-    // Block size and aligned start of the [start0, end0) loops' schedule (see
-    // bench_sched_block_env). Computed once, before the region: every thread
-    // must see the same values, or the same-thread guarantee is void.
-    const int sched_env  = bench_sched_block_env();
-    const int sched_blk  = sched_env > 0 ? sched_env
-                                         : std::max(1, (end0 - start0 + CHUNK_PMP_MAX_THREADS - 1) / CHUNK_PMP_MAX_THREADS);
-    const int sched_base = sched_env > 0 ? start0 - start0 % sched_env : start0;
+    // Block size and aligned start of the [start0, end0) loops' schedule
+    // (bench_sched_for, bench_prelude.h). Computed once, before the region:
+    // every thread must see the same values, or the same-thread guarantee is
+    // void. The pragma macros name sched_blk.
+    const BenchSched sched      = bench_sched_for(start0, end0);
+    const int        sched_blk  = sched.blk;
+    const int        sched_base = sched.base;
 
 #pragma omp parallel
     {

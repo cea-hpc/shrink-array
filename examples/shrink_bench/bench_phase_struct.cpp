@@ -120,13 +120,21 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
     // on why not a `parallel reduction`).
     double sum = 0;
 
+    // Round-robin, chunk-aligned blocks (bench_sched_for): the writer's cost
+    // depends on the index, and both loops must share the schedule.
+    const BenchSched sched      = bench_sched_for(start0, end0);
+    const int        sched_blk  = sched.blk;
+    const int        sched_base = sched.base;
+
 #pragma omp parallel
     {
         begin_parallel_phase_g();
 
-        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = start0; i < end0; ++i)
+        BENCH_OMP_FOR_BLOCK_NOWAIT_SCALAR
+        for (int i = sched_base; i < end0; ++i)
         {
+            if (i < start0) // alignment head: same trip count in both loops
+                continue;
             if (i < nba1)
             {
                 tab_point[i] = Point3{};
@@ -146,12 +154,14 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
             }
         }
 
-        // No barrier between the two loops: same bounds, same static schedule,
-        // so a thread reads back the elements it wrote itself (and a read of
-        // its own deferred write goes through the read gate anyway).
-        BENCH_OMP_FOR_STATIC_NOWAIT_RED_SCALAR(sum)
-        for (int i = start0; i < end0; ++i)
+        // No barrier between the two loops: same bounds, same schedule and block
+        // size, so a thread reads back the elements it wrote itself (and a read
+        // of its own deferred write goes through the read gate anyway).
+        BENCH_OMP_FOR_BLOCK_NOWAIT_RED_SCALAR(sum)
+        for (int i = sched_base; i < end0; ++i)
         {
+            if (i < start0)
+                continue;
             const Point3& p = tab_point[i];
             const Cell&   c = tab_cell[i];
             sum += p.x + p.y * static_cast<double>(c.fraction) + p.z + static_cast<double>(c.material);
