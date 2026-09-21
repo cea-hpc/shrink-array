@@ -162,33 +162,34 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
         // is the yield of the scan (how much of this work pays off).
         increm_chunk_compress_attempt<Chunk2A<T>>();
 
-        if (SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk); !this->is_cst_val2())
-        {
-            // No second value yet: whatever the first element holds is the
-            // candidate second constant.
-            const in_t<T> second_v = Base::read_value_scan(0);
-            const auto scan     = Base::scan_constants(first_value, second_v, size.count());
+        // Already compressed to its second value: nothing to scan, and
+        // nothing that may be scanned. A candidate can be in that state when
+        // the single-chunk compress() (compress_int, sequential build) ran
+        // over it while it was still queued: its flag is set, its entry is
+        // still in vec_tuple_to_compress, and it comes back through here at
+        // the next pass. The branch that used to scan it read through
+        // `values` -- under CHUNK_CST_VAL2_NO_ARRAYS a region that was never
+        // written, so every element read as 0 == first_value, the chunk
+        // went on ll_compt1 and block_clear() freed the region pointer as a
+        // buffer (SIGSEGV in free_elt_pow2 on aarch64, the invariant check
+        // "Attempted to free 'cst_val2'" in a debug build). With the arrays
+        // filled it was merely useless: the re-scan sent the chunk to
+        // ll_compt2, and the OpenMP CAS refused the clear.
+        if (this->is_cst_val2())
+            return;
 
-            if (scan.first)
-            {
-                ll_compt1.emplace_back(std::make_tuple(this, num_chunk, num_tab, size));
-            }
-            if (scan.second)
-            {
-                ll_compt2.emplace_back(std::make_tuple(this, second_v, num_chunk, num_tab, size));
-            }
-        }
-        else if (ptr_second_value.get() != first_value)
+        // No second value yet: whatever the first element holds is the
+        // candidate second constant.
+        const in_t<T> second_v = Base::read_value_scan(0);
+        const auto    scan     = Base::scan_constants(first_value, second_v, size.count());
+
+        if (scan.first)
         {
-            const auto scan = Base::scan_constants(first_value, ptr_second_value.get(), size.count());
-            if (scan.first)
-            {
-                ll_compt1.emplace_back(std::make_tuple(this, num_chunk, num_tab, size));
-            }
-            if (scan.second)
-            {
-                ll_compt2.emplace_back(std::make_tuple(this, T{}, num_chunk, num_tab, size));
-            }
+            ll_compt1.emplace_back(std::make_tuple(this, num_chunk, num_tab, size));
+        }
+        if (scan.second)
+        {
+            ll_compt2.emplace_back(std::make_tuple(this, second_v, num_chunk, num_tab, size));
         }
     }
 }
@@ -1102,6 +1103,14 @@ template <typename T, typename Derived>
 inline void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int num_compress_value, char* ptr_type_cst,
                                                             SecondValueRef<T> ptr_second_value, int, T* cst2_ptr)
 {
+    // Same refusal as try_mark_cst_and_get_old() on the OpenMP side: a chunk
+    // whose values already point at a constant has no buffer to release, and
+    // handing that pointer to the allocator corrupts it (or faults: a
+    // second-value identifier is not backed by a page under
+    // CHUNK_CST_VAL2_NO_ARRAYS). The type table is left as it is -- it
+    // describes the constant in place.
+    if (values == Base::get_cst_val1() || Derived::tab_cst_val2_holder::is_cst_val2_ptr(values)) [[unlikely]]
+        return;
     increm_chunk_compress<Derived>();
     Base::free_values(values);
     Derived::set_cst_val_to_cst_val(num_compress_value, ptr_type_cst);
