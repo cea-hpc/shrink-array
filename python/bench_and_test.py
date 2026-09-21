@@ -1564,9 +1564,22 @@ def run_rechunk_phase(args, extra_ldpath, errors):
       * CHUNK_COARSEN_MIN_META_MB : the floor that decides a coarsening; 0 here
                                     so the move fires on the shrunk arrays this
                                     test uses.
-      * one cwd per run           : the reference files data_<tab>_<k>.bin carry
-                                    no variant or geometry in their names.
-      * perf stage               : --divisor/--iter_max shrink the huge perf data
+      * CHUNK_ADVISOR_MIN_GAIN_MB : the absolute deadband (8 MB by policy); 0
+                                    here for the same reason -- at --divisor 200
+                                    the 64 -> 128 metadata gain is ~0.7 MB, and
+                                    the deadband alone refused every tick.
+      * check stage              : --mode check reads the oracle (data_<tab>_<k>
+                                   .bin, written once by the baseline run of
+                                   the correctness phase in output_dir), so it
+                                   runs THERE, read-only, and is skipped with a
+                                   notice when the oracle is absent (--skip-check,
+                                   or a failed baseline). It used to run in a
+                                   directory of its own, empty: the binary
+                                   aborted on the first missing file and the
+                                   phase reported FAIL (code -6) on every
+                                   chunk-family variant.
+      * perf stage               : its own cwd (nothing read, nothing kept);
+                                   --divisor/--iter_max shrink the huge perf data
                                    so the feature test stays quick (it validates
                                    the feature under -DPERF, not perf numbers).
     """
@@ -1588,12 +1601,17 @@ def run_rechunk_phase(args, extra_ldpath, errors):
     env_common = {
         "OMP_NUM_THREADS":      str(args.check_threads),
         "CHUNK_ADVISOR_PERIOD": "4",
-        # CHUNK_ADVISOR_MIN_GAIN_MB was exported here and read by nothing, so
-        # the deadband it meant to lower never moved. The gate that decides a
-        # coarsening today is the metadata floor, and on an array shrunk by
-        # --divisor it is what refuses the move; 0 disables it for this test.
+        # Both gates of a coarsening, off: the metadata floor and the absolute
+        # deadband (the decider takes the larger of the two, so one alone
+        # still refused the ~0.7 MB gain of the arrays --divisor leaves).
         "CHUNK_COARSEN_MIN_META_MB": "0",
+        "CHUNK_ADVISOR_MIN_GAIN_MB": "0",
     }
+
+    oracle_ok = os.path.exists(os.path.join(args.output_dir, "data_tab_ORACLE_COMPLETE.marker"))
+    if not oracle_ok:
+        print(yellow("   no complete oracle in output_dir (data_tab_ORACLE_COMPLETE.marker): "
+                     "the check stage is skipped, only perf runs"))
 
     n_pass = n_total = 0
     for cfg in args.configs:
@@ -1604,6 +1622,8 @@ def run_rechunk_phase(args, extra_ldpath, errors):
             if skip_variant_on_config(var, cfg):
                 continue
             for stage in ("check", "perf"):
+                if stage == "check" and not oracle_ok:
+                    continue
                 exe = resolve_exe(args.build_root, cfg, var, stage)
                 if not exe:
                     continue
@@ -1612,10 +1632,12 @@ def run_rechunk_phase(args, extra_ldpath, errors):
                         f"{var[:VARIANT_W]:<{VARIANT_W}} | {stage:5} | ")
                 sys.stdout.write("\r" + lead + "running…       ")
                 sys.stdout.flush()
-                # Its own cwd: this phase runs a static-geometry binary and a
-                # dynamic one under the same label, and they would otherwise
-                # trade data_<tab>_<k>.bin through the shared directory.
-                rdir = _run_dir(args.output_dir, "rechunk", short_config_label(cfg), var, stage)
+                # check reads the oracle where the correctness phase wrote it
+                # (a shrink binary never writes reference files: io_res is 2,
+                # read-only, in every chunk build); perf touches no file and
+                # gets a directory of its own.
+                rdir = (args.output_dir if stage == "check"
+                        else _run_dir(args.output_dir, "rechunk", short_config_label(cfg), var, stage))
                 ok, dur, code, err_tail, _ = run_cmd(
                     [exe, "--no_compress"] + stage_extra_args[stage],
                     {**env_common, **san}, to,
@@ -1636,7 +1658,7 @@ def run_rechunk_phase(args, extra_ldpath, errors):
                         f"RECHUNK_FEATURE_FAIL: {exe} --no_compress "
                         f"{' '.join(stage_extra_args[stage])} stage={stage} code={code}\n"
                         f"  (expected '[APPLIED]'; env CHUNK_ADVISOR_PERIOD=4 "
-                        f"CHUNK_COARSEN_MIN_META_MB=0)\n"
+                        f"CHUNK_COARSEN_MIN_META_MB=0 CHUNK_ADVISOR_MIN_GAIN_MB=0)\n"
                         f"  stderr_tail:\n    " + err_tail.replace('\n', '\n    ')
                     )
                     errors.append(_entry)

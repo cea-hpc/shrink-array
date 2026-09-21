@@ -126,8 +126,25 @@ bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeReport& r
     // stops chasing sub-percent "gains" (the observed thrashing: ~48 MB
     // moves on multi-GB arrays). Coarsening faces a higher bar than fining,
     // for the model-optimism reason above.
+    // CHUNK_ADVISOR_MIN_GAIN_MB overrides the absolute deadband, in MB; 0
+    // disables it. Read once, like the floor below. Without it the feature
+    // test of bench_and_test.py could not fire a move: it shrinks its arrays
+    // with --divisor, the metadata gain of 64 -> 128 is then under a MB, and
+    // the 8 MB policy value still gated the coarsening branch after
+    // CHUNK_COARSEN_MIN_META_MB=0 had cleared the floor -- "gain below
+    // deadband" at every tick, on every chunk-family variant.
+    static const std::size_t env_min_gain = []() -> std::size_t
+    {
+        const char* e = std::getenv("CHUNK_ADVISOR_MIN_GAIN_MB");
+        if (e == nullptr || e[0] == '\0')
+            return static_cast<std::size_t>(-1); // unset: keep the policy
+        const double mb = std::strtod(e, nullptr);
+        return mb > 0. ? static_cast<std::size_t>(mb * 1024. * 1024.) : 0u;
+    }();
+    const std::size_t min_gain = env_min_gain == static_cast<std::size_t>(-1) ? pol_.min_gain_bytes : env_min_gain;
+
     const std::size_t rel_gate  = static_cast<std::size_t>(pol_.min_gain_frac * static_cast<double>(cur_e.mem_bytes));
-    std::size_t       data_gate = std::max(pol_.min_gain_bytes, rel_gate);
+    std::size_t       data_gate = std::max(min_gain, rel_gate);
     if (coarsening && pol_.coarsen_gain_multiple > 1)
         data_gate *= pol_.coarsen_gain_multiple;
 
@@ -165,8 +182,8 @@ bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeReport& r
         }();
         const std::size_t policy_floor =
             env_meta_floor == static_cast<std::size_t>(-1) ? pol_.coarsen_min_meta_gain_bytes : env_meta_floor;
-        const auto meta_floor = std::max(pol_.min_gain_bytes, policy_floor);
-        clears_gate = (gain_meta >= static_cast<double>(meta_floor) && gain_bytes >= pol_.min_gain_bytes) ||
+        const auto meta_floor = std::max(min_gain, policy_floor);
+        clears_gate = (gain_meta >= static_cast<double>(meta_floor) && gain_bytes >= min_gain) ||
                       gain_bytes >= data_gate;
     }
     else
