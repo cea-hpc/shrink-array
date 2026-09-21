@@ -66,6 +66,12 @@
 #endif
 #ifdef _MSC_VER
 #    define ANKERL_UNORDERED_DENSE_NOINLINE __declspec(noinline)
+#elif defined(__NVCOMPILER)
+// Local patch (shrink-array): nvc++ warns "routine is both inline and
+// noinline" [inline_gnu_noinline_conflict] on the three on_error_* functions
+// below, which are `inline` for the ODR and noinline to keep the throw out of
+// the callers. They are cold paths; on that compiler the hint is dropped.
+#    define ANKERL_UNORDERED_DENSE_NOINLINE
 #else
 #    define ANKERL_UNORDERED_DENSE_NOINLINE __attribute__((noinline))
 #endif
