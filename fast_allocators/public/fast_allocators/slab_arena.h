@@ -118,25 +118,39 @@ inline std::atomic<std::size_t>& reclaim_entered() noexcept
 ///        "emptied-slab calls" is 0 these say whether any free ever happened:
 ///        parked blocks are retained by design, freed ones are not. Bumped
 ///        through CHUNK_FREEPATH_INC (chunk/freepath_counters.h).
+/// @brief A global counter alone on its cache lines.
+/// @details A bare `static std::atomic` is 8 bytes the linker packs next to
+///          whatever comes before and after it. Two of these landed on the
+///          line holding the head of Proxy2<double>::share_info_array, which
+///          every Chunk2 write reads: each fetch_add then invalidated that
+///          line on all the other cores (false sharing; 36% of a 64-thread
+///          run attributed to get_info_second_value, a read-only function).
+///          128 rather than 64: adjacent-line prefetch, and 128-byte lines.
+struct alignas(128) IsolatedCounter
+{
+    std::atomic<std::size_t> v{0};
+};
+static_assert(sizeof(IsolatedCounter) == 128, "IsolatedCounter must fill its alignment");
+
 inline std::atomic<std::size_t>& freepath_freed() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static IsolatedCounter c;
+    return c.v;
 }
 inline std::atomic<std::size_t>& freepath_park_own() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static IsolatedCounter c;
+    return c.v;
 }
 inline std::atomic<std::size_t>& freepath_park_foreign() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static IsolatedCounter c;
+    return c.v;
 }
 inline std::atomic<std::size_t>& freepath_kept_nomigrate() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static IsolatedCounter c;
+    return c.v;
 }
 /// @brief Materialisations routed with NO affinity key (the rank's shared pool)
 ///        and with one. A slab can only empty if it holds a single array's
@@ -145,13 +159,13 @@ inline std::atomic<std::size_t>& freepath_kept_nomigrate() noexcept
 ///        and none of them can ever empty, whatever the drain frees.
 inline std::atomic<std::size_t>& freepath_alloc_key0() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static IsolatedCounter c;
+    return c.v;
 }
 inline std::atomic<std::size_t>& freepath_alloc_keyed() noexcept
 {
-    static std::atomic<std::size_t> v{0};
-    return v;
+    static IsolatedCounter c;
+    return c.v;
 }
 
 

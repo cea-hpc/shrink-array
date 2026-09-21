@@ -21,7 +21,14 @@
 #ifdef FAST_ALLOC
     #include <atomic>
     #include "fast_allocators/slab_arena.h"
-    #define CHUNK_FREEPATH_INC(which) fast_alloc::freepath_##which().fetch_add(1, std::memory_order_relaxed)
+    // Counted only while the report that prints them is on (CHUNK_ARENA_REPORT
+    // in the environment, read once): these sit on the materialisation and
+    // release paths of every thread, and a shared counter there is a store to
+    // a shared cache line per chunk -- see fast_alloc::IsolatedCounter.
+    #define CHUNK_FREEPATH_INC(which)                                                                                  \
+        (fast_alloc::arena_report_enabled()                                                                           \
+             ? static_cast<void>(fast_alloc::freepath_##which().fetch_add(1, std::memory_order_relaxed))              \
+             : static_cast<void>(0))
     /// Count one materialisation, by whether it carries an affinity key.
     #define CHUNK_FREEPATH_ALLOC(key) ((key) != 0u ? CHUNK_FREEPATH_INC(alloc_keyed) : CHUNK_FREEPATH_INC(alloc_key0))
 #else
