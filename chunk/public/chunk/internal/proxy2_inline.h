@@ -257,6 +257,16 @@ void Proxy2<T>::perform_core_assignment(in_t<T> v) const noexcept
             if (was_cst_val2)
             {
                 chunk.set_nb_val_eq_second_value(this->chunk_size() - 1);
+                // The write that leaves cst_val2 skipped the first-value block
+                // at the top (it only counts on a materialised chunk), and
+                // create_value's crossed reset just zeroed nb_first_value: a
+                // first_value written here is the one this chunk holds, count
+                // it. Without it a chunk that went all-second then all-first
+                // stopped at size - 1 and never compressed back (serial builds:
+                // the counters are the only path; chunk2<bool> showed it, the
+                // other types were reclaimed by compress_int's self-heal).
+                if (v == static_cast<T>(Chunk2<T>::first_value))
+                    chunk.inc_nb_val_eq_first_value();
             }
             else if (v == second_value)
             {

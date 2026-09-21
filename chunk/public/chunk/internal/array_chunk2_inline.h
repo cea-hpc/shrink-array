@@ -895,11 +895,17 @@ void ArrayChunk2<T, ind_type>::compress_int()
             for (int k = 0; k < nb1; ++k)
             {
                 const int ind1 = tab_nb1[k];
-                std::cerr << ind1 << " " << ind1 * this->size_policy_.size()
-                          << " is_inside=" << static_cast<int>(
-                                 shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(shrink_array::Proxy2<T>::share_info_array.get_num_tab(const_cast<ArrayChunk2<T, ind_type>*>(this)))[ind1]
-                                     .load(std::memory_order_acquire))
-                          << "\n";
+                std::cerr << ind1 << " " << ind1 * this->size_policy_.size();
+                // The candidate-list flag exists in fast-block builds only: a
+                // serial build has no such table, indexing it aborted here.
+                if constexpr (chunk_config::use_fast_block_compression)
+                    std::cerr << " is_inside="
+                              << static_cast<int>(
+                                     shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
+                                         shrink_array::Proxy2<T>::share_info_array.get_num_tab(
+                                             const_cast<ArrayChunk2<T, ind_type>*>(this)))[ind1]
+                                         .load(std::memory_order_acquire));
+                std::cerr << "\n";
                 if (k > 10)
                     break;
                 if constexpr (chunk_config::use_compression_with_counter)
@@ -935,11 +941,17 @@ void ArrayChunk2<T, ind_type>::compress_int()
             for (int k = 0; k < nb2; ++k)
             {
                 const int ind2 = tab_nb2[k];
-                std::cerr << ind2 << " " << ind2 * this->size_policy_.size()
-                          << " is_inside=" << static_cast<int>(
-                                 shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(shrink_array::Proxy2<T>::share_info_array.get_num_tab(const_cast<ArrayChunk2<T, ind_type>*>(this)))[ind2]
-                                     .load(std::memory_order_acquire))
-                          << "\n";
+                std::cerr << ind2 << " " << ind2 * this->size_policy_.size();
+                // The candidate-list flag exists in fast-block builds only: a
+                // serial build has no such table, indexing it aborted here.
+                if constexpr (chunk_config::use_fast_block_compression)
+                    std::cerr << " is_inside="
+                              << static_cast<int>(
+                                     shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
+                                         shrink_array::Proxy2<T>::share_info_array.get_num_tab(
+                                             const_cast<ArrayChunk2<T, ind_type>*>(this)))[ind2]
+                                         .load(std::memory_order_acquire));
+                std::cerr << "\n";
                 if (k > 10)
                     break;
                 if constexpr (chunk_config::use_compression_with_counter)
