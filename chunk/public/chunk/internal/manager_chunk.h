@@ -228,9 +228,9 @@ class ManagerChunkInt : public virtual ManagerChunkDynInterface<>,
     /// @brief Does any of the @p n_thr per-rank candidate lists hold a chunk?
     [[nodiscard]] virtual bool have_chunk_to_compress_potentially(int n_thr) const = 0;
     /// @brief Drain this type's compression-candidate backlog.
-    /// @param is_inside_ompt True from an OMPT callback or inside a parallel
-    ///        region, which selects how the variant parallelises the pass.
-    virtual void compress_chunk_to_compress_potentially(bool is_inside_ompt) = 0;
+    /// @param apply true: compress the candidates found constant; false: walk
+    ///        the lists without compressing (see AllTypeChunk's).
+    virtual void compress_chunk_to_compress_potentially(bool apply) = 0;
 
     /// Bytes parked in this manager's reuse pools (printed with CHUNK_STATS).
     /// Common to every build: the reuse pools are not an OpenMP-only surface,
@@ -412,7 +412,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     void resize_chunk_to_compress_potentially() const override;
     void force_chunk_to_compress() const override;
     [[nodiscard]] bool have_chunk_to_compress_potentially(int n_thr) const override;
-    void compress_chunk_to_compress_potentially(bool is_inside_ompt) override;
+    void compress_chunk_to_compress_potentially(bool apply) override;
 
     [[nodiscard]] std::size_t reuse_pool_bytes_int() const override { return reuse_pool_bytes(); }
     std::size_t trim_reuse_pools_int(std::size_t keep) override { return trim_reuse_pools(keep); }

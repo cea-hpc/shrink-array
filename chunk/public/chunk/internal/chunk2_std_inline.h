@@ -189,19 +189,20 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_impl(vec_t
  *
  * @tparam SecondValueFunc Nullary callable returning the array's second value.
  * @tparam ClearFunc       Callable `(int num_compress_value)` applying the clear.
- * @param is_inside_ompt   True when called from an OMPT callback.
+ * @param apply            true: compress a constant chunk; false: scan only.
  * @param n_elems          This chunk's own element count, captured at enqueue.
  * @param get_second_value Supplies the second value (a constant for the bool twin).
  * @param clear_one        Clears to the first (0) or second (1) constant.
  *
- * @warning The clear only runs when @p is_inside_ompt is true. Called with
- *          false, this scans the whole chunk and discards the verdict — it
- *          compresses nothing. Every caller outside the OMPT path must rely on
- *          make_block_compression() instead.
+ * @warning The clear only runs when @p apply is true. Called with false,
+ *          this scans the whole chunk and discards the verdict -- it
+ *          compresses nothing (the flag was named apply, and
+ *          compress_int's drain passed false for a year believing it
+ *          compressed).
  */
 template <typename T, typename Derived, bool Enabled>
 template <typename SecondValueFunc, typename ClearFunc>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(bool is_inside_ompt, unsigned int n_elems, SecondValueFunc get_second_value,
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(bool apply, unsigned int n_elems, SecondValueFunc get_second_value,
                               ClearFunc&& clear_one)
 {
     if (Base::is_not_cst_val1())
@@ -225,7 +226,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(bool is_inside_omp
         // only.
         const auto scan = Base::scan_constants(first_value, get_second_value(), n_elems);
 
-        if (is_inside_ompt)
+        if (apply)
         {
             if (scan.first)
             {
@@ -240,7 +241,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(bool is_inside_omp
 }
 
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress([[maybe_unused]] int thr_rank, const inf_array_t& inf_array, bool is_inside_ompt,
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress([[maybe_unused]] int thr_rank, const inf_array_t& inf_array, bool apply,
                          unsigned int n_elems)
 {
     // Only a MATERIALISED chunk can be compressed. A queued entry can outlive
@@ -255,7 +256,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress([[maybe_unused]] int th
         return;
 
     compress_impl(
-        is_inside_ompt, n_elems, [&inf_array]() { return std::get<0>(inf_array); },
+        apply, n_elems, [&inf_array]() { return std::get<0>(inf_array); },
         [this, thr_rank, &inf_array](int num_compress_value)
         { this->clear_int_st(num_compress_value, std::get<1>(inf_array), thr_rank); });
 }
@@ -264,20 +265,20 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress([[maybe_unused]] int th
  * @brief Bool twin of compress().
  *
  * @param thr_rank       Rank whose pool receives the released buffer.
- * @param is_inside_ompt True when called from an OMPT callback.
+ * @param apply          true: compress the chunk if constant; false: scan only.
  * @param n_elems        This chunk's own element count, captured at enqueue.
  *
- * @warning Same as compress(): with @p is_inside_ompt false the scan runs and
- *          the verdict is dropped.
+ * @warning Same as compress(): with @p apply false the scan runs and the
+ *          verdict is dropped.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_bool([[maybe_unused]] int thr_rank, bool is_inside_ompt, unsigned int n_elems)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_bool([[maybe_unused]] int thr_rank, bool apply, unsigned int n_elems)
 {
     if constexpr (is_bool)
     {
         if (!derived().written()) // see compress(): a stale entry for a chunk already at a constant
             return;
-        compress_impl(is_inside_ompt, n_elems, []() { return true; },
+        compress_impl(apply, n_elems, []() { return true; },
                       [this, thr_rank](int num_compress_value) { this->clear_int_st_bool(num_compress_value, thr_rank); });
     }
 }
@@ -290,20 +291,20 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_bool([[maybe_unused]] i
  *
  * @param inf_array      (second_value, index, ...) selecting which candidate
  *                       lists to drain.
- * @param is_inside_ompt Forwarded to compress().
+ * @param apply          Forwarded to compress().
  *
  * @note Like the Chunk2A equivalent: outside a parallel region it opens one and
  *       lets each rank sweep its own list (serial mop-up for ranks beyond the
  *       team size); inside a region it sweeps the calling rank only.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress(const inf_array_t& inf_array, bool is_inside_ompt)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress(const inf_array_t& inf_array, bool apply)
 {
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
 
     if (CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, inf_array, is_inside_ompt);
+        compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, inf_array, apply);
     }
     else
     {
@@ -323,12 +324,12 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress(const
             const int thr = CHUNK_PMP_THREAD_RANK;
             if (thr == 0) // one writer; `master` is deprecated since OpenMP 5.1
                 team = CHUNK_PMP_NUM_THREADS;
-            compress_chunk_to_compress_in_par(thr, inf_array, is_inside_ompt);
+            compress_chunk_to_compress_in_par(thr, inf_array, apply);
         }
         // Lists are sized by CHUNK_PMP_MAX_THREADS; a team smaller than that
         // leaves the upper ranks unswept. Serial mop-up, empty lists are cheap.
         for (int thr_rank = team; thr_rank < CHUNK_PMP_MAX_THREADS; ++thr_rank)
-            compress_chunk_to_compress_in_par(thr_rank, inf_array, is_inside_ompt);
+            compress_chunk_to_compress_in_par(thr_rank, inf_array, apply);
     }
 
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
@@ -336,10 +337,10 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress(const
 
 /**
  * @brief Bool twin of compress_chunk_to_compress().
- * @param is_inside_ompt Forwarded to compress_bool().
+ * @param apply          Forwarded to compress_bool().
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool(bool is_inside_ompt)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool(bool apply)
 {
     if constexpr (is_bool)
     {
@@ -347,7 +348,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool(
 
         if (CHUNK_PMP_IN_PARALLEL_REGION)
         {
-            compress_chunk_to_compress_bool_in_par(CHUNK_PMP_THREAD_RANK, is_inside_ompt);
+            compress_chunk_to_compress_bool_in_par(CHUNK_PMP_THREAD_RANK, apply);
         }
         else
         {
@@ -358,10 +359,10 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool(
                 const int thr = CHUNK_PMP_THREAD_RANK;
                 if (thr == 0)
                     team = CHUNK_PMP_NUM_THREADS;
-                compress_chunk_to_compress_bool_in_par(thr, is_inside_ompt);
+                compress_chunk_to_compress_bool_in_par(thr, apply);
             }
             for (int thr_rank = team; thr_rank < CHUNK_PMP_MAX_THREADS; ++thr_rank)
-                compress_chunk_to_compress_bool_in_par(thr_rank, is_inside_ompt);
+                compress_chunk_to_compress_bool_in_par(thr_rank, apply);
         }
         chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
     }
@@ -463,29 +464,29 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
  * @brief Compresses one rank's candidates for one second value.
  * @param thr_rank       Rank whose list is drained.
  * @param inf_array      (second_value, index, ...) selecting the list.
- * @param is_inside_ompt Forwarded to compress().
+ * @param apply          Forwarded to compress().
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_par(int thr_rank, const inf_array_t& inf_array, bool is_inside_ompt)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_par(int thr_rank, const inf_array_t& inf_array, bool apply)
 {
     compress_chunk_to_compress_in_par_impl(thr_rank, std::get<0>(inf_array),
-                                           [thr_rank, &inf_array, is_inside_ompt](auto* chunk_t, unsigned int n_elems)
-                                           { chunk_t->compress(thr_rank, inf_array, is_inside_ompt, n_elems); });
+                                           [thr_rank, &inf_array, apply](auto* chunk_t, unsigned int n_elems)
+                                           { chunk_t->compress(thr_rank, inf_array, apply, n_elems); });
 }
 
 /**
  * @brief Bool twin of compress_chunk_to_compress_in_par().
  * @param thr_rank       Rank whose list is drained.
- * @param is_inside_ompt Forwarded to compress_bool().
+ * @param apply          Forwarded to compress_bool().
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool_in_par(int thr_rank, bool is_inside_ompt)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool_in_par(int thr_rank, bool apply)
 {
     if constexpr (is_bool)
     {
         compress_chunk_to_compress_in_par_impl(thr_rank, true,
-                                               [thr_rank, is_inside_ompt](auto* chunk_t, unsigned int n_elems)
-                                               { chunk_t->compress_bool(thr_rank, is_inside_ompt, n_elems); });
+                                               [thr_rank, apply](auto* chunk_t, unsigned int n_elems)
+                                               { chunk_t->compress_bool(thr_rank, apply, n_elems); });
     }
 }
 

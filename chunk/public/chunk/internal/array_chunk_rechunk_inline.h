@@ -672,7 +672,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     ++n_folded;
                     auto& nch = tmp.chunk_list[static_cast<std::size_t>(c)];
                     nch.compress(get_thr_rank_fast(), c, tmp.num_tab,
-                                 /*is_inside_ompt=*/build_config::use_openmp,
+                                 /*apply=*/true,
                                  ChunkElems{static_cast<unsigned>(new_size)});
                     // Every source chunk WAS a constant here, so a refusal means
                     // the span merged constants that differ -- the genuine cost
@@ -714,7 +714,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                         ++n_folded;
                         auto& nch = tmp.chunk_list[static_cast<std::size_t>(c)];
                         nch.compress(get_thr_rank_fast(), inf_new2,
-                                     /*is_inside_ompt=*/build_config::use_openmp, static_cast<unsigned int>(new_size));
+                                     /*apply=*/true, static_cast<unsigned int>(new_size));
                         if (!nch.is_cst_val1() && !nch.is_cst_val2(std::get<1>(inf_new2)))
                             ++n_refused;
                     }

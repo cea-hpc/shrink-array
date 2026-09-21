@@ -183,11 +183,11 @@ void AllTypeChunk::force_chunk_to_compress() const
     }
 }
 
-void AllTypeChunk::compress_chunk_to_compress_potentially(bool is_inside_ompt) const
+void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
 {
     for (auto& elm : getListTypeChunk())
     {
-        elm->compress_chunk_to_compress_potentially(is_inside_ompt);
+        elm->compress_chunk_to_compress_potentially(apply);
     }
 }
 bool AllTypeChunk::have_chunk_to_compress_potentially() const

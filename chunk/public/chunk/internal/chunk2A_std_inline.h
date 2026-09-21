@@ -407,8 +407,9 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
  * @param thr_rank       Calling thread's rank (OMPT path only).
  * @param num_chunk      Index of this chunk in its array.
  * @param num_tab        Table number of the owning array.
- * @param is_inside_ompt True when called from an OMPT callback, which selects
- *                       the clear variant used.
+ * @param apply          true: compress the chunk if constant. Honoured in a
+ *                       serial build and under OMPT; an OpenMP build without
+ *                       OMPT returns at once (below), whatever it says.
  * @param size           Geometry of the owning array.
  *
  * @warning Returns immediately in an OpenMP build WITHOUT OMPT — there,
@@ -420,7 +421,7 @@ template <typename T>
 void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
                           int                   num_chunk,
                           int                   num_tab,
-                          [[maybe_unused]] bool is_inside_ompt,
+                          [[maybe_unused]] bool apply,
                           ChunkElems            size)
 {
     // In the GNU/GOMP build (use_openmp && no OMPT) NEITHER clear_int_st branch
@@ -505,11 +506,12 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
         // -- the serial path used the short two-argument form and the first
         // read of such a chunk after a rechunk_to() dereferenced null
         // (rechunk_validation_chunk2a_dyn, scale-64-to-tgt, serial build).
+        // The serial build used to clear on !apply (the flag was named
+        // apply and the serial callers passed false): every caller
+        // now says what it wants, so the two builds read it the same way.
         bool do_clear = false;
-        if constexpr (!build_config::use_openmp)
-            do_clear = !is_inside_ompt;
-        else if constexpr (chunk_config::use_compression_with_ompt)
-            do_clear = is_inside_ompt;
+        if constexpr (!build_config::use_openmp || chunk_config::use_compression_with_ompt)
+            do_clear = apply;
 
         if (do_clear)
         {
@@ -531,23 +533,23 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
  * disarmed for the duration, so the region this opens does not re-enter the
  * compression machinery through its own parallel-begin/end.
  *
- * @param is_inside_ompt Forwarded to compress(); says which clear variant applies.
+ * @param apply          Forwarded to compress().
  */
 template <typename T>
-void Chunk2A<T>::compress_chunk_to_compress(bool is_inside_ompt)
+void Chunk2A<T>::compress_chunk_to_compress(bool apply)
 {
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
 
     if (CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, is_inside_ompt);
+        compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, apply);
     }
     else
     {
 #pragma omp parallel
         {
             const int thr = CHUNK_PMP_THREAD_RANK;
-            compress_chunk_to_compress_in_par(thr, is_inside_ompt);
+            compress_chunk_to_compress_in_par(thr, apply);
         }
     }
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
@@ -597,7 +599,7 @@ bool Chunk2A<T>::have_chunk_to_compress([[maybe_unused]] int max_thr)
  * each entry carries rather than any ambient size.
  *
  * @param thr            Rank whose list is processed.
- * @param is_inside_ompt Forwarded to compress().
+ * @param apply          Forwarded to compress().
  *
  * @warning The "already queued" flag reset and the list clear MUST stay gated on
  *          the same condition. Clearing the flag while leaving the entry in the
@@ -607,7 +609,7 @@ bool Chunk2A<T>::have_chunk_to_compress([[maybe_unused]] int max_thr)
  *          clear at the end.
  */
 template <typename T>
-void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, bool is_inside_ompt)
+void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, bool apply)
 {
     auto& vec_tup = manager_chunk2A::get_chunk2A_to_compress_potentially(thr);
 
@@ -636,7 +638,7 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
                 if constexpr (build_config::chunk_dynamic)
                     shrink_array::set_thread_chunk_size(csize.count());
 
-                chunk_t->compress(thr, num_chunk, num_tab, is_inside_ompt, csize);
+                chunk_t->compress(thr, num_chunk, num_tab, apply, csize);
                 // DEDUP FLAG / LIST must be reset TOGETHER. The is_inside flag is
                 // the CAS gate in add_to_compression_list (0->1 admits a chunk).
                 // Resetting it to 0 here while leaving the entry physically in
@@ -665,7 +667,7 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
             // Per-entry geometry, exactly like the OpenMP branch above — the
             // former call relied on the (now removed) `= __chunk_size` default,
             // which under-scanned dynamic chunks (see chunk2A_std.h).
-            std::get<0>(tup)->compress(0, num_chunk, num_tab, is_inside_ompt, std::get<3>(tup));
+            std::get<0>(tup)->compress(0, num_chunk, num_tab, apply, std::get<3>(tup));
             Proxy2A<T>::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
         }
     }

@@ -594,9 +594,10 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
     /**
      * @brief Drain and compress every thread's candidate list.
-     * @param is_inside_ompt true when called from an OMPT callback
+     * @param apply true: compress the candidates found constant; false: walk
+     *        the lists only (v1 ignores it: its pass always compresses)
      */
-    static void compress_chunk_to_compress(bool is_inside_ompt);
+    static void compress_chunk_to_compress(bool apply);
 
 
     /**

@@ -386,11 +386,15 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>,
     /**
      * @brief Drains the compression-candidate backlog of every type.
      *
-     * @param is_inside_ompt True when called from an OMPT callback or from
-     *        inside a parallel region, which changes how the managers
-     *        parallelise the pass and which synchronisation they may use.
+     * @param apply true: every candidate found constant is compressed -- what
+     *        the between-region passes want; false: the lists are walked,
+     *        their flags reset and (chunk2) emptied, and NOTHING is
+     *        compressed -- the terminal sweep of a dying array uses it to
+     *        purge its chunks from the lists. It used to be called
+     *        apply, and compress_int passed false believing it
+     *        drained: its "misses" were the candidates it had just un-queued.
      */
-    void compress_chunk_to_compress_potentially(bool is_inside_ompt) const;
+    void compress_chunk_to_compress_potentially(bool apply) const;
 
     /// @return True as soon as one type has at least one pending compression candidate.
     bool have_chunk_to_compress_potentially() const;

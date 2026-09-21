@@ -242,11 +242,11 @@ bool ManagerChunk<CHUNK_T, T>::have_chunk_to_compress_potentially(int n_thr) con
  * driven once per registered second value; the other variants have a single
  * entry point.
  *
- * @param is_inside_ompt True when called from an OMPT callback or from inside a
- *        parallel region, which selects how the variant parallelises the pass.
+ * @param apply true: compress the candidates found constant; false: walk the
+ *        lists without compressing (the dying array's purge).
  */
 template <template <typename> typename CHUNK_T, typename T>
-void ManagerChunk<CHUNK_T, T>::compress_chunk_to_compress_potentially([[maybe_unused]] bool is_inside_ompt)
+void ManagerChunk<CHUNK_T, T>::compress_chunk_to_compress_potentially([[maybe_unused]] bool apply)
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -258,17 +258,17 @@ void ManagerChunk<CHUNK_T, T>::compress_chunk_to_compress_potentially([[maybe_un
                 const auto& v_all_inf_array = sh_inf.get_all_inf_array();
                 for (const auto& inf_array : v_all_inf_array)
                 {
-                    CHUNK_T<T>::compress_chunk_to_compress(*inf_array, is_inside_ompt);
+                    CHUNK_T<T>::compress_chunk_to_compress(*inf_array, apply);
                 }
             }
             else
             {
-                CHUNK_T<T>::compress_chunk_to_compress_bool(is_inside_ompt);
+                CHUNK_T<T>::compress_chunk_to_compress_bool(apply);
             }
         }
         else
         {
-            CHUNK_T<T>::compress_chunk_to_compress(is_inside_ompt);
+            CHUNK_T<T>::compress_chunk_to_compress(apply);
         }
     }
 }

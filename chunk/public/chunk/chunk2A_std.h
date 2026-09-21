@@ -663,7 +663,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     using OmpPolicy::create_value;
     using OmpPolicy::create_value_bool;
 
-    static void compress_chunk_to_compress_in_par(int thr, bool is_inside_ompt);
+    static void compress_chunk_to_compress_in_par(int thr, bool apply);
 
     /// @brief Materialise this chunk if it is currently compressed to either
     ///        constant; a no-op otherwise (already materialised).
@@ -723,9 +723,9 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
                                ChunkElems                size,
                                bool                      claimed = false);
 
-    void compress(int thr_rank, int num_chunk, int num_tab, bool is_inside_ompt, ChunkElems size);
+    void compress(int thr_rank, int num_chunk, int num_tab, bool apply, ChunkElems size);
 
-    static void compress_chunk_to_compress(bool is_inside_ompt);
+    static void compress_chunk_to_compress(bool apply);
     static bool have_chunk_to_compress(int max_thr);
 
     static void make_block_compression(int thr, Proxy2A<T>* proxy2A);

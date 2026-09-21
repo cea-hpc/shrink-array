@@ -169,7 +169,7 @@ void ChunkOmpPolicy<T, Derived, Enabled>::compress(int thr_rank, unsigned int n_
 }
 
 template <typename T>
-void Chunk<T>::compress_chunk_to_compress(bool /*is_inside_ompt*/)
+void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
 {
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
 
