@@ -47,6 +47,14 @@ const bool g_barrier_flush_legacy = []
     return e != nullptr && e[0] != '\0' && e[0] != '0';
 }();
 
+// CHUNK_SERIAL_DRAIN_LEGACY=1: the serial flush opens its drain regions even
+// when no op is pending, as before (A/B, bisection). Same reading rules.
+const bool g_serial_drain_legacy = []
+{
+    const char* e = std::getenv("CHUNK_SERIAL_DRAIN_LEGACY");
+    return e != nullptr && e[0] != '\0' && e[0] != '0';
+}();
+
 // Template method bodies now live in chunk/manager_chunk_inline.h (included
 // transitively via chunk/manager_chunk.h). This TU keeps only the non-template
 // global state and the explicit instantiations (Stage 2: instantiations are

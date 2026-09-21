@@ -89,6 +89,8 @@ namespace shrink_array
 extern std::atomic<bool> __global_need_flush_deferred;
 // Defined in manager_chunk.cpp: CHUNK_BARRIER_FLUSH_LEGACY, read once at load.
 extern const bool g_barrier_flush_legacy;
+// Defined in manager_chunk.cpp: CHUNK_SERIAL_DRAIN_LEGACY, read once at load.
+extern const bool g_serial_drain_legacy;
 /**
  * @brief Compress every compressible chunk of this type, ignoring the candidate lists.
  *
@@ -537,6 +539,17 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
         int           pass            = 0;
         for (; any_left && pass < kMaxDrainPasses; ++pass)
         {
+            // No op queued on any rank: no region. Exact here -- we are outside
+            // any team, after its join, so every enqueue's increment is
+            // visible to this acquire sum; and every op in a map is counted
+            // (one insertion site, increment per new entry; decrements only
+            // after removal). A skipped pass would only have dropped chunk-set
+            // keys and a "may hold ops" hint. Was: one fork/join of the whole
+            // team per type and per pass regardless -- 92% of the run's
+            // parallel regions at 64 threads.
+            if (!g_serial_drain_legacy && !CompressionManager<T, CHUNK_T<T>>::any_pending_ops())
+                break;
+
             bool pass_flushed = false;
 #pragma omp parallel reduction(|| : pass_flushed)
             {
