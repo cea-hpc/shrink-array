@@ -150,7 +150,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     is_cst_val_new_value_is_other_cst_val(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
     {
         // CRTP dispatch: each variant owns its fast pre-check. Chunk2 keeps the
-        // strict constant-to-constant test below; Chunk2A widens it (see
+        // "a constant is written" test below; Chunk2A widens it (see
         // Proxy2A::pre_check_mark_for_compression) because its
         // should_mark_for_compression() accepts a case this test would reject.
         //
@@ -163,22 +163,35 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     }
 
     /**
-     * @brief Strict constant-to-constant pre-check, shared by every variant.
-     * @details Accepts only a write that moves the chunk directly from one
-     *          constant to the other. This is the corrected (non-tautological)
-     *          form; it is sufficient for Chunk2, whose
-     *          should_mark_for_compression() only ever fires on such a
-     *          transition.
+     * @brief Pre-check shared by every variant: the write is of a constant.
+     * @details A write is worth the marking path (one read of the old value,
+     *          then add_to_compression_list) when the value written is one of
+     *          the chunk's two constants -- whatever the chunk's state.
+     *          should_mark_for_compression() then keeps the writes that change
+     *          the element (old != new), so a chunk is queued at most once per
+     *          pass, on its first write of a constant over something else.
+     *
+     *          Until Sept '26 this accepted only a chunk ALREADY at one
+     *          constant being written the other, on the reasoning that
+     *          should_mark only fired on that transition. It does not: a chunk
+     *          materialised by a plain value (2.5 over cst_val1) and then
+     *          written back to a constant element by element was never
+     *          queued, and stayed materialised for the run in a perf build --
+     *          the check builds' compress_int self-heal was compressing 100
+     *          out of 100 such chunks. The cost of the widening is paid only
+     *          by writes of a constant: an old-value read and a compare, and,
+     *          on the first such write per pass, the flag's CAS. The
+     *          candidate list then also holds chunks that will not be constant
+     *          at the pass, scanned at chunk_size each.
      * @param new_value The new value to check.
      * @param first_value The first constant value to compare against.
      * @param second_val The second constant value to compare against.
-     * @return true if the chunk is at cst_val1 and new_value == second_val,
-     *         or at cst_val2 and new_value == first_value.
+     * @return true if new_value is first_value or second_val.
      */
     [[nodiscard]] bool
     pre_check_mark_for_compression_strict(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
     {
-        return (is_cst_val1() && new_value == second_val) || (is_cst_val2() && new_value == first_value);
+        return new_value == first_value || new_value == second_val;
     }
 
     /**

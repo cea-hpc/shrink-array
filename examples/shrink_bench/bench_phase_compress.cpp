@@ -70,6 +70,18 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         auto& tab_point   = bench_arr.tab_point;
         auto& tab_cell    = bench_arr.tab_cell;
 
+        // Compress the queued candidates first, from outside the region: each
+        // compress() below runs in an `omp single`, where compress_int cannot
+        // drain (it would nest a parallel region), so a candidate still queued
+        // by the serial writes of the iteration (fill_range / copy_range) was
+        // reported as a miss its self-heal had to compress.
+        if constexpr (build_config::use_openmp && !chunk_config::have_agressive_compression)
+        {
+            auto& ens = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
+            if (ens.have_chunk_to_compress_potentially())
+                ens.compress_chunk_to_compress_potentially(true);
+        }
+
 #pragma omp parallel
         {
 #pragma omp single nowait

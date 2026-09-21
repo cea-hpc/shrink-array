@@ -744,8 +744,11 @@ void ArrayChunk2<T, ind_type>::compress_int()
     // its OWN parallel region, so it must not be nested: guard on
     // !CHUNK_PMP_IN_PARALLEL_REGION (if compress_int ever runs inside a parallel
     // region, skip the drain -- pre-existing behaviour, no nesting).
-    // `drained` qualifies the self-heal report below: without the drain, a
-    // chunk it compresses may only have been queued.
+    // `true`, as finalize_parallel_phase passes it: with false the pass scans
+    // each candidate, DROPS the verdict and resets its flag (compress_impl), so
+    // the "drain" un-queued the candidates and the self-heal below then
+    // reported them as never marked. `drained` qualifies that report: without
+    // the drain, a chunk it compresses may only have been queued.
     bool drained = false;
     if constexpr (chunk_config::not_use_compression_with_ompt && !chunk_config::have_agressive_compression)
     {
@@ -754,7 +757,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
             auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
             if (ens_type_chunk.have_chunk_to_compress_potentially())
             {
-                ens_type_chunk.compress_chunk_to_compress_potentially(false);
+                ens_type_chunk.compress_chunk_to_compress_potentially(true);
             }
             drained = true;
         }
@@ -892,16 +895,41 @@ void ArrayChunk2<T, ind_type>::compress_int()
                 keep2.push_back(jj);
         tab_nb1.swap(keep1);
         tab_nb2.swap(keep2);
+        // After the swap keep1 / keep2 hold the scanned lists.
+        const auto& keep1_scanned = keep1;
+        const auto& keep2_scanned = keep2;
 
         const auto healed1 = scanned1 - tab_nb1.size();
         const auto healed2 = scanned2 - tab_nb2.size();
         if (healed1 + healed2 != 0)
         {
+            // The healed chunks are those the filter dropped: the scanned list
+            // minus the kept one. A few indices name the chunk for whoever
+            // wants to map it back to the writes that left it constant.
+            auto healed_indices = [](const std::vector<int>& scanned, const std::vector<int>& kept)
+            {
+                std::string out;
+                int         n = 0;
+                for (const int j : scanned)
+                {
+                    if (std::ranges::find(kept, j) != kept.end())
+                        continue;
+                    if (n++ == 8)
+                    {
+                        out += " ...";
+                        break;
+                    }
+                    out += ' ';
+                    out += std::to_string(j);
+                }
+                return out;
+            };
 #pragma omp critical
             {
                 std::cerr << "[compress_int self-heal] ArrayChunk2<" << type_name<T>() << ", " << type_name<ind_type>()
-                          << ">: " << healed1 << " chunk(s) at first_value, " << healed2
-                          << " at second_value, materialised and not compressed: compressed now"
+                          << ">: " << healed1 << " chunk(s) at first_value [" << healed_indices(keep1_scanned, tab_nb1)
+                          << " ], " << healed2 << " at second_value [" << healed_indices(keep2_scanned, tab_nb2)
+                          << " ], materialised and not compressed: compressed now"
                           << (drained ? " (pending list drained first: never marked)"
                                       : " (in a parallel region, pending list NOT drained: maybe only queued)")
                           << "\n";
