@@ -53,6 +53,8 @@
 #include "chunk/internal/conditional_counter.h" // counter_value_t
 #include "chunk/config.h"
 #include "chunk/vector_range_ops.h" // detail::ChunkedArray + the std::vector fallback
+#include "chunk/internal/write_compress_sync_policy.h" // fill_range_mt: the writer side of the Dekker handshake
+#include "chunk/internal/compression_manager.h"      // fill_range_mt: must_defer_write / wait_out_compressor
 
 namespace shrink_array
 {
@@ -400,6 +402,136 @@ template <detail::ChunkedArray Arr, typename It>
 void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, assume_drained_t)
 {
     copy_range(a, first, last, src_first, /*drain=*/false);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// fill_range_mt: the parallel form -- one write SESSION per chunk
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @brief Bulk fill callable concurrently from several threads, each on its own
+ *        indices: one write session per chunk instead of one per element.
+ *
+ * @details fill_range() writes raw into a chunk's buffer under a SERIAL
+ *          contract (no concurrent writer, no compression pass). This variant
+ *          keeps the per-element write path's guarantees by taking its steps
+ *          once per chunk span instead of once per element:
+ *            1. pending deferred ops on the chunk -> this span goes through the
+ *               element path (it syncs foreign ops, erases/excludes own ones);
+ *            2. a compressor on the chunk -> wait it out (bounded, before
+ *               announcing, like the element path);
+ *            3. announce this thread as a writer of the chunk (Dekker, the
+ *               write side of WriteCompressSyncPolicy);
+ *            4. re-check (compressor, pending ops, still materialised); any
+ *               doubt -> retire and take the element path for the span;
+ *            5. raw stores into the chunk's buffer;
+ *            6. retire;
+ *            7. queue the chunk as a compression candidate (as the last element
+ *               write would have: the pass drops it if it is not constant).
+ *          A chunk that is not materialised is first materialised through the
+ *          element path, outside any session (a proxy write inside a session
+ *          would re-announce and then clear this thread's writer flag).
+ *          Unlike fill_range, a chunk is never RELEASED here (a whole-chunk
+ *          fill of the constant leaves it materialised and queued): another
+ *          thread may be writing other elements of the same chunk, into that
+ *          very buffer.
+ *
+ *          Chunk2A under OpenMP with fast block compression only; everywhere
+ *          else (Chunk, Chunk2, bool, serial builds) it is the element loop --
+ *          correct in parallel, without the speed-up. Chunk is excluded on
+ *          purpose: its zero counter is resynced from the whole chunk, which
+ *          another thread may be writing.
+ *
+ * @pre   Called inside or outside a parallel region; concurrent callers write
+ *        DISJOINT indices (any chunk may be shared). No rechunk_to() / resize /
+ *        clear of @p a meanwhile (the usual contract of those).
+ * @param a     target array
+ * @param first first index, inclusive (clamped to size())
+ * @param last  last index, exclusive (clamped to size())
+ * @param v     value to store
+ */
+template <detail::ChunkedArray Arr, typename U>
+void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
+{
+    using T          = Arr::value_type;
+    using ind_type   = decltype(a.size());
+    using chunk_type = Arr::chunk_type;
+
+    const auto n = static_cast<std::size_t>(a.size());
+    if (first >= last || first >= n)
+        return;
+    if (last > n)
+        last = n;
+
+    const in_t<T> value = static_cast<T>(v);
+
+    constexpr bool session = chunk_config::use_chunk2a && build_config::use_openmp &&
+                             chunk_config::use_fast_block_compression && detail::raw_fillable_v<T>;
+    if constexpr (!session)
+    {
+        for (std::size_t i = first; i < last; ++i)
+            a[static_cast<ind_type>(i)] = value;
+    }
+    else
+    {
+        using Policy = WriteCompressSyncPolicy<typename Arr::proxy_type>;
+        using Mgr    = CompressionManager<T, chunk_type>;
+
+        const unsigned int S = a.chunk_size();
+        if constexpr (build_config::chunk_dynamic)
+            set_thread_chunk_size(S);
+        const int thr = get_thr_rank_fast();
+
+        const std::size_t first_chunk = first / S;
+        const std::size_t last_chunk  = (last - 1) / S;
+
+        for (std::size_t ci = first_chunk; ci <= last_chunk; ++ci)
+        {
+            const std::size_t c_begin = ci * S;
+            const std::size_t c_end   = c_begin + S;
+            const std::size_t lo      = first > c_begin ? first : c_begin;
+            const std::size_t hi      = last < c_end ? last : c_end;
+
+            auto& ch = a.chunk_ref(ci);
+
+            // Materialise through the element path, outside any session.
+            std::size_t i = lo;
+            while (i < hi && !detail::materialised(ch))
+            {
+                a[static_cast<ind_type>(i)] = value;
+                ++i;
+            }
+            if (i == hi)
+                continue;
+
+            bool done = false;
+            if (!ch.pending_any()) // 1. deferred ops on the chunk: element path
+            {
+                if (Mgr::must_defer_write(ch)) // 2. a compressor on it: wait (bounded)
+                    Mgr::wait_out_compressor(ch);
+
+                Policy::announce_write(thr, &ch); // 3.
+                if (!Mgr::must_defer_write(ch) && !ch.pending_any() && detail::materialised(ch)) // 4.
+                {
+                    T* dst = ch.values_load(); // 5.
+                    for (std::size_t k = i; k < hi; ++k)
+                        dst[k - c_begin] = value;
+                    done = true;
+                }
+                Policy::end_write(thr); // 6.
+            }
+
+            if (!done)
+            {
+                for (; i < hi; ++i)
+                    a[static_cast<ind_type>(i)] = value;
+                continue; // the element path queued the chunk itself
+            }
+
+            detail::queue_for_compression(a, c_begin); // 7.
+        }
+    }
 }
 
 } // namespace shrink_array
