@@ -177,9 +177,24 @@ void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
     {
         const int thr     = CHUNK_PMP_THREAD_RANK;
         auto&     chunk_t = manager_chunk::chunk_to_compress_potentially_thr[thr];
+        // Dynamic geometry: pin the ambient chunk size to EACH candidate's own
+        // (the tuple's ChunkElems, captured when it was queued), restored after
+        // the loop. clear_st() -> free_block_to_pool() parks the buffer in the
+        // reuse list of the AMBIENT size, and a thread's ambient size after a
+        // re-chunk is that array's new one (the rebuild region sets it and
+        // never restores the workers'): compressing a 64-chunk of another
+        // array from a rank left at 128 parked its 64-buffer in the 128 list,
+        // which handed it out as a 128-buffer later -- a re-chunk right before
+        // a zeroing phase gave non-reproducible results two iterations on, at
+        // 2-3 threads (shrink_bench chunk_dyn, forced advisor, Sept '26).
+        // Chunk2 and Chunk2A pin the same way (compress_chunk_to_compress_in_par_impl,
+        // make_block_compression_impl).
+        [[maybe_unused]] const unsigned int saved_sz = shrink_array::thread_chunk_size();
         for (auto& tup : chunk_t)
         {
             auto* chunk_p = std::get<0>(tup);
+            if constexpr (build_config::chunk_dynamic)
+                shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
             chunk_p->compress(thr, std::get<3>(tup).count());
 
             // Release the dedup gate for this chunk. add_to_compression_list only
@@ -197,6 +212,8 @@ void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
         if constexpr (chunk_config::use_compression_with_ompt)
             manager_chunk::old_size_chunk_to_compress_potentially[thr] = chunk_t.size();
         //   old_size_chunk_to_compress_potentially[thr] = chunk_t.size();
+        if constexpr (build_config::chunk_dynamic)
+            shrink_array::set_thread_chunk_size(saved_sz);
         chunk_t.clear();
     }
 
@@ -367,13 +384,28 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
 
     fill_list_chunk_to_compress_in_par(thr, ll_compt);
 
+    // Geometry: the list of one rank mixes chunks from EVERY array, at their
+    // own sizes once one has been re-chunked. clear_int_st() frees the buffer
+    // into the reuse list of the AMBIENT size (free_block_to_pool), so each
+    // chunk is pinned to its own n_elems right before its clear, as Chunk2's
+    // make_block_compression_impl and Chunk2A's do. Pinned once to the
+    // triggering array's size (FastBlockSupport::make_block_compression),
+    // a 64-chunk of another array cleared from a pass at 128 parked its
+    // buffer in the 128 list, which handed it out as a 128-buffer later:
+    // non-reproducible results two iterations after a re-chunk, at 2-3
+    // threads (shrink_bench chunk_dyn, forced advisor, Sept '26).
+    [[maybe_unused]] const unsigned int saved_sz = shrink_array::thread_chunk_size();
     for (const auto& tup : ll_compt)
     {
         auto* chunk_ptr = std::get<0>(tup);
 
+        if constexpr (build_config::chunk_dynamic)
+            shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
         chunk_ptr->clear_int_st(thr);
         chunk_ptr->steal_unmark();
     }
+    if constexpr (build_config::chunk_dynamic)
+        shrink_array::set_thread_chunk_size(saved_sz);
 
     for (int k = 0; k < sz; ++k)
     {
