@@ -565,6 +565,14 @@ struct Proxy2AFastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2A<
  * @tparam T stored element type
  */
 
+/// A/B switch: CHUNK_PROXY2A_MARK_LEGACY=1 (read once, at load) disables the
+/// "could become uniform" filter of Proxy2A::should_mark_for_compression().
+inline const bool g_proxy2a_mark_legacy = []
+{
+    const char* e = std::getenv("CHUNK_PROXY2A_MARK_LEGACY");
+    return e != nullptr && e[0] != '\0' && e[0] != '0';
+}();
+
 template <typename T>
 class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_config::use_fast_block_compression>
 {
@@ -830,15 +838,59 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      *          queued again, hence never compressed until it passed through
      *          first_value: 100 out of 100 in the Sept '26 probe.
      */
-    [[nodiscard]] static bool should_mark_for_compression(in_t<T> old_value,
-                                                          in_t<T> new_value,
-                                                          in_t<T> second_value,
-                                                          in_t<T> first_value) noexcept
+    ///
+    /// Both Chunk2A clauses also require may_become_uniform(new_value): they
+    /// used to fire on ANY such write, so a materialised chunk of varied data
+    /// was queued, scanned, found not uniform, reset -- and re-queued by the
+    /// next write; the writer then drove make_block_compression on the slow
+    /// path again and again (~3 us per write on chunk2a_256, 64 threads).
+    /// Non-static: the filter reads the chunk.
+    [[nodiscard]] bool should_mark_for_compression(in_t<T> old_value,
+                                                   in_t<T> new_value,
+                                                   in_t<T> second_value,
+                                                   in_t<T> first_value) const noexcept
     {
-        return CompressionManager<T, ChunkType>::should_mark_for_compression(old_value, new_value, second_value,
-                                                                             first_value) ||
-               (second_value == first_value && new_value != first_value) ||
-               (second_value != first_value && old_value == second_value && new_value != second_value);
+        if (CompressionManager<T, ChunkType>::should_mark_for_compression(old_value, new_value, second_value,
+                                                                          first_value))
+            return true;
+        const bool discover = (second_value == first_value && new_value != first_value);
+        const bool leave    = (second_value != first_value && old_value == second_value && new_value != second_value);
+        if (!discover && !leave)
+            return false;
+        if (g_proxy2a_mark_legacy)
+            return true;
+        if constexpr (chunk_config::use_fast_block_compression)
+        {
+            // Already queued: add_to_compression_list() is a no-op, exactly as
+            // before -- one relaxed load, and the reads of the filter are only
+            // paid once the pass has reset the flag.
+            if (this->ptr_is_inside_chunk_list_to_compress != nullptr &&
+                this->ptr_is_inside_chunk_list_to_compress->load(std::memory_order_relaxed) != 0)
+                return true;
+        }
+        return may_become_uniform(new_value);
+    }
+
+    /// @brief Could the chunk be uniform at @p v once this write lands?
+    /// @details NECESSARY condition: two other elements of the chunk (the first
+    ///          and the last, or their neighbours when one of them is the
+    ///          element being written) already hold @p v. The write that
+    ///          completes a uniform chunk always passes -- every other element
+    ///          holds the value by then. Read with the scan accessor (internal
+    ///          read, counted as such in CHUNK_STATS). Under concurrent writes
+    ///          on the same chunk, two final writes landing exactly on the two
+    ///          reference elements may both read the other's old value and both
+    ///          skip: a missed hint (the chunk stays materialised, values
+    ///          correct), never a wrong value.
+    [[nodiscard]] bool may_become_uniform(in_t<T> v) const noexcept
+    {
+        const int S = static_cast<int>(this->chunk_size());
+        if (S < 3) [[unlikely]]
+            return true;
+        const int i  = this->num;
+        const int r0 = (i == 0) ? 1 : 0;
+        const int r1 = (i == S - 1) ? S - 2 : S - 1;
+        return this->chunk.read_value_scan(r0) == v && this->chunk.read_value_scan(r1) == v;
     }
 
     /**
