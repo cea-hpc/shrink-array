@@ -133,7 +133,7 @@ bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeReport& r
     // the 8 MB policy value still gated the coarsening branch after
     // CHUNK_COARSEN_MIN_META_MB=0 had cleared the floor -- "gain below
     // deadband" at every tick, on every chunk-family variant.
-    static const std::size_t env_min_gain = []() -> std::size_t
+    static const std::size_t env_min_gain = []()
     {
         const char* e = std::getenv("CHUNK_ADVISOR_MIN_GAIN_MB");
         if (e == nullptr || e[0] == '\0')
@@ -143,7 +143,7 @@ bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeReport& r
     }();
     const std::size_t min_gain = env_min_gain == static_cast<std::size_t>(-1) ? pol_.min_gain_bytes : env_min_gain;
 
-    const std::size_t rel_gate  = static_cast<std::size_t>(pol_.min_gain_frac * static_cast<double>(cur_e.mem_bytes));
+    const auto rel_gate  = static_cast<std::size_t>(pol_.min_gain_frac * static_cast<double>(cur_e.mem_bytes));
     std::size_t       data_gate = std::max(min_gain, rel_gate);
     if (coarsening && pol_.coarsen_gain_multiple > 1)
         data_gate *= pol_.coarsen_gain_multiple;
@@ -326,7 +326,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             return false;
         }
 
-        const ChunkSizeReport rep = ChunkSizeAdvisor<T>::analyze(arr);
+        const ChunkSizeReport& rep = ChunkSizeAdvisor<T>::analyze(arr);
 
         // If a PRIOR re-chunk of this array is awaiting its "after" figure,
         // fill it now: this tick's analysis sees the new geometry once it has
@@ -365,7 +365,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             pending_after_.erase(it);
         }
 
-        const bool act = observe<T>(&arr, tick, rep, name);
+        const bool act = observe(&arr, tick, rep, name);
         if (act && !pol_.dry_run && rep.best >= 0)
         {
             const int      eff_best = capped_best_index(rep, hist_[&arr].coarsen_banned);
@@ -381,7 +381,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             // "after" is measured at the NEXT tick on this array (settled +
             // re-compressed), not now. Seed it with the prediction so a run
             // that ends before the next tick still shows a sane figure.
-            log_.push_back(RechunkEvent{iter, std::string(name), old_sz, new_sz, mem_bef, mem_prd, mem_prd});
+            log_.emplace_back(RechunkEvent{iter, std::string(name), old_sz, new_sz, mem_bef, mem_prd, mem_prd});
             pending_after_[&arr] = log_.size() - 1;
         }
         return act;
