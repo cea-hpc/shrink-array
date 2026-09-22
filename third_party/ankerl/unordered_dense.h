@@ -1771,7 +1771,16 @@ private:
         // leaves exactly one bit per matching lane, four apart, which is what lane_stride is.
         auto const cmp = vceqq_u8(vld1q_u8(group.m_fingerprints.data()), vdupq_n_u8(static_cast<std::uint8_t>(word)));
         auto const nibbles = vshrn_n_u16(vreinterpretq_u16_u8(cmp), 4);
-        return vget_lane_u64(vreinterpret_u64_u8(nibbles), 0) & UINT64_C(0x1111111111111111);
+        // Local patch (shrink-array): the eight bytes are read out with memcpy
+        // rather than vreinterpret_u64_u8 + vget_lane_u64. nvc++ reports every
+        // vreinterpret_* as "conversion between incompatible vector types"
+        // [incompatible_vectors_conversion] -- which is what a reinterpret IS,
+        // so the diagnostic is pure noise here, and it repeats for every
+        // instantiation of the table. gcc and clang fold this memcpy to the
+        // same `fmov x0, d0`.
+        std::uint64_t mask{};
+        std::memcpy(&mask, &nibbles, sizeof(mask));
+        return mask & UINT64_C(0x1111111111111111);
         // NOLINTEND(portability-simd-intrinsics)
 #    else
         auto const wanted = static_cast<std::uint64_t>(static_cast<std::uint8_t>(word)) * UINT64_C(0x0101010101010101);
