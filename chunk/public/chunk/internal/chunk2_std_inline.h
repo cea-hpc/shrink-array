@@ -196,7 +196,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_impl(vec_t
  *
  * @warning The clear only runs when @p apply is true. Called with false,
  *          this scans the whole chunk and discards the verdict -- it
- *          compresses nothing (the flag was named apply, and
+ *          compresses nothing (the flag was named is_inside_ompt, and
  *          compress_int's drain passed false for a year believing it
  *          compressed).
  */

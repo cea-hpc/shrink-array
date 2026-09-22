@@ -391,7 +391,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>,
      *        their flags reset and (chunk2) emptied, and NOTHING is
      *        compressed -- the terminal sweep of a dying array uses it to
      *        purge its chunks from the lists. It used to be called
-     *        apply, and compress_int passed false believing it
+     *        is_inside_ompt, and compress_int passed false believing it
      *        drained: its "misses" were the candidates it had just un-queued.
      */
     void compress_chunk_to_compress_potentially(bool apply) const;

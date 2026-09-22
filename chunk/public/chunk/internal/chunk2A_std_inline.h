@@ -407,15 +407,18 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
  * @param thr_rank       Calling thread's rank (OMPT path only).
  * @param num_chunk      Index of this chunk in its array.
  * @param num_tab        Table number of the owning array.
- * @param apply          true: compress the chunk if constant. Honoured in a
- *                       serial build and under OMPT; an OpenMP build without
- *                       OMPT returns at once (below), whatever it says.
+ * @param apply          true: scan, and compress the chunk if constant;
+ *                       false: nothing at all in an OpenMP build without OMPT
+ *                       (the candidate lists' purge walks call it so: the
+ *                       scan with no clear to show for it measured ~40 % of an
+ *                       aarch64 profile), the scan alone elsewhere.
  * @param size           Geometry of the owning array.
  *
- * @warning Returns immediately in an OpenMP build WITHOUT OMPT — there,
- *          make_block_compression() is the only compressor, and this scan would
- *          be pure cost with no clear to show for it (it measured ~40% of an
- *          aarch64 profile). Do not assume calling this compresses anything.
+ * @note In an OpenMP build without OMPT the between-region pass is
+ *       make_block_compression() (compress_chunk_to_compress); this is what
+ *       the rechunk fold calls on a chunk of its own, with apply = true.
+ *       Until Sept '26 it returned at once there whatever the flag, and a
+ *       GNU build's fold counted every merged constant span as refused.
  */
 template <typename T>
 void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
@@ -434,14 +437,14 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
     // scan via fill_list_to_compress, its own find_or_set, then clear_int_st).
     // find_or_set is idempotent, so that registration is redundant and the
     // discarded new_cst_val2_ptr is only used by the OMPT clear. This scan was
-    // ~40% of the aarch64 profile with zero compression effect. make_block_
-    // compression is the sole compressor in this build, so skip entirely.
-    //
-    // The guard fires EXACTLY when this function cannot compress
-    // (use_openmp && !OMPT); non-OMP and OMPT builds keep their live clear paths.
+    // ~40% of the aarch64 profile with zero compression effect: the lists'
+    // purge walks (apply = false) skip it entirely. With apply = true -- the
+    // rechunk fold, on a chunk no writer can reach -- the scan and the clear
+    // run here as in every other build.
     if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
     {
-        return;
+        if (!apply)
+            return;
     }
 
     // Only a MATERIALISED chunk can be compressed: a queued entry can outlive
@@ -507,13 +510,10 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
         // read of such a chunk after a rechunk_to() dereferenced null
         // (rechunk_validation_chunk2a_dyn, scale-64-to-tgt, serial build).
         // The serial build used to clear on !apply (the flag was named
-        // apply and the serial callers passed false): every caller
-        // now says what it wants, so the two builds read it the same way.
-        bool do_clear = false;
-        if constexpr (!build_config::use_openmp || chunk_config::use_compression_with_ompt)
-            do_clear = apply;
-
-        if (do_clear)
+        // is_inside_ompt and the serial callers passed false), and the
+        // OpenMP build without OMPT never: every caller now says what it
+        // wants, so every build reads it the same way.
+        if (apply)
         {
             SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
             char* ptr_type_cst     = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
