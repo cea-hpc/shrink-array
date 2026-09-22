@@ -401,15 +401,12 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     /**
      * @brief Core compression-marking logic. Must run on EVERY write, not
      *        just zero-transitions: should_mark_for_compression() is tested
-     *        internally, but this function ALSO carries the data-race check
-     *        and the pathological slow-path fallback, both of which need to
-     *        run regardless of whether this particular write is itself a
-     *        zero-transition.
+     *        internally, but this function ALSO carries the data-race check,
+     *        which needs to run regardless of whether this particular write
+     *        is itself a zero-transition.
      * @details Adds this element to the compression candidate list if it is
      *          a zero-transition OR if a race was detected (the in-memory
-     *          value no longer matches `expected_in_memory`). Otherwise, if
-     *          the slow write-compress path is currently active, adds a
-     *          null sentinel to keep that protocol progressing.
+     *          value no longer matches `expected_in_memory`).
      * @param old_value Value before the write.
      * @param new_value Value after the write.
      * @param expected_in_memory The value this write expects to still be in

@@ -149,12 +149,6 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(in_t<T>
         Base::add_to_compression_list();
         return;
     }
-
-    // Handle pathological cases where the slow path might get stuck
-    if (WriteCompressSyncPolicy<Chunk<T>>::is_slow_path_active()) [[unlikely]]
-    {
-        Base::add_null_sentinel_to_compression_list();
-    }
 }
 
 template <typename T>
@@ -656,10 +650,6 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression() const noexc
         if (have_queue)
             return;
 
-        const int max_thr = CHUNK_PMP_MAX_THREADS;
-
-        if (max_thr > 1)
-            WriteCompressSyncPolicy<Proxy<T>>::activate_slow_path();
         std::atomic_thread_fence(std::memory_order_seq_cst);
 
         Chunk<T>::make_block_compression(thr_rank, this->self());

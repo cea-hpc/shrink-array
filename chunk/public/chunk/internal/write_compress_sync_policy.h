@@ -175,18 +175,10 @@ template <typename PROX, bool Enabled = build_config::use_openmp>
 class WriteCompressSyncPolicy
 {
   private:
-    /// Slow-path latch. Chunk v1 only, and one-way: activate_slow_path() is
-    /// called from the v1 proxy before make_block_compression(), and nothing
-    /// clears it -- once set for a given (variant, T) instantiation it stays
-    /// set. The v2/v2A instantiations never activate it.
-    /// @note There WAS a deactivate_slow_path(), which never had a caller; it
-    ///       was removed rather than left as a promise the code did not keep.
-    ///       Restoring it is three lines if the lifecycle below is decided the
-    ///       other way.
-    /// @warning Do not fold this into CompressionManager::state_ before deciding
-    ///          its intended lifecycle: re-evaluating the latch is its own work
-    ///          item.
-    alignas(128) static inline std::atomic<bool> active_slow_path{false};
+    // The v1 "slow-path latch" (active_slow_path / is_slow_path_active /
+    // activate_slow_path) was removed: it was raised on the Proxy<T>
+    // instantiation and tested on the Chunk<T> one -- two statics, the read one
+    // never written -- so its null-sentinel branch was unreachable.
 
   public:
     /// @brief One writer flag, padded to its own cache line: the chunk the
@@ -484,18 +476,6 @@ class WriteCompressSyncPolicy
     }
 
     ~WriteCompressSyncPolicy() = default;
-
-    /// @brief Returns true if slow-path is active.
-    [[nodiscard]] static bool is_slow_path_active() noexcept
-    {
-        return active_slow_path.load(std::memory_order_acquire);
-    }
-
-    /// @brief Activates slow-path mode.
-    static void activate_slow_path() noexcept
-    {
-        active_slow_path.store(true, std::memory_order_seq_cst);
-    }
 };
 
 /**

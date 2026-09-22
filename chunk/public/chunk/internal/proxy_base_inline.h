@@ -107,27 +107,6 @@ constexpr int get_num_tab_async_helper(auto* ctx, const ProxyType& proxy, const 
 }
 
 /**
- * @brief Queues this chunk on an explicitly supplied candidate list, once.
- *
- * Non-atomic variant of add_to_compression_list(): the flag is read and set
- * with plain accesses, so it is only correct where a single thread owns the
- * chunk. Despite its name it pushes the chunk itself, not a sentinel.
- *
- * @param vec_tuple Candidate list to push onto.
- */
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
-void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_null_sentinel_to_compression_list(
-    auto& vec_tuple) const
-{
-    if (!(*ptr_is_inside_chunk_list_to_compress))
-    {
-        *ptr_is_inside_chunk_list_to_compress = 1;
-        push_to_compress_list(vec_tuple, &derived().chunk, derived().num_chunk, derived().num_tab,
-                              ChunkElems{this->chunk_size()});
-    }
-}
-
-/**
  * @brief Arms the "already queued" flag pointer from a replay context.
  *
  * Async counterpart of set_ptr_is_inside_chunk_list_to_compress(): the
@@ -212,32 +191,6 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list([[maybe_unused]] 
     else
     {
         //    add_null_sentinel_to_compression_list(vec_tuple);
-    }
-}
-
-/**
- * @brief Appends a null terminator to this thread's candidate list.
- *
- * Marks the end of a batch of candidates with a `{nullptr, -1, -1}` tuple, so
- * the compression sweep knows where the group it must process stops. Idempotent
- * and cheap: nothing is pushed onto an empty list, nor after a sentinel that is
- * already the last entry.
- */
-template <typename Derived, typename T, typename ChunkType, bool Enabled>
-void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_null_sentinel_to_compression_list() const
-{
-    const int thr = get_thr_rank_fast();
-
-    auto&     vec = derived().get_vec_tuple_to_compress_potentially_thr(thr);
-    const int sz  = vec.size();
-
-    if (sz)
-    {
-        const auto& tup = vec[sz - 1];
-        if (std::get<0>(tup) != nullptr)
-        {
-            push_to_compress_list(vec, static_cast<ChunkType*>(nullptr), -1, -1, ChunkElems{0U});
-        }
     }
 }
 

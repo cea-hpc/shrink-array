@@ -159,12 +159,6 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     ///        taking the tab/chunk indices from @p ctx.
     void set_ptr_is_inside_chunk_list_to_compress_async(auto* ctx);
 
-    /// @brief Close @p vec_tuple with a null entry, marking the batch's end.
-    void add_null_sentinel_to_compression_list(auto& vec_tuple) const;
-
-    /// @brief add_null_sentinel_to_compression_list() on the calling thread's list.
-    void add_null_sentinel_to_compression_list() const;
-
     /// @brief Queue the chunk @p ctx names as a compression candidate, on the
     ///        replay path.
 #if CRTP_USE_DEDUCING_THIS
@@ -203,12 +197,6 @@ struct ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSuppor
     /// @brief Never callable in this configuration. Aborts.
     template <typename ProxyType, typename Ctx>
     static ProxyType make_proxy_with_info(Ctx* /*ctx*/)
-    {
-        std::abort();
-    }
-
-    /// @brief Never callable in this configuration. Aborts.
-    static void add_null_sentinel_to_compression_list()
     {
         std::abort();
     }
