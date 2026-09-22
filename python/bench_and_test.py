@@ -313,10 +313,32 @@ DEFAULT_SEQ_OMP_SEED     = 42
 DEFAULT_SEQ_OMP_ITER_MAX = 2000
 DEFAULT_SEQ_OMP_DIVISOR  = 100
 
+# --- Scalability guard (omp-llvm only) ------------------------------------
+# A short perf sweep whose POINT is the shape of the curve, not the absolute
+# numbers: the wall time must keep going DOWN as threads are added, or at
+# least not blow up. It catches the regressions the averaged perf phase hides
+# -- a lock that only bites past 32 threads, a pass that became serial -- and
+# it is cheap: one run per thread count, one variant, on the one config worth
+# trusting for timings (release LLVM, the fastest of the matrix).
+SCALING_CONFIG   = "cmake-build-omp-llvm"
+SCALING_THREADS  = [4, 8, 16, 32, 64, 128]
+SCALING_VARIANT  = "chunk2a@dyn"
+SCALING_DIVISOR  = 50
+SCALING_ITER_MAX = 200
+# A point is a REGRESSION when it is slower than the previous one by more than
+# this factor. 1.10 tolerates the usual run-to-run spread of a single run and
+# the genuine plateau at the top of the curve; a real serialisation shows up
+# as 1.5x and beyond.
+SCALING_MAX_SLOWDOWN = 1.10
+
 # --- Mode presets --------------------------------------------------------
 # Each preset overrides threads / reps_perf / full_reps_threads unless the user
 # passes those flags explicitly. Vary both the thread distribution and the
 # number of repetitions.
+# The scalability guard (run_scaling_phase) is NOT part of these presets: it
+# runs in every mode, on its own thread list, because a mode that trims the
+# perf sweep is exactly the one that would otherwise miss a scaling
+# regression. --skip-scaling is the way out.
 #   fast   : compromise — 64/128 only, few reps on 64, no PERF on the serial
 #            configs. About 1h30 on the full aarch64 matrix, not the ~10 min
 #            this line used to claim: 1129 runs over 8 configs is not a
@@ -1695,6 +1717,117 @@ def run_rechunk_phase(args, extra_ldpath, errors):
     return n_pass, n_total
 
 
+def run_scaling_phase(args, extra_ldpath, errors):
+    """Scalability guard: one perf run per thread count, on omp-llvm alone.
+
+    The averaged perf phase answers "how fast", this one answers "does it
+    still scale". It runs ONE binary over SCALING_THREADS (4..128) with a
+    shrunk workload, prints the curve with the speedup against the first
+    point, and FAILS when a point is slower than the previous one by more than
+    SCALING_MAX_SLOWDOWN (1.10: a single run has spread, and the top of the
+    curve legitimately plateaus -- a serialised pass shows up as 1.5x and
+    beyond).
+
+    Everything it needs is a constant at the top of this file, deliberately:
+    seven knobs for a guard that either says "still scales" or names the point
+    where it stopped would be seven ways to make its verdict unreadable.
+    --skip-scaling turns it off, and it runs in EVERY mode -- most of all in
+    --mode fast, which cuts the perf sweep down to 64/128 and would otherwise
+    see no scalability regression at all.
+
+    Why omp-llvm alone: it is the fastest config of the matrix, hence the one
+    whose curve is worth believing, and one config keeps the phase to a couple
+    of minutes. The point is a REGRESSION signal, not a measurement campaign:
+    --divisor 50 --iter_max 200 keeps every point short, and the thread counts
+    the machine cannot honour (more than CHUNK_PMP_MAX_THREADS / the CPUs
+    present) are dropped with a note rather than measured against an
+    oversubscribed run.
+    """
+    print(cyan(bold("\n📈 Scalability guard — " + short_config_label(SCALING_CONFIG))))
+
+    if SCALING_CONFIG not in args.configs:
+        print(dim(f"   ({short_config_label(SCALING_CONFIG)} not in --configs -- skipped)"))
+        return 0, 0
+
+    exe = resolve_exe(args.build_root, SCALING_CONFIG, SCALING_VARIANT, "perf")
+    if not exe:
+        print(dim(f"   (no {SCALING_VARIANT} perf binary in "
+                  f"{short_config_label(SCALING_CONFIG)} -- skipped)"))
+        return 0, 0
+
+    # Oversubscription measures the scheduler, not the library: drop the
+    # points the machine cannot run one thread per CPU.
+    ncpu = os.cpu_count() or 1
+    threads = [t for t in SCALING_THREADS if t <= ncpu]
+    dropped = [t for t in SCALING_THREADS if t > ncpu]
+    if dropped:
+        print(dim(f"   {ncpu} CPUs: thread count(s) {dropped} dropped (would oversubscribe)"))
+    if len(threads) < 2:
+        print(dim("   (fewer than two usable thread counts -- skipped)"))
+        return 0, 0
+
+    bench_args = ["--mode", "perf", "--no_io",
+                  "--divisor", str(SCALING_DIVISOR),
+                  "--iter_max", str(SCALING_ITER_MAX)]
+    rdir = _run_dir(args.output_dir, "scaling", short_config_label(SCALING_CONFIG))
+
+    n_pass = n_total = 0
+    prev_t = prev_dur = None
+    first_dur = None
+    for tc in threads:
+        n_total += 1
+        lead = (f"{dim(_hms())} {short_config_label(SCALING_CONFIG)[:CONFIG_W]:<{CONFIG_W}} | "
+                f"{SCALING_VARIANT[:VARIANT_W]:<{VARIANT_W}} | {tc:3}th | ")
+        sys.stdout.write("\r" + lead + "running…       ")
+        sys.stdout.flush()
+
+        ok, dur, code, err_tail, _ = run_cmd(
+            [exe] + bench_args, {"OMP_NUM_THREADS": str(tc)},
+            effective_timeout(args.timeout, args.timeout_per_thread, tc),
+            extra_ld_library_path=extra_ldpath, cwd=rdir)
+
+        if not ok:
+            sys.stdout.write("\r" + lead + red("FAIL") + f" (code {code})\n")
+            _entry = (f"SCALING_RUN_FAIL: {exe} {' '.join(bench_args)} threads={tc} code={code}\n"
+                      f"  stderr_tail:\n    " + err_tail.replace('\n', '\n    '))
+            errors.append(_entry)
+            _append_error_now(args.errors_log, _entry)
+            sys.stdout.flush()
+            continue
+
+        if first_dur is None:
+            first_dur = dur
+        speedup = first_dur / dur if dur > 0 else 0.0
+        ratio   = (dur / prev_dur) if prev_dur else 1.0
+        regress = prev_dur is not None and ratio > SCALING_MAX_SLOWDOWN
+
+        note = f" x{speedup:5.2f} vs {threads[0]}th"
+        if prev_dur is not None:
+            note += f", {ratio:4.2f}x the {prev_t}th point"
+        if regress:
+            sys.stdout.write("\r" + lead + red(f"{dur:7.2f}s") + red(note) + "\n")
+            _entry = (f"SCALING_REGRESSION: {short_config_label(SCALING_CONFIG)} "
+                      f"{SCALING_VARIANT} {prev_t}th {prev_dur:.2f}s -> {tc}th {dur:.2f}s "
+                      f"({ratio:.2f}x, limit {SCALING_MAX_SLOWDOWN})\n"
+                      f"  ({' '.join(bench_args)})\n")
+            errors.append(_entry)
+            _append_error_now(args.errors_log, _entry)
+        else:
+            n_pass += 1
+            sys.stdout.write("\r" + lead + bold(f"{dur:7.2f}s") + dim(note) + "\n")
+        sys.stdout.flush()
+        prev_t, prev_dur = tc, dur
+
+    if n_total == 0:
+        tag = yellow("nothing to run")
+    elif n_pass == n_total:
+        tag = green(f"{n_pass}/{n_total} points scale")
+    else:
+        tag = red(f"{n_pass}/{n_total} points scale")
+    print(f"   Scalability: {tag}")
+    return n_pass, n_total
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Benchmark + correctness runner for shrink-array.",
@@ -1814,6 +1947,13 @@ def main():
     parser.add_argument("--ctest-jobs", type=int, default=4,
                         help="Parallel ctest jobs per config (default 4; the "
                              "harnesses are small, the 8-thread ones share cores).")
+    parser.add_argument("--skip-scaling", action="store_true",
+                        help="Skip the scalability guard: one perf run per thread count "
+                             f"({', '.join(map(str, SCALING_THREADS))}) on "
+                             f"{short_config_label(SCALING_CONFIG)}, which FAILS when the "
+                             "curve turns back up. On in every mode; the constants are at "
+                             "the top of this file (SCALING_*), not options -- the guard is "
+                             "a regression signal, not a measurement campaign.")
     parser.add_argument("--skip-rechunk", action="store_true",
                         help="Skip the adaptive re-chunk feature test on the "
                              "_dyn binaries (perf + check stages).")
@@ -2743,6 +2883,13 @@ def main():
         # --- Phase 3: adaptive re-chunk feature test (dyn) --------------
         if not args.skip_rechunk:
             run_rechunk_phase(args, extra_ldpath, errors)
+
+        # --- Phase 4: scalability guard (omp-llvm) ----------------------
+        # After the perf sweep: it reads the same binaries, and a failure here
+        # is about the SHAPE of the curve, which only means something once the
+        # timings above have been produced without incident.
+        if not args.skip_scaling and not args.skip_perf:
+            run_scaling_phase(args, extra_ldpath, errors)
 
         # --- Phase 5: randomised parameter sweep (opt-in) ---------------
         # Last on purpose: it is the only phase that does NOT repeat the same
