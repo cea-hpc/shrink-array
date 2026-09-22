@@ -18,6 +18,7 @@
 
 #include <atomic>   // std::atomic<char> (the "queued" flags)
 #include <cstdio>   // std::fprintf (check-build trace)
+#include <cstdlib>  // std::getenv (CHUNK_PROXY2A_META_LEGACY)
 #include <iostream> // std::cerr (verbose)
 #include <memory>   // std::make_unique
 #include <utility>  // std::move, std::cmp_greater_equal
@@ -80,10 +81,50 @@ namespace shrink_array
 
 // Full arming: resolves num_tab, then every cached pointer. The most expensive
 // of the four, and the default for a write that has not proved it needs less.
+/// A/B switch: CHUNK_PROXY2A_META_LEGACY=1 (read once, at load) makes every
+/// proxy look its metadata addresses up through the per-tab tables again.
+inline const bool g_proxy2a_meta_legacy = []
+{
+    const char* e = std::getenv("CHUNK_PROXY2A_META_LEGACY");
+    return e != nullptr && e[0] != '\0' && e[0] != '0';
+}();
+
+template <typename T>
+bool Proxy2A<T>::meta_from_armed(bool with_sv) noexcept
+{
+    if (meta_.type == nullptr || g_proxy2a_meta_legacy) [[unlikely]]
+        return false;
+    this->ptr_is_inside_chunk_list_to_compress = meta_.inside + num_chunk;
+    ptr_type_cst                               = meta_.type + num_chunk;
+    if constexpr (is_not_bool)
+    {
+        if (with_sv)
+            BaseSpec::ptr_second_value = SecondValueRef<T>{meta_.sv + num_chunk};
+    }
+    if constexpr (build_config::any_check)
+    {
+        const bool bad_inside = this->ptr_is_inside_chunk_list_to_compress !=
+                                &Base::FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab][num_chunk];
+        const bool bad_type = ptr_type_cst != &tab_type_cst_val[num_tab][num_chunk];
+        bool       bad_sv   = false;
+        if constexpr (is_not_bool)
+            bad_sv = with_sv && BaseSpec::ptr_second_value.slot != BaseSpec::get_tab_second_value(num_tab, num_chunk).slot;
+        if (bad_inside || bad_type || bad_sv)
+            INVARIANT_FAILED("Proxy2A::meta_from_armed: armed metadata address differs from the table's "
+                             "(inside {}, type {}, second value {}) for num_tab {} chunk {} -- a reallocation "
+                             "of the array's rows without sync_meta_bases()?",
+                             bad_inside, bad_type, bad_sv, num_tab, num_chunk);
+    }
+    return true;
+}
+
 template <typename T>
 void Proxy2A<T>::set_info_on_chunk() noexcept
 {
     set_num_tab();
+
+    if (meta_from_armed(/*with_sv=*/true)) [[likely]]
+        return;
 
     Base::set_ptr_is_inside_chunk_list_to_compress();
 
@@ -100,6 +141,8 @@ void Proxy2A<T>::set_info_on_chunk() noexcept
 template <typename T>
 void Proxy2A<T>::set_other_info_on_chunk() noexcept
 {
+    if (meta_from_armed(/*with_sv=*/false)) [[likely]]
+        return;
     Base::set_ptr_is_inside_chunk_list_to_compress();
 
     ptr_type_cst = &tab_type_cst_val[num_tab][num_chunk];
@@ -119,6 +162,18 @@ void Proxy2A<T>::set_ptr_second_value() noexcept
 {
     if constexpr (is_not_bool)
     {
+        if (meta_.type != nullptr && !g_proxy2a_meta_legacy) [[likely]]
+        {
+            BaseSpec::ptr_second_value = SecondValueRef<T>{meta_.sv + num_chunk};
+            if constexpr (build_config::any_check)
+            {
+                if (BaseSpec::ptr_second_value.slot != BaseSpec::get_tab_second_value(num_tab, num_chunk).slot)
+                    INVARIANT_FAILED("Proxy2A::set_ptr_second_value: armed slot differs from the table's for "
+                                     "num_tab {} chunk {} -- a reallocation without sync_meta_bases()?",
+                                     num_tab, num_chunk);
+            }
+            return;
+        }
         BaseSpec::ptr_second_value = BaseSpec::get_tab_second_value(num_tab, num_chunk);
     }
 }

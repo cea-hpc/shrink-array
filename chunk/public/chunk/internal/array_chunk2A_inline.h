@@ -89,6 +89,7 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
             // it runs BEFORE any refill, so no proxy holds a cached
             // ptr_second_value into a table we are about to reallocate.
             Proxy2A<T>::resize_tab_is_int(num_tab, 0, nb_chunk);
+            sync_meta_bases(); // rows reallocated: re-arm (Proxy2AMetaBases)
             this->assign_alloc_key(); // own slabs if large enough (see alloc_key_)
 
             // Per-chunk init: every iteration writes slot i of tables sized just
@@ -316,6 +317,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
 
         chunk_list.clear();
         Proxy2A<T>::clear_tab_is_int(num_tab);
+        sync_meta_bases(); // rows released: disarm
 
         return;
     }
@@ -521,6 +523,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
     Proxy2A<T>::clear_tab_is_int(num_tab);
 
     nb_chunk = 0;
+    sync_meta_bases(); // rows released: disarm
 
     // An array with its own slab affinity gives its memory back NOW: every
     // buffer parked above (own rank) or by another rank (foreign, under this
@@ -673,6 +676,7 @@ void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
     Base2::resize_common(newsz);
 
     Proxy2A<T>::resize_tab_is_int(num_tab, old_nb_chunk, nb_chunk);
+    sync_meta_bases(); // rows reallocated: re-arm (Proxy2AMetaBases)
 
     if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
     {

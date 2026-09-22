@@ -33,6 +33,7 @@
 #include "chunk/internal/concept_array_chunk_element.h"  // for ArrayChunkElement
 #include "chunk/config.h"                       // for use_openmp
 #include "chunk/internal/tab_cst_val2_holder.h"           // for GlobalVecHolder (cst2 GC)
+#include "chunk/internal/proxy2A_meta_bases.h"            // Proxy2AMetaBases (armed metadata rows)
 #include "chunk/internal/write_compress_sync_policy.h"   // for WriteCompressSyncPolicy
 
 namespace shrink_array
@@ -93,6 +94,35 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     using Base::num_tab;
 
     friend Base2;
+
+    /// @brief This array's rows in the per-tab metadata tables, armed into
+    ///        every write proxy by operator[] (see Proxy2AMetaBases).
+    [[nodiscard]] const Proxy2AMetaBases<T>& meta_bases() const noexcept
+    {
+        return meta_bases_;
+    }
+
+    /// @brief Re-read the rows from the tables. Call after ANY reallocation of
+    ///        this array's rows (resize_tab_is_int) or change of num_tab -- a
+    ///        missed site is caught by the any_check comparison in
+    ///        Proxy2A::meta_from_armed().
+    void sync_meta_bases() noexcept
+    {
+        Proxy2AMetaBases<T> b;
+        if (num_tab >= 0 && nb_chunk > 0)
+        {
+            b.type   = Proxy2A<T>::tab_type_cst_val[num_tab].data();
+            b.inside = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab).get();
+            if constexpr (!std::is_same_v<T, bool>)
+                b.sv = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab).get();
+        }
+        meta_bases_ = b;
+    }
+
+  private:
+    Proxy2AMetaBases<T> meta_bases_{}; ///< see meta_bases()
+
+  public:
 
     // Mode-specific members, moved out of this class into the mixins above.
     // The using-declarations are not decoration: ArrayChunkBase re-exports

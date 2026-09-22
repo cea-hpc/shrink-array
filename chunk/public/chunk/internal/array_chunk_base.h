@@ -922,6 +922,12 @@ class ArrayChunkBase : public CRTPSupport<Derived>, public DirtyBitsetSupport<De
         {
             val.arm_inf_array(derived().registry_mirror());
         }
+        // Chunk2A: arm the proxy with the array's metadata rows (base +
+        // num_chunk instead of three table lookups per write).
+        else if constexpr (std::is_same_v<proxy_type, Proxy2A<T>>)
+        {
+            val.arm_meta_bases(derived().meta_bases());
+        }
 
         // P1 (CHUNK_SYNC_ON_READ): this is the ONLY non-const proxy operator[] —
         // the write entry. Under sync_on_read it no longer flushes; visibility is

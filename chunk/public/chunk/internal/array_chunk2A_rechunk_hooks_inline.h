@@ -51,7 +51,11 @@ bool RechunkHooks2A<Derived, true>::rechunk_swap_identity(Derived& tmp)
     // member AND make the registry agree (get_num_tab(this) -> S' row).
     using std::swap;
     swap(self().num_tab, tmp.num_tab);
-    return proxy_type::share_info_array.swap_keys(&self(), &tmp);
+    const bool ok = proxy_type::share_info_array.swap_keys(&self(), &tmp);
+    // num_tab changed hands: each array now owns the other's metadata rows.
+    self().sync_meta_bases();
+    tmp.sync_meta_bases();
+    return ok;
 }
 
 } // namespace shrink_array
