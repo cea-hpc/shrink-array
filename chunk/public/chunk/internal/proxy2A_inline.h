@@ -81,12 +81,16 @@ namespace shrink_array
 
 // Full arming: resolves num_tab, then every cached pointer. The most expensive
 // of the four, and the default for a write that has not proved it needs less.
-/// A/B switch: CHUNK_PROXY2A_META_LEGACY=1 (read once, at load) makes every
-/// proxy look its metadata addresses up through the per-tab tables again.
+/// Opt-in switch: the armed metadata rows are used only with
+/// CHUNK_PROXY2A_META_ARMED=1 (read once, at load); by default every proxy
+/// looks its addresses up through the per-tab tables, as before. Measured gain
+/// of the armed rows: ~0.4% (chunk2a_256, 64 threads) -- off by default until
+/// the write path weighs enough for sync_meta_bases' invariant to pay.
+/// g_proxy2a_meta_legacy == true means "look up" (the name predates the flip).
 inline const bool g_proxy2a_meta_legacy = []
 {
-    const char* e = std::getenv("CHUNK_PROXY2A_META_LEGACY");
-    return e != nullptr && e[0] != '\0' && e[0] != '0';
+    const char* e = std::getenv("CHUNK_PROXY2A_META_ARMED");
+    return !(e != nullptr && e[0] != '\0' && e[0] != '0');
 }();
 
 template <typename T>
