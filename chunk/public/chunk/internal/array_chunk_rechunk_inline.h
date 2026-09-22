@@ -66,12 +66,16 @@ inline long rss_mib_now() noexcept
 #ifdef _OPENMP
 /// @brief The rebuild loop's schedule: CHUNK_RECHUNK_SCHEDULE="kind[,chunk]"
 ///        (static|dynamic|guided|auto, chunk >= 1 or omitted), read once;
-///        dynamic,64 when unset or malformed -- the historical schedule.
+///        guided,16 when unset or malformed. Measured at 64 threads
+///        (shrink_bench_chunk2_dyn --mode perf): whole bench -3.8% vs the
+///        historical dynamic,64 (34.68 -> 33.37 s), rebuild phases -7%
+///        (median); dynamic,256/1024 were 2-3x slower on small rechunks.
+///        CHUNK_RECHUNK_SCHEDULE=dynamic,64 restores the old schedule.
 struct RebuildSchedule
 {
-    omp_sched_t kind  = omp_sched_dynamic;
-    int         chunk = 64;
-    char        text[32]{"dynamic,64"};
+    omp_sched_t kind  = omp_sched_guided;
+    int         chunk = 16;
+    char        text[32]{"guided,16"};
 };
 
 inline const RebuildSchedule& rebuild_schedule() noexcept
@@ -104,7 +108,7 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
         if (!ok)
         {
             std::fprintf(stderr, "[RECHUNK] CHUNK_RECHUNK_SCHEDULE=\"%s\" not understood "
-                                 "(kind[,chunk], kind = static|dynamic|guided|auto): keeping dynamic,64\n", e);
+                                 "(kind[,chunk], kind = static|dynamic|guided|auto): keeping guided,16\n", e);
             return r;
         }
         r.kind  = k;
@@ -894,7 +898,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 // nothing. Per-thread (thread_local), so it lives inside the region.
                 typename CompressionManager<T, chunk_type>::FlushReplayGuard rechunk_replay_guard;
                 std::vector<T>                                               buf(static_cast<std::size_t>(new_size));
-                // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default dynamic,64
+                // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
                 // (rechunk_detail::rebuild_schedule).
 #pragma omp for schedule(runtime)
                 for (int c = c0; c < c1; ++c)
