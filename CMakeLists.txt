@@ -221,11 +221,42 @@ elseif (CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM")
 endif ()
 include(CheckCXXCompilerFlag)
 
+# icpx and a non-Intel CPU.
+#
+#   "This executable is built with target processor feature specified, it can
+#    only be run on Intel(R) processors."
+#
+# is printed by __intel_cpu_features_init_x, from Intel's runtime helper
+# library, before main -- which is what an AMD node answers, after the OMPT
+# callbacks have already printed their lines. -x<target> is what asks for that
+# vendor dispatch, so the default here is -march=native: the clang spelling
+# icpx also takes, same instruction set for the machine it is built on, no
+# -x. ONEAPI_XHOST=ON restores -xHost for a binary that will only ever run on
+# the Intel machine that built it.
+#
+# If the message persists with -march=native (the feature requirement is
+# recorded either way; only the run on the AMD machine can tell), the last
+# resort is ONEAPI_NO_INTEL_LIBS=ON: it links NO Intel runtime library at all.
+# That is what it takes -- dropping libirc alone does not link, since libsvml
+# itself needs it (undefined __intel_cpu_features_init_x) -- and the price is
+# the vectorised math: -fveclib=none, so sin/cos go through libm one element
+# at a time.
+option(ONEAPI_XHOST "icpx: build an Intel-only binary (-xHost) instead of one that also runs on AMD" OFF)
+option(ONEAPI_NO_INTEL_LIBS "icpx: link no Intel runtime library (no libirc, no libsvml: no vector math) -- the last resort when the vendor check still fires on a non-Intel CPU" OFF)
+
 if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
         add_compile_options(-tp=host)
     elseif(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
-        add_compile_options(-xHost)
+        if(ONEAPI_XHOST)
+            add_compile_options(-xHost)
+        else()
+            add_compile_options(-march=native)
+        endif()
+        if(ONEAPI_NO_INTEL_LIBS)
+            add_compile_options(-no-intel-lib -fveclib=none)
+            add_link_options(-no-intel-lib)
+        endif()
     else()
         # GCC et Clang
         if(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64|arm)")
