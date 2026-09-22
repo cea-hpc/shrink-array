@@ -30,6 +30,7 @@
 #include <cstdio>      // std::fprintf (CHUNK_RECHUNK_TRACE)
 #include <cstdlib>     // std::getenv / std::atoi (CHUNK_POOL_BREAKDOWN, CHUNK_RECHUNK_TRACE, CHUNK_RECHUNK_SLICES)
 #include <type_traits> // std::is_same_v, the v1 bool guard
+#include <string_view> // CHUNK_RECHUNK_SCHEDULE parsing
 #include <utility>     // std::swap (the array swap)
 #include <vector>      // the refill buffers
 
@@ -61,6 +62,59 @@ inline long rss_mib_now() noexcept
     const long ps = ::sysconf(_SC_PAGESIZE);
     return ps > 0 ? (resident * ps) >> 20 : -1;
 }
+
+#ifdef _OPENMP
+/// @brief The rebuild loop's schedule: CHUNK_RECHUNK_SCHEDULE="kind[,chunk]"
+///        (static|dynamic|guided|auto, chunk >= 1 or omitted), read once;
+///        dynamic,64 when unset or malformed -- the historical schedule.
+struct RebuildSchedule
+{
+    omp_sched_t kind  = omp_sched_dynamic;
+    int         chunk = 64;
+    char        text[32]{"dynamic,64"};
+};
+
+inline const RebuildSchedule& rebuild_schedule() noexcept
+{
+    static const RebuildSchedule s = []
+    {
+        RebuildSchedule r;
+        const char*     e = std::getenv("CHUNK_RECHUNK_SCHEDULE");
+        if (e == nullptr || e[0] == '\0')
+            return r;
+        char kind[16] = {};
+        int  chunk    = 0;
+        const int n   = std::sscanf(e, "%15[a-z],%d", kind, &chunk);
+        omp_sched_t k{};
+        bool        ok = n >= 1 && chunk >= 0;
+        if (ok)
+        {
+            const std::string_view kv(kind);
+            if (kv == "static")
+                k = omp_sched_static;
+            else if (kv == "dynamic")
+                k = omp_sched_dynamic;
+            else if (kv == "guided")
+                k = omp_sched_guided;
+            else if (kv == "auto")
+                k = omp_sched_auto;
+            else
+                ok = false;
+        }
+        if (!ok)
+        {
+            std::fprintf(stderr, "[RECHUNK] CHUNK_RECHUNK_SCHEDULE=\"%s\" not understood "
+                                 "(kind[,chunk], kind = static|dynamic|guided|auto): keeping dynamic,64\n", e);
+            return r;
+        }
+        r.kind  = k;
+        r.chunk = chunk; // 0: the runtime's default for this kind
+        std::snprintf(r.text, sizeof r.text, "%s,%d", kind, chunk);
+        return r;
+    }();
+    return s;
+}
+#endif
 } // namespace shrink_array::rechunk_detail
 
 namespace shrink_array
@@ -793,6 +847,20 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // compress a half-rebuilt array -- and a slice boundary is precisely
         // "half rebuilt". The drain is serial under OMPT, so it opens no region
         // of its own and the flag costs it nothing.
+#ifdef _OPENMP
+        // The rebuild loop is schedule(runtime): set the chosen schedule on this
+        // task (the slice regions inherit it) and restore the caller's after
+        // the slices. See rechunk_detail::rebuild_schedule().
+        omp_sched_t caller_sched_kind{};
+        int         caller_sched_chunk = 0;
+        omp_get_schedule(&caller_sched_kind, &caller_sched_chunk);
+        {
+            const auto& rs = rechunk_detail::rebuild_schedule();
+            omp_set_schedule(rs.kind, rs.chunk);
+            if (std::getenv("CHUNK_RECHUNK_TRACE"))
+                std::fprintf(stderr, "[RECHUNK] rebuild schedule: %s\n", rs.text);
+        }
+#endif
         g_in_rechunk_rebuild = true;
         // Its own knob: one statm read per slice is nothing, but 18 to 34 lines
         // per array bury the summary that CHUNK_RECHUNK_TRACE is asked for.
@@ -826,7 +894,9 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 // nothing. Per-thread (thread_local), so it lives inside the region.
                 typename CompressionManager<T, chunk_type>::FlushReplayGuard rechunk_replay_guard;
                 std::vector<T>                                               buf(static_cast<std::size_t>(new_size));
-#pragma omp for schedule(dynamic, 64)
+                // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default dynamic,64
+                // (rechunk_detail::rebuild_schedule).
+#pragma omp for schedule(runtime)
                 for (int c = c0; c < c1; ++c)
                     rebuild_one(c, buf);
             }
@@ -860,6 +930,9 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                          n_slices, r, r - rss_start);
         }
         g_in_rechunk_rebuild = false;
+#ifdef _OPENMP
+        omp_set_schedule(caller_sched_kind, caller_sched_chunk); // the caller's, untouched
+#endif
         if (std::getenv("CHUNK_RECHUNK_TRACE"))
         {
             // What the new geometry actually HOLDS, counted on tmp before the
