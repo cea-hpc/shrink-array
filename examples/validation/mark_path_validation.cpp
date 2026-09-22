@@ -129,16 +129,15 @@ static int materialised(const Array<double>& arr)
 
 /// @brief One region writing every element, then the between-region pass.
 ///
-/// chunk2a outside OMPT is the one variant whose between-region pass
-/// compresses nothing: in an OpenMP build Chunk2A::compress() returns at
-/// once (the scan had no clear to show for it and cost 40 % of an aarch64
-/// profile), and serially the candidates just queue (no inline counters, as
-/// chunk2 has). make_block_compression() -- the pass a writer runs once its
-/// candidate list is long enough, and resize() runs -- is its only
-/// compressor. A hundred candidates never reach that length, so the harness
-/// runs that pass itself: it consumes the candidate lists, so a chunk the
-/// write path failed to queue still shows as materialised, which is the
-/// property here.
+/// A serial chunk2a has no between-region pass at all (there is no region):
+/// its candidates queue until make_block_compression() -- the pass a writer
+/// runs once its list is long enough, and resize() runs -- consumes them,
+/// and a hundred candidates never reach that length. The harness runs that
+/// pass itself there: it consumes the candidate lists, so a chunk the write
+/// path failed to queue still shows as materialised, which is the property
+/// here. Every OpenMP build compresses at finalize_parallel_phase(), chunk2a
+/// included since Sept '26 (Chunk2A::compress_chunk_to_compress runs the
+/// writers' pass rank by rank when no OMPT callback does it).
 template <typename Fn>
 static void phase(Array<double>& arr, int N, Fn&& body)
 {
@@ -150,7 +149,7 @@ static void phase(Array<double>& arr, int N, Fn&& body)
             body(i);
     }
     end_phase();
-    if constexpr (chunk_config::use_chunk2a && build_config::has_not_ompt)
+    if constexpr (chunk_config::use_chunk2a && !build_config::use_openmp)
         arr.make_block_compression();
 }
 

@@ -531,7 +531,9 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
  * Entry point used between parallel phases. Reuses the current team when
  * already inside a region, and opens its own otherwise. The OMPT callbacks are
  * disarmed for the duration, so the region this opens does not re-enter the
- * compression machinery through its own parallel-begin/end.
+ * compression machinery through its own parallel-begin/end. Without OMPT the
+ * per-chunk compress() is a no-op, and the pass is make_block_compression()
+ * over every rank instead (see below).
  *
  * @param apply          Forwarded to compress().
  */
@@ -543,6 +545,30 @@ void Chunk2A<T>::compress_chunk_to_compress(bool apply)
     if (CHUNK_PMP_IN_PARALLEL_REGION)
     {
         compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, apply);
+    }
+    else if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
+    {
+        // An OpenMP build without OMPT had no between-region compressor for
+        // chunk2a until Sept '26: compress() returns at once there, so a
+        // candidate waited until its rank's list reached the in-loop
+        // threshold, and what the last phases of a run left constant was
+        // never compressed (chunk2a_1024 --mode perf, 6 threads: 1 GB of
+        // buffers more returned to the pool with this pass, -3 % RSS, time
+        // within noise). Between two regions no writer is live, so the
+        // writers' pass runs without its handshake (nullptr proxy), rank
+        // after rank, as ArrayChunk2A::make_block_compression() does.
+        if (apply)
+        {
+            for (int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
+                make_block_compression(thr, nullptr);
+        }
+        else
+        {
+#pragma omp parallel
+            {
+                compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, apply);
+            }
+        }
     }
     else
     {

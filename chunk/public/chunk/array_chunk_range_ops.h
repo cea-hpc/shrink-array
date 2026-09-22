@@ -97,6 +97,34 @@ template <typename Chunk>
     return ch.written();
 }
 
+/**
+ * @brief Queue the chunk holding element @p i for the next compression pass.
+ *
+ * @details The raw stores of the bulk paths below go straight into a
+ *          materialised chunk's buffer, past the write path and its marking:
+ *          a chunk they leave constant (a fill of the constant over the whole
+ *          chunk, a copy of a mostly-constant source) was never queued and
+ *          stayed materialised for the run -- 56 of tab1's 360 chunks at the
+ *          end of a chunk2a dyn check, all from its fill_range. This does what
+ *          the last write of the span would have done: the flag's CAS and, on
+ *          the first time, one entry in the caller's candidate list; the pass
+ *          scans the chunk once and drops it if it is not constant. Fast-block
+ *          builds only (the serial counters are resynced by the caller).
+ */
+template <typename Arr>
+void queue_for_compression(Arr& a, std::size_t i)
+{
+    if constexpr (chunk_config::use_fast_block_compression)
+    {
+        auto p = a[static_cast<decltype(a.size())>(i)];
+        if constexpr (requires { p.set_num_tab_ptr_is_inside_chunk(); })
+            p.set_num_tab_ptr_is_inside_chunk(); // Proxy2A
+        else
+            p.set_info_on_chunk(); // Proxy (v1)
+        p.add_to_compression_list();
+    }
+}
+
 } // namespace detail
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -256,6 +284,11 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
                         ++nz;
                 a[static_cast<ind_type>(c_begin)].resync_nb_val_eq_zero(nz);
             }
+
+            // The chunk may be constant now: a fill of first_value, or on
+            // chunk2a of any value (a uniform run is its second constant).
+            if (value_is_cst1 || chunk_config::use_chunk2a)
+                detail::queue_for_compression(a, c_begin);
         }
     }
 }
@@ -346,6 +379,9 @@ void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, bool 
                         ++nz;
                 a[static_cast<ind_type>(c_begin)].resync_nb_val_eq_zero(nz);
             }
+
+            // The source is not known to be uniform: the pass decides.
+            detail::queue_for_compression(a, c_begin);
         }
     }
 }
