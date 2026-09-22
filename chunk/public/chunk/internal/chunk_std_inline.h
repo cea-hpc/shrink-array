@@ -25,7 +25,7 @@
 #include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"       // increm_chunk_* / add_chunk_* (CHUNK_STATS)
 #include "chunk/internal/manager_chunk.h"     // manager_chunk:: candidate lists
-#include "chunk/PMP_CHUNK.h"         // CHUNK_PMP_*
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_*
 #include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_*
 
 namespace shrink_array
@@ -59,7 +59,6 @@ template <typename T, typename Derived, bool Enabled>
 void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_par(int                    thr,
                                                                                   vec_tuple_chunkp_int2& ll_compt)
 {
-
     const auto& vec_tup = Derived::manager_chunk::chunk_to_compress_potentially_thr[thr];
 
     const int sz = vec_tup.size();
@@ -133,7 +132,7 @@ void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
 {
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
 
-    #pragma omp parallel
+#pragma omp parallel
     {
         const int thr     = CHUNK_PMP_THREAD_RANK;
         auto&     chunk_t = manager_chunk::chunk_to_compress_potentially_thr[thr];
@@ -149,7 +148,7 @@ void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
         // 2-3 threads (shrink_bench chunk_dyn, forced advisor, Sept '26).
         // Chunk2 and Chunk2A pin the same way (compress_chunk_to_compress_in_par_impl,
         // make_block_compression_impl).
-        [[maybe_unused]] const unsigned int saved_sz = shrink_array::thread_chunk_size();
+        [[maybe_unused]] const unsigned int saved_sz = thread_chunk_size();
         for (auto& tup : chunk_t)
         {
             auto* chunk_p = std::get<0>(tup);
@@ -405,7 +404,8 @@ void Chunk<T>::block_clear([[maybe_unused]] int thr_rank)
     if constexpr (chunk_config::stats)
     {
         increm_chunk_compress<Chunk<T>>();
-        add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
+        add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) *
+                                        static_cast<long>(shrink_array::alloc_chunk_count()));
         if constexpr (build_config::use_openmp)
             increm_chunk_release_pool<Chunk<T>>();
         else
@@ -432,7 +432,8 @@ void ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(int thr_rank)
         if constexpr (chunk_config::stats)
         {
             increm_chunk_compress<Chunk<T>>();
-        add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
+            add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) *
+                                            static_cast<long>(shrink_array::alloc_chunk_count()));
             increm_chunk_release_pool<Chunk<T>>();
         }
         Base::free_block_to_pool(thr_rank, old);
@@ -459,7 +460,7 @@ void ChunkOmpPolicy<T, Derived, Enabled>::clear_st(int thr_rank, unsigned int n_
         if (!derived().written())
         {
             invariant_failed(std::source_location::current(), "trying to clear a chunk that is not written (chunk={})",
-                         static_cast<const void*>(this));
+                             static_cast<const void*>(this));
         }
     }
 
@@ -475,8 +476,7 @@ void ChunkOmpPolicy<T, Derived, Enabled>::clear_st(int thr_rank, unsigned int n_
     // The memset below already used n_elems for exactly this reason; the push
     // must agree with it. Same defect family as 4f5a6c48 ("pin ambient on the
     // free path, not just alloc"), fixed for Chunk2 and never for v1.
-    auto& ll_block_free_thr =
-        manager_chunk::get_list_block_free_thr_for_size(thr_rank, n_elems);
+    auto& ll_block_free_thr = manager_chunk::get_list_block_free_thr_for_size(thr_rank, n_elems);
 
     Base::init_block(values.load(), n_elems);
     CHUNK_LEDGER_PARK(values.load(), "clear_st.park"); // LIVE -> PARKED before it re-enters the pool
@@ -492,7 +492,8 @@ void ChunkOmpPolicy<T, Derived, false>::clear_st()
     if constexpr (chunk_config::stats)
     {
         increm_chunk_compress<Chunk<T>>();
-        add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
+        add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) *
+                                        static_cast<long>(shrink_array::alloc_chunk_count()));
         increm_chunk_release_free<Chunk<T>>();
     }
 
