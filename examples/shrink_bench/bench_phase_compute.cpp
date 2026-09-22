@@ -23,8 +23,19 @@
 #include <limits>
 #include <vector>
 
+#include <algorithm> // std::min / std::max (block bounds)
+
 #include "bench_phases.h"
 #include "bench_utils.h" // linear_correlation, exponential_correlation
+
+// Inner loop of the four-accumulator loop: a simd reduction on the std::vector
+// baseline (keeps it vectorised), nothing on shrink builds (the read gate has
+// side effects). See bench_phase_compute.
+#ifdef SHRINK_ARRAY
+    #define BENCH_OMP_SIMD_RED(...)
+#else
+    #define BENCH_OMP_SIMD_RED(...) BENCH_PRAGMA_STR(omp simd reduction(+ : __VA_ARGS__))
+#endif
 
 // Distinct second values the unsigned long array may register, as a mask over
 // the index. CHUNK_BENCH_ULONG_BANDS sets the count (default 4096, the order a
@@ -384,30 +395,55 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             // std::vector baseline this loop now vectorises (width 4, cos /
             // sin / tan through the vector libm, atan scalarised); on a shrink
             // build it is the same scalar loop as before.
-            BENCH_OMP_FOR_BLOCK_NOWAIT_RED(val_sum, long_val_sum, v_real, v_im)
-            for (int i = sched_base; i < end0; ++i)
+            // No reduction clause: GCC merges a multi-variable reduction inside
+            // GOMP_atomic_start(), ONE global libgomp mutex, which 64 threads hit
+            // together at the end of this nowait loop (2.9x slower than libomp).
+            // Per-thread partials, merged by lock-free atomics below. The blocks
+            // are walked explicitly -- block b of sched_blk iterations from
+            // sched_base goes to thread b mod T, the mapping of the region's
+            // schedule(static, sched_blk) loops -- so the inner loop can be an
+            // omp simd reduction on the std::vector baseline.
+            double    p_val_sum      = 0;
+            long      p_long_val_sum = 0;
+            double    p_v_real       = 0;
+            double    p_v_im         = 0;
+            const int n_blocks       = (end0 - sched_base + sched_blk - 1) / sched_blk;
+#pragma omp for schedule(static, 1) nowait
+            for (int blk = 0; blk < n_blocks; ++blk)
             {
-                if (i < start0) // alignment head: same trip count in every loop
-                    continue;
-                const double t1 = tab1[i];
-                const double t2 = tab2[i];
-                const double t3 = tab3[i];
-                const double t5 = tab5[i];
+                const int lo = std::max(start0, sched_base + blk * sched_blk);
+                const int hi = std::min(end0, sched_base + (blk + 1) * sched_blk);
+                BENCH_OMP_SIMD_RED(p_val_sum, p_long_val_sum, p_v_real, p_v_im)
+                for (int i = lo; i < hi; ++i)
+                {
+                    const double t1 = tab1[i];
+                    const double t2 = tab2[i];
+                    const double t3 = tab3[i];
+                    const double t5 = tab5[i];
 
-                const complex_double valc = tab_complex[i];
-                const bool           b    = tab_bool[i];
-                const int            ti   = tab_int[i];
+                    const complex_double valc = tab_complex[i];
+                    const bool           b    = tab_bool[i];
+                    const int            ti   = tab_int[i];
 
-                const double common = std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val);
-                const double arm =
-                    b ? (std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val)) - (std::tan(t3) + std::cos(t5))
-                      : (std::sin(t1) + std::atan(t2) + std::cos(t3) + std::sin(val)) - (std::sin(t3) + std::atan(t5));
+                    const double common = std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val);
+                    const double arm =
+                        b ? (std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val)) - (std::tan(t3) + std::cos(t5))
+                          : (std::sin(t1) + std::atan(t2) + std::cos(t3) + std::sin(val)) - (std::sin(t3) + std::atan(t5));
 
-                val_sum += common + arm;
-                v_real += std::cos(valc.real()) - tab_float[i];
-                v_im += std::sin(valc.imag()) - tab_short[i] - tab_char[i];
-                long_val_sum += ti > 0 ? static_cast<long>(ti) : 0L;
+                    p_val_sum += common + arm;
+                    p_v_real += std::cos(valc.real()) - tab_float[i];
+                    p_v_im += std::sin(valc.imag()) - tab_short[i] - tab_char[i];
+                    p_long_val_sum += ti > 0 ? static_cast<long>(ti) : 0L;
+                }
             }
+#pragma omp atomic
+            val_sum += p_val_sum;
+#pragma omp atomic
+            long_val_sum += p_long_val_sum;
+#pragma omp atomic
+            v_real += p_v_real;
+#pragma omp atomic
+            v_im += p_v_im;
         }
 
         // No barrier before the last loop, and none between its two passes:
