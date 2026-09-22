@@ -576,7 +576,16 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             if (old_size > new_size)
                 old_done = std::vector<std::atomic<int>>(static_cast<std::size_t>(self().nb_chunk));
         }
-        auto rebuild_one = [&](int c, std::vector<T>& buf)
+        // Per-thread fold counters: ++ on the shared atomics above, per chunk and
+        // by every thread, kept one cache line of the caller's frame bouncing --
+        // the line the lambda also reads n / new_size from at each call. Merged
+        // once per thread and slice after the loop.
+        struct RebuildTally
+        {
+            long folded  = 0;
+            long refused = 0;
+        };
+        auto rebuild_one = [&](int c, std::vector<T>& buf, RebuildTally& tally)
         {
             const ind_type base = static_cast<ind_type>(c) * static_cast<ind_type>(new_size);
             if (base >= n)
@@ -754,7 +763,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             {
                 if (all_folded)
                 {
-                    ++n_folded;
+                    ++tally.folded;
                     auto& nch = tmp.chunk_list[static_cast<std::size_t>(c)];
                     nch.compress(get_thr_rank_fast(), c, tmp.num_tab,
                                  /*apply=*/true,
@@ -763,7 +772,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     // the span merged constants that differ -- the genuine cost
                     // of coarsening, the one the forecast has to carry.
                     if (!nch.is_cst_val1() && !nch.is_cst_val2())
-                        ++n_refused;
+                        ++tally.refused;
                 }
             }
             // No v1 branch. v1 has one compressible constant, zero, and the
@@ -796,12 +805,12 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 {
                     if (all_folded)
                     {
-                        ++n_folded;
+                        ++tally.folded;
                         auto& nch = tmp.chunk_list[static_cast<std::size_t>(c)];
                         nch.compress(get_thr_rank_fast(), inf_new2,
                                      /*apply=*/true, static_cast<unsigned int>(new_size));
                         if (!nch.is_cst_val1() && !nch.is_cst_val2(std::get<1>(inf_new2)))
-                            ++n_refused;
+                            ++tally.refused;
                     }
                 }
             }
@@ -925,11 +934,15 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 // nothing. Per-thread (thread_local), so it lives inside the region.
                 typename CompressionManager<T, chunk_type>::FlushReplayGuard rechunk_replay_guard;
                 std::vector<T>                                               buf(static_cast<std::size_t>(new_size));
+                RebuildTally tally; // this thread's fold counts for this slice
                 // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
                 // (rechunk_detail::rebuild_schedule).
 #pragma omp for schedule(runtime)
                 for (int c = c0; c < c1; ++c)
-                    rebuild_one(c, buf);
+                    rebuild_one(c, buf, tally);
+                // One RMW per thread and slice, not one per folded chunk.
+                n_folded.fetch_add(tally.folded, std::memory_order_relaxed);
+                n_refused.fetch_add(tally.refused, std::memory_order_relaxed);
             }
             if (sl + 1 < n_slices)
             {
