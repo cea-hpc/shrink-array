@@ -42,7 +42,6 @@
 
 #include "chunk/config.h"
 #include "chunk/singleton.h"
-#include "chunk/internal/manager_chunk.h"
 #include "chunk/manage_ompt.h"
 
 #include "chunk/all_type_chunk.h"

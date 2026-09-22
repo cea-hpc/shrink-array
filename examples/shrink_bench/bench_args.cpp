@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <exception> // std::exception (the stoi guard below)
 #include <iostream>
 #include <string>
 

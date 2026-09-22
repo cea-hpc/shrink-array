@@ -12,6 +12,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <random> // std::mt19937 / std::random_device (initializeRNG)
 #include <string>
 #include <sys/resource.h>
 #include <unistd.h>

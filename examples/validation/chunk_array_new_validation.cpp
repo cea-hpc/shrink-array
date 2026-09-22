@@ -39,7 +39,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <new>
 #include <type_traits>
 #include <unistd.h>
 

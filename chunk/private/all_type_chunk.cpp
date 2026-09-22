@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 #include <algorithm> // std::find, the registered sizes
+#include <cstddef>   // std::size_t (the reuse-pool byte counts)
 #include <mutex>
 #include <atomic> // for atomic_thread_fence, memory_order_seq_cst, atomic
 #include <memory> // for unique_ptr

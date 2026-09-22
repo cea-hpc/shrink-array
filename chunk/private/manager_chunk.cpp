@@ -27,6 +27,7 @@
 // #include "chunk/internal/chunk_func.h"
 
 //#include "chunk/type_name.h"
+#include <atomic>  // std::atomic (__global_need_flush_deferred)
 #include <cstdlib> // std::getenv (CHUNK_BARRIER_FLUSH_LEGACY)
 
 #include "chunk/internal/manager_chunk.h"
