@@ -191,8 +191,10 @@ if (CHUNK_BUILD_DYN)
   # --- Tests: register the check declinations of each variant ---
   foreach(_vname chunk chunk2 chunk2a)
     foreach(_sz IN LISTS CHUNK_STATIC_SIZES)
+      # One binary per variant and size since the check/perf merge; the mode
+      # is a run-time flag (the _check_ binaries these named no longer exist).
       add_test(NAME shrink_bench_${_vname}_check_${_sz}
-               COMMAND shrink_bench_${_vname}_check_${_sz})
+               COMMAND shrink_bench_${_vname}_${_sz} --mode check)
       set_property(TEST shrink_bench_${_vname}_check_${_sz}
                    PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
     endforeach()
