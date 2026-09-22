@@ -38,12 +38,11 @@
 #                           per thread is deferred with no compressor in
 #                           sight, and the result must still equal a
 #                           std::vector's, bit for bit.
-#   chunk_array_new_validation  Chunk<T>::operator new[] hands back an array
-#                           whose every chunk is at the first constant, at
-#                           every size and from inside a parallel region as
-#                           well as outside. chunk v1 only (the other variants
-#                           have no class-level array-new), and nothing else
-#                           covers it: the library never array-news a chunk.
+#   chunk_array_new_validation  the variant's operator new[] hands back an
+#                           array whose every chunk is at the first constant,
+#                           at every size and from inside a parallel region as
+#                           well as outside. Nothing else covers it: the
+#                           library never array-news a chunk.
 #   mark_path_validation    a chunk written back to a constant everywhere is
 #                           compressed by the incremental path alone -- the
 #                           write marks it, the between-region pass compresses
@@ -161,27 +160,32 @@ foreach(_geom IN LISTS _rt_geometries)
 endforeach()
 endforeach()
 
-# --- chunk_array_new_validation: chunk v1 alone (Chunk<T>::operator new[] is
-# its own), one executable per geometry, at 1 and 8 threads like the others.
-# OpenMP builds only: the operator is ChunkOmpPolicy's, and the serial
-# specialisation of that policy declares nothing (there is no array-new to
-# test there).
+# --- chunk_array_new_validation: the three variants, one executable per
+# variant and geometry, at 1 and 8 threads like the others. OpenMP builds
+# only: the operators are the *OmpPolicy's, and their serial specialisations
+# declare nothing (there is no array-new to test there).
 if (OMP)
 foreach(_geom IN LISTS _rt_geometries)
-  set(_tgt chunk_array_new_validation_chunk_${_geom})
-  add_executable(${_tgt} chunk_array_new_validation.cpp)
-  target_link_libraries(${_tgt} PRIVATE chunk_v1_${_geom})
-  if (_geom STREQUAL "dyn")
-    target_compile_definitions(${_tgt} PRIVATE CHUNK CHUNK_DYNAMIC DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
-  else()
-    target_compile_definitions(${_tgt} PRIVATE CHUNK) # CHUNK_SIZE comes from the lib (PUBLIC)
-  endif()
-  validation_setup_target(${_tgt})
+  foreach(_vi RANGE ${_rt_nvar_last})
+    list(GET _rt_variant_names   ${_vi} _vname)
+    list(GET _rt_variant_libbase ${_vi} _libbase)
+    list(GET _rt_variant_macro   ${_vi} _vmacro)
 
-  foreach(_nthr 1 8)
-    add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
-    set_property(TEST ${_tgt}_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
-    set_property(TEST ${_tgt}_${_nthr}thr PROPERTY LABELS validation)
+    set(_tgt chunk_array_new_validation_${_vname}_${_geom})
+    add_executable(${_tgt} chunk_array_new_validation.cpp)
+    target_link_libraries(${_tgt} PRIVATE ${_libbase}_${_geom})
+    if (_geom STREQUAL "dyn")
+      target_compile_definitions(${_tgt} PRIVATE ${_vmacro} CHUNK_DYNAMIC DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
+    else()
+      target_compile_definitions(${_tgt} PRIVATE ${_vmacro}) # CHUNK_SIZE comes from the lib (PUBLIC)
+    endif()
+    validation_setup_target(${_tgt})
+
+    foreach(_nthr 1 8)
+      add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
+      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
+      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY LABELS validation)
+    endforeach()
   endforeach()
 endforeach()
 endif()

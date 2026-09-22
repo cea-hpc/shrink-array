@@ -359,6 +359,25 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
     using Base::is_not_bool;
     using Base::values;
 
+    /// @brief Array-new for chunks: allocates and points every chunk at the
+    ///        first constant (init_chunks_cst_val).
+    /// @warning `new Chunk2<T>[n]` runs the DEFAULT CONSTRUCTORS after this, so
+    ///          that initialisation is immediately overwritten; the operator
+    ///          pays off for a placement-new array, where the caller does not
+    ///          construct. Nothing in the library array-news a chunk --
+    ///          ArrayChunk* hold a std::vector<chunk_type>, initialised by
+    ///          their own loops.
+    void* operator new[](std::size_t sz);
+    /// @brief Matching array-delete.
+    void  operator delete[](void* p);
+    /// @brief Point @p n freshly allocated chunks at the first constant.
+    /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
+    ///          parallel region (inside one it stays on the calling thread: an
+    ///          allocation is made by one thread, and an orphaned `omp for`
+    ///          would hang waiting for the others). Shared by the three
+    ///          variants -- chunk_array_new::init_chunks.
+    static void init_chunks_cst_val(Chunk2<T>* v, std::size_t n) noexcept;
+
     /**
      * \brief Shared body of create_value() and create_value_bool().
      * \tparam IsBoolCas true to publish with compare_and_swap_bool, false with

@@ -21,6 +21,7 @@
 #include <tuple>     // the candidate-list entries
 
 #include "chunk/chunk_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
+#include "chunk/internal/chunk_array_new.h"   // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"       // increm_chunk_* / add_chunk_* (CHUNK_STATS)
 #include "chunk/internal/manager_chunk.h"     // manager_chunk:: candidate lists
@@ -34,66 +35,18 @@ namespace shrink_array
 // serial build selects the empty <..., false> specialisation. Chunk's own
 // members here compile in both modes.
 
-// Threshold under which the initialisation below stays on the calling thread:
-// the same 500 chunks the array paths use (ArrayChunk::create / resize).
-inline constexpr std::size_t kParallelInitMinChunks = 500;
-
 template <typename T, typename Derived, bool Enabled>
 void* ChunkOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 {
     auto* v = static_cast<Chunk<T>*>(::operator new(sz));
-
-    const std::size_t n = sz / sizeof(Chunk<T>);
-
-    // Every chunk starts compressed to the first constant. Only the RAW memory
-    // is touched here -- the caller's constructors run next and set `values`
-    // themselves -- so this is the placement-new form's initialisation, the one
-    // `new Chunk<T>[n]` would immediately overwrite. See init_chunks_cst_val().
-    init_chunks_cst_val(v, n);
-
+    init_chunks_cst_val(v, sz / sizeof(Chunk<T>));
     return static_cast<void*>(v);
 }
 
-/**
- * @brief Point @p n freshly allocated chunks at the first constant, in
- *        parallel past kParallelInitMinChunks.
- *
- * @details `init_values_cst_val()` is one store, so this is a memory-bound
- *          sweep, worth a team past the threshold -- but only OUTSIDE a
- *          parallel region, where this function may open its own. Inside one
- *          it stays on the calling thread:
- *
- *          - an orphaned `omp for` would require EVERY thread of the team to
- *            call this, which no allocation does. Called from one thread (an
- *            `omp single`, a `master`, a branch), the caller blocks on the
- *            loop's barrier and the others on theirs: measured, it hangs at 4
- *            threads;
- *          - a nested `omp parallel` is worse. The `omp parallel
- *            num_threads(max/2)` that used to sit here was serialised by every
- *            default runtime (max_active_levels 1), so it ran on ONE thread
- *            anyway, and with nesting enabled it would have opened N x N/2
- *            threads from an allocation.
- *
- *          The old form also had a hole at exactly n == 500 (`if (n < 500)
- *          ... else if (n > 500)`), where nothing was initialised at all.
- *
- * @param v first chunk
- * @param n how many
- */
 template <typename T, typename Derived, bool Enabled>
 void ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk<T>* v, std::size_t n) noexcept
 {
-    if (n >= kParallelInitMinChunks && CHUNK_PMP_MAX_THREADS >= 2 && !CHUNK_PMP_IN_PARALLEL_REGION)
-    {
-    #pragma omp parallel for simd
-        for (std::size_t k = 0; k < n; ++k)
-            v[k].init_values_cst_val();
-        return;
-    }
-
-    #pragma omp simd
-    for (std::size_t k = 0; k < n; ++k)
-        v[k].init_values_cst_val();
+    chunk_array_new::init_chunks(v, n, [](Chunk<T>& c) { c.init_values_cst_val(); });
 }
 
 template <typename T, typename Derived, bool Enabled>

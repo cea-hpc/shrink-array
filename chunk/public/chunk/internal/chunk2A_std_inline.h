@@ -18,6 +18,7 @@
 #pragma once
 
 #include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
+#include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED (steal-mark check)
 #include <cstdlib>  // std::abort
 #include <iostream> // std::cerr (debug aborts in create_value*)
@@ -73,6 +74,28 @@
 
 namespace shrink_array
 {
+
+// ── Array-new (placement-new arrays; see chunk_array_new.h) ────────────────
+template <typename T, typename Derived, bool Enabled>
+void* Chunk2AOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
+{
+    auto* v = static_cast<Chunk2A<T>*>(::operator new(sz));
+    init_chunks_cst_val(v, sz / sizeof(Chunk2A<T>));
+    return static_cast<void*>(v);
+}
+
+template <typename T, typename Derived, bool Enabled>
+void Chunk2AOmpPolicy<T, Derived, Enabled>::operator delete[](void* p)
+{
+    ::operator delete(p);
+}
+
+template <typename T, typename Derived, bool Enabled>
+void Chunk2AOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk2A<T>* v, std::size_t n) noexcept
+{
+    chunk_array_new::init_chunks(v, n, [](Chunk2A<T>& c) { c.init_after_constructor(); });
+}
+
 
 
 /**

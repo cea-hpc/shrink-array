@@ -18,6 +18,7 @@
 #pragma once
 
 #include "chunk/PMP_CHUNK.h"
+#include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (operator new[])
 #include "chunk/chunk2_std.h"
 #include "chunk/internal/proxy2.h"
 
@@ -66,6 +67,28 @@
 
 namespace shrink_array
 {
+
+// ── Array-new (placement-new arrays; see chunk_array_new.h) ────────────────
+template <typename T, typename Derived, bool Enabled>
+void* Chunk2OmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
+{
+    auto* v = static_cast<Chunk2<T>*>(::operator new(sz));
+    init_chunks_cst_val(v, sz / sizeof(Chunk2<T>));
+    return static_cast<void*>(v);
+}
+
+template <typename T, typename Derived, bool Enabled>
+void Chunk2OmpPolicy<T, Derived, Enabled>::operator delete[](void* p)
+{
+    ::operator delete(p);
+}
+
+template <typename T, typename Derived, bool Enabled>
+void Chunk2OmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk2<T>* v, std::size_t n) noexcept
+{
+    chunk_array_new::init_chunks(v, n, [](Chunk2<T>& c) { c.init_after_constructor(); });
+}
+
 
 // ---------------------------------------------------------------------------
 // Chunk2FastCompPolicy<T, Derived, true>: the queue-driven compression.
