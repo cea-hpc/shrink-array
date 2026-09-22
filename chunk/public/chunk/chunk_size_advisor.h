@@ -203,104 +203,156 @@ class ChunkSizeAdvisor
 
         int64_t mat0 = 0;
 
-#pragma omp parallel for schedule(static) reduction(+ : mat0) if (nc > 16384)
-        for (int64_t j = 0; j < nc; ++j)
-        {
-            const void* key                    = nullptr;
-            const int   kind                   = classify(tab.chunk_list[j], key);
-            kindv[static_cast<std::size_t>(j)] = static_cast<std::uint8_t>(kind);
-            keyv[static_cast<std::size_t>(j)]  = key;
-            if (kind != 0 && kind != 1)
-            {
-                ++mat0;
-            }
-            // if (kind == 0)      ++cst1_0;
-            // else if (kind == 1) ++cst2_0;
-            // else                ++mat0;
-        }
-
-        // ── Coarser fold: SERIAL, byte-identical to the single-pass version.
-        // Level l aggregates blocks of 2^l consecutive chunks. A block aggregate
-        // is {kind, key}: CST1 / CST2(key) / MAT; folding a child into a block
-        // degrades it per the merge rule above. Sourced from the arrays above so
-        // no accessor is called here — the sequential dependency stays cheap.
+        // ── Coarser fold and finer sampling: parallel too, same results.
+        // Both used to run SERIALLY after the classification, and the sampling
+        // re-classified every chunk (classify() again, kindv already held the
+        // answer): the master thread spent 3.7 s of a 17 s run here (four arrays,
+        // 64 threads, the other 63 idle). Both are now shared out, and every
+        // count they produce is an integer computed exactly as before, so the
+        // report is byte-identical:
+        //  - the fold is split into super-blocks of 2^L chunks: every level-l
+        //    block (l <= L) lies inside one super-block, so each super-block
+        //    folds independently with its own run[] and the per-level counts are
+        //    summed;
+        //  - the sampling SELECTION stays sequential (it depends on the running
+        //    count of materialised chunks) but reads kindv, and only the chosen
+        //    chunks' DATA are scanned in parallel.
         const int L = opt.coarser_levels;
         struct Agg
         {
             int         kind;
             const void* key;
         }; // kind: 0 cst1, 1 cst2, 2 mat
-        std::vector<Agg>     run(static_cast<std::size_t>(L) + 1);       // run[l] = open block at level l
         std::vector<int64_t> mat_at(static_cast<std::size_t>(L) + 1, 0); // materialized blocks per level
-        for (auto& a : run)
-            a = {0, nullptr};
 
-        for (int64_t j = 0; j < nc; ++j)
-        {
-            const int   kind = kindv[static_cast<std::size_t>(j)];
-            const void* key  = keyv[static_cast<std::size_t>(j)];
-
-            for (int l = 1; l <= L; ++l)
-            {
-                Agg& a = run[static_cast<std::size_t>(l)];
-                if ((j & ((int64_t{1} << l) - 1)) == 0)
-                    a = {kind, key}; // block opens with this child
-                else if (a.kind != 2 && (a.kind != kind || a.key != key))
-                    a.kind = 2; // mixed constants -> materialized
-                if (((j + 1) & ((int64_t{1} << l) - 1)) == 0 || j + 1 == nc)
-                    if (a.kind == 2)
-                        ++mat_at[static_cast<std::size_t>(l)]; // commit block at boundary
-            }
-        }
-
-        // ── Finer sizes: sample the DATA of materialized chunks ───────────────
-        // For each scanned mat chunk, count constant sub-blocks at S/2^k.
         const int            F = opt.finer_levels;
         std::vector<int64_t> fine_cst(static_cast<std::size_t>(F) + 1, 0); // constant sub-blocks found
         int64_t              scanned = 0;
-        if (F > 0 && mat0 > 0 && S >= opt.min_size * 2)
+        std::vector<int64_t> picks; // chunks whose data the finer sampling reads
+
+        const int64_t super   = int64_t{1} << (L > 0 ? L : 0);
+        const int64_t n_super = (nc + super - 1) / super;
+
+#pragma omp parallel if (nc > 16384)
         {
-            const int64_t stride = mat0 > opt.max_mat_scans ? (mat0 + opt.max_mat_scans - 1) / opt.max_mat_scans : 1;
-            int64_t       seen   = 0;
-            for (int64_t j = 0; j < nc && scanned < opt.max_mat_scans; ++j)
+#pragma omp for schedule(static) reduction(+ : mat0)
+            for (int64_t j = 0; j < nc; ++j)
             {
-                const auto& c          = tab.chunk_list[j];
-                const void* key_unused = nullptr;
-                if (classify(c, key_unused) != 2) // skip cst1 / cst2 (only mat has data to sample)
-                    continue;
-                if ((seen++ % stride) != 0)
-                    continue;
-                ++scanned;
-                const T* v = c.values_load();
-                for (int k = 1; k <= F; ++k)
+                const void* key                    = nullptr;
+                const int   kind                   = classify(tab.chunk_list[j], key);
+                kindv[static_cast<std::size_t>(j)] = static_cast<std::uint8_t>(kind);
+                keyv[static_cast<std::size_t>(j)]  = key;
+                if (kind != 0 && kind != 1)
                 {
-                    const uint32_t sub = S >> k;
-                    if (sub < opt.min_size)
-                        break;
-                    for (uint32_t b = 0; b < S; b += sub)
+                    ++mat0;
+                }
+            }
+            // (implicit barrier: kindv, keyv and mat0 are complete)
+
+            // Coarser fold, one super-block of 2^L chunks per iteration.
+            {
+                std::vector<Agg>     run(static_cast<std::size_t>(L) + 1, Agg{0, nullptr});
+                std::vector<int64_t> mat_loc(static_cast<std::size_t>(L) + 1, 0);
+#pragma omp for schedule(static) nowait
+                for (int64_t s = 0; s < n_super; ++s)
+                {
+                    const int64_t j0 = s * super;
+                    const int64_t j1 = (j0 + super) < nc ? (j0 + super) : nc;
+                    for (int64_t j = j0; j < j1; ++j)
                     {
-                        bool cst = true;
-                        for (uint32_t i = 1; i < sub; ++i)
-                            if (!(v[b + i] == v[b]))
-                            {
-                                cst = false;
-                                break;
-                            }
-                        // A sub-block that is merely uniform is NOT compressible:
-                        // the runtime only ever stores a chunk as a constant when
-                        // that constant is one it can REPRESENT -- cst_val1 (the
-                        // designated first value), plus cst_val2 for chunk2/2A.
-                        // A run of 7.0 stays materialised in v1 whatever its
-                        // length. Counting every uniform run made the model
-                        // predict that almost everything would compress after a
-                        // split: on tab1 it forecast a 5743 MB gain where the
-                        // measured one was 251 MB, and the decider acted on it.
-                        // Gate on the value, not just on the uniformity.
-                        if (cst)
-                            cst = compressible_value(v[b]);
-                        fine_cst[static_cast<std::size_t>(k)] += cst ? 1 : 0;
+                        const int   kind = kindv[static_cast<std::size_t>(j)];
+                        const void* key  = keyv[static_cast<std::size_t>(j)];
+
+                        for (int l = 1; l <= L; ++l)
+                        {
+                            Agg& a = run[static_cast<std::size_t>(l)];
+                            if ((j & ((int64_t{1} << l) - 1)) == 0)
+                                a = {kind, key}; // block opens with this child
+                            else if (a.kind != 2 && (a.kind != kind || a.key != key))
+                                a.kind = 2; // mixed constants -> materialized
+                            if (((j + 1) & ((int64_t{1} << l) - 1)) == 0 || j + 1 == nc)
+                                if (a.kind == 2)
+                                    ++mat_loc[static_cast<std::size_t>(l)]; // commit block at boundary
+                        }
                     }
                 }
+                for (int l = 1; l <= L; ++l)
+                    if (mat_loc[static_cast<std::size_t>(l)] != 0)
+                    {
+#pragma omp atomic
+                        mat_at[static_cast<std::size_t>(l)] += mat_loc[static_cast<std::size_t>(l)];
+                    }
+            }
+
+            // ── Finer sizes: sample the DATA of materialized chunks ───────────
+            // Selection: the same chunks as the former sequential loop -- every
+            // stride-th materialised chunk, at most max_mat_scans -- read from
+            // kindv instead of classify()ing every chunk again.
+#pragma omp single
+            {
+                if (F > 0 && mat0 > 0 && S >= opt.min_size * 2)
+                {
+                    const int64_t stride =
+                        mat0 > opt.max_mat_scans ? (mat0 + opt.max_mat_scans - 1) / opt.max_mat_scans : 1;
+                    int64_t seen = 0;
+                    picks.reserve(static_cast<std::size_t>(mat0 < opt.max_mat_scans ? mat0 : opt.max_mat_scans));
+                    for (int64_t j = 0; j < nc && static_cast<int64_t>(picks.size()) < opt.max_mat_scans; ++j)
+                    {
+                        if (kindv[static_cast<std::size_t>(j)] != 2) // skip cst1 / cst2 (only mat has data)
+                            continue;
+                        if ((seen++ % stride) != 0)
+                            continue;
+                        picks.push_back(j);
+                    }
+                    scanned = static_cast<int64_t>(picks.size());
+                }
+            }
+            // (implicit barrier: picks is complete)
+
+            {
+                std::vector<int64_t> fine_loc(static_cast<std::size_t>(F) + 1, 0);
+                const int64_t        n_picks = static_cast<int64_t>(picks.size());
+#pragma omp for schedule(static) nowait
+                for (int64_t p = 0; p < n_picks; ++p)
+                {
+                    const auto& c = tab.chunk_list[picks[static_cast<std::size_t>(p)]];
+                    const T*    v = c.values_load();
+                    for (int k = 1; k <= F; ++k)
+                    {
+                        const uint32_t sub = S >> k;
+                        if (sub < opt.min_size)
+                            break;
+                        for (uint32_t b = 0; b < S; b += sub)
+                        {
+                            bool cst = true;
+                            for (uint32_t i = 1; i < sub; ++i)
+                                if (!(v[b + i] == v[b]))
+                                {
+                                    cst = false;
+                                    break;
+                                }
+                            // A sub-block that is merely uniform is NOT compressible:
+                            // the runtime only ever stores a chunk as a constant when
+                            // that constant is one it can REPRESENT -- cst_val1 (the
+                            // designated first value), plus cst_val2 for chunk2/2A.
+                            // A run of 7.0 stays materialised in v1 whatever its
+                            // length. Counting every uniform run made the model
+                            // predict that almost everything would compress after a
+                            // split: on tab1 it forecast a 5743 MB gain where the
+                            // measured one was 251 MB, and the decider acted on it.
+                            // Gate on the value, not just on the uniformity.
+                            if (cst)
+                                cst = compressible_value(v[b]);
+                            fine_loc[static_cast<std::size_t>(k)] += cst ? 1 : 0;
+                        }
+                    }
+                }
+                for (int k = 1; k <= F; ++k)
+                    if (fine_loc[static_cast<std::size_t>(k)] != 0)
+                    {
+#pragma omp atomic
+                        fine_cst[static_cast<std::size_t>(k)] += fine_loc[static_cast<std::size_t>(k)];
+                    }
             }
         }
 
