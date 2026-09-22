@@ -23,8 +23,9 @@ Two ways to name the binaries:
     and back to the first, so a long session spreads its draws over all of
     them. A build's binaries execute in THEIR directory, where the reference
     files (data_tab_*, the oracle a check run reads) live, as in the
-    historical mode; --run-dir (default: the current directory) receives
-    the outputs, the CSV and the log.
+    historical mode; the outputs, the CSV and the log go to a directory of
+    their own under the build root, multi_launch_runs/<date_time>, one per
+    session (--run-dir names another).
 
   --regen-ref regenerates the reference before the runs, with the vector
   (std::vector) check binary: in the current directory in the historical
@@ -116,11 +117,12 @@ parser.add_argument("--build-root", default=os.environ.get("CHUNK_BUILD_ROOT"),
                     metavar="DIR",
                     help="Where the build directories live (default: $CHUNK_BUILD_ROOT, "
                          "else the repository this script sits in).")
-parser.add_argument("--run-dir", default=".", metavar="DIR",
-                    help="Where the output_*/error_* files, the CSV and the log go (default: "
-                         "current directory). In the historical mode the binaries run there too "
-                         "and read the oracle data_tab_* there; under --builds each build's "
-                         "binaries run in their own directory, with their own oracle.")
+parser.add_argument("--run-dir", default=None, metavar="DIR",
+                    help="Where the output_*/error_* files, the CSV and the log go. Default: "
+                         "the current directory in the historical mode (the binaries run there "
+                         "too and read the oracle data_tab* there); under --builds a directory "
+                         "of its own, <build-root>/multi_launch_runs/<date_time>, and each "
+                         "build's binaries run in their own directory, with their own oracle.")
 parser.add_argument("--regen-ref", action="store_true",
                     help="Regenerate the reference files (data_tab_*) with the vector check "
                          "binary before the runs: in the current directory (historical mode), "
@@ -181,7 +183,20 @@ if args.builds and os.path.isfile(args.builds):
     args.builds = os.path.abspath(args.builds)
 if args.build_root:
     args.build_root = os.path.abspath(args.build_root)
+if args.run_dir is None:
+    if args.builds:
+        # One directory per session under the build root (the work directory
+        # on the cluster): nothing lands in python/, nothing overwrites the
+        # previous campaign's files.
+        _root = args.build_root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        args.run_dir = os.path.join(_root, "multi_launch_runs",
+                                    datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"))
+    else:
+        args.run_dir = "."
+os.makedirs(args.run_dir, exist_ok=True)
 os.chdir(args.run_dir)
+if args.builds:
+    print(f"📁 Outputs, CSV and log in {os.getcwd()}")
 
 # Resolve the selection. --all_exec expands both axes (unless the user
 # narrowed one explicitly, which then wins for that axis).
