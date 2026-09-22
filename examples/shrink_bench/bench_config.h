@@ -9,6 +9,13 @@
  */
 #pragma once
 
+#include <cmath>
+#include <cstdio>
+
+#include <algorithm>
+#include <iostream>
+#include <limits>
+
 // Bench-mode configuration. Defines whether we run in --check or --perf mode
 // and the derived sizing / frequency constants. All functions are constexpr
 // (or fall back to plain functions if INPUT_DATA is set, in which case the
@@ -179,26 +186,123 @@ inline int get_io_mode()
     return -1;
 }
 
-inline int get_size_interval(int multiplier = 1, int divisor = 1)
+/// @brief Per-mode base of the interval size, before --multiply / --divisor.
+inline long long get_size_base_interval()
 {
-    int base_size = -1;
     if (mode_check)
-        base_size = 20000;
-    else if (mode_perf)
-        base_size = 100000;
-
-    return (base_size * multiplier) / divisor;
+        return 20000;
+    if (mode_perf)
+        return 100000;
+    return -1;
 }
 
-inline int get_size_data(int multiplier = 1, int divisor = 1)
+/// @brief Per-mode base of the array size, before --multiply / --divisor.
+inline long long get_size_base_data()
 {
-    long base_size = -1; // long to avoid overflow on large data sets
     if (mode_check)
-        base_size = 5000000;
-    else if (mode_perf)
-        base_size = 1000000000;
+        return 5000000;
+    if (mode_perf)
+        return 1000000000;
+    return -1;
+}
 
-    return static_cast<int>((base_size * multiplier) / divisor);
+/// @brief floor(base * multiplier / divisor), in 64-bit: --multiply is real.
+inline long long scaled_size(long long base, double multiplier, int divisor)
+{
+    return static_cast<long long>(std::floor(static_cast<double>(base) * multiplier / divisor));
+}
+
+inline int get_size_interval(double multiplier = 1.0, int divisor = 1)
+{
+    return static_cast<int>(scaled_size(get_size_base_interval(), multiplier, divisor));
+}
+
+inline int get_size_data(double multiplier = 1.0, int divisor = 1)
+{
+    return static_cast<int>(scaled_size(get_size_base_data(), multiplier, divisor));
+}
+
+/**
+ * @brief Refuse factors that push the bench's int arithmetic past INT_MAX.
+ * @details The largest int the bench computes is below
+ *          max(2 * sz + 65536, sz + max(interval, 2 * iter_max, 65536)):
+ *            - tab_float and tab_char are CREATED at 2 * sz (shrink_bench.cpp,
+ *              resized to sz afterwards): the largest term. It is what made
+ *              --mode perf --multiply 2 create a float array of 4e9 elements
+ *              wrapped to a negative size (std::bad_alloc);
+ *            - end0 = start0 + size, BEFORE its clip to sz (start0 <= sz,
+ *              size <= interval);
+ *            - i + 2 * k in the compute phase (i < sz, k < iter_max);
+ *            - end0 + 256, the tail loop;
+ *            - the library's int indices (ind_type = int): the element count,
+ *              and chunk count x chunk size, up to sz + one chunk (65536
+ *              covers any geometry the rechunk reaches).
+ *          Beyond that the bench and the library need 64-bit indices.
+ *          Also refuses a factor that leaves an empty interval. Exits(1)
+ *          with the largest valid --multiply for this --divisor.
+ */
+inline void check_size_limits(double multiplier, int divisor, int iter_max)
+{
+    // %.10g: the default stream precision printed 1.9999999 as "2".
+    auto real = [](double v)
+    {
+        char b[32];
+        std::snprintf(b, sizeof b, "%.10g", v);
+        return std::string(b);
+    };
+    if (!std::isfinite(multiplier) || multiplier <= 0.0 || divisor < 1)
+    {
+        std::cerr << "error: --multiply must be a real > 0 and --divisor an integer >= 1 (got " << real(multiplier) << ", "
+                  << divisor << ")\n";
+        std::exit(1);
+    }
+    const long long base_data = get_size_base_data();
+    const long long base_itv  = get_size_base_interval();
+    if (base_data <= 0 || base_itv <= 0)
+        return; // no --mode chosen: nothing is allocated from these sizes
+
+    if (scaled_size(base_itv, multiplier, divisor) < 1)
+    {
+        std::cerr << "error: --multiply " << real(multiplier) << " --divisor " << divisor
+                  << " leaves an empty interval (the interval base is " << base_itv << ")\n";
+        std::exit(1);
+    }
+
+    const long long margin = std::max({2LL * iter_max, 65536LL});
+    auto reach = [&](double m)
+    {
+        const long long sz_m = scaled_size(base_data, m, divisor);
+        return std::max(2 * sz_m + 65536LL, sz_m + std::max(scaled_size(base_itv, m, divisor), margin));
+    };
+
+    constexpr long long int_max = std::numeric_limits<int>::max();
+    if (reach(multiplier) <= int_max)
+        return;
+
+    // Each term of the bound, solved for m (the floors only lower the reach):
+    //   2 * sz + 65536   <= INT_MAX  ->  m <= (INT_MAX - 65536) * d / (2 * base_data)
+    //   sz + margin      <= INT_MAX  ->  m <= (INT_MAX - margin) * d / base_data
+    //   sz + interval    <= INT_MAX  ->  m <= INT_MAX * d / (base_data + base_itv)
+    const double d     = divisor;
+    double       m_max = std::min({(int_max - 65536.0) * d / (2.0 * static_cast<double>(base_data)),
+                                   (int_max - static_cast<double>(margin)) * d / static_cast<double>(base_data),
+                                   int_max * d / static_cast<double>(base_data + base_itv)});
+    m_max = std::floor(m_max * 1e6) / 1e6; // printed to 6 decimals: round DOWN
+    while (m_max > 0.0 && reach(m_max) > int_max)
+        m_max -= 1e-6;
+
+    char buf[64];
+    std::snprintf(buf, sizeof buf, "%.6f", m_max);
+    std::cerr << "error: --multiply " << real(multiplier) << " --divisor " << divisor << " gives "
+              << scaled_size(base_data, multiplier, divisor) << " elements; the bench's int arithmetic would reach "
+              << reach(multiplier) << " > INT_MAX (" << int_max << ").\n";
+    if (m_max > 0.0)
+        std::cerr << "       Largest valid --multiply for --divisor " << divisor << " (iter_max " << iter_max << "): " << buf
+                  << "\n";
+    else
+        std::cerr << "       No --multiply fits with --divisor " << divisor << ": raise --divisor.\n";
+    std::cerr << "       Beyond that the bench and the library (ind_type = int) need 64-bit indices.\n";
+    std::exit(1);
 }
 
 inline int get_iter_stop(int iter_max)

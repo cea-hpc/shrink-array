@@ -18,6 +18,7 @@
 /// @brief Command-line parsing. See bench_args.h.
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <string>
@@ -25,6 +26,39 @@
 #include "bench_args.h"
 #include "bench_config.h" // set_bench_mode, BenchMode
 #include "bench_utils.h"  // valid_args, suggest_closest, print_help
+
+namespace
+{
+/// @brief The whole of @p text as a base-10 int, or exit(1) naming @p opt.
+/// @details std::stoi alone reads the leading digits and drops the rest
+///          ("1.9999999" gave 1) and throws on garbage or overflow.
+int parse_int_arg(const char* opt, const char* text)
+{
+    try
+    {
+        std::size_t used  = 0;
+        const int   value = std::stoi(text, &used, 10);
+        if (used == std::string(text).size())
+            return value;
+    }
+    catch (const std::exception&)
+    {
+    }
+    std::cerr << "error: " << opt << " expects an integer (got \"" << text << "\")\n";
+    std::exit(1);
+}
+
+/// @brief The whole of @p text as a finite real > 0, or exit(1) naming @p opt.
+double parse_positive_real_arg(const char* opt, const char* text)
+{
+    char*        end   = nullptr;
+    const double value = std::strtod(text, &end);
+    if (end != text && *end == '\0' && std::isfinite(value) && value > 0.0)
+        return value;
+    std::cerr << "error: " << opt << " expects a real > 0 (got \"" << text << "\")\n";
+    std::exit(1);
+}
+} // namespace
 
 BenchArgs parse_bench_args(int argc, char* argv[])
 {
@@ -40,7 +74,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
     bool no_struct     = false; // --no_struct: no Point3 / Cell arrays (bench_args.h)
 
     // Nouveaux facteurs
-    int multiply_factor = 1;
+    double multiply_factor = 1.0;
     int divisor_factor  = 1;
 
     // Default iter_max (kept at 2000 to preserve historical behaviour);
@@ -89,18 +123,18 @@ BenchArgs parse_bench_args(int argc, char* argv[])
             else if (arg == "--multiply")
             {
                 if (i + 1 < argc)
-                    multiply_factor = std::stoi(argv[++i]);
+                    multiply_factor = parse_positive_real_arg("--multiply", argv[++i]);
             }
             else if (arg == "--divisor")
             {
                 if (i + 1 < argc)
-                    divisor_factor = std::stoi(argv[++i]);
+                    divisor_factor = parse_int_arg("--divisor", argv[++i]);
             }
             else if (arg == "--iter_max")
             {
                 if (i + 1 < argc)
                 {
-                    iter_max_arg = std::stoi(argv[++i]);
+                    iter_max_arg = parse_int_arg("--iter_max", argv[++i]);
                     if (iter_max_arg <= 0)
                     {
                         std::cerr << "--iter_max must be a positive integer (got " << iter_max_arg << ")\n";

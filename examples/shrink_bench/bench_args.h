@@ -45,7 +45,7 @@ struct BenchArgs
     /// phases, checks, stats and checksums are skipped.
     bool no_struct = false;
 
-    int multiply_factor = 1; ///< --multiply
+    double multiply_factor = 1.0; ///< --multiply (a real factor)
     int divisor_factor  = 1; ///< --divisor
 
     /// --iter_max. 2000 by default, kept from the historical behaviour.
