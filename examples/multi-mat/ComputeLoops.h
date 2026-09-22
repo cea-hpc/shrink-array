@@ -193,10 +193,10 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::fun
             const auto& frac_ind = get_mat_vec(frac);
 
             // This second lambda allows you to vectorize (1)(2) the loop on
-	    // the arrays in direct addressing and no to do it when the arrays
-	    // are of compressed types (1) when the compiler gets there .. this was the
+            // the arrays in direct addressing and no to do it when the arrays
+            // are of compressed types (1) when the compiler gets there .. this was the
             // case with the classic Intel compiler (2) With IntelOneAPI / aocc / clang++
-	    // this doesn't seem to vectorize
+            // this doesn't seem to vectorize
 
             for (int p = 0; p < 5; ++p) // so that the calculation loop lasts longer -->
             // We read arrays more often than we write them
@@ -212,7 +212,7 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::fun
                     // (a read through the Chunk2 array on a chunk material)
                     const double vv =
                         frac_ind[nn] * (std::cos(tab0_ind[nn]) + std::sin(tab1_ind[nn]) +
-		        std::tan(tab2_ind[nn])) + std::cos(val);
+                        std::tan(tab2_ind[nn])) + std::cos(val);
                     vl += vv;
                 });
             }

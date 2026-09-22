@@ -225,8 +225,10 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_impl(vec_t
  */
 template <typename T, typename Derived, bool Enabled>
 template <typename SecondValueFunc, typename ClearFunc>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(bool apply, unsigned int n_elems, SecondValueFunc get_second_value,
-                              ClearFunc&& clear_one)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(bool apply,
+                                                              unsigned int n_elems,
+                                                              SecondValueFunc get_second_value,
+                                                              ClearFunc&& clear_one)
 {
     if (Base::is_not_cst_val1())
     {
@@ -264,8 +266,10 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(bool apply, unsign
 }
 
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress([[maybe_unused]] int thr_rank, const inf_array_t& inf_array, bool apply,
-                         unsigned int n_elems)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress([[maybe_unused]] int thr_rank,
+                                                         const inf_array_t&      inf_array,
+                                                         bool                    apply,
+                                                         unsigned int            n_elems)
 {
     // Only a MATERIALISED chunk can be compressed. A queued entry can outlive
     // the chunk's materialisation: make_block_compression (or a previous
@@ -295,7 +299,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress([[maybe_unused]] int th
  *          verdict is dropped.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_bool([[maybe_unused]] int thr_rank, bool apply, unsigned int n_elems)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_bool([[maybe_unused]] int thr_rank,
+                                                              bool                 apply,
+                                                              unsigned int         n_elems)
 {
     if constexpr (is_bool)
     {
@@ -488,7 +494,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
  * @param apply          Forwarded to compress().
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_par(int thr_rank, const inf_array_t& inf_array, bool apply)
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_par(int                thr_rank,
+                                                                                  const inf_array_t& inf_array,
+                                                                                  bool               apply)
 {
     compress_chunk_to_compress_in_par_impl(thr_rank, std::get<0>(inf_array),
                                            [thr_rank, &inf_array, apply](auto* chunk_t, unsigned int n_elems)
