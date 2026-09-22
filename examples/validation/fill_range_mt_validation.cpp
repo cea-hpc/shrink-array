@@ -170,15 +170,22 @@ static int run_validation(long N, int rounds)
     return bad ? 1 : 0;
 }
 
+// Perf blocks: half the smallest chunk this bench builds (64), with values
+// alternating between neighbours, so no chunk is ever uniform -- a uniform
+// Chunk2A chunk compresses to its second value, and the timings would then
+// measure compression churn instead of writes.
+constexpr long kPerfBlk = 32;
+
 static void run_perf(long N)
 {
     Array<double> arr(N);
-    const long    nblk = (N + kBlk - 1) / kBlk;
+    const long    nblk = (N + kPerfBlk - 1) / kPerfBlk;
     auto          now  = [] { return std::chrono::steady_clock::now(); };
     double        t_el = 0, t_mt = 0;
     for (int rep = 0; rep < 6; ++rep)
     {
-        const double v  = 1.0 + rep; // never a constant: every chunk stays materialised
+        const double v  = 1.0 + rep;
+        auto         vb = [v](long b) { return v + 0.25 * static_cast<double>(b & 1); }; // neighbours differ
         const auto   t0 = now();
 #pragma omp parallel
         {
@@ -186,10 +193,11 @@ static void run_perf(long N)
 #pragma omp for schedule(static, 1)
             for (long b = 0; b < nblk; ++b)
             {
-                const long lo = b * kBlk;
-                const long hi = lo + kBlk < N ? lo + kBlk : N;
+                const long   lo = b * kPerfBlk;
+                const long   hi = lo + kPerfBlk < N ? lo + kPerfBlk : N;
+                const double x  = vb(b);
                 for (long i = lo; i < hi; ++i)
-                    arr[i] = v;
+                    arr[i] = x;
             }
         }
         end_phase();
@@ -200,9 +208,9 @@ static void run_perf(long N)
 #pragma omp for schedule(static, 1)
             for (long b = 0; b < nblk; ++b)
             {
-                const long lo = b * kBlk;
-                const long hi = lo + kBlk < N ? lo + kBlk : N;
-                fill_range_mt(arr, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), v + 0.5);
+                const long lo = b * kPerfBlk;
+                const long hi = lo + kPerfBlk < N ? lo + kPerfBlk : N;
+                fill_range_mt(arr, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), vb(b) + 0.5);
             }
         }
         end_phase();
