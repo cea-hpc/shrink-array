@@ -136,14 +136,19 @@
 // blocks of sched_blk iterations round-robin instead, over [sched_base, end):
 // sched_base is start rounded DOWN to a multiple of the block, and the loop
 // skips the indices below start, so every block boundary is a multiple of the
-// block size -- with a power of two >= the chunk size, no block straddles two
-// library chunks. Every loop of a region that reads back what another wrote
+// block size. Blocks SMALLER than a chunk are fine and faster here: a chunk is
+// then written by several threads, but the finer round-robin balances better,
+// and that dominates (see the measurements below). Every loop of a region that reads back what another wrote
 // must use the SAME sched_blk and the SAME bounds: that is the condition under
 // which OpenMP gives a thread the same iterations in each.
 //
-// BENCH_SCHED_BLOCK (environment, read once): unset -> 256; N -> N rounded up
+// BENCH_SCHED_BLOCK (environment, read once): unset -> 64; N -> N rounded up
 // to a power of two; 0 -> the previous contiguous slices (no alignment).
-// 64 threads, chunk2_256, --mode perf: 18.33 s with 0, 15.82 s with 256.
+// 64 threads, --mode perf, 5 runs each:
+//                    0 (slices)   64       128      256      512      1024
+//   chunk2_256        18.33 s   9.33 s   9.48 s  10.07 s
+//   chunk2a_dyn                12.02 s  12.10 s  12.56 s  13.69 s  16.12 s
+// (the 0 column predates later library fixes; compare within a row.)
 //
 // The macros name a local `sched_blk`; declare it with bench_sched_for().
 #define BENCH_OMP_FOR_BLOCK_NOWAIT_SCALAR          _Pragma("omp for schedule(static, sched_blk) nowait")
@@ -155,13 +160,13 @@
 #endif
 
 /// @brief BENCH_SCHED_BLOCK, read once, rounded up to a power of two; 0 keeps
-///        the contiguous slices. Default 256.
+///        the contiguous slices. Default 64.
 inline int bench_sched_block_env() noexcept
 {
     static const int v = []
     {
         const char* e = std::getenv("BENCH_SCHED_BLOCK");
-        long        b = (e && e[0]) ? std::atol(e) : 256L;
+        long        b = (e && e[0]) ? std::atol(e) : 64L;
         if (b <= 0)
             return 0;
         long p = 1;
