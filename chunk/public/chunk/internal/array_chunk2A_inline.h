@@ -325,24 +325,37 @@ void ArrayChunk2A<T, ind_type>::clear_core()
 
         // ── Missed-compression audit (option 2) ──────────────────────────────────
         // debug/check + non-aggressive only. After the terminal compression pass
-        // above, walk THIS array's chunks (not the candidate list) and flag any
-        // block that is (a) still materialised (written()), (b) never registered as
-        // a compression candidate (tab_is_inside_chunk_list_to_compress == 0), yet
-        // (c) actually constant (all elements equal). Such a block "slipped through"
-        // the incremental should_mark_for_compression path — it became constant
-        // without the write path noticing, so it was never queued and never
-        // compressed. This is the real "did the algorithm miss one" probe: it scans
-        // the chunks directly rather than the candidate list, so it sees blocks that
-        // were never enqueued (which the empty-list check structurally cannot).
-        // Non-fatal: reports a count; a few is benign (a straggler can legitimately
-        // be materialised), a large/recurring residual means the marking path has a
-        // hole. Runs once, at array teardown — the O(nb_chunk * chunk_size) cost is
-        // check-only and compiled out in production (any_check false).
+        // above, walk THIS array's chunks (not the candidate list) and look at
+        // every block that is (a) still materialised (written()), (b) never
+        // registered as a compression candidate (tab_is_inside_chunk_list_to_
+        // compress == 0), yet (c) actually constant (all elements equal). Two
+        // very different things hide behind that, told apart by the value:
+        //
+        //   MISSED  constant at first_value, or at the chunk's own second value
+        //           (get_tab_second_value): the pass would have compressed it,
+        //           the write path let it become constant without queueing it.
+        //           A few is benign (a straggler), a recurring/large count means
+        //           the marking path has a hole.
+        //   STUCK   constant at ANOTHER value: chunk2a keeps a chunk's second
+        //           value until the chunk passes through first_value (the clear
+        //           to cst1 resets it), so a chunk compressed to V once and
+        //           uniformly W later is not compressible as it stands -- not by
+        //           the write path, not by compress(). Probed Sept '26: 100
+        //           chunks at 1.0, then all 3.0 -> 100 materialised, then all 0
+        //           then all 3.0 -> 0. This count is the memory that design
+        //           choice costs on this array; it used to be reported as a
+        //           marking miss, which sent the search the wrong way.
+        //
+        // Scans the chunks directly rather than the candidate list, so it sees
+        // blocks that were never enqueued (which the empty-list check
+        // structurally cannot). Non-fatal. Runs once, at array teardown -- the
+        // O(nb_chunk * chunk_size) cost is check-only and compiled out in
+        // production (any_check false).
         if constexpr (build_config::any_check && !chunk_config::have_agressive_compression)
         {
             const auto  csz    = static_cast<unsigned int>(this->size_policy_.size());
             auto&       inside = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab);
-            std::size_t missed = 0;
+            std::size_t missed_first = 0, missed_second = 0, stuck = 0;
 
             for (int j = 0; j < nb_chunk; ++j)
             {
@@ -354,17 +367,33 @@ void ArrayChunk2A<T, ind_type>::clear_core()
 
                 // Is it actually constant? (same notion fill_list_to_compress uses:
                 // every element equal to the block's first element.)
-                if (ck.constant_value(csz))
-                    ++missed;
+                const auto v = ck.constant_value(csz);
+                if (!v)
+                    continue;
+                if (*v == static_cast<T>(Chunk2A<T>::first_value))
+                    ++missed_first;
+                else if (*v == Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, j).get())
+                    ++missed_second;
+                else
+                    ++stuck;
             }
 
-            if (missed != 0)
+            if (missed_first + missed_second != 0)
             {
                 std::fprintf(stderr,
-                             "[COMPRESS-AUDIT] chunk2a tab=%d: %zu constant block(s) never "
-                             "queued for compression (missed by the marking path). "
-                             "A few is benign; a recurring/large count is not.\n",
-                             num_tab, missed);
+                             "[COMPRESS-AUDIT] chunk2a tab=%d: %zu constant block(s) never queued for "
+                             "compression (%zu at first_value, %zu at their second value: missed by the "
+                             "marking path). A few is benign; a recurring/large count is not.\n",
+                             num_tab, missed_first + missed_second, missed_first, missed_second);
+                std::fflush(stderr);
+            }
+            if (stuck != 0)
+            {
+                std::fprintf(stderr,
+                             "[COMPRESS-AUDIT] chunk2a tab=%d: %zu block(s) constant at a value other than "
+                             "their second value: stuck, not a marking miss (chunk2a keeps a chunk's "
+                             "second value until it passes through first_value).\n",
+                             num_tab, stuck);
                 std::fflush(stderr);
             }
         }
