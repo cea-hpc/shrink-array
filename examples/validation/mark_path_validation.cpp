@@ -54,6 +54,7 @@
 //
 // EXIT STATUS: 0 when every count matches, 1 otherwise.
 
+#include <cstdint> // std::uint8_t (the Kind enum's base)
 #include <cstdio>
 #include <cstdlib>
 #include <type_traits>
@@ -158,7 +159,13 @@ static void phase(Array<double>& arr, int N, Fn&& body)
 ///        declared second value) compresses on chunk2 / chunk2a; `other`
 ///        (a value the array never declared) compresses on chunk2a alone,
 ///        which discovers its second value per chunk.
-enum class Kind { first, declared, other, plain };
+enum class Kind : std::uint8_t
+{
+    first,
+    declared,
+    other,
+    plain
+};
 
 static int expect_after(Kind k)
 {

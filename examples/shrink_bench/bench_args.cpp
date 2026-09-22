@@ -43,6 +43,9 @@ int parse_int_arg(const char* opt, const char* text)
     }
     catch (const std::exception&)
     {
+        // Nothing to do here on purpose: an unparsable value falls through to
+        // the same message as a partially parsed one, just below. Catching is
+        // what turns stoi's throw into that message.
     }
     std::cerr << "error: " << opt << " expects an integer (got \"" << text << "\")\n";
     std::exit(1);
