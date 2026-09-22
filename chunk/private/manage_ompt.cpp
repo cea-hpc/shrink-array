@@ -188,29 +188,10 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
     }
 }
 
-/**
- * @brief `ompt_callback_parallel_begin`: a parallel region is about to start.
- *
- * Clears the compression-candidate list left over from the previous phase, so
- * the region starts with an empty backlog. Runs on the encountering thread
- * only, before the team is formed.
- */
-void on_parallel_begin(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, const void*)
-{
-    if (!__global_ompt)
-        return;
-
-    // Vector-mode build: chunk lib has nothing to do. Avoid touching the
-    // AllTypeChunk singleton — its lazy init calls omp_get_max_threads()
-    // from an OMPT callback context, which segfaults in libomp (LWP crash
-    // in omp_get_max_threads with vector_check target confirmed).
-    if constexpr (!chunk_config::is_shrink_enabled)
-        return;
-
-    auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
-
-    ens_type_chunk.clean_chunk_to_compress_potentially();
-}
+// No `ompt_callback_parallel_begin` any more. It pre-reserved every rank's
+// compression-candidate list to the size it reached in the previous phase --
+// a no-op, since the passes empty the lists with clear(), which keeps their
+// capacity. The candidates themselves are consumed at parallel_end.
 
 /**
  * @brief `ompt_callback_parallel_end`: the team of a parallel region has joined.
@@ -353,8 +334,6 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
     auto ompt_set_callback = (ompt_set_callback_t)lookup("ompt_set_callback");
     if (ompt_set_callback)
     {
-        printf("Callback 'on_parallel_begin' defined\n");
-        ompt_set_callback(ompt_callback_parallel_begin, (ompt_callback_t)on_parallel_begin);
         printf("Callback 'on_parallel_end' defined\n");
         ompt_set_callback(ompt_callback_parallel_end, (ompt_callback_t)on_parallel_end);
         printf("Callback 'on_barrier' defined\n");

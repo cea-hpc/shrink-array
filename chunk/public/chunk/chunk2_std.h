@@ -754,25 +754,6 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
     // specialisation below has no queue and so declares none of it.
 
     /*!
-     * \brief OMPT-only in practice: pre-reserve the compression candidate
-     *        list's capacity from its last-seen size, avoiding repeated
-     *        reallocation across barrier-triggered sweeps.
-     * \details Only reached through ManagerChunk::clean_chunk_to_compress_
-     *          potentially(), whose own definition is OMPT-guarded; the body
-     *          compiles in every mode, so no guard here (same as Chunk v1).
-     * \param second_value Which candidate list (keyed by second constant)
-     *                      to pre-size.
-     * \param max_thr Number of per-thread candidate lists to pre-size.
-     */
-    static void clean_chunk_to_compress(T second_value, int max_thr);
-
-    /*!
-     * \brief Bool specialization of clean_chunk_to_compress().
-     * \param max_thr Number of per-thread candidate lists to pre-size.
-     */
-    static void clean_chunk_to_compress_bool(int max_thr);
-
-    /*!
      * \brief Drain the compression-candidate queue for the given second
      *        value, across all threads.
      * \param inf_array (second_value, ...) tuple identifying which
@@ -1546,7 +1527,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     // Chunk2OmpPolicy<T, Chunk2, build_config::use_openmp>, one specialisation
     // per mode; the serial one carries the counter resets the parallel path
     // does not maintain. The queue-driven compression (compress*,
-    // fill_list*, compress_chunk_to_compress*, clean_chunk_to_compress*)
+    // fill_list*, compress_chunk_to_compress*)
     // sits on Chunk2FastCompPolicy<T, Chunk2, true>, next to
     // make_block_compression -- same technique as ChunkOmpPolicy for Chunk v1.
 };

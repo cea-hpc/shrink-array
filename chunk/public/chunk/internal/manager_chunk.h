@@ -187,32 +187,8 @@ struct ManagerChunkParallelInterface<false>
     virtual void delete_chunk_allocator() = 0;
 };
 
-/**
- * @brief The OMPT-only half of the manager interface.
- * @tparam WithOmpt Whether the OMPT compression callbacks are compiled in.
- */
-template <bool WithOmpt = chunk_config::use_compression_with_ompt>
-struct ManagerChunkOmptInterface; // primary left undefined: only the 2 specializations exist
-
-template <>
-struct ManagerChunkOmptInterface<true>
-{
-    virtual ~ManagerChunkOmptInterface() = default;
-
-    /// @brief Drop the candidates a finished OMPT phase left behind.
-    virtual void clean_chunk_to_compress_potentially(int max_thr) = 0;
-};
-
-/// @brief Builds without the OMPT callbacks: nothing to declare.
-template <>
-struct ManagerChunkOmptInterface<false>
-{
-    virtual ~ManagerChunkOmptInterface() = default;
-};
-
 class ManagerChunkInt : public virtual ManagerChunkDynInterface<>,
-                        public virtual ManagerChunkParallelInterface<>,
-                        public virtual ManagerChunkOmptInterface<>
+                        public virtual ManagerChunkParallelInterface<>
 {
   public:
     ~ManagerChunkInt() override = default;
@@ -220,7 +196,7 @@ class ManagerChunkInt : public virtual ManagerChunkDynInterface<>,
     // --- present in every build ---
     /// @brief Release this type's allocation blocks.
     virtual void destroy_block_chunk() = 0;
-    /// @brief Pre-size each rank's candidate list from its last-seen size.
+    /// @brief Size the per-rank candidate lists to the team.
     virtual void resize_chunk_to_compress_potentially() const = 0;
     /// @brief Compress every compressible chunk of this type now, ignoring the
     ///        candidate lists.
@@ -300,26 +276,6 @@ struct ManagerChunkDynImpl<CHUNK_T, T, false> : public virtual ManagerChunkDynIn
 };
 
 /**
- * @brief The OMPT-only half of the manager implementation.
- * @see ManagerChunkDynImpl for why the override lives in a policy.
- */
-template <template <typename> typename CHUNK_T, typename T,
-          bool WithOmpt = chunk_config::use_compression_with_ompt>
-struct ManagerChunkOmptImpl; // primary left undefined: only the 2 specializations exist
-
-template <template <typename> typename CHUNK_T, typename T>
-struct ManagerChunkOmptImpl<CHUNK_T, T, true> : public virtual ManagerChunkOmptInterface<true>
-{
-    void clean_chunk_to_compress_potentially(int max_thr) override;
-};
-
-/// @brief Builds without the OMPT callbacks: nothing to implement.
-template <template <typename> typename CHUNK_T, typename T>
-struct ManagerChunkOmptImpl<CHUNK_T, T, false> : public virtual ManagerChunkOmptInterface<false>
-{
-};
-
-/**
  * @brief The allocator / free-list half of the manager IMPLEMENTATION.
  *
  * @details Carries the overrides of ManagerChunkParallelInterface, so
@@ -368,7 +324,6 @@ struct ManagerChunkParallelImpl<CHUNK_T, T, false> : public virtual ManagerChunk
 template <template <typename> class CHUNK_T, typename T>
 class ManagerChunk final : public virtual ManagerChunkInt,
                           public ManagerChunkDynImpl<CHUNK_T, T>,
-                          public ManagerChunkOmptImpl<CHUNK_T, T>,
                           public ManagerChunkParallelImpl<CHUNK_T, T>
 {
     // The implementation policies carry overrides whose bodies belong to
@@ -377,8 +332,6 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     // rather than a public accessor, which would widen the surface for everyone.
     template <template <typename> class, typename, bool>
     friend struct ManagerChunkDynImpl;
-    template <template <typename> class, typename, bool>
-    friend struct ManagerChunkOmptImpl;
     template <template <typename> class, typename, bool>
     friend struct ManagerChunkParallelImpl;
 
@@ -424,7 +377,6 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     // Where the build-dependent overrides went, so a reader looking for one here
     // is not left thinking it does not exist:
     //   register_chunk_size()                 -> ManagerChunkDynImpl
-    //   clean_chunk_to_compress_potentially() -> ManagerChunkOmptImpl
     //   the allocator / free-list surface     -> ManagerChunkParallelImpl
 
     /// @brief Recompute how many buffers each thread may keep parked for reuse.
@@ -1326,9 +1278,6 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     static inline TChunk2CompMap<CHUNK_T, T> chunk2_to_compress_potentially;
     static inline TChunk2AComp<CHUNK_T, T>   chunk2A_to_compress_potentially;
     static inline TChunkComp<CHUNK_T, T>     chunk_to_compress_potentially;
-
-    static inline std::vector<size_t> old_size_chunk2_to_compress_potentially;
-    static inline std::vector<size_t> old_size_chunk_to_compress_potentially;
 
   private:
     static inline long somme_chunk_create{0};

@@ -599,40 +599,6 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
      */
     static void compress_chunk_to_compress(bool apply);
 
-
-    /**
-     * @brief Pre-reserve the per-thread candidate lists from their last known sizes.
-     *
-     * @details Only ever reached through
-     *          ManagerChunk::clean_chunk_to_compress_potentially(), whose own
-     *          definition is OMPT-guarded, so no guard is needed here: both
-     *          statics it touches (chunk_to_compress_potentially_thr and
-     *          old_size_chunk_to_compress_potentially) are declared
-     *          unconditionally in ManagerChunk.h, and the body compiles in every
-     *          mode.
-     *
-     * @param max_thr number of per-thread lists to reserve
-     */
-    static void clean_chunk_to_compress(int max_thr)
-    {
-        if (manager_chunk::chunk_to_compress_potentially_thr.empty())
-        {
-            return;
-        }
-
-        for (int thr = 0; thr < max_thr; ++thr)
-        {
-            auto& chunk_t = manager_chunk::chunk_to_compress_potentially_thr[thr];
-
-            const int sz = manager_chunk::old_size_chunk_to_compress_potentially[thr];
-
-            if (sz)
-                chunk_t.reserve(sz);
-            else
-                chunk_t.reserve(100);
-        }
-    }
-
     // compress(int thr_rank, unsigned n_elems) lives in ChunkOmpPolicy: it is
     // the queue consumer's per-chunk step (compress_chunk_to_compress above)
     // and needs a thread rank, so it belongs on the OpenMP surface with

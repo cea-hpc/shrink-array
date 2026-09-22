@@ -209,11 +209,10 @@ void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
             Proxy<T>::reset_tab_inside_list_to_compress(std::get<2>(tup), std::get<1>(tup));
         }
 
-        if constexpr (chunk_config::use_compression_with_ompt)
-            manager_chunk::old_size_chunk_to_compress_potentially[thr] = chunk_t.size();
-        //   old_size_chunk_to_compress_potentially[thr] = chunk_t.size();
         if constexpr (build_config::chunk_dynamic)
             shrink_array::set_thread_chunk_size(saved_sz);
+        // clear() keeps the capacity: the list is already reserved for the
+        // next pass, at the size this one reached.
         chunk_t.clear();
     }
 

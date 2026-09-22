@@ -204,16 +204,6 @@ bool AllTypeChunk::have_chunk_to_compress_potentially() const
     return false;
 }
 
-template <typename Derived>
-void AllTypeChunkOmptInterface<Derived, true>::clean_chunk_to_compress_potentially()
-{
-    const int max_thr = CHUNK_PMP_MAX_THREADS;
-
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
-    {
-        elm->clean_chunk_to_compress_potentially(max_thr);
-    }
-}
 
 template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::resize_list_nb_chunk_thr() const
@@ -516,6 +506,5 @@ bool set_max_malloc_arenas(int max_arenas)
 // OpenMP versions call manager virtuals that a serial build does not declare.
 template struct AllTypeChunkParallelInterface<AllTypeChunk, build_config::use_openmp>;
 template struct AllTypeChunkDynInterface<AllTypeChunk, build_config::chunk_dynamic>;
-template struct AllTypeChunkOmptInterface<AllTypeChunk, chunk_config::use_compression_with_ompt>;
 
 } // namespace shrink_array

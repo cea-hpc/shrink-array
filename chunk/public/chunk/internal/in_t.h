@@ -109,8 +109,6 @@ namespace shrink_array
 //     ArrayChunk2::set_second_value(T)                (array_chunk2.h and
 //                                                       array_chunk2_inline.h)
 //     Chunk2FastCompPolicy::have_chunk_to_compress(T)  (chunk2_std.h)
-//     Chunk2FastCompPolicy::clean_chunk_to_compress(T) (chunk2_std.h and
-//                                                       chunk2_std_inline.h)
 //
 // ─── COROLLARY FOR LOCAL VARIABLES ───────────────────────────────────────────
 //

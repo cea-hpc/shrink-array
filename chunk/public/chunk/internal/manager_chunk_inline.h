@@ -134,8 +134,9 @@ void ManagerChunk<CHUNK_T, T>::force_chunk_to_compress() const
  *
  * Which containers exist depends on the variant (see the file header): a plain
  * per-rank list for Chunk and Chunk2A, plus the per-second-value map for
- * Chunk2. The OMPT builds also size the per-rank history used to pre-reserve
- * the lists at the next parallel-begin.
+ * Chunk2. A list keeps its capacity across the passes' clear(), so nothing
+ * pre-reserves it (the per-rank "last size" history that once did, at every
+ * parallel-begin under OMPT, was a no-op and is gone).
  */
 template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunk<CHUNK_T, T>::resize_chunk_to_compress_potentially() const
@@ -149,12 +150,6 @@ void ManagerChunk<CHUNK_T, T>::resize_chunk_to_compress_potentially() const
         {
             // Resize the list of chunks potentially needing compression
             chunk_to_compress_potentially_thr.resize(nthr);
-
-            // OMPT specific history tracking
-            if constexpr (build_config::has_ompt)
-            {
-                old_size_chunk_to_compress_potentially.resize(nthr);
-            }
         }
     }
 
@@ -172,13 +167,6 @@ void ManagerChunk<CHUNK_T, T>::resize_chunk_to_compress_potentially() const
         if constexpr (IsChunk2A<CHUNK_T, T>)
         {
             chunk2A_to_compress_potentially_thr.resize(nthr);
-        }
-
-        // OMPT history management for both Chunk2 and Chunk2A
-
-        if constexpr (IsChunk2Or2A<CHUNK_T, T> && build_config::has_ompt)
-        {
-            old_size_chunk2_to_compress_potentially.resize(nthr);
         }
     }
 }
@@ -276,47 +264,6 @@ void ManagerChunk<CHUNK_T, T>::compress_chunk_to_compress_potentially([[maybe_un
 // The definitions below are members of the mode-specific policies, so the
 // specialization itself selects the mode: <..., true> is only ever
 // instantiated under OpenMP, <..., false> only without it.
-
-// ManagerChunkOmptImpl<..., true> is only instantiated when the OMPT callbacks
-// are compiled in, so the specialization already selects the mode.
-
-/**
- * @brief Pre-size this type's candidate lists at the start of a parallel region.
- *
- * Discards nothing despite the name: it reserves each rank's list to the size
- * it reached during the previous phase, so a phase queueing as many candidates
- * as the last one does not reallocate while doing it.
- *
- * @param max_thr Number of per-rank lists to reserve.
- * @note OMPT builds only — called from the parallel-begin callback.
- */
-template <template <typename> typename CHUNK_T, typename T>
-void ManagerChunkOmptImpl<CHUNK_T, T, true>::clean_chunk_to_compress_potentially(int max_thr)
-{
-    if constexpr (IsChunk2<CHUNK_T, T>)
-    {
-        if constexpr (ManagerChunk<CHUNK_T, T>::is_not_bool)
-        {
-            const auto& sh_inf = Proxy2<T>::share_info_array;
-
-            const auto& v_all_second_val = sh_inf.get_all_second_value();
-
-            for (const auto& second_value : v_all_second_val)
-            {
-                CHUNK_T<T>::clean_chunk_to_compress(second_value, max_thr);
-            }
-        }
-        else
-        {
-            CHUNK_T<T>::clean_chunk_to_compress_bool(max_thr);
-        }
-    }
-    else
-    {
-        CHUNK_T<T>::clean_chunk_to_compress(max_thr);
-    }
-}
-
 
 /**
  * @brief Sizes the per-rank free-lists of released buffers to the current team.
@@ -433,7 +380,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
 // here does not nest. Each thread drains ONLY its own index
 // (disjoint arr[t]) → data-race-free, and destroy() recycles into
 // that thread's own pool. Compiled out under OMPT, where opening a
-// region would fire on_parallel_begin/end compression callbacks
+// region would fire the parallel_end compression callback
 // that must not run from a teardown drain.
 #pragma omp parallel
                 {

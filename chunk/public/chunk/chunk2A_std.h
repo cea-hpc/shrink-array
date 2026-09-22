@@ -645,14 +645,6 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
         return manager_chunk2A::get_chunk2A_to_compress_potentially(thr);
     }
 
-    /*!
-     * \brief Pre-reserve each rank's candidate list from its last-seen size.
-     * \details Only reached through ManagerChunk::clean_chunk_to_compress_
-     *          potentially(), whose own definition is OMPT-guarded; the body
-     *          compiles in every mode, so no guard here (same as Chunk v1/Chunk2).
-     */
-    static void clean_chunk_to_compress(int max_thr);
-
     // block_clear / clear_st / clear / clear_int_st / create_value* live on
     // Chunk2AOmpPolicy, one specialisation per mode (see above). Both declare
     // these names; the in-class bodies below call them unqualified.

@@ -697,10 +697,9 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
 
     if constexpr (chunk_config::use_compression_with_ompt)
     {
-        const size_t sz                                               = vec_tup.size();
-        manager_chunk2A::old_size_chunk2_to_compress_potentially[thr] = sz;
+        // clear() keeps the capacity: the list is already reserved for the
+        // next pass, at the size this one reached.
         vec_tup.clear();
-        vec_tup.reserve(sz / 5 + 1);
     }
 }
 
@@ -745,37 +744,6 @@ void Chunk2A<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int      th
             if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
                 chunk_t->steal_unmark();
         }
-    }
-}
-
-/**
- * @brief Pre-sizes the candidate lists at the start of a parallel region.
- *
- * Despite the name it discards nothing: it reserves each rank's list to the
- * size that rank reached during the previous phase, so a phase that queues as
- * many candidates as the last one does not reallocate while doing it.
- *
- * @param max_thr Number of per-thread lists to reserve.
- * @note Only called from the OMPT parallel-begin callback; compiles in every
- *       mode, so it is not fenced.
- */
-template <typename T>
-void Chunk2A<T>::clean_chunk_to_compress(int max_thr)
-{
-    if (manager_chunk2A::is_chunk2A_to_compress_potentially_empty())
-    {
-        return;
-    }
-
-    for (int thr = 0; thr < max_thr; ++thr)
-    {
-        auto& chunk_t = manager_chunk2A::get_chunk2A_to_compress_potentially(thr);
-
-        const int sz = manager_chunk2A::old_size_chunk2_to_compress_potentially[thr];
-        if (sz)
-            chunk_t.reserve(sz);
-        else
-            chunk_t.reserve(100);
     }
 }
 

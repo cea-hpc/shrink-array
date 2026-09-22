@@ -453,11 +453,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
     if constexpr (build_config::chunk_dynamic)
         shrink_array::set_thread_chunk_size(saved_sz);
 
-    const size_t sz = vec_tuple.size();
-    if constexpr (chunk_config::use_compression_with_ompt)
-        manager_chunk2::old_size_chunk2_to_compress_potentially[thr_rank] = sz;
+    // clear() keeps the capacity: the list is already reserved for the next
+    // pass, at the size this one reached.
     vec_tuple.clear();
-    vec_tuple.reserve(sz / 10);
 }
 
 /**
@@ -830,49 +828,6 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr_r
             make_block_compression_bool(thr_rank, nullptr);
         }
     }
-}
-
-/**
- * @brief Pre-sizes each rank's candidate list for one second value.
- *
- * Discards nothing despite the name: it reserves every rank's list to the size
- * that rank reached during the previous phase, so a phase queueing as many
- * candidates as the last one does not reallocate while doing it.
- *
- * @param second_value Which per-value list to reserve.
- * @param max_thr      Number of per-rank lists to reserve.
- * @note OMPT builds only — called from the parallel-begin callback.
- */
-template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::clean_chunk_to_compress(T second_value, int max_thr)
-{
-    if (is_vec_tuple_to_compress_potentially_empty_thr())
-        return;
-
-    for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
-    {
-        auto& vec_pair = *(manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][second_value]);
-
-        const int sz = manager_chunk2::old_size_chunk2_to_compress_potentially[thr_rank];
-        if (sz)
-            vec_pair.reserve(sz);
-        else
-            vec_pair.reserve(100);
-    }
-}
-/**
- * @brief Bool twin of clean_chunk_to_compress().
- *
- * bool's second value is always `true`, so this IS the general reservation at
- * that key. The body used to be duplicated verbatim, with `true` hard-coded in
- * place of the parameter.
- *
- * @param max_thr Number of per-rank lists to reserve.
- */
-template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::clean_chunk_to_compress_bool(int max_thr)
-{
-    clean_chunk_to_compress(static_cast<T>(true), max_thr);
 }
 
 // ---------------------------------------------------------------------------

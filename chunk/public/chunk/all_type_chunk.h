@@ -69,8 +69,7 @@ class ManagerChunkInt;
  *       live in the three policies above:
  *       ::AllTypeChunkParallelInterface picks the per-thread allocator and
  *       free-list methods over the single-allocator ones,
- *       ::AllTypeChunkDynInterface adds register_chunk_size(), and
- *       ::AllTypeChunkOmptInterface adds clean_chunk_to_compress_potentially().
+ *       ::AllTypeChunkDynInterface adds register_chunk_size().
  */
 // ===========================================================================
 // Build-dependent halves of the registry's surface.
@@ -88,7 +87,7 @@ class ManagerChunkInt;
 // manager virtuals that a serial build does not declare.
 //
 // This mirrors what ManagerChunkInt already does with
-// ManagerChunkParallelInterface / DynInterface / OmptInterface; these forward
+// ManagerChunkParallelInterface / DynInterface; these forward
 // to those.
 //
 // Each body reaches the registry with an inline static_cast rather than through
@@ -228,29 +227,8 @@ struct AllTypeChunkDynInterface<Derived, false>
 {
 };
 
-/**
- * @brief The OMPT half of the registry.
- * @tparam Enabled build_config::use_compression_with_ompt.
- */
-template <typename Derived, bool Enabled = chunk_config::use_compression_with_ompt>
-struct AllTypeChunkOmptInterface; // primary left undefined: only the 2 specializations exist
-
-template <typename Derived>
-struct AllTypeChunkOmptInterface<Derived, true>
-{
-    /// Empties the compression-candidate lists of every type (start of a parallel region).
-    void clean_chunk_to_compress_potentially();
-};
-
-/// @brief Builds without OMPT callbacks: no list to empty at region entry.
-template <typename Derived>
-struct AllTypeChunkOmptInterface<Derived, false>
-{
-};
-
 class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>,
-                     public AllTypeChunkDynInterface<AllTypeChunk>,
-                     public AllTypeChunkOmptInterface<AllTypeChunk>
+                     public AllTypeChunkDynInterface<AllTypeChunk>
 {
     friend class SingletonChk<AllTypeChunk>;
     /// The dynamic-geometry policy records the sizes it declares (registered_sizes_).
