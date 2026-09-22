@@ -91,12 +91,30 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
             Proxy2A<T>::resize_tab_is_int(num_tab, 0, nb_chunk);
             this->assign_alloc_key(); // own slabs if large enough (see alloc_key_)
 
-            for (int i = 0; i < nb_chunk; ++i)
+            // Per-chunk init: every iteration writes slot i of tables sized just
+            // above and nothing else, so it parallelises as is. Was serial: ~1 s
+            // of master-only time per run of shrink_bench_chunk2a_dyn at 64
+            // threads (creation + the new array of each rechunk). Same pattern as
+            // ArrayChunk2::rebuild_storage; serial inside a region (the caller
+            // need not be the whole team) and for small arrays.
+            const auto init_chunk = [&](int i)
             {
                 Proxy2A<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab, i, 0);
                 Proxy2A<T>::tab_type_cst_val[num_tab][i] = is_val1;
                 Proxy2A<T>::BaseSpec::set(num_tab, i, T{});
                 chunk_list[i].init_after_constructor();
+            };
+            const bool parallel_chunk_init = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 16384;
+            if (parallel_chunk_init)
+            {
+#pragma omp parallel for schedule(static)
+                for (int i = 0; i < nb_chunk; ++i)
+                    init_chunk(i);
+            }
+            else
+            {
+                for (int i = 0; i < nb_chunk; ++i)
+                    init_chunk(i);
             }
         }
     }
