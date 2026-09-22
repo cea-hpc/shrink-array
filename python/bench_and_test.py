@@ -325,11 +325,14 @@ SCALING_THREADS  = [4, 8, 16, 32, 64, 128]
 SCALING_VARIANT  = "chunk2a@dyn"
 SCALING_DIVISOR  = 50
 SCALING_ITER_MAX = 200
-# A point is a REGRESSION when it is slower than the previous one by more than
-# this factor. 1.10 tolerates the usual run-to-run spread of a single run and
-# the genuine plateau at the top of the curve; a real serialisation shows up
-# as 1.5x and beyond.
-SCALING_MAX_SLOWDOWN = 1.10
+# A point is a REGRESSION when it is slower than the BEST point so far by more
+# than this factor. Against the best rather than the previous point, and 1.25
+# rather than 1.10: measured on an i9-12900H (6 P-cores + 8 E-cores), the
+# 16-thread point is 1.15x the 8-thread one because the threads past 12 land
+# on E-cores -- the machine, not the library. A serialised pass is 1.5x and
+# beyond, and against the best point a slow stretch cannot drift the reference
+# along with it.
+SCALING_MAX_SLOWDOWN = 1.25
 
 # --- Mode presets --------------------------------------------------------
 # Each preset overrides threads / reps_perf / full_reps_threads unless the user
@@ -1723,10 +1726,11 @@ def run_scaling_phase(args, extra_ldpath, errors):
     The averaged perf phase answers "how fast", this one answers "does it
     still scale". It runs ONE binary over SCALING_THREADS (4..128) with a
     shrunk workload, prints the curve with the speedup against the first
-    point, and FAILS when a point is slower than the previous one by more than
-    SCALING_MAX_SLOWDOWN (1.10: a single run has spread, and the top of the
-    curve legitimately plateaus -- a serialised pass shows up as 1.5x and
-    beyond).
+    point, and FAILS when a point is slower than the BEST one so far by more
+    than SCALING_MAX_SLOWDOWN (1.25: a single run has spread, the top of the
+    curve legitimately plateaus, and on a hybrid machine the points past the
+    performance cores are genuinely slower -- a serialised pass shows up as
+    1.5x and beyond).
 
     Everything it needs is a constant at the top of this file, deliberately:
     seven knobs for a guard that either says "still scales" or names the point
@@ -1772,7 +1776,7 @@ def run_scaling_phase(args, extra_ldpath, errors):
     rdir = _run_dir(args.output_dir, "scaling", short_config_label(SCALING_CONFIG))
 
     n_pass = n_total = 0
-    prev_t = prev_dur = None
+    best_t = best_dur = None
     first_dur = None
     for tc in threads:
         n_total += 1
@@ -1798,16 +1802,16 @@ def run_scaling_phase(args, extra_ldpath, errors):
         if first_dur is None:
             first_dur = dur
         speedup = first_dur / dur if dur > 0 else 0.0
-        ratio   = (dur / prev_dur) if prev_dur else 1.0
-        regress = prev_dur is not None and ratio > SCALING_MAX_SLOWDOWN
+        ratio   = (dur / best_dur) if best_dur else 1.0
+        regress = best_dur is not None and ratio > SCALING_MAX_SLOWDOWN
 
         note = f" x{speedup:5.2f} vs {threads[0]}th"
-        if prev_dur is not None:
-            note += f", {ratio:4.2f}x the {prev_t}th point"
+        if best_dur is not None:
+            note += f", {ratio:4.2f}x the best ({best_t}th)"
         if regress:
             sys.stdout.write("\r" + lead + red(f"{dur:7.2f}s") + red(note) + "\n")
             _entry = (f"SCALING_REGRESSION: {short_config_label(SCALING_CONFIG)} "
-                      f"{SCALING_VARIANT} {prev_t}th {prev_dur:.2f}s -> {tc}th {dur:.2f}s "
+                      f"{SCALING_VARIANT} best {best_t}th {best_dur:.2f}s -> {tc}th {dur:.2f}s "
                       f"({ratio:.2f}x, limit {SCALING_MAX_SLOWDOWN})\n"
                       f"  ({' '.join(bench_args)})\n")
             errors.append(_entry)
@@ -1816,7 +1820,8 @@ def run_scaling_phase(args, extra_ldpath, errors):
             n_pass += 1
             sys.stdout.write("\r" + lead + bold(f"{dur:7.2f}s") + dim(note) + "\n")
         sys.stdout.flush()
-        prev_t, prev_dur = tc, dur
+        if best_dur is None or dur < best_dur:
+            best_t, best_dur = tc, dur
 
     if n_total == 0:
         tag = yellow("nothing to run")
@@ -1950,8 +1955,8 @@ def main():
     parser.add_argument("--skip-scaling", action="store_true",
                         help="Skip the scalability guard: one perf run per thread count "
                              f"({', '.join(map(str, SCALING_THREADS))}) on "
-                             f"{short_config_label(SCALING_CONFIG)}, which FAILS when the "
-                             "curve turns back up. On in every mode; the constants are at "
+                             f"{short_config_label(SCALING_CONFIG)}, which FAILS when a point "
+                             f"is more than {SCALING_MAX_SLOWDOWN}x the best. On in every mode; the constants are at "
                              "the top of this file (SCALING_*), not options -- the guard is "
                              "a regression signal, not a measurement campaign.")
     parser.add_argument("--skip-rechunk", action="store_true",
