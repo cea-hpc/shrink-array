@@ -47,11 +47,11 @@ static const unsigned long bench_ulong_mask = []() -> unsigned long
     if (const char* e = std::getenv("CHUNK_BENCH_ULONG_BANDS"))
         bands = std::atol(e);
     if (bands <= 0)
-        return ~0UL;                      // unbounded
+        return ~0UL; // unbounded
     // Bands are 256 indices wide (the |0xFF, &~0x0F arithmetic below), so the
     // mask has to cover bands * 256 indices, rounded up to a power of two.
-    unsigned long span = static_cast<unsigned long>(bands) * 256UL;
-    unsigned long m    = 1;
+    const unsigned long span = static_cast<unsigned long>(bands) * 256UL;
+    unsigned long       m    = 1;
     while (m < span)
         m <<= 1;
     return m - 1UL;
@@ -93,12 +93,12 @@ void bench_phase_compute(BenchArrays&            bench_arr,
     double v_real       = 0;
     double v_im         = 0;
 
-// The accumulators are SHARED in the region, and each loop that adds to them
-// carries its own reduction clause (BENCH_OMP_FOR_STATIC_NOWAIT_RED): a
-// worksharing reduction must be on a shared variable, and that is the form
-// `for simd` accepts on the std::vector baseline. A reduction on a nowait
-// loop is complete for the thread at the end of its own portion; the value
-// is whole after the region's barrier, which is where it is read.
+    // The accumulators are SHARED in the region, and each loop that adds to them
+    // carries its own reduction clause (BENCH_OMP_FOR_STATIC_NOWAIT_RED): a
+    // worksharing reduction must be on a shared variable, and that is the form
+    // `for simd` accepts on the std::vector baseline. A reduction on a nowait
+    // loop is complete for the thread at the end of its own portion; the value
+    // is whole after the region's barrier, which is where it is read.
     // Block size and aligned start of the [start0, end0) loops' schedule
     // (bench_sched_for, bench_prelude.h). Computed once, before the region:
     // every thread must see the same values, or the same-thread guarantee is
@@ -426,9 +426,10 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     const int            ti   = tab_int[i];
 
                     const double common = std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val);
-                    const double arm =
-                        b ? (std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val)) - (std::tan(t3) + std::cos(t5))
-                          : (std::sin(t1) + std::atan(t2) + std::cos(t3) + std::sin(val)) - (std::sin(t3) + std::atan(t5));
+                    const double arm    = b ? (std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val)) -
+                                                  (std::tan(t3) + std::cos(t5))
+                                            : (std::sin(t1) + std::atan(t2) + std::cos(t3) + std::sin(val)) -
+                                                  (std::sin(t3) + std::atan(t5));
 
                     p_val_sum += common + arm;
                     p_v_real += std::cos(valc.real()) - tab_float[i];

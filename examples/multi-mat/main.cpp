@@ -146,7 +146,7 @@ int main()
         std::cerr << "The chunk size can't be null\n";
     }
 
-    if (bool is_pow2 = ParamChunk::check_pow2(chunk_size); !is_pow2)
+    if (const bool is_pow2 = ParamChunk::check_pow2(chunk_size); !is_pow2)
     {
         std::cerr << "The chunk size must be power of two";
     }
@@ -279,7 +279,7 @@ int main()
     rusage usage;
     if (getrusage(RUSAGE_SELF, &usage) == 0)
     {
-        long rss = usage.ru_maxrss; // Resident Set Size in kilobytes
+        const long rss = usage.ru_maxrss; // Resident Set Size in kilobytes
         std::cout << "Memory consumption : " << convert_memory(rss * 1024) << " Mo\n\n";
     }
     else

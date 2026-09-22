@@ -41,8 +41,8 @@
  * @see proxy_base.h, compression_manager.h, write_compress_sync_policy.h
  */
 
-#include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
-#include "chunk/internal/proxy_base.h"        // the declarations these bodies belong to (self-contained, like the other *_inline.h)
+#include "chunk/internal/in_t.h"       // in_t<T>: the element snapshots
+#include "chunk/internal/proxy_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems — used HERE, not via includers
 #include "chunk/internal/phase_guard.h"       // check-build guard of the phase protocol
 
@@ -629,8 +629,8 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
             thread_local bool     force_defer_odd   = false;
             if (++force_defer_count == build_config::force_defer_every) [[unlikely]]
             {
-                force_defer_count = 0;
-                force_defer_odd   = !force_defer_odd;
+                force_defer_count                                 = 0;
+                force_defer_odd                                   = !force_defer_odd;
                 (force_defer_odd ? force_defer_2 : force_defer_1) = true;
             }
         }
@@ -1169,7 +1169,7 @@ T ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation) n
                 const in_t<T> current = load_value();
                 // 1. Promote storage and operand to higher precision
                 // 2. Perform the math in high precision
-                CalcType intermediate = operation(static_cast<CalcType>(current), static_cast<CalcType>(v));
+                const CalcType intermediate = operation(static_cast<CalcType>(current), static_cast<CalcType>(v));
                 // 3. Truncate back to storage type T
 
                 result = static_cast<T>(intermediate);

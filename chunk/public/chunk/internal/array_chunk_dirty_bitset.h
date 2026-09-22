@@ -121,7 +121,7 @@ class DirtyBitsetSupport<Derived, true>
             const int words_to_copy = std::min(old_nb_words, new_nb_words);
             for (int i = 0; i < words_to_copy; ++i)
             {
-                uint64_t val = bitset_[i].word.load(std::memory_order_relaxed);
+                const uint64_t val = bitset_[i].word.load(std::memory_order_relaxed);
                 new_bitset[i].word.store(val, std::memory_order_relaxed);
             }
         }
@@ -237,10 +237,10 @@ class DirtyBitsetSupport<Derived, false>
   public:
     /// @name No-op verbs (no bitset in this mode)
     /// @{
-    void               alloc_dirty_bitset(int /*nb_chunk*/) noexcept {}
-    void               reallocate_dirty_bitset(int /*old_nb_chunk*/, int /*new_nb_chunk*/) noexcept {}
-    void               clear_dirty_bitset() noexcept {}
-    void               mark_chunk_dirty(int /*chunk_idx*/) noexcept {}
+    void alloc_dirty_bitset(int /*nb_chunk*/) noexcept {}
+    void reallocate_dirty_bitset(int /*old_nb_chunk*/, int /*new_nb_chunk*/) noexcept {}
+    void clear_dirty_bitset() noexcept {}
+    void mark_chunk_dirty(int /*chunk_idx*/) noexcept {}
     /// @brief Never dirty: no deferred write can exist in this mode.
     [[nodiscard]] bool is_chunk_dirty(int /*chunk_idx*/) const noexcept
     {

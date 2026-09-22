@@ -57,11 +57,11 @@
 #include <vector>
 
 #include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk
-#include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
+#include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
 #include "chunk/internal/value_less.h"
 #include "chunk/internal/map_helper.h"
 #include "chunk/internal/in_t.h"
-#include "chunk/config.h"          // build_config::any_check
+#include "chunk/config.h"                   // build_config::any_check
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 
 namespace shrink_array
@@ -301,8 +301,8 @@ class PointerMapChunk2
     {
         // No second value yet: the sentinel index, not 0 (which is the slot
         // of whichever second value was registered first, by any array).
-        T   val{};
-        int ind = chunk_config::no_second_value_index;
+        const T   val{};
+        const int ind = chunk_config::no_second_value_index;
         vec.emplace_back(key, std::make_tuple(val, ind, num_tab));
     }
 

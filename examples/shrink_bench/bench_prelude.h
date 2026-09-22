@@ -118,13 +118,13 @@
 // do vectorise (the compute kernel, the plain fills) so that the warning
 // keeps meaning something for them.
 #define BENCH_PRAGMA_STR(x) _Pragma(#x)
-#define BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR          _Pragma("omp for schedule(static) nowait")
+#define BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR _Pragma("omp for schedule(static) nowait")
 #define BENCH_OMP_FOR_STATIC_NOWAIT_RED_SCALAR(...) BENCH_PRAGMA_STR(omp for schedule(static) nowait reduction(+ : __VA_ARGS__))
 #ifdef SHRINK_ARRAY
-    #define BENCH_OMP_FOR_STATIC_NOWAIT          _Pragma("omp for schedule(static) nowait")
+    #define BENCH_OMP_FOR_STATIC_NOWAIT _Pragma("omp for schedule(static) nowait")
     #define BENCH_OMP_FOR_STATIC_NOWAIT_RED(...) BENCH_PRAGMA_STR(omp for schedule(static) nowait reduction(+ : __VA_ARGS__))
 #else
-    #define BENCH_OMP_FOR_STATIC_NOWAIT          _Pragma("omp for simd schedule(static) nowait")
+    #define BENCH_OMP_FOR_STATIC_NOWAIT _Pragma("omp for simd schedule(static) nowait")
     #define BENCH_OMP_FOR_STATIC_NOWAIT_RED(...) BENCH_PRAGMA_STR(omp for simd schedule(static) nowait reduction(+ : __VA_ARGS__))
 #endif
 
@@ -151,7 +151,7 @@
 // (the 0 column predates later library fixes; compare within a row.)
 //
 // The macros name a local `sched_blk`; declare it with bench_sched_for().
-#define BENCH_OMP_FOR_BLOCK_NOWAIT_SCALAR          _Pragma("omp for schedule(static, sched_blk) nowait")
+#define BENCH_OMP_FOR_BLOCK_NOWAIT_SCALAR _Pragma("omp for schedule(static, sched_blk) nowait")
 #define BENCH_OMP_FOR_BLOCK_NOWAIT_RED_SCALAR(...) BENCH_PRAGMA_STR(omp for schedule(static, sched_blk) nowait reduction(+ : __VA_ARGS__))
 #ifdef SHRINK_ARRAY
     #define BENCH_OMP_FOR_BLOCK_NOWAIT_RED(...) BENCH_PRAGMA_STR(omp for schedule(static, sched_blk) nowait reduction(+ : __VA_ARGS__))
@@ -166,7 +166,7 @@ inline int bench_sched_block_env() noexcept
     static const int v = []
     {
         const char* e = std::getenv("BENCH_SCHED_BLOCK");
-        long        b = (e && e[0]) ? std::atol(e) : 64L;
+        const long  b = (e && e[0]) ? std::atol(e) : 64L;
         if (b <= 0)
             return 0;
         long p = 1;

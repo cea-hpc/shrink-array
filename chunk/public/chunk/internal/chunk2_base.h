@@ -107,7 +107,7 @@ class Chunk2Base : public ChunkBase<T, Derived>
                             IndexType            index_opt,
                             [[maybe_unused]] int thr_rank,
                             char*                ptr_type_cst     = nullptr,
-                            SecondValueRef<T> ptr_second_value = {},
+                            SecondValueRef<T>    ptr_second_value = {},
                             T*                   cst2_ptr         = nullptr);
 
     /// @brief Clear chunk and reset to constant value
@@ -118,7 +118,10 @@ class Chunk2Base : public ChunkBase<T, Derived>
     /// @param ptr_second_value Second value pointer (Chunk2A only)
 
     template <typename IndexType>
-    void clear_impl(IndexType index_opt, int thr_rank, char* ptr_type_cst = nullptr, SecondValueRef<T> ptr_second_value = {});
+    void clear_impl(IndexType         index_opt,
+                    int               thr_rank,
+                    char*             ptr_type_cst     = nullptr,
+                    SecondValueRef<T> ptr_second_value = {});
     /**
      * @brief Atomically attempts to install a new buffer or recycles it on failure.
      * @tparam CasFunc Type of the CAS lambda/functor.
@@ -183,7 +186,7 @@ class Chunk2Base : public ChunkBase<T, Derived>
             // Path for Chunk2 (Table indexed)
             if constexpr (is_chunk2_derived)
             {
-                int ind = *ind_opt;
+                const int ind = *ind_opt;
                 if constexpr (is_bool)
                 {
                     is_violating = derived().is_cst_val2();
