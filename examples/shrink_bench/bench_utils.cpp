@@ -186,10 +186,13 @@ void memory_consumption(const std::string& msg)
         // bytes. Against "materialised + parked" above, `live` says how much of
         // the slabs handed out is neither: blocks freed back to their slab, and
         // slab tails never carved. Fast-alloc builds only.
-      //  if constexpr (build_config::use_fast_alloc)
-        #ifdef FAST_ALLOC
-            fast_alloc::report_all_arenas(msg.c_str());
-        #endif
+        // #ifdef, not `if constexpr (build_config::use_fast_alloc)`: the
+        // fast_alloc namespace only exists when slab_arena.h was included,
+        // which is itself under this macro (top of the file), and a discarded
+        // branch of a non-template function still looks its names up.
+#ifdef FAST_ALLOC
+        fast_alloc::report_all_arenas(msg.c_str());
+#endif
     }
     else
     {

@@ -41,10 +41,8 @@
 // through the `build_config::has_bzip2` compile-time flag, so declaring
 // them unconditionally is harmless (unused declarations don't link).
 // -----------------------------------------------------------------------------
-#ifdef BZIP2
 void compress_file(const std::string& source_file, const std::string& dest_file);
 void decompress_file(const std::string& source_file, const std::string& dest_file);
-#endif
 
 // -----------------------------------------------------------------------------
 // write_binary_file<VEC> — dump a plain std::vector to disk as raw bytes
