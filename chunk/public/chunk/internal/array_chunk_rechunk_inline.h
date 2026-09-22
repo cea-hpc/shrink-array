@@ -567,6 +567,15 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             else
                 return 0;
         }();
+        // Fining only (v1, OpenMP): how many new chunks read one old chunk,
+        // and how many have finished with each -- see the release below.
+        [[maybe_unused]] const int fine_ratio = old_size > new_size ? old_size / new_size : 1;
+        [[maybe_unused]] std::vector<std::atomic<int>> old_done;
+        if constexpr (chunk_config::use_chunk && build_config::use_openmp)
+        {
+            if (old_size > new_size)
+                old_done = std::vector<std::atomic<int>>(static_cast<std::size_t>(self().nb_chunk));
+        }
         auto rebuild_one = [&](int c, std::vector<T>& buf)
         {
             const ind_type base = static_cast<ind_type>(c) * static_cast<ind_type>(new_size);
@@ -641,12 +650,18 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             //
             // A source chunk is done for good once every element of it has been
             // transcribed. Sizes are powers of two, so the boundaries align
-            // exactly: old chunk `oc` is fully covered by spans already handled
-            // as soon as its end (oc+1)*old_size is within this span's end.
-            // When coarsening, that is every chunk of [old_first, old_last];
-            // when fining, only the last new chunk mapping into a given old one
-            // satisfies it -- so exactly one c releases it, and the parallel
-            // loop needs no coordination.
+            // exactly. When coarsening, this span covers every chunk of
+            // [old_first, old_last] whole, and releases them. When fining,
+            // old_size / new_size new chunks read the same old one, on
+            // whichever threads the schedule gives them: the LAST to finish
+            // releases it, counted per old chunk (old_done). The release used
+            // to be the job of the last new chunk BY INDEX, "exactly one c, no
+            // coordination" -- which freed the source while the thread holding
+            // the previous index was still reading it. Any schedule whose block
+            // boundary can fall between c and c+1 hit it: guided,16 (the
+            // default since Sept '26), guided,64 and static gave 952 to 1560
+            // wrong elements on rechunk_validation's 512 -> 256; dynamic,64,
+            // dynamic,16 and static,16 keep the pair on one thread and hid it.
             //
             // Released while the TLS is still old_size, deliberately:
             // free_block_to_pool() routes by the AMBIENT geometry, so freeing a
@@ -662,9 +677,21 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 const int thr = get_thr_rank_fast();
                 for (int oc = old_first; oc <= old_last; ++oc)
                 {
-                    const ind_type oc_end = static_cast<ind_type>(oc + 1) * static_cast<ind_type>(old_size);
-                    if (oc_end > end)
-                        continue; // still needed by the next new chunk
+                    if (old_size > new_size)
+                    {
+                        // Fining: old chunk oc is read by fine_ratio new chunks;
+                        // release it with the last of them to finish, whoever
+                        // that is.
+                        if (old_done[static_cast<std::size_t>(oc)].fetch_add(1, std::memory_order_acq_rel) + 1 !=
+                            fine_ratio)
+                            continue;
+                    }
+                    else
+                    {
+                        const ind_type oc_end = static_cast<ind_type>(oc + 1) * static_cast<ind_type>(old_size);
+                        if (oc_end > end)
+                            continue; // still needed by the next new chunk
+                    }
                     auto& och = self().chunk_list[static_cast<std::size_t>(oc)];
                     if (!och.is_cst_val1())
                         och.clear_st(thr, old_size);
