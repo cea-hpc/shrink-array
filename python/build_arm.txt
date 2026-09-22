@@ -1,4 +1,4 @@
-# Builds for multi_launch_no_compress_inter.py --builds build_arm.txt, on the
+# Builds for multi_launch_stress.py --builds build_arm.txt, on the
 # ARM cluster: every optimised (Release / RelWithDebInfo) OpenMP build that
 # compile_all.sh and compile_all_gnu.sh make there -- oneapi and aocc are
 # x86-only, nvhpc is left out on purpose, and the -cs build only exists when

@@ -80,7 +80,7 @@ exec_timeout = args.exec_timeout
 # Ces noms etaient FAUX bien avant la fusion check/perf : les cibles ont
 # toujours porte une declinaison de taille, il n'a jamais existe de
 # shrink_bench_chunk_check tout court. Corriges ici sur la declinaison dyn, la
-# meme que le defaut de multi_launch_no_compress_inter.py -- et sans le _check,
+# meme que le defaut de multi_launch_stress.py -- et sans le _check,
 # qui est desormais un drapeau d'execution (MODE_ARGS plus bas).
 base_exec_list = [
     "./shrink_bench_chunk_dyn",

@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-multi_launch_no_compress_inter.py -- stress runner: the check binaries, over
-and over, each run at a random thread count.
+multi_launch_stress.py -- stress runner: the check binaries, over and over,
+each run at a random thread count.
+
+(Was multi_launch_no_compress_inter.py: it used to set NO_COMPRESS=1, which
+stopped meaning anything when compression became opt-in in shrink_bench
+(--compress / COMPRESS=1, Sept '26). What it does is the stress loop.)
 
 Two ways to name the binaries:
 
@@ -11,8 +15,8 @@ Two ways to name the binaries:
   * --builds: run it from anywhere (the python/ directory, typically) and give
     it the builds to exercise, either inline or as a file, one name per line:
 
-        python3 multi_launch_no_compress_inter.py --builds build_arm.txt
-        python3 multi_launch_no_compress_inter.py --builds omp-llvm,omp-gnu
+        python3 multi_launch_stress.py --builds build_arm.txt
+        python3 multi_launch_stress.py --builds omp-llvm,omp-gnu
 
     A name is a directory under --build-root (default: the repository, i.e.
     the parent of this script, or $CHUNK_BUILD_ROOT); "omp-llvm" and
@@ -213,7 +217,7 @@ _console_log_path = "multi_launch_output.log"
 try:
     _console_log_file = open(_console_log_path, "w")
     _console_log_file.write(
-        f"# multi_launch_no_compress_inter.py run log — "
+        f"# multi_launch_stress.py run log — "
         f"{datetime.datetime.now().isoformat(timespec='seconds')}\n")
     _console_log_file.write("# command: " + " ".join(sys.argv) + "\n")
     _console_log_file.write("# run dir: " + os.getcwd() + "\n\n")
