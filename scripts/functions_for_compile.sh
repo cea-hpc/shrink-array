@@ -568,6 +568,14 @@ __status_enabled() {
     esac
 }
 
+__term_cols() {  # terminal width, re-read every draw (a window can be resized)
+    local c
+    c=$(tput cols 2>/dev/null) || c=""
+    [ -n "$c" ] || c=${COLUMNS:-80}
+    [ "$c" -gt 20 ] 2>/dev/null || c=80
+    printf '%s' "$c"
+}
+
 __clear_status() {  # erase the previously drawn [RUN ] block (ANSI mode only)
     [ "$__STATUS_N" -gt 0 ] || return 0
     printf '\033[%dA\033[J' "$__STATUS_N"
@@ -587,11 +595,33 @@ __job_progress() {  # <log> → "[N/M] (P%)" from the log tail, or "configuring�
 }
 
 __draw_status() {  # one [RUN ] line per tracked job, pid-sorted (stable order)
-    local pid dt
+    # Every line is TRUNCATED to the terminal width. __clear_status erases by
+    # moving up __STATUS_N ROWS, so a line that wraps makes the block taller
+    # than the count and the erase lands in the middle of it: the display then
+    # scrolls one block per refresh instead of redrawing in place. The old
+    # format was exactly 80 columns wide with the longest config name
+    # ("omp-gnu-relwithdebinfo-std-alloc-address-sanitizer", 49 chars), which
+    # wrapped on every 80-column terminal. The name field now takes whatever
+    # room is left, and the line is cut to width - 1 whatever happens.
+    local pid dt line cols name_w
+    local cols=$(__term_cols)
     local lines=0
+    # "[RUN ] " + name + " " + "9999s" + "  " + "[1234/5678] (100%)" -> the name
+    # gets the rest, never less than 12 columns.
+    local name
+    name_w=$(( cols - 34 ))
+    [ "$name_w" -ge 12 ] || name_w=12
     for pid in $(printf '%s\n' "${!JOB_NAME[@]}" | sort -n); do
         dt=$(( SECONDS - JOB_T0[$pid] ))
-        printf '[RUN ] %-50s %4ds  %s\n' "${JOB_NAME[$pid]}" "$dt" "$(__job_progress "${JOB_LOG[$pid]}")"
+        # A name too long is cut at the FRONT, not the back: these names share
+        # long prefixes (omp-gnu-, omp-llvm-) and differ at the end, so
+        # "omp-gnu-relwithdebinfo-std-alloc-address-sanitizer" and its
+        # -thread-sanitizer twin are told apart by their last characters.
+        name=${JOB_NAME[$pid]}
+        [ "${#name}" -le "$name_w" ] || name="…${name: -$(( name_w - 1 ))}"
+        line=$(printf '[RUN ] %-*s %4ds  %s' "$name_w" "$name" "$dt" \
+                      "$(__job_progress "${JOB_LOG[$pid]}")")
+        printf '%.*s\n' "$(( cols - 1 ))" "$line"
         lines=$(( lines + 1 ))
     done
     __STATUS_N=$lines
