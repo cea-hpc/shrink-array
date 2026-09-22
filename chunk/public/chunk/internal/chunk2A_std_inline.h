@@ -555,11 +555,22 @@ void Chunk2A<T>::compress_chunk_to_compress(bool apply)
         // never compressed (chunk2a_1024 --mode perf, 6 threads: 1 GB of
         // buffers more returned to the pool with this pass, -3 % RSS, time
         // within noise). Between two regions no writer is live, so the
-        // writers' pass runs without its handshake (nullptr proxy), rank
-        // after rank, as ArrayChunk2A::make_block_compression() does.
+        // writers' pass runs without its handshake (nullptr proxy), each
+        // rank on its own list -- the lists are per rank, the second-value
+        // registry takes its mutex, the in-loop passes already run
+        // concurrently -- and the ranks beyond the team's size serially,
+        // as Chunk2FastCompPolicy::compress_chunk_to_compress does.
         if (apply)
         {
-            for (int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
+            int team = 0;
+#pragma omp parallel
+            {
+                const int thr = CHUNK_PMP_THREAD_RANK;
+                if (thr == 0)
+                    team = CHUNK_PMP_NUM_THREADS;
+                make_block_compression(thr, nullptr);
+            }
+            for (int thr = team; thr < CHUNK_PMP_MAX_THREADS; ++thr)
                 make_block_compression(thr, nullptr);
         }
         else
