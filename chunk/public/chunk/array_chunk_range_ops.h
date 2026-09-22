@@ -453,11 +453,14 @@ void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, assum
  *          thread may be writing other elements of the same chunk, into that
  *          very buffer.
  *
- *          Chunk2A under OpenMP with fast block compression only; everywhere
- *          else (Chunk, Chunk2, bool, serial builds) it is the element loop --
- *          correct in parallel, without the speed-up. Chunk is excluded on
- *          purpose: its zero counter is resynced from the whole chunk, which
- *          another thread may be writing.
+ *          Chunk2A and Chunk under OpenMP with fast block compression;
+ *          everywhere else (Chunk2, bool, serial builds) it is the element loop
+ *          -- correct in parallel, without the speed-up. Chunk: its zero
+ *          counter, which a raw fill would have to resync from the whole chunk,
+ *          does not exist with fast block compression; and the null sentinel
+ *          its element path adds while the slow compression path is active is
+ *          never reached (the flag is raised on WriteCompressSyncPolicy<Proxy<T>>
+ *          but tested on WriteCompressSyncPolicy<Chunk<T>>).
  *
  * @pre   Called inside or outside a parallel region; concurrent callers write
  *        DISJOINT indices (any chunk may be shared). No rechunk_to() / resize /
@@ -482,7 +485,7 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
 
     const in_t<T> value = static_cast<T>(v);
 
-    constexpr bool session = chunk_config::use_chunk2a && build_config::use_openmp &&
+    constexpr bool session = (chunk_config::use_chunk2a || chunk_config::use_chunk) && build_config::use_openmp &&
                              chunk_config::use_fast_block_compression && detail::raw_fillable_v<T>;
     if constexpr (!session)
     {
@@ -535,6 +538,8 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
                     for (std::size_t k = i; k < hi; ++k)
                         dst[k - c_begin] = value;
                     uniform = detail::may_be_uniform(dst, S); // buffer pinned by the session
+                    if constexpr (chunk_config::use_chunk)
+                        uniform = uniform && dst[0] == static_cast<T>(chunk_type::first_value); // v1: first value only
                     done    = true;
                 }
                 Policy::end_write(thr); // 6.
