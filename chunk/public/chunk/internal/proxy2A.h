@@ -799,6 +799,18 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      * @param second_value Current second value for comparison
      * @param first_value First constant value for comparison
      * @return true if the chunk should be marked for compression
+     *
+     * @details Beyond the shared predicate (a write of one of the two
+     *          constants over something else), chunk2a queues two writes of
+     *          its own: any non-first value on a chunk that has no second
+     *          value yet (how it discovers one), and a write that LEAVES the
+     *          chunk's second value (old == second, new is neither constant):
+     *          the chunk may be turning uniform at a third value W, which
+     *          the pass compresses (fill_list_to_compress scans against
+     *          values[0] and registers what it finds). Without that clause a
+     *          chunk compressed to V once and uniformly W later was never
+     *          queued again, hence never compressed until it passed through
+     *          first_value: 100 out of 100 in the Sept '26 probe.
      */
     [[nodiscard]] static bool should_mark_for_compression(in_t<T> old_value,
                                                           in_t<T> new_value,
@@ -807,7 +819,8 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     {
         return CompressionManager<T, ChunkType>::should_mark_for_compression(old_value, new_value, second_value,
                                                                              first_value) ||
-               (second_value == first_value && new_value != first_value);
+               (second_value == first_value && new_value != first_value) ||
+               (second_value != first_value && old_value == second_value && new_value != second_value);
     }
 
     /**
@@ -839,8 +852,13 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     [[nodiscard]] bool
     pre_check_mark_for_compression(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
     {
+        // The third clause of should_mark_for_compression() (leaving the second
+        // value) depends on the old value, which this filter does not see: a
+        // write of a non-constant on a chunk that has a second value goes
+        // through, and the predicate decides on the old value it reads anyway.
         return this->pre_check_mark_for_compression_strict(new_value, first_value, second_val) ||
-               (second_val == first_value && new_value != first_value);
+               (second_val == first_value && new_value != first_value) ||
+               (second_val != first_value && new_value != second_val);
     }
 
     /**

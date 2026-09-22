@@ -465,33 +465,19 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
 
         if constexpr (Base::is_not_bool)
         {
-
+            // Against values[0], as fill_list_to_compress does, whatever
+            // second value the chunk has registered: a chunk uniform at a
+            // value other than its current one is compressed to THAT value,
+            // which find_or_set registers and the clear commits. Scanning
+            // against the registered value alone (until Sept '26) left such a
+            // chunk materialised for good, until it passed through first_value.
             SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            // No second value recorded yet, or none registered for it: the first
-            // element is the candidate second constant.
-            if (ptr_second_value.get() == first_value ||
-                tab_cst_val2_holder::find_cst_val2_ptr(ptr_second_value.get()) == nullptr)
-            {
-                const in_t<T> second_v = Base::read_value_scan(0);
-                const auto scan     = Base::scan_constants(first_value, second_v, size.count());
-                compact1            = scan.first;
-                compact2            = scan.second;
-                if (compact2)
-                {
-                    new_cst_val2_ptr =
-                        tab_cst_val2_holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
-                }
-            }
-            else if (ptr_second_value.get() != first_value)
-            {
-                const auto scan = Base::scan_constants(first_value, ptr_second_value.get(), size.count());
-                compact1        = scan.first;
-                compact2        = scan.second;
-                // second_v already known and registered — retrieve its pointer
-                if (compact2)
-                    new_cst_val2_ptr =
-                        tab_cst_val2_holder::find_or_set_ind_cst_val2(ptr_second_value.get(), ptr_second_value);
-            }
+            const in_t<T>     second_v         = Base::read_value_scan(0);
+            const auto        scan             = Base::scan_constants(first_value, second_v, size.count());
+            compact1                           = scan.first;
+            compact2                           = scan.second;
+            if (compact2)
+                new_cst_val2_ptr = tab_cst_val2_holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
         }
         else
         {
