@@ -113,6 +113,20 @@ template <typename Chunk>
  *          scans the chunk once and drops it if it is not constant. Fast-block
  *          builds only (the serial counters are resynced by the caller).
  */
+/**
+ * @brief Can the chunk whose buffer is @p dst (@p S elements) be uniform?
+ * @details NECESSARY condition only -- first, middle and last element equal.
+ *          A uniform chunk always passes; a chunk that fails cannot be
+ *          compressed, so queueing it would only cost the next pass a full
+ *          scan (and, in a parallel run, push the lists to "dangerous" and the
+ *          scans onto the writers' slow path).
+ */
+template <typename T>
+[[nodiscard]] bool may_be_uniform(const T* dst, unsigned int S) noexcept
+{
+    return S == 0 || (dst[0] == dst[S / 2] && dst[0] == dst[S - 1]);
+}
+
 template <typename Arr>
 void queue_for_compression(Arr& a, std::size_t i)
 {
@@ -289,7 +303,7 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
 
             // The chunk may be constant now: a fill of first_value, or on
             // chunk2a of any value (a uniform run is its second constant).
-            if (value_is_cst1 || chunk_config::use_chunk2a)
+            if ((value_is_cst1 || chunk_config::use_chunk2a) && detail::may_be_uniform(dst, S))
                 detail::queue_for_compression(a, c_begin);
         }
     }
@@ -382,8 +396,10 @@ void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, bool 
                 a[static_cast<ind_type>(c_begin)].resync_nb_val_eq_zero(nz);
             }
 
-            // The source is not known to be uniform: the pass decides.
-            detail::queue_for_compression(a, c_begin);
+            // The source is not known to be uniform: the pass decides -- for
+            // the chunks that can be.
+            if (detail::may_be_uniform(dst, S))
+                detail::queue_for_compression(a, c_begin);
         }
     }
 }
@@ -505,7 +521,8 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
             if (i == hi)
                 continue;
 
-            bool done = false;
+            bool done    = false;
+            bool uniform = false; // may_be_uniform, read inside the session
             if (!ch.pending_any()) // 1. deferred ops on the chunk: element path
             {
                 if (Mgr::must_defer_write(ch)) // 2. a compressor on it: wait (bounded)
@@ -517,7 +534,8 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
                     T* dst = ch.values_load(); // 5.
                     for (std::size_t k = i; k < hi; ++k)
                         dst[k - c_begin] = value;
-                    done = true;
+                    uniform = detail::may_be_uniform(dst, S); // buffer pinned by the session
+                    done    = true;
                 }
                 Policy::end_write(thr); // 6.
             }
@@ -529,7 +547,8 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
                 continue; // the element path queued the chunk itself
             }
 
-            detail::queue_for_compression(a, c_begin); // 7.
+            if (uniform) // 7. only a chunk that can be uniform
+                detail::queue_for_compression(a, c_begin);
         }
     }
 }
