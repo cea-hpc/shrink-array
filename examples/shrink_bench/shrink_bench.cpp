@@ -138,9 +138,12 @@ int main(int argc, char* argv[])
     const bool      read_trace      = bench_args.read_trace;
     const bool      test_stl        = bench_args.test_stl;
     const bool      no_struct       = bench_args.no_struct;
-    const int       multiply_factor = bench_args.multiply_factor;
+    const double    multiply_factor = bench_args.multiply_factor;
     const int       divisor_factor  = bench_args.divisor_factor;
     const int       iter_max_arg    = bench_args.iter_max_arg;
+
+    // Before sz is computed: a factor past the int range would wrap here.
+    check_size_limits(multiply_factor, divisor_factor, iter_max_arg);
 
     const int sz       = get_size_data(multiply_factor, divisor_factor);
     const int interval = get_size_interval(multiply_factor, divisor_factor);
