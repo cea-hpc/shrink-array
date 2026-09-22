@@ -326,22 +326,17 @@ else
         run_cmd "CXX=icpx cmake -S ~/shrink-array -B $build_rep/cmake-build-omp-oneapi/$arch $ONEAPI_STDLIB_OPT -DOMP:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
     launch_build "$build_rep/cmake-build-omp-oneapi/$arch" $BUILD_FLAGS
-
-    if [ "$BUILD_ONLY" = false ]; then
-        run_cmd "CXX=icpx cmake -S ~/shrink-array -B $build_rep/cmake-build-omp-oneapi-manual-compression/$arch $ONEAPI_STDLIB_OPT -DHAVE_MANUAL_COMPRESSION:BOOL=ON -DOMP:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
-    fi
-    launch_build "$build_rep/cmake-build-omp-oneapi-manual-compression/$arch" $BUILD_FLAGS
+    # The three -manual-compression twins that used to follow each oneapi
+    # build are gone: -DHAVE_MANUAL_COMPRESSION is read by no CMakeLists and
+    # by no source any more (the manual mode left when compression became the
+    # embedded, incremental one), so they compiled the very same code a second
+    # time -- three oneapi builds' worth of wall time for nothing.
 
     set_build_header 'Compiling oneapi:'
     if [ "$BUILD_ONLY" = false ]; then
         run_cmd "CXX=icpx cmake -S ~/shrink-array -B $build_rep/cmake-build-oneapi/$arch $ONEAPI_STDLIB_OPT -DOMP:BOOL=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
     launch_build "$build_rep/cmake-build-oneapi/$arch" $BUILD_FLAGS
-
-    if [ "$BUILD_ONLY" = false ]; then
-        run_cmd "CXX=icpx cmake -S ~/shrink-array -B $build_rep/cmake-build-oneapi-manual-compression/$arch $ONEAPI_STDLIB_OPT -DOMP:BOOL=OFF -DHAVE_MANUAL_COMPRESSION:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
-    fi
-    launch_build "$build_rep/cmake-build-oneapi-manual-compression/$arch" $BUILD_FLAGS
 fi
 
 set_build_header 'Compiling oneapi debug openmp:'
@@ -349,11 +344,6 @@ if [ "$BUILD_ONLY" = false ]; then
     run_cmd "CXX=icpx cmake -S ~/shrink-array -B $build_rep/cmake-build-omp-oneapi-debug/$arch $ONEAPI_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DOMP:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
 fi
 launch_build "$build_rep/cmake-build-omp-oneapi-debug/$arch" $BUILD_FLAGS
-
-if [ "$BUILD_ONLY" = false ]; then
-    run_cmd "CXX=icpx cmake -S ~/shrink-array -B $build_rep/cmake-build-omp-oneapi-debug-manual-compression/$arch $ONEAPI_STDLIB_OPT -DCMAKE_BUILD_TYPE=Debug -DOMP:BOOL=ON -DHAVE_MANUAL_COMPRESSION:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
-fi
-launch_build "$build_rep/cmake-build-omp-oneapi-debug-manual-compression/$arch" $BUILD_FLAGS
 
 else
     echo "[SKIP] oneapi builds disabled (enable_oneapi=$enable_oneapi, is_arm=$is_arm)"
