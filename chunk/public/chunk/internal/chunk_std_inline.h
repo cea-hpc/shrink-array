@@ -34,59 +34,66 @@ namespace shrink_array
 // serial build selects the empty <..., false> specialisation. Chunk's own
 // members here compile in both modes.
 
+// Threshold under which the initialisation below stays on the calling thread:
+// the same 500 chunks the array paths use (ArrayChunk::create / resize).
+inline constexpr std::size_t kParallelInitMinChunks = 500;
+
 template <typename T, typename Derived, bool Enabled>
 void* ChunkOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 {
     auto* v = static_cast<Chunk<T>*>(::operator new(sz));
 
-    const size_t n = sz / sizeof(Chunk<T>);
+    const std::size_t n = sz / sizeof(Chunk<T>);
 
-    auto lbd0 = [&]()
-    {
-    #pragma omp simd
-        for (size_t k = 0; k < n; ++k)
-        {
-            auto* ptr = v + k;
-            ptr->init_values_cst_val();
-        }
-    };
-
-    if (n < 500)
-    {
-        lbd0();
-    }
-    else
-    {
-        auto lbd1 = [&]()
-        {
-    #pragma omp for simd
-            for (size_t k = 0; k < n; ++k)
-            {
-                auto* ptr = v + k;
-                ptr->init_values_cst_val();
-            }
-        };
-        if (n > 500)
-        {
-            if (!CHUNK_PMP_IN_PARALLEL_REGION)
-            {
-    #pragma omp parallel
-                lbd1();
-            }
-            else if (CHUNK_PMP_MAX_THREADS >= 4)
-            {
-                [[maybe_unused]] const int size = CHUNK_PMP_MAX_THREADS / 2; // unused when the pragma is ignored (serial build)
-    #pragma omp parallel num_threads(size) // nested useful ?
-                lbd1();
-            }
-        }
-        else
-        {
-            lbd1();
-        }
-    }
+    // Every chunk starts compressed to the first constant. Only the RAW memory
+    // is touched here -- the caller's constructors run next and set `values`
+    // themselves -- so this is the placement-new form's initialisation, the one
+    // `new Chunk<T>[n]` would immediately overwrite. See init_chunks_cst_val().
+    init_chunks_cst_val(v, n);
 
     return static_cast<void*>(v);
+}
+
+/**
+ * @brief Point @p n freshly allocated chunks at the first constant, in
+ *        parallel past kParallelInitMinChunks.
+ *
+ * @details `init_values_cst_val()` is one store, so this is a memory-bound
+ *          sweep, worth a team past the threshold -- but only OUTSIDE a
+ *          parallel region, where this function may open its own. Inside one
+ *          it stays on the calling thread:
+ *
+ *          - an orphaned `omp for` would require EVERY thread of the team to
+ *            call this, which no allocation does. Called from one thread (an
+ *            `omp single`, a `master`, a branch), the caller blocks on the
+ *            loop's barrier and the others on theirs: measured, it hangs at 4
+ *            threads;
+ *          - a nested `omp parallel` is worse. The `omp parallel
+ *            num_threads(max/2)` that used to sit here was serialised by every
+ *            default runtime (max_active_levels 1), so it ran on ONE thread
+ *            anyway, and with nesting enabled it would have opened N x N/2
+ *            threads from an allocation.
+ *
+ *          The old form also had a hole at exactly n == 500 (`if (n < 500)
+ *          ... else if (n > 500)`), where nothing was initialised at all.
+ *
+ * @param v first chunk
+ * @param n how many
+ */
+template <typename T, typename Derived, bool Enabled>
+void ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk<T>* v, std::size_t n) noexcept
+{
+    if (n >= kParallelInitMinChunks && CHUNK_PMP_MAX_THREADS >= 2 && !CHUNK_PMP_IN_PARALLEL_REGION)
+    {
+    #pragma omp parallel for simd
+        for (std::size_t k = 0; k < n; ++k)
+            v[k].init_values_cst_val();
+        return;
+    }
+
+    #pragma omp simd
+    for (std::size_t k = 0; k < n; ++k)
+        v[k].init_values_cst_val();
 }
 
 template <typename T, typename Derived, bool Enabled>
@@ -100,7 +107,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_pa
                                                                                   vec_tuple_chunkp_int2& ll_compt)
 {
 
-    auto& vec_tup = Derived::manager_chunk::chunk_to_compress_potentially_thr[thr];
+    const auto& vec_tup = Derived::manager_chunk::chunk_to_compress_potentially_thr[thr];
 
     const int sz = vec_tup.size();
 
@@ -254,7 +261,7 @@ void ChunkOmpPolicy<T, Derived, Enabled>::zero_fill_fresh(T* p) noexcept
 {
     if constexpr (build_config::use_fast_alloc)
     {
-        std::fill_n(p, shrink_array::alloc_chunk_count(), Base::zero);
+        std::fill_n(p, alloc_chunk_count(), Base::zero);
     }
 }
 
@@ -315,7 +322,7 @@ void ChunkOmpPolicy<T, Derived, false>::create_value() noexcept
         {
             if constexpr (build_config::use_fast_alloc)
             {
-                std::fill_n(p, shrink_array::alloc_chunk_count(), Base::zero);
+                std::fill_n(p, alloc_chunk_count(), Base::zero);
             }
         });
 }
@@ -404,7 +411,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
         chunk_ptr->steal_unmark();
     }
     if constexpr (build_config::chunk_dynamic)
-        shrink_array::set_thread_chunk_size(saved_sz);
+        set_thread_chunk_size(saved_sz);
 
     for (int k = 0; k < sz; ++k)
     {

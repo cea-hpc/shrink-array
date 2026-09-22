@@ -233,10 +233,24 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
     using Base::self;
     using Base::values;
 
-    /// @brief Array-new for chunks, routed through the chunk pool.
+    /// @brief Array-new for chunks: allocates and points every chunk at the
+    ///        first constant (init_chunks_cst_val).
+    /// @warning `new Chunk<T>[n]` runs the DEFAULT CONSTRUCTORS after this, so
+    ///          that initialisation is immediately overwritten; the operator
+    ///          pays off for a placement-new array, where the caller does not
+    ///          construct. Nothing in the library array-news a chunk --
+    ///          ArrayChunk* hold a std::vector<chunk_type>, initialised by
+    ///          their own loops.
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
     void  operator delete[](void* p);
+    /// @brief Point @p n freshly allocated chunks at the first constant.
+    /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
+    ///          parallel region (inside one it stays on the calling thread: an
+    ///          allocation is made by one thread, and an orphaned `omp for`
+    ///          would hang waiting for the others). Public: an application
+    ///          that placement-news an array of chunks initialises it here.
+    static void init_chunks_cst_val(Chunk<T>* v, std::size_t n) noexcept;
 
     /// @brief CAS this chunk's values pointer into place.
     /// @param values_loc buffer to publish
