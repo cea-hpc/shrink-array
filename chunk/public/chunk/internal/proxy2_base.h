@@ -282,6 +282,24 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     }
 
     /**
+     * @brief Marking for a caller that stores AFTER marking (Proxy2A's
+     *        assignment: mark, then perform_core_assignment).
+     * @details Same test as mark_for_compression_if_needed() above, except the
+     *          memory check of mark_for_compression_core() expects the OLD
+     *          value. The helper above expects the new one -- right for a
+     *          caller that has already stored (memory then differs only if a
+     *          race changed it), but before the store memory still holds the
+     *          old value, so its check fired on every write that changes the
+     *          value and queued the chunk whatever should_mark said.
+     */
+    void mark_for_compression_before_store(in_t<T> second_val, in_t<T> new_value, in_t<T> first_value) const
+    {
+        const bool isv = is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
+        const T    old = Base::read_values();
+        mark_for_compression_core(old, new_value, old, isv, second_val, first_value);
+    }
+
+    /**
      * @brief Marks block for compression with an explicit old boolean value
      *        (provided to avoid a race), rather than reading it back from
      *        values[num].

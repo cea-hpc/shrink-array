@@ -25,7 +25,7 @@
 
 #include "chunk/internal/in_t.h"
 #include "chunk/array_chunk2A.h"
-#include "chunk/PMP_CHUNK.h"         // get_thr_rank_fast
+#include "chunk/PMP_CHUNK.h" // get_thr_rank_fast
 #include "chunk/internal/deferred_op_pool.h"
 #include "chunk/internal/bad_ptr_check.h"     // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/internal/invariant_check.h"   // INVARIANT_FAILED
@@ -90,7 +90,7 @@ namespace shrink_array
 inline const bool g_proxy2a_meta_legacy = []
 {
     const char* e = std::getenv("CHUNK_PROXY2A_META_ARMED");
-    return !(e != nullptr && e[0] != '\0' && e[0] != '0');
+    return e == nullptr || e[0] == '\0' || e[0] == '0';
 }();
 
 template <typename T>
@@ -109,10 +109,11 @@ bool Proxy2A<T>::meta_from_armed(bool with_sv) noexcept
     {
         const bool bad_inside = this->ptr_is_inside_chunk_list_to_compress !=
                                 &Base::FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab][num_chunk];
-        const bool bad_type = ptr_type_cst != &tab_type_cst_val[num_tab][num_chunk];
-        bool       bad_sv   = false;
+        const bool bad_type   = ptr_type_cst != &tab_type_cst_val[num_tab][num_chunk];
+        bool       bad_sv     = false;
         if constexpr (is_not_bool)
-            bad_sv = with_sv && BaseSpec::ptr_second_value.slot != BaseSpec::get_tab_second_value(num_tab, num_chunk).slot;
+            bad_sv =
+                with_sv && BaseSpec::ptr_second_value.slot != BaseSpec::get_tab_second_value(num_tab, num_chunk).slot;
         if (bad_inside || bad_type || bad_sv)
             INVARIANT_FAILED("Proxy2A::meta_from_armed: armed metadata address differs from the table's "
                              "(inside {}, type {}, second value {}) for num_tab {} chunk {} -- a reallocation "
@@ -208,7 +209,13 @@ void Proxy2A<T>::mark_for_compression_if_needed(in_t<T> new_value) const
 {
     if constexpr (is_not_bool)
     {
-        Base2::mark_for_compression_if_needed(BaseSpec::ptr_second_value.get(), new_value, Chunk2A<T>::first_value);
+        // Called BEFORE the store (handle_no_bool_assignment): the memory check
+        // must expect the old value -- see mark_for_compression_before_store.
+        if (g_proxy2a_mark_legacy) [[unlikely]]
+            Base2::mark_for_compression_if_needed(BaseSpec::ptr_second_value.get(), new_value, Chunk2A<T>::first_value);
+        else
+            Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value.get(), new_value,
+                                                     Chunk2A<T>::first_value);
     }
     else
     {
@@ -321,7 +328,7 @@ void Proxy2A<T>::perform_compression() noexcept
 
     const int sz_before = static_cast<int>(vec_to_compress_potantially.size());
 
-    int sz_threshold = szm / 2;
+    const int sz_threshold = szm / 2;
 
     if (sz_before > sz_threshold)
     {
@@ -1035,10 +1042,10 @@ void Proxy2A<T>::execute_arithmetic_compound_operation(OP op, const U& v, Modify
  */
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 template <typename OP, typename LBD, typename U>
-void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_compound_operation_async(auto* ctx,
-                                                                                                        OP    op,
+void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_compound_operation_async(auto*    ctx,
+                                                                                                        OP       op,
                                                                                                         const U& v,
-                                                                                                        LBD   lbd) const
+                                                                                                        LBD lbd) const
 {
     using CalcType = std::common_type_t<T, base_t<U>>;
 
