@@ -169,18 +169,11 @@ inline bool mode_perf  = false; ///< g_bench_mode == perf
  */
 inline void set_bench_mode(BenchMode m)
 {
-#ifdef BENCH_INT64
-    // The int64 declination is a perf instrument (bench_int.h). A check compares
-    // against the data_tab* reference files, which the ordinary 32-bit build
-    // writes and nothing regenerates at 64 bits, so --mode check here would
-    // report differences that mean nothing. Refuse it rather than print them.
-    if (m == BenchMode::check)
-    {
-        std::cerr << "error: --mode check is not supported by the 64-bit-index (int64) build.\n"
-                     "       Run the check on the ordinary build; int64 is for --mode perf.\n";
-        std::exit(1);
-    }
-#endif
+    // An int64 build (BENCH_INT64) checks against the same data_tab* files as
+    // the 32-bit one: they hold element values and a checksum, nothing sized by
+    // Int, and the index type changes no value the bench computes. A mismatch
+    // there is a real 32/64-bit divergence -- in the library's index path, or
+    // an index expression of the bench that overflows at 32 bits.
     g_bench_mode = m;
     mode_check   = (m == BenchMode::check);
     mode_perf    = (m == BenchMode::perf);

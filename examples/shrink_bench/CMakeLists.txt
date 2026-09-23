@@ -129,9 +129,10 @@ endfunction()
 # down) and dyn get a twin. The ordinary 32-bit targets are untouched either
 # way, both live side by side.
 #
-# NOT registered with ctest, and --mode check is not supported on them: a check
-# compares against the data_tab* reference files, which the 32-bit build writes
-# and nothing regenerates at 64 bits. These are perf instruments.
+# NOT registered with ctest: these are perf instruments first. --mode check
+# works on them, against the data_tab* files of the 32-bit vector_check of the
+# same configuration (element values, independent of Int);
+# python/bench_and_test.py runs a few such checks.
 # ============================================================================
 option(SHRINK_BENCH_INT64 "Also build the 64-bit-index (int64) bench executables" OFF)
 set(SHRINK_BENCH_INT64_SIZES "1024" CACHE STRING

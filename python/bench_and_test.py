@@ -332,8 +332,15 @@ SCALING_CONFIGS  = ["cmake-build-omp-llvm", "cmake-build-omp-gnu"]
 # bend it shares is the machine's, and one only the chunk variants show is ours.
 SCALING_REFERENCE_VARIANT = "vector"
 SCALING_THREADS  = [4, 8, 16, 32, 64, 128]
-SCALING_DIVISOR  = 50
-SCALING_ITER_MAX = 200
+# The guard runs the int64 binaries (shrink_bench_<variant>_int64_<size>, see
+# int64_variant) at --multiply 2: arrays past INT_MAX elements, so the curves
+# also cover the 64-bit index path at the scale it exists for. --iter_max 500
+# holds each point down; the sizes with no int64 declination (256) are left out.
+SCALING_MULTIPLY = 2
+SCALING_ITER_MAX = 500
+# Floor of a point's timeout: twice the perf size at 4 threads is far from the
+# few seconds of the old --divisor 50 points.
+SCALING_TIMEOUT  = 3600
 # A point is a REGRESSION when it is slower than the BEST point so far by more
 # than this factor. Against the best rather than the previous point, and 1.25
 # rather than 1.10: measured on an i9-12900H (6 P-cores + 8 E-cores), the
@@ -342,6 +349,15 @@ SCALING_ITER_MAX = 200
 # beyond, and against the best point a slow stretch cannot drift the reference
 # along with it.
 SCALING_MAX_SLOWDOWN = 1.25
+
+# --- 64-bit index checks (int64 binaries) ----------------------------------
+# A few --mode check runs of the int64 binaries against the 32-bit oracle of
+# the same config: the data_tab* files hold element values, independent of the
+# index type, so the int64 build must reproduce them exactly. One per variant,
+# both geometries between them; chunk2a@dyn is the richest path (a second
+# value per chunk, re-chunking). Not a sweep: the 32-bit checks cover the
+# rest, and this only asks whether 64-bit indices change a result.
+INT64_CHECK_VARIANTS = ["chunk@1024", "chunk2@1024", "chunk2a@dyn"]
 
 # --- Mode presets --------------------------------------------------------
 # Each preset overrides threads / reps_perf / full_reps_threads unless the user
@@ -419,6 +435,24 @@ def _variant_base(var):
     (e.g. "chunk2a@256" -> "chunk2a", "vector" -> "vector"). Used wherever the
     logic keys on the variant identity rather than its size."""
     return var.split("@", 1)[0]
+
+
+def int64_variant(var):
+    """The int64 declination of a --variants entry, spelled for resolve_exe:
+    "chunk2a@1024" -> "chunk2a_int64@1024" (shrink_bench_chunk2a_int64_1024),
+    "vector" -> "vector_int64" (with stage perf: shrink_bench_vector_int64_perf).
+    Built on the release OpenMP configs only, for 1024 and dyn (see
+    examples/shrink_bench/CMakeLists.txt, SHRINK_BENCH_INT64)."""
+    if "@" in var:
+        base, size = var.split("@", 1)
+        return f"{base}_int64@{size}"
+    return f"{var}_int64"
+
+
+def oracle_complete(output_dir, config):
+    """Whether `config`'s oracle (oracle_dir) was written to the end."""
+    return os.path.exists(os.path.join(oracle_dir(output_dir, config),
+                                       "data_tab_ORACLE_COMPLETE.marker"))
 
 
 def resolve_exe(build_root, config, var, stage):
@@ -1661,8 +1695,7 @@ def run_rechunk_phase(args, extra_ldpath, errors):
     }
 
     def _oracle_ok(cfg):
-        return os.path.exists(os.path.join(oracle_dir(args.output_dir, cfg),
-                                           "data_tab_ORACLE_COMPLETE.marker"))
+        return oracle_complete(args.output_dir, cfg)
 
     n_pass = n_total = 0
     for cfg in args.configs:
@@ -1757,8 +1790,9 @@ def run_scaling_phase(args, extra_ldpath, errors):
     whose curves are worth believing; GNU is the one without OMPT, whose
     phase-end path differs (see SCALING_CONFIGS). The allocator, aggressive-
     compression and stats configs would add runs, not information.
-    The point is a REGRESSION signal, not a measurement campaign:
-    --divisor 50 --iter_max 200 keeps every point short, and the thread counts
+    The binaries are the int64 ones at --multiply 2 (past INT_MAX elements) and
+    --iter_max 500 (see SCALING_MULTIPLY): a REGRESSION signal on the 64-bit
+    path at full scale, not a measurement campaign. The thread counts
     the machine cannot honour (more than CHUNK_PMP_MAX_THREADS / the CPUs
     present) are dropped with a note rather than measured against an
     oversubscribed run.
@@ -1778,7 +1812,7 @@ def run_scaling_phase(args, extra_ldpath, errors):
         return 0, 0
 
     bench_args = ["--mode", "perf", "--no_io",
-                  "--divisor", str(SCALING_DIVISOR),
+                  "--multiply", str(SCALING_MULTIPLY),
                   "--iter_max", str(SCALING_ITER_MAX)]
 
     # vector first: the reference every other curve is read against.
@@ -1795,16 +1829,19 @@ def run_scaling_phase(args, extra_ldpath, errors):
             continue
 
         variants = []
+        missing  = []
         for var in scaling_vars:
             if skip_variant_on_config(var, config):
                 continue
-            exe = resolve_exe(args.build_root, config, var, "perf")
+            exe = resolve_exe(args.build_root, config, int64_variant(var), "perf")
             if not exe:
-                print(dim(f"   (no {var} perf binary in {label} -- skipped)"))
+                missing.append(var)
                 continue
             variants.append((var, exe))
+        if missing:
+            print(dim(f"   (no int64 binary in {label} for {', '.join(missing)} -- skipped)"))
         if not variants:
-            print(dim(f"   (no perf binary in {label} -- skipped)"))
+            print(dim(f"   (no int64 perf binary in {label} -- built with -DSHRINK_BENCH_INT64=ON)"))
             continue
         n_curves += len(variants)
 
@@ -1822,7 +1859,7 @@ def run_scaling_phase(args, extra_ldpath, errors):
 
                 ok, dur, code, err_tail, _ = run_cmd(
                     [exe] + bench_args, {"OMP_NUM_THREADS": str(tc)},
-                    effective_timeout(args.timeout, args.timeout_per_thread, tc),
+                    max(SCALING_TIMEOUT, effective_timeout(args.timeout, args.timeout_per_thread, tc)),
                     extra_ld_library_path=extra_ldpath, cwd=rdir)
 
                 if not ok:
@@ -1870,6 +1907,65 @@ def run_scaling_phase(args, extra_ldpath, errors):
         tag = red(f"{n_pass}/{n_total} points scale ({n_curves} curves; "
                   f"failing: {', '.join(failed_vars)})")
     print(f"   Scalability: {tag}")
+    return n_pass, n_total
+
+
+def run_int64_check_phase(args, extra_ldpath, errors):
+    """64-bit index checks: a few --mode check runs of the int64 binaries.
+
+    INT64_CHECK_VARIANTS, once each, at --check-threads, in every config that
+    has both int64 binaries (the release OpenMP ones) and a complete oracle.
+    They run in that oracle, read-only, as the 32-bit checks do: the reference
+    files are the 32-bit vector_check's, element values that do not depend on
+    the index type, so an int64 binary must reproduce them. A failure is a
+    32/64-bit divergence -- in the library's index path, or an index
+    expression of the bench that overflows at 32 bits.
+    """
+    print(cyan(bold("\n🔢 64-bit index checks — int64 binaries against the 32-bit oracle")))
+
+    env = {"OMP_NUM_THREADS": str(args.check_threads)}
+    to  = effective_timeout(args.timeout, args.timeout_per_thread, args.check_threads)
+
+    n_pass = n_total = 0
+    for cfg in args.configs:
+        label = short_config_label(cfg)
+        exes  = [(var, resolve_exe(args.build_root, cfg, int64_variant(var), "check"))
+                 for var in INT64_CHECK_VARIANTS]
+        exes  = [(var, exe) for var, exe in exes if exe]
+        if not exes:
+            continue  # not an int64 config: nothing to say
+        if not oracle_complete(args.output_dir, cfg):
+            print(yellow(f"   {label}: no complete oracle in {oracle_dir(args.output_dir, cfg)} -- skipped"))
+            continue
+        for var, exe in exes:
+            n_total += 1
+            shown = int64_variant(var)
+            lead  = (f"{dim(_hms())} {label[:CONFIG_W]:<{CONFIG_W}} | "
+                     f"{shown[:VARIANT_W + 6]:<{VARIANT_W + 6}} | ")
+            sys.stdout.write("\r" + lead + "running…       ")
+            sys.stdout.flush()
+            ok, dur, code, err_tail, _ = run_cmd(
+                [exe, "--mode", "check"], {**env, **sanitizer_env_for(cfg)}, to,
+                extra_ld_library_path=extra_ldpath, cwd=oracle_dir(args.output_dir, cfg))
+            if ok:
+                n_pass += 1
+                sys.stdout.write("\r" + lead + green("check OK ✓") + f" ({dur:.1f}s)\n")
+            else:
+                sys.stdout.write("\r" + lead + red("FAIL") + f" (code {code})\n")
+                _entry = (f"INT64_CHECK_FAIL: {exe} --mode check threads={args.check_threads} code={code}\n"
+                          f"  (int64 build against the 32-bit oracle of {label})\n"
+                          f"  stderr_tail:\n    " + err_tail.replace('\n', '\n    '))
+                errors.append(_entry)
+                _append_error_now(args.errors_log, _entry)
+            sys.stdout.flush()
+
+    if n_total == 0:
+        tag = yellow("no int64 binaries found")
+    elif n_pass == n_total:
+        tag = green(f"{n_pass}/{n_total} passed")
+    else:
+        tag = red(f"{n_pass}/{n_total} passed")
+    print(f"   64-bit index checks: {tag}")
     return n_pass, n_total
 
 
@@ -2000,6 +2096,9 @@ def main():
                              f"is more than {SCALING_MAX_SLOWDOWN}x the best. On in every mode; the constants are at "
                              "the top of this file (SCALING_*), not options -- the guard is "
                              "a regression signal, not a measurement campaign.")
+    parser.add_argument("--skip-int64-check", action="store_true",
+                        help="Skip the 64-bit index checks: --mode check of the int64 binaries ("
+                             + ", ".join(INT64_CHECK_VARIANTS) + ") against the 32-bit oracle.")
     parser.add_argument("--skip-rechunk", action="store_true",
                         help="Skip the adaptive re-chunk feature test on the "
                              "_dyn binaries (perf + check stages).")
@@ -2929,6 +3028,11 @@ def main():
         # --- Phase 3: adaptive re-chunk feature test (dyn) --------------
         if not args.skip_rechunk:
             run_rechunk_phase(args, extra_ldpath, errors)
+
+        # --- Phase 3b: 64-bit index checks (int64 binaries) --------------
+        # Needs the oracles of the correctness phase, like the rechunk check.
+        if not args.skip_check and not args.skip_int64_check:
+            run_int64_check_phase(args, extra_ldpath, errors)
 
         # --- Phase 4: scalability guard (omp-llvm, omp-gnu) -------------
         # After the perf sweep: it reads the same binaries, and a failure here

@@ -36,11 +36,12 @@
  *       `int` in both builds: it is one of the element types the bench covers
  *       (next to short, long, float, ...), not an index.
  *
- * @note The 64-bit build is a PERF instrument only -- `--mode check` is not
- *       supported on it and its targets are not registered with ctest. The
- *       reference files a check compares against (data_tab*) are written by
- *       the 32-bit build, and nothing re-generates them at 64 bits; see
- *       examples/shrink_bench/CMakeLists.txt.
+ * @note The 64-bit build is a PERF instrument first: its targets are not
+ *       registered with ctest. `--mode check` works on it, against the
+ *       reference files (data_tab*) of the 32-bit vector_check of the same
+ *       configuration -- element values, independent of Int -- so a check
+ *       there asserts that 64-bit indices give the 32-bit results
+ *       (python/bench_and_test.py runs a few, INT64_CHECK_VARIANTS).
  *
  * Enable with `cmake -DSHRINK_BENCH_INT64=ON`, which adds the int64 targets
  * (shrink_bench_<variant>_int64_<size>, for the sizes of
