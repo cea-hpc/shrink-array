@@ -622,10 +622,12 @@ int main(int argc, char* argv[])
         }
 
         // ─── STRESS TESTS ──────────────────────────────────────────────────
-        // Two extra parallel regions per k iteration, on a mid-array window
-        // (~interval/4 elements). Gated by disjoint k-modulos so each runs
+        // Extra work per k iteration, gated by disjoint k-modulos so each runs
         // ~1/5 of iterations — enough to surface rare bugs, not enough to
-        // dominate baseline perf.
+        // dominate baseline perf: (a) a short team and (b) a dynamic schedule,
+        // parallel regions on a mid-array window (~interval/4 elements); (c)
+        // the serial range API on a fixed window; (d) fill_range_mt from every
+        // thread on ~interval/2 elements.
 
         // (a) n-1 threads — exercise the case where one thread never enters
         //     the parallel region. Rank-based bookkeeping that implicitly
@@ -724,6 +726,23 @@ int main(int argc, char* argv[])
                 src[i] = (i % 97 == 0) ? static_cast<double>(i) : second_value_d2;
 
             copy_range(tab5, r0, r1, src.begin(), assume_drained);
+        }
+        // (d) fill_range_mt -- the bulk range API from EVERY thread at once:
+        //     one write session per chunk span (pending ops, compressor wait,
+        //     Dekker announce, raw stores, queue). 64-element blocks dealt
+        //     round-robin, so each chunk is shared by several threads; eight
+        //     arrays, every constant outcome plus a plain value alternating
+        //     between blocks. Larger than (c) -- interval/2 elements, from
+        //     start0/3, unaligned -- since it is parallel and ~8x cheaper per
+        //     element than operator[] on Chunk2A. Same writes in the
+        //     std::vector build (vector_range_ops.h), so the check builds
+        //     compare them like any other.
+        if (k % 5 == 1)
+        {
+            const Int beg_s = std::max<Int>(start0 / 3, 0) + 7;
+            const Int end_s = std::min(beg_s + interval / 2, sz);
+
+            bench_phase_range_mt(bench_arrays, k, beg_s, end_s);
         }
         // ─── END STRESS TESTS ──────────────────────────────────────────────
 

@@ -40,6 +40,8 @@
 #include <concepts>  // std::convertible_to
 #include <cstddef>   // std::size_t, std::ptrdiff_t
 #include <iterator>  // std::next
+#include <type_traits> // std::is_same_v (fill_range_mt's vector<bool> guard)
+#include <vector>      // std::vector<bool> (same guard)
 
 namespace shrink_array
 {
@@ -153,6 +155,23 @@ template <typename C, typename It>
 void copy_range(C& c, std::size_t first, std::size_t last, It src_first, assume_drained_t)
 {
     copy_range(c, first, last, src_first);
+}
+
+/**
+ * @brief fill_range_mt on a plain container: fill_range, callable from several
+ *        threads at once on DISJOINT indices.
+ * @details The chunked overload (array_chunk_range_ops.h) runs a per-chunk
+ *          write session; a plain container needs nothing -- disjoint
+ *          std::fill ranges do not race. NOT for std::vector<bool>, whose
+ *          bit-packed words make neighbouring indices share storage.
+ */
+template <typename C, typename U>
+    requires(!detail::ChunkedArray<C>)
+void fill_range_mt(C& c, std::size_t first, std::size_t last, const U& v)
+{
+    static_assert(!std::is_same_v<C, std::vector<bool>>,
+                  "fill_range_mt: std::vector<bool> packs neighbouring indices into one word");
+    fill_range(c, first, last, v);
 }
 
 } // namespace shrink_array

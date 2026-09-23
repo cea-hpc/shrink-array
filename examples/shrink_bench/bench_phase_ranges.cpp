@@ -24,6 +24,7 @@
 /// Bodies are VERBATIM, bound names included -- hence the parameter called `i`
 /// on two of them.
 
+#include <algorithm> // std::min (bench_phase_range_mt)
 #include <complex>
 #include <iostream>
 
@@ -304,4 +305,56 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, 
 
         std::cout << "set : " << seg_end - deb << " values to : " << second_value_d << "\n";
     }
+}
+
+void bench_phase_range_mt(BenchArrays& bench_arr, Int k, Int beg_s, Int end_s)
+{
+    auto& tab1        = bench_arr.tab1;
+    auto& tab2        = bench_arr.tab2;
+    auto& tab3        = bench_arr.tab3;
+    auto& tab_int     = bench_arr.tab_int;
+    auto& tab_bool    = bench_arr.tab_bool;
+    auto& tab_complex = bench_arr.tab_complex;
+    auto& tab_float   = bench_arr.tab_float;
+    auto& tab_long    = bench_arr.tab_long;
+
+    if (end_s <= beg_s)
+        return;
+
+    // Smaller than a chunk at every geometry: several threads per chunk.
+    constexpr Int kBlk = 64;
+    const Int     nblk = (end_s - beg_s + kBlk - 1) / kBlk;
+    // Every other run swaps the constants, so the same chunks go from one
+    // constant to the other (and back) across the run.
+    const bool swap = ((k / 5) & 1) != 0;
+
+#pragma omp parallel
+    {
+        begin_parallel_phase_g();
+#pragma omp for schedule(static, 1) nowait
+        for (Int b = 0; b < nblk; ++b)
+        {
+            const auto lo = static_cast<std::size_t>(beg_s + b * kBlk);
+            const auto hi = static_cast<std::size_t>(std::min(beg_s + (b + 1) * kBlk, end_s));
+
+            // shrink_array:: spelled out: this file has no using-directive, and
+            // the std::vector baseline resolves to vector_range_ops.h.
+            shrink_array::fill_range_mt(tab1, lo, hi, swap ? 0. : second_value_d);
+            shrink_array::fill_range_mt(tab2, lo, hi, swap ? second_value_d : 0.);
+            // A plain value alternating between neighbouring blocks: chunks
+            // stay materialised, and are NOT queued (they cannot be uniform).
+            shrink_array::fill_range_mt(tab3, lo, hi, (b & 1) ? 3.5 : 2.5);
+            shrink_array::fill_range_mt(tab_int, lo, hi, swap ? 0 : second_value_i);
+            shrink_array::fill_range_mt(tab_float, lo, hi, swap ? second_value_f1 : second_value_f0);
+            shrink_array::fill_range_mt(tab_long, lo, hi, swap ? 0L : second_value_l);
+            shrink_array::fill_range_mt(tab_complex, lo, hi, swap ? zero_complex : second_value_c);
+            // bool: the element path on every variant (bit-packed chunks); the
+            // baseline's tab_bool is a std::vector<short>.
+            shrink_array::fill_range_mt(tab_bool, lo, hi, !swap);
+        }
+
+        finalize_parallel_phase_only_flush_g();
+    }
+
+    finalize_parallel_phase_after_flush_g();
 }

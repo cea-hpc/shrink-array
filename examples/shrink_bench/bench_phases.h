@@ -160,6 +160,16 @@ void bench_phase_stress_teams(BenchArrays& bench_arr, Int team, Int beg_s, Int e
  */
 void bench_phase_stress_dynamic(BenchArrays& bench_arr, Int grain, Int beg_s, Int end_s);
 
+/**
+ * @brief Stress (d): fill_range_mt from every thread, over [beg_s, end_s).
+ * @details 64-element blocks dealt round-robin, so chunks are shared between
+ *          threads; eight arrays, every constant outcome plus a plain value
+ *          alternating between neighbouring blocks. @p k picks which of the
+ *          two value sets runs, so chunks go back and forth across the run.
+ *          See bench_phase_ranges.cpp.
+ */
+void bench_phase_range_mt(BenchArrays& bench_arr, Int k, Int beg_s, Int end_s);
+
 /// @name The four sibling range-fill regions
 /// Same shape, different values and closing bound. See bench_phase_ranges.cpp.
 /// @{
