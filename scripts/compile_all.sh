@@ -93,10 +93,12 @@ load_mold() {
 }
 load_mold
 
-# icpx/oneapi disabled on x86 too: icpx 2026.0 ICEs in clang CodeGen
-# (EmitCtorList → getPointerBitCastOrAddrSpaceCast on a null Constant) while
-# emitting global_ctors for the explicit ManagerChunk instantiations. See the
-# Intel priority-support ticket. Flip to true to re-enable (stays x86-only).
+# oneAPI (icpx) builds, x86-only. They compile again (Sept '26). The icpx
+# 2026.0 ICE in clang CodeGen (EmitCtorList -> getPointerBitCastOrAddrSpaceCast
+# on a null Constant, emitting global_ctors for the explicit ManagerChunk
+# instantiations; Intel priority-support ticket) has its fallback in
+# chunk/CMakeLists.txt: -DCHUNK_ICPX_O0_WORKAROUND=ON compiles the three TUs it
+# hit at -O0 under icpx. Set to false to skip oneAPI.
 enable_oneapi=true
 
 # AOCC (AMD Optimizing C/C++ Compiler, clang-based) — x86-only, like oneapi.
