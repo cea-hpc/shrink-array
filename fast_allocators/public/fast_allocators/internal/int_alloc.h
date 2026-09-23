@@ -57,7 +57,7 @@ inline void* int_alloc(size_t size)
     char* ptr;
 
 #ifdef ALLOC_ALIGN
-    svalloc_align(ptr, 1, size);
+    svalloc_align(ptr, char, size);
 #else
     svalloc(ptr, char, size);
 #endif
@@ -69,7 +69,7 @@ inline void* int_alloc_align(size_t size)
 {
     char* ptr;
 
-    svalloc_align(ptr, 1, size);
+    svalloc_align(ptr, char, size);
 
     return (void*)ptr;
 }

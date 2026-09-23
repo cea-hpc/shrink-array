@@ -38,7 +38,7 @@
  *          afterwards.
  */
 
-#include <bit> // std::has_single_bit: the shift or the division in free_elt_pow2
+#include <bit>     // std::has_single_bit: the shift or the division in free_elt_pow2
 #include <cerrno>  // errno, after a failed mmap
 #include <cstddef> // std::size_t
 #include <cstdio>  // std::fprintf / std::fflush (the [MUNMAP] traces)
@@ -54,18 +54,8 @@
 /*---------------------------------------------------------------------------*/
 
 #include "fast_allocators/internal/alloc_config.h"    // constexpr mirrors of STD_ALLOC / DEBUG / _OPENMP
-#include "fast_allocators/slab_arena.h"      // FIX: ArenaKind for op/ctx/value slab routing
+#include "fast_allocators/slab_arena.h"               // FIX: ArenaKind for op/ctx/value slab routing
 #include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2, for slab_of()'s effective slab geometry
-
-// Forward-declare the reclaim helper so the two-phase lookup inside the
-// TCTypeCAllocator template methods below always finds it, regardless of any
-// header-ordering quirk. The definition (with the counters) lives in
-// slab_arena.h, which is included just above.
-namespace fast_alloc
-{
-template <class Slab>
-void madvise_empty_slab(Slab* p) noexcept;
-}
 
 template <typename T>
 class Singleton;
@@ -257,13 +247,13 @@ class alignas(64) TCAllocator
     /// @brief Index of the element at @p p within this slab (division).
     [[nodiscard]] int num_block(const void* p) const noexcept
     {
-        return (static_cast<const char*>(p) - data) / ElementSize;
+        return static_cast<int>((static_cast<const char*>(p) - data) / ElementSize);
     }
 
     /// @brief num_block() by shift. Valid only if #ElementSize is a power of two.
     [[nodiscard]] int num_block_pow2(const void* p) const noexcept
     {
-        return (static_cast<const char*>(p) - data) >> Log2ElementSize;
+        return static_cast<int>((static_cast<const char*>(p) - data) >> Log2ElementSize);
     }
 
     /**
@@ -451,13 +441,13 @@ struct alignas(64) TCCAllocator
     /// @brief Index of the element at @p p within this slab (division).
     int num_block(const void* p) const noexcept
     {
-        return (static_cast<const char*>(p) - data) / ElementSize;
+        return static_cast<int>((static_cast<const char*>(p) - data) / ElementSize);
     }
 
     /// @brief num_block() by shift. Valid only if #ElementSize is a power of two.
     int num_block_pow2(const void* p) const noexcept
     {
-        return (static_cast<const char*>(p) - data) >> Log2ElementSize;
+        return static_cast<int>((static_cast<const char*>(p) - data) >> Log2ElementSize);
     }
 
     /**
@@ -1220,8 +1210,8 @@ struct TCTypeAllocator final : public VTCTypeAllocator
 
         while (node != nullptr)
         {
-            s_UsedSize += node->UsedSize * node->ElementSize;
-            s_nn_ref += node->nn_ref * node->ElementSize;
+            s_UsedSize += static_cast<size_t>(node->UsedSize) * node->ElementSize;
+            s_nn_ref += static_cast<size_t>(node->nn_ref) * node->ElementSize;
             s_blocks += node->BlockSize;
 
             auto* next = node->next;
@@ -1904,8 +1894,8 @@ struct TCAllocatorEB
     TCAllocatorEB() : firstFree(-1), nn_ref(0), UsedSize(0)
     {
 #ifdef DEBUG
-        const int       szt            = sizeof(T);
-        const uintptr_t block_size_max = (uintptr_t)((uintptr_t)1 << ((szt * 8) - 1));
+        const int  szt            = sizeof(T);
+        const auto block_size_max = static_cast<uintptr_t>(uintptr_t{1} << ((szt * 8) - 1));
         DBG_ASSERT(_BlockSize < block_size_max);
 #endif
         alloc_block();
@@ -1953,14 +1943,14 @@ struct TCAllocatorEB
             {
                 if (lng != 0)
                 {
-                    std::cerr << "munmap failed: " << std::strerror(errno) << std::endl;
+                    std::cerr << "munmap failed: " << std::strerror(errno) << '\n';
                 }
                 return 1;
             }
             if (munmap(data + BlockSize, 2 * BlockSize - (reinterpret_cast<uintptr_t>(data) -
                                                           reinterpret_cast<uintptr_t>(a) + BlockSize)) == -1)
             {
-                std::cerr << "munmap failed: " << std::strerror(errno) << std::endl;
+                std::cerr << "munmap failed: " << std::strerror(errno) << '\n';
                 return 1;
             }
         }
@@ -1973,8 +1963,8 @@ struct TCAllocatorEB
 
             if (result != 0)
             {
-                std::cerr << "posix_memalign failed with error code: " << result << std::endl;
-                std::cerr << "Error message: " << std::strerror(result) << std::endl;
+                std::cerr << "posix_memalign failed with error code: " << result << '\n';
+                std::cerr << "Error message: " << std::strerror(result) << '\n';
                 return 1;
             }
             data = static_cast<char*>(datal);
@@ -2035,13 +2025,13 @@ struct TCAllocatorEB
     /// @brief Index of the element at @p p within this slab (division).
     int num_block(const void* p) const noexcept
     {
-        return (static_cast<const char*>(p) - data) / ElementSize;
+        return static_cast<int>((static_cast<const char*>(p) - data) / ElementSize);
     }
 
     /// @brief num_block() by shift. Valid only if #ElementSize is a power of two.
     int num_block_pow2(const void* p) const noexcept
     {
-        return (static_cast<const char*>(p) - data) >> Log2ElementSize;
+        return static_cast<int>((static_cast<const char*>(p) - data) >> Log2ElementSize);
     }
 
     /**
@@ -2184,14 +2174,12 @@ struct TCTypeAllocatorEBC : public VTCAllocatorEB
 
                 return p->alloc();
             }
-            else
-            {
-                auto* p = new TCAllocatorEBT;
 
-                insert(block, p);
+            auto* p = new TCAllocatorEBT;
 
-                return p->alloc();
-            }
+            insert(block, p);
+
+            return p->alloc();
         }
 
         auto* current_block = block;

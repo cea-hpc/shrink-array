@@ -47,12 +47,8 @@
  * The macros are read in alloc_config.h; the bodies branch with `if constexpr`.
  * What still has to be a directive, and why, is written at each site.
  *
- * @warning static_const_array_define.h, included below, `#define`s SIZE_BLOCK --
- *          AFTER tc_allocator.h has declared `inline constexpr unsigned int
- *          SIZE_BLOCK` for the same value. From this point on the macro wins,
- *          so the constexpr that file went out of its way to introduce is
- *          shadowed everywhere static_const_array.h has been included. The two
- *          values agree, so nothing misbehaves today.
+ * SIZE_BLOCK is tc_allocator.h's `inline constexpr unsigned int`;
+ * static_const_array_define.h only keeps MAX_CONST_BLOCK_SIZE.
  */
 
 #include "fast_allocators/internal/svalloc.h"

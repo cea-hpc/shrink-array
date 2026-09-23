@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+#include <cstddef> // size_t
+
 #include "fast_allocators/tc_allocator.h"
 #include "fast_allocators/internal/static_const_array.h"
 
@@ -21,7 +23,7 @@
                 // --> deadlock
 void* TCAllocator::operator new(size_t s)
 {
-    return (void*)TypeAllocator<TCAllocator>::alloc(s);
+    return TypeAllocator<TCAllocator>::alloc(s);
 }
 
 void TCAllocator::operator delete(void* p)

@@ -16,5 +16,4 @@
 
 #pragma once
 
-#define SIZE_BLOCK 1048576
 #define MAX_CONST_BLOCK_SIZE 65536

@@ -24,7 +24,6 @@
 
 #include "fast_allocators/internal/alloc_config.h" // constexpr mirrors of STD_ALLOC / DEBUG
 #include "fast_allocators/internal/pmp_alloc.h"
-extern bool __debug_mem;
 
 /**
  * @copydoc StaticConstArray::getBlockAllocInt

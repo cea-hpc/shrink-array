@@ -27,6 +27,7 @@
 #include "fast_allocators/internal/alloc_config.h" // constexpr mirror of STD_ALLOC
 #include "fast_allocators/internal/static_const_array.h"
 #include "fast_allocators/internal/pmp_alloc.h" // PMP_MAX_THREADS (was in static_const_array_inline.h)
+#include "fast_allocators/internal/svalloc.h"   // svalloc, svcalloc, svfree
 
 InfoFreeElt StaticConstArray::tab_info_free_elt;
 InfoFreeElt StaticConstArray::tab_info_free_elt_align;
@@ -152,10 +153,8 @@ class ManageTCTypeAllocator
                           [[maybe_unused]] size_t& alloc_sz)
     {
 #ifndef _OPENMP
-        for (set_allocator_t::iterator it = set_allocator.begin(); it != set_allocator.end(); ++it)
+        for (VTCTypeAllocator* inst : set_allocator)
         {
-            VTCTypeAllocator* inst = (*it);
-
             inst->addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
         }
 #else

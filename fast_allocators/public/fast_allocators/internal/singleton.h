@@ -25,7 +25,7 @@ class Singleton
   protected:
     // Atomic: getInstance() reads it without the mutex (double-checked locking).
     static inline std::atomic<T*> unique_instance{nullptr};
-    static inline std::mutex unique_instance_mutex;
+    static inline std::mutex      unique_instance_mutex;
 
   public:
     Singleton(const Singleton&)            = delete;
@@ -41,7 +41,7 @@ class Singleton
             return p;
 
         std::lock_guard lock(unique_instance_mutex);
-        T* p = unique_instance.load(std::memory_order_relaxed); // under the lock
+        T*              p = unique_instance.load(std::memory_order_relaxed); // under the lock
         if (p == nullptr)
         {
             p = new T();       // immortal: never deleted
