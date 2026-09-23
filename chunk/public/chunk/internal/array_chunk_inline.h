@@ -129,8 +129,10 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
     // reductions). Same guard as the other teardown loops: never nest inside a
     // caller's region, and not worth a team for a handful of chunks.
     const auto csz = static_cast<unsigned int>(this->size_policy_.size());
+    
     int n_compressed = 0;
     int n_would_be_t2 = 0;
+
 #pragma omp parallel for reduction(+ : n_compressed, n_would_be_t2) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
     for (int j = 0; j < nb_chunk; ++j)
     {
@@ -176,6 +178,15 @@ void ArrayChunk<T, ind_type>::clear()
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk<T, ind_type>::clear_core()
 {
+    // Pin the ambient size to THIS array's own geometry before the sweep
+    // below: get_chunk_allocator() routes on thread_chunk_size(), not on the
+    // buffer being freed, so a size left by another array's write sent these
+    // buffers to the wrong size's allocator (sl_contains assertion in
+    // TCTypeAllocator after a re-chunk, fast-alloc only). ArrayChunk2 and
+    // ArrayChunk2A had this pin; v1 did not. See ArrayChunk2::clear_core().
+    if constexpr (build_config::chunk_dynamic)
+        shrink_array::set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
+
     // Drain deferred writes on this array's chunks before chunk_list is freed.
     this->flush_pending_deferred_ops();
 
@@ -330,7 +341,7 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
 #pragma omp for schedule(static) nowait
     for (int j = 0; j < nb_chunk; ++j)
     {
-        auto& chunk = chunk_list[j];
+        const auto& chunk = chunk_list[j];
 
         if (chunk.written())
         {
