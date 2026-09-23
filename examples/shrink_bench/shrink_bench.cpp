@@ -552,7 +552,7 @@ int main(int argc, char* argv[])
                     // STEP B — cst2 GC mark report (read-only) : ArrayChunk2A-only API
                     // (per-chunk cst_val2 pointer registry has no equivalent on CHUNK /
                     // CHUNK2, which have no per-chunk GC-able registry to report on).
-                    // %ld + a cast: k_iter is Int, which is `long` in the _i64
+                    // %ld + a cast: k_iter is Int, which is `long` in the int64
                     // build and `int` otherwise.
                     std::fprintf(stderr, "[cst2-gc @ iter %ld]\n", static_cast<long>(k_iter));
                     // Spelled out rather than Array<T>: the enclosing
@@ -561,7 +561,7 @@ int main(int argc, char* argv[])
                     // which has no gc_mark_report -- in a v1/v2 build. `Int`
                     // is what matters here: ArrayChunk2A<double> would take the
                     // default ind_type (int), a DIFFERENT instantiation from the
-                    // one the bench fills in an _i64 build, and the report would
+                    // one the bench fills in an int64 build, and the report would
                     // be of an array nothing ever touched.
                     ArrayChunk2A<double, Int>::gc_mark_report();
                     ArrayChunk2A<short, Int>::gc_mark_report();

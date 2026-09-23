@@ -42,8 +42,10 @@
  *       the 32-bit build, and nothing re-generates them at 64 bits; see
  *       examples/shrink_bench/CMakeLists.txt.
  *
- * Enable with `cmake -DSHRINK_BENCH_INT64=ON`, which adds the `_i64` targets
- * next to the ordinary ones (both are kept, neither replaces the other).
+ * Enable with `cmake -DSHRINK_BENCH_INT64=ON`, which adds the int64 targets
+ * (shrink_bench_<variant>_int64_<size>, for the sizes of
+ * SHRINK_BENCH_INT64_SIZES and dyn) next to the ordinary ones (both are kept,
+ * neither replaces the other).
  */
 
 #ifdef BENCH_INT64

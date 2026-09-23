@@ -143,7 +143,7 @@ if skip_release; then
     echo "[debug-only] skipping gnu openmp"
 else
     compile_with_cmake "$build_rep/cmake-build-omp-gnu${ICF_SUFFIX}/$arch" \
-      "-DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
+      "-DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT $INT64_OPT" \
       "gnu openmp"
 fi
 

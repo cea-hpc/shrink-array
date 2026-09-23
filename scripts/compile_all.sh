@@ -323,7 +323,7 @@ if skip_release; then
     echo "[debug-only] skipping oneapi release builds"
 else
     if [ "$BUILD_ONLY" = false ]; then
-        run_cmd "CXX=icpx cmake -S ~/shrink-array -B $build_rep/cmake-build-omp-oneapi/$arch $ONEAPI_STDLIB_OPT -DOMP:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+        run_cmd "CXX=icpx cmake -S ~/shrink-array -B $build_rep/cmake-build-omp-oneapi/$arch $ONEAPI_STDLIB_OPT -DOMP:BOOL=ON $INT64_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
     launch_build "$build_rep/cmake-build-omp-oneapi/$arch" $BUILD_FLAGS
     # The three -manual-compression twins that used to follow each oneapi
@@ -424,7 +424,7 @@ if [ -n "$latest_nvhpc" ]; then
                 echo "[debug-only] skipping nvhpc release build"
             else
                 if [ "$BUILD_ONLY" = false ]; then
-                    run_cmd "CXX='$nvcxx' cmake -S ~/shrink-array -B $build_rep/cmake-build-omp-nvhpc/$arch -DCMAKE_CXX_COMPILER='$nvcxx' $NVHPC_STDLIB_OPT -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja || echo '[WARN] nvhpc release configure failed'"
+                    run_cmd "CXX='$nvcxx' cmake -S ~/shrink-array -B $build_rep/cmake-build-omp-nvhpc/$arch -DCMAKE_CXX_COMPILER='$nvcxx' $NVHPC_STDLIB_OPT -DOMP:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja || echo '[WARN] nvhpc release configure failed'"
                 fi
                 launch_build "$build_rep/cmake-build-omp-nvhpc/$arch" $BUILD_FLAGS
             fi
@@ -482,7 +482,7 @@ if skip_release; then
    echo "[debug-only] skipping llvm release build"
 else
    if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S ~/shrink-array -B $build_rep/cmake-build-omp-llvm/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+      run_cmd "CXX='$clangxx' cmake -S ~/shrink-array -B $build_rep/cmake-build-omp-llvm/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON $INT64_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
    fi
    launch_build "$build_rep/cmake-build-omp-llvm/$arch"
 fi
@@ -740,7 +740,7 @@ else
         echo "[debug-only] skipping aocc release build"
     else
         if [ "$BUILD_ONLY" = false ]; then
-            run_cmd "CXX='$aoccxx' cmake -S ~/shrink-array -B $build_rep/cmake-build-omp-aocc/$arch $AOCC_CXX_OPT $AOCC_STDLIB_OPT -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+            run_cmd "CXX='$aoccxx' cmake -S ~/shrink-array -B $build_rep/cmake-build-omp-aocc/$arch $AOCC_CXX_OPT $AOCC_STDLIB_OPT -DOMP:BOOL=ON $INT64_OPT -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
         fi
         launch_build "$build_rep/cmake-build-omp-aocc/$arch" $BUILD_FLAGS
     fi

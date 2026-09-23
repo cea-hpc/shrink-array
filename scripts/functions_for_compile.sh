@@ -18,6 +18,14 @@ maybe_wipe_cache() {  # <build-dir>
     return 0
 }
 
+# ─── 64-bit-index bench executables (SHRINK_BENCH_INT64) ─────────────────────
+# Added to the configure line of the release OpenMP (perf) configurations only:
+# shrink_bench_<variant>_int64_<1024|dyn> and shrink_bench_vector_int64_perf
+# (examples/shrink_bench/CMakeLists.txt). Perf instruments -- no check mode, so
+# the debug, check, stats, sanitizer, std-alloc and serial builds do without.
+# Opt-out: INT64_OPT= ./compile_all.sh (or -DSHRINK_BENCH_INT64=OFF).
+INT64_OPT=${INT64_OPT--DSHRINK_BENCH_INT64=ON}
+
 # ─── Hardening (CHUNK_GLIBCXX_ASSERTIONS / CHUNK_UBSAN) ──────────────────────
 # Decides, from a cmake configure argument string, which hardening options of
 # chunk/CMakeLists.txt to switch on. One rule, applied identically to every

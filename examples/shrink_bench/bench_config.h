@@ -170,14 +170,14 @@ inline bool mode_perf  = false; ///< g_bench_mode == perf
 inline void set_bench_mode(BenchMode m)
 {
 #ifdef BENCH_INT64
-    // The _i64 declination is a perf instrument (bench_int.h). A check compares
+    // The int64 declination is a perf instrument (bench_int.h). A check compares
     // against the data_tab* reference files, which the ordinary 32-bit build
     // writes and nothing regenerates at 64 bits, so --mode check here would
     // report differences that mean nothing. Refuse it rather than print them.
     if (m == BenchMode::check)
     {
-        std::cerr << "error: --mode check is not supported by the 64-bit-index (_i64) build.\n"
-                     "       Run the check on the ordinary build; _i64 is for --mode perf.\n";
+        std::cerr << "error: --mode check is not supported by the 64-bit-index (int64) build.\n"
+                     "       Run the check on the ordinary build; int64 is for --mode perf.\n";
         std::exit(1);
     }
 #endif
@@ -250,7 +250,7 @@ inline Int get_size_data(double multiplier = 1.0, Int divisor = 1)
  *              and chunk count x chunk size, up to sz + one chunk (65536
  *              covers any geometry the rechunk reaches).
  *          Beyond that the bench and the library need 64-bit indices, which
- *          is what the _i64 declination is (bench_int.h): `Int` is `long`
+ *          is what the int64 declination is (bench_int.h): `Int` is `long`
  *          there, so this same bound is computed against LONG_MAX and a
  *          `--multiply` the 32-bit build refuses simply passes.
  *          Also refuses a factor that leaves an empty interval. Exits(1)
@@ -317,7 +317,8 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
     else
         std::cerr << "       No --multiply fits with --divisor " << divisor << ": raise --divisor.\n";
     std::cerr << "       Beyond that the bench and the library (ind_type = Int) need 64-bit indices:\n"
-                 "       rebuild with -DSHRINK_BENCH_INT64=ON and run the _i64 executable (perf only).\n";
+                 "       rebuild with -DSHRINK_BENCH_INT64=ON and run the int64 executable\n"
+                 "       (shrink_bench_<variant>_int64_<1024|dyn>, perf only).\n";
     std::exit(1);
 }
 
