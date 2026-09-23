@@ -70,11 +70,16 @@ namespace detail
  * @brief Can this variant be raw-filled, or must every element go through the
  *        proxy?
  *
- * @details bool only: its chunks are bit-packed. Chunk2 used to be excluded
- *          too: a raw fill "left its second-value state stale, and all-cst2
- *          regions were lost". Deferred writes are handled by the raw paths
- *          (drain / assume_drained, and the write session), candidacy by the
- *          explicit queueing -- which took two fixes for Chunk2 (Sept '26):
+ * @details bool: its chunks are bit-packed. Chunk2 is back on the element path
+ *          (Sept '26): opened to the raw paths with the two fixes below, it
+ *          broke on Grace at 8+ threads -- rechunk_validation_chunk2_dyn
+ *          POST-FAIL after compress (scale-64-to-tgt), and shrink_bench
+ *          chunk2_256 check errors ("is_cst_val2 should be not") -- where the raw
+ *          paths run concurrently (the rebuild's parallel copy_range,
+ *          fill_range_mt). Not reproduced on one core; the lead is a pass
+ *          compressing a chunk queued by a raw copy while another thread's
+ *          unannounced raw stores still land in it. The fixes stay, needed when
+ *          the path is reopened:
  *           - the materialised test must ask written(ind2), with the array's
  *             second-value index: the index-less written() is bool-only and
  *             false for every other T (materialised(a, ch, ind2));
@@ -91,7 +96,7 @@ namespace detail
  *          the element path's.
  */
 template <typename T>
-inline constexpr bool raw_fillable_v = !std::is_same_v<T, bool>;
+inline constexpr bool raw_fillable_v = !chunk_config::use_chunk2 && !std::is_same_v<T, bool>;
 
 /** @brief Only v1 in counter mode carries a per-chunk zero count to restore. */
 inline constexpr bool track_zeros_v = chunk_config::use_chunk && chunk_config::use_compression_with_counter;
@@ -649,13 +654,23 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
                     {
                         for (std::size_t k = i; k < hi; ++k)
                             dst[k - c_begin] = value;
-                        uniform = detail::may_be_uniform(dst, S); // buffer pinned by the session
+                        // No read of elements this span does not own: other
+                        // writers of the chunk store them PLAIN here (only
+                        // Chunk2A's are relaxed atomics), and reading them was a
+                        // data race (TSan, bench_phase_range_mt). Queue on the
+                        // value instead, as the element paths mark: v1 compresses
+                        // only to first_value, Chunk2 only to first_value or the
+                        // array's second value. Chunk2A aggregates (no lock-free
+                        // atomic_ref): only a span covering the whole chunk,
+                        // uniform by construction; a partial one is not queued.
+                        if constexpr (chunk_config::use_chunk)
+                            uniform = static_cast<T>(value) == static_cast<T>(chunk_type::first_value);
+                        else if constexpr (chunk_config::use_chunk2 && requires { a.get_second_value(); })
+                            uniform = static_cast<T>(value) == static_cast<T>(chunk_type::first_value) ||
+                                      static_cast<T>(value) == static_cast<T>(a.get_second_value());
+                        else
+                            uniform = (i == c_begin && hi == c_end);
                     }
-                    if constexpr (chunk_config::use_chunk)
-                        uniform = uniform && dst[0] == static_cast<T>(chunk_type::first_value); // v1: first value only
-                    if constexpr (chunk_config::use_chunk2 && requires { a.get_second_value(); })
-                        uniform = uniform && (dst[0] == static_cast<T>(chunk_type::first_value) ||
-                                              dst[0] == static_cast<T>(a.get_second_value())); // Chunk2: the two
                     done    = true;
                 }
                 Policy::end_write(thr); // 6.
