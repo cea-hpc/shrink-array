@@ -70,15 +70,28 @@ namespace detail
  * @brief Can this variant be raw-filled, or must every element go through the
  *        proxy?
  *
- * @details Chunk2 and bool keep second-value state (compression candidacy plus
- *          possibly-deferred writes) inside the proxy write path. A raw fill
- *          materialises the buffer but leaves that state stale, and all-cst2
- *          regions are then lost -- recompressed to cst1. rechunk_refill()
- *          draws exactly this line; the reasoning is the same here, so the two
- *          stay in step.
+ * @details bool only: its chunks are bit-packed. Chunk2 used to be excluded
+ *          too: a raw fill "left its second-value state stale, and all-cst2
+ *          regions were lost". Deferred writes are handled by the raw paths
+ *          (drain / assume_drained, and the write session), candidacy by the
+ *          explicit queueing -- which took two fixes for Chunk2 (Sept '26):
+ *           - the materialised test must ask written(ind2), with the array's
+ *             second-value index: the index-less written() is bool-only and
+ *             false for every other T (materialised(a, ch, ind2));
+ *           - queue_for_compression() must load the second value before
+ *             queueing (set_info_on_chunk): Chunk2's candidate lists are keyed
+ *             by it, and the Proxy2A-style arming it used put the chunks in the
+ *             list of T{} -- a list no pass drains, whose entries then crashed
+ *             the teardown of a rechunk's temporary array.
+ *          With both, second-value / first-value / unaligned spans written
+ *          through the element path, fill_range and fill_range_mt give the
+ *          same values and the same cst1 / cst2 counts (release and check
+ *          builds, 1-8 threads), and the Chunk2 harnesses -- rechunk included,
+ *          whose rebuild goes through copy_range -- give outputs identical to
+ *          the element path's.
  */
 template <typename T>
-inline constexpr bool raw_fillable_v = !chunk_config::use_chunk2 && !std::is_same_v<T, bool>;
+inline constexpr bool raw_fillable_v = !std::is_same_v<T, bool>;
 
 /** @brief Only v1 in counter mode carries a per-chunk zero count to restore. */
 inline constexpr bool track_zeros_v = chunk_config::use_chunk && chunk_config::use_compression_with_counter;
@@ -173,13 +186,51 @@ void fill_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::si
         dst[o] = v;
 }
 
+/// @brief The array's second-value index for Chunk2 (non-bool), -1 otherwise.
+///        Read once per range call: it is a registry lookup.
+template <typename Arr>
+[[nodiscard]] int second_value_index(const Arr& a) noexcept
+{
+    if constexpr (chunk_config::use_chunk2 && !std::is_same_v<typename Arr::value_type, bool>)
+        return a.get_ind_second_value();
+    else
+        return -1;
+}
+
+/// @brief materialised() for any variant: Chunk2's index-less written() is
+///        bool-only (false for every other T), so it is asked with @p ind2.
+template <typename Arr, typename Chunk>
+[[nodiscard]] bool materialised(const Arr&, const Chunk& ch, [[maybe_unused]] int ind2) noexcept
+{
+    if constexpr (chunk_config::use_chunk2 && !std::is_same_v<typename Arr::value_type, bool>)
+        return ch.written(ind2);
+    else
+        return ch.written();
+}
+
 template <typename Arr>
 void queue_for_compression(Arr& a, std::size_t i)
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
+        // Chunk2: candidate lists are keyed by second value and exist only for
+        // arrays that called set_second_value() -- skip the others, as the
+        // element path's pre-check does (Proxy2::has_candidate_list).
+        if constexpr (chunk_config::use_chunk2 && !std::is_same_v<typename Arr::value_type, bool> &&
+                      requires { Arr::proxy_type::has_candidate_list(a.get_second_value()); })
+        {
+            if (!Arr::proxy_type::has_candidate_list(a.get_second_value()))
+                return;
+        }
         auto p = a[static_cast<decltype(a.size())>(i)];
-        if constexpr (requires { p.set_num_tab_ptr_is_inside_chunk(); })
+        // Chunk2 FIRST: Proxy2 also has set_num_tab_ptr_is_inside_chunk() (from
+        // the shared base), but that one does not load the second value -- the
+        // key of Chunk2's candidate list -- so the chunk landed in the list of
+        // T{} (first_value), which no pass ever drains. set_info_on_chunk()
+        // loads (second_value, ind, num_tab) and the flag pointer.
+        if constexpr (std::is_same_v<typename Arr::proxy_type, Proxy2<typename Arr::value_type>>)
+            p.set_info_on_chunk(); // Proxy2
+        else if constexpr (requires { p.set_num_tab_ptr_is_inside_chunk(); })
             p.set_num_tab_ptr_is_inside_chunk(); // Proxy2A
         else
             p.set_info_on_chunk(); // Proxy (v1)
@@ -204,9 +255,8 @@ void queue_for_compression(Arr& a, std::size_t i)
  *            materialises, then store the remainder straight into its buffer
  *            and restore the zero counter the bulk store bypassed.
  *
- *          Variants that keep second-value state in the proxy (Chunk2, bool)
- *          take the per-element path throughout -- still correct, just without
- *          the speedup. See detail::raw_fillable_v.
+ *          bool (bit-packed chunks) takes the per-element path throughout --
+ *          still correct, just without the speedup. See detail::raw_fillable_v.
  *
  * @param a     target array
  * @param first first index, inclusive (clamped to size())
@@ -243,6 +293,7 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
 
     const unsigned int S     = a.chunk_size();
     const in_t<T>      value = static_cast<T>(v);
+    const int          ind2  = detail::second_value_index(a); // Chunk2's written(ind)
 
     // Pin the ambient geometry once for the whole operation: every
     // materialisation below must size its buffer from THIS array's chunk_size,
@@ -315,12 +366,12 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
             // "Materialises" is written(), not !is_cst_val1(): see
             // detail::materialised for the Chunk2A second-constant trap.
             std::size_t i = lo;
-            while (i < hi && !detail::materialised(ch))
+            while (i < hi && !detail::materialised(a, ch, ind2))
             {
                 a[static_cast<ind_type>(i)] = value;
                 ++i;
             }
-            if (!detail::materialised(ch))
+            if (!detail::materialised(a, ch, ind2))
                 continue; // still constant: the range held only that constant
 
             T* dst = ch.values_load();
@@ -349,7 +400,10 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
 
             // The chunk may be constant now: a fill of first_value, or on
             // chunk2a of any value (a uniform run is its second constant).
-            if ((value_is_cst1 || chunk_config::use_chunk2a) && detail::may_be_uniform(dst, S))
+            bool compressible_value = value_is_cst1 || chunk_config::use_chunk2a;
+            if constexpr (chunk_config::use_chunk2 && requires { a.get_second_value(); })
+                compressible_value = compressible_value || value == static_cast<T>(a.get_second_value());
+            if (compressible_value && detail::may_be_uniform(dst, S))
                 detail::queue_for_compression(a, c_begin);
         }
     }
@@ -396,7 +450,8 @@ void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, bool 
     if (drain)
         a.flush_pending_deferred_ops(/*force=*/true);
 
-    const unsigned int S = a.chunk_size();
+    const unsigned int S    = a.chunk_size();
+    const int          ind2 = detail::second_value_index(a); // Chunk2's written(ind)
 
     if constexpr (build_config::chunk_dynamic)
         set_thread_chunk_size(S);
@@ -421,12 +476,12 @@ void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, bool 
         else
         {
             std::size_t i = lo;
-            while (i < hi && !detail::materialised(ch))
+            while (i < hi && !detail::materialised(a, ch, ind2))
             {
                 a[static_cast<ind_type>(i)] = static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first)));
                 ++i;
             }
-            if (!detail::materialised(ch))
+            if (!detail::materialised(a, ch, ind2))
                 continue; // the whole span was the chunk's constant
 
             T* dst = ch.values_load();
@@ -499,8 +554,8 @@ void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, assum
  *          thread may be writing other elements of the same chunk, into that
  *          very buffer.
  *
- *          Chunk2A and Chunk under OpenMP with fast block compression;
- *          everywhere else (Chunk2, bool, serial builds) it is the element loop
+ *          Chunk2A, Chunk2 and Chunk under OpenMP with fast block compression;
+ *          everywhere else (bool, serial builds) it is the element loop
  *          -- correct in parallel, without the speed-up. Chunk: its zero
  *          counter, which a raw fill would have to resync from the whole chunk,
  *          does not exist with fast block compression; and the null sentinel
@@ -531,7 +586,8 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
 
     const in_t<T> value = static_cast<T>(v);
 
-    constexpr bool session = (chunk_config::use_chunk2a || chunk_config::use_chunk) && build_config::use_openmp &&
+    constexpr bool session = (chunk_config::use_chunk2a || chunk_config::use_chunk2 || chunk_config::use_chunk) &&
+                             build_config::use_openmp &&
                              chunk_config::use_fast_block_compression && detail::raw_fillable_v<T>;
     if constexpr (!session)
     {
@@ -543,7 +599,8 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
         using Policy = WriteCompressSyncPolicy<typename Arr::proxy_type>;
         using Mgr    = CompressionManager<T, chunk_type>;
 
-        const unsigned int S = a.chunk_size();
+        const unsigned int S    = a.chunk_size();
+        const int          ind2 = detail::second_value_index(a); // Chunk2's written(ind)
         if constexpr (build_config::chunk_dynamic)
             set_thread_chunk_size(S);
         const int thr = get_thr_rank_fast();
@@ -562,7 +619,7 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
 
             // Materialise through the element path, outside any session.
             std::size_t i = lo;
-            while (i < hi && !detail::materialised(ch))
+            while (i < hi && !detail::materialised(a, ch, ind2))
             {
                 a[static_cast<ind_type>(i)] = value;
                 ++i;
@@ -578,7 +635,7 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
                     Mgr::wait_out_compressor(ch);
 
                 Policy::announce_write(thr, &ch); // 3.
-                if (!Mgr::must_defer_write(ch) && !ch.pending_any() && detail::materialised(ch)) // 4.
+                if (!Mgr::must_defer_write(ch) && !ch.pending_any() && detail::materialised(a, ch, ind2)) // 4.
                 {
                     T* dst = ch.values_load(); // 5.
                     if constexpr (detail::relaxed_element_stores_v<chunk_type, T>)
@@ -596,6 +653,9 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
                     }
                     if constexpr (chunk_config::use_chunk)
                         uniform = uniform && dst[0] == static_cast<T>(chunk_type::first_value); // v1: first value only
+                    if constexpr (chunk_config::use_chunk2 && requires { a.get_second_value(); })
+                        uniform = uniform && (dst[0] == static_cast<T>(chunk_type::first_value) ||
+                                              dst[0] == static_cast<T>(a.get_second_value())); // Chunk2: the two
                     done    = true;
                 }
                 Policy::end_write(thr); // 6.

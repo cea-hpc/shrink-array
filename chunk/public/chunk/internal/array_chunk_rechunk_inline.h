@@ -715,8 +715,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // one decision per chunk, arms with real proxy writes, stores the
             // rest straight into the buffer, and restores the zero counter the
             // bulk store bypasses. It also carries the same variant split --
-            // chunk2 and bool keep second-value state in the proxy, so they go
-            // per element -- which no longer has to be restated here.
+            // bool (bit-packed) goes per element -- which no longer has to be
+            // restated here.
             //
             // assume_drained: rechunk_to() has already flushed this array's
             // deferred ops, and this lambda runs inside the parallel loop below,
