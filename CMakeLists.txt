@@ -506,6 +506,45 @@ if(SHRINK_INTEL_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
     endif()
 endif()
 
+# ── ArmPL's libamath for GNU / Clang builds on aarch64 ──────────────────────
+# Arm's optimised libm (armpl module, free), linked ahead of glibc's: the
+# benches' compute phases live in cos/sin/atan/tan (the x86-64 counterpart,
+# libimf, took shrink_bench_chunk2a_256 from 15.70 s to 12.41 s on AMD Milan,
+# GNU). NVHPC is left alone: it links its own optimised math library.
+# SHRINK_ARM_LIBM is a TEMPORARY switch for the comparison runs (OFF: glibc's
+# libm). Configure with the armpl module loaded, or set ARMPL_LIBM_DIR; the
+# executables then carry an rpath and run without the module.
+option(SHRINK_ARM_LIBM "aarch64, GNU/Clang: link the executables with ArmPL's libamath when found (OFF: glibc libm, for comparisons)" ON)
+set(ARMPL_LIBM_DIR "" CACHE PATH "Directory holding libamath.so (default: from the armpl module, $ARMPL_DIR/lib)")
+if(SHRINK_ARM_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64"
+   AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+    set(_amath_hints "")
+    if(ARMPL_LIBM_DIR)
+        list(APPEND _amath_hints "${ARMPL_LIBM_DIR}")
+    endif()
+    if(DEFINED ENV{ARMPL_DIR})
+        list(APPEND _amath_hints "$ENV{ARMPL_DIR}/lib")
+    endif()
+    foreach(_v ARMPL_LIBRARIES ARMPL_LIBRARY_DIR ARMPL_LIB)
+        if(DEFINED ENV{${_v}})
+            list(APPEND _amath_hints "$ENV{${_v}}")
+        endif()
+    endforeach()
+    if(_amath_hints)
+        find_library(SHRINK_LIBAMATH NAMES amath HINTS ${_amath_hints} NO_DEFAULT_PATH)
+    endif()
+    if(SHRINK_LIBAMATH)
+        get_filename_component(_amath_dir "${SHRINK_LIBAMATH}" DIRECTORY)
+        message(STATUS "ArmPL libm: ${SHRINK_LIBAMATH} -- linked ahead of libm (SHRINK_ARM_LIBM=OFF to compare with glibc)")
+        # link_libraries: every target created from here on links it first,
+        # ahead of the -lm the examples add and the driver's own.
+        link_libraries("${SHRINK_LIBAMATH}")
+        add_link_options("LINKER:-rpath,${_amath_dir}")
+    else()
+        message(STATUS "ArmPL libm: libamath not found -- glibc libm (load the armpl module before cmake, or set ARMPL_LIBM_DIR)")
+    endif()
+endif()
+
 # ── Subdirectories ────────────────────────────────────────────────────────────
 add_subdirectory(chunk)
 
