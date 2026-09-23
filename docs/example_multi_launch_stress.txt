@@ -1,0 +1,2 @@
+python3 multi_launch_stress.py --min_threads 40 --max_threads 200 --regen-ref --all_exec --build-root $CCCWORKDIR/shrink-array --builds build_arm.txt 
+
