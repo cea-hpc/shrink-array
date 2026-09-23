@@ -175,7 +175,7 @@ int main()
 
     auto start = std::chrono::steady_clock::now();
 
-    std::cout << "\nCreate array :" << std::endl;
+    std::cout << "\nCreate array :" << '\n';
 
     dispatch.create(nbmat);
     dispatch.set(simu.getDis());
@@ -222,7 +222,7 @@ int main()
                                  const double sz0 = only_first_chunk ? tab0_ind.stats_seq() : tab0_ind.stats();
 
                                  std::cout << "  Chunk filling rate : " << std::fixed << std::setprecision(2) << sz0
-                                           << "%" << std::endl;
+                                           << "%" << '\n';
 
                                  // The presence fraction, a Chunk2 array: only its
                                  // interface chunks should be materialised, the
@@ -232,7 +232,7 @@ int main()
                                  const double szf      = only_first_chunk ? frac_ind.stats_seq() : frac_ind.stats();
 
                                  std::cout << "  Fraction chunk filling rate (Chunk2) : " << std::fixed
-                                           << std::setprecision(2) << szf << "%" << std::endl;
+                                           << std::setprecision(2) << szf << "%" << '\n';
                              }
 
                              if (only_first_chunk)
@@ -251,7 +251,7 @@ int main()
                              const double sz = static_cast<double>(s) / static_cast<double>(mesh_size) * 100.;
 
                              std::cout << "  Real filling rate : " << std::fixed << std::setprecision(2) << sz << "%"
-                                       << std::endl;
+                                       << '\n';
                          }
                      });
     };
@@ -272,7 +272,7 @@ int main()
     end             = std::chrono::steady_clock::now();
     elapsed_seconds = end - start;
 
-    std::cout << "\nResult = " << value_compute << std::endl;
+    std::cout << "\nResult = " << value_compute << '\n';
 
     std::cout << "\n\nElapsed time  : " << elapsed_seconds.count() << "s\n\n";
 
@@ -280,11 +280,11 @@ int main()
     if (getrusage(RUSAGE_SELF, &usage) == 0)
     {
         const long rss = usage.ru_maxrss; // Resident Set Size in kilobytes
-        std::cout << "Memory consumption : " << convert_memory(rss * 1024) << " Mo\n\n";
+        std::cout << "Memory consumption : " << convert_memory(static_cast<double>(rss * 1024)) << " Mo\n\n";
     }
     else
     {
-        std::cerr << "Unable to retrieve information from memory." << std::endl;
+        std::cerr << "Unable to retrieve information from memory." << '\n';
     }
 
     if constexpr (multi_mat::chunk_stats)

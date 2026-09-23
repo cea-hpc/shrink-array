@@ -1,17 +1,17 @@
 /*
-* Copyright 2024-2026 CEA (www.cea.fr)
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+ * Copyright 2024-2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #pragma once
@@ -61,7 +61,8 @@ class Simu
     double pc_chunk  = .5; ///< Average interval of a chunk material, % of the mesh
     double pc_vector = 3;  ///< Average interval of a vector material, % of the mesh
 
-    int option_chunk     = 3; ///< Storage of the materials: 1 all chunk, 2 all vector, 3 random 50/50, 4 random at chunk_rate
+    int option_chunk =
+        3; ///< Storage of the materials: 1 all chunk, 2 all vector, 3 random 50/50, 4 random at chunk_rate
     int freq_rtz_default = std::max(iter_max_default / 10, 5);
     int freq_rtz; ///< Every this many iterations the fields are zeroed instead of written
 
@@ -96,7 +97,6 @@ class Simu
 
     VecInt2D ll; ///< [material] the cells of its current interval (indirection)
 
-  public:
     Simu() = default;
 
     int                      getMeshSize() const;
@@ -162,5 +162,6 @@ class Simu
      * @param value     This thread's share of the gadget result.
      */
     template <typename LOOPS, typename LOOPSCHUNK>
-    void computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::function<void(bool)>& lbd_stats, double& value);
+    void
+    computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::function<void(bool)>& lbd_stats, double& value);
 };

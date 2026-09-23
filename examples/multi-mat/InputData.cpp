@@ -1,17 +1,17 @@
 /*
-* Copyright 2024-2026 CEA (www.cea.fr)
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+ * Copyright 2024-2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 /**
@@ -70,7 +70,7 @@ void ask(const char* prompt, const char* name, T& value, Parse parse, Valid vali
     }
     catch (const std::invalid_argument&)
     {
-        std::cerr << "Error: Conversion failed. The string is not a valid number" << std::endl;
+        std::cerr << "Error: Conversion failed. The string is not a valid number" << '\n';
     }
     catch (const std::out_of_range& e)
     {
@@ -88,7 +88,8 @@ void ask(const char* prompt, const char* name, T& value, Parse parse, Valid vali
 [[maybe_unused]] void ask_percentage(const char* prompt, const char* name, double& value)
 {
     constexpr double eps = 1e-10;
-    ask(prompt, name, value, [](const std::string& s) { return std::stod(s); },
+    ask(
+        prompt, name, value, [](const std::string& s) { return std::stod(s); },
         [](double v) { return v >= eps && v <= 100 - eps; });
 }
 
@@ -124,7 +125,8 @@ void Simu::inputData()
         std::cout << "   all vector                       : 2\n";
         std::cout << "   random vector / chunk (default)  : 3\n";
         std::cout << "   random vector / chunk with rate  : 4\n";
-        ask("Option", "option", option_chunk, [](const std::string& s) { return std::stoi(s); },
+        ask(
+            "Option", "option", option_chunk, [](const std::string& s) { return std::stoi(s); },
             [](int v) { return v >= 1 && v <= 4; });
 
         if (option_chunk == 4)

@@ -22,7 +22,7 @@
 #include <algorithm> // For std::shuffle
 
 #ifdef _OPENMP
-#include <omp.h>
+    #include <omp.h>
 #endif
 
 #include <sys/resource.h>
@@ -84,7 +84,7 @@ void save_seed_to_file(unsigned seed, const std::string& filename)
     }
     else
     {
-        std::cerr << "Unable to open file for saving seed." << std::endl;
+        std::cerr << "Unable to open file for saving seed." << '\n';
     }
 }
 
@@ -100,7 +100,7 @@ unsigned load_seed_to_file(const std::string& filename)
     }
     else
     {
-        std::cerr << "Unable to open file for loading seed. --> create new one" << std::endl;
+        std::cerr << "Unable to open file for loading seed. --> create new one" << '\n';
     }
     std::cout << "\nLoad seed in file\n";
 
@@ -228,12 +228,12 @@ int main()
     const int max_thr = 1;
 #endif
 
-    std::cout << "Number of threads : " << max_thr << std::endl;
+    std::cout << "Number of threads : " << max_thr << '\n';
 
     auto start = std::chrono::steady_clock::now();
 
-    std::cout << "Initialisation ..." << std::endl;
-    std::cout << "Creation of arrays ..." << std::endl;
+    std::cout << "Initialisation ..." << '\n';
+    std::cout << "Creation of arrays ..." << '\n';
 
     ArrayChunk<double> tab_chunk1(sz), tab_chunk2(sz), tab_chunk3(sz);
 
@@ -275,7 +275,7 @@ int main()
     // Create a uniform distribution for the starting points of the intervals
     std::uniform_int_distribution startDistribution(min, max);
 
-    std::cout << "Iteration ..." << std::endl;
+    std::cout << "Iteration ..." << '\n';
 
     std::array<int, iter_max> tab_size, tab_start, tab_nba1, tab_nba2;
 
@@ -344,7 +344,8 @@ int main()
             const int start = 1 + std::rand() % (nsz - sz - 1);
 
             // Shuffle the vector to ensure the array is not ordered
-            std::shuffle(index.begin() + start, index.begin() + start + sz, std::default_random_engine(std::time(nullptr)));
+            std::shuffle(index.begin() + start, index.begin() + start + sz,
+                         std::default_random_engine(std::time(nullptr)));
         }
 
         if (k % freq_raz == 0)
@@ -400,7 +401,7 @@ int main()
         // Afficher la progression en pourcentage tous les 10%
         if (k % progress_interval == 0)
         {
-            std::cout << "Progression : " << std::fixed << std::setprecision(2) << progress << "%" << std::endl;
+            std::cout << "Progression : " << std::fixed << std::setprecision(2) << progress << "%" << '\n';
         }
 
         if (k % freq_compress == 0)
@@ -417,12 +418,12 @@ int main()
     elapsed_seconds = end - start;
     std::cout << "\nElapsed time computation : " << elapsed_seconds.count() << "s\n";
 
-    std::cout << tab2[2] << std::endl;
+    std::cout << tab2[2] << '\n';
 
     auto lbd = [](const ArrayChunk<double>& tab)
     {
         const double sz0 = tab.stats();
-        std::cout << "Chunk filling rate : " << std::fixed << std::setprecision(2) << sz0 << "%" << std::endl;
+        std::cout << "Chunk filling rate : " << std::fixed << std::setprecision(2) << sz0 << "%" << '\n';
     };
 
     lbd(tab_chunk1);
@@ -437,11 +438,11 @@ int main()
     if (getrusage(RUSAGE_SELF, &usage) == 0)
     {
         long rss = usage.ru_maxrss; // Résident Set Size en kilo-octets
-        std::cout << "\nMemory consumption : " << convert_memory(rss * 1024) << " Mo \n\n";
+        std::cout << "\nMemory consumption : " << convert_memory(static_cast<double>(rss * 1024)) << " Mo \n\n";
     }
     else
     {
-        std::cerr << "Unable to retrieve information from memory." << std::endl;
+        std::cerr << "Unable to retrieve information from memory." << '\n';
     }
 
     tab1.clear();

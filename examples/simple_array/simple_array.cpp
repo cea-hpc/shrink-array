@@ -108,7 +108,7 @@ void save_seed_to_file(unsigned seed, const std::string& filename)
     }
     else
     {
-        std::cerr << "Unable to open file for saving seed." << std::endl;
+        std::cerr << "Unable to open file for saving seed." << '\n';
     }
 }
 
@@ -124,7 +124,7 @@ unsigned load_seed_to_file(const std::string& filename)
     }
     else
     {
-        std::cerr << "Unable to open file for loading seed. --> create new one" << std::endl;
+        std::cerr << "Unable to open file for loading seed. --> create new one" << '\n';
     }
     std::cout << "\nLoad seed in file\n";
 
@@ -202,12 +202,12 @@ int main()
     const int max_thr = 1;
 #endif
 
-    std::cout << "Number of threads : " << max_thr << std::endl;
+    std::cout << "Number of threads : " << max_thr << '\n';
 
     auto start = std::chrono::steady_clock::now();
 
-    std::cout << "Initialisation ..." << std::endl;
-    std::cout << "Creation of arrays ..." << std::endl;
+    std::cout << "Initialisation ..." << '\n';
+    std::cout << "Creation of arrays ..." << '\n';
 
     // constexpr int interval = 2000;
 #if defined CHUNK || defined CHUNK2
@@ -249,7 +249,7 @@ int main()
     // Create a uniform distribution for the starting points of the intervals
     std::uniform_int_distribution startDistribution(min, max);
 
-    std::cout << "Iteration ..." << std::endl;
+    std::cout << "Iteration ..." << '\n';
 
     std::array<int, iter_max> tab_size, tab_start, tab_nba1, tab_nba2;
 
@@ -328,7 +328,7 @@ int main()
 
                 for (int p = 0; p < 5; ++p)
                 {
-                    const double val = static_cast<double>(p);
+                    const auto val = static_cast<double>(p);
 
 #pragma omp for schedule(static) nowait
                     for (int i = start0; i < end0; ++i)
@@ -339,13 +339,13 @@ int main()
             }
         }
 
-        std::cout << "k : " << k << " v = " << v << std::endl;
+        std::cout << "k : " << k << " v = " << v << '\n';
 
         if (k % freq_check_sum == 0)
         {
             std::cout << "\ntab1 check_sum = " << calculate_checksum(tab1) << "\n";
             std::cout << "tab2 check_sum = " << calculate_checksum(tab2) << "\n";
-            std::cout << "tab3 check_sum = " << calculate_checksum(tab3) << std::endl;
+            std::cout << "tab3 check_sum = " << calculate_checksum(tab3) << '\n';
         }
 
 #if defined CHUNK || defined CHUNK2
@@ -361,19 +361,19 @@ int main()
 #endif
     }
 
-    std::cout << "\nv = " << v << std::endl;
+    std::cout << "\nv = " << v << '\n';
 
     end             = std::chrono::steady_clock::now();
     elapsed_seconds = end - start;
     std::cout << "\nElapsed time computation : " << elapsed_seconds.count() << "s\n";
 
-    std::cout << tab2[2] << std::endl;
+    std::cout << tab2[2] << '\n';
 
 #if defined CHUNK || defined CHUNK2
     auto lbd = [](const ArrayChunk<double>& tab)
     {
         const double sz0 = tab.stats();
-        std::cout << "Chunk filling rate : " << std::fixed << std::setprecision(2) << sz0 << "%" << std::endl;
+        std::cout << "Chunk filling rate : " << std::fixed << std::setprecision(2) << sz0 << "%" << '\n';
     };
 
     lbd(tab1);
@@ -390,11 +390,11 @@ int main()
     if (getrusage(RUSAGE_SELF, &usage) == 0)
     {
         long rss = usage.ru_maxrss; // Résident Set Size en kilo-octets
-        std::cout << "\nMemory consumption : " << convert_memory(rss * 1024) << " Mo \n\n";
+        std::cout << "\nMemory consumption : " << convert_memory(static_cast<double>(rss * 1024)) << " Mo \n\n";
     }
     else
     {
-        std::cerr << "Unable to retrieve information from memory." << std::endl;
+        std::cerr << "Unable to retrieve information from memory." << '\n';
     }
 
     tab1.clear();

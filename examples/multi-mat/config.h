@@ -61,7 +61,8 @@
 #include "chunk/manage_ompt.h"
 
 #if defined(MULTIMAT_EMBEDDED_COMPRESSION) && !defined(HAVE_OMPT)
-    #error "multi-mat-embedded rests on the OMPT tool of the chunk library, which this build has not (HAVE_OMPT): build with Clang or IntelLLVM, OMP=ON, no TSan -- gcc's libgomp has no OMPT"
+    #error \
+        "multi-mat-embedded rests on the OMPT tool of the chunk library, which this build has not (HAVE_OMPT): build with Clang or IntelLLVM, OMP=ON, no TSan -- gcc's libgomp has no OMPT"
 #endif
 
 // `#pragma forceinline` is the classic Intel compiler's; gcc and clang warn

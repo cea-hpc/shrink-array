@@ -42,7 +42,11 @@ static void fill_and_compress(TAB& tab)
     TAB::make_block_compression();
 }
 
-struct Truth { long long chunks, mat; double mem; };
+struct Truth
+{
+    long long chunks, mat;
+    double    mem;
+};
 
 static Truth ground_truth(const ArrayChunk2A<double>& tab, double meta)
 {
@@ -53,7 +57,7 @@ static Truth ground_truth(const ArrayChunk2A<double>& tab, double meta)
         if (!c.is_cst_val1() && !c.is_cst_val2())
             ++t.mat;
     }
-    t.mem = t.chunks * meta + double(t.mat) * tab.chunk_size() * sizeof(double);
+    t.mem = static_cast<double>(t.chunks) * meta + double(t.mat) * tab.chunk_size() * sizeof(double);
     return t;
 }
 
@@ -67,15 +71,15 @@ int main()
     ParamChunk::init_indexes(true);
 
     // Ground truth at every real size
-    const unsigned sizes[] = {64, 128, 256, 512, 1024};
+    const unsigned     sizes[] = {64, 128, 256, 512, 1024};
     std::vector<Truth> truths;
-    double meta = 0.;
+    double             meta = 0.;
     for (unsigned cs : sizes)
     {
         set_thread_chunk_size(cs);
-        ArrayChunk2A<double> tab(1);   // proven pattern (test_multisize):
-        tab.set_chunk_size(cs);        // register per-array size FIRST,
-        tab.resize(N);                 // THEN size the geometry
+        ArrayChunk2A<double> tab(1); // proven pattern (test_multisize):
+        tab.set_chunk_size(cs);      // register per-array size FIRST,
+        tab.resize(N);               // THEN size the geometry
         fill_and_compress(tab);
         if (meta == 0.)
         {
@@ -94,7 +98,7 @@ int main()
     ChunkSizeAdvisor<double>::Options opt;
     opt.coarser_levels = 2;
     opt.finer_levels   = 2;
-    auto rep = ChunkSizeAdvisor<double>::analyze(ref, opt);
+    auto rep           = ChunkSizeAdvisor<double>::analyze(ref, opt);
     ChunkSizeAdvisor<double>::print(rep, "ref S=256");
 
     std::printf("\n── prediction (from S=256) vs ground truth ──\n");
@@ -105,16 +109,15 @@ int main()
         // find matching real size
         for (size_t k = 0; k < std::size(sizes); ++k)
         {
-            if (sizes[k] != e.size) continue;
-            const auto& t   = truths[k];
-            const double dm = t.mat ? 100. * double(e.mat - t.mat) / double(t.mat)
-                                    : (e.mat ? 100. : 0.);
-            const bool ok   = e.exact ? (e.mat == t.mat && e.n_chunks == t.chunks)
-                                      : (dm > -10. && dm < 10.);
-            std::printf("   S=%5u : pred mat=%9lld %s | real mat=%9lld | d=%+6.2f%%  mem pred=%8.2f real=%8.2f Mo  %s\n",
-                        e.size, (long long)e.mat, e.exact ? "(exact)" : "(sampl)",
-                        t.mat, dm, e.mem_bytes / 1048576., t.mem / 1048576.,
-                        ok ? "OK" : "FAIL");
+            if (sizes[k] != e.size)
+                continue;
+            const auto&  t  = truths[k];
+            const double dm = t.mat ? 100. * double(e.mat - t.mat) / double(t.mat) : (e.mat ? 100. : 0.);
+            const bool   ok = e.exact ? (e.mat == t.mat && e.n_chunks == t.chunks) : (dm > -10. && dm < 10.);
+            std::printf(
+                "   S=%5u : pred mat=%9lld %s | real mat=%9lld | d=%+6.2f%%  mem pred=%8.2f real=%8.2f Mo  %s\n",
+                e.size, (long long)e.mat, e.exact ? "(exact)" : "(sampl)", t.mat, dm, e.mem_bytes / 1048576.,
+                t.mem / 1048576., ok ? "OK" : "FAIL");
             fail += !ok;
         }
     }
