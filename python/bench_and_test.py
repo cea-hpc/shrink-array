@@ -50,6 +50,7 @@ import os
 import sys
 import time
 import argparse
+import json  # --rerun-failed: failed_cases.jsonl
 import csv
 from pathlib import Path
 
@@ -753,7 +754,7 @@ def _write_full_log(cmd, child_env, returncode, stdout_text, stderr_text):
         pass  # logging must never break the run
 
 
-def run_cmd(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, must_contain=None):
+def _run_cmd_impl(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, must_contain=None):
     """Run cmd. Returns (success, duration_s, returncode, stderr_tail, mem_mo).
 
     extra_ld_library_path: path(s) to PREPEND to LD_LIBRARY_PATH for this run.
@@ -854,17 +855,152 @@ def run_cmd(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, must_c
         return False, 0.0, -1, f"{type(e).__name__}: {e}", None
 
 
+# ── --rerun-failed: recording the failed runs ────────────────────────────────
+# Every FAILED run of the two executors is remembered here until the phase that
+# made it logs its failure (_append_error_now), which moves it to
+# failed_cases.jsonl. A later SUCCESSFUL run of the same command (the
+# rebuild-and-retry path) forgets it, so a failure that healed is not replayed.
+_PENDING_FAILED_RUNS = []
+_CTEST_FAILED_NAME_RE = __import__("re").compile(r"^\s*\d+\s+-\s+(\S+)\s+\(", __import__("re").M)
+
+
+def _run_key(r):
+    return (tuple(r["cmd"]), r.get("cwd"), tuple(sorted((r.get("env") or {}).items())))
+
+
+def _note_run(executor, ok, cmd, env_vars, timeout, extra_ld_library_path, cwd, must_contain, stdout_text=None):
+    rec = {"executor": executor, "cmd": [str(c) for c in cmd], "env": dict(env_vars or {}),
+           "timeout": timeout, "ld": extra_ld_library_path, "cwd": cwd, "must_contain": must_contain}
+    if ok:
+        k = _run_key(rec)
+        _PENDING_FAILED_RUNS[:] = [r for r in _PENDING_FAILED_RUNS if _run_key(r) != k]
+        return
+    # ctest: replay only the tests that failed, not the whole label.
+    if os.path.basename(rec["cmd"][0]) == "ctest" and stdout_text:
+        tail = stdout_text.split("The following tests FAILED", 1)
+        names = _CTEST_FAILED_NAME_RE.findall(tail[1]) if len(tail) == 2 else []
+        if names:
+            import re as _re2
+            rec["cmd"] = [rec["cmd"][0], "-R", "^(" + "|".join(_re2.escape(n) for n in names) + ")$",
+                          "--output-on-failure"]
+            rec["ctest_tests"] = names
+    _PENDING_FAILED_RUNS.append(rec)
+
+
+def run_cmd(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, must_contain=None):
+    """_run_cmd_impl(), recording a failed run for --rerun-failed."""
+    res = _run_cmd_impl(cmd, env_vars, timeout, extra_ld_library_path=extra_ld_library_path,
+                        cwd=cwd, must_contain=must_contain)
+    _note_run("run_cmd", res[0], cmd, env_vars, timeout, extra_ld_library_path, cwd, must_contain)
+    return res
+
+
+def run_capture_stdout(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None):
+    """_run_capture_stdout_impl(), recording a failed run for --rerun-failed."""
+    res = _run_capture_stdout_impl(cmd, env_vars, timeout, extra_ld_library_path=extra_ld_library_path,
+                                   cwd=cwd)
+    _note_run("capture", res[0], cmd, env_vars, timeout, extra_ld_library_path, cwd, None,
+              stdout_text=res[3])
+    return res
+
+
+def _failed_cases_path(errors_log):
+    return os.path.join(os.path.dirname(os.path.abspath(errors_log)), "failed_cases.jsonl")
+
+
 def _append_error_now(errors_log, entry):
     """Append a single error entry to the log immediately, so failures are on
     disk the instant they happen — not only at the final flush_summary(). This
     is what lets you `tail -f` the log during a run and see the real stderr of a
     FAIL right away instead of waiting for the run to finish (or guessing when it
-    is interrupted). Best-effort: never let logging raise into the run loop."""
+    is interrupted). Best-effort: never let logging raise into the run loop.
+
+    Also appends the failed runs behind this entry to failed_cases.jsonl, the
+    list --rerun-failed replays (none: the entry is recorded as not
+    replayable -- a comparison across runs, a guard)."""
     try:
         with open(errors_log, "a") as f:
             f.write(entry.rstrip("\n") + "\n")
     except OSError:
         pass
+    try:
+        first = entry.strip().splitlines()[0] if entry.strip() else ""
+        case = {"kind": first.split(":", 1)[0], "summary": first[:300],
+                "runs": list(_PENDING_FAILED_RUNS)}
+        _PENDING_FAILED_RUNS.clear()
+        with open(_failed_cases_path(errors_log), "a") as f:
+            f.write(json.dumps(case) + "\n")
+    except (OSError, TypeError, ValueError):
+        pass
+
+
+def run_rerun_failed(args):
+    """--rerun-failed: replay the recorded failed runs; returns the exit code."""
+    src = args.rerun_failed or _failed_cases_path(args.errors_log)
+    if not os.path.isfile(src):
+        print(red(f"--rerun-failed: {src} not found (no failed run recorded there)"))
+        return 2
+    cases = []
+    with open(src) as f:
+        for ln in f:
+            ln = ln.strip()
+            if ln:
+                try:
+                    cases.append(json.loads(ln))
+                except ValueError:
+                    pass
+    reps = max(1, args.rerun_repeat)
+    print(cyan(bold(f"\n🔁 Re-running the failed cases of {src}  ({len(cases)} case(s), x{reps})")))
+    still, n_ok, n_fail, n_skip = [], 0, 0, 0
+    for case in cases:
+        runs = case.get("runs") or []
+        head = case.get("summary", "")[:150]
+        if not runs:
+            n_skip += 1
+            print(dim(f"  ⏭  not replayable (no single failed run behind it): {head}"))
+            continue
+        case_fail = None
+        for rep in range(reps):
+            for r in runs:
+                if r.get("executor") == "capture":
+                    ok, _dur, code, _out, tail = _run_capture_stdout_impl(
+                        r["cmd"], r.get("env") or {}, r.get("timeout"),
+                        extra_ld_library_path=r.get("ld"), cwd=r.get("cwd"))
+                    if not tail:  # ctest reports on stdout
+                        tail = "\n".join((_out or "").splitlines()[-12:])
+                else:
+                    ok, _dur, code, tail, _mem = _run_cmd_impl(
+                        r["cmd"], r.get("env") or {}, r.get("timeout"),
+                        extra_ld_library_path=r.get("ld"), cwd=r.get("cwd"),
+                        must_contain=r.get("must_contain"))
+                if not ok:
+                    case_fail = (rep + 1, code, tail)
+                    break
+            if case_fail:
+                break
+        if case_fail:
+            n_fail += 1
+            still.append(case)
+            rep, code, tail = case_fail
+            print(red(f"  ✗ still fails (repeat {rep}/{reps}, code {code}): {head}"))
+            for tl in (tail or "").splitlines()[-8:]:
+                print(dim("      " + tl))
+        else:
+            n_ok += 1
+            print(green(f"  ✓ passes x{reps}: {head}"))
+    # Keep the previous list, then keep only what still fails (the not
+    # replayable entries are kept too: they still need a full run to clear).
+    dst = _failed_cases_path(args.errors_log)
+    try:
+        if os.path.abspath(src) == os.path.abspath(dst):
+            os.replace(dst, dst.replace(".jsonl", ".prev.jsonl"))
+        with open(dst, "w") as f:
+            for case in still + [c for c in cases if not (c.get("runs") or [])]:
+                f.write(json.dumps(case) + "\n")
+    except OSError:
+        pass
+    print(bold(f"\n🔁 {n_ok} pass, {n_fail} still fail, {n_skip} not replayable  -> {dst}"))
+    return 1 if n_fail else 0
 
 
 def _memory_guard_errors(norm, baseline_variant,
@@ -1143,7 +1279,7 @@ def _run_dir(output_dir, *parts):
     return d
 
 
-def run_capture_stdout(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None):
+def _run_capture_stdout_impl(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None):
     """Sibling of run_cmd() that returns the FULL stdout instead of parsing
     peak memory / sanitizer hits / must_contain. This phase needs the raw
     CHUNK_STATS text and the checksum line, neither of which run_cmd()
@@ -2202,6 +2338,14 @@ def main():
                              "full crash context the 30-line err_tail drops. Pass "
                              "--full-log-dir . to write directly into the arch dir, "
                              "or --no-full-log to disable.")
+    parser.add_argument("--rerun-failed", nargs="?", const="", default=None, metavar="FILE",
+                        help="Replay ONLY the runs that failed in a previous run, recorded in "
+                             "<output-dir>/failed_cases.jsonl (or FILE), and skip every phase. "
+                             "Rewrites the list with what still fails (previous one kept as "
+                             "failed_cases.prev.jsonl). Exit code 1 if any case still fails.")
+    parser.add_argument("--rerun-repeat", type=int, default=1,
+                        help="With --rerun-failed: re-run each failed case up to N times, "
+                             "stopping at its first failure (for intermittent failures).")
     parser.add_argument("--no-full-log", action="store_true",
                         help="Disable the default per-run full stdout+stderr "
                              "capture (see --full-log-dir).")
@@ -2278,11 +2422,20 @@ def main():
         _atexit.register(lambda: isinstance(sys.stdout, _Tee) and sys.stdout.close_log())
     except OSError:
         _console_log_file = None  # if we can't open it, just run without the log
+    # --rerun-failed: replay the recorded failures only, and stop there (the
+    # errors log of the failing run is left as it was).
+    if args.rerun_failed is not None:
+        sys.exit(run_rerun_failed(args))
     # Truncate the errors log at startup so incremental _append_error_now()
     # writes reflect only THIS run (append mode would otherwise accumulate
     # across runs and mix stale failures with current ones).
     try:
         open(args.errors_log, "w").close()
+    except OSError:
+        pass
+    # Same for the replay list of --rerun-failed.
+    try:
+        open(_failed_cases_path(args.errors_log), "w").close()
     except OSError:
         pass
     print(f"📂 Output directory: {out_dir}")
