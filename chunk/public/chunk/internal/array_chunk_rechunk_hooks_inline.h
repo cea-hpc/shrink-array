@@ -32,7 +32,8 @@ template <typename Derived>
 void RechunkHooks<Derived, true>::rechunk_drop_candidates()
 {
     if constexpr (chunk_config::use_fast_block_compression)
-        manager_type::remove_from_compress_list_chunk_by_num_tab(proxy_type::share_info_array.get_num_tab(self().registry_key()));
+        manager_type::remove_from_compress_list_chunk_by_num_tab(
+            proxy_type::share_info_array.get_num_tab(self().registry_key()));
 }
 
 template <typename Derived>

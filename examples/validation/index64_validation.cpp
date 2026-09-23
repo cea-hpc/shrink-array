@@ -56,9 +56,11 @@
 #include "chunk/array_chunk2.h"
 #include "chunk/array_chunk2A.h"
 #include "chunk/param_chunk.h"
+#include "chunk/chunk_std.h"                  // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"
+#include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 
 int __mem_page_size = 0;
 
@@ -244,12 +246,12 @@ int verify_mixed(const char* label, const char* step, const Arr& a, int which, l
     for (long i = 0; i < M; ++i)
     {
         const double want = pattern(which, i, S);
-        const double got  = a[static_cast<typename Arr::ind_type>(i)];
+        const double got  = a[static_cast<Arr::ind_type>(i)];
         if (got != want)
         {
             if (nbad < 5)
-                std::printf("[%s/%s] FAIL %s: array %d [%ld] = %g, expected %g\n", variant_name(), label, step, which, i,
-                            got, want);
+                std::printf("[%s/%s] FAIL %s: array %d [%ld] = %g, expected %g\n", variant_name(), label, step, which,
+                            i, got, want);
             ++nbad;
         }
     }

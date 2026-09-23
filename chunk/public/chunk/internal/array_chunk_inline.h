@@ -52,7 +52,7 @@ void ArrayChunk<T, ind_type>::rebuild_storage(ind_type sz)
     {
         if (this->size_policy_.size())
         {
-            nb_chunk = static_cast<int>(sz >> this->size_policy_.decalage()) + 1;
+            nb_chunk = this->chunks_for(sz);
             manager_chunk::increm_somme_chunk_create(nb_chunk);
             manager_chunk::compute_size_buffer_reuse();
             manager_chunk::compute_size_max_number_of_chunk_to_check_compress();
@@ -386,7 +386,8 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
             for (int k = 0; k < shown; ++k)
             {
                 const int ind1 = ll[k];
-                std::cerr << ind1 << " " << static_cast<ind_type>(ind1) * static_cast<ind_type>(this->size_policy_.size()) << "\n";
+                std::cerr << ind1 << " "
+                          << static_cast<ind_type>(ind1) * static_cast<ind_type>(this->size_policy_.size()) << "\n";
             }
             if (nb > shown)
             {
@@ -415,7 +416,7 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
 
     const int old_nb_chunk = nb_chunk;
 
-    nb_chunk = static_cast<int>(newsz >> this->size_policy_.decalage()) + 1;
+    nb_chunk = this->chunks_for(newsz);
 
     chunk_list.resize(nb_chunk);
     Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk);

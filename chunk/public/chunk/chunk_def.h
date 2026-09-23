@@ -33,8 +33,6 @@ struct ChunkDef
     // stale value that predates the constexpr-geometry refactor and wrongly
     // rejected CHUNK_SIZE=512.)
     constexpr static int size_max              = 65535;
-    constexpr static int reset_list_size       = 1;
-    constexpr static int async_reset_list_size = 2;
 
     constexpr static int nb_max_compress_value = 2;
 

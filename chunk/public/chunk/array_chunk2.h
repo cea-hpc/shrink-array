@@ -113,7 +113,6 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     // hook call through the CRTP self() would see two base subobjects and be
     // ambiguous. Naming them here makes them members of ArrayChunk2, which hides
     // both bases' versions.
-    using Parallel2::clear_in_par;
     using FastBlock2::make_block_compression;
 
     using Hooks2::rechunk_capture_state;
@@ -261,20 +260,24 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
         return this->get_info_second_value();
     }
 
-    ArrayChunk2& operator=(ArrayChunk2&& other) noexcept
+    /**
+     * @brief Move-assign: this array's own contents are released (clear()),
+     *        then it takes @p other's -- chunks, geometry and identity, by the
+     *        same exchange as swap(); @p other is left empty and valid.
+     * @details It used to steal @p other's chunk list and nothing else: this
+     *          array's old chunks were destroyed with their buffers still
+     *          queued as compression candidates, the moved chunks kept
+     *          @p other's metadata rows (num_tab), and @p other kept its
+     *          nb_chunk over an empty list. Sequential context, as clear().
+     * @throws std::bad_alloc from clear() -- hence not noexcept.
+     */
+    ArrayChunk2& operator=(ArrayChunk2&& other)
     {
-        // Drain ops on THIS array's (about-to-be-freed) chunks before the move
-        // frees this->chunk_list. other's chunks keep their addresses (vector
-        // move steals the buffer), so their ops stay valid — no drain needed.
-        // flush_pending_deferred_ops() is inherited from ArrayChunk2Base.
-        this->flush_pending_deferred_ops();
-
-        chunk_list = (std::move(other.chunk_list));
-        //  tab_is_inside_chunk_list_to_compress = (std::move(other.tab_is_inside_chunk_list_to_compress));
-        nb_chunk     = other.nb_chunk;
-        m_size       = other.m_size;
-        ind_cst_val2 = other.ind_cst_val2;
-
+        if (this != &other)
+        {
+            clear();
+            this->swap_storage_and_identity(other);
+        }
         return *this;
     }
 
@@ -306,7 +309,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      */
     [[nodiscard]] bool written(ind_type i) const
     {
-        return chunk_written(static_cast<int>(i >> this->size_policy_.decalage()));
+        return chunk_written(this->chunk_index_of(i));
     }
 
     /**
@@ -504,6 +507,36 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     /// chunk_config::no_second_value_index until set_second_value().
     int ind_cst_val2 = chunk_config::no_second_value_index;
 
+    friend ArrayChunkBase<ArrayChunk2<T, ind_type>>; // swap_identity()
+
+    /**
+     * @brief The identity step of swap(): the registry tuple (second value,
+     *        its index, num_tab), which is what Chunk2 reads its identity
+     *        from, then the members that mirror it.
+     * @details The num_tab member is not swapped, as in rechunk_swap_identity:
+     *          Chunk2 never reads it. map_inf_array points each second value at
+     *          the inf_array MEMBER of an array that has it; after the exchange
+     *          that member holds the other array's tuple, so both values are
+     *          re-pointed (a T{} value is the static inf_array_none's).
+     */
+    void swap_identity(ArrayChunk2& other)
+    {
+        auto& sh_inf = Proxy2<T>::share_info_array;
+        sh_inf.swap_entries(this->registry_key(), other.registry_key());
+        std::swap(ind_cst_val2, other.ind_cst_val2);
+        sync_registry_mirror();
+        other.sync_registry_mirror();
+        if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
+        {
+            for (ArrayChunk2* arr : {this, &other})
+            {
+                const T value = std::get<0>(arr->inf_array);
+                if (value != T{})
+                    sh_inf.insert(value, &arr->inf_array);
+            }
+        }
+    }
+
   public:
     /// @brief Read-only access to the underlying chunk list.
     [[nodiscard]] const std::vector<Chunk2<T>>& getChunkList() const
@@ -521,6 +554,6 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 #include "chunk/internal/array_chunk2_inline.h"
 
 // Bodies of the two mode-specific mixins. After array_chunk2_inline.h, so their
-// CRTP self() sees a complete ArrayChunk2 (the serial clear_in_par calls clear()).
+// CRTP self() sees a complete ArrayChunk2.
 #include "chunk/internal/array_chunk2_parallel_inline.h"
 #include "chunk/internal/array_chunk2_rechunk_hooks_inline.h"

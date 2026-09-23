@@ -16,53 +16,17 @@
  * limitations under the License.
  */
 
-// Out-of-line bodies of the OpenMP-only array surface (ParallelSupport).
-// Included at the end of array_chunk.h, after the class and its own inline
-// file, so the CRTP self() down-cast sees a complete Derived and so the heavy
-// includes below (manager, compression manager, stats) stay out of the
-// container declaration itself.
-#include <memory> // std::uninitialized_fill_n
-#include <vector> // std::vector
-
+// Out-of-line bodies of ArrayChunk's mode-gated surfaces (ParallelSupport,
+// FastBlockSupport). Included at the end of array_chunk.h, after the class and
+// its own inline file, so the CRTP self() down-cast sees a complete Derived and
+// so the compression manager stays out of the container declaration itself.
 #include "chunk/internal/array_chunk_parallel.h"
-#include "chunk/internal/array_chunk_parallel_common_inline.h" // clear_in_par_impl
-#include "chunk/chunk_def.h"                          // ChunkDef::reset_list_size / async_reset_list_size
-#include "chunk/PMP_CHUNK.h"                          // CHUNK_PMP_THREAD_RANK, get_size_max_tab_omp
-#include "chunk/internal/manager_chunk.h"                      // manager_type::get_list_block_free_thr
-#include "chunk/internal/chunk_stats.h"                        // increm_chunk_teardown_clear (CHUNK_STATS)
-#include "chunk/internal/compression_manager.h"                // CompressionManager<> in flush_pending_deferred_ops
+#include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
+#include "chunk/PMP_CHUNK.h"                                   // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size (make_block_compression)
 
 namespace shrink_array
 {
-
-// move_list_block_free_tmp() is ParallelSupportCommon's (one copy for the three variants).
-
-template <typename Derived>
-void ParallelSupport<Derived, true>::clear_in_par(int opt_chunk_list_size)
-{
-    Common::template clear_in_par_impl<entry_type>(
-        opt_chunk_list_size,
-        // Plain Chunk has a single constant, so written() cannot mistake a
-        // shared marker for a live buffer the way it could on Chunk2.
-        [](const chunk_type& chunk_t) { return chunk_t.written(); },
-        [this](std::vector<entry_type>& entries, int thr_rank)
-        {
-            Derived&             arr  = this->self();
-            auto&                lbf  = manager_type::get_list_block_free_thr(thr_rank);
-            constexpr value_type zero{};
-
-            for (auto& chunk_t : entries)
-            {
-                value_type* values_loc = chunk_t->values_load();
-
-                std::uninitialized_fill_n(values_loc, arr.size_policy_.size(), zero);
-                lbf.push_back(values_loc);
-
-                chunk_t->init_values_cst_val();
-            }
-        });
-}
 
 template <typename Derived>
 void FastBlockSupport<Derived, true>::make_block_compression()

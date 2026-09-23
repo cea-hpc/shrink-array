@@ -18,46 +18,25 @@
 
 /**
  * @file array_chunk_parallel.h
- * @brief The OpenMP-only surface of ArrayChunk (v1) — in-parallel teardown, the
- *        per-thread async-reset registries and the deferred-op flush — isolated
- *        in its own mixin so it disappears entirely from a serial build.
+ * @brief ArrayChunk's (v1) two mode-gated surfaces -- the OpenMP-only one (the
+ *        deferred-op flush) and the fast-block-only one
+ *        (make_block_compression) -- isolated in their own mixins so they
+ *        disappear entirely from a build that has neither.
  *
- * @details Four groups of ArrayChunk members exist only because the build has
- *          OpenMP, and each said so in its own way:
- *          - clear_in_par() — the in-parallel teardown. A serial build has no
- *            team to split the chunk list across, so the whole body already sat
- *            behind `if constexpr (build_config::use_openmp)` with clear() as
- *            the else branch.
- *          - move_list_block_free_tmp() — reserves room in the calling thread's
- *            block free-list before a teardown batch parks buffers there. There
- *            is no per-thread free-list in a serial build, so it is a no-op
- *            there.
- *          - get_list_chunk_list() / get_list_nb_chunk() and their two static
- *            registries — the async_reset_list_size path parks chunk_list and
- *            nb_chunk per thread for a later reset. Present only in the
- *            ParallelSupport<Derived, true> specialisation, so a serial build
- *            never sees them.
- *          - flush_pending_deferred_ops() — drains the deferred writes queued on
- *            this array's chunks. Nothing defers without OpenMP, so the body was
- *            an `if constexpr` that collapsed to nothing.
+ * @details ParallelSupport<Derived, use_openmp> carries
+ *          flush_pending_deferred_ops(), which drains the deferred writes
+ *          queued on this array's chunks (ParallelSupportCommon, shared with the
+ *          two other variants); the serial specialisation is an empty class
+ *          whose flush is a no-op. FastBlockSupport<Derived,
+ *          use_fast_block_compression> carries the fast-block compression pass,
+ *          whose gate is stricter than use_openmp.
  *
- *          ParallelSupport<Derived, use_openmp> gathers the four: the OpenMP
- *          specialisation carries them unchanged, the serial one is an empty
- *          class (no member, zero bytes via the empty-base optimisation) whose
- *          verbs are no-ops the optimiser deletes — except clear_in_par(), which
- *          keeps the serial fallback it already had (Derived::clear()).
+ *          The mixin also held clear_in_par(), an in-parallel teardown nothing
+ *          called, with its per-thread "async reset" registries; both are gone.
  *
- *          The mixin is CRTP-generic, but only ArrayChunk uses it: the 2/2A
- *          variants get the same members from ArrayChunk2Base, whose bodies are
- *          the same shape. Their flush_pending_deferred_ops() is in fact a
- *          byte-identical duplicate of the one here.
- *
- * @see array_chunk_parallel_inline.h for the bodies
- * @see array_chunk_dirty_bitset.h for the same split applied to the dirty bitset
- * @see array_chunk_rechunk.h for the same split applied to the re-chunk algorithm
+ * @see array_chunk_parallel_inline.h for the body
+ * @see array_chunk_parallel_common.h for the shared part
  */
-
-#include <vector>
 
 #include "chunk/config.h"
 #include "chunk/chunk_traits.h"
@@ -79,65 +58,22 @@ class ParallelSupport;
 
 // ── OpenMP build: the real parallel surface ──────────────────────────────────
 /**
- * @brief OpenMP specialisation: the teardown, the registries and the flush.
+ * @brief OpenMP specialisation: the deferred-op flush.
  * @copydetails ParallelSupport
  */
 template <typename Derived>
 class ParallelSupport<Derived, true> : public ParallelSupportCommon<Derived>
 {
-  public:
-    using Common       = ParallelSupportCommon<Derived>;
-    using Traits       = Common::Traits;       ///< Traits specialisation of the concrete array.
-    using value_type   = Common::value_type;   ///< Stored element type.
-    using chunk_type   = Common::chunk_type;   ///< Chunk type held in the array's chunk_list.
-    using manager_type = Common::manager_type; ///< Per-type manager owning the free-lists.
-    using entry_type   = Common::ChunkEntry;   ///< Collected entry: the chunk alone (the index is unused here).
-
-    /**
-     * @brief Reserve room in thread @p thr_rank's block free-list for @p nb buffers.
-     * @param thr_rank the calling thread's rank
-     * @param nb number of buffers about to be parked there
-     * @details Growth is amortised (5*nb) because a teardown pass parks its
-     *          whole batch one buffer at a time.
-     */
-
-    /**
-     * @brief In-parallel teardown: compress every written chunk back to constant.
-     *
-     * @details Called from inside a parallel region. Each thread takes its share
-     *          of the chunk list (`omp for ... nowait`), zeroes the buffers it
-     *          owns and parks them in its own free-list. What happens to the
-     *          array's size/geometry afterwards depends on @p opt_chunk_list_size.
-     *
-     * @param opt_chunk_list_size one of ChunkDef::reset_list_size (barrier, then
-     *        reset m_size and nb_chunk), ChunkDef::async_reset_list_size (park
-     *        chunk_list / nb_chunk in the per-thread registries below for a later
-     *        reset, no barrier), or anything else (barrier, then reset nb_chunk).
-     */
-    void clear_in_par(int opt_chunk_list_size);
-
-    // The async-reset registries, the CRTP self() down-cast and the shared body
-    // of clear_in_par() all come from ParallelSupportCommon<Derived>. The
-    // registries stay per-variant: the base is templated on Derived, so each
-    // array type instantiates its own statics, exactly as when every mixin
-    // declared its own.
+    // flush_pending_deferred_ops() and self() come from ParallelSupportCommon.
 };
 
 // ── Serial build: nothing to parallelise ─────────────────────────────────────
 /**
- * @brief Serial specialisation: the same verbs, inert, and no registries at all.
- *
- * @details The two registries are gone rather than left empty — they were
- *          already compiled out in a serial build, and their only reader
- *          (clear_in_par's async_reset_list_size branch) is gone with them.
- *          clear_in_par() falls back to a plain clear().
+ * @brief Serial specialisation: the same verb, inert.
  */
 template <typename Derived>
 class ParallelSupport<Derived, false> : public ParallelSupportCommonSerial<Derived>
 {
-  public:
-    // clear_in_par(), move_list_block_free_tmp() and self() come from
-    // ParallelSupportCommonSerial<Derived>.
 };
 
 /**

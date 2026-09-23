@@ -1,0 +1,279 @@
+/*
+ * Copyright 2024-2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// ============================================================================
+// swap() / move-assignment harness. Variant-agnostic: tests chunk / chunk2 /
+// chunk2a depending on the compile-time macro (CHUNK / CHUNK2 / CHUNK2A), like
+// the other harnesses here.
+// ============================================================================
+//
+// Both operations exchange chunk lists in O(1), and the chunks are described
+// by per-array state kept elsewhere: the proxies' tables indexed by num_tab
+// (constant types, Chunk2A's per-chunk second value, compression candidates)
+// and the registry mapping the array's address to num_tab (Chunk2: to its
+// second-value tuple). They used to move the chunks alone, so each array read
+// the other's metadata -- a Chunk2A chunk folded to its second value came back
+// as the OTHER array's second value -- and the move left the source with
+// nb_chunk over an empty list.
+//
+// Two arrays with different second values, filled by whole chunks (first
+// constant, second value, data), compressed, then:
+//   swap  -- each reads the other's values, before and after a new compression
+//            pass and a rewrite;
+//   move  -- the target reads the source's values; the source is empty and
+//            takes a resize, writes and a compression pass.
+//
+// Exit 0 = every check holds. Any thread count (the tests run it at 1 and 8).
+
+#include <cstdio>
+#include <cstdlib>
+#include <type_traits>
+#include <utility>
+#include <unistd.h>
+
+#include "chunk/chunk_traits.h"
+#include "chunk/array_chunk.h"
+#include "chunk/array_chunk2.h"
+#include "chunk/array_chunk2A.h"
+#include "chunk/param_chunk.h"
+#include "chunk/chunk_std.h"                  // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"
+#include "chunk/PMP_CHUNK.h"
+#include "chunk/manage_ompt.h"
+
+int __mem_page_size = 0;
+
+using namespace shrink_array;
+
+namespace
+{
+
+static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a,
+              "swap_move_validation must be built with CHUNK, CHUNK2 or CHUNK2A");
+
+template <typename T>
+using Array = std::conditional_t<chunk_config::use_chunk2a, ArrayChunk2A<T>,
+              std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+
+constexpr const char* variant_name()
+{
+    if constexpr (chunk_config::use_chunk2a)
+        return "chunk2a";
+    else if constexpr (chunk_config::use_chunk2)
+        return "chunk2";
+    else
+        return "chunk";
+}
+
+void begin_phase()
+{
+    if constexpr (build_config::has_not_ompt)
+        shrink_array::begin_parallel_phase();
+}
+
+void end_phase()
+{
+    if constexpr (build_config::has_not_ompt)
+        shrink_array::finalize_parallel_phase();
+}
+
+template <typename Arr, typename Val>
+void maybe_set_second_value(Arr& a, const Val& v)
+{
+    if constexpr (requires(Arr x) { x.set_second_value(v); })
+        a.set_second_value(v);
+}
+
+template <typename Arr>
+void compress_in_region(Arr& a)
+{
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp single
+        a.compress();
+    }
+    end_phase();
+}
+
+/// A pattern by whole chunks: first constant, second value @p sv, data.
+struct Pattern
+{
+    double sv;   ///< this array's second value
+    double base; ///< offset of its data chunks
+    long   S;    ///< chunk size
+
+    [[nodiscard]] double at(long i) const
+    {
+        switch ((i / S) % 3)
+        {
+        case 0:
+            return 0.0;
+        case 1:
+            return sv;
+        default:
+            return base + static_cast<double>(i % 101);
+        }
+    }
+};
+
+template <typename Arr>
+void fill(Arr& a, const Pattern& p, long n)
+{
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for schedule(static)
+        for (long i = 0; i < n; ++i)
+            a[static_cast<int>(i)] = p.at(i);
+    }
+    end_phase();
+}
+
+template <typename Arr>
+int verify(const char* step, const char* name, const Arr& a, const Pattern& p, long n)
+{
+    int bad = 0;
+    if (static_cast<long>(a.size()) != n)
+    {
+        std::printf("[%s/%s] FAIL %s: size() = %ld, expected %ld\n", variant_name(), step, name,
+                    static_cast<long>(a.size()), n);
+        return 1;
+    }
+    for (long i = 0; i < n; ++i)
+    {
+        const double got  = a[static_cast<int>(i)];
+        const double want = p.at(i);
+        if (got != want)
+        {
+            if (bad < 5)
+                std::printf("[%s/%s] FAIL %s[%ld] = %g, expected %g (chunk %ld)\n", variant_name(), step, name, i, got,
+                            want, i / p.S);
+            ++bad;
+        }
+    }
+    return bad;
+}
+
+int check_swap()
+{
+    const char*   step = "swap";
+    Array<double> a;
+    Array<double> b;
+    const long    S = static_cast<long>(a.chunk_size());
+    const long    N = 30 * S + 11;
+    a.resize(static_cast<int>(N));
+    b.resize(static_cast<int>(N));
+    const Pattern pa{2.0, 10.0, S};
+    const Pattern pb{5.0, 500.0, S};
+    maybe_set_second_value(a, pa.sv);
+    maybe_set_second_value(b, pb.sv);
+    fill(a, pa, N);
+    fill(b, pb, N);
+    compress_in_region(a);
+    compress_in_region(b);
+
+    int bad = verify(step, "a (before)", std::as_const(a), pa, N) + verify(step, "b (before)", std::as_const(b), pb, N);
+
+    a.swap(b);
+    bad += verify(step, "a (swapped)", std::as_const(a), pb, N) + verify(step, "b (swapped)", std::as_const(b), pa, N);
+
+    // The exchanged metadata must keep working: a pass, a rewrite, a pass.
+    compress_in_region(a);
+    compress_in_region(b);
+    bad += verify(step, "a (compressed)", std::as_const(a), pb, N) +
+           verify(step, "b (compressed)", std::as_const(b), pa, N);
+    const Pattern pb2{pb.sv, 900.0, S};
+    const Pattern pa2{pa.sv, 90.0, S};
+    fill(a, pb2, N);
+    fill(b, pa2, N);
+    compress_in_region(a);
+    compress_in_region(b);
+    bad += verify(step, "a (rewritten)", std::as_const(a), pb2, N) +
+           verify(step, "b (rewritten)", std::as_const(b), pa2, N);
+
+    if (!bad)
+        std::printf("[%s/%s] OK: N=%ld, second values %g/%g exchanged with the chunks, compressed and rewritten\n",
+                    variant_name(), step, N, pa.sv, pb.sv);
+    return bad ? 1 : 0;
+}
+
+int check_move()
+{
+    const char*   step = "move";
+    Array<double> src;
+    Array<double> dst;
+    const long    S = static_cast<long>(src.chunk_size());
+    const long    N = 25 * S + 3;
+    const long    M = 12 * S + 5;
+    src.resize(static_cast<int>(N));
+    dst.resize(static_cast<int>(M));
+    const Pattern ps{3.0, 30.0, S};
+    const Pattern pd{7.0, 700.0, S};
+    maybe_set_second_value(src, ps.sv);
+    maybe_set_second_value(dst, pd.sv);
+    fill(src, ps, N);
+    fill(dst, pd, M);
+    compress_in_region(src);
+    compress_in_region(dst);
+
+    dst = std::move(src);
+
+    int bad = verify(step, "dst (moved into)", std::as_const(dst), ps, N);
+    // Reading the moved-from array is the point: the move-assignment's
+    // contract leaves it empty and valid, and that is what is checked here.
+    if (!src.empty() || src.chunk_count() != 0)
+    {
+        std::printf("[%s/%s] FAIL source after move: size() = %ld, chunk_count() = %d, expected 0 and 0\n",
+                    variant_name(), step, static_cast<long>(src.size()), src.chunk_count());
+        ++bad;
+    }
+    compress_in_region(dst);
+    bad += verify(step, "dst (compressed)", std::as_const(dst), ps, N);
+
+    // The moved-from array is empty, not broken.
+    const Pattern pr{pd.sv, 800.0, S};
+    maybe_set_second_value(src, pr.sv);
+    src.resize(static_cast<int>(M));
+    fill(src, pr, M);
+    compress_in_region(src);
+    bad += verify(step, "src (reused)", std::as_const(src), pr, M);
+    bad += verify(step, "dst (untouched)", std::as_const(dst), ps, N);
+
+    if (!bad)
+        std::printf("[%s/%s] OK: N=%ld moved over M=%ld, the source reused\n", variant_name(), step, N, M);
+    return bad ? 1 : 0;
+}
+
+} // namespace
+
+int main()
+{
+    __mem_page_size = getpagesize();
+    ParamChunk::init_indexes(true);
+
+    std::printf("=== swap_move_validation [variant = %s]  threads=%d ===\n", variant_name(), CHUNK_PMP_MAX_THREADS);
+
+    int fails = 0;
+    fails += check_swap();
+    fails += check_move();
+
+    release_chunk_pools();
+    destroy_block_chunk();
+
+    std::printf("\n[%s] %s\n", variant_name(), fails ? "=== SWAP/MOVE FAILED ===" : "=== SWAP/MOVE OK ===");
+    return fails ? 1 : 0;
+}

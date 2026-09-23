@@ -206,17 +206,17 @@ void memory_consumption(const std::string& msg)
 // -----------------------------------------------------------------------------
 Int linear_correlation(Int i, Int sz, Int sz1)
 {
-    return static_cast<Int>((static_cast<double>(sz1) / sz) * i);
+    return static_cast<Int>((static_cast<double>(sz1) / static_cast<double>(sz)) * static_cast<double>(i));
 }
 
 Int exponential_correlation(Int i, Int sz, Int sz1, double p)
 {
-    return static_cast<Int>(sz1 * pow(static_cast<double>(i) / sz, p));
+    return static_cast<Int>(static_cast<double>(sz1) * pow(static_cast<double>(i) / static_cast<double>(sz), p));
 }
 
 Int interpolation(Int i, Int sz, Int sz1)
 {
-    return static_cast<Int>(sz1 * sqrt(static_cast<double>(i) / sz));
+    return static_cast<Int>(static_cast<double>(sz1) * sqrt(static_cast<double>(i) / static_cast<double>(sz)));
 }
 
 // -----------------------------------------------------------------------------

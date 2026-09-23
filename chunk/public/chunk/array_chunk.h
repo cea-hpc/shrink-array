@@ -72,9 +72,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     // hook call through the CRTP self() would see two base subobjects and be
     // ambiguous. Naming them here makes them members of ArrayChunk, which hides
     // both bases' versions.
-    using Parallel::clear_in_par;
     using Parallel::flush_pending_deferred_ops;
-    using Parallel::move_list_block_free_tmp;
 
     using Hooks::rechunk_drain_reuse_list;
     using Hooks::rechunk_drop_candidates;
@@ -151,33 +149,44 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     /// @param sz element count to allocate for
     void rebuild_storage(ind_type sz);
 
-    ArrayChunk& operator=(ArrayChunk&& other) noexcept
+    /**
+     * @brief Move-assign: this array's own contents are released (clear()),
+     *        then it takes @p other's -- chunks, geometry and identity, by the
+     *        same exchange as swap(); @p other is left empty and valid.
+     * @details It used to steal @p other's chunk list and nothing else: this
+     *          array's old chunks were destroyed with their buffers still
+     *          queued as compression candidates, the moved chunks kept
+     *          @p other's metadata rows (num_tab), and @p other kept its
+     *          nb_chunk over an empty list. Sequential context, as clear().
+     * @throws std::bad_alloc from clear() -- hence not noexcept.
+     */
+    ArrayChunk& operator=(ArrayChunk&& other)
     {
-        chunk_list = (std::move(other.chunk_list));
-
-        nb_chunk = other.nb_chunk;
-        m_size   = other.m_size;
-
+        if (this != &other)
+        {
+            clear();
+            this->swap_storage_and_identity(other);
+        }
         return *this;
     }
 
     /// @brief Has the chunk holding element @p i been materialised?
     [[nodiscard]] bool written(ind_type i) const noexcept
     {
-        return chunk_list[i >> size_policy_.decalage()].written();
+        return chunk_list[this->chunk_index_of(i)].written();
     }
 
     /// @brief Materialise the chunk holding element @p i if it is still
     ///        compressed; a no-op otherwise.
     void alloc_chunk(ind_type i) noexcept
     {
-        chunk_list[i >> size_policy_.decalage()].alloc_chunk();
+        chunk_list[this->chunk_index_of(i)].alloc_chunk();
     }
 
     /// @brief alloc_chunk(), taking the buffer from rank @p thr_rank's pool.
     void alloc_chunk(ind_type i, int thr_rank) noexcept
     {
-        chunk_list[i >> size_policy_.decalage()].alloc_chunk(thr_rank);
+        chunk_list[this->chunk_index_of(i)].alloc_chunk(thr_rank);
     }
 
     // make_block_compression() comes from FastBlockSupport (a no-op outside
@@ -246,6 +255,18 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     {
         return chunk_list;
     }
+
+  private:
+    friend ArrayChunkBase<ArrayChunk<T, ind_type>>; // swap_identity()
+
+    /// @brief The identity step of swap(): num_tab and the registry entry, so
+    ///        the per-num_tab tables follow the chunks.
+    void swap_identity(ArrayChunk& other)
+    {
+        using std::swap;
+        swap(this->num_tab, other.num_tab);
+        Proxy<T>::share_info_array.swap_keys(this->registry_key(), other.registry_key());
+    }
 };
 
 } // namespace shrink_array
@@ -256,6 +277,6 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
 #include "chunk/internal/array_chunk_inline.h"
 
 // Bodies of the two mode-specific mixins. After array_chunk_inline.h, so their
-// CRTP self() sees a complete ArrayChunk (the serial clear_in_par calls clear()).
+// CRTP self() sees a complete ArrayChunk.
 #include "chunk/internal/array_chunk_parallel_inline.h"
 #include "chunk/internal/array_chunk_rechunk_hooks_inline.h"

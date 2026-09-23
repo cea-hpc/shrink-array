@@ -206,7 +206,37 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     ind_type m_size; ///< Number of elements exposed by size().
 
+    /**
+     * @name Index splitting
+     * A global element index is an ind_type (int or long); the chunk it falls
+     * in and its offset there are ints -- nb_chunk, the per-chunk tables and the
+     * chunks' own offsets are int, which holds while size() < INT_MAX *
+     * chunk_size(). The narrowing is written here, once, rather than implied at
+     * every `const int c = i >> ...`.
+     * @{
+     */
+    /// @brief The chunk holding element @p i: `i >> chunk_decalage()`.
+    [[nodiscard]] int chunk_index_of(ind_type i) const noexcept
+    {
+        return static_cast<int>(i >> size_policy_.decalage());
+    }
+    /// @brief Element @p i's offset inside its chunk: `i & chunk_modulo()`.
+    [[nodiscard]] int offset_in_chunk(ind_type i) const noexcept
+    {
+        return static_cast<int>(i & size_policy_.modulo());
+    }
+    /// @brief Chunks allocated for @p n elements: n / chunk_size() + 1 (the last
+    ///        chunk is never full -- see capacity()).
+    [[nodiscard]] int chunks_for(ind_type n) const noexcept
+    {
+        return chunk_index_of(n) + 1;
+    }
+    /** @} */
+
     /// @brief Installs the core's way back to rechunk_to() (rechunk_erased).
+    /// @note Protected, not private with `friend Derived`: Chunk2 and Chunk2A
+    ///       reach this base through ArrayChunk2Base<Derived>, which has to
+    ///       construct it too.
     ArrayChunkBase() noexcept
     {
         this->rechunk_fn_ = &rechunk_thunk;
@@ -269,7 +299,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      */
     [[nodiscard]] T* print_adr(ind_type i) const noexcept
     {
-        return chunk_list[i >> size_policy_.decalage()].print_adr(i & size_policy_.modulo());
+        return chunk_list[chunk_index_of(i)].print_adr(offset_in_chunk(i));
     }
 
     /**
@@ -706,15 +736,30 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /**
      * @brief swap(): O(1) exchange of two containers.
      *
-     * @details The container's whole state is the chunk list + geometry + size +
-     *          dirty bitset, all members swapped wholesale. No element moves, no
-     *          gate interaction.
+     * @details No element moves: the chunk lists are exchanged, and with them
+     *          everything that describes those chunks. The per-array tables of
+     *          the proxies (constant types, Chunk2A's per-chunk second values,
+     *          the compression candidates) are indexed by num_tab, and the
+     *          registries map the array's address to it -- so the identity is
+     *          exchanged too, as rechunk_to() does, and the metadata travel
+     *          with their chunks. So do the slab-affinity key (the buffers were
+     *          drawn under it) and the dirty bitset. It used to exchange the
+     *          chunks alone: each array then read the other's metadata rows
+     *          (Chunk2A: a chunk folded to its second value read the other
+     *          array's), and "swap(nb_tab, other.nb_tab)" swapped the static
+     *          counter with itself.
+     *
+     *          Sequential context: the deferred writes of both arrays are
+     *          drained first, since they carry the array they were queued on.
      *
      * @param other the container to exchange state with
+     * @throws std::bad_alloc from the drain -- hence not noexcept, unlike
+     *         std::vector::swap: the exchange is O(1), the bookkeeping around
+     *         it is not free.
      * @pre Both operands must share chunk geometry (enforced under check; with
      *      StaticChunkSize this is always true).
      */
-    void swap(Derived& other) noexcept
+    void swap(Derived& other)
     {
         if constexpr (build_config::any_check)
         {
@@ -722,14 +767,34 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
                 INVARIANT_FAILED("ArrayChunk::swap: mismatched chunk geometry ({} vs {})", size_policy_.size(),
                                  other.size_policy_.size());
         }
+        swap_storage_and_identity(other);
+    }
+
+  protected:
+    /**
+     * @brief The exchange behind swap() and the derived move-assignments:
+     *        storage, geometry, affinity key, dirty bitset, then the identity
+     *        (Derived::swap_identity()). No geometry precondition -- the
+     *        geometry is exchanged with the chunks, as rechunk_to() does.
+     */
+    void swap_storage_and_identity(Derived& other)
+    {
+        if (&derived() == &other)
+            return;
+        derived().flush_pending_deferred_ops(/*force=*/true);
+        other.flush_pending_deferred_ops(/*force=*/true);
+
         using std::swap;
         swap(chunk_list, other.chunk_list);
+        swap(alloc_key_, other.alloc_key_);
         swap_dirty_bitset(other);
         swap(m_size, other.m_size);
         swap(nb_chunk, other.nb_chunk);
-        swap(nb_tab, other.nb_tab);
         swap(size_policy_, other.size_policy_);
+        derived().swap_identity(other);
     }
+
+  public:
 
     /**
      * @brief Centralized synchronization logic.
@@ -828,8 +893,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      */
     SA_FLATTEN FORCE_INLINE T operator[](ind_type i) const noexcept
     {
-        const int num_chunk = i >> size_policy_.decalage();
-        const int num       = i & size_policy_.modulo();
+        const int num_chunk = chunk_index_of(i);
+        const int num       = offset_in_chunk(i);
         // Loop index is always in range; lets the compiler drop bounds/negative
         // checks. Side-effect free (C++23 [[assume]] when available, else no-op).
         // num = i & size_policy_.modulo()  =>  0 <= num <= static_cast<int>(size_policy_.modulo()) by construction.
@@ -851,9 +916,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      */
     proxy_type operator[](ind_type i) noexcept
     {
-        const int         num_chunk = i >> size_policy_.decalage();
+        const int         num_chunk = chunk_index_of(i);
         auto&             chunk_t   = chunk_list[num_chunk];
-        const int         num       = i & size_policy_.modulo();
+        const int         num       = offset_in_chunk(i);
         const proxy_type& val       = chunk_t[num];
 
         // Arm ptr_on_array / num_chunk in ALL modes, not only under fast block

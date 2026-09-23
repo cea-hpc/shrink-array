@@ -18,6 +18,7 @@
 /// @brief The reference-file verification pass. See bench_phases.h.
 
 #include <complex>
+#include <cstdint> // std::uint64_t
 #include <iostream>
 #include <string>
 
@@ -56,7 +57,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
     [[maybe_unused]] const bool write_trace = io.write_trace;
 
     auto lbd_check =
-        [&](Int kk, const std::string& tab_name, const auto& tab, u_int64_t checksum, bool special_writing = false)
+        [&](Int kk, const std::string& tab_name, const auto& tab, std::uint64_t checksum, bool special_writing = false)
     {
         if (no_io)
         {
@@ -88,7 +89,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 
         if CONSTEXPR (io_res)
         {
-            u_int64_t tab1_ch = 0, tab2_ch = 0, tab3_ch = 0, tab4_ch = 0, tab5_ch = 0, tab_int_ch = 0, tab_bool_ch = 0,
+            std::uint64_t tab1_ch = 0, tab2_ch = 0, tab3_ch = 0, tab4_ch = 0, tab5_ch = 0, tab_int_ch = 0, tab_bool_ch = 0,
                       tab_complex_ch = 0, tab_float_ch = 0, tab_char_ch = 0, tab_short_ch = 0, tab_long_ch = 0,
                       tab_ulong_ch = 0, tab_quant_ch = 0, tab_point_ch = 0, tab_cell_ch = 0;
 

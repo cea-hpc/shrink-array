@@ -17,6 +17,7 @@
 /// @file bench_stats.cpp
 /// @brief The value census and filling-rate report. See bench_phases.h.
 
+#include <algorithm> // std::max (name_padding)
 #include <complex>
 #include <iomanip>
 #include <iostream>
@@ -116,7 +117,8 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         std::cout << std::fixed << std::setprecision(2);
 
         constexpr Int name_width   = 20;
-        const Int     name_padding = (name_width - name.length()) / 2;
+        // Signed: a name longer than the width pads by 0, not by (size_t)-1 / 2.
+        const Int     name_padding = std::max<Int>(0, (name_width - static_cast<Int>(name.length())) / 2);
         std::cout << std::setw(name_padding) << "" << "\nstatistics " << name << "\n";
 
         constexpr Int label_width = 22;

@@ -98,7 +98,7 @@ static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, UInt c
 template <typename VEC>
 void write_binary_file(const std::string& filename,
                        const VEC&         data,
-                       u_int64_t          checksum,
+                       std::uint64_t          checksum,
                        bool               special_writing,
                        const char*        no_compress)
 {
@@ -202,7 +202,7 @@ void read_check_binary_file(Int                ind,
                             const std::string& tab_name,
                             const std::string& filename,
                             const VEC&         data_check,
-                            u_int64_t          lchs,
+                            std::uint64_t          lchs,
                             const char*        no_compress,
                             bool               read_trace,
                             bool               write_trace)

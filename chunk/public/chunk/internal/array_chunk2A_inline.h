@@ -65,7 +65,7 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
     {
         if (this->size_policy_.size())
         {
-            nb_chunk = (sz >> this->size_policy_.decalage()) + 1;
+            nb_chunk = this->chunks_for(sz);
         }
         else if (sz && !this->size_policy_.size())
         {
@@ -615,7 +615,8 @@ void ArrayChunk2A<T, ind_type>::compress_int()
             int shown = 0;
             for (const int ind : tab_nb1)
             {
-                std::cerr << ind << " " << static_cast<ind_type>(ind) * static_cast<ind_type>(this->size_policy_.size()) << "\n";
+                std::cerr << ind << " " << static_cast<ind_type>(ind) * static_cast<ind_type>(this->size_policy_.size())
+                          << "\n";
                 if (++shown >= 10)
                     break;
             }
@@ -641,7 +642,8 @@ void ArrayChunk2A<T, ind_type>::compress_int()
             int shown = 0;
             for (const int ind : tab_nb2)
             {
-                std::cerr << ind << " " << static_cast<ind_type>(ind) * static_cast<ind_type>(this->size_policy_.size()) << "\n";
+                std::cerr << ind << " " << static_cast<ind_type>(ind) * static_cast<ind_type>(this->size_policy_.size())
+                          << "\n";
                 if (++shown >= 10)
                     break;
             }

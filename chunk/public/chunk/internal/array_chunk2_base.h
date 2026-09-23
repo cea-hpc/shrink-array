@@ -54,7 +54,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
      */
     void alloc_chunk(ind_type i)
     {
-        const int num_chunk = i >> this->size_policy_.decalage();
+        const int num_chunk = this->chunk_index_of(i);
 
         // Deliberately NO dirty-marking here. Historical note: this used to
         // call mark_chunk_dirty(i) with the ELEMENT index — an out-of-bounds
@@ -77,7 +77,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
      */
     void alloc_chunk(ind_type i, int thr_rank)
     {
-        const int num_chunk = i >> this->size_policy_.decalage();
+        const int num_chunk = this->chunk_index_of(i);
         // See alloc_chunk(i) above: deliberately no dirty-marking (the old
         // element-index mark was an unobservable OOB write).
         chunk_list[num_chunk].alloc_chunk(derived().get_metadata(i), thr_rank);
@@ -136,7 +136,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
 
         const int old_nb_chunk = nb_chunk;
         m_size                 = newsz;
-        nb_chunk               = newsz / this->size_policy_.size() + 1;
+        nb_chunk               = this->chunks_for(newsz);
 
         if (nb_chunk <= old_nb_chunk)
             return; // Only handling growth here
@@ -192,10 +192,6 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         }
     }
 
-    // move_list_block_free_tmp() comes from ParallelSupportCommon (OpenMP) /
-    // ParallelSupportCommonSerial (no-op), through the variant's ParallelSupport2
-    // / ParallelSupport2A mixin.
-
     // mark_chunk_dirty / is_chunk_dirty are inherited from ArrayChunkBase —
     // the single owner of the dirty-bit verbs (this class used to carry a
     // byte-identical duplicate of mark_chunk_dirty plus a caller-less
@@ -204,7 +200,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     /// @brief Is the chunk holding element @p i compressed to the first value?
     [[nodiscard]] bool is_cst_val1(ind_type i) const noexcept
     {
-        return chunk_list[i >> this->size_policy_.decalage()].is_cst_val1();
+        return chunk_list[this->chunk_index_of(i)].is_cst_val1();
     }
 };
 

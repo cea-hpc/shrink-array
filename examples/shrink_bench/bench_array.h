@@ -45,12 +45,12 @@ namespace shrink_array
 // indexes exactly as wide as the bench computes -- a 64-bit bench on a 32-bit
 // array would overflow inside the library instead of inside main().
 template <typename T>
-using ActiveArray =
-    std::conditional_t<chunk_config::use_chunk2a,
-                       ArrayChunk2A<T, Int>,
-                       std::conditional_t<chunk_config::use_chunk2,
-                                          ArrayChunk2<T, Int>,
-                                          std::conditional_t<chunk_config::use_chunk, ArrayChunk<T, Int>, std::vector<T>>>>;
+using ActiveArray = std::conditional_t<
+    chunk_config::use_chunk2a,
+    ArrayChunk2A<T, Int>,
+    std::conditional_t<chunk_config::use_chunk2,
+                       ArrayChunk2<T, Int>,
+                       std::conditional_t<chunk_config::use_chunk, ArrayChunk<T, Int>, std::vector<T>>>>;
 
 
 // Runtime chunk size for CHUNK_DYNAMIC builds. Seeded into g_active_chunk_size

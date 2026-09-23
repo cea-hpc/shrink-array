@@ -32,8 +32,6 @@ class Chunk2A;
 
 template <typename ChunkType>
 class ArrayChunkCore;
-template <typename ChunkType>
-struct AsyncResetRegistry; // array_chunk_parallel_common.h
 
 /**
  * @brief What a proxy of @p ChunkType may cast its type-erased ptr_on_array to.

@@ -124,10 +124,6 @@ struct ManagerChunkParallelInterface<true>
 
     /// @brief Size the per-rank free-lists of released buffers to the team.
     virtual void resize_all_list_block_free_thr() = 0;
-    /// @brief Size the per-rank registry of chunk lists awaiting a deferred reset.
-    virtual void resize_list_chunk_list_thr() = 0;
-    /// @brief Size the per-rank registry of chunk counters awaiting a deferred reset.
-    virtual void resize_list_nb_chunk_thr() = 0;
     /// @brief Apply this type's pending deferred write ops, repeatedly until a
     ///        pass changes nothing (a replay can enqueue another op).
     /// @param in_parallel  True when called from inside a parallel region.
@@ -145,9 +141,6 @@ struct ManagerChunkParallelInterface<true>
     /// @brief Redistribute released buffers across the per-thread free-lists
     ///        (a thread freeing far more than it allocates would hoard them).
     virtual void load_balance_list_block_free() = 0;
-
-    /// @brief Reserve room for @p sz entries in the async-reset registries.
-    virtual void reserve_nb_chunk_int(int sz) = 0;
 
     // --- teardown of the reuse lists, in phases (see manager_chunk_inline.h) ---
     // AllTypeChunk::clear_list_block_free_thr() drives them: prepare() outside
@@ -296,8 +289,6 @@ struct ManagerChunkParallelImpl<CHUNK_T, T, true> : public virtual ManagerChunkP
     void alloc_chunk_allocator_thr() override;
 
     void resize_all_list_block_free_thr() override;
-    void resize_list_chunk_list_thr() override;
-    void resize_list_nb_chunk_thr() override;
     void load_balance_list_block_free() override;
     void flush_all_deferred(bool in_parallel, bool& have_flushed) override;
     void destroy_after_flush(bool in_parallel) override;
@@ -310,7 +301,6 @@ struct ManagerChunkParallelImpl<CHUNK_T, T, true> : public virtual ManagerChunkP
     void               clear_list_block_free_sort(int bucket) override;
     void               clear_list_block_free_dedup(int slice, int nslices) override;
     void               clear_list_block_free_thr(int bucket) override;
-    void               reserve_nb_chunk_int(int sz) override;
 };
 
 /// @brief Serial builds: a single allocator, and nothing per-thread to manage.

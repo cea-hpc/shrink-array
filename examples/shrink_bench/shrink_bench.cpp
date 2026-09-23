@@ -19,6 +19,7 @@
 #include <cfenv>
 #include <chrono>
 #include <cmath> // std::fmod (bound stress workload)
+#include <cstdio> // std::fprintf
 #include <cstdlib>
 #include <dlfcn.h>
 #include <iomanip>

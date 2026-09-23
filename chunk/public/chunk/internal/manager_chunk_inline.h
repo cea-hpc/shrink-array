@@ -278,33 +278,6 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::resize_all_list_block_free_thr(
 }
 
 /**
- * @brief Sizes the per-rank registry of chunk lists awaiting a deferred reset.
- * @note AsyncResetRegistry<CHUNK_T<T>>: the one the arrays of this chunk type
- *       fill, whatever their index type.
- */
-template <template <typename> typename CHUNK_T, typename T>
-void ManagerChunkParallelImpl<CHUNK_T, T, true>::resize_list_chunk_list_thr()
-{
-    using mgr        = ManagerChunk<CHUNK_T, T>;
-    const auto& self = static_cast<const mgr&>(*this);
-
-    AsyncResetRegistry<CHUNK_T<T>>::get_list_chunk_list().resize(self.max_thr);
-}
-
-/**
- * @brief Sizes the per-rank registry of chunk counters awaiting a deferred reset.
- * @see resize_list_chunk_list_thr, its twin for the chunk lists.
- */
-template <template <typename> typename CHUNK_T, typename T>
-void ManagerChunkParallelImpl<CHUNK_T, T, true>::resize_list_nb_chunk_thr()
-{
-    using mgr        = ManagerChunk<CHUNK_T, T>;
-    const auto& self = static_cast<const mgr&>(*this);
-
-    AsyncResetRegistry<CHUNK_T<T>>::get_list_nb_chunk().resize(self.max_thr);
-}
-
-/**
  * @brief Release the deferred-op storage once its ops have been applied.
  *
  * Destroys the per-thread op maps and clears every array's dirty bitset, so the
@@ -839,8 +812,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_screen(in
         lbf.clear();
     }
 
-    // Also drain the SIZED reuse free-lists. The array teardown (clear_core /
-    // clear_in_par) parks OLD/live-geometry buffers here, keyed by
+    // Also drain the SIZED reuse free-lists. The array teardown (clear_core)
+    // parks OLD/live-geometry buffers here, keyed by
     // size_policy_.size(). drain_reuse_list_for_size releases a given size at
     // each rechunk, but at PROGRAM END no rechunk runs, so the FINAL
     // geometry's buffers sit in this map unfreed -> ASan direct-leak of one
@@ -1081,42 +1054,6 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_thr(int b
 }
 
 /**
- * @brief Reserve room for @p sz entries in the async-reset registries.
- *
- * @param sz Expected number of arrays to be registered for a deferred reset.
- * @note Reserves for the calling rank when already inside a parallel region,
- *       and for every rank otherwise.
- */
-template <template <typename> typename CHUNK_T, typename T>
-void ManagerChunkParallelImpl<CHUNK_T, T, true>::reserve_nb_chunk_int(int sz)
-{
-    using mgr        = ManagerChunk<CHUNK_T, T>;
-    const auto& self = static_cast<const mgr&>(*this);
-
-    auto lbd = [&](int thr_rank)
-    {
-        auto& lbf = AsyncResetRegistry<CHUNK_T<T>>::get_list_chunk_list(thr_rank);
-        lbf.reserve(sz);
-
-        auto& lbi = AsyncResetRegistry<CHUNK_T<T>>::get_list_nb_chunk(thr_rank);
-        lbi.reserve(sz);
-    };
-
-    if (CHUNK_PMP_IN_PARALLEL_REGION)
-    {
-        const int thr_rank = CHUNK_PMP_THREAD_RANK;
-        lbd(thr_rank);
-    }
-    else
-    {
-        for (int thr_rank = 0; thr_rank < self.max_thr; ++thr_rank)
-        {
-            lbd(thr_rank);
-        }
-    }
-}
-
-/**
  * @brief Destroy the per-thread free-list containers themselves (teardown).
  * @note Comes after clear_list_block_free_thr(), which empties them: this drops the
  *       containers, not their contents.
@@ -1134,9 +1071,6 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::delete_list_block_chunk_free_it
     {
         CHUNK_T<T>::manager_chunk::get_list_block_free_thr(0).clear();
     }
-
-    AsyncResetRegistry<CHUNK_T<T>>::list_chunk_list.clear();
-    AsyncResetRegistry<CHUNK_T<T>>::list_nb_chunk.clear();
 }
 
 /**

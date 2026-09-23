@@ -26,6 +26,7 @@
 
 #include <algorithm> // std::min (bench_phase_range_mt)
 #include <complex>
+#include <cstddef> // std::size_t (bench_phase_range_mt)
 #include <iostream>
 
 #include "bench_phases.h"

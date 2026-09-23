@@ -33,7 +33,8 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
     // member. See RechunkSupport::rechunk_to for why the drop must happen at the
     // owning geometry.
     if constexpr (chunk_config::use_fast_block_compression)
-        manager_type::remove_from_compress_list_chunk2_by_num_tab(proxy_type::share_info_array.get_num_tab(self().registry_key()));
+        manager_type::remove_from_compress_list_chunk2_by_num_tab(
+            proxy_type::share_info_array.get_num_tab(self().registry_key()));
 }
 
 template <typename Derived>

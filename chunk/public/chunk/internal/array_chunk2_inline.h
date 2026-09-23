@@ -125,7 +125,7 @@ void ArrayChunk2<T, ind_type>::rebuild_storage(ind_type sz)
     {
         if (this->size_policy_.size())
         {
-            nb_chunk = (sz >> this->size_policy_.decalage()) + 1;
+            nb_chunk = this->chunks_for(sz);
 
             if constexpr (chunk_config::use_fast_block_compression)
             {
@@ -704,8 +704,7 @@ void ArrayChunk2<T, ind_type>::clear_core()
                     // clear_list_block_free_thr -> free(): invalid pointer at teardown
                     // (fast-alloc parks instead of svfreeing, so it never bites --
                     // matching the std-alloc-only crash). Storing cst_val1 makes every
-                    // compress path short-circuit. Mirrors clear_in_par
-                    // (array_chunk2_parallel_inline.h) and ArrayChunk2A::clear_core.
+                    // compress path short-circuit. Mirrors ArrayChunk2A::clear_core.
                     if constexpr (is_not_bool)
                         ll_chunk_loc[k]->init_values_cst_val1();
                     else
@@ -962,7 +961,8 @@ void ArrayChunk2<T, ind_type>::compress_int()
             for (int k = 0; k < nb1; ++k)
             {
                 const int ind1 = tab_nb1[k];
-                std::cerr << ind1 << " " << static_cast<ind_type>(ind1) * static_cast<ind_type>(this->size_policy_.size());
+                std::cerr << ind1 << " "
+                          << static_cast<ind_type>(ind1) * static_cast<ind_type>(this->size_policy_.size());
                 // The candidate-list flag exists in fast-block builds only: a
                 // serial build has no such table, indexing it aborted here.
                 if constexpr (chunk_config::use_fast_block_compression)
@@ -1008,7 +1008,8 @@ void ArrayChunk2<T, ind_type>::compress_int()
             for (int k = 0; k < nb2; ++k)
             {
                 const int ind2 = tab_nb2[k];
-                std::cerr << ind2 << " " << static_cast<ind_type>(ind2) * static_cast<ind_type>(this->size_policy_.size());
+                std::cerr << ind2 << " "
+                          << static_cast<ind_type>(ind2) * static_cast<ind_type>(this->size_policy_.size());
                 // The candidate-list flag exists in fast-block builds only: a
                 // serial build has no such table, indexing it aborted here.
                 if constexpr (chunk_config::use_fast_block_compression)

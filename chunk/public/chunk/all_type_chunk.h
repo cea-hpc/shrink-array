@@ -113,10 +113,6 @@ struct AllTypeChunkParallelInterface<Derived, true>
 {
     /// Resizes every manager's per-thread free-block lists to the current thread count.
     void resize_all_list_block_free_thr() const;
-    /// Resizes every manager's per-thread chunk lists to the current thread count.
-    void resize_list_chunk_list_thr() const;
-    /// Resizes every manager's per-thread chunk counters to the current thread count.
-    void resize_list_nb_chunk_thr() const;
 
     /**
      * @brief Releases the buffers freed by a preceding flush, for every type.
@@ -163,12 +159,6 @@ struct AllTypeChunkParallelInterface<Derived, true>
 
     /// Empties the per-thread free-block lists of every type (teardown).
     void clear_list_block_free_thr();
-
-    /**
-     * @brief Reserves room for @p sz chunks in every type's per-thread structures.
-     * @param sz Expected chunk count, used to size the containers up front.
-     */
-    void reserve_nb_chunk_int(int sz);
 
     /// Destroys the per-thread free-block list containers themselves (teardown).
     void delete_list_block_chunk_free_itself() const;
@@ -425,8 +415,8 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>,
 
 
     // load_balance_list_block_free(), need_load_balance_list_block_free(),
-    // clear_list_block_free_thr(), reserve_nb_chunk_int() and
-    // delete_list_block_chunk_free_itself() moved to
+    // clear_list_block_free_thr() and delete_list_block_chunk_free_itself()
+    // moved to
     // AllTypeChunkParallelInterface: they forward to manager virtuals that only
     // ManagerChunkParallelInterface<true> declares.
 };

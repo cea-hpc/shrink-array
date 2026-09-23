@@ -289,8 +289,10 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 if (i > tab_nba1[k])
                 {
                     tab2[i]      = std::cos(double(2 * i));
-                    tab_char[i]  = static_cast<unsigned char>(exponential_correlation(i, sz, std::numeric_limits<char>::max(), 2));
-                    tab_short[i] = static_cast<short>(exponential_correlation(i, sz, std::numeric_limits<short>::max(), 2));
+                    tab_char[i] =
+                        static_cast<unsigned char>(exponential_correlation(i, sz, std::numeric_limits<char>::max(), 2));
+                    tab_short[i] =
+                        static_cast<short>(exponential_correlation(i, sz, std::numeric_limits<short>::max(), 2));
                 }
 
                 if (i > tab_nba2[k])
@@ -331,7 +333,8 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     tab_ulong[i] &= ~0x0FUL;
 
                     tab_float[i] -= 1.5f;
-                    tab_char[i]    = static_cast<unsigned char>(linear_correlation(i, sz, std::numeric_limits<char>::max()));
+                    tab_char[i] =
+                        static_cast<unsigned char>(linear_correlation(i, sz, std::numeric_limits<char>::max()));
                     tab_short[i]   = static_cast<short>(linear_correlation(i, sz, std::numeric_limits<short>::max()));
                     tab_complex[i] = complex_double(tab1[i], tab2[i]);
 
@@ -380,7 +383,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
         const Int beg_loc = start0 + 4 * interval10;
         const Int end_loc = start0 + 5 * interval10;
 
-        const Int beg_loc0 = start0 + 4.8 * interval10;
+        const Int beg_loc0 = static_cast<Int>(static_cast<double>(start0) + 4.8 * static_cast<double>(interval10));
 
         for (Int p = 0; p < 20; ++p)
         {

@@ -70,8 +70,8 @@ bool ArrayChunkBase<Derived>::is_written_at(int j) const noexcept
 template <typename Derived>
 void ArrayChunkBase<Derived>::set_value(ind_type i, in_t<T> v)
 {
-    const int num_chunk = i >> size_policy_.decalage();
-    const int num       = i & size_policy_.modulo();
+    const int num_chunk = chunk_index_of(i);
+    const int num       = offset_in_chunk(i);
 
     auto& chunk_t = chunk_list[num_chunk];
 
@@ -111,8 +111,8 @@ void ArrayChunkBase<Derived>::set_value(ind_type i, in_t<T> v)
 template <typename Derived>
 ArrayChunkBase<Derived>::T ArrayChunkBase<Derived>::operator()(ind_type i) const noexcept
 {
-    const int   num_chunk = i >> size_policy_.decalage();
-    const int   num       = i & size_policy_.modulo();
+    const int   num_chunk = chunk_index_of(i);
+    const int   num       = offset_in_chunk(i);
     const auto& chunk_t   = chunk_list[num_chunk];
 
     sync_chunk(chunk_t, num_chunk, num);
@@ -124,8 +124,8 @@ ArrayChunkBase<Derived>::T ArrayChunkBase<Derived>::operator()(ind_type i) const
 template <typename Derived>
 ArrayChunkBase<Derived>::T& ArrayChunkBase<Derived>::operator()(ind_type i) noexcept
 {
-    const int num_chunk = i >> size_policy_.decalage();
-    const int num       = i & size_policy_.modulo();
+    const int num_chunk = chunk_index_of(i);
+    const int num       = offset_in_chunk(i);
     auto&     chunk_t   = chunk_list[num_chunk];
 
     // 2. Concurrency check

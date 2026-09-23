@@ -16,16 +16,11 @@
  * limitations under the License.
  */
 
-// Body of the shared in-parallel teardown. Split from
+// Body of flush_pending_deferred_ops(). Split from
 // array_chunk_parallel_common.h so the declaration stays light enough to be
-// included next to the container declarations, while the heavy includes below
-// (thread ranks, stats) only reach the three *_parallel_inline.h files.
-#include <vector>
-
+// included next to the container declarations, while the compression manager
+// only reaches the three *_parallel_inline.h files.
 #include "chunk/internal/array_chunk_parallel_common.h"
-#include "chunk/chunk_def.h"           // ChunkDef::reset_list_size / async_reset_list_size
-#include "chunk/PMP_CHUNK.h"           // CHUNK_PMP_THREAD_RANK, get_size_max_tab_omp
-#include "chunk/internal/chunk_stats.h"         // increm_chunk_teardown_clear (CHUNK_STATS)
 #include "chunk/internal/compression_manager.h" // CompressionManager<> in flush_pending_deferred_ops
 
 namespace shrink_array
@@ -62,79 +57,6 @@ void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
                     static_cast<void>(CM::flush_chunk_all_ranks(&arr.chunk_list[j]));
             }
         }
-    }
-}
-
-template <typename Derived>
-template <typename Entry, typename SelectFn, typename ParkFn>
-void ParallelSupportCommon<Derived>::clear_in_par_impl(int opt_chunk_list_size, SelectFn&& select, ParkFn&& park_all)
-{
-    Derived& arr = self();
-
-    if (!arr.nb_chunk)
-        return;
-
-    const int nb_chunk_total = arr.nb_chunk; // loop bound; arr.nb_chunk is reset below
-
-    const int nb_chunk0 = get_size_max_tab_omp(nb_chunk_total);
-
-    // reserve(), NOT a sized construction: the loop below appends with
-    // emplace_back, so sizing the vector first left nb_chunk0 empty entries in
-    // front of the real ones, which the park step then dereferenced.
-    std::vector<Entry> ll_chunk_loc;
-    ll_chunk_loc.reserve(nb_chunk0);
-
-#pragma omp for schedule(static) nowait
-    for (int j = 0; j < nb_chunk_total; ++j)
-    {
-        if (select(arr.chunk_list[j]))
-        {
-            if constexpr (chunk_config::stats)
-            {
-                increm_chunk_teardown_clear<chunk_type>();
-            }
-
-            ll_chunk_loc.emplace_back(&arr.chunk_list[j], j);
-        }
-    }
-
-    const int thr_rank = CHUNK_PMP_THREAD_RANK;
-
-    const int nb = static_cast<int>(ll_chunk_loc.size());
-
-    arr.move_list_block_free_tmp(thr_rank, nb);
-
-    if (nb)
-    {
-        park_all(ll_chunk_loc, thr_rank);
-    }
-
-    if (opt_chunk_list_size == ChunkDef::reset_list_size)
-    {
-#pragma omp barrier
-
-#pragma omp atomic write
-        arr.m_size = 0;
-
-#pragma omp atomic write
-        arr.nb_chunk = 0;
-    }
-    else if (opt_chunk_list_size == ChunkDef::async_reset_list_size)
-    {
-        auto& lbf0 = get_list_chunk_list(thr_rank);
-
-        lbf0.push_back(&arr.chunk_list);
-
-        auto& lbf1 = get_list_nb_chunk(thr_rank);
-
-        lbf1.push_back(&arr.nb_chunk);
-    }
-    else
-    {
-#pragma omp barrier
-
-#pragma omp atomic write
-        arr.nb_chunk = 0;
     }
 }
 

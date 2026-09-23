@@ -207,15 +207,6 @@ bool AllTypeChunk::have_chunk_to_compress_potentially() const
 
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::resize_list_nb_chunk_thr() const
-{
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
-    {
-        elm->resize_list_nb_chunk_thr();
-    }
-}
-
-template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::destroy_after_flush(bool in_parallel)
 {
     for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
@@ -275,15 +266,6 @@ void AllTypeChunkParallelInterface<Derived, true>::resize_all_list_block_free_th
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::resize_list_chunk_list_thr() const
-{
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
-    {
-        elm->resize_list_chunk_list_thr();
-    }
-}
-
-template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::init_manager(ManagerChunkInt& m, int block_size) const
 {
     // The sequence ParamChunk::init_indexes() used to run over the whole
@@ -293,8 +275,6 @@ void AllTypeChunkParallelInterface<Derived, true>::init_manager(ManagerChunkInt&
     // thread model's interface does not declare them.
     typename Derived::manager_int_t& mm = m;
     mm.resize_all_list_block_free_thr();
-    mm.resize_list_chunk_list_thr();
-    mm.resize_list_nb_chunk_thr();
     // std-alloc: the two below are no-ops on the manager.
     mm.alloc_chunk_allocator_thr();
     mm.init_allocators(block_size);
@@ -306,15 +286,6 @@ void AllTypeChunkParallelInterface<Derived, true>::alloc_chunk_allocator_thr() c
     for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
     {
         elm->alloc_chunk_allocator_thr();
-    }
-}
-
-template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::reserve_nb_chunk_int(int sz)
-{
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
-    {
-        elm->reserve_nb_chunk_int(sz);
     }
 }
 
