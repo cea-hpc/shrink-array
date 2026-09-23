@@ -145,7 +145,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // cst_buffer_size (the dynamic-mode ceiling). A chunk wider than that
     // would read those buffers out of bounds, so refuse the re-chunk.
     // Raise CHUNK_DYN_MAX_SIZE if a legitimate geometry needs to be larger.
-    if (new_size > shrink_array::cst_buffer_size)
+    if (new_size > cst_buffer_size)
     {
         if constexpr (build_config::any_check)
         {
@@ -225,7 +225,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // materialising, so a value captured here would already be stale and
     // arbitrary relative to old_size by the time it would be restored --
     // see the restore site for the full rationale.
-    const unsigned int saved_g_active = shrink_array::active_chunk_size();
+    const unsigned int saved_g_active = active_chunk_size();
 
     set_active_chunk_size(new_size);
     set_thread_chunk_size(new_size);
@@ -351,8 +351,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // g_active is unaffected by this: only rechunk_to() ever touches
         // it (via set_active_chunk_size()), never a per-write self-
         // correction, so saved_g_active stays a trustworthy baseline.
-        shrink_array::set_active_chunk_size(saved_g_active);
-        shrink_array::set_thread_chunk_size(old_size);
+        set_active_chunk_size(saved_g_active);
+        set_thread_chunk_size(old_size);
 
         t4_out = t_now();
         r_swap = rss_now();
@@ -412,15 +412,15 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // mixes several arrays' blocks and we make no assumption about ownership.
     if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
     {
-        const unsigned int saved_sz = shrink_array::thread_chunk_size();
-        shrink_array::set_thread_chunk_size(old_size);
+        const unsigned int saved_sz = thread_chunk_size();
+        set_thread_chunk_size(old_size);
         for (int r = 0; r < CHUNK_PMP_MAX_THREADS; ++r)
         {
             if (old_key != 0)
                 chunk_type::get_chunk_allocator(r, old_key).reclaim_empty_slabs_now();
             chunk_type::get_chunk_allocator(r, 0u).reclaim_empty_slabs_now();
         }
-        shrink_array::set_thread_chunk_size(saved_sz);
+        set_thread_chunk_size(saved_sz);
     }
     if (std::getenv("CHUNK_RECHUNK_TRACE") || pool_dbg)
     {
@@ -441,8 +441,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         {
             if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
             {
-                const unsigned int saved = shrink_array::thread_chunk_size();
-                shrink_array::set_thread_chunk_size(old_size);
+                const unsigned int saved = thread_chunk_size();
+                set_thread_chunk_size(old_size);
                 for (int r = 0; r < CHUNK_PMP_MAX_THREADS; ++r)
                 {
                     auto& a = chunk_type::get_chunk_allocator(r, key);
@@ -455,7 +455,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
                                 ++empty;
                         }
                 }
-                shrink_array::set_thread_chunk_size(saved);
+                set_thread_chunk_size(saved);
             }
         };
         std::size_t slabs = 0, live_blocks = 0, empty_slabs = 0;
@@ -644,7 +644,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             increm_chunk_rechunk_rebuilt<chunk_type>();
 
             // read *this at OLD (const operator[] = pure read); TLS is per-thread
-            shrink_array::set_thread_chunk_size(old_size);
+            set_thread_chunk_size(old_size);
             for (ind_type k = 0; k < m; ++k)
                 buf[static_cast<std::size_t>(k)] = static_cast<T>(std::as_const(self())[base + k]);
 
@@ -722,9 +722,9 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // deferred ops, and this lambda runs inside the parallel loop below,
             // where a per-chunk whole-array drain would be both wrong and
             // pointless.
-            shrink_array::set_thread_chunk_size(new_size);
-            shrink_array::copy_range(tmp, static_cast<std::size_t>(base), static_cast<std::size_t>(end), buf.begin(),
-                                     shrink_array::assume_drained);
+            set_thread_chunk_size(new_size);
+            copy_range(tmp, static_cast<std::size_t>(base), static_cast<std::size_t>(end), buf.begin(),
+                                     assume_drained);
 
             // Fold back NOW what was already compressed.
             //
@@ -950,7 +950,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 // home, then give back the slabs they just emptied. Only blocks
                 // already released by clear_st are touched -- the source chunks
                 // the remaining slices still have to read are untouched.
-                shrink_array::set_thread_chunk_size(static_cast<unsigned int>(old_size));
+                set_thread_chunk_size(static_cast<unsigned int>(old_size));
                 self().rechunk_drain_reuse_list(static_cast<unsigned int>(old_size));
                 if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
                 {
@@ -958,7 +958,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                         for (int r = 0; r < CHUNK_PMP_MAX_THREADS; ++r)
                             chunk_type::get_chunk_allocator(r, old_key_refill).reclaim_empty_slabs_now();
                 }
-                shrink_array::set_thread_chunk_size(static_cast<unsigned int>(new_size));
+                set_thread_chunk_size(static_cast<unsigned int>(new_size));
                 if (slice_trace)
                 {
                     const long r = rechunk_detail::rss_mib_now();
@@ -1031,12 +1031,12 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         for (ind_type base = 0; base < n; base += bsz)
         {
             const ind_type m = (n - base) < bsz ? (n - base) : bsz;
-            shrink_array::set_active_chunk_size(old_size);
-            shrink_array::set_thread_chunk_size(old_size);
+            set_active_chunk_size(old_size);
+            set_thread_chunk_size(old_size);
             for (ind_type k = 0; k < m; ++k)
                 buf[static_cast<std::size_t>(k)] = static_cast<T>(self()[base + k]);
-            shrink_array::set_active_chunk_size(new_size);
-            shrink_array::set_thread_chunk_size(new_size);
+            set_active_chunk_size(new_size);
+            set_thread_chunk_size(new_size);
             for (ind_type k = 0; k < m; ++k)
                 tmp[base + k] = static_cast<T>(buf[static_cast<std::size_t>(k)]);
         }

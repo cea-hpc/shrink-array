@@ -396,14 +396,14 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \param inf_array (second_value, ...) tuple describing the target state.
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-    inline void create_value(bool need_set_second_value, const inf_array_t& inf_array, int thr_rank) noexcept;
+     void create_value(bool need_set_second_value, const inf_array_t& inf_array, int thr_rank) noexcept;
 
     /*!
      * \brief Bool specialization of create_value().
      * \param need_set_second_value Whether to also register the second-value slot.
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-    inline void create_value_bool(bool need_set_second_value, int thr_rank) noexcept;
+     void create_value_bool(bool need_set_second_value, int thr_rank) noexcept;
 
     /*!
      * \brief Convenience overload of create_value() that resolves the
@@ -450,7 +450,7 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \param ind Index of the second constant to compress to.
      * \param thr_rank Calling thread's rank.
      */
-    inline void clear(int ind, int thr_rank);
+    void clear(int ind, int thr_rank);
 
     /*!
      * \brief Shared "actually install the constant and release the old
@@ -459,7 +459,7 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \param ind Index of the second constant (unused when num_compress_value == 0).
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-    inline void block_clear(int num_compress_value, int ind, int thr_rank);
+     void block_clear(int num_compress_value, int ind, int thr_rank);
 
     /*!
      * \brief Compress this chunk to a constant, for a specific thread.
@@ -471,7 +471,7 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      *            num_compress_value == 0).
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-    inline void clear_int_st(int num_compress_value, int ind, int thr_rank);
+    void clear_int_st(int num_compress_value, int ind, int thr_rank);
 
     /*!
      * \brief Bool specialization of the 3-arg clear_int_st(), for a
@@ -480,7 +480,7 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      *                            (single, shared) second constant.
      * \param thr_rank Calling thread's rank.
      */
-    inline void clear_int_st_bool(int num_compress_value, int thr_rank);
+    void clear_int_st_bool(int num_compress_value, int thr_rank);
 
     /*!
      * \brief Compress this chunk to a constant (no thread dimension): the
@@ -546,7 +546,7 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \param ind Index of the second constant (unused when
      *            num_compress_value == 0).
      */
-    inline void clear_int_st(int num_compress_value, int ind);
+     void clear_int_st(int num_compress_value, int ind);
 
     /*!
      * \brief Compress this chunk to its first constant (serial/counter
@@ -555,7 +555,7 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      *            check; the compression itself always targets the first
      *            constant regardless of ind.
      */
-    inline void clear_st(int ind);
+     void clear_st(int ind);
 
     /*!
      * \brief Compress this chunk to a constant (serial twin of the OpenMP
@@ -575,7 +575,7 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \param num_compress_value 0 for the first constant, non-zero for the second.
      * \param ind Index of the second constant (unused when num_compress_value == 0).
      */
-    inline void block_clear(int num_compress_value, int ind, int);
+     void block_clear(int num_compress_value, int ind, int);
 };
 
 // --- In chunk2_std.h ---

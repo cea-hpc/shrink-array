@@ -481,7 +481,7 @@ struct ChunkAllocPolicy<T, Derived, true>
         // The reuse list of THIS array on this rank (thread_alloc_key(), primed by
         // the proxy next to the geometry): a block taken here comes from the
         // array's own slabs, so affinity survives recycling.
-        const unsigned int alloc_key = shrink_array::thread_alloc_key();
+        const unsigned int alloc_key = thread_alloc_key();
         CHUNK_FREEPATH_ALLOC(alloc_key);
         if (const auto n = static_cast<int>(d.get_manager().get_list_block_free_thr_size(thr_rank, alloc_key)); n > 0)
         {
@@ -491,7 +491,7 @@ struct ChunkAllocPolicy<T, Derived, true>
             {
                 increm_chunk_list<Derived>();
                 add_chunk_bytes_reused<Derived>(static_cast<long>(sizeof(T)) *
-                                                 static_cast<long>(shrink_array::alloc_chunk_count()));
+                                                 static_cast<long>(alloc_chunk_count()));
             }
             values_loc = ll_block_free_thr.back();
             CHUNK_CHECK_VALUES_PTR(values_loc, "freelist.pop");
@@ -509,7 +509,7 @@ struct ChunkAllocPolicy<T, Derived, true>
             {
                 increm_chunk_alloc<Derived>();
                 add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) *
-                                                static_cast<long>(shrink_array::alloc_chunk_count()));
+                                                static_cast<long>(alloc_chunk_count()));
             }
             if constexpr (build_config::use_fast_alloc)
             {
@@ -527,7 +527,7 @@ struct ChunkAllocPolicy<T, Derived, true>
                 // Every caller's initialiser returns void, so the guard was
                 // always true; it only stood in the way of ever writing one
                 // that did not.
-                svcalloc_align(values_loc, T, shrink_array::alloc_chunk_count());
+                svcalloc_align(values_loc, T, alloc_chunk_count());
                 CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.svcalloc");
                 CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.svcalloc");
                 init_fresh(values_loc);
@@ -585,7 +585,7 @@ struct ChunkAllocPolicy<T, Derived, false>
             increm_chunk_create<Derived>();
             increm_chunk_alloc<Derived>();
             add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) *
-                                            static_cast<long>(shrink_array::alloc_chunk_count()));
+                                            static_cast<long>(alloc_chunk_count()));
         }
 
         if constexpr (build_config::use_fast_alloc)
@@ -601,7 +601,7 @@ struct ChunkAllocPolicy<T, Derived, false>
         }
         else
         {
-            svcalloc_align(values_loc, T, shrink_array::alloc_chunk_count());
+            svcalloc_align(values_loc, T, alloc_chunk_count());
             CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.svcalloc_serial");
             CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.svcalloc_serial");
             init_fresh(values_loc);
@@ -725,7 +725,7 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
         CHUNK_LEDGER_PARK(values_loc, "recup_value");
         // Back to the list it was taken from / would have been taken from: the
         // array's, on this rank.
-        auto& ll_block_free_thr = d.get_manager().get_list_block_free_thr(thr_rank, shrink_array::thread_alloc_key());
+        auto& ll_block_free_thr = d.get_manager().get_list_block_free_thr(thr_rank, thread_alloc_key());
         ll_block_free_thr.push_back(values_loc);
     }
 
@@ -904,7 +904,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
     ///         the active size was never registered.
     static auto& route_omp_dynamic_alloc(int thr_rank, unsigned int key = 0) noexcept
     {
-        const unsigned int sz = shrink_array::thread_chunk_size();
+        const unsigned int sz = thread_chunk_size();
         if (auto it = allocator_pool_.find(pool_key(key, sz)); it != allocator_pool_.end())
             return it->second[thr_rank];
         // Unregistered KEY at a registered size: the shared set of that size is
@@ -927,7 +927,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
     ///         unregistered.
     static auto& route_serial_dynamic_alloc() noexcept
     {
-        const unsigned int sz = shrink_array::thread_chunk_size();
+        const unsigned int sz = thread_chunk_size();
         if (auto it = allocator_pool_serial_.find(sz); it != allocator_pool_serial_.end())
             return *it->second; // deref unique_ptr
         // Fallback: unregistered size -> the legacy single allocator, so
@@ -1046,7 +1046,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @param key Affinity key of the array being served (0 = shared rank
     ///            pool). Only the dynamic OpenMP registry honours it so far.
     static auto& get_chunk_allocator([[maybe_unused]] int thr_rank,
-                                     [[maybe_unused]] unsigned int key = shrink_array::thread_alloc_key()) noexcept
+                                     [[maybe_unused]] unsigned int key = thread_alloc_key()) noexcept
     {
         if constexpr (build_config::use_fast_alloc)
         {
@@ -1558,12 +1558,12 @@ class ChunkBase : public CRTPSupport<Derived>,
         if constexpr (std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>)
         {
             // For trivially constructible scalar types: use memset (fastest option)
-            std::memset(values_loc, 0, shrink_array::alloc_chunk_count() * sizeof(T));
+            std::memset(values_loc, 0, alloc_chunk_count() * sizeof(T));
         }
         else
         {
             // For all other cases (composite_arithmetic, non-trivial types, etc.)
-            std::fill_n(values_loc, shrink_array::alloc_chunk_count(), T{});
+            std::fill_n(values_loc, alloc_chunk_count(), T{});
         }
     }
 

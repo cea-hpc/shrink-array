@@ -459,7 +459,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
     // in the @512 list on the master thread and the next 512-array popped
     // them (rechunk_validation PRE-FAIL on clang/OMPT). Same pin as
     // make_block_compression_impl() and Chunk2A<T>::make_block_compression().
-    [[maybe_unused]] const unsigned int saved_sz = shrink_array::thread_chunk_size();
+    [[maybe_unused]] const unsigned int saved_sz = thread_chunk_size();
 
     for (auto& tup : vec_tuple)
     {
@@ -480,7 +480,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
     }
 
     if constexpr (build_config::chunk_dynamic)
-        shrink_array::set_thread_chunk_size(saved_sz);
+        set_thread_chunk_size(saved_sz);
 
     // clear() keeps the capacity: the list is already reserved for the next
     // pass, at the size this one reached.
@@ -662,7 +662,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
     // so the sweep -- an OMPT callback on whichever thread -- leaves the
     // caller's thread_chunk_size() untouched. The triggering proxy's size is
     // still applied first for the handshake, as before.
-    [[maybe_unused]] const unsigned int saved_sz = shrink_array::thread_chunk_size();
+    [[maybe_unused]] const unsigned int saved_sz = thread_chunk_size();
 
     if (proxy2)
     {
@@ -686,7 +686,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
                     chunk_t->steal_unmark();
             }
             if constexpr (build_config::chunk_dynamic)
-                shrink_array::set_thread_chunk_size(saved_sz);
+                set_thread_chunk_size(saved_sz);
             return;
         }
         // Check builds: the window is shut, commit the claims -- what the
@@ -754,7 +754,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
     }
 
     if constexpr (build_config::chunk_dynamic)
-        shrink_array::set_thread_chunk_size(saved_sz);
+        set_thread_chunk_size(saved_sz);
 }
 
 // make_block_compression (declared in chunk2_std.h). Binds the non-bool scan and
@@ -1067,7 +1067,7 @@ void Chunk2OmpPolicy<T, Derived, false>::create_value_bool(bool need_set_second_
  * @param thr_rank Rank whose pool receives the released buffer.
  */
 template <typename T, typename Derived, bool Enabled>
-inline void Chunk2OmpPolicy<T, Derived, Enabled>::clear(int ind, int thr_rank)
+void Chunk2OmpPolicy<T, Derived, Enabled>::clear(int ind, int thr_rank)
 {
     Base::clear_impl(ind, thr_rank);
 }
@@ -1081,7 +1081,7 @@ inline void Chunk2OmpPolicy<T, Derived, Enabled>::clear(int ind, int thr_rank)
  * @param ind Index of the array's second value, used by that assertion.
  */
 template <typename T, typename Derived>
-inline void Chunk2OmpPolicy<T, Derived, false>::clear_st(int ind)
+void Chunk2OmpPolicy<T, Derived, false>::clear_st(int ind)
 {
     Base::debug_check_written(ind);
 
@@ -1106,14 +1106,14 @@ inline void Chunk2OmpPolicy<T, Derived, false>::clear_st(int ind)
  * @param thr_rank           Rank whose pool receives the released buffer.
  */
 template <typename T, typename Derived, bool Enabled>
-inline void Chunk2OmpPolicy<T, Derived, Enabled>::block_clear(int num_compress_value, int ind, [[maybe_unused]] int thr_rank)
+void Chunk2OmpPolicy<T, Derived, Enabled>::block_clear(int num_compress_value, int ind, [[maybe_unused]] int thr_rank)
 {
     // CHUNK_STATS: one materialised block released by a successful compression.
     // Counted here because block_clear is the single point every variant and
     // both OMP/non-OMP modes funnel through (the old counter only fired on the
     // plain-chunk sweep, so chunk2/chunk2a always reported 0).
     increm_chunk_compress<Derived>();
-    add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
+    add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
     Base::block_clear_common(num_compress_value, ind, thr_rank);
 }
 
@@ -1121,14 +1121,14 @@ inline void Chunk2OmpPolicy<T, Derived, Enabled>::block_clear(int num_compress_v
 /// Serial build: frees the buffer outright instead of parking it in a rank
 /// pool, and resets the per-chunk element counters.
 template <typename T, typename Derived>
-inline void Chunk2OmpPolicy<T, Derived, false>::block_clear(int num_compress_value, int ind, int)
+void Chunk2OmpPolicy<T, Derived, false>::block_clear(int num_compress_value, int ind, int)
 {
     // CHUNK_STATS: one materialised block released by a successful compression.
     // Counted here because block_clear is the single point every variant and
     // both OMP/non-OMP modes funnel through (the old counter only fired on the
     // plain-chunk sweep, so chunk2/chunk2a always reported 0).
     increm_chunk_compress<Derived>();
-    add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
+    add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
     Base::free_values(values);
 
     derived().init_values_cst_val(num_compress_value, ind);
@@ -1148,7 +1148,7 @@ inline void Chunk2OmpPolicy<T, Derived, false>::block_clear(int num_compress_val
  *      check_not_constant_before_clear().
  */
 template <typename T, typename Derived, bool Enabled>
-inline void Chunk2OmpPolicy<T, Derived, Enabled>::clear_int_st(int num_compress_value, int ind, int thr_rank)
+void Chunk2OmpPolicy<T, Derived, Enabled>::clear_int_st(int num_compress_value, int ind, int thr_rank)
 {
     Base::check_not_constant_before_clear(num_compress_value, ind);
     block_clear(num_compress_value, ind, thr_rank);
@@ -1160,7 +1160,7 @@ inline void Chunk2OmpPolicy<T, Derived, Enabled>::clear_int_st(int num_compress_
  * @param thr_rank           Rank whose pool receives the released buffer.
  */
 template <typename T, typename Derived, bool Enabled>
-inline void Chunk2OmpPolicy<T, Derived, Enabled>::clear_int_st_bool(int num_compress_value, int thr_rank)
+void Chunk2OmpPolicy<T, Derived, Enabled>::clear_int_st_bool(int num_compress_value, int thr_rank)
 {
     if constexpr (is_bool)
     {
@@ -1182,7 +1182,7 @@ inline void Chunk2OmpPolicy<T, Derived, Enabled>::clear_int_st_bool(int num_comp
  * @pre The chunk is materialised (debug-only assertion).
  */
 template <typename T, typename Derived>
-inline void Chunk2OmpPolicy<T, Derived, false>::clear_int_st(int num_compress_value, int ind)
+void Chunk2OmpPolicy<T, Derived, false>::clear_int_st(int num_compress_value, int ind)
 {
     // --- check only on debug ---
 
@@ -1206,7 +1206,7 @@ inline void Chunk2OmpPolicy<T, Derived, false>::clear_int_st(int num_compress_va
     // dropping the second call out of the (redundant, and therefore
     // harmless) if constexpr; removed rather than re-braced, for consistency.
     increm_chunk_compress<Derived>();
-    add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
+    add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
 
     Base::free_values(values);
 

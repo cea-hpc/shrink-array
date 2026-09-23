@@ -185,7 +185,7 @@ void ArrayChunk<T, ind_type>::clear_core()
     // TCTypeAllocator after a re-chunk, fast-alloc only). ArrayChunk2 and
     // ArrayChunk2A had this pin; v1 did not. See ArrayChunk2::clear_core().
     if constexpr (build_config::chunk_dynamic)
-        shrink_array::set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
+        set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
 
     // Drain deferred writes on this array's chunks before chunk_list is freed.
     this->flush_pending_deferred_ops();

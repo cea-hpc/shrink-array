@@ -305,117 +305,116 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
             }
         }
     }
-   // {
-        // Now we're inside the compression phase. Log scope from here to the end.
-        //  ScopedRingLog<EV_BLOCK_COMPRESS_BEGIN, EV_BLOCK_COMPRESS_END> block_log{static_cast<uint32_t>(sz) &
-        //                                                                         0x00FFFFFFu};
-        vec_tuple_chunkA2p_int2  ll_compt1;
-        vec_tuple_chunkA2p_Tint2 ll_compt2;
 
-        ll_compt1.reserve(sz / 50 + 1);
-        ll_compt2.reserve(sz / 50 + 1);
+    // Now we're inside the compression phase. Log scope from here to the end.
+    //  ScopedRingLog<EV_BLOCK_COMPRESS_BEGIN, EV_BLOCK_COMPRESS_END> block_log{static_cast<uint32_t>(sz) &
+    //                                                                         0x00FFFFFFu};
+    vec_tuple_chunkA2p_int2  ll_compt1;
+    vec_tuple_chunkA2p_Tint2 ll_compt2;
 
-        // `claimed`: the claim loop above runs only with a proxy. Without one
-        // this is the resize path, outside any parallel region.
-        fill_list_chunk_to_compress_in_par(thr, ll_compt1, ll_compt2, proxy2A != nullptr);
+    ll_compt1.reserve(sz / 50 + 1);
+    ll_compt2.reserve(sz / 50 + 1);
 
-        for (auto& tup : ll_compt1)
+    // `claimed`: the claim loop above runs only with a proxy. Without one
+    // this is the resize path, outside any parallel region.
+    fill_list_chunk_to_compress_in_par(thr, ll_compt1, ll_compt2, proxy2A != nullptr);
+
+    for (auto& tup : ll_compt1)
+    {
+        const int num_chunk = std::get<1>(tup);
+        const int num_tab   = std::get<2>(tup);
+
+        auto* chunk_ptr = std::get<0>(tup);
+
+        // Per-chunk geometry pin -- see this function's header comment.
+        if constexpr (build_config::chunk_dynamic)
+            shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
+
+        char* ptr_type_cst = &(Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk]);
+
+        // Long form in both modes: thr is 0 with OpenMP off. clear_int_st(5-arg)
+        // is now available in non-OMP (step 1).
+        SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+        chunk_ptr->clear_int_st(0, ptr_type_cst, ptr_second_value, thr);
+        chunk_ptr->steal_unmark();
+    }
+
+    for (auto& tup : ll_compt2)
+    {
+        auto [chunk_ptr, second_v, num_chunk, num_tab, csize] = tup;
+
+        // Per-chunk geometry pin -- see this function's header comment.
+        if constexpr (build_config::chunk_dynamic)
+            shrink_array::set_thread_chunk_size(csize.count());
+
+        if constexpr (Base::is_not_bool)
         {
-            const int num_chunk = std::get<1>(tup);
-            const int num_tab   = std::get<2>(tup);
+            if (second_v != T{})
+            {
+                char* ptr_type_cst = &(Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk]);
 
-            auto* chunk_ptr = std::get<0>(tup);
+                // Type-2 registration, identical in both modes. find_or_set records
+                // the second value in the chunk's slot and returns the shared
+                // array; clear_int_st installs it as the chunk's values pointer
+                // (the CAS). thr is 0 with OpenMP off.
+                SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
 
-            // Per-chunk geometry pin -- see this function's header comment.
-            if constexpr (build_config::chunk_dynamic)
-                shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
+                T* new_cst_val2_ptr =
+                    chunk_ptr->tab_cst_val2_holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
+
+                chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr, new_cst_val2_ptr);
+            }
+        }
+        else
+        {
+            // bool: no second-value pointer, ordering issue does not apply
+            if (second_v)
+            {
+                chunk_ptr->tab_cst_val2_holder::find_or_set_ind_cst_val2();
+            }
 
             char* ptr_type_cst = &(Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk]);
 
-            // Long form in both modes: thr is 0 with OpenMP off. clear_int_st(5-arg)
-            // is now available in non-OMP (step 1).
             SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            chunk_ptr->clear_int_st(0, ptr_type_cst, ptr_second_value, thr);
-            chunk_ptr->steal_unmark();
+            chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr);
         }
+        chunk_ptr->steal_unmark();
+    }
 
-        for (auto& tup : ll_compt2)
+    for (int k = 0; k < sz; ++k)
+    {
+        const auto& tup       = vec_tuple_to_compress[k];
+        const int   num_chunk = std::get<1>(tup);
+        if (num_chunk != -1)
         {
-            auto [chunk_ptr, second_v, num_chunk, num_tab, csize] = tup;
+            const int num_tab = std::get<2>(tup);
 
-            // Per-chunk geometry pin -- see this function's header comment.
-            if constexpr (build_config::chunk_dynamic)
-                shrink_array::set_thread_chunk_size(csize.count());
-
-            if constexpr (Base::is_not_bool)
-            {
-                if (second_v != T{})
-                {
-                    char* ptr_type_cst = &(Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk]);
-
-                    // Type-2 registration, identical in both modes. find_or_set records
-                    // the second value in the chunk's slot and returns the shared
-                    // array; clear_int_st installs it as the chunk's values pointer
-                    // (the CAS). thr is 0 with OpenMP off.
-                    SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-
-                    T* new_cst_val2_ptr =
-                        chunk_ptr->tab_cst_val2_holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
-
-                    chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr, new_cst_val2_ptr);
-                }
-            }
-            else
-            {
-                // bool: no second-value pointer, ordering issue does not apply
-                if (second_v)
-                {
-                    chunk_ptr->tab_cst_val2_holder::find_or_set_ind_cst_val2();
-                }
-
-                char* ptr_type_cst = &(Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk]);
-
-                SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-                chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr);
-            }
-            chunk_ptr->steal_unmark();
+            Proxy2A<T>::Base::reset_tab_inside_list_to_compress(num_tab, num_chunk);
         }
+        // The pass is over for every candidate: no mark may outlive it
+        // (idempotent for the ones released above).
+        if (auto* const chunk_t = std::get<0>(tup))
+            chunk_t->steal_unmark();
+    }
 
-        for (int k = 0; k < sz; ++k)
+    vec_tuple_to_compress.clear();
+    vec_tuple_to_compress.reserve(sz / 10 + 1);
+
+    if (proxy2A)
+    {
+        if (proxy2A->is_not_cst_val())
         {
-            const auto& tup       = vec_tuple_to_compress[k];
-            const int   num_chunk = std::get<1>(tup);
-            if (num_chunk != -1)
-            {
-                const int num_tab = std::get<2>(tup);
-
-                Proxy2A<T>::Base::reset_tab_inside_list_to_compress(num_tab, num_chunk);
-            }
-            // The pass is over for every candidate: no mark may outlive it
-            // (idempotent for the ones released above).
-            if (auto* const chunk_t = std::get<0>(tup))
-                chunk_t->steal_unmark();
+            proxy2A->set_info_on_chunk();
+            // We are in a critical section: this guarantees that only one thread executes this part of the code at
+            // a time, but another thread may be running add_to_compression_list at the same time
+            proxy2A->add_to_compression_list(vec_tuple_to_compress);
         }
 
-        vec_tuple_to_compress.clear();
-        vec_tuple_to_compress.reserve(sz / 10 + 1);
-
-        if (proxy2A)
+        if constexpr (build_config::use_openmp)
         {
-            if (proxy2A->is_not_cst_val())
-            {
-                proxy2A->set_info_on_chunk();
-                // We are in a critical section: this guarantees that only one thread executes this part of the code at
-                // a time, but another thread may be running add_to_compression_list at the same time
-                proxy2A->add_to_compression_list(vec_tuple_to_compress);
-            }
-
-            if constexpr (build_config::use_openmp)
-            {
-                proxy2A->compression_mgr.template finish<Proxy2A<T>>();
-            }
+            proxy2A->compression_mgr.template finish<Proxy2A<T>>();
         }
- //   }
+    }
 }
 
 /**
