@@ -36,7 +36,7 @@
 #include "chunk/internal/proxy_operators.h"
 #include "chunk/internal/compression_manager.h"
 #include "chunk/internal/tab_cst_val2_holder.h" // TabCstVal2Holder (CHUNK_CST_VAL2_NO_ARRAYS)
-#include "chunk/internal/relaxed_element.h"    // store_value: Chunk2A's relaxed element stores
+#include "chunk/internal/relaxed_element.h"     // store_value: Chunk2A's relaxed element stores
 #include "chunk/internal/concept_is_clean_assignement.h"
 #include "chunk/internal/crp_helper.h"
 #include "chunk/internal/arithmetic_context.h"

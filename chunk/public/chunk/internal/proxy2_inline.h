@@ -18,7 +18,7 @@
 
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
-#include <cstdlib> // std::getenv (CHUNK_PROXY2_NO_ACQ_FENCE)
+#include <cstdlib>                        // std::getenv (CHUNK_PROXY2_NO_ACQ_FENCE)
 #include "chunk/internal/proxy2.h"        // the declarations these bodies belong to
 
 namespace shrink_array
@@ -59,10 +59,11 @@ typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_ar
             // value compare would raise a false alarm on a NaN second value.
             const inf_array_t reg = Derived::get_info_second_value(get_ptr_on_array());
             if (std::get<1>(reg) != std::get<1>(*inf_array_src_) || std::get<2>(reg) != std::get<2>(*inf_array_src_))
-                INVARIANT_FAILED("ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
-                                 "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
-                                 std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg),
-                                 std::get<2>(reg), static_cast<const void*>(get_ptr_on_array()));
+                INVARIANT_FAILED(
+                    "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
+                    "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
+                    std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg), std::get<2>(reg),
+                    static_cast<const void*>(get_ptr_on_array()));
         }
         return *inf_array_src_;
     }
@@ -80,10 +81,11 @@ typename ProxySpec2<bool, Derived>::inf_array_t ProxySpec2<bool, Derived>::load_
             // value compare would raise a false alarm on a NaN second value.
             const inf_array_t reg = Derived::get_info_second_value(get_ptr_on_array());
             if (std::get<1>(reg) != std::get<1>(*inf_array_src_) || std::get<2>(reg) != std::get<2>(*inf_array_src_))
-                INVARIANT_FAILED("ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
-                                 "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
-                                 std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg),
-                                 std::get<2>(reg), static_cast<const void*>(get_ptr_on_array()));
+                INVARIANT_FAILED(
+                    "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
+                    "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
+                    std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg), std::get<2>(reg),
+                    static_cast<const void*>(get_ptr_on_array()));
         }
         return *inf_array_src_;
     }
@@ -197,8 +199,8 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression()
         {
             // in_t: the map key, by reference when T is large (a struct), by
             // value when it is a scalar. The map is not touched in the loop.
-            const in_t<T> second_val  = elm.first;
-            auto*   vec_tuple_p = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][second_val].get();
+            const in_t<T> second_val = elm.first;
+            auto* vec_tuple_p = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][second_val].get();
             if (vec_tuple_p)
             {
                 const int sz_before = static_cast<int>(vec_tuple_p->size());
@@ -428,7 +430,7 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
                 auto&     chunk = ctx->chunk;
                 const int num   = ctx->num;
 
-                const Proxy2 proxy = Base::template make_proxy_with_info<Proxy2>(ctx);
+                const auto proxy = Base::template make_proxy_with_info<Proxy2>(ctx);
 
                 // Deferred replay: pin the frozen per-op geometry so create_value
                 // below materialises at proxy.chunk_size(), not the flushing thread's
@@ -612,7 +614,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operat
     }
 
     const in_t<T> v_old  = read_values_async(ctx);
-    T*      values = chunk.values_load();
+    T*            values = chunk.values_load();
     operation(values);
 
     const in_t<T> v_new = read_values_async(ctx);
@@ -630,9 +632,9 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operat
  */
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 template <typename OP, typename LAMBDA, typename U>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_compound_operation(OP     op,
+void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_compound_operation(OP       op,
                                                                                                  const U& operand,
-                                                                                                 LAMBDA operation)
+                                                                                                 LAMBDA   operation)
 {
     // Same fix as ensure_writable_storage(): this function may call
     // chunk.create_value() below (via the will_be_not_second_value branch)
@@ -678,8 +680,8 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_co
     const U& operand,
     LAMBDA   operation) const
 {
-    using CalcType     = std::common_type_t<T, U>;
-    const Proxy2 proxy = Base::template make_proxy_with_info<Derived>(ctx);
+    using CalcType      = std::common_type_t<T, U>;
+    const Proxy2  proxy = Base::template make_proxy_with_info<Derived>(ctx);
     const in_t<T> v_old = read_values_async(ctx);
 
     const CalcType v_new_precise = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
@@ -707,9 +709,9 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_co
  */
 template <typename Derived, typename T, typename ChunkType>
 template <typename OP, typename LAMBDA, typename U>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_compound_operation(OP     op,
+void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_compound_operation(OP       op,
                                                                                                const U& operand,
-                                                                                               LAMBDA operation)
+                                                                                               LAMBDA   operation)
 {
     // Same fix as ensure_writable_storage(): see that function's comment.
     if constexpr (build_config::chunk_dynamic)
@@ -728,7 +730,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_comp
             op(static_cast<CalcType>(Base::values[Base::num]), static_cast<CalcType>(operand));
         // Built where it is used (was a default-constructed `T res` at function
         // scope, then assigned: two writes of a struct for one value).
-        const in_t<T> res = static_cast<T>(intermediate);
+        const auto res = static_cast<T>(intermediate);
 
         const bool will_be_not_second_value = (res != second_value) && derived().is_cst_val2();
 
@@ -858,7 +860,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_opera
     const int num   = ctx->num;
 
     const in_t<T> v_old = read_values_async(ctx);
-    const Proxy2 proxy = Base::template make_proxy_with_info<Derived>(ctx);
+    const Proxy2  proxy = Base::template make_proxy_with_info<Derived>(ctx);
 
     const bool is_val1 = chunk.is_cst_val1();
     const bool is_val2 = proxy.is_cst_val2();
@@ -901,8 +903,8 @@ T Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
     {
         BaseSpec::set_info_second_value_ind(); // Initialize second_value / ind — needed by both branches below
 
-        const in_t<T>    v_old_snapshot = values[num];
-        const bool is_first_value = (v_old_snapshot == static_cast<T>(Chunk2<T>::first_value));
+        const in_t<T> v_old_snapshot = values[num];
+        const bool    is_first_value = (v_old_snapshot == static_cast<T>(Chunk2<T>::first_value));
 
         if (!is_first_value) [[likely]]
         {

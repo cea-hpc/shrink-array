@@ -16,12 +16,12 @@
 
 #pragma once
 
-#include <cstdlib>     // std::abort (debug stubs)
-#include <iostream>    // std::cerr (debug stubs)
-#include <memory>      // std::unique_ptr
-#include <stdexcept>   // std::runtime_error (PointerMapChunk2A::get)
+#include <cstdlib>   // std::abort (debug stubs)
+#include <iostream>  // std::cerr (debug stubs)
+#include <memory>    // std::unique_ptr
+#include <stdexcept> // std::runtime_error (PointerMapChunk2A::get)
 #include <type_traits>
-#include <utility>     // std::pair, std::swap
+#include <utility> // std::pair, std::swap
 #include <vector>
 #ifndef __NVCOMPILER
     #include <concepts>
@@ -71,8 +71,8 @@ class PointerMapChunk2A
     bool                                           using_big = false;
 
   public:
-    PointerMapChunk2A()                                    = default;
-    PointerMapChunk2A(const PointerMapChunk2A&)            = default;
+    PointerMapChunk2A()                                        = default;
+    PointerMapChunk2A(const PointerMapChunk2A&)                = default;
     PointerMapChunk2A(PointerMapChunk2A&&) noexcept            = default;
     PointerMapChunk2A& operator=(const PointerMapChunk2A&)     = default;
     PointerMapChunk2A& operator=(PointerMapChunk2A&&) noexcept = default;
@@ -1006,7 +1006,9 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     // ========================================================================
 
     template <typename U, typename Op>
-    T apply_compound_operation(Op op, in_t<U> v, bool /*check_first_value_result*/ = false) noexcept; // in_t: see assign_impl
+    T apply_compound_operation(Op      op,
+                               in_t<U> v,
+                               bool /*check_first_value_result*/ = false) noexcept; // in_t: see assign_impl
 
     const Proxy2A& operator=(const Proxy2A& from) = delete;
     Proxy2A(const Proxy2A& other)                 = default;

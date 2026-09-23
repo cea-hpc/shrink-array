@@ -27,7 +27,7 @@
 
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement, asserted on ChunkBase
 #include "chunk/internal/chunk_size_policy.h"
-#include "chunk/internal/in_t.h" // in_t<T>: the scans' constants, by value or by reference
+#include "chunk/internal/in_t.h"            // in_t<T>: the scans' constants, by value or by reference
 #include "chunk/internal/relaxed_element.h" // element_at<true>: the marking filter's reads
 #include "chunk/internal/svalloc.h"
 #include "chunk/config.h"
@@ -490,8 +490,7 @@ struct ChunkAllocPolicy<T, Derived, true>
             if constexpr (chunk_config::stats)
             {
                 increm_chunk_list<Derived>();
-                add_chunk_bytes_reused<Derived>(static_cast<long>(sizeof(T)) *
-                                                 static_cast<long>(alloc_chunk_count()));
+                add_chunk_bytes_reused<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
             }
             values_loc = ll_block_free_thr.back();
             CHUNK_CHECK_VALUES_PTR(values_loc, "freelist.pop");
@@ -508,8 +507,7 @@ struct ChunkAllocPolicy<T, Derived, true>
             if constexpr (chunk_config::stats)
             {
                 increm_chunk_alloc<Derived>();
-                add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) *
-                                                static_cast<long>(alloc_chunk_count()));
+                add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
             }
             if constexpr (build_config::use_fast_alloc)
             {
@@ -532,7 +530,6 @@ struct ChunkAllocPolicy<T, Derived, true>
                 CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.svcalloc");
                 init_fresh(values_loc);
             }
-
         }
         if constexpr (chunk_config::stats)
         {
@@ -574,8 +571,9 @@ struct ChunkAllocPolicy<T, Derived, false>
     /// @param init_fresh Function to initialize the allocated block
     /// @return Pointer to the allocated and initialized chunk
     template <typename InitReused, typename InitFresh>
-    T* allocate_chunk_internal([[maybe_unused]] int thr_rank, [[maybe_unused]] InitReused init_reused,
-                               InitFresh init_fresh)
+    T* allocate_chunk_internal([[maybe_unused]] int        thr_rank,
+                               [[maybe_unused]] InitReused init_reused,
+                               InitFresh                   init_fresh)
     {
         auto& d = static_cast<Derived&>(*this);
         T*    values_loc;
@@ -584,8 +582,7 @@ struct ChunkAllocPolicy<T, Derived, false>
         {
             increm_chunk_create<Derived>();
             increm_chunk_alloc<Derived>();
-            add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) *
-                                            static_cast<long>(alloc_chunk_count()));
+            add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
         }
 
         if constexpr (build_config::use_fast_alloc)
@@ -702,7 +699,7 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
         }
 
         return !d.values.compare_exchange_strong(m_ptr_cst_val, values_loc, std::memory_order_acq_rel,
-                                                  std::memory_order_acquire);
+                                                 std::memory_order_acquire);
     }
 
     /// @brief Compare-and-swap against first constant value
@@ -1000,9 +997,9 @@ class ChunkBase : public CRTPSupport<Derived>,
     struct NullValueAllocator
     {
         /// @brief No pool to set up.
-        void             init(int /*element_size*/, int /*block_size*/, int /*munmap_flag*/) noexcept {}
+        void init(int /*element_size*/, int /*block_size*/, int /*munmap_flag*/) noexcept {}
         /// @brief No pool to tear down.
-        void             destroy() noexcept {}
+        void destroy() noexcept {}
         /// @brief Never allocates: std-alloc buffers come from svalloc.
         [[nodiscard]] T* alloc() noexcept
         {
@@ -1045,7 +1042,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @return Reference to the allocator to use for this thread/build mode.
     /// @param key Affinity key of the array being served (0 = shared rank
     ///            pool). Only the dynamic OpenMP registry honours it so far.
-    static auto& get_chunk_allocator([[maybe_unused]] int thr_rank,
+    static auto& get_chunk_allocator([[maybe_unused]] int          thr_rank,
                                      [[maybe_unused]] unsigned int key = thread_alloc_key()) noexcept
     {
         if constexpr (build_config::use_fast_alloc)
@@ -1182,12 +1179,12 @@ class ChunkBase : public CRTPSupport<Derived>,
             // works for the variants that have no such member at all.
             if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
             {
-                static_assert(requires(const Derived& d, const T* q) {
-                                  d.is_cst_val2_ptr_of(q);
-                                  d.second_value_from_ptr(q);
-                              },
-                              "Chunk2A must provide is_cst_val2_ptr_of() and second_value_from_ptr() "
-                              "when second values carry identifiers (see CHUNK_CST_VAL2_FILLED_ARRAYS)");
+                static_assert(
+                    requires(const Derived& d, const T* q) {
+                        d.is_cst_val2_ptr_of(q);
+                        d.second_value_from_ptr(q);
+                    }, "Chunk2A must provide is_cst_val2_ptr_of() and second_value_from_ptr() "
+                       "when second values carry identifiers (see CHUNK_CST_VAL2_FILLED_ARRAYS)");
                 const T* const p = values_load();
                 if (derived().is_cst_val2_ptr_of(p)) [[unlikely]]
                     return derived().second_value_from_ptr(p);
@@ -1351,15 +1348,15 @@ class ChunkBase : public CRTPSupport<Derived>,
         unsigned int i = 0;
         while (i < n)
         {
-            const unsigned int e         = std::min(n, i + kScanBlock);
-            unsigned int       not_first = 0;
+            const unsigned int e          = std::min(n, i + kScanBlock);
+            unsigned int       not_first  = 0;
             unsigned int       not_second = 0;
             for (unsigned int j = i; j < e; ++j)
             {
                 not_first |= static_cast<unsigned int>(p[j] != first_v);
                 not_second |= static_cast<unsigned int>(p[j] != second_v);
             }
-            i = e;
+            i        = e;
             r.first  = r.first && not_first == 0;
             r.second = r.second && not_second == 0;
             if (!r.first && !r.second)
@@ -1451,7 +1448,10 @@ class ChunkBase : public CRTPSupport<Derived>,
             // the address is real and the semantics are exactly what they
             // were. Its only caller is ArrayChunkBase's re-export, itself
             // never called internally -- this is a diagnostic path.
-            if constexpr (requires { derived().is_cst_val2(); derived().materialise_for_address(); })
+            if constexpr (requires {
+                              derived().is_cst_val2();
+                              derived().materialise_for_address();
+                          })
             {
                 if (derived().is_cst_val2()) [[unlikely]]
                     derived().materialise_for_address();
@@ -1696,7 +1696,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     // is_not_available moved to ChunkDeferredOpsPolicy<T, Derived, true>
     // above (bodies of the last 3 still out-of-line, in chunk_base_inline.h).
 
-  public:
+
     // ========================================================================
     // Member variables
     // ========================================================================
@@ -1805,22 +1805,16 @@ class ChunkBase : public CRTPSupport<Derived>,
         return false;
     }
     /// @brief No per-chunk mark in this configuration: no-op.
-    static void steal_mark() noexcept
-    {
-    }
+    static void steal_mark() noexcept {}
     /// @copydoc steal_mark()
-    static void steal_commit() noexcept
-    {
-    }
+    static void steal_commit() noexcept {}
     /// @brief No per-chunk mark in this configuration: never committed.
     [[nodiscard]] static constexpr bool steal_committed() noexcept
     {
         return false;
     }
     /// @copydoc steal_mark()
-    static void steal_unmark() noexcept
-    {
-    }
+    static void steal_unmark() noexcept {}
 #endif
 
     /// First constant value for compression: the value-initialised T. Spelled

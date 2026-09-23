@@ -115,9 +115,9 @@ template <typename A, typename R = decltype(invariant_fmt_arg(std::declval<A>())
 using invariant_fmt_arg_t = std::conditional_t<std::is_lvalue_reference_v<R>, R, std::remove_reference_t<R>>;
 
 template <typename... Args>
-[[noreturn]] inline void invariant_failed(const std::source_location&                        loc,
-                                          std::format_string<invariant_fmt_arg_t<Args>...> fmt,
-                                          Args&&... args) noexcept
+[[noreturn]] void invariant_failed(const std::source_location&                      loc,
+                                   std::format_string<invariant_fmt_arg_t<Args>...> fmt,
+                                   Args&&... args) noexcept
 {
     // 1. Determine prefix based on build mode
     constexpr const char* prefix = build_config::is_debug ? "[DEBUG_INVARIANT_FAILURE] " : "[CRITICAL_FAILURE] ";

@@ -876,7 +876,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool              need_
 
     else if constexpr (build_config::is_debug)
     {
-        std::cerr << "Chunk2A_std_inline::create_value() called" << std::endl;
+        std::cerr << "Chunk2A_std_inline::create_value() called" << '\n';
         std::abort();
     }
 }
@@ -920,7 +920,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_seco
     }
     else if constexpr (build_config::is_debug)
     {
-        std::cerr << "Chunk2A_std_inline::create_value_bool() called" << std::endl;
+        std::cerr << "Chunk2A_std_inline::create_value_bool() called" << '\n';
         std::abort();
     }
 }

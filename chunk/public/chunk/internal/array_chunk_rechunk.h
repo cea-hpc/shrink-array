@@ -240,7 +240,7 @@ class RechunkSupport<Derived, false>
     /** @brief Nothing pooled by geometry. */
     void rechunk_drain_reuse_list(unsigned int /*new_size*/) {}
     /** @brief No state to carry. */
-    T    rechunk_capture_state() const
+    T rechunk_capture_state() const
     {
         return T{};
     }

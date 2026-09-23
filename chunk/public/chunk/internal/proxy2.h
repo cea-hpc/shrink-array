@@ -250,7 +250,6 @@ struct ProxySpec2<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2<bool>
     mutable const inf_array_t* inf_array_src_ = nullptr;
 
   public:
-
     using ChunkType = Chunk2<bool>;
 
     using values_type_ref = Proxy2Base<Derived, bool, ChunkType>::values_type_ref;
@@ -333,11 +332,11 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     using Base2 = Proxy2Base<Derived, T, Chunk2<T>>;
     using Base  = ProxyBase<Derived, T, Chunk2<T>>;
 
-    using Base::read_values_async;
-    using Base::tab_is_inside_chunk_list_to_compress;
     using Base::chunk;
     using Base::num;
     using Base::read_values;
+    using Base::read_values_async;
+    using Base::tab_is_inside_chunk_list_to_compress;
     using Base::values;
     using ProxySpec2<T, Derived>::inf_array;
 
@@ -537,8 +536,8 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
         const auto second_value = get_second_value();
         // find(), not operator[]: operator[] INSERTS a null entry for a missing
         // key, which have_chunk_to_compress() would dereference later.
-        auto&      m            = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
-        const auto it           = m.find(second_value);
+        auto&      m  = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
+        const auto it = m.find(second_value);
         if (it == m.end() || it->second == nullptr) [[unlikely]]
             chunk2_missing_candidate_list(thr);
         return *it->second;
@@ -550,14 +549,13 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @param thr Thread rank [0, MAX_THREADS).
      * @return Reference to vector of (chunk*, chunk_idx, tab_idx) tuples.
      */
-    VectorTuple4ChunkInt2<Chunk2, T>& get_vec_tuple_to_compress_potentially_async_thr(auto* ctx,
-                                                                                                   int   thr) const
+    VectorTuple4ChunkInt2<Chunk2, T>& get_vec_tuple_to_compress_potentially_async_thr(auto* ctx, int thr) const
     {
         const auto second_value = get_second_value(ctx);
         // find(), not operator[]: operator[] INSERTS a null entry for a missing
         // key, which have_chunk_to_compress() would dereference later.
-        auto&      m            = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
-        const auto it           = m.find(second_value);
+        auto&      m  = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
+        const auto it = m.find(second_value);
         if (it == m.end() || it->second == nullptr) [[unlikely]]
             chunk2_missing_candidate_list(thr);
         return *it->second;
@@ -1111,7 +1109,9 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *       (reader_sync) so the RMW cannot clobber it.
      */
     template <typename U, typename Op>
-    T apply_compound_operation(Op op, in_t<U> v, bool check_first_value_result = false) noexcept; // in_t: see assign_impl
+    T apply_compound_operation(Op      op,
+                               in_t<U> v,
+                               bool    check_first_value_result = false) noexcept; // in_t: see assign_impl
 
     const Proxy2& operator=(const Proxy2& from) = delete;
     Proxy2(const Proxy2& other)                 = default;

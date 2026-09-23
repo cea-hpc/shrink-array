@@ -20,17 +20,17 @@
 #include <map>
 #include <vector>
 #include <tuple>
-#include <cstdio>            // fprintf (pool breakdown)
-#include <cstdlib>            // getenv (CHUNK_DRAIN_TRACE)
+#include <cstdio>  // fprintf (pool breakdown)
+#include <cstdlib> // getenv (CHUNK_DRAIN_TRACE)
 #include <unordered_map>
-#include <cstdint>       // pool keys (drain_reuse_list_for_size, keyed lists)
-#include <type_traits>         // remove_reference_t / remove_pointer_t (same)
+#include <cstdint>     // pool keys (drain_reuse_list_for_size, keyed lists)
+#include <type_traits> // remove_reference_t / remove_pointer_t (same)
 
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/internal/TChunk.h"
-#include "chunk/PMP_CHUNK.h"   // CHUNK_PMP_MAX_THREADS (drain_reuse_list_for_size)
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS (drain_reuse_list_for_size)
 #include "chunk/internal/pool_ledger.h" // CHUNK_LEDGER_DISCARD (drain_reuse_list_for_size)
-#include "chunk/type_name.h"  // type_name<T> (pool breakdown)
+#include "chunk/type_name.h"            // type_name<T> (pool breakdown)
 #include "chunk/internal/svalloc.h"     // svfree (drain_reuse_list_for_size)
 
 #include "chunk/internal/freepath_counters.h" // CHUNK_FREEPATH_INC (CHUNK_ARENA_REPORT)
@@ -180,8 +180,7 @@ struct ManagerChunkParallelInterface<false>
  *          vs single), and the dynamic-geometry build adds register_chunk_size().
  *          Every implementation lives in ManagerChunk below.
  */
-class ManagerChunkInt : public virtual ManagerChunkDynInterface<>,
-                        public virtual ManagerChunkParallelInterface<>
+class ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtual ManagerChunkParallelInterface<>
 {
   public:
     ~ManagerChunkInt() override = default;
@@ -313,8 +312,8 @@ struct ManagerChunkParallelImpl<CHUNK_T, T, false> : public virtual ManagerChunk
  */
 template <template <typename> class CHUNK_T, typename T>
 class ManagerChunk final : public virtual ManagerChunkInt,
-                          public ManagerChunkDynImpl<CHUNK_T, T>,
-                          public ManagerChunkParallelImpl<CHUNK_T, T>
+                           public ManagerChunkDynImpl<CHUNK_T, T>,
+                           public ManagerChunkParallelImpl<CHUNK_T, T>
 {
     // The implementation policies carry overrides whose bodies belong to
     // this class's state (max_thr is a per-instance const, not a static), and
@@ -326,7 +325,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     friend struct ManagerChunkParallelImpl;
 
   private:
-    const int max_thr = CHUNK_PMP_MAX_THREADS;
+    const int max_thr   = CHUNK_PMP_MAX_THREADS;
     using p_vector_char = std::vector<char>*;
     using inf_array_t   = std::tuple<T, int, p_vector_char>;
 
@@ -346,19 +345,25 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *       container this manager sizes is sized for the team that existed when
      *       the manager was created.
      */
-    ManagerChunk() = default;
+    ManagerChunk()           = default;
     ~ManagerChunk() override = default;
 
     ManagerChunk(const ManagerChunk& ref) = delete;
 
-    void destroy_block_chunk() override;
-    void resize_chunk_to_compress_potentially() const override;
-    void force_chunk_to_compress() const override;
+    void               destroy_block_chunk() override;
+    void               resize_chunk_to_compress_potentially() const override;
+    void               force_chunk_to_compress() const override;
     [[nodiscard]] bool have_chunk_to_compress_potentially(int n_thr) const override;
-    void compress_chunk_to_compress_potentially(bool apply) override;
+    void               compress_chunk_to_compress_potentially(bool apply) override;
 
-    [[nodiscard]] std::size_t reuse_pool_bytes_int() const override { return reuse_pool_bytes(); }
-    std::size_t trim_reuse_pools_int(std::size_t keep) override { return trim_reuse_pools(keep); }
+    [[nodiscard]] std::size_t reuse_pool_bytes_int() const override
+    {
+        return reuse_pool_bytes();
+    }
+    std::size_t trim_reuse_pools_int(std::size_t keep) override
+    {
+        return trim_reuse_pools(keep);
+    }
     void print_reuse_pool_breakdown_int(const char* label) const override
     {
         print_reuse_pool_breakdown(label);
@@ -547,8 +552,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             if constexpr (chunk_config::chunk_dynamic)
             {
                 const auto it = list_block_free_thr_by_size_.find(thread_chunk_size());
-                if (it != list_block_free_thr_by_size_.end()
-                    && static_cast<size_t>(thr_rank) < it->second.size())
+                if (it != list_block_free_thr_by_size_.end() && static_cast<size_t>(thr_rank) < it->second.size())
                 {
                     return it->second[thr_rank].list.size();
                 }
@@ -580,8 +584,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             // time; a thread rank beyond it would be the same out-of-bounds
             // operator[] as on the legacy store, so fall back rather than
             // index blindly.
-            if (it != list_block_free_thr_by_size_.end()
-                && static_cast<size_t>(thr_rank) < it->second.size())
+            if (it != list_block_free_thr_by_size_.end() && static_cast<size_t>(thr_rank) < it->second.size())
             {
                 return it->second[thr_rank].list;
             }
@@ -655,8 +658,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                          "[POOLS] %s %-22s legacy store        : %9zu block(s), %8.1f MB"
                          " (sized by the ambient %u)\n",
                          label, type_name<T>().data(), legacy_blocks,
-                         (double) (legacy_blocks * sizeof(T) * thread_chunk_size()) / 1e6,
-                         thread_chunk_size());
+                         (double)(legacy_blocks * sizeof(T) * thread_chunk_size()) / 1e6, thread_chunk_size());
         }
 
         if constexpr (chunk_config::chunk_dynamic)
@@ -677,8 +679,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                              "[POOLS] %s %-22s size %-6u        : %9zu block(s), %8.1f MB"
                              " across %zu/%zu rank(s)\n",
                              label, type_name<T>().data(), kv.first, blocks,
-                             (double) (blocks * sizeof(T) * kv.first) / 1e6,
-                             non_empty_ranks, kv.second.size());
+                             (double)(blocks * sizeof(T) * kv.first) / 1e6, non_empty_ranks, kv.second.size());
             }
         }
     }
@@ -756,15 +757,14 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         if constexpr (chunk_config::use_fast_alloc)
         {
-            (void) keep_per_thread;
+            (void)keep_per_thread;
             return 0;
         }
         else
         {
             std::size_t freed = 0;
 
-            const auto trim_one = [&freed, keep_per_thread](auto& lst,
-                                                            std::size_t elem_count) noexcept
+            const auto trim_one = [&freed, keep_per_thread](auto& lst, std::size_t elem_count) noexcept
             {
                 if (lst.size() <= keep_per_thread)
                     return;
@@ -850,10 +850,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                              "[DRAIN] %-22s size %-6u : %-26s %3zu rank(s), %8zu block(s)"
                              " | map:",
                              type_name<T>().data(), size,
-                             (probe == list_block_free_thr_by_size_.end())
-                                 ? "NOT in map -> returns"
-                                 : "found",
-                             ranks, blocks);
+                             (probe == list_block_free_thr_by_size_.end()) ? "NOT in map -> returns" : "found", ranks,
+                             blocks);
                 for (const auto& kv : list_block_free_thr_by_size_)
                     std::fprintf(stderr, " %u", kv.first);
                 std::fprintf(stderr, "\n");
@@ -874,148 +872,148 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             // own lists, which must empty for the array's slabs to empty.
             const auto drain_one = [&](std::vector<PerThreadFreeList>& per_thr)
             {
-            const auto n_thr  = static_cast<int>(per_thr.size()); // iterate by ITS size, never max_thr
+                const auto n_thr = static_cast<int>(per_thr.size()); // iterate by ITS size, never max_thr
 
-            if constexpr (!chunk_config::use_fast_alloc)
-            {
-                // std-alloc: parked buffers were svcalloc'd -> svfree each.
-                for (int thr = 0; thr < n_thr; ++thr)
+                if constexpr (!chunk_config::use_fast_alloc)
                 {
-                    auto& lst = per_thr[thr].list;
-                    for (T* b : lst)
+                    // std-alloc: parked buffers were svcalloc'd -> svfree each.
+                    for (int thr = 0; thr < n_thr; ++thr)
                     {
-                        CHUNK_LEDGER_DISCARD(b, "rechunk_to.drain_reuse");
-                        svfree(b);
-                    }
-                    lst.clear();
-                }
-            }
-            else
-            {
-                // fast-alloc: free each block through its OWNING thread's slab
-                // (free_elt_pow2 is only safe on an owned block). Owner-routed
-                // drain, in three passes.
-                //
-                // The previous shape -- a parallel pass where rank T offered its
-                // own list to its own allocator, then a SERIAL owner-routing
-                // sweep offering every leftover block to every rank in turn --
-                // was calibrated on 7553 orphans (3.9 MB). It is quadratic:
-                // is_free_able_elt() walks the allocator's slab chains (linear in
-                // slabs), the sweep repeats it for every rank, and after a v1
-                // re-chunk of a 10^9-double array most of the 11M parked blocks
-                // are orphans (clear_st parks in the FREEING thread's list, the
-                // refill reads spans owned by other ranks). perf at 64 threads:
-                // 39% in the OpenMP barrier, the drain on one thread underneath.
-                //
-                // Ownership is not ambiguous, only expensive to ask the allocator
-                // for: every slab is reachable from exactly one rank's chains,
-                // and addr_to_block() maps a pointer to its slab in O(1). So:
-                //   1. serial: allocator instance -> rank (n_thr entries); a slab
-                //      names its instance in its header (TCAllocator::owner);
-                //   2. parallel over q: rank q walks ITS list, buckets each
-                //      block under its owner (row q of a q x r matrix -- no two
-                //      ranks write the same cell), keeps what has no known owner;
-                //   3. parallel over r: rank r frees every bucket[*][r] into
-                //      ITS OWN allocator, the only mutation of a slab chain, and
-                //      always by the rank that owns it.
-                // Blocks whose slab is unknown to every chain (bypass_slabs(),
-                // or a slab already torn down) stay parked as before: an
-                // unreachable block is worse than a retained one.
-                using alloc_t = std::remove_reference_t<decltype(CHUNK_T<T>::get_chunk_allocator(0))>;
-                // Every slab names its owning allocator instance AND that
-                // instance's rank (TCAllocator::owner / owner_rank, written at
-                // creation), whatever affinity key the instance serves. So a
-                // block routes on two field reads: rank r's bucket, then
-                // owner->free_elt_pow2 on rank r. No map, no chain walk, and
-                // the keyed allocator sets need no special case.
-                alloc_t* geometry = nullptr; // any instance of this size: slab_of() needs its geometry only
-                {
-                    const unsigned int saved_sz = shrink_array::thread_chunk_size();
-                    shrink_array::set_thread_chunk_size(size);
-                    geometry = &CHUNK_T<T>::get_chunk_allocator(0, 0u);
-                    shrink_array::set_thread_chunk_size(saved_sz);
-                }
-                if (geometry != nullptr)
-                {
-                    std::vector<std::vector<std::vector<T*>>> bucket(
-                        static_cast<std::size_t>(n_thr),
-                        std::vector<std::vector<T*>>(static_cast<std::size_t>(n_thr)));
-
-                    auto sort_own_list = [&](int q) noexcept
-                    {
-                        if (q < 0 || q >= n_thr)
-                            return;
-                        auto& lst = per_thr[q].list;
-                        if (lst.empty())
-                            return;
-                        auto&       row  = bucket[static_cast<std::size_t>(q)];
-                        std::size_t kept = 0;
-                        for (std::size_t i = 0; i < lst.size(); ++i)
+                        auto& lst = per_thr[thr].list;
+                        for (T* b : lst)
                         {
-                            T*          b    = lst[i];
-                            const auto* slab = geometry->slab_of(b);
-                            if (slab && slab->owner && slab->owner_rank >= 0 && slab->owner_rank < n_thr)
-                                row[static_cast<std::size_t>(slab->owner_rank)].push_back(b);
-                            else
-                                lst[kept++] = b; // no owner claims it: stays parked
+                            CHUNK_LEDGER_DISCARD(b, "rechunk_to.drain_reuse");
+                            svfree(b);
                         }
-                        lst.resize(kept);
-                    };
-                    auto free_own_buckets = [&](int r) noexcept
+                        lst.clear();
+                    }
+                }
+                else
+                {
+                    // fast-alloc: free each block through its OWNING thread's slab
+                    // (free_elt_pow2 is only safe on an owned block). Owner-routed
+                    // drain, in three passes.
+                    //
+                    // The previous shape -- a parallel pass where rank T offered its
+                    // own list to its own allocator, then a SERIAL owner-routing
+                    // sweep offering every leftover block to every rank in turn --
+                    // was calibrated on 7553 orphans (3.9 MB). It is quadratic:
+                    // is_free_able_elt() walks the allocator's slab chains (linear in
+                    // slabs), the sweep repeats it for every rank, and after a v1
+                    // re-chunk of a 10^9-double array most of the 11M parked blocks
+                    // are orphans (clear_st parks in the FREEING thread's list, the
+                    // refill reads spans owned by other ranks). perf at 64 threads:
+                    // 39% in the OpenMP barrier, the drain on one thread underneath.
+                    //
+                    // Ownership is not ambiguous, only expensive to ask the allocator
+                    // for: every slab is reachable from exactly one rank's chains,
+                    // and addr_to_block() maps a pointer to its slab in O(1). So:
+                    //   1. serial: allocator instance -> rank (n_thr entries); a slab
+                    //      names its instance in its header (TCAllocator::owner);
+                    //   2. parallel over q: rank q walks ITS list, buckets each
+                    //      block under its owner (row q of a q x r matrix -- no two
+                    //      ranks write the same cell), keeps what has no known owner;
+                    //   3. parallel over r: rank r frees every bucket[*][r] into
+                    //      ITS OWN allocator, the only mutation of a slab chain, and
+                    //      always by the rank that owns it.
+                    // Blocks whose slab is unknown to every chain (bypass_slabs(),
+                    // or a slab already torn down) stay parked as before: an
+                    // unreachable block is worse than a retained one.
+                    using alloc_t = std::remove_reference_t<decltype(CHUNK_T<T>::get_chunk_allocator(0))>;
+                    // Every slab names its owning allocator instance AND that
+                    // instance's rank (TCAllocator::owner / owner_rank, written at
+                    // creation), whatever affinity key the instance serves. So a
+                    // block routes on two field reads: rank r's bucket, then
+                    // owner->free_elt_pow2 on rank r. No map, no chain walk, and
+                    // the keyed allocator sets need no special case.
+                    alloc_t* geometry = nullptr; // any instance of this size: slab_of() needs its geometry only
                     {
-                        if (r < 0 || r >= n_thr)
-                            return;
-                        // Route to the `size` allocator: get_chunk_allocator keys on
-                        // the per-thread active size. Freeing a size-`size` block
-                        // through the wrong-size allocator corrupts that slab's
-                        // free-list -> SIGSEGV walking it at teardown.
-                        // Every block in bucket[*][r] belongs to an instance of
-                        // rank r (its slab said so); free it through THAT instance.
-                        for (int q = 0; q < n_thr; ++q)
+                        const unsigned int saved_sz = shrink_array::thread_chunk_size();
+                        shrink_array::set_thread_chunk_size(size);
+                        geometry = &CHUNK_T<T>::get_chunk_allocator(0, 0u);
+                        shrink_array::set_thread_chunk_size(saved_sz);
+                    }
+                    if (geometry != nullptr)
+                    {
+                        std::vector<std::vector<std::vector<T*>>> bucket(
+                            static_cast<std::size_t>(n_thr),
+                            std::vector<std::vector<T*>>(static_cast<std::size_t>(n_thr)));
+
+                        auto sort_own_list = [&](int q) noexcept
                         {
-                            auto& cell = bucket[static_cast<std::size_t>(q)][static_cast<std::size_t>(r)];
-                            for (T* b : cell)
+                            if (q < 0 || q >= n_thr)
+                                return;
+                            auto& lst = per_thr[q].list;
+                            if (lst.empty())
+                                return;
+                            auto&       row  = bucket[static_cast<std::size_t>(q)];
+                            std::size_t kept = 0;
+                            for (std::size_t i = 0; i < lst.size(); ++i)
                             {
-                                CHUNK_FREEPATH_INC(freed);
-                                CHUNK_LEDGER_DISCARD(b, "rechunk_to.drain_reuse.owner");
-                                auto* slab  = geometry->slab_of(b);
-                                auto* owner = static_cast<alloc_t*>(const_cast<void*>(slab->owner));
-                                owner->free_elt_pow2(b, slab);
+                                T*          b    = lst[i];
+                                const auto* slab = geometry->slab_of(b);
+                                if (slab && slab->owner && slab->owner_rank >= 0 && slab->owner_rank < n_thr)
+                                    row[static_cast<std::size_t>(slab->owner_rank)].push_back(b);
+                                else
+                                    lst[kept++] = b; // no owner claims it: stays parked
                             }
-                            cell.clear();
-                            cell.shrink_to_fit();
-                        }
-                    };
+                            lst.resize(kept);
+                        };
+                        auto free_own_buckets = [&](int r) noexcept
+                        {
+                            if (r < 0 || r >= n_thr)
+                                return;
+                            // Route to the `size` allocator: get_chunk_allocator keys on
+                            // the per-thread active size. Freeing a size-`size` block
+                            // through the wrong-size allocator corrupts that slab's
+                            // free-list -> SIGSEGV walking it at teardown.
+                            // Every block in bucket[*][r] belongs to an instance of
+                            // rank r (its slab said so); free it through THAT instance.
+                            for (int q = 0; q < n_thr; ++q)
+                            {
+                                auto& cell = bucket[static_cast<std::size_t>(q)][static_cast<std::size_t>(r)];
+                                for (T* b : cell)
+                                {
+                                    CHUNK_FREEPATH_INC(freed);
+                                    CHUNK_LEDGER_DISCARD(b, "rechunk_to.drain_reuse.owner");
+                                    auto* slab  = geometry->slab_of(b);
+                                    auto* owner = static_cast<alloc_t*>(const_cast<void*>(slab->owner));
+                                    owner->free_elt_pow2(b, slab);
+                                }
+                                cell.clear();
+                                cell.shrink_to_fit();
+                            }
+                        };
 
-                    if constexpr (chunk_config::not_use_compression_with_ompt)
-                    {
-                        // Serial call sites (the refill's own region has closed); a
-                        // no-op region in a non-OMP build. Skipped under OMPT, where
-                        // opening a region would fire compression callbacks that
-                        // must not run here.
-                        #pragma omp parallel
+                        if constexpr (chunk_config::not_use_compression_with_ompt)
                         {
-                            sort_own_list(CHUNK_PMP_THREAD_RANK);
+// Serial call sites (the refill's own region has closed); a
+// no-op region in a non-OMP build. Skipped under OMPT, where
+// opening a region would fire compression callbacks that
+// must not run here.
+#pragma omp parallel
+                            {
+                                sort_own_list(CHUNK_PMP_THREAD_RANK);
+                            }
+                            // Ranks a smaller team did not cover (cheap when empty).
+                            for (int q = 0; q < n_thr; ++q)
+                                sort_own_list(q);
+#pragma omp parallel
+                            {
+                                free_own_buckets(CHUNK_PMP_THREAD_RANK);
+                            }
+                            for (int r = 0; r < n_thr; ++r)
+                                free_own_buckets(r);
                         }
-                        // Ranks a smaller team did not cover (cheap when empty).
-                        for (int q = 0; q < n_thr; ++q)
-                            sort_own_list(q);
-                        #pragma omp parallel
+                        else
                         {
-                            free_own_buckets(CHUNK_PMP_THREAD_RANK);
+                            for (int q = 0; q < n_thr; ++q)
+                                sort_own_list(q);
+                            for (int r = 0; r < n_thr; ++r)
+                                free_own_buckets(r);
                         }
-                        for (int r = 0; r < n_thr; ++r)
-                            free_own_buckets(r);
-                    }
-                    else
-                    {
-                        for (int q = 0; q < n_thr; ++q)
-                            sort_own_list(q);
-                        for (int r = 0; r < n_thr; ++r)
-                            free_own_buckets(r);
                     }
                 }
-            }
             }; // drain_one
             if (const auto it = list_block_free_thr_by_size_.find(size); it != list_block_free_thr_by_size_.end())
                 drain_one(it->second);
@@ -1047,8 +1045,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             static const bool trace = std::getenv("CHUNK_THRESHOLD_TRACE") != nullptr;
             if (trace)
             {
-                std::fprintf(stderr, "[THRESHOLD] %-22s %8d -> %8d\n",
-                             type_name<T>().data(),
+                std::fprintf(stderr, "[THRESHOLD] %-22s %8d -> %8d\n", type_name<T>().data(),
                              size_max_number_of_chunk_to_check_compress, v);
                 std::fflush(stderr);
             }
@@ -1239,7 +1236,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
     }
 
-  public:
+
     static inline TChunk2CompMap<CHUNK_T, T>  map_chunk2_to_compress_potentially_thr;
     static inline TChunk2CompThr<CHUNK_T, T>  chunk2_to_compress_potentially_thr;
     static inline TChunk2ACompThr<CHUNK_T, T> chunk2A_to_compress_potentially_thr;
@@ -1263,7 +1260,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
   private:
     static inline long somme_chunk_create{0};
 
-    static inline int size_buffer_reuse;
+    static inline int                                   size_buffer_reuse;
     static inline std::unordered_map<unsigned int, int> size_buffer_reuse_by_key_; ///< see get_size_buffer_reuse(key)
 
     static inline int size_max_number_of_chunk_to_check_compress;

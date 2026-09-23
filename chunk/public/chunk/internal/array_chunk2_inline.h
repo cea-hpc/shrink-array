@@ -218,7 +218,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
                 const size_t bytes = this->size_policy_.size() * sizeof(T);
 
                 const size_t pagesize   = sysconf(_SC_PAGESIZE);
-                size_t alloc_size = (bytes + pagesize - 1) / pagesize * pagesize;
+                size_t       alloc_size = (bytes + pagesize - 1) / pagesize * pagesize;
 
                 void* ptr = mmap(nullptr, alloc_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
@@ -289,20 +289,20 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
             // pointer), so it is always safe to redo unconditionally here.
             if constexpr (build_config::use_mm_protect)
             {
-                const std::size_t cur_elems = Chunk2<T>::tab_m_ptr_cst_val2_mm_elems.size() > static_cast<std::size_t>(ind)
-                                                   ? Chunk2<T>::tab_m_ptr_cst_val2_mm_elems[ind]
-                                                   : 0;
+                const std::size_t cur_elems =
+                    Chunk2<T>::tab_m_ptr_cst_val2_mm_elems.size() > static_cast<std::size_t>(ind)
+                        ? Chunk2<T>::tab_m_ptr_cst_val2_mm_elems[ind]
+                        : 0;
                 const std::size_t need_elems = this->size_policy_.size();
 
                 if (need_elems > cur_elems)
                 {
-                    const size_t bytes     = need_elems * sizeof(T);
-                    const size_t pagesize  = sysconf(_SC_PAGESIZE);
-                    const size_t alloc_sz  = (bytes + pagesize - 1) / pagesize * pagesize;
+                    const size_t bytes    = need_elems * sizeof(T);
+                    const size_t pagesize = sysconf(_SC_PAGESIZE);
+                    const size_t alloc_sz = (bytes + pagesize - 1) / pagesize * pagesize;
 
-                    void* ptr = mmap(nullptr, alloc_sz, PROT_READ | PROT_WRITE,
-                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-                    T* arr = static_cast<T*>(ptr);
+                    void* ptr = mmap(nullptr, alloc_sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                    T*    arr = static_cast<T*>(ptr);
                     for (std::size_t i = 0; i < need_elems; ++i)
                         arr[i] = sec_value;
                     mprotect(ptr, alloc_sz, PROT_READ);
@@ -422,8 +422,8 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
     // guard as the other teardown loops: never nest inside a caller's region,
     // and not worth a team for a handful of chunks.
     const auto csz_audit = static_cast<unsigned int>(this->size_policy_.size());
-    int n_t0 = 0;
-    int n_t1 = 0;
+    int        n_t0      = 0;
+    int        n_t1      = 0;
 
     if constexpr (is_not_bool)
     {
@@ -484,10 +484,10 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
     int n_would_be_2a = -1;
     if constexpr (is_not_bool) // bool has no room for a distinct second value
     {
-        const auto         csz          = static_cast<unsigned int>(this->size_policy_.size());
-        const int          ind          = get_ind_second_value();
-        const in_t<T>      second_value = get_second_value();
-        n_would_be_2a                   = 0;
+        const auto    csz          = static_cast<unsigned int>(this->size_policy_.size());
+        const int     ind          = get_ind_second_value();
+        const in_t<T> second_value = get_second_value();
+        n_would_be_2a              = 0;
 #pragma omp parallel for reduction(+ : n_would_be_2a) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
         for (int j = 0; j < nb_chunk; ++j)
         {
@@ -509,8 +509,8 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
         add_chunk_still_compressed_at_exit<Chunk2<T>>(n_compressed);
         record_chunk_size_at_exit<Chunk2<T>>(static_cast<unsigned int>(this->size_policy_.size()));
     }
-    print_formatted_chunk_stats(os, num_tab, type_name<T>(), n_compressed, nb_chunk, n_t1,
-                                "Chunk2", /*n_cross=*/n_would_be_2a, /*cross_name=*/"Chunk2A");
+    print_formatted_chunk_stats(os, num_tab, type_name<T>(), n_compressed, nb_chunk, n_t1, "Chunk2",
+                                /*n_cross=*/n_would_be_2a, /*cross_name=*/"Chunk2A");
 }
 
 // clear() and clear_core() are currently the same teardown; the split exists so
@@ -640,11 +640,9 @@ void ArrayChunk2<T, ind_type>::clear_core()
                 }
             }
         }
-
     }
     else
     {
-
 #pragma omp parallel
         {
             const int nb_chunk0 = get_size_max_tab_omp(nb_chunk);
@@ -683,7 +681,7 @@ void ArrayChunk2<T, ind_type>::clear_core()
                 // later size-B pop then memsets it at B and overflows. Falls
                 // back to the legacy single list in single-size builds.
                 const unsigned int my_sz = this->size_policy_.size();
-                auto& lbf = manager_chunk2::get_list_block_free_thr_for_size(thr_rank, my_sz);
+                auto&              lbf   = manager_chunk2::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
                 for (int k = 0; k < nb; ++k)
                 {
@@ -786,13 +784,13 @@ void ArrayChunk2<T, ind_type>::compress_int()
     const int nb_res = (nb_chunk / (50 * CHUNK_PMP_MAX_THREADS)) + 1;
     tab_nb1.reserve(nb_res);
     tab_nb2.reserve(nb_res);
-    T second_value;
+    T   second_value;
     int ind = 0;
 
     if constexpr (is_not_bool)
     {
-        second_value  = get_second_value();
-        ind           = get_ind_second_value();
+        second_value = get_second_value();
+        ind          = get_ind_second_value();
 
 #pragma omp for schedule(static) nowait
         for (int j = 0; j < nb_chunk; ++j)
@@ -805,9 +803,8 @@ void ArrayChunk2<T, ind_type>::compress_int()
                 // (none registered, or 0) comes back as `first` only: filed in
                 // both lists, the reclaim below would clear_st the same chunk
                 // twice and trip check_not_constant_before_clear.
-                const auto scan =
-                    chunk.scan_constants(Chunk2<T>::first_value, second_value,
-                                         static_cast<unsigned int>(this->size_policy_.size()));
+                const auto scan = chunk.scan_constants(Chunk2<T>::first_value, second_value,
+                                                       static_cast<unsigned int>(this->size_policy_.size()));
                 if (scan.first)
                 {
                     tab_nb1.push_back(j);
@@ -891,9 +888,9 @@ void ArrayChunk2<T, ind_type>::compress_int()
     // drain is skipped and a queued compression looks the same, so the report
     // says which case it is.
     {
-        const auto scanned1 = tab_nb1.size();
-        const auto scanned2 = tab_nb2.size();
-        auto still_written = [&](int jj) -> bool
+        const auto scanned1      = tab_nb1.size();
+        const auto scanned2      = tab_nb2.size();
+        auto       still_written = [&](int jj) -> bool
         {
             if constexpr (is_not_bool)
                 return chunk_list[jj].written(ind);
@@ -974,18 +971,17 @@ void ArrayChunk2<T, ind_type>::compress_int()
                 // serial build has no such table, indexing it aborted here.
                 if constexpr (chunk_config::use_fast_block_compression)
                     std::cerr << " is_inside="
-                              << static_cast<int>(
-                                     shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
-                                         shrink_array::Proxy2<T>::share_info_array.get_num_tab(
-                                             const_cast<void*>(this->registry_key())))[ind1]
-                                         .load(std::memory_order_acquire));
+                              << static_cast<int>(shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
+                                                      shrink_array::Proxy2<T>::share_info_array.get_num_tab(
+                                                          const_cast<void*>(this->registry_key())))[ind1]
+                                                      .load(std::memory_order_acquire));
                 std::cerr << "\n";
                 if (k > 10)
                     break;
                 if constexpr (chunk_config::use_compression_with_counter)
                 {
                     const auto& chunk = chunk_list[ind1];
-                    std::cerr << "nb first_value : " << chunk.get_nb_first_value() << "\n";
+                    std::cerr << "nb first_value : " << static_cast<unsigned>(chunk.get_nb_first_value()) << "\n";
                 }
             }
             if (nb1 > 10)
@@ -1021,18 +1017,17 @@ void ArrayChunk2<T, ind_type>::compress_int()
                 // serial build has no such table, indexing it aborted here.
                 if constexpr (chunk_config::use_fast_block_compression)
                     std::cerr << " is_inside="
-                              << static_cast<int>(
-                                     shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
-                                         shrink_array::Proxy2<T>::share_info_array.get_num_tab(
-                                             const_cast<void*>(this->registry_key())))[ind2]
-                                         .load(std::memory_order_acquire));
+                              << static_cast<int>(shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
+                                                      shrink_array::Proxy2<T>::share_info_array.get_num_tab(
+                                                          const_cast<void*>(this->registry_key())))[ind2]
+                                                      .load(std::memory_order_acquire));
                 std::cerr << "\n";
                 if (k > 10)
                     break;
                 if constexpr (chunk_config::use_compression_with_counter)
                 {
                     const auto& chunk = chunk_list[ind2];
-                    std::cerr << "nb second_value : " << chunk.get_nb_second_value() << "\n";
+                    std::cerr << "nb second_value : " << static_cast<unsigned>(chunk.get_nb_second_value()) << "\n";
                 }
             }
             if (nb2 > 10)

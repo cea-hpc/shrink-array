@@ -686,8 +686,8 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::wait_out_compressor(con
 {
     constexpr int kMaxYields = CHUNK_WRITE_WAIT_MAX_YIELDS;
 
-    int spin   = 0;
-    int yields = 0;
+    int                         spin     = 0;
+    int                         yields   = 0;
     [[maybe_unused]] const bool mark_hit = chunk.steal_marked();
     // Relaxed, the same predicate as the gate: the decision is re-taken by
     // the caller's gate loads, which the handshake orders (announce_write,

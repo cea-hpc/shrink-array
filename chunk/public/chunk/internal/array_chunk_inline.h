@@ -25,7 +25,7 @@
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h" // print_formatted_chunk_stats
 #include "chunk/internal/manager_chunk.h"       // per-size free lists, candidate filter
-#include "chunk/PMP_CHUNK.h"           // CHUNK_PMP_*
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
 #include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_PARK / DISCARD
 #include "chunk/internal/svalloc.h"             // svfree
 #include "chunk/type_name.h"
@@ -130,7 +130,7 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
     // caller's region, and not worth a team for a handful of chunks.
     const auto csz = static_cast<unsigned int>(this->size_policy_.size());
 
-    int n_compressed = 0;
+    int n_compressed  = 0;
     int n_would_be_t2 = 0;
 
 #pragma omp parallel for reduction(+ : n_compressed, n_would_be_t2) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
@@ -254,7 +254,7 @@ void ArrayChunk<T, ind_type>::clear_core()
                 // ambient t_active (which may be another size mid-rechunk).
                 // Falls back to the legacy single list in single-size builds.
                 const unsigned int my_sz = this->size_policy_.size();
-                auto& lbf = Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(thr_rank, my_sz);
+                auto&              lbf   = Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
                 // Where these buffers land matters: get_list_block_free_thr_for_size()
                 // falls back to the LEGACY list when my_sz has no per-size list,
@@ -413,7 +413,6 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
             }
         }
     }
-
 }
 
 // make_block_compression() is FastBlockSupport<ArrayChunk, true>'s

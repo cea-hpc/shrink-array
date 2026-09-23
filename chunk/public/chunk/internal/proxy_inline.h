@@ -180,7 +180,7 @@ void Proxy<T>::execute_arithmetic_compound_operation(OP op, [[maybe_unused]] con
         const CalcType v_new_precise = op(static_cast<CalcType>(v_old), static_cast<CalcType>(v));
 
         // 2. Truncate back to storage type T
-        const in_t<T> v_new = static_cast<T>(v_new_precise);
+        const auto v_new = static_cast<T>(v_new_precise);
 
         values[num] = v_new;
 
@@ -229,7 +229,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_opera
         const CalcType res = op(static_cast<CalcType>(old_value), static_cast<CalcType>(v));
 
         // 2. Truncate result back to the array's storage type
-        const in_t<T> final_val = static_cast<T>(res);
+        const auto final_val = static_cast<T>(res);
 
         // 3. Store the value in physical memory
         values_ptr[num] = final_val;
@@ -329,7 +329,7 @@ T Proxy<T>::assign_impl(in_t<U> v) noexcept
                 auto&     chunk = ctx->chunk;
                 const int num   = ctx->num;
 
-                const Proxy proxy = Base::template make_proxy_with_info<Proxy>(ctx);
+                const auto proxy = Base::template make_proxy_with_info<Proxy>(ctx);
 
                 const bool is_cst = proxy.is_cst_val();
 

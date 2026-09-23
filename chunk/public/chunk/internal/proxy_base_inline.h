@@ -64,7 +64,7 @@ namespace shrink_array
  * @param size      Chunk geometry, dropped when the tuple has only 3 fields.
  */
 template <typename Vec, typename ChunkPtr>
-inline void push_to_compress_list(Vec& vec, ChunkPtr chunk, int num_chunk, int num_tab, ChunkElems size)
+void push_to_compress_list(Vec& vec, ChunkPtr chunk, int num_chunk, int num_tab, ChunkElems size)
 {
     using Tup = Vec::value_type; // C++20: typename not needed in an alias declaration
     if constexpr (std::tuple_size_v<Tup> == 4)
@@ -888,7 +888,7 @@ void ProxyBase<Derived, T, ChunkType>::enqueue_async_arithmetic(const U& v, Op o
     {
         using ProxyType = std::remove_cvref_t<decltype(derived())>;
 
-        ProxyType proxy = ProxyBase::template make_proxy_with_info<ProxyType>(ctx);
+        auto proxy = ProxyBase::template make_proxy_with_info<ProxyType>(ctx);
 
         body(ctx, proxy);
     };
@@ -1063,7 +1063,7 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
                                 // Additional sanity: the stored value should be readable back
                                 // from the current pointer.
                                 const in_t<T> readback = values_after[ctx->num];
-                                const in_t<T> expected = static_cast<T>(res);
+                                const auto    expected = static_cast<T>(res);
                                 if (readback != expected)
                                 {
                                     INVARIANT_FAILED("apply_atomic_op ASYNC lambda: chunk={} num={} readback mismatch: "
@@ -1150,7 +1150,7 @@ T ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation) n
                             const in_t<T>  current = values[ctx->num];
                             const CalcType intermediate =
                                 ctx->operation(static_cast<CalcType>(current), static_cast<CalcType>(ctx->operand));
-                            const in_t<T> final_val = static_cast<T>(intermediate);
+                            const auto final_val = static_cast<T>(intermediate);
 
                             if constexpr (build_config::any_check)
                             {
@@ -1384,7 +1384,7 @@ void ProxyBase<Derived, T, ChunkType>::apply_inplace_operation(SyncOp           
 
             auto write_body = [ctx, op = std::forward<AsyncOp>(async_op)]() mutable
             {
-                const ProxyType proxy = ProxyBase::template make_proxy_with_info<ProxyType>(ctx);
+                const auto proxy = ProxyBase::template make_proxy_with_info<ProxyType>(ctx);
 
                 op(ctx, proxy);
             };

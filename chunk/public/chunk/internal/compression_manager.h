@@ -70,8 +70,14 @@ struct FlushReplayState
     ///        Nesting-safe: saves and restores the flag.
     struct FlushReplayGuard
     {
-        FlushReplayGuard() noexcept { in_flush_replay = true; }
-        ~FlushReplayGuard() { in_flush_replay = saved; }
+        FlushReplayGuard() noexcept
+        {
+            in_flush_replay = true;
+        }
+        ~FlushReplayGuard()
+        {
+            in_flush_replay = saved;
+        }
 
         FlushReplayGuard(const FlushReplayGuard&)            = delete;
         FlushReplayGuard& operator=(const FlushReplayGuard&) = delete;
@@ -241,14 +247,19 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
      * @note Public on purpose, so to_be_queued() can bracket its insert; the raw
      *       acquire/release stay private to the drain paths.
      */
-    static void enqueue_lock(int thr_rank) noexcept { rank_flush_acquire(thr_rank); }
+    static void enqueue_lock(int thr_rank) noexcept
+    {
+        rank_flush_acquire(thr_rank);
+    }
 
     /// @brief Close the bracket opened by enqueue_lock().
     /// @param thr_rank rank passed to the matching enqueue_lock()
-    static void enqueue_unlock(int thr_rank) noexcept { rank_flush_release(thr_rank); }
+    static void enqueue_unlock(int thr_rank) noexcept
+    {
+        rank_flush_release(thr_rank);
+    }
 
   private:
-
     /// @brief One dangerous-list flag, padded to its own cache line.
     /// @note 128 bytes rather than 64, to stay safe on ARM.
     struct alignas(128) PaddedDangerousFlag
@@ -304,10 +315,10 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         ///       member makes the op layout identical across every translation
         ///       unit regardless of DEBUG/CHECK_OPTIM. Only the verification in
         ///       write_body() is gated on build_config::any_check.
-        std::uint64_t magic    = deferred_lifecycle::op_alive_magic;
+        std::uint64_t magic = deferred_lifecycle::op_alive_magic;
 
         /// Set once write_body() has run, so a second replay is detectable.
-        bool          executed = false;
+        bool executed = false;
 
         /// Guards destroy() so its teardown runs exactly once: the first caller
         /// wins the exchange, the rest return immediately.
@@ -350,8 +361,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
                 if (magic != deferred_lifecycle::op_alive_magic)
                     INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op magic corrupt/poisoned "
                                      "(op={}, magic={:#x}, executed={}, enqueue_rank={}, flusher_rank={})",
-                                     static_cast<const void*>(this), magic, executed, this->thread_rank,
-                                     flusher_rank);
+                                     static_cast<const void*>(this), magic, executed, this->thread_rank, flusher_rank);
 
                 // (2) This op must not have run before (double-flush guard).
                 if (executed)
@@ -955,7 +965,6 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
      */
     template <typename ProxyType>
     void finish([[maybe_unused]] bool log = true);
-
 };
 
 /**
@@ -983,7 +992,10 @@ struct CompressionManagerOmpPolicy<T, ChunkType, false> : FlushReplayState<T, Ch
      *
      * @return always false: nothing is ever deferred without OpenMP.
      */
-    [[nodiscard]] static constexpr bool have_deferred_queue() noexcept { return false; }
+    [[nodiscard]] static constexpr bool have_deferred_queue() noexcept
+    {
+        return false;
+    }
 };
 
 /**
@@ -1001,8 +1013,7 @@ struct CompressionManagerOmpPolicy<T, ChunkType, false> : FlushReplayState<T, Ch
  * @note Thread safety: All methods are thread-safe
  */
 template <typename T, typename ChunkType>
-class CompressionManager
-    : public CompressionManagerOmpPolicy<T, ChunkType, build_config::use_openmp>
+class CompressionManager : public CompressionManagerOmpPolicy<T, ChunkType, build_config::use_openmp>
 {
   public:
     CompressionManager()  = default;

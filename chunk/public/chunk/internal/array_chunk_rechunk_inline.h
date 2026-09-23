@@ -37,12 +37,12 @@
 #include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
 #include "chunk/internal/array_chunk_base.h"
 #include "chunk/internal/array_chunk_rechunk.h"
-#include "chunk/array_chunk_range_ops.h" // copy_range -- the public bulk fill
-#include "chunk/internal/chunk_stats.h"           // increm_chunk_rechunk* (CHUNK_STATS)
-#include "chunk/internal/compression_manager.h"   // CompressionManager<>::FlushReplayGuard in rechunk_refill
-#include "chunk/internal/conditional_counter.h"   // counter_value_t -- nb_val_eq_zero resync after the raw-fill
-#include "chunk/PMP_CHUNK.h"             // get_thr_rank_fast
-#include <unistd.h>  // sysconf(_SC_PAGESIZE) -- the per-slice RSS trace
+#include "chunk/array_chunk_range_ops.h"        // copy_range -- the public bulk fill
+#include "chunk/internal/chunk_stats.h"         // increm_chunk_rechunk* (CHUNK_STATS)
+#include "chunk/internal/compression_manager.h" // CompressionManager<>::FlushReplayGuard in rechunk_refill
+#include "chunk/internal/conditional_counter.h" // counter_value_t -- nb_val_eq_zero resync after the raw-fill
+#include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
+#include <unistd.h>                             // sysconf(_SC_PAGESIZE) -- the per-slice RSS trace
 
 namespace shrink_array::rechunk_detail
 {
@@ -54,7 +54,7 @@ inline long rss_mib_now() noexcept
     std::FILE* f = std::fopen("/proc/self/statm", "r");
     if (f == nullptr)
         return -1;
-    long size = 0, resident = 0;
+    long      size = 0, resident = 0;
     const int n = std::fscanf(f, "%ld %ld", &size, &resident);
     std::fclose(f);
     if (n != 2)
@@ -86,11 +86,11 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
         const char*     e = std::getenv("CHUNK_RECHUNK_SCHEDULE");
         if (e == nullptr || e[0] == '\0')
             return r;
-        char kind[16] = {};
-        int  chunk    = 0;
-        const int n   = std::sscanf(e, "%15[a-z],%d", kind, &chunk);
-        omp_sched_t k{};
-        bool        ok = n >= 1 && chunk >= 0;
+        char        kind[16] = {};
+        int         chunk    = 0;
+        const int   n        = std::sscanf(e, "%15[a-z],%d", kind, &chunk);
+        omp_sched_t k        = omp_sched_static;
+        bool        ok       = n >= 1 && chunk >= 0;
         if (ok)
         {
             const std::string_view kv(kind);
@@ -107,8 +107,10 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
         }
         if (!ok)
         {
-            std::fprintf(stderr, "[RECHUNK] CHUNK_RECHUNK_SCHEDULE=\"%s\" not understood "
-                                 "(kind[,chunk], kind = static|dynamic|guided|auto): keeping guided,16\n", e);
+            std::fprintf(stderr,
+                         "[RECHUNK] CHUNK_RECHUNK_SCHEDULE=\"%s\" not understood "
+                         "(kind[,chunk], kind = static|dynamic|guided|auto): keeping guided,16\n",
+                         e);
             return r;
         }
         r.kind  = k;
@@ -191,7 +193,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // wall times. The slice trace inside rechunk_refill brackets the refill;
     // this brackets everything around it, where the remaining part of the
     // peak was measured to sit.
-    auto rss_now = [&] { return trace_phases ? rechunk_detail::rss_mib_now() : -1L; };
+    auto       rss_now = [&] { return trace_phases ? rechunk_detail::rss_mib_now() : -1L; };
     const long r_entry = rss_now();
     long       r_flush = -1, r_pre_tmp = -1, r_refill = -1, r_swap = -1, r_teardown = -1;
 
@@ -569,7 +571,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         }();
         // Fining only (v1, OpenMP): how many new chunks read one old chunk,
         // and how many have finished with each -- see the release below.
-        [[maybe_unused]] const int fine_ratio = old_size > new_size ? old_size / new_size : 1;
+        [[maybe_unused]] const int                     fine_ratio = old_size > new_size ? old_size / new_size : 1;
         [[maybe_unused]] std::vector<std::atomic<int>> old_done;
         if constexpr (chunk_config::use_chunk && build_config::use_openmp)
         {
@@ -723,8 +725,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // where a per-chunk whole-array drain would be both wrong and
             // pointless.
             set_thread_chunk_size(new_size);
-            copy_range(tmp, static_cast<std::size_t>(base), static_cast<std::size_t>(end), buf.begin(),
-                                     assume_drained);
+            copy_range(tmp, static_cast<std::size_t>(base), static_cast<std::size_t>(end), buf.begin(), assume_drained);
 
             // Fold back NOW what was already compressed.
             //
@@ -766,8 +767,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     ++tally.folded;
                     auto& nch = tmp.chunk_list[static_cast<std::size_t>(c)];
                     nch.compress(get_thr_rank_fast(), c, tmp.num_tab,
-                                 /*apply=*/true,
-                                 ChunkElems{static_cast<unsigned>(new_size)});
+                                 /*apply=*/true, ChunkElems{static_cast<unsigned>(new_size)});
                     // Every source chunk WAS a constant here, so a refusal means
                     // the span merged constants that differ -- the genuine cost
                     // of coarsening, the one the forecast has to carry.
@@ -891,7 +891,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // The rebuild loop is schedule(runtime): set the chosen schedule on this
         // task (the slice regions inherit it) and restore the caller's after
         // the slices. See rechunk_detail::rebuild_schedule().
-        omp_sched_t caller_sched_kind{};
+        omp_sched_t caller_sched_kind  = omp_sched_static;
         int         caller_sched_chunk = 0;
         omp_get_schedule(&caller_sched_kind, &caller_sched_chunk);
         {
@@ -935,8 +935,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 typename CompressionManager<T, chunk_type>::FlushReplayGuard rechunk_replay_guard;
                 std::vector<T>                                               buf(static_cast<std::size_t>(new_size));
                 RebuildTally tally; // this thread's fold counts for this slice
-                // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
-                // (rechunk_detail::rebuild_schedule).
+                                    // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
+                                    // (rechunk_detail::rebuild_schedule).
 #pragma omp for schedule(runtime)
                 for (int c = c0; c < c1; ++c)
                     rebuild_one(c, buf, tally);
@@ -962,8 +962,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 if (slice_trace)
                 {
                     const long r = rechunk_detail::rss_mib_now();
-                    std::fprintf(stderr, "[RECHUNK-SLICE] %d/%d after-drain rss=%ld MB  (%+ld since start)\n",
-                                 sl + 1, n_slices, r, r - rss_start);
+                    std::fprintf(stderr, "[RECHUNK-SLICE] %d/%d after-drain rss=%ld MB  (%+ld since start)\n", sl + 1,
+                                 n_slices, r, r - rss_start);
                 }
             }
         }

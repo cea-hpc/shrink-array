@@ -30,7 +30,7 @@
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_stats_printer.h" // print_formatted_chunk_stats
 #include "chunk/internal/manager_chunk.h"
-#include "chunk/PMP_CHUNK.h"           // CHUNK_PMP_*, get_size_max_tab_omp
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_*, get_size_max_tab_omp
 #include "chunk/singleton.h"
 #include "chunk/type_name.h"
 
@@ -89,7 +89,7 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
             // it runs BEFORE any refill, so no proxy holds a cached
             // ptr_second_value into a table we are about to reallocate.
             Proxy2A<T>::resize_tab_is_int(num_tab, 0, nb_chunk);
-            sync_meta_bases(); // rows reallocated: re-arm (Proxy2AMetaBases)
+            sync_meta_bases();        // rows reallocated: re-arm (Proxy2AMetaBases)
             this->assign_alloc_key(); // own slabs if large enough (see alloc_key_)
 
             // Per-chunk init: every iteration writes slot i of tables sized just
@@ -373,8 +373,8 @@ void ArrayChunk2A<T, ind_type>::clear_core()
         // production (any_check false).
         if constexpr (build_config::any_check && !chunk_config::have_agressive_compression)
         {
-            const auto  csz    = static_cast<unsigned int>(this->size_policy_.size());
-            auto&       inside = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab);
+            const auto  csz          = static_cast<unsigned int>(this->size_policy_.size());
+            auto&       inside       = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab);
             std::size_t missed_first = 0, missed_second = 0, stuck = 0;
 
             for (int j = 0; j < nb_chunk; ++j)

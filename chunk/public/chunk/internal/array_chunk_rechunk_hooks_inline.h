@@ -24,8 +24,8 @@
 
 #include "chunk/internal/array_chunk_rechunk_hooks.h"
 #include "chunk/internal/manager_chunk.h" // manager_type — candidate store + reuse free-lists
-#include <cstdlib> // std::getenv (CHUNK_RECHUNK_DROP_LEGACY)
-#include <tuple>   // std::get on candidate tuples
+#include <cstdlib>                        // std::getenv (CHUNK_RECHUNK_DROP_LEGACY)
+#include <tuple>                          // std::get on candidate tuples
 
 namespace shrink_array
 {
@@ -33,7 +33,7 @@ namespace shrink_array
 // Defined in each variant's hooks file, guarded: a TU that includes several
 // variants must see a single definition.
 #ifndef SHRINK_ARRAY_RECHUNK_DROP_LEGACY_DEFINED
-#define SHRINK_ARRAY_RECHUNK_DROP_LEGACY_DEFINED
+    #define SHRINK_ARRAY_RECHUNK_DROP_LEGACY_DEFINED
 namespace rechunk_detail
 {
 /// A/B switch: CHUNK_RECHUNK_DROP_LEGACY=1 (read once) makes

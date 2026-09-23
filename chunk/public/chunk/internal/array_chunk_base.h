@@ -47,9 +47,9 @@
 #include "chunk/chunk_traits.h"
 #include "chunk/internal/process_verbs.h" // compress_now_and_trim_pools -- shrink_to_fit()
 #include "chunk/internal/crp_helper.h"
-#include "chunk/internal/array_chunk_core.h"         // ArrayChunkCore — geometry, chunks, bitset, identity
-#include "chunk/internal/array_chunk_rechunk.h"      // RechunkSupport — CHUNK_DYNAMIC-only mixin
-#include "chunk/internal/invariant_check.h"          // INVARIANT_FAILED — used HERE (swap check)
+#include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
+#include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
+#include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED — used HERE (swap check)
 #include "chunk/internal/def_force_inline.h"
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_* macros — used HERE, not via includers
 
@@ -131,12 +131,12 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     friend class RechunkHooks;
 
   public:
-    using Traits       = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
-    using T            = Traits::value_type;        ///< Stored element type.
-    using ind_type     = Traits::index_type;        ///< Signed global index type.
-    using chunk_type   = Traits::chunk_type;        ///< Chunk type held in @ref chunk_list.
-    using proxy_type   = Traits::proxy_type;        ///< Write proxy returned by the non-const accessors.
-    using manager_type = Traits::manager_type;      ///< Per-type manager owning the compression machinery.
+    using Traits       = ArrayChunkTraits<Derived>;  ///< Traits specialisation of the concrete array.
+    using T            = Traits::value_type;         ///< Stored element type.
+    using ind_type     = Traits::index_type;         ///< Signed global index type.
+    using chunk_type   = Traits::chunk_type;         ///< Chunk type held in @ref chunk_list.
+    using proxy_type   = Traits::proxy_type;         ///< Write proxy returned by the non-const accessors.
+    using manager_type = Traits::manager_type;       ///< Per-type manager owning the compression machinery.
     using Core         = ArrayChunkCore<chunk_type>; ///< The index-independent part (array_chunk_core.h).
 
     // ── STL-vector-like member typedefs ──────────────────────────────────────
@@ -168,18 +168,18 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     // Re-export the mixin verbs so the container's own surface is unchanged for
     // callers (and for the derived arrays, which use them unqualified).
     using Core::alloc_dirty_bitset;
-    using Core::reallocate_dirty_bitset;
-    using Core::clear_dirty_bitset;
-    using Core::mark_chunk_dirty;
-    using Core::is_chunk_dirty;
-    using Core::swap_dirty_bitset;
     using Core::clear_all_dirty_bitsets;
+    using Core::clear_dirty_bitset;
+    using Core::is_chunk_dirty;
+    using Core::mark_chunk_dirty;
+    using Core::reallocate_dirty_bitset;
+    using Core::swap_dirty_bitset;
 
-    using Core::registry_key;
-    using Core::chunk_size;
     using Core::alloc_key;
     using Core::chunk_count;
     using Core::chunk_ref;
+    using Core::chunk_size;
+    using Core::registry_key;
 
     using RechunkSupport<Derived>::rechunk_to;
     using RechunkSupport<Derived>::rechunk_all_to;
@@ -195,14 +195,14 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     // The core's members, named here so this class and the derived arrays
     // keep using them unqualified-through-this as before (the core is a
     // dependent base).
-    using Core::size_policy_;
+    using Core::alloc_key_;
+    using Core::assign_alloc_key;
     using Core::chunk_list;
     using Core::nb_chunk;
-    using Core::num_tab;
     using Core::nb_tab;
-    using Core::alloc_key_;
     using Core::next_alloc_key_;
-    using Core::assign_alloc_key;
+    using Core::num_tab;
+    using Core::size_policy_;
 
     ind_type m_size; ///< Number of elements exposed by size().
 
@@ -481,7 +481,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         /** @brief Step back one element, entering (and syncing) the previous chunk on underflow. */
         const_iterator& operator--() noexcept
         {
-            --lin_; // see operator++: lin_ is what == and != read
+            --lin_;                     // see operator++: lin_ is what == and != read
             if (num_ == 0) [[unlikely]] // crossed a chunk boundary backwards
             {
                 --num_chunk_;
@@ -794,7 +794,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     }
 
   public:
-
     /**
      * @brief Centralized synchronization logic.
      * @param chunk_t Reference to the actual chunk for OMP checks.

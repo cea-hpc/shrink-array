@@ -220,7 +220,7 @@ class WriteCompressSyncPolicy
     ///          to_be_queued_for_deferred_processing() at 128 threads.
     alignas(128) static inline std::atomic<int> num_thread_flushing{0};
 
-  public:
+
     WriteCompressSyncPolicy() noexcept = default;
 
     // Non-copyable

@@ -38,7 +38,7 @@
 namespace shrink_array
 {
 template <typename T>
-inline bool need_load_balance_list_block_free_thr()
+bool need_load_balance_list_block_free_thr()
 {
     const int max_thr = CHUNK_PMP_MAX_THREADS;
 
@@ -66,7 +66,7 @@ inline bool need_load_balance_list_block_free_thr()
 }
 
 template <typename T>
-inline void load_balance_list_block_free_thr()
+void load_balance_list_block_free_thr()
 {
     int lg = 0;
 

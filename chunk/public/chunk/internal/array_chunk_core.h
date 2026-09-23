@@ -184,9 +184,8 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
         const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk) * sizeof(chunk_type);
         if (meta_bytes < build_config::alloc_affinity_min_bytes)
             return;
-        const unsigned int key = (alloc_key_ != 0)
-                                     ? alloc_key_
-                                     : next_alloc_key_.fetch_add(1, std::memory_order_relaxed);
+        const unsigned int key =
+            (alloc_key_ != 0) ? alloc_key_ : next_alloc_key_.fetch_add(1, std::memory_order_relaxed);
         // Keep the key ONLY if the manager really built its allocator set and
         // lists. Otherwise stay on the shared pool: a key with no registered
         // set makes route_omp_dynamic_alloc fall through to the legacy single

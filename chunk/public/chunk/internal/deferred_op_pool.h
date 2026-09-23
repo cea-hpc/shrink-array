@@ -18,12 +18,12 @@
 
 #include <algorithm> // std::max (slab sizing)
 #include <cassert>
-#include <cstddef>   // std::byte, std::size_t
-#include <cstdint>   // std::uintptr_t (the block probe)
-#include <cstdio>    // std::fprintf (diagnostics)
-#include <cstdlib>   // std::abort, std::getenv (CHUNK_RECYCLE_TRACE)
-#include <memory>    // std::unique_ptr
-#include <utility>   // std::move
+#include <cstddef> // std::byte, std::size_t
+#include <cstdint> // std::uintptr_t (the block probe)
+#include <cstdio>  // std::fprintf (diagnostics)
+#include <cstdlib> // std::abort, std::getenv (CHUNK_RECYCLE_TRACE)
+#include <memory>  // std::unique_ptr
+#include <utility> // std::move
 #include <vector>
 #include <sys/mman.h> // msync / MS_ASYNC (the block probe)
 #include <unistd.h>   // sysconf (same)
@@ -42,7 +42,12 @@
  */
 namespace fast_alloc
 {
-    enum class ArenaKind { Op, Ctx, Value };
+enum class ArenaKind
+{
+    Op,
+    Ctx,
+    Value
+};
 }
 
 /// @brief std-alloc stand-in for the fast allocator: operator new/delete
@@ -54,7 +59,10 @@ class TCTypeAllocator
   public:
     void init(size_t, size_t, size_t) {}
     void set_arena(fast_alloc::ArenaKind) {}
-    bool is_free_able_elt(std::byte*) { return true; }
+    bool is_free_able_elt(std::byte*)
+    {
+        return true;
+    }
 
     std::byte* alloc()
     {
@@ -78,13 +86,16 @@ class DeferredOperationBase
     /// @brief Replay the write.
     virtual void write_body() = 0;
     /// @brief Run the destructor and hand the block back to its pool.
-    virtual void destroy() noexcept = 0;
+    virtual void destroy() noexcept           = 0;
     virtual ~DeferredOperationBase() noexcept = default;
 };
 
 struct DeferredOpDeleter
 {
-    void operator()(DeferredOperationBase* p) const noexcept { (void)p; }
+    void operator()(DeferredOperationBase* p) const noexcept
+    {
+        (void)p;
+    }
 };
 
 using DeferredOpPtr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
@@ -104,12 +115,12 @@ struct FastAllocatorBase
 {
     size_t block_size = 0; ///< bytes per block
     /// @brief Take a block (uninitialised).
-    virtual void* allocate_raw()   = 0;
+    virtual void* allocate_raw() = 0;
     /// @brief Return a block to the pool.
-    virtual void  recycle(void* p) = 0;
+    virtual void recycle(void* p) = 0;
     /// @brief The slab the blocks come from (the ledger's identity).
     [[nodiscard]] virtual const void* slab_addr() const noexcept = 0;
-    virtual ~FastAllocatorBase() = default;
+    virtual ~FastAllocatorBase()                                 = default;
 };
 
 // ============================================================================
@@ -212,8 +223,8 @@ struct FastAllocatorConcrete : FastAllocatorBase
             // Smart calculation: divide the target granularity (e.g. 2MB) by object size.
             // We guarantee a minimum of 64 blocks to prevent excessive system calls.
             constexpr uintptr_t blocks_per_pool = (element_size >= build_config::deferred_pool_granularity)
-                ? 64
-                : (build_config::deferred_pool_granularity / element_size);
+                                                      ? 64
+                                                      : (build_config::deferred_pool_granularity / element_size);
 
             // FIX (op/value slab aliasing): last arg = nb_max_block_empty = -1
             // → the op allocator NEVER munmaps an empty slab. Previously it was 1
@@ -424,14 +435,27 @@ struct FastAllocatorConcrete : FastAllocatorBase
 // Allocator Registry and Tags
 // ============================================================================
 
-struct OpTag {};
-struct CtxTag {};
+struct OpTag
+{
+};
+struct CtxTag
+{
+};
 
 // FIX (op/ctx/value slab aliasing): map each registry tag to its arena so op and
 // ctx pools allocate slabs from disjoint address spaces.
-template <typename Tag> struct arena_of_tag;
-template <> struct arena_of_tag<OpTag>  { static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Op;  };
-template <> struct arena_of_tag<CtxTag> { static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Ctx; };
+template <typename Tag>
+struct arena_of_tag;
+template <>
+struct arena_of_tag<OpTag>
+{
+    static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Op;
+};
+template <>
+struct arena_of_tag<CtxTag>
+{
+    static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Ctx;
+};
 
 /**
  * @brief Registry that manages a collection of FastAllocators, one per object size.
@@ -480,7 +504,7 @@ using CtxRegistry = AllocatorRegistry<CtxTag>;
 // for the type about to be constructed on it. On aarch64 a misaligned atomic
 // access (LDAR/STLR/LDXR) faults — a candidate cause for the slab-only crash.
 template <typename T>
-inline void chunk_align_probe([[maybe_unused]] const char* site, [[maybe_unused]] void* mem) noexcept
+void chunk_align_probe([[maybe_unused]] const char* site, [[maybe_unused]] void* mem) noexcept
 {
 #ifdef CHUNK_ALIGN_CHECK
     if ((reinterpret_cast<std::uintptr_t>(mem) & (alignof(T) - 1)) != 0)
@@ -560,8 +584,14 @@ void free_ctx(T* p)
     alloc->recycle(static_cast<void*>(p));
 }
 
-inline void reset_op_allocators()  { OpRegistry::reset(); }
-inline void reset_ctx_allocators() { CtxRegistry::reset(); }
+inline void reset_op_allocators()
+{
+    OpRegistry::reset();
+}
+inline void reset_ctx_allocators()
+{
+    CtxRegistry::reset();
+}
 
 /**
  * @brief Clears the allocator REGISTRY of the CALLING thread only.

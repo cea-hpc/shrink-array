@@ -45,7 +45,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     using Base::m_size;
     using Base::nb_chunk;
 
-  public:
+
     // ── Identical methods → factorised here ───────────────────────────────
 
     /**

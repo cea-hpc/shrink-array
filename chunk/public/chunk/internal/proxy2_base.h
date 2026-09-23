@@ -233,7 +233,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     void mark_for_compression_core(in_t<T> old_value,
                                    in_t<T> new_value,
                                    in_t<T> expected_in_memory,
-                                   bool     isv,
+                                   bool    isv,
                                    Args&&... compression_args) const;
 
     /**

@@ -102,14 +102,15 @@ struct alignas(64) ChunkStatsThr
     /// pays. Counted in every build mode; the asymmetric protocol is not there yet.
     long gate_start             = 0; ///< CompressionManager::start() entered
     long gate_start_flush_yield = 0; ///< ... of which yielded to a flush (either check)
-    long gate_start_yield_late  = 0; ///< ... of those, at the re-check AFTER the writer wait (hard held, writers deferred for nothing)
-    long gate_start_deferred    = 0; ///< ... of which gave up after the writer-wait budget
-    long gate_flush             = 0; ///< announce_flush() calls (flush_deferred, flush_chunk_all_ranks)
-    long gate_deferred          = 0; ///< writes deferred (enqueue_deferred_write): a compressor was in flight
-    long gate_wait              = 0; ///< wait_out_compressor() calls (a writer found the gate shut)
-    long gate_mark_hit          = 0; ///< ... of which because ITS chunk was marked by a compressor's pass
-    long gate_wait_yields       = 0; ///< ... yields spent there (one per 1000 pauses)
-    long gate_driver            = 0; ///< run_slow_path() drivers (a writer sent to the slow path)
+    long gate_start_yield_late =
+        0; ///< ... of those, at the re-check AFTER the writer wait (hard held, writers deferred for nothing)
+    long gate_start_deferred = 0; ///< ... of which gave up after the writer-wait budget
+    long gate_flush          = 0; ///< announce_flush() calls (flush_deferred, flush_chunk_all_ranks)
+    long gate_deferred       = 0; ///< writes deferred (enqueue_deferred_write): a compressor was in flight
+    long gate_wait           = 0; ///< wait_out_compressor() calls (a writer found the gate shut)
+    long gate_mark_hit       = 0; ///< ... of which because ITS chunk was marked by a compressor's pass
+    long gate_wait_yields    = 0; ///< ... yields spent there (one per 1000 pauses)
+    long gate_driver         = 0; ///< run_slow_path() drivers (a writer sent to the slow path)
 };
 
 /// @brief Program start, for the per-second rates print_chunk_stats() shows

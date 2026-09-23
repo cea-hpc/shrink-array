@@ -311,7 +311,7 @@ struct GlobalVecHolder
     static inline std::atomic<char*>       region_begin{nullptr}; ///< Reservation start; null before init().
     static inline char*                    region_end = nullptr;  ///< One past the reservation.
     static inline std::atomic<std::size_t> region_used{0};        ///< Bump offset, in bytes.
-    static inline std::size_t              region_stride = 0;      ///< Bytes per array: every array is carved at a multiple of it.
+    static inline std::size_t region_stride = 0; ///< Bytes per array: every array is carved at a multiple of it.
 
     /// @brief Largest identifier the region can hand out.
     ///
@@ -344,9 +344,8 @@ struct GlobalVecHolder
                    ? ((static_cast<std::size_t>(cst_buffer_size) * sizeof(T) + 4095u) & ~std::size_t{4095u})
                    : ((static_cast<std::size_t>(cst_buffer_size) * sizeof(T) + 63u) & ~std::size_t{63u}));
 
-    static constexpr std::size_t kMaxIds = (kRegionBytes / kIdStride) < CHUNK_CST_VAL2_MAX_IDS
-                                               ? (kRegionBytes / kIdStride)
-                                               : CHUNK_CST_VAL2_MAX_IDS;
+    static constexpr std::size_t kMaxIds =
+        (kRegionBytes / kIdStride) < CHUNK_CST_VAL2_MAX_IDS ? (kRegionBytes / kIdStride) : CHUNK_CST_VAL2_MAX_IDS;
 
     /// @brief The value registered under each identifier, contiguous: what
     ///        a chunk's second value is read through on every write of a
@@ -380,14 +379,13 @@ struct GlobalVecHolder
         // to give each identifier a distinct address. One cache line does,
         // and it takes the capacity from 65 536 values to 33 million while no
         // page is ever backed.
-        const std::size_t bytes = build_config::cst_val2_no_arrays
-                                      ? std::size_t{64}
-                                      : static_cast<std::size_t>(cst_buffer_size) * sizeof(T);
-        std::size_t       stride;
+        const std::size_t bytes =
+            build_config::cst_val2_no_arrays ? std::size_t{64} : static_cast<std::size_t>(cst_buffer_size) * sizeof(T);
+        std::size_t stride;
         if constexpr (build_config::use_mm_protect && !build_config::cst_val2_no_arrays)
         {
-            const std::size_t pagesize = static_cast<std::size_t>(sysconf(_SC_PAGESIZE));
-            stride                     = ((bytes + pagesize - 1) / pagesize) * pagesize;
+            const auto pagesize = static_cast<std::size_t>(sysconf(_SC_PAGESIZE));
+            stride              = ((bytes + pagesize - 1) / pagesize) * pagesize;
         }
         else
         {
@@ -435,8 +433,8 @@ struct GlobalVecHolder
             if (warned.compare_exchange_strong(expected, true, std::memory_order_relaxed))
             {
                 std::cerr << "[cst_val2] second-value region past half full: " << (off / bytes) << " of "
-                          << (kRegionBytes / bytes) << " arrays of " << bytes << " bytes ("
-                          << (kRegionBytes >> 20) << " MiB). Raise CHUNK_CST_VAL2_REGION_BYTES if the count keeps "
+                          << (kRegionBytes / bytes) << " arrays of " << bytes << " bytes (" << (kRegionBytes >> 20)
+                          << " MiB). Raise CHUNK_CST_VAL2_REGION_BYTES if the count keeps "
                           << "growing; exhausting the region aborts.\n";
             }
         }
@@ -478,7 +476,7 @@ struct GlobalVecHolder
     // arrays are freed (single-threaded clear paths) so a lookup never
     // dereferences a freed array.
 #ifndef CHUNK_CST_VAL2_INDEX_LOG2
-    #define CHUNK_CST_VAL2_INDEX_LOG2 18   // 2^18 = 262144 slots, 2 Mio/type; <11% load at 30k values
+    #define CHUNK_CST_VAL2_INDEX_LOG2 18 // 2^18 = 262144 slots, 2 Mio/type; <11% load at 30k values
 #endif
     static constexpr size_t INDEX_CAP       = size_t{1} << CHUNK_CST_VAL2_INDEX_LOG2; ///< Initial capacity.
     static constexpr int    INDEX_MAX_PROBE = 64; ///< Bounded; giving up means fallback.
@@ -544,9 +542,8 @@ struct GlobalVecHolder
     {
         if constexpr (build_config::cst_val2_no_arrays)
         {
-            const char* b = region_begin.load(std::memory_order_relaxed);
-            const auto  id =
-                static_cast<std::size_t>((reinterpret_cast<const char*>(p) - b) / region_stride) + 1u;
+            const char* b  = region_begin.load(std::memory_order_relaxed);
+            const auto  id = static_cast<std::size_t>((reinterpret_cast<const char*>(p) - b) / region_stride) + 1u;
             return value_by_id[id];
         }
         else
@@ -562,8 +559,10 @@ struct GlobalVecHolder
     {
         uint64_t x = 0;
         std::memcpy(&x, &v, sizeof(T) < sizeof(uint64_t) ? sizeof(T) : sizeof(uint64_t));
-        x ^= x >> 33; x *= 0xff51afd7ed558ccdULL;
-        x ^= x >> 33; x *= 0xc4ceb9fe1a85ec53ULL;
+        x ^= x >> 33;
+        x *= 0xff51afd7ed558ccdULL;
+        x ^= x >> 33;
+        x *= 0xc4ceb9fe1a85ec53ULL;
         x ^= x >> 33;
         return static_cast<size_t>(x);
     }
@@ -591,11 +590,11 @@ struct GlobalVecHolder
         {
             T* p = t->slots[(h + probe) & mask].load(std::memory_order_acquire);
             if (p == nullptr)
-                return nullptr;      // empty slot => v is not indexed here
+                return nullptr; // empty slot => v is not indexed here
             if (value_of_ptr(p) == v)
-                return p;            // validated hit
+                return p; // validated hit
         }
-        return nullptr;              // probe budget exhausted => treat as miss
+        return nullptr; // probe budget exhausted => treat as miss
     }
 
     /**
@@ -669,8 +668,8 @@ struct GlobalVecHolder
                 if (cur != nullptr)
                 {
                     if (value_of_ptr(cur) == v)
-                        return;      // already indexed (equivalent pointer)
-                    continue;        // occupied by another value -> probe on
+                        return; // already indexed (equivalent pointer)
+                    continue;   // occupied by another value -> probe on
                 }
                 // Empty slot: publish (single writer under insert_mutex).
                 t->slots[idx].store(p, std::memory_order_release);
@@ -1126,8 +1125,8 @@ struct TabCstVal2Holder
 
         if (degraded) [[unlikely]]
         {
-            for (segment_t* seg = global_vec_holder::head.load(std::memory_order_acquire);
-                 seg != nullptr; seg = seg->next)
+            for (segment_t* seg = global_vec_holder::head.load(std::memory_order_acquire); seg != nullptr;
+                 seg            = seg->next)
             {
                 for (int i = 0; i < seg->used; ++i)
                 {
@@ -1147,7 +1146,7 @@ struct TabCstVal2Holder
         if (seg->used == segment_t::SIZE)
             seg = global_vec_holder::append_segment(last_seg);
 
-        T* p               = alloc_chunk(second_v); // fill_n BEFORE publication
+        T* p                  = alloc_chunk(second_v); // fill_n BEFORE publication
         seg->slots[seg->used] = p;
         ++seg->used;
         global_vec_holder::index_publish(second_v, p); // release: readers see the fill
@@ -1168,7 +1167,6 @@ struct TabCstVal2Holder
         // the last one calls clear().
         global_vec_holder::clear_if_last(nb_val2);
     }
-
 };
 
 /**

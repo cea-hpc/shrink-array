@@ -27,7 +27,7 @@
 
 #include "chunk/rechunk_decider.h"
 #include "chunk/chunk_size_advisor.h"
-#include "chunk/config.h"            // build_config::chunk_dynamic
+#include "chunk/config.h"                     // build_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size
 
 namespace shrink_array
@@ -143,8 +143,8 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     }();
     const std::size_t min_gain = env_min_gain == static_cast<std::size_t>(-1) ? pol_.min_gain_bytes : env_min_gain;
 
-    const auto rel_gate  = static_cast<std::size_t>(pol_.min_gain_frac * static_cast<double>(cur_e.mem_bytes));
-    std::size_t       data_gate = std::max(min_gain, rel_gate);
+    const auto  rel_gate  = static_cast<std::size_t>(pol_.min_gain_frac * static_cast<double>(cur_e.mem_bytes));
+    std::size_t data_gate = std::max(min_gain, rel_gate);
     if (coarsening && pol_.coarsen_gain_multiple > 1)
         data_gate *= pol_.coarsen_gain_multiple;
 
@@ -183,8 +183,8 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         const std::size_t policy_floor =
             env_meta_floor == static_cast<std::size_t>(-1) ? pol_.coarsen_min_meta_gain_bytes : env_meta_floor;
         const auto meta_floor = std::max(min_gain, policy_floor);
-        clears_gate = (gain_meta >= static_cast<double>(meta_floor) && gain_bytes >= min_gain) ||
-                      gain_bytes >= data_gate;
+        clears_gate =
+            (gain_meta >= static_cast<double>(meta_floor) && gain_bytes >= min_gain) || gain_bytes >= data_gate;
     }
     else
         clears_gate = gain_bytes >= data_gate;

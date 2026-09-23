@@ -20,10 +20,10 @@
 #include <vector>
 
 #include "chunk/internal/chunk_base.h"  // the declarations these bodies belong to
-#include "chunk/config.h"      // build_config::use_fast_alloc, chunk_config::
+#include "chunk/config.h"               // build_config::use_fast_alloc, chunk_config::
 #include "chunk/internal/chunk_stats.h" // increm_chunk_read_sync / _cross (CHUNK_STATS)
 #include "chunk/internal/pool_ledger.h" // CHUNK_LEDGER_PARK / CHUNK_LEDGER_RELEASE
-#include "chunk/PMP_CHUNK.h"   // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_IN_PARALLEL_REGION
 
 namespace shrink_array
 {

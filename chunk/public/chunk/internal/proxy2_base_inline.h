@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include <utility>             // std::forward
+#include <utility>                      // std::forward
 #include "chunk/internal/proxy2_base.h" // the declarations these bodies belong to
 
 /*
@@ -32,7 +32,7 @@ template <typename... Args>
 void Proxy2Base<Derived, T, ChunkType>::mark_for_compression_core(in_t<T> old_value,
                                                                   in_t<T> new_value,
                                                                   in_t<T> expected_in_memory,
-                                                                  bool     isv,
+                                                                  bool    isv,
                                                                   Args&&... compression_args) const
 {
     // Check if transition is valid for compression OR if memory changed unexpectedly (Race)

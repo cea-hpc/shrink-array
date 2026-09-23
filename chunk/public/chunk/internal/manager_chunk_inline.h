@@ -562,8 +562,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::init_allocators([[maybe_unused]
     // so instantiating this call in a std build would fail return-type deduction.
     if constexpr (build_config::use_fast_alloc)
     {
-        using mgr          = ManagerChunk<CHUNK_T, T>;
-        const int max_thr  = static_cast<const mgr&>(*this).max_thr;
+        using mgr         = ManagerChunk<CHUNK_T, T>;
+        const int max_thr = static_cast<const mgr&>(*this).max_thr;
 
         // Also recorded here, not only in register_chunk_size(): an array may be
         // created before any runtime size is registered, and register_alloc_key()
@@ -627,8 +627,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, false>::init_allocator(int block_size)
 template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunkDynImpl<CHUNK_T, T, true>::register_chunk_size(unsigned int size, [[maybe_unused]] int block_size)
 {
-    using mgr          = ManagerChunk<CHUNK_T, T>;
-    const int this_thr = static_cast<const mgr&>(*this).max_thr;
+    using mgr                   = ManagerChunk<CHUNK_T, T>;
+    const int this_thr          = static_cast<const mgr&>(*this).max_thr;
     mgr::registered_block_size_ = block_size; // for register_alloc_key()
 
     if constexpr (build_config::use_fast_alloc)
@@ -749,7 +749,7 @@ std::size_t ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_pr
     const auto& self = static_cast<const mgr&>(*this);
 
     auto nb = static_cast<std::size_t>(std::max(1, self.max_thr));
-    nb             = std::max(nb, mgr::get_list_block_free_thr().size());
+    nb      = std::max(nb, mgr::get_list_block_free_thr().size());
     if constexpr (build_config::chunk_dynamic)
     {
         for (const auto& size_kv : mgr::list_block_free_thr_by_size_)
@@ -911,8 +911,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
     if (static_cast<std::size_t>(slice) >= mgr::teardown_repeats_.size())
     {
         // A team larger than max_thr: prepare() could not size for it.
-        std::fprintf(stderr, "[DOUBLE-FREE] teardown dedup: slice %d of %d has no repeat list, skipped\n",
-                     slice, nslices);
+        std::fprintf(stderr, "[DOUBLE-FREE] teardown dedup: slice %d of %d has no repeat list, skipped\n", slice,
+                     nslices);
         return;
     }
     const std::size_t k = to_free.size();
@@ -953,8 +953,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
         std::size_t pos;
         std::size_t end;
     };
-    auto greater = [&](const Head& a, const Head& b)
-    { return less(b.p, a.p) || (a.p == b.p && a.bucket > b.bucket); };
+    auto greater = [&](const Head& a, const Head& b) { return less(b.p, a.p) || (a.p == b.p && a.bucket > b.bucket); };
 
     std::vector<Head> heap;
     heap.reserve(k);
@@ -1107,8 +1106,8 @@ bool ManagerChunk<CHUNK_T, T>::register_alloc_key([[maybe_unused]] unsigned int 
         set_size_buffer_reuse(key, nb_chunk / (Chunk2ADef::factor_div_somme_chunk_buffer_resuse * max_thr));
         if (std::getenv("CHUNK_AFFINITY_TRACE"))
         {
-            std::fprintf(stderr, "[AFFINITY] key=%u size=%u nb_chunk=%d budget=%d threads=%d\n",
-                         key, size, nb_chunk, get_size_buffer_reuse(key), max_thr);
+            std::fprintf(stderr, "[AFFINITY] key=%u size=%u nb_chunk=%d budget=%d threads=%d\n", key, size, nb_chunk,
+                         get_size_buffer_reuse(key), max_thr);
             std::fflush(stderr);
         }
         return true;
@@ -1122,8 +1121,9 @@ template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunk<CHUNK_T, T>::compute_size_buffer_reuse()
 {
     // to change Chunk2ADef...
-    size_buffer_reuse = static_cast<int>(somme_chunk_create /
-                                         (Chunk2ADef::factor_div_somme_chunk_buffer_resuse * CHUNK_PMP_MAX_THREADS));
+    size_buffer_reuse =
+        static_cast<int>(somme_chunk_create /
+                         (static_cast<long>(Chunk2ADef::factor_div_somme_chunk_buffer_resuse) * CHUNK_PMP_MAX_THREADS));
     size_buffer_reuse = std::max(size_buffer_reuse, Chunk2ADef::size_min_buffer_reuse);
 }
 
@@ -1192,13 +1192,11 @@ void ManagerChunk<CHUNK_T, T>::compute_size_max_number_of_chunk_to_check_compres
     //
     // The `if constexpr (IsChunk2<...>)` left commented out just below says
     // someone had already seen this.
-    using VariantDef = std::conditional_t<
-        IsChunk2A<CHUNK_T, T>, Chunk2ADef,
-        std::conditional_t<IsChunk2<CHUNK_T, T>, Chunk2Def, ChunkDef>>;
+    using VariantDef = std::conditional_t<IsChunk2A<CHUNK_T, T>, Chunk2ADef,
+                                          std::conditional_t<IsChunk2<CHUNK_T, T>, Chunk2Def, ChunkDef>>;
 
-    int threshold =
-        somme_chunk_create / (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS);
-    threshold = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);
+    int threshold = somme_chunk_create / (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS);
+    threshold     = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);
 
     // TEMPORARY (CHUNK_THRESHOLD_TRACE=1): the inputs, alongside the result that
     // set_size_max_number_of_chunk_to_check_compress() prints. somme_chunk_create
@@ -1209,11 +1207,10 @@ void ManagerChunk<CHUNK_T, T>::compute_size_max_number_of_chunk_to_check_compres
         std::fprintf(stderr,
                      "[THRESHOLD] %-22s somme_create=%lld / (div=%d * thr=%d) = %d,"
                      " floor=%d -> %d\n",
-                     type_name<T>().data(), (long long) somme_chunk_create,
-                     VariantDef::factor_div_nb_chunk_for_compress, CHUNK_PMP_MAX_THREADS,
+                     type_name<T>().data(), (long long)somme_chunk_create, VariantDef::factor_div_nb_chunk_for_compress,
+                     CHUNK_PMP_MAX_THREADS,
                      static_cast<int>(somme_chunk_create /
-                                      (VariantDef::factor_div_nb_chunk_for_compress *
-                                       CHUNK_PMP_MAX_THREADS)),
+                                      (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS)),
                      VariantDef::size_min_list_chunk_to_check_compress, threshold);
         std::fflush(stderr);
     }

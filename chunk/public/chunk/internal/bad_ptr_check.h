@@ -92,7 +92,7 @@ template <typename T>
         // library's cached one shows up. CHUNK_PMP_THREAD_RANK is that raw
         // omp_get_thread_num() (0 in a serial build), so the shims express it
         // without a directive -- and -1 still means "outside any region".
-        const int omp_tid = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
+        const int omp_tid   = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
         const int fast_rank = get_thr_rank_fast();
 
         ::shrink_array::invariant_failed(loc, "[BAD_PTR] site='{}' ptr={} chunk={} omp_tid={} fast_rank={}", site,

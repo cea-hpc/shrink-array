@@ -698,9 +698,9 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
 
             auto lbd_equal_asynch = [ctx]() // the operand lives in the context: no second copy in the closure
             {
-                auto&         chunk = ctx->chunk;
-                const int     num   = ctx->num;
-                const Proxy2A proxy = Base::template make_proxy_with_info<Proxy2A>(ctx);
+                auto&      chunk = ctx->chunk;
+                const int  num   = ctx->num;
+                const auto proxy = Base::template make_proxy_with_info<Proxy2A>(ctx);
 
                 // Deferred replay: create_value -> allocate_chunk_internal sizes the
                 // buffer from the ambient thread_chunk_size(), but here the flushing
@@ -827,7 +827,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                                              static_cast<const void*>(values_after));
                         }
                         const in_t<T> readback = values_after[num];
-                        const in_t<T> expected = static_cast<T>(ctx->operand);
+                        const auto    expected = static_cast<T>(ctx->operand);
                         if (readback != expected)
                         {
                             INVARIANT_FAILED("lbd_equal_asynch: readback mismatch after store! "
@@ -978,7 +978,7 @@ void Proxy2A<T>::execute_arithmetic_compound_operation(OP op, const U& v, Modify
 
     // 1. Perform math in high precision to verify if result matches constant values
     const CalcType v_new_precise   = op(static_cast<CalcType>(v_old), static_cast<CalcType>(v));
-    const in_t<T>  v_new_truncated = static_cast<T>(v_new_precise);
+    const auto     v_new_truncated = static_cast<T>(v_new_precise);
 
     const bool cst_val2 = is_cst_val2();
 
@@ -1071,7 +1071,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
 
         const in_t<T>  v_old           = Base::read_values_async(ctx);
         const CalcType v_new_precise   = op(static_cast<CalcType>(v_old), static_cast<CalcType>(v));
-        const in_t<T>  v_new_truncated = static_cast<T>(v_new_precise);
+        const auto     v_new_truncated = static_cast<T>(v_new_precise);
 
         const bool cst_val2 = proxy.is_cst_val2();
 
