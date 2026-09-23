@@ -172,10 +172,14 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *          move-assignment declared, none was generated: `ArrayChunk2A a(std::move(b))`
      *          and every return that is not elided ran the copy constructor,
      *          element by element. Sequential context, as the constructors.
-     * @throws std::bad_alloc from the empty array's registration or the
-     *         deferred-write drain -- hence not noexcept.
+     * @note noexcept, so that std::vector moves arrays when it reallocates
+     *       instead of copying them element by element. What can fail here
+     *       -- the empty array's registration, the deferred-write drain --
+     *       only fails on memory exhaustion or a corrupt registry, which the
+     *       library already treats as fatal (alloc_chunk() is noexcept too):
+     *       std::terminate.
      */
-    ArrayChunk2A(ArrayChunk2A&& other) : ArrayChunk2A(0)
+    ArrayChunk2A(ArrayChunk2A&& other) noexcept : ArrayChunk2A(0)
     {
         this->swap_storage_and_identity(other);
     }
@@ -295,9 +299,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *          queued as compression candidates, the moved chunks kept
      *          @p other's metadata rows (num_tab), and @p other kept its
      *          nb_chunk over an empty list. Sequential context, as clear().
-     * @throws std::bad_alloc from clear() -- hence not noexcept.
+     * @note noexcept, as the move constructor: a failure here terminates.
      */
-    ArrayChunk2A& operator=(ArrayChunk2A<T, ind_type>&& other)
+    ArrayChunk2A& operator=(ArrayChunk2A<T, ind_type>&& other) noexcept
     {
         if (this != &other)
         {
@@ -355,24 +359,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         Base::assign(count, val);
     }
     using Base::assign; // the (first, last) overload, hidden by the one above otherwise
-
-    /**
-     * @brief Exchange the storage of two arrays.
-     *
-     * @param other array to exchange storage with
-     * @note num_tab is deliberately NOT swapped (the disabled line below records
-     *       the attempt). The registry maps an ADDRESS to a num_tab, and neither
-     *       array changes address here, so swapping the tab index would leave
-     *       both arrays disagreeing with the registry about their own identity.
-     *       rechunk_to() needs the opposite behaviour and gets it explicitly
-     *       from rechunk_swap_identity(), which updates the registry too.
-     */
-    void swap(ArrayChunk2A& other) noexcept
-    {
-        std::swap(chunk_list, other.chunk_list);
-        std::swap(m_size, other.m_size);
-        std::swap(nb_chunk, other.nb_chunk);
-    }
 
     /**
      * @brief Element-wise equality.

@@ -164,10 +164,14 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      *          move-assignment declared, none was generated: `ArrayChunk2 a(std::move(b))`
      *          and every return that is not elided ran the copy constructor,
      *          element by element. Sequential context, as the constructors.
-     * @throws std::bad_alloc from the empty array's registration or the
-     *         deferred-write drain -- hence not noexcept.
+     * @note noexcept, so that std::vector moves arrays when it reallocates
+     *       instead of copying them element by element. What can fail here
+     *       -- the empty array's registration, the deferred-write drain --
+     *       only fails on memory exhaustion or a corrupt registry, which the
+     *       library already treats as fatal (alloc_chunk() is noexcept too):
+     *       std::terminate.
      */
-    ArrayChunk2(ArrayChunk2&& other) : ArrayChunk2(0)
+    ArrayChunk2(ArrayChunk2&& other) noexcept : ArrayChunk2(0)
     {
         this->swap_storage_and_identity(other);
     }
@@ -285,9 +289,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      *          queued as compression candidates, the moved chunks kept
      *          @p other's metadata rows (num_tab), and @p other kept its
      *          nb_chunk over an empty list. Sequential context, as clear().
-     * @throws std::bad_alloc from clear() -- hence not noexcept.
+     * @note noexcept, as the move constructor: a failure here terminates.
      */
-    ArrayChunk2& operator=(ArrayChunk2&& other)
+    ArrayChunk2& operator=(ArrayChunk2&& other) noexcept
     {
         if (this != &other)
         {

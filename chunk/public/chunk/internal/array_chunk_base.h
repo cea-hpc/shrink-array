@@ -732,7 +732,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     void copy_from(const Derived& from);
 
   public:
-
     /**
      * @brief swap(): O(1) exchange of two containers.
      *
@@ -753,13 +752,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          drained first, since they carry the array they were queued on.
      *
      * @param other the container to exchange state with
-     * @throws std::bad_alloc from the drain -- hence not noexcept, unlike
-     *         std::vector::swap: the exchange is O(1), the bookkeeping around
-     *         it is not free.
+     * @note noexcept, as std::vector::swap. The drain and the registry
+     *       update around the O(1) exchange only fail on memory exhaustion or
+     *       a corrupt registry, which terminates.
      * @pre Both operands must share chunk geometry (enforced under check; with
      *      StaticChunkSize this is always true).
      */
-    void swap(Derived& other)
+    void swap(Derived& other) noexcept
     {
         if constexpr (build_config::any_check)
         {

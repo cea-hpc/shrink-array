@@ -36,7 +36,9 @@
 //   move  -- the target reads the source's values; the source is empty and
 //            takes a resize, writes and a compression pass;
 //   move-construct -- the same through the move constructor, which did not
-//            exist (the copy constructor ran instead, element by element).
+//            exist (the copy constructor ran instead, element by element);
+//   vector   -- a std::vector of arrays reallocating: the moves are noexcept,
+//            so the arrays are moved (their chunk lists kept), not copied.
 //
 // Exit 0 = every check holds. Any thread count (the tests run it at 1 and 8).
 
@@ -44,6 +46,7 @@
 #include <cstdlib>
 #include <type_traits>
 #include <utility>
+#include <vector>
 #include <unistd.h>
 
 #include "chunk/chunk_traits.h"
@@ -176,35 +179,40 @@ int check_swap()
     Array<double> a;
     Array<double> b;
     const long    S = static_cast<long>(a.chunk_size());
-    const long    N = 30 * S + 11;
+    // Different sizes: the per-array tables (indexed by num_tab) have one row
+    // per chunk, so chunks exchanged without their identity would index rows
+    // of the wrong length.
+    const long N  = 30 * S + 11;
+    const long NB = 47 * S + 5;
     a.resize(static_cast<int>(N));
-    b.resize(static_cast<int>(N));
+    b.resize(static_cast<int>(NB));
     const Pattern pa{2.0, 10.0, S};
     const Pattern pb{5.0, 500.0, S};
     maybe_set_second_value(a, pa.sv);
     maybe_set_second_value(b, pb.sv);
     fill(a, pa, N);
-    fill(b, pb, N);
+    fill(b, pb, NB);
     compress_in_region(a);
     compress_in_region(b);
 
-    int bad = verify(step, "a (before)", std::as_const(a), pa, N) + verify(step, "b (before)", std::as_const(b), pb, N);
+    int bad =
+        verify(step, "a (before)", std::as_const(a), pa, N) + verify(step, "b (before)", std::as_const(b), pb, NB);
 
     a.swap(b);
-    bad += verify(step, "a (swapped)", std::as_const(a), pb, N) + verify(step, "b (swapped)", std::as_const(b), pa, N);
+    bad += verify(step, "a (swapped)", std::as_const(a), pb, NB) + verify(step, "b (swapped)", std::as_const(b), pa, N);
 
     // The exchanged metadata must keep working: a pass, a rewrite, a pass.
     compress_in_region(a);
     compress_in_region(b);
-    bad += verify(step, "a (compressed)", std::as_const(a), pb, N) +
+    bad += verify(step, "a (compressed)", std::as_const(a), pb, NB) +
            verify(step, "b (compressed)", std::as_const(b), pa, N);
     const Pattern pb2{pb.sv, 900.0, S};
     const Pattern pa2{pa.sv, 90.0, S};
-    fill(a, pb2, N);
+    fill(a, pb2, NB);
     fill(b, pa2, N);
     compress_in_region(a);
     compress_in_region(b);
-    bad += verify(step, "a (rewritten)", std::as_const(a), pb2, N) +
+    bad += verify(step, "a (rewritten)", std::as_const(a), pb2, NB) +
            verify(step, "b (rewritten)", std::as_const(b), pa2, N);
 
     if (!bad)
@@ -300,6 +308,46 @@ int check_move_construct()
     return bad ? 1 : 0;
 }
 
+static_assert(std::is_nothrow_move_constructible_v<Array<double>> && std::is_nothrow_move_assignable_v<Array<double>>,
+              "std::vector copies on reallocation unless the moves are noexcept");
+
+int check_vector_realloc()
+{
+    const char*                step = "vector";
+    std::vector<Array<double>> v;
+    v.reserve(1);
+    v.emplace_back(0);
+    const long    S = static_cast<long>(v[0].chunk_size());
+    const long    N = 18 * S + 7;
+    const long    M = 9 * S + 2;
+    const Pattern p0{2.0, 20.0, S};
+    const Pattern p1{8.0, 80.0, S};
+    v[0].resize(static_cast<int>(N));
+    maybe_set_second_value(v[0], p0.sv);
+    fill(v[0], p0, N);
+    compress_in_region(v[0]);
+    const auto* const chunks_before = v[0].getChunkList().data();
+
+    v.emplace_back(static_cast<int>(M)); // capacity 1: reallocates, moving v[0]
+
+    int bad = 0;
+    if (v[0].getChunkList().data() != chunks_before)
+    {
+        std::printf("[%s/%s] FAIL the reallocation copied the array instead of moving it\n", variant_name(), step);
+        ++bad;
+    }
+    maybe_set_second_value(v[1], p1.sv);
+    fill(v[1], p1, M);
+    compress_in_region(v[1]);
+    compress_in_region(v[0]);
+    bad += verify(step, "v[0] (moved)", std::as_const(v[0]), p0, N);
+    bad += verify(step, "v[1]", std::as_const(v[1]), p1, M);
+
+    if (!bad)
+        std::printf("[%s/%s] OK: N=%ld moved by the reallocation, chunk list kept\n", variant_name(), step, N);
+    return bad ? 1 : 0;
+}
+
 } // namespace
 
 int main()
@@ -313,6 +361,7 @@ int main()
     fails += check_swap();
     fails += check_move();
     fails += check_move_construct();
+    fails += check_vector_realloc();
 
     release_chunk_pools();
     destroy_block_chunk();
