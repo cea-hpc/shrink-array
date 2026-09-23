@@ -48,6 +48,11 @@ Notable features:
 import subprocess
 import os
 import sys
+
+# --numa-interleave: numactl prefix for runs spanning several NUMA nodes.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import numa_launch as _numa  # noqa: E402
+_NUMA_MODE = "auto"  # set from --numa-interleave in main()
 import time
 import argparse
 import json  # --rerun-failed: failed_cases.jsonl
@@ -784,6 +789,7 @@ def _run_cmd_impl(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, 
         child_env["LD_LIBRARY_PATH"] = (
             extra_ld_library_path + (":" + prev if prev else "")
         )
+    cmd = _numa.interleave_prefix(child_env, _NUMA_MODE) + list(cmd)  # --numa-interleave
     try:
         res = subprocess.run(
             cmd, env=child_env, cwd=cwd,
@@ -1301,6 +1307,7 @@ def _run_capture_stdout_impl(cmd, env_vars, timeout, extra_ld_library_path=None,
         child_env["LD_LIBRARY_PATH"] = (
             extra_ld_library_path + (":" + prev if prev else "")
         )
+    cmd = _numa.interleave_prefix(child_env, _NUMA_MODE) + list(cmd)  # --numa-interleave
     try:
         res = subprocess.run(
             cmd, env=child_env, cwd=cwd,
@@ -2343,6 +2350,11 @@ def main():
                              "full crash context the 30-line err_tail drops. Pass "
                              "--full-log-dir . to write directly into the arch dir, "
                              "or --no-full-log to disable.")
+    parser.add_argument("--numa-interleave", choices=list(_numa.MODES), default="auto",
+                        help="auto: run under `numactl --interleave=<nodes>` when the run spans "
+                             "2+ NUMA nodes (only the CPU nodes of the cores it uses; Grace, "
+                             "144 threads: -6.9%%). off: never (timings comparable with runs "
+                             "made before this option).")
     parser.add_argument("--rerun-failed", nargs="?", const="", default=None, metavar="FILE",
                         help="Replay ONLY the runs that failed in a previous run, recorded in "
                              "<output-dir>/failed_cases.jsonl (or FILE), and skip every phase. "
@@ -2358,7 +2370,8 @@ def main():
 
     # Regression guards: apply CLI overrides to the module-level floor map used
     # inside run_cmd (which has no access to args).
-    global _STATS_MARK_RATIO_MIN
+    global _STATS_MARK_RATIO_MIN, _NUMA_MODE
+    _NUMA_MODE = args.numa_interleave
     if args.no_stats_guard:
         _STATS_MARK_RATIO_MIN = {}
     elif args.stats_mark_ratio_min is not None:

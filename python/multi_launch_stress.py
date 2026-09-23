@@ -47,6 +47,10 @@ import argparse
 import difflib
 import sys
 
+# --numa-interleave: numactl prefix for runs spanning several NUMA nodes.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import numa_launch as _numa  # noqa: E402
+
 import atexit
 import datetime
 
@@ -176,6 +180,10 @@ parser.add_argument(
     help="Size declination(s), comma-separated or 'all'. 'default' is the "
          "bare binary without suffix (compile-time default size). Default: dyn."
 )
+
+parser.add_argument("--numa-interleave", choices=list(_numa.MODES), default="auto",
+                    help="auto: launch under `numactl --interleave=<nodes>` when the run spans "
+                         "2+ NUMA nodes (the CPU nodes of the cores it uses). off: never.")
 
 args = parser.parse_args()
 
@@ -385,7 +393,8 @@ if args.regen_ref:
         log_name = f"regen_ref_{build}.txt" if build else "regen_ref.txt"
         t0 = time.perf_counter()
         with open(log_name, "w") as log:
-            result = subprocess.run([vector_of[build]] + MODE_ARGS, check=False, stdout=log, stderr=subprocess.STDOUT,
+            result = subprocess.run(_numa.interleave_prefix(env, args.numa_interleave) + [vector_of[build]] + MODE_ARGS,
+                                    check=False, stdout=log, stderr=subprocess.STDOUT,
                                     env=env, cwd=ref_dir_of[build])
         wall = time.perf_counter() - t0
         if result.returncode != 0:
@@ -457,6 +466,10 @@ for i in range(n):
         if no_io:
             env["NO_IO"] = "1"
 
+        numa_prefix = _numa.interleave_prefix(env, args.numa_interleave)
+        if numa_prefix:
+            print(f"🧭 {' '.join(numa_prefix[1:])} ({exe_threads} threads span several NUMA nodes)")
+
         exe_tag = os.path.basename(exe)
         # The build in the file names too, so two builds' runs never collide.
         file_tag = f"{build}_{exe_tag}" if build else exe_tag
@@ -468,11 +481,11 @@ for i in range(n):
             # cwd: the build's own directory under --builds (its oracle lives
             # there), the current directory otherwise (None).
             if no_io:
-                result = subprocess.run([exe] + MODE_ARGS, check=False, env=env, cwd=ref_dir_of[build])
+                result = subprocess.run(numa_prefix + [exe] + MODE_ARGS, check=False, env=env, cwd=ref_dir_of[build])
             else:
                 with open(stdout_file, "w") as stdout, open(stderr_file, "w") as stderr:
-                    result = subprocess.run([exe] + MODE_ARGS, check=False, stdout=stdout, stderr=stderr, env=env,
-                                            cwd=ref_dir_of[build])
+                    result = subprocess.run(numa_prefix + [exe] + MODE_ARGS, check=False, stdout=stdout,
+                                            stderr=stderr, env=env, cwd=ref_dir_of[build])
 
             wall_seconds = time.perf_counter() - t0
             returncode = result.returncode
