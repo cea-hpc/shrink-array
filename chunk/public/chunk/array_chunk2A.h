@@ -19,22 +19,22 @@
 
 #pragma once
 
-#include <iostream>                             // for cout, ostream
-#include <utility>                              // for move
-#include <vector>                               // for vector, swap
-#include <unordered_set>                        // for the cst2 GC live set
+#include <iostream>      // for cout, ostream
+#include <utility>       // for move
+#include <vector>        // for vector, swap
+#include <unordered_set> // for the cst2 GC live set
 
-#include <initializer_list> // the {a, b, c} constructor
-#include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
-#include "chunk/internal/array_chunk2_base.h"            // for ArrayChunk2Base
-#include "chunk/internal/array_chunk2A_parallel.h"       // ParallelSupport2A — OpenMP-only mixin
-#include "chunk/internal/array_chunk2A_rechunk_hooks.h"  // RechunkHooks2A — CHUNK_DYNAMIC-only mixin
-#include "chunk/internal/array_chunk_base.h"             // for ArrayChunkBase
-#include "chunk/internal/concept_array_chunk_element.h"  // for ArrayChunkElement
-#include "chunk/config.h"                       // for use_openmp
-#include "chunk/internal/tab_cst_val2_holder.h"           // for GlobalVecHolder (cst2 GC)
-#include "chunk/internal/proxy2A_meta_bases.h"            // Proxy2AMetaBases (armed metadata rows)
-#include "chunk/internal/write_compress_sync_policy.h"   // for WriteCompressSyncPolicy
+#include <initializer_list>                   // the {a, b, c} constructor
+#include <iterator>                           // std::forward_iterator, std::distance -- the (first, last) constructor
+#include "chunk/internal/array_chunk2_base.h" // for ArrayChunk2Base
+#include "chunk/internal/array_chunk2A_parallel.h"      // ParallelSupport2A — OpenMP-only mixin
+#include "chunk/internal/array_chunk2A_rechunk_hooks.h" // RechunkHooks2A — CHUNK_DYNAMIC-only mixin
+#include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
+#include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
+#include "chunk/config.h"                               // for use_openmp
+#include "chunk/internal/tab_cst_val2_holder.h"         // for GlobalVecHolder (cst2 GC)
+#include "chunk/internal/proxy2A_meta_bases.h"          // Proxy2AMetaBases (armed metadata rows)
+#include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
 
 namespace shrink_array
 {
@@ -90,8 +90,8 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     using Base2::resize;
 
     using Base::nb_tab;
-    using Base::size_policy_;
     using Base::num_tab;
+    using Base::size_policy_;
 
     friend Base2;
 
@@ -123,7 +123,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     Proxy2AMetaBases<T> meta_bases_{}; ///< see meta_bases()
 
   public:
-
     // Mode-specific members, moved out of this class into the mixins above.
     // The using-declarations are not decoration: ArrayChunkBase re-exports
     // RechunkSupport's hook DEFAULTS under these very names, so without them a
@@ -271,9 +270,8 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         std::unordered_set<const void*> live;
         gc_collect_live(live);
         const std::size_t held = GlobalVecHolder<T>::count_entries();
-        std::fprintf(stderr,
-                     "[cst2-gc] live=%zu / holder=%zu  (reclaimable=%zu)\n",
-                     live.size(), held, held > live.size() ? held - live.size() : 0);
+        std::fprintf(stderr, "[cst2-gc] live=%zu / holder=%zu  (reclaimable=%zu)\n", live.size(), held,
+                     held > live.size() ? held - live.size() : 0);
         std::fflush(stderr);
     }
 

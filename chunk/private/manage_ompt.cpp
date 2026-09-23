@@ -35,7 +35,7 @@
 
 #include <algorithm> // std::min (CHUNK_OMPT_STATS report)
 #include <atomic>
-#include <chrono>  // CHUNK_OMPT_STATS: time spent flushing
+#include <chrono> // CHUNK_OMPT_STATS: time spent flushing
 #include <cstdint>
 #include <cstdio>  // CHUNK_OMPT_STATS report
 #include <cstdlib> // std::getenv
@@ -89,8 +89,8 @@ struct alignas(128) OmptSyncSlot
     std::atomic<std::uint64_t> flush_ns[kOmptKinds][2];
 };
 
-OmptSyncSlot            g_ompt_slots[kOmptMaxSlots];
-std::atomic<int>        g_ompt_next_slot{0};
+OmptSyncSlot               g_ompt_slots[kOmptMaxSlots];
+std::atomic<int>           g_ompt_next_slot{0};
 thread_local OmptSyncSlot* t_ompt_slot = nullptr;
 
 OmptSyncSlot* ompt_my_slot() noexcept
@@ -106,7 +106,7 @@ OmptSyncSlot* ompt_my_slot() noexcept
 }
 
 /// Single-writer increment: the slot belongs to the calling thread.
-inline void ompt_bump(std::atomic<std::uint64_t>& c, std::uint64_t v = 1) noexcept
+void ompt_bump(std::atomic<std::uint64_t>& c, std::uint64_t v = 1) noexcept
 {
     c.store(c.load(std::memory_order_relaxed) + v, std::memory_order_relaxed);
 }
@@ -115,17 +115,28 @@ const char* ompt_kind_name(int k) noexcept
 {
     switch (k)
     {
-        case 1: return "barrier";
-        case 2: return "barrier_implicit";
-        case 3: return "barrier_explicit";
-        case 4: return "barrier_implementation";
-        case 5: return "taskwait";
-        case 6: return "taskgroup";
-        case 7: return "reduction";
-        case 8: return "barrier_implicit_workshare";
-        case 9: return "barrier_implicit_parallel";
-        case 10: return "barrier_teams";
-        default: return "?";
+        case 1:
+            return "barrier";
+        case 2:
+            return "barrier_implicit";
+        case 3:
+            return "barrier_explicit";
+        case 4:
+            return "barrier_implementation";
+        case 5:
+            return "taskwait";
+        case 6:
+            return "taskgroup";
+        case 7:
+            return "reduction";
+        case 8:
+            return "barrier_implicit_workshare";
+        case 9:
+            return "barrier_implicit_parallel";
+        case 10:
+            return "barrier_teams";
+        default:
+            return "?";
     }
 }
 
@@ -155,9 +166,10 @@ void ompt_finalize(ompt_data_t*)
             }
             if (calls == 0)
                 continue;
-            std::fprintf(stderr, "[OMPT-SYNC] %-27s %-5s %12llu %12llu %12llu %12llu %10.1f %10.1f\n", ompt_kind_name(k),
-                         e == 0 ? "begin" : "end", (unsigned long long)calls, (unsigned long long)tried,
-                         (unsigned long long)skip, (unsigned long long)fl, ns * 1e-6, ns_max * 1e-6);
+            std::fprintf(stderr, "[OMPT-SYNC] %-27s %-5s %12llu %12llu %12llu %12llu %10.1f %10.1f\n",
+                         ompt_kind_name(k), e == 0 ? "begin" : "end", (unsigned long long)calls,
+                         (unsigned long long)tried, (unsigned long long)skip, (unsigned long long)fl,
+                         static_cast<double>(ns) * 1e-6, static_cast<double>(ns_max) * 1e-6);
         }
     std::fflush(stderr);
 }
@@ -260,11 +272,7 @@ void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, 
 // it calls this at BOTH the begin and the end of EVERY sync region, whatever
 // its kind (barriers, taskwait, taskgroup, reductions). CHUNK_OMPT_STATS
 // counts them.
-void on_barrier_end(ompt_sync_region_t    kind,
-                    ompt_scope_endpoint_t endpoint,
-                    ompt_data_t*,
-                    ompt_data_t*,
-                    const void*)
+void on_barrier_end(ompt_sync_region_t kind, ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, const void*)
 {
     if (!__global_ompt)
         return;

@@ -75,7 +75,7 @@ class SingletonChk
             return p;
 
         std::lock_guard lock(unique_instance_mutex);
-        T* p = unique_instance.load(std::memory_order_relaxed); // under the lock
+        T*              p = unique_instance.load(std::memory_order_relaxed); // under the lock
         if (p == nullptr)
         {
             p = new T();       // immortal: never deleted

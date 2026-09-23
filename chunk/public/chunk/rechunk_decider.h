@@ -70,38 +70,38 @@ struct RechunkPolicy
                                             // a good one is repeated, reaching the
                                             // same size in three checked moves.
     std::size_t coarsen_min_meta_gain_bytes = 24u << 20;
-                                            // A coarsening must gain at least this
-                                            // much METADATA to be worth doing at
-                                            // all. The metadata term is exact, so
-                                            // it needs no margin for trust -- this
-                                            // is about cost: a coarsening is a full
-                                            // rebuild, ~0.6 s per array on the
-                                            // 64-thread bench, and the gains fall
-                                            // geometrically (tab1, 6.1 GB: 211 MB,
-                                            // 105, 52, 25, then 11). The last step
-                                            // cleared the 8 MB absolute deadband on
-                                            // an exact 10.9 MB forecast and returned
-                                            // 3.7 -- the forecast stops being
-                                            // trustworthy at the same step the gain
-                                            // stops being worth having. 0 disables
-                                            // (absolute deadband only).
-    unsigned coarsen_gain_multiple = 3;     // coarsening must clear this many times
-                                            // the normal gain gate. The model is
-                                            // reliable when fining (constant chunks
-                                            // split into constant children) and
-                                            // optimistic when coarsening (one
-                                            // differing element keeps the whole,
-                                            // now much larger, chunk materialised),
-                                            // so the two directions should not face
-                                            // the same bar. 1 = same bar as fining.
-    double coarsen_trust_ratio = 0.5;       // after a coarsening lands, compare the
-                                            // measured gain with the predicted one.
-                                            // Below this ratio the model was wrong
-                                            // about THIS array, and coarsening is
-                                            // barred for it from then on. Fining
-                                            // stays available. 0 disables the
-                                            // feedback.
-    bool dry_run = true;                    // phase-3A: never mutate, only log
+    // A coarsening must gain at least this
+    // much METADATA to be worth doing at
+    // all. The metadata term is exact, so
+    // it needs no margin for trust -- this
+    // is about cost: a coarsening is a full
+    // rebuild, ~0.6 s per array on the
+    // 64-thread bench, and the gains fall
+    // geometrically (tab1, 6.1 GB: 211 MB,
+    // 105, 52, 25, then 11). The last step
+    // cleared the 8 MB absolute deadband on
+    // an exact 10.9 MB forecast and returned
+    // 3.7 -- the forecast stops being
+    // trustworthy at the same step the gain
+    // stops being worth having. 0 disables
+    // (absolute deadband only).
+    unsigned coarsen_gain_multiple = 3; // coarsening must clear this many times
+                                        // the normal gain gate. The model is
+                                        // reliable when fining (constant chunks
+                                        // split into constant children) and
+                                        // optimistic when coarsening (one
+                                        // differing element keeps the whole,
+                                        // now much larger, chunk materialised),
+                                        // so the two directions should not face
+                                        // the same bar. 1 = same bar as fining.
+    double coarsen_trust_ratio = 0.5;   // after a coarsening lands, compare the
+                                        // measured gain with the predicted one.
+                                        // Below this ratio the model was wrong
+                                        // about THIS array, and coarsening is
+                                        // barred for it from then on. Fining
+                                        // stays available. 0 disables the
+                                        // feedback.
+    bool dry_run = true;                // phase-3A: never mutate, only log
 };
 
 class RechunkDecider

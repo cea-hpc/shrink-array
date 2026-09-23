@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-#include <array>
-#include <malloc.h>
+#include <cstddef> // std::size_t
 
 #include "chunk/internal/manager_chunk.h"
 #include "chunk/all_type_chunk.h"

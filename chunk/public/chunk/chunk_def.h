@@ -32,7 +32,7 @@ struct ChunkDef
     // conditional_counter.h, so 65535 is the true maximum. (Was 256/128, a
     // stale value that predates the constexpr-geometry refactor and wrongly
     // rejected CHUNK_SIZE=512.)
-    constexpr static int size_max              = 65535;
+    constexpr static int size_max = 65535;
 
     constexpr static int nb_max_compress_value = 2;
 

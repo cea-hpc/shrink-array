@@ -19,25 +19,25 @@
 
 #pragma once
 
-#include <cstdlib>                              // for abort
-#include <iostream>                             // for cout, ostream
-#include <tuple>                                // for tuple
-#include <type_traits>                          // for is_same_v
-#include <utility>                              // for get, move
-#include <variant>                              // for tuple
-#include <vector>                               // for vector
+#include <cstdlib>     // for abort
+#include <iostream>    // for cout, ostream
+#include <tuple>       // for tuple
+#include <type_traits> // for is_same_v
+#include <utility>     // for get, move
+#include <variant>     // for tuple
+#include <vector>      // for vector
 
-#include <initializer_list> // the {a, b, c} constructor
-#include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
-#include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
-#include "chunk/internal/array_chunk2_base.h"            // for ArrayChunk2Base
-#include "chunk/internal/array_chunk2_parallel.h"        // ParallelSupport2 — OpenMP-only mixin
-#include "chunk/internal/array_chunk2_rechunk_hooks.h"   // RechunkHooks2 — CHUNK_DYNAMIC-only mixin
-#include "chunk/internal/array_chunk_base.h"             // for ArrayChunkBase
-#include "chunk/chunk_define.h"                 // for HAVE_EMBEDDED_FAST_BLOCK_COMPRESSION
-#include "chunk/internal/concept_array_chunk_element.h"  // for ArrayChunkElement
-#include "chunk/config.h"                       // for use_fast_block_compression, use_openmp
-#include "chunk/internal/write_compress_sync_policy.h"   // for WriteCompressSyncPolicy
+#include <initializer_list>                   // the {a, b, c} constructor
+#include <iterator>                           // std::forward_iterator, std::distance -- the (first, last) constructor
+#include "chunk/internal/in_t.h"              // in_t<T>: the element snapshots
+#include "chunk/internal/array_chunk2_base.h" // for ArrayChunk2Base
+#include "chunk/internal/array_chunk2_parallel.h"       // ParallelSupport2 — OpenMP-only mixin
+#include "chunk/internal/array_chunk2_rechunk_hooks.h"  // RechunkHooks2 — CHUNK_DYNAMIC-only mixin
+#include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
+#include "chunk/chunk_define.h"                         // for HAVE_EMBEDDED_FAST_BLOCK_COMPRESSION
+#include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
+#include "chunk/config.h"                               // for use_fast_block_compression, use_openmp
+#include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
 
 namespace shrink_array
 {
@@ -72,9 +72,8 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
                     public RechunkHooks2<ArrayChunk2<T, ind_type>>
 {
   public:
-
-    using Base2         = ArrayChunk2Base<ArrayChunk2>;
-    using Base  = ArrayChunkBase<ArrayChunk2>;
+    using Base2      = ArrayChunk2Base<ArrayChunk2>;
+    using Base       = ArrayChunkBase<ArrayChunk2>;
     using Parallel2  = ParallelSupport2<ArrayChunk2>;
     using FastBlock2 = FastBlockSupport2<ArrayChunk2>;
     using Hooks2     = RechunkHooks2<ArrayChunk2>;
@@ -91,10 +90,10 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
     using Base2::chunk_list;
 
-    using Base2::m_size;
-    using Base2::nb_chunk;
     using Base::nb_tab;
     using Base::size_policy_;
+    using Base2::m_size;
+    using Base2::nb_chunk;
     using Base2::resize; // Import resize(sz, val)
 
     using inf_array_t = std::tuple<T, int, int>;
@@ -105,7 +104,8 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
     // RechunkHooks2::rechunk_reown_after_swap copies ind_cst_val2, which is
     // private below. Same reason ArrayChunkBase befriends RechunkSupport.
-    template <typename, bool> friend class RechunkHooks2;
+    template <typename, bool>
+    friend class RechunkHooks2;
 
     // Mode-specific members, moved out of this class into the mixins above.
     // The using-declarations are not decoration: ArrayChunkBase re-exports
@@ -255,7 +255,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      *          by a larger one: a still-live chunk of another array may hold the
      *          old address as its `values`.
      */
-    void            set_second_value(T sec_value, bool message = true);
+    void set_second_value(T sec_value, bool message = true);
     /**
      * @brief The array-wide second constant, read from the shared registry.
      * @return the registered second value; always true for bool
@@ -447,7 +447,6 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     }
 
   public:
-
     /// This array's (second value, index, num_tab) tuple: a MIRROR of its entry
     /// in Proxy2<T>::share_info_array, complete in every build mode.
     /// @details The registry stays the source of truth. The mirror is never
@@ -521,7 +520,6 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     }
 
   public:
-
   private:
     /// Index of the second value in the shared value table;
     /// chunk_config::no_second_value_index until set_second_value().

@@ -171,7 +171,10 @@ struct AllTypeChunkParallelInterface<Derived, false>
     /// Serial build: nothing is deferred, so there is nothing to reclaim.
     static void destroy_after_flush(bool) {}
     /// Serial build: writes are applied inline, so there is no queue to drain.
-    static bool flush_all_deferred(bool) { return false; }
+    static bool flush_all_deferred(bool)
+    {
+        return false;
+    }
 
     /**
      * @brief The single allocator of ONE manager, at its registration.
@@ -217,8 +220,7 @@ struct AllTypeChunkDynInterface<Derived, false>
 {
 };
 
-class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>,
-                     public AllTypeChunkDynInterface<AllTypeChunk>
+class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public AllTypeChunkDynInterface<AllTypeChunk>
 {
     friend class SingletonChk<AllTypeChunk>;
     /// The dynamic-geometry policy records the sizes it declares (registered_sizes_).
@@ -246,8 +248,8 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>,
     static constexpr int kMaxManagers = 256;
 
     std::array<std::unique_ptr<ManagerChunkInt>, kMaxManagers> managers_;
-    std::atomic<int>                                          nb_managers_{0};
-    std::mutex                                                registry_mutex_;
+    std::atomic<int>                                           nb_managers_{0};
+    std::mutex                                                 registry_mutex_;
 
     /// Set by ParamChunk::init_indexes(): the registry accepts managers only
     /// once the block size (and the stats) exist. An array constructed before
@@ -332,10 +334,9 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>,
     /// that their bodies stay dependent (each build declares a different half).
     using manager_int_t = ManagerChunkInt;
 
-  public:
     /// Non-copyable: the registry owns the managers and is a singleton.
     AllTypeChunk(const AllTypeChunk& ref) = delete;
-    virtual ~AllTypeChunk() = default;
+    virtual ~AllTypeChunk()               = default;
 
     /// @return The registered managers, in registration order: the prefix
     ///         published so far, read without a lock (see the members above).

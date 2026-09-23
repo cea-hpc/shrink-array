@@ -45,7 +45,7 @@
 #include <vector>
 
 #include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
-#include "chunk/config.h" // chunk_config::use_chunk2 / use_chunk2a
+#include "chunk/config.h"        // chunk_config::use_chunk2 / use_chunk2a
 #include "chunk/internal/rechunk_cost_model.h"
 #include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size
 
@@ -145,8 +145,8 @@ class ChunkSizeAdvisor
         // conservative answer, and the right one for a predictor whose errors
         // have been one-sided so far.
         const in_t<T> cst1_value = Arr::chunk_type::first_value;
-        bool    has_cst2   = false;
-        T       cst2_value = cst1_value;
+        bool          has_cst2   = false;
+        T             cst2_value = cst1_value;
         if constexpr ((chunk_config::use_chunk2 || chunk_config::use_chunk2a) && requires { tab.get_second_value(); })
         {
             cst2_value = tab.get_second_value();
@@ -311,7 +311,7 @@ class ChunkSizeAdvisor
 
             {
                 std::vector<int64_t> fine_loc(static_cast<std::size_t>(F) + 1, 0);
-                const int64_t        n_picks = static_cast<int64_t>(picks.size());
+                const auto           n_picks = static_cast<int64_t>(picks.size());
 #pragma omp for schedule(static) nowait
                 for (int64_t p = 0; p < n_picks; ++p)
                 {
@@ -379,7 +379,7 @@ class ChunkSizeAdvisor
             const int64_t sub_per_chunk = int64_t{1} << k;
             const int64_t scanned_subs  = scanned * sub_per_chunk;
             const double  frac_cst = scanned_subs > 0 ? static_cast<double>(fine_cst[static_cast<std::size_t>(k)]) /
-                                                           static_cast<double>(scanned_subs)
+                                                            static_cast<double>(scanned_subs)
                                                       : 0.;
             const int64_t nchunks  = nc * sub_per_chunk; // cst chunks split into cst children
             const auto    mat      = static_cast<int64_t>(

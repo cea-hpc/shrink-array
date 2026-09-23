@@ -47,15 +47,15 @@
 #include <cstddef>
 #include <type_traits>
 
-#include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
-#include "chunk/PMP_CHUNK.h"           // get_thr_rank_fast
+#include "chunk/internal/in_t.h"                // in_t<T>: the element snapshots
+#include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
 #include "chunk/internal/conditional_counter.h" // counter_value_t
 #include "chunk/config.h"
-#include "chunk/vector_range_ops.h" // detail::ChunkedArray + the std::vector fallback
+#include "chunk/vector_range_ops.h"                    // detail::ChunkedArray + the std::vector fallback
 #include "chunk/internal/write_compress_sync_policy.h" // fill_range_mt: the writer side of the Dekker handshake
-#include "chunk/internal/compression_manager.h"      // fill_range_mt: must_defer_write / wait_out_compressor
-#include "chunk/internal/relaxed_element.h"          // fill_range_mt: Chunk2A's shared elements
+#include "chunk/internal/compression_manager.h"        // fill_range_mt: must_defer_write / wait_out_compressor
+#include "chunk/internal/relaxed_element.h"            // fill_range_mt: Chunk2A's shared elements
 
 namespace shrink_array
 {
@@ -616,8 +616,8 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
     const in_t<T> value = static_cast<T>(v);
 
     constexpr bool session = (chunk_config::use_chunk2a || chunk_config::use_chunk2 || chunk_config::use_chunk) &&
-                             build_config::use_openmp &&
-                             chunk_config::use_fast_block_compression && detail::raw_fillable_v<T>;
+                             build_config::use_openmp && chunk_config::use_fast_block_compression &&
+                             detail::raw_fillable_v<T>;
     if constexpr (!session)
     {
         for (std::size_t i = first; i < last; ++i)
@@ -657,13 +657,13 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
                 continue;
 
             bool done    = false;
-            bool uniform = false; // may_be_uniform, read inside the session
+            bool uniform = false;  // may_be_uniform, read inside the session
             if (!ch.pending_any()) // 1. deferred ops on the chunk: element path
             {
                 if (Mgr::must_defer_write(ch)) // 2. a compressor on it: wait (bounded)
                     Mgr::wait_out_compressor(ch);
 
-                Policy::announce_write(thr, &ch); // 3.
+                Policy::announce_write(thr, &ch);                                                         // 3.
                 if (!Mgr::must_defer_write(ch) && !ch.pending_any() && detail::materialised(a, ch, ind2)) // 4.
                 {
                     T* dst = ch.values_load(); // 5.
@@ -695,7 +695,7 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
                         else
                             uniform = (i == c_begin && hi == c_end);
                     }
-                    done    = true;
+                    done = true;
                 }
                 Policy::end_write(thr); // 6.
             }

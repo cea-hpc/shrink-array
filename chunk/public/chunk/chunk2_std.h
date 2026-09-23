@@ -369,7 +369,7 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
     ///          their own loops.
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
-    void  operator delete[](void* p);
+    void operator delete[](void* p);
     /// @brief Point @p n freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
     ///          parallel region (inside one it stays on the calling thread: an
@@ -396,14 +396,14 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \param inf_array (second_value, ...) tuple describing the target state.
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-     void create_value(bool need_set_second_value, const inf_array_t& inf_array, int thr_rank) noexcept;
+    void create_value(bool need_set_second_value, const inf_array_t& inf_array, int thr_rank) noexcept;
 
     /*!
      * \brief Bool specialization of create_value().
      * \param need_set_second_value Whether to also register the second-value slot.
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-     void create_value_bool(bool need_set_second_value, int thr_rank) noexcept;
+    void create_value_bool(bool need_set_second_value, int thr_rank) noexcept;
 
     /*!
      * \brief Convenience overload of create_value() that resolves the
@@ -420,7 +420,7 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
         }
         else if constexpr (build_config::is_debug)
         {
-            std::cerr << "Chunk2_std::create_value() called" << std::endl;
+            std::cerr << "Chunk2_std::create_value() called" << '\n';
             std::abort();
         }
     }
@@ -439,7 +439,7 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
         }
         else if constexpr (build_config::is_debug)
         {
-            std::cerr << "Chunk2_std::create_value_bool() called" << std::endl;
+            std::cerr << "Chunk2_std::create_value_bool() called" << '\n';
             std::abort();
         }
     }
@@ -459,7 +459,7 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \param ind Index of the second constant (unused when num_compress_value == 0).
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-     void block_clear(int num_compress_value, int ind, int thr_rank);
+    void block_clear(int num_compress_value, int ind, int thr_rank);
 
     /*!
      * \brief Compress this chunk to a constant, for a specific thread.
@@ -546,7 +546,7 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \param ind Index of the second constant (unused when
      *            num_compress_value == 0).
      */
-     void clear_int_st(int num_compress_value, int ind);
+    void clear_int_st(int num_compress_value, int ind);
 
     /*!
      * \brief Compress this chunk to its first constant (serial/counter
@@ -555,7 +555,7 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      *            check; the compression itself always targets the first
      *            constant regardless of ind.
      */
-     void clear_st(int ind);
+    void clear_st(int ind);
 
     /*!
      * \brief Compress this chunk to a constant (serial twin of the OpenMP
@@ -575,7 +575,7 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \param num_compress_value 0 for the first constant, non-zero for the second.
      * \param ind Index of the second constant (unused when num_compress_value == 0).
      */
-     void block_clear(int num_compress_value, int ind, int);
+    void block_clear(int num_compress_value, int ind, int);
 };
 
 // --- In chunk2_std.h ---
@@ -850,8 +850,7 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
      * \tparam ClearFunc callable (int num_compress_value).
      */
     template <typename SecondValueFunc, typename ClearFunc>
-    void
-    compress_impl(bool apply, unsigned int n_elems, SecondValueFunc get_second_value, ClearFunc&& clear_one);
+    void compress_impl(bool apply, unsigned int n_elems, SecondValueFunc get_second_value, ClearFunc&& clear_one);
 
     /**
      * \brief Shared body of the two fill_list_chunk_to_compress_in_par entry
@@ -1178,7 +1177,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
                 if constexpr (build_config::any_check)
                 {
                     std::cerr << "Logic Error: init_values_cst_val called for boolean type with index "
-                              << num_compress_value << ". Use init_values_cst_val_bool instead." << std::endl;
+                              << num_compress_value << ". Use init_values_cst_val_bool instead." << '\n';
                     std::abort();
                 }
             }
@@ -1201,7 +1200,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
             // This branch is reached if the method is called on a non-boolean chunk
             if constexpr (build_config::is_debug)
             {
-                std::cerr << "Logic Error: init_values_cst_val_bool called on a non-boolean chunk type." << std::endl;
+                std::cerr << "Logic Error: init_values_cst_val_bool called on a non-boolean chunk type." << '\n';
                 std::abort();
             }
         }
@@ -1301,7 +1300,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
             if constexpr (build_config::is_debug)
             {
                 std::cerr << "Logic Error: written() called on a non-boolean chunk. "
-                          << "For non-bool types, use written(int ind) instead." << std::endl;
+                          << "For non-bool types, use written(int ind) instead." << '\n';
                 std::abort();
             }
             return false;
@@ -1348,7 +1347,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
             if constexpr (build_config::is_debug)
             {
                 std::cerr << "Logic Error: written(int ind) called on a boolean chunk. "
-                          << "Boolean chunks use a single shared second value, use written() instead." << std::endl;
+                          << "Boolean chunks use a single shared second value, use written() instead." << '\n';
                 std::abort();
             }
             return false;
@@ -1372,7 +1371,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
             if constexpr (build_config::is_debug)
             {
                 std::cerr << "Logic Error: is_cst_val2(int ind) called on a boolean chunk. "
-                          << "Boolean chunks do not use indexed constants." << std::endl;
+                          << "Boolean chunks do not use indexed constants." << '\n';
                 std::abort();
             }
             return false;
@@ -1395,7 +1394,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
             if constexpr (build_config::is_debug)
             {
                 std::cerr << "Logic Error: is_cst_val2() called on a non-boolean chunk. "
-                          << "Non-bool types require an index (int ind)." << std::endl;
+                          << "Non-bool types require an index (int ind)." << '\n';
                 std::abort();
             }
             return false;
@@ -1418,7 +1417,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         {
             if constexpr (build_config::is_debug)
             {
-                std::cerr << "Logic Error: is_not_cst_val2(int ind) called on a boolean chunk." << std::endl;
+                std::cerr << "Logic Error: is_not_cst_val2(int ind) called on a boolean chunk." << '\n';
                 std::abort();
             }
             return true;
@@ -1439,7 +1438,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         {
             if constexpr (build_config::is_debug)
             {
-                std::cerr << "Logic Error: is_not_cst_val2() called on a non-boolean chunk." << std::endl;
+                std::cerr << "Logic Error: is_not_cst_val2() called on a non-boolean chunk." << '\n';
                 std::abort();
             }
             return true;
@@ -1462,7 +1461,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         {
             if constexpr (build_config::is_debug)
             {
-                std::cerr << "Logic Error: is_cst_val() without index called on a non-boolean chunk." << std::endl;
+                std::cerr << "Logic Error: is_cst_val() without index called on a non-boolean chunk." << '\n';
                 std::abort();
             }
             return false;

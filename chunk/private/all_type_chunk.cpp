@@ -25,11 +25,11 @@
 #include "chunk/singleton.h"
 #include "chunk/internal/manager_chunk.h"
 #include "chunk/all_type_chunk.h"
-#include "chunk/PMP_CHUNK.h"        // for CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK, __fast...
-#include "chunk/chunk_define.h"     // for HAVE_EMBEDDED_COMPRESSION_WITH_OMPT
+#include "chunk/PMP_CHUNK.h"                 // for CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK, __fast...
+#include "chunk/chunk_define.h"              // for HAVE_EMBEDDED_COMPRESSION_WITH_OMPT
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
-#include "chunk/manage_ompt.h"      // the declarations of the five phase functions below
+#include "chunk/manage_ompt.h"               // the declarations of the five phase functions below
 
 // Stays a directive, and cannot be anything else: a std-alloc build does not put
 // fast_allocators/public on the include path at all, so the header is not merely
@@ -369,7 +369,7 @@ void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr()
         {
             for (std::size_t i = 0; i < types.size(); ++i)
             {
-                for (std::size_t b = static_cast<std::size_t>(thr_rank); b < nb_buckets[i];
+                for (auto b = static_cast<std::size_t>(thr_rank); b < nb_buckets[i];
                      b += static_cast<std::size_t>(nthr))
                 {
                     phase(types[i], static_cast<int>(b));
@@ -441,7 +441,7 @@ void AllTypeChunkDynInterface<Derived, true>::register_chunk_size(unsigned int s
     // (register_manager replays the list); then declared to the managers that
     // exist. Both under the registry mutex: a first array of a new type may be
     // registering on another thread.
-    auto& reg = static_cast<Derived&>(*this);
+    auto&                             reg = static_cast<Derived&>(*this);
     const std::lock_guard<std::mutex> lock(reg.registry_mutex_);
     if (std::find(reg.registered_sizes_.begin(), reg.registered_sizes_.end(), size) == reg.registered_sizes_.end())
         reg.registered_sizes_.push_back(size);

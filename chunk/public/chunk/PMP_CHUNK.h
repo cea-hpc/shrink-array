@@ -29,7 +29,7 @@ inline thread_local int __fast_omp_rank = -1;
 
     #include <omp.h>
 
-static inline int get_thr_rank_fast() noexcept
+inline int get_thr_rank_fast() noexcept
 {
     // If OMPT is working, this value is already set at the start of the region.
     // No guards, no OpenMP library calls, just a direct TLS read.
@@ -76,7 +76,7 @@ inline int chunk_pmp_thread_rank() noexcept
 
 #else
 
-static inline int get_thr_rank_fast() noexcept
+inline int get_thr_rank_fast() noexcept
 {
     return 0;
 }

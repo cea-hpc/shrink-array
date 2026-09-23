@@ -36,10 +36,10 @@
  *      rationale.
  */
 
-#include <algorithm> // std::fill, std::copy
-#include <concepts>  // std::convertible_to
-#include <cstddef>   // std::size_t, std::ptrdiff_t
-#include <iterator>  // std::next
+#include <algorithm>   // std::fill, std::copy
+#include <concepts>    // std::convertible_to
+#include <cstddef>     // std::size_t, std::ptrdiff_t
+#include <iterator>    // std::next
 #include <type_traits> // std::is_same_v (fill_range_mt's vector<bool> guard)
 #include <vector>      // std::vector<bool> (same guard)
 

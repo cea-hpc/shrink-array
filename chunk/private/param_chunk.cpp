@@ -41,10 +41,12 @@
 // Created by ballereaup on 07/05/24.
 //
 
-#include <chrono>   // steady_clock, the gate rates
-#include <iomanip>  // std::setprecision (stats ratios)
-#include <utility>  // std::cmp_greater
-#include <unistd.h> // sysconf(_SC_PAGESIZE): page-aware slab floor
+#include <algorithm> // std::max
+#include <chrono>    // steady_clock, the gate rates
+#include <iomanip>   // std::setprecision (stats ratios)
+#include <iostream>  // std::cout, std::cerr
+#include <utility>   // std::cmp_greater
+#include <unistd.h>  // sysconf(_SC_PAGESIZE): page-aware slab floor
 
 #include "chunk/singleton.h"
 #include "chunk/internal/chunk_stats.h" // per-variant stats reduce/print
@@ -436,8 +438,8 @@ void ParamChunk::ChunkStats()
             std::cout << "  gate deferred  = " << t.gate_deferred << "  (" << rate(t.gate_deferred)
                       << "/s; writes parked in a rank queue while a compressor was in flight)\n";
             std::cout << "  gate wait      = " << t.gate_wait << "  (" << rate(t.gate_wait)
-                      << "/s; writers that found the gate shut, " << t.gate_wait_yields
-                      << " yields of 1000 pauses; " << t.gate_mark_hit << " on a chunk marked by a pass)\n";
+                      << "/s; writers that found the gate shut, " << t.gate_wait_yields << " yields of 1000 pauses; "
+                      << t.gate_mark_hit << " on a chunk marked by a pass)\n";
             std::cout << "  gate wall time = " << std::setprecision(1) << secs << " s\n" << std::defaultfloat;
         }
         // Re-chunk counters exist only in a dynamic build (a static geometry

@@ -126,7 +126,7 @@ struct GlobalStatsChunkList
         std::cout << tc.BOLD << "AGGREGATED METADATA OVERHEAD:" << tc.RESET << "\n";
         std::cout << std::left << std::setw(40) << " Total footprint for tracking lists"
                   << ": " << tc.BOLD << tc.GREEN << format_memory(total_metadata_mem) << tc.RESET << "\n";
-        std::cout << tc.CYAN << std::string(total_width, '=') << tc.RESET << "\n" << std::endl;
+        std::cout << tc.CYAN << std::string(total_width, '=') << tc.RESET << "\n\n";
     }
 };
 

@@ -98,30 +98,30 @@ extern bool analyze_ring_sweep();
 
 #else
 
-static inline uint32_t get_tid()
+inline uint32_t get_tid()
 {
     return 0;
 }
 
-static inline void ring_log(uint32_t, EventCode, uint32_t = 0) {}
+inline void ring_log(uint32_t, EventCode, uint32_t = 0) {}
 
-static inline void ring_log_end(uint32_t, EventCode, uint32_t = 0) {}
+inline void ring_log_end(uint32_t, EventCode, uint32_t = 0) {}
 
-static inline void ring_log_start(uint32_t, EventCode, uint32_t = 0) {}
+inline void ring_log_start(uint32_t, EventCode, uint32_t = 0) {}
 
-static inline void ring_log_op(uint32_t, EventCode, uint32_t, const void*) {}
+inline void ring_log_op(uint32_t, EventCode, uint32_t, const void*) {}
 
-static inline void dump_ring() {}
+inline void dump_ring() {}
 
-static inline void dump_ring_for_addr(const void*) {}
+inline void dump_ring_for_addr(const void*) {}
 
 // These two used to have no no-op counterpart, which made them the only names of
 // this header a caller could not spell without an #ifdef of its own. With the
 // stubs, `if constexpr (chunk_config::ring_log_debug)` compiles and links in
 // every build, and shrink_bench.cpp no longer needs the directive.
-static inline void ring_init() {}
+inline void ring_init() {}
 
-static inline bool analyze_ring_sweep()
+inline bool analyze_ring_sweep()
 {
     return false;
 }

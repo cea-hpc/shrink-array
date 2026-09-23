@@ -22,7 +22,7 @@
 /*---------------------------------------------------------------------------*/
 
 #include <complex>
-#include <tuple>  // the candidate-list entries
+#include <tuple> // the candidate-list entries
 #include <vector>
 
 /// @brief The complex element type of the library (chunk_std.cpp instantiates it).
@@ -30,9 +30,9 @@ using complex_double = std::complex<double>;
 
 #include "chunk/internal/process_verbs.h" // compress_now_and_trim_pools, defined in chunk_std.cpp
 #include "chunk/internal/chunk_base.h"
-#include "chunk/chunk_define.h"       // build macros
-#include "chunk/internal/chunk_size_config.h"  // ChunkElems
-#include "chunk/internal/chunk_stats.h"        // increm_chunk_write (CHUNK_STATS)
+#include "chunk/chunk_define.h"               // build macros
+#include "chunk/internal/chunk_size_config.h" // ChunkElems
+#include "chunk/internal/chunk_stats.h"       // increm_chunk_write (CHUNK_STATS)
 #include "chunk/internal/conditional_counter.h"
 #include "chunk/internal/proxy.h"
 
@@ -102,7 +102,10 @@ template <typename AllT>
 struct ChunkPoolParallelInterface<false, AllT>
 {
     /// @return Always false: there is a single free list, so nothing to balance.
-    [[nodiscard]] static bool need_load_balance_list_block_free() { return false; }
+    [[nodiscard]] static bool need_load_balance_list_block_free()
+    {
+        return false;
+    }
     /// @brief No-op: see need_load_balance_list_block_free().
     static void load_balance_list_block_free() {}
     /// @brief No-op: a serial build keeps no per-rank free lists.
@@ -197,7 +200,6 @@ struct ChunkCounterPolicy
         // Implicit conversion to unsigned char happens here
         return nb_val_eq_zero == size;
     }
-
 };
 
 
@@ -243,7 +245,7 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
     ///          their own loops.
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
-    void  operator delete[](void* p);
+    void operator delete[](void* p);
     /// @brief Point @p n freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
     ///          parallel region (inside one it stays on the calling thread: an
@@ -384,7 +386,7 @@ struct ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
      * @param n_elems   THIS chunk's element count -- never the ambient size, see
      *                  TChunk.h's note on the field it is carried in
      */
-    void        fill_list_to_compress(vec_tuple_chunkp_int2& ll_compt, int num_chunk, int num_tab, unsigned int n_elems);
+    void fill_list_to_compress(vec_tuple_chunkp_int2& ll_compt, int num_chunk, int num_tab, unsigned int n_elems);
 
     /**
      * @brief Compress every chunk @p thr has queued, in one batch.
@@ -420,7 +422,9 @@ struct ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived
     /// @brief No candidate list to fill in this mode.
     static void fill_list_chunk_to_compress_in_par(int /*thr*/, vec_tuple_chunkp_int2& /*ll_compt*/) {}
     /// @copydoc fill_list_chunk_to_compress_in_par
-    static void fill_list_to_compress(vec_tuple_chunkp_int2& /*ll_compt*/, int /*num_chunk*/, int /*num_tab*/,
+    static void fill_list_to_compress(vec_tuple_chunkp_int2& /*ll_compt*/,
+                                      int /*num_chunk*/,
+                                      int /*num_tab*/,
                                       unsigned int /*n_elems*/)
     {
     }
@@ -605,7 +609,6 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     inline static manager_chunk s_manager_{};
 
   public:
-
     /**
      * @brief Drain and compress every thread's candidate list.
      * @param apply true: compress the candidates found constant; false: walk
