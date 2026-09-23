@@ -46,7 +46,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     auto& tab_point   = bench_arr.tab_point;
     auto& tab_cell    = bench_arr.tab_cell;
 
-    const int sz = bench_arr.sz;
+    const Int sz = bench_arr.sz;
 
     auto lbd_fill_values = [&](const std::string& name, const auto& tab, auto sec_val)
     {
@@ -55,14 +55,14 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         constexpr bool is_complex  = std::is_same_v<value_type, complex_double>;
         constexpr bool is_char     = std::is_same_v<value_type, unsigned char>;
 
-        int nbz = 0;
-        int nbv = 0;
-        int nb  = 0;
+        Int nbz = 0;
+        Int nbv = 0;
+        Int nb  = 0;
 
-        const int ssz = tab.size();
+        const Int ssz = tab.size();
 
 #pragma omp parallel for reduction(+ : nbz, nbv, nb)
-        for (int k = 0; k < ssz; ++k)
+        for (Int k = 0; k < ssz; ++k)
         {
             if constexpr (is_complex)
             {
@@ -82,7 +82,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
             else if constexpr (is_not_bool)
             {
                 // T{}, not 0: the struct element types compare with their own
-                // null element and have no conversion from int.
+                // null element and have no conversion from Int.
                 if (tab[k] == value_type{})
                 {
                     nbz++;
@@ -115,12 +115,12 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
 
         std::cout << std::fixed << std::setprecision(2);
 
-        constexpr int name_width   = 20;
-        const int     name_padding = (name_width - name.length()) / 2;
+        constexpr Int name_width   = 20;
+        const Int     name_padding = (name_width - name.length()) / 2;
         std::cout << std::setw(name_padding) << "" << "\nstatistics " << name << "\n";
 
-        constexpr int label_width = 22;
-        constexpr int value_width = 10;
+        constexpr Int label_width = 22;
+        constexpr Int value_width = 10;
 
         // The colon is now output as a separate token to ensure alignment.
         if constexpr (is_not_bool)

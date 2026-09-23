@@ -64,13 +64,10 @@ using namespace shrink_array;
 namespace shrink_array
 {
 
-template <typename T>
-using ActiveArray =
-    std::conditional_t<chunk_config::use_chunk2a,
-                       ArrayChunk2A<T>,
-                       std::conditional_t<chunk_config::use_chunk2,
-                                          ArrayChunk2<T>,
-                                          std::conditional_t<chunk_config::use_chunk, ArrayChunk<T>, std::vector<T>>>>;
+// ActiveArray now lives in bench_array.h, with the `Int` index type it hands
+// to the library: this file carried a second, identical copy of the alias --
+// harmless while both spelled the same thing, a redefinition as soon as one of
+// them gained a template argument.
 
 // chunk_dyn_size now lives in bench_array.h: bench_init.cpp needs it as much
 // as main() does.
@@ -118,7 +115,7 @@ int main(int argc, char* argv[])
     // mallopt() is not too late -- it applies to arenas created afterwards.
     {
         const char* e      = std::getenv("CHUNK_MALLOC_ARENAS");
-        const int   arenas = e ? std::atoi(e) : 0; // 0 = leave glibc alone
+        const Int   arenas = e ? std::atoi(e) : 0; // 0 = leave glibc alone
         if (arenas > 0)
             set_max_malloc_arenas(arenas);
     }
@@ -139,14 +136,14 @@ int main(int argc, char* argv[])
     const bool      test_stl        = bench_args.test_stl;
     const bool      no_struct       = bench_args.no_struct;
     const double    multiply_factor = bench_args.multiply_factor;
-    const int       divisor_factor  = bench_args.divisor_factor;
-    const int       iter_max_arg    = bench_args.iter_max_arg;
+    const Int       divisor_factor  = bench_args.divisor_factor;
+    const Int       iter_max_arg    = bench_args.iter_max_arg;
 
-    // Before sz is computed: a factor past the int range would wrap here.
+    // Before sz is computed: a factor past the Int range would wrap here.
     check_size_limits(multiply_factor, divisor_factor, iter_max_arg);
 
-    const int sz       = get_size_data(multiply_factor, divisor_factor);
-    const int interval = get_size_interval(multiply_factor, divisor_factor);
+    const Int sz       = get_size_data(multiply_factor, divisor_factor);
+    const Int interval = get_size_interval(multiply_factor, divisor_factor);
 
     // Example behavior based on flags
     if (no_io_v)
@@ -168,7 +165,7 @@ int main(int argc, char* argv[])
 
     // Not const: the INPUT_DATA branch below re-reads it from std::cin. And no
     // longer constexpr either -- the mode is chosen at run time by --mode.
-    int io_res = input_data ? 0 : get_io_mode();
+    Int io_res = input_data ? 0 : get_io_mode();
 
     const char* no_io = no_io_v ? "1" : std::getenv("NO_IO");
     // Compression is opt-in (--compress or COMPRESS=1): the I/O layer keeps its
@@ -208,10 +205,10 @@ int main(int argc, char* argv[])
     // Geometry validation and library start-up: moved to bench_init.cpp.
     bench_init_library();
 
-    const int iter_max = iter_max_arg;
+    const Int iter_max = iter_max_arg;
     std::cout << "iter_max = " << iter_max << "\n";
 
-    const int iter_stop = get_iter_stop(iter_max);
+    const Int iter_stop = get_iter_stop(iter_max);
 
     // Every one of these is used as `k % freq == 0`, so it must never be zero.
     // iter_max / 10 and iter_max / 4 round down to 0 for a small --iter_max --
@@ -219,11 +216,11 @@ int main(int argc, char* argv[])
     // means "every iteration", which is the sensible reading of "every
     // iter_max/10" when iter_max < 10, and is what get_freq_raz() already does
     // with its own `if (ret == 0) ret = 1`.
-    const int freq_stats = have_stats() ? std::max(1, iter_max / 10) : 1000000000;
+    const Int freq_stats = have_stats() ? std::max<Int>(1, iter_max / 10) : 1000000000;
 
-    const int freq_check_sum = have_check_sum() ? std::max(1, iter_max / 4) : 1000000000;
+    const Int freq_check_sum = have_check_sum() ? std::max<Int>(1, iter_max / 4) : 1000000000;
 
-    CONSTEXPR int freq_conso_mem = get_freq_conso_mem();
+    CONSTEXPR Int freq_conso_mem = get_freq_conso_mem();
 
     // Cadence of the per-iteration checksum line. Defaults to the memory
     // line's, so the two land on the same iterations and a checksum can be read
@@ -231,24 +228,24 @@ int main(int argc, char* argv[])
     // the memory lines, the [RECHUNK-*] verdicts and the final summary.
     // CHUNK_BENCH_KSUM_PERIOD overrides it (=1 prints every iteration, which is
     // what a bisection wants).
-    const int freq_ksum = []
+    const Int freq_ksum = []() -> Int
     {
         if (const char* e = std::getenv("CHUNK_BENCH_KSUM_PERIOD"))
         {
-            const int n = std::atoi(e);
+            const Int n = std::atoi(e);
             if (n > 0)
                 return n;
         }
         return 0; // 0 = follow freq_conso_mem, resolved just below
     }();
 
-    [[maybe_unused]] const int freq_compress = need_compression ? 1 : std::max(1, iter_max / 10);
+    [[maybe_unused]] const Int freq_compress = need_compression ? 1 : std::max<Int>(1, iter_max / 10);
 
-    const int freq_raz = get_freq_raz(iter_max);
+    const Int freq_raz = get_freq_raz(iter_max);
 
     // CHUNK_PMP_MAX_THREADS (PMP_CHUNK.h) is omp_get_max_threads() with OpenMP
     // and the literal 1 without, so no #ifdef is needed here any more.
-    const int max_thr = CHUNK_PMP_MAX_THREADS;
+    const Int max_thr = CHUNK_PMP_MAX_THREADS;
 
     CONSTEXPR bool stats     = have_stats();
     CONSTEXPR bool check_sum = have_check_sum();
@@ -432,8 +429,8 @@ int main(int argc, char* argv[])
     start           = end;
     std::cout << "\nElapsed time Initialisation to zero: " << elapsed_seconds.count() << "s\n";
 
-    const int min = 1;
-    const int max = sz;
+    const Int min = 1;
+    const Int max = sz;
 
     // Initialize the random number generator
     const std::string str            = std::to_string(iter_max);
@@ -442,21 +439,21 @@ int main(int argc, char* argv[])
     initializeRNG(rng, seed_file_name);
 
     // Create a uniform distribution for interval sizes
-    std::uniform_int_distribution sizeDistribution(1, interval);
+    std::uniform_int_distribution<Int> sizeDistribution(1, interval);
 
     // Create a uniform distribution for the starting points of the intervals
-    std::uniform_int_distribution startDistribution(min, max);
+    std::uniform_int_distribution<Int> startDistribution(min, max);
 
     std::cout << "Iteration ..." << std::endl;
 
-    std::vector<int> tab_size(iter_max), tab_start(iter_max), tab_nba1(iter_max), tab_nba2(iter_max);
+    std::vector<Int> tab_size(iter_max), tab_start(iter_max), tab_nba1(iter_max), tab_nba2(iter_max);
 
     // no parallel in OpenMP
-    for (int k = 0; k < iter_max; ++k)
+    for (Int k = 0; k < iter_max; ++k)
     {
-        const int size   = sizeDistribution(rng);
-        const int start0 = startDistribution(rng);
-        const int end0   = start0 + size;
+        const Int size   = sizeDistribution(rng);
+        const Int start0 = startDistribution(rng);
+        const Int end0   = start0 + size;
         tab_size[k]      = size;
         tab_start[k]     = start0;
 
@@ -488,15 +485,15 @@ int main(int argc, char* argv[])
     // `if constexpr`, so a normal build never touches std::random_device -- the
     // statement is compiled, never executed, and r stays -1, which the test at
     // the injection site below rejects.
-    int r          = -1;
-    int cycle_alea = -1;
+    Int r          = -1;
+    Int cycle_alea = -1;
     if constexpr (test_captur_bug)
     {
         std::mt19937                       rng0(std::random_device{}());
-        std::uniform_int_distribution<int> dist0(0, 2);
+        std::uniform_int_distribution<Int> dist0(0, 2);
         r = dist0(rng0);
 
-        std::uniform_int_distribution<int> dist1(0, 31);
+        std::uniform_int_distribution<Int> dist1(0, 31);
         cycle_alea = dist1(rng0);
     }
 
@@ -519,11 +516,11 @@ int main(int argc, char* argv[])
     // are largest, and the tick count stays bounded. The floor of 10 stops a
     // very short run from examining every other iteration.
     // CHUNK_ADVISOR_PERIOD overrides; 0 still disables.
-    const int advisor_period = [iter_max]
+    const Int advisor_period = [iter_max]() -> Int
     {
         if (const char* e = std::getenv("CHUNK_ADVISOR_PERIOD"))
             return std::atoi(e);
-        return std::max(10, iter_max / 20);
+        return std::max<Int>(10, iter_max / 20);
     }();
     // Phase-3A decider (dry-run): persists across ticks, keyed by array address.
     // `advisor_call` increments once per advisor_tick so cooldown/stability count
@@ -534,14 +531,14 @@ int main(int argc, char* argv[])
     // it when worthwhile. dry_run=false makes it act (rechunk is now parallel and
     // cheap, so we gate purely on memory gain + hysteresis, not CPU cost).
     RechunkDecider rechunk_decider{RechunkPolicy{.dry_run = false}};
-    int            advisor_call = 0;
-    auto           advisor_tick = [&](int k_iter)
+    Int            advisor_call = 0;
+    auto           advisor_tick = [&](Int k_iter)
     {
         if constexpr (has_advisor)
         {
             if (advisor_period <= 0 || (k_iter % advisor_period) != 0)
                 return;
-            const int tick = advisor_call++;
+            const Int tick = advisor_call++;
             rechunk_decider.consider<double>(tab1, tick, k_iter, "tab1");
             rechunk_decider.consider<double>(tab2, tick, k_iter, "tab2");
             rechunk_decider.consider<short>(tab_short, tick, k_iter, "tab_short");
@@ -555,10 +552,20 @@ int main(int argc, char* argv[])
                     // STEP B — cst2 GC mark report (read-only) : ArrayChunk2A-only API
                     // (per-chunk cst_val2 pointer registry has no equivalent on CHUNK /
                     // CHUNK2, which have no per-chunk GC-able registry to report on).
-                    std::fprintf(stderr, "[cst2-gc @ iter %d]\n", k_iter);
-                    ArrayChunk2A<double>::gc_mark_report();
-                    ArrayChunk2A<short>::gc_mark_report();
-                    ArrayChunk2A<complex_double>::gc_mark_report();
+                    // %ld + a cast: k_iter is Int, which is `long` in the _i64
+                    // build and `int` otherwise.
+                    std::fprintf(stderr, "[cst2-gc @ iter %ld]\n", static_cast<long>(k_iter));
+                    // Spelled out rather than Array<T>: the enclosing
+                    // `if constexpr` is in a plain lambda, so its discarded
+                    // branch is still checked, and Array<T> is ArrayChunk<T> --
+                    // which has no gc_mark_report -- in a v1/v2 build. `Int`
+                    // is what matters here: ArrayChunk2A<double> would take the
+                    // default ind_type (int), a DIFFERENT instantiation from the
+                    // one the bench fills in an _i64 build, and the report would
+                    // be of an array nothing ever touched.
+                    ArrayChunk2A<double, Int>::gc_mark_report();
+                    ArrayChunk2A<short, Int>::gc_mark_report();
+                    ArrayChunk2A<complex_double, Int>::gc_mark_report();
                 }
             }
         }
@@ -567,7 +574,7 @@ int main(int argc, char* argv[])
 
     auto last = std::chrono::steady_clock::now();
 
-    for (int k = 0; k < iter_max; ++k)
+    for (Int k = 0; k < iter_max; ++k)
     {
         if (k > 0)
             advisor_tick(k);
@@ -584,10 +591,10 @@ int main(int argc, char* argv[])
         if constexpr (chunk_config::ring_log_debug)
             shrink_array::ring_init();
 
-        const int size   = tab_size[k];
-        const int start0 = tab_start[k];
+        const Int size   = tab_size[k];
+        const Int start0 = tab_start[k];
 
-        int end0 = start0 + size;
+        Int end0 = start0 + size;
 
         if (end0 > sz)
             end0 = sz;
@@ -636,9 +643,9 @@ int main(int argc, char* argv[])
 
         if (k % 5 == 2)
         {
-            const int team  = std::max(max_thr, 2);
-            const int beg_s = std::max(start0 / 2, 0);
-            const int end_s = std::min(beg_s + interval / 4, sz);
+            const Int team  = std::max<Int>(max_thr, 2);
+            const Int beg_s = std::max<Int>(start0 / 2, 0);
+            const Int end_s = std::min(beg_s + interval / 4, sz);
 
             bench_phase_stress_teams(bench_arrays, team, beg_s, end_s);
         }
@@ -658,13 +665,13 @@ int main(int argc, char* argv[])
         //                            dispatch overhead still negligible.
         if (k % 5 == 3)
         {
-            const int beg_s = std::max(start0 / 2, 0);
-            const int end_s = std::min(beg_s + interval / 4, sz);
+            const Int beg_s = std::max<Int>(start0 / 2, 0);
+            const Int end_s = std::min(beg_s + interval / 4, sz);
             // NOT __chunk_size: in dynamic builds that is the compile-time
             // default (64), while arrays run at chunk_dyn_size (512) — grain
             // would be 16, i.e. 32 tasks per 512-chunk instead of the 4
             // documented above.
-            [[maybe_unused]] const int grain = std::max(1, static_cast<int>(active_chunk_size()) / 4);
+            [[maybe_unused]] const Int grain = std::max<Int>(1, static_cast<Int>(active_chunk_size()) / 4);
 
             bench_phase_stress_dynamic(bench_arrays, grain, beg_s, end_s);
         }
@@ -686,7 +693,7 @@ int main(int argc, char* argv[])
         //     them like any other.
         if (k % 5 == 4)
         {
-            const auto r0 = static_cast<std::size_t>(std::max(start0 / 4, 0)) + 3;
+            const auto r0 = static_cast<std::size_t>(std::max<Int>(start0 / 4, 0)) + 3;
             const auto r1 = std::min(r0 + 1029, static_cast<std::size_t>(sz));
 
             // DO NOT strip the shrink_array:: below: this file's `using
@@ -698,7 +705,7 @@ int main(int argc, char* argv[])
             // Constant fills, one per outcome on a chunked array: the second
             // value (a fully covered chunk goes constant outright on chunk2a),
             // the first value (its buffer is released), a plain value
-            // (materialised, then raw-stored), an int and a bool (per-element
+            // (materialised, then raw-stored), an Int and a bool (per-element
             // path: bool keeps its state in the proxy).
             fill_range(tab1, r0, r1, second_value_d, assume_drained);
             fill_range(tab2, r0, r1, 0., assume_drained);
@@ -727,7 +734,7 @@ int main(int argc, char* argv[])
         // a divergence that first appears between two sampled iterations would
         // otherwise be reported against the wrong one.
         {
-            const int  ksum_period = freq_ksum > 0 ? freq_ksum : std::max(1, freq_conso_mem);
+            const Int  ksum_period = freq_ksum > 0 ? freq_ksum : std::max<Int>(1, freq_conso_mem);
             const bool ksum_bad =
                 !std::isfinite(val_sum) || !std::isfinite(cv_val_sum.real()) || !std::isfinite(cv_val_sum.imag());
             if (k % ksum_period == 0 || k == 0 || k == iter_max - 1 || ksum_bad)

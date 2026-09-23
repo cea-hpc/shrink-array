@@ -25,7 +25,7 @@
 #include "bench_phases.h"
 #include "bench_utils.h"
 
-void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] int team, int beg_s, int end_s)
+void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] Int team, Int beg_s, Int end_s)
 {
     // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
@@ -44,7 +44,7 @@ void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] int team,
     {
         begin_parallel_phase_g();
 BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int j = beg_s; j < end_s; ++j)
+        for (Int j = beg_s; j < end_s; ++j)
         {
             tab1[j] = second_value_d;
             tab2[j] = 0;
@@ -64,7 +64,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
     finalize_parallel_phase_after_flush_g();
 }
 
-void bench_phase_stress_dynamic(BenchArrays& bench_arr, [[maybe_unused]] int grain, int beg_s, int end_s)
+void bench_phase_stress_dynamic(BenchArrays& bench_arr, [[maybe_unused]] Int grain, Int beg_s, Int end_s)
 {
     // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
@@ -86,7 +86,7 @@ void bench_phase_stress_dynamic(BenchArrays& bench_arr, [[maybe_unused]] int gra
     {
         begin_parallel_phase_g();
 #pragma omp for schedule(dynamic, grain) nowait
-        for (int j = beg_s; j < end_s; ++j)
+        for (Int j = beg_s; j < end_s; ++j)
         {
             tab1[j] = second_value_d0;
             tab2[j] = second_value_d0;

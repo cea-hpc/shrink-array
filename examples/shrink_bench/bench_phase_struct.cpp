@@ -49,18 +49,18 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
     auto& tab_point = bench_arr.tab_point;
     auto& tab_cell  = bench_arr.tab_cell;
 
-    const int sz       = bench_arr.sz;
-    const int interval = bench_arr.interval;
+    const Int sz       = bench_arr.sz;
+    const Int interval = bench_arr.interval;
 
 #pragma omp parallel
     {
         begin_parallel_phase_g();
 
-        int begin_i = sz / 2;
-        int end_i   = sz - sz / 3;
+        Int begin_i = sz / 2;
+        Int end_i   = sz - sz / 3;
 
         BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = begin_i; i < end_i; ++i)
+        for (Int i = begin_i; i < end_i; ++i)
         {
             tab_point[i] = second_value_p;
             tab_cell[i]  = second_value_cell;
@@ -70,7 +70,7 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
         end_i   = sz - sz / 4;
 
         BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = begin_i; i < end_i; ++i)
+        for (Int i = begin_i; i < end_i; ++i)
         {
             tab_point[i] = Point3{2., 0., 0.};
             tab_cell[i]  = Cell{2, 1.f};
@@ -80,10 +80,10 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
         end_i   = std::min(begin_i + interval, sz);
 
         BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = begin_i; i < end_i; ++i)
+        for (Int i = begin_i; i < end_i; ++i)
         {
             tab_point[i] = Point3{static_cast<double>(i), 0.5, static_cast<double>(i % 7)};
-            tab_cell[i]  = Cell{i % 5, static_cast<float>(i % 3) * 0.25f};
+            tab_cell[i]  = Cell{static_cast<int32_t>(i % 5), static_cast<float>(i % 3) * 0.25f};
         }
 
         finalize_parallel_phase_only_flush_g();
@@ -99,11 +99,11 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
 // the window into point_sum, twice the reads of the writes, as the other
 // compute loops do.
 void bench_phase_struct_compute(BenchArrays&            bench_arr,
-                                int                     k,
-                                int                     start0,
-                                int                     end0,
-                                const std::vector<int>& tab_nba1,
-                                const std::vector<int>& tab_nba2,
+                                Int                     k,
+                                Int                     start0,
+                                Int                     end0,
+                                const std::vector<Int>& tab_nba1,
+                                const std::vector<Int>& tab_nba2,
                                 double&                 point_sum)
 {
     if (!bench_arr.with_struct) // --no_struct
@@ -112,8 +112,8 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
     auto& tab_point = bench_arr.tab_point;
     auto& tab_cell  = bench_arr.tab_cell;
 
-    const int  nba1 = tab_nba1[k];
-    const int  nba2 = tab_nba2[k];
+    const Int  nba1 = tab_nba1[k];
+    const Int  nba2 = tab_nba2[k];
     const auto dk   = static_cast<double>(k % 3);
 
     // Shared accumulator of the region, reduced by the loop (bench_prelude.h
@@ -123,15 +123,15 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
     // Round-robin, chunk-aligned blocks (bench_sched_for): the writer's cost
     // depends on the index, and both loops must share the schedule.
     const BenchSched sched      = bench_sched_for(start0, end0);
-    const int        sched_blk  = sched.blk;
-    const int        sched_base = sched.base;
+    const Int        sched_blk  = sched.blk;
+    const Int        sched_base = sched.base;
 
 #pragma omp parallel
     {
         begin_parallel_phase_g();
 
         BENCH_OMP_FOR_BLOCK_NOWAIT_SCALAR
-        for (int i = sched_base; i < end0; ++i)
+        for (Int i = sched_base; i < end0; ++i)
         {
             if (i < start0) // alignment head: same trip count in both loops
                 continue;
@@ -158,7 +158,7 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
         // size, so a thread reads back the elements it wrote itself (and a read
         // of its own deferred write goes through the read gate anyway).
         BENCH_OMP_FOR_BLOCK_NOWAIT_RED_SCALAR(sum)
-        for (int i = sched_base; i < end0; ++i)
+        for (Int i = sched_base; i < end0; ++i)
         {
             if (i < start0)
                 continue;
@@ -177,7 +177,7 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
 // ─── Reset ───────────────────────────────────────────────────────────────────
 // The struct arrays' share of the raz sweep: the window back to the null
 // element, a whole run for the next pass.
-void bench_phase_struct_raz(BenchArrays& bench_arr, int start0, int end0)
+void bench_phase_struct_raz(BenchArrays& bench_arr, Int start0, Int end0)
 {
     if (!bench_arr.with_struct) // --no_struct
         return;
@@ -190,7 +190,7 @@ void bench_phase_struct_raz(BenchArrays& bench_arr, int start0, int end0)
         begin_parallel_phase_g();
 
         BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = start0; i < end0; ++i)
+        for (Int i = start0; i < end0; ++i)
         {
             tab_point[i] = Point3{};
             tab_cell[i]  = Cell{};

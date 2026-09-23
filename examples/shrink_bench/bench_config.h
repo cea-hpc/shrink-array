@@ -169,12 +169,24 @@ inline bool mode_perf  = false; ///< g_bench_mode == perf
  */
 inline void set_bench_mode(BenchMode m)
 {
+#ifdef BENCH_INT64
+    // The _i64 declination is a perf instrument (bench_int.h). A check compares
+    // against the data_tab* reference files, which the ordinary 32-bit build
+    // writes and nothing regenerates at 64 bits, so --mode check here would
+    // report differences that mean nothing. Refuse it rather than print them.
+    if (m == BenchMode::check)
+    {
+        std::cerr << "error: --mode check is not supported by the 64-bit-index (_i64) build.\n"
+                     "       Run the check on the ordinary build; _i64 is for --mode perf.\n";
+        std::exit(1);
+    }
+#endif
     g_bench_mode = m;
     mode_check   = (m == BenchMode::check);
     mode_perf    = (m == BenchMode::perf);
 }
 
-inline int get_io_mode()
+inline Int get_io_mode()
 {
     // The two branches only ever differed by the check-mode value (2 reads the
     // dump back and verifies it, which needs a shrink build; the baseline
@@ -207,24 +219,24 @@ inline long long get_size_base_data()
 }
 
 /// @brief floor(base * multiplier / divisor), in 64-bit: --multiply is real.
-inline long long scaled_size(long long base, double multiplier, int divisor)
+inline long long scaled_size(long long base, double multiplier, Int divisor)
 {
     return static_cast<long long>(std::floor(static_cast<double>(base) * multiplier / divisor));
 }
 
-inline int get_size_interval(double multiplier = 1.0, int divisor = 1)
+inline Int get_size_interval(double multiplier = 1.0, Int divisor = 1)
 {
-    return static_cast<int>(scaled_size(get_size_base_interval(), multiplier, divisor));
+    return static_cast<Int>(scaled_size(get_size_base_interval(), multiplier, divisor));
 }
 
-inline int get_size_data(double multiplier = 1.0, int divisor = 1)
+inline Int get_size_data(double multiplier = 1.0, Int divisor = 1)
 {
-    return static_cast<int>(scaled_size(get_size_base_data(), multiplier, divisor));
+    return static_cast<Int>(scaled_size(get_size_base_data(), multiplier, divisor));
 }
 
 /**
- * @brief Refuse factors that push the bench's int arithmetic past INT_MAX.
- * @details The largest int the bench computes is below
+ * @brief Refuse factors that push the bench's Int arithmetic past its range.
+ * @details The largest Int the bench computes is below
  *          max(2 * sz + 65536, sz + max(interval, 2 * iter_max, 65536)):
  *            - tab_float and tab_char are CREATED at 2 * sz (shrink_bench.cpp,
  *              resized to sz afterwards): the largest term. It is what made
@@ -234,14 +246,17 @@ inline int get_size_data(double multiplier = 1.0, int divisor = 1)
  *              size <= interval);
  *            - i + 2 * k in the compute phase (i < sz, k < iter_max);
  *            - end0 + 256, the tail loop;
- *            - the library's int indices (ind_type = int): the element count,
+ *            - the library's Int indices (ind_type = Int): the element count,
  *              and chunk count x chunk size, up to sz + one chunk (65536
  *              covers any geometry the rechunk reaches).
- *          Beyond that the bench and the library need 64-bit indices.
+ *          Beyond that the bench and the library need 64-bit indices, which
+ *          is what the _i64 declination is (bench_int.h): `Int` is `long`
+ *          there, so this same bound is computed against LONG_MAX and a
+ *          `--multiply` the 32-bit build refuses simply passes.
  *          Also refuses a factor that leaves an empty interval. Exits(1)
  *          with the largest valid --multiply for this --divisor.
  */
-inline void check_size_limits(double multiplier, int divisor, int iter_max)
+inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
 {
     // %.10g: the default stream precision printed 1.9999999 as "2".
     auto real = [](double v)
@@ -275,14 +290,14 @@ inline void check_size_limits(double multiplier, int divisor, int iter_max)
         return std::max(2 * sz_m + 65536LL, sz_m + std::max(scaled_size(base_itv, m, divisor), margin));
     };
 
-    constexpr long long int_max = std::numeric_limits<int>::max();
+    constexpr long long int_max = std::numeric_limits<Int>::max();
     if (reach(multiplier) <= int_max)
         return;
 
     // Each term of the bound, solved for m (the floors only lower the reach):
-    //   2 * sz + 65536   <= INT_MAX  ->  m <= (INT_MAX - 65536) * d / (2 * base_data)
-    //   sz + margin      <= INT_MAX  ->  m <= (INT_MAX - margin) * d / base_data
-    //   sz + interval    <= INT_MAX  ->  m <= INT_MAX * d / (base_data + base_itv)
+    //   2 * sz + 65536   <= int_max  ->  m <= (int_max - 65536) * d / (2 * base_data)
+    //   sz + margin      <= int_max  ->  m <= (int_max - margin) * d / base_data
+    //   sz + interval    <= int_max  ->  m <= int_max * d / (base_data + base_itv)
     const double d     = divisor;
     double       m_max = std::min({(int_max - 65536.0) * d / (2.0 * static_cast<double>(base_data)),
                                    (int_max - static_cast<double>(margin)) * d / static_cast<double>(base_data),
@@ -294,18 +309,19 @@ inline void check_size_limits(double multiplier, int divisor, int iter_max)
     char buf[64];
     std::snprintf(buf, sizeof buf, "%.6f", m_max);
     std::cerr << "error: --multiply " << real(multiplier) << " --divisor " << divisor << " gives "
-              << scaled_size(base_data, multiplier, divisor) << " elements; the bench's int arithmetic would reach "
-              << reach(multiplier) << " > INT_MAX (" << int_max << ").\n";
+              << scaled_size(base_data, multiplier, divisor) << " elements; the bench's Int arithmetic would reach "
+              << reach(multiplier) << " > the Int range (" << int_max << ").\n";
     if (m_max > 0.0)
         std::cerr << "       Largest valid --multiply for --divisor " << divisor << " (iter_max " << iter_max << "): " << buf
                   << "\n";
     else
         std::cerr << "       No --multiply fits with --divisor " << divisor << ": raise --divisor.\n";
-    std::cerr << "       Beyond that the bench and the library (ind_type = int) need 64-bit indices.\n";
+    std::cerr << "       Beyond that the bench and the library (ind_type = Int) need 64-bit indices:\n"
+                 "       rebuild with -DSHRINK_BENCH_INT64=ON and run the _i64 executable (perf only).\n";
     std::exit(1);
 }
 
-inline int get_iter_stop(int iter_max)
+inline Int get_iter_stop(Int iter_max)
 {
     if (mode_check)
         return 33;
@@ -314,13 +330,13 @@ inline int get_iter_stop(int iter_max)
     return -1;
 }
 
-inline int get_freq_raz(int iter_max)
+inline Int get_freq_raz(Int iter_max)
 {
     if (mode_check)
         return 4;
     else if (mode_perf)
     {
-        int ret = iter_max / 10;
+        Int ret = iter_max / 10;
         if (ret == 0)
         {
             ret = 1;
@@ -330,7 +346,7 @@ inline int get_freq_raz(int iter_max)
     return -1;
 }
 
-inline int get_freq_conso_mem()
+inline Int get_freq_conso_mem()
 {
     // CHUNK_BENCH_MEM_PERIOD=<n>: print the memory line every n iterations,
     // whatever the mode. =1 turns the ten iterations before an advisor tick
@@ -338,7 +354,7 @@ inline int get_freq_conso_mem()
     // peak needs. Decided once at startup, like every other CONSTEXPR site.
     if (const char* e = std::getenv("CHUNK_BENCH_MEM_PERIOD"))
     {
-        const int n = std::atoi(e);
+        const Int n = std::atoi(e);
         if (n > 0)
             return n;
     }

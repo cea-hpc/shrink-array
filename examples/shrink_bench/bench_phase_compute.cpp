@@ -58,11 +58,11 @@ static const unsigned long bench_ulong_mask = []() -> unsigned long
 }();
 
 void bench_phase_compute(BenchArrays&            bench_arr,
-                         int                     k,
-                         int                     start0,
-                         int                     end0,
-                         const std::vector<int>& tab_nba1,
-                         const std::vector<int>& tab_nba2,
+                         Int                     k,
+                         Int                     start0,
+                         Int                     end0,
+                         const std::vector<Int>& tab_nba1,
+                         const std::vector<Int>& tab_nba2,
                          double&                 val_sum_out,
                          long&                   long_val_sum_out,
                          double&                 v_real_out,
@@ -84,7 +84,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
     auto& tab_long    = bench_arr.tab_long;
     auto& tab_ulong   = bench_arr.tab_ulong;
 
-    const int sz = bench_arr.sz;
+    const Int sz = bench_arr.sz;
 
     // Zero-initialised: the reduction accumulates here, then lands on the
     // caller's running totals at the end of the function.
@@ -104,15 +104,15 @@ void bench_phase_compute(BenchArrays&            bench_arr,
     // every thread must see the same values, or the same-thread guarantee is
     // void. The pragma macros name sched_blk.
     const BenchSched sched      = bench_sched_for(start0, end0);
-    const int        sched_blk  = sched.blk;
-    const int        sched_base = sched.base;
+    const Int        sched_blk  = sched.blk;
+    const Int        sched_base = sched.base;
 
 #pragma omp parallel
     {
         begin_parallel_phase_g();
 
-        const int dec = k % 16;
-        const int deb = std::max(start0 - 512, 0);
+        const Int dec = k % 16;
+        const Int deb = std::max<Int>(start0 - 512, 0);
 
         // nowait on this loop and the next: they write DISJOINT ranges
         // ([deb, start0) here, [end0, end0 + 256) below) that nothing in this
@@ -133,9 +133,9 @@ void bench_phase_compute(BenchArrays&            bench_arr,
         // calls inside index-selected branches -- "control flow cannot be
         // substituted for a select", the calls may not be speculated.
         BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = deb; i < start0; ++i)
+        for (Int i = deb; i < start0; ++i)
         {
-            const int j = i - deb;
+            const Int j = i - deb;
 
             if (j < 60 + dec)
                 tab_complex[i] = complex_double(std::sin(i + k), std::cos(i + k));
@@ -150,9 +150,9 @@ void bench_phase_compute(BenchArrays&            bench_arr,
         }
 
         BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = deb; i < start0; ++i)
+        for (Int i = deb; i < start0; ++i)
         {
-            const int j = i - deb;
+            const Int j = i - deb;
 
             if (j < 60 + dec)
             {
@@ -186,7 +186,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 tab3[i]      = second_value_d;
                 tab4[i]      = 0;
                 tab5[i]      = second_value_d2;
-                tab_int[i]   = j;
+                tab_int[i]   = static_cast<int>(j);
                 tab_float[j] = second_value_f0;
                 tab_short[j] = second_value_s0;
                 tab_char[i]  = second_value_c0;
@@ -198,7 +198,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 tab3[i]      = 0;
                 tab4[i]      = 0;
                 tab5[i]      = 0;
-                tab_int[i]   = j + 1;
+                tab_int[i]   = static_cast<int>(j + 1);
                 tab_float[j] = 0;
                 tab_short[j] = 0;
                 tab_char[i]  = 0;
@@ -226,7 +226,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
         // Scalar: 256 elements, and interpolation() carries early exits
         // ("cannot vectorize early exit loop with more than one early exit").
         BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = end0; i < std::min(end0 + 256, sz); ++i)
+        for (Int i = end0; i < std::min(end0 + 256, sz); ++i)
         {
             if (i % 3 == 0)
             {
@@ -241,7 +241,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 
                 tab_float[i] = static_cast<float>(std::tan(i));
                 tab_short[i] = 0;
-                tab_char[i]  = interpolation(i, sz, 128);
+                tab_char[i]  = static_cast<unsigned char>(interpolation(i, sz, 128));
             }
             else
             {
@@ -251,9 +251,9 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 tab4[i]        = 0;
                 tab5[i]        = std::cos(i + 2 * k);
                 tab_complex[i] = complex_double(std::tan(i + 2 * k), std::cos(i - k));
-                tab_int[i]     = i - k;
+                tab_int[i]     = static_cast<int>(i - k);
                 tab_float[i]   = 0;
-                tab_short[i]   = interpolation(i, sz, std::numeric_limits<short>::max());
+                tab_short[i]   = static_cast<short>(interpolation(i, sz, std::numeric_limits<short>::max()));
                 tab_char[i]    = 0;
             }
         }
@@ -276,7 +276,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             // To simulate behavior of a code where we read more than we write
 
             BENCH_OMP_FOR_BLOCK_NOWAIT_SCALAR
-            for (int i = sched_base; i < end0; ++i)
+            for (Int i = sched_base; i < end0; ++i)
             {
                 if (i < start0) // alignment head: same trip count in every loop
                     continue;
@@ -289,8 +289,8 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 if (i > tab_nba1[k])
                 {
                     tab2[i]      = std::cos(double(2 * i));
-                    tab_char[i]  = exponential_correlation(i, sz, std::numeric_limits<char>::max(), 2);
-                    tab_short[i] = exponential_correlation(i, sz, std::numeric_limits<short>::max(), 2);
+                    tab_char[i]  = static_cast<unsigned char>(exponential_correlation(i, sz, std::numeric_limits<char>::max(), 2));
+                    tab_short[i] = static_cast<short>(exponential_correlation(i, sz, std::numeric_limits<short>::max(), 2));
                 }
 
                 if (i > tab_nba2[k])
@@ -298,7 +298,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     tab3[i] = std::sin(tab1[i] + tab2[i]);
                     tab4[i] *= tab5[i] + 1;
                     tab_bool[i] = true;
-                    tab_int[i]  = i + 1;
+                    tab_int[i]  = static_cast<int>(i + 1);
 
                     tab_int[i] = static_cast<int>(std::floor(log10(static_cast<double>(tab_int[i]))));
                     tab_int[i] *= tab_int[i]; // Before the previous line if i bigger than sqrt(soit 2^31 − 1)
@@ -331,8 +331,8 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     tab_ulong[i] &= ~0x0FUL;
 
                     tab_float[i] -= 1.5f;
-                    tab_char[i]    = linear_correlation(i, sz, std::numeric_limits<char>::max());
-                    tab_short[i]   = linear_correlation(i, sz, std::numeric_limits<short>::max());
+                    tab_char[i]    = static_cast<unsigned char>(linear_correlation(i, sz, std::numeric_limits<char>::max()));
+                    tab_short[i]   = static_cast<short>(linear_correlation(i, sz, std::numeric_limits<short>::max()));
                     tab_complex[i] = complex_double(tab1[i], tab2[i]);
 
                     tab_complex[i] = 3. * tab_complex[i];
@@ -349,7 +349,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
         else
         {
             BENCH_OMP_FOR_BLOCK_NOWAIT_SCALAR
-            for (int i = sched_base; i < end0; ++i)
+            for (Int i = sched_base; i < end0; ++i)
             {
                 if (i < start0) // alignment head: same trip count in every loop
                     continue;
@@ -374,15 +374,15 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             }
         }
 
-        const int interval_loc = end0 - start0;
-        const int interval10   = interval_loc / 10;
+        const Int interval_loc = end0 - start0;
+        const Int interval10   = interval_loc / 10;
 
-        const int beg_loc = start0 + 4 * interval10;
-        const int end_loc = start0 + 5 * interval10;
+        const Int beg_loc = start0 + 4 * interval10;
+        const Int end_loc = start0 + 5 * interval10;
 
-        const int beg_loc0 = start0 + 4.8 * interval10;
+        const Int beg_loc0 = start0 + 4.8 * interval10;
 
-        for (int p = 0; p < 20; ++p)
+        for (Int p = 0; p < 20; ++p)
         {
             const auto val = static_cast<double>(p);
 
@@ -407,14 +407,14 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             long      p_long_val_sum = 0;
             double    p_v_real       = 0;
             double    p_v_im         = 0;
-            const int n_blocks       = (end0 - sched_base + sched_blk - 1) / sched_blk;
+            const Int n_blocks       = (end0 - sched_base + sched_blk - 1) / sched_blk;
 #pragma omp for schedule(static, 1) nowait
-            for (int blk = 0; blk < n_blocks; ++blk)
+            for (Int blk = 0; blk < n_blocks; ++blk)
             {
-                const int lo = std::max(start0, sched_base + blk * sched_blk);
-                const int hi = std::min(end0, sched_base + (blk + 1) * sched_blk);
+                const Int lo = std::max(start0, sched_base + blk * sched_blk);
+                const Int hi = std::min(end0, sched_base + (blk + 1) * sched_blk);
                 BENCH_OMP_SIMD_RED(p_val_sum, p_long_val_sum, p_v_real, p_v_im)
-                for (int i = lo; i < hi; ++i)
+                for (Int i = lo; i < hi; ++i)
                 {
                     const double t1 = tab1[i];
                     const double t2 = tab2[i];
@@ -423,7 +423,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 
                     const complex_double valc = tab_complex[i];
                     const bool           b    = tab_bool[i];
-                    const int            ti   = tab_int[i];
+                    const Int            ti   = tab_int[i];
 
                     const double common = std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val);
                     const double arm    = b ? (std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val)) -
@@ -454,12 +454,12 @@ void bench_phase_compute(BenchArrays&            bench_arr,
         // region is now barrier-free: every thread works its own slice from
         // the first loop to the last, and the deferred writes it leaves behind
         // are resolved by the library's read gate or by the region's end.
-        for (int p = 0; p < 2; ++p)
+        for (Int p = 0; p < 2; ++p)
         {
             const double val = static_cast<double>(p);
 
             BENCH_OMP_FOR_BLOCK_NOWAIT_RED_SCALAR(val_sum)
-            for (int i = sched_base; i < end0; ++i)
+            for (Int i = sched_base; i < end0; ++i)
             {
                 if (i < start0) // alignment head: same trip count in every loop
                     continue;
@@ -510,7 +510,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                         neutral_sqrt_assign(tab2, i, tab2[i]);
                     }
                     tab_bool[i] = true;
-                    tab_int[i]  = i;
+                    tab_int[i]  = static_cast<int>(i);
                 }
 
                 if (i > beg_loc && i < end_loc)
@@ -521,7 +521,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     tab4[i] = 0;
                     tab5[i] = 1;
 
-                    tab_int[i] = i & 0xF;
+                    tab_int[i] = static_cast<int>(i & 0xF);
                     tab_int[i] |= 0x1;
                     tab_int[i] ^= 0x3;
                     tab_int[i] <<= 2;

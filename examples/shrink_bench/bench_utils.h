@@ -96,14 +96,14 @@ uint64_t calculate_checksum(const V& vec)
     uint64_t checksum = 0;
 
     using T      = V::value_type;
-    const int nn = vec.size();
+    const Int nn = vec.size();
 
-    constexpr T zero{}; // T{}, not 0: the struct element types have no conversion from int
+    constexpr T zero{}; // T{}, not 0: the struct element types have no conversion from Int
 
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
 
 #pragma omp parallel for reduction(+ : checksum)
-    for (int k = 0; k < nn; ++k)
+    for (Int k = 0; k < nn; ++k)
     {
         const T element = vec[k];
 
@@ -130,14 +130,14 @@ __attribute__((optimize("O2")))
 void calculate_checksum_0(const V& vec, std::vector<uint64_t_padding>& checksum_thr)
 {
     using T      = V::value_type;
-    const int nn = vec.size();
+    const Int nn = vec.size();
 
     constexpr T zero{};
 
     auto& checksum = checksum_thr[CHUNK_PMP_THREAD_RANK];
 
 #pragma omp for schedule(static) nowait
-    for (int k = 0; k < nn; ++k)
+    for (Int k = 0; k < nn; ++k)
     {
         const T element = vec[k];
 
@@ -186,7 +186,7 @@ void maybe_set_second_value(Arr& a, const Val& v)
 // __mem_page_size is defined in bench_utils.cpp. fast_allocators declares it
 // too, but that header is not in a CHUNK_STD_ALLOC build: the declaration has
 // to be here (removed once as a duplicate -- the std-alloc builds broke).
-extern int  __mem_page_size;
+extern int  __mem_page_size; // NOT Int: shared with fast_allocators, which declares it `int`
 extern bool __debug_flag;
 
 extern const std::vector<std::string> valid_args;
@@ -198,10 +198,10 @@ void     initializeRNG(std::mt19937& rng, const std::string& seed_file_name);
 double convert_memory(double memoryValue);
 void   memory_consumption(const std::string& msg);
 
-int linear_correlation(int i, int sz, int sz1);
-int exponential_correlation(int i, int sz, int sz1, double p);
-int interpolation(int i, int sz, int sz1);
+Int linear_correlation(Int i, Int sz, Int sz1);
+Int exponential_correlation(Int i, Int sz, Int sz1, double p);
+Int interpolation(Int i, Int sz, Int sz1);
 
-int         levenshtein(const std::string& a, const std::string& b);
+Int         levenshtein(const std::string& a, const std::string& b);
 void        print_help();
 std::string suggest_closest(const std::string& input);

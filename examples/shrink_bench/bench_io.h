@@ -58,13 +58,13 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
 // receives std::string fragments (log_message, or a std::cerr wrapper) and
 // `fmt` formats one value (the local format_val lambdas).
 template <typename Sink, typename Fmt, typename T>
-static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, unsigned int count)
+static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, UInt count)
 {
-    unsigned int p = 0;
+    UInt p = 0;
     while (p < count)
     {
         const T            current_val = values[p];
-        const unsigned int start_idx   = p;
+        const UInt start_idx   = p;
 
         // Count how many identical consecutive values follow
         while (p < count && values[p] == current_val)
@@ -72,7 +72,7 @@ static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, unsign
             ++p;
         }
 
-        const unsigned int run_length = p - start_idx;
+        const UInt run_length = p - start_idx;
         const std::string  val_str    = fmt(current_val);
         if (run_length > 2)
         {
@@ -86,7 +86,7 @@ static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, unsign
         }
         else
         {
-            for (unsigned int i = 0; i < run_length; ++i)
+            for (UInt i = 0; i < run_length; ++i)
             {
                 sink(val_str + " ");
             }
@@ -198,7 +198,7 @@ void write_binary_file(const std::string& filename,
 //   - read_trace=true  : replay from trace_err.txt written by a previous run.
 // -----------------------------------------------------------------------------
 template <typename VEC>
-void read_check_binary_file(int                ind,
+void read_check_binary_file(Int                ind,
                             const std::string& tab_name,
                             const std::string& filename,
                             const VEC&         data_check,
@@ -247,7 +247,7 @@ void read_check_binary_file(int                ind,
         std::cerr << "\n";
     }
 
-    const int sz = data_check.size();
+    const Int sz = data_check.size();
 
     // Whether `filename` (.bin) is a decompression TEMPORARY we created here
     // (compressed regime) or the oracle's persistent copy (a baseline without
@@ -279,7 +279,7 @@ void read_check_binary_file(int                ind,
         return;
     }
 
-    // Helper lambda to format values as strings, handling char-to-int conversion
+    // Helper lambda to format values as strings, handling char-to-Int conversion
     auto format_val = [&](auto val) -> std::string
     {
         if constexpr (std::is_same_v<T, char> || std::is_same_v<T, unsigned char> || std::is_same_v<T, signed char>)
@@ -303,7 +303,7 @@ void read_check_binary_file(int                ind,
     // branch, and an explicit capture that the std::vector instantiation
     // never reads draws -Wunused-lambda-capture from clang.
     [[maybe_unused]]
-    auto lbd_check_trace = [&](std::ifstream& trace_file, int k, auto& value)
+    auto lbd_check_trace = [&](std::ifstream& trace_file, Int k, auto& value)
     {
         // The body as a whole, not statement by statement: everything below
         // reads data_check, whose type is the DEPENDENT template parameter, so
@@ -340,8 +340,8 @@ void read_check_binary_file(int                ind,
             std::getline(trace_file, line);
             std::getline(trace_file, line);
 
-            const int num_chunk = k >> data_check.chunk_decalage();
-            const int num       = k & data_check.chunk_modulo();
+            const Int num_chunk = k >> data_check.chunk_decalage();
+            const Int num       = k & data_check.chunk_modulo();
 
             bool                  is_values   = false;
             bool                  is_cst_val1 = false;
@@ -447,7 +447,7 @@ void read_check_binary_file(int                ind,
                     lbd_print();
                     constexpr T    v{}; // T{}: the struct elements have no conversion from 0
                     bool           te = true;
-                    for (unsigned int p = 0; p < data_check.chunk_size(); ++p)
+                    for (UInt p = 0; p < data_check.chunk_size(); ++p)
                     {
                         if (chunk_t.values[p] != v)
                         {
@@ -465,7 +465,7 @@ void read_check_binary_file(int                ind,
                         bool all_equal = true;
                         auto first     = chunk_t.values[0];
 
-                        for (unsigned int p = 1; p < data_check.chunk_size(); ++p)
+                        for (UInt p = 1; p < data_check.chunk_size(); ++p)
                         {
                             if (chunk_t.values[p] != first)
                             {
@@ -521,7 +521,7 @@ void read_check_binary_file(int                ind,
             std::cerr << "Failed to open trace_err.txt\n";
         }
     }
-    int ind_read = -1;
+    Int ind_read = -1;
 
     if (read_trace)
     {
@@ -539,7 +539,7 @@ void read_check_binary_file(int                ind,
             trace_file_read.close();
         }
     }
-    int k_read = -1;
+    Int k_read = -1;
     if (ok_read_trace)
     {
         trace_file_read >> k_read;
@@ -552,7 +552,7 @@ void read_check_binary_file(int                ind,
 
     if constexpr (std::is_same_v<T, bool>)
     {
-        for (int k = 0; k < sz; ++k)
+        for (Int k = 0; k < sz; ++k)
         {
             T value;
             file.read(reinterpret_cast<char*>(&value), sizeof(T));
@@ -592,10 +592,10 @@ void read_check_binary_file(int                ind,
                 // reads chunk_t, declared here, so they cannot be split.
                 if constexpr (chunk_config::is_shrink_enabled)
                 {
-                    const int num_chunk = k >> data_check.chunk_decalage();
+                    const Int num_chunk = k >> data_check.chunk_decalage();
 
                     log_message("\nchunk number        : " + std::to_string(num_chunk) + "\n");
-                    const int num = k & data_check.chunk_modulo();
+                    const Int num = k & data_check.chunk_modulo();
                     log_message("number inside chunk : " + std::to_string(num) + "\n");
                     const auto& chunk_t = data_check.getChunkList()[num_chunk];
                     using ValueType     = decltype(chunk_t.values); // infer the type
@@ -621,7 +621,7 @@ void read_check_binary_file(int                ind,
                     std::ostringstream oss1;
                     oss1 << "0x" << std::hex << addr;
                     const std::string s1  = oss1.str();
-                    const int         val = *reinterpret_cast<int*>(addr);
+                    const Int         val = *reinterpret_cast<Int*>(addr);
                     log_message("value  = " + std::to_string(val) + "\n");
                     log_message("address values[" + std::to_string(num) + "] : " + s1 + "\n");
 
@@ -656,7 +656,7 @@ void read_check_binary_file(int                ind,
         std::vector<T> vec(sz);
         file.read(reinterpret_cast<char*>(vec.data()), sz * sizeof(T));
 
-        int nn = 0;
+        Int nn = 0;
 
         double ratio_max = 0;
 
@@ -664,7 +664,7 @@ void read_check_binary_file(int                ind,
 
         constexpr bool is_complex = std::is_same_v<T, complex_double>;
 
-        for (int k = 0; k < sz; ++k)
+        for (Int k = 0; k < sz; ++k)
         {
             const T value       = vec[k];
             const T value_check = data_check[k];
@@ -756,10 +756,10 @@ void read_check_binary_file(int                ind,
 
                 if constexpr (chunk_config::is_shrink_enabled)
                 {
-                    const int   num_chunk = k >> data_check.chunk_decalage();
+                    const Int   num_chunk = k >> data_check.chunk_decalage();
                     const auto& chunk_t   = data_check.getChunkList()[num_chunk];
                     log_message("chunk number        : " + std::to_string(num_chunk) + "\n");
-                    const int num = k & data_check.chunk_modulo();
+                    const Int num = k & data_check.chunk_modulo();
                     log_message("number inside chunk : " + std::to_string(num) + "\n");
 
                     // Detect whether a type is an atomic of a pointer, regardless of the pointed-to type
@@ -815,7 +815,7 @@ void read_check_binary_file(int                ind,
                     // above: the ratio report sitting between the two must keep
                     // running in the std::vector build, so the two cannot be merged
                     // into a single `if constexpr`.
-                    const int num_chunk = k >> data_check.chunk_decalage();
+                    const Int num_chunk = k >> data_check.chunk_decalage();
 
                     if (const auto& chunk_t = data_check.chunk_list[num_chunk]; chunk_t.is_cst_val1() && value != zero)
                     {
@@ -842,7 +842,7 @@ void read_check_binary_file(int                ind,
                         constexpr T zero{};
                         bool        test_zero = true;
 
-                        for (unsigned int p = 0; p < data_check.chunk_size(); p++)
+                        for (UInt p = 0; p < data_check.chunk_size(); p++)
                         {
                             if (chunk_t.values[p] != zero)
                             {
@@ -875,7 +875,7 @@ void read_check_binary_file(int                ind,
                         bool all_equal = true;
                         auto first_v   = chunk_t.values[0];
 
-                        for (unsigned int i = 1; i < data_check.chunk_size(); ++i)
+                        for (UInt i = 1; i < data_check.chunk_size(); ++i)
                         {
                             if (chunk_t.values[i] != first_v)
                             {

@@ -85,7 +85,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                       std::chrono::duration<double>&         elapsed_seconds);
 
 template <class Arr, typename T>
-void neutral_sqrt_assign(Arr& tab, int i, T v)
+void neutral_sqrt_assign(Arr& tab, Int i, T v)
 {
     if constexpr (chunk_config::use_chunk)
         tab(i) = std::sqrt(v); // discarded quand Arr=std::vector : never typed
@@ -112,11 +112,11 @@ void neutral_sqrt_assign(Arr& tab, int i, T v)
  *       it keeps references out of the reduction clause.
  */
 void bench_phase_compute(BenchArrays&            bench_arr,
-                         int                     k,
-                         int                     start0,
-                         int                     end0,
-                         const std::vector<int>& tab_nba1,
-                         const std::vector<int>& tab_nba2,
+                         Int                     k,
+                         Int                     start0,
+                         Int                     end0,
+                         const std::vector<Int>& tab_nba1,
+                         const std::vector<Int>& tab_nba2,
                          double&                 val_sum,
                          long&                   long_val_sum,
                          double&                 v_real,
@@ -135,22 +135,22 @@ void bench_phase_struct_fill(BenchArrays& bench_arr);
  *        into @p point_sum. Same arguments as bench_phase_compute.
  */
 void bench_phase_struct_compute(BenchArrays&            bench_arr,
-                                int                     k,
-                                int                     start0,
-                                int                     end0,
-                                const std::vector<int>& tab_nba1,
-                                const std::vector<int>& tab_nba2,
+                                Int                     k,
+                                Int                     start0,
+                                Int                     end0,
+                                const std::vector<Int>& tab_nba1,
+                                const std::vector<Int>& tab_nba2,
                                 double&                 point_sum);
 
 /// @brief The struct arrays' share of the raz sweep: [start0, end0) back to T{}.
-void bench_phase_struct_raz(BenchArrays& bench_arr, int start0, int end0);
+void bench_phase_struct_raz(BenchArrays& bench_arr, Int start0, Int end0);
 
 /**
  * @brief Stress (a): a team one thread SHORT of the default, over [beg_s, end_s).
  * @details Moved verbatim. Runs on ~1/5 of iterations (disjoint k-modulo gate in
  *          main()), enough to surface rare bugs without dominating the baseline.
  */
-void bench_phase_stress_teams(BenchArrays& bench_arr, int team, int beg_s, int end_s);
+void bench_phase_stress_teams(BenchArrays& bench_arr, Int team, Int beg_s, Int end_s);
 
 /**
  * @brief Stress (b): `schedule(dynamic, grain)` over [beg_s, end_s).
@@ -158,15 +158,15 @@ void bench_phase_stress_teams(BenchArrays& bench_arr, int team, int beg_s, int e
  *          SAME chunk at once -- it is what exercises the CAS / Dekker paths that
  *          stay idle under the default static schedule.
  */
-void bench_phase_stress_dynamic(BenchArrays& bench_arr, int grain, int beg_s, int end_s);
+void bench_phase_stress_dynamic(BenchArrays& bench_arr, Int grain, Int beg_s, Int end_s);
 
 /// @name The four sibling range-fill regions
 /// Same shape, different values and closing bound. See bench_phase_ranges.cpp.
 /// @{
-void bench_phase_range_a(BenchArrays& bench_arr, int beg, int i);
-void bench_phase_range_b(BenchArrays& bench_arr, int beg, int i);
-void bench_phase_range_c(BenchArrays& bench_arr, int beg, int seg_end);
-void bench_phase_range_d(BenchArrays& bench_arr, int beg, int seg_end);
+void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int i);
+void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int i);
+void bench_phase_range_c(BenchArrays& bench_arr, Int beg, Int seg_end);
+void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end);
 /// @}
 
 /**
@@ -196,7 +196,7 @@ struct BenchIoFlags
 {
     const char* no_io;       ///< non-null: skip file I/O entirely
     const char* no_compress; ///< non-null: write/read uncompressed
-    int         io_res;      ///< get_io_mode(): 0 none, 1 write, 2 read-and-check
+    Int         io_res;      ///< get_io_mode(): 0 none, 1 write, 2 read-and-check
     bool        read_trace;
     bool        write_trace;
 };
@@ -213,7 +213,7 @@ struct BenchIoFlags
  *          generic lambda, instantiated once here instead of in main() -- and
  *          the entry point below is an ordinary function.
  */
-void bench_check_all(BenchArrays& bench_arr, int ind, const BenchIoFlags& io);
+void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io);
 
 /**
  * @brief Print the per-array value census and the chunk filling rates.
@@ -246,7 +246,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats);
  *          file: side by side, it becomes visible that the four differ only by
  *          the value written and by the sentinel the scan stops on.
  */
-void bench_phase_raz_sweep(BenchArrays& bench_arr, int k, int size, int start0, int end0);
+void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, Int end0);
 
 /**
  * @brief Print the thirteen checksums.

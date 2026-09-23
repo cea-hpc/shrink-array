@@ -40,13 +40,17 @@
 namespace shrink_array
 {
 
+// `Int` is the bench's index type (bench_int.h): `int` by default, `long`
+// under -DBENCH_INT64. It is handed to the library as `ind_type`, so the array
+// indexes exactly as wide as the bench computes -- a 64-bit bench on a 32-bit
+// array would overflow inside the library instead of inside main().
 template <typename T>
 using ActiveArray =
     std::conditional_t<chunk_config::use_chunk2a,
-                       ArrayChunk2A<T>,
+                       ArrayChunk2A<T, Int>,
                        std::conditional_t<chunk_config::use_chunk2,
-                                          ArrayChunk2<T>,
-                                          std::conditional_t<chunk_config::use_chunk, ArrayChunk<T>, std::vector<T>>>>;
+                                          ArrayChunk2<T, Int>,
+                                          std::conditional_t<chunk_config::use_chunk, ArrayChunk<T, Int>, std::vector<T>>>>;
 
 
 // Runtime chunk size for CHUNK_DYNAMIC builds. Seeded into g_active_chunk_size
@@ -134,7 +138,7 @@ using BenchBoolArray = std::conditional_t<chunk_config::is_shrink_enabled, Array
 ///          the value table allows now. A constant rather than a build option
 ///          on purpose -- the point is to exercise the capacity, not to make it
 ///          adjustable.
-inline constexpr int bench_double_bands = 200000;
+inline constexpr Int bench_double_bands = 200000;
 
 struct BenchArrays
 {
@@ -154,10 +158,10 @@ struct BenchArrays
     Array<unsigned long>&  tab_ulong;
     Array<double>&         tab_quant; ///< quantised: up to bench_double_bands distinct second values
     Array<Point3>&         tab_point; ///< an aggregate element: three doubles (bench_struct.h)
-    Array<Cell>&           tab_cell;  ///< an aggregate element: an int and a float
+    Array<Cell>&           tab_cell;  ///< an aggregate element: an Int and a float
 
-    int sz;       ///< element count of the double arrays (others are sz, 2*sz or sz/2)
-    int interval; ///< the workload's stride, get_size_interval()
+    Int sz;       ///< element count of the double arrays (others are sz, 2*sz or sz/2)
+    Int interval; ///< the workload's stride, get_size_interval()
     /// false under --no_struct: tab_point and tab_cell are of size 1 and every
     /// phase, check, stat and checksum of theirs is skipped.
     bool with_struct;

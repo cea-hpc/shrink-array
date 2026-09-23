@@ -30,15 +30,15 @@
 
 namespace
 {
-/// @brief The whole of @p text as a base-10 int, or exit(1) naming @p opt.
+/// @brief The whole of @p text as a base-10 Int, or exit(1) naming @p opt.
 /// @details std::stoi alone reads the leading digits and drops the rest
 ///          ("1.9999999" gave 1) and throws on garbage or overflow.
-int parse_int_arg(const char* opt, const char* text)
+Int parse_int_arg(const char* opt, const char* text)
 {
     try
     {
         std::size_t used  = 0;
-        const int   value = std::stoi(text, &used, 10);
+        const Int   value = std::stoi(text, &used, 10);
         if (used == std::string(text).size())
             return value;
     }
@@ -79,13 +79,13 @@ BenchArgs parse_bench_args(int argc, char* argv[])
 
     // Nouveaux facteurs
     double multiply_factor = 1.0;
-    int divisor_factor  = 1;
+    Int divisor_factor  = 1;
 
     // Default iter_max (kept at 2000 to preserve historical behaviour);
     // can be overridden at runtime via --iter_max <N>.
-    int iter_max_arg = 2000;
+    Int iter_max_arg = 2000;
 
-    for (int i = 1; i < argc; ++i)
+    for (Int i = 1; i < argc; ++i)
     {
         const std::string arg = argv[i];
 

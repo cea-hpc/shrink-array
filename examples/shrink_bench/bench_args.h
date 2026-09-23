@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include "bench_int.h" // Int: the sizes this struct carries
+
 /// @brief Everything the command line can set.
 struct BenchArgs
 {
@@ -46,10 +48,10 @@ struct BenchArgs
     bool no_struct = false;
 
     double multiply_factor = 1.0; ///< --multiply (a real factor)
-    int divisor_factor  = 1; ///< --divisor
+    Int divisor_factor  = 1; ///< --divisor
 
     /// --iter_max. 2000 by default, kept from the historical behaviour.
-    int iter_max_arg = 2000;
+    Int iter_max_arg = 2000;
 };
 
 /**

@@ -26,7 +26,7 @@
 #include "bench_io.h"    // write_binary_file, read_check_binary_file
 #include "bench_utils.h" // calculate_checksum
 
-void bench_check_all(BenchArrays& bench_arr, int ind, const BenchIoFlags& io)
+void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 {
     // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
@@ -51,12 +51,12 @@ void bench_check_all(BenchArrays& bench_arr, int ind, const BenchIoFlags& io)
     // names so the bodies below are VERBATIM.
     const char*                 no_io       = io.no_io;
     const char*                 no_compress = io.no_compress;
-    const int                   io_res      = io.io_res;
+    const Int                   io_res      = io.io_res;
     [[maybe_unused]] const bool read_trace  = io.read_trace;
     [[maybe_unused]] const bool write_trace = io.write_trace;
 
     auto lbd_check =
-        [&](int kk, const std::string& tab_name, const auto& tab, u_int64_t checksum, bool special_writing = false)
+        [&](Int kk, const std::string& tab_name, const auto& tab, u_int64_t checksum, bool special_writing = false)
     {
         if (no_io)
         {
@@ -79,7 +79,7 @@ void bench_check_all(BenchArrays& bench_arr, int ind, const BenchIoFlags& io)
         }
     };
 
-    auto lbd_check_all = [&](int ind)
+    auto lbd_check_all = [&](Int ind)
     {
         if (no_io)
         {
@@ -143,7 +143,7 @@ void bench_check_all(BenchArrays& bench_arr, int ind, const BenchIoFlags& io)
                 calculate_checksum_0(vec_cell_ch.vec, vec_cell_ch.checksum_thr);
             }
 
-            for (int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
+            for (Int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
             {
                 tab1_ch += vec1_ch.checksum_thr[thr];
                 tab2_ch += vec2_ch.checksum_thr[thr];

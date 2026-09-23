@@ -37,7 +37,7 @@ void bench_init_library()
     if constexpr (chunk_config::is_shrink_enabled)
     {
         __mem_page_size          = getpagesize();
-        constexpr int chunk_size = static_cast<int>(__chunk_size);
+        constexpr Int chunk_size = static_cast<Int>(__chunk_size);
 
         static_assert(chunk_size <= ChunkDef::size_max);
 

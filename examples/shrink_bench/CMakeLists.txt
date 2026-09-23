@@ -46,6 +46,7 @@ set(SHRINK_BENCH_SOURCES
 )
 set(SHRINK_BENCH_HEADERS
         bench_struct.h
+        bench_int.h
         bench_prelude.h
         bench_config.h
         bench_utils.h
@@ -107,6 +108,39 @@ function(sa2_setup_target tgt)
     target_link_libraries(${tgt} PRIVATE BZip2::BZip2)
 endfunction()
 
+# ============================================================================
+# 64-bit index declination (_i64).
+#
+# The bench spells every size and index `Int` (bench_int.h), and hands that same
+# type to the library as `ind_type` (bench_array.h). `Int` is `int` here and
+# `long` under BENCH_INT64, so an _i64 target is the SAME sources built with
+# 64-bit indices -- which is what a run past INT_MAX elements needs: `--mode
+# perf` already starts at 1e9, and `--multiply 2` is refused at 32 bits by
+# check_size_limits().
+#
+# OFF by default: it doubles the number of bench executables, and this directory
+# is already the bulk of the build. Turn it on with -DSHRINK_BENCH_INT64=ON; the
+# ordinary 32-bit targets are untouched either way, both live side by side.
+#
+# NOT registered with ctest, and --mode check is not supported on them: a check
+# compares against the data_tab* reference files, which the 32-bit build writes
+# and nothing regenerates at 64 bits. These are perf instruments.
+# ============================================================================
+option(SHRINK_BENCH_INT64 "Also build the 64-bit-index (_i64) bench executables" OFF)
+
+# Helper: mirror an existing bench target as its _i64 twin.
+#   sa2_add_i64_twin(<target> <lib> [extra compile definitions...])
+function(sa2_add_i64_twin tgt lib)
+    if (NOT SHRINK_BENCH_INT64)
+        return()
+    endif()
+    set(_i64 ${tgt}_i64)
+    add_executable(${_i64} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
+    target_link_libraries(${_i64} PRIVATE ${lib})
+    target_compile_definitions(${_i64} PRIVATE BENCH_INT64=1 ${ARGN})
+    sa2_setup_target(${_i64})
+endfunction()
+
 set(_sa2_variant_names   chunk       chunk2      chunk2a)
 set(_sa2_variant_libbase chunk_v1    chunk_v2    chunk_v2a)
 
@@ -126,6 +160,7 @@ foreach(_vi RANGE ${_sa2_nvar_last})
     add_executable(${_tgt} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
     target_link_libraries(${_tgt} PRIVATE ${_libbase}_${_sz})
     sa2_setup_target(${_tgt})
+    sa2_add_i64_twin(${_tgt} ${_libbase}_${_sz})
   endforeach()
 
   # Dynamic declination.
@@ -135,6 +170,7 @@ foreach(_vi RANGE ${_sa2_nvar_last})
     target_link_libraries(${_tgt} PRIVATE ${_libbase}_dyn)
     target_compile_definitions(${_tgt} PRIVATE DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
     sa2_setup_target(${_tgt})
+    sa2_add_i64_twin(${_tgt} ${_libbase}_dyn DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
   endif()
 endforeach()
 
@@ -156,6 +192,14 @@ target_link_libraries(shrink_bench_vector_perf  PRIVATE chunk_vector)
 sa2_setup_target(shrink_bench_vector_check)
 sa2_setup_target(shrink_bench_vector_perf)
 chunk_enable_fast_math(shrink_bench_vector_perf)
+
+# The std::vector baseline gets an _i64 twin too: a 64-bit shrink run is only
+# worth a number next to the baseline built the same way. Only the perf one --
+# the check target has no 64-bit meaning (no reference files).
+sa2_add_i64_twin(shrink_bench_vector_perf chunk_vector)
+if (SHRINK_BENCH_INT64)
+  chunk_enable_fast_math(shrink_bench_vector_perf_i64)
+endif()
 # The compute kernel is `omp for simd` over cos/sin/atan/tan: without the
 # vector libm the perf target gets from chunk_enable_fast_math it stays scalar
 # by design (its checksums must match a shrink build's, see bench_prelude.h),

@@ -29,7 +29,7 @@
 
 #include "bench_phases.h"
 
-void bench_phase_range_a(BenchArrays& bench_arr, int beg, int i)
+void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int i)
 {
     // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
@@ -51,7 +51,7 @@ void bench_phase_range_a(BenchArrays& bench_arr, int beg, int i)
     {
         begin_parallel_phase_g();
 BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int j = beg; j < i; ++j)
+        for (Int j = beg; j < i; ++j)
         {
             tab1[j] = 0;
             tab2[j] = second_value_d;
@@ -78,7 +78,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
     finalize_parallel_phase_after_flush_g();
 }
 
-void bench_phase_range_b(BenchArrays& bench_arr, int beg, int i)
+void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int i)
 {
     // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
@@ -100,7 +100,7 @@ void bench_phase_range_b(BenchArrays& bench_arr, int beg, int i)
     {
         begin_parallel_phase_g();
 BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int j = beg; j < i; ++j)
+        for (Int j = beg; j < i; ++j)
         {
             tab1[j] = second_value_d;
 
@@ -129,7 +129,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
     finalize_parallel_phase_after_flush_g();
 }
 
-void bench_phase_range_c(BenchArrays& bench_arr, int beg, int seg_end)
+void bench_phase_range_c(BenchArrays& bench_arr, Int beg, Int seg_end)
 {
     // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
@@ -151,7 +151,7 @@ void bench_phase_range_c(BenchArrays& bench_arr, int beg, int seg_end)
     {
         begin_parallel_phase_g();
 BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int j = beg; j < seg_end; ++j)
+        for (Int j = beg; j < seg_end; ++j)
         {
             tab1[j] = second_value_d0;
 
@@ -179,7 +179,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
     finalize_parallel_phase_after_flush_g();
 }
 
-void bench_phase_range_d(BenchArrays& bench_arr, int beg, int seg_end)
+void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end)
 {
     // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp).
     auto& tab1 = bench_arr.tab1;
@@ -201,7 +201,7 @@ void bench_phase_range_d(BenchArrays& bench_arr, int beg, int seg_end)
     {
         begin_parallel_phase_g();
 BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int j = beg; j < seg_end; ++j)
+        for (Int j = beg; j < seg_end; ++j)
         {
             tab1[j] = second_value_d;
             tab2[j] = second_value_d;
@@ -228,18 +228,18 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
     finalize_parallel_phase_after_flush_g();
 }
 
-void bench_phase_raz_sweep(BenchArrays& bench_arr, int k, int size, int start0, int end0)
+void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, Int end0)
 {
     // Aliases so the body below is VERBATIM (see bench_phase_fill.cpp). Only
     // tab1 is scanned here; the four range fills reach the rest through `a`,
     // which the moved code calls bench_arrays.
     const auto& tab1         = bench_arr.tab1;
-    const int   sz           = bench_arr.sz;
+    const Int   sz           = bench_arr.sz;
     auto&       bench_arrays = bench_arr;
 
     std::cout << "interval " << ": [" << start0 << ", " << end0 << "]" << " size : " << size << "\n";
 
-    int i;
+    Int i;
 
     for (i = start0; i < sz; ++i)
     {
@@ -249,13 +249,13 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, int k, int size, int start0, 
         }
     }
 
-    const int deb = i;
+    const Int deb = i;
 
     if (k % 4 == 0)
     {
         if (k % 8 == 0)
         {
-            const int beg = i;
+            const Int beg = i;
             while (i < sz && tab1[i] != 0 && tab1[i] != second_value_d)
             {
                 i++;
@@ -266,7 +266,7 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, int k, int size, int start0, 
         }
         else if (k % 16 == 0)
         {
-            const int beg = i;
+            const Int beg = i;
             while (i < sz && tab1[i] != 0 && tab1[i] != second_value_d)
             {
                 i++;
@@ -278,12 +278,12 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, int k, int size, int start0, 
         }
         else
         {
-            const int beg = i;
+            const Int beg = i;
             while (i < sz && tab1[i] != 0 && tab1[i] != second_value_d0)
             {
                 i++;
             }
-            const int seg_end = i;
+            const Int seg_end = i;
 
             bench_phase_range_c(bench_arrays, beg, seg_end);
 
@@ -292,13 +292,13 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, int k, int size, int start0, 
     }
     else
     {
-        const int beg = i;
+        const Int beg = i;
         while (i < sz && tab1[i] != 0)
         {
             i++;
         }
 
-        const int seg_end = i;
+        const Int seg_end = i;
 
         bench_phase_range_d(bench_arrays, beg, seg_end);
 

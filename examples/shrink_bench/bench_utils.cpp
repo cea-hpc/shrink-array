@@ -29,7 +29,7 @@
 // -----------------------------------------------------------------------------
 // File-scope globals (declared in bench_utils.h).
 // -----------------------------------------------------------------------------
-int  __mem_page_size = 0;
+int  __mem_page_size = 0; // NOT Int: see bench_utils.h
 bool __debug_flag    = false;
 
 // FIX: "--test_stl" was missing here while main() has always had a branch to
@@ -171,7 +171,7 @@ void memory_consumption(const std::string& msg)
             {
                 long live_bytes  = 0;
                 long live_chunks = 0;
-                for (int v = 0; v < shrink_array::CHUNK_STATS_N_VARIANT; ++v)
+                for (Int v = 0; v < shrink_array::CHUNK_STATS_N_VARIANT; ++v)
                 {
                     const shrink_array::ChunkStatsThr t = shrink_array::reduce_chunk_stats(v);
                     live_bytes += t.bytes_alloc + t.bytes_reused - t.bytes_freed;
@@ -204,40 +204,40 @@ void memory_consumption(const std::string& msg)
 // -----------------------------------------------------------------------------
 // Correlation shapes used to generate synthetic values.
 // -----------------------------------------------------------------------------
-int linear_correlation(int i, int sz, int sz1)
+Int linear_correlation(Int i, Int sz, Int sz1)
 {
-    return static_cast<int>((static_cast<double>(sz1) / sz) * i);
+    return static_cast<Int>((static_cast<double>(sz1) / sz) * i);
 }
 
-int exponential_correlation(int i, int sz, int sz1, double p)
+Int exponential_correlation(Int i, Int sz, Int sz1, double p)
 {
-    return static_cast<int>(sz1 * pow(static_cast<double>(i) / sz, p));
+    return static_cast<Int>(sz1 * pow(static_cast<double>(i) / sz, p));
 }
 
-int interpolation(int i, int sz, int sz1)
+Int interpolation(Int i, Int sz, Int sz1)
 {
-    return static_cast<int>(sz1 * sqrt(static_cast<double>(i) / sz));
+    return static_cast<Int>(sz1 * sqrt(static_cast<double>(i) / sz));
 }
 
 // -----------------------------------------------------------------------------
 // CLI helpers.
 // -----------------------------------------------------------------------------
-int levenshtein(const std::string& a, const std::string& b)
+Int levenshtein(const std::string& a, const std::string& b)
 {
     const size_t len_a = a.size();
     const size_t len_b = b.size();
-    std::vector  dp(len_a + 1, std::vector<int>(len_b + 1));
+    std::vector  dp(len_a + 1, std::vector<Int>(len_b + 1));
 
     for (size_t i = 0; i <= len_a; ++i)
         for (size_t j = 0; j <= len_b; ++j)
         {
             if (i == 0)
-                dp[i][j] = static_cast<int>(j);
+                dp[i][j] = static_cast<Int>(j);
             else if (j == 0)
-                dp[i][j] = static_cast<int>(i);
+                dp[i][j] = static_cast<Int>(i);
             else
             {
-                const int subst = (a[i - 1] != b[j - 1]) ? 1 : 0;
+                const Int subst = (a[i - 1] != b[j - 1]) ? 1 : 0;
                 dp[i][j]        = std::min({dp[i - 1][j - 1] + subst, dp[i - 1][j] + 1, dp[i][j - 1] + 1});
             }
         }
@@ -256,11 +256,11 @@ void print_help()
 std::string suggest_closest(const std::string& input)
 {
     std::string closest;
-    int         min_distance = std::numeric_limits<int>::max();
+    Int         min_distance = std::numeric_limits<Int>::max();
 
     for (const auto& arg : valid_args)
     {
-        const int dist = levenshtein(input, arg);
+        const Int dist = levenshtein(input, arg);
         if (dist < min_distance)
         {
             min_distance = dist;

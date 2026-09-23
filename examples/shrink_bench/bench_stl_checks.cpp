@@ -46,7 +46,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
     if (test_stl)
     {
         std::cout << tc.BOLD << tc.CYAN << "\n=== STL interface self-checks ===\n" << tc.RESET;
-        int  failures = 0;
+        Int  failures = 0;
         auto expect   = [&](bool ok, const char* what)
         {
             if (!ok)
@@ -60,14 +60,14 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
 
         // Fresh, deterministic array so the checks don't depend on the compute
         // loop's final state. Size spans several chunks to exercise boundaries.
-        constexpr int NS = 1000;
+        constexpr Int NS = 1000;
         Array<double> v(NS);
-        for (int i = 0; i < NS; ++i)
+        for (Int i = 0; i < NS; ++i)
             v[i] = static_cast<double>(i);
 
         // Independent oracle.
         double oracle_sum = 0.0;
-        for (int i = 0; i < NS; ++i)
+        for (Int i = 0; i < NS; ++i)
             oracle_sum += static_cast<double>(i);
 
         // --- member typedefs are present and sane -----------------------------
@@ -79,7 +79,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // --- forward const iteration (range-for) matches operator[] -----------
         {
             double it_sum = 0.0;
-            int    n      = 0;
+            Int    n      = 0;
             for (const double x : std::as_const(v))
             {
                 it_sum += x;
@@ -100,7 +100,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // --- reverse iteration visits elements in reverse ---------------------
         {
             double rev_sum       = 0.0;
-            int    n             = 0;
+            Int    n             = 0;
             double prev          = 1e300;
             bool   monotone_down = true;
             for (auto r = v.rbegin(); r != v.rend(); ++r)
@@ -171,14 +171,14 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // --- swap() exchanges contents ----------------------------------------
         {
             Array<double> a(NS), b(NS);
-            for (int i = 0; i < NS; ++i)
+            for (Int i = 0; i < NS; ++i)
             {
                 a[i] = 1.0;
                 b[i] = 9.0;
             }
             a.swap(b);
             bool ok = true;
-            for (int i = 0; ok && i < NS; ++i)
+            for (Int i = 0; ok && i < NS; ++i)
                 ok = (a[i] == 9.0 && b[i] == 1.0);
             expect(ok, "swap() exchanges element contents");
         }
@@ -193,7 +193,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             const std::size_t cap = g.capacity();
             expect(cap >= static_cast<std::size_t>(NS), "reserve(n): capacity() >= n");
             expect(g.size() == 1, "reserve() leaves size() alone");
-            for (int i = 1; i < NS; ++i)
+            for (Int i = 1; i < NS; ++i)
                 g.push_back(static_cast<double>(i));
             expect(g.size() == static_cast<std::size_t>(NS), "push_back grows size() by one each");
             expect(g.capacity() == cap, "push_back within the capacity does not change it");
@@ -202,7 +202,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             g.pop_back();
             expect(g.size() == static_cast<std::size_t>(NS) && g.back() == double(NS - 1), "pop_back");
             bool ok = true;
-            for (int i = 1; i < NS; ++i)
+            for (Int i = 1; i < NS; ++i)
                 ok = ok && (std::as_const(g)[i] == static_cast<double>(i));
             expect(ok, "push_back'd elements read back");
             // Past the capacity: the push_back that needs a new chunk.
@@ -210,7 +210,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             for (std::size_t i = g.size(); i < cap + 3; ++i)
                 g.push_back(-1.0);
             expect(static_cast<std::size_t>(g.size()) == cap + 3 && g.capacity() > cap && g.back() == -1.0 &&
-                       std::as_const(g)[static_cast<int>(before) - 1] == double(NS - 1),
+                       std::as_const(g)[static_cast<Int>(before) - 1] == double(NS - 1),
                    "push_back past the capacity grows the storage and keeps the contents");
             g.clear();
         }
@@ -218,11 +218,11 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // --- (first, last) and {…} constructors, assign(first, last) ---------
         {
             std::vector<double> src(NS);
-            for (int i = 0; i < NS; ++i)
+            for (Int i = 0; i < NS; ++i)
                 src[static_cast<std::size_t>(i)] = 0.5 * i;
             Array<double> r(src.begin(), src.end());
             bool          ok = static_cast<std::size_t>(r.size()) == src.size();
-            for (int i = 0; ok && i < NS; ++i)
+            for (Int i = 0; ok && i < NS; ++i)
                 ok = std::as_const(r)[i] == src[static_cast<std::size_t>(i)];
             expect(ok, "(first, last) constructor copies the range");
 
@@ -244,7 +244,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         {
             Array<double> c(v);
             bool          same = c.size() == v.size();
-            for (int i = 0; same && i < NS; ++i)
+            for (Int i = 0; same && i < NS; ++i)
                 same = std::as_const(c)[i] == std::as_const(v)[i];
             expect(same, "copy constructor: every element equal");
             c[5] = -99.0;
@@ -252,11 +252,11 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
                    "a write in the copy leaves the source alone (deep, not an alias)");
 
             Array<double> d(3 * NS);
-            for (int i = 0; i < 3 * NS; ++i)
+            for (Int i = 0; i < 3 * NS; ++i)
                 d[i] = 7.0;
             d    = v;
             same = d.size() == v.size();
-            for (int i = 0; same && i < NS; ++i)
+            for (Int i = 0; same && i < NS; ++i)
                 same = std::as_const(d)[i] == std::as_const(v)[i];
             expect(same, "copy-assignment over a larger array: sized and equal");
             auto& d_alias = d; // through an alias: clang flags a literal `d = d`
@@ -274,11 +274,11 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
                 {
                     A s2(NS);
                     maybe_set_second_value(s2, second_value_d1);
-                    for (int i = 0; i < NS; ++i)
+                    for (Int i = 0; i < NS; ++i)
                         s2[i] = (i % 3 == 0) ? second_value_d1 : 0.0;
                     A    t2(s2);
                     bool ok = t2.get_second_value() == second_value_d1;
-                    for (int i = 0; ok && i < NS; ++i)
+                    for (Int i = 0; ok && i < NS; ++i)
                         ok = std::as_const(t2)[i] == std::as_const(s2)[i];
                     expect(ok, "copy constructor carries chunk2's second value and its runs");
                     s2.clear();
@@ -291,11 +291,11 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         // Observable here as: it returns, and the contents are unchanged.
         {
             Array<double> z(NS);
-            for (int i = 0; i < NS; ++i)
+            for (Int i = 0; i < NS; ++i)
                 z[i] = (i < NS / 2) ? 0.0 : static_cast<double>(i);
             z.shrink_to_fit();
             bool ok = z.size() == static_cast<std::size_t>(NS);
-            for (int i = 0; ok && i < NS; ++i)
+            for (Int i = 0; ok && i < NS; ++i)
                 ok = std::as_const(z)[i] == ((i < NS / 2) ? 0.0 : static_cast<double>(i));
             expect(ok, "shrink_to_fit keeps size and contents");
             z.clear();

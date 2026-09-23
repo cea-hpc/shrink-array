@@ -48,15 +48,15 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
     auto& tab_ulong   = bench_arr.tab_ulong;
     auto& tab_quant   = bench_arr.tab_quant;
 
-    const int sz       = bench_arr.sz;
-    const int interval = bench_arr.interval;
+    const Int sz       = bench_arr.sz;
+    const Int interval = bench_arr.interval;
 
 #pragma omp parallel
     {
         begin_parallel_phase_g();
 
 BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = 0; i < 256; ++i)
+        for (Int i = 0; i < 256; ++i)
         {
             if (i % 3 == 0)
             {
@@ -86,19 +86,19 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         }
 
 BENCH_OMP_FOR_STATIC_NOWAIT
-        for (int i = 256; i < sz / 4; ++i)
+        for (Int i = 256; i < sz / 4; ++i)
         {
             tab_short[i] = 0;
         }
 
 BENCH_OMP_FOR_STATIC_NOWAIT
-        for (int i = sz / 4; i < sz / 2; ++i)
+        for (Int i = sz / 4; i < sz / 2; ++i)
         {
             tab_short[i] = second_value_s0;
         }
 
 BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = 256; i < sz / 2; ++i)
+        for (Int i = 256; i < sz / 2; ++i)
         {
             tab1[i] = second_value_d;
             tab2[i] = second_value_d;
@@ -115,8 +115,8 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
             tab_complex[i] = zero_complex;
         }
 
-        int begin_i = sz / 2;
-        int end_i   = sz - sz / 3;
+        Int begin_i = sz / 2;
+        Int end_i   = sz - sz / 3;
 
 #pragma omp single nowait
         {
@@ -127,7 +127,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         }
 
 BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = begin_i; i < end_i; ++i)
+        for (Int i = begin_i; i < end_i; ++i)
         {
             tab1[i] = second_value_d;
             tab2[i] = 0;
@@ -153,7 +153,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         end_i   = sz - sz / 4;
 
 BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = begin_i; i < end_i; ++i)
+        for (Int i = begin_i; i < end_i; ++i)
         {
             tab1[i] = second_value_d0;
             tab2[i] = second_value_d0;
@@ -183,7 +183,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         end_i   = std::min(begin_i + interval, sz);
 
 BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = begin_i; i < end_i; ++i)
+        for (Int i = begin_i; i < end_i; ++i)
         {
             tab1[i] = 2;
             tab2[i] = 2;
@@ -209,7 +209,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         end_i   = std::min(begin_i + interval, sz);
 
 BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = begin_i; i < end_i; ++i)
+        for (Int i = begin_i; i < end_i; ++i)
         {
             tab1[i] = 1;
             tab2[i] = 2;
@@ -225,7 +225,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         }
 
 BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = end_i; i < sz; ++i)
+        for (Int i = end_i; i < sz; ++i)
         {
             tab1[i] = 0;
             tab2[i] = 0;
@@ -242,7 +242,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         // char store alone as well (the short fills above vectorise). A
         // zeroing loop the idiom pass turns into memset anyway.
 BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
-        for (int i = end_i; i < 2 * sz; ++i)
+        for (Int i = end_i; i < 2 * sz; ++i)
         {
             tab_char[i]  = 0;
             tab_float[i] = 0;

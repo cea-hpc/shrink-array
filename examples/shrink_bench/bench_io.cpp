@@ -40,10 +40,10 @@ void compress_file(const std::string& source_file, const std::string& dest_file)
     std::vector        buffer((std::istreambuf_iterator(in_file)), std::istreambuf_iterator<char>());
     const unsigned int source_len = buffer.size();
 
-    unsigned int      dest_len = source_len * 1.01 + 600; // Estimate of the compressed size
+    unsigned int dest_len = source_len * 1.01 + 600; // Estimate of the compressed size
     std::vector<char> dest_buffer(dest_len);
 
-    const int result = BZ2_bzBuffToBuffCompress(dest_buffer.data(), &dest_len, buffer.data(), source_len, 9, 0, 30);
+    const Int result = BZ2_bzBuffToBuffCompress(dest_buffer.data(), &dest_len, buffer.data(), source_len, 9, 0, 30);
 
     if (result != BZ_OK)
     {
@@ -81,11 +81,11 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
 
     std::vector        source_buffer((std::istreambuf_iterator(in_file)), std::istreambuf_iterator<char>());
     const unsigned int source_len = source_buffer.size();
-    unsigned int       dest_len   = originalLen; // Initialize the size of the output buffer
+    unsigned int dest_len   = originalLen; // Initialize the size of the output buffer
 
     std::vector<char> dest_buffer(dest_len);
 
-    int result = BZ2_bzBuffToBuffDecompress(dest_buffer.data(), &dest_len, source_buffer.data(), source_len, 0, 0);
+    Int result = BZ2_bzBuffToBuffDecompress(dest_buffer.data(), &dest_len, source_buffer.data(), source_len, 0, 0);
 
     while (result == BZ_OUTBUFF_FULL)
     {

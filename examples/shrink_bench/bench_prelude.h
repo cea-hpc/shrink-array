@@ -66,6 +66,8 @@
 #include <vector>
 #include <cstdlib> // std::getenv / std::atol (BENCH_SCHED_BLOCK)
 
+#include "bench_int.h" // Int / UInt: the bench index type (32- or 64-bit)
+
 #include "chunk/chunk_define.h"
 #include "chunk/term_color.h"
 #include "chunk/PMP_CHUNK.h"
@@ -161,9 +163,9 @@
 
 /// @brief BENCH_SCHED_BLOCK, read once, rounded up to a power of two; 0 keeps
 ///        the contiguous slices. Default 64.
-inline int bench_sched_block_env() noexcept
+inline Int bench_sched_block_env() noexcept
 {
-    static const int v = []
+    static const Int v = []() -> Int
     {
         const char* e = std::getenv("BENCH_SCHED_BLOCK");
         const long  b = (e && e[0]) ? std::atol(e) : 64L;
@@ -172,7 +174,7 @@ inline int bench_sched_block_env() noexcept
         long p = 1;
         while (p < b && p < (1L << 30))
             p <<= 1;
-        return static_cast<int>(p);
+        return static_cast<Int>(p);
     }();
     return v;
 }
@@ -180,19 +182,19 @@ inline int bench_sched_block_env() noexcept
 /// @brief Block size and aligned start of a [start, end) worksharing loop.
 struct BenchSched
 {
-    int blk;  ///< iterations per block (the schedule's chunk size)
-    int base; ///< first iteration: start rounded down to a multiple of blk
+    Int blk;  ///< iterations per block (the schedule's chunk size)
+    Int base; ///< first iteration: start rounded down to a multiple of blk
 };
 
 /// @brief The schedule of a [start, end) loop; call it BEFORE the parallel
 ///        region, so that every thread uses the same values.
-inline BenchSched bench_sched_for(int start, int end) noexcept
+inline BenchSched bench_sched_for(Int start, Int end) noexcept
 {
-    const int b = bench_sched_block_env();
+    const Int b = bench_sched_block_env();
     if (b > 0)
         return {b, start - start % b};
-    const int t = CHUNK_PMP_MAX_THREADS;
-    return {std::max(1, (end - start + t - 1) / t), start}; // contiguous slices
+    const Int t = CHUNK_PMP_MAX_THREADS;
+    return {std::max<Int>(1, (end - start + t - 1) / t), start}; // contiguous slices
 }
 
 // No longer gated on CHECK: there is no CHECK macro any more, the mode is a
