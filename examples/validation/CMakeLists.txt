@@ -195,8 +195,8 @@ endif()
 # Every allocator of one element type must cut its slabs at one size whatever
 # the element size, or slab_of() through the ambient-size allocator misses the
 # block's slab after a re-chunk (see the harness). TCTypeCAllocator exists
-# under OpenMP only.
-if (OMP)
+# under OpenMP only, and fast_allocators is not built with CHUNK_STD_ALLOC.
+if (OMP AND NOT CHUNK_STD_ALLOC)
   add_executable(slab_geometry_validation slab_geometry_validation.cpp)
   target_link_libraries(slab_geometry_validation PRIVATE fast_allocators OpenMP::OpenMP_CXX)
   chunk_require_cxx20(slab_geometry_validation PRIVATE)

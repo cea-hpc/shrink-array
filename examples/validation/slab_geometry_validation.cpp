@@ -44,9 +44,7 @@
 #include <cstdio>
 #include <unistd.h>
 
-#ifdef FAST_ALLOC
 #include "fast_allocators/tc_allocator.h"
-#endif
 
 int __mem_page_size = 0;
 
