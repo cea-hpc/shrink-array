@@ -44,6 +44,7 @@
 
 #include "chunk/config.h"
 #include "chunk/chunk_traits.h"
+#include "chunk/internal/array_chunk_for.h" // ArrayChunkCore -- rechunk_all_to's registry keys
 
 namespace shrink_array
 {
@@ -96,8 +97,11 @@ class RechunkSupport<Derived, true>
             {
                 if (key)
                 {
-                    auto* arr = static_cast<Derived*>(const_cast<void*>(key));
-                    arr->rechunk_to(new_size);
+                    // The key is an array's core, and the arrays of this
+                    // element type may differ in index type: reach each one's
+                    // own rechunk_to() through the core.
+                    auto* arr = static_cast<ArrayChunkCore<chunk_type>*>(const_cast<void*>(key));
+                    arr->rechunk_erased(new_size);
                 }
             });
     }

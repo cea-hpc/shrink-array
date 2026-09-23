@@ -30,33 +30,22 @@ class Chunk2;
 template <typename T>
 class Chunk2A;
 
-// Forward declarations of array chunk types
-template <ArrayChunkElement, typename ind_type>
-class ArrayChunk;
-template <ArrayChunkElement, typename ind_type>
-class ArrayChunk2;
-template <ArrayChunkElement, typename ind_type>
-class ArrayChunk2A;
-
 template <typename ChunkType>
-struct ArrayChunkFor; // primary template
+class ArrayChunkCore;
+template <typename ChunkType>
+struct AsyncResetRegistry; // array_chunk_parallel_common.h
 
-template <typename T>
-struct ArrayChunkFor<Chunk<T>>
+/**
+ * @brief What a proxy of @p ChunkType may cast its type-erased ptr_on_array to.
+ * @details The index-independent core of the array, never the array itself: a
+ *          chunk type has one array type per index type (`ArrayChunk2A<T, int>`,
+ *          `ArrayChunk2A<T, long>`), and ptr_on_array is the address of the core
+ *          (ArrayChunkCore::registry_key()) for all of them.
+ */
+template <typename ChunkType>
+struct ArrayChunkFor
 {
-    using type = ArrayChunk<T, int>;
-};
-
-template <typename T>
-struct ArrayChunkFor<Chunk2<T>>
-{
-    using type = ArrayChunk2<T, int>;
-};
-
-template <typename T>
-struct ArrayChunkFor<Chunk2A<T>>
-{
-    using type = ArrayChunk2A<T, int>;
+    using type = ArrayChunkCore<ChunkType>;
 };
 
 template <typename ChunkType>

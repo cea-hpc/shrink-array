@@ -48,10 +48,10 @@ template <typename Derived>
 bool RechunkHooks2A<Derived, true>::rechunk_swap_identity(Derived& tmp)
 {
     // 2A stores num_tab as a member and indexes its metadata by it, so swap the
-    // member AND make the registry agree (get_num_tab(this) -> S' row).
+    // member AND make the registry agree (get_num_tab(registry_key()) -> S' row).
     using std::swap;
     swap(self().num_tab, tmp.num_tab);
-    const bool ok = proxy_type::share_info_array.swap_keys(&self(), &tmp);
+    const bool ok = proxy_type::share_info_array.swap_keys(self().registry_key(), tmp.registry_key());
     // num_tab changed hands: each array now owns the other's metadata rows.
     self().sync_meta_bases();
     tmp.sync_meta_bases();

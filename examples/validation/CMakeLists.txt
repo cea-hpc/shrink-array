@@ -113,7 +113,7 @@ endif()
 # tests per executable: the properties must not depend on the team, so they
 # are asserted at 1 thread and at 8.
 set(_rt_harnesses       compress_roundtrip pool_accounting deferred_path_validation open_types_validation
-                        mark_path_validation fill_range_mt_validation)
+                        mark_path_validation fill_range_mt_validation index64_validation)
 set(_rt_variant_names   chunk       chunk2      chunk2a)
 set(_rt_variant_libbase chunk_v1    chunk_v2    chunk_v2a)
 set(_rt_variant_macro   CHUNK       CHUNK2      CHUNK2A)

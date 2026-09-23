@@ -184,7 +184,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     {
         auto& sh_inf = Proxy2A<T>::share_info_array;
 
-        sh_inf.insert(this, nb_tab);
+        sh_inf.insert(this->registry_key(), nb_tab);
         num_tab = nb_tab;
         ++nb_tab;
     }
@@ -200,7 +200,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     ~ArrayChunk2A()
     {
         clear();
-        Proxy2A<T>::share_info_array.erase(this);
+        Proxy2A<T>::share_info_array.erase(this->registry_key());
     }
 
     /**
@@ -229,13 +229,15 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         Proxy2A<T>::share_info_array.for_each_key(
             [&](const void* key)
             {
-                auto* arr = static_cast<const ArrayChunk2A<T>*>(key);
-                const auto& cl = arr->chunk_list;
-                const int   nc = arr->nb_chunk;
+                // The key is the array's core, whatever its index type.
+                auto*     arr = static_cast<const ArrayChunkCore<Chunk2A<T>>*>(key);
+                const int nc  = arr->chunk_count();
                 for (int j = 0; j < nc; ++j)
-                    if (cl[static_cast<std::size_t>(j)].is_cst_val2())
-                        live.insert(static_cast<const void*>(
-                            cl[static_cast<std::size_t>(j)].values_load()));
+                {
+                    const auto& ch = arr->chunk_ref(static_cast<std::size_t>(j));
+                    if (ch.is_cst_val2())
+                        live.insert(static_cast<const void*>(ch.values_load()));
+                }
             });
     }
 
@@ -419,6 +421,35 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     [[nodiscard]] const std::vector<Chunk2A<T>>& getChunkList() const
     {
         return chunk_list;
+    }
+
+  private:
+    /// @brief This array holds one reference on Chunk2A<T>'s cst2 registry
+    ///        (TabCstVal2Holder). See acquire_cst2_registry().
+    bool holds_cst2_registry_ = false;
+
+    /**
+     * @brief Take this array's reference on the cst2 registry, once, as soon
+     *        as it has chunks.
+     * @details The registry is shared by every ArrayChunk2A<T> and counted:
+     *          create() registers a user, clear() drops one and frees
+     *          everything with the last. The reference used to be taken in
+     *          rebuild_storage() when the size was not 0, and dropped by every
+     *          clear_core(). So an array built empty and grown by resize()
+     *          took none -- its first compression pass found no registry
+     *          (SIGSEGV in find_or_register) unless another array of the same
+     *          T had been built with a size -- and an empty array's teardown
+     *          dropped a reference it never took, freeing the registry under
+     *          the arrays still alive. One reference per array, taken here and
+     *          given back in clear_core() only if taken.
+     */
+    void acquire_cst2_registry()
+    {
+        if (!holds_cst2_registry_)
+        {
+            Chunk2A<T>::tab_cst_val2_holder::create();
+            holds_cst2_registry_ = true;
+        }
     }
 };
 

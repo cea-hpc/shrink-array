@@ -79,7 +79,7 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
             manager_chunk2A::compute_size_buffer_reuse();
             manager_chunk2A::compute_size_max_number_of_chunk_to_check_compress();
 
-            Chunk2A<T>::tab_cst_val2_holder::create();
+            acquire_cst2_registry();
             chunk_list.resize(nb_chunk);
 
             this->alloc_dirty_bitset(nb_chunk);
@@ -238,7 +238,7 @@ void ArrayChunk2A<T, ind_type>::clear()
                 summary[static_cast<std::size_t>(j)] = {v0.has_value(), v0.value_or(T{})};
             }
             auto&     sh_inf   = Proxy2A<T>::share_info_array;
-            const int num_tab_ = sh_inf.get_num_tab(this);
+            const int num_tab_ = sh_inf.get_num_tab(this->registry_key());
             report_size_prediction<T>(summary, csz, num_tab_, "chunk2a",
                                       sizeof(std::remove_reference_t<decltype(chunk_list[0])>));
         }
@@ -506,7 +506,12 @@ void ArrayChunk2A<T, ind_type>::clear_core()
 #pragma omp barrier
 #pragma omp single
             {
-                Chunk2A<T>::tab_cst_val2_holder::clear(nb_val2);
+                // Only the reference this array took (acquire_cst2_registry).
+                if (holds_cst2_registry_)
+                {
+                    Chunk2A<T>::tab_cst_val2_holder::clear(nb_val2);
+                    holds_cst2_registry_ = false;
+                }
             }
         }
 
@@ -610,7 +615,7 @@ void ArrayChunk2A<T, ind_type>::compress_int()
             int shown = 0;
             for (const int ind : tab_nb1)
             {
-                std::cerr << ind << " " << ind * this->size_policy_.size() << "\n";
+                std::cerr << ind << " " << static_cast<ind_type>(ind) * static_cast<ind_type>(this->size_policy_.size()) << "\n";
                 if (++shown >= 10)
                     break;
             }
@@ -636,7 +641,7 @@ void ArrayChunk2A<T, ind_type>::compress_int()
             int shown = 0;
             for (const int ind : tab_nb2)
             {
-                std::cerr << ind << " " << ind * this->size_policy_.size() << "\n";
+                std::cerr << ind << " " << static_cast<ind_type>(ind) * static_cast<ind_type>(this->size_policy_.size()) << "\n";
                 if (++shown >= 10)
                     break;
             }
@@ -670,10 +675,12 @@ void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
 {
     auto& sh_inf = Proxy2A<T>::share_info_array;
 
-    const int num_tab      = sh_inf.get_num_tab(this);
+    const int num_tab      = sh_inf.get_num_tab(this->registry_key());
     const int old_nb_chunk = nb_chunk;
 
     Base2::resize_common(newsz);
+    if (nb_chunk > 0)
+        acquire_cst2_registry(); // an array built empty gets its chunks here
 
     Proxy2A<T>::resize_tab_is_int(num_tab, old_nb_chunk, nb_chunk);
     sync_meta_bases(); // rows reallocated: re-arm (Proxy2AMetaBases)

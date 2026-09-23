@@ -32,7 +32,7 @@ template <typename Derived>
 void RechunkHooks<Derived, true>::rechunk_drop_candidates()
 {
     if constexpr (chunk_config::use_fast_block_compression)
-        manager_type::remove_from_compress_list_chunk_by_num_tab(proxy_type::share_info_array.get_num_tab(&self()));
+        manager_type::remove_from_compress_list_chunk_by_num_tab(proxy_type::share_info_array.get_num_tab(self().registry_key()));
 }
 
 template <typename Derived>
@@ -48,7 +48,7 @@ bool RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
     // so swap the member (kept consistent with the registry swap_keys below).
     using std::swap;
     swap(self().num_tab, tmp.num_tab);
-    return proxy_type::share_info_array.swap_keys(&self(), &tmp);
+    return proxy_type::share_info_array.swap_keys(self().registry_key(), tmp.registry_key());
 }
 
 } // namespace shrink_array

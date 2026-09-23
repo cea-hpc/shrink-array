@@ -33,7 +33,7 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
     // member. See RechunkSupport::rechunk_to for why the drop must happen at the
     // owning geometry.
     if constexpr (chunk_config::use_fast_block_compression)
-        manager_type::remove_from_compress_list_chunk2_by_num_tab(proxy_type::share_info_array.get_num_tab(&self()));
+        manager_type::remove_from_compress_list_chunk2_by_num_tab(proxy_type::share_info_array.get_num_tab(self().registry_key()));
 }
 
 template <typename Derived>
@@ -81,7 +81,7 @@ bool RechunkHooks2<Derived, true>::rechunk_swap_identity(Derived& tmp)
     // `this`; the members are only touched by operator= / set_second_value) and
     // they may be uninitialized, so swapping would read indeterminate values
     // (MSan / valgrind). The registry-tuple swap IS the identity swap.
-    return proxy_type::share_info_array.swap_entries(&self(), &tmp);
+    return proxy_type::share_info_array.swap_entries(self().registry_key(), tmp.registry_key());
 }
 
 template <typename Derived>

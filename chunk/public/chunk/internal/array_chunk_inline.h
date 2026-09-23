@@ -103,7 +103,7 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
         return;
 
     auto&     sh_inf  = Proxy<T>::share_info_array;
-    const int num_tab = sh_inf.get_num_tab(const_cast<ArrayChunk*>(this));
+    const int num_tab = sh_inf.get_num_tab(const_cast<void*>(this->registry_key()));
 
     // Plain Chunk classification: a block that is NOT written() is stored in its
     // compressed (constant == first_value) form; written() means it is
@@ -186,7 +186,7 @@ void ArrayChunk<T, ind_type>::clear_core()
     if constexpr (chunk_config::use_fast_block_compression)
     {
         auto&     sh_inf   = Proxy<T>::share_info_array;
-        const int num_tab_ = sh_inf.get_num_tab(this);
+        const int num_tab_ = sh_inf.get_num_tab(this->registry_key());
         manager_chunk::remove_from_compress_list_chunk_by_num_tab(num_tab_);
     }
 
@@ -386,7 +386,7 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
             for (int k = 0; k < shown; ++k)
             {
                 const int ind1 = ll[k];
-                std::cerr << ind1 << " " << ind1 * this->size_policy_.size() << "\n";
+                std::cerr << ind1 << " " << static_cast<ind_type>(ind1) * static_cast<ind_type>(this->size_policy_.size()) << "\n";
             }
             if (nb > shown)
             {
@@ -409,7 +409,7 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
 
     auto& sh_inf = Proxy<T>::share_info_array;
 
-    const int num_tab = sh_inf.get_num_tab(this);
+    const int num_tab = sh_inf.get_num_tab(this->registry_key());
 
     m_size = newsz;
 

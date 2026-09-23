@@ -48,7 +48,6 @@
 #include <utility>   // std::swap
 
 #include "chunk/config.h"
-#include "chunk/chunk_traits.h" // ArrayChunkTraits — proxy_type in clear_all_dirty_bitsets
 
 namespace shrink_array
 {
@@ -70,8 +69,9 @@ struct alignas(128) PaddedDirtyWord
 /**
  * @brief Per-chunk dirty bitset, present only when the build has OpenMP.
  *
- * @tparam Derived the concrete array type (needed by clear_all_dirty_bitsets to
- *         walk the per-type registry).
+ * @tparam Derived the array core that owns it, ArrayChunkCore<chunk_type>
+ *         (needed by clear_all_dirty_bitsets to walk the per-type registry,
+ *         whose keys are addresses of that core).
  * @tparam Enabled defaulted to build_config::use_openmp; never pass it
  *         explicitly outside of tests — the point of the parameter is that the
  *         two specialisations below are selected by the build mode.
@@ -215,7 +215,7 @@ class DirtyBitsetSupport<Derived, true>
      */
     static void clear_all_dirty_bitsets()
     {
-        using proxy_type = ArrayChunkTraits<Derived>::proxy_type;
+        using proxy_type = Derived::proxy_type;
         proxy_type::share_info_array.for_each_key(
             [](const void* key)
             {

@@ -279,8 +279,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::resize_all_list_block_free_thr(
 
 /**
  * @brief Sizes the per-rank registry of chunk lists awaiting a deferred reset.
- * @note Reads through ArrayChunk<T> whatever CHUNK_T is: the async-reset
- *       registries are shared across variants by that type.
+ * @note AsyncResetRegistry<CHUNK_T<T>>: the one the arrays of this chunk type
+ *       fill, whatever their index type.
  */
 template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunkParallelImpl<CHUNK_T, T, true>::resize_list_chunk_list_thr()
@@ -288,7 +288,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::resize_list_chunk_list_thr()
     using mgr        = ManagerChunk<CHUNK_T, T>;
     const auto& self = static_cast<const mgr&>(*this);
 
-    ArrayChunk<T>::get_list_chunk_list().resize(self.max_thr);
+    AsyncResetRegistry<CHUNK_T<T>>::get_list_chunk_list().resize(self.max_thr);
 }
 
 /**
@@ -301,7 +301,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::resize_list_nb_chunk_thr()
     using mgr        = ManagerChunk<CHUNK_T, T>;
     const auto& self = static_cast<const mgr&>(*this);
 
-    ArrayChunk<T>::get_list_nb_chunk().resize(self.max_thr);
+    AsyncResetRegistry<CHUNK_T<T>>::get_list_nb_chunk().resize(self.max_thr);
 }
 
 /**
@@ -1095,10 +1095,10 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::reserve_nb_chunk_int(int sz)
 
     auto lbd = [&](int thr_rank)
     {
-        auto& lbf = ArrayChunk<T>::get_list_chunk_list(thr_rank);
+        auto& lbf = AsyncResetRegistry<CHUNK_T<T>>::get_list_chunk_list(thr_rank);
         lbf.reserve(sz);
 
-        auto& lbi = ArrayChunk<T>::get_list_nb_chunk(thr_rank);
+        auto& lbi = AsyncResetRegistry<CHUNK_T<T>>::get_list_nb_chunk(thr_rank);
         lbi.reserve(sz);
     };
 
@@ -1135,8 +1135,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::delete_list_block_chunk_free_it
         CHUNK_T<T>::manager_chunk::get_list_block_free_thr(0).clear();
     }
 
-    ArrayChunk<T>::list_chunk_list.clear();
-    ArrayChunk<T>::list_nb_chunk.clear();
+    AsyncResetRegistry<CHUNK_T<T>>::list_chunk_list.clear();
+    AsyncResetRegistry<CHUNK_T<T>>::list_nb_chunk.clear();
 }
 
 /**

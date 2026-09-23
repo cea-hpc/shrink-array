@@ -84,7 +84,7 @@ void ArrayChunkBase<Derived>::set_value(ind_type i, in_t<T> v)
     // set_num_tab()/get_info_second_value() need ptr_on_array set even in
     // non-OpenMP builds, otherwise share_info lookups abort with
     // "key NOT FOUND".
-    p.set_this_and_num_chunk(&derived(), num_chunk, num_tab);
+    p.set_this_and_num_chunk(this->registry_key(), num_chunk, num_tab);
 
     // Chunk2 only: arm the proxy with the address of this array's registry
     // mirror, so the write path copies the (second_value, ind, num_tab)

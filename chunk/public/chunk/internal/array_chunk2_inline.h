@@ -90,7 +90,7 @@ void ArrayChunk2<T, ind_type>::create(ind_type sz)
 
     auto& sh_inf = Proxy2<T>::share_info_array;
 
-    sh_inf.insert_only_num_tab(this, nb_tab);
+    sh_inf.insert_only_num_tab(this->registry_key(), nb_tab);
     ++nb_tab;
 
     // Registry entry written: refresh the mirror the write proxies are armed
@@ -119,7 +119,7 @@ void ArrayChunk2<T, ind_type>::rebuild_storage(ind_type sz)
 {
     // Already registered: num_tab is the registry value, not nb_tab-1 (only
     // valid right after create()'s ++nb_tab).
-    const int num_tab = Proxy2<T>::share_info_array.get_num_tab(this);
+    const int num_tab = Proxy2<T>::share_info_array.get_num_tab(this->registry_key());
 
     if (sz)
     {
@@ -243,7 +243,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
                 }
             }
 
-            sh_inf.replace(this, sec_value, ind);
+            sh_inf.replace(this->registry_key(), sec_value, ind);
             sh_inf.insert_map_ind_cst_val2(sec_value, ind);
 
             ind_cst_val2 = ind;
@@ -332,11 +332,11 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
                 std::get<1>(inf_array) = ind;
             }
         }
-        const bool exi = sh_inf.exists(this);
+        const bool exi = sh_inf.exists(this->registry_key());
 
         if (exi && sec_value != get_second_value())
         {
-            sh_inf.replace_all_other_elm(this, sec_value, ind_cst_val2);
+            sh_inf.replace_all_other_elm(this->registry_key(), sec_value, ind_cst_val2);
             sh_inf.insert_map_ind_cst_val2(sec_value, ind);
         }
     }
@@ -366,7 +366,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
             }
         }
 
-        sh_inf.replace_all_other_elm(this, true, 0);
+        sh_inf.replace_all_other_elm(this->registry_key(), true, 0);
     }
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -391,7 +391,7 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
         return;
 
     auto&     sh_inf  = Proxy2<T>::share_info_array;
-    const int num_tab = sh_inf.get_num_tab(const_cast<ArrayChunk2*>(this));
+    const int num_tab = sh_inf.get_num_tab(const_cast<void*>(this->registry_key()));
 
     // Chunk2-specific classification. FIXED: written(ind) tests
     // `values != cst_val1 && is_not_cst_val2(ind)` -- i.e. it is true for a
@@ -566,7 +566,7 @@ void ArrayChunk2<T, ind_type>::clear_core()
     {
         auto& sh_inf = Proxy2<T>::share_info_array;
 
-        const int num_tab = sh_inf.get_num_tab(this);
+        const int num_tab = sh_inf.get_num_tab(this->registry_key());
 
         Proxy2<T>::clear_is_int(num_tab);
 
@@ -962,7 +962,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
             for (int k = 0; k < nb1; ++k)
             {
                 const int ind1 = tab_nb1[k];
-                std::cerr << ind1 << " " << ind1 * this->size_policy_.size();
+                std::cerr << ind1 << " " << static_cast<ind_type>(ind1) * static_cast<ind_type>(this->size_policy_.size());
                 // The candidate-list flag exists in fast-block builds only: a
                 // serial build has no such table, indexing it aborted here.
                 if constexpr (chunk_config::use_fast_block_compression)
@@ -970,7 +970,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
                               << static_cast<int>(
                                      shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
                                          shrink_array::Proxy2<T>::share_info_array.get_num_tab(
-                                             const_cast<ArrayChunk2<T, ind_type>*>(this)))[ind1]
+                                             const_cast<void*>(this->registry_key())))[ind1]
                                          .load(std::memory_order_acquire));
                 std::cerr << "\n";
                 if (k > 10)
@@ -1008,7 +1008,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
             for (int k = 0; k < nb2; ++k)
             {
                 const int ind2 = tab_nb2[k];
-                std::cerr << ind2 << " " << ind2 * this->size_policy_.size();
+                std::cerr << ind2 << " " << static_cast<ind_type>(ind2) * static_cast<ind_type>(this->size_policy_.size());
                 // The candidate-list flag exists in fast-block builds only: a
                 // serial build has no such table, indexing it aborted here.
                 if constexpr (chunk_config::use_fast_block_compression)
@@ -1016,7 +1016,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
                               << static_cast<int>(
                                      shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
                                          shrink_array::Proxy2<T>::share_info_array.get_num_tab(
-                                             const_cast<ArrayChunk2<T, ind_type>*>(this)))[ind2]
+                                             const_cast<void*>(this->registry_key())))[ind2]
                                          .load(std::memory_order_acquire));
                 std::cerr << "\n";
                 if (k > 10)
@@ -1072,7 +1072,7 @@ void ArrayChunk2<T, ind_type>::resize(ind_type newsz)
     {
         const auto& sh_inf = Proxy2<T>::share_info_array;
 
-        const int num_tab = sh_inf.get_num_tab(this);
+        const int num_tab = sh_inf.get_num_tab(this->registry_key());
         Proxy2<T>::resize_tab_is_int(num_tab, nb_chunk);
     }
 

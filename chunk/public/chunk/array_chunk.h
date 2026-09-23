@@ -122,8 +122,8 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
         // Drop our (this -> num_tab) registry entry so a later array reusing this
         // address does not inherit our stale num_tab via the first-match lookup
         // in PointerMapChunk. Required for rechunk_to's tmp; correct for every
-        // array. Must run AFTER clear() (which still needs get_num_tab(this)).
-        Proxy<T>::share_info_array.erase(this);
+        // array. Must run AFTER clear() (which still needs get_num_tab(registry_key())).
+        Proxy<T>::share_info_array.erase(this->registry_key());
     }
     /// @brief Claim this array's identity before its storage is built:
     ///        register its address and take the next free num_tab, which
@@ -133,7 +133,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     {
         auto& sh_inf = Proxy<T>::share_info_array;
 
-        sh_inf.insert(this, Base::nb_tab);
+        sh_inf.insert(this->registry_key(), Base::nb_tab);
 
         this->num_tab = Base::nb_tab;
 

@@ -169,12 +169,12 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      * @brief Release the array's storage, then drop both registry entries.
      *
      * @details Order matters: clear() first, then the two registry erases --
-     *          clear() still needs get_num_tab(this) and its own terminal sweep
+     *          clear() still needs get_num_tab(registry_key()) and its own terminal sweep
      *          still needs a valid inf_array pointer.
      *
      * @warning Neither erase is optional, and each closes a distinct
      *          use-after-free:
-     *          - share_info_array.erase(this) drops the (address -> tuple)
+     *          - share_info_array.erase(registry_key()) drops the (address -> tuple)
      *            entry. Without it, a later array reusing this address inherits
      *            our stale num_tab and second value through PointerMapChunk2's
      *            first-match lookup. rechunk_to()'s short-lived @c tmp makes
@@ -193,7 +193,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     ~ArrayChunk2()
     {
         clear();
-        Proxy2<T>::share_info_array.erase(this);
+        Proxy2<T>::share_info_array.erase(this->registry_key());
 
         if constexpr (chunk_config::use_fast_block_compression)
         {
@@ -245,7 +245,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     {
         if constexpr (!std::is_same_v<T, bool>)
         {
-            auto* p = static_cast<void*>(const_cast<ArrayChunk2<T, ind_type>*>(this));
+            auto* p = const_cast<void*>(this->registry_key());
             return Proxy2<T>::share_info_array.get_second_value(p);
         }
         else
@@ -281,7 +281,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     /// @brief Full registry tuple for this array: second value, its index, num_tab.
     [[nodiscard]] inf_array_t get_info_second_value() const noexcept
     {
-        auto* p = static_cast<void*>(const_cast<ArrayChunk2<T, ind_type>*>(this));
+        auto* p = const_cast<void*>(this->registry_key());
         return Proxy2<T>::share_info_array.get_info_second_value(p);
     }
 

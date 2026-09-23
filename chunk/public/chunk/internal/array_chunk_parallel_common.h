@@ -42,10 +42,11 @@
  *          and what is left in each variant is exactly what is specific to it.
  *
  *          The registries used by the ChunkDef::async_reset_list_size branch
- *          live here too. They stay per-variant in practice: the class is
- *          templated on Derived, so ParallelSupportCommon<ArrayChunk<T>> and
- *          ParallelSupportCommon<ArrayChunk2<T>> are different types with
- *          different statics, exactly as the three separate mixins were.
+ *          are AsyncResetRegistry<chunk_type>: one per chunk type, shared by the
+ *          arrays of every index type, and the same one the manager of that
+ *          chunk type sizes and clears. (They used to be statics of this class,
+ *          i.e. one per Derived -- while the manager only ever sized
+ *          ArrayChunk<T, int>'s.)
  *
  * @see array_chunk_parallel_common_inline.h for the body
  * @see array_chunk_parallel.h, array_chunk2_parallel.h, array_chunk2A_parallel.h
@@ -60,6 +61,45 @@
 
 namespace shrink_array
 {
+
+/**
+ * @brief Per-thread lists of the chunk_list / nb_chunk a deferred teardown
+ *        (ChunkDef::async_reset_list_size) still has to reset.
+ * @details Keyed by the chunk type alone: filled by clear_in_par_impl() for an
+ *          array of any index type, sized and cleared by
+ *          ManagerChunk<chunk type>.
+ */
+template <typename ChunkType>
+struct AsyncResetRegistry
+{
+    /** @brief The chunk lists thread @p thr_rank still has to reset. */
+    static std::vector<std::vector<ChunkType>*>& get_list_chunk_list(int thr_rank)
+    {
+        return list_chunk_list[thr_rank];
+    }
+
+    /** @brief The whole per-thread table of pending chunk lists. */
+    static std::vector<std::vector<std::vector<ChunkType>*>>& get_list_chunk_list()
+    {
+        return list_chunk_list;
+    }
+
+    /** @brief The chunk counters thread @p thr_rank still has to reset. */
+    static std::vector<int*>& get_list_nb_chunk(int thr_rank)
+    {
+        return list_nb_chunk[thr_rank];
+    }
+
+    /** @brief The whole per-thread table of pending chunk counters. */
+    static std::vector<std::vector<int*>>& get_list_nb_chunk()
+    {
+        return list_nb_chunk;
+    }
+
+    static inline std::vector<std::vector<std::vector<ChunkType>*>>
+                                                 list_chunk_list; ///< Backing store of get_list_chunk_list().
+    static inline std::vector<std::vector<int*>> list_nb_chunk;   ///< Backing store of get_list_nb_chunk().
+};
 
 /**
  * @brief The parallel-teardown machinery shared by the three array variants.
@@ -146,38 +186,18 @@ class ParallelSupportCommon
 
     /**
      * @name Async-reset registries (ChunkDef::async_reset_list_size)
-     *
-     * Per-thread lists of the chunk_list / nb_chunk a deferred teardown still
-     * has to reset. Filled by clear_in_par_impl(), drained by the manager.
+     * @brief This chunk type's AsyncResetRegistry.
      * @{
      */
-    /** @brief The chunk lists thread @p thr_rank still has to reset. */
     static std::vector<std::vector<chunk_type>*>& get_list_chunk_list(int thr_rank)
     {
-        return get_list_chunk_list()[thr_rank];
+        return AsyncResetRegistry<chunk_type>::get_list_chunk_list(thr_rank);
     }
 
-    /** @brief The whole per-thread table of pending chunk lists. */
-    static std::vector<std::vector<std::vector<chunk_type>*>>& get_list_chunk_list()
-    {
-        return list_chunk_list;
-    }
-
-    /** @brief The chunk counters thread @p thr_rank still has to reset. */
     static std::vector<int*>& get_list_nb_chunk(int thr_rank)
     {
-        return get_list_nb_chunk()[thr_rank];
+        return AsyncResetRegistry<chunk_type>::get_list_nb_chunk(thr_rank);
     }
-
-    /** @brief The whole per-thread table of pending chunk counters. */
-    static std::vector<std::vector<int*>>& get_list_nb_chunk()
-    {
-        return list_nb_chunk;
-    }
-
-    static inline std::vector<std::vector<std::vector<chunk_type>*>>
-                                                 list_chunk_list; ///< Backing store of get_list_chunk_list().
-    static inline std::vector<std::vector<int*>> list_nb_chunk;   ///< Backing store of get_list_nb_chunk().
     /** @} */
 
     /**

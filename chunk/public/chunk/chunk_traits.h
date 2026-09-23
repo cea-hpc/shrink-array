@@ -50,8 +50,12 @@ template <template <typename> class ChunkType, typename T>
 class ManagerChunk;
 
 // ============================================================================
-// 2. CHUNK TO ARRAY MAPPING (ChunkTraits)
+// 2. CHUNK TO PROXY / MANAGER MAPPING (ChunkTraits)
 // ============================================================================
+//
+// No chunk -> array mapping: a chunk type has one array type per index type.
+// What is common to all of them is ArrayChunkCore<chunk_type>
+// (array_chunk_core.h), which is what ArrayChunkFor names.
 
 template <typename C>
 struct ChunkTraits;
@@ -59,19 +63,22 @@ struct ChunkTraits;
 template <typename T>
 struct ChunkTraits<Chunk<T>>
 {
-    using ArrayType = ArrayChunk<T>;
+    using proxy_type   = Proxy<T>;
+    using manager_type = ManagerChunk<Chunk, T>;
 };
 
 template <typename T>
 struct ChunkTraits<Chunk2<T>>
 {
-    using ArrayType = ArrayChunk2<T>;
+    using proxy_type   = Proxy2<T>;
+    using manager_type = ManagerChunk<Chunk2, T>;
 };
 
 template <typename T>
 struct ChunkTraits<Chunk2A<T>>
 {
-    using ArrayType = ArrayChunk2A<T>;
+    using proxy_type   = Proxy2A<T>;
+    using manager_type = ManagerChunk<Chunk2A, T>;
 };
 
 // ============================================================================

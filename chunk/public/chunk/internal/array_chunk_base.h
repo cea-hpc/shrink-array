@@ -47,8 +47,7 @@
 #include "chunk/chunk_traits.h"
 #include "chunk/internal/process_verbs.h" // compress_now_and_trim_pools -- shrink_to_fit()
 #include "chunk/internal/crp_helper.h"
-#include "chunk/internal/chunk_size_policy.h"        // ActiveSizePolicy — the geometry member
-#include "chunk/internal/array_chunk_dirty_bitset.h" // DirtyBitsetSupport — OpenMP-only mixin
+#include "chunk/internal/array_chunk_core.h"         // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h"      // RechunkSupport — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/invariant_check.h"          // INVARIANT_FAILED — used HERE (swap check)
 #include "chunk/internal/def_force_inline.h"
@@ -101,12 +100,21 @@ inline constexpr bool has_chunk_written_v = requires(const D& d, int j) { d.chun
  *          @c rechunk_* hooks give each variant a place to plug into the shared
  *          re-chunking algorithm.
  *
+ *          What does not depend on the index type -- geometry, chunk list,
+ *          dirty bitset, registry identity -- is ArrayChunkCore, the one part of
+ *          the array the proxies and the per-T registries see (see
+ *          array_chunk_core.h). This class adds the index-typed part: m_size and
+ *          the element API.
+ *
  * @tparam Derived the concrete array type (ArrayChunk, ArrayChunk2,
  *         ArrayChunk2A), which must specialise ArrayChunkTraits.
  * @see ArrayChunkTraits
  */
 template <typename Derived>
-class ArrayChunkBase : public CRTPSupport<Derived>, public DirtyBitsetSupport<Derived>, public RechunkSupport<Derived>
+class ArrayChunkBase : public CRTPSupport<Derived>,
+                       public RegistryKeyCanaryBase,
+                       public ArrayChunkCore<typename ArrayChunkTraits<Derived>::chunk_type>,
+                       public RechunkSupport<Derived>
 {
     // RechunkSupport rebuilds the container from the outside — it swaps
     // chunk_list / m_size / nb_chunk / size_policy_ between *this and the fresh
@@ -129,6 +137,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>, public DirtyBitsetSupport<De
     using chunk_type   = Traits::chunk_type;        ///< Chunk type held in @ref chunk_list.
     using proxy_type   = Traits::proxy_type;        ///< Write proxy returned by the non-const accessors.
     using manager_type = Traits::manager_type;      ///< Per-type manager owning the compression machinery.
+    using Core         = ArrayChunkCore<chunk_type>; ///< The index-independent part (array_chunk_core.h).
 
     // ── STL-vector-like member typedefs ──────────────────────────────────────
     /**
@@ -158,13 +167,19 @@ class ArrayChunkBase : public CRTPSupport<Derived>, public DirtyBitsetSupport<De
 
     // Re-export the mixin verbs so the container's own surface is unchanged for
     // callers (and for the derived arrays, which use them unqualified).
-    using DirtyBitsetSupport<Derived>::alloc_dirty_bitset;
-    using DirtyBitsetSupport<Derived>::reallocate_dirty_bitset;
-    using DirtyBitsetSupport<Derived>::clear_dirty_bitset;
-    using DirtyBitsetSupport<Derived>::mark_chunk_dirty;
-    using DirtyBitsetSupport<Derived>::is_chunk_dirty;
-    using DirtyBitsetSupport<Derived>::swap_dirty_bitset;
-    using DirtyBitsetSupport<Derived>::clear_all_dirty_bitsets;
+    using Core::alloc_dirty_bitset;
+    using Core::reallocate_dirty_bitset;
+    using Core::clear_dirty_bitset;
+    using Core::mark_chunk_dirty;
+    using Core::is_chunk_dirty;
+    using Core::swap_dirty_bitset;
+    using Core::clear_all_dirty_bitsets;
+
+    using Core::registry_key;
+    using Core::chunk_size;
+    using Core::alloc_key;
+    using Core::chunk_count;
+    using Core::chunk_ref;
 
     using RechunkSupport<Derived>::rechunk_to;
     using RechunkSupport<Derived>::rechunk_all_to;
@@ -177,99 +192,35 @@ class ArrayChunkBase : public CRTPSupport<Derived>, public DirtyBitsetSupport<De
     using RechunkSupport<Derived>::rechunk_swap_identity;
 
   protected:
-    /**
-     * @brief Chunk-size policy — the single home for chunk geometry.
-     *
-     * @details Shared by all containers that derive from ArrayChunkBase
-     *          (ArrayChunk, ArrayChunk2, ArrayChunk2A). Fixed to StaticChunkSize
-     *          for now (compile-time geometry, zero bytes via
-     *          [[no_unique_address]]). Geometry use-sites go through
-     *          size_policy_.decalage()/modulo()/size() instead of the free
-     *          __decalage_chunk/__modulo_chunk/__chunk_size globals. Templating
-     *          the policy (to allow DynamicChunkSize) is a later step.
-     */
-    [[no_unique_address]] ActiveSizePolicy size_policy_{};
+    // The core's members, named here so this class and the derived arrays
+    // keep using them unqualified-through-this as before (the core is a
+    // dependent base).
+    using Core::size_policy_;
+    using Core::chunk_list;
+    using Core::nb_chunk;
+    using Core::num_tab;
+    using Core::nb_tab;
+    using Core::alloc_key_;
+    using Core::next_alloc_key_;
+    using Core::assign_alloc_key;
 
-    std::vector<chunk_type> chunk_list; ///< The chunks, in index order.
-    ind_type                m_size;     ///< Number of elements exposed by size().
-    int                     nb_chunk;   ///< Number of live chunks in @ref chunk_list.
+    ind_type m_size; ///< Number of elements exposed by size().
 
-    int               num_tab;   ///< Identity of this array in the per-type registries.
-    static inline int nb_tab{0}; ///< Number of arrays of this type created so far (source of num_tab).
-    /// @brief Slab-affinity key: 0 = the rank's shared allocator pool; otherwise
-    ///        this array's own allocator set (rank x size), so its buffers share
-    ///        slabs with no other array and re-chunking or destroying it empties
-    ///        whole slabs. Assigned once by assign_alloc_key() when the array is
-    ///        large enough (build_config::alloc_affinity_min_bytes); swapped with
-    ///        the geometry at a re-chunk (the new storage lives under the new key,
-    ///        the old one dies with tmp and its slabs with it).
-    unsigned int alloc_key_ = 0;
-    /// @brief Process-wide source of affinity keys, across types (a key names one
-    ///        array, whatever its element type).
-    static inline std::atomic<unsigned int> next_alloc_key_{1};
-    /// @brief Give this array its own allocator set if it is worth a slab per
-    ///        rank; registers allocators, reuse lists and their budget with the
-    ///        manager. Call from rebuild_storage() once nb_chunk is known
-    ///        (sequential). Idempotent for an array that already has a key.
-    void assign_alloc_key()
+    /// @brief Installs the core's way back to rechunk_to() (rechunk_erased).
+    ArrayChunkBase() noexcept
     {
-        if constexpr (build_config::alloc_affinity_min_bytes == 0 || !build_config::chunk_dynamic ||
-                      !build_config::use_fast_alloc || !build_config::use_openmp)
-            return;
-        if (nb_chunk <= 0)
-            return;
-        const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk) * sizeof(chunk_type);
-        if (meta_bytes < build_config::alloc_affinity_min_bytes)
-            return;
-        const unsigned int key = (alloc_key_ != 0)
-                                     ? alloc_key_
-                                     : next_alloc_key_.fetch_add(1, std::memory_order_relaxed);
-        // Keep the key ONLY if the manager really built its allocator set and
-        // lists. Otherwise stay on the shared pool: a key with no registered
-        // set makes route_omp_dynamic_alloc fall through to the legacy single
-        // allocator, which is neither this size's nor this array's.
-        alloc_key_ = Derived::manager_type::register_alloc_key(key, size_policy_.size(), nb_chunk) ? key : 0u;
+        this->rechunk_fn_ = &rechunk_thunk;
+    }
+
+  private:
+    static void rechunk_thunk(Core& core, unsigned int new_size)
+    {
+        // The core IS the base of a Derived: its fn pointer was set by this
+        // very class, in the constructor of that Derived.
+        static_cast<Derived&>(core).rechunk_to(new_size);
     }
 
   public:
-    /**
-     * @brief Public read-only accessor to the chunk geometry.
-     *
-     * @details For consumers that only have a type-erased pointer to the array
-     *          (e.g. proxies via ptr_on_array). With StaticChunkSize this folds
-     *          to a compile-time constant at the call site (size() is static
-     *          constexpr); with DynamicChunkSize it reads the runtime value.
-     *          Keeps size_policy_ itself protected.
-     *
-     * @return the number of elements per chunk
-     */
-    [[nodiscard]] unsigned int chunk_size() const noexcept
-    {
-        return size_policy_.size();
-    }
-    /// @brief This array's slab-affinity key (0 = shared pool). See alloc_key_.
-    [[nodiscard]] unsigned int alloc_key() const noexcept
-    {
-        return alloc_key_;
-    }
-
-    /**
-     * @brief Direct access to one chunk, for bulk range operations.
-     *
-     * @details NOT part of the container interface -- it exposes the chunked
-     *          representation, which the element API deliberately hides. It
-     *          exists so the bulk operations in array_chunk_range_ops.h can take
-     *          ONE decision per chunk instead of one per element, as free
-     *          functions rather than members (so the same call site accepts a
-     *          std::vector). Everything else should go through operator[].
-     *
-     * @param i chunk index; the caller guarantees 0 <= i < nb_chunk
-     */
-    [[nodiscard]] chunk_type& chunk_ref(std::size_t i) noexcept { return chunk_list[i]; }
-
-    /// @copydoc chunk_ref
-    [[nodiscard]] const chunk_type& chunk_ref(std::size_t i) const noexcept { return chunk_list[i]; }
-
     T* data() = delete;
     /**
      * @brief Set the runtime chunk geometry.
@@ -910,7 +861,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>, public DirtyBitsetSupport<De
         // but set_num_tab()/get_info_second_value() still look ptr_on_array up in
         // share_info_array; leaving it unset caused "[share_info get] key NOT
         // FOUND" aborts in Proxy2/Proxy2A check builds.
-        val.set_this_and_num_chunk(&derived(), num_chunk, num_tab);
+        val.set_this_and_num_chunk(registry_key(), num_chunk, num_tab);
 
         // Chunk2 only: arm the proxy with the address of this array's registry
         // mirror, so the write path copies the (second_value, ind, num_tab)
