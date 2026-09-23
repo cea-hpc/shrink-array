@@ -100,7 +100,7 @@ void Chunk2Base<T, Derived>::clear_impl(IndexType index_opt, int thr_rank, char*
 
     if constexpr (build_config::any_check)
     {
-        const void* current_ptr = static_cast<const void*>(values_load());
+        auto* current_ptr = static_cast<const void*>(values_load());
         // Safety checks
         if (is_cst_val1())
         {
