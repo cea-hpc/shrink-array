@@ -332,6 +332,13 @@ void ArrayChunk<T, ind_type>::clear_core()
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk<T, ind_type>::compress_int(bool verbose)
 {
+    // Pin the ambient size to THIS array's geometry: the frees below route on
+    // thread_chunk_size(), not on the buffer (see clear_core()). Left to
+    // whichever array the thread last served, a re-chunked array's buffers
+    // went to another size's allocator (sl_remove assertion, fast-alloc only).
+    if constexpr (build_config::chunk_dynamic)
+        shrink_array::set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
+
 
     const int nb_chunk0 = get_size_max_tab_omp(nb_chunk, true);
 

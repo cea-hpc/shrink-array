@@ -70,16 +70,8 @@ namespace detail
  * @brief Can this variant be raw-filled, or must every element go through the
  *        proxy?
  *
- * @details bool: its chunks are bit-packed. Chunk2 is back on the element path
- *          (Sept '26): opened to the raw paths with the two fixes below, it
- *          broke on Grace at 8+ threads -- rechunk_validation_chunk2_dyn
- *          POST-FAIL after compress (scale-64-to-tgt), and shrink_bench
- *          chunk2_256 check errors ("is_cst_val2 should be not") -- where the raw
- *          paths run concurrently (the rebuild's parallel copy_range,
- *          fill_range_mt). Not reproduced on one core; the lead is a pass
- *          compressing a chunk queued by a raw copy while another thread's
- *          unannounced raw stores still land in it. The fixes stay, needed when
- *          the path is reopened:
+ * @details bool only: its chunks are bit-packed. Chunk2 takes the raw paths
+ *          since three fixes (Sept '26):
  *           - the materialised test must ask written(ind2), with the array's
  *             second-value index: the index-less written() is bool-only and
  *             false for every other T (materialised(a, ch, ind2));
@@ -87,19 +79,76 @@ namespace detail
  *             queueing (set_info_on_chunk): Chunk2's candidate lists are keyed
  *             by it, and the Proxy2A-style arming it used put the chunks in the
  *             list of T{} -- a list no pass drains, whose entries then crashed
- *             the teardown of a rechunk's temporary array.
- *          With both, second-value / first-value / unaligned spans written
- *          through the element path, fill_range and fill_range_mt give the
- *          same values and the same cst1 / cst2 counts (release and check
- *          builds, 1-8 threads), and the Chunk2 harnesses -- rechunk included,
- *          whose rebuild goes through copy_range -- give outputs identical to
- *          the element path's.
+ *             the teardown of a rechunk's temporary array;
+ *           - in counter mode (the serial builds) a raw store must recount
+ *             Chunk2's two per-chunk counters (resync_counters), as it did v1's
+ *             zero count. Without it rechunk_validation_chunk2_dyn lost runs of
+ *             the second value to chunks compressed to the first one (POST-FAIL
+ *             34819 / 1e6) and shrink_bench chunk2 --mode check read "is_cst_val2
+ *             should be not". That was taken for a concurrency failure on Grace
+ *             and Chunk2 was put back on the element path (5bc3ed1f); it fails
+ *             identically on one core, serial build -- the configs it failed in
+ *             were the serial ones, where the counters exist.
  */
 template <typename T>
-inline constexpr bool raw_fillable_v = !chunk_config::use_chunk2 && !std::is_same_v<T, bool>;
+inline constexpr bool raw_fillable_v = !std::is_same_v<T, bool>;
 
 /** @brief Only v1 in counter mode carries a per-chunk zero count to restore. */
 inline constexpr bool track_zeros_v = chunk_config::use_chunk && chunk_config::use_compression_with_counter;
+
+/** @brief Chunk2 in counter mode carries two: first-value and second-value counts. */
+inline constexpr bool track_chunk2_counts_v = chunk_config::use_chunk2 && chunk_config::use_compression_with_counter;
+
+/**
+ * @brief Recount the per-chunk element counters after a raw store into
+ *        [c_begin, c_begin + S), which bypassed them.
+ *
+ * @details In counter mode (use_compression_with_counter, i.e. without fast
+ *          block compression -- the serial builds) the compression of a chunk
+ *          is decided by counters the proxy maintains INCREMENTALLY: v1's
+ *          nb_val_eq_zero, Chunk2's nb_val_eq_first_value and
+ *          nb_val_eq_second_value. A raw store moves none of them, so they
+ *          describe a state that no longer exists and nothing detects the
+ *          drift: later writes only nudge them by one, and the full tests
+ *          compare to chunk_size() exactly, so the chunk compresses the moment
+ *          a count happens to land there -- a chunk that is NOT all constant,
+ *          after which every read returns the constant. Recount, don't adjust
+ *          (rechunk_refill documents the same trap).
+ *
+ *          Chunk2 used to be left out: its raw paths opened with v1's recount
+ *          only, and rechunk_validation_chunk2_dyn (serial builds, the
+ *          rebuild's copy_range) lost whole runs of the second value to
+ *          chunks compressed to the first one (34819 of 1e6 elements).
+ *          The second-value count is taken against the array's second value,
+ *          exactly as Proxy2 counts it.
+ */
+template <typename Arr, typename Chunk, typename T>
+void resync_counters(Arr& a, Chunk& ch, std::size_t c_begin, const T* dst, unsigned int S)
+{
+    if constexpr (track_zeros_v)
+    {
+        counter_value_t nz = 0;
+        for (unsigned int k = 0; k < S; ++k)
+            if (dst[k] == static_cast<T>(Chunk::first_value))
+                ++nz;
+        a[static_cast<typename Arr::ind_type>(c_begin)].resync_nb_val_eq_zero(nz);
+    }
+    else if constexpr (track_chunk2_counts_v && requires { a.get_second_value(); })
+    {
+        const T         sv = static_cast<T>(a.get_second_value());
+        counter_value_t n1 = 0;
+        counter_value_t n2 = 0;
+        for (unsigned int k = 0; k < S; ++k)
+        {
+            if (dst[k] == static_cast<T>(Chunk::first_value))
+                ++n1;
+            if (dst[k] == sv)
+                ++n2;
+        }
+        ch.set_nb_val_eq_first_value(n1);
+        ch.set_nb_val_eq_second_value(n2);
+    }
+}
 
 /**
  * @brief Does this chunk own a buffer the bulk store may write into?
@@ -383,25 +432,8 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
             for (std::size_t k = i; k < hi; ++k)
                 dst[k - c_begin] = value;
 
-            // Restore the per-chunk zero count the bulk store bypassed.
-            //
-            // nb_val_eq_zero is maintained INCREMENTALLY by the proxy path, so
-            // only the arming writes moved it while the stores above went
-            // straight to the buffer. Left alone the counter describes a state
-            // that no longer exists, and nothing detects the drift: later writes
-            // only nudge it by one and is_full_zero() tests `== chunk_size`
-            // exactly, so the chunk compresses the moment the count happens to
-            // land there -- compressing a chunk that is NOT all constant, after
-            // which every read returns the constant. Same trap rechunk_refill
-            // documents, same fix: recount rather than adjust.
-            if constexpr (detail::track_zeros_v)
-            {
-                counter_value_t nz = 0;
-                for (unsigned int k = 0; k < S; ++k)
-                    if (dst[k] == static_cast<T>(chunk_type::first_value))
-                        ++nz;
-                a[static_cast<ind_type>(c_begin)].resync_nb_val_eq_zero(nz);
-            }
+            // Restore the per-chunk counters the bulk store bypassed.
+            detail::resync_counters(a, ch, c_begin, dst, S);
 
             // The chunk may be constant now: a fill of first_value, or on
             // chunk2a of any value (a uniform run is its second constant).
@@ -493,14 +525,7 @@ void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, bool 
             for (std::size_t k = i; k < hi; ++k)
                 dst[k - c_begin] = static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(k - first)));
 
-            if constexpr (detail::track_zeros_v)
-            {
-                counter_value_t nz = 0;
-                for (unsigned int k = 0; k < S; ++k)
-                    if (dst[k] == static_cast<T>(chunk_type::first_value))
-                        ++nz;
-                a[static_cast<ind_type>(c_begin)].resync_nb_val_eq_zero(nz);
-            }
+            detail::resync_counters(a, ch, c_begin, dst, S); // as fill_range
 
             // The source is not known to be uniform: the pass decides -- for
             // the chunks that can be.
