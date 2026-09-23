@@ -54,7 +54,6 @@
 
 #include <cstdlib>
 #include <cstdio>
-#include <tuple>
 #include <type_traits>
 #include <unistd.h>
 
@@ -63,8 +62,9 @@
 #include "chunk/array_chunk2.h"
 #include "chunk/array_chunk2A.h"
 #include "chunk/param_chunk.h"
-#include "chunk/config.h"    // chunk_config::use_chunk*
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
+#include "chunk/chunk_std.h"   // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"      // chunk_config::use_chunk*
+#include "chunk/PMP_CHUNK.h"   // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h" // begin_parallel_phase / finalize_parallel_phase
 
 // Defined by every executable of the library (the fast allocator reads it).
@@ -85,15 +85,18 @@ static void end_phase()
 }
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a, ArrayChunk2A<T>,
-              std::conditional_t<chunk_config::use_chunk2,  ArrayChunk2<T>,
-                                                            ArrayChunk<T>>>;
+using Array = std::conditional_t<chunk_config::use_chunk2a,
+                                 ArrayChunk2A<T>,
+                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a) return "chunk2a";
-    else if constexpr (chunk_config::use_chunk2) return "chunk2";
-    else return "chunk";
+    if constexpr (chunk_config::use_chunk2a)
+        return "chunk2a";
+    else if constexpr (chunk_config::use_chunk2)
+        return "chunk2";
+    else
+        return "chunk";
 }
 
 // set_second_value only exists on chunk2 / chunk2a; no-op elsewhere.
@@ -112,8 +115,8 @@ constexpr long kRun = 4096;
 template <typename T>
 struct Scenario
 {
-    T second;  // the second constant written in run 1
-    T refill;  // the value the first quarter is rewritten with after the pass
+    T second; // the second constant written in run 1
+    T refill; // the value the first quarter is rewritten with after the pass
     T (*varied)(long i);
 };
 
@@ -146,8 +149,10 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
         for (long i = 0; i < N; ++i)
         {
             const long run = (i / kRun) % 3;
-            if (run == 0) arr[i] = T(0);
-            else if (run == 1) arr[i] = sc.second;
+            if (run == 0)
+                arr[i] = T(0);
+            else if (run == 1)
+                arr[i] = sc.second;
         }
     }
     end_phase();
@@ -175,16 +180,24 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
     T    got_first{}, exp_first{};
     for (long i = 0; i < N; ++i)
     {
-        const long run = (i / kRun) % 3;
-        T expected = sc.varied(i);
-        if (run == 0) expected = T(0);
-        else if (run == 1) expected = sc.second;
-        if (i < N / 4) expected = sc.refill;
+        const long run      = (i / kRun) % 3;
+        T          expected = sc.varied(i);
+        if (run == 0)
+            expected = T(0);
+        else if (run == 1)
+            expected = sc.second;
+        if (i < N / 4)
+            expected = sc.refill;
 
         const T got = arr[i];
         if (got != expected)
         {
-            if (first < 0) { first = i; got_first = got; exp_first = expected; }
+            if (first < 0)
+            {
+                first     = i;
+                got_first = got;
+                exp_first = expected;
+            }
             ++bad;
         }
     }
@@ -194,13 +207,13 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
     {
         printf("[%s/%s] FAIL: %ld/%ld mismatches, first at i=%ld (chunk #%ld, offset %ld, run %ld) "
                "got=%g expected=%g\n",
-               variant_name(), label, bad, N, first, first / csz, first % csz, (first / kRun) % 3,
-               (double) got_first, (double) exp_first);
+               variant_name(), label, bad, N, first, first / csz, first % csz, (first / kRun) % 3, (double)got_first,
+               (double)exp_first);
     }
     else
     {
-        printf("[%s/%s] OK: %ld elements round-trip through compress() at chunk_size=%ld\n",
-               variant_name(), label, N, csz);
+        printf("[%s/%s] OK: %ld elements round-trip through compress() at chunk_size=%ld\n", variant_name(), label, N,
+               csz);
     }
 
     arr.clear();

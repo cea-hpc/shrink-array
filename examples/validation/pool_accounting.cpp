@@ -34,7 +34,6 @@
 
 #include <cstdlib>
 #include <cstdio>
-#include <tuple>
 #include <type_traits>
 #include <unistd.h>
 
@@ -43,9 +42,11 @@
 #include "chunk/array_chunk2.h"
 #include "chunk/array_chunk2A.h"
 #include "chunk/param_chunk.h"
-#include "chunk/config.h"      // chunk_config::use_chunk*
-#include "chunk/PMP_CHUNK.h"   // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h" // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/chunk_std.h"                  // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/chunk_size_policy.h" // cst_buffer_size
+#include "chunk/config.h"                     // chunk_config::use_chunk*
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/chunk_def.h"
 #include "chunk/chunk2_def.h"
 #include "chunk/chunk2A_def.h"
@@ -56,18 +57,22 @@ int __mem_page_size = 0;
 using namespace shrink_array;
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a, ArrayChunk2A<T>,
-              std::conditional_t<chunk_config::use_chunk2,  ArrayChunk2<T>,
-                                                            ArrayChunk<T>>>;
+using Array = std::conditional_t<chunk_config::use_chunk2a,
+                                 ArrayChunk2A<T>,
+                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
 
-using VariantDef = std::conditional_t<chunk_config::use_chunk2a, Chunk2ADef,
-                   std::conditional_t<chunk_config::use_chunk2,  Chunk2Def, ChunkDef>>;
+using VariantDef = std::conditional_t<chunk_config::use_chunk2a,
+                                      Chunk2ADef,
+                                      std::conditional_t<chunk_config::use_chunk2, Chunk2Def, ChunkDef>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a) return "chunk2a";
-    else if constexpr (chunk_config::use_chunk2) return "chunk2";
-    else return "chunk";
+    if constexpr (chunk_config::use_chunk2a)
+        return "chunk2a";
+    else if constexpr (chunk_config::use_chunk2)
+        return "chunk2";
+    else
+        return "chunk";
 }
 
 template <typename Arr, typename Val>
@@ -130,7 +135,7 @@ int main(int argc, char** argv)
     printf("=== pool_accounting [variant = %s]  N=%ld  threads=%d ===\n", variant_name(), N, CHUNK_PMP_MAX_THREADS);
 
     const long base = Manager::get_somme_chunk_create();
-    expect(Manager::reuse_pool_blocks() == 0, "pools empty at start", (long) Manager::reuse_pool_blocks(), 0);
+    expect(Manager::reuse_pool_blocks() == 0, "pools empty at start", (long)Manager::reuse_pool_blocks(), 0);
 
     // --- 1. count alive: two arrays, then one cleared, then both ------------
     long chunks_a = 0, chunks_b = 0;
@@ -163,12 +168,12 @@ int main(int argc, char** argv)
         const bool a_owns_slabs = a.alloc_key() != 0;
         a.clear();
         expect(Manager::get_somme_chunk_create() == base + chunks_b,
-               "somme_chunk_create back down by a's chunks after a.clear()",
-               Manager::get_somme_chunk_create(), base + chunks_b);
+               "somme_chunk_create back down by a's chunks after a.clear()", Manager::get_somme_chunk_create(),
+               base + chunks_b);
         const long parked      = static_cast<long>(Manager::reuse_pool_blocks());
         const long want_parked = (parks_on_clear && !a_owns_slabs) ? written_a : 0;
         expect(parked == want_parked,
-               a_owns_slabs   ? "a owned its slabs: nothing parked after a.clear()"
+               a_owns_slabs     ? "a owned its slabs: nothing parked after a.clear()"
                : parks_on_clear ? "a's written buffers parked for reuse"
                                 : "serial: nothing parked",
                parked, want_parked);
@@ -199,21 +204,20 @@ int main(int argc, char** argv)
                 // Chunks alive followed the geometry: fewer chunks at a larger size.
                 const long delta = Manager::get_somme_chunk_create() - before;
                 const long want  = static_cast<long>(b.get_nb_chunk_written()) - chunks_b;
-                expect(delta <= 0 && delta >= want - 1,
-                       "somme_chunk_create follows the new chunk count", delta, want);
+                expect(delta <= 0 && delta >= want - 1, "somme_chunk_create follows the new chunk count", delta, want);
             }
         }
     } // b and c cleared here
 
     expect(Manager::get_somme_chunk_create() == base,
-           "somme_chunk_create back to its start value once every array is gone",
-           Manager::get_somme_chunk_create(), base);
+           "somme_chunk_create back to its start value once every array is gone", Manager::get_somme_chunk_create(),
+           base);
 
     Manager::compute_size_max_number_of_chunk_to_check_compress();
-    expect(Manager::get_size_max_number_of_chunk_to_check_compress() == VariantDef::size_min_list_chunk_to_check_compress,
-           "compression threshold back at the floor with no array alive",
-           Manager::get_size_max_number_of_chunk_to_check_compress(),
-           VariantDef::size_min_list_chunk_to_check_compress);
+    expect(
+        Manager::get_size_max_number_of_chunk_to_check_compress() == VariantDef::size_min_list_chunk_to_check_compress,
+        "compression threshold back at the floor with no array alive",
+        Manager::get_size_max_number_of_chunk_to_check_compress(), VariantDef::size_min_list_chunk_to_check_compress);
 
     // The library's own teardown (see compress_roundtrip.cpp).
     // No #ifdef: release_chunk_pools() does whichever half this build needs --

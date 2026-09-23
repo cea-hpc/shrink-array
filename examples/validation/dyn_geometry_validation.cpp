@@ -38,7 +38,6 @@
 
 #include <cstdlib>
 #include <cstdio>
-#include <tuple>
 #include <type_traits>
 #include <unistd.h>
 #include <vector>
@@ -48,7 +47,8 @@
 #include "chunk/array_chunk2.h"
 #include "chunk/array_chunk2A.h"
 #include "chunk/param_chunk.h"
-#include "chunk/config.h" // chunk_config::use_chunk*
+#include "chunk/internal/chunk_size_policy.h" // cst_buffer_size, set_active_chunk_size, set_thread_chunk_size
+#include "chunk/config.h"                     // chunk_config::use_chunk*
 
 using namespace shrink_array;
 
@@ -63,15 +63,18 @@ static_assert(build_config::chunk_dynamic,
               "static geometry there is only ever one chunk size to get right");
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a, ArrayChunk2A<T>,
-              std::conditional_t<chunk_config::use_chunk2,  ArrayChunk2<T>,
-                                                            ArrayChunk<T>>>;
+using Array = std::conditional_t<chunk_config::use_chunk2a,
+                                 ArrayChunk2A<T>,
+                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a) return "chunk2a";
-    else if constexpr (chunk_config::use_chunk2) return "chunk2";
-    else return "chunk";
+    if constexpr (chunk_config::use_chunk2a)
+        return "chunk2a";
+    else if constexpr (chunk_config::use_chunk2)
+        return "chunk2";
+    else
+        return "chunk";
 }
 
 // set_second_value only exists on chunk2 / chunk2a; no-op elsewhere. Required on
@@ -88,7 +91,10 @@ void maybe_set_second_value(Arr& a, const Val& v)
 // constant/materialised transitions are exercised) while making a wrong read
 // obvious — a mis-sized buffer returns the value of a DIFFERENT run, not a
 // neighbouring one.
-static double pattern(long i) { return double((i / 5000) % 3); }
+static double pattern(long i)
+{
+    return double((i / 5000) % 3);
+}
 
 /**
  * @brief Write a whole array at chunk size @p csz, read it back, compare.
@@ -107,17 +113,26 @@ static int round_trip_at(unsigned int csz, long N)
 
     if (arr.chunk_size() != csz)
     {
-        printf("[%s/size=%u] FAIL: array built at chunk_size=%u\n",
-               variant_name(), csz, arr.chunk_size());
+        printf("[%s/size=%u] FAIL: array built at chunk_size=%u\n", variant_name(), csz, arr.chunk_size());
         return 1;
     }
 
     std::vector<double> ref(N);
-    for (long i = 0; i < N; ++i) { const double v = pattern(i); arr[i] = v; ref[i] = v; }
+    for (long i = 0; i < N; ++i)
+    {
+        const double v = pattern(i);
+        arr[i]         = v;
+        ref[i]         = v;
+    }
 
     long bad = 0, first = -1;
     for (long i = 0; i < N; ++i)
-        if (arr[i] != ref[i]) { if (first < 0) first = i; ++bad; }
+        if (arr[i] != ref[i])
+        {
+            if (first < 0)
+                first = i;
+            ++bad;
+        }
 
     if (bad)
     {
@@ -125,8 +140,8 @@ static int round_trip_at(unsigned int csz, long N)
         // the buffer actually had, which names the geometry the allocator used.
         printf("[%s/size=%u] FAIL: %ld/%ld mismatches, first at i=%ld "
                "(chunk #%ld, offset %ld) got=%g expected=%g\n",
-               variant_name(), csz, bad, N, first,
-               first / (long)csz, first % (long)csz, (double)arr[first], ref[first]);
+               variant_name(), csz, bad, N, first, first / (long)csz, first % (long)csz, (double)arr[first],
+               ref[first]);
         return 1;
     }
 

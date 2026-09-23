@@ -57,6 +57,8 @@
 #include "chunk/array_chunk2.h"
 #include "chunk/array_chunk2A.h"
 #include "chunk/param_chunk.h"
+#include "chunk/chunk_std.h"                  // release_chunk_pools, destroy_block_chunk
+#include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size, set_thread_chunk_size
 #include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"

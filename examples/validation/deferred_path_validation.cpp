@@ -61,6 +61,7 @@
 #include "chunk/array_chunk2.h"
 #include "chunk/array_chunk2A.h"
 #include "chunk/param_chunk.h"
+#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"
@@ -84,15 +85,18 @@ static void end_phase()
 }
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a, ArrayChunk2A<T>,
-              std::conditional_t<chunk_config::use_chunk2,  ArrayChunk2<T>,
-                                                            ArrayChunk<T>>>;
+using Array = std::conditional_t<chunk_config::use_chunk2a,
+                                 ArrayChunk2A<T>,
+                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a) return "chunk2a";
-    else if constexpr (chunk_config::use_chunk2) return "chunk2";
-    else return "chunk";
+    if constexpr (chunk_config::use_chunk2a)
+        return "chunk2a";
+    else if constexpr (chunk_config::use_chunk2)
+        return "chunk2";
+    else
+        return "chunk";
 }
 
 template <typename Arr, typename Val>
@@ -114,7 +118,7 @@ template <typename C>
 static void chain_int(C& c, long i)
 {
     using T = int;
-    c[i] = static_cast<T>(i & 0xF);
+    c[i]    = static_cast<T>(i & 0xF);
     c[i] |= 0x1;
     c[i] ^= 0x3;
     c[i] <<= 2;
@@ -140,7 +144,7 @@ template <typename C>
 static void chain_double(C& c, long i)
 {
     using T = double;
-    c[i] = static_cast<T>(i % 97) + 0.5;
+    c[i]    = static_cast<T>(i % 97) + 0.5;
     c[i] += 1.25;
     c[i] *= 2.0;
     c[i] -= 0.75;
@@ -213,8 +217,8 @@ static long compare(const char* label, const char* stage, const Array<T>& arr, c
         const long csz = static_cast<long>(arr.chunk_size());
         printf("[%s/%s] FAIL after %s: %ld/%ld mismatches, first at i=%ld (chunk #%ld, offset %ld) "
                "got=%g expected=%g\n",
-               variant_name(), label, stage, bad, N, first, first / csz, first % csz, (double) got_first,
-               (double) exp_first);
+               variant_name(), label, stage, bad, N, first, first / csz, first % csz, (double)got_first,
+               (double)exp_first);
     }
     return bad;
 }

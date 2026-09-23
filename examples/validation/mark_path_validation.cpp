@@ -66,6 +66,7 @@
 #include "chunk/array_chunk2.h"
 #include "chunk/array_chunk2A.h"
 #include "chunk/param_chunk.h"
+#include "chunk/chunk_std.h"   // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"      // chunk_config::use_chunk*
 #include "chunk/PMP_CHUNK.h"   // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h" // begin_parallel_phase / finalize_parallel_phase
@@ -88,15 +89,18 @@ static void end_phase()
 }
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a, ArrayChunk2A<T>,
-              std::conditional_t<chunk_config::use_chunk2,  ArrayChunk2<T>,
-                                                            ArrayChunk<T>>>;
+using Array = std::conditional_t<chunk_config::use_chunk2a,
+                                 ArrayChunk2A<T>,
+                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a) return "chunk2a";
-    else if constexpr (chunk_config::use_chunk2) return "chunk2";
-    else return "chunk";
+    if constexpr (chunk_config::use_chunk2a)
+        return "chunk2a";
+    else if constexpr (chunk_config::use_chunk2)
+        return "chunk2";
+    else
+        return "chunk";
 }
 
 // set_second_value only exists on chunk2 / chunk2a; no-op elsewhere.
@@ -171,10 +175,14 @@ static int expect_after(Kind k)
 {
     switch (k)
     {
-        case Kind::first:    return 0;
-        case Kind::declared: return chunk_config::use_chunk2or2a ? 0 : kChunks;
-        case Kind::other:    return chunk_config::use_chunk2a ? 0 : kChunks;
-        case Kind::plain:    return kChunks;
+        case Kind::first:
+            return 0;
+        case Kind::declared:
+            return chunk_config::use_chunk2or2a ? 0 : kChunks;
+        case Kind::other:
+            return chunk_config::use_chunk2a ? 0 : kChunks;
+        case Kind::plain:
+            return kChunks;
     }
     return -1;
 }
@@ -185,8 +193,8 @@ static int check(const char* scenario, const char* step, const Array<double>& ar
     const int exp = expect_after(k);
     if (got != exp)
     {
-        printf("[%s/%s] FAIL after '%s': %d chunk(s) materialised, expected %d\n", variant_name(), scenario, step,
-               got, exp);
+        printf("[%s/%s] FAIL after '%s': %d chunk(s) materialised, expected %d\n", variant_name(), scenario, step, got,
+               exp);
         return 1;
     }
     printf("[%s/%s] ok    after '%-10s': %3d materialised\n", variant_name(), scenario, step, got);
@@ -202,8 +210,8 @@ int main()
     const int S = static_cast<int>(Array<double>(1).chunk_size());
     const int N = kChunks * S;
 
-    printf("=== mark_path_validation [variant = %s]  chunk_size=%d  chunks=%d  threads=%d ===\n", variant_name(),
-           S, kChunks, CHUNK_PMP_MAX_THREADS);
+    printf("=== mark_path_validation [variant = %s]  chunk_size=%d  chunks=%d  threads=%d ===\n", variant_name(), S,
+           kChunks, CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 
@@ -263,6 +271,7 @@ int main()
     release_chunk_pools();
     destroy_block_chunk();
 
-    printf("\n[%s] %s\n", variant_name(), fails == 0 ? "=== MARK PATH OK, TEARDOWN OK ===" : "=== MARK PATH FAILURES ===");
+    printf("\n[%s] %s\n", variant_name(),
+           fails == 0 ? "=== MARK PATH OK, TEARDOWN OK ===" : "=== MARK PATH FAILURES ===");
     return fails ? 1 : 0;
 }

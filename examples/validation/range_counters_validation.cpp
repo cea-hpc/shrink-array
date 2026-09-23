@@ -57,7 +57,6 @@
 #include "chunk/param_chunk.h"
 #include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"
 
 int __mem_page_size = 0;

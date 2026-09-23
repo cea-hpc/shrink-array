@@ -63,15 +63,18 @@ namespace
 {
 
 /// The chunk type of this build, as the arrays pick theirs.
-using Ch = std::conditional_t<chunk_config::use_chunk2a, Chunk2A<double>,
-           std::conditional_t<chunk_config::use_chunk2,  Chunk2<double>,
-                                                         Chunk<double>>>;
+using Ch = std::conditional_t<chunk_config::use_chunk2a,
+                              Chunk2A<double>,
+                              std::conditional_t<chunk_config::use_chunk2, Chunk2<double>, Chunk<double>>>;
 
 constexpr const char* variant_name()
 {
-    if constexpr (chunk_config::use_chunk2a) return "chunk2a";
-    else if constexpr (chunk_config::use_chunk2) return "chunk2";
-    else return "chunk";
+    if constexpr (chunk_config::use_chunk2a)
+        return "chunk2a";
+    else if constexpr (chunk_config::use_chunk2)
+        return "chunk2";
+    else
+        return "chunk";
 }
 
 /// @brief How many of the @p n chunks hold a buffer (none should).
@@ -142,20 +145,18 @@ int main()
     __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
 
-    printf("=== chunk_array_new_validation [variant = %s]  threads=%d ===\n", variant_name(),
-           CHUNK_PMP_MAX_THREADS);
+    printf("=== chunk_array_new_validation [variant = %s]  threads=%d ===\n", variant_name(), CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
     // 1 and 5000 are the plain cases; 499 / 500 / 501 bracket the threshold.
-    for (const std::size_t n : {std::size_t(1), std::size_t(499), std::size_t(500), std::size_t(501),
-                                std::size_t(5000)})
+    for (const std::size_t n :
+         {std::size_t(1), std::size_t(499), std::size_t(500), std::size_t(501), std::size_t(5000)})
     {
         fails += one_case(n, /*in_region=*/false);
         fails += one_case(n, /*in_region=*/true);
     }
     fails += placement_case(1000);
 
-    printf("\n[%s] %s\n", variant_name(),
-           fails == 0 ? "=== ARRAY-NEW OK ===" : "=== ARRAY-NEW FAILURES ===");
+    printf("\n[%s] %s\n", variant_name(), fails == 0 ? "=== ARRAY-NEW OK ===" : "=== ARRAY-NEW FAILURES ===");
     return fails ? 1 : 0;
 }

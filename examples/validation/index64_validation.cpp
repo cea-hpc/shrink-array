@@ -56,7 +56,7 @@
 #include "chunk/array_chunk2.h"
 #include "chunk/array_chunk2A.h"
 #include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h"                  // release_chunk_pools, destroy_block_chunk
+#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"
@@ -73,8 +73,9 @@ static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_confi
               "index64_validation must be built with CHUNK, CHUNK2 or CHUNK2A");
 
 template <typename T, typename I>
-using Array = std::conditional_t<chunk_config::use_chunk2a, ArrayChunk2A<T, I>,
-              std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T, I>, ArrayChunk<T, I>>>;
+using Array = std::conditional_t<chunk_config::use_chunk2a,
+                                 ArrayChunk2A<T, I>,
+                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T, I>, ArrayChunk<T, I>>>;
 
 constexpr const char* variant_name()
 {
@@ -148,10 +149,10 @@ int check_past_int_max()
     }
 
     // Both sides of 2^31, and the chunk boundaries around it.
-    const long I = INT_MAX;
-    const std::vector<long> pos{0,       1,         S - 1,     S,         I - S,     I - 1,     I,         I + 1,
-                                I + 2,   I + S - 1, I + S,     I + 2 * S, N - S - 1, N - 2,     N - 1};
-    auto value_at = [](std::size_t k) { return static_cast<char>(1 + (k % 7)); };
+    const long              I = INT_MAX;
+    const std::vector<long> pos{0,     1,         S - 1, S,         I - S,     I - 1, I,    I + 1,
+                                I + 2, I + S - 1, I + S, I + 2 * S, N - S - 1, N - 2, N - 1};
+    auto                    value_at = [](std::size_t k) { return static_cast<char>(1 + (k % 7)); };
 
     // (1) sequential writes
     for (std::size_t k = 0; k < pos.size(); ++k)
@@ -184,8 +185,7 @@ int check_past_int_max()
                 if (!written && cbig[q] != char(0))
                 {
                     if (nbad < 5)
-                        std::printf("[%s/%s] FAIL %s: untouched [%ld] = %d\n", variant_name(), label, step, q,
-                                    cbig[q]);
+                        std::printf("[%s/%s] FAIL %s: untouched [%ld] = %d\n", variant_name(), label, step, q, cbig[q]);
                     ++nbad;
                 }
             }
@@ -230,12 +230,12 @@ double pattern(int which, long i, long S)
     const long c = i / S;
     switch (which)
     {
-    case 0:
-        return (c % 3 == 0) ? 0.0 : (c % 3 == 1) ? 1.0 : 1.0 + static_cast<double>(i % 97);
-    case 1:
-        return (c % 4 == 0) ? 0.0 : (c % 4 == 1) ? 100.0 : 100.0 + static_cast<double>(i % 89);
-    default:
-        return (c % 2 == 0) ? 7.0 : static_cast<double>(i % 5);
+        case 0:
+            return (c % 3 == 0) ? 0.0 : (c % 3 == 1) ? 1.0 : 1.0 + static_cast<double>(i % 97);
+        case 1:
+            return (c % 4 == 0) ? 0.0 : (c % 4 == 1) ? 100.0 : 100.0 + static_cast<double>(i % 89);
+        default:
+            return (c % 2 == 0) ? 7.0 : static_cast<double>(i % 5);
     }
 }
 

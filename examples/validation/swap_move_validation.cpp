@@ -54,7 +54,7 @@
 #include "chunk/array_chunk2.h"
 #include "chunk/array_chunk2A.h"
 #include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h"                  // release_chunk_pools, destroy_block_chunk
+#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"
@@ -70,8 +70,9 @@ static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_confi
               "swap_move_validation must be built with CHUNK, CHUNK2 or CHUNK2A");
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a, ArrayChunk2A<T>,
-              std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array = std::conditional_t<chunk_config::use_chunk2a,
+                                 ArrayChunk2A<T>,
+                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -125,12 +126,12 @@ struct Pattern
     {
         switch ((i / S) % 3)
         {
-        case 0:
-            return 0.0;
-        case 1:
-            return sv;
-        default:
-            return base + static_cast<double>(i % 101);
+            case 0:
+                return 0.0;
+            case 1:
+                return sv;
+            default:
+                return base + static_cast<double>(i % 101);
         }
     }
 };
@@ -245,6 +246,7 @@ int check_move()
     int bad = verify(step, "dst (moved into)", std::as_const(dst), ps, N);
     // Reading the moved-from array is the point: the move-assignment's
     // contract leaves it empty and valid, and that is what is checked here.
+    // NOLINTNEXTLINE(bugprone-use-after-move)
     if (!src.empty() || src.chunk_count() != 0)
     {
         std::printf("[%s/%s] FAIL source after move: size() = %ld, chunk_count() = %d, expected 0 and 0\n",
