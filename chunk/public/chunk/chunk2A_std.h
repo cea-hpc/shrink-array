@@ -382,7 +382,7 @@ struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurren
     ///          their own loops.
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
-    void  operator delete[](void* p);
+    void operator delete[](void* p);
     /// @brief Point @p n freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
     ///          parallel region (inside one it stays on the calling thread: an
@@ -398,20 +398,20 @@ struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurren
      * \param ptr_second_value      The chunk's second value; read only when the flag is set.
      * \param thr_rank              Rank whose allocator provides the buffer.
      */
-    inline void create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value, int thr_rank);
+    void create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value, int thr_rank);
 
     /*!
      * \brief Bool specialization of create_value().
      * \param need_set_second_value Fill value -- true for the second constant, false for the first.
      * \param thr_rank              Rank whose allocator provides the buffer.
      */
-    inline void create_value_bool(bool need_set_second_value, int thr_rank);
+    void create_value_bool(bool need_set_second_value, int thr_rank);
 
     /// @brief create_value() on the calling thread's rank.
-    inline void create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value);
+    void create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value);
 
     /// @brief create_value_bool() on the calling thread's rank.
-    inline void create_value_bool(bool need_set_second_value);
+    void create_value_bool(bool need_set_second_value);
 
     /*!
      * \brief Compress this chunk back to a constant, if it is materialised.
@@ -419,7 +419,7 @@ struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurren
      * \param ptr_second_value The chunk's second-value slot.
      * \param thr_rank         Rank whose pool receives the released buffer.
      */
-    inline void clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank);
+    void clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank);
 
     /*!
      * \brief Release this chunk's buffer and point it back at a constant --
@@ -429,8 +429,11 @@ struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurren
      * \param ptr_second_value   The chunk's second-value slot.
      * \param thr_rank           Rank whose pool receives the released buffer.
      */
-    inline void block_clear(int num_compress_value, char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank,
-                            T* cst2_ptr);
+    void block_clear(int               num_compress_value,
+                     char*             ptr_type_cst,
+                     SecondValueRef<T> ptr_second_value,
+                     int               thr_rank,
+                     T*                cst2_ptr);
 
     /*!
      * \brief Compress this chunk, committing its second-value pointer first.
@@ -441,11 +444,11 @@ struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurren
      * \param new_cst_val2_ptr   Pointer returned by find_or_set_ind_cst_val2();
      *                           required when @p num_compress_value is 1.
      */
-    inline void clear_int_st(int   num_compress_value,
-                             char* ptr_type_cst,
-                             SecondValueRef<T> ptr_second_value,
-                             int   thr_rank,
-                             T*    new_cst_val2_ptr = nullptr);
+    void clear_int_st(int               num_compress_value,
+                      char*             ptr_type_cst,
+                      SecondValueRef<T> ptr_second_value,
+                      int               thr_rank,
+                      T*                new_cst_val2_ptr = nullptr);
 
     /*!
      * \brief clear_int_st() on the calling thread's rank.
@@ -497,21 +500,21 @@ struct Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      *        compression can register a cst_val2 exactly like the OpenMP path.
      *        thr_rank is 0 with OpenMP off.
      */
-    inline void clear_int_st(int   num_compress_value,
-                             char* ptr_type_cst,
-                             SecondValueRef<T> ptr_second_value,
-                             int   thr_rank,
-                             T*    new_cst_val2_ptr = nullptr);
+    void clear_int_st(int               num_compress_value,
+                      char*             ptr_type_cst,
+                      SecondValueRef<T> ptr_second_value,
+                      int               thr_rank,
+                      T*                new_cst_val2_ptr = nullptr);
 
 
     /// @brief Compress to the FIRST constant and forget the second value, if materialised.
-    inline void clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value);
+    void clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value);
 
     /// @brief Unconditional twin of clear(char*, T*): no written() test.
-    inline void clear_st(char* ptr_type_cst, SecondValueRef<T> ptr_second_value);
+    void clear_st(char* ptr_type_cst, SecondValueRef<T> ptr_second_value);
 
-    /// @brief Release the buffer outright (no rank pool) and point at a constant.
-    inline void block_clear(int num_compress_value, char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int, T* cst2_ptr);
+    /// @brief Release the buffer outright (no rank pool) and point at a constant. void
+    void block_clear(int num_compress_value, char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int, T* cst2_ptr);
 };
 
 template <typename T>
@@ -572,7 +575,6 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
         Base::values = Base::get_cst_val1();
     }
 
-
     /**
      * @brief Set constant type to val1
      * @param ptr_type_cst Pointer to type indicator
@@ -591,7 +593,6 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     }
 
     static void set_cst_val_to_cst_val(int num_compress_value, char* ptr_type_cst) noexcept;
-
 
     /**
      * @brief Initialize values depending on constant type
@@ -725,7 +726,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     static void fill_list_chunk_to_compress_in_par(int                       thr,
                                                    vec_tuple_chunkA2p_int2&  ll_compt1,
                                                    vec_tuple_chunkA2p_Tint2& ll_compt2,
-                                                  bool                      claimed = false);
+                                                   bool                      claimed = false);
 
     void fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
                                vec_tuple_chunkA2p_Tint2& ll_compt2,

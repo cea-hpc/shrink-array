@@ -17,17 +17,17 @@
 
 #pragma once
 
-#include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
+#include "chunk/internal/in_t.h"            // in_t<T>: the element snapshots
 #include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED (steal-mark check)
-#include <cstdlib>  // std::abort
-#include <iostream> // std::cerr (debug aborts in create_value*)
+#include <cstdlib>                          // std::abort
+#include <iostream>                         // std::cerr (debug aborts in create_value*)
 
 #include "chunk/internal/chunk_size_config.h" // ChunkElems
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/chunk_define.h"
-#include "chunk/internal/cpu_pause.h"         // CPU_PAUSE (spin in create_value*)
-#include "chunk/chunk2A_std.h"       // the declarations these bodies belong to (self-contained, like the other *_inline.h)
+#include "chunk/internal/cpu_pause.h" // CPU_PAUSE (spin in create_value*)
+#include "chunk/chunk2A_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/proxy2A.h"
 #include "chunk/internal/manager_chunk.h"
 
@@ -95,8 +95,6 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk2A<T>* v, s
 {
     chunk_array_new::init_chunks(v, n, [](Chunk2A<T>& c) { c.init_after_constructor(); });
 }
-
-
 
 /**
  * @brief Records which of the two constants this chunk is being compressed to.
@@ -307,12 +305,12 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
             }
         }
     }
-    {
+   // {
         // Now we're inside the compression phase. Log scope from here to the end.
-      //  ScopedRingLog<EV_BLOCK_COMPRESS_BEGIN, EV_BLOCK_COMPRESS_END> block_log{static_cast<uint32_t>(sz) &
-       //                                                                         0x00FFFFFFu};
-        vec_tuple_chunkA2p_int2                                       ll_compt1;
-        vec_tuple_chunkA2p_Tint2                                      ll_compt2;
+        //  ScopedRingLog<EV_BLOCK_COMPRESS_BEGIN, EV_BLOCK_COMPRESS_END> block_log{static_cast<uint32_t>(sz) &
+        //                                                                         0x00FFFFFFu};
+        vec_tuple_chunkA2p_int2  ll_compt1;
+        vec_tuple_chunkA2p_Tint2 ll_compt2;
 
         ll_compt1.reserve(sz / 50 + 1);
         ll_compt2.reserve(sz / 50 + 1);
@@ -417,7 +415,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
                 proxy2A->compression_mgr.template finish<Proxy2A<T>>();
             }
         }
-    }
+ //   }
 }
 
 /**
@@ -478,7 +476,7 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
     {
         // CHUNK_STATS: one compression candidate scanned. compress/compress_attempt
         // is the yield of the scan (how much of this work pays off).
-        increm_chunk_compress_attempt<Chunk2A<T>>();
+        increm_chunk_compress_attempt<Chunk2A>();
         bool compact1 = false;
         bool compact2 = false;
 
@@ -525,7 +523,7 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
         if (apply)
         {
             SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            char* ptr_type_cst     = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
+            char*             ptr_type_cst     = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
             if (compact1)
                 clear_int_st(0, ptr_type_cst, ptr_second_value, thr_rank);
             if (compact2)
@@ -555,7 +553,7 @@ void Chunk2A<T>::compress_chunk_to_compress(bool apply)
     {
         compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, apply);
     }
-    else if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
+    if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
     {
         // An OpenMP build without OMPT had no between-region compressor for
         // chunk2a until Sept '26: compress() returns at once there, so a
@@ -674,15 +672,15 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
 
         for (const auto& tup : vec_tup)
         {
-            auto* const     chunk_t   = std::get<0>(tup);
-            const int       num_chunk = std::get<1>(tup);
-            const int       num_tab   = std::get<2>(tup);
-            const ChunkElems csize    = std::get<3>(tup);
+            auto* const      chunk_t   = std::get<0>(tup);
+            const int        num_chunk = std::get<1>(tup);
+            const int        num_tab   = std::get<2>(tup);
+            const ChunkElems csize     = std::get<3>(tup);
 
             if (chunk_t)
             {
                 if constexpr (build_config::chunk_dynamic)
-                    shrink_array::set_thread_chunk_size(csize.count());
+                    set_thread_chunk_size(csize.count());
 
                 chunk_t->compress(thr, num_chunk, num_tab, apply, csize);
                 // DEDUP FLAG / LIST must be reset TOGETHER. The is_inside flag is
@@ -701,7 +699,7 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
         }
 
         if constexpr (build_config::chunk_dynamic)
-            shrink_array::set_thread_chunk_size(saved_sz);
+            set_thread_chunk_size(saved_sz);
     }
     else
     {
@@ -753,8 +751,8 @@ void Chunk2A<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int      th
         auto* const chunk_t = std::get<0>(tup);
         if (chunk_t)
         {
-            const int  num_chunk = std::get<1>(tup);
-            const int  num_tab   = std::get<2>(tup);
+            const int num_chunk = std::get<1>(tup);
+            const int num_tab   = std::get<2>(tup);
             // Per-entry geometry (see chunk2A_std.h): in dynamic builds each
             // queued chunk carries the chunk size of its owning array.
             const ChunkElems csize = std::get<3>(tup);
@@ -800,7 +798,7 @@ void Chunk2A<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int      th
  * @param chunk The chunk about to be materialised.
  */
 template <typename T, typename ChunkT>
-inline void wait_before_materialise(const ChunkT& chunk) noexcept
+void wait_before_materialise(const ChunkT& chunk) noexcept
 {
     if constexpr (chunk_config::use_chunk_steal_mark)
     {
@@ -813,7 +811,6 @@ inline void wait_before_materialise(const ChunkT& chunk) noexcept
             CPU_PAUSE();
     }
 }
-
 
 /**
  * @brief Materialises this chunk: allocate a buffer, fill it, publish it by CAS.
@@ -835,7 +832,9 @@ inline void wait_before_materialise(const ChunkT& chunk) noexcept
  *          flusher holds.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value, int thr_rank)
+void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool              need_set_second_value,
+                                                         SecondValueRef<T> ptr_second_value,
+                                                         int               thr_rank)
 {
     if constexpr (is_not_bool)
     {
@@ -883,7 +882,6 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool need_set_second_va
     }
 }
 
-
 /**
  * @brief Materialises a `bool` chunk.
  *
@@ -899,11 +897,10 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_seco
 {
     if constexpr (is_bool)
     {
-        // Same exclusion as create_value(), which this twin was missing: make_block_compression() is a single function for
-        // every T, so a bool chunk's `values` is CAS-stolen and
-        // free_block_to_pool()d exactly like any other. Allocating and filling a
-        // block here while that is in flight races the free on the same recycled
-        // block -- see wait_before_materialise() for the condition.
+        // Same exclusion as create_value(), which this twin was missing: make_block_compression() is a single function
+        // for every T, so a bool chunk's `values` is CAS-stolen and free_block_to_pool()d exactly like any other.
+        // Allocating and filling a block here while that is in flight races the free on the same recycled block -- see
+        // wait_before_materialise() for the condition.
         wait_before_materialise<T>(derived());
 
         auto init_func = [need_set_second_value](bool* ptr)
@@ -931,14 +928,14 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_seco
 
 /// @brief create_value() on the calling thread's rank.
 template <typename T, typename Derived, bool Enabled>
-inline void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value)
+void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value)
 {
     create_value(need_set_second_value, ptr_second_value, get_thr_rank_fast());
 }
 
 /// @brief create_value_bool() on the calling thread's rank.
 template <typename T, typename Derived, bool Enabled>
-inline void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_second_value)
+void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_second_value)
 {
     create_value_bool(need_set_second_value, get_thr_rank_fast());
 }
@@ -968,7 +965,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::create_value(bool need_set_second_valu
         }
         else
         {
-            for (unsigned int i = 0; i < shrink_array::alloc_chunk_count(); ++i)
+            for (unsigned int i = 0; i < alloc_chunk_count(); ++i)
             {
                 ptr[i] = ptr_second_value.get();
             }
@@ -1002,11 +999,10 @@ void Chunk2AOmpPolicy<T, Derived, false>::create_value_bool(bool need_set_second
  * @param thr_rank         Rank whose pool receives the released buffer.
  */
 template <typename T, typename Derived, bool Enabled>
-inline void Chunk2AOmpPolicy<T, Derived, Enabled>::clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank)
+void Chunk2AOmpPolicy<T, Derived, Enabled>::clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank)
 {
     Base::clear_impl(std::nullopt, thr_rank, ptr_type_cst, ptr_second_value);
 }
-
 
 /**
  * @brief Compresses this chunk to the FIRST constant and forgets its second value.
@@ -1018,7 +1014,7 @@ inline void Chunk2AOmpPolicy<T, Derived, Enabled>::clear(char* ptr_type_cst, Sec
  * @param ptr_second_value The chunk's second-value slot, reset to `T{}`.
  */
 template <typename T, typename Derived>
-inline void Chunk2AOmpPolicy<T, Derived, false>::clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
+void Chunk2AOmpPolicy<T, Derived, false>::clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
 {
     if (this->written())
     {
@@ -1040,7 +1036,7 @@ inline void Chunk2AOmpPolicy<T, Derived, false>::clear(char* ptr_type_cst, Secon
  * @param ptr_second_value The chunk's second-value slot, reset to `T{}`.
  */
 template <typename T, typename Derived>
-inline void Chunk2AOmpPolicy<T, Derived, false>::clear_st(char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
+void Chunk2AOmpPolicy<T, Derived, false>::clear_st(char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
 {
     // Check condition only if debug mode is active at compile-time
     Base::debug_check_written();
@@ -1066,9 +1062,11 @@ inline void Chunk2AOmpPolicy<T, Derived, false>::clear_st(char* ptr_type_cst, Se
  * @param thr_rank           Rank whose pool receives the released buffer.
  */
 template <typename T, typename Derived, bool Enabled>
-inline void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(int num_compress_value, char* ptr_type_cst,
-                                                              SecondValueRef<T> ptr_second_value, [[maybe_unused]] int thr_rank,
-                                                              T* cst2_ptr)
+void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(int                  num_compress_value,
+                                                        char*                ptr_type_cst,
+                                                        SecondValueRef<T>    ptr_second_value,
+                                                        [[maybe_unused]] int thr_rank,
+                                                        T*                   cst2_ptr)
 {
     // CHUNK_STATS: one materialised block released by a successful compression.
     // Counted here because block_clear is the single point every variant and
@@ -1096,11 +1094,11 @@ inline void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(int num_compress_
  *                           required when @p num_compress_value is 1.
  */
 template <typename T, typename Derived, bool Enabled>
-inline void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(int   num_compress_value,
-                                                                char* ptr_type_cst,
-                                                                SecondValueRef<T> ptr_second_value,
-                                                                int   thr_rank,
-                                                                T*    new_cst_val2_ptr)
+void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(int               num_compress_value,
+                                                         char*             ptr_type_cst,
+                                                         SecondValueRef<T> ptr_second_value,
+                                                         int               thr_rank,
+                                                         T*                new_cst_val2_ptr)
 {
     Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
 
@@ -1116,8 +1114,11 @@ inline void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(int   num_compre
 /// @copydoc Chunk2AOmpPolicy::block_clear
 /// Serial build: frees the buffer outright instead of parking it in a rank pool.
 template <typename T, typename Derived>
-inline void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int num_compress_value, char* ptr_type_cst,
-                                                            SecondValueRef<T> ptr_second_value, int, T* cst2_ptr)
+void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int               num_compress_value,
+                                                      char*             ptr_type_cst,
+                                                      SecondValueRef<T> ptr_second_value,
+                                                      int,
+                                                      T* cst2_ptr)
 {
     // Same refusal as try_mark_cst_and_get_old() on the OpenMP side: a chunk
     // whose values already point at a constant has no buffer to release, and
@@ -1145,11 +1146,11 @@ inline void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int num_compress_va
  * @copydetails Chunk2AOmpPolicy::clear_int_st
  */
 template <typename T, typename Derived>
-inline void Chunk2AOmpPolicy<T, Derived, false>::clear_int_st(int   num_compress_value,
-                                                              char* ptr_type_cst,
-                                                              SecondValueRef<T> ptr_second_value,
-                                                              int   thr_rank,
-                                                              T*    new_cst_val2_ptr)
+void Chunk2AOmpPolicy<T, Derived, false>::clear_int_st(int               num_compress_value,
+                                                       char*             ptr_type_cst,
+                                                       SecondValueRef<T> ptr_second_value,
+                                                       int               thr_rank,
+                                                       T*                new_cst_val2_ptr)
 {
     Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
     if (num_compress_value == 1 && new_cst_val2_ptr == nullptr)
