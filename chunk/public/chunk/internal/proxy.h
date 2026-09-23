@@ -176,11 +176,6 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
     }
 
     /**
-     * @brief Call `func` with each registered key, in insertion order.
-     * @tparam F Callable invoked with a `const void*` key.
-     * @param func Callback to invoke for every key.
-     */
-    /**
      * @brief Update the table number registered for an existing key.
      * @param key Key to update.
      * @param val New table number.
@@ -223,7 +218,8 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
      * @brief Swap the table numbers registered for two existing keys.
      * @details Orthographe conservee pour les hooks de re-chunk v1 / v2A, qui
      *          appellent swap_keys la ou v2 appelle swap_entries. Meme operation.
-     * @param key_a,key_b les deux adresses de tableau.
+     * @param key_a first key; les deux adresses de tableau.
+     * @param key_b second key.
      * @return false si l'une des deux cles est absente (rien n'est modifie).
      */
     bool swap_keys(const void* key_a, const void* key_b)
@@ -662,11 +658,6 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         // wrap the call in a lambda that calls write_fn(v)
         return Base::write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
     }
-    /**
-     * @brief Perform the actual write: install `v` at this proxy's index,
-     *        materialising the chunk first if it is currently compressed.
-     * @param v Value to write.
-     */
     /**
      * @brief Perform the actual write: install `v` at this proxy's index,
      *        materialising the chunk first if it is currently compressed.

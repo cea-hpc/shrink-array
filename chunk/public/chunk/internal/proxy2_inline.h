@@ -482,18 +482,6 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
     return static_cast<T>(v);
 }
 
-/**
- * @brief Handles simple compound operations (+, -, bit operations)
- * @tparam Lambda Callable that performs the operation
- * @param operation Lambda taking T* and performing operation on values_[num_]
- *
- * @details
- * Pattern for operations like +=, -=, &=, |=, ^=, <<=, >>=, ++, --
- * 1. Allocate storage if compressed
- * 2. Read old value
- * 3. Apply operation
- * 4. Track for compression
- */
 template <typename T>
 void Proxy2<T>::ensure_writable_storage()
 {
@@ -634,8 +622,8 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operat
 /**
  * @brief Handles arithmetic compound operations with operator (*, /, %),
  *        deferred-compression form (Enabled=true policy).
- * @tparam Op  Operation type (e.g., std::multiplies)
- * @tparam Lambda Callable `(op)` that performs the operation
+ * @tparam OP  Operation type (e.g., std::multiplies)
+ * @tparam LAMBDA Callable `(op)` that performs the operation
  * @param op Operation to apply
  * @param operand Right-hand operand
  * @param operation Called when the chunk had to be materialised
@@ -715,7 +703,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_co
 /**
  * @brief Serial (counter) form of execute_arithmetic_compound_operation()
  *        (Enabled=false policy).
- * @tparam Lambda Callable `(op, T* values)`.
+ * @tparam LAMBDA Callable `(op, T* values)`.
  */
 template <typename Derived, typename T, typename ChunkType>
 template <typename OP, typename LAMBDA, typename U>
@@ -757,6 +745,18 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_comp
     operation(op, Base::values);
 }
 
+/**
+ * @brief Handles simple compound operations (+, -, bit operations)
+ * @tparam LAMBDA Callable that performs the operation
+ * @param operation Callable taking the element (T&) and applying the operation to it
+ *
+ * @details
+ * Pattern for operations like +=, -=, &=, |=, ^=, <<=, >>=, ++, --
+ * 1. Allocate storage if compressed
+ * 2. Read old value
+ * 3. Apply operation
+ * 4. Track for compression
+ */
 template <typename T>
 template <typename LAMBDA>
 void Proxy2<T>::execute_inplace_operation(LAMBDA operation)

@@ -803,12 +803,12 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     template <typename U, typename Op>
     T arithmetic_assign(in_t<U> v, Op operation) noexcept; // in_t: see assign_impl in the proxies
     /**
-     * @brief Compound addition assignment
+     * @brief Compound addition assignment -- clean types (e.g. float += float,
+     *        float += int).
      * @tparam U Type of operand (implicit conversion to T)
      * @param v Value to add
      * @return Result of the addition
      */
-    /** @brief Compound addition — clean types (e.g. float += float, float += int). */
     template <typename U>
         requires IsCleanCompoundOp<T, U> && ElementAddable<T>
     T operator+=(const U& v) noexcept
@@ -826,7 +826,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /**
-     * @brief Compound subtraction operator
+     * @brief Compound subtraction operator -- clean types.
      *
      * Subtracts a value from the element referenced by the proxy in a thread-safe manner.
      *
@@ -836,7 +836,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @note noexcept guaranteed
      * @note Increments CHUNK_STATS if enabled
      */
-    /** @brief Compound subtraction — clean types. */
     template <typename U>
         requires IsCleanCompoundOp<T, U> && ElementSubtractable<T>
     T operator-=(const U& v) noexcept

@@ -130,7 +130,8 @@ class PointerMapLinear
      *          Only rebinds payloads — no element is erased or moved, so no
      *          reference into the container is invalidated.
      *
-     * @param key_a,key_b the two array addresses.
+     * @param key_a the first array address.
+     * @param key_b the second array address.
      * @return false unless BOTH keys are present, in which case nothing changed.
      */
     bool swap_entries(const void* key_a, const void* key_b)

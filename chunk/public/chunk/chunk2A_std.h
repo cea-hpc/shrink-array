@@ -250,18 +250,6 @@ struct Chunk2AStateQueries
         return !is_cst_val2();
     }
 
-    /**
-     * @brief The constant this chunk stands for, read from the registry.
-     *
-     * @pre is_cst_val2(). @see build_config::cst_val2_no_arrays
-     * @details Used by ChunkBase::element_at() under
-     *          CHUNK_CST_VAL2_NO_ARRAYS, where the shared arrays are not
-     *          allocated and the values pointer names an identifier rather
-     *          than a buffer. Deliberately does NOT dereference that pointer:
-     *          id_of_ptr() is arithmetic on the region base and stride, and
-     *          value_of_id() is one load of the value table -- the same table
-     *          a write of a wide type already reads.
-     */
     /// @brief is_cst_val2() asked of a pointer the caller already loaded.
     /// @details element_at() must test and read the SAME load: asking the chunk
     ///          loads `values` a second time, and a compressor claiming it in
@@ -275,7 +263,20 @@ struct Chunk2AStateQueries
             return p == Holder::m_ptr.data();
     }
 
-    /// @brief second_value_of_chunk() for a pointer the caller already loaded.
+    /**
+     * @brief The constant a chunk whose values pointer is @p p stands for,
+     *        read from the registry: second_value_of_chunk() for a pointer
+     *        the caller already loaded.
+     *
+     * @pre @p p satisfies is_cst_val2_ptr_of(). @see build_config::cst_val2_no_arrays
+     * @details Used by ChunkBase::element_at() under
+     *          CHUNK_CST_VAL2_NO_ARRAYS, where the shared arrays are not
+     *          allocated and the values pointer names an identifier rather
+     *          than a buffer. Deliberately does NOT dereference that pointer:
+     *          id_of_ptr() is arithmetic on the region base and stride, and
+     *          value_of_id() is one load of the value table -- the same table
+     *          a write of a wide type already reads.
+     */
     [[nodiscard]] T second_value_from_ptr(const T* p) const noexcept
     {
         if constexpr (is_not_bool)

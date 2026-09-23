@@ -71,8 +71,9 @@ static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_confi
               "range_counters_validation must be built with CHUNK, CHUNK2 or CHUNK2A");
 
 template <typename T>
-using Array = std::conditional_t<chunk_config::use_chunk2a, ArrayChunk2A<T>,
-              std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+using Array = std::conditional_t<chunk_config::use_chunk2a,
+                                 ArrayChunk2A<T>,
+                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
 
 constexpr const char* variant_name()
 {
@@ -129,12 +130,12 @@ const char* case_name(Case c)
 {
     switch (c)
     {
-    case Case::first:
-        return "first";
-    case Case::second:
-        return "second";
-    default:
-        return "copy";
+        case Case::first:
+            return "first";
+        case Case::second:
+            return "second";
+        default:
+            return "copy";
     }
 }
 
@@ -166,7 +167,7 @@ int run_case(Case c)
 
     // The single proxied write of a constant: with a stale count, the one that
     // makes it reach chunk_size.
-    const double constant = (c == Case::second) ? kSecond : 0.0;
+    const double constant  = (c == Case::second) ? kSecond : 0.0;
     a[static_cast<int>(S)] = constant;
     compress_in_region(a);
 
@@ -183,8 +184,8 @@ int run_case(Case c)
         }
     }
     if (!bad)
-        std::printf("[%s/%s] OK: raw span of %ld plain values + one %s value, compressed, read back\n",
-                    variant_name(), case_name(c), S, c == Case::second ? "second" : "first");
+        std::printf("[%s/%s] OK: raw span of %ld plain values + one %s value, compressed, read back\n", variant_name(),
+                    case_name(c), S, c == Case::second ? "second" : "first");
     return bad ? 1 : 0;
 }
 

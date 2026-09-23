@@ -168,20 +168,6 @@ template <typename Chunk>
 }
 
 /**
- * @brief Queue the chunk holding element @p i for the next compression pass.
- *
- * @details The raw stores of the bulk paths below go straight into a
- *          materialised chunk's buffer, past the write path and its marking:
- *          a chunk they leave constant (a fill of the constant over the whole
- *          chunk, a copy of a mostly-constant source) was never queued and
- *          stayed materialised for the run -- 56 of tab1's 360 chunks at the
- *          end of a chunk2a dyn check, all from its fill_range. This does what
- *          the last write of the span would have done: the flag's CAS and, on
- *          the first time, one entry in the caller's candidate list; the pass
- *          scans the chunk once and drops it if it is not constant. Fast-block
- *          builds only (the serial counters are resynced by the caller).
- */
-/**
  * @brief Can the chunk whose buffer is @p dst (@p S elements) be uniform?
  * @details NECESSARY condition only -- first, middle and last element equal.
  *          A uniform chunk always passes; a chunk that fails cannot be
@@ -262,6 +248,20 @@ template <typename Arr, typename Chunk>
         return ch.written();
 }
 
+/**
+ * @brief Queue the chunk holding element @p i for the next compression pass.
+ *
+ * @details The raw stores of the bulk paths below go straight into a
+ *          materialised chunk's buffer, past the write path and its marking:
+ *          a chunk they leave constant (a fill of the constant over the whole
+ *          chunk, a copy of a mostly-constant source) was never queued and
+ *          stayed materialised for the run -- 56 of tab1's 360 chunks at the
+ *          end of a chunk2a dyn check, all from its fill_range. This does what
+ *          the last write of the span would have done: the flag's CAS and, on
+ *          the first time, one entry in the caller's candidate list; the pass
+ *          scans the chunk once and drops it if it is not constant. Fast-block
+ *          builds only (the serial counters are resynced by the caller).
+ */
 template <typename Arr>
 void queue_for_compression(Arr& a, std::size_t i)
 {
@@ -462,9 +462,8 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
 template <detail::ChunkedArray Arr, typename It>
 void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, bool drain = true)
 {
-    using T          = Arr::value_type;
-    using ind_type   = decltype(a.size());
-    using chunk_type = Arr::chunk_type;
+    using T        = Arr::value_type;
+    using ind_type = decltype(a.size());
 
     const auto n = static_cast<std::size_t>(a.size());
     if (first >= last || first >= n)
@@ -536,7 +535,7 @@ void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, bool 
 }
 
 /// @copydoc fill_range
-/// @param  assume_drained_t  caller guarantees the deferred queue is already drained
+/// @note The assume_drained_t tag: caller guarantees the deferred queue is already drained
 template <detail::ChunkedArray Arr, typename U>
 void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, assume_drained_t)
 {
@@ -544,7 +543,7 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, assume_
 }
 
 /// @copydoc copy_range
-/// @param  assume_drained_t  caller guarantees the deferred queue is already drained
+/// @note The assume_drained_t tag: caller guarantees the deferred queue is already drained
 template <detail::ChunkedArray Arr, typename It>
 void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, assume_drained_t)
 {

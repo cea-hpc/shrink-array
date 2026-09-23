@@ -373,7 +373,7 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @details Examines compression list size and activates slow-path if threshold exceeded.
      *          Activates slow-path mode to prevent concurrent fast-path access during compression.
      * @post May activate slow-path mode if compression is needed
-     * @thread_safety Sets atomic slow-path flag visible to all threads
+     * @note Thread safety: Sets atomic slow-path flag visible to all threads
      */
 
     void trigger_compression_if_needed(int thr_rank) noexcept;
@@ -491,7 +491,7 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @param num_tab Tab index
      * @param num_chunk Chunk index
      * @post Chunk marked as not in compression list (can be re-added)
-     * @thread_safety Memory order release ensures visibility to all threads
+     * @note Thread safety: Memory order release ensures visibility to all threads
      */
 
     static void reset_tab_is_inside_list_to_compress(int num_tab, int num_chunk) noexcept
@@ -585,7 +585,7 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *          - All values become first_value
      *          - All values become second_value
      *          Atomically adds chunk to compression list if needed.
-     * @thread_safety Uses compare_exchange for atomic list insertion
+     * @note Thread safety: Uses compare_exchange for atomic list insertion
      */
 
     void mark_for_compression_if_needed(in_t<T> new_value) const
@@ -898,7 +898,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *          - cst_val1: Fill with first_value (typically 0)
      *          - cst_val2: Fill with second_value
      * @post Chunk has allocated values array; no longer compressed
-     * @thread_safety Uses atomic compare-exchange in multi-threaded builds
+     * @note Thread safety: Uses atomic compare-exchange in multi-threaded builds
      */
 
     void create_value() const noexcept
@@ -986,7 +986,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *          - Short-circuit if value matches compression state
      *          - Decompression if needed
      *          - Actual value write
-     * @thread_safety Caller must ensure appropriate locking
+     * @note Thread safety: Caller must ensure appropriate locking
      */
 
     void perform_core_assignment(in_t<T> v) const noexcept;
@@ -1050,8 +1050,8 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @tparam U Type of the value being assigned.
      * @param v Value to assign.
      * @return The assigned value.
-     * @complexity O(1) amortized; may trigger O(n) decompression.
-     * @thread_safety Thread-safe via fast-path counters or slow-path lock.
+     * @note Complexity: O(1) amortized; may trigger O(n) decompression.
+     * @note Thread safety: Thread-safe via fast-path counters or slow-path lock.
      */
     template <typename U>
     // in_t<U>, not const U&: this is the write engine, the one frame the

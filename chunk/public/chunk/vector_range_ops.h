@@ -139,7 +139,7 @@ void copy_range(C& c, std::size_t first, std::size_t last, It src_first)
 }
 
 /// @copydoc fill_range
-/// @param assume_drained_t nothing to drain on a plain container; accepted so
+/// @note The assume_drained_t tag: nothing to drain on a plain container; accepted so
 ///        the tag form of the call is the same on every container
 template <typename C, typename U>
     requires(!detail::ChunkedArray<C>)
@@ -149,7 +149,7 @@ void fill_range(C& c, std::size_t first, std::size_t last, const U& v, assume_dr
 }
 
 /// @copydoc copy_range
-/// @param assume_drained_t see fill_range's tag overload
+/// @note The assume_drained_t tag: see fill_range's tag overload
 template <typename C, typename It>
     requires(!detail::ChunkedArray<C>)
 void copy_range(C& c, std::size_t first, std::size_t last, It src_first, assume_drained_t)

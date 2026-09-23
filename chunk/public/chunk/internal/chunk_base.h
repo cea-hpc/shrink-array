@@ -1127,8 +1127,6 @@ class ChunkBase : public CRTPSupport<Derived>,
     // Atomic / Non-atomic pointer management
     // ========================================================================
 
-    /// @brief Load the values pointer with appropriate memory ordering
-    /// @return Pointer to the chunk data
     /**
      * @brief The element at @p i, whatever the chunk's state.
      *
@@ -1208,6 +1206,8 @@ class ChunkBase : public CRTPSupport<Derived>,
             return p[i];
     }
 
+    /// @brief Load the values pointer with appropriate memory ordering
+    /// @return Pointer to the chunk data
     T* values_load() const noexcept
     {
         if constexpr (build_config::use_openmp)

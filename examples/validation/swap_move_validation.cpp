@@ -277,6 +277,7 @@ int check_move_construct()
 
     int bad = verify(step, "dst (constructed)", std::as_const(dst), ps, N);
     // Reading the moved-from array is the point, as in check_move().
+    // NOLINTNEXTLINE(bugprone-use-after-move)
     if (!src.empty() || src.chunk_count() != 0)
     {
         std::printf("[%s/%s] FAIL source after move: size() = %ld, chunk_count() = %d, expected 0 and 0\n",

@@ -119,15 +119,6 @@ inline constexpr complex_double zero_complex = std::complex<double>(0., 0.);
 ///        split -- this alias just names it so BenchArrays can hold a reference.
 using BenchBoolArray = std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, std::vector<short>>;
 
-/**
- * @brief The fifteen arrays the workload drives, by reference, plus their
- *        geometry.
- *
- * @note References, not values: the arrays stay owned by main(), which builds
- *       and destroys them. This is a handle onto them, cheap to pass and
- *       impossible to copy by accident.
- * @warning tab_bool's type varies by build -- see BenchBoolArray above.
- */
 /// @brief Distinct levels tab_quant may take, hence the distinct second values
 ///        it registers.
 ///
@@ -140,6 +131,15 @@ using BenchBoolArray = std::conditional_t<chunk_config::is_shrink_enabled, Array
 ///          adjustable.
 inline constexpr Int bench_double_bands = 200000;
 
+/**
+ * @brief The fifteen arrays the workload drives, by reference, plus their
+ *        geometry.
+ *
+ * @note References, not values: the arrays stay owned by main(), which builds
+ *       and destroys them. This is a handle onto them, cheap to pass and
+ *       impossible to copy by accident.
+ * @warning tab_bool's type varies by build -- see BenchBoolArray above.
+ */
 struct BenchArrays
 {
     Array<double>& tab1;

@@ -522,7 +522,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     }
 
     /// @brief Conservative check: might this thread hold deferred ops?
-    /// @param thr_rank unused -- the flag is thread-local, not rank-indexed
+    /// @note No rank argument: the flag is thread-local, not rank-indexed.
     /// @return false only when the calling thread certainly holds none
     [[nodiscard]] static bool thread_may_have_ops() noexcept
     {
@@ -700,8 +700,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     static void erase_own_rank_op(int thr, ChunkType* chunk, int num) noexcept;
 
     /**
-     * @brief Might rank @p thr hold deferred ops?
-     * @param thr rank to test -- always the caller's own
+     * @brief Might the calling rank hold deferred ops?
      * @return false only when it certainly holds none
      * @warning Deliberately NOT an .empty() check on the deferred table: that
      *          unlocked read raced its do_erase (TSan-confirmed). The lock-free
@@ -907,7 +906,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
      * @pre OpenMP must be enabled
      * @post Slow-path is activated if returns true
      *
-     * @thread_safety Thread-safe, but only one thread should call this
+     * @note Thread-safe, but only one thread should call this
      */
     template <typename ProxyType>
     bool start();
@@ -999,7 +998,7 @@ struct CompressionManagerOmpPolicy<T, ChunkType, false> : FlushReplayState<T, Ch
  *
  * @tparam T         Element type
  * @tparam ChunkType Chunk variant the manager coordinates
- * @thread_safety All methods are thread-safe
+ * @note Thread safety: All methods are thread-safe
  */
 template <typename T, typename ChunkType>
 class CompressionManager

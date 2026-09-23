@@ -66,28 +66,6 @@ inline std::atomic<std::size_t>& reclaim_bytes() noexcept
     return b;
 }
 
-/**
- * @brief Drop an emptied slab's resident pages, keeping it mapped and reusable.
- *
- * @tparam Slab Duck-typed on `nn_ref`, `data` and `BlockAllocator`. A template
- *         purely so those members need only be complete at instantiation.
- * @param p The slab. Null and non-empty slabs are ignored.
- *
- * @details MADV_DONTNEED returns the pages to the OS but leaves the mapping in
- *          place: the address stays valid, the slab stays on its owner's list,
- *          and the next allocation from it faults fresh zero pages back in.
- *
- * @warning Only ever call this on a slab with `nn_ref == 0`. It re-checks, but
- *          the caller is what makes it true. And it is safe only for a pool
- *          whose free list lives OUTSIDE the slab: the value family keeps links
- *          in a side array, the op/ctx family threads them through the freed
- *          elements and would be destroyed by this.
- *
- * @note The last page is deliberately kept: it holds the trailing back-pointer
- *       that resolves an interior pointer to its slab.
- *
- * @see alloc_config::reclaim_empty_slabs, the build switch on the call site.
- */
 /// @brief Why a slab was NOT advised away, counted per reason. An emptied slab
 ///        that madvise cannot take is the difference between "the drain works"
 ///        and "the memory comes back"; without these the two look alike from
@@ -113,11 +91,6 @@ inline std::atomic<std::size_t>& reclaim_entered() noexcept
     return v;
 }
 
-/// @brief What the chunk layer did with a buffer it stopped using. A slab can
-///        only empty if blocks actually reach the allocator, so when
-///        "emptied-slab calls" is 0 these say whether any free ever happened:
-///        parked blocks are retained by design, freed ones are not. Bumped
-///        through CHUNK_FREEPATH_INC (chunk/freepath_counters.h).
 /// @brief A global counter alone on its cache lines.
 /// @details A bare `static std::atomic` is 8 bytes the linker packs next to
 ///          whatever comes before and after it. Two of these landed on the
@@ -132,6 +105,11 @@ struct alignas(128) IsolatedCounter
 };
 static_assert(sizeof(IsolatedCounter) == 128, "IsolatedCounter must fill its alignment");
 
+/// @brief What the chunk layer did with a buffer it stopped using. A slab can
+///        only empty if blocks actually reach the allocator, so when
+///        "emptied-slab calls" is 0 these say whether any free ever happened:
+///        parked blocks are retained by design, freed ones are not. Bumped
+///        through CHUNK_FREEPATH_INC (chunk/freepath_counters.h).
 inline std::atomic<std::size_t>& freepath_freed() noexcept
 {
     static IsolatedCounter c;
@@ -169,6 +147,28 @@ inline std::atomic<std::size_t>& freepath_alloc_keyed() noexcept
 }
 
 
+/**
+ * @brief Drop an emptied slab's resident pages, keeping it mapped and reusable.
+ *
+ * @tparam Slab Duck-typed on `nn_ref`, `data` and `BlockAllocator`. A template
+ *         purely so those members need only be complete at instantiation.
+ * @param p The slab. Null and non-empty slabs are ignored.
+ *
+ * @details MADV_DONTNEED returns the pages to the OS but leaves the mapping in
+ *          place: the address stays valid, the slab stays on its owner's list,
+ *          and the next allocation from it faults fresh zero pages back in.
+ *
+ * @warning Only ever call this on a slab with `nn_ref == 0`. It re-checks, but
+ *          the caller is what makes it true. And it is safe only for a pool
+ *          whose free list lives OUTSIDE the slab: the value family keeps links
+ *          in a side array, the op/ctx family threads them through the freed
+ *          elements and would be destroyed by this.
+ *
+ * @note The last page is deliberately kept: it holds the trailing back-pointer
+ *       that resolves an interior pointer to its slab.
+ *
+ * @see alloc_config::reclaim_empty_slabs, the build switch on the call site.
+ */
 template <typename Slab>
 inline void madvise_empty_slab(Slab* p) noexcept
 {

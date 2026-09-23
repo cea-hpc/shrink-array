@@ -129,7 +129,7 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
     // reductions). Same guard as the other teardown loops: never nest inside a
     // caller's region, and not worth a team for a handful of chunks.
     const auto csz = static_cast<unsigned int>(this->size_policy_.size());
-    
+
     int n_compressed = 0;
     int n_would_be_t2 = 0;
 

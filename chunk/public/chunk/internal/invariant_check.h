@@ -56,6 +56,12 @@ struct formatter<std::complex<T>, char>
 
 namespace shrink_array
 {
+/// @brief True when std::format has a formatter for V (C++20 spelling of
+///        C++23's std::formattable: a disabled formatter has no format()).
+template <typename V>
+concept invariant_formattable =
+    requires(std::formatter<V, char> f, const V& v, std::format_context& c) { f.format(v, c); };
+
 /**
  * @brief The argument std::format will see for @p a: itself when its type is
  *        formattable, its bytes in hex otherwise.
@@ -68,12 +74,6 @@ namespace shrink_array
  * gets: enough to tell two values apart in a post-mortem, which is what the
  * message is for.
  */
-/// @brief True when std::format has a formatter for V (C++20 spelling of
-///        C++23's std::formattable: a disabled formatter has no format()).
-template <typename V>
-concept invariant_formattable =
-    requires(std::formatter<V, char> f, const V& v, std::format_context& c) { f.format(v, c); };
-
 template <typename A>
     requires invariant_formattable<std::remove_cvref_t<A>>
 A&& invariant_fmt_arg(A&& a)

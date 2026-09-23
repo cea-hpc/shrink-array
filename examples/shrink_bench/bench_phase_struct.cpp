@@ -123,9 +123,10 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
 
     // Round-robin, chunk-aligned blocks (bench_sched_for): the writer's cost
     // depends on the index, and both loops must share the schedule.
-    const BenchSched sched      = bench_sched_for(start0, end0);
-    const Int        sched_blk  = sched.blk;
-    const Int        sched_base = sched.base;
+    const BenchSched sched = bench_sched_for(start0, end0);
+    // Named by the pragma macros only: unused in a serial build.
+    [[maybe_unused]] const Int sched_blk  = sched.blk;
+    const Int                  sched_base = sched.base;
 
 #pragma omp parallel
     {

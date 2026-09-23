@@ -69,9 +69,11 @@ inline void finalize_parallel_phase_after_flush_g()
  * @brief Fill every array with the workload's starting pattern.
  *
  * @param bench_arr the arrays, by reference.
- * @param start,end,elapsed_seconds the timing cursors main() carries across
- *        phases; this phase stamps them from inside an `omp single`, exactly as
- *        it did when it was inline in main().
+ * @param start the timing cursors main() carries across phases; this phase
+ *        stamps them (start, end, elapsed_seconds) from inside an `omp
+ *        single`, exactly as it did when it was inline in main().
+ * @param end see start.
+ * @param elapsed_seconds see start.
  *
  * @details Moved VERBATIM out of main(): one `omp parallel` region holding a
  *          dozen `omp for nowait` loops, 200 lines, the largest block of the
@@ -110,10 +112,16 @@ void neutral_sqrt_assign(Arr& tab, Int i, T v)
  *
  * @param bench_arr      the arrays.
  * @param k      the iteration index; the workload varies its pattern with k % 16.
- * @param start0,end0 the window this iteration writes.
- * @param tab_nba1,tab_nba2 the per-iteration thresholds main() precomputed;
- *        read at [k], never written here.
- * @param val_sum,long_val_sum,v_real,v_im the running accumulators, ADDED TO.
+ * @param start0 start of the window this iteration writes.
+ * @param end0 end of that window.
+ * @param tab_nba1 the per-iteration thresholds main() precomputed; read at
+ *        [k], never written here.
+ * @param tab_nba2 see tab_nba1.
+ * @param val_sum the running accumulators (val_sum, long_val_sum, v_real,
+ *        v_im), ADDED TO.
+ * @param long_val_sum see val_sum.
+ * @param v_real see val_sum.
+ * @param v_im see val_sum.
  *
  * @details Moved VERBATIM out of main(): 392 lines, six `omp for` loops inside a
  *          single `omp parallel reduction` region -- the largest block of the
@@ -258,9 +266,11 @@ void bench_stats(BenchArrays& bench_arr, bool stats);
  * @param bench_arr the arrays.
  * @param k the iteration index; k % 4, % 8 and % 16 pick which of the four
  *        bench_phase_range_* patterns gets written.
- * @param size,start0,end0 the window this iteration works in. Printed, and
- *        start0 is where the scan begins -- which then deliberately runs to sz,
+ * @param size the window this iteration works in (size, start0, end0).
+ *        Printed.
+ * @param start0 where the scan begins -- which then deliberately runs to sz,
  *        not to end0.
+ * @param end0 see size.
  *
  * @details Moved VERBATIM out of main(), where it was a seventy-line nest of
  *          modulo tests around four near-identical scans. It is the DISPATCHER
