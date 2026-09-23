@@ -87,8 +87,20 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
 template <class Arr, typename T>
 void neutral_sqrt_assign(Arr& tab, Int i, T v)
 {
+    // v1: the raw reference tab(i) is valid on a MATERIALISED chunk only. The
+    // write that computed v (tab2[i] = fmod(...)) can itself have compressed
+    // the chunk -- a 0 completing an all-zero chunk, which the serial (counter)
+    // build folds at once -- and the raw store then went into the shared
+    // constant (harmless for sqrt(0) = 0, an INVARIANT_FAILED in checked
+    // builds; seed-dependent). Same value either way, so the reference data
+    // do not change.
     if constexpr (chunk_config::use_chunk)
-        tab(i) = std::sqrt(v); // discarded quand Arr=std::vector : never typed
+    {
+        if (tab.written(i))
+            tab(i) = std::sqrt(v); // discarded quand Arr=std::vector : never typed
+        else
+            tab[i] = std::sqrt(v);
+    }
     else
         tab[i] = std::sqrt(v);
 }

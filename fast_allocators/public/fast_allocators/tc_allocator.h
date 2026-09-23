@@ -1149,6 +1149,16 @@ struct TCTypeAllocator final : public VTCTypeAllocator
 
             auto* p       = new TCAllocator;
             p->arena_kind = arena_kind; // FIX: route slab to op/ctx arena
+            // Stamped like every slab alloc_slow() creates. This first one was
+            // not: a free of one of its blocks found no owner and fell back to
+            // the CALLER's allocator -- in a dynamic build, whichever chunk
+            // size the thread last served -- which then unlinked the slab
+            // from lists it was never on (sl_remove assertion; silent list
+            // corruption without DBG_ASSERT). With the owner set, the free
+            // goes home whatever the ambient size (ChunkBase::release_to_owner).
+            p->owner      = this;
+            p->owner_rank = rank_;
+            p->owner_key  = key_;
 
             p->init(ElementSize, BlockAllocator_);
             DBG_ASSERT(p->slab_bytes() == slab_bytes_);
