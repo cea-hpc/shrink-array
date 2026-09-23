@@ -121,11 +121,17 @@ struct PointerMapInfArrayPolicy<T, false>
     using inf_array_t = int;
 
     /// @brief No registry in this mode: an empty list.
-    [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const { return {}; }
+    [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const
+    {
+        return {};
+    }
     /// @brief No registry in this mode: nothing to record.
-    void                                    insert(in_t<T> /*key*/, inf_array_t* /*ind*/) {}
+    void insert(in_t<T> /*key*/, inf_array_t* /*ind*/) {}
     /// @brief No registry in this mode: never found.
-    [[nodiscard]] inf_array_t*              find_inf_array(in_t<T> /*key*/) const { return nullptr; }
+    [[nodiscard]] inf_array_t* find_inf_array(in_t<T> /*key*/) const
+    {
+        return nullptr;
+    }
 };
 
 /**
@@ -136,9 +142,8 @@ struct PointerMapInfArrayPolicy<T, false>
  * @tparam T Element type this registry is keyed on.
  */
 template <typename T>
-class PointerMapChunk
-    : public PointerMapInfArrayPolicy<T, chunk_config::use_fast_block_compression>,
-      public PointerMapLinear<int, std::vector<std::pair<const void*, int>>>
+class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fast_block_compression>,
+                        public PointerMapLinear<int, std::vector<std::pair<const void*, int>>>
 {
   private:
     using Policy = PointerMapInfArrayPolicy<T, chunk_config::use_fast_block_compression>;
@@ -203,13 +208,14 @@ class PointerMapChunk
      */
     [[nodiscard]] int get_num_tab(const void* key) const
     {
-        for (const auto& item : vec)
+        for (const auto& [k, v] : vec)
         {
-            if (item.first == key)
+            if (k == key)
             {
-                return item.second;
+                return v;
             }
         }
+
         throw std::runtime_error("Key not found in the vector!");
     }
 
@@ -254,7 +260,8 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      */
     void set_info_on_chunk()
     {
-        set_num_tab(); // this policy's no-arg overload (below); Proxy's `using Base::set_num_tab` would hide it through derived()
+        set_num_tab(); // this policy's no-arg overload (below); Proxy's `using Base::set_num_tab` would hide it through
+                       // derived()
         derived().Base::set_ptr_is_inside_chunk_list_to_compress();
     }
 
@@ -483,9 +490,9 @@ struct ProxyFastCompPolicy<Derived, T, false> : public ProxyBase<Derived, T, Chu
 };
 
 #ifdef __clang__
-#  define SA_INHERIT_CTOR_TYPENAME typename
+    #define SA_INHERIT_CTOR_TYPENAME typename
 #else
-#  define SA_INHERIT_CTOR_TYPENAME
+    #define SA_INHERIT_CTOR_TYPENAME
 #endif
 
 /*!
@@ -534,9 +541,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
 
     using Base::num_tab; ///< tab index for this array
 
-    using Base::num_chunk;    ///< chunk index
-    using Base::ptr_on_array; ///< pointer to array (for tab lookup)
     using Base::chunk_size_frozen_; ///< non-zero on a proxy rebuilt from a replay context
+    using Base::num_chunk;          ///< chunk index
+    using Base::ptr_on_array;       ///< pointer to array (for tab lookup)
 
     using Base::arithmetic_assign;
 
@@ -700,8 +707,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @param num_ Element offset within the chunk.
      * @param chunk_ Owning chunk.
      */
-     explicit Proxy(values_type_ref values_, int num_, Chunk<T>& chunk_) noexcept
-        : FastCompPolicy(values_, num_, chunk_)
+    explicit Proxy(values_type_ref values_, int num_, Chunk<T>& chunk_) noexcept : FastCompPolicy(values_, num_, chunk_)
     {
     }
 
@@ -957,7 +963,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        vs write through the reference) cannot be known here.
      * @return Reference to this element's live value.
      */
-    T& getVal() noexcept
+    T& get_val() noexcept
     {
         const bool need_alloc = is_cst_val();
 
