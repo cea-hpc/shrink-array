@@ -341,6 +341,12 @@ SCALING_ITER_MAX = 500
 # Floor of a point's timeout: twice the perf size at 4 threads is far from the
 # few seconds of the old --divisor 50 points.
 SCALING_TIMEOUT  = 3600
+# Fallback of a config built WITHOUT the int64 binaries (-DSHRINK_BENCH_INT64
+# off: a hand-configured build): its 32-bit binaries, on the shrunk workload
+# the guard used before -- rather than no curve at all. Per config: a config
+# that has int64 binaries stays int64, and its sizes without one (256) stay out.
+SCALING_FALLBACK_DIVISOR  = 50
+SCALING_FALLBACK_ITER_MAX = 200
 # A point is a REGRESSION when it is slower than the BEST point so far by more
 # than this factor. Against the best rather than the previous point, and 1.25
 # rather than 1.10: measured on an i9-12900H (6 P-cores + 8 E-cores), the
@@ -1792,7 +1798,9 @@ def run_scaling_phase(args, extra_ldpath, errors):
     compression and stats configs would add runs, not information.
     The binaries are the int64 ones at --multiply 2 (past INT_MAX elements) and
     --iter_max 500 (see SCALING_MULTIPLY): a REGRESSION signal on the 64-bit
-    path at full scale, not a measurement campaign. The thread counts
+    path at full scale, not a measurement campaign. A config built without
+    the int64 binaries falls back to its 32-bit ones at --divisor 50
+    --iter_max 200 (SCALING_FALLBACK_*). The thread counts
     the machine cannot honour (more than CHUNK_PMP_MAX_THREADS / the CPUs
     present) are dropped with a note rather than measured against an
     oversubscribed run.
@@ -1811,9 +1819,12 @@ def run_scaling_phase(args, extra_ldpath, errors):
         print(dim("   (fewer than two usable thread counts -- skipped)"))
         return 0, 0
 
-    bench_args = ["--mode", "perf", "--no_io",
+    args_int64 = ["--mode", "perf", "--no_io",
                   "--multiply", str(SCALING_MULTIPLY),
                   "--iter_max", str(SCALING_ITER_MAX)]
+    args_32bit = ["--mode", "perf", "--no_io",
+                  "--divisor", str(SCALING_FALLBACK_DIVISOR),
+                  "--iter_max", str(SCALING_FALLBACK_ITER_MAX)]
 
     # vector first: the reference every other curve is read against.
     scaling_vars = [SCALING_REFERENCE_VARIANT] + [v for v in args.variants
@@ -1828,21 +1839,36 @@ def run_scaling_phase(args, extra_ldpath, errors):
             print(dim(f"   ({label} not in --configs -- skipped)"))
             continue
 
-        variants = []
-        missing  = []
-        for var in scaling_vars:
-            if skip_variant_on_config(var, config):
-                continue
+        candidates = [v for v in scaling_vars if not skip_variant_on_config(v, config)]
+        variants   = []
+        missing    = []
+        for var in candidates:
             exe = resolve_exe(args.build_root, config, int64_variant(var), "perf")
-            if not exe:
+            if exe:
+                variants.append((var, exe))
+            else:
                 missing.append(var)
+
+        if variants:
+            bench_args = args_int64
+            if missing:
+                print(dim(f"   (no int64 binary in {label} for {', '.join(missing)} -- skipped)"))
+        else:
+            # No int64 binary at all in this config: fall back to its 32-bit
+            # ones, on the shrunk workload (SCALING_FALLBACK_*).
+            bench_args = args_32bit
+            for var in candidates:
+                exe = resolve_exe(args.build_root, config, var, "perf")
+                if exe:
+                    variants.append((var, exe))
+                else:
+                    print(dim(f"   (no {var} perf binary in {label} -- skipped)"))
+            if not variants:
+                print(dim(f"   (no perf binary in {label} -- skipped)"))
                 continue
-            variants.append((var, exe))
-        if missing:
-            print(dim(f"   (no int64 binary in {label} for {', '.join(missing)} -- skipped)"))
-        if not variants:
-            print(dim(f"   (no int64 perf binary in {label} -- built with -DSHRINK_BENCH_INT64=ON)"))
-            continue
+            print(yellow(f"   {label}: no int64 binary (built without -DSHRINK_BENCH_INT64=ON) -- "
+                         f"32-bit fallback, {' '.join(bench_args[3:])}"))
+        is_int64 = bench_args is args_int64
         n_curves += len(variants)
 
         for var, exe in variants:
@@ -1859,7 +1885,8 @@ def run_scaling_phase(args, extra_ldpath, errors):
 
                 ok, dur, code, err_tail, _ = run_cmd(
                     [exe] + bench_args, {"OMP_NUM_THREADS": str(tc)},
-                    max(SCALING_TIMEOUT, effective_timeout(args.timeout, args.timeout_per_thread, tc)),
+                    (max(SCALING_TIMEOUT, effective_timeout(args.timeout, args.timeout_per_thread, tc))
+                     if is_int64 else effective_timeout(args.timeout, args.timeout_per_thread, tc)),
                     extra_ld_library_path=extra_ldpath, cwd=rdir)
 
                 if not ok:
