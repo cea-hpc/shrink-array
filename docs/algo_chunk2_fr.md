@@ -1,6 +1,7 @@
 # L'algorithme d'`ArrayChunk2`
 
-*État du code : septembre 2026 (mis à jour après l'ouverture des opérations sur plages à Chunk2). Ce document remplace l'ancienne présentation, qui décrivait
+*État du code : fin septembre 2026 (opérations sur plages ouvertes à Chunk2, compression des
+candidats avant un rechunk, fin de phase sans OMPT allégée). Ce document remplace l'ancienne présentation, qui décrivait
 une version antérieure (verrous par élément, `__decalage_chunk` global, taille de chunk fixée
 à 64, parallélisation « sans solution satisfaisante »). Les noms de fonctions et de fichiers
 cités sont ceux de l'arbre actuel ; en cas de doute, c'est le code qui fait foi.*
@@ -292,12 +293,21 @@ plus tard :
 Le rejeu fige la géométrie de l'opération (en géométrie dynamique, un chunk est matérialisé à
 **sa** taille, pas à celle du thread qui rejoue).
 
+En fin de phase, le « dirty bitset » de chaque tableau (le filtre de la barrière de lecture,
+section 5) est remis à zéro. Chaque bitset porte un mot supplémentaire, « au moins un bit a
+été levé », que seule la mise en file d'une écriture différée lève : un tableau sans écriture
+différée pendant la phase n'est pas réécrit. Sans ce mot, la remise à zéro réécrivait une ligne
+de 128 octets par tranche de 64 chunks de chaque tableau, en série sur le maître, à chaque fin
+de phase : ~21 s d'un run de ~30 s sur AMD Milan (GNU, 64 threads).
+
 ### 7.4 Les rappels OMPT
 
 Avec OMPT, la bibliothèque s'accroche au runtime OpenMP : `on_implicit_task` (cache du rang
 du thread), `on_barrier` et `on_parallel_end` (rejeu des opérations différées et passes de
-compression). Sans OMPT, le code appelant encadre ses régions par `begin_parallel_phase()` /
-`finalize_parallel_phase()`.
+compression). Sans OMPT (libgomp), le code appelant encadre ses régions par
+`begin_parallel_phase()` / `finalize_parallel_phase()`, et le travail de fin de région est fait
+par le **maître**, après la région : c'est là qu'une étape séquentielle coûteuse se voit
+d'abord (les autres threads attendent dans `gomp_barrier_wait_end`).
 
 ---
 
@@ -409,16 +419,26 @@ d'affinité), ce qui permet de restituer leur mémoire d'un bloc à leur destruc
 décision du **décideur** (`ChunkSizeAdvisor::analyze`, qui estime la mémoire à chaque taille
 à partir de l'état des chunks). Les étapes :
 
-1. vider les listes de réutilisation et préparer les réserves à la nouvelle taille ;
-2. construire un **tableau temporaire** à la nouvelle taille (initialisation des chunks en
+1. à l'ancienne géométrie : vider les écritures différées du tableau, puis **compresser ses
+   candidats** (le `compress()` de la variante, en série, sur le rang du thread appelant,
+   chaque entrée avec son propre nombre d'éléments) avant de les retirer des listes. Ils
+   étaient seulement retirés jusqu'en septembre 2026 : un chunk mis en file par l'écriture
+   qui l'avait rendu uniforme restait alors matérialisé pendant la reconstruction, était
+   recopié au lieu d'être replié, et n'était jamais remis en file. Mesuré sur
+   `rechunk_validation` (1 thread) : Chunk2, 0 → 2 408 chunks repliés et 7 107 → 4 701 restés
+   matérialisés ; `CHUNK_RECHUNK_DROP_LEGACY=1` rétablit le simple retrait ;
+2. vider les listes de réutilisation et préparer les réserves à la nouvelle taille ;
+3. construire un **tableau temporaire** à la nouvelle taille (initialisation des chunks en
    parallèle) ;
-3. le **remplir en parallèle** par tranches (`rechunk_refill`, ordonnancement réglable par
-   `CHUNK_RECHUNK_SCHEDULE`, `guided,16` par défaut) : les valeurs de chaque nouveau chunk
-   sont relues puis réécrites par `copy_range` ; un nouveau chunk dont toutes les sources
-   étaient compressées est **replié** immédiatement vers la constante ;
-4. **échanger les identités** : `num_tab` et les clés du registre changent de main, et le
+4. le **remplir en parallèle** par tranches (`rechunk_refill`, ordonnancement réglable par
+   `CHUNK_RECHUNK_SCHEDULE`, `guided,16` par défaut) : une tranche dont toutes les sources
+   sont à la première valeur est sautée ; sinon les valeurs sont relues puis réécrites par
+   `copy_range`, et un nouveau chunk dont toutes les sources étaient compressées est
+   **replié** tout de suite (`compress()` de la variante sur ce chunk, qui refuse si les
+   constantes des sources diffèrent) ;
+5. **échanger les identités** : `num_tab` et les clés du registre changent de main, et le
    miroir est relu des deux côtés ;
-5. détruire l'ancien stockage.
+6. détruire l'ancien stockage.
 
 `CHUNK_RECHUNK_TRACE=1` affiche le temps de chaque phase et les compteurs de repliement.
 
@@ -465,6 +485,26 @@ le laisser sur le chemin élément par élément :
 
 Seul `bool` (chunks compactés bit à bit) reste sur le chemin élément par élément.
 
+**La décision de mise en file dans `fill_range_mt`** lit, pour savoir si le chunk peut être
+uniforme, trois éléments (0, S/2, S−1) que d'autres threads peuvent être en train d'écrire.
+Chunk2A écrit ces éléments en atomiques relâchés (`relaxed_element.h` :
+`fill_span_relaxed_edges`, `may_be_uniform_relaxed`), ce qui rend la lecture sûre ; pour les
+types sans atomique sans verrou, et pour Chunk et Chunk2, ce sont des lectures ordinaires.
+
+**Points ouverts (septembre 2026).**
+
+- Avec le chemin direct ouvert à Chunk2, `bench_and_test.py` a signalé sur Grace (8 threads et
+  plus) des valeurs fausses **après compression** : `rechunk_validation_chunk2_dyn`
+  (`scale-64-to-tgt`, POST-FAIL) et le mode check de `shrink_bench_chunk2_256`
+  (« is_cst_val2 should be not »). Non reproduit sur une machine à un cœur, ni lors d'un
+  second passage sur le cluster ; la piste est une passe qui compresse un chunk mis en file
+  par une copie directe pendant que les écritures directes, non annoncées, d'un autre thread
+  y arrivent encore. Le repli connu : exclure Chunk2 de `detail::raw_fillable_v`.
+- TSan signale, pour Chunk et Chunk2 dans `fill_range_mt`, la lecture ordinaire des trois
+  éléments ci-dessus contre l'écriture d'un autre thread sur le même chunk. Le correctif
+  envisagé : décider sur la **valeur** écrite (la première valeur pour Chunk, la première ou
+  la seconde pour Chunk2), comme le chemin élément par élément, sans rien lire.
+
 ---
 
 ## 11. Variables d'environnement utiles
@@ -478,9 +518,17 @@ Seul `bool` (chunks compactés bit à bit) reste sur le chemin élément par él
 | `CHUNK_BARRIER_FLUSH_LEGACY=1` | ancien vidage des opérations différées aux barrières |
 | `CHUNK_SERIAL_DRAIN_LEGACY=1` | ancien vidage en série en fin de région |
 | `CHUNK_OMPT_STATS=1` | statistiques des régions de synchronisation (build OMPT) |
+| `CHUNK_RECHUNK_DROP_LEGACY=1` | au rechunk, retire les candidats du tableau sans les compresser d'abord (ancien comportement) |
 
 Option de compilation utile pour la validation : `CHUNK_FORCE_DEFER_EVERY=N` force une
 écriture sur N à passer par le chemin différé (à utiliser à 32 threads au plus).
+
+Options CMake liées aux performances des bancs :
+
+| option | effet |
+|---|---|
+| `SHRINK_INTEL_LIBM` (ON) | x86-64, hors icpx : lie les exécutables à la libm d'Intel (`libimf`) si elle est trouvée (`INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, ou à côté d'`icpx`). AMD Milan, GNU : 15,7 s → 12,4 s sur `shrink_bench_chunk2a_256` |
+| `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang : lie `libamath` d'ArmPL (`ARMPL_LIBM_DIR`). Aucun gain mesuré sur Grace (RHEL 9.6) ; conservée pour refaire la mesure (`scripts/test_armpl_libm.sh`) |
 
 ---
 
