@@ -317,41 +317,19 @@ set(CHUNK_SOURCES
         private/manage_ompt.cpp
         private/ring_log_debug.cpp
 )
-# array_chunk2A.cpp: physically drop -O3 under icpx (2026.0 EmitCtorList ICE).
-# CMake can't remove an inherited flag per source, so strip the globally
-# injected -O3 and re-apply it per source, skipping this TU under icpx.
-
-# 1) Remove the leaked -O3 from the optimized build-type flags.
-foreach(cfg RELEASE RELWITHDEBINFO)
-  string(REGEX REPLACE "(^| )-O3( |$)" " " CMAKE_CXX_FLAGS_${cfg}
-          "${CMAKE_CXX_FLAGS_${cfg}}")
-endforeach()
-
-# 2) Re-apply -O3 to every compiled TU in optimized configs, except array_chunk2A.cpp.
-set(CHUNK_CPP_SOURCES
-        array_chunk.cpp array_chunk2.cpp array_chunk2A.cpp ManagerChunk.cpp
-        AllTypeChunk.cpp param_chunk.cpp chunk_std.cpp
-        manage_ompt.cpp ring_log_debug.cpp)
-set(CHUNK_O3_SOURCES ${CHUNK_CPP_SOURCES})
-list(REMOVE_ITEM CHUNK_O3_SOURCES array_chunk2A.cpp)
-set_source_files_properties(${CHUNK_O3_SOURCES} PROPERTIES
-        COMPILE_OPTIONS "$<$<CONFIG:Release,RelWithDebInfo>:-O3>")
-
-# 3) array_chunk2A.cpp: -O3 for every compiler but icpx, -O0 for icpx.
-set_source_files_properties(array_chunk2A.cpp array_chunk2.cpp  ManagerChunk.cpp PROPERTIES COMPILE_OPTIONS
-        "$<$<AND:$<CONFIG:Release,RelWithDebInfo>,$<NOT:$<CXX_COMPILER_ID:IntelLLVM>>>:-O3>")
-if (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
-  set_property(SOURCE array_chunk2A.cpp array_chunk2.cpp APPEND_STRING PROPERTY
-          COMPILE_FLAGS "-fno-use-init-array -O0")
-  set_property(SOURCE ManagerChunk.cpp
-      APPEND_STRING PROPERTY COMPILE_FLAGS " -g -fno-use-init-array -O0")
+# Optimisation: the library's .cpp files inherit the project's
+# CMAKE_CXX_FLAGS_RELEASE / _RELWITHDEBINFO (-O3 -g), like every other target.
+# (Until Sept '26 an icpx 2026.0 ICE workaround stripped -O3 here and re-added
+# it per source under names that matched no source file -- leaving every
+# chunk/private/*.cpp at -O0 in optimised builds, on every compiler.)
+# If the icpx EmitCtorList ICE comes back, CHUNK_ICPX_O0_WORKAROUND=ON builds
+# only the three TUs it hit at -O0, under icpx only.
+option(CHUNK_ICPX_O0_WORKAROUND "icpx only: compile array_chunk2A.cpp, array_chunk2.cpp and manager_chunk.cpp at -O0 (EmitCtorList ICE)" OFF)
+if (CHUNK_ICPX_O0_WORKAROUND AND CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+  set_property(SOURCE private/array_chunk2A.cpp private/array_chunk2.cpp private/manager_chunk.cpp
+               APPEND PROPERTY COMPILE_OPTIONS "-O0;-fno-use-init-array")
+  message(STATUS "CHUNK_ICPX_O0_WORKAROUND: array_chunk2A.cpp, array_chunk2.cpp, manager_chunk.cpp at -O0 (icpx)")
 endif()
-#if (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
-#  set_property(SOURCE array_chunk2A.cpp APPEND_STRING PROPERTY COMPILE_FLAGS " -O0 -fno-optimize-sibling-calls")
-#endif()
-
-#set_source_files_properties(array_chunk2A.cpp PROPERTIES
-#      COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:IntelLLVM>:-O0>")
 
 # --- Variant factory -----------------------------------------------------
 # chunk_add_variant(<target> <variant_define> <size> <is_dyn>)
