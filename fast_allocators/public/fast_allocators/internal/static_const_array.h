@@ -229,18 +229,18 @@ class StaticConstArray
   private:
     /// @brief Bare ladder lookup: smallest bucket that fits @p sz.
     /// @return Null if @p sz is past the top bucket. Not locked, not bounded.
-    static inline void* getBlockAllocInt(unsigned int sz);
+    static void* getBlockAllocInt(unsigned int sz);
 
     /// @brief Bare ladder release, the counterpart of getBlockAllocInt().
     /// @pre @p ptr came from the bucket that @p sz selects.
-    static inline void freeBlockWithInt(int sz, void* ptr);
+    static void freeBlockWithInt(int sz, void* ptr);
 
     /// @brief getBlockAllocInt() over the aligned ladder.
     /// @details Skips the buckets narrower than `__ALIGNEMENT__`.
-    static inline void* getBlockAllocAlignInt(int sz);
+    static void* getBlockAllocAlignInt(int sz);
 
     /// @brief freeBlockWithInt() over the aligned ladder.
-    static inline void freeBlockWithAlignInt(int sz, void* ptr);
+    static void freeBlockWithAlignInt(int sz, void* ptr);
 
   public:
     StaticConstArray()  = default;
@@ -254,10 +254,10 @@ class StaticConstArray
      *         caller should fall back to malloc.
      * @note Takes the critical section when called inside a parallel region.
      */
-    static inline void* getBlockAlloc(unsigned int sz);
+    static void* getBlockAlloc(unsigned int sz);
 
     /// @brief getBlockAlloc() over the aligned ladder. Same null convention.
-    static inline void* getBlockAllocAlign(int sz);
+    static void* getBlockAllocAlign(int sz);
 
     /**
      * @brief Give a block back to the ladder.
@@ -268,14 +268,14 @@ class StaticConstArray
      * @note Inside a parallel region the block is batched rather than returned
      *       immediately. @see InfoFreeElt
      */
-    static inline bool freeBlock(int sz, void* ptr);
+    static bool freeBlock(int sz, void* ptr);
 
     /// @brief freeBlock() over the aligned ladder. Same bool convention.
-    static inline bool freeBlockAlign(int sz, void* ptr);
+    static bool freeBlockAlign(int sz, void* ptr);
 
     /// @brief The largest size the ladder serves.
     /// @warning Asserts in a STD_ALLOC build, where there is no ladder to size.
-    static inline int computeBlockSize();
+    static int computeBlockSize();
 };
 
 /// @brief Standalone bucket for 8-byte blocks, the most common size.

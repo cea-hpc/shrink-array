@@ -67,7 +67,7 @@ namespace
 // exercising compression at all past the first round. No-op in serial builds
 // (finalize_parallel_phase is `if constexpr (use_openmp)`) and skipped under
 // OMPT, which already drains.
-inline void drain_compression_backlog()
+void drain_compression_backlog()
 {
     if constexpr (build_config::has_not_ompt)
         shrink_array::finalize_parallel_phase();

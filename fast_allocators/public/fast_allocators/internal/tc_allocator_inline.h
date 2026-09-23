@@ -1,14 +1,12 @@
 
-#include <cmath>
+#include <cmath>                        // std::log2, the element-size shift
 #include <cstddef>                      // std::ptrdiff_t, the element offsets
-#include <cstdlib>                      // posix_memalign, std::abort
+#include <cstdlib>                      // std::abort on an arena failure
 #include <iostream>                     // std::cerr on an arena failure
-#include <cstring>                      // FIX: memset to zero posix_memalign'd slabs (not zeroed like mmap)
+#include <cstring>                      // std::memset, zeroing a recycled value slab
 #include "fast_allocators/slab_arena.h" // FIX: disjoint op/value slab arenas
 
 #include "fast_allocators/internal/next_power_of_2.h"
-
-// #define USE_POSIX_MEM_ALIGN
 
 inline void TCAllocator::alloc_block()
 {
@@ -16,74 +14,9 @@ inline void TCAllocator::alloc_block()
 
     BlockSize = static_cast<int>((BlockAllocator - sizeof(void*)) / ElementSize);
 
-#ifdef USE_CLASSIC_MALLOC
-
-    if (BlockAllocator <= 65536)
-    {
-        alloc_ptr = (char*)malloc(2 * BlockAllocator);
-
-        data = alloc_ptr + (BlockAllocator - ((size_t)alloc_ptr & (BlockAllocator - 1)));
-    }
-    else
-    {
-        alloc_ptr = 0;
-
-    #ifdef USE_POSIX_MEM_ALIGN
-        void* datal;
-
-        posix_memalign(datal, BlockAllocator, BlockAllocator);
-
-        data = (char*)datal;
-    #else
-
-        if (!__mem_page_size)
-        {
-            __mem_page_size = getpagesize();
-        }
-
-        if (((2 * BlockAllocator) % __mem_page_size == 0) && __mem_page_size)
-        {
-            use_mmap = true;
-
-            char* a = (char*)sctk_mmap(nullptr, 2 * BlockAllocator);
-
-            //	data = a + (BlockAllocator - ((size_t) a & (BlockAllocator - 1)));
-
-            data = (char*)((((unsigned long)a + (BlockAllocator - 1)) & -BlockAllocator));
-
-            munmap(a, (unsigned long)(data) - (unsigned long)(a));
-
-            unsigned long ll = (unsigned long)(a + 2 * BlockAllocator) - (unsigned long)(data + BlockAllocator);
-
-            if (ll)
-            {
-                munmap(data + BlockAllocator, ll);
-            }
-        }
-        else
-        {
-            use_mmap = false;
-
-            posix_memalign((void**)&data, BlockAllocator, BlockAllocator);
-        }
-
-    #endif
-    }
-
-#else
-
-    #ifdef USE_POSIX_MEM_ALIGN
-
-    posix_memalign((void**)&data, BlockAllocator, BlockAllocator);
-
-    #else
     if (__mem_page_size == 0)
     {
-        #ifdef PGI
-        __mem_page_size = 2048;
-        #else
         __mem_page_size = getpagesize();
-        #endif
     }
 
     // FIX (op/value slab aliasing): allocate the op slab from the dedicated OP
@@ -92,8 +25,6 @@ inline void TCAllocator::alloc_block()
     // reobtained by the value pool (the proven crash path: OP_ALLOC then
     // VALUE_ALLOC at the same address on different tids). Recycled within the op
     // arena's own free-list in destroy().
-    use_mmap = false;
-
     data = static_cast<char*>(fast_alloc::arena_for(arena_kind).allocate(BlockAllocator, BlockAllocator));
 
     if (data == nullptr) [[unlikely]]
@@ -101,10 +32,6 @@ inline void TCAllocator::alloc_block()
         std::cerr << "Fatal Error: op_arena failed to allocate " << BlockAllocator << " bytes\n";
         std::abort();
     }
-
-    #endif
-
-#endif
 
     // NOTE: no slab-wide memset here. A fresh arena slab is already zero
     // (MAP_ANONYMOUS), and a recycled slab must NOT be blanket-zeroed — doing so

@@ -170,7 +170,7 @@ inline std::atomic<std::size_t>& freepath_alloc_keyed() noexcept
  * @see alloc_config::reclaim_empty_slabs, the build switch on the call site.
  */
 template <typename Slab>
-inline void madvise_empty_slab(Slab* p) noexcept
+void madvise_empty_slab(Slab* p) noexcept
 {
     reclaim_entered().fetch_add(1, std::memory_order_relaxed);
     if (p != nullptr && p->nn_ref != 0)
@@ -236,7 +236,7 @@ inline void madvise_empty_slab(Slab* p) noexcept
  * @return true if the pages were dropped and @p p was flagged.
  */
 template <typename Slab>
-inline bool madvise_empty_slab_full(Slab* p) noexcept
+bool madvise_empty_slab_full(Slab* p) noexcept
 {
     reclaim_entered().fetch_add(1, std::memory_order_relaxed);
     if (p == nullptr || p->nn_ref != 0)

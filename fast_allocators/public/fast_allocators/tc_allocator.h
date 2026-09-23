@@ -52,7 +52,6 @@
 
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
-// #define USE_POSIX_MEM_ALIGN
 
 #include "fast_allocators/internal/alloc_config.h"    // constexpr mirrors of STD_ALLOC / DEBUG / _OPENMP
 #include "fast_allocators/slab_arena.h"      // FIX: ArenaKind for op/ctx/value slab routing
@@ -67,10 +66,6 @@ namespace fast_alloc
 template <class Slab>
 void madvise_empty_slab(Slab* p) noexcept;
 }
-
-// #define USE_CLASSIC_MALLOC
-
-// #define CHECK_BLOCK_ALLOCATOR
 
 template <typename T>
 class Singleton;
@@ -109,19 +104,14 @@ extern bool __debug_mem;
  * @return The mapping. Never null -- a failure prints errno and aborts, because
  *         every caller here is on a path with no way to report failure upward.
  */
-static inline void* sctk_mmap(size_t size)
+inline void* sctk_mmap(size_t size)
 {
     void* tmp;
 #if defined(BSD)
     tmp = mmap(nullptr, (size), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
 #else
-    #ifdef PGI
-    tmp = mmap(nullptr, (size), PROT_READ | PROT_WRITE, MAP_PRIVATE | 0x20, -1, 0);
-    #else
+    // MAP_ANONYMOUS: not backed by any file; the contents are zero (mmap(2)).
     tmp = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        // MAP_ANONYMOUS
-        // The mapping is not backed by any file; its contents are initialized to zero (man ..)
-    #endif
 #endif
 
     if (tmp == MAP_FAILED)
@@ -309,15 +299,10 @@ class alignas(64) TCAllocator
 
   private:
     char* data; ///< The block itself, aligned on #BlockAllocator.
-#ifdef USE_CLASSIC_MALLOC
-    char* alloc_ptr; ///< Unrounded malloc() result, kept so free() gets it back.
-#endif
 
     uintptr_t BlockAllocator; ///< Block size in bytes; a power of two.
 
     int Log2ElementSize; ///< log2(#ElementSize), for num_block_pow2().
-
-    bool use_mmap; ///< The block came from mmap rather than from malloc.
 
   public:
     int firstFree; ///< Head of the free list, an element index; -1 if empty.
@@ -561,7 +546,7 @@ struct alignas(64) TCCAllocator
  * @note Recursive and linear -- a debug aid, called only from DBG_ASSERT.
  */
 template <typename Node>
-[[nodiscard]] inline bool sl_contains(const Node* list, const Node* node) noexcept
+[[nodiscard]] bool sl_contains(const Node* list, const Node* node) noexcept
 {
     return (list != nullptr) && ((list == node) || sl_contains(list->next, node));
 }
@@ -574,7 +559,7 @@ template <typename Node>
  * @note Linear -- a debug aid, called only from DBG_ASSERT.
  */
 template <typename Node>
-[[nodiscard]] inline bool sl_check(const Node* node) noexcept
+[[nodiscard]] bool sl_check(const Node* node) noexcept
 {
     if (node == nullptr)
         return true;
@@ -597,7 +582,7 @@ template <typename Node>
  * @post @p node's links are nulled, so it can be inserted elsewhere.
  */
 template <typename Node>
-inline void sl_remove(Node*& list, Node* node) noexcept
+void sl_remove(Node*& list, Node* node) noexcept
 {
     DBG_ASSERT(node != nullptr);
     DBG_ASSERT(list != nullptr);
@@ -630,7 +615,7 @@ inline void sl_remove(Node*& list, Node* node) noexcept
  *          one the next alloc() looks at.
  */
 template <typename Node>
-inline void sl_insert(Node*& list, Node* node) noexcept
+void sl_insert(Node*& list, Node* node) noexcept
 {
     DBG_ASSERT(node != nullptr);
     DBG_ASSERT(sl_check(list));
@@ -676,14 +661,14 @@ inline void sl_insert(Node*& list, Node* node) noexcept
  *          them. See alloc_config::reclaim_empty_slabs.
  */
 template <typename Node, class Count, class OnKept, class OnEvict>
-inline void sl_manage_full_empty(Node*&  block,
-                                 Node*&  block_full,
-                                 Node**  block_empty,
-                                 Count&  nb_block_empty,
-                                 int     nb_max_block_empty,
-                                 Node*   p,
-                                 OnKept  on_kept,
-                                 OnEvict on_evict) noexcept
+void sl_manage_full_empty(Node*&  block,
+                          Node*&  block_full,
+                          Node**  block_empty,
+                          Count&  nb_block_empty,
+                          int     nb_max_block_empty,
+                          Node*   p,
+                          OnKept  on_kept,
+                          OnEvict on_evict) noexcept
 {
     if (p->was_full() && block_full) [[unlikely]]
     {
@@ -736,7 +721,7 @@ inline void sl_manage_full_empty(Node*&  block,
  *       free it through the one that answers true.
  */
 template <typename Node, typename Elem, class IsRemovable>
-[[nodiscard]] inline bool
+[[nodiscard]] bool
 sl_is_free_able_elt(const Node* block, const Node* block_full, const Elem* ptr, IsRemovable is_removable) noexcept
 {
     if (block)
@@ -1929,9 +1914,6 @@ struct TCAllocatorEB
     /// @brief Returns the block to whichever allocator alloc_block() used.
     ~TCAllocatorEB()
     {
-#ifdef USE_POSIX_MEM_ALIGN
-        free(static_cast<void*>(data));
-#else
         if (use_mmap)
         {
             munmap(data, BlockSize);
@@ -1940,8 +1922,6 @@ struct TCAllocatorEB
         {
             free(static_cast<void*>(data));
         }
-
-#endif
     }
 
     /**
@@ -1953,13 +1933,6 @@ struct TCAllocatorEB
      */
     int alloc_block()
     {
-#ifdef USE_POSIX_MEM_ALIGN
-        void* datal;
-
-        posix_memalign(&datal, BlockSizePOT, BlockSize);
-
-        data = static_cast<char*>(datal);
-#else
         if (!__mem_page_size)
         {
             __mem_page_size = getpagesize();
@@ -2006,8 +1979,6 @@ struct TCAllocatorEB
             }
             data = static_cast<char*>(datal);
         }
-
-#endif
 
         *reinterpret_cast<TCAllocatorEB**>(data + UsedBlockSize) = this;
 
