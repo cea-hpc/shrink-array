@@ -808,7 +808,7 @@ void Proxy2<T>::execute_inplace_operation(LAMBDA operation)
         was_first_value  = (values[num] == static_cast<T>(Chunk2<T>::first_value));
     }
 
-    operation(Base::values);
+    operation(Base::values[num]);
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
@@ -877,7 +877,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_opera
     }
 
     T* values = chunk.values_load();
-    operation(values);
+    operation(values[num]);
 
     // The value just written, read for the counters: nothing writes it
     // afterwards, so in_t (a reference for a struct) rather than a copy.

@@ -36,6 +36,7 @@
 #include "chunk/internal/proxy_operators.h"
 #include "chunk/internal/compression_manager.h"
 #include "chunk/internal/tab_cst_val2_holder.h" // TabCstVal2Holder (CHUNK_CST_VAL2_NO_ARRAYS)
+#include "chunk/internal/relaxed_element.h"    // store_value: Chunk2A's relaxed element stores
 #include "chunk/internal/concept_is_clean_assignement.h"
 #include "chunk/internal/crp_helper.h"
 #include "chunk/internal/arithmetic_context.h"
@@ -446,7 +447,17 @@ class ProxyBase : public ProxyOperators<Derived, T>,
             if (chunk.steal_committed()) [[unlikely]]
                 INVARIANT_FAILED("store_value on a chunk committed to a compressor (num={})", num);
         }
-        values[num] = v;
+        // Chunk2A: the marking filter of another writer may be reading this
+        // element -- relaxed atomic store, see relaxed_element.h.
+        if constexpr (detail::relaxed_element_stores_v<ChunkType, T>)
+        {
+            T* const p = values;
+            detail::store_element_relaxed(p + num, static_cast<T>(v));
+        }
+        else
+        {
+            values[num] = v;
+        }
     }
 
     /// @brief Raw read for the WRITE path only. Deliberately does not sync.
@@ -1031,11 +1042,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires ElementIncrementable<T>
     {
         // Synchronous version
-        auto inc_operation = [this] { derived().execute_inplace_operation([this](T* val) { ++val[num]; }); };
+        auto inc_operation = [this] { derived().execute_inplace_operation([](T& e) { ++e; }); };
 
         // Asynchronous version
         auto inc_operation_async = [](auto* ctx, auto& proxy)
-        { proxy.execute_inplace_operation_async(ctx, [ctx](T* val) { ++val[ctx->num]; }); };
+        { proxy.execute_inplace_operation_async(ctx, [](T& e) { ++e; }); };
 
         apply_inplace_operation(inc_operation, inc_operation_async);
 
@@ -1060,10 +1071,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     T operator--() noexcept
         requires ElementIncrementable<T>
     {
-        auto dec_operation = [this] { derived().execute_inplace_operation([this](T* val) { --val[num]; }); };
+        auto dec_operation = [this] { derived().execute_inplace_operation([](T& e) { --e; }); };
 
         auto dec_operation_async = [](auto* ctx, auto& proxy)
-        { proxy.execute_inplace_operation_async(ctx, [ctx](T* val) { --val[ctx->num]; }); };
+        { proxy.execute_inplace_operation_async(ctx, [](T& e) { --e; }); };
 
         apply_inplace_operation(dec_operation, dec_operation_async);
 
@@ -1090,10 +1101,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     {
         T temp(*this);
 
-        auto inc_operation = [this] { derived().execute_inplace_operation([this](T* val) { val[num]++; }); };
+        auto inc_operation = [this] { derived().execute_inplace_operation([](T& e) { e++; }); };
 
         auto inc_operation_async = [](auto* ctx, auto& proxy)
-        { proxy.execute_inplace_operation_async(ctx, [ctx](T* val) { val[ctx->num]++; }); };
+        { proxy.execute_inplace_operation_async(ctx, [](T& e) { e++; }); };
 
         apply_inplace_operation(inc_operation, inc_operation_async);
         return temp;
@@ -1110,10 +1121,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires ElementIncrementable<T>
     {
         T    temp(*this);
-        auto dec_operation = [this] { derived().execute_inplace_operation([this](T* val) { val[num]--; }); };
+        auto dec_operation = [this] { derived().execute_inplace_operation([](T& e) { e--; }); };
 
         auto dec_operation_async = [](auto* ctx, auto& proxy)
-        { proxy.execute_inplace_operation_async(ctx, [ctx](T* val) { val[ctx->num]--; }); };
+        { proxy.execute_inplace_operation_async(ctx, [](T& e) { e--; }); };
 
         apply_inplace_operation(dec_operation, dec_operation_async);
         return temp;

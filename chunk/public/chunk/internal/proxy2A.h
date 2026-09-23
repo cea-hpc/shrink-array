@@ -882,15 +882,28 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     ///          reference elements may both read the other's old value and both
     ///          skip: a missed hint (the chunk stays materialised, values
     ///          correct), never a wrong value.
+    ///
+    ///          Tolerating a stale value does not make the read race-free: the
+    ///          two elements belong to other writers, so both sides are relaxed
+    ///          atomics (relaxed_element.h; the stores in store_value()). A type
+    ///          that cannot take them (the aggregates) skips the filter and
+    ///          queues as it did before it: correct, only without the saving.
     [[nodiscard]] bool may_become_uniform(in_t<T> v) const noexcept
     {
-        const int S = static_cast<int>(this->chunk_size());
-        if (S < 3) [[unlikely]]
+        if constexpr (!detail::relaxed_element_access_v<T>)
+        {
             return true;
-        const int i  = this->num;
-        const int r0 = (i == 0) ? 1 : 0;
-        const int r1 = (i == S - 1) ? S - 2 : S - 1;
-        return this->chunk.read_value_scan(r0) == v && this->chunk.read_value_scan(r1) == v;
+        }
+        else
+        {
+            const int S = static_cast<int>(this->chunk_size());
+            if (S < 3) [[unlikely]]
+                return true;
+            const int i  = this->num;
+            const int r0 = (i == 0) ? 1 : 0;
+            const int r1 = (i == S - 1) ? S - 2 : S - 1;
+            return this->chunk.read_value_scan_relaxed(r0) == v && this->chunk.read_value_scan_relaxed(r1) == v;
+        }
     }
 
     /**

@@ -1220,7 +1220,7 @@ void Proxy2A<T>::execute_inplace_operation(ModifyFn modify_fn)
 
     ensure_writable_storage();
 
-    modify_fn(values);
+    detail::modify_element<Chunk2A<T>, T>(values, num, modify_fn);
 
     mark_for_compression_if_needed_with_value(v_old, read_values());
 }
@@ -1266,7 +1266,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
         }
 
         // Apply the operation on the freshly-loaded pointer
-        operation(values_before);
+        detail::modify_element<ChunkType, T>(values_before, ctx->num, operation);
 
         // Post-store confirmation
         T* values_after = ctx->chunk.values_load();

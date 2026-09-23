@@ -28,6 +28,7 @@
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement, asserted on ChunkBase
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/internal/in_t.h" // in_t<T>: the scans' constants, by value or by reference
+#include "chunk/internal/relaxed_element.h" // element_at<true>: the marking filter's reads
 #include "chunk/internal/svalloc.h"
 #include "chunk/config.h"
 #include "chunk/ring_log_debug.h" // SEGV hunt: EV_VALUE_ALLOC/FREE to prove aliasing
@@ -1147,6 +1148,9 @@ class ChunkBase : public CRTPSupport<Derived>,
      *       address and a mutable reference into the buffer, which a registry
      *       lookup cannot stand in for.
      */
+    /// @tparam Relaxed read the element through a relaxed atomic_ref: for an
+    ///         element another thread may be writing (relaxed_element.h).
+    template <bool Relaxed = false>
     [[nodiscard]] T element_at(int i) const noexcept
     {
         if constexpr (build_config::cst_val2_no_arrays)
@@ -1189,10 +1193,19 @@ class ChunkBase : public CRTPSupport<Derived>,
                 const T* const p = values_load();
                 if (derived().is_cst_val2_ptr_of(p)) [[unlikely]]
                     return derived().second_value_from_ptr(p);
-                return p[i];
+                return load_at<Relaxed>(p, i);
             }
         }
-        return values_load()[i];
+        return load_at<Relaxed>(values_load(), i);
+    }
+
+    template <bool Relaxed>
+    [[nodiscard]] static T load_at(const T* p, int i) noexcept
+    {
+        if constexpr (Relaxed)
+            return detail::load_element_relaxed(p + i);
+        else
+            return p[i];
     }
 
     T* values_load() const noexcept
@@ -1280,6 +1293,18 @@ class ChunkBase : public CRTPSupport<Derived>,
             increm_chunk_scan_read<Derived>();
         }
         return element_at(i);
+    }
+
+    /// @brief read_value_scan() of an element another thread may be writing:
+    ///        a relaxed atomic load (relaxed_element.h). The marking filter's.
+    /// @pre detail::relaxed_element_access_v<T>.
+    [[nodiscard]] T read_value_scan_relaxed(int i) const noexcept
+    {
+        if constexpr (chunk_config::stats)
+        {
+            increm_chunk_scan_read<Derived>();
+        }
+        return element_at<true>(i);
     }
 
     /// @brief Outcome of scan_constants(): which hypothesis survived the walk.

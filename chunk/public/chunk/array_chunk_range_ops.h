@@ -55,6 +55,7 @@
 #include "chunk/vector_range_ops.h" // detail::ChunkedArray + the std::vector fallback
 #include "chunk/internal/write_compress_sync_policy.h" // fill_range_mt: the writer side of the Dekker handshake
 #include "chunk/internal/compression_manager.h"      // fill_range_mt: must_defer_write / wait_out_compressor
+#include "chunk/internal/relaxed_element.h"          // fill_range_mt: Chunk2A's shared elements
 
 namespace shrink_array
 {
@@ -125,6 +126,51 @@ template <typename T>
 [[nodiscard]] bool may_be_uniform(const T* dst, unsigned int S) noexcept
 {
     return S == 0 || (dst[0] == dst[S / 2] && dst[0] == dst[S - 1]);
+}
+
+/**
+ * @brief may_be_uniform() on a buffer other threads are writing (fill_range_mt).
+ * @details Same three elements, read as relaxed atomics: other writers of the
+ *          chunk store them concurrently (relaxed_element.h).
+ */
+template <typename T>
+[[nodiscard]] bool may_be_uniform_relaxed(const T* dst, unsigned int S) noexcept
+{
+    if (S == 0)
+        return true;
+    const T v0 = load_element_relaxed(dst);
+    return v0 == load_element_relaxed(dst + S / 2) && v0 == load_element_relaxed(dst + S - 1);
+}
+
+/**
+ * @brief Store @p v into offsets [@p o_lo, @p o_hi) of a chunk buffer other
+ *        threads are writing and reading (fill_range_mt, Chunk2A).
+ * @details Only five offsets are ever read by a thread that does not own them:
+ *          0, 1, S-2, S-1 (the marking filter, Proxy2A::may_become_uniform)
+ *          and 0, S/2, S-1 (may_be_uniform_relaxed). Those are stored as
+ *          relaxed atomics; the runs between them stay plain stores, so the
+ *          bulk of the fill still vectorises.
+ */
+template <typename T>
+void fill_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::size_t S, T v) noexcept
+{
+    // Ascending for S >= 4; for a smaller S the out-of-order or duplicate
+    // entries are skipped by `s < o`, and S - 2 wrapping for S == 1 by `s >= o_hi`.
+    const std::size_t shared[] = {0, 1, S / 2, S - 2, S - 1};
+    std::size_t       o        = o_lo;
+    for (const std::size_t s : shared)
+    {
+        if (s < o)
+            continue;
+        if (s >= o_hi)
+            break;
+        for (; o < s; ++o)
+            dst[o] = v;
+        store_element_relaxed(dst + s, v);
+        o = s + 1;
+    }
+    for (; o < o_hi; ++o)
+        dst[o] = v;
 }
 
 template <typename Arr>
@@ -535,9 +581,19 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
                 if (!Mgr::must_defer_write(ch) && !ch.pending_any() && detail::materialised(ch)) // 4.
                 {
                     T* dst = ch.values_load(); // 5.
-                    for (std::size_t k = i; k < hi; ++k)
-                        dst[k - c_begin] = value;
-                    uniform = detail::may_be_uniform(dst, S); // buffer pinned by the session
+                    if constexpr (detail::relaxed_element_stores_v<chunk_type, T>)
+                    {
+                        // Other writers of this chunk read some of these
+                        // elements, and write the ones this span reads.
+                        detail::fill_span_relaxed_edges(dst, i - c_begin, hi - c_begin, S, static_cast<T>(value));
+                        uniform = detail::may_be_uniform_relaxed(dst, S); // buffer pinned by the session
+                    }
+                    else
+                    {
+                        for (std::size_t k = i; k < hi; ++k)
+                            dst[k - c_begin] = value;
+                        uniform = detail::may_be_uniform(dst, S); // buffer pinned by the session
+                    }
                     if constexpr (chunk_config::use_chunk)
                         uniform = uniform && dst[0] == static_cast<T>(chunk_type::first_value); // v1: first value only
                     done    = true;

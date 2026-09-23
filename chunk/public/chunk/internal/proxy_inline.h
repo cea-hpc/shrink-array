@@ -147,7 +147,6 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(in_t<T>
     if (should_mark_for_compression(old_value, new_value) || (read_values() != expected_in_memory)) [[unlikely]]
     {
         Base::add_to_compression_list();
-        return;
     }
 }
 
@@ -195,10 +194,10 @@ void Proxy<T>::execute_arithmetic_compound_operation(OP op, [[maybe_unused]] con
 
 template <typename Derived, typename T, bool Enabled>
 template <typename OP, typename LAMBDA, typename U>
-void ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_operation_async(auto*              ctx,
-                                                                                           OP                 op,
+void ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_operation_async(auto* ctx,
+                                                                                           OP    op,
                                                                                            [[maybe_unused]] const U& v,
-                                                                                           LAMBDA             lbd) const
+                                                                                           LAMBDA lbd) const
 {
     // Determine the high-precision calculation type for STL parity
     using CalcType = std::common_type_t<T, base_t<U>>;
@@ -259,18 +258,16 @@ T Proxy<T>::assign_impl(in_t<U> v) noexcept
             {
                 return zero;
             }
-            else
-            {
-                if (values[num] != zero)
-                {
-                    chunk.inc_nb_val_eq_zero();
-                }
 
-                if (chunk.is_full_zero(this->chunk_size()))
-                {
-                    this->manage_full_zero();
-                    return zero;
-                }
+            if (values[num] != zero)
+            {
+                chunk.inc_nb_val_eq_zero();
+            }
+
+            if (chunk.is_full_zero(this->chunk_size()))
+            {
+                this->manage_full_zero();
+                return zero;
             }
         }
         else if (!is_cst_val() && values[num] == zero)
@@ -485,7 +482,7 @@ void Proxy<T>::execute_inplace_operation(LAMBDA operation)
         }
     }
 
-    operation(Base::values);
+    operation(Base::values[num]);
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
@@ -533,7 +530,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_async(a
     T* values = chunk_loc.values_load();
 
     // Apply the user-provided operation on the real values
-    operation(values);
+    operation(values[num]);
 
     // Re-read the updated value: nothing writes it afterwards, in_t (a
     // reference for a struct) rather than a copy.

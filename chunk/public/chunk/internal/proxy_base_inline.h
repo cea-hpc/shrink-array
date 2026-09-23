@@ -1212,7 +1212,10 @@ T ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation) n
                                 ring_log(get_tid(), EV_LAMBDA_ASYNC_ARITH, info);
                             }
 
-                            values[ctx->num] = final_val;
+                            if constexpr (detail::relaxed_element_stores_v<ChunkType, T>)
+                                detail::store_element_relaxed(values + ctx->num, static_cast<T>(final_val));
+                            else
+                                values[ctx->num] = final_val;
                         });
                 });
         }
@@ -1251,12 +1254,12 @@ T ProxyBase<Derived, T, ChunkType>::bitwise_assign_with_result(in_t<U> v, Op ope
     using CalcType = std::common_type_t<T, U>;
     T result;
 
-    auto op_lambda = [this, &v, &result, operation](T* val) // v: the call's parameter, alive for the call
+    auto op_lambda = [&v, &result, operation](T& e) // v: the call's parameter, alive for the call
     {
         // Integral promotion logic: promote both to common type, apply op, truncate
-        const CalcType intermediate = operation(static_cast<CalcType>(val[num]), static_cast<CalcType>(v));
-        val[num]                    = static_cast<T>(intermediate);
-        result                      = val[num];
+        const CalcType intermediate = operation(static_cast<CalcType>(e), static_cast<CalcType>(v));
+        e                           = static_cast<T>(intermediate);
+        result                      = e;
     };
 
     if constexpr (chunk_config::use_fast_block_compression)
@@ -1270,12 +1273,11 @@ T ProxyBase<Derived, T, ChunkType>::bitwise_assign_with_result(in_t<U> v, Op ope
                                      {
                                          proxy.execute_inplace_operation_async(
                                              ctx,
-                                             [ctx, operation](T* val)
+                                             [ctx, operation](T& e)
                                              {
-                                                 const CalcType intermediate =
-                                                     operation(static_cast<CalcType>(val[ctx->num]),
-                                                               static_cast<CalcType>(ctx->operand));
-                                                 val[ctx->num] = static_cast<T>(intermediate);
+                                                 const CalcType intermediate = operation(
+                                                     static_cast<CalcType>(e), static_cast<CalcType>(ctx->operand));
+                                                 e = static_cast<T>(intermediate);
                                              });
                                      });
         }
@@ -1313,10 +1315,10 @@ T ProxyBase<Derived, T, ChunkType>::bitwise_assign_simple(in_t<U> v, Op operatio
     auto op_lambda = [this, &v, operation] // v: the call's parameter, alive for the call
     {
         derived().execute_inplace_operation(
-            [this, &v, operation](T* val)
+            [&v, operation](T& e)
             {
-                const CalcType intermediate = operation(static_cast<CalcType>(val[num]), static_cast<CalcType>(v));
-                val[num]                    = static_cast<T>(intermediate);
+                const CalcType intermediate = operation(static_cast<CalcType>(e), static_cast<CalcType>(v));
+                e                           = static_cast<T>(intermediate);
             });
     };
 
@@ -1329,12 +1331,11 @@ T ProxyBase<Derived, T, ChunkType>::bitwise_assign_simple(in_t<U> v, Op operatio
                                      {
                                          proxy.execute_inplace_operation_async(
                                              ctx,
-                                             [ctx, operation](T* val)
+                                             [ctx, operation](T& e)
                                              {
-                                                 const CalcType intermediate =
-                                                     operation(static_cast<CalcType>(val[ctx->num]),
-                                                               static_cast<CalcType>(ctx->operand));
-                                                 val[ctx->num] = static_cast<T>(intermediate);
+                                                 const CalcType intermediate = operation(
+                                                     static_cast<CalcType>(e), static_cast<CalcType>(ctx->operand));
+                                                 e = static_cast<T>(intermediate);
                                              });
                                      });
         }
