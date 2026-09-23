@@ -22,9 +22,28 @@
 // of the container declaration itself.
 #include "chunk/internal/array_chunk2_rechunk_hooks.h"
 #include "chunk/internal/manager_chunk.h" // manager_type — candidate store + reuse free-lists
+#include <cstdlib> // std::getenv (CHUNK_RECHUNK_DROP_LEGACY)
+#include <tuple>   // std::get on candidate tuples
 
 namespace shrink_array
 {
+
+// Defined in each variant's hooks file, guarded: a TU that includes several
+// variants must see a single definition.
+#ifndef SHRINK_ARRAY_RECHUNK_DROP_LEGACY_DEFINED
+#define SHRINK_ARRAY_RECHUNK_DROP_LEGACY_DEFINED
+namespace rechunk_detail
+{
+/// A/B switch: CHUNK_RECHUNK_DROP_LEGACY=1 (read once) makes
+/// rechunk_drop_candidates() drop the array's candidates WITHOUT compressing
+/// them first -- the behaviour before Sept '26.
+inline const bool g_rechunk_drop_legacy = []
+{
+    const char* e = std::getenv("CHUNK_RECHUNK_DROP_LEGACY");
+    return e != nullptr && e[0] != '\0' && e[0] != '0';
+}();
+} // namespace rechunk_detail
+#endif
 
 template <typename Derived>
 void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
@@ -32,9 +51,34 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
     // Chunk2 resolves num_tab from the registry (keyed by `this`), never the
     // member. See RechunkSupport::rechunk_to for why the drop must happen at the
     // owning geometry.
+    //
+    // COMPRESS them first (Sept '26) -- see RechunkHooks2A: a candidate dropped
+    // here stayed materialised through the rebuild and was never re-queued.
+    // Chunk2's compress() takes the array's (second_value, ind, num_tab) tuple;
+    // bool has no second value and is left to the drop.
     if constexpr (chunk_config::use_fast_block_compression)
-        manager_type::remove_from_compress_list_chunk2_by_num_tab(
-            proxy_type::share_info_array.get_num_tab(self().registry_key()));
+    {
+        const int num_tab = proxy_type::share_info_array.get_num_tab(self().registry_key());
+        if constexpr (Derived::is_not_bool && build_config::use_openmp)
+        {
+            if (!rechunk_detail::g_rechunk_drop_legacy)
+            {
+                const auto inf = self().get_info_second_value();
+                const int  thr = get_thr_rank_fast();
+                shrink_array::set_thread_chunk_size(self().size_policy_.size());
+                for (auto& per_rank : manager_type::map_chunk2_to_compress_potentially_thr)
+                    for (auto& kv : per_rank)
+                    {
+                        if (!kv.second)
+                            continue;
+                        for (auto& tup : *kv.second)
+                            if (std::get<2>(tup) == num_tab)
+                                std::get<0>(tup)->compress(thr, inf, /*apply=*/true, std::get<3>(tup).count());
+                    }
+            }
+        }
+        manager_type::remove_from_compress_list_chunk2_by_num_tab(num_tab);
+    }
 }
 
 template <typename Derived>
