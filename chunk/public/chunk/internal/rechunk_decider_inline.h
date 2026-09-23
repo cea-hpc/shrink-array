@@ -72,8 +72,8 @@ inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool ba
 
 // Feed one advisor observation for array `key` at logical time `tick`.
 // Logs the verdict; returns true iff it WOULD re-chunk (dry-run) this tick.
-template <typename T>
-bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeReport& rep, const char* name)
+
+inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeReport& rep, const char* name)
 {
     if (rep.best < 0 || rep.cur < 0)
         return false;
@@ -320,7 +320,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                 arr.rechunk_to(tgt);
                 // Log it so print_rechunk_log() ("Re-chunks performed") shows the
                 // forced move. Mem figures are 0 (advisor bypassed, not measured).
-                log_.push_back(RechunkEvent{iter, std::string(name), cur_sz, tgt, 0.0, 0.0, 0.0});
+                log_.emplace_back(RechunkEvent{iter, std::string(name), cur_sz, tgt, 0.0, 0.0, 0.0});
                 return true;
             }
             return false;

@@ -116,7 +116,7 @@ class RechunkDecider
 
     /// @brief Feed one advisor observation for array @p key at logical time
     ///        @p tick. Logs the verdict; true iff it WOULD re-chunk this tick.
-    template <typename T>
+
     bool observe(const void* key, int tick, const ChunkSizeReport& rep, const char* name);
 
     /// @brief One-call convenience: analyse @p arr, apply the memory +
