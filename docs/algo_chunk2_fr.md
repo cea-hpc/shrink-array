@@ -1,733 +1,501 @@
+# L'algorithme d'`ArrayChunk2`
 
-
-# Présentation de l'algorithme Implémenté Dans ArrayChunk2
-
-
-
-## Objectif
-
-L'objet `ArrayChunk2` implémente une structure de données optimisée pour gérer de grands tableaux en les divisant en sous-unités appelées **chunks**. Cela permet :
-
-- Un gain en mémoire sur les tableaux contenant beaucoup de zéro ou une autre valeur identique (comme par exemple 1)
-- Des accès rapides via des opérations "bitwise"
-- Un fonctionnement en multi-thread ("OpenMP") performant
-
-Ce document présente l'algorithme : en décrivant et expliquant à chaque étape de l'utilisation en lecture et écriture de cet objet ArrayChunk2
-
-## Exemple de déclaration et initialisation du tableau 
-
-```cpp
-ArrayChunk2<int> tab_int(sz);
-tab_int.set_second_value(1);
-
-ArrayChunk2<double> tab_double(sz);
-tab_double.set_second_value(2);
-```
-L'utilisation se fait quasiment comme un vector STL C++
-
-```cpp
- for (int i = begin_i; i < end_i; ++i)
- {
-     tab_int[i] = 1;
-	 tab_double[i] = 2 * tab_int[i];
- }
-```
-
-## Principe général
-
-Chaque index `i` est décomposé en deux parties :
-
-- **Numéro du chunk** : `i >> __decalage_chunk`
-- **Index local dans le chunk** : `i & __modulo_chunk`
-
-Ces opérations permettent d’accéder rapidement au bon sous-tableau et à la bonne position dans ce sous-tableau. Remarque : ces instructions de décalage de bit ne coute qu'un cycle d'horloge sur un processeur
-
-Les valeurs __decalage_chunk et __modulo_chunk sont calculées à partir de la variable chunk_size 
-chunk_size doit être une puissance de 2 (par défaut 64)
-
-```cpp
-
-    static void setDecalageChunk(unsigned int chunk_size)
-    {
-        __decalage_chunk = log2int(chunk_size);
-    }
-
-    static void setModuloChunk(unsigned int chunk_size)
-    {
-        __modulo_chunk = chunk_size - 1;
-    }
-```
-
+*État du code : septembre 2026 (mis à jour après l'ouverture des opérations sur plages à Chunk2). Ce document remplace l'ancienne présentation, qui décrivait
+une version antérieure (verrous par élément, `__decalage_chunk` global, taille de chunk fixée
+à 64, parallélisation « sans solution satisfaisante »). Les noms de fonctions et de fichiers
+cités sont ceux de l'arbre actuel ; en cas de doute, c'est le code qui fait foi.*
 
 ---
 
-## Méthodes principales
+## 1. Objectif
 
+`ArrayChunk2<T>` est un tableau découpé en **chunks** (blocs de taille fixe, puissance de 2)
+qui se **compressent** dès que tous leurs éléments valent l'une de **deux constantes** :
 
+- la **première valeur** `first_value` (0, la valeur d'initialisation) ;
+- une **seconde valeur**, **commune à tout le tableau**, déclarée par `set_second_value()`.
 
-Dans cette partie on décrit les principales méthodes de l'algorithme dans le même ordre que l’exécution du programme
+Un chunk compressé n'a pas de tampon propre : il pointe vers un tampon constant partagé.
+Le gain mémoire vient de là.
 
-On présente ici les principaux accesseurs des tableaux de type ArrayChunk2
+Les trois variantes de la bibliothèque se distinguent par ce qu'elles savent compresser :
 
-### `operator[]` (lecture constante)
+| variante | constantes compressibles | métadonnée de seconde valeur |
+|---|---|---|
+| `ArrayChunk` (v1) | `first_value` seulement | aucune |
+| **`ArrayChunk2`** | `first_value` **et une seconde valeur par tableau** | une entrée par tableau |
+| `ArrayChunk2A` | `first_value` et **une seconde valeur par chunk** | une entrée par chunk |
+
+`ArrayChunk2` est donc le bon choix quand les données ont **une seule valeur dominante
+non nulle** : ses métadonnées sont plus légères que celles de Chunk2A.
+
+---
+
+## 2. Utilisation
 
 ```cpp
-template <typename T, typename ind_type>
-Inlinable T ArrayChunk2<T, ind_type>::operator[](ind_type i) const noexcept
+ArrayChunk2<double> tab(n);
+tab.set_second_value(1.0);      // à déclarer avant les phases parallèles
+
+#pragma omp parallel for
+for (long i = 0; i < n; ++i)
+    tab[i] = f(i);              // écriture : passe par un proxy
+
+double s = std::as_const(tab)[i];   // lecture : renvoie un T
+```
+
+L'interface est proche d'un `std::vector` : `size()`, `resize()`, `at()`, itérateurs constants,
+`swap()`, etc. Trois points diffèrent :
+
+- **`operator[]` non constant renvoie un proxy** (`Proxy2<T>`), pas une référence. C'est par
+  lui que passent toutes les écritures. Les opérateurs composés (`+=`, `*=`, …) sont
+  reprogrammés sur le proxy.
+- **`set_second_value()` doit être appelé hors région parallèle**, avant les écritures : il
+  enregistre la seconde valeur dans le registre et crée les listes de candidats à la
+  compression pour cette valeur. Un tableau qui ne déclare jamais de seconde valeur se
+  comporte comme un `ArrayChunk` (compression vers 0 seulement).
+- **Les opérations sur plages** (`fill_range`, `copy_range`, `fill_range_mt` dans
+  `array_chunk_range_ops.h`) écrivent une plage en une décision par chunk, et
+  `fill_range_mt` peut être appelée par plusieurs threads à la fois (section 10).
+
+---
+
+## 3. Géométrie : taille de chunk et découpage de l'indice
+
+La taille de chunk est portée **par chaque tableau** (`size_policy_`, voir
+`chunk_size_policy.h`), et non par une variable globale :
+
+- **géométrie fixe** : la taille est une constante de compilation, une bibliothèque par
+  taille (`chunk_v2_256`, …, liste `CHUNK_STATIC_SIZES`, la première donnant
+  `CHUNK_DEFAULT_SIZE`) ;
+- **géométrie dynamique** (`CHUNK_DYNAMIC`, bibliothèques `_dyn`) : la taille est fixée à
+  l'exécution et peut **changer au cours de la vie du tableau** (`rechunk_to()`, section 9),
+  jusqu'à `chunk_dyn_max_size` (4096 par défaut).
+
+L'indice global `i` se décompose en deux opérations d'un cycle :
+
+```cpp
+const int num_chunk = i >> size_policy_.decalage();   // numéro du chunk
+const int num       = i &  size_policy_.modulo();     // position dans le chunk
+```
+
+---
+
+## 4. Les états d'un chunk et les structures partagées
+
+### 4.1 Trois états
+
+Chaque `Chunk2<T>` contient essentiellement un pointeur atomique `values`. Selon sa cible,
+le chunk est dans l'un de trois états :
+
+| état | `values` pointe vers | test |
+|---|---|---|
+| compressé à la première valeur | le tampon constant `cst_val1` (que des 0) | `is_cst_val1()` |
+| compressé à la seconde valeur | le tampon constant `cst_val2[ind]` | `is_cst_val2(ind)` |
+| matérialisé | un tampon privé, alloué pour ce chunk | `written(ind)` |
+
+Les tampons constants sont **alloués une seule fois** et partagés par tous les chunks
+concernés. Leur taille est `cst_buffer_size` (la taille de chunk en géométrie fixe,
+`chunk_dyn_max_size` en géométrie dynamique). Il existe un tampon `cst_val2` par seconde
+valeur déclarée, repéré par un **indice** `ind`.
+
+> Attention : `Chunk2::written()` **sans argument** est réservé à `bool` et renvoie `false`
+> pour tout autre type. Pour savoir si un chunk non booléen est matérialisé, il faut
+> `written(ind)` avec l'indice de la seconde valeur du tableau
+> (`ArrayChunk2::chunk_written(j)` le fait).
+
+### 4.2 Le registre des secondes valeurs
+
+La seconde valeur **n'est pas stockée dans le tableau** : elle vit dans le registre partagé
+`Proxy2<T>::share_info_array`, indexé par l'**adresse** du tableau. Chaque entrée est un
+triplet `inf_array_t` :
+
+```
+(second_value, ind, num_tab)
+```
+
+- `ind` : l'indice du tampon constant `cst_val2` de cette valeur ;
+- `num_tab` : le numéro du tableau, qui indexe les tables de métadonnées par tableau
+  (par exemple les drapeaux « déjà candidat à la compression »).
+
+Le registre reste la source de vérité, mais chaque tableau en garde un **miroir**
+(`ArrayChunk2::inf_array`), relu (`sync_registry_mirror()`) après les trois seuls endroits qui
+écrivent le registre : `create()`, `set_second_value()` et l'échange d'identité du rechunk.
+L'`operator[]` d'écriture **arme chaque proxy avec l'adresse de ce miroir**
+(`registry_mirror()`, `arm_inf_array()`) : le chemin d'écriture copie le triplet au lieu de
+chercher dans le registre. En build de vérification (`any_check`), chaque lecture du miroir
+est comparée au registre.
+
+`CHUNK_PROXY2_ARM_LEGACY=1` désactive cet armement (retour à la recherche dans le registre).
+
+---
+
+## 5. La lecture
+
+L'opérateur de lecture renvoie une **valeur**, jamais une référence :
+
+```cpp
+SA_FLATTEN FORCE_INLINE T operator[](ind_type i) const noexcept
 {
-    const auto& chunk = chunk_list[i >> __decalage_chunk];
-    return chunk[i & __modulo_chunk];
+    const int num_chunk = i >> size_policy_.decalage();
+    const int num       = i & size_policy_.modulo();
+    const auto& chunk_t = chunk_list[num_chunk];
+    sync_chunk(chunk_t, num_chunk, num);      // barrière de lecture (OpenMP)
+    return chunk_t[num];
 }
 ```
-### operator() (forçage lecture (*) : même si l'utilisation du tableau appellerait l’opérateur en écriture on force le mode lecture )
+
+Lire un chunk compressé ne coûte rien de plus : on lit dans le tampon constant.
+
+**La barrière de lecture** (`sync_chunk`, compilée à vide sans OpenMP) garantit qu'une
+lecture voit les écritures **différées** (section 7.3) déjà émises sur ce chunk :
+
+1. un **filtre grossier** par chunk (le « dirty bitset ») : un bit à zéro signifie qu'aucune
+   écriture différée n'a jamais visé ce chunk, et la lecture repart immédiatement. C'est le
+   cas de loin le plus fréquent ;
+2. sinon, le **compteur précis** d'opérations en attente du chunk décide s'il faut appliquer
+   ces opérations (`reader_sync`) avant de lire.
+
+Il existe aussi `operator()` const (même lecture, utile quand le contexte appellerait sinon
+l'opérateur d'écriture) et `T& operator()(i)` non const, qui donne une référence brute dans
+le tampon : **à n'utiliser que sur un chunk matérialisé**, puisqu'il contourne le proxy.
+
+---
+
+## 6. L'écriture
+
+### 6.1 L'`operator[]` d'écriture : un proxy armé
 
 ```cpp
-template <typename T, typename ind_type>
-Inlinable T ArrayChunk2<T, ind_type>::operator()(ind_type i) noexcept
+proxy_type operator[](ind_type i) noexcept
 {
-    const auto& chunk = chunk_list[i >> __decalage_chunk];
-
-    T& val = chunk[i & __modulo_chunk];
-
+    const int num_chunk = i >> size_policy_.decalage();
+    const int num       = i & size_policy_.modulo();
+    const proxy_type& val = chunk_list[num_chunk][num];
+    val.set_this_and_num_chunk(&derived(), num_chunk, num_tab);   // tableau, chunk, num_tab
+    val.arm_inf_array(derived().registry_mirror());                // Chunk2 : le miroir
     return val;
-
-}
-```
-### `operator[]` (retourne un objet de type Proxy2<T>)
-
-```cpp
-template <typename T, typename ind_type>
-Inlinable Proxy2<T> ArrayChunk2<T, ind_type>::operator[](ind_type i) noexcept
-{
-    const Proxy2<T>& val = chunk_list[i >> __decalage_chunk][i & __modulo_chunk]; \\ (1)
-    val.set_this_and_num_chunk(this, i >> __decalage_chunk);
-
-    return val; \\ (2)
 }
 ```
 
-Le premier point important de cet algorithme est le distinguo entre l'opérateur de lecture qui retourne un T simple et l'opérateur d'écriture qui retourne un Proxy2<T>.
-Cette classe Proxy2 va permettre de savoir si le tableau accèdé est à droite de l'affectation (par exemple =) ou à gauche. Elle va aussi permettre de connaître la valeur à droite de l’opérateur d'affectation.
+Le proxy sait donc, sans aucune recherche, **quel tableau**, **quel chunk**, **quelle
+position** et **quel triplet de seconde valeur** il concerne. Il permet surtout de connaître
+**la valeur écrite avant de décider** : si c'est une constante que le chunk contient déjà,
+il n'y a rien à faire, et surtout rien à allouer.
 
-Connaître cette valeur est important, car si celle-ci correspond au valeur de compression, il ne sera pas nécessaire d'allouer un bloc. 
-Si le tableau est de type const alors il n'y a pas d’ambiguïté : on utilise l'opérateur const []
-L'opérateur () ((*) forçage lecture) est une astuce qui permet de ne pas utiliser l'opérateur d'écriture lorsque l'on sait que l'opération ne va pas changer la valeur constante : typiquement sqrt
-
- A la ligne de code (1) on appelle l’opérateur [] de Chunk2
+### 6.2 L'affectation (`assign_impl`)
 
 ```cpp
-template <typename T>
-Inlinable Proxy2<T> Chunk2<T>::operator[](int i) noexcept
-{
-    return Proxy2<T>(values, i, *this); \\ (3)
-}
-```
-Le pointeur values (std::atomic<T*>) pointe soit sur un bloc de données de taille (chunk_size) ou sur un premier tableau de aussi taille chunk_size contenant umiquement la première valeur constante (0) ou sur un deuxième contenant uniquement la deuxième valeur de compression. Ces deux tableaux ne sont alloués qu'une fois chacun : ils n'occupent que 2 * chunk_size comme place mémoire. C'est ce mécanisme qui permet de gagner en place mémoire.
+const T* values_loc = chunk.values_load();
 
- A la ligne de code (3) on appelle le constructeur ci-dessous : en initialisant les champs nécessaires à proxy2
-```cpp
-inline explicit Proxy2(std::atomic<T*>& values_, int num_, Chunk2<T>& chunk_) noexcept
-        : values(values_), num(num_), chunk(chunk_)
-    {
-    }
-```
+// 1. first_value sur un chunk déjà à first_value : rien à faire
+if (is_cst_val1_and_v_equal_first_value(values_loc, v)) return v;
 
-A la ligne de code (3) au niveau du return. Il y a 2 chemins possible qui correspondent au mode écriture ou mode lecture : le mode écriture est beaucoup plus complexe et va être décrit ci dessous. Le mode lecture est juste l’accès au tableau, celui-ci est donc beaucoup plus rapide. On va décrire l’opérateur d'affectation = mais avec cette technique de classe "proxy", il faut recoder l'ensemble des opérateurs (+=, *= , /= etc...)  sachant qu'il y a des différences de comportement entre chaque operateur, on va regrouper le codage par similitude : par exemple /= et *= ou += et -= 
+set_info_second_value_ind();   // second_value et ind, depuis le miroir
 
- ### Mode lecture
-
- On appelle l’opérateur de conversion
-
-```cpp
-inline operator T() const noexcept
-{
-    return values[num];
-}
-```
-
- ### Mode écriture
-
-
-```cpp 
-template <typename T>
-Inlinable T Proxy2<T>::operator=(T v) noexcept
-{
-    // Si la valeur a affecté est égale à la première valeur et
-    // si le pointeur sur le bloc est déjà égale au tableau contenant
-    // ces valeurs alors il n'y a rien à faire.
-
-    if (v == static_cast<T>(Chunk2<T>::first_value) && is_cst_val1())
-    {
+// 2. second_value sur un chunk à cst_val2, ou sur un élément qui la contient déjà :
+//    rien à faire -- sauf si des écritures différées sont en attente sur le chunk
+//    (une ancienne opération rejouée plus tard écraserait la valeur laissée en place)
+if (!chunk.pending_any())
+    if (v == second_value && (values_loc == chunk.get_cst_val2(ind) || values_loc[num] == second_value))
         return v;
-    }
-	
-    // Permet de récupérer la valeur de la seconde valeur de compression 
-    // et de initialiser celle-ci dans l'objet "Chunk2". 
-    // On récupère aussi un indice qui permet d'utiliser 
-    // le tableau de valeur constante correspondant à la seconde valeur.
- 
-    set_info_second_value_ind();
-	
-    // Si la valeur a affecté est égale à la deuxième valeur et si le pointeur sur le bloc est déjà égale au tableau contenant ces valeurs alors il n'y a rien à faire.
-	
-    if (is_cst_val2()) 
-    {
-        if (v == second_value)
-        {
-            return v;
-        }
-    }
-    else
-    {   
-        // Identique a set_info_second_value_ind()
-        // mais ajoute l'initialisation de pointeur utile a la construction de la liste de bloc a comprimer
-        set_info_on_chunk();
-        manage_compression(inf_array); // Gestion de la compression "en vol" sera expliquée ultérieurement
-    }
-    // Identique a set_info_on_chunk() mais avec un lock OpenMP thread
-    set_info_on_chunk_and_lock_writing();
-	
-    // Remplissage en vol de la liste des blocs a éventuellement comprimé "en vol" 
-    mark_for_compression(num, v, second_value); 
-    
-	// Voir - ci dessous : cette partie de l'algorithme est dans une méthode car celui-ci est réutilisée pour d'autres opérateurs.
-    manage_core_op_eq(v)
 
-    return v;
-}
-```
-Détails de l'algorithme en mode écriture :
-
-(1a)  On utilise une technique qui permet de ne pas utiliser de déclarations statiques dans la classe "ArrayChunk2".   L'utilisation de statique n'aurait pas été possible
-   dans le cas d'un programme utilisant différent "ArrayChunk2". 
-  On limite aussi au maximum la place mémoire consommée par chaque "Chunk2"
-
-
-```cpp
-template <typename T>
-Inlinable void Proxy2<T>::manage_core_op_eq(T v) const noexcept
-{
-    bool need_alloc;
-
-    if (v == second_value) // (1b)
-    {
-        if (values[num] == second_value)
-        {
-            unlock_writing(); (11b)
-            return;
-        }
-        if (is_cst_val1()) // (2b)
-        {
-            create_value(); // (3b)
-
-            values[num] = second_value;
-
-            unlock_writing();
-
-            return;
-        }
-    }
-
-    need_alloc = is_cst_val(); // (4b)
-
-    if (need_alloc)
-    {
-        create_value(); (3b)
-    }
-
-    values[num] = v; (5b)
-
-    unlock_writing();
-}
+// 3. sinon : le corps de l'écriture, confié au moteur d'écriture
+auto body = [this, &v] { mark_for_compression_if_needed(v); perform_core_assignment(v); };
+const bool deferred = write_with_optional_lock_with_set_ptr(body);
+if (deferred) { /* capturer l'opération pour la rejouer plus tard (7.3) */ }
 ```
 
-Suite détails de l'algorithme en mode écriture :
+### 6.3 Le corps : `perform_core_assignment`
+
+- **seconde valeur écrite dans un chunk à `cst_val1`** : on matérialise le chunk
+  (`create_value()`, pré-rempli de 0), puis on écrit la valeur ;
+- **chunk compressé (l'une ou l'autre constante) et valeur différente** : on matérialise le
+  chunk, pré-rempli **avec la constante qu'il quitte**, puis on écrit ;
+- **chunk matérialisé** : simple écriture dans le tampon.
+
+Dans les builds **séquentiels** seulement, des compteurs par chunk (nombre d'éléments égaux à
+chaque constante) déclenchent directement la compression quand un chunk devient uniforme.
+Avec OpenMP, ces compteurs n'existent pas : c'est la compression « en vol » de la section 8
+qui s'en charge.
+
+### 6.4 La matérialisation : `create_value`
+
+1. prendre un tampon dans la **liste de réutilisation du thread** (tampons libérés par des
+   compressions précédentes), ou en allouer un auprès de l'allocateur rapide
+   (`fast_allocators`, section 9.1) ;
+2. le **pré-remplir** avec la constante que le chunk quitte ;
+3. le **publier par CAS** sur `values`. Le CAS refuse une transition incohérente (par
+   exemple si un autre thread a matérialisé ou compressé le chunk entre-temps) ; le perdant
+   rend son tampon.
 
-(1b) Si la valeur est égale à la seconde valeur de compression et que l'on veut affecter cette même valeur alors il n'y a rien faire.
-
-(11b) Verrou pour le mode multi-thread : expliqué ultérieurement.
-
-(2b) Le bloc pointe sur le bloc contenant que des premières valeurs (de taille chunk_size et contenant que des zéros). On veut affecter la seconde valeur : donc il faut créer un nouveau bloc
-
-(3b) Création d'un nouveau bloc (voir ci-dessous) affectation à la seconde valeur et retour.
-
-(4b) Si le bloc pointe sur l'une des valeurs constantes : il faut créer un bloc car on veut affecter une valeur qui ne correspond à aucune de celles-ci.
-
-(5b) Affectation de la valeur
-
-```cpp
-template <typename T>
-void Chunk2<T>::create_value(bool need_set_second_value, const T* ptr_second_value, int thr_rank) noexcept
-{
-    T*    values_loc;
-    auto& ll_block_free_thr = manager_chunk2::get_list_block_free_thr(thr_rank);\\ (1c)
-    const int n = manager_chunk2::get_list_block_free_thr_size(thr_rank);
-
-    if (!need_set_second_value) \\ (2c)
-    {
-       if (n) \\ (3c)
-       {
-            values_loc = ll_block_free_thr.back();
-            ll_block_free_thr.pop_back();
-       }
-       else
-       {
-#ifdef FAST_ALLOC
-            values_loc = chunk_allocator_thr[thr_rank].alloc(); \\ (4c)
-            init_block(values_loc);
-#else
-            svcalloc_align(values_loc, T, __chunk_size); \\ (44c)
-#endif // CHUNK_STD_ALLOC
-        }
-    }
-    else
-    {
-        if (n) \\ (5c)
-        {
-            values_loc = ll_block_free_thr.back();
-
-            ll_block_free_thr.pop_back();
-
-            const T second_value = *ptr_second_value;
-
-            for (unsigned int i = 0; i < __chunk_size; ++i)
-            {
-                values_loc[i] = second_value;
-            }
-        }
-        else \\ (6c)
-        {
-#ifdef FAST_ALLOC
-            values_loc = chunk_allocator_thr[thr_rank].alloc();
-#else
-            svalloc_align(values_loc, T, __chunk_size);
-#endif
-            for (unsigned int i = 0; i < __chunk_size; ++i)
-            {
-                values_loc[i] = *ptr_second_value;
-            }
-        }
-    }
- 
-    if (compare_and_swap(values_loc)) \\ (8c)
-    {
-        recup_value(values_loc, thr_rank);
-    }
-}
-```
-Détails création d'un bloc de valeur non constante :
-
-(1c) Récupération de la liste des blocs liberés et de la taille de celle-ci : permet de faire re-circuler les blocs sans allocation dynamique.
-
-(2c) Test pour savoir si on doit initialiser le bloc à la seconde valeur : c'est le cas où le bloc pointe sur le bloc constant de seconde valeur.
-
-(3c) Récupération du pointeur sur le bloc et suppression de la liste
-
-(4c) Allocation d'un bloc (si la liste des blocs libres est vide) soit via un allocateur spécialisé (**) soit avec une allocation allignée
-
-(5c) identique à (3c) mais avec initialisation à la seconde valeur.
-
-(6c) identique à (4c) mais avec aussi initialisation à la seconde valeur.
-
-## La compression "en vol"
-
-Un point clé de cet algorithme est cette compression "en vol". Cela rajoute de la complexité mais c"est néanmoins nécessaire. ci-dessous l'exemple de boucle très simple qui poserait problème si on ne faisait pas cette compression :
-
-```cpp
-    for (int i = 0; i < sz; ++i)
-    {
-        tab[i] = second_value;
-    }
-```
-Ci-dessus on effectue l'initialisation de tab sur l'ensemble de ces éléments à la seconde valeur. Le problème, si on ne faisait pas la compression en vol, serait le suivant : la mémoire serait entièrement allouée et donc l'intérêt de la compression nul. Pourquoi on a ce problème ? : à la déclaration du tableau tous les blocs sont positionnés sur la première valeur de compression (initialisation à zéro du tableau). A chaque itération de la boucle, on constate à chaque début de bloc qu'il y a 0 alors il faudra avoir 1 0 0 0 0 0 0 0 (si chunk_size vaut 8 et la seconde valeur 1) et cela entraine systématiquement la création d'un bloc. C'est donc pour contrer ce problème que l'on implémente cet algorithme de compression en vol.
-
-Ci-dessous on va détailler cet algorithme de compression.
-
-
-
-```cpp
-template <typename T>
-Inlinable void Proxy2<T>::manage_compression(const inf_array_t& inf_array) noexcept
-{
-    const int thr_rank     = CHUNK_PMP_THREAD_RANK;
-    const T   second_value = std::get<0>(inf_array); \\ (1d)
-    auto*     vec_tuple_p  = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][second_value].get(); \\ (2d)
-
-    auto& vec_tuple = *vec_tuple_p;
-
-    const int sz = static_cast<int>(vec_tuple.size()); \\ (3d)
-    const int szm = manager_chunk2::get_size_max_number_of_chunk_to_check_compress(); \\ (4d)
-
-    if (sz > szm) \\ (5d)
-    {
-        auto& ml = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
-
-        for (auto& elm : ml) \\ (6d)
-        {
-            const T second_value = elm.first;
-
-            Chunk2<T>::make_block_compression(thr_rank, *share_info_array.find_inf_array(second_value), this); \\ (7d)
-        }
-
-        set_info_on_chunk();
-    }
-}
-```
-(1d) Récupération de la seconde valeur
-(2d) Récupération d'un vecteur de "tuple" chaque tuple contenant les infos nécéssaires à la compression du bloc.
-(3d) Récupération de la taille de ce vecteur
-(4d) Récupération de la taille maximum acceptée pour la liste des blocs à comprimer (trop petite on appelerait trop fréquement La compression, trop grande on gaspillerait de la mémoire) 
-(5d) Activation de la compression si on dépasse la taille maximum.
-(6d) Boucle 
-(7d) Appel de la compression 
-
-```cpp
-template <typename T>
-void Chunk2<T>::make_block_compression(int thr, const inf_array_t& inf_array, Proxy2<T>* proxy2)
-{
-    const T second_value = std::get<0>(inf_array);
-
-    auto& vec_tuple_to_compress = *(manager_chunk2::map_chunk2_to_compress_potentially_thr[thr][second_value]);
-    vec_tuple_chunk2p_int2 ll_compt1; \\ (1d)
-    vec_tuple_chunk2p_int2 ll_compt2; \\ (11d)
-
-    const int sz = vec_tuple_to_compress.size();
-
-    fill_list_chunk_to_compress_in_par(thr, ll_compt1, ll_compt2, inf_array, proxy2); // (2d)
-
-    for (const auto& tup : ll_compt1) // (3d)
-    {
-        const int num_chunk = std::get<1>(tup);
-        const int num_tab   = std::get<2>(tup);
-
-        auto* chunk_t = std::get<0>(tup);
-
-        chunk_t->clear_reversible(0, std::get<1>(inf_array), num_chunk, num_tab, proxy2, vec_tuple_remind, thr);
-    }
-
-    for (int k = 0; k < nn2; ++k) // (4d)
-    {
-        const auto& tup     = ll_compt2[k];
-        auto* chunk_t = std::get<0>(tup);
-
-        const int num_chunk = std::get<1>(tup);
-        const int num_tab   = std::get<2>(tup);
-
-        chunk_t->clear_reversible(1, std::get<1>(inf_array), num_chunk, num_tab, proxy2, vec_tuple_remind, thr);
-    }
- 
-}
-
-```
-Dans le source ci-dessus : on a supprimé la partie gérant le multi-thread pour des raisons de simplification : on y reviendra plus loin
-
-(1d) Déclaration d'un vecteur de "tuple" pour contenir les blocs à comprimer sur la première valeur (0)
-(11d) Même déclaration que ci-dessus pour les blocs à comprimer sur la deuxième valeur
-(2d) Appel de la méthode pour remplir les vecteur ll_compt1 et ll_compt2 : description de la méthode ci-dessous.
-(3d) Boucle pour appeler la méthode qui va comprimer le bloc sur la première valeur
-(4d) Même boucle mais pour la compression sur la deuxième valeur
-
-
-```cpp
-template <typename T>
-void Chunk2<T>::fill_list_to_compress(vec_tuple_chunk2p_int2& ll_compt1,
-                                      vec_tuple_chunk2p_int2& ll_compt2,
-                                      const inf_array_t&      inf_array,
-                                      int                     num_chunk,
-                                      int                     num_tab)
-{ 
-    // Test pour savoir si le bloc pointe sur le bloc contenant les premières valeurs ou
-    // sur le bloc contenant les deuxièmes valeurs (si c'est le cas il n'y a rien à faire)
-    // L'argument de is_not_cst_val2 est utilisé pour récupérer le tableau correspondant à la deuxième valeur
-    // de compression
-    if (is_not_cst_val1() && is_not_cst_val2(std::get<1>(inf_array))) // (1e)
-    {
-        bool compact1 = true;
-        bool compact2 = true;
-
-        const T second_v = std::get<0>(inf_array); // Récupération de la seconde valeur
-
-       //  Boucle sur l'ensemble du bloc pour inspecter la valeur de chaque élément
-        for (unsigned int i = 0; i < __chunk_size; ++i)
-        {
-            if (values[i] != first_value) // (4e)
-            {
-                compact1 = false;
-            }
-            if (values[i] != second_v) // (44e)
-            {
-                compact2 = false;
-            }
-  
-            if (!compact1 && !compact2) // (5e)
-            {
-                break;
-            }
-        }
-
-        if (compact1) // (6e)
-        {
-            compact2 = false;
-
-            ll_compt1.emplace_back(std::make_tuple(this, num_chunk, num_tab));
-        }
-        if (compact2) // (66e)
-        {
-            ll_compt2.emplace_back(std::make_tuple(this, num_chunk, num_tab));
-        }
-    }
-}
-```
-
-(4e) Si la valeur de l'élément n'est pas égale à la première valeur de compression alors on se positionne pour arêter la boucle
-(44e) Même test que ci-dessus mais pour la seconde valeur
-(5e) Si les deux tests ci-dessus sont vérifiés alors on arrête la boucle
-(6e) Si tous les éléménts sont égaux à la première valeur, alors on ajoute ce bloc dans la liste des blocs à comprimer
-(66e) Même opération que ci-dessus mais pour la seconde valeur
-
-```cpp
-template <typename T>
-Inlinable void Chunk2<T>::clear_reversible(int                               num_compress_value,
-                                           int                               ind,
-                                           int                               num_chunk,
-                                           int                               num_tab,
-                                           const Proxy2<T>*                  proxy2,
-                                           int                               thr_rank)
-{
- 
-    auto& ll_block_free_comp_thr = get_list_block_free_comp_thr(thr_rank); \\ (1f)
-
-    if (num_compress_value == 0)  \\ (2f)
-    {
-	    ll_block_free_comp_thr.push_back(values); \\ (3f)
-
-        set_cst_val_to_cst_val1(); \\ (4f)
-        init_values_cst_val(); \\ (5f)
-    }
-    else if (num_compress_value == 1) \\ (22f)
-    {
-	    ll_block_free_comp_thr.push_back(values);\\ (33f)
-
-        set_cst_val_to_cst_val2(ind); \\ (44f)
-        init_values_cst_val(); \\ (55f)
-    }
-}
-
-```
-(1f) Récupération de la liste qui vont être libre.
-(2f) Test pour savoir si on va initialiser le pointeur du bloc sur le tableau de première valeur.
-(3f) Ajout du bloc dans la liste des blocs libres.
-(4f) Positionnement du pointeur de valeur constante sur le bloc de valeur constante contenant la première valeur.
-(5f) Positionnement du pointeur de valeur sur le bloc de valeur constante contenant la première valeur.
-
-(22f) (33f) (44f) (55f) même séquence pour la deuxième valeur.
-
-
-
-## Présentation de l'algorithme a partir de plusieurs diagrammes de flux
-
-Suite a la présentation linéaire a partir d'extrait de source : on présente les principaux parties de l’algorithme avec des diagrammes de flux, en réutilisant les annotations ci-dessus.
-
-### Diagramme de flux de l'algorithme général
-
-```mermaid
-flowchart TD
-    %% --- Partie 1 : Découpage de l'index ---
-    subgraph Indexing["Découpage de l'index global i"]
-        A["Index global i"] --> B["num_chunk = i >> __decalage_chunk"]
-        A --> C["Index local = i & __modulo_chunk"]
-    end
-
-    %% --- Accès au chunk ---
-    D["chunk_list[num_chunk]"]
-    B --> D
-    C --> D
-
-    %% --- Choix du mode d'accès ---
-    E{"Type d'accès"}
-    D --> E
-    E -->|"Lecture const ([]) ou ()"| F["Retour T (valeur)"]
-    E -->|"Lecture via Proxy2"| G1["Retour Proxy2&lt;T&gt; (non-const)"]
-    E -->|"Écriture"| G["Retour Proxy2&lt;T&gt;"]
-
-    %% --- Lecture const directe ---
-    F --> H["operator T() const noexcept"]
-    H --> I["values[num]"]
-
-    %% --- Lecture via Proxy2 ---
-    G1 --> H1["operator T() const noexcept (depuis Proxy2)"]
-    H1 --> I1["values[num]"]
-
-    %% --- Écriture ---
-    G --> J["operator= ou autres opérateurs"]
-    J --> K{"Valeur constante ?"}
-    K -->|"Oui et bloc déjà correct"| L["Pas d'allocation"]
-    K -->|"Non"| M["Compression en vol éventuelle + allocation bloc"]
-    M --> N["manage_core_op_eq"]
-    N --> O["create_value si besoin"]
-    O --> P["values[num] = v"]
-    P --> Q["unlock_writing()"]
-```
-### Diagramme de flux de la méthode manage_core_op_eq avec jonction avec le précédent diagramme
-
-```mermaid
-flowchart TD
-    classDef retour fill:#d4f4dd,stroke:#2b7a0b,stroke-width:1px;
-
-    %% --- Départ : operator= ---
-    A["Entrée : Proxy2::operator=(v)"] --> B{"(1a) v == first_value ET is_cst_val1() ?"}
-    B1["Retour direct (aucune modif)"]:::retour
-    B -->|Oui| B1
-    B -->|Non| C["(2a) set_info_second_value_ind / compression éventuelle"]
-    C --> D{"(3a) v == second_value ET is_cst_val2() ?"}
-    D1["Retour direct (aucune modif)"]:::retour
-    D -->|Oui| D1
-    D -->|Non| E["(4a) set_info_on_chunk_and_lock_writing"]
-    E --> F["(5a) fill_chunk_list_to_compress_potentially"]
-    F --> G["(6a) manage_core_op_eq(v)"]
-
-    %% --- manage_core_op_eq ---
-    subgraph MCOEQ["manage_core_op_eq"]
-        G --> H{"v == second_value ?"}
-        H -->|Oui| I{"values[num] == second_value ?"}
-        I1["unlock_writing() et return"]:::retour
-        I -->|Oui| I1
-        I -->|Non| J{"is_cst_val1() ?"}
-        K["create_value()"]
-        L["values[num] = second_value"]
-        M["unlock_writing() et return"]:::retour
-        J -->|Oui| K --> L --> M
-        J -->|Non| N["(continuer)"]
-        H -->|Non| N
-        N --> O["need_alloc = is_cst_val()"]
-        O --> P{"need_alloc == true ?"}
-        Q["create_value()"]
-        R["(pas d'allocation)"]
-        P -->|Oui| Q
-        P -->|Non| R
-        S["values[num] = v"]
-        Q --> S
-        R --> S
-        T["unlock_writing()"]:::retour
-        S --> T
-    end
-```
-### 🔍 Lecture rapide
-- **(1a)** Si `v` est égal à `first_value` **et** que le bloc pointe déjà sur le tableau de cette valeur → **sortie immédiate**, rien à faire.
-- **(2a)** Récupération de la valeur de `second_value` sans déclaration statique, pour optimiser la mémoire et permettre plusieurs instances indépendantes d'`ArrayChunk2`.
-- **(3a)** Si `v` est égal à `second_value` **et** que le bloc pointe déjà dessus → **sortie immédiate**.
-- **(4a)** Préparer les informations sur le chunk et verrouiller l’écriture.
-- **(5a)** Mettre à jour la liste des chunks à compresser “en vol”.
-- **(6a)** Appeler `manage_core_op_eq(v)` :
-  - Si `v == second_value` **et** que `values[num] == second_value` → déverrouiller et sortir.
-  - Si `v == second_value` mais bloc sur `first_value` → créer un bloc, assigner `second_value`, déverrouiller et sortir.
-  - Sinon, tester `is_cst_val()` → si vrai, créer un bloc vide ; si faux, réutiliser l’existant.
-  - Assigner `v` à `values[num]` puis déverrouiller.
-  
-### Diagramme de flux de la méthode create_value
-
-```mermaid
-flowchart TD
-    classDef sortie fill:#d4f4dd,stroke:#2b7a0b,stroke-width:1px;
-
-    A["Entrée : create_value(need_set_second_value, ptr_second_value, thr_rank)"] --> B["(1c) Récupérer ll_block_free_thr et n"]
-
-    B --> C{"(2c) need_set_second_value == false ?"}
-    C -->|Oui| D{"(3c) n > 0 ?"}
-    D -->|Oui| E["Récupérer bloc depuis ll_block_free_thr.back() et pop_back()"]:::sortie
-    D -->|Non| F{"Allocation bloc"}
-    F -->|FAST_ALLOC| G["(4c) alloc via chunk_allocator_thr + init_block()"]:::sortie
-    F -->|Sinon| H["(44c) svcalloc_align()"]:::sortie
-
-    C -->|Non| I{"(5c) n > 0 ?"}
-    I -->|Oui| J["Récupérer bloc depuis ll_block_free_thr.back() et pop_back()"]
-    J --> K["Initialiser bloc avec second_value"]:::sortie
-    I -->|Non| L{"Allocation bloc"}
-    L -->|FAST_ALLOC| M["(6c) alloc via chunk_allocator_thr"]
-    L -->|Sinon| N["svalloc_align()"]
-    M --> O["Initialiser bloc avec *ptr_second_value"]:::sortie
-    N --> O
-
-    %% Étape finale
-    E --> P{"(8c) compare_and_swap(values_loc) ?"}
-    G --> P
-    H --> P
-    K --> P
-    O --> P
-
-    P -->|Oui| Q["recup_value(values_loc, thr_rank)"]:::sortie
-    P -->|Non| R["Fin"]:::sortie
-```
 ---
 
-### 🔍 Lecture rapide
-- **Branches hautes** : cas `need_set_second_value == false` → soit on réutilise un bloc libre `(3c)`, soit on alloue `(4c)/(44c)`.
-- **Branches basses** : cas `need_set_second_value == true` → soit on réutilise un bloc libre et on l’initialise `(5c)`, soit on alloue et on initialise `(6c)`.
-- **Fin** : on tente un `compare_and_swap` `(8c)` puis éventuellement `recup_value`.
+## 7. Le parallélisme OpenMP
 
----
+L'ancienne version verrouillait chaque écriture. La version actuelle n'a **aucun verrou sur
+le chemin d'écriture courant** : elle repose sur trois mécanismes.
+
+### 7.1 Le moteur d'écriture et le protocole de Dekker asymétrique
+
+Toutes les écritures passent par `ProxyBase::write_with_optional_lock_impl`
+(`proxy_base_inline.h`). Le danger à éviter : un thread écrit dans le tampon d'un chunk
+pendant qu'un compresseur le libère. Le moteur applique une poignée de main de type
+**Dekker** entre écrivains et compresseurs (`WriteCompressSyncPolicy`) :
+
+- **côté écrivain (fréquent, léger)** : le thread publie « j'écris dans ce chunk »
+  (`announce_write`, une écriture relâchée suivie d'une simple barrière de compilateur),
+  **revérifie** qu'aucun compresseur n'est en cours sur ce chunk, écrit, puis se retire
+  (`end_write`) ;
+- **côté compresseur (rare, lourd)** : il se déclare, force la visibilité de toutes les
+  annonces des écrivains avec l'appel système `membarrier` (c'est ce qui rend la version
+  asymétrique possible), puis attend les écrivains annoncés sur ses chunks.
+
+Des deux côtés, exactement un seul peut passer. Sans `membarrier` (noyau trop ancien, TSan),
+la version symétrique utilise des barrières `seq_cst` des deux côtés.
+
+### 7.2 Le déroulé d'une écriture dans le moteur
+
 ```mermaid
 flowchart TD
-    classDef sortie fill:#d4f4dd,stroke:#2b7a0b,stroke-width:1px;
-
-    A["Entrée : fill_list_to_compress(...)"] --> B{"(1e) is_not_cst_val1() && is_not_cst_val2(...) ?"}
-    B -->|Non| Z["Fin (aucune action)"]:::sortie
-    B -->|Oui| C["Init compact1 = true, compact2 = true"]
-
-    C --> D["(2e) second_v = std::get<0>(inf_array)"]
-
-    D --> E["(3e) Boucle i = 0 → __chunk_size - 1"]
-    E --> F{"(4e) values[i] != first_value ?"}
-    F -->|Oui| G["compact1 = false"]
-    F -->|Non| H["(inchangé)"]
-
-    G --> I{"(44e) values[i] != second_v ?"}
-    H --> I
-    I -->|Oui| J["compact2 = false"]
-    I -->|Non| K["(inchangé)"]
-
-    J --> L{"(5e) !compact1 && !compact2 ?"}
-    K --> L
-    L -->|Oui| M["break (sortie de boucle)"]
-    L -->|Non| E
-
-    %% Après boucle
-    E --> N{"(6e) compact1 == true ?"}
-    M --> N
-    N -->|Oui| O["compact2 = false"]
-    O --> P["ll_compt1.emplace_back(this, num_chunk, num_tab)"]
-    N -->|Non| Q["(aucune insertion dans ll_compt1)"]
-
-    P --> R{"(66e) compact2 == true ?"}
-    Q --> R
-    R -->|Oui| S["ll_compt2.emplace_back(this, num_chunk, num_tab)"]
-    R -->|Non| T["(aucune insertion dans ll_compt2)"]
-
-    S --> U["Fin"]:::sortie
-    T --> U
+    A["Proxy2::assign_impl : corps prêt"] --> B{"rejeu d'une opération<br/>différée en cours ?"}
+    B -->|oui| B1["exécuter le corps directement"]
+    B -->|non| C{"opérations différées<br/>en attente sur le chunk ?"}
+    C -->|"d'autres threads"| C1["les appliquer (reader_sync)"]
+    C -->|"les siennes"| C2["bloquer leur rejeu pendant l'écriture"]
+    C -->|non| D
+    C1 --> D
+    C2 --> D
+    D{"compresseur en cours<br/>sur ce chunk ?"} -->|oui| D1["attente bornée<br/>(wait_out_compressor)"]
+    D -->|non| E
+    D1 --> E["announce_write (Dekker, côté écrivain)"]
+    E --> F{"revérification :<br/>compresseur ?"}
+    F -->|non| G["corps : marquage + perform_core_assignment"]
+    G --> H["end_write"]
+    H --> I["entretien : liste dangereuse ?<br/>trop d'opérations différées ?"]
+    F -->|oui| J["end_write + écriture DIFFÉRÉE (7.3)"]
 ```
 
-### 🔍 Lecture rapide
-- **(1e)** On traite uniquement si le bloc n’est ni le bloc constant de première valeur (`first_value`), ni celui de seconde valeur (`second_value`).  
+### 7.3 Les écritures différées
 
-- **(2e)** Récupérer la seconde valeur `second_v` depuis `inf_array`.  
+Quand un compresseur est en cours sur le chunk et que l'attente bornée n'a pas suffi,
+l'écriture n'est pas perdue : elle est **capturée** (un contexte alloué dans un pool, qui
+contient la position et l'opérande) et placée dans la file du thread. Elle sera **rejouée**
+plus tard :
 
-- **(3e)** Parcourir tous les éléments du bloc (`__chunk_size`).  
+- par une **lecture** du chunk (barrière de lecture, section 5) ;
+- aux **barrières** OpenMP : chaque rang vide sa propre file (`on_barrier`) ;
+- en **fin de région parallèle** (`on_parallel_end` / `finalize_parallel_phase`), par un
+  vidage en série qui n'ouvre une région que s'il reste des opérations ;
+- dans le chemin d'écriture lui-même, quand la file d'un thread dépasse un seuil.
 
-- **(4e)** Si un élément est différent de `first_value` → `compact1 = false`.  
+Le rejeu fige la géométrie de l'opération (en géométrie dynamique, un chunk est matérialisé à
+**sa** taille, pas à celle du thread qui rejoue).
 
-- **(44e)** Si un élément est différent de `second_v` → `compact2 = false`.  
+### 7.4 Les rappels OMPT
 
-- **(5e)** Si `compact1` et `compact2` sont déjà `false` → sortir de la boucle.  
+Avec OMPT, la bibliothèque s'accroche au runtime OpenMP : `on_implicit_task` (cache du rang
+du thread), `on_barrier` et `on_parallel_end` (rejeu des opérations différées et passes de
+compression). Sans OMPT, le code appelant encadre ses régions par `begin_parallel_phase()` /
+`finalize_parallel_phase()`.
 
-- **(6e)** Si `compact1` est encore `true` → forcer `compact2 = false` et ajouter le bloc à `ll_compt1`.  
+---
 
-- **(66e)** Si `compact2` est encore `true` → ajouter le bloc à `ll_compt2`.
+## 8. La compression « en vol »
 
-  
+### 8.1 Pourquoi
 
+Même exemple que dans l'ancienne version, toujours valable :
 
+```cpp
+for (long i = 0; i < n; ++i)
+    tab[i] = second_value;
+```
 
-## Le Multi Threading OpenMP
+À la construction, tous les chunks sont à `cst_val1`. La première écriture de chaque chunk
+le **matérialise** (il contient alors `1 0 0 0 …`). Sans compression pendant l'exécution, la
+boucle finirait avec **tout le tableau alloué**, alors que chaque chunk est redevenu uniforme.
+La compression en vol rend ces chunks à `cst_val2` au fil de l'eau.
 
-Un des challenges c'est la parallélisation performante en multi - thread de cet algorithme. On utilise le modèle OpenMP. A ce jour, on a pas trouve de solution satisfaisante.
+### 8.2 Les listes de candidats
+
+Chaque thread tient une **liste de chunks candidats par seconde valeur** :
+
+```
+manager_chunk2::map_chunk2_to_compress_potentially_thr[rang][second_value]
+```
+
+Chaque entrée porte `(chunk, num_chunk, num_tab, nombre d'éléments)`. Le nombre d'éléments
+est celui de la géométrie du tableau **au moment de la mise en file** : le thread qui
+traitera l'entrée peut avoir une autre taille « ambiante » (après un rechunk).
+
+**Mise en file** (`mark_for_compression_if_needed`, dans le corps de l'écriture) : un chunk
+entre dans la liste quand l'écriture **fait passer un élément à l'une des deux constantes**
+(`old != first && new == first`, ou `old != second && new == second`), avec deux filtres
+placés avant :
+
+- une **pré-vérification**, bon marché (`pre_check_mark_for_compression_strict`) : la
+  valeur écrite est **l'une des deux constantes, quel que soit l'état du chunk**. Jusqu'en
+  septembre 2026, elle n'admettait que l'écriture d'une constante sur un chunk déjà à
+  l'autre constante ; un chunk matérialisé par une valeur quelconque puis réécrit élément
+  par élément à une constante n'était alors jamais mis en file, et restait matérialisé.
+  Le coût de l'élargissement n'est payé que par les écritures d'une constante : une
+  lecture de l'ancienne valeur, une comparaison et, à la première de chaque passe, la CAS
+  du drapeau ;
+- l'existence d'une **liste pour cette seconde valeur sur ce rang**
+  (`has_candidate_list`) : un tableau qui n'a jamais appelé `set_second_value()` n'a pas de
+  liste, et n'est jamais mis en file.
+
+Un drapeau atomique par chunk (« déjà candidat », `tab_is_inside_chunk_list_to_compress`,
+indexé par `num_tab`) garantit qu'un chunk n'est mis en file **qu'une fois** jusqu'à la
+passe suivante.
+
+### 8.3 Le déclenchement
+
+Quand la liste d'un thread dépasse une taille seuil
+(`get_size_max_number_of_chunk_to_check_compress()`), elle est marquée **« dangereuse »**.
+Après sa prochaine écriture réussie, c'est **ce thread** qui lance la passe, sur son chemin
+lent (`run_slow_path` → `perform_compression`). Les passes ont aussi lieu en fin de phase
+parallèle.
+
+### 8.4 La passe : `make_block_compression_impl`
+
+```mermaid
+flowchart TD
+    A["liste (rang, second_value)"] --> B["handshake compresseur<br/>(CompressionManager::start)"]
+    B --> C["pour chaque entrée : figer la taille<br/>du chunk (n_elems de l'entrée)"]
+    C --> D["fill_list_to_compress : parcourir le chunk"]
+    D -->|"tout = first_value"| E["liste ll_compt1"]
+    D -->|"tout = second_value"| F["liste ll_compt2"]
+    D -->|"sinon"| G["rien (drapeau remis à zéro)"]
+    E --> H["clear : rendre le tampon,<br/>values -> cst_val1"]
+    F --> I["clear : rendre le tampon,<br/>values -> cst_val2[ind]"]
+    H --> J["remettre les drapeaux à zéro,<br/>vider la liste, finish()"]
+    I --> J
+    G --> J
+```
+
+Le **parcours** (`fill_list_to_compress`) ne concerne que les chunks matérialisés. Il
+compare chaque élément aux deux constantes et s'arrête dès que les deux hypothèses sont
+réfutées. Un chunk uniforme à 0 va dans `ll_compt1`, un chunk uniforme à la seconde valeur
+dans `ll_compt2`.
+
+La **libération** (famille `clear`) remet le tampon dans la liste de réutilisation du thread,
+à la **taille propre du chunk**. C'est ce qui évite de ranger un tampon de 4096 éléments dans
+la réserve des chunks de 512 quand la liste mélange un tableau et le tableau temporaire d'un
+rechunk.
+
+Avec les **marques de vol** (`use_chunk_steal_mark`), le compresseur marque les chunks qu'il
+traite, et un écrivain n'attend que si **son** chunk est marqué, au lieu d'attendre la fin de
+toute la passe.
+
+---
+
+## 9. Mémoire et géométrie dynamique
+
+### 9.1 L'allocation des tampons
+
+Les tampons de chunks viennent de `fast_allocators` : des **arènes de blocs** (slabs) par
+rang et par taille de chunk, avec des **listes de réutilisation** alimentées par les
+compressions. Un tampon libéré par un autre rang que son propriétaire est mis de côté
+(« parked ») puis rendu à sa réserve d'origine. Les tableaux assez gros (au-delà de
+`alloc_affinity_min_bytes`, 16 Mio par défaut) ont leur propre jeu d'allocateurs (clé
+d'affinité), ce qui permet de restituer leur mémoire d'un bloc à leur destruction ; avec
+`CHUNK_RECLAIM_EMPTY_SLABS`, les slabs vides sont rendus au système.
+
+### 9.2 Le rechunk (géométrie dynamique)
+
+`rechunk_to(new_size)` change la taille de chunk d'un tableau existant, par exemple sur
+décision du **décideur** (`ChunkSizeAdvisor::analyze`, qui estime la mémoire à chaque taille
+à partir de l'état des chunks). Les étapes :
+
+1. vider les listes de réutilisation et préparer les réserves à la nouvelle taille ;
+2. construire un **tableau temporaire** à la nouvelle taille (initialisation des chunks en
+   parallèle) ;
+3. le **remplir en parallèle** par tranches (`rechunk_refill`, ordonnancement réglable par
+   `CHUNK_RECHUNK_SCHEDULE`, `guided,16` par défaut) : les valeurs de chaque nouveau chunk
+   sont relues puis réécrites par `copy_range` ; un nouveau chunk dont toutes les sources
+   étaient compressées est **replié** immédiatement vers la constante ;
+4. **échanger les identités** : `num_tab` et les clés du registre changent de main, et le
+   miroir est relu des deux côtés ;
+5. détruire l'ancien stockage.
+
+`CHUNK_RECHUNK_TRACE=1` affiche le temps de chaque phase et les compteurs de repliement.
+
+---
+
+## 10. Les opérations sur plages
+
+`fill_range(a, first, last, v)` et `copy_range(a, first, last, src)` écrivent une plage en
+prenant **une décision par chunk** : elles matérialisent le chunk par le chemin normal si
+besoin, écrivent le reste **directement dans le tampon**, puis ne mettent en file que les
+chunks qui **peuvent** être uniformes (premier, milieu et dernier éléments égaux) **à une
+valeur que Chunk2 sait compresser** (la première valeur ou la seconde valeur du tableau).
+Elles sont **séquentielles** : pas d'écrivain ni de compression concurrents sur le tableau.
+Le rechunk passe par `copy_range` pour reconstruire le nouveau tableau.
+
+`fill_range_mt(a, first, last, v)` peut être appelée **par plusieurs threads à la fois**, sur
+des indices disjoints (un chunk peut être partagé) : elle reprend, une fois par morceau de
+chunk, les étapes du moteur d'écriture (section 7.2) :
+
+1. opérations différées en attente sur le chunk → ce morceau passe par le chemin élément
+   par élément ;
+2. compresseur en cours sur le chunk → attente bornée, avant de s'annoncer ;
+3. annonce comme écrivain (Dekker) ;
+4. revérification (compresseur, opérations en attente, chunk toujours matérialisé) ; au
+   moindre doute, retrait et chemin élément par élément ;
+5. écriture directe dans le tampon ;
+6. retrait ;
+7. mise en file si le chunk peut être uniforme.
+
+Un chunk non matérialisé est d'abord matérialisé par le chemin normal, **hors session** (une
+écriture par proxy à l'intérieur de la session effacerait l'annonce du thread en se
+retirant), et un chunk n'est **jamais libéré** par `fill_range_mt` : un autre thread peut
+être en train d'écrire d'autres éléments de ce même tampon.
+
+**Deux points propres à Chunk2**, corrigés en septembre 2026, qui justifiaient auparavant de
+le laisser sur le chemin élément par élément :
+
+- le test « ce chunk est-il matérialisé ? » doit appeler `written(ind)` avec l'indice de
+  seconde valeur du tableau (`detail::materialised(a, ch, ind2)`) : `written()` sans argument
+  est réservé à `bool` et renvoie `false` pour les autres types ;
+- la mise en file (`detail::queue_for_compression`) doit **charger la seconde valeur** avant
+  d'ajouter le chunk (`set_info_on_chunk()`), puisque les listes de Chunk2 sont indexées par
+  elle. Sans ça, les chunks atterrissaient dans la liste de `T{}`, qu'aucune passe ne vide.
+
+Seul `bool` (chunks compactés bit à bit) reste sur le chemin élément par élément.
+
+---
+
+## 11. Variables d'environnement utiles
+
+| variable | effet |
+|---|---|
+| `CHUNK_RECHUNK_SCHEDULE=kind[,chunk]` | ordonnancement de la reconstruction du rechunk (`guided,16` par défaut) |
+| `CHUNK_RECHUNK_TRACE=1` | temps des phases du rechunk, repliements |
+| `CHUNK_PROXY2_ARM_LEGACY=1` | désactive l'armement du proxy par le miroir du registre |
+| `CHUNK_PROXY2_ACQ_FENCE=1` | rétablit les barrières d'acquisition après la lecture du registre (désactivées par défaut) |
+| `CHUNK_BARRIER_FLUSH_LEGACY=1` | ancien vidage des opérations différées aux barrières |
+| `CHUNK_SERIAL_DRAIN_LEGACY=1` | ancien vidage en série en fin de région |
+| `CHUNK_OMPT_STATS=1` | statistiques des régions de synchronisation (build OMPT) |
+
+Option de compilation utile pour la validation : `CHUNK_FORCE_DEFER_EVERY=N` force une
+écriture sur N à passer par le chemin différé (à utiliser à 32 threads au plus).
+
+---
+
+## 12. Où lire le code
+
+| sujet | fichiers |
+|---|---|
+| le tableau | `array_chunk2.h`, `internal/array_chunk2_inline.h`, `internal/array_chunk2_base.h` |
+| base commune, lecture, `operator[]` | `internal/array_chunk_base.h`, `internal/array_chunk_base_inline.h` |
+| le chunk, matérialisation, compression | `chunk2_std.h`, `internal/chunk2_std_inline.h`, `internal/chunk_base.h` |
+| le proxy d'écriture | `internal/proxy2.h`, `internal/proxy2_inline.h`, `internal/proxy2_base.h` |
+| le moteur d'écriture | `internal/proxy_base.h`, `internal/proxy_base_inline.h` |
+| Dekker, écrivains / compresseurs | `internal/write_compress_sync_policy.h` |
+| compresseur, écritures différées | `internal/compression_manager.h` |
+| géométrie | `internal/chunk_size_policy.h` |
+| rechunk, décideur | `internal/array_chunk_rechunk_inline.h`, `chunk_size_advisor.h` |
+| opérations sur plages | `array_chunk_range_ops.h` |
+| harnais de validation | `examples/validation/` (`rechunk_validation`, `compress_roundtrip`, `deferred_path_validation`, `pool_accounting`, `fill_range_mt_validation`, …) |
