@@ -461,6 +461,51 @@ if(ENABLE_IWYU)
     endif()
 endif()
 
+# ── Intel libm for GNU / Clang builds on x86-64 ─────────────────────────────
+# RHEL 8's glibc libm is old and slow on cos/sin/atan/tan, which the benches'
+# compute phases live in: AMD Milan, GNU, shrink_bench_chunk2a_256, 64 threads,
+# 15.70 s -> 12.41 s with libimf (same seed, same long_val_sum). icpx links
+# libimf itself; other compilers get it here when it is found. Every
+# executable of the build uses the same libm, so check-mode comparisons within
+# a build are unaffected.
+option(SHRINK_INTEL_LIBM "x86-64, non-icpx: link the executables with Intel's libm (libimf) when found" ON)
+set(INTEL_LIBM_DIR "" CACHE PATH "Directory holding libimf.so and libintlc.so (default: $CMPLR_ROOT/lib, then next to icpx)")
+if(SHRINK_INTEL_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
+   AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+    set(_imf_hints "")
+    if(INTEL_LIBM_DIR)
+        list(APPEND _imf_hints "${INTEL_LIBM_DIR}")
+    endif()
+    if(DEFINED ENV{CMPLR_ROOT})
+        list(APPEND _imf_hints "$ENV{CMPLR_ROOT}/lib")
+    endif()
+    find_program(_shrink_icpx icpx)
+    if(_shrink_icpx)
+        execute_process(COMMAND "${_shrink_icpx}" -print-file-name=libimf.so
+                        OUTPUT_VARIABLE _imf_path OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+        if(_imf_path AND IS_ABSOLUTE "${_imf_path}" AND EXISTS "${_imf_path}")
+            get_filename_component(_imf_dir0 "${_imf_path}" DIRECTORY)
+            list(APPEND _imf_hints "${_imf_dir0}")
+        endif()
+    endif()
+    if(_imf_hints)
+        find_library(SHRINK_LIBIMF NAMES imf HINTS ${_imf_hints} NO_DEFAULT_PATH)
+        find_library(SHRINK_LIBINTLC NAMES intlc HINTS ${_imf_hints} NO_DEFAULT_PATH)
+    endif()
+    if(SHRINK_LIBIMF AND SHRINK_LIBINTLC)
+        get_filename_component(_imf_dir "${SHRINK_LIBIMF}" DIRECTORY)
+        message(STATUS "Intel libm: ${SHRINK_LIBIMF} -- linked ahead of libm (SHRINK_INTEL_LIBM=OFF to disable)")
+        # link_libraries: every target created from here on links them first,
+        # ahead of the -lm the examples add and the driver's own. libintlc is
+        # kept as a DIRECT dependency even under --as-needed: libimf needs it,
+        # and the executable's RUNPATH only serves its direct dependencies.
+        link_libraries("${SHRINK_LIBIMF}" "-Wl,--push-state,--no-as-needed" "${SHRINK_LIBINTLC}" "-Wl,--pop-state")
+        add_link_options("LINKER:-rpath,${_imf_dir}")
+    else()
+        message(STATUS "Intel libm: not found -- glibc libm (set INTEL_LIBM_DIR, or load the oneAPI environment)")
+    endif()
+endif()
+
 # ── Subdirectories ────────────────────────────────────────────────────────────
 add_subdirectory(chunk)
 
