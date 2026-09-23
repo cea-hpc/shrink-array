@@ -116,9 +116,9 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
 
         std::cout << std::fixed << std::setprecision(2);
 
-        constexpr Int name_width   = 20;
+        constexpr Int name_width = 20;
         // Signed: a name longer than the width pads by 0, not by (size_t)-1 / 2.
-        const Int     name_padding = std::max<Int>(0, (name_width - static_cast<Int>(name.length())) / 2);
+        const Int name_padding = std::max<Int>(0, (name_width - static_cast<Int>(name.length())) / 2);
         std::cout << std::setw(name_padding) << "" << "\nstatistics " << name << "\n";
 
         constexpr Int label_width = 22;
@@ -264,10 +264,9 @@ void bench_print_checksums(BenchArrays& bench_arr, bool check_sum)
     {
         if CONSTEXPR (check_sum)
         {
-            static const char* const n[] = {"tab1",     "tab2",     "tab3",      "tab4",      "tab5",
-                                            "tab_int",  "tab_bool", "tab_complex", "tab_float", "tab_short",
-                                            "tab_char", "tab_long", "tab_ulong", "tab_quant", "tab_point",
-                                            "tab_cell"};
+            static const char* const n[] = {
+                "tab1",      "tab2",      "tab3",     "tab4",     "tab5",      "tab_int",   "tab_bool",  "tab_complex",
+                "tab_float", "tab_short", "tab_char", "tab_long", "tab_ulong", "tab_quant", "tab_point", "tab_cell"};
             print_checksums(n, tab1, tab2, tab3, tab4, tab5, tab_int, tab_bool, tab_complex, tab_float, tab_short,
                             tab_char, tab_long, tab_ulong, tab_quant);
             if (bench_arr.with_struct) // --no_struct

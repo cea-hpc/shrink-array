@@ -55,7 +55,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
     {
         begin_parallel_phase_g();
 
-BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
+        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int i = 0; i < 256; ++i)
         {
             if (i % 3 == 0)
@@ -85,19 +85,19 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
             tab_complex[i] = zero_complex;
         }
 
-BENCH_OMP_FOR_STATIC_NOWAIT
+        BENCH_OMP_FOR_STATIC_NOWAIT
         for (Int i = 256; i < sz / 4; ++i)
         {
             tab_short[i] = 0;
         }
 
-BENCH_OMP_FOR_STATIC_NOWAIT
+        BENCH_OMP_FOR_STATIC_NOWAIT
         for (Int i = sz / 4; i < sz / 2; ++i)
         {
             tab_short[i] = second_value_s0;
         }
 
-BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
+        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int i = 256; i < sz / 2; ++i)
         {
             tab1[i] = second_value_d;
@@ -126,7 +126,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
             std::cout << "\nElapsed time init zero loops : " << elapsed_seconds.count() << "s\n";
         }
 
-BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
+        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int i = begin_i; i < end_i; ++i)
         {
             tab1[i] = second_value_d;
@@ -152,7 +152,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         begin_i = end_i;
         end_i   = sz - sz / 4;
 
-BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
+        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int i = begin_i; i < end_i; ++i)
         {
             tab1[i] = second_value_d0;
@@ -182,7 +182,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         begin_i = end_i;
         end_i   = std::min(begin_i + interval, sz);
 
-BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
+        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int i = begin_i; i < end_i; ++i)
         {
             tab1[i] = 2;
@@ -208,7 +208,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         begin_i = end_i;
         end_i   = std::min(begin_i + interval, sz);
 
-BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
+        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int i = begin_i; i < end_i; ++i)
         {
             tab1[i] = 1;
@@ -224,7 +224,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
             tab_complex[i] = zero_complex;
         }
 
-BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
+        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int i = end_i; i < sz; ++i)
         {
             tab1[i] = 0;
@@ -241,7 +241,7 @@ BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         // Scalar: LLVM reports this one "uncountable" under `simd`, with the
         // char store alone as well (the short fills above vectorise). A
         // zeroing loop the idiom pass turns into memset anyway.
-BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
+        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int i = end_i; i < 2 * sz; ++i)
         {
             tab_char[i]  = 0;

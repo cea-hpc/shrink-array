@@ -18,7 +18,7 @@
 #include <bit> // std::has_single_bit
 #include <cfenv>
 #include <chrono>
-#include <cmath> // std::fmod (bound stress workload)
+#include <cmath>  // std::fmod (bound stress workload)
 #include <cstdio> // std::fprintf
 #include <cstdlib>
 #include <dlfcn.h>
@@ -198,7 +198,7 @@ int main(int argc, char* argv[])
             }
             catch (const std::invalid_argument& e)
             {
-                std::cerr << "Error: Conversion failed. The string is not a valid number" << std::endl;
+                std::cerr << "Error: Conversion failed. The string is not a valid number" << '\n';
             }
         }
     }

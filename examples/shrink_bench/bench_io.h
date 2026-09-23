@@ -63,7 +63,7 @@ static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, UInt c
     UInt p = 0;
     while (p < count)
     {
-        const T            current_val = values[p];
+        const T    current_val = values[p];
         const UInt start_idx   = p;
 
         // Count how many identical consecutive values follow
@@ -72,8 +72,8 @@ static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, UInt c
             ++p;
         }
 
-        const UInt run_length = p - start_idx;
-        const std::string  val_str    = fmt(current_val);
+        const UInt        run_length = p - start_idx;
+        const std::string val_str    = fmt(current_val);
         if (run_length > 2)
         {
             std::string line = val_str;
@@ -98,7 +98,7 @@ static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, UInt c
 template <typename VEC>
 void write_binary_file(const std::string& filename,
                        const VEC&         data,
-                       std::uint64_t          checksum,
+                       std::uint64_t      checksum,
                        bool               special_writing,
                        const char*        no_compress)
 {
@@ -202,7 +202,7 @@ void read_check_binary_file(Int                ind,
                             const std::string& tab_name,
                             const std::string& filename,
                             const VEC&         data_check,
-                            std::uint64_t          lchs,
+                            std::uint64_t      lchs,
                             const char*        no_compress,
                             bool               read_trace,
                             bool               write_trace)
@@ -220,7 +220,7 @@ void read_check_binary_file(Int                ind,
     std::ifstream file_check_sum(filename_check_sum, std::ios::binary);
     if (!file_check_sum)
     {
-        std::cerr << "Error open file  : " << filename_check_sum << std::endl;
+        std::cerr << "Error open file  : " << filename_check_sum << '\n';
         std::abort();
     }
 
@@ -275,7 +275,7 @@ void read_check_binary_file(Int                ind,
     std::ifstream file(filename, std::ios::binary);
     if (!file)
     {
-        std::cerr << "Error open file  : " << filename << std::endl;
+        std::cerr << "Error open file  : " << filename << '\n';
         return;
     }
 
@@ -445,8 +445,8 @@ void read_check_binary_file(Int                ind,
                 {
                     std::cerr << "\nwas values it is\n";
                     lbd_print();
-                    constexpr T    v{}; // T{}: the struct elements have no conversion from 0
-                    bool           te = true;
+                    constexpr T v{}; // T{}: the struct elements have no conversion from 0
+                    bool        te = true;
                     for (UInt p = 0; p < data_check.chunk_size(); ++p)
                     {
                         if (chunk_t.values[p] != v)

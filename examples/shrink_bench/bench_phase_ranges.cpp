@@ -52,7 +52,7 @@ void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int i)
 #pragma omp parallel
     {
         begin_parallel_phase_g();
-BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
+        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int j = beg; j < i; ++j)
         {
             tab1[j] = 0;
@@ -101,7 +101,7 @@ void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int i)
 #pragma omp parallel
     {
         begin_parallel_phase_g();
-BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
+        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int j = beg; j < i; ++j)
         {
             tab1[j] = second_value_d;
@@ -152,7 +152,7 @@ void bench_phase_range_c(BenchArrays& bench_arr, Int beg, Int seg_end)
 #pragma omp parallel
     {
         begin_parallel_phase_g();
-BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
+        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int j = beg; j < seg_end; ++j)
         {
             tab1[j] = second_value_d0;
@@ -202,7 +202,7 @@ void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end)
 #pragma omp parallel
     {
         begin_parallel_phase_g();
-BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
+        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int j = beg; j < seg_end; ++j)
         {
             tab1[j] = second_value_d;

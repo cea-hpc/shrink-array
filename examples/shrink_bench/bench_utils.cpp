@@ -22,9 +22,9 @@
 
 #include "bench_utils.h"
 
-#include "chunk/all_type_chunk.h"           // reuse_pool_bytes, the retention split of memory_consumption
+#include "chunk/all_type_chunk.h" // reuse_pool_bytes, the retention split of memory_consumption
 #ifdef FAST_ALLOC
-#include "fast_allocators/slab_arena.h" // report_all_arenas, its slab-side counterpart
+    #include "fast_allocators/slab_arena.h" // report_all_arenas, its slab-side counterpart
 #endif
 // -----------------------------------------------------------------------------
 // File-scope globals (declared in bench_utils.h).
@@ -38,9 +38,9 @@ bool __debug_flag    = false;
 // STL-interface and read-idempotence self-checks had NEVER run. Worse, the
 // binary exited 0 after printing "Unknown argument", so bench_and_test.py's STL
 // phase went green without executing anything.
-const std::vector<std::string> valid_args = {"--no_io",    "--compress",    "--write_trace", "--read_trace",
-                                             "--multiply", "--divisor",     "--iter_max",    "--mode",
-                                             "--test_stl", "--no_struct",   "--help"};
+const std::vector<std::string> valid_args = {"--no_io",    "--compress",  "--write_trace", "--read_trace",
+                                             "--multiply", "--divisor",   "--iter_max",    "--mode",
+                                             "--test_stl", "--no_struct", "--help"};
 
 // -----------------------------------------------------------------------------
 // Seed persistence.
@@ -57,7 +57,7 @@ void save_seed_to_file(unsigned seed, const std::string& filename)
     }
     else
     {
-        std::cerr << "Unable to open file for saving seed." << std::endl;
+        std::cerr << "Unable to open file for saving seed." << '\n';
     }
 }
 
@@ -71,7 +71,7 @@ unsigned load_seed_to_file(const std::string& filename)
     }
     else
     {
-        std::cerr << "Unable to open file for loading seed. --> create new one" << std::endl;
+        std::cerr << "Unable to open file for loading seed. --> create new one" << '\n';
     }
     std::cout << "\nLoad seed in file\n";
 
@@ -161,7 +161,8 @@ void memory_consumption(const std::string& msg)
         // tables, the slabs' unused capacity, and the bench's own arrays.
         if constexpr (chunk_config::is_shrink_enabled)
         {
-            const std::size_t parked = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef().reuse_pool_bytes();
+            const std::size_t parked =
+                shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef().reuse_pool_bytes();
             std::cout << ", parked " << convert_memory(static_cast<double>(parked)) << " Mo";
             // Preprocessor guard, not `if constexpr`: ChunkStatsThr and
             // reduce_chunk_stats() only exist in a CHUNK_STATS build, and a
@@ -197,7 +198,7 @@ void memory_consumption(const std::string& msg)
     }
     else
     {
-        std::cerr << "Unable to retrieve information from memory." << std::endl;
+        std::cerr << "Unable to retrieve information from memory." << '\n';
     }
 }
 

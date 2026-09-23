@@ -109,7 +109,7 @@ uint64_t calculate_checksum(const V& vec)
 
         if (element != zero)
         {
-            const unsigned char* bytes = reinterpret_cast<const unsigned char*>(&element);
+            const auto* bytes = reinterpret_cast<const unsigned char*>(&element);
             for (size_t i = 0; i < sizeof(T); ++i)
             {
                 checksum += bytes[i];
@@ -143,7 +143,7 @@ void calculate_checksum_0(const V& vec, std::vector<uint64_t_padding>& checksum_
 
         if (element != zero)
         {
-            const unsigned char* bytes = reinterpret_cast<const unsigned char*>(&element);
+            const auto* bytes = reinterpret_cast<const unsigned char*>(&element);
             for (size_t i = 0; i < sizeof(T); ++i)
             {
                 checksum += static_cast<uint64_t_padding>(bytes[i]);

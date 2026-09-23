@@ -31,14 +31,14 @@
 /// @brief Everything the command line can set.
 struct BenchArgs
 {
-    bool no_io_v       = false; ///< --no_io
+    bool no_io_v = false; ///< --no_io
     /// --compress: bzip2 the reference files written by the vector baseline and
     /// read the .bz2 oracle back. Off by default: the check runs work on the
     /// plain .bin, which spares the compress / decompress round trip.
-    bool compress_v = false;
-    bool write_trace   = false; ///< --write_trace
-    bool read_trace    = false; ///< --read_trace
-    bool test_stl      = false; ///< --test_stl: run the STL-interface self-checks
+    bool compress_v  = false;
+    bool write_trace = false; ///< --write_trace
+    bool read_trace  = false; ///< --read_trace
+    bool test_stl    = false; ///< --test_stl: run the STL-interface self-checks
     /// --no_struct: leave out the two struct arrays (Point3, Cell; bench_struct.h).
     /// They add 32 bytes per element to the std::vector baseline (+35 % of its
     /// memory, +28 % of its wall at 6 threads) and ~9 % to a chunk build's
@@ -48,7 +48,7 @@ struct BenchArgs
     bool no_struct = false;
 
     double multiply_factor = 1.0; ///< --multiply (a real factor)
-    Int divisor_factor  = 1; ///< --divisor
+    Int    divisor_factor  = 1;   ///< --divisor
 
     /// --iter_max. 2000 by default, kept from the historical behaviour.
     Int iter_max_arg = 2000;

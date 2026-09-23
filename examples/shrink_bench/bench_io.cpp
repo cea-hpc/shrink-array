@@ -26,28 +26,28 @@ void compress_file(const std::string& source_file, const std::string& dest_file)
     std::ifstream in_file(source_file, std::ios_base::binary);
     if (!in_file)
     {
-        std::cerr << "Error opening source file for compression" << std::endl;
+        std::cerr << "Error opening source file for compression" << '\n';
         return;
     }
 
     std::ofstream out_file(dest_file, std::ios_base::binary);
     if (!out_file)
     {
-        std::cerr << "Error opening destination file for compression" << std::endl;
+        std::cerr << "Error opening destination file for compression" << '\n';
         return;
     }
 
     std::vector        buffer((std::istreambuf_iterator(in_file)), std::istreambuf_iterator<char>());
     const unsigned int source_len = buffer.size();
 
-    unsigned int dest_len = static_cast<unsigned int>(source_len * 1.01 + 600); // Estimate of the compressed size
+    auto              dest_len = static_cast<unsigned int>(source_len * 1.01 + 600); // Estimate of the compressed size
     std::vector<char> dest_buffer(dest_len);
 
     const Int result = BZ2_bzBuffToBuffCompress(dest_buffer.data(), &dest_len, buffer.data(), source_len, 9, 0, 30);
 
     if (result != BZ_OK)
     {
-        std::cerr << "Error during compression : " << result << std::endl;
+        std::cerr << "Error during compression : " << result << '\n';
         return;
     }
 
@@ -60,14 +60,14 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
     std::ifstream in_file(source_file, std::ios_base::binary);
     if (!in_file)
     {
-        std::cerr << "Error when opening source file for decompression : " << source_file << std::endl;
+        std::cerr << "Error when opening source file for decompression : " << source_file << '\n';
         std::abort();
     }
 
     std::ofstream out_file(dest_file, std::ios_base::binary);
     if (!out_file)
     {
-        std::cerr << "Error opening destination file for decompression: " << dest_file << std::endl;
+        std::cerr << "Error opening destination file for decompression: " << dest_file << '\n';
         std::abort();
     }
 
@@ -75,13 +75,13 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
     in_file.read(reinterpret_cast<char*>(&originalLen), sizeof(originalLen)); // Read the original size
     if (!in_file)
     {
-        std::cerr << "Error reading compressed data size." << std::endl;
+        std::cerr << "Error reading compressed data size." << '\n';
         std::abort();
     }
 
     std::vector        source_buffer((std::istreambuf_iterator(in_file)), std::istreambuf_iterator<char>());
     const unsigned int source_len = source_buffer.size();
-    unsigned int dest_len   = originalLen; // Initialize the size of the output buffer
+    unsigned int       dest_len   = originalLen; // Initialize the size of the output buffer
 
     std::vector<char> dest_buffer(dest_len);
 
@@ -96,26 +96,26 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
 
     if (result != BZ_OK)
     {
-        std::cerr << "Error during decompression : " << result << std::endl;
+        std::cerr << "Error during decompression : " << result << '\n';
         switch (result)
         {
             case BZ_CONFIG_ERROR:
-                std::cerr << "Configuration error." << std::endl;
+                std::cerr << "Configuration error." << '\n';
                 break;
             case BZ_PARAM_ERROR:
-                std::cerr << "Parameter error." << std::endl;
+                std::cerr << "Parameter error." << '\n';
                 break;
             case BZ_MEM_ERROR:
-                std::cerr << "Memory error." << std::endl;
+                std::cerr << "Memory error." << '\n';
                 break;
             case BZ_DATA_ERROR:
-                std::cerr << "Data integrity error." << std::endl;
+                std::cerr << "Data integrity error." << '\n';
                 break;
             case BZ_DATA_ERROR_MAGIC:
-                std::cerr << "Data error, magic number mismatch." << std::endl;
+                std::cerr << "Data error, magic number mismatch." << '\n';
                 break;
             default:
-                std::cerr << "Unknown error." << std::endl;
+                std::cerr << "Unknown error." << '\n';
                 break;
         }
         std::abort();

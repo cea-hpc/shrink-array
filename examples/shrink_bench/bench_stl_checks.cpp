@@ -259,7 +259,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             for (Int i = 0; same && i < NS; ++i)
                 same = std::as_const(d)[i] == std::as_const(v)[i];
             expect(same, "copy-assignment over a larger array: sized and equal");
-            auto& d_alias = d; // through an alias: clang flags a literal `d = d`
+            auto& d_alias = d;       // through an alias: clang flags a literal `d = d`
             d             = d_alias; // self-assignment: a no-op
             expect(std::as_const(d)[7] == 7.0, "self-assignment is a no-op");
             c.clear();

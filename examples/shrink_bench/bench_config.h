@@ -260,8 +260,8 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
     };
     if (!std::isfinite(multiplier) || multiplier <= 0.0 || divisor < 1)
     {
-        std::cerr << "error: --multiply must be a real > 0 and --divisor an integer >= 1 (got " << real(multiplier) << ", "
-                  << divisor << ")\n";
+        std::cerr << "error: --multiply must be a real > 0 and --divisor an integer >= 1 (got " << real(multiplier)
+                  << ", " << divisor << ")\n";
         std::exit(1);
     }
     const long long base_data = get_size_base_data();
@@ -277,7 +277,7 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
     }
 
     const long long margin = std::max({2LL * iter_max, 65536LL});
-    auto reach = [&](double m)
+    auto            reach  = [&](double m)
     {
         const long long sz_m = scaled_size(base_data, m, divisor);
         return std::max(2 * sz_m + 65536LL, sz_m + std::max(scaled_size(base_itv, m, divisor), margin));
@@ -295,7 +295,7 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
     double       m_max = std::min({(int_max - 65536.0) * d / (2.0 * static_cast<double>(base_data)),
                                    (int_max - static_cast<double>(margin)) * d / static_cast<double>(base_data),
                                    int_max * d / static_cast<double>(base_data + base_itv)});
-    m_max = std::floor(m_max * 1e6) / 1e6; // printed to 6 decimals: round DOWN
+    m_max              = std::floor(m_max * 1e6) / 1e6; // printed to 6 decimals: round DOWN
     while (m_max > 0.0 && reach(m_max) > int_max)
         m_max -= 1e-6;
 
@@ -305,8 +305,8 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
               << scaled_size(base_data, multiplier, divisor) << " elements; the bench's Int arithmetic would reach "
               << reach(multiplier) << " > the Int range (" << int_max << ").\n";
     if (m_max > 0.0)
-        std::cerr << "       Largest valid --multiply for --divisor " << divisor << " (iter_max " << iter_max << "): " << buf
-                  << "\n";
+        std::cerr << "       Largest valid --multiply for --divisor " << divisor << " (iter_max " << iter_max
+                  << "): " << buf << "\n";
     else
         std::cerr << "       No --multiply fits with --divisor " << divisor << ": raise --divisor.\n";
     std::cerr << "       Beyond that the bench and the library (ind_type = Int) need 64-bit indices:\n"

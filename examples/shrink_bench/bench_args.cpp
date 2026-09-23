@@ -70,16 +70,16 @@ BenchArgs parse_bench_args(int argc, char* argv[])
 
     // The locals the moved body works on, under their original names: the body
     // stays VERBATIM, and we copy into `args` on the way out.
-    bool no_io_v       = false;
-    bool compress_v    = false;
-    bool write_trace   = false;
-    bool read_trace    = false;
-    bool test_stl      = false; // --test_stl: run the STL-interface self-checks
-    bool no_struct     = false; // --no_struct: no Point3 / Cell arrays (bench_args.h)
+    bool no_io_v     = false;
+    bool compress_v  = false;
+    bool write_trace = false;
+    bool read_trace  = false;
+    bool test_stl    = false; // --test_stl: run the STL-interface self-checks
+    bool no_struct   = false; // --no_struct: no Point3 / Cell arrays (bench_args.h)
 
     // Nouveaux facteurs
     double multiply_factor = 1.0;
-    Int divisor_factor  = 1;
+    Int    divisor_factor  = 1;
 
     // Default iter_max (kept at 2000 to preserve historical behaviour);
     // can be overridden at runtime via --iter_max <N>.

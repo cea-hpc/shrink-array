@@ -288,7 +288,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 
                 if (i > tab_nba1[k])
                 {
-                    tab2[i]      = std::cos(double(2 * i));
+                    tab2[i] = std::cos(double(2 * i));
                     tab_char[i] =
                         static_cast<unsigned char>(exponential_correlation(i, sz, std::numeric_limits<char>::max(), 2));
                     tab_short[i] =
@@ -459,7 +459,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
         // are resolved by the library's read gate or by the region's end.
         for (Int p = 0; p < 2; ++p)
         {
-            const double val = static_cast<double>(p);
+            const auto val = static_cast<double>(p);
 
             BENCH_OMP_FOR_BLOCK_NOWAIT_RED_SCALAR(val_sum)
             for (Int i = sched_base; i < end0; ++i)

@@ -43,7 +43,7 @@ void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] Int team,
 #pragma omp parallel num_threads(team - 1)
     {
         begin_parallel_phase_g();
-BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
+        BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int j = beg_s; j < end_s; ++j)
         {
             tab1[j] = second_value_d;
