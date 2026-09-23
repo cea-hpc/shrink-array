@@ -511,10 +511,13 @@ endif()
 # benches' compute phases live in cos/sin/atan/tan (the x86-64 counterpart,
 # libimf, took shrink_bench_chunk2a_256 from 15.70 s to 12.41 s on AMD Milan,
 # GNU). NVHPC is left alone: it links its own optimised math library.
-# SHRINK_ARM_LIBM is a TEMPORARY switch for the comparison runs (OFF: glibc's
-# libm). Configure with the armpl module loaded, or set ARMPL_LIBM_DIR; the
-# executables then carry an rpath and run without the module.
-option(SHRINK_ARM_LIBM "aarch64, GNU/Clang: link the executables with ArmPL's libamath when found (OFF: glibc libm, for comparisons)" ON)
+# SHRINK_ARM_LIBM is OFF by default: measured on Grace (clang 22, 64 threads,
+# same seed, RHEL 9.6 glibc vs armpl 25.07), chunk2a_dyn 8.30 -> 8.12 s,
+# chunk2a_256 6.20 -> 6.23 s, chunk2_256 5.76 -> 5.75 s -- noise; RHEL 9's
+# aarch64 libm is on par with ArmPL's for these calls. Kept for re-measuring
+# (scripts/test_armpl_libm.sh): -DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir of
+# libamath.so>; the executables then carry an rpath and run without the module.
+option(SHRINK_ARM_LIBM "aarch64, GNU/Clang: link the executables with ArmPL's libamath when found (default OFF: no measured gain on Grace)" OFF)
 set(ARMPL_LIBM_DIR "" CACHE PATH "Directory holding libamath.so (default: from the armpl module, $ARMPL_DIR/lib)")
 if(SHRINK_ARM_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64"
    AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
@@ -535,7 +538,7 @@ if(SHRINK_ARM_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64"
     endif()
     if(SHRINK_LIBAMATH)
         get_filename_component(_amath_dir "${SHRINK_LIBAMATH}" DIRECTORY)
-        message(STATUS "ArmPL libm: ${SHRINK_LIBAMATH} -- linked ahead of libm (SHRINK_ARM_LIBM=OFF to compare with glibc)")
+        message(STATUS "ArmPL libm: ${SHRINK_LIBAMATH} -- linked ahead of libm (SHRINK_ARM_LIBM=ON)")
         # link_libraries: every target created from here on links it first,
         # ahead of the -lm the examples add and the driver's own.
         link_libraries("${SHRINK_LIBAMATH}")
