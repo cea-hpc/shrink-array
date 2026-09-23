@@ -34,7 +34,9 @@
 //   swap  -- each reads the other's values, before and after a new compression
 //            pass and a rewrite;
 //   move  -- the target reads the source's values; the source is empty and
-//            takes a resize, writes and a compression pass.
+//            takes a resize, writes and a compression pass;
+//   move-construct -- the same through the move constructor, which did not
+//            exist (the copy constructor ran instead, element by element).
 //
 // Exit 0 = every check holds. Any thread count (the tests run it at 1 and 8).
 
@@ -258,6 +260,45 @@ int check_move()
     return bad ? 1 : 0;
 }
 
+int check_move_construct()
+{
+    const char*   step = "move-construct";
+    Array<double> src;
+    const long    S = static_cast<long>(src.chunk_size());
+    const long    N = 20 * S + 9;
+    const long    M = 7 * S + 1;
+    src.resize(static_cast<int>(N));
+    const Pattern ps{4.0, 40.0, S};
+    maybe_set_second_value(src, ps.sv);
+    fill(src, ps, N);
+    compress_in_region(src);
+
+    Array<double> dst(std::move(src));
+
+    int bad = verify(step, "dst (constructed)", std::as_const(dst), ps, N);
+    // Reading the moved-from array is the point, as in check_move().
+    if (!src.empty() || src.chunk_count() != 0)
+    {
+        std::printf("[%s/%s] FAIL source after move: size() = %ld, chunk_count() = %d, expected 0 and 0\n",
+                    variant_name(), step, static_cast<long>(src.size()), src.chunk_count());
+        ++bad;
+    }
+    compress_in_region(dst);
+    bad += verify(step, "dst (compressed)", std::as_const(dst), ps, N);
+
+    const Pattern pr{6.0, 600.0, S};
+    maybe_set_second_value(src, pr.sv);
+    src.resize(static_cast<int>(M));
+    fill(src, pr, M);
+    compress_in_region(src);
+    bad += verify(step, "src (reused)", std::as_const(src), pr, M);
+    bad += verify(step, "dst (untouched)", std::as_const(dst), ps, N);
+
+    if (!bad)
+        std::printf("[%s/%s] OK: N=%ld moved into a new array, the source reused\n", variant_name(), step, N);
+    return bad ? 1 : 0;
+}
+
 } // namespace
 
 int main()
@@ -270,6 +311,7 @@ int main()
     int fails = 0;
     fails += check_swap();
     fails += check_move();
+    fails += check_move_construct();
 
     release_chunk_pools();
     destroy_block_chunk();

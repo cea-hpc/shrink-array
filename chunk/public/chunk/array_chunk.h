@@ -106,6 +106,22 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
         this->copy_from(from);
     }
 
+    /**
+     * @brief Move-construct: an empty array at the active geometry takes
+     *        @p other's chunks, geometry and identity -- the exchange of
+     *        swap() -- and @p other is left empty and valid.
+     * @details O(1) in the elements. With a copy constructor and a
+     *          move-assignment declared, none was generated: `ArrayChunk a(std::move(b))`
+     *          and every return that is not elided ran the copy constructor,
+     *          element by element. Sequential context, as the constructors.
+     * @throws std::bad_alloc from the empty array's registration or the
+     *         deferred-write drain -- hence not noexcept.
+     */
+    ArrayChunk(ArrayChunk&& other) : ArrayChunk(0)
+    {
+        this->swap_storage_and_identity(other);
+    }
+
     template <std::forward_iterator It>
     ArrayChunk(It first, It last) : ArrayChunk(static_cast<ind_type>(std::distance(first, last)))
     {
