@@ -363,26 +363,33 @@ class alignas(64) TCAllocator
  *          nothing ever writes into a free element afterwards.
  *
  * @note The side array is `unsigned short`, so a slab holds at most
- *       #first_free_init - 1 elements; alloc_block() shrinks the block to
- *       respect that rather than overflowing the index.
+ *       #first_free_init - 1 elements; alloc_block() caps BlockSize there and
+ *       leaves the rest of the slab unused (and untouched: see alloc_block()).
  *
  * @note Slabs come from fast_alloc::value_arena(), which is disjoint from the
  *       op and ctx arenas on purpose -- see the note in alloc_block().
  */
 struct alignas(64) TCCAllocator
 {
-    /// @brief Effective slab size for @p element_bytes elements in a requested
-    ///        @p block_bytes: alloc_block()'s rounding -- a power of two, then
-    ///        re-derived if the capacity would exceed what the `unsigned short`
-    ///        side array can index. ONE rule, shared by alloc_block(), the
-    ///        instance's init() and slab_of().
-    [[nodiscard]] static uintptr_t slab_bytes_for(uintptr_t block_bytes, int element_bytes) noexcept
+    /// @brief Effective slab size for a requested @p block_bytes: rounded up to
+    ///        a power of two. ONE rule, shared by alloc_block(), the instance's
+    ///        init() and slab_of().
+    /// @details Independent of the element size, on purpose. A buffer is freed
+    ///          through slab_of() of the allocator the thread's AMBIENT chunk
+    ///          size selects (ChunkBase::release_to_owner), which after a
+    ///          re-chunk need not be the size that allocated it; that only
+    ///          finds the right slab if every allocator of one element type
+    ///          cuts its slabs at the same size. This used to shrink a slab
+    ///          whose capacity exceeded what the `unsigned short` side array
+    ///          indexes -- for small elements (8 and 16 bytes in a 2 MiB budget:
+    ///          256 and 512 KiB slabs) the geometry then depended on the element
+    ///          size, and slab_of() read a "slab" pointer out of the middle of a
+    ///          block (slab_geometry_validation). The capacity is capped in
+    ///          alloc_block() instead; the unused tail is never touched.
+    /// @param element_bytes Unused; kept so that the call sites read alike.
+    [[nodiscard]] static uintptr_t slab_bytes_for(uintptr_t block_bytes, [[maybe_unused]] int element_bytes) noexcept
     {
-        uintptr_t  slab_bytes = NextPowerOf2(block_bytes);
-        const auto capacity   = (slab_bytes - sizeof(void*)) / static_cast<uintptr_t>(element_bytes);
-        if (capacity > static_cast<uintptr_t>(first_free_init - 1))
-            slab_bytes = NextPowerOf2((static_cast<uintptr_t>(first_free_init - 1) * element_bytes) + sizeof(void*));
-        return slab_bytes;
+        return NextPowerOf2(block_bytes);
     }
 
     /// @brief The slab of @p slab_bytes (a power of two) holding @p ptr:
@@ -710,11 +717,6 @@ inline void sl_manage_full_empty(Node*&  block,
 }
 
 /**
- * @brief Type-erased handle on a ::TCTypeAllocator, for the memory report.
- * @details Every instance registers itself so a total can be taken across all
- *          element types without the reporting code knowing any of them.
- */
-/**
  * @brief Does @p ptr's slab belong to the pair of lists @p block / @p block_full?
  *
  * @param block Head of the "room left" list; may be null.
@@ -768,6 +770,11 @@ sl_is_free_able_elt(const Node* block, const Node* block_full, const Elem* ptr, 
     return false;
 }
 
+/**
+ * @brief Type-erased handle on a ::TCTypeAllocator, for the memory report.
+ * @details Every instance registers itself so a total can be taken across all
+ *          element types without the reporting code knowing any of them.
+ */
 struct VTCTypeAllocator
 {
     /// @brief Virtual, so the registry may hold any element type.

@@ -196,8 +196,11 @@ inline void TCCAllocator::alloc_block()
     }
 
     // Arena slabs are fresh-mmap zeroed on first use, but recycled slabs may hold
-    // stale bytes; the pool relies on zero-initialized slabs, so clear it.
-    std::memset(data, 0, BlockAllocator);
+    // stale bytes; the pool relies on zero-initialized elements, so clear them --
+    // the BlockSize elements only: when BlockSize is capped by the side array,
+    // the tail up to the back-pointer is never handed out, and leaving it
+    // untouched keeps it out of the resident set (slab_bytes_for()).
+    std::memset(data, 0, static_cast<std::size_t>(BlockSize) * static_cast<std::size_t>(ElementSize));
 
     *reinterpret_cast<TCCAllocator**>(data + BlockAllocator - sizeof(void*)) = this;
 

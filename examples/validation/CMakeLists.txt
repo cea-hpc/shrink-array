@@ -190,3 +190,16 @@ foreach(_geom IN LISTS _rt_geometries)
   endforeach()
 endforeach()
 endif()
+
+# --- slab_geometry_validation: the zeroed value allocator alone (no variant).
+# Every allocator of one element type must cut its slabs at one size whatever
+# the element size, or slab_of() through the ambient-size allocator misses the
+# block's slab after a re-chunk (see the harness). TCTypeCAllocator exists
+# under OpenMP only.
+if (OMP)
+  add_executable(slab_geometry_validation slab_geometry_validation.cpp)
+  target_link_libraries(slab_geometry_validation PRIVATE fast_allocators OpenMP::OpenMP_CXX)
+  chunk_require_cxx20(slab_geometry_validation PRIVATE)
+  add_test(NAME slab_geometry_validation COMMAND slab_geometry_validation)
+  set_property(TEST slab_geometry_validation PROPERTY LABELS validation)
+endif()
