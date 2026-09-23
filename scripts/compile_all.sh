@@ -550,11 +550,10 @@ if [ "$BUILD_ONLY" = false ]; then
 fi
 launch_build "$build_rep/cmake-build-omp-llvm-debug-thread-sanitizer/$arch"
 
-set_build_header 'Compiling llvm debug openmp address sanitizer:'
-if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S ~/shrink-array -B $build_rep/cmake-build-omp-llvm-debug-address-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=address"
-fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug-address-sanitizer/$arch"
+# (fast-allocator ASan build dropped, Sept '26: with the fast allocator the
+# chunk buffers live inside the library's slab arenas, which ASan sees as a few
+# large blocks -- an overflow or use-after-free inside a slab goes unreported.
+# ASan runs on the std-alloc builds, where every buffer is a real malloc.)
 
 set_build_header 'Compiling llvm debug openmp std_alloc thread sanitizer:'
 if [ "$BUILD_ONLY" = false ]; then

@@ -241,9 +241,10 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-thread-sanitizer${ICF_S
   "-DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu debug openmp thread sanitizer"
 
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-address-sanitizer${ICF_SUFFIX}/$arch" \
-  "-DOMP:BOOL=ON -DSANITIZER=address -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
-  "gnu debug openmp address sanitizer"
+# (fast-allocator ASan build dropped, Sept '26: with the fast allocator the
+# chunk buffers live inside the library's slab arenas, which ASan sees as a few
+# large blocks -- an overflow or use-after-free inside a slab goes unreported.
+# ASan runs on the std-alloc builds below, where every buffer is a real malloc.)
 
 compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-std-alloc-thread-sanitizer${ICF_SUFFIX}/$arch" \
   "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
