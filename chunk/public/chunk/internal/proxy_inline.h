@@ -32,27 +32,19 @@ const Proxy<T>& Proxy<T>::operator=(const Proxy<T>& from) noexcept
 {
     if (&from != this)
     {
-        const in_t<T> v = from.values[from.num];
+        // Read through operator T(): the dirty-bit gated read (read_pure()
+        // when a deferred op may be queued on from's chunk). The read is
+        // complete before the write starts, so no reader/writer nesting even
+        // when both proxies sit in the same chunk.
+        const in_t<T> v = static_cast<T>(from);
 
-        const bool need_alloc = is_cst_val();
-
-        if (v == zero && need_alloc)
-        {
-            return *this;
-        }
-
-        if constexpr (chunk_config::stats)
-        {
-            increm_chunk_write<ChunkType>(v);
-        }
-
-        create_value(need_alloc);
-
-        if constexpr (build_config::do_check)
-        {
-            global_check_write_nan(v, num);
-        }
-        values[num] = v;
+        // Write through the engine: Dekker handshake / deferred path,
+        // WAW-erase, pending_any()-guarded zero early-out, compression
+        // marking and nb_val_eq_zero maintenance. The former inline store
+        // bypassed all of it (a[i] = b[j] could land in a CAS-swapped buffer,
+        // be overwritten by an older deferred replay, or drift the zero
+        // counter into a spurious full-zero compression).
+        assign_impl<T>(v);
     }
 
     return *this;

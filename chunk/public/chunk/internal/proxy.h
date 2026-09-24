@@ -890,9 +890,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     Proxy(Proxy&& other) noexcept = default;
 
     /**
-     * @brief Proxy-to-proxy assignment: read `from`'s current value and
-     *        write it into this proxy's slot (with its own zero-and-
-     *        already-compressed early-out, independent of assign_impl()).
+     * @brief Proxy-to-proxy assignment: read `from`'s current value through
+     *        operator T() (gated read) and write it into this proxy's slot
+     *        through assign_impl() (the full write engine).
      * @param from Proxy to read the value from.
      * @return *this.
      */
