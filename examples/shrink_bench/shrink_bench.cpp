@@ -242,6 +242,19 @@ int main(int argc, char* argv[])
 
     [[maybe_unused]] const Int freq_compress = need_compression ? 1 : std::max<Int>(1, iter_max / 10);
 
+    // Period of the DEBUG audit of the inline compression ("Check compression",
+    // ArrayChunk*::compress_int). Not freq_compress: that one is 1 whenever
+    // need_compression holds, i.e. in the very builds where the audit exists.
+    // Every iteration was a full sweep of every array plus a self-heal that
+    // made debug compress more than the inline path alone. SHRINK_BENCH_AUDIT_FREQ
+    // overrides (1 = every iteration, the former behaviour).
+    [[maybe_unused]] const Int freq_audit = [iter_max]() -> Int
+    {
+        if (const char* e = std::getenv("SHRINK_BENCH_AUDIT_FREQ"))
+            return std::max<Int>(1, std::atoi(e));
+        return std::max<Int>(1, iter_max / 10);
+    }();
+
     const Int freq_raz = get_freq_raz(iter_max);
 
     // CHUNK_PMP_MAX_THREADS (PMP_CHUNK.h) is omp_get_max_threads() with OpenMP
@@ -827,17 +840,28 @@ int main(int argc, char* argv[])
                 // compression (normally useless for 2 and 2A, whose writes
                 // compress as they go). The three branches used to carry the
                 // same body under three headings.
+                // Periodic, plus the last iteration so no end-of-run miss escapes.
+                // A persisting miss stays visible at the next audit: a
+                // materialised constant chunk stays so until it is written.
+                const bool audit_now = (k % freq_audit == 0) || (k + 1 == iter_max);
+
                 if constexpr (chunk_config::use_chunk || chunk_config::use_chunk2 ||
                               (chunk_config::use_chunk2a && chunk_config::use_fast_block_compression))
                 {
-                    std::cout << "Check compression " << "\n";
-                    bench_phase_compress_all(bench_arrays);
+                    if (audit_now)
+                    {
+                        std::cout << "Check compression " << "\n";
+                        bench_phase_compress_all(bench_arrays);
+                    }
                 }
 
                 if constexpr (print_mem) // see the note on the first site
                 {
-                    const std::string msg_iter_c = "iteration : " + std::to_string(k) + " after compress";
-                    memory_consumption(msg_iter_c);
+                    if (audit_now) // "after compress" only means something right after one
+                    {
+                        const std::string msg_iter_c = "iteration : " + std::to_string(k) + " after compress";
+                        memory_consumption(msg_iter_c);
+                    }
                 }
             }
         }
