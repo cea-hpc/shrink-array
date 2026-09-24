@@ -26,6 +26,7 @@
 #include <algorithm> // std::min / std::max (block bounds)
 
 #include "bench_phases.h"
+#include "bench_rmw_check.h"
 #include "bench_utils.h" // linear_correlation, exponential_correlation
 
 // Inner loop of the four-accumulator loop: a simd reduction on the std::vector
@@ -282,7 +283,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     continue;
                 tab1[i] = std::sqrt(double(i));
 
-                tab_float[i] += 1;
+                SB_CHECKED_RMW(tab_float, i, += 1);
 
                 tab_complex[i] = complex_double(std::sqrt(double(i + 1)), std::sqrt(double(i - 1)));
 
@@ -298,12 +299,12 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 if (i > tab_nba2[k])
                 {
                     tab3[i] = std::sin(tab1[i] + tab2[i]);
-                    tab4[i] *= tab5[i] + 1;
+                    SB_CHECKED_RMW(tab4, i, *= tab5[i] + 1);
                     tab_bool[i] = true;
                     tab_int[i]  = static_cast<int>(i + 1);
 
                     tab_int[i] = static_cast<int>(std::floor(log10(static_cast<double>(tab_int[i]))));
-                    tab_int[i] *= tab_int[i]; // Before the previous line if i bigger than sqrt(soit 2^31 − 1)
+                    SB_CHECKED_RMW(tab_int, i, *= tab_int[i]); // Before the previous line if i bigger than sqrt(soit 2^31 − 1)
                     // (46340) --> overflow
 
                     tab_int[i]--;
@@ -313,8 +314,8 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     tab_int[i] = std::abs(tab_int[i]);
 
                     tab_long[i] = static_cast<long>(i);
-                    tab_long[i] += 1L;
-                    tab_long[i] *= 2L;
+                    SB_CHECKED_RMW(tab_long, i, += 1L);
+                    SB_CHECKED_RMW(tab_long, i, *= 2L);
                     --tab_long[i];
 
                     // Bounded to CHUNK_BENCH_ULONG_BANDS distinct values. The
@@ -329,10 +330,10 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     // from manufacturing the very registry pressure it was
                     // then blamed for. 0 restores the unbounded behaviour.
                     tab_ulong[i] = static_cast<unsigned long>(i) & bench_ulong_mask;
-                    tab_ulong[i] |= 0xFFUL;
-                    tab_ulong[i] &= ~0x0FUL;
+                    SB_CHECKED_RMW(tab_ulong, i, |= 0xFFUL);
+                    SB_CHECKED_RMW(tab_ulong, i, &= ~0x0FUL);
 
-                    tab_float[i] -= 1.5f;
+                    SB_CHECKED_RMW(tab_float, i, -= 1.5f);
                     tab_char[i] =
                         static_cast<unsigned char>(linear_correlation(i, sz, std::numeric_limits<char>::max()));
                     tab_short[i]   = static_cast<short>(linear_correlation(i, sz, std::numeric_limits<short>::max()));
@@ -340,7 +341,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 
                     tab_complex[i] = 3. * tab_complex[i];
                     tab_complex[i] = tab_complex[i] + complex_double(1., 3.);
-                    tab_complex[i] *= 2.;
+                    SB_CHECKED_RMW(tab_complex, i, *= 2.);
                     tab_complex[i] = complex_double(2., 3.) * tab_complex[i];
                     tab_complex[i] = 2. / tab_complex[i];
                     tab_complex[i] = 2. - tab_complex[i];
@@ -367,7 +368,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 
                 tab4[i] = second_value_d1;
                 tab5[i] = second_value_d2;
-                tab1[i] *= second_value_d;
+                SB_CHECKED_RMW(tab1, i, *= second_value_d);
 
                 tab_float[i] = second_value_f1;
                 tab_char[i]  = second_value_c1;
@@ -472,27 +473,27 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 if (i > end0 - interval10)
                 {
                     tab1[i] = tab2[i] * tab3[i] * std::sin(tab1[i]) + std::cos(val);
-                    tab1[i] += tab2[i] - std::exp(std::fmod(static_cast<double>(tab3[i]), 700.0));
-                    tab1[i] -= tab3[i] + std::tan(tab2[i]);
-                    tab1[i] += 1;
+                    SB_CHECKED_RMW(tab1, i, += tab2[i] - std::exp(std::fmod(static_cast<double>(tab3[i]), 700.0)));
+                    SB_CHECKED_RMW(tab1, i, -= tab3[i] + std::tan(tab2[i]));
+                    SB_CHECKED_RMW(tab1, i, += 1);
                     --tab2[i];
                     tab2[i] = -tab2[i];
                     tab2[i]++;
-                    tab2[i] *= tab3[i];
-                    tab2[i] /= tab1[i];
+                    SB_CHECKED_RMW(tab2, i, *= tab3[i]);
+                    SB_CHECKED_RMW(tab2, i, /= tab1[i]);
                     ++tab4[i];
-                    tab5[i] *= 2;
-                    tab_float[i] /= 1.01f;
-                    tab_float[i] -= .5f;
+                    SB_CHECKED_RMW(tab5, i, *= 2);
+                    SB_CHECKED_RMW(tab_float, i, /= 1.01f);
+                    SB_CHECKED_RMW(tab_float, i, -= .5f);
 
-                    tab_complex[i] /= complex_double(2, 3);
-                    tab_complex[i] -= tab1[i];
-                    tab_complex[i] *= tab1[i];
+                    SB_CHECKED_RMW(tab_complex, i, /= complex_double(2, 3));
+                    SB_CHECKED_RMW(tab_complex, i, -= tab1[i]);
+                    SB_CHECKED_RMW(tab_complex, i, *= tab1[i]);
 
                     tab_complex[i] = complex_double(3., 2.) * tab1[i] + tab2[i] / complex_double(2., 2.);
                     tab_complex[i] = tab1[i] - complex_double(1., 2.) + tab3[i] + complex_double(3., 1.);
 
-                    tab_complex[i] *= tab1[i];
+                    SB_CHECKED_RMW(tab_complex, i, *= tab1[i]);
 
                     // --- bound accumulators to keep the stress workload
                     // numerically finite (values are a checksum; exact
@@ -525,10 +526,10 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     tab5[i] = 1;
 
                     tab_int[i] = static_cast<int>(i & 0xF);
-                    tab_int[i] |= 0x1;
-                    tab_int[i] ^= 0x3;
-                    tab_int[i] <<= 2;
-                    tab_int[i] >>= 1;
+                    SB_CHECKED_RMW(tab_int, i, |= 0x1);
+                    SB_CHECKED_RMW(tab_int, i, ^= 0x3);
+                    SB_CHECKED_RMW(tab_int, i, <<= 2);
+                    SB_CHECKED_RMW(tab_int, i, >>= 1);
                     tab_int[i] = (tab_int[i] & 0xF) | 0x2;
                     tab_int[i] = tab_int[i] % 5;
                     tab_int[i] = ~tab_int[i];
