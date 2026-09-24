@@ -134,7 +134,7 @@ endif()
 # RelWithDebInfo sanitizer flavours are compiled at -O2, which drops them on
 # aarch64 -- and a TSan/ASan report without a usable stack is worthless. Kept
 # separate from CHUNK_UBSAN (which sets it too) so a TSan build gets it as well.
-if (SANITIZER AND NOT SANITIZER STREQUAL "OFF"
+if (SANITIZER AND NOT SANITIZER STREQUAL "none"
     AND (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
   target_compile_options(chunk_hardening INTERFACE -fno-omit-frame-pointer)
 endif()
