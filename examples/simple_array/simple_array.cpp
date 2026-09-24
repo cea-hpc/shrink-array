@@ -304,7 +304,10 @@ int main()
                 }
             }
 
-            while (tab1[i] != 0)
+            // Bounded: i can already be sz here (start0 == sz is drawn by
+            // startDistribution(1, sz), or no non-zero was found), and a
+            // non-zero run can extend to sz - 1.
+            while (i < sz && tab1[i] != 0)
             {
                 tab1[i] = tab2[i] = tab3[i] = 0;
                 i++;
