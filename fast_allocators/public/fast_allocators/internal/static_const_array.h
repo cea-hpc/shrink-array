@@ -51,6 +51,8 @@
  * static_const_array_define.h only keeps MAX_CONST_BLOCK_SIZE.
  */
 
+#include <cassert> // TypeAllocator::alloc: the size its free will route by
+
 #include "fast_allocators/internal/svalloc.h"
 #include "fast_allocators/internal/pmp_alloc.h" // PMP_MAX_THREADS / PMP_THREAD_RANK / PMP_IN_PARALLEL_REGION
 
@@ -401,6 +403,43 @@ struct FixedSizeAllocator : private StaticConstArray
     // 12 and 24 are very common sizes in the code --> specialized
     // for the AutoPtr case, otherwise it's 8 and 24
 
+  private:
+    /// @brief Allocator8 / Allocator24 are plain buckets, no more thread-safe
+    ///        than the ladder's: same guard as getBlockAlloc(). Serially
+    ///        PMP_IN_PARALLEL_REGION is the constant false and the branch folds
+    ///        away.
+    template <typename Bucket>
+    static void* shortcut_alloc(Bucket& bucket)
+    {
+        if (PMP_IN_PARALLEL_REGION)
+        {
+            void* ptr;
+#pragma omp critical
+            {
+                ptr = bucket.alloc();
+            }
+            return ptr;
+        }
+        return bucket.alloc();
+    }
+
+    /// @brief Counterpart of shortcut_alloc(), same guard.
+    template <typename Bucket>
+    static void shortcut_free(Bucket& bucket, void* ptr)
+    {
+        if (PMP_IN_PARALLEL_REGION)
+        {
+#pragma omp critical
+            {
+                bucket.free_elt(ptr);
+            }
+            return;
+        }
+        bucket.free_elt(ptr);
+    }
+
+  public:
+
     /// @brief One block of `sizeof(_ElementType)` bytes.
     static void* alloc_block()
     {
@@ -413,11 +452,11 @@ struct FixedSizeAllocator : private StaticConstArray
         {
             if (sizeof(_ElementType) == 8)
             {
-                return Allocator8.alloc();
+                return shortcut_alloc(Allocator8);
             }
             if (sizeof(_ElementType) == 24)
             {
-                return Allocator24.alloc();
+                return shortcut_alloc(Allocator24);
             }
 
             void* ptr = getBlockAlloc(sizeof(_ElementType));
@@ -444,11 +483,11 @@ struct FixedSizeAllocator : private StaticConstArray
         {
             if (s == 8)
             {
-                return Allocator8.alloc();
+                return shortcut_alloc(Allocator8);
             }
             if (s == 24)
             {
-                return Allocator24.alloc();
+                return shortcut_alloc(Allocator24);
             }
 
             void* ptr = getBlockAlloc(s);
@@ -465,7 +504,8 @@ struct FixedSizeAllocator : private StaticConstArray
     /// @brief Give back a block from either alloc_block() overload.
     /// @warning Routes by `sizeof(_ElementType)`, NOT by the size the block was
     ///          actually taken with. A block from `alloc_block(s)` with
-    ///          `s != sizeof(_ElementType)` goes back to the wrong bucket.
+    ///          `s != sizeof(_ElementType)` goes back to the wrong bucket;
+    ///          TypeAllocator::alloc() asserts it never is.
     static void free_block(void* ptr)
     {
         if (ptr == nullptr)
@@ -479,11 +519,11 @@ struct FixedSizeAllocator : private StaticConstArray
         {
             if (sizeof(_ElementType) == 8)
             {
-                Allocator8.free_elt(ptr);
+                shortcut_free(Allocator8, ptr);
             }
             else if (sizeof(_ElementType) == 24)
             {
-                Allocator24.free_elt(ptr);
+                shortcut_free(Allocator24, ptr);
             }
             else
             {
@@ -545,8 +585,12 @@ template <typename T>
 struct TypeAllocator
 {
     /// @brief A block of @p s bytes for a T.
+    /// @pre `s == sizeof(T)`: free() routes by sizeof(T), so any other size
+    ///      (an operator new reached by a larger derived class) would go back
+    ///      to the wrong bucket.
     static void* alloc(size_t s)
     {
+        assert(s == sizeof(T) && "TypeAllocator: free() routes by sizeof(T)");
         return FixedSizeAllocator<T>::alloc_block(s);
     }
     /// @brief Give it back.
