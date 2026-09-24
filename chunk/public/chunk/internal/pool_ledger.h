@@ -253,6 +253,85 @@ inline ankerl::unordered_dense::map<const void*, BRec>& block_live()
     return m;
 }
 
+// ── End-of-run report (diagnostic) ───────────────────────────────────────────
+// Lists every block still recorded in block_live(), grouped by (state, last
+// site). Enabled only when the ledger is on AND CHUNK_LEDGER_REPORT is set in
+// the environment, so it costs nothing otherwise. It separates the causes a
+// LeakSanitizer report cannot: a block left LIVE was allocated and never parked
+// nor released (its reference was dropped); a block left PARKED was parked but
+// not freed by the exit drain; a leaked block absent from the table was never
+// seen by the ledger's hooks at all.
+inline void report_live_blocks() noexcept
+{
+    if constexpr (pool_ledger_enabled)
+    {
+        const std::scoped_lock lk(mtx());
+        std::size_t n_live = 0, n_parked = 0;
+        // (state, site) -> count ; a plain array of pairs keeps this free of
+        // any extra container dependency.
+        struct Row { int state; const char* site; std::size_t count; };
+        Row  rows[64];
+        int  n_rows = 0;
+        for (const auto& kv : block_live())
+        {
+            const BRec& r = kv.second;
+            if (r.state == BState::FREE)
+                continue;
+            if (r.state == BState::LIVE)
+                ++n_live;
+            else
+                ++n_parked;
+            int i = 0;
+            for (; i < n_rows; ++i)
+                if (rows[i].state == static_cast<int>(r.state) && rows[i].site == r.last_site)
+                    break;
+            if (i == n_rows)
+            {
+                if (n_rows == 64)
+                    continue; // table full: still counted in the totals above
+                rows[n_rows++] = Row{static_cast<int>(r.state), r.last_site, 0};
+            }
+            ++rows[i].count;
+        }
+        std::fprintf(stderr, "\n[POOL_LEDGER/REPORT] blocks still recorded at exit: "
+                             "%zu LIVE, %zu PARKED\n", n_live, n_parked);
+        for (int i = 0; i < n_rows; ++i)
+            std::fprintf(stderr, "[POOL_LEDGER/REPORT]   %-7s %8zu  last site: %s\n",
+                         rows[i].state == static_cast<int>(BState::LIVE) ? "LIVE" : "PARKED",
+                         rows[i].count, rows[i].site);
+        if (n_live == 0 && n_parked == 0)
+            std::fprintf(stderr, "[POOL_LEDGER/REPORT]   (none) -- any LSan leak comes "
+                                 "from a path the ledger does not trace\n");
+        std::fflush(stderr);
+    }
+}
+
+// Registered once, on the first block the ledger sees.
+//
+// ORDER MATTERS: block_live() is a function-local static, destroyed at exit in
+// the REVERSE order of construction relative to std::atexit registrations. The
+// map must therefore be CONSTRUCTED BEFORE the handler is registered, so that
+// the handler runs first and reads a live map. Registering first (the naive
+// order) destroys the map before the report runs, which then reads freed
+// memory and prints arbitrary states -- observed: a LIVE block reported as
+// PARKED. The explicit block_live() call below forces construction first.
+inline void maybe_register_live_report() noexcept
+{
+    if constexpr (pool_ledger_enabled)
+    {
+        static const bool registered = [] {
+            if (std::getenv("CHUNK_LEDGER_REPORT") != nullptr)
+            {
+                (void)block_live();                       // construct the map FIRST
+                std::atexit([] { report_live_blocks(); }); // ...then register
+            }
+            return true;
+        }();
+        (void)registered;
+    }
+}
+
+
 // Core transition. `allow_unknown` is true only for b_alloc: a never-seen
 // pointer is implicitly FREE and becomes LIVE. For pop/park/release, an unknown
 // pointer is itself a bug (we lost track of its birth, or it is foreign).
@@ -341,6 +420,7 @@ inline void block_transition(const void* p,
 
 inline void on_block_alloc(const void* p, const char* site) noexcept
 {
+    maybe_register_live_report();
     block_transition(p, BState::FREE, BState::LIVE, site, "b_alloc", /*allow_unknown=*/true);
 }
 inline void on_block_pop(const void* p, const char* site) noexcept
