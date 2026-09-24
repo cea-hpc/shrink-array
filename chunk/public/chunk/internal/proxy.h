@@ -768,26 +768,30 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Add `v` to this element in place.
      * @tparam U Type of the operand.
      * @param v Operand to add.
-     * @return The resulting value.
-     */
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires ElementAddable<T>
-    T operator+=(const U& v) noexcept
+    Proxy operator+=(const U& v) noexcept
     {
-        return this->template arithmetic_assign<U>(v, std::plus<>{});
+        this->template arithmetic_assign<U>(v, std::plus<>{});
+        return *this;
     }
 
     /**
      * @brief Subtract `v` from this element in place.
      * @tparam U Type of the operand.
      * @param v Operand to subtract.
-     * @return The resulting value.
-     */
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires ElementSubtractable<T>
-    T operator-=(const U& v) noexcept
+    Proxy operator-=(const U& v) noexcept
     {
-        return this->template arithmetic_assign<U>(v, std::minus<>{});
+        this->template arithmetic_assign<U>(v, std::minus<>{});
+        return *this;
     }
 
     /**
@@ -831,26 +835,30 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Divide this element by `v` in place.
      * @tparam U Type of the operand.
      * @param v Divisor.
-     * @return The resulting value.
-     */
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires ElementDivisible<T>
-    T operator/=(const U& v) noexcept
+    Proxy operator/=(const U& v) noexcept
     {
-        return apply_compound_operation<U>(v, std::divides<>());
+        apply_compound_operation<U>(v, std::divides<>());
+        return *this;
     }
 
     /**
      * @brief Multiply this element by `v` in place.
      * @tparam U Type of the operand.
      * @param v Multiplier.
-     * @return The resulting value.
-     */
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires ElementMultipliable<T>
-    T operator*=(const U& v) noexcept
+    Proxy operator*=(const U& v) noexcept
     {
-        return apply_compound_operation<U>(v, std::multiplies<>());
+        apply_compound_operation<U>(v, std::multiplies<>());
+        return *this;
     }
 
     /// @brief Functor wrapping operator% for apply_compound_operation().
@@ -867,16 +875,17 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *        no-op passthrough (returns v unchanged) for non-integral T.
      * @tparam U Type of the operand.
      * @param v Modulus.
-     * @return The resulting value (integral T), or v unchanged otherwise.
-     */
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires ElementModulable<T> || std::is_same_v<T, bool>
-    T operator%=(const U& v) noexcept
+    Proxy operator%=(const U& v) noexcept
     {
         if constexpr (std::is_integral_v<T>)
-            return apply_compound_operation<U>(v, typename Base::modulo{});
+            { apply_compound_operation<U>(v, typename Base::modulo{}); return *this; }
         else
-            return v;
+            return *this;
     }
 
     Proxy(const Proxy& other)     = default;

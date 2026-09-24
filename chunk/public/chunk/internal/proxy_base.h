@@ -813,22 +813,25 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *        float += int).
      * @tparam U Type of operand (implicit conversion to T)
      * @param v Value to add
-     * @return Result of the addition
-     */
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires IsCleanCompoundOp<T, U> && ElementAddable<T>
-    T operator+=(const U& v) noexcept
+    Derived operator+=(const U& v) noexcept
     {
-        return arithmetic_assign<T>(static_cast<T>(v), std::plus<T>{});
+        arithmetic_assign<T>(static_cast<T>(v), std::plus<T>{});
+        return derived();
     }
 
     /** @brief Compound addition — type mismatch (e.g. float += double). Precision warning. */
     template <typename U>
         requires(!IsCleanCompoundOp<T, U>) && std::is_convertible_v<U, T> && ElementAddable<T>
     [[deprecated("HPC WARNING: Type mismatch in +=. Possible precision loss. Use 'f' suffix for floats.")]]
-    T operator+=(const U& v) noexcept
+    Derived operator+=(const U& v) noexcept
     {
-        return arithmetic_assign<T>(static_cast<T>(v), std::plus<T>{});
+        arithmetic_assign<T>(static_cast<T>(v), std::plus<T>{});
+        return derived();
     }
 
     /**
@@ -838,15 +841,18 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *
      * @tparam U Type of the value to subtract (must be compatible with T)
      * @param v Value to subtract
-     * @return T New value after subtraction
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.
      * @note noexcept guaranteed
      * @note Increments CHUNK_STATS if enabled
      */
     template <typename U>
         requires IsCleanCompoundOp<T, U> && ElementSubtractable<T>
-    T operator-=(const U& v) noexcept
+    Derived operator-=(const U& v) noexcept
     {
-        return arithmetic_assign<T>(static_cast<T>(v), std::minus<T>{});
+        arithmetic_assign<T>(static_cast<T>(v), std::minus<T>{});
+        return derived();
     }
 
     /** @brief Compound subtraction — type mismatch. */
@@ -854,9 +860,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     template <typename U>
         requires(!IsCleanCompoundOp<T, U>) && std::is_constructible_v<T, U> && ElementSubtractable<T>
     [[deprecated("HPC WARNING: Precision mismatch.")]]
-    T operator-=(const U& v) noexcept
+    Derived operator-=(const U& v) noexcept
     {
-        return arithmetic_assign<T>(static_cast<T>(v), std::minus<T>{});
+        arithmetic_assign<T>(static_cast<T>(v), std::minus<T>{});
+        return derived();
     }
     /**
      * @brief Helper for bitwise operations with result retrieval
@@ -910,16 +917,19 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *
      * @tparam U Type of the value (must be integral)
      * @param v Value to use for the AND operation
-     * @return T New value after the AND operation
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
      */
 
     template <typename U>
-    T operator&=(const U& v) noexcept
+    Derived operator&=(const U& v) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
     {
-        return bitwise_assign_with_result<U>(v, [](auto a, auto b) { return a & b; });
+        bitwise_assign_with_result<U>(v, [](auto a, auto b) { return a & b; });
+        return derived();
     }
 
     /**
@@ -929,17 +939,20 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *
      * @tparam U Type of the value (must be integral)
      * @param v Value to use for the OR operation
-     * @return T Casted value of v (original behavior, not the actual value)
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
      * @warning Returns casted v, not the actual final stored value
      */
 
     template <typename U>
-    T operator|=(const U& v) noexcept
+    Derived operator|=(const U& v) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
     {
-        return bitwise_assign_simple<U>(v, [](auto a, auto b) { return a | b; });
+        bitwise_assign_simple<U>(v, [](auto a, auto b) { return a | b; });
+        return derived();
     }
 
     /**
@@ -949,17 +962,20 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *
      * @tparam U Type of the value (must be integral)
      * @param v Value to use for the XOR operation
-     * @return T Casted value of v (original behavior, not the actual value)
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
      * @warning Returns casted v, not the actual final stored value
      */
 
     template <typename U>
-    T operator^=(const U& v) noexcept
+    Derived operator^=(const U& v) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
     {
-        return bitwise_assign_simple<U>(v, [](auto a, auto b) { return a ^ b; });
+        bitwise_assign_simple<U>(v, [](auto a, auto b) { return a ^ b; });
+        return derived();
     }
 
     /**
@@ -978,19 +994,21 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /** @brief Bitwise shift left — clean types (Integral <<= Integral). */
     template <typename U>
         requires IsCleanShiftOp<T, U>
-    T operator<<=(const U& v) noexcept
+    Derived operator<<=(const U& v) noexcept
     {
-        return bitwise_assign_simple<U>(v, [](auto a, auto b) { return a << b; });
+        bitwise_assign_simple<U>(v, [](auto a, auto b) { return a << b; });
+        return derived();
     }
 
     /** @brief Bitwise shift left — trap for non-integral shift amount. */
     template <typename U>
         requires(!IsCleanShiftOp<T, U>) && std::is_integral_v<T>
     [[deprecated("HPC WARNING: Shift amount must be an integer to avoid precision issues.")]]
-    T operator<<=(const U& v) noexcept
+    Derived operator<<=(const U& v) noexcept
     {
         // Force conversion to int for the shift amount
-        return bitwise_assign_simple<int>(static_cast<int>(v), [](auto a, auto b) { return a << b; });
+        bitwise_assign_simple<int>(static_cast<int>(v), [](auto a, auto b) { return a << b; });
+        return derived();
     }
 
     /**
@@ -1000,7 +1018,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *
      * @tparam U Type of the shift amount (must be integral)
      * @param v Number of positions to shift
-     * @return T Casted value of v (original behavior, not the actual value)
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
      * @warning Returns casted v, not the actual final stored value
@@ -1008,18 +1028,20 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
     template <typename U>
         requires IsCleanShiftOp<T, U>
-    T operator>>=(const U& v) noexcept
+    Derived operator>>=(const U& v) noexcept
     {
-        return bitwise_assign_simple<U>(v, [](auto a, auto b) { return a >> b; });
+        bitwise_assign_simple<U>(v, [](auto a, auto b) { return a >> b; });
+        return derived();
     }
 
     /** @brief Bitwise shift right — trap. */
     template <typename U>
         requires(!IsCleanShiftOp<T, U>) && std::is_integral_v<T>
     [[deprecated("HPC WARNING: Shift amount must be an integer.")]]
-    T operator>>=(const U& v) noexcept
+    Derived operator>>=(const U& v) noexcept
     {
-        return bitwise_assign_simple<int>(static_cast<int>(v), [](auto a, auto b) { return a >> b; });
+        bitwise_assign_simple<int>(static_cast<int>(v), [](auto a, auto b) { return a >> b; });
+        return derived();
     }
 
     [[nodiscard]] T operator~() const noexcept
@@ -1044,12 +1066,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /**
      * @brief Pre-increment operator
-     * @return Reference to incremented value
-     *
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.
      * @details Implements: ++proxy
      * Returns the value after increment.
      */
-    T operator++() noexcept
+    Derived operator++() noexcept
         requires ElementIncrementable<T>
     {
         // Synchronous version
@@ -1069,17 +1092,21 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // lines up). read_pure() pulls the offset to applied state, then reads
         // live through the chunk. Same contract as the pure-read comparison
         // operators. Precise gate: nothing pending -> no toll.
-        return read_pure();
+        // compound-returns-proxy: return the proxy, not read_pure(): its
+        // conversion IS read_pure(), so the contract above holds, but
+        // the read -- and its sync -- is only paid if the value is used.
+        return derived();
     }
 
     /**
      * @brief Pre-decrement operator
-     * @return Reference to decremented value
-     *
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.
      * @details Implements: --proxy
      * Returns the value after decrement.
      */
-    T operator--() noexcept
+    Derived operator--() noexcept
         requires ElementIncrementable<T>
     {
         auto dec_operation = [this] { derived().execute_inplace_operation([](T& e) { --e; }); };
@@ -1097,7 +1124,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // lines up). read_pure() pulls the offset to applied state, then reads
         // live through the chunk. Same contract as the pure-read comparison
         // operators. Precise gate: nothing pending -> no toll.
-        return read_pure();
+        // compound-returns-proxy: return the proxy, not read_pure(): its
+        // conversion IS read_pure(), so the contract above holds, but
+        // the read -- and its sync -- is only paid if the value is used.
+        return derived();
     }
 
     /**

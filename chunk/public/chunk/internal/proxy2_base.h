@@ -381,17 +381,19 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @brief Multiply this element by `v` in place.
      * @tparam U Type of the operand.
      * @param v Multiplier.
-     * @return The resulting value. Bool: prints an error and returns v
-     *         unchanged (not implemented for bool).
-     */
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.
+     *         Bool: not implemented -- prints an error and leaves the
+     *         element unchanged.*/
     template <typename U>
         requires ElementMultipliable<T>
-    T operator*=(const U& v) noexcept
+    Derived operator*=(const U& v) noexcept
     {
         if constexpr (is_bool)
         {
             std::cerr << "operator not implemented for bool\n";
-            return static_cast<T>(v);
+            return derived();
         }
         else
         {
@@ -400,11 +402,12 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
             // Pure-read early-out: route through read_pure() so it honours the
             // read-side gate under CHUNK_SYNC_ON_READ (byte-identical otherwise).
             if (v == static_cast<base_t<U>>(1))
-                return Base::read_pure();
+                return derived();
 
             // 2. Call the common math engine
             // We use the transparent functor std::multiplies<>
-            return derived().template apply_compound_operation<U>(std::multiplies<>{}, v, true);
+            derived().template apply_compound_operation<U>(std::multiplies<>{}, v, true);
+            return derived();
         }
     }
 
@@ -412,17 +415,19 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @brief Divide this element by `v` in place.
      * @tparam U Type of the operand.
      * @param v Divisor. Debug builds abort on v == 0.
-     * @return The resulting value. Bool: prints an error and returns v
-     *         unchanged (not implemented for bool).
-     */
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.
+     *         Bool: not implemented -- prints an error and leaves the
+     *         element unchanged.*/
     template <typename U>
         requires ElementDivisible<T>
-    T operator/=(const U& v) noexcept
+    Derived operator/=(const U& v) noexcept
     {
         if constexpr (is_bool)
         {
             std::cerr << "operator not implemented for bool\n";
-            return static_cast<T>(v);
+            return derived();
         }
         else
         {
@@ -435,9 +440,10 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
             // Pure-read early-out: route through read_pure() so it honours the
             // read-side gate under CHUNK_SYNC_ON_READ (byte-identical otherwise).
             if (v == static_cast<base_t<U>>(1))
-                return Base::read_pure();
+                return derived();
             // 2. Execution via the common engine
-            return derived().template apply_compound_operation<U>(std::divides<>{}, v, true);
+            derived().template apply_compound_operation<U>(std::divides<>{}, v, true);
+            return derived();
         }
     }
 
@@ -445,22 +451,25 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @brief Compute this element modulo `v` in place.
      * @tparam U Type of the operand.
      * @param v Modulus.
-     * @return The resulting value. Non-integral or bool: prints an error
-     *         and returns v unchanged (not implemented).
-     */
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.
+     *         Bool: not implemented -- prints an error and leaves the
+     *         element unchanged.*/
     template <typename U>
         requires ElementModulable<T> || std::is_same_v<T, bool>
-    T operator%=(const U& v) noexcept
+    Derived operator%=(const U& v) noexcept
     {
         if constexpr (std::is_integral_v<T> && is_not_bool)
         {
             // 2. Execution via the common engine
-            return derived().template apply_compound_operation<U>(Base::modulo(), v, false);
+            derived().template apply_compound_operation<U>(typename Base::modulo{}, v, false);
+            return derived();
         }
         else
         {
             std::cerr << "operator not implemented (requires integral non-bool type)\n";
-            return static_cast<T>(v);
+            return derived();
         }
     }
 };
