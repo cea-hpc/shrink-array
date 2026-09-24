@@ -1071,12 +1071,23 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     inline static manager_chunk2 s_manager_{};
 
   public:
-    /*!
-     * \brief Copy constructor: copies only the values pointer (shallow copy;
-     *        the chunk does not own/duplicate the pointed-to buffer).
-     * \param other Chunk to copy from.
+    /**
+     * @brief Copy constructor: copies the values pointer (shallow copy; the
+     *        chunk does not own/duplicate the pointed-to buffer) AND the
+     *        Chunk2CounterPolicy counters.
+     * @param other Chunk to copy from.
+     * @warning The counter base MUST be copied. Left out of the initialiser
+     *          list it is default-constructed and both counters restart at 0,
+     *          and since this user-declared copy ctor suppresses the implicit
+     *          move ctor, every std::vector<Chunk2> reallocation goes through
+     *          here. The counter then under-counts by the elements already
+     *          equal to the value and can no longer reach `size`: compression
+     *          of the chunk is delayed or missed for good. Same defect as the
+     *          one fixed in Chunk v1 (chunk_std.h). `values` is atomic, so it
+     *          cannot come through a base copy and is copied by hand below.
      */
     Chunk2(const Chunk2& other)
+        : Chunk2CounterPolicy<chunk_config::use_compression_with_counter>(other)
     {
         if constexpr (build_config::use_openmp)
         {
@@ -1088,16 +1099,21 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
     }
 
-    /*!
-     * \brief Copy assignment: copies only the values pointer (shallow copy;
-     *        the chunk does not own/duplicate the pointed-to buffer).
-     * \param other Chunk to copy from.
-     * \return *this.
+    /**
+     * @brief Copy assignment: copies the values pointer (shallow copy; the
+     *        chunk does not own/duplicate the pointed-to buffer) AND the
+     *        Chunk2CounterPolicy counters.
+     * @param other Chunk to copy from.
+     * @return *this.
+     * @see Chunk2(const Chunk2&) for why the counters must follow `values`.
      */
     Chunk2<T>& operator=(const Chunk2<T>& other)
     {
         if (this == &other)
             return *this;
+
+        // Same reason as the copy ctor: propagate the counter state.
+        Chunk2CounterPolicy<chunk_config::use_compression_with_counter>::operator=(other);
 
         if constexpr (build_config::use_openmp)
         {
