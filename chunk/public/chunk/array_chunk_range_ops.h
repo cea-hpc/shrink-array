@@ -52,6 +52,7 @@
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
 #include "chunk/internal/conditional_counter.h" // counter_value_t
 #include "chunk/config.h"
+#include "chunk/chunk_traits.h"                // Chunk / Chunk2 / Chunk2A: the type traits below
 #include "chunk/vector_range_ops.h"                    // detail::ChunkedArray + the std::vector fallback
 #include "chunk/internal/write_compress_sync_policy.h" // fill_range_mt: the writer side of the Dekker handshake
 #include "chunk/internal/compression_manager.h"        // fill_range_mt: must_defer_write / wait_out_compressor
@@ -93,11 +94,40 @@ namespace detail
 template <typename T>
 inline constexpr bool raw_fillable_v = !std::is_same_v<T, bool>;
 
+/**
+ * @brief Which chunk variant does array type @p Arr hold?
+ *
+ * @details Dispatch on the TYPE, never on chunk_config::use_chunk /
+ *          use_chunk2 / use_chunk2a: those say which variants the BUILD
+ *          contains, and a build may contain several (chunk_v1v2:
+ *          CHUNK=1;CHUNK2=1). Testing the flags there sent an ArrayChunk2 down
+ *          v1's paths (a fill_range_mt of its second value never queued) and
+ *          an ArrayChunk down Chunk2's (get_ind_second_value(), written(ind2):
+ *          no compile). In a single-variant build both forms fold to the same
+ *          constants.
+ */
+template <typename Arr>
+inline constexpr bool is_v1_v = std::is_same_v<typename Arr::chunk_type, Chunk<typename Arr::value_type>>;
+
+/** @copydoc is_v1_v */
+template <typename Arr>
+inline constexpr bool is_v2_v = std::is_same_v<typename Arr::chunk_type, Chunk2<typename Arr::value_type>>;
+
+/** @copydoc is_v1_v */
+template <typename Arr>
+inline constexpr bool is_v2a_v = std::is_same_v<typename Arr::chunk_type, Chunk2A<typename Arr::value_type>>;
+
+/** @brief Chunk2 on a non-bool T: the variant with a second value (and written(ind)). */
+template <typename Arr>
+inline constexpr bool has_second_value_v = is_v2_v<Arr> && !std::is_same_v<typename Arr::value_type, bool>;
+
 /** @brief Only v1 in counter mode carries a per-chunk zero count to restore. */
-inline constexpr bool track_zeros_v = chunk_config::use_chunk && chunk_config::use_compression_with_counter;
+template <typename Arr>
+inline constexpr bool track_zeros_v = is_v1_v<Arr> && chunk_config::use_compression_with_counter;
 
 /** @brief Chunk2 in counter mode carries two: first-value and second-value counts. */
-inline constexpr bool track_chunk2_counts_v = chunk_config::use_chunk2 && chunk_config::use_compression_with_counter;
+template <typename Arr>
+inline constexpr bool track_chunk2_counts_v = is_v2_v<Arr> && chunk_config::use_compression_with_counter;
 
 /**
  * @brief Recount the per-chunk element counters after a raw store into
@@ -125,7 +155,7 @@ inline constexpr bool track_chunk2_counts_v = chunk_config::use_chunk2 && chunk_
 template <typename Arr, typename Chunk, typename T>
 void resync_counters(Arr& a, Chunk& ch, std::size_t c_begin, const T* dst, unsigned int S)
 {
-    if constexpr (track_zeros_v)
+    if constexpr (track_zeros_v<Arr>)
     {
         counter_value_t nz = 0;
         for (unsigned int k = 0; k < S; ++k)
@@ -133,7 +163,7 @@ void resync_counters(Arr& a, Chunk& ch, std::size_t c_begin, const T* dst, unsig
                 ++nz;
         a[static_cast<typename Arr::ind_type>(c_begin)].resync_nb_val_eq_zero(nz);
     }
-    else if constexpr (track_chunk2_counts_v && requires { a.get_second_value(); })
+    else if constexpr (track_chunk2_counts_v<Arr> && requires { a.get_second_value(); })
     {
         const T         sv = static_cast<T>(a.get_second_value());
         counter_value_t n1 = 0;
@@ -231,7 +261,7 @@ void fill_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::si
 template <typename Arr>
 [[nodiscard]] int second_value_index(const Arr& a) noexcept
 {
-    if constexpr (chunk_config::use_chunk2 && !std::is_same_v<typename Arr::value_type, bool>)
+    if constexpr (has_second_value_v<Arr>)
         return a.get_ind_second_value();
     else
         return -1;
@@ -242,7 +272,7 @@ template <typename Arr>
 template <typename Arr, typename Chunk>
 [[nodiscard]] bool materialised(const Arr&, const Chunk& ch, [[maybe_unused]] int ind2) noexcept
 {
-    if constexpr (chunk_config::use_chunk2 && !std::is_same_v<typename Arr::value_type, bool>)
+    if constexpr (has_second_value_v<Arr>)
         return ch.written(ind2);
     else
         return ch.written();
@@ -270,7 +300,7 @@ void queue_for_compression(Arr& a, std::size_t i)
         // Chunk2: candidate lists are keyed by second value and exist only for
         // arrays that called set_second_value() -- skip the others, as the
         // element path's pre-check does (Proxy2::has_candidate_list).
-        if constexpr (chunk_config::use_chunk2 && !std::is_same_v<typename Arr::value_type, bool> &&
+        if constexpr (has_second_value_v<Arr> &&
                       requires { Arr::proxy_type::has_candidate_list(a.get_second_value()); })
         {
             if (!Arr::proxy_type::has_candidate_list(a.get_second_value()))
@@ -437,8 +467,8 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
 
             // The chunk may be constant now: a fill of first_value, or on
             // chunk2a of any value (a uniform run is its second constant).
-            bool compressible_value = value_is_cst1 || chunk_config::use_chunk2a;
-            if constexpr (chunk_config::use_chunk2 && requires { a.get_second_value(); })
+            bool compressible_value = value_is_cst1 || detail::is_v2a_v<Arr>;
+            if constexpr (detail::is_v2_v<Arr> && requires { a.get_second_value(); })
                 compressible_value = compressible_value || value == static_cast<T>(a.get_second_value());
             if (compressible_value && detail::may_be_uniform(dst, S))
                 detail::queue_for_compression(a, c_begin);
@@ -615,7 +645,7 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
 
     const in_t<T> value = static_cast<T>(v);
 
-    constexpr bool session = (chunk_config::use_chunk2a || chunk_config::use_chunk2 || chunk_config::use_chunk) &&
+    constexpr bool session = (detail::is_v2a_v<Arr> || detail::is_v2_v<Arr> || detail::is_v1_v<Arr>) &&
                              build_config::use_openmp && chunk_config::use_fast_block_compression &&
                              detail::raw_fillable_v<T>;
     if constexpr (!session)
@@ -687,9 +717,9 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
                         // array's second value. Chunk2A aggregates (no lock-free
                         // atomic_ref): only a span covering the whole chunk,
                         // uniform by construction; a partial one is not queued.
-                        if constexpr (chunk_config::use_chunk)
+                        if constexpr (detail::is_v1_v<Arr>)
                             uniform = static_cast<T>(value) == static_cast<T>(chunk_type::first_value);
-                        else if constexpr (chunk_config::use_chunk2 && requires { a.get_second_value(); })
+                        else if constexpr (detail::is_v2_v<Arr> && requires { a.get_second_value(); })
                             uniform = static_cast<T>(value) == static_cast<T>(chunk_type::first_value) ||
                                       static_cast<T>(value) == static_cast<T>(a.get_second_value());
                         else
