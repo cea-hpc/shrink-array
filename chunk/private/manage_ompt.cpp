@@ -56,6 +56,14 @@
 // sit in. A build without OMPT compiles this file to nothing.
 #if defined HAVE_EMBEDDED_COMPRESSION_WITH_OMPT
 
+    #include <omp.h> // omp_in_parallel: the allocator flush runs outside any active region
+    // Directive, like all_type_chunk.cpp's: a std-alloc build does not put
+    // fast_allocators/public on the include path at all.
+    #ifndef CHUNK_STD_ALLOC
+        #include "fast_allocators/tc_allocator.h"
+        #include "fast_allocators/internal/static_const_array.h" // StaticConstArray::clearInfoFreeElt
+    #endif
+
 /**
  * @brief Master switch of the OMPT callbacks, true in this build.
  *
@@ -206,7 +214,7 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
 // capacity. The candidates themselves are consumed at parallel_end.
 
 /**
- * @brief `ompt_callback_parallel_end`: the team of a parallel region has joined.
+ * @brief The chunk library's part of `ompt_callback_parallel_end`.
  *
  * The library's main phase boundary: flushes the deferred writes through
  * shrink_array::finalize_parallel_phase(), then compresses the candidates
@@ -215,11 +223,8 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
  * comments, which record why each suppression is needed and what regressed
  * when it was missing.
  */
-void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, const void*)
+static void parallel_end_chunk_work()
 {
-    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
-        return;
-
     // Vector-mode build: chunk lib is inactive, nothing to finalize.
     if constexpr (!chunk_config::is_shrink_enabled)
         return;
@@ -257,6 +262,45 @@ void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, 
     #pragma omp barrier
 
     ens_type_chunk.compress_chunk_to_compress_potentially(true);
+}
+
+/**
+ * @brief Hand the fast_allocators per-thread free batches back to the ladder.
+ *
+ * @details Inside a region StaticConstArray::freeBlock / freeBlockAlign park
+ *          freed blocks in a per-thread batch that is flushed only when it
+ *          overflows (4 MiB or 10000 blocks, per ladder): without this, up to
+ *          that much per thread stayed out of every free list after the region,
+ *          until the same thread overflowed again in a later one.
+ *
+ *          Outside any ACTIVE region only (the outermost parallel_end): the
+ *          flush takes no lock, so no rank may be freeing meanwhile. A nested
+ *          region's end leaves its batches to the enclosing one's.
+ */
+static void flush_allocator_free_batches()
+{
+    #ifndef CHUNK_STD_ALLOC
+    if (!omp_in_parallel())
+        StaticConstArray::clearInfoFreeElt();
+    #endif
+}
+
+/**
+ * @brief `ompt_callback_parallel_end`: the team of a parallel region has joined.
+ *
+ * Runs the chunk library's phase boundary (parallel_end_chunk_work), then
+ * flushes the allocator's free batches -- AFTER it: the compression pass opens
+ * its own region with these callbacks suspended, and its frees are batched
+ * too.
+ */
+void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, const void*)
+{
+    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
+        return;
+
+    parallel_end_chunk_work();
+
+    flush_allocator_free_batches();
 }
 
 /**

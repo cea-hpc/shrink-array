@@ -88,6 +88,10 @@ struct InfoFreeElt
     int* somme_sz;
     int* compt;
 
+    /// @brief Ranks the four arrays were sized for (PMP_MAX_THREADS at
+    ///        construction); 0 in a serial build, which allocates nothing.
+    int nb_thr = 0;
+
     /**
      * @brief Record one freed block, if the batch still has room.
      * @param ptr The block.
@@ -213,10 +217,12 @@ class StaticConstArray
     /// @brief clearInfoFreeElt() for the aligned ladder. Same warning.
     static void clearInfoFreeEltAlign(int thr_rank);
 
-    /// @brief Flush every thread's batch, both ladders.
-    /// @warning Nothing calls this. It also clears only `compt` and not
-    ///          `somme_sz`, so a batch it emptied still counts as 4 MiB full
-    ///          and would never batch again. Fix the reset before using it.
+    /// @brief Flush every thread's batch, both ladders, and reset them.
+    /// @warning Quiescent point only: no rank may be freeing meanwhile, since
+    ///          this runs without the overflow path's `omp critical`. Called
+    ///          by the chunk library's OMPT parallel_end callback, outside any
+    ///          active region, so that a region's parked blocks do not outlive
+    ///          it.
     static void clearInfoFreeElt();
 
     static InfoFreeElt tab_info_free_elt;       ///< Batches for the plain ladder.

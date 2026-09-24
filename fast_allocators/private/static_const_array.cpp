@@ -48,6 +48,8 @@ InfoFreeElt::InfoFreeElt() : tab_ptr(nullptr), tab_sz(nullptr), somme_sz(nullptr
 
         svcalloc(compt, int, max_thr);
         svcalloc(somme_sz, int, max_thr);
+
+        nb_thr = max_thr;
     }
 }
 
@@ -87,15 +89,19 @@ void StaticConstArray::clearInfoFreeEltAlign(int thr_rank)
 /// @copydoc StaticConstArray::clearInfoFreeElt()
 void StaticConstArray::clearInfoFreeElt()
 {
-    const int max_thr = PMP_MAX_THREADS;
-
-    for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
+    // Over the ranks the batches were SIZED for, not PMP_MAX_THREADS: that may
+    // have grown since (omp_set_num_threads) and would index past the arrays;
+    // nb_thr is 0 serially, where nothing was allocated. reset(), not compt = 0:
+    // somme_sz must come down too, or the emptied batch still counts as full.
+    for (int thr_rank = 0; thr_rank < tab_info_free_elt.nb_thr; ++thr_rank)
     {
         clearInfoFreeElt(thr_rank);
+        tab_info_free_elt.reset(thr_rank);
+    }
+    for (int thr_rank = 0; thr_rank < tab_info_free_elt_align.nb_thr; ++thr_rank)
+    {
         clearInfoFreeEltAlign(thr_rank);
-
-        tab_info_free_elt.compt[thr_rank]       = 0;
-        tab_info_free_elt_align.compt[thr_rank] = 0;
+        tab_info_free_elt_align.reset(thr_rank);
     }
 }
 
