@@ -520,7 +520,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
     }
 
     if (toggle_flag)
-        __global_need_flush_deferred.store(true, std::memory_order_relaxed);
+        __global_need_flush_deferred.store(true, std::memory_order_release);
 }
 
 /**

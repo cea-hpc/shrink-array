@@ -18,6 +18,7 @@
 #include <mutex>
 #include <atomic> // for atomic_thread_fence, memory_order_seq_cst, atomic
 #include <memory> // for unique_ptr
+#include <optional> // SerialFlushOwnership
 #include <vector> // for vector
 #include <malloc.h>
 
@@ -41,6 +42,21 @@
 
 namespace shrink_array
 {
+namespace
+{
+// Cross-thread exclusion of the SERIAL deferred flush. Deliberately SEPARATE
+// from __global_need_flush_deferred, which is a re-entrancy guard with a
+// sequential per-type toggle: turning THAT flag into a take-or-give-up lock
+// would make an inner per-type flush give up whenever an outer level held it,
+// silently dropping deferred writes. Value-initialised to clear (C++20).
+std::atomic_flag g_serial_flush_owner{};
+
+/// Releases g_serial_flush_owner on every exit path of the serial flush.
+struct SerialFlushOwnership
+{
+    ~SerialFlushOwnership() { g_serial_flush_owner.clear(std::memory_order_release); }
+};
+} // namespace
 
 // Aggressive-compression scheduling is now a constexpr build mode driven by the
 // CMake option HAVE_AGRESSIVE_COMPRESSION (-> chunk_config::have_agressive_compression),
@@ -224,6 +240,17 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_pa
     // ManagerChunkParallelImpl::flush_all_deferred).
     const bool toggle_flag = !in_parallel || g_barrier_flush_legacy;
 
+    // Two threads must not run the SERIAL flush at once: each drains every
+    // rank and reclaims buffers, so concurrent passes race on the same ops.
+    // The loser returns -- the owner is already flushing everything. acquire
+    // pairs with the owner's release on exit: this thread sees that flush's
+    // effects. The in-region flush is collaborative by design and not gated.
+    if (!in_parallel && g_serial_flush_owner.test_and_set(std::memory_order_acquire))
+        return false;
+    std::optional<SerialFlushOwnership> serial_ownership;
+    if (!in_parallel)
+        serial_ownership.emplace();
+
     for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
     {
         elm->flush_all_deferred(in_parallel, have_flushed);
@@ -242,7 +269,7 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_pa
     //  #pragma omp barrier // dead lock with ompt
 
     if (toggle_flag)
-        __global_need_flush_deferred.store(true, std::memory_order_relaxed);
+        __global_need_flush_deferred.store(true, std::memory_order_release);
 
     return have_flushed;
 }

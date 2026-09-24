@@ -37,3 +37,9 @@ __pycache__/
 # The one-shot apply_*.py patch scripts: written for a single edit, never meant
 # to be part of the tree (git log has the result, which is what matters).
 apply_*.py
+
+# ShAIrLock: opencode install dir (binaries, token, logs)
+.shairlock/opencode/
+
+# ShAIrLock: session vault backup
+.git_vault/
