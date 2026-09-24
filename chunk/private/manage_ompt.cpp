@@ -27,8 +27,9 @@
  * phase transitions declared in chunk/manage_ompt.h, so an application built
  * this way needs no explicit call at all.
  *
- * In any other build this file only defines `g_ompt_suspended = false`; the
- * application drives the phase transitions itself (see manage_ompt.h).
+ * In any other build this file only defines `g_ompt_suspended{1}` (callbacks
+ * permanently suspended: none exists); the application drives the phase
+ * transitions itself (see manage_ompt.h).
  *
  * @see chunk/manage_ompt.h for the semantics of the phase transitions.
  */
@@ -378,7 +379,8 @@ extern "C" ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
 #else
 
 /**
- * @brief Master switch of the OMPT callbacks, false in a build without OMPT.
+ * @brief Suspension counter of the OMPT callbacks, held at 1 in a build
+ *        without OMPT (they run only while it is zero, and none exists here).
  *
  * The symbol is still defined so that code testing it links in every variant;
  * here no callback exists and the application drives the phase transitions.
