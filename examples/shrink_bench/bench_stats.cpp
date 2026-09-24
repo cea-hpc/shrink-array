@@ -116,9 +116,12 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
 
         std::cout << std::fixed << std::setprecision(2);
 
-        constexpr Int name_width = 20;
+        // int, not Int: a display width handed to std::setw(int), never an
+        // array index -- Int widens to 64 bits under BENCH_INT64 and would
+        // narrow back at setw().
+        constexpr int name_width = 20;
         // Signed: a name longer than the width pads by 0, not by (size_t)-1 / 2.
-        const Int name_padding = std::max<Int>(0, (name_width - static_cast<Int>(name.length())) / 2);
+        const int name_padding = std::max<int>(0, (name_width - static_cast<int>(name.length())) / 2);
         std::cout << std::setw(name_padding) << "" << "\nstatistics " << name << "\n";
 
         constexpr Int label_width = 22;

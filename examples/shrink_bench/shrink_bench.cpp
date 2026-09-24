@@ -116,7 +116,7 @@ int main(int argc, char* argv[])
     // mallopt() is not too late -- it applies to arenas created afterwards.
     {
         const char* e      = std::getenv("CHUNK_MALLOC_ARENAS");
-        const Int   arenas = e ? std::atoi(e) : 0; // 0 = leave glibc alone
+        const int   arenas = e ? std::atoi(e) : 0; // 0 = leave glibc alone
         if (arenas > 0)
             set_max_malloc_arenas(arenas);
     }
