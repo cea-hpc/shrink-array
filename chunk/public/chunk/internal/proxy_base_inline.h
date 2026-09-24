@@ -1112,7 +1112,10 @@ T ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation) n
 
     using CalcType = std::common_type_t<T, base_t<U>>;
 
-    T result;
+    // Value-initialised: on the DEFERRED path (need_async) op_lambda never
+    // runs, so an uninitialised result would be returned -- UB. The value
+    // returned there is unspecified (see the declaration's @warning).
+    T result{};
 
     auto op_lambda = [this, &v, &result, operation] // v: the call's parameter, alive for the call
     {
@@ -1252,7 +1255,10 @@ T ProxyBase<Derived, T, ChunkType>::bitwise_assign_with_result(in_t<U> v, Op ope
     // in the same loop loses whole per-thread slices).
     chunk.reader_sync(num);
     using CalcType = std::common_type_t<T, U>;
-    T result;
+    // Value-initialised: on the DEFERRED path (need_async) op_lambda never
+    // runs, so an uninitialised result would be returned -- UB. The value
+    // returned there is unspecified (see the declaration's @warning).
+    T result{};
 
     auto op_lambda = [&v, &result, operation](T& e) // v: the call's parameter, alive for the call
     {

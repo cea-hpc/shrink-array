@@ -795,7 +795,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @tparam Op Operation type (callable: T(T, U))
      * @param v Value to use in the operation
      * @param operation Binary function applying the operation (e.g., a + b)
-     * @return T Resulting value after the operation
+     * @return T Resulting value after the operation, when the write is
+     *         applied synchronously
+     * @warning When the write is DEFERRED (fast block compression, a compressor
+     *          in flight), the operation has not happened yet on return and
+     *          its result does not exist: the value returned is then
+     *          unspecified (value-initialised). A caller that needs the
+     *          result must read the element back, which syncs it.
      * @note Thread-safe via write_with_optional_lock_info()
      * @note Increments CHUNK_STATS statistics if enabled
      */
@@ -862,7 +868,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @tparam Op Operation type (callable: void(T&, T))
      * @param v Value to use in the operation
      * @param operation Function applying the in-place operation (e.g., a &= b)
-     * @return T Resulting value after the operation
+     * @return T Resulting value after the operation, when the write is
+     *         applied synchronously
+     * @warning When the write is DEFERRED (fast block compression, a compressor
+     *          in flight), the operation has not happened yet on return and
+     *          its result does not exist: the value returned is then
+     *          unspecified (value-initialised). A caller that needs the
+     *          result must read the element back, which syncs it.
      * @note Thread-safe via write_with_optional_lock_info()
      * @note Requires T and U to be integral types
      */
