@@ -153,21 +153,25 @@ endif()
 
 install(TARGETS chunk_hardening EXPORT chunk-targets)
 
-# --- WARNINGS (Debug only) -----------------------------------------------
-# -Wall -Wextra on every Debug build, for the library and the in-tree
-# consumers alike (PUBLIC, BUILD_INTERFACE only: an installed consumer of
-# chunk::chunk does not inherit our warning policy). Restricted to gcc/clang
-# family: nvc++ accepts the flags but drowns real diagnostics in noise, and the
-# example CMakeLists already skip it for gcc/clang switches for that reason.
-# Release/RelWithDebInfo untouched. Opt out with -DCHUNK_WARNINGS=OFF;
-# -DCHUNK_WERROR=ON promotes them to errors (CI).
-option(CHUNK_WARNINGS "Enable -Wall -Wextra on Debug builds (gcc/clang family)" ON)
-option(CHUNK_WERROR   "Treat warnings as errors when CHUNK_WARNINGS is on" OFF)
+# --- WARNINGS (every build type) -----------------------------------------
+# -Wall -Wextra on every build, for the library and the in-tree consumers
+# alike (PUBLIC, BUILD_INTERFACE only: an installed consumer of chunk::chunk
+# does not inherit our warning policy). Restricted to gcc/clang family: nvc++
+# accepts the flags but drowns real diagnostics in noise, and the example
+# CMakeLists already skip it for gcc/clang switches for that reason. Was
+# Debug-only: -Wmaybe-uninitialized, -Wstringop-overflow, -Warray-bounds only
+# fire from the optimisation passes, so a Debug-only policy never saw the
+# warnings that matter in the build that ships. -Werror stays Debug-only
+# (CI): a benign warning must not block a perf build. Opt out with
+# -DCHUNK_WARNINGS=OFF; -DCHUNK_WERROR=ON promotes them to errors (Debug/CI).
+option(CHUNK_WARNINGS "Enable -Wall -Wextra on every build type (gcc/clang family)" ON)
+option(CHUNK_WERROR   "Treat warnings as errors on Debug builds when CHUNK_WARNINGS is on" OFF)
 
 add_library(chunk_warnings INTERFACE)
 if (CHUNK_WARNINGS)
   set(_chunk_warn_compilers "$<CXX_COMPILER_ID:GNU,Clang,AppleClang,IntelLLVM>")
-  set(_chunk_warn_when "$<AND:$<CONFIG:Debug>,${_chunk_warn_compilers}>")
+  set(_chunk_warn_when "${_chunk_warn_compilers}")
+  set(_chunk_werror_when "$<AND:$<CONFIG:Debug>,${_chunk_warn_compilers}>")
   # Without -fopenmp every `#pragma omp` (101 of them in chunk/) trips
   # -Wunknown-pragmas, which -Wall enables. The code is correct there -- the
   # loops just run serially -- so silence that one warning on non-OMP builds
@@ -175,13 +179,14 @@ if (CHUNK_WARNINGS)
   target_compile_options(chunk_warnings INTERFACE
           "$<BUILD_INTERFACE:$<${_chunk_warn_when}:-Wall;-Wextra>>"
           "$<BUILD_INTERFACE:$<$<AND:${_chunk_warn_when},$<NOT:$<BOOL:${CHUNK_OMP}>>>:-Wno-unknown-pragmas>>"
-          "$<BUILD_INTERFACE:$<$<AND:${_chunk_warn_when},$<BOOL:${CHUNK_WERROR}>>:-Werror>>")
+          "$<BUILD_INTERFACE:$<$<AND:${_chunk_werror_when},$<BOOL:${CHUNK_WERROR}>>:-Werror>>")
   unset(_chunk_warn_compilers)
   unset(_chunk_warn_when)
+  unset(_chunk_werror_when)
   if (CHUNK_WERROR)
-    message(STATUS "CHUNK_WARNINGS=ON → -Wall -Wextra -Werror on Debug builds (gcc/clang family)")
+    message(STATUS "CHUNK_WARNINGS=ON → -Wall -Wextra on every build, -Werror on Debug (gcc/clang family)")
   else()
-    message(STATUS "CHUNK_WARNINGS=ON → -Wall -Wextra on Debug builds (gcc/clang family)")
+    message(STATUS "CHUNK_WARNINGS=ON → -Wall -Wextra on every build (gcc/clang family)")
   endif()
 endif()
 install(TARGETS chunk_warnings EXPORT chunk-targets)
