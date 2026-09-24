@@ -25,5 +25,7 @@
  * manual one, where the program makes the phase calls itself (config.h).
  */
 
+#include <atomic>
+
 /// @brief Read by chunk_config::OMPTcc: no callback exists in this binary.
-bool __global_ompt = false;
+std::atomic<int> g_ompt_suspended{1}; // no callback exists in this binary

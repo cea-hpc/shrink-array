@@ -27,7 +27,7 @@
  * phase transitions declared in chunk/manage_ompt.h, so an application built
  * this way needs no explicit call at all.
  *
- * In any other build this file only defines `__global_ompt = false`; the
+ * In any other build this file only defines `g_ompt_suspended = false`; the
  * application drives the phase transitions itself (see manage_ompt.h).
  *
  * @see chunk/manage_ompt.h for the semantics of the phase transitions.
@@ -62,7 +62,7 @@
  * disable the embedded compression hooks at runtime (e.g. around a region that
  * must not trigger a flush) without unregistering the tool.
  */
-bool __global_ompt = true;
+std::atomic<int> g_ompt_suspended{0}; // 0 = callbacks active
 
 // ── CHUNK_OMPT_STATS: what the sync-region callback does, counted ───────────
 //
@@ -187,7 +187,7 @@ void ompt_finalize(ompt_data_t*)
  */
 void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, unsigned int, unsigned int, int)
 {
-    if (!__global_ompt)
+    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
         return;
 
     // ompt_scope_begin is the start of the thread's work in the parallel region
@@ -216,7 +216,7 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
  */
 void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, const void*)
 {
-    if (!__global_ompt)
+    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
         return;
 
     // Vector-mode build: chunk lib is inactive, nothing to finalize.
@@ -274,7 +274,7 @@ void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, 
 // counts them.
 void on_barrier_end(ompt_sync_region_t kind, ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, const void*)
 {
-    if (!__global_ompt)
+    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
         return;
 
     OmptSyncSlot* slot = nullptr;
@@ -383,6 +383,6 @@ extern "C" ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
  * The symbol is still defined so that code testing it links in every variant;
  * here no callback exists and the application drives the phase transitions.
  */
-bool __global_ompt = false;
+std::atomic<int> g_ompt_suspended{1}; // no callback exists in this build
 
 #endif

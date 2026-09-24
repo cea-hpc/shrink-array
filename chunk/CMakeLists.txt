@@ -342,7 +342,7 @@ function(chunk_add_variant target_name variant_define size is_dyn)
 
   # NO_OMPT_TOOL (extra argument): the variant is built without the OMPT tool
   # of private/manage_ompt.cpp, for a program that ships its own (the symbols
-  # ompt_start_tool and __global_ompt are then the program's to define).
+  # ompt_start_tool and g_ompt_suspended are then the program's to define).
   set(_variant_sources ${CHUNK_SOURCES})
   if ("NO_OMPT_TOOL" IN_LIST ARGN)
     list(REMOVE_ITEM _variant_sources private/manage_ompt.cpp)

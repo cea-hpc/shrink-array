@@ -14,7 +14,7 @@
 #                       error rather than a binary that loses its deferred
 #                       writes.
 # Both link chunk_v1v2_<size>, a variant built WITHOUT the library's own
-# tool, so that ompt_start_tool and __global_ompt come from here.
+# tool, so that ompt_start_tool and g_ompt_suspended come from here.
 # The sources both executables share; each adds the file that defines the
 # OMPT switch of the library: manage_ompt.cpp (the tool) or ompt_off.cpp.
 set(_mm_sources main.cpp

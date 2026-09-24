@@ -1154,9 +1154,12 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const Proxy2<T>& a)
 {
-    os << a.values[a.num];
+    // Through the proxy's read entry, like operator T(): the raw values[num]
+    // snapshot is stale while a deferred op pends on this offset (forced-
+    // defer builds print 0 right after the write).
+    os << a.read_pure();
     return os;
-};
+}
 
 } // namespace shrink_array
 

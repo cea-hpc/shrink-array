@@ -57,7 +57,7 @@
 
 /// @brief The switch the library reads (chunk_config::OMPTcc): the callbacks
 ///        below are live.
-bool __global_ompt = true;
+std::atomic<int> g_ompt_suspended{0}; // 0 = callbacks active
 
 namespace
 {
@@ -71,7 +71,7 @@ std::atomic<bool> in_phase_end{false};
 
 void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, unsigned int, unsigned int, int)
 {
-    if (!__global_ompt)
+    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
         return;
     if (endpoint == ompt_scope_begin)
         shrink_array::begin_parallel_phase();
@@ -79,7 +79,7 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
 
 void on_sync_region(ompt_sync_region_t, ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, const void*)
 {
-    if (!__global_ompt || in_phase_end.load(std::memory_order_relaxed))
+    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0 || in_phase_end.load(std::memory_order_relaxed))
         return;
     if (endpoint == ompt_scope_end)
         shrink_array::finalize_barrier_phase();
@@ -87,7 +87,7 @@ void on_sync_region(ompt_sync_region_t, ompt_scope_endpoint_t endpoint, ompt_dat
 
 void on_parallel_end(ompt_data_t*, ompt_data_t*, int, const void*)
 {
-    if (!__global_ompt || in_phase_end.load(std::memory_order_relaxed))
+    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0 || in_phase_end.load(std::memory_order_relaxed))
         return;
     in_phase_end.store(true, std::memory_order_relaxed);
     shrink_array::finalize_parallel_phase();

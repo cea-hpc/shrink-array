@@ -19,6 +19,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <atomic> // g_ompt_suspended
 
 #include "chunk/internal/define_mm_protect.h"
 #include "chunk/chunk_define.h"
@@ -215,7 +216,12 @@ static constexpr bool verbose = false;
 
 } // namespace build_config
 
-extern bool __global_ompt;
+/// Number of threads currently suspending the OMPT callbacks (they run only
+/// while it is zero). A COUNTER, not a flag: several threads suspend them at
+/// once (compress_chunk_to_compress runs on every thread of a region), and a
+/// flag would let the FIRST to finish resume them while the others are still
+/// compressing. Atomic: it is written and read concurrently. See OMPTcc<true>.
+extern std::atomic<int> g_ompt_suspended;
 
 
 /**
@@ -500,19 +506,33 @@ struct OMPTcc
     }
 };
 
-/// @brief The real switch, behind the process-wide ::__global_ompt.
+/// @brief The real switch, behind the process-wide ::g_ompt_suspended.
 template <>
 struct OMPTcc<true>
 {
     /// @brief Set the switch.
+    /// @details update(false) suspends the callbacks, update(true) resumes
+    ///          them; they stay suspended while ANY thread holds a suspension.
+    ///          The resume never takes the count below zero, so an extra
+    ///          update(true) is a no-op, as it was with the former flag.
+    ///          relaxed: a switch, publishing no data.
     static void update(bool state)
     {
-        ::__global_ompt = state;
+        if (!state)
+        {
+            ::g_ompt_suspended.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        int cur = ::g_ompt_suspended.load(std::memory_order_relaxed);
+        while (cur > 0 &&
+               !::g_ompt_suspended.compare_exchange_weak(cur, cur - 1, std::memory_order_relaxed))
+        {
+        }
     }
     /// @brief Read the switch.
     static bool is_enabled()
     {
-        return ::__global_ompt;
+        return ::g_ompt_suspended.load(std::memory_order_relaxed) == 0;
     }
     /// @brief Complement of is_enabled().
     static bool is_not_enabled()
