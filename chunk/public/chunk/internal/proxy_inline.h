@@ -149,11 +149,12 @@ void Proxy<T>::execute_arithmetic_compound_operation(OP op, [[maybe_unused]] con
     // Determine the high-precision calculation type (STL parity)
     using CalcType = std::common_type_t<T, base_t<U>>;
 
-    if constexpr (chunk_config::use_fast_block_compression)
-    {
-        set_info_on_chunk();
-        FastCompPolicy::perform_compression();
-    }
+    // No compression pass from here. In fast-block builds this body runs
+    // inside the rank's writer window (apply_atomic_op -> write_with_optional_
+    // lock_info): start()'s "no writer" wait would see this rank's own flag and
+    // run to its budget, and perform_compression() would clear the dangerous
+    // flag the post-end_write driver acts on. The engine drives the pass after
+    // end_write(), and has already armed set_info_on_chunk().
 
     const bool was_not_written = !chunk.written();
 
@@ -627,18 +628,23 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression() const noexc
 
     if (Base::should_trigger_compression(sz_before, szm))
     {
-        const bool have_queue = CompressionManagerType::have_deferred_queue();
-
-        if (have_queue)
-            return;
+        // Drain this rank's deferred ops first -- they must be applied before
+        // their chunks are compressed -- as Proxy2 / Proxy2A do. This used to
+        // RETURN when the rank had any (have_deferred_queue()), before the
+        // flag below was cleared: the rank stayed dangerous, every write took
+        // run_slow_path(), which skips the P3 backlog drain, so the ops never
+        // drained and the next pass returned again -- the slow path fed itself
+        // until the between-phase drain.
+        static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));
 
         std::atomic_thread_fence(std::memory_order_seq_cst);
 
         Chunk<T>::make_block_compression(thr_rank, this->self());
     }
-    // Looked at: clear the flag the trigger raised (it only ever came down
-    // through finish(), once per completed compression, against one raise per
-    // write above the threshold). See mark_list_dangerous_for_thread.
+    // Looked at, whether or not there was work: clear the flag the trigger
+    // raised (it only ever came down through finish(), once per completed
+    // compression, against one raise per write above the threshold). See
+    // mark_list_dangerous_for_thread and the Proxy2A counterpart.
     CompressionManagerType::mark_list_safe_for_thread(thr_rank);
 }
 
