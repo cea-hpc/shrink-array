@@ -1038,16 +1038,26 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_thr(int b
                 skip.insert(rep.ptr);
     }
 
+    // Tell the ledger before each svfree: this exit drain was the only free
+    // site in the manager without a hook, so every block it released stayed
+    // PARKED in the ledger -- millions of false positives in the
+    // CHUNK_LEDGER_REPORT output that masked any real leak.
     if (skip.empty())
     {
         for (auto* elm : b)
+        {
+            CHUNK_LEDGER_DISCARD(elm, "clear_list_block_free_thr.drain");
             svfree(elm);
+        }
     }
     else
     {
         for (auto* elm : b)
             if (!skip.contains(elm))
+            {
+                CHUNK_LEDGER_DISCARD(elm, "clear_list_block_free_thr.drain");
                 svfree(elm);
+            }
     }
     b.clear();
 }
