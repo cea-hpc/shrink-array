@@ -23,6 +23,7 @@
 #include <concepts>
 #include <cstring>     // std::memcmp
 #include <type_traits> // std::has_unique_object_representations_v
+#include <utility>     // std::unreachable, __cpp_lib_unreachable
 
 #include "chunk/chunk_def.h" // ComplexType
 #include "chunk/internal/complex_less.h"
@@ -64,11 +65,19 @@ struct ValueLess
             static_assert(std::totally_ordered<T>,
                           "chunk2 orders second values: this element type needs an operator< "
                           "(a defaulted operator<=> will do), or no padding and no floating point");
-        // unreachable: the static_assert above always fires for a type reaching
+        // Unreachable: the static_assert above always fires for a type reaching
         // this branch. Present only for nvc++ (EDG), whose flow analysis does
         // not prune discarded `if constexpr` branches and otherwise warns
         // "missing return statement" [implicit_return_from_non_void_function].
+        // std::unreachable() is [[noreturn]], which ends the path for EDG and
+        // also tells the optimiser the branch is dead. Keyed on the LIBRARY
+        // feature macro, not __cplusplus: -std=c++23 alone does not guarantee
+        // the standard library provides it.
+#if defined(__cpp_lib_unreachable)
+        std::unreachable();
+#else
         return false;
+#endif
     }
 };
 
