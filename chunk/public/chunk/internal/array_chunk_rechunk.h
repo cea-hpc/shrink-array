@@ -138,6 +138,11 @@ class RechunkSupport<Derived, true>
      * @param new_size the new chunk size (power of two)
      * @warning Restores the previously active geometry on exit; see
      *          rechunk_all_to for what the caller must do afterwards.
+     * @warning Invalidates EVERY outstanding proxy of this array (from
+     *          operator[] or a compound operator): the storage they refer to is
+     *          swapped out and destroyed with tmp. A RechunkDecider may call
+     *          this on the user's behalf, so a proxy must not be held across an
+     *          advisor tick either.
      */
     void rechunk_to(unsigned int new_size);
 

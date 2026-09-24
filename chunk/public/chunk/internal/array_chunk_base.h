@@ -911,6 +911,20 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param i global element index; the caller guarantees 0 <= i < size()
      * @return the write proxy for that element, armed with the owning array and
      *         chunk number
+     * @warning The proxy is a HANDLE on the element, not a copy of its value:
+     *          it holds references into this array's chunk storage. It must not
+     *          outlive any operation that rebuilds or releases that storage -- resize()
+     *          (a push_back/emplace_back beyond the capacity included),
+     *          reserve(), shrink_to_fit(), clear(), assign(), swap(), a copy or
+     *          move assignment, the array's destruction, and above all a
+     *          re-chunk, whether called explicitly (rechunk_to) or decided by a
+     *          RechunkDecider. (shrink_to_fit() keeps the chunks but compresses
+     *          them and releases their buffers, which a proxy's ctor-time
+     *          `values` snapshot may still point into.) Reading a stale proxy
+     *          reads swapped-out or released storage.
+     *          Take a value when it has to survive: `T v = a[i];`, not
+     *          `auto v = a[i];` (which keeps the proxy). The compound operators
+     *          (+= ... >>=) and the prefix ++/-- return the same kind of proxy.
      */
     proxy_type operator[](ind_type i) noexcept
     {

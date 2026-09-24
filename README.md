@@ -47,6 +47,14 @@ Positional access (`operator[]`, `at`, `front`, `back`), `size`/`empty`/`capacit
 
 What is not there, by construction: `data()` (no contiguous storage: a compressed chunk has no buffer), mutable iterators and `T&` on an element (the non-const `operator[]` returns a write proxy: read, build, assign -- `tab[i].x = 1` does not compile), `insert`/`erase` in the middle. A default-constructed array is empty, as a `std::vector`.
 
+### The write proxy
+
+The non-const `operator[]` returns a *proxy*: a handle on the element that reads it on conversion and routes every write through the compression machinery. It behaves like a value in expressions, with two differences worth knowing.
+
+It is a handle, not a copy. `T v = tab[i];` takes the value; `auto v = tab[i];` keeps the proxy, which then follows the element. The compound operators (`+=` ... `>>=`) and the prefix `++`/`--` return the same kind of proxy: `tab[i] += x;` discards it -- the operation can then be deferred at no cost -- while `T y = (tab[i] += x);` reads the result. The postfix `tab[i]++` returns the old value, as a `T`.
+
+It must not outlive the storage it points into. A proxy holds references into the array's chunks, so it is invalidated by anything that rebuilds or releases them: `resize` (a `push_back` beyond the capacity included), `reserve`, `shrink_to_fit`, `clear`, `assign`, `swap`, an assignment to the array, its destruction -- and a re-chunk, whether you call `rechunk_to` or a `RechunkDecider` decides it for you. Keep proxies short-lived, and take a `T` whenever a value has to survive.
+
 ## Compilation
 
 The compilation is done via `CMake`:

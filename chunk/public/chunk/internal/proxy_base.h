@@ -209,11 +209,26 @@ struct ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSuppor
 
 /**
  * @brief Base class for proxy types using CRTP pattern
- * @tparam Derived The derived proxy class (Proxy2 or Proxy2A)
+ * @tparam Derived The derived proxy class (Proxy, Proxy2 or Proxy2A)
  * @tparam T The underlying value type
- * @tparam ChunkType The chunk type (Chunk2<T> or Chunk2A<T>)
+ * @tparam ChunkType The chunk type (Chunk<T>, Chunk2<T> or Chunk2A<T>)
  *
  * Contains all common operators, compression logic, and thread-safety mechanisms.
+ *
+ * A proxy stands for ONE element of an array and behaves like a value: it
+ * converts to T by reading the element (operator T() -> read_pure(), which
+ * first synchronises any deferred write to it), and every write goes through
+ * it. It is a handle, not a copy:
+ *   - it holds references into the array's chunk storage, so it must not
+ *     outlive an operation that rebuilds that storage -- in particular a
+ *     re-chunk, explicit or decided by a RechunkDecider (full list on the
+ *     array's non-const operator[]);
+ *   - `auto v = a[i];` keeps the proxy, which then follows the element;
+ *     `T v = a[i];` takes the value.
+ * The compound operators (+= -= *= /= %= &= |= ^= <<= >>=) and the prefix
+ * ++/-- return the proxy by value: discarding it, as `a[i] += x;` does, keeps
+ * the operation fully deferrable, while `T y = (a[i] += x);` reads the result.
+ * The postfix ++/-- return the old value as a T.
  */
 template <typename Derived, typename T, typename ChunkType>
 class ProxyBase : public ProxyOperators<Derived, T>,
@@ -1059,17 +1074,16 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
         apply_inplace_operation(inc_operation, inc_operation_async);
 
-        // NOT `values[num]`: `values` is the ctor-time snapshot, and the call
-        // above may have materialised the chunk (snapshot now stale, possibly
-        // the cst sentinel) or DEFERRED the op (cell not yet decremented, and
-        // another rank's replay writing it concurrently -- TSan, v1 static 256,
-        // 8 threads: this read racing `--val[ctx->num]` in the async body two
-        // lines up). read_pure() pulls the offset to applied state, then reads
-        // live through the chunk. Same contract as the pure-read comparison
-        // operators. Precise gate: nothing pending -> no toll.
-        // compound-returns-proxy: return the proxy, not read_pure(): its
-        // conversion IS read_pure(), so the contract above holds, but
-        // the read -- and its sync -- is only paid if the value is used.
+        // Return the proxy, not a value. Reading the element here would have to
+        // go through read_pure(), never `values[num]`: `values` is the ctor-time
+        // snapshot, and the call above may have materialised the chunk (snapshot
+        // now stale, possibly the cst sentinel) or DEFERRED the op (cell not yet
+        // updated, while another rank's replay may be writing it -- TSan, v1
+        // static 256, 8 threads: such a read raced the async body above). The
+        // returned proxy's operator T() IS read_pure(): it pulls the offset to
+        // applied state, then reads live through the chunk. So `y = ++a[i]`
+        // gets the right value, and the read -- with its sync -- is only paid
+        // when the value is actually used.
         return derived();
     }
 
@@ -1091,17 +1105,16 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
         apply_inplace_operation(dec_operation, dec_operation_async);
 
-        // NOT `values[num]`: `values` is the ctor-time snapshot, and the call
-        // above may have materialised the chunk (snapshot now stale, possibly
-        // the cst sentinel) or DEFERRED the op (cell not yet decremented, and
-        // another rank's replay writing it concurrently -- TSan, v1 static 256,
-        // 8 threads: this read racing `--val[ctx->num]` in the async body two
-        // lines up). read_pure() pulls the offset to applied state, then reads
-        // live through the chunk. Same contract as the pure-read comparison
-        // operators. Precise gate: nothing pending -> no toll.
-        // compound-returns-proxy: return the proxy, not read_pure(): its
-        // conversion IS read_pure(), so the contract above holds, but
-        // the read -- and its sync -- is only paid if the value is used.
+        // Return the proxy, not a value. Reading the element here would have to
+        // go through read_pure(), never `values[num]`: `values` is the ctor-time
+        // snapshot, and the call above may have materialised the chunk (snapshot
+        // now stale, possibly the cst sentinel) or DEFERRED the op (cell not yet
+        // updated, while another rank's replay may be writing it -- TSan, v1
+        // static 256, 8 threads: such a read raced the async body above). The
+        // returned proxy's operator T() IS read_pure(): it pulls the offset to
+        // applied state, then reads live through the chunk. So `y = ++a[i]`
+        // gets the right value, and the read -- with its sync -- is only paid
+        // when the value is actually used.
         return derived();
     }
 

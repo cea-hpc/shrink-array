@@ -397,10 +397,11 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         }
         else
         {
-            // Optimization: multiplying by 1 changes nothing
+            // Early-out: multiplying by 1 changes nothing, so there is nothing to
+            // write. Nothing to read either: the proxy is returned, and reading
+            // it goes through operator T() -> read_pure(), which honours the
+            // read-side gate under CHUNK_SYNC_ON_READ.
             // base_t<U> extracts the arithmetic type (e.g., double) even if U is a Proxy.
-            // Pure-read early-out: route through read_pure() so it honours the
-            // read-side gate under CHUNK_SYNC_ON_READ (byte-identical otherwise).
             if (v == static_cast<base_t<U>>(1))
                 return derived();
 
@@ -437,8 +438,9 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
                     std::abort();
             }
 
-            // Pure-read early-out: route through read_pure() so it honours the
-            // read-side gate under CHUNK_SYNC_ON_READ (byte-identical otherwise).
+            // Early-out: dividing by 1 changes nothing -- nothing to write, and
+            // nothing to read: reading the returned proxy goes through
+            // operator T() -> read_pure() (see operator*=).
             if (v == static_cast<base_t<U>>(1))
                 return derived();
             // 2. Execution via the common engine
