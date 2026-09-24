@@ -210,6 +210,9 @@ inline constexpr bool do_check = false;
 // std::size_t{2}, not 2: the product is otherwise computed in int and then
 // widened (bugprone-implicit-widening-of-multiplication-result). It fits in an
 // int today; expressing the type once means it still will if the value grows.
+// Single source of the deferred-pool granularity (deferred_op_pool.h): a
+// level-dependent chunk_config twin once shadowed it here, unconsumed; removed
+// — the pool ran at this 2 MiB in every SHRINK_LEVEL, so this keeps that.
 constexpr std::size_t deferred_pool_granularity = std::size_t{2} * 1024 * 1024;
 
 static constexpr bool verbose = false;
@@ -346,12 +349,6 @@ inline constexpr bool use_chunk_steal_mark = build_config::use_openmp && use_pre
 #endif
 
 inline constexpr int tuning_level = SHRINK_LEVEL;
-// Level 1: 64KB (Stress allocation logic)
-// Level 2: 2MB (Standard)
-// Level 3: 16MB (High Throughput)
-constexpr size_t deferred_pool_granularity = (tuning_level == 1)   ? 64 * 1024
-                                             : (tuning_level == 3) ? 16 * 1024 * 1024
-                                                                   : 2 * 1024 * 1024;
 // SEGV hunt: two independent switches.
 //   RING_LOG_DEBUG  -> ALL events, including hot-path (FLUSH/COMPRESS/STORE_VALUE).
 //                      Very heavy: masks the heisenbug. Leave OFF for the hunt.

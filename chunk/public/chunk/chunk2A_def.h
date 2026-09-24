@@ -35,9 +35,9 @@ struct Chunk2ADef
     // arrays at high thread counts).
     //
     // This is driven by a DEDICATED knob, CHUNK2A_COMPRESS_LEVEL, NOT the global
-    // SHRINK_LEVEL: the global one also drives chunk2, the deferred-pool
-    // granularity, buffer reuse, etc., so tuning chunk2a through it would move
-    // several unrelated variables at once and make A/B comparisons meaningless.
+    // SHRINK_LEVEL: the global one also drives chunk2's thresholds and buffer
+    // reuse, so tuning chunk2a through it would move several unrelated
+    // variables at once and make A/B comparisons meaningless.
     // Override at build time with -DCHUNK2A_COMPRESS_LEVEL=<0|1|2|3>:
     //   0 (default): original chunk2a values (factor 50 / min 500).
     //   1 : extreme stress — compress very often (tiny threshold).
