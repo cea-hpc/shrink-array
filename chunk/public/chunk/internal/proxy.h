@@ -825,11 +825,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @tparam BinaryOp Binary operator to apply (divides/multiplies/modulo).
      * @param v Operand to combine with the current value.
      * @param op The operator to apply.
-     * @return The resulting value (unchanged, still zero, if the write was
-     *         skipped).
      */
     template <typename U, typename BinaryOp>
-    T apply_compound_operation(in_t<U> v, BinaryOp op); // in_t: see assign_impl
+    void apply_compound_operation(in_t<U> v, BinaryOp op); // in_t: see assign_impl
 
     /**
      * @brief Divide this element by `v` in place.

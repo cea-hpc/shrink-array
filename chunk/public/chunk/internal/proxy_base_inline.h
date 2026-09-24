@@ -1085,13 +1085,12 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
 }
 
 // arithmetic_assign (declared in proxy_base.h): sync body + deferred replay body,
-// as in apply_atomic_op, but this one RETURNS the result, so the sync body writes
-// it through a captured reference. Note the asymmetry that follows: on the
-// deferred path the caller gets the value computed BEFORE the operation is
-// replayed. The reader_sync below is what makes the returned v_old trustworthy.
+// as in apply_atomic_op. Returns nothing: the operators return the proxy, and on
+// the deferred path the result does not exist yet anyway. The reader_sync below
+// is what makes v_old -- the input of the read-modify-write -- trustworthy.
 template <typename Derived, typename T, typename ChunkType>
 template <typename U, typename Op>
-T ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation) noexcept
+void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation) noexcept
 {
     if constexpr (chunk_config::stats)
     {
@@ -1112,15 +1111,10 @@ T ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation) n
 
     using CalcType = std::common_type_t<T, base_t<U>>;
 
-    // Value-initialised: on the DEFERRED path (need_async) op_lambda never
-    // runs, so an uninitialised result would be returned -- UB. The value
-    // returned there is unspecified (see the declaration's @warning).
-    T result{};
-
-    auto op_lambda = [this, &v, &result, operation] // v: the call's parameter, alive for the call
+    auto op_lambda = [this, &v, operation] // v: the call's parameter, alive for the call
     {
         execute_operation(
-            [this, &v, &result, operation]
+            [this, &v, operation]
             {
                 const in_t<T> current = load_value();
                 // 1. Promote storage and operand to higher precision
@@ -1128,7 +1122,7 @@ T ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation) n
                 const CalcType intermediate = operation(static_cast<CalcType>(current), static_cast<CalcType>(v));
                 // 3. Truncate back to storage type T
 
-                result = static_cast<T>(intermediate);
+                const T result = static_cast<T>(intermediate);
                 store_value(result);
 
                 if constexpr (chunk_config::use_fast_block_compression)
@@ -1228,83 +1222,22 @@ T ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation) n
         op_lambda();
     }
 
-    return result;
 }
-// bitwise_assign_with_result (declared in proxy_base.h): unlike the arithmetic
-// path this one operates on the raw values array (execute_inplace_operation), so
-// there is no load/store pair to guard — only the promotion to
-// std::common_type_t and the truncation back to T.
+// bitwise_assign (declared in proxy_base.h): the single engine of the bitwise
+// compound operators. It operates on the raw values array
+// (execute_inplace_operation), so there is no load/store pair to guard -- only
+// the promotion to std::common_type_t and the truncation back to T. Returns
+// nothing, so the whole operation can be deferred without anyone waiting.
 template <typename Derived, typename T, typename ChunkType>
 template <typename U, typename Op>
-T ProxyBase<Derived, T, ChunkType>::bitwise_assign_with_result(in_t<U> v, Op operation) noexcept
+void ProxyBase<Derived, T, ChunkType>::bitwise_assign(in_t<U> v, Op operation) noexcept
     requires std::is_integral_v<T> && std::is_integral_v<U>
 {
     if constexpr (chunk_config::stats)
     {
         increm_chunk_write<ChunkType>(v);
     }
-    // Cross-rank RMW materialisation (CHUNK_SYNC_ON_READ): the same gate as
-    // arithmetic_assign / apply_inplace_operation / Proxy2A::apply_compound_
-    // operation. This engine reads val[num] in place; a deferred write to THIS
-    // offset still queued on another rank (or the plain `= v` that preceded
-    // this op and was refused) has not reached the buffer yet, so the RMW
-    // would compute from a stale cell and the two writes would resolve in the
-    // wrong order. Precise gate: no pending -> no-op. The bitwise engines were
-    // the only RMW paths without it (shrink_bench chunk2a dyn, 32-56 threads:
-    // tab_long with += *= -- passes, tab_ulong with |= &= on the same indices
-    // in the same loop loses whole per-thread slices).
-    chunk.reader_sync(num);
-    using CalcType = std::common_type_t<T, U>;
-    // Value-initialised: on the DEFERRED path (need_async) op_lambda never
-    // runs, so an uninitialised result would be returned -- UB. The value
-    // returned there is unspecified (see the declaration's @warning).
-    T result{};
 
-    auto op_lambda = [&v, &result, operation](T& e) // v: the call's parameter, alive for the call
-    {
-        // Integral promotion logic: promote both to common type, apply op, truncate
-        const CalcType intermediate = operation(static_cast<CalcType>(e), static_cast<CalcType>(v));
-        e                           = static_cast<T>(intermediate);
-        result                      = e;
-    };
-
-    if constexpr (chunk_config::use_fast_block_compression)
-    {
-        if (const bool need_async =
-                write_with_optional_lock_info([this, op_lambda] { derived().execute_inplace_operation(op_lambda); });
-            need_async)
-        {
-            enqueue_async_arithmetic(v, operation,
-                                     [&](auto* ctx, auto& proxy)
-                                     {
-                                         proxy.execute_inplace_operation_async(
-                                             ctx,
-                                             [ctx, operation](T& e)
-                                             {
-                                                 const CalcType intermediate = operation(
-                                                     static_cast<CalcType>(e), static_cast<CalcType>(ctx->operand));
-                                                 e = static_cast<T>(intermediate);
-                                             });
-                                     });
-        }
-    }
-    else
-    {
-        derived().execute_inplace_operation(op_lambda);
-    }
-
-    return result;
-}
-
-// bitwise_assign_simple (declared in proxy_base.h): same body as
-// bitwise_assign_with_result minus the result capture — it returns the OPERAND,
-// not the stored value (documented warning at the declaration), which is what
-// lets the whole operation be deferred without anyone waiting on a result.
-template <typename Derived, typename T, typename ChunkType>
-template <typename U, typename Op>
-T ProxyBase<Derived, T, ChunkType>::bitwise_assign_simple(in_t<U> v, Op operation) noexcept
-    requires std::is_integral_v<T> && std::is_integral_v<U>
-{
     // Cross-rank RMW materialisation (CHUNK_SYNC_ON_READ): the same gate as
     // arithmetic_assign / apply_inplace_operation / Proxy2A::apply_compound_
     // operation. This engine reads val[num] in place; a deferred write to THIS
@@ -1350,8 +1283,6 @@ T ProxyBase<Derived, T, ChunkType>::bitwise_assign_simple(in_t<U> v, Op operatio
     {
         op_lambda();
     }
-
-    return static_cast<T>(v);
 }
 
 // apply_inplace_operation (declared in proxy_base.h): ++/--/in-place engine. The

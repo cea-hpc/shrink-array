@@ -1322,11 +1322,10 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
  * @tparam Op Binary operation type.
  * @param op Operation to apply.
  * @param v  Operand.
- * @return @p v converted to T — NOT the value left in the chunk.
  */
 template <typename T>
 template <typename U, typename Op>
-T Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v, bool /*check_first_value_result*/) noexcept
+void Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v, bool /*check_first_value_result*/) noexcept
 {
     set_info_on_chunk();
 
@@ -1340,13 +1339,11 @@ T Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v, bool /*check_first_valu
     // Fast shortcut: if current value is first_value (usually 0), 0 * v is 0.
     // Safe to short-circuit because a concurrent writer that changes this
     // value cannot make the previous-value-was-first_value branch wrong:
-    // we simply return the value we'd have stored anyway.
+    // the operation would have left it unchanged anyway.
     if (v_old != Chunk2A<T>::first_value)
     {
         Base::apply_atomic_op(op, v, v_old);
     }
-
-    return static_cast<T>(v);
 }
 
 } // namespace shrink_array

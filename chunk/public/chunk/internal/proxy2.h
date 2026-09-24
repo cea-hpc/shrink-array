@@ -1104,14 +1104,13 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *        value is also treated as a compression candidate (`*=` and `/=`
      *        pass true: they can land on it from a non-zero slot; `%=` passes
      *        false).
-     * @return The value now in the slot.
      * @note Materialises any foreign deferred write to this offset first
      *       (reader_sync) so the RMW cannot clobber it.
      */
     template <typename U, typename Op>
-    T apply_compound_operation(Op      op,
-                               in_t<U> v,
-                               bool    check_first_value_result = false) noexcept; // in_t: see assign_impl
+    void apply_compound_operation(Op      op,
+                                  in_t<U> v,
+                                  bool    check_first_value_result = false) noexcept; // in_t: see assign_impl
 
     const Proxy2& operator=(const Proxy2& from) = delete;
     Proxy2(const Proxy2& other)                 = default;

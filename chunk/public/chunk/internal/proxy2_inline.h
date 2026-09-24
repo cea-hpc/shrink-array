@@ -889,9 +889,9 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_opera
 
 template <typename T>
 template <typename U, typename Op>
-T Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
-                                      in_t<U>               v,
-                                      [[maybe_unused]] bool check_first_value_result) noexcept
+void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
+                                         in_t<U>               v,
+                                         [[maybe_unused]] bool check_first_value_result) noexcept
 {
     // Cross-rank RMW materialisation (CHUNK_SYNC_ON_READ): pull any foreign
     // deferred write to this offset to applied state before reading v_old, so the
@@ -959,8 +959,6 @@ T Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
         if (v_old != Chunk2<T>::first_value)
             Base::apply_atomic_op(op, v, v_old);
     }
-
-    return static_cast<T>(v);
 }
 
 } // namespace shrink_array

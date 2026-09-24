@@ -541,7 +541,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_async(a
 
 template <typename T>
 template <typename U, typename BinaryOp>
-T Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
+void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
 {
     // Cross-rank RMW materialisation: pull any foreign deferred write first.
     chunk.reader_sync(num);
@@ -592,22 +592,15 @@ T Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
                 // (reader_sync -> flush_chunk_all_ranks) can be replaying it
                 // right now -- TSan: write in
                 // execute_arithmetic_compound_operation_async vs this read
-                // (shrink_bench_chunk_check_256, tab4[i] *= ...). Report the
-                // result the op yields from the value read above, which is what
-                // the synchronous path stores; Proxy2 / Proxy2A likewise never
-                // re-read after apply_atomic_op.
-                using CalcType = std::common_type_t<T, base_t<U>>;
-                return static_cast<T>(op(static_cast<CalcType>(v_old), static_cast<CalcType>(v)));
+                // (shrink_bench_chunk_check_256, tab4[i] *= ...). Nothing is
+                // returned any more, so there is no reason to read it back.
             }
-            return v_old; // zero, and the op was skipped: still zero
         }
     }
     else
     {
         std::cerr << "operator not implemented for bool\n";
     }
-
-    return values[num];
 }
 
 template <typename Derived, typename T, bool Enabled>

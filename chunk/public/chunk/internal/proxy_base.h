@@ -795,19 +795,16 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @tparam Op Operation type (callable: T(T, U))
      * @param v Value to use in the operation
      * @param operation Binary function applying the operation (e.g., a + b)
-     * @return T Resulting value after the operation, when the write is
-     *         applied synchronously
-     * @warning When the write is DEFERRED (fast block compression, a compressor
-     *          in flight), the operation has not happened yet on return and
-     *          its result does not exist: the value returned is then
-     *          unspecified (value-initialised). A caller that needs the
-     *          result must read the element back, which syncs it.
+     * @note Returns nothing: the operators return the proxy, whose conversion
+     *       to T reads the resulting value (synchronised). On the deferred
+     *       path the result does not exist yet on return, so nothing here
+     *       could report it.
      * @note Thread-safe via write_with_optional_lock_info()
      * @note Increments CHUNK_STATS statistics if enabled
      */
 
     template <typename U, typename Op>
-    T arithmetic_assign(in_t<U> v, Op operation) noexcept; // in_t: see assign_impl in the proxies
+    void arithmetic_assign(in_t<U> v, Op operation) noexcept; // in_t: see assign_impl in the proxies
     /**
      * @brief Compound addition assignment -- clean types (e.g. float += float,
      *        float += int).
@@ -866,48 +863,26 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return derived();
     }
     /**
-     * @brief Helper for bitwise operations with result retrieval
+     * @brief Engine of every bitwise compound operator (&= |= ^= <<= >>=).
      *
-     * Executes an in-place bitwise operation and returns the modified value.
-     * Used for &= which requires the correct result.
+     * Executes an in-place bitwise operation, synchronously or deferred.
      *
      * @tparam U Type of the value to apply (must be integral)
-     * @tparam Op Operation type (callable: void(T&, T))
+     * @tparam Op Operation type (callable: T(T, T))
      * @param v Value to use in the operation
-     * @param operation Function applying the in-place operation (e.g., a &= b)
-     * @return T Resulting value after the operation, when the write is
-     *         applied synchronously
-     * @warning When the write is DEFERRED (fast block compression, a compressor
-     *          in flight), the operation has not happened yet on return and
-     *          its result does not exist: the value returned is then
-     *          unspecified (value-initialised). A caller that needs the
-     *          result must read the element back, which syncs it.
+     * @param operation Function applying the operation
+     * @note Returns nothing: the operators return the proxy, whose conversion
+     *       to T reads the resulting value (synchronised). On the deferred
+     *       path the result does not exist yet on return, so nothing here
+     *       could report it.
      * @note Thread-safe via write_with_optional_lock_info()
+     * @note Increments CHUNK_STATS statistics if enabled -- formerly only the
+     *       &= engine did, so |= ^= <<= >>= went uncounted
      * @note Requires T and U to be integral types
      */
 
     template <typename U, typename Op>
-    T bitwise_assign_with_result(in_t<U> v, Op operation) noexcept
-        requires std::is_integral_v<T> && std::is_integral_v<U>;
-
-    /**
-     * @brief Simplified helper for bitwise operations
-     *
-     * Executes an in-place bitwise operation but returns the input value v
-     * instead of the actual value after modification (original behavior).
-     *
-     * @tparam U Type of the value to apply (must be integral)
-     * @tparam Op Operation type (callable: void(T&, T))
-     * @param v Value to use in the operation
-     * @param operation Function applying the in-place operation
-     * @return T Returns static_cast<T>(v), NOT the final value
-     * @warning The return value does NOT correspond to the actual stored value!
-     * @note Thread-safe via write_with_optional_lock_info()
-     * @note Requires T and U to be integral types
-     */
-
-    template <typename U, typename Op>
-    T bitwise_assign_simple(in_t<U> v, Op operation) noexcept
+    void bitwise_assign(in_t<U> v, Op operation) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<U>;
 
     /**
@@ -928,7 +903,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator&=(const U& v) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
     {
-        bitwise_assign_with_result<U>(v, [](auto a, auto b) { return a & b; });
+        bitwise_assign<U>(v, [](auto a, auto b) { return a & b; });
         return derived();
     }
 
@@ -951,7 +926,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator|=(const U& v) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
     {
-        bitwise_assign_simple<U>(v, [](auto a, auto b) { return a | b; });
+        bitwise_assign<U>(v, [](auto a, auto b) { return a | b; });
         return derived();
     }
 
@@ -974,7 +949,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator^=(const U& v) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
     {
-        bitwise_assign_simple<U>(v, [](auto a, auto b) { return a ^ b; });
+        bitwise_assign<U>(v, [](auto a, auto b) { return a ^ b; });
         return derived();
     }
 
@@ -996,7 +971,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires IsCleanShiftOp<T, U>
     Derived operator<<=(const U& v) noexcept
     {
-        bitwise_assign_simple<U>(v, [](auto a, auto b) { return a << b; });
+        bitwise_assign<U>(v, [](auto a, auto b) { return a << b; });
         return derived();
     }
 
@@ -1007,7 +982,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator<<=(const U& v) noexcept
     {
         // Force conversion to int for the shift amount
-        bitwise_assign_simple<int>(static_cast<int>(v), [](auto a, auto b) { return a << b; });
+        bitwise_assign<int>(static_cast<int>(v), [](auto a, auto b) { return a << b; });
         return derived();
     }
 
@@ -1030,7 +1005,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires IsCleanShiftOp<T, U>
     Derived operator>>=(const U& v) noexcept
     {
-        bitwise_assign_simple<U>(v, [](auto a, auto b) { return a >> b; });
+        bitwise_assign<U>(v, [](auto a, auto b) { return a >> b; });
         return derived();
     }
 
@@ -1040,7 +1015,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     [[deprecated("HPC WARNING: Shift amount must be an integer.")]]
     Derived operator>>=(const U& v) noexcept
     {
-        bitwise_assign_simple<int>(static_cast<int>(v), [](auto a, auto b) { return a >> b; });
+        bitwise_assign<int>(static_cast<int>(v), [](auto a, auto b) { return a >> b; });
         return derived();
     }
 
