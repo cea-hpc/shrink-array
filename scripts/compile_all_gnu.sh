@@ -228,6 +228,19 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug${ICF_SUFFIX}/$arch" \
   "-DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu debug openmp"
 
+# Debug OpenMP WITH the pool ledger forced on. The ledger is off by default
+# under OpenMP (its global mutex serialises every alloc/free and distorts the
+# concurrency a debug build is meant to exercise -- see pool_ledger.h), so
+# without this target its double-free / illegal-park detection would never run
+# in the one mode where those bugs actually appear. Kept as a SINGLE dedicated
+# target, like the stats one: crossing CHUNK_FORCE_LEDGER with every other axis
+# would blow up the matrix for no added coverage.
+# NB: passed as a CMake option, NOT via -DCMAKE_CXX_FLAGS -- $ARCH_FLAGS already
+# sets CMAKE_CXX_FLAGS (-mcpu=native on ARM) and the second one would win.
+compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-ledger${ICF_SUFFIX}/$arch" \
+  "-DCHUNK_FORCE_LEDGER:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT $SYNC_CMAKE_OPT" \
+  "gnu debug openmp with ledger"
+
 # Debug + std allocator + OpenMP, WITHOUT a sanitizer. The two std-alloc debug
 # flavours below only exist in thread/address-sanitizer form, so a plain debug
 # run of the std-alloc path had no build dir of its own -- and a sanitizer build

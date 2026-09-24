@@ -92,14 +92,35 @@ inline int current_rank() noexcept
     return CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
 }
 
-// Master switch for BOTH ledgers (ctx/op above + block below). On only under
-// any_check AND when CHUNK_NO_LEDGER is not defined: the flag lets a fast debug
-// build skip the global-mutex hooks that otherwise serialise every thread and
-// dominate runtime at high thread counts. Keeps all other any_check invariants.
-#ifdef CHUNK_NO_LEDGER
+// Master switch for BOTH ledgers (ctx/op above + block below).
+//
+// Every hook takes a GLOBAL std::mutex plus a global map lookup. The cost is
+// not symmetric between build modes, so neither is the default:
+//
+//   - serial build: the lock is never contended. The overhead is marginal and
+//     the detection (double-free, illegal park, leaked LIVE block) is free ->
+//     ON by default under any_check.
+//   - OpenMP build: the single lock serialises EVERY allocation across all
+//     threads. At 16+ threads it dominates run time, but the real problem is
+//     that it changes the concurrency the debug build exists to exercise: a
+//     race on the allocation path can become unreproducible precisely because
+//     the ledger is holding a global lock around it -> OFF by default.
+//
+// Overrides:
+//   -DCHUNK_FORCE_LEDGER : force ON wherever any_check is on, OpenMP included.
+//                          Use it when hunting a multi-threaded double-free --
+//                          and see the cmake-build-omp-gnu-debug-ledger target,
+//                          which exists so this coverage does not silently
+//                          vanish from the build matrix.
+//   -DCHUNK_NO_LEDGER    : force OFF everywhere, whatever the build mode.
+//
+// Either way, every other any_check invariant/assert stays active.
+#if defined(CHUNK_NO_LEDGER)
 inline constexpr bool pool_ledger_enabled = false;
-#else
+#elif defined(CHUNK_FORCE_LEDGER)
 inline constexpr bool pool_ledger_enabled = build_config::any_check;
+#else
+inline constexpr bool pool_ledger_enabled = build_config::any_check && !build_config::use_openmp;
 #endif
 
 inline void on_ctx_alloc(void* p, std::size_t sz, const void* slab = nullptr) noexcept

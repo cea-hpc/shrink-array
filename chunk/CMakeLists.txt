@@ -370,6 +370,7 @@ function(chunk_add_variant target_name variant_define size is_dyn)
           $<$<BOOL:${CHUNK_ALIGN_CHECK}>:CHUNK_ALIGN_CHECK>
           $<$<BOOL:${HAVE_AGRESSIVE_COMPRESSION}>:HAVE_AGRESSIVE_COMPRESSION>
           $<$<BOOL:${CHUNK_STATS}>:CHUNK_STATS>
+          $<$<BOOL:${CHUNK_FORCE_LEDGER}>:CHUNK_FORCE_LEDGER>
   )
 
   # Read-side sync backlog threshold (only when explicitly set).

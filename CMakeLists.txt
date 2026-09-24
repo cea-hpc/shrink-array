@@ -4,6 +4,7 @@ project(chunk LANGUAGES CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(CHECK_OPTIM "Enable runtime invariant checks in release builds" OFF)
+option(CHUNK_FORCE_LEDGER "Keep the pool ledger active under OpenMP (off by default there: its global mutex serialises every alloc/free)" OFF)
 
 # An emptied slab would otherwise keep its resident pages: the allocator never
 # unmaps a value slab (see the op/value alCHUNK_RECLAIM_EMPTY_SLABSiasing note in tc_allocator.h), so the
