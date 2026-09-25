@@ -1269,14 +1269,20 @@ void ProxyBase<Derived, T, ChunkType>::bitwise_assign(in_t<U> v, Op operation) n
     {
         if (const bool need_async = write_with_optional_lock_info(op_lambda); need_async)
         {
+            // The replay body outlives this call (enqueue_async_arithmetic
+            // stores it): it must not capture anything of this frame. The
+            // operation is read from the context, which holds its own copy --
+            // as arithmetic_assign does. It used to capture `operation` by
+            // reference through [&], dangling at replay; only stateless
+            // functors (std::bit_or<> ...) made that harmless.
             enqueue_async_arithmetic(v, operation,
-                                     [&](auto* ctx, auto& proxy)
+                                     [](auto* ctx, auto& proxy)
                                      {
                                          proxy.execute_inplace_operation_async(
                                              ctx,
-                                             [ctx, operation](T& e)
+                                             [ctx](T& e)
                                              {
-                                                 const CalcType intermediate = operation(
+                                                 const CalcType intermediate = ctx->operation(
                                                      static_cast<CalcType>(e), static_cast<CalcType>(ctx->operand));
                                                  e = static_cast<T>(intermediate);
                                              });
