@@ -31,6 +31,7 @@
 #include "chunk/config.h"                     // build_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size
 #include "chunk/internal/env_parse.h"         // env_number / env_flag (checked, not atoi)
+#include "chunk/internal/churn_counters.h" // CHUNK_RECHUNK_CHURN
 
 namespace shrink_array
 {
@@ -323,6 +324,48 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         }
 
         const ChunkSizeReport& rep = ChunkSizeAdvisor<T>::analyze(arr);
+
+        // CHUNK_RECHUNK_CHURN=1 (every array) or =<name>: the per-phase
+        // transient the snapshot above cannot see (churn_counters.h).
+        {
+            static const char* const churn_env = std::getenv("CHUNK_RECHUNK_CHURN");
+            if (churn_env != nullptr && churn_env[0] != '\0' && churn_env[0] != '0' &&
+                (std::strcmp(churn_env, "1") == 0 || std::strcmp(churn_env, name) == 0) && rep.cur >= 0)
+            {
+                Hist&          h       = hist_[&arr];
+                const unsigned key     = arr.alloc_key();
+                const long     creates = churn::Materialisations<T>::total(key);
+                const long     phases  = churn::phase_ends();
+                const long     mat_now = static_cast<long>(rep.table[static_cast<std::size_t>(rep.cur)].mat);
+                const unsigned S       = rep.current_size;
+                if (key != 0 && h.churn_creates >= 0 && key == h.churn_key)
+                {
+                    const long   d_creates = creates - h.churn_creates;
+                    const long   d_phases  = (phases - h.churn_phases) > 0 ? (phases - h.churn_phases) : 1;
+                    const long   growth    = mat_now - h.churn_mat;
+                    const double transient =
+                        static_cast<double>(d_creates - (growth > 0 ? growth : 0)) / static_cast<double>(d_phases);
+                    const double mb_S   = transient * S * sizeof(T) / 1e6;
+                    const double mb_64s = transient * 64. * sizeof(T) / 1e6; // same chunk count at 64
+                    std::fprintf(stderr,
+                                 "[RECHUNK-CHURN] %s S=%u: %ld materialisations over %ld phases since the last "
+                                 "tick (%.0f/phase), resident materialised %ld -> %ld: transient ~%.0f "
+                                 "chunks/phase = %.1f MB at S=%u; at S=64: %.1f MB if scattered, %.1f MB if "
+                                 "grouped\n",
+                                 name, S, d_creates, d_phases, static_cast<double>(d_creates) / d_phases,
+                                 h.churn_mat, mat_now, transient, mb_S, S, mb_64s, mb_S);
+                }
+                else
+                {
+                    std::fprintf(stderr, "[RECHUNK-CHURN] %s S=%u: baseline (key %u)\n", name, S, key);
+                }
+                std::fflush(stderr);
+                h.churn_key     = key;
+                h.churn_creates = creates;
+                h.churn_phases  = phases;
+                h.churn_mat     = mat_now;
+            }
+        }
 
         // CHUNK_ADVISOR_TABLE=1 (every array) or =<name> (that one): the whole
         // table this tick's decision is taken from -- the finer rows too.

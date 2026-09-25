@@ -165,6 +165,12 @@ class RechunkDecider
         int                  visited_tick[kVisited] = {-1000000000, -1000000000, -1000000000, -1000000000,
                                                        -1000000000, -1000000000, -1000000000, -1000000000};
         int                  visited_head           = 0; // next write slot (ring)
+        // CHUNK_RECHUNK_CHURN: the previous tick's counters (the baseline is
+        // reset when the key changes, i.e. after a re-chunk of this array).
+        unsigned churn_key     = 0;
+        long     churn_creates = -1;
+        long     churn_phases  = 0;
+        long     churn_mat     = 0;
     };
 
     // `tick` is a monotone counter that increments once per advisor call (the
