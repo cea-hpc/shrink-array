@@ -43,6 +43,7 @@
 #include <cstddef> // std::size_t
 #include <cstdint>
 #include <cstdio> // std::printf (print)
+#include <type_traits> // std::is_same_v (the bool second value)
 #include <vector>
 
 #include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
