@@ -383,54 +383,36 @@ if(NOT USE_MOLD STREQUAL "OFF")
     endif()
 endif()
 
-# ── C++ standard (C++23 by default; C++20 for NVHPC) ─────────────────────────
-# CHUNK_CXX_STANDARD picks the standard every target is built with: 23 by
-# default, 20 under NVHPC (nvc++ is kept at C++20). -DCMAKE_CXX_STANDARD=<n>,
-# as the older compile scripts pass it, still works: it becomes the default.
-# The code needs C++20 and uses C++23 features where the compiler offers them
-# (feature-test macros, e.g. [[assume]] in def_force_inline.h).
+# ── C++ standard: C++23, required ────────────────────────────────────────────
+# The code uses C++23 unconditionally (deducing this in the CRTP bases,
+# [[assume]], std::unreachable), so every target is built with it; a compiler
+# without it -- nvc++, AOCC 5 (LLVM 17 with libstdc++ 15) -- cannot build the
+# library.
 #
-# CMake's compile-feature table for nvc++ (NVHPC 26.x) doesn't advertise
-# cxx_std_20, so target_compile_features(<t> ... cxx_std_20) hard-errors with
-# "feature cxx_std_20 is not known to CXX compiler NVHPC" even though nvc++ fully
-# supports C++20: for NVHPC the -std flag is passed directly, every other
-# compiler gets the portable feature request. Defined before the first
-# add_subdirectory(), so it is visible in chunk/ and examples/.
-# fast_allocators keeps its own inline equivalent because it is installable
-# standalone (own project()) and must not depend on this umbrella-level helper;
-# it reads CHUNK_CXX_STANDARD when built from here.
-if (DEFINED CMAKE_CXX_STANDARD)
-  set(_chunk_cxx_std_default ${CMAKE_CXX_STANDARD})
-elseif (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
-  set(_chunk_cxx_std_default 20)
-else()
-  set(_chunk_cxx_std_default 23)
-endif()
-set(CHUNK_CXX_STANDARD ${_chunk_cxx_std_default} CACHE STRING
-    "C++ standard of every target: 23 by default, 20 for NVHPC")
-set_property(CACHE CHUNK_CXX_STANDARD PROPERTY STRINGS 20 23)
-if (NOT CHUNK_CXX_STANDARD MATCHES "^(20|23)$")
-  message(FATAL_ERROR "CHUNK_CXX_STANDARD must be 20 or 23 (got ${CHUNK_CXX_STANDARD})")
-endif()
-# The portable request (target_compile_features cxx_std_NN) needs CMake to know
-# that feature for this compiler. NVHPC is never in its table, and an older
-# CMake may not list cxx_std_23 for a newer compiler (IntelLLVM 2026.0 with the
-# cluster's default cmake module): then the -std flag is passed directly.
-if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC" OR NOT "cxx_std_${CHUNK_CXX_STANDARD}" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
-  set(CHUNK_CXX_STD_FLAG "-std=gnu++${CHUNK_CXX_STANDARD}")
-  message(STATUS "C++ standard: C++${CHUNK_CXX_STANDARD} via ${CHUNK_CXX_STD_FLAG} (CMake ${CMAKE_VERSION} has no "
-                 "cxx_std_${CHUNK_CXX_STANDARD} entry for ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}; "
-                 "the compiler supports it)")
+# The portable request (target_compile_features cxx_std_23) needs CMake to know
+# that feature for this compiler. An older CMake may not list it for a newer
+# compiler (IntelLLVM 2026.0 with CMake 3.20), and NVHPC is never in its table:
+# then the -std flag is passed directly. Defined before the first
+# add_subdirectory(), so it is visible in chunk/ and examples/. fast_allocators
+# keeps its own inline equivalent because it is installable standalone (own
+# project()) and must not depend on this umbrella-level helper.
+# CHUNK_CXX_STANDARD (a 20-or-23 switch for a few days) is gone: drop a stale
+# cache entry so it does not suggest it still does something.
+unset(CHUNK_CXX_STANDARD CACHE)
+if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC" OR NOT "cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+  set(CHUNK_CXX_STD_FLAG "-std=gnu++23")
+  message(STATUS "C++ standard: C++23 via ${CHUNK_CXX_STD_FLAG} (CMake ${CMAKE_VERSION} has no cxx_std_23 entry "
+                 "for ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION})")
 else()
   set(CHUNK_CXX_STD_FLAG "")
-  message(STATUS "C++ standard: C++${CHUNK_CXX_STANDARD} (CHUNK_CXX_STANDARD)")
+  message(STATUS "C++ standard: C++23")
 endif()
 
 function(chunk_require_cxx_std target scope)
   if (CHUNK_CXX_STD_FLAG)
     target_compile_options(${target} ${scope} ${CHUNK_CXX_STD_FLAG})
   else()
-    target_compile_features(${target} ${scope} cxx_std_${CHUNK_CXX_STANDARD})
+    target_compile_features(${target} ${scope} cxx_std_23)
   endif()
 endfunction()
 

@@ -51,29 +51,15 @@ set_target_properties(fast_allocators PROPERTIES
   SOVERSION ${ALLOCATORS_MAJOR_VERSION}
 )
 
-# C++ standard: CHUNK_CXX_STANDARD when built from the umbrella project;
-# standalone, the same default (23, 20 for NVHPC, CMAKE_CXX_STANDARD if given).
-# NVHPC: CMake's compile-feature table for nvc++ 26.3 doesn't advertise
-# cxx_std_20, so target_compile_features() errors even though nvc++ supports
-# C++20. Set the standard flag directly for NVHPC; keep the portable feature
-# request for every other compiler. Kept inline (not a shared root-level helper)
-# so this file still configures when built standalone via its own project().
-if (DEFINED CHUNK_CXX_STANDARD)
-  set(_fa_cxx_std ${CHUNK_CXX_STANDARD})
-elseif (DEFINED CMAKE_CXX_STANDARD)
-  set(_fa_cxx_std ${CMAKE_CXX_STANDARD})
-elseif (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
-  set(_fa_cxx_std 20)
+# C++23, required, as for the whole library. The -std flag directly when this
+# CMake does not know cxx_std_23 for the compiler (NVHPC always; an older CMake
+# with a newer compiler, e.g. IntelLLVM 2026.0 with CMake 3.20). Kept inline
+# (not a shared root-level helper) so this file still configures when built
+# standalone via its own project().
+if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC" OR NOT "cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+  target_compile_options(fast_allocators PRIVATE -std=gnu++23)
 else()
-  set(_fa_cxx_std 23)
-endif()
-# Same fallback as the umbrella project: the -std flag directly when this CMake
-# does not know cxx_std_NN for the compiler (NVHPC always; an older CMake with
-# a newer compiler, e.g. IntelLLVM 2026.0).
-if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC" OR NOT "cxx_std_${_fa_cxx_std}" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
-  target_compile_options(fast_allocators PRIVATE -std=gnu++${_fa_cxx_std})
-else()
-  target_compile_features(fast_allocators PRIVATE cxx_std_${_fa_cxx_std})
+  target_compile_features(fast_allocators PRIVATE cxx_std_23)
 endif()
 
 target_include_directories(fast_allocators

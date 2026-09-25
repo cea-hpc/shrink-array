@@ -18,21 +18,11 @@
  */
 #pragma once
 
-#include <version> // __cpp_explicit_this_parameter
-
-// --- Optional C++23 "deducing this" path for CRTP methods --------------------
-// When available (GCC 14+, Clang 18+, MSVC 19.32+), individual CRTP method
-// bodies may take an explicit object parameter (this auto& self) instead of
-// calling derived(). Gate each converted method with #if CRTP_USE_DEDUCING_THIS;
-// the class keeps its Derived parameter and CRTPSupport base either way, so the
-// change is strictly local to the method bodies you convert.
-#if defined(CRTP_FORCE_DEDUCING_THIS)
-    #define CRTP_USE_DEDUCING_THIS CRTP_FORCE_DEDUCING_THIS
-#elif defined(__cpp_explicit_this_parameter) && __cpp_explicit_this_parameter >= 202110L
-    #define CRTP_USE_DEDUCING_THIS 1
-#else
-    #define CRTP_USE_DEDUCING_THIS 0
-#endif
+// --- C++23 "deducing this" in CRTP methods ------------------------------------
+// The library requires C++23: a CRTP method body may take an explicit object
+// parameter (this auto& self) instead of calling derived(). The class keeps its
+// Derived parameter and the CRTPSupport base, so a conversion stays local to the
+// method bodies converted.
 
 namespace shrink_array
 {
