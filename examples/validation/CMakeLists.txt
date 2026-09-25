@@ -56,6 +56,10 @@
 #                           sized for it), and a team past the capacity stops
 #                           with an invariant failure (the executable re-runs
 #                           itself with --beyond to check it).
+#   nested_region_validation a thread that opens a nested (serialised) region
+#                           keeps its own per-rank structures afterwards; two
+#                           ACTIVE levels stop with an invariant failure
+#                           (re-run with --nested-active).
 #
 # All sources are variant-agnostic (the array type follows the CHUNK / CHUNK2
 # / CHUNK2A macro) and depend on the library alone -- none of the shrink_bench
@@ -120,7 +124,8 @@ endif()
 # are asserted at 1 thread and at 8.
 set(_rt_harnesses       compress_roundtrip pool_accounting deferred_path_validation open_types_validation
                         mark_path_validation fill_range_mt_validation index64_validation
-                        swap_move_validation range_counters_validation thread_growth_validation)
+                        swap_move_validation range_counters_validation thread_growth_validation
+                        nested_region_validation)
 set(_rt_variant_names   chunk       chunk2      chunk2a)
 set(_rt_variant_libbase chunk_v1    chunk_v2    chunk_v2a)
 set(_rt_variant_macro   CHUNK       CHUNK2      CHUNK2A)

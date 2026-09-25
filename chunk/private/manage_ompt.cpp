@@ -187,25 +187,27 @@ void ompt_finalize(ompt_data_t*)
 /**
  * @brief `ompt_callback_implicit_task`: start/end of a thread's implicit task.
  *
- * Runs on EVERY thread of the team, and is the only callback that does. Used
- * on the `ompt_scope_begin` endpoint to seed the thread-local rank cache via
- * shrink_array::begin_parallel_phase(); the `ompt_scope_end` endpoint is
- * ignored.
+ * Runs on EVERY thread of the team, and is the only callback that does. The
+ * `ompt_scope_begin` endpoint seeds the thread-local rank cache via
+ * shrink_array::begin_parallel_phase(). The `ompt_scope_end` endpoint, and a
+ * begin while the callbacks are suspended, clear it (-1): the next
+ * get_thr_rank_fast() recomputes it. It used to be left as it was, so a
+ * thread coming back from a nested (serialised) region kept the inner rank
+ * 0, and a region run while suspended kept the previous region's rank --
+ * sharing another rank's candidate list and deferred-op queue.
  *
  * @param endpoint Which side of the implicit task is being reported.
  */
 void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, unsigned int, unsigned int, int)
 {
-    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
-        return;
-
-    // ompt_scope_begin is the start of the thread's work in the parallel region
-    if (endpoint == ompt_scope_begin)
+    if (endpoint != ompt_scope_begin || g_ompt_suspended.load(std::memory_order_relaxed) != 0)
     {
-        // Initialize the thread-local rank cache using the ID provided by OMPT
-        // This is much faster than calling omp_get_thread_num() later.
-        shrink_array::begin_parallel_phase();
+        shrink_array::__fast_omp_rank = -1; // recomputed on the next get_thr_rank_fast()
+        return;
     }
+    // ompt_scope_begin is the start of the thread's work in the parallel region:
+    // seed the thread-local rank cache (and arm the phase guard).
+    shrink_array::begin_parallel_phase();
 }
 
 // No `ompt_callback_parallel_begin` any more. It pre-reserved every rank's

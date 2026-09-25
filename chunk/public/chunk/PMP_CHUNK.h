@@ -93,6 +93,35 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
 }
 
 /**
+ * @brief The rank the library indexes its per-thread structures with: the
+ *        thread's rank in the one ACTIVE team.
+ * @details omp_get_thread_num() is the rank in the INNERMOST team. Outside any
+ *          nesting that is the same thing. In a nested region that is
+ *          serialised (a team of one: the default, max-active-levels 1) it is
+ *          0 for every thread, so thread k of the outer team would share rank
+ *          0's candidate list and deferred-op queue with the real rank 0 --
+ *          unprotected, those are per-rank by design. The active team's rank
+ *          is found with omp_get_ancestor_thread_num. Two ACTIVE levels (inner
+ *          teams of several threads) are not supported: ranks of different
+ *          inner teams collide, so it is an invariant failure.
+ */
+[[nodiscard]] inline int chunk_pmp_library_rank() noexcept
+{
+    const int level = omp_get_level();
+    if (level <= 1) [[likely]]
+        return omp_get_thread_num();
+    if (omp_get_active_level() > 1) [[unlikely]]
+        INVARIANT_FAILED("nested ACTIVE parallel regions (active level {}) are not supported by the chunk arrays: "
+                         "per-thread ranks of different inner teams would collide. Keep the inner regions "
+                         "serialised (OMP_MAX_ACTIVE_LEVELS=1, the default) or do not touch the arrays in them.",
+                         omp_get_active_level());
+    for (int l = level; l >= 1; --l)
+        if (omp_get_team_size(l) > 1)
+            return omp_get_ancestor_thread_num(l);
+    return 0; // every level serialised: a single thread
+}
+
+/**
  * @brief Upper bound of a loop over thread ranks that looks for work
  *        (candidate lists, deferred ops, writer flags).
  * @details omp_get_max_threads(), as these loops always used, but never below
@@ -117,11 +146,17 @@ inline int get_thr_rank_fast() noexcept
     // Fallback if OMPT is disabled or not supported by the runtime
     if (rank == -1) [[unlikely]]
     {
-        rank = ::shrink_array::__fast_omp_rank = ::shrink_array::chunk_pmp_checked_rank(omp_get_thread_num());
+        rank = ::shrink_array::__fast_omp_rank =
+            ::shrink_array::chunk_pmp_checked_rank(::shrink_array::chunk_pmp_library_rank());
     }
     if constexpr (build_config::any_check)
     {
-        assert(::shrink_array::__fast_omp_rank == omp_get_thread_num());
+        // A stale cache (a rank left over from another region) is exactly
+        // what the per-rank queues cannot survive: fail in release check
+        // builds too, where an assert is compiled out.
+        if (rank != ::shrink_array::chunk_pmp_library_rank()) [[unlikely]]
+            INVARIANT_FAILED("stale thread-rank cache: {} but this thread is rank {} of the active team", rank,
+                             ::shrink_array::chunk_pmp_library_rank());
     }
     return rank;
 }
@@ -130,7 +165,7 @@ inline int get_thr_rank_fast() noexcept
 
 inline int chunk_pmp_thread_rank() noexcept
 {
-    return ::shrink_array::chunk_pmp_checked_rank(omp_get_thread_num());
+    return ::shrink_array::chunk_pmp_checked_rank(::shrink_array::chunk_pmp_library_rank());
 }
 
         #define CHUNK_PMP_THREAD_RANK chunk_pmp_thread_rank()
