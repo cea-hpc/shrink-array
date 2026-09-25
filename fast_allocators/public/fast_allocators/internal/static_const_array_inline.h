@@ -130,6 +130,16 @@ inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
         return int_alloc(sz);
     }
 
+    // The same bypass as getBlockAllocAlign, and as freeBlock honours: with the
+    // flag set, freeBlock int_free()s whatever it is given, so the block must
+    // not come from the ladder's slabs (it used to: free() on a slab pointer).
+    if constexpr (alloc_config::debug_mem_observable)
+    {
+        if (__debug_mem)
+        {
+            return int_alloc(NextPowerOf2(sz));
+        }
+    }
 
     // Tree: unbalanced: favor speed on small blocks
     if (sz <= MAX_CONST_BLOCK_SIZE)

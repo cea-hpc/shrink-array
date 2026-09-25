@@ -124,7 +124,9 @@ inline std::size_t reclaim_min_empty_slabs() noexcept
  * @warning Nothing in this repository ever assigns `__debug_mem`; it is
  *          declared `extern` and initialised to false, so it is reachable only
  *          by a translation unit outside the library. StaticConstArray honours
- *          it symmetrically (both the alloc and the free path), but
+ *          it symmetrically on both ladders (getBlockAlloc / freeBlock and the
+ *          aligned pair; getBlockAlloc ignored it until Sept. '26, so a free
+ *          could int_free() a slab block), but
  *          TCTypeCAllocator does NOT: its free_elt() honours it while its
  *          alloc() ignores it, so setting the flag on an already-populated
  *          allocator would `delete[]` a pointer that was carved out of a slab.
