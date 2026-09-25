@@ -47,6 +47,7 @@
 #include <cstddef>
 #include <type_traits>
 
+#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"                // in_t<T>: the element snapshots
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
@@ -92,7 +93,7 @@ namespace detail
  *             were the serial ones, where the counters exist.
  */
 template <typename T>
-inline constexpr bool raw_fillable_v = !std::is_same_v<T, bool>;
+inline constexpr bool raw_fillable_v = !is_bool_like_v<T>;
 
 /**
  * @brief Which chunk variant does array type @p Arr hold?

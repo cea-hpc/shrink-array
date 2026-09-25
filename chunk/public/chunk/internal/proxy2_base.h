@@ -22,6 +22,7 @@
 #include <type_traits> // std::is_integral_v, std::is_same_v
 #include <utility>     // std::forward
 
+#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/proxy_base.h"
 
@@ -61,7 +62,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     using typename Base::atomic_ptr_ref_t;
     using values_type_ref = atomic_ptr_ref_t;
 
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
     // Both members exist on ProxyBase in every mode (the serial specialisation
@@ -459,7 +460,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *         Bool: not implemented -- prints an error and leaves the
      *         element unchanged.*/
     template <typename U>
-        requires ElementModulable<T> || std::is_same_v<T, bool>
+        requires ElementModulable<T> || is_bool_like_v<T>
     Derived operator%=(const U& v) noexcept
     {
         if constexpr (std::is_integral_v<T> && is_not_bool)

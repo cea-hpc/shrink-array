@@ -26,6 +26,7 @@
 #include <cstdint>     // pool keys (drain_reuse_list_for_size, keyed lists)
 #include <type_traits> // remove_reference_t / remove_pointer_t (same)
 
+#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/internal/TChunk.h"
 #include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS (drain_reuse_list_for_size)
@@ -329,7 +330,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     using p_vector_char = std::vector<char>*;
     using inf_array_t   = std::tuple<T, int, p_vector_char>;
 
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
     struct alignas(128) PerThreadFreeList

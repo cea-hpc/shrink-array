@@ -132,8 +132,8 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     ///          when the write was enqueued may since have been reallocated.
     static void store_value_async(auto* ctx, in_t<T> v) noexcept
     {
-        T* const values_loc  = ctx->chunk.values_load();
-        values_loc[ctx->num] = v;
+        T* const values_loc = ctx->chunk.values_load();
+        elem_set(values_loc, static_cast<std::size_t>(ctx->num), static_cast<T>(v));
     }
 
     /**
@@ -153,7 +153,7 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     [[nodiscard]] static T read_values_async(auto* ctx) noexcept
     {
         const T* const values_loc = ctx->chunk.values_load();
-        return values_loc[ctx->num];
+        return elem_get(values_loc, static_cast<std::size_t>(ctx->num));
     }
 
     /// @brief set_ptr_is_inside_chunk_list_to_compress() for the replay path,
@@ -442,6 +442,20 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // Common I/O operations
     //
 
+    /// @brief This element, read raw: `values[num]`, or its bit for Bit
+    ///        (element_access.h). No sync, no check -- the old spelling.
+    [[nodiscard]] T raw_elem() const noexcept
+    {
+        return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
+    }
+
+    /// @brief This element, written raw: `values[num] = v`, or an atomic RMW
+    ///        of its word for Bit. No sync, no check -- the old spelling.
+    void raw_elem_set(in_t<T> v) const noexcept
+    {
+        elem_set(static_cast<T*>(values), static_cast<std::size_t>(num), static_cast<T>(v));
+    }
+
     /// @brief Write @p v straight through #values, with no synchronisation.
     /// @pre The chunk is materialised and the caller holds the write path.
     void store_value(in_t<T> v) const noexcept
@@ -471,7 +485,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         }
         else
         {
-            values[num] = v;
+            // Bit: an atomic RMW of the word (element_access.h); values[num] otherwise.
+            elem_set(static_cast<T*>(values), static_cast<std::size_t>(num), static_cast<T>(v));
         }
     }
 
@@ -514,7 +529,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
                 return vals[num];
             }
         }
-        return values[num];
+        return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
     }
 
     // PURE-READ entry (operator T(), the *=1 / /=1 early-outs). Under
@@ -756,6 +771,15 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     [[nodiscard]] operator T() const noexcept
     {
         return read_pure();
+    }
+
+    /// @brief ArrayChunkBits: read the element straight as a bool. Through
+    ///        operator T() it would be two user conversions (proxy -> Bit ->
+    ///        bool), which C++ does not chain, so `bool b = a[i]` needs this one.
+    [[nodiscard]] operator bool() const noexcept
+        requires is_packed_bit_v<T>
+    {
+        return static_cast<bool>(read_pure());
     }
 
     /**

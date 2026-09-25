@@ -29,6 +29,7 @@
 #include "chunk/internal/churn_counters.h" // churn::note_materialisation
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/internal/in_t.h"            // in_t<T>: the scans' constants, by value or by reference
+#include "chunk/internal/element_access.h"  // elem_get: Bit buffers are words of bits
 #include "chunk/internal/relaxed_element.h" // element_at<true>: the marking filter's reads
 #include "chunk/internal/svalloc.h"
 #include "chunk/config.h"
@@ -978,8 +979,11 @@ class ChunkBase : public CRTPSupport<Derived>,
 
   public:
     // Type traits
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    // bool and Bit (bit.h) share chunk2's bool path: one second value, true.
+    static constexpr bool is_bool     = is_bool_like_v<T>;
     static constexpr bool is_not_bool = !is_bool;
+    /// The buffer is words of bits (Bit), not an array of T.
+    static constexpr bool is_packed = is_packed_bit_v<T>;
 
     static constexpr bool use_mm_protect = build_config::use_mm_protect;
     constexpr static T    zero{};
@@ -1202,7 +1206,9 @@ class ChunkBase : public CRTPSupport<Derived>,
     template <bool Relaxed>
     [[nodiscard]] static T load_at(const T* vals, int i) noexcept
     {
-        if constexpr (Relaxed)
+        if constexpr (is_packed)
+            return elem_get(vals, static_cast<std::size_t>(i)); // relaxed word load under OpenMP
+        else if constexpr (Relaxed)
             return detail::load_element_relaxed(vals + i);
         else
             return vals[i];
@@ -1348,7 +1354,20 @@ class ChunkBase : public CRTPSupport<Derived>,
         // reductions of comparisons, which vectorise (AVX2 / NEON); the early
         // exit survives between blocks, so a chunk disproved at its first
         // element still costs one block, not the whole chunk.
-        const T*     vals = values_load();
+        const T* vals = values_load();
+        if constexpr (is_packed)
+        {
+            // One compare per 64 elements (bit_words.h).
+            const bits::Uniform u        = bits::scan_words(detail::as_words(vals), count);
+            const auto          all_of_v = [u](bool v) noexcept
+            { return u == (v ? bits::Uniform::all_true : bits::Uniform::all_false); };
+            if constexpr (chunk_config::stats)
+                add_chunk_scan_read<Derived>(static_cast<long>(count));
+            ConstantScan packed{all_of_v(first_v), all_of_v(second_v)};
+            if (packed.first)
+                packed.second = false;
+            return packed;
+        }
         ConstantScan scan{true, true};
         unsigned int i = 0;
         while (i < count)
@@ -1383,6 +1402,13 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @pre The chunk is materialised.
     [[nodiscard]] bool is_constant_to(in_t<T> v, unsigned int count) const noexcept
     {
+        if constexpr (is_packed)
+        {
+            if constexpr (chunk_config::stats)
+                add_chunk_scan_read<Derived>(static_cast<long>(count));
+            return bits::scan_words(detail::as_words(values_load()), count) ==
+                   (static_cast<bool>(v) ? bits::Uniform::all_true : bits::Uniform::all_false);
+        }
         // Same shape as scan_constants(): branch-free blocks, exit between them.
         const T*     vals = values_load();
         unsigned int i    = 0;
@@ -1462,6 +1488,7 @@ class ChunkBase : public CRTPSupport<Derived>,
                     derived().materialise_for_address();
             }
         }
+        static_assert(!is_packed, "print_adr: a Bit has no address (bit.h)");
         return &values_load()[i];
     }
 
@@ -1531,6 +1558,7 @@ class ChunkBase : public CRTPSupport<Derived>,
                     INVARIANT_FAILED("operator()(int) on a chunk that is not materialised");
             }
         }
+        static_assert(!is_packed, "operator()(int) returns T&: a Bit has no address (bit.h)");
         return values_load()[i];
     }
 
@@ -1547,13 +1575,14 @@ class ChunkBase : public CRTPSupport<Derived>,
     ///                   buffer allocated at a different geometry.
     static void init_block(T* values_loc, unsigned int n_elems) noexcept
     {
-        if constexpr (std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>)
+        const std::size_t units = Derived::storage_units(n_elems);
+        if constexpr ((std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>) || is_packed)
         {
-            std::memset(values_loc, 0, n_elems * sizeof(T));
+            std::memset(values_loc, 0, units * sizeof(T)); // Bit: all words 0, every bit false
         }
         else
         {
-            std::fill_n(values_loc, n_elems, T{});
+            std::fill_n(values_loc, units, T{});
         }
     }
 
@@ -1566,14 +1595,17 @@ class ChunkBase : public CRTPSupport<Derived>,
      */
     [[nodiscard]] static constexpr std::size_t storage_units(std::size_t n_elems) noexcept
     {
-        return n_elems;
+        if constexpr (is_packed)
+            return bits::bytes_for(n_elems) / sizeof(T); // whole 64-bit words
+        else
+            return n_elems;
     }
 
     /// @brief init_block() over the active geometry's storage.
     static void init_block(T* values_loc) noexcept
     {
         const std::size_t units = Derived::storage_units(alloc_chunk_count());
-        if constexpr (std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>)
+        if constexpr ((std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>) || is_packed)
         {
             // For trivially constructible scalar types: use memset (fastest option)
             std::memset(values_loc, 0, units * sizeof(T));
@@ -1843,7 +1875,9 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     using cst_val1_type = std::conditional_t<build_config::use_mm_protect, T*, std::array<T, cst_buffer_size>>;
 
-    static inline cst_val1_type m_ptr_cst_val1 = []
+    // alignas: a Bit chunk compressed to the first constant points here, and
+    // its reads load 64-bit words (element_access.h).
+    alignas(bits::word_t) static inline cst_val1_type m_ptr_cst_val1 = []
     {
         if constexpr (build_config::use_mm_protect)
         {
