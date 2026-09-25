@@ -115,9 +115,9 @@ inline int current_rank() noexcept
 //   -DCHUNK_NO_LEDGER    : force OFF everywhere, whatever the build mode.
 //
 // Either way, every other any_check invariant/assert stays active.
-#if defined(CHUNK_NO_LEDGER)
+#ifdef CHUNK_NO_LEDGER
 inline constexpr bool pool_ledger_enabled = false;
-#elif defined(CHUNK_FORCE_LEDGER)
+#elifdef CHUNK_FORCE_LEDGER
 inline constexpr bool pool_ledger_enabled = build_config::any_check;
 #else
 inline constexpr bool pool_ledger_enabled = build_config::any_check && !build_config::use_openmp;

@@ -53,7 +53,7 @@ namespace shrink_array
 template <typename T>
 struct ValueLess
 {
-    bool operator()(const T& lhs, const T& rhs) const noexcept
+    static bool operator()(const T& lhs, const T& rhs) noexcept
     {
         if constexpr (ComplexType<T>)
             return ComplexLess<typename T::value_type>{}(lhs, rhs);

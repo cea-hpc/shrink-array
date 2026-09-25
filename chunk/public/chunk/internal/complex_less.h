@@ -24,7 +24,7 @@
 template <typename T>
 struct ComplexLess
 {
-    bool operator()(const std::complex<T>& lhs, const std::complex<T>& rhs) const noexcept
+    static bool operator()(const std::complex<T>& lhs, const std::complex<T>& rhs) noexcept
     {
         if (lhs.real() < rhs.real())
             return true;

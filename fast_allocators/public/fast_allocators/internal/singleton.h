@@ -10,7 +10,7 @@
         #include <sanitizer/lsan_interface.h>
         #define SA_LSAN_IGNORE(p) __lsan_ignore_object(p)
     #endif
-#elif defined(__SANITIZE_ADDRESS__)
+#elifdef __SANITIZE_ADDRESS__
     #include <sanitizer/lsan_interface.h>
     #define SA_LSAN_IGNORE(p) __lsan_ignore_object(p)
 #endif

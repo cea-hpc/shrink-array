@@ -386,9 +386,9 @@ inline constexpr bool use_fast_block_compression = use_openmp;
 
 // A ThreadSanitizer build, whichever compiler spells it. TSan does not model
 // membarrier(), so such a build keeps the symmetric handshake below.
-#if defined(__SANITIZE_THREAD__)
+#ifdef __SANITIZE_THREAD__
     #define CHUNK_TSAN_BUILD 1
-#elif defined(__has_feature)
+#elifdef __has_feature
     #if __has_feature(thread_sanitizer)
         #define CHUNK_TSAN_BUILD 1
     #endif

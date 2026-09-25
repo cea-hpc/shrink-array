@@ -214,12 +214,12 @@ inline BenchSched bench_sched_for(Int start, Int end) noexcept
 #include "chunk/type_name.h"
 #include "chunk/chunk_std.h"
 
-#if defined CHUNK
+#ifdef CHUNK
     #include "chunk/array_chunk.h"
-#elif defined CHUNK2
+#elifdef CHUNK2
     #include "chunk/array_chunk2.h"
     #include "chunk/debug.h"
-#elif defined CHUNK2A
+#elifdef CHUNK2A
     #include "chunk/array_chunk2.h"
     #include "chunk/array_chunk2A.h"
 #else

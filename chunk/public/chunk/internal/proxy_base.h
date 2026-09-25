@@ -702,7 +702,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
          * @param rhs Divisor
          * @return x % y
          */
-        constexpr T operator()(T lhs, T rhs) const noexcept
+        static constexpr T operator()(T lhs, T rhs) noexcept
         {
             return lhs % rhs;
         }

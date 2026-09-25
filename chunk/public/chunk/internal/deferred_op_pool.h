@@ -92,7 +92,7 @@ class DeferredOperationBase
 
 struct DeferredOpDeleter
 {
-    void operator()(DeferredOperationBase* op) const noexcept
+    static void operator()(DeferredOperationBase* op) noexcept
     {
         (void)op;
     }

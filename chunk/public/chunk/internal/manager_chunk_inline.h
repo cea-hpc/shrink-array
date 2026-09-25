@@ -726,7 +726,7 @@ namespace detail
 template <typename T>
 struct PtrLess
 {
-    bool operator()(const T* lhs, const T* rhs) const noexcept
+    static bool operator()(const T* lhs, const T* rhs) noexcept
     {
         return std::less<const T*>{}(lhs, rhs);
     }

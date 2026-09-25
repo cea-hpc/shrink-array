@@ -865,7 +865,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     /// @brief Functor wrapping operator% for apply_compound_operation().
     struct modulo
     {
-        constexpr T operator()(in_t<T> lhs, in_t<T> rhs) const noexcept
+        static constexpr T operator()(in_t<T> lhs, in_t<T> rhs) noexcept
         {
             return lhs % rhs;
         }
