@@ -132,7 +132,7 @@ def main():
         print(f"{len(confs)} profiles, {len(enabled & names)} enabled (*)")
         return
 
-    if not a.force and subprocess.run(["pgrep", "-f", "clion"], capture_output=True).returncode == 0:
+    if not a.force and subprocess.run(["pgrep", "-x", "clion"], capture_output=True).returncode == 0:
         sys.exit("error: CLion is running -- it rewrites workspace.xml when it closes. Close it, or pass --force.")
 
     ws = open(a.workspace, encoding="utf-8").read()
