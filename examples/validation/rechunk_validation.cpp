@@ -56,6 +56,7 @@
 #include "chunk/config.h"                     // chunk_config::use_chunk*
 #include "chunk/array_chunk_range_ops.h"      // fill_range / copy_range
 #include "chunk/manage_ompt.h"                // finalize_parallel_phase (compression backlog drain)
+#include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
 
 using namespace shrink_array;
 
@@ -496,9 +497,9 @@ int main(int argc, char** argv)
         else
             pos.push_back(argv[a]);
     }
-    const long     N_scale = pos.size() > 0 ? atol(pos[0]) : 1000000L;
-    const unsigned tgt     = pos.size() > 1 ? (unsigned)atoi(pos[1]) : 1024u;
-    const int      rounds  = pos.size() > 2 ? atoi(pos[2]) : 200;
+    const long     N_scale = pos.size() > 0 ? shrink_array::arg_number<long>(pos[0], 1000000L, "N") : 1000000L;
+    const unsigned tgt     = pos.size() > 1 ? shrink_array::arg_number<unsigned>(pos[1], 1024u, "target size") : 1024u;
+    const int      rounds  = pos.size() > 2 ? shrink_array::arg_number<int>(pos[2], 200, "rounds") : 200;
     const bool     run_ser = std::strcmp(mode, "parallel") != 0;
     const bool     run_par = std::strcmp(mode, "serial") != 0;
     if (!run_ser && !run_par)

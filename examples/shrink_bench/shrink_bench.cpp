@@ -59,6 +59,7 @@
 #include "chunk/ring_log_debug.h"     // SEGV hunt: ring_init/analyze_ring_sweep decls
 #include "chunk/chunk_size_advisor.h" // step-0 observation (acts in dyn builds only)
 #include "chunk/rechunk_decider.h"    // phase-3A: re-chunk decisions (idem)
+#include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
 using namespace shrink_array;
 
@@ -218,8 +219,7 @@ int main(int argc, char* argv[])
     // first allocation, which happens in static initialisation, before main.
     // mallopt() is not too late -- it applies to arenas created afterwards.
     {
-        const char* e      = std::getenv("CHUNK_MALLOC_ARENAS");
-        const int   arenas = e ? std::atoi(e) : 0; // 0 = leave glibc alone
+        const int arenas = shrink_array::env_number<int>("CHUNK_MALLOC_ARENAS", 0); // 0 = leave glibc alone
         if (arenas > 0)
             set_max_malloc_arenas(arenas);
     }
@@ -334,12 +334,8 @@ int main(int argc, char* argv[])
     // what a bisection wants).
     const Int freq_ksum = []() -> Int
     {
-        if (const char* e = std::getenv("CHUNK_BENCH_KSUM_PERIOD"))
-        {
-            const Int n = std::atoi(e);
-            if (n > 0)
-                return n;
-        }
+        if (const Int n = shrink_array::env_number<Int>("CHUNK_BENCH_KSUM_PERIOD", 0); n > 0)
+            return n;
         return 0; // 0 = follow freq_conso_mem, resolved just below
     }();
 
@@ -353,8 +349,12 @@ int main(int argc, char* argv[])
     // overrides (1 = every iteration, the former behaviour).
     [[maybe_unused]] const Int freq_audit = [iter_max]() -> Int
     {
-        if (const char* e = std::getenv("SHRINK_BENCH_AUDIT_FREQ"))
-            return std::max<Int>(1, std::atoi(e));
+        if (const char* e = std::getenv("SHRINK_BENCH_AUDIT_FREQ"); e != nullptr && *e != '\0')
+        {
+            if (Int v = 0; shrink_array::parse_number(e, v))
+                return std::max<Int>(1, v);
+            shrink_array::warn_invalid_env("SHRINK_BENCH_AUDIT_FREQ", e);
+        }
         return std::max<Int>(1, iter_max / 10);
     }();
 
@@ -638,8 +638,12 @@ int main(int argc, char* argv[])
     // CHUNK_ADVISOR_PERIOD overrides; 0 still disables.
     const Int advisor_period = [iter_max]() -> Int
     {
-        if (const char* e = std::getenv("CHUNK_ADVISOR_PERIOD"))
-            return std::atoi(e);
+        if (const char* e = std::getenv("CHUNK_ADVISOR_PERIOD"); e != nullptr && *e != '\0')
+        {
+            if (Int v = 0; shrink_array::parse_number(e, v))
+                return v;
+            shrink_array::warn_invalid_env("CHUNK_ADVISOR_PERIOD", e);
+        }
         return std::max<Int>(10, iter_max / 20);
     }();
     // Phase-3A decider (dry-run): persists across ticks, keyed by array address.

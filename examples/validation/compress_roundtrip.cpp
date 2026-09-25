@@ -62,10 +62,11 @@
 #include "chunk/array_chunk2.h"
 #include "chunk/array_chunk2A.h"
 #include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h"   // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"      // chunk_config::use_chunk*
-#include "chunk/PMP_CHUNK.h"   // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h" // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/chunk_std.h"          // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"             // chunk_config::use_chunk*
+#include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
 // Defined by every executable of the library (the fast allocator reads it).
 int __mem_page_size = 0;
@@ -224,7 +225,7 @@ int main(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
 
-    const long N = argc > 1 ? atol(argv[1]) : (1L << 20);
+    const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
 
     ParamChunk::init_indexes(true);
 

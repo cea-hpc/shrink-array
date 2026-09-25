@@ -17,7 +17,7 @@
 /// @file bench_phase_compute.cpp
 /// @brief The main compute loop's parallel region. See bench_phases.h.
 
-#include <cstdlib> // std::getenv / std::atol (CHUNK_BENCH_ULONG_BANDS)
+#include <cstdlib> // std::getenv
 #include <cmath>
 #include <complex>
 #include <limits>
@@ -27,7 +27,8 @@
 
 #include "bench_phases.h"
 #include "bench_rmw_check.h"
-#include "bench_utils.h" // linear_correlation, exponential_correlation
+#include "bench_utils.h"              // linear_correlation, exponential_correlation
+#include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
 // Inner loop of the four-accumulator loop: a simd reduction on the std::vector
 // baseline (keeps it vectorised), nothing on shrink builds (the read gate has
@@ -44,9 +45,7 @@
 // for the whole array, which is what the registry stress runs want.
 static const unsigned long bench_ulong_mask = []() -> unsigned long
 {
-    long bands = 4096;
-    if (const char* e = std::getenv("CHUNK_BENCH_ULONG_BANDS"))
-        bands = std::atol(e);
+    const long bands = shrink_array::env_number<long>("CHUNK_BENCH_ULONG_BANDS", 4096);
     if (bands <= 0)
         return ~0UL; // unbounded
     // Bands are 256 indices wide (the |0xFF, &~0x0F arithmetic below), so the
@@ -304,7 +303,8 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     tab_int[i]  = static_cast<int>(i + 1);
 
                     tab_int[i] = static_cast<int>(std::floor(log10(static_cast<double>(tab_int[i]))));
-                    SB_CHECKED_RMW(tab_int, i, *= tab_int[i]); // Before the previous line if i bigger than sqrt(soit 2^31 − 1)
+                    SB_CHECKED_RMW(tab_int, i,
+                                   *= tab_int[i]); // Before the previous line if i bigger than sqrt(soit 2^31 − 1)
                     // (46340) --> overflow
 
                     tab_int[i]--;

@@ -64,7 +64,8 @@
 #include <tuple>
 #include <type_traits>
 #include <vector>
-#include <cstdlib> // std::getenv / std::atol (BENCH_SCHED_BLOCK)
+#include <cstdlib>                    // std::getenv
+#include "chunk/internal/env_parse.h" // env_number (BENCH_SCHED_BLOCK, before its use below)
 
 #include "bench_int.h" // Int / UInt: the bench index type (32- or 64-bit)
 
@@ -167,8 +168,7 @@ inline Int bench_sched_block_env() noexcept
 {
     static const Int v = []() -> Int
     {
-        const char* e = std::getenv("BENCH_SCHED_BLOCK");
-        const long  b = (e && e[0]) ? std::atol(e) : 64L;
+        const long b = shrink_array::env_number<long>("BENCH_SCHED_BLOCK", 64L);
         if (b <= 0)
             return 0;
         long p = 1;

@@ -65,6 +65,7 @@
 #include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"
+#include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 #ifdef CHUNK_STATS
     #include "chunk/internal/chunk_stats.h"
 #endif
@@ -376,7 +377,7 @@ int main(int argc, char** argv)
     // million deferred writes per run of the executable, and a Debug build
     // still under 20 s at 1 thread (each deferred op is a context, a map
     // entry and a replay -- forty times the cost of the write it stands for).
-    const long N = argc > 1 ? atol(argv[1]) : (1L << 17);
+    const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 17, "N") : (1L << 17);
 
     ParamChunk::init_indexes(true);
 

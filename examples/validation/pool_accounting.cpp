@@ -50,6 +50,7 @@
 #include "chunk/chunk_def.h"
 #include "chunk/chunk2_def.h"
 #include "chunk/chunk2A_def.h"
+#include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
 // Defined by every executable of the library (the fast allocator reads it).
 int __mem_page_size = 0;
@@ -128,7 +129,7 @@ int main(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
 
-    const long N = argc > 1 ? atol(argv[1]) : (1L << 20);
+    const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
 
     ParamChunk::init_indexes(true);
 
