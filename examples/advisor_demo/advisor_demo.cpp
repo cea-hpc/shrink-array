@@ -89,37 +89,49 @@ int main()
         truths.push_back(ground_truth(tab, meta));
     }
 
-    // Advisor prediction from the middle size (256): finer 128/64, coarser 512/1024
-    set_thread_chunk_size(256);
-    ArrayChunk2A<double> ref(1);
-    ref.set_chunk_size(256);
-    ref.resize(N);
-    fill_and_compress(ref);
-    ChunkSizeAdvisor<double>::Options opt;
-    opt.coarser_levels = 2;
-    opt.finer_levels   = 2;
-    auto rep           = ChunkSizeAdvisor<double>::analyze(ref, opt);
-    ChunkSizeAdvisor<double>::print(rep, "ref S=256");
-
-    std::printf("\n── prediction (from S=256) vs ground truth ──\n");
+    // Advisor predictions against ground truth, from two reference sizes:
+    //  - the middle one (256): finer 128/64, coarser 512/1024;
+    //  - the largest (1024): finer 512/256 only. There the 256-long runs at
+    //    -1.5 / 7.25 are materialised, so the finer rows must recognise them
+    //    as compressible -- Chunk2A compresses a uniform chunk at ANY value.
+    //    Gated on first_value/second value, the S=256 row read 4608
+    //    materialised chunks against 2560 real (+80%).
     int fail = 0;
-    for (size_t i = 0; i < rep.table.size(); ++i)
+    for (const unsigned ref_size : {256u, 1024u})
     {
-        const auto& e = rep.table[i];
-        // find matching real size
-        for (size_t k = 0; k < std::size(sizes); ++k)
+        set_thread_chunk_size(ref_size);
+        ArrayChunk2A<double> ref(1);
+        ref.set_chunk_size(ref_size);
+        ref.resize(N);
+        fill_and_compress(ref);
+        ChunkSizeAdvisor<double>::Options opt;
+        opt.coarser_levels = 2;
+        opt.finer_levels   = 2;
+        auto rep           = ChunkSizeAdvisor<double>::analyze(ref, opt);
+        char title[32];
+        std::snprintf(title, sizeof title, "ref S=%u", ref_size);
+        ChunkSizeAdvisor<double>::print(rep, title);
+
+        std::printf("\n── prediction (from S=%u) vs ground truth ──\n", ref_size);
+        for (size_t i = 0; i < rep.table.size(); ++i)
         {
-            if (sizes[k] != e.size)
-                continue;
-            const auto&  t  = truths[k];
-            const double dm = t.mat ? 100. * double(e.mat - t.mat) / double(t.mat) : (e.mat ? 100. : 0.);
-            const bool   ok = e.exact ? (e.mat == t.mat && e.n_chunks == t.chunks) : (dm > -10. && dm < 10.);
-            std::printf(
-                "   S=%5u : pred mat=%9lld %s | real mat=%9lld | d=%+6.2f%%  mem pred=%8.2f real=%8.2f Mo  %s\n",
-                e.size, (long long)e.mat, e.exact ? "(exact)" : "(sampl)", t.mat, dm, e.mem_bytes / 1048576.,
-                t.mem / 1048576., ok ? "OK" : "FAIL");
-            fail += !ok;
+            const auto& e = rep.table[i];
+            // find matching real size
+            for (size_t k = 0; k < std::size(sizes); ++k)
+            {
+                if (sizes[k] != e.size)
+                    continue;
+                const auto&  t  = truths[k];
+                const double dm = t.mat ? 100. * double(e.mat - t.mat) / double(t.mat) : (e.mat ? 100. : 0.);
+                const bool   ok = e.exact ? (e.mat == t.mat && e.n_chunks == t.chunks) : (dm > -10. && dm < 10.);
+                std::printf(
+                    "   S=%5u : pred mat=%9lld %s | real mat=%9lld | d=%+6.2f%%  mem pred=%8.2f real=%8.2f Mo  %s\n",
+                    e.size, (long long)e.mat, e.exact ? "(exact)" : "(sampl)", t.mat, dm, e.mem_bytes / 1048576.,
+                    t.mem / 1048576., ok ? "OK" : "FAIL");
+                fail += !ok;
+            }
         }
+        ref.clear();
     }
     std::printf("\n=== %s ===\n", fail ? "ADVISOR VALIDATION FAILED" : "ADVISOR VALIDATED");
     return fail;

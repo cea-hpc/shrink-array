@@ -152,11 +152,25 @@ class ChunkSizeAdvisor
             cst2_value = tab.get_second_value();
             has_cst2   = !(cst2_value == cst1_value);
         }
-        const auto compressible_value = [&](const T& elem) -> bool
+        const auto compressible_value = [&]([[maybe_unused]] const T& elem) -> bool
         {
-            if (elem == cst1_value)
+            // Chunk2A: any uniform value is compressible -- each chunk
+            // registers its own second value, and compress() compresses a
+            // chunk uniform at ANY value to that value (find_or_set). Its
+            // arrays have no array-level second value, so the gate below kept
+            // first_value only: the finer rows missed every other uniform
+            // sub-block, and a coarsening that turned out costly (writes
+            // materialising whole large chunks) could never look worse than
+            // refining back (tab1 stuck at "best=1024" while its data grew
+            // 406 -> 565 MB over six ticks at S=512).
+            if constexpr (chunk_config::use_chunk2a)
                 return true;
-            return has_cst2 && (elem == cst2_value);
+            else
+            {
+                if (elem == cst1_value)
+                    return true;
+                return has_cst2 && (elem == cst2_value);
+            }
         };
 
         const auto classify = [&](const auto& chunk, const void*& key) -> int
