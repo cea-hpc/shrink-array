@@ -957,14 +957,20 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     }
 
     /**
-     * @brief Escape hatch for callers that need a real `T&` (e.g. passing
-     *        `a[i]` to a function expecting `T&`, where the implicit
-     *        `operator T()` conversion alone would not bind). Always
-     *        materialises the chunk first, since the caller's intent (read
-     *        vs write through the reference) cannot be known here.
+     * @brief UNSAFE: a raw `T&` into this element's chunk buffer, for callers
+     *        that must bind a real reference (e.g. passing `a[i]` to a
+     *        function taking `T&`). Materialises the chunk first if it is
+     *        compressed.
+     * @warning A write through the returned reference bypasses the proxy:
+     *          the chunk is not marked as a compression candidate, deferred
+     *          ops are not replayed first, and nothing orders it against
+     *          other threads. The reference dangles as soon as the chunk is
+     *          recompressed or freed. Prefer the proxy's own operators.
+     * @note Always materialises: the caller's intent (read or write
+     *       through the reference) cannot be known here.
      * @return Reference to this element's live value.
      */
-    T& get_val() noexcept
+    [[nodiscard]] T& unsafe_ref() noexcept
     {
         const bool need_alloc = is_cst_val();
 
