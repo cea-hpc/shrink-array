@@ -28,7 +28,7 @@
 #include <chrono>      // CHUNK_RECHUNK_TRACE phase timers
 #include <cstddef>     // std::size_t
 #include <cstdio>      // std::fprintf (CHUNK_RECHUNK_TRACE)
-#include <cstdlib>     // std::getenv / std::atoi (CHUNK_POOL_BREAKDOWN, CHUNK_RECHUNK_TRACE, CHUNK_RECHUNK_SLICES)
+#include <cstdlib>     // std::getenv (CHUNK_POOL_BREAKDOWN, CHUNK_RECHUNK_TRACE, CHUNK_RECHUNK_SLICES)
 #include <type_traits> // std::is_same_v, the v1 bool guard
 #include <string_view> // CHUNK_RECHUNK_SCHEDULE parsing
 #include <utility>     // std::swap (the array swap)
@@ -42,6 +42,7 @@
 #include "chunk/internal/compression_manager.h" // CompressionManager<>::FlushReplayGuard in rechunk_refill
 #include "chunk/internal/conditional_counter.h" // counter_value_t -- nb_val_eq_zero resync after the raw-fill
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
+#include "chunk/internal/env_parse.h"           // env_number / env_flag (checked, not atoi)
 #include <unistd.h>                             // sysconf(_SC_PAGESIZE) -- the per-slice RSS trace
 
 namespace shrink_array::rechunk_detail
@@ -927,8 +928,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // floor: that floor is the two geometries coexisting at slab
             // granularity, not blocks scattered across the index.
             n_slices = 16;
-            if (const char* env = std::getenv("CHUNK_RECHUNK_SLICES"))
-                n_slices = std::max(1, static_cast<int>(std::strtol(env, nullptr, 10)));
+            n_slices = std::max(1, shrink_array::env_number<int>("CHUNK_RECHUNK_SLICES", n_slices));
             // Not worth slicing an array too small to empty a slab per slice.
             n_slices = std::min(n_slices, std::max(1, n_new / 4096));
         }

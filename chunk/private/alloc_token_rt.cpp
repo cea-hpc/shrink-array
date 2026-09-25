@@ -51,10 +51,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>  // malloc & co, std::getenv, std::atoi
+#include <cstdlib>  // malloc & co, std::getenv
 #include <cstring>  // std::strcmp
 #include <malloc.h> // memalign
 #include <new>
+#include "chunk/internal/env_parse.h" // env_number / env_flag (checked, not atoi)
 
 namespace
 {
@@ -127,7 +128,7 @@ __attribute__((destructor)) void report()
         if (std::strcmp(env, "all") == 0)
             top = kSlots;
         else
-            top = static_cast<std::size_t>(std::atoi(env));
+            top = shrink_array::env_number<std::size_t>("ALLOC_TOKEN_REPORT", top);
         if (top == 0)
             return;
     }

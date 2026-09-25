@@ -28,9 +28,9 @@
 
 #include "chunk/rechunk_decider.h"
 #include "chunk/chunk_size_advisor.h"
-#include "chunk/config.h"                       // build_config::chunk_dynamic
-#include "chunk/internal/chunk_size_policy.h"   // shrink_array::cst_buffer_size
-#include "fast_allocators/internal/env_parse.h" // env_number / env_flag (checked, not atoi)
+#include "chunk/config.h"                     // build_config::chunk_dynamic
+#include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size
+#include "chunk/internal/env_parse.h"         // env_number / env_flag (checked, not atoi)
 
 namespace shrink_array
 {
@@ -141,9 +141,9 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         if (env == nullptr || env[0] == '\0')
             return static_cast<std::size_t>(-1); // unset: keep the policy
         double mb = 0.;
-        if (!fast_alloc::parse_number(env, mb))
+        if (!shrink_array::parse_number(env, mb))
         {
-            fast_alloc::warn_invalid_env("CHUNK_ADVISOR_MIN_GAIN_MB", env);
+            shrink_array::warn_invalid_env("CHUNK_ADVISOR_MIN_GAIN_MB", env);
             return static_cast<std::size_t>(-1); // not a number: keep the policy
         }
         return mb > 0. ? static_cast<std::size_t>(mb * 1024. * 1024.) : 0u;
@@ -185,9 +185,9 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
             if (env == nullptr || env[0] == '\0')
                 return static_cast<std::size_t>(-1); // unset: keep the policy
             double mb = 0.;
-            if (!fast_alloc::parse_number(env, mb))
+            if (!shrink_array::parse_number(env, mb))
             {
-                fast_alloc::warn_invalid_env("CHUNK_COARSEN_MIN_META_MB", env);
+                shrink_array::warn_invalid_env("CHUNK_COARSEN_MIN_META_MB", env);
                 return static_cast<std::size_t>(-1); // not a number: keep the policy
             }
             return mb > 0. ? static_cast<std::size_t>(mb * 1024. * 1024.) : 0u;
@@ -293,19 +293,19 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         // it un-beneficial and the advisor never fires. Self-limiting: once
         // arr.chunk_size()==<size> the guard is false, so it never repeats.
         // 0/unset disables. Read once.
-        static const unsigned force_sz = fast_alloc::env_number<unsigned>("CHUNK_FORCE_RECHUNK", 0u);
+        static const unsigned force_sz = shrink_array::env_number<unsigned>("CHUNK_FORCE_RECHUNK", 0u);
         // CHUNK_FORCE_RECHUNK_AT=<iter> delays the forced rechunk until iter >=
         // this (default 0 = at the first tick). Forcing at iter 0 rechunks fresh,
         // near-empty arrays; set e.g. 1000 to rechunk POPULATED arrays with
         // pending deferred ops -- the state under which the real bug appears.
-        static const int force_at = fast_alloc::env_number<int>("CHUNK_FORCE_RECHUNK_AT", 0);
+        static const int force_at = shrink_array::env_number<int>("CHUNK_FORCE_RECHUNK_AT", 0);
         // CHUNK_FORCE_RECHUNK_TOGGLE=1 rechunks at EVERY tick (iter>=force_at),
         // alternating force_sz <-> CHUNK_FORCE_RECHUNK_ALT (default 64). Combined
         // with a short CHUNK_ADVISOR_PERIOD and a large --divisor, this hammers
         // the rechunk path many times in a short, ASan-cheap run to reproduce a
         // rechunk-triggered corruption. Default (0) keeps the one-shot behaviour.
-        static const unsigned force_alt    = fast_alloc::env_number<unsigned>("CHUNK_FORCE_RECHUNK_ALT", 64u);
-        static const bool     force_toggle = fast_alloc::env_number<int>("CHUNK_FORCE_RECHUNK_TOGGLE", 0) != 0;
+        static const unsigned force_alt    = shrink_array::env_number<unsigned>("CHUNK_FORCE_RECHUNK_ALT", 64u);
+        static const bool     force_toggle = shrink_array::env_number<int>("CHUNK_FORCE_RECHUNK_TOGGLE", 0) != 0;
         if (force_sz != 0u && !pol_.dry_run && iter >= force_at)
         {
             const unsigned cur_sz = arr.chunk_size();

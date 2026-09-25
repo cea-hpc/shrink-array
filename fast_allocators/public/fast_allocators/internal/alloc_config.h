@@ -29,8 +29,12 @@
  * fast_allocators does not include anything from chunk/, and must not start to.
  */
 
-#include <cstdlib> // std::getenv / std::strtol (CHUNK_RECLAIM_MIN_SLABS)
-#include <cstddef> // std::size_t
+#include <charconv>     // std::from_chars (CHUNK_RECLAIM_MIN_SLABS)
+#include <cstdio>       // std::fprintf
+#include <cstdlib>      // std::getenv
+#include <cstring>      // std::strlen
+#include <system_error> // std::errc
+#include <cstddef>      // std::size_t
 namespace alloc_config
 {
 
@@ -104,11 +108,22 @@ inline std::size_t reclaim_min_empty_slabs() noexcept
 {
     static const std::size_t min_slabs = []() -> std::size_t
     {
+        // The whole value must be a non-negative integer (std::from_chars:
+        // a '-', trailing text or an overflow is refused, with a warning, and
+        // 0 kept) -- the rule of chunk/internal/env_parse.h, which this
+        // library cannot include. strtol's result used to be clamped silently.
         const char* env = std::getenv("CHUNK_RECLAIM_MIN_SLABS");
         if (env == nullptr || env[0] == '\0')
             return 0;
-        const long v = std::strtol(env, nullptr, 10);
-        return v > 0 ? static_cast<std::size_t>(v) : 0;
+        std::size_t v   = 0;
+        const char* end = env + std::strlen(env);
+        const auto  res = std::from_chars(env, end, v);
+        if (res.ec != std::errc{} || res.ptr != end)
+        {
+            std::fprintf(stderr, "[env] CHUNK_RECLAIM_MIN_SLABS=\"%s\" is not a valid value: ignored, 0 kept\n", env);
+            return 0;
+        }
+        return v;
     }();
     return min_slabs;
 }
