@@ -102,15 +102,15 @@ inline constexpr bool reclaim_empty_slabs =
  */
 inline std::size_t reclaim_min_empty_slabs() noexcept
 {
-    static const std::size_t n = []() -> std::size_t
+    static const std::size_t min_slabs = []() -> std::size_t
     {
-        const char* e = std::getenv("CHUNK_RECLAIM_MIN_SLABS");
-        if (e == nullptr || e[0] == '\0')
+        const char* env = std::getenv("CHUNK_RECLAIM_MIN_SLABS");
+        if (env == nullptr || env[0] == '\0')
             return 0;
-        const long v = std::strtol(e, nullptr, 10);
+        const long v = std::strtol(env, nullptr, 10);
         return v > 0 ? static_cast<std::size_t>(v) : 0;
     }();
-    return n;
+    return min_slabs;
 }
 
 /**
