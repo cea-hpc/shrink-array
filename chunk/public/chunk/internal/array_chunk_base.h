@@ -896,8 +896,11 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         // Loop index is always in range; lets the compiler drop bounds/negative
         // checks. Side-effect free (C++23 [[assume]] when available, else no-op).
         // num = i & size_policy_.modulo()  =>  0 <= num <= static_cast<int>(size_policy_.modulo()) by construction.
+        // modulo() read into a local first: clang ignores an assumption that
+        // calls a function it cannot prove side-effect free (-Wassume).
+        [[maybe_unused]] const int chunk_mod = static_cast<int>(size_policy_.modulo());
         SA_ASSUME(num_chunk >= 0);
-        SA_ASSUME(num >= 0 && num <= static_cast<int>(size_policy_.modulo()));
+        SA_ASSUME(num >= 0 && num <= chunk_mod);
         const auto& chunk_t = chunk_list[num_chunk];
 
         sync_chunk(chunk_t, num_chunk, num);
