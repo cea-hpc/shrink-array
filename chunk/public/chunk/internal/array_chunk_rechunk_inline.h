@@ -49,6 +49,15 @@ namespace shrink_array::rechunk_detail
 /// @brief Resident set size of this process in MiB, or -1 if unreadable.
 /// @details /proc/self/statm field 2 is resident pages. Only the
 ///          CHUNK_RECHUNK_TRACE path reads it, once per slice.
+/// A/B switch: CHUNK_RECHUNK_INSTALL_LEGACY=1 (read once) makes the Chunk2A
+/// rebuild copy and fold spans whose sources are all the same second constant,
+/// as before, instead of installing that constant directly.
+inline const bool g_install_legacy = []
+{
+    const char* env = std::getenv("CHUNK_RECHUNK_INSTALL_LEGACY");
+    return env != nullptr && env[0] != '\0' && env[0] != '0';
+}();
+
 inline long rss_mib_now() noexcept
 {
     std::FILE* file = std::fopen("/proc/self/statm", "r");
@@ -524,10 +533,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // written by exactly one caller, *this reads are const, and the write
         // path partitions allocator/compression state by thread rank — so this
         // is safe to run concurrently over disjoint c.
-        std::atomic<long> n_folded{0};  // spans the rebuild tried to fold back
-        std::atomic<long> n_refused{0}; // ... of which compress() declined: the span
-                                        // merged constants that DIFFER, so no
-                                        // single-constant form can hold it
+        std::atomic<long> n_folded{0};    // spans the rebuild tried to fold back
+        std::atomic<long> n_installed{0}; // ... of which 2A installed directly (no buffer)
+        std::atomic<long> n_refused{0};   // ... of which compress() declined: the span
+                                          // merged constants that DIFFER, so no
+                                          // single-constant form can hold it
         // Chunk2's cst2 predicate and its compress() both need the array's
         // second-value registry entry, and both run per chunk. The lookup goes
         // through the shared info registry, so it is hoisted here: once per
@@ -584,8 +594,9 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // once per thread and slice after the loop.
         struct RebuildTally
         {
-            long folded  = 0;
-            long refused = 0;
+            long folded    = 0;
+            long refused   = 0;
+            long installed = 0; // 2A: constant installed without a buffer
         };
         auto rebuild_one = [&](int new_chunk, std::vector<T>& buf, RebuildTally& tally)
         {
@@ -604,9 +615,19 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // Chunk2's is_cst_val2() needs the second-value index, v1 has cst1
             // only (covered by all_cst1).
             bool all_folded = true;
+            // 2A: every source is cst2 at the SAME shared array (same value):
+            // the new chunk is that constant, known without filling it.
+            [[maybe_unused]] bool     any_cst1_src = false;
+            [[maybe_unused]] bool     same_cst2    = true;
+            [[maybe_unused]] const T* cst2_src     = nullptr;
             for (int oc = old_first; oc <= old_last; ++oc)
             {
                 const auto& och = self().chunk_list[static_cast<std::size_t>(oc)];
+                if constexpr (chunk_config::use_chunk2a)
+                {
+                    if (och.is_cst_val1())
+                        any_cst1_src = true;
+                }
                 if (!och.is_cst_val1())
                 {
                     all_cst1 = false;
@@ -614,6 +635,10 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     {
                         if (!och.is_cst_val2())
                             all_folded = false;
+                        else if (cst2_src == nullptr)
+                            cst2_src = och.values_load();
+                        else if (och.values_load() != cst2_src)
+                            same_cst2 = false;
                     }
                     else if constexpr (chunk_config::use_chunk2)
                     {
@@ -644,6 +669,37 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 return; // fresh cst1, leave it
             }
             increm_chunk_rechunk_rebuilt<chunk_type>();
+
+            // 2A: all sources are the same second constant -> install it.
+            // Copying it into a fresh buffer, scanning it back and releasing
+            // the buffer (the fold below) gives the same state, but the pages
+            // those allocations touch stay with the process: 130-640 MB per
+            // 128 -> 256 re-chunk on the 64-thread bench, which turned the
+            // forecast gains into losses. This is what a type-2 compression
+            // commits (find_or_set on the chunk's second-value slot, type
+            // table, values pointer), minus the buffer; tmp's chunk is
+            // reachable by no other thread until the swap, so no CAS.
+            if constexpr (chunk_config::use_chunk2a && !std::is_same_v<T, bool>)
+            {
+                if (all_folded && same_cst2 && !any_cst1_src && cst2_src != nullptr &&
+                    !rechunk_detail::g_install_legacy)
+                {
+                    set_thread_chunk_size(old_size);
+                    // auto: SecondValueRef is not declared in every TU that
+                    // instantiates this file (array_chunk2.cpp), and the name
+                    // would be looked up even in a discarded branch.
+                    const T v   = static_cast<T>(std::as_const(self())[base]);
+                    auto&   nch = tmp.chunk_list[static_cast<std::size_t>(new_chunk)];
+                    auto    psv = Proxy2A<T>::BaseSpec::get_tab_second_value(tmp.num_tab, new_chunk);
+                    char*   ptc = &Proxy2A<T>::tab_type_cst_val[tmp.num_tab][new_chunk];
+                    (void)nch.find_or_set_ind_cst_val2(v, psv);
+                    chunk_type::set_cst_val_to_cst_val2(ptc);
+                    nch.init_values_cst_val(ptc, psv);
+                    ++tally.folded;
+                    ++tally.installed;
+                    return;
+                }
+            }
 
             // read *this at OLD (const operator[] = pure read); TLS is per-thread
             set_thread_chunk_size(old_size);
@@ -945,6 +1001,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 // One RMW per thread and slice, not one per folded chunk.
                 n_folded.fetch_add(tally.folded, std::memory_order_relaxed);
                 n_refused.fetch_add(tally.refused, std::memory_order_relaxed);
+                n_installed.fetch_add(tally.installed, std::memory_order_relaxed);
             }
             if (sl + 1 < n_slices)
             {
@@ -1016,9 +1073,9 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     ++n_mat;
             }
             std::fprintf(stderr,
-                         "[RECHUNK] %d -> %d: %d new chunks, %ld folded back at rebuild, "
+                         "[RECHUNK] %d -> %d: %d new chunks, %ld folded back at rebuild (%ld installed directly), "
                          "%ld still materialised (%ld MB of buffers), %ld refused merged-constant spans\n",
-                         old_size, new_size, n_new, n_folded.load(), n_mat,
+                         old_size, new_size, n_new, n_folded.load(), n_installed.load(), n_mat,
                          (n_mat * static_cast<long>(new_size) * static_cast<long>(sizeof(T))) >> 20, n_refused.load());
         }
     }
