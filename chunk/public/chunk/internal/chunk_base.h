@@ -495,7 +495,7 @@ struct ChunkAllocPolicy<T, Derived, true>
             if constexpr (chunk_config::stats)
             {
                 increm_chunk_list<Derived>();
-                add_chunk_bytes_reused<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
+                add_chunk_bytes_reused<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(Derived::storage_units(alloc_chunk_count())));
             }
             values_loc = ll_block_free_thr.back();
             CHUNK_CHECK_VALUES_PTR(values_loc, "freelist.pop");
@@ -512,7 +512,7 @@ struct ChunkAllocPolicy<T, Derived, true>
             if constexpr (chunk_config::stats)
             {
                 increm_chunk_alloc<Derived>();
-                add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
+                add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(Derived::storage_units(alloc_chunk_count())));
             }
             if constexpr (build_config::use_fast_alloc)
             {
@@ -530,7 +530,7 @@ struct ChunkAllocPolicy<T, Derived, true>
                 // Every caller's initialiser returns void, so the guard was
                 // always true; it only stood in the way of ever writing one
                 // that did not.
-                svcalloc_align(values_loc, T, alloc_chunk_count());
+                svcalloc_align(values_loc, T, Derived::storage_units(alloc_chunk_count()));
                 CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.svcalloc");
                 CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.svcalloc");
                 init_fresh(values_loc);
@@ -587,7 +587,7 @@ struct ChunkAllocPolicy<T, Derived, false>
         {
             increm_chunk_create<Derived>();
             increm_chunk_alloc<Derived>();
-            add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
+            add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(Derived::storage_units(alloc_chunk_count())));
         }
 
         if constexpr (build_config::use_fast_alloc)
@@ -603,7 +603,7 @@ struct ChunkAllocPolicy<T, Derived, false>
         }
         else
         {
-            svcalloc_align(values_loc, T, alloc_chunk_count());
+            svcalloc_align(values_loc, T, Derived::storage_units(alloc_chunk_count()));
             CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.svcalloc_serial");
             CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.svcalloc_serial");
             init_fresh(values_loc);
@@ -844,7 +844,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
         {
             arr[thr].set_rank(thr); // stamped into every slab as owner_rank
             arr[thr].set_key(key);  // ... and owner_key
-            arr[thr].init(static_cast<int>(size), block_size / v, -1);
+            arr[thr].init(static_cast<int>(Derived::storage_units(size)), block_size / v, -1);
         }
         allocator_pool_.emplace(pool_key(key, size), std::move(arr));
     }
@@ -886,7 +886,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
         // sl_remove SIGSEGV on a node whose arena_kind read back as Op, with
         // ElementSize/BlockSize matching op-pool geometry, not this T's).
         allocator->set_arena(fast_alloc::ArenaKind::Value);
-        allocator->init(static_cast<size_t>(size), static_cast<uintptr_t>(block_size), -1);
+        allocator->init(static_cast<size_t>(Derived::storage_units(size)), static_cast<uintptr_t>(block_size), -1);
         allocator_pool_serial_.emplace(size, std::move(allocator));
     }
 
@@ -1557,18 +1557,31 @@ class ChunkBase : public CRTPSupport<Derived>,
         }
     }
 
-    /// @brief init_block() over the active geometry's element count.
+    /**
+     * @brief Units of T to allocate for a chunk of @p n_elems elements.
+     * @details One per element: element i is values[i]. A packed chunk
+     *          (ChunkBits: 8 bools per byte) hides this with fewer, and every
+     *          allocation, allocator geometry and byte count goes through
+     *          Derived::storage_units(), never through the element count alone.
+     */
+    [[nodiscard]] static constexpr std::size_t storage_units(std::size_t n_elems) noexcept
+    {
+        return n_elems;
+    }
+
+    /// @brief init_block() over the active geometry's storage.
     static void init_block(T* values_loc) noexcept
     {
+        const std::size_t units = Derived::storage_units(alloc_chunk_count());
         if constexpr (std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>)
         {
             // For trivially constructible scalar types: use memset (fastest option)
-            std::memset(values_loc, 0, alloc_chunk_count() * sizeof(T));
+            std::memset(values_loc, 0, units * sizeof(T));
         }
         else
         {
             // For all other cases (composite_arithmetic, non-trivial types, etc.)
-            std::fill_n(values_loc, alloc_chunk_count(), T{});
+            std::fill_n(values_loc, units, T{});
         }
     }
 

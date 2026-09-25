@@ -218,6 +218,18 @@ foreach(_geom IN LISTS _rt_geometries)
 endforeach()
 endif()
 
+# --- bit_words_validation: the bit-packed storage kernel of ArrayChunkBits
+# alone (header only, no variant, no library): get/set against
+# std::vector<bool>, the word scans, and concurrent writes to neighbouring
+# bits of one word through the atomic read-modify-write.
+find_package(Threads REQUIRED)
+add_executable(bit_words_validation bit_words_validation.cpp)
+target_include_directories(bit_words_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public)
+target_link_libraries(bit_words_validation PRIVATE Threads::Threads)
+chunk_require_cxx20(bit_words_validation PRIVATE)
+add_test(NAME bit_words_validation COMMAND bit_words_validation)
+set_property(TEST bit_words_validation PROPERTY LABELS validation)
+
 # --- slab_geometry_validation: the zeroed value allocator alone (no variant).
 # Every allocator of one element type must cut its slabs at one size whatever
 # the element size, or slab_of() through the ambient-size allocator misses the

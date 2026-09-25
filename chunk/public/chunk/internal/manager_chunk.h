@@ -659,7 +659,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                          "[POOLS] %s %-22s legacy store        : %9zu block(s), %8.1f MB"
                          " (sized by the ambient %u)\n",
                          label, type_name<T>().data(), legacy_blocks,
-                         (double)(legacy_blocks * sizeof(T) * thread_chunk_size()) / 1e6, thread_chunk_size());
+                         (double)(legacy_blocks * sizeof(T) * CHUNK_T<T>::storage_units(thread_chunk_size())) / 1e6, thread_chunk_size());
         }
 
         if constexpr (chunk_config::chunk_dynamic)
@@ -680,7 +680,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                              "[POOLS] %s %-22s size %-6u        : %9zu block(s), %8.1f MB"
                              " across %zu/%zu rank(s)\n",
                              label, type_name<T>().data(), kv.first, blocks,
-                             (double)(blocks * sizeof(T) * kv.first) / 1e6, non_empty_ranks, kv.second.size());
+                             (double)(blocks * sizeof(T) * CHUNK_T<T>::storage_units(kv.first)) / 1e6, non_empty_ranks, kv.second.size());
             }
         }
     }
@@ -709,7 +709,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
         for (const auto& ptf : list_block_free_thr)
             legacy_blocks += ptf.list.size();
-        total += legacy_blocks * sizeof(T) * thread_chunk_size();
+        total += legacy_blocks * sizeof(T) * CHUNK_T<T>::storage_units(thread_chunk_size());
 
         if constexpr (chunk_config::chunk_dynamic)
         {
@@ -718,7 +718,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 std::size_t blocks = 0;
                 for (const auto& ptf : kv.second)
                     blocks += ptf.list.size();
-                total += blocks * sizeof(T) * kv.first;
+                total += blocks * sizeof(T) * CHUNK_T<T>::storage_units(kv.first);
             }
         }
         return total;
@@ -775,7 +775,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                     lst.pop_back();
                     CHUNK_LEDGER_DISCARD(block, "trim_reuse_pools");
                     svfree(block);
-                    freed += elem_count * sizeof(T);
+                    freed += CHUNK_T<T>::storage_units(elem_count) * sizeof(T);
                 }
                 // A vector that shrank keeps its capacity, so a pool that peaked
                 // once holds on to the pointer array for good. Hand that back too.
