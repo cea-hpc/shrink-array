@@ -1,4 +1,5 @@
 #pragma once
+#include <cstring> // std::strcmp (CHUNK_ADVISOR_TABLE)
 
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
@@ -22,13 +23,14 @@
 #include <algorithm> // std::max
 #include <cstddef>
 #include <cstdio>
-#include <cstdlib> // std::getenv / std::atoi -- CHUNK_FORCE_RECHUNK debug hooks
+#include <cstdlib> // std::getenv -- CHUNK_FORCE_RECHUNK debug hooks
 #include <string>
 
 #include "chunk/rechunk_decider.h"
 #include "chunk/chunk_size_advisor.h"
 #include "chunk/config.h"                     // build_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size
+#include "chunk/internal/env_parse.h"         // env_number / env_flag (checked, not atoi)
 
 namespace shrink_array
 {
@@ -138,7 +140,12 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         const char* env = std::getenv("CHUNK_ADVISOR_MIN_GAIN_MB");
         if (env == nullptr || env[0] == '\0')
             return static_cast<std::size_t>(-1); // unset: keep the policy
-        const double mb = std::strtod(env, nullptr);
+        double mb = 0.;
+        if (!shrink_array::parse_number(env, mb))
+        {
+            shrink_array::warn_invalid_env("CHUNK_ADVISOR_MIN_GAIN_MB", env);
+            return static_cast<std::size_t>(-1); // not a number: keep the policy
+        }
         return mb > 0. ? static_cast<std::size_t>(mb * 1024. * 1024.) : 0u;
     }();
     const std::size_t min_gain = env_min_gain == static_cast<std::size_t>(-1) ? pol_.min_gain_bytes : env_min_gain;
@@ -177,7 +184,12 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
             const char* env = std::getenv("CHUNK_COARSEN_MIN_META_MB");
             if (env == nullptr || env[0] == '\0')
                 return static_cast<std::size_t>(-1); // unset: keep the policy
-            const double mb = std::strtod(env, nullptr);
+            double mb = 0.;
+            if (!shrink_array::parse_number(env, mb))
+            {
+                shrink_array::warn_invalid_env("CHUNK_COARSEN_MIN_META_MB", env);
+                return static_cast<std::size_t>(-1); // not a number: keep the policy
+            }
             return mb > 0. ? static_cast<std::size_t>(mb * 1024. * 1024.) : 0u;
         }();
         const std::size_t policy_floor =
@@ -281,35 +293,19 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         // it un-beneficial and the advisor never fires. Self-limiting: once
         // arr.chunk_size()==<size> the guard is false, so it never repeats.
         // 0/unset disables. Read once.
-        static const unsigned force_sz = []
-        {
-            const char* env = std::getenv("CHUNK_FORCE_RECHUNK");
-            return env ? static_cast<unsigned>(std::atoi(env)) : 0u;
-        }();
+        static const unsigned force_sz = shrink_array::env_number<unsigned>("CHUNK_FORCE_RECHUNK", 0u);
         // CHUNK_FORCE_RECHUNK_AT=<iter> delays the forced rechunk until iter >=
         // this (default 0 = at the first tick). Forcing at iter 0 rechunks fresh,
         // near-empty arrays; set e.g. 1000 to rechunk POPULATED arrays with
         // pending deferred ops -- the state under which the real bug appears.
-        static const int force_at = []
-        {
-            const char* env = std::getenv("CHUNK_FORCE_RECHUNK_AT");
-            return env ? std::atoi(env) : 0;
-        }();
+        static const int force_at = shrink_array::env_number<int>("CHUNK_FORCE_RECHUNK_AT", 0);
         // CHUNK_FORCE_RECHUNK_TOGGLE=1 rechunks at EVERY tick (iter>=force_at),
         // alternating force_sz <-> CHUNK_FORCE_RECHUNK_ALT (default 64). Combined
         // with a short CHUNK_ADVISOR_PERIOD and a large --divisor, this hammers
         // the rechunk path many times in a short, ASan-cheap run to reproduce a
         // rechunk-triggered corruption. Default (0) keeps the one-shot behaviour.
-        static const unsigned force_alt = []
-        {
-            const char* env = std::getenv("CHUNK_FORCE_RECHUNK_ALT");
-            return env ? static_cast<unsigned>(std::atoi(env)) : 64u;
-        }();
-        static const bool force_toggle = []
-        {
-            const char* env = std::getenv("CHUNK_FORCE_RECHUNK_TOGGLE");
-            return env && std::atoi(env) != 0;
-        }();
+        static const unsigned force_alt    = shrink_array::env_number<unsigned>("CHUNK_FORCE_RECHUNK_ALT", 64u);
+        static const bool     force_toggle = shrink_array::env_number<int>("CHUNK_FORCE_RECHUNK_TOGGLE", 0) != 0;
         if (force_sz != 0u && !pol_.dry_run && iter >= force_at)
         {
             const unsigned cur_sz = arr.chunk_size();
@@ -327,6 +323,20 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         }
 
         const ChunkSizeReport& rep = ChunkSizeAdvisor<T>::analyze(arr);
+
+        // CHUNK_ADVISOR_TABLE=1 (every array) or =<name> (that one): the whole
+        // table this tick's decision is taken from -- the finer rows too.
+        {
+            static const char* const table_env = std::getenv("CHUNK_ADVISOR_TABLE");
+            if (table_env != nullptr && table_env[0] != '\0' && table_env[0] != '0' &&
+                (std::strcmp(table_env, "1") == 0 || std::strcmp(table_env, name) == 0))
+            {
+                char title[96];
+                std::snprintf(title, sizeof title, "%s tick %d iter %d", name, static_cast<int>(tick), iter);
+                ChunkSizeAdvisor<T>::print(rep, title);
+                std::fflush(stdout);
+            }
+        }
 
         // If a PRIOR re-chunk of this array is awaiting its "after" figure,
         // fill it now: this tick's analysis sees the new geometry once it has

@@ -45,11 +45,11 @@ struct chunk_pmp_schedule
 #ifdef _OPENMP
     #include <algorithm>
     #include <atomic>
-    #include <cstdlib> // std::getenv, std::atoi
 
     #include <omp.h>
 
     #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
+    #include "chunk/internal/env_parse.h"       // CHUNK_THREAD_CAPACITY
 
 namespace shrink_array
 {
@@ -74,8 +74,7 @@ namespace shrink_array
     static const int capacity = []
     {
         int cap = std::max(omp_get_max_threads(), omp_get_num_procs());
-        if (const char* env = std::getenv("CHUNK_THREAD_CAPACITY"); env != nullptr)
-            cap = std::max(cap, std::atoi(env));
+        cap     = std::max(cap, shrink_array::env_number<int>("CHUNK_THREAD_CAPACITY", 0));
         return cap;
     }();
     return capacity;
