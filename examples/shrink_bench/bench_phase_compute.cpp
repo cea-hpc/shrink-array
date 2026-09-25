@@ -531,7 +531,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     SB_CHECKED_RMW(tab_int, i, <<= 2);
                     SB_CHECKED_RMW(tab_int, i, >>= 1);
                     tab_int[i] = (tab_int[i] & 0xF) | 0x2;
-                    tab_int[i] = tab_int[i] % 5;
+                    SB_CHECKED_RMW(tab_int, i, %= 5); // same value as tab_int[i] % 5: the only %= of the bench
                     tab_int[i] = ~tab_int[i];
                     tab_int[i] = 1;
 

@@ -124,7 +124,7 @@ static void chain_int(C& c, long i)
     c[i] <<= 2;
     c[i] >>= 1;
     c[i] = (T(c[i]) & 0xF) | 0x2;
-    c[i] = T(c[i]) % 5;
+    c[i] %= 5; // operator%=: no other test uses it
     c[i] = ~T(c[i]);
     c[i] = 1;
     if (i % 3 == 0)
