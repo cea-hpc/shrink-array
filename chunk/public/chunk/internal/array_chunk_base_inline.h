@@ -30,13 +30,13 @@ namespace shrink_array
 {
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::create_common()
+void ArrayChunkBase<Derived>::create_common(this Derived& self)
 {
-    nb_chunk = 0;
+    self.nb_chunk = 0;
 
     chunk_config::CheckNaN<chunk_config::do_check>::update(true);
 
-    derived().pre_create_hook();
+    self.pre_create_hook();
 
     // resize_tab_is_int(nb_tab) must be called in ALL modes, not only when
     // use_fast_block_compression is on:
@@ -49,7 +49,7 @@ void ArrayChunkBase<Derived>::create_common()
     // Gating this on use_fast_block_compression (false in non-OMP builds)
     // left Proxy2A's tab_second_value empty, so a later tab_second_value[0]
     // aborted with "__n < this->size()" at ArrayChunk2A creation.
-    proxy_type::resize_tab_is_int(nb_tab);
+    proxy_type::resize_tab_is_int(self.nb_tab);
 }
 
 template <typename Derived>
@@ -68,12 +68,12 @@ bool ArrayChunkBase<Derived>::is_written_at(int j) const noexcept
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::set_value(ind_type i, in_t<T> v)
+void ArrayChunkBase<Derived>::set_value(this Derived& self, ind_type i, in_t<T> v)
 {
-    const int num_chunk = chunk_index_of(i);
-    const int num       = offset_in_chunk(i);
+    const int num_chunk = self.chunk_index_of(i);
+    const int num       = self.offset_in_chunk(i);
 
-    auto& chunk_t = chunk_list[num_chunk];
+    auto& chunk_t = self.chunk_list[num_chunk];
 
     // COMPLEX CASES (ArrayChunk2 / ArrayChunk2A):
     // We use the Proxy because it handles decompression,
@@ -84,7 +84,7 @@ void ArrayChunkBase<Derived>::set_value(ind_type i, in_t<T> v)
     // set_num_tab()/get_info_second_value() need ptr_on_array set even in
     // non-OpenMP builds, otherwise share_info lookups abort with
     // "key NOT FOUND".
-    proxy.set_this_and_num_chunk(this->registry_key(), num_chunk, num_tab);
+    proxy.set_this_and_num_chunk(self.registry_key(), num_chunk, self.num_tab);
 
     // Chunk2 only: arm the proxy with the address of this array's registry
     // mirror, so the write path copies the (second_value, ind, num_tab)
@@ -94,13 +94,13 @@ void ArrayChunkBase<Derived>::set_value(ind_type i, in_t<T> v)
     // registry.
     if constexpr (std::is_same_v<proxy_type, Proxy2<T>>)
     {
-        proxy.arm_inf_array(derived().registry_mirror());
+        proxy.arm_inf_array(self.registry_mirror());
     }
     // Chunk2A: arm the proxy with the array's metadata rows (base +
     // num_chunk instead of three table lookups per write).
     else if constexpr (std::is_same_v<proxy_type, Proxy2A<T>>)
     {
-        proxy.arm_meta_bases(derived().meta_bases());
+        proxy.arm_meta_bases(self.meta_bases());
     }
 
     // Assignment triggers Proxy::operator= which handles everything internally,
@@ -191,43 +191,43 @@ double ArrayChunkBase<Derived>::stats_seq() const
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::assign(ind_type count, in_t<T> val)
+void ArrayChunkBase<Derived>::assign(this Derived& self, ind_type count, in_t<T> val)
 {
-    derived().resize(count);
+    self.resize(count);
     for (ind_type i = 0; i < count; ++i)
-        (*this)[i] = val;
+        self[i] = val;
 }
 
 template <typename Derived>
 template <std::forward_iterator It>
-void ArrayChunkBase<Derived>::assign(It first, It last)
+void ArrayChunkBase<Derived>::assign(this Derived& self, It first, It last)
 {
-    derived().resize(static_cast<ind_type>(std::distance(first, last)));
+    self.resize(static_cast<ind_type>(std::distance(first, last)));
     ind_type i = 0;
     for (; first != last; ++first)
-        (*this)[i++] = static_cast<T>(*first);
+        self[i++] = static_cast<T>(*first);
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::reserve(ind_type new_capacity)
+void ArrayChunkBase<Derived>::reserve(this Derived& self, ind_type new_capacity)
 {
-    if (static_cast<size_type>(new_capacity) <= capacity())
+    if (static_cast<size_type>(new_capacity) <= self.capacity())
         return;
     // resize() builds the storage of new_capacity elements and sets the size to it; the
     // size is what reserve() leaves alone. resize() to new_capacity allocates
     // new_capacity / chunk_size + 1 chunks, so the capacity covers it afterwards.
-    const ind_type keep = m_size;
-    derived().resize(new_capacity);
-    m_size = keep;
+    const ind_type keep = self.m_size;
+    self.resize(new_capacity);
+    self.m_size = keep;
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::copy_from(const Derived& from)
+void ArrayChunkBase<Derived>::copy_from(this Derived& self, const Derived& from)
 {
     const ind_type from_size = from.m_size;
-    derived().resize(from_size);
+    self.resize(from_size);
     for (ind_type i = 0; i < from_size; ++i)
-        (*this)[i] = std::as_const(from)[i];
+        self[i] = std::as_const(from)[i];
 }
 
 template <typename Derived>
@@ -253,11 +253,11 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(ind_type i)
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(ind_type i)
+ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(this Derived& self, ind_type i)
 {
-    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(m_size)) [[unlikely]]
+    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(self.m_size)) [[unlikely]]
         throw std::out_of_range("ArrayChunk::at: index out of range");
-    return (*this)[i]; // non-const operator[] -> proxy_type (write entry)
+    return self[i]; // non-const operator[] -> proxy_type (write entry)
 }
 
 template <typename Derived>
@@ -269,11 +269,11 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::front() const
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::front()
+ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::front(this Derived& self)
 {
-    if (empty()) [[unlikely]]
+    if (self.empty()) [[unlikely]]
         throw std::out_of_range("ArrayChunk::front: container is empty");
-    return (*this)[0];
+    return self[0];
 }
 
 template <typename Derived>
@@ -285,11 +285,11 @@ ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::back() const
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::back()
+ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::back(this Derived& self)
 {
-    if (empty()) [[unlikely]]
+    if (self.empty()) [[unlikely]]
         throw std::out_of_range("ArrayChunk::back: container is empty");
-    return (*this)[m_size - 1];
+    return self[self.m_size - 1];
 }
 
 } // namespace shrink_array

@@ -96,9 +96,19 @@ inline constexpr bool has_chunk_written_v = requires(const D& obj, int j) { obj.
  *          @c T& / @c const T&.
  *
  *          Everything variant-specific (deferred compression state, second
- *          value, registry identity) is reached through derived(); the
+ *          value, registry identity) is reached through the derived array; the
  *          @c rechunk_* hooks give each variant a place to plug into the shared
  *          re-chunking algorithm.
+ *
+ *          The write side (operator[], at/front/back, push_back/emplace_back, assign,
+ *          reserve, set_value, swap, the copy and creation steps) takes the
+ *          derived array as an explicit object parameter, `this Derived& self`
+ *          (C++23): no downcast, and a call made through a reference to this
+ *          base does not compile -- it cannot pick the base's view by accident.
+ *          Typed, not deduced (`this auto&`): a deduced self would also bind a
+ *          const object and outrank the const read overloads. The read side
+ *          (operator[] const, operator(), sync_chunk) still goes through
+ *          derived().
  *
  *          What does not depend on the index type -- geometry, chunk list,
  *          dirty bitset, registry identity -- is ArrayChunkCore, the one part of
@@ -308,7 +318,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          variant's pre_create_hook() and sizes the proxy's per-array tables
      *          for this array's identity.
      */
-    void create_common();
+    void create_common(this Derived& self);
     /**
      * @brief Is chunk @p j materialised?
      * @details Routes to Derived::chunk_written(j) when it exists (ArrayChunk2,
@@ -370,7 +380,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          storage of a resize() to @p new_capacity, with the size left where it is.
      *          The new chunks are at the first constant, like any fresh chunk.
      */
-    void reserve(ind_type new_capacity);
+    void reserve(this Derived& self, ind_type new_capacity);
 
     /**
      * @brief Append one element, growing the container by one.
@@ -380,13 +390,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *       resize(), a sequential point (see capacity()). Invalidates all
      *       iterators.
      */
-    void push_back(in_t<T> val)
+    void push_back(this Derived& self, in_t<T> val)
     {
-        if (static_cast<size_type>(m_size) < capacity()) [[likely]]
-            ++m_size;
+        if (static_cast<size_type>(self.m_size) < self.capacity()) [[likely]]
+            ++self.m_size;
         else
-            derived().resize(m_size + 1);
-        (*this)[m_size - 1] = val;
+            self.resize(self.m_size + 1);
+        self[self.m_size - 1] = val;
     }
 
     /**
@@ -397,9 +407,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          builds from its members.
      */
     template <typename... Args>
-    void emplace_back(Args&&... args)
+    void emplace_back(this Derived& self, Args&&... args)
     {
-        push_back(T{std::forward<Args>(args)...});
+        self.push_back(T{std::forward<Args>(args)...});
     }
 
     // ── STL const_iterator (read-only, bidirectional, intra-chunk cursor) ─────
@@ -665,7 +675,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @return the write proxy for that element
      * @throws std::out_of_range if @p i is negative or >= size()
      */
-    [[nodiscard]] reference at(ind_type i);
+    [[nodiscard]] reference at(this Derived& self, ind_type i);
 
     /**
      * @name First / last element
@@ -680,9 +690,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @{
      */
     [[nodiscard]] const_reference front() const;
-    [[nodiscard]] reference       front();
+    [[nodiscard]] reference       front(this Derived& self);
     [[nodiscard]] const_reference back() const;
-    [[nodiscard]] reference       back();
+    [[nodiscard]] reference       back(this Derived& self);
     /** @} */
     /** @} */
 
@@ -697,7 +707,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param count new element count
      * @param val value written to every position
      */
-    void assign(ind_type count, in_t<T> val);
+    void assign(this Derived& self, ind_type count, in_t<T> val);
 
     /**
      * @brief assign(): the elements of [first, last), in order.
@@ -705,7 +715,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          then one proxied write per element. Sequential.
      */
     template <std::forward_iterator It>
-    void assign(It first, It last);
+    void assign(this Derived& self, It first, It last);
 
   protected:
     /**
@@ -729,7 +739,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          @p from has one (the derived copy hooks take care of it: this
      *          base knows no second value).
      */
-    void copy_from(const Derived& from);
+    void copy_from(this Derived& self, const Derived& from);
 
   public:
     /**
@@ -758,15 +768,15 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @pre Both operands must share chunk geometry (enforced under check; with
      *      StaticChunkSize this is always true).
      */
-    void swap(Derived& other) noexcept
+    void swap(this Derived& self, Derived& other) noexcept
     {
         if constexpr (build_config::any_check)
         {
-            if (size_policy_.size() != other.size_policy_.size())
-                INVARIANT_FAILED("ArrayChunk::swap: mismatched chunk geometry ({} vs {})", size_policy_.size(),
+            if (self.size_policy_.size() != other.size_policy_.size())
+                INVARIANT_FAILED("ArrayChunk::swap: mismatched chunk geometry ({} vs {})", self.size_policy_.size(),
                                  other.size_policy_.size());
         }
-        swap_storage_and_identity(other);
+        self.swap_storage_and_identity(other);
     }
 
   protected:
@@ -776,21 +786,21 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *        (Derived::swap_identity()). No geometry precondition -- the
      *        geometry is exchanged with the chunks, as rechunk_to() does.
      */
-    void swap_storage_and_identity(Derived& other)
+    void swap_storage_and_identity(this Derived& self, Derived& other)
     {
-        if (&derived() == &other)
+        if (&self == &other)
             return;
-        derived().flush_pending_deferred_ops(/*force=*/true);
+        self.flush_pending_deferred_ops(/*force=*/true);
         other.flush_pending_deferred_ops(/*force=*/true);
 
         using std::swap;
-        swap(chunk_list, other.chunk_list);
-        swap(alloc_key_, other.alloc_key_);
-        swap_dirty_bitset(other);
-        swap(m_size, other.m_size);
-        swap(nb_chunk, other.nb_chunk);
-        swap(size_policy_, other.size_policy_);
-        derived().swap_identity(other);
+        swap(self.chunk_list, other.chunk_list);
+        swap(self.alloc_key_, other.alloc_key_);
+        self.swap_dirty_bitset(other);
+        swap(self.m_size, other.m_size);
+        swap(self.nb_chunk, other.nb_chunk);
+        swap(self.size_policy_, other.size_policy_);
+        self.swap_identity(other);
     }
 
   public:
@@ -845,7 +855,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param i global element index (unchecked)
      * @param v value to store
      */
-    void set_value(ind_type i, in_t<T> v);
+    void set_value(this Derived& self, ind_type i, in_t<T> v);
 
     /**
      * @brief Read the element at @p i.
@@ -929,11 +939,11 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          `auto v = a[i];` (which keeps the proxy). The compound operators
      *          (+= ... >>=) and the prefix ++/-- return the same kind of proxy.
      */
-    proxy_type operator[](ind_type i) noexcept
+    proxy_type operator[](this Derived& self, ind_type i) noexcept
     {
-        const int         num_chunk = chunk_index_of(i);
-        auto&             chunk_t   = chunk_list[num_chunk];
-        const int         num       = offset_in_chunk(i);
+        const int         num_chunk = self.chunk_index_of(i);
+        auto&             chunk_t   = self.chunk_list[num_chunk];
+        const int         num       = self.offset_in_chunk(i);
         const proxy_type& val       = chunk_t[num];
 
         // Arm ptr_on_array / num_chunk in ALL modes, not only under fast block
@@ -941,7 +951,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         // but set_num_tab()/get_info_second_value() still look ptr_on_array up in
         // share_info_array; leaving it unset caused "[share_info get] key NOT
         // FOUND" aborts in Proxy2/Proxy2A check builds.
-        val.set_this_and_num_chunk(registry_key(), num_chunk, num_tab);
+        val.set_this_and_num_chunk(self.registry_key(), num_chunk, self.num_tab);
 
         // Chunk2 only: arm the proxy with the address of this array's registry
         // mirror, so the write path copies the (second_value, ind, num_tab)
@@ -951,13 +961,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         // registry.
         if constexpr (std::is_same_v<proxy_type, Proxy2<T>>)
         {
-            val.arm_inf_array(derived().registry_mirror());
+            val.arm_inf_array(self.registry_mirror());
         }
         // Chunk2A: arm the proxy with the array's metadata rows (base +
         // num_chunk instead of three table lookups per write).
         else if constexpr (std::is_same_v<proxy_type, Proxy2A<T>>)
         {
-            val.arm_meta_bases(derived().meta_bases());
+            val.arm_meta_bases(self.meta_bases());
         }
 
         // P1 (CHUNK_SYNC_ON_READ): this is the ONLY non-const proxy operator[] —
