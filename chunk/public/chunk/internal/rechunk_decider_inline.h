@@ -1,4 +1,6 @@
 #pragma once
+#include <unistd.h> // sysconf
+#include "fast_allocators/slab_arena.h" // fast_alloc::value_arena (CHUNK_RECHUNK_MEMTRACE)
 #include <cstring> // std::strcmp (CHUNK_ADVISOR_TABLE)
 
 /*
@@ -275,6 +277,15 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
 // and actually re-chunk it when warranted. The advisor run, the decision and
 // the rechunk_to all happen here, so a caller needs nothing else. No-op in
 // static builds. Returns true iff a re-chunk was decided this tick.
+/// @brief CHUNK_RECHUNK_MEMTRACE: the last tick printed -- one variable for
+///        every consider<T, Arr> instantiation (a function-local static in the
+///        template would print once per element type).
+inline int& rechunk_memtrace_last_tick() noexcept
+{
+    static int t = -1000000000;
+    return t;
+}
+
 template <typename T, typename Arr>
 bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
 {
@@ -321,6 +332,42 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                 return true;
             }
             return false;
+        }
+
+        // CHUNK_RECHUNK_MEMTRACE=1: once per tick, the process memory split
+        // into the chunk value arena (resident pages, mincore) and the rest.
+        // MiB, like [RECHUNK-RSS] (rss_mib_now), so the two traces add up.
+        {
+            static const bool memtrace = []
+            {
+                const char* e = std::getenv("CHUNK_RECHUNK_MEMTRACE");
+                return e != nullptr && e[0] != '\0' && e[0] != '0';
+            }();
+            // Shared by every consider<T, Arr> instantiation: once per tick,
+            // not once per element type.
+            int& last_mem_tick = rechunk_memtrace_last_tick();
+            if (memtrace && tick != last_mem_tick)
+            {
+                last_mem_tick = tick;
+                long rss_mb = -1;
+                if (std::FILE* f = std::fopen("/proc/self/statm", "r"))
+                {
+                    long size_pages = 0, rss_pages = 0;
+                    if (std::fscanf(f, "%ld %ld", &size_pages, &rss_pages) == 2)
+                        rss_mb = static_cast<long>(static_cast<double>(rss_pages) *
+                                                   static_cast<double>(::sysconf(_SC_PAGESIZE)) / 1048576.);
+                    std::fclose(f);
+                }
+                const auto& va     = fast_alloc::value_arena();
+                const long  res_mb = static_cast<long>(static_cast<double>(va.resident_bytes()) / 1048576.);
+                std::fprintf(stderr,
+                             "[RECHUNK-MEM] tick %d iter %d: rss %ld MB = values arena %ld MB + other %ld MB"
+                             "   (arena mapped %ld MB, slabs handed out %ld MB)\n",
+                             tick, iter, rss_mb, res_mb, rss_mb - res_mb,
+                             static_cast<long>(static_cast<double>(va.mapped_bytes()) / 1048576.),
+                             static_cast<long>(static_cast<double>(va.live_bytes()) / 1048576.));
+                std::fflush(stderr);
+            }
         }
 
         const ChunkSizeReport& rep = ChunkSizeAdvisor<T>::analyze(arr);

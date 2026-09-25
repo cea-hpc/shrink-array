@@ -419,6 +419,52 @@ class SlabArena
      *          - `freelist` bytes deallocated and recycled internally but still
      *                       RESIDENT. This is the reclaim target.
      */
+    /**
+     * @brief Bytes of this arena's mappings resident RIGHT NOW (mincore()).
+     * @details `live` counts slabs handed out, madvise'd ones included, and the
+     *          reclaim counters are cumulative: neither is resident memory at a
+     *          given moment. One mincore() per mapping, one byte of scratch per
+     *          page -- meant for a trace point, not a hot path.
+     */
+    [[nodiscard]] std::size_t resident_bytes() const noexcept
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        const long page = ::sysconf(_SC_PAGESIZE);
+        if (page <= 0)
+            return 0;
+        const auto        psz = static_cast<std::size_t>(page);
+        std::size_t       res = 0;
+        std::vector<unsigned char> vec;
+        for (const auto& r : regions_)
+        {
+            const std::size_t len   = r.end - r.begin;
+            const std::size_t pages = (len + psz - 1) / psz;
+            vec.resize(pages);
+            if (::mincore(reinterpret_cast<void*>(r.begin), len, vec.data()) != 0)
+                continue;
+            for (unsigned char v : vec)
+                res += (v & 1u) ? psz : 0;
+        }
+        return res;
+    }
+
+    /// @brief Bytes currently handed out (slabs, madvise'd ones included).
+    [[nodiscard]] std::size_t live_bytes() const noexcept
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        return bytes_live_;
+    }
+
+    /// @brief Bytes of address space reserved by this arena (never shrinks).
+    [[nodiscard]] std::size_t mapped_bytes() const noexcept
+    {
+        std::lock_guard<std::mutex> lk(mtx_);
+        std::size_t mapped = 0;
+        for (const auto& r : regions_)
+            mapped += (r.end - r.begin);
+        return mapped;
+    }
+
     void report(const char* when) const noexcept
     {
         std::lock_guard<std::mutex> lk(mtx_);
