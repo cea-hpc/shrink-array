@@ -42,6 +42,7 @@
 #include <utility>   // std::swap
 #include <atomic>    // next_alloc_key_
 #include <iterator>  // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
+#include <memory>      // std::addressof
 
 #include "chunk/internal/in_t.h"
 #include "chunk/chunk_traits.h"
@@ -107,8 +108,9 @@ inline constexpr bool has_chunk_written_v = requires(const D& obj, int j) { obj.
  *          base does not compile -- it cannot pick the base's view by accident.
  *          Typed, not deduced (`this auto&`): a deduced self would also bind a
  *          const object and outrank the const read overloads. The read side
- *          (operator[] const, operator(), sync_chunk) still goes through
- *          derived().
+ *          (operator[] const, operator(), read_value, sync_chunk, at/front/back
+ *          const, is_written_at, the written-chunk counts and the iterators)
+ *          takes `this const Derived& self` the same way.
  *
  *          What does not depend on the index type -- geometry, chunk list,
  *          dirty bitset, registry identity -- is ArrayChunkCore, the one part of
@@ -328,33 +330,33 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @return true if chunk @p j has been written (i.e. is not constant)
      * @see has_chunk_written_v
      */
-    [[nodiscard]] bool is_written_at(int j) const noexcept;
+    [[nodiscard]] bool is_written_at(this const Derived& self, int j) noexcept;
     /**
      * @brief Count the number of chunks that have been modified (written).
      * Uses multi-threading if not already in a parallel region.
      * @return Total number of non-constant chunks.
      */
 
-    [[nodiscard]] int get_nb_chunk_written() const;
+    [[nodiscard]] int get_nb_chunk_written(this const Derived& self);
 
     /**
      * @brief Sequential counterpart of get_nb_chunk_written().
      * @return Total number of non-constant chunks, counted on one thread.
      */
-    [[nodiscard]] int get_nb_chunk_written_seq() const;
+    [[nodiscard]] int get_nb_chunk_written_seq(this const Derived& self);
     /**
      * @brief Calculate the filling rate of written chunks.
      * @return Percentage of modified chunks.
      */
-    [[nodiscard]] double stats_seq() const;
+    [[nodiscard]] double stats_seq(this const Derived& self);
 
     /**
      * @brief Parallel counterpart of stats_seq().
      * @return Percentage of modified chunks, 0 when the container has no chunk.
      */
-    [[nodiscard]] double stats() const
+    [[nodiscard]] double stats(this const Derived& self)
     {
-        return nb_chunk ? (100.0 * get_nb_chunk_written() / nb_chunk) : 0.0;
+        return self.nb_chunk ? (100.0 * self.get_nb_chunk_written() / self.nb_chunk) : 0.0;
     }
 
     // ── Capacity, and the growth by one ──────────────────────────────────────
@@ -531,7 +533,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
          * @param owner the array being traversed
          * @param lin absolute linear index (may be m_size, i.e. end())
          */
-        const_iterator(const ArrayChunkBase* owner, ind_type lin) noexcept
+        const_iterator(const Derived* owner, ind_type lin) noexcept
             : owner_(owner)
             , lin_(lin)
             , modulo_(static_cast<int>(owner->size_policy_.modulo()))
@@ -561,7 +563,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             }
         }
 
-        const ArrayChunkBase* owner_     = nullptr; ///< Array being traversed.
+        const Derived*        owner_     = nullptr; ///< Array being traversed.
         const chunk_type*     chunk_     = nullptr; ///< Current chunk, already sync'd; null at end/rend.
         ind_type              lin_       = 0;       // absolute linear index (identity/compare)
         int                   num_chunk_ = 0;       ///< Index of @ref chunk_ in the chunk list.
@@ -579,38 +581,38 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * Read-only ranges over the elements; all invalidated by any resize.
      * @{
      */
-    [[nodiscard]] const_iterator begin() const noexcept
+    [[nodiscard]] const_iterator begin(this const Derived& self) noexcept
     {
-        return const_iterator(this, 0);
+        return const_iterator(std::addressof(self), 0);
     }
-    [[nodiscard]] const_iterator end() const noexcept
+    [[nodiscard]] const_iterator end(this const Derived& self) noexcept
     {
-        return const_iterator(this, m_size);
+        return const_iterator(std::addressof(self), self.m_size);
     }
-    [[nodiscard]] const_iterator cbegin() const noexcept
+    [[nodiscard]] const_iterator cbegin(this const Derived& self) noexcept
     {
-        return begin();
+        return self.begin();
     }
-    [[nodiscard]] const_iterator cend() const noexcept
+    [[nodiscard]] const_iterator cend(this const Derived& self) noexcept
     {
-        return end();
+        return self.end();
     }
 
-    [[nodiscard]] const_reverse_iterator rbegin() const noexcept
+    [[nodiscard]] const_reverse_iterator rbegin(this const Derived& self) noexcept
     {
-        return const_reverse_iterator(end());
+        return const_reverse_iterator(self.end());
     }
-    [[nodiscard]] const_reverse_iterator rend() const noexcept
+    [[nodiscard]] const_reverse_iterator rend(this const Derived& self) noexcept
     {
-        return const_reverse_iterator(begin());
+        return const_reverse_iterator(self.begin());
     }
-    [[nodiscard]] const_reverse_iterator crbegin() const noexcept
+    [[nodiscard]] const_reverse_iterator crbegin(this const Derived& self) noexcept
     {
-        return rbegin();
+        return self.rbegin();
     }
-    [[nodiscard]] const_reverse_iterator crend() const noexcept
+    [[nodiscard]] const_reverse_iterator crend(this const Derived& self) noexcept
     {
-        return rend();
+        return self.rend();
     }
     /** @} */
 
@@ -667,7 +669,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @return the element value
      * @throws std::out_of_range if @p i is negative or >= size()
      */
-    [[nodiscard]] const_reference at(ind_type i) const;
+    [[nodiscard]] const_reference at(this const Derived& self, ind_type i);
 
     /**
      * @brief Checked write access.
@@ -689,9 +691,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @throws std::out_of_range if the container is empty
      * @{
      */
-    [[nodiscard]] const_reference front() const;
+    [[nodiscard]] const_reference front(this const Derived& self);
     [[nodiscard]] reference       front(this Derived& self);
-    [[nodiscard]] const_reference back() const;
+    [[nodiscard]] const_reference back(this const Derived& self);
     [[nodiscard]] reference       back(this Derived& self);
     /** @} */
     /** @} */
@@ -811,7 +813,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param offset Offset within the chunk.
      * @note Compiles to nothing in a serial build (`if constexpr (use_openmp)`).
      */
-    FORCE_INLINE void sync_chunk(const chunk_type& chunk_t, int num_chunk, int offset) const noexcept
+    FORCE_INLINE void sync_chunk(this const Derived& self, const chunk_type& chunk_t, int num_chunk, int offset) noexcept
     {
         if constexpr (build_config::use_openmp)
         {
@@ -830,7 +832,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             // deferred op. That is acceptable: it is only a coarse pre-filter.
             // The precise, authoritative gate below is the chunk's OWN pending
             // counter — see next comment.
-            if (derived().is_chunk_dirty(num_chunk)) [[unlikely]]
+            if (self.is_chunk_dirty(num_chunk)) [[unlikely]]
             {
                 // Precise per-chunk gate (per-chunk pending_ops_ load) or coarse
                 // is_not_available() fallback under SHRINK_SMALL_CHUNK — selected
@@ -862,9 +864,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param i global element index (unchecked)
      * @return the element value
      */
-    T read_value(ind_type i) const noexcept
+    T read_value(this const Derived& self, ind_type i) noexcept
     {
-        return (*this)(i);
+        return self(i);
     }
     /**
      * @brief CONST operator() for fast READ access.
@@ -874,7 +876,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @return the element value, after the read gate has been honoured
      */
 
-    T operator()(ind_type i) const noexcept;
+    T operator()(this const Derived& self, ind_type i) noexcept;
 
     /**
      * @brief NON-CONST operator() for direct REFERENCE access (Write).
@@ -884,7 +886,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @warning Bypasses the write proxy: valid only where the chunk is known to
      *          be materialised. Prefer operator[] or set_value() otherwise.
      */
-    T& operator()(ind_type i) noexcept;
+    T& operator()(this Derived& self, ind_type i) noexcept;
 
     /**
      * @brief Unchecked read access (hot path).
@@ -899,21 +901,21 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param i global element index; the caller guarantees 0 <= i < size()
      * @return the element VALUE (see the member-typedef note on const_reference)
      */
-    SA_FLATTEN FORCE_INLINE T operator[](ind_type i) const noexcept
+    SA_FLATTEN FORCE_INLINE T operator[](this const Derived& self, ind_type i) noexcept
     {
-        const int num_chunk = chunk_index_of(i);
-        const int num       = offset_in_chunk(i);
+        const int num_chunk = self.chunk_index_of(i);
+        const int num       = self.offset_in_chunk(i);
         // Loop index is always in range; lets the compiler drop bounds/negative
         // checks. Side-effect free (C++23 [[assume]] when available, else no-op).
         // num = i & size_policy_.modulo()  =>  0 <= num <= static_cast<int>(size_policy_.modulo()) by construction.
         // modulo() read into a local first: clang ignores an assumption that
         // calls a function it cannot prove side-effect free (-Wassume).
-        [[maybe_unused]] const int chunk_mod = static_cast<int>(size_policy_.modulo());
+        [[maybe_unused]] const int chunk_mod = static_cast<int>(self.size_policy_.modulo());
         SA_ASSUME(num_chunk >= 0);
         SA_ASSUME(num >= 0 && num <= chunk_mod);
-        const auto& chunk_t = chunk_list[num_chunk];
+        const auto& chunk_t = self.chunk_list[num_chunk];
 
-        sync_chunk(chunk_t, num_chunk, num);
+        self.sync_chunk(chunk_t, num_chunk, num);
 
         return chunk_t[num];
     }

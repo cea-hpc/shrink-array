@@ -53,17 +53,17 @@ void ArrayChunkBase<Derived>::create_common(this Derived& self)
 }
 
 template <typename Derived>
-bool ArrayChunkBase<Derived>::is_written_at(int j) const noexcept
+bool ArrayChunkBase<Derived>::is_written_at(this const Derived& self, int j) noexcept
 {
     if constexpr (has_chunk_written_v<Derived>)
     {
         // ArrayChunk2: Chunk2::written() needs the second-value index.
-        return derived().chunk_written(j);
+        return self.chunk_written(j);
     }
     else
     {
         // ArrayChunk and ArrayChunk2A: the chunk knows by itself.
-        return chunk_list[j].written();
+        return self.chunk_list[j].written();
     }
 }
 
@@ -109,27 +109,27 @@ void ArrayChunkBase<Derived>::set_value(this Derived& self, ind_type i, in_t<T> 
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::T ArrayChunkBase<Derived>::operator()(ind_type i) const noexcept
+ArrayChunkBase<Derived>::T ArrayChunkBase<Derived>::operator()(this const Derived& self, ind_type i) noexcept
 {
-    const int   num_chunk = chunk_index_of(i);
-    const int   num       = offset_in_chunk(i);
-    const auto& chunk_t   = chunk_list[num_chunk];
+    const int   num_chunk = self.chunk_index_of(i);
+    const int   num       = self.offset_in_chunk(i);
+    const auto& chunk_t   = self.chunk_list[num_chunk];
 
-    sync_chunk(chunk_t, num_chunk, num);
+    self.sync_chunk(chunk_t, num_chunk, num);
 
     // 2. Direct read from chunk
     return chunk_t.read_value(num);
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::T& ArrayChunkBase<Derived>::operator()(ind_type i) noexcept
+ArrayChunkBase<Derived>::T& ArrayChunkBase<Derived>::operator()(this Derived& self, ind_type i) noexcept
 {
-    const int num_chunk = chunk_index_of(i);
-    const int num       = offset_in_chunk(i);
-    auto&     chunk_t   = chunk_list[num_chunk];
+    const int num_chunk = self.chunk_index_of(i);
+    const int num       = self.offset_in_chunk(i);
+    auto&     chunk_t   = self.chunk_list[num_chunk];
 
     // 2. Concurrency check
-    sync_chunk(chunk_t, num_chunk, num);
+    self.sync_chunk(chunk_t, num_chunk, num);
 
     // 3. Return reference to physical storage
     return chunk_t(num);
@@ -150,10 +150,11 @@ void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_c
 }
 
 template <typename Derived>
-int ArrayChunkBase<Derived>::get_nb_chunk_written() const
+int ArrayChunkBase<Derived>::get_nb_chunk_written(this const Derived& self)
 {
-    int  nb_written = 0;
-    auto lbd        = [&](int j) { return static_cast<int>(is_written_at(j)); };
+    int       nb_written = 0;
+    const int nb_chunk   = self.nb_chunk;
+    auto      lbd        = [&](int j) { return static_cast<int>(self.is_written_at(j)); };
 
     if (CHUNK_PMP_IN_PARALLEL_REGION)
     {
@@ -171,23 +172,23 @@ int ArrayChunkBase<Derived>::get_nb_chunk_written() const
 }
 
 template <typename Derived>
-int ArrayChunkBase<Derived>::get_nb_chunk_written_seq() const
+int ArrayChunkBase<Derived>::get_nb_chunk_written_seq(this const Derived& self)
 {
     int nb_chunk_written = 0;
-    for (int j = 0; j < nb_chunk; ++j)
+    for (int j = 0; j < self.nb_chunk; ++j)
     {
-        nb_chunk_written += static_cast<int>(is_written_at(j));
+        nb_chunk_written += static_cast<int>(self.is_written_at(j));
     }
     return nb_chunk_written;
 }
 
 template <typename Derived>
-double ArrayChunkBase<Derived>::stats_seq() const
+double ArrayChunkBase<Derived>::stats_seq(this const Derived& self)
 {
-    if (nb_chunk == 0)
+    if (self.nb_chunk == 0)
         return 0.0;
-    const int nb_chunk_written = get_nb_chunk_written_seq();
-    return 100.0 * static_cast<double>(nb_chunk_written) / nb_chunk;
+    const int nb_chunk_written = self.get_nb_chunk_written_seq();
+    return 100.0 * static_cast<double>(nb_chunk_written) / self.nb_chunk;
 }
 
 template <typename Derived>
@@ -245,11 +246,11 @@ ArrayChunkBase<Derived>::size_type ArrayChunkBase<Derived>::max_size() const noe
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(ind_type i) const
+ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(this const Derived& self, ind_type i)
 {
-    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(m_size)) [[unlikely]]
+    if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(self.m_size)) [[unlikely]]
         throw std::out_of_range("ArrayChunk::at: index out of range");
-    return (*this)[i]; // const operator[] -> T (value)
+    return self[i]; // const operator[] -> T (value)
 }
 
 template <typename Derived>
@@ -261,11 +262,11 @@ ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(this Derived& sel
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::front() const
+ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::front(this const Derived& self)
 {
-    if (empty()) [[unlikely]]
+    if (self.empty()) [[unlikely]]
         throw std::out_of_range("ArrayChunk::front: container is empty");
-    return (*this)[0];
+    return self[0];
 }
 
 template <typename Derived>
@@ -277,11 +278,11 @@ ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::front(this Derived& 
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::back() const
+ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::back(this const Derived& self)
 {
-    if (empty()) [[unlikely]]
+    if (self.empty()) [[unlikely]]
         throw std::out_of_range("ArrayChunk::back: container is empty");
-    return (*this)[m_size - 1];
+    return self[self.m_size - 1];
 }
 
 template <typename Derived>
