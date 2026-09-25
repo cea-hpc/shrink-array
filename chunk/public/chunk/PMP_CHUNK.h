@@ -17,7 +17,7 @@
 #pragma once
 
 #include <cassert>
-#include "config.h"
+#include "chunk/config.h"
 
 namespace shrink_array
 {

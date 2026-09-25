@@ -774,9 +774,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     void enqueue_async_arithmetic(const U& v, Op operation, AsyncBody&& async_body);
 
     /**
-     * @brief Apply @p operation to the element as one atomic read-modify-write.
-     * @param v_old The value the caller already read, used as the compare-exchange
-     *        expectation; the loop retries from whatever it actually finds.
+     * @brief Apply @p operation to the element: load, compute in
+     *        common_type_t<T, U>, store -- inside the write protocol
+     *        (write_with_optional_lock_info), deferred when the fast path
+     *        refuses. Not a hardware atomic read-modify-write: there is no
+     *        compare-exchange loop, and two threads updating the same element
+     *        race as they would on a plain T.
+     * @param v_old Unused by the body (kept for the callers' signature).
      */
     template <typename U, typename Op>
         requires std::is_invocable_r_v<T, Op, T, U>
@@ -930,7 +934,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
-     * @warning Returns casted v, not the actual final stored value
      */
 
     template <typename U>
@@ -953,7 +956,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
-     * @warning Returns casted v, not the actual final stored value
      */
 
     template <typename U>
@@ -974,7 +976,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @return T Casted value of v (original behavior, not the actual value)
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
-     * @warning Returns casted v, not the actual final stored value
      */
 
     /** @brief Bitwise shift left — clean types (Integral <<= Integral). */
@@ -1009,7 +1010,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
-     * @warning Returns casted v, not the actual final stored value
      * @note Divides by 2^v for unsigned types, implementation-defined for signed
      */
     template <typename U>

@@ -7,7 +7,7 @@ option(CHECK_OPTIM "Enable runtime invariant checks in release builds" OFF)
 option(CHUNK_FORCE_LEDGER "Keep the pool ledger active under OpenMP (off by default there: its global mutex serialises every alloc/free)" OFF)
 
 # An emptied slab would otherwise keep its resident pages: the allocator never
-# unmaps a value slab (see the op/value alCHUNK_RECLAIM_EMPTY_SLABSiasing note in tc_allocator.h), so the
+# unmaps a value slab (see the op/value aliasing note in tc_allocator.h), so the
 # peak of a re-chunk -- where the old and the new geometry are both materialised
 # -- would stay in RSS afterwards. This madvise()s those pages away while
 # keeping the slab mapped and reusable.
@@ -51,9 +51,8 @@ option(CHUNK_SECOND_VALUE_INDEXED "Chunk2A: store second values as 4-byte identi
 if(CHUNK_SECOND_VALUE_INDEXED)
     add_definitions(-DCHUNK_SECOND_VALUE_INDEXED)
 endif()
-#if(CHECK_OPTIM)
-#    target_compile_definitions(chunk PUBLIC CHECK_OPTIM)
-#endif()
+# CHECK_OPTIM (option above) turns build_config::any_check on in a release
+# build: chunk/CMakeLists.txt passes it to the library, PUBLIC.
 
 # ── Sanitizer option ──────────────────────────────────────────────────────────
 set(SANITIZER "none" CACHE STRING "Sanitizer to enable: none, thread, address, token")
@@ -62,6 +61,9 @@ set_property(CACHE SANITIZER PROPERTY STRINGS none thread address token)
 message(STATUS "Sanitizer: ${SANITIZER}")
 
 # ── OpenMP ────────────────────────────────────────────────────────────────────
+# Read by every target of the tree; the scripts pass -DOMP=ON. OFF (as an
+# undeclared variable read) builds the serial library.
+option(OMP "Build with OpenMP (the parallel library and examples)" OFF)
 if(OMP)
     find_package(OpenMP 4.5 REQUIRED)
     set(CMAKE_LIBRARY_PATH /usr/local/lib/x86_64-unknown-linux-gnu ${CMAKE_LIBRARY_PATH})

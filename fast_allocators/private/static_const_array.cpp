@@ -140,7 +140,7 @@ class ManageTCTypeAllocator
     void addTCTypeAllocatorInst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
     {
 #ifndef _OPENMP
-        set_allocator.insert(ptr_tcallocator); // not sure this is thread-safe
+        set_allocator.insert(ptr_tcallocator); // serial builds only: no concurrent insert
 #endif
     }
 

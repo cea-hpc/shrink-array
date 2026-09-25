@@ -1902,14 +1902,15 @@ struct TCAllocatorEB
 
     using T = TypeFromSize<ElementSizePrev2>::Tindex;
 
+    // A free element holds the index of the next free one, in T -- a type
+    // sized from the element. The block must be addressable by it: a
+    // compile-time check (it was a runtime DBG_ASSERT, DEBUG builds only).
+    static_assert(static_cast<uintptr_t>(_BlockSize) < (uintptr_t{1} << (sizeof(T) * 8 - 1)),
+                  "TCAllocatorEB: block too large for the element's free-list index type");
+
     /// @brief Takes its block straight away -- there is no separate init().
     TCAllocatorEB() : firstFree(-1), nn_ref(0), UsedSize(0)
     {
-#ifdef DEBUG
-        const int  szt            = sizeof(T);
-        const auto block_size_max = static_cast<uintptr_t>(uintptr_t{1} << ((szt * 8) - 1));
-        DBG_ASSERT(_BlockSize < block_size_max);
-#endif
         // alloc() inserts the slab right after this constructor returns: a
         // slab without a block (or without its back-pointer) would be handed
         // out and corrupt memory silently. Abort, as the other families do.

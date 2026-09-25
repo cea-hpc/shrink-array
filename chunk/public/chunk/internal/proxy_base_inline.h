@@ -937,7 +937,7 @@ constexpr bool check_is_cst_val2([[maybe_unused]] const P& proxy)
  * @tparam Op Binary operation, invocable as `T(T, U)`.
  * @param operation Operation to apply.
  * @param v         Operand.
- * @param v_old     Value before the operation, used for the compression marking.
+ * @param v_old     Unused (the bodies reload the current value themselves).
  */
 template <typename Derived, typename T, typename ChunkType>
 template <typename U, typename Op>

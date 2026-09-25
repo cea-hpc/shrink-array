@@ -65,7 +65,7 @@ cmake --build build_dir
 ```
 
 See [compile_all.sh](./scripts/compile_all.sh) for more details.
-The library and examples can be compiled with different c++ compiler: g++, OneAPI, aocc, nvhpc, llvm. Compiler must support at least c++17. remark we use c++20 in the CMakeLists.txt 
+The library and examples can be compiled with different C++ compilers: g++, OneAPI, aocc, nvhpc, llvm. The compiler must support C++20, which the CMakeLists.txt requires. The `cpp23` branch carries the same library with C++23 required.
 
 ## Examples
 
@@ -75,8 +75,8 @@ Two examples are proposed:
  - The [first](examples/simple_array) allows to compare an implementation with classical `std::vector` and one with compress arrays (ArrayChunk).
     We can compare the execution speed and memory consumption between the two modes.
 
- - The [second](examples/multi-mat) is more advanced: it shows the use of this compression on multidimensional arrays. We can choose whether to compress the second dimension of the array **HOW?**.
-   We also show a vectorization technique on these data structures. We can refer to the comments in the code for more explanations **WHERE?**.
+ - The [second](examples/multi-mat) is more advanced: it shows the use of this compression on multidimensional arrays. Each material is stored either in compressed arrays or in `std::vector`s: the program asks for the split at start-up (`Option`: 1 all compressed, 2 all `std::vector`, 3 a random draw, 4 a random draw at a given rate; see [InputData.cpp](examples/multi-mat/InputData.cpp)).
+   We also show a vectorization technique on these data structures: every loop is written once against a loop policy, scalar for the compressed arrays and `omp simd` for the `std::vector` ones -- see [Loops.h](examples/multi-mat/Loops.h) and [ComputeLoops.h](examples/multi-mat/ComputeLoops.h).
 
 
 ## License
