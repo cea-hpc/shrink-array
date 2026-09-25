@@ -132,6 +132,10 @@ class RechunkDecider
         std::string name; // array name
         unsigned    old_size, new_size;
         double      mem_before, mem_pred, mem_after; // bytes (model)
+        /// Model memory at the OLD size, from the after-tick's analysis (the
+        /// advisor evaluates the finer sizes too): old_mem_now - mem_after is
+        /// what the move freed at UNCHANGED data. -1 when not available.
+        double mem_after_old = -1.;
     };
 
     /// @brief Print the per-event table: when, old->new, model memory
