@@ -86,8 +86,8 @@ namespace detail
  *          arrays cannot satisfy (their iterator is bidirectional).
  */
 template <typename A>
-concept ChunkedArray = requires(A& a, const A& ca, std::size_t i) {
-    { a.chunk_ref(i) };
+concept ChunkedArray = requires(A& arr, const A& ca, std::size_t i) {
+    { arr.chunk_ref(i) };
     { ca.chunk_size() } -> std::convertible_to<unsigned int>;
     { ca.size() };
 };
@@ -102,40 +102,40 @@ concept ChunkedArray = requires(A& a, const A& ca, std::size_t i) {
 
 /**
  * @brief Set every element of [first, last) to @p v.
- * @param c     target container
- * @param first first index, inclusive (clamped to c.size())
- * @param last  last index, exclusive (clamped to c.size())
- * @param v     value to store
+ * @param container target container
+ * @param first     first index, inclusive (clamped to container.size())
+ * @param last      last index, exclusive (clamped to container.size())
+ * @param v         value to store
  */
 template <typename C, typename U>
     requires(!detail::ChunkedArray<C>)
-void fill_range(C& c, std::size_t first, std::size_t last, const U& v)
+void fill_range(C& container, std::size_t first, std::size_t last, const U& v)
 {
-    const auto n = static_cast<std::size_t>(c.size());
-    last         = std::min(last, n);
+    const auto size = static_cast<std::size_t>(container.size());
+    last            = std::min(last, size);
     if (first >= last)
         return;
-    std::fill(std::next(c.begin(), static_cast<std::ptrdiff_t>(first)),
-              std::next(c.begin(), static_cast<std::ptrdiff_t>(last)), static_cast<C::value_type>(v));
+    std::fill(std::next(container.begin(), static_cast<std::ptrdiff_t>(first)),
+              std::next(container.begin(), static_cast<std::ptrdiff_t>(last)), static_cast<C::value_type>(v));
 }
 
 /**
  * @brief Copy [src_first, src_first + (last - first)) into [first, last).
- * @param c         target container
- * @param first     first target index, inclusive (clamped to c.size())
- * @param last      last target index, exclusive (clamped to c.size())
- * @param src_first iterator on the source range; must not alias @p c
+ * @param container target container
+ * @param first     first target index, inclusive (clamped to container.size())
+ * @param last      last target index, exclusive (clamped to container.size())
+ * @param src_first iterator on the source range; must not alias @p container
  */
 template <typename C, typename It>
     requires(!detail::ChunkedArray<C>)
-void copy_range(C& c, std::size_t first, std::size_t last, It src_first)
+void copy_range(C& container, std::size_t first, std::size_t last, It src_first)
 {
-    const auto n = static_cast<std::size_t>(c.size());
-    last         = std::min(last, n);
+    const auto size = static_cast<std::size_t>(container.size());
+    last            = std::min(last, size);
     if (first >= last)
         return;
     std::copy(src_first, std::next(src_first, static_cast<std::ptrdiff_t>(last - first)),
-              std::next(c.begin(), static_cast<std::ptrdiff_t>(first)));
+              std::next(container.begin(), static_cast<std::ptrdiff_t>(first)));
 }
 
 /// @copydoc fill_range
@@ -143,18 +143,18 @@ void copy_range(C& c, std::size_t first, std::size_t last, It src_first)
 ///        the tag form of the call is the same on every container
 template <typename C, typename U>
     requires(!detail::ChunkedArray<C>)
-void fill_range(C& c, std::size_t first, std::size_t last, const U& v, assume_drained_t)
+void fill_range(C& container, std::size_t first, std::size_t last, const U& v, assume_drained_t)
 {
-    fill_range(c, first, last, v);
+    fill_range(container, first, last, v);
 }
 
 /// @copydoc copy_range
 /// @note The assume_drained_t tag: see fill_range's tag overload
 template <typename C, typename It>
     requires(!detail::ChunkedArray<C>)
-void copy_range(C& c, std::size_t first, std::size_t last, It src_first, assume_drained_t)
+void copy_range(C& container, std::size_t first, std::size_t last, It src_first, assume_drained_t)
 {
-    copy_range(c, first, last, src_first);
+    copy_range(container, first, last, src_first);
 }
 
 /**
@@ -167,11 +167,11 @@ void copy_range(C& c, std::size_t first, std::size_t last, It src_first, assume_
  */
 template <typename C, typename U>
     requires(!detail::ChunkedArray<C>)
-void fill_range_mt(C& c, std::size_t first, std::size_t last, const U& v)
+void fill_range_mt(C& container, std::size_t first, std::size_t last, const U& v)
 {
     static_assert(!std::is_same_v<C, std::vector<bool>>,
                   "fill_range_mt: std::vector<bool> packs neighbouring indices into one word");
-    fill_range(c, first, last, v);
+    fill_range(container, first, last, v);
 }
 
 } // namespace shrink_array

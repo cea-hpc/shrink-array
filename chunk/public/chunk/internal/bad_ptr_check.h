@@ -50,30 +50,30 @@ namespace shrink_array::bad_ptr
 {
 
 /**
- * @brief Validate that @p p is either null or a plausible values pointer.
+ * @brief Validate that @p ptr is either null or a plausible values pointer.
  *
  * Compiles to nothing when build_config::any_check is false.
  * The source_location captured by INVARIANT_FAILED points at the caller,
  * because @p loc is defaulted to std::source_location::current() at the
  * call site, not inside this function.
  *
- * @param p          Pointer to validate (may be null).
+ * @param ptr          Pointer to validate (may be null).
  * @param site       Short static string identifying the producer site.
  * @param chunk_ptr  Optional pointer to the owning chunk, for cross-referencing.
  * @param loc        Auto-captured at the call site; do not pass explicitly.
  */
 template <typename T>
-[[gnu::always_inline]] inline void check(const T*             p,
+[[gnu::always_inline]] inline void check(const T*             ptr,
                                          const char*          site,
                                          const void*          chunk_ptr = nullptr,
                                          std::source_location loc       = std::source_location::current()) noexcept
 {
     if constexpr (build_config::any_check)
     {
-        const auto u = reinterpret_cast<std::uintptr_t>(p);
+        const auto addr = reinterpret_cast<std::uintptr_t>(ptr);
 
         // nullptr is tolerated — is_written checks handle it explicitly.
-        if (p == nullptr)
+        if (ptr == nullptr)
             return;
 
         // Valid: address above the low pages AND aligned to alignof(T).
@@ -84,7 +84,7 @@ template <typename T>
         // happens to over-align statics, but AddressSanitizer relocates globals
         // (redzones) onto merely alignof(T)-aligned addresses, tripping this.
         constexpr std::uintptr_t align_mask = alignof(T) - 1;
-        if (u >= 0x1000 && (u & align_mask) == 0) [[likely]]
+        if (addr >= 0x1000 && (addr & align_mask) == 0) [[likely]]
             return;
 
         // Deliberately the RAW rank, not get_thr_rank_fast() below: printing
@@ -96,7 +96,7 @@ template <typename T>
         const int fast_rank = get_thr_rank_fast();
 
         ::shrink_array::invariant_failed(loc, "[BAD_PTR] site='{}' ptr={} chunk={} omp_tid={} fast_rank={}", site,
-                                         static_cast<const void*>(p), chunk_ptr, omp_tid, fast_rank);
+                                         static_cast<const void*>(ptr), chunk_ptr, omp_tid, fast_rank);
     }
 }
 

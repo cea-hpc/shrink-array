@@ -462,8 +462,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // element -- relaxed atomic store, see relaxed_element.h.
         if constexpr (detail::relaxed_element_stores_v<ChunkType, T>)
         {
-            T* const p = values;
-            detail::store_element_relaxed(p + num, static_cast<T>(v));
+            T* const vals = values;
+            detail::store_element_relaxed(vals + num, static_cast<T>(v));
         }
         else
         {
@@ -499,15 +499,15 @@ class ProxyBase : public ProxyOperators<Derived, T>,
             // converting a pointer that is NOT in the region gave an arbitrary
             // index into value_by_id[] and a SIGSEGV. One load, one exact range
             // test on it, one conversion of the same pointer.
-            if constexpr (requires(const T* q) {
-                              TabCstVal2Holder<T>::is_cst_val2_ptr(q);
-                              TabCstVal2Holder<T>::value_of_ptr_checked(q);
+            if constexpr (requires(const T* ptr) {
+                              TabCstVal2Holder<T>::is_cst_val2_ptr(ptr);
+                              TabCstVal2Holder<T>::value_of_ptr_checked(ptr);
                           })
             {
-                const T* const p = values;
-                if (TabCstVal2Holder<T>::is_cst_val2_ptr(p)) [[unlikely]]
-                    return TabCstVal2Holder<T>::value_of_ptr_checked(p);
-                return p[num];
+                const T* const vals = values;
+                if (TabCstVal2Holder<T>::is_cst_val2_ptr(vals)) [[unlikely]]
+                    return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
+                return vals[num];
             }
         }
         return values[num];
@@ -623,20 +623,20 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /**
      * @brief Store pointer-to-array and chunk index for subsequent operations.
-     * @param p pointer to the array
+     * @param array_ptr pointer to the array
      * @param num_chunk_ chunk index
      */
 
-    void set_this_and_num_chunk(const void* p, int num_chunk_) const noexcept
+    void set_this_and_num_chunk(const void* array_ptr, int num_chunk_) const noexcept
     {
-        ptr_on_array = p;
+        ptr_on_array = array_ptr;
         num_chunk    = num_chunk_;
         num_tab      = -1; // not armed: set_num_tab() looks the registry up
     }
 
     /// @brief Same, with the array's own table number, so the write path
     ///        needs no registry lookup.
-    /// @param p          pointer to the array
+    /// @param array_ptr          pointer to the array
     /// @param num_chunk_ chunk index
     /// @param num_tab_   the array's num_tab (ArrayChunkBase::num_tab), the
     ///                   value it registered under its address
@@ -645,9 +645,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///       threshold, and it ran on EVERY write: 1.5% of the reference run.
     ///       The array knows the answer; it is checked against the registry
     ///       under any_check (Proxy2A::set_num_tab).
-    void set_this_and_num_chunk(const void* p, int num_chunk_, int num_tab_) const noexcept
+    void set_this_and_num_chunk(const void* array_ptr, int num_chunk_, int num_tab_) const noexcept
     {
-        ptr_on_array = p;
+        ptr_on_array = array_ptr;
         num_chunk    = num_chunk_;
         num_tab      = num_tab_;
     }
@@ -698,13 +698,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     {
         /**
          * @brief Apply modulo operation
-         * @param x Dividend
-         * @param y Divisor
+         * @param lhs Dividend
+         * @param rhs Divisor
          * @return x % y
          */
-        constexpr T operator()(T x, T y) const
+        constexpr T operator()(T lhs, T rhs) const
         {
-            return x % y;
+            return lhs % rhs;
         }
     };
 
@@ -914,7 +914,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator&=(const U& v) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
     {
-        bitwise_assign<U>(v, [](auto a, auto b) { return a & b; });
+        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs & rhs; });
         return derived();
     }
 
@@ -937,7 +937,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator|=(const U& v) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
     {
-        bitwise_assign<U>(v, [](auto a, auto b) { return a | b; });
+        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs | rhs; });
         return derived();
     }
 
@@ -960,7 +960,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator^=(const U& v) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
     {
-        bitwise_assign<U>(v, [](auto a, auto b) { return a ^ b; });
+        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs ^ rhs; });
         return derived();
     }
 
@@ -982,7 +982,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires IsCleanShiftOp<T, U>
     Derived operator<<=(const U& v) noexcept
     {
-        bitwise_assign<U>(v, [](auto a, auto b) { return a << b; });
+        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs << rhs; });
         return derived();
     }
 
@@ -993,7 +993,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator<<=(const U& v) noexcept
     {
         // Force conversion to int for the shift amount
-        bitwise_assign<int>(static_cast<int>(v), [](auto a, auto b) { return a << b; });
+        bitwise_assign<int>(static_cast<int>(v), [](auto lhs, auto rhs) { return lhs << rhs; });
         return derived();
     }
 
@@ -1016,7 +1016,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires IsCleanShiftOp<T, U>
     Derived operator>>=(const U& v) noexcept
     {
-        bitwise_assign<U>(v, [](auto a, auto b) { return a >> b; });
+        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs >> rhs; });
         return derived();
     }
 
@@ -1026,7 +1026,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     [[deprecated("HPC WARNING: Shift amount must be an integer.")]]
     Derived operator>>=(const U& v) noexcept
     {
-        bitwise_assign<int>(static_cast<int>(v), [](auto a, auto b) { return a >> b; });
+        bitwise_assign<int>(static_cast<int>(v), [](auto lhs, auto rhs) { return lhs >> rhs; });
         return derived();
     }
 
@@ -1062,11 +1062,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires ElementIncrementable<T>
     {
         // Synchronous version
-        auto inc_operation = [this] { derived().execute_inplace_operation([](T& e) { ++e; }); };
+        auto inc_operation = [this] { derived().execute_inplace_operation([](T& elem) { ++elem; }); };
 
         // Asynchronous version
         auto inc_operation_async = [](auto* ctx, auto& proxy)
-        { proxy.execute_inplace_operation_async(ctx, [](T& e) { ++e; }); };
+        { proxy.execute_inplace_operation_async(ctx, [](T& elem) { ++elem; }); };
 
         apply_inplace_operation(inc_operation, inc_operation_async);
 
@@ -1094,10 +1094,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator--() noexcept
         requires ElementIncrementable<T>
     {
-        auto dec_operation = [this] { derived().execute_inplace_operation([](T& e) { --e; }); };
+        auto dec_operation = [this] { derived().execute_inplace_operation([](T& elem) { --elem; }); };
 
         auto dec_operation_async = [](auto* ctx, auto& proxy)
-        { proxy.execute_inplace_operation_async(ctx, [](T& e) { --e; }); };
+        { proxy.execute_inplace_operation_async(ctx, [](T& elem) { --elem; }); };
 
         apply_inplace_operation(dec_operation, dec_operation_async);
 
@@ -1126,10 +1126,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     {
         T temp(*this);
 
-        auto inc_operation = [this] { derived().execute_inplace_operation([](T& e) { e++; }); };
+        auto inc_operation = [this] { derived().execute_inplace_operation([](T& elem) { elem++; }); };
 
         auto inc_operation_async = [](auto* ctx, auto& proxy)
-        { proxy.execute_inplace_operation_async(ctx, [](T& e) { e++; }); };
+        { proxy.execute_inplace_operation_async(ctx, [](T& elem) { elem++; }); };
 
         apply_inplace_operation(inc_operation, inc_operation_async);
         return temp;
@@ -1146,10 +1146,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires ElementIncrementable<T>
     {
         T    temp(*this);
-        auto dec_operation = [this] { derived().execute_inplace_operation([](T& e) { e--; }); };
+        auto dec_operation = [this] { derived().execute_inplace_operation([](T& elem) { elem--; }); };
 
         auto dec_operation_async = [](auto* ctx, auto& proxy)
-        { proxy.execute_inplace_operation_async(ctx, [](T& e) { e--; }); };
+        { proxy.execute_inplace_operation_async(ctx, [](T& elem) { elem--; }); };
 
         apply_inplace_operation(dec_operation, dec_operation_async);
         return temp;

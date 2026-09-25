@@ -71,18 +71,18 @@ class SingletonChk
         // mutex, and this is reached once per thread per barrier (64 threads
         // serialised on it at each one). The acquire pairs with the release
         // store below: seeing the pointer implies seeing the constructed T.
-        if (T* p = unique_instance.load(std::memory_order_acquire)) [[likely]]
-            return p;
+        if (T* instance = unique_instance.load(std::memory_order_acquire)) [[likely]]
+            return instance;
 
         std::lock_guard lock(unique_instance_mutex);
-        T*              p = unique_instance.load(std::memory_order_relaxed); // under the lock
-        if (p == nullptr)
+        T*              instance = unique_instance.load(std::memory_order_relaxed); // under the lock
+        if (instance == nullptr)
         {
-            p = new T();       // immortal: never deleted
-            SA_LSAN_IGNORE(p); // intentional leak, not a real one
-            unique_instance.store(p, std::memory_order_release);
+            instance = new T();       // immortal: never deleted
+            SA_LSAN_IGNORE(instance); // intentional leak, not a real one
+            unique_instance.store(instance, std::memory_order_release);
         }
-        return p;
+        return instance;
     }
 
     /// @brief Delete the instance. Retained for API completeness; unused

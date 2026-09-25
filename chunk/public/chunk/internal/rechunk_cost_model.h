@@ -85,7 +85,7 @@ void calibrate_rechunk_cost(std::size_t sample_size = (16u << 20),
                             int         alloc_reps  = 200000) noexcept
 {
     using clk  = std::chrono::steady_clock;
-    auto to_ns = [](clk::duration d) { return std::chrono::duration<double, std::nano>(d).count(); };
+    auto to_ns = [](clk::duration dur) { return std::chrono::duration<double, std::nano>(dur).count(); };
 
     // --- copy component ---
     {
@@ -108,21 +108,21 @@ void calibrate_rechunk_cost(std::size_t sample_size = (16u << 20),
         const std::size_t bytes = static_cast<std::size_t>(chunk_size) * sizeof(T);
         for (int i = 0; i < 1000; ++i)
         {
-            void* p = ::operator new(bytes);
-            ::operator delete(p);
+            void* ptr = ::operator new(bytes);
+            ::operator delete(ptr);
         }
-        volatile std::size_t sink = 0;
-        const auto           a    = clk::now();
+        volatile std::size_t sink  = 0;
+        const auto           start = clk::now();
         for (int i = 0; i < alloc_reps; ++i)
         {
-            void* p = ::operator new(bytes);
-            std::memset(p, 0, 64);
-            sink += reinterpret_cast<std::size_t>(p);
-            ::operator delete(p);
+            void* ptr = ::operator new(bytes);
+            std::memset(ptr, 0, 64);
+            sink += reinterpret_cast<std::size_t>(ptr);
+            ::operator delete(ptr);
         }
-        const auto b = clk::now();
+        const auto stop = clk::now();
         (void)sink;
-        g_rechunk_cost_allocfree_ns = to_ns(b - a) / static_cast<double>(alloc_reps);
+        g_rechunk_cost_allocfree_ns = to_ns(stop - start) / static_cast<double>(alloc_reps);
     }
 }
 

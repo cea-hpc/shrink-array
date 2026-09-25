@@ -89,8 +89,8 @@ namespace shrink_array
 /// g_proxy2a_meta_legacy == true means "look up" (the name predates the flip).
 inline const bool g_proxy2a_meta_legacy = []
 {
-    const char* e = std::getenv("CHUNK_PROXY2A_META_ARMED");
-    return e == nullptr || e[0] == '\0' || e[0] == '0';
+    const char* env = std::getenv("CHUNK_PROXY2A_META_ARMED");
+    return env == nullptr || env[0] == '\0' || env[0] == '0';
 }();
 
 template <typename T>

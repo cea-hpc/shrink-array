@@ -46,10 +46,10 @@ struct formatter<std::complex<T>, char>
         return ctx.begin();
     }
 
-    /// @brief Write @p c as "(re+imi)".
-    auto format(const std::complex<T>& c, std::format_context& ctx) const
+    /// @brief Write @p value as "(re+imi)".
+    auto format(const std::complex<T>& value, std::format_context& ctx) const
     {
-        return std::format_to(ctx.out(), "({}+{}i)", c.real(), c.imag());
+        return std::format_to(ctx.out(), "({}+{}i)", value.real(), value.imag());
     }
 };
 } // namespace std
@@ -60,10 +60,10 @@ namespace shrink_array
 ///        C++23's std::formattable: a disabled formatter has no format()).
 template <typename V>
 concept invariant_formattable =
-    requires(std::formatter<V, char> f, const V& v, std::format_context& c) { f.format(v, c); };
+    requires(std::formatter<V, char> fmt, const V& v, std::format_context& fmt_ctx) { fmt.format(v, fmt_ctx); };
 
 /**
- * @brief The argument std::format will see for @p a: itself when its type is
+ * @brief The argument std::format will see for @p arg: itself when its type is
  *        formattable, its bytes in hex otherwise.
  *
  * The invariant messages print element values ("expected={} readback={}").
@@ -76,19 +76,19 @@ concept invariant_formattable =
  */
 template <typename A>
     requires invariant_formattable<std::remove_cvref_t<A>>
-A&& invariant_fmt_arg(A&& a)
+A&& invariant_fmt_arg(A&& arg)
 {
-    return std::forward<A>(a);
+    return std::forward<A>(arg);
 }
 
 template <typename A>
-std::string invariant_fmt_arg(A&& a)
+std::string invariant_fmt_arg(A&& arg)
 {
     using V = std::remove_cvref_t<A>;
     std::string out;
     out.reserve(2 + 2 * sizeof(V));
     out += "0x";
-    const auto* bytes = reinterpret_cast<const unsigned char*>(&a);
+    const auto* bytes = reinterpret_cast<const unsigned char*>(&arg);
     for (std::size_t i = 0; i < sizeof(V); ++i)
     {
         static constexpr char hex[] = "0123456789abcdef";

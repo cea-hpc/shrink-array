@@ -299,22 +299,22 @@ extern TCTypeAllocatorEBC<24, SIZE_BLOCK> Allocator24;
  */
 struct BlkAllocator : public StaticConstArray
 {
-    /// @brief A block of @p s bytes, from the ladder or from malloc.
-    static void* alloc_block(size_t s)
+    /// @brief A block of @p size bytes, from the ladder or from malloc.
+    static void* alloc_block(size_t size)
     {
         if constexpr (alloc_config::use_std_alloc)
         {
-            return int_alloc(s);
+            return int_alloc(size);
         }
         else
         {
-            void* ptr = getBlockAlloc(s);
+            void* ptr = getBlockAlloc(size);
 
             // getBlockAlloc() returns null for a size past the largest bucket;
             // that is not a failure, it is "too big for the ladder".
             if (!ptr)
             {
-                int_alloc((char*&)ptr, s);
+                int_alloc((char*&)ptr, size);
                 return ptr;
             }
 
@@ -323,9 +323,9 @@ struct BlkAllocator : public StaticConstArray
     }
 
     /// @brief Give back a block from alloc_block().
-    /// @param s Must be the size it was allocated with -- that is what decides
+    /// @param size Must be the size it was allocated with -- that is what decides
     ///        whether it goes to the ladder or to int_free().
-    static void free_block(void* ptr, size_t s)
+    static void free_block(void* ptr, size_t size)
     {
         if (ptr == nullptr)
             return;
@@ -338,7 +338,7 @@ struct BlkAllocator : public StaticConstArray
         {
             // freeBlock() returns false for a size the ladder does not serve --
             // it came from int_alloc(), so it goes back to int_free().
-            if (freeBlock(s, ptr))
+            if (freeBlock(size, ptr))
             {
                 return;
             }
@@ -348,40 +348,40 @@ struct BlkAllocator : public StaticConstArray
     }
 
     /**
-     * @brief A block of @p s bytes that remembers its own size.
-     * @return A pointer past a header of `__ALIGNEMENT__` bytes holding @p s,
+     * @brief A block of @p size bytes that remembers its own size.
+     * @return A pointer past a header of `__ALIGNEMENT__` bytes holding @p size,
      *         so free_tab() needs no size argument. The alignment padding is
      *         what makes the returned pointer suitably aligned.
      */
-    static void* alloc_tab(size_t s)
+    static void* alloc_tab(size_t size)
     {
-        int* ptr = (int*)getBlockAlloc(s + __ALIGNEMENT__);
+        int* ptr = (int*)getBlockAlloc(size + __ALIGNEMENT__);
 
         if (!ptr)
         {
-            ptr = (int*)int_alloc_align(s + __ALIGNEMENT__);
+            ptr = (int*)int_alloc_align(size + __ALIGNEMENT__);
         }
 
-        ptr[0] = s;
+        ptr[0] = size;
 
-        char* p = (char*)ptr;
+        char* user_ptr = (char*)ptr;
 
-        p += __ALIGNEMENT__;
+        user_ptr += __ALIGNEMENT__;
 
-        return p;
+        return user_ptr;
     }
 
     /// @brief Give back an alloc_tab() block, reading its size from its header.
-    static void free_tab(void* p)
+    static void free_tab(void* user_ptr)
     {
-        if (p == nullptr)
+        if (user_ptr == nullptr)
             return;
 
-        int* m_ptr = (int*)((char*)p - __ALIGNEMENT__);
+        int* m_ptr = (int*)((char*)user_ptr - __ALIGNEMENT__);
 
-        const int s = m_ptr[0];
+        const int size = m_ptr[0];
 
-        if (!freeBlock(s + __ALIGNEMENT__, m_ptr))
+        if (!freeBlock(size + __ALIGNEMENT__, m_ptr))
         {
             int_free_align(m_ptr);
         }
@@ -439,7 +439,6 @@ struct FixedSizeAllocator : private StaticConstArray
     }
 
   public:
-
     /// @brief One block of `sizeof(_ElementType)` bytes.
     static void* alloc_block()
     {
@@ -470,31 +469,31 @@ struct FixedSizeAllocator : private StaticConstArray
         }
     }
 
-    /// @brief One block of @p s bytes, ignoring `sizeof(_ElementType)`.
+    /// @brief One block of @p size bytes, ignoring `sizeof(_ElementType)`.
     /// @note Used by ::TypeAllocator, where the caller knows the size and the
     ///       type parameter only selects the pool.
-    static void* alloc_block(size_t s)
+    static void* alloc_block(size_t size)
     {
         if constexpr (alloc_config::use_std_alloc)
         {
-            return int_alloc(s);
+            return int_alloc(size);
         }
         else
         {
-            if (s == 8)
+            if (size == 8)
             {
                 return shortcut_alloc(Allocator8);
             }
-            if (s == 24)
+            if (size == 24)
             {
                 return shortcut_alloc(Allocator24);
             }
 
-            void* ptr = getBlockAlloc(s);
+            void* ptr = getBlockAlloc(size);
 
             if (!ptr)
             {
-                return int_alloc(s);
+                return int_alloc(size);
             }
 
             return ptr;
@@ -584,20 +583,20 @@ struct FixedSizeAllocator : private StaticConstArray
 template <typename T>
 struct TypeAllocator
 {
-    /// @brief A block of @p s bytes for a T.
+    /// @brief A block of @p size bytes for a T.
     /// @pre `s == sizeof(T)`: free() routes by sizeof(T), so any other size
     ///      (an operator new reached by a larger derived class) would go back
     ///      to the wrong bucket.
-    static void* alloc(size_t s)
+    static void* alloc(size_t size)
     {
-        assert(s == sizeof(T) && "TypeAllocator: free() routes by sizeof(T)");
-        return FixedSizeAllocator<T>::alloc_block(s);
+        assert(size == sizeof(T) && "TypeAllocator: free() routes by sizeof(T)");
+        return FixedSizeAllocator<T>::alloc_block(size);
     }
     /// @brief Give it back.
     /// @warning Routes by `sizeof(T)`. @see FixedSizeAllocator::free_block
-    static void free(void* p)
+    static void free(void* ptr)
     {
-        FixedSizeAllocator<T>::free_block(p);
+        FixedSizeAllocator<T>::free_block(ptr);
     }
 };
 

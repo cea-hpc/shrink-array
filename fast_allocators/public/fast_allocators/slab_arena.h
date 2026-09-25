@@ -56,14 +56,14 @@ namespace fast_alloc
 /// @brief How many times ::madvise_empty_slab has advised a slab away.
 inline std::atomic<std::size_t>& reclaim_calls() noexcept
 {
-    static std::atomic<std::size_t> c{0};
-    return c;
+    static std::atomic<std::size_t> counter{0};
+    return counter;
 }
 /// @brief How many bytes that represents.
 inline std::atomic<std::size_t>& reclaim_bytes() noexcept
 {
-    static std::atomic<std::size_t> b{0};
-    return b;
+    static std::atomic<std::size_t> counter{0};
+    return counter;
 }
 
 /// @brief Why a slab was NOT advised away, counted per reason. An emptied slab
@@ -112,23 +112,23 @@ static_assert(sizeof(IsolatedCounter) == 128, "IsolatedCounter must fill its ali
 ///        through CHUNK_FREEPATH_INC (chunk/freepath_counters.h).
 inline std::atomic<std::size_t>& freepath_freed() noexcept
 {
-    static IsolatedCounter c;
-    return c.v;
+    static IsolatedCounter counter;
+    return counter.v;
 }
 inline std::atomic<std::size_t>& freepath_park_own() noexcept
 {
-    static IsolatedCounter c;
-    return c.v;
+    static IsolatedCounter counter;
+    return counter.v;
 }
 inline std::atomic<std::size_t>& freepath_park_foreign() noexcept
 {
-    static IsolatedCounter c;
-    return c.v;
+    static IsolatedCounter counter;
+    return counter.v;
 }
 inline std::atomic<std::size_t>& freepath_kept_nomigrate() noexcept
 {
-    static IsolatedCounter c;
-    return c.v;
+    static IsolatedCounter counter;
+    return counter.v;
 }
 /// @brief Materialisations routed with NO affinity key (the rank's shared pool)
 ///        and with one. A slab can only empty if it holds a single array's
@@ -137,13 +137,13 @@ inline std::atomic<std::size_t>& freepath_kept_nomigrate() noexcept
 ///        and none of them can ever empty, whatever the drain frees.
 inline std::atomic<std::size_t>& freepath_alloc_key0() noexcept
 {
-    static IsolatedCounter c;
-    return c.v;
+    static IsolatedCounter counter;
+    return counter.v;
 }
 inline std::atomic<std::size_t>& freepath_alloc_keyed() noexcept
 {
-    static IsolatedCounter c;
-    return c.v;
+    static IsolatedCounter counter;
+    return counter.v;
 }
 
 
@@ -152,7 +152,7 @@ inline std::atomic<std::size_t>& freepath_alloc_keyed() noexcept
  *
  * @tparam Slab Duck-typed on `nn_ref`, `data` and `BlockAllocator`. A template
  *         purely so those members need only be complete at instantiation.
- * @param p The slab. Null and non-empty slabs are ignored.
+ * @param slab The slab. Null and non-empty slabs are ignored.
  *
  * @details MADV_DONTNEED returns the pages to the OS but leaves the mapping in
  *          place: the address stays valid, the slab stays on its owner's list,
@@ -170,15 +170,15 @@ inline std::atomic<std::size_t>& freepath_alloc_keyed() noexcept
  * @see alloc_config::reclaim_empty_slabs, the build switch on the call site.
  */
 template <typename Slab>
-void madvise_empty_slab(Slab* p) noexcept
+void madvise_empty_slab(Slab* slab) noexcept
 {
     reclaim_entered().fetch_add(1, std::memory_order_relaxed);
-    if (p != nullptr && p->nn_ref != 0)
+    if (slab != nullptr && slab->nn_ref != 0)
         reclaim_skip_live().fetch_add(1, std::memory_order_relaxed);
-    if (p == nullptr || p->nn_ref != 0)
+    if (slab == nullptr || slab->nn_ref != 0)
         return;
-    void*      base = p->data;
-    const auto len  = static_cast<std::size_t>(p->BlockAllocator);
+    void*      base = slab->data;
+    const auto len  = static_cast<std::size_t>(slab->BlockAllocator);
     if (base == nullptr || len == 0)
         return;
     const long ps = ::sysconf(_SC_PAGESIZE);
@@ -233,20 +233,20 @@ void madvise_empty_slab(Slab* p) noexcept
  *          back-pointer only to have it wiped a moment later. A re-chunk's
  *          end-of-move sweep is such a point; a free path is not.
  *
- * @return true if the pages were dropped and @p p was flagged.
+ * @return true if the pages were dropped and @p slab was flagged.
  */
 template <typename Slab>
-bool madvise_empty_slab_full(Slab* p) noexcept
+bool madvise_empty_slab_full(Slab* slab) noexcept
 {
     reclaim_entered().fetch_add(1, std::memory_order_relaxed);
-    if (p == nullptr || p->nn_ref != 0)
+    if (slab == nullptr || slab->nn_ref != 0)
     {
-        if (p != nullptr)
+        if (slab != nullptr)
             reclaim_skip_live().fetch_add(1, std::memory_order_relaxed);
         return false;
     }
-    void*      base = p->data;
-    const auto len  = static_cast<std::size_t>(p->BlockAllocator);
+    void*      base = slab->data;
+    const auto len  = static_cast<std::size_t>(slab->BlockAllocator);
     if (base == nullptr || len == 0)
         return false;
     const long ps = ::sysconf(_SC_PAGESIZE);
@@ -266,7 +266,7 @@ bool madvise_empty_slab_full(Slab* p) noexcept
     }
     // Flag first: from here the trailing back-pointer is not to be trusted, and
     // alloc() is what puts it back.
-    p->backptr_dropped = true;
+    slab->backptr_dropped = true;
     ::madvise(base, adv, MADV_DONTNEED);
     reclaim_calls().fetch_add(1, std::memory_order_relaxed);
     reclaim_bytes().fetch_add(adv, std::memory_order_relaxed);
@@ -326,26 +326,26 @@ class SlabArena
         auto it = free_lists_.find(size);
         if (it != free_lists_.end() && !it->second.empty())
         {
-            void* p = it->second.back();
+            void* block = it->second.back();
             it->second.pop_back();
             // SEGV hunt: detect if a slab is handed out while still marked live
             // (would mean it was freed and reused with live blocks in it — the
             // all-zero-op corruption). This should be impossible: a slab on the
             // free-list must have been deallocate()'d (removed from live_).
-            if (live_.contains(reinterpret_cast<std::uintptr_t>(p)))
+            if (live_.contains(reinterpret_cast<std::uintptr_t>(block)))
             {
                 std::fprintf(stderr,
                              "[ARENA %s] DOUBLE-ALLOC slab %p (size=%zu): handed out while still live "
                              "— a slab was recycled with live blocks still in it\n",
-                             name_, p, size);
+                             name_, block, size);
                 std::fflush(stderr);
                 std::abort();
             }
-            live_.insert(reinterpret_cast<std::uintptr_t>(p));
+            live_.insert(reinterpret_cast<std::uintptr_t>(block));
             bytes_live_ += size;
             bytes_high_ = std::max(bytes_high_, bytes_live_);
             ++alloc_calls_;
-            return p;
+            return block;
         }
 
         // Otherwise bump-allocate, growing the reservation if needed.
@@ -372,32 +372,32 @@ class SlabArena
      *       bookkeeping is already gone, which is harmless. The dangerous
      *       direction -- a live slab handed out again -- is fatal in allocate().
      */
-    void deallocate(void* p, std::size_t size) noexcept
+    void deallocate(void* block, std::size_t size) noexcept
     {
-        if (p == nullptr)
+        if (block == nullptr)
             return;
         std::lock_guard<std::mutex> lk(mtx_);
         // SEGV hunt: a slab freed while not live. Warn but do NOT abort — at
         // program teardown a ~TCTypeCAllocator may deallocate() a slab whose
         // bookkeeping is already gone, which is harmless. The DANGEROUS direction
         // (a live slab handed out again) is caught fatally in allocate().
-        if (live_.erase(reinterpret_cast<std::uintptr_t>(p)) == 0)
+        if (live_.erase(reinterpret_cast<std::uintptr_t>(block)) == 0)
         {
-            std::fprintf(stderr, "[ARENA %s] double-free/unknown slab %p (size=%zu) — ignored\n", name_, p, size);
+            std::fprintf(stderr, "[ARENA %s] double-free/unknown slab %p (size=%zu) — ignored\n", name_, block, size);
             std::fflush(stderr);
             return; // don't push an unknown slab onto the free-list
         }
         bytes_live_ -= size;
         ++dealloc_calls_;
         dealloc_bytes_ += size;
-        free_lists_[size].push_back(p);
+        free_lists_[size].push_back(block);
     }
 
-    /// @brief Does @p p fall inside one of this arena's reservations?
+    /// @brief Does @p ptr fall inside one of this arena's reservations?
     /// @note Linear in the region count, and takes the lock. Diagnostics only.
-    bool owns(const void* p) const noexcept
+    bool owns(const void* ptr) const noexcept
     {
-        auto                        v = reinterpret_cast<std::uintptr_t>(p);
+        auto                        v = reinterpret_cast<std::uintptr_t>(ptr);
         std::lock_guard<std::mutex> lk(mtx_);
         for (const auto& r : regions_)
             if (v >= r.begin && v < r.end)
@@ -444,10 +444,10 @@ class SlabArena
         std::uintptr_t end;   ///< One past its last address.
     };
 
-    /// @brief Round @p v up to a multiple of @p a. @p a must be a power of two.
-    static std::uintptr_t align_up(std::uintptr_t v, std::size_t a) noexcept
+    /// @brief Round @p v up to a multiple of @p alignment. @p alignment must be a power of two.
+    static std::uintptr_t align_up(std::uintptr_t v, std::size_t alignment) noexcept
     {
-        return (v + (a - 1)) & ~(static_cast<std::uintptr_t>(a) - 1);
+        return (v + (alignment - 1)) & ~(static_cast<std::uintptr_t>(alignment) - 1);
     }
 
     /// @brief Map a fresh reservation and restart the bump cursor in it.
@@ -466,10 +466,10 @@ class SlabArena
             std::fprintf(stderr, "SlabArena(%s): mmap of %zu bytes failed\n", name_, want);
             std::abort();
         }
-        auto b = reinterpret_cast<std::uintptr_t>(base);
-        regions_.push_back(Region{.begin = b, .end = b + want});
-        cursor_     = b;
-        region_end_ = b + want;
+        auto region_begin = reinterpret_cast<std::uintptr_t>(base);
+        regions_.push_back(Region{.begin = region_begin, .end = region_begin + want});
+        cursor_     = region_begin;
+        region_end_ = region_begin + want;
     }
 
     const char*         name_;              ///< Diagnostic label only.
@@ -508,24 +508,24 @@ class SlabArena
  */
 inline SlabArena& op_arena()
 {
-    static auto* a = new SlabArena("ops");
-    return *a;
+    static auto* arena = new SlabArena("ops");
+    return *arena;
 }
 
 /// @brief The arena backing the deferred-operation CONTEXT pool.
 /// @copydetails op_arena
 inline SlabArena& ctx_arena()
 {
-    static auto* a = new SlabArena("ctx");
-    return *a;
+    static auto* arena = new SlabArena("ctx");
+    return *arena;
 }
 
 /// @brief The arena backing the chunk value slabs.
 /// @copydetails op_arena
 inline SlabArena& value_arena()
 {
-    static auto* a = new SlabArena("values");
-    return *a;
+    static auto* arena = new SlabArena("values");
+    return *arena;
 }
 
 /**
@@ -568,8 +568,8 @@ inline bool arena_report_enabled() noexcept
 {
     static const bool on = []
     {
-        const char* e = std::getenv("CHUNK_ARENA_REPORT");
-        return e && e[0] && e[0] != '0';
+        const char* env = std::getenv("CHUNK_ARENA_REPORT");
+        return env && env[0] && env[0] != '0';
     }();
     return on;
 }

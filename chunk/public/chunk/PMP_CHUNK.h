@@ -33,18 +33,18 @@ inline int get_thr_rank_fast() noexcept
 {
     // If OMPT is working, this value is already set at the start of the region.
     // No guards, no OpenMP library calls, just a direct TLS read.
-    int r = ::shrink_array::__fast_omp_rank;
+    int rank = ::shrink_array::__fast_omp_rank;
 
     // Fallback if OMPT is disabled or not supported by the runtime
-    if (r == -1) [[unlikely]]
+    if (rank == -1) [[unlikely]]
     {
-        r = ::shrink_array::__fast_omp_rank = omp_get_thread_num();
+        rank = ::shrink_array::__fast_omp_rank = omp_get_thread_num();
     }
     if constexpr (build_config::any_check)
     {
         assert(::shrink_array::__fast_omp_rank == omp_get_thread_num());
     }
-    return r;
+    return rank;
 }
 
     #ifndef CHUNK_PMP_THREAD_RANK

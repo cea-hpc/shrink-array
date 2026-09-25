@@ -21,14 +21,14 @@
 
 #ifndef _OPENMP // openmp problem allocator remembers itself
                 // --> deadlock
-void* TCAllocator::operator new(size_t s)
+void* TCAllocator::operator new(size_t size)
 {
-    return TypeAllocator<TCAllocator>::alloc(s);
+    return TypeAllocator<TCAllocator>::alloc(size);
 }
 
-void TCAllocator::operator delete(void* p)
+void TCAllocator::operator delete(void* ptr)
 {
-    TypeAllocator<TCAllocator>::free(p);
+    TypeAllocator<TCAllocator>::free(ptr);
 }
 #endif
 #if defined(DEBUG) || defined(_OPENMP)

@@ -108,14 +108,14 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
     {
         if (static_cast<int>(k) > nb_chunk && k != 1)
             break;
-        const PredictorPoint p = predict_at_multiple<T>(summary, S, k, meta_per_block);
+        const PredictorPoint point = predict_at_multiple<T>(summary, S, k, meta_per_block);
         if (k == 1)
         {
-            current      = p;
+            current      = point;
             have_current = true;
         }
-        if (p.mem_bytes < best.mem_bytes)
-            best = p;
+        if (point.mem_bytes < best.mem_bytes)
+            best = point;
     }
 
     if (!have_current)

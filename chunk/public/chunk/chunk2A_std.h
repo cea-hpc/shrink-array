@@ -255,20 +255,20 @@ struct Chunk2AStateQueries
     ///          loads `values` a second time, and a compressor claiming it in
     ///          between swaps that pointer for a region identifier, which the
     ///          read then indexes as a buffer.
-    [[nodiscard]] bool is_cst_val2_ptr_of(const T* p) const noexcept
+    [[nodiscard]] bool is_cst_val2_ptr_of(const T* ptr) const noexcept
     {
         if constexpr (is_not_bool)
-            return Holder::is_cst_val2_ptr(p);
+            return Holder::is_cst_val2_ptr(ptr);
         else
-            return p == Holder::m_ptr.data();
+            return ptr == Holder::m_ptr.data();
     }
 
     /**
-     * @brief The constant a chunk whose values pointer is @p p stands for,
+     * @brief The constant a chunk whose values pointer is @p ptr stands for,
      *        read from the registry: second_value_of_chunk() for a pointer
      *        the caller already loaded.
      *
-     * @pre @p p satisfies is_cst_val2_ptr_of(). @see build_config::cst_val2_no_arrays
+     * @pre @p ptr satisfies is_cst_val2_ptr_of(). @see build_config::cst_val2_no_arrays
      * @details Used by ChunkBase::element_at() under
      *          CHUNK_CST_VAL2_NO_ARRAYS, where the shared arrays are not
      *          allocated and the values pointer names an identifier rather
@@ -277,10 +277,10 @@ struct Chunk2AStateQueries
      *          value_of_id() is one load of the value table -- the same table
      *          a write of a wide type already reads.
      */
-    [[nodiscard]] T second_value_from_ptr(const T* p) const noexcept
+    [[nodiscard]] T second_value_from_ptr(const T* ptr) const noexcept
     {
         if constexpr (is_not_bool)
-            return Holder::value_of_id(Holder::id_of_ptr(p));
+            return Holder::value_of_id(Holder::id_of_ptr(ptr));
         else
             return true;
     }
@@ -317,17 +317,17 @@ struct Chunk2AStateQueries
         return base()->is_cst_val1() || is_cst_val2();
     }
 
-    /// @brief Is @p p one of the constant arrays (first or a second one)?
+    /// @brief Is @p ptr one of the constant arrays (first or a second one)?
     /// @note For a values pointer the caller already loaded -- the pre-store
     ///       guards of the proxy -- where is_cst_val() would load it again.
-    [[nodiscard]] static bool is_constant_ptr(const T* p) noexcept
+    [[nodiscard]] static bool is_constant_ptr(const T* ptr) noexcept
     {
-        if (p == Base::get_cst_val1())
+        if (ptr == Base::get_cst_val1())
             return true;
         if constexpr (is_not_bool)
-            return Holder::is_cst_val2_ptr(p);
+            return Holder::is_cst_val2_ptr(ptr);
         else
-            return p == Holder::m_ptr.data();
+            return ptr == Holder::m_ptr.data();
     }
 
     /// @brief Materialised (owns a buffer, i.e. compressed to neither constant)?
@@ -383,14 +383,14 @@ struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurren
     ///          their own loops.
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
-    void operator delete[](void* p);
+    void operator delete[](void* ptr);
     /// @brief Point @p n freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
     ///          parallel region (inside one it stays on the calling thread: an
     ///          allocation is made by one thread, and an orphaned `omp for`
     ///          would hang waiting for the others). Shared by the three
     ///          variants -- chunk_array_new::init_chunks.
-    static void init_chunks_cst_val(Chunk2A<T>* v, std::size_t n) noexcept;
+    static void init_chunks_cst_val(Chunk2A<T>* v, std::size_t count) noexcept;
 
     /*!
      * \brief Materialise this chunk's buffer (allocate + fill + CAS-publish),
@@ -612,15 +612,15 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
         }
         if constexpr (is_not_bool)
         {
-            T* p = tab_cst_val2_holder::find_cst_val2_ptr(ptr_second_value.get());
+            T* cst_val2_ptr = tab_cst_val2_holder::find_cst_val2_ptr(ptr_second_value.get());
             if constexpr (build_config::any_check)
             {
-                if (p == nullptr)
+                if (cst_val2_ptr == nullptr)
                     invariant_failed(std::source_location::current(),
                                      "init_values_cst_val: type says cst_val2 but no array is registered for the "
                                      "chunk's second value");
             }
-            Base::values = p;
+            Base::values = cst_val2_ptr;
         }
         else
         {

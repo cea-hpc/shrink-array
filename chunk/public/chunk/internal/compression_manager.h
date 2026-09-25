@@ -232,10 +232,10 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     /// One lock per rank; sized at init_deferred_queues() with max_thr entries.
     static inline std::unique_ptr<PaddedFlushLock[]> xflush_lock_rank;
 
-    /// @brief Spin-acquire rank @p r's flush lock (recursive for the owner).
-    static void rank_flush_acquire(int r) noexcept;
-    /// @brief Release rank @p r's flush lock, or drop one nesting level.
-    static void rank_flush_release(int r) noexcept;
+    /// @brief Spin-acquire rank @p rank's flush lock (recursive for the owner).
+    static void rank_flush_acquire(int rank) noexcept;
+    /// @brief Release rank @p rank's flush lock, or drop one nesting level.
+    static void rank_flush_release(int rank) noexcept;
 
   public:
     /**
@@ -336,11 +336,11 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
 
         /**
          * @brief Capture a write for later replay.
-         * @param c    context holding the frozen target metadata
+         * @param context    context holding the frozen target metadata
          * @param fn_  callable performing the write
          * @param rank enqueuing thread's rank
          */
-        DeferredOperation(CTX* c, WriteFn&& fn_, int rank) : ctx(c), fn(std::move(fn_))
+        DeferredOperation(CTX* context, WriteFn&& fn_, int rank) : ctx(context), fn(std::move(fn_))
         {
             this->thread_rank = rank;
         }
@@ -600,12 +600,12 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         pending_ops_shard[thr_rank].v.fetch_add(1, std::memory_order_release);
     }
 
-    /// @brief Count @p n drained ops off @p thr_rank.
+    /// @brief Count @p count drained ops off @p thr_rank.
     /// @param thr_rank rank whose ops were drained
-    /// @param n        number of ops drained
-    static void dec_pending_ops(int thr_rank, int64_t n = 1) noexcept
+    /// @param count        number of ops drained
+    static void dec_pending_ops(int thr_rank, int64_t count = 1) noexcept
     {
-        pending_ops_shard[thr_rank].v.fetch_sub(n, std::memory_order_release);
+        pending_ops_shard[thr_rank].v.fetch_sub(count, std::memory_order_release);
     }
 
     /// @brief Pending-op count for a single rank.
@@ -783,16 +783,16 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
 
     template <typename F>
     /**
-     * @brief Run @p f as the slow-path compression driver.
+     * @brief Run @p fn as the slow-path compression driver.
      * @tparam F callable to run inside the driver bracket
-     * @param f  the driver body, typically perform_compression()
-     * @details Brackets @p f with driver_inflight_. The counter lives here, not
+     * @param fn  the driver body, typically perform_compression()
+     * @details Brackets @p fn with driver_inflight_. The counter lives here, not
      *          in WriteCompressSyncPolicy, because it is compression-lifecycle
      *          state rather than write/flush-handshake state.
      * @note seq_cst supersedes the former acq_rel: this is the cold path, so the
      *       cost is irrelevant.
      */
-    static void run_slow_path(F&& f)
+    static void run_slow_path(F&& fn)
     {
         increm_chunk_gate_driver<ChunkType>();
         driver_inflight_.fetch_add(1, std::memory_order_seq_cst);
@@ -802,7 +802,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         // not rare: a dangerous rank sent every write through here, 483 000/s
         // at 4 threads on the perf bench, and a membarrier() per call made
         // the bench 60-100% slower.)
-        std::forward<F>(f)();
+        std::forward<F>(fn)();
         driver_inflight_.fetch_sub(1, std::memory_order_seq_cst);
     }
 

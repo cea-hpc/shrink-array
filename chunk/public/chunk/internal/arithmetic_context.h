@@ -33,10 +33,10 @@ class Proxy;
 // Helper: dispatch get_num_tab() depending on Proxy signature
 // ============================================================================
 template <typename ProxyType>
-constexpr int get_num_tab_helper(const ProxyType& proxy, const void* p)
+constexpr int get_num_tab_helper(const ProxyType& proxy, const void* array_ptr)
 {
-    if constexpr (requires { proxy.get_num_tab(p); })
-        return proxy.get_num_tab(p);
+    if constexpr (requires { proxy.get_num_tab(array_ptr); })
+        return proxy.get_num_tab(array_ptr);
     else
         return proxy.get_num_tab();
 }
@@ -94,12 +94,12 @@ struct BaseArithmeticContext
     // destructor so a use-after-recycle read no longer sees ctx_alive_magic.
     std::uint64_t magic = deferred_lifecycle::ctx_alive_magic;
 
-    BaseArithmeticContext(const ProxyType& prox, const void* p)
+    BaseArithmeticContext(const ProxyType& prox, const void* array_ptr)
         : num(prox.get_num())
         , chunk(prox.get_chunk())
         , num_chunk(prox.get_num_chunk())
-        , num_tab(get_num_tab_helper(prox, p))
-        , ptr_on_array(p)
+        , num_tab(get_num_tab_helper(prox, array_ptr))
+        , ptr_on_array(array_ptr)
         , chunk_size_frozen(prox.chunk_size()) // resolve while the array is alive
         , alloc_key_frozen(prox.alloc_key())
     {
@@ -125,7 +125,7 @@ struct ArithmeticProxyContext : BaseArithmeticContext<T, Proxy<T>>
 {
     using Base = BaseArithmeticContext<T, Proxy<T>>;
 
-    ArithmeticProxyContext(const Proxy<T>& proxy, const void* p) : Base(proxy, p) {}
+    ArithmeticProxyContext(const Proxy<T>& proxy, const void* array_ptr) : Base(proxy, array_ptr) {}
 };
 
 // ============================================================================
@@ -140,8 +140,8 @@ struct ArithmeticAffectationProxyContext : BaseArithmeticContext<T, Proxy<T>>
 
     U operand; // Assigned value
 
-    ArithmeticAffectationProxyContext(const Proxy<T>& proxy, U op_value, const void* p)
-        : Base(proxy, p), operand(op_value)
+    ArithmeticAffectationProxyContext(const Proxy<T>& proxy, U op_value, const void* array_ptr)
+        : Base(proxy, array_ptr), operand(op_value)
     {
     }
 };
@@ -159,8 +159,8 @@ struct ArithmeticOperationProxyContext : BaseArithmeticContext<T, Proxy<T>>
     T  operand;   // Right-hand operand
     Op operation; // Functor implementing the operation
 
-    ArithmeticOperationProxyContext(const Proxy<T>& proxy, T op_value, Op op, const void* p)
-        : Base(proxy, p), operand(op_value), operation(op)
+    ArithmeticOperationProxyContext(const Proxy<T>& proxy, T op_value, Op op, const void* array_ptr)
+        : Base(proxy, array_ptr), operand(op_value), operation(op)
     {
     }
 };
@@ -175,7 +175,7 @@ struct ArithmeticContext : BaseArithmeticContext<T, ProxyType, ChunkType>
 {
     using Base = BaseArithmeticContext<T, ProxyType, ChunkType>;
 
-    ArithmeticContext(const ProxyType& proxy, const void* p) : Base(proxy, p) {}
+    ArithmeticContext(const ProxyType& proxy, const void* array_ptr) : Base(proxy, array_ptr) {}
 };
 
 // ============================================================================
@@ -190,8 +190,8 @@ struct ArithmeticOperationContext : BaseArithmeticContext<T, ProxyType, ChunkTyp
     T  operand;
     Op operation;
 
-    ArithmeticOperationContext(const ProxyType& proxy, T op_value, Op op, const void* p)
-        : Base(proxy, p), operand(op_value), operation(op)
+    ArithmeticOperationContext(const ProxyType& proxy, T op_value, Op op, const void* array_ptr)
+        : Base(proxy, array_ptr), operand(op_value), operation(op)
     {
     }
 };
@@ -208,7 +208,8 @@ struct ArithmeticAffectationContext : BaseArithmeticContext<T, ProxyType, ChunkT
 
     U operand;
 
-    ArithmeticAffectationContext(const ProxyType& proxy, U op_value, const void* p) : Base(proxy, p), operand(op_value)
+    ArithmeticAffectationContext(const ProxyType& proxy, U op_value, const void* array_ptr)
+        : Base(proxy, array_ptr), operand(op_value)
     {
     }
 };

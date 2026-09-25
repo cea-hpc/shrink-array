@@ -380,8 +380,8 @@ class WriteCompressSyncPolicy
     {
         for (int i = 0; i < max_thr; ++i)
         {
-            const auto* p = static_cast<const ChunkT*>(per_thread_writing[i].v.load(std::memory_order_acquire));
-            if (p != nullptr && p->steal_marked())
+            const auto* chunk = static_cast<const ChunkT*>(per_thread_writing[i].v.load(std::memory_order_acquire));
+            if (chunk != nullptr && chunk->steal_marked())
                 return true;
         }
         return false;

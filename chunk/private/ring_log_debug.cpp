@@ -221,12 +221,13 @@ void dump_ring()
     std::cout << "\033[1m---- ring dump (last " << (head - start) << " entries) ----\033[0m\n";
     for (uint32_t i = start; i < head; ++i)
     {
-        const RingEntry& e     = ring_buf[i & (RING_SIZE - 1)];
-        const char*      color = event_color(e.ev);
-        const char*      name  = event_name(e.ev);
+        const RingEntry& entry = ring_buf[i & (RING_SIZE - 1)];
+        const char*      color = event_color(entry.ev);
+        const char*      name  = event_name(entry.ev);
 
-        std::cout << "[" << i << "] tid=" << e.tid << " ev=" << color << name << "\033[0m"
-                  << " info=" << e.info << " addr=0x" << std::hex << e.addr << std::dec << " ts=" << e.ts << "\n";
+        std::cout << "[" << i << "] tid=" << entry.tid << " ev=" << color << name << "\033[0m"
+                  << " info=" << entry.info << " addr=0x" << std::hex << entry.addr << std::dec << " ts=" << entry.ts
+                  << "\n";
     }
     std::cout << "\033[1m---- end ring ----\033[0m\n";
 }
@@ -238,33 +239,33 @@ void dump_ring()
 // pass isolates the culprit op's own alloc/flush/free ordering.
 void dump_ring_for_addr(const void* target)
 {
-    const uint64_t t     = reinterpret_cast<uint64_t>(target);
-    const uint64_t bmask = ~static_cast<uint64_t>(0xffffULL);
-    const uint32_t head  = ring_head.load(std::memory_order_relaxed);
-    const uint32_t start = (head > RING_SIZE) ? (head - RING_SIZE) : 0;
+    const uint64_t target_addr = reinterpret_cast<uint64_t>(target);
+    const uint64_t bmask       = ~static_cast<uint64_t>(0xffffULL);
+    const uint32_t head        = ring_head.load(std::memory_order_relaxed);
+    const uint32_t start       = (head > RING_SIZE) ? (head - RING_SIZE) : 0;
 
-    std::cout << "\033[1m---- ring dump: EXACT op addr 0x" << std::hex << t << std::dec << " ----\033[0m\n";
+    std::cout << "\033[1m---- ring dump: EXACT op addr 0x" << std::hex << target_addr << std::dec << " ----\033[0m\n";
     for (uint32_t i = start; i < head; ++i)
     {
-        const RingEntry& e = ring_buf[i & (RING_SIZE - 1)];
-        if (e.addr != t)
+        const RingEntry& entry = ring_buf[i & (RING_SIZE - 1)];
+        if (entry.addr != target_addr)
             continue;
-        std::cout << "[" << i << "] tid=" << e.tid << " ev=" << event_name(e.ev) << " num=" << e.info << " addr=0x"
-                  << std::hex << e.addr << std::dec << " ts=" << e.ts << "\n";
+        std::cout << "[" << i << "] tid=" << entry.tid << " ev=" << event_name(entry.ev) << " num=" << entry.info
+                  << " addr=0x" << std::hex << entry.addr << std::dec << " ts=" << entry.ts << "\n";
     }
-    std::cout << "\033[1m---- ring dump: block context 0x" << std::hex << (t & bmask) << std::dec
+    std::cout << "\033[1m---- ring dump: block context 0x" << std::hex << (target_addr & bmask) << std::dec
               << " (other offsets in same slab) ----\033[0m\n";
     for (uint32_t i = start; i < head; ++i)
     {
-        const RingEntry& e = ring_buf[i & (RING_SIZE - 1)];
-        if (e.addr == 0)
+        const RingEntry& entry = ring_buf[i & (RING_SIZE - 1)];
+        if (entry.addr == 0)
             continue;
-        if ((e.addr & bmask) != (t & bmask))
+        if ((entry.addr & bmask) != (target_addr & bmask))
             continue;
-        if (e.addr == t)
+        if (entry.addr == target_addr)
             continue; // already shown exact
-        std::cout << "[" << i << "] tid=" << e.tid << " ev=" << event_name(e.ev) << " num=" << e.info << " addr=0x"
-                  << std::hex << e.addr << std::dec << " ts=" << e.ts << "\n";
+        std::cout << "[" << i << "] tid=" << entry.tid << " ev=" << event_name(entry.ev) << " num=" << entry.info
+                  << " addr=0x" << std::hex << entry.addr << std::dec << " ts=" << entry.ts << "\n";
     }
     std::cout << "\033[1m---- end ring for addr ----\033[0m\n";
     std::cout.flush(); // SEGV hunt: abort() does NOT flush cout — force it now
@@ -408,44 +409,44 @@ bool analyze_ring_sweep()
 
     for (uint32_t i = start; i < head; ++i)
     {
-        const RingEntry& e = ring_buf[i & (RING_SIZE - 1)];
-        last_ts            = std::max(last_ts, e.ts);
+        const RingEntry& entry = ring_buf[i & (RING_SIZE - 1)];
+        last_ts                = std::max(last_ts, entry.ts);
 
-        ThreadState& s = state[e.tid];
+        ThreadState& thr_state = state[entry.tid];
 
-        switch (e.ev)
+        switch (entry.ev)
         {
             case EV_BEGIN_FAST_PATH:
-                if (!s.in_fast)
+                if (!thr_state.in_fast)
                 {
-                    s.in_fast    = true;
-                    s.fast_start = e.ts;
+                    thr_state.in_fast    = true;
+                    thr_state.fast_start = entry.ts;
                 }
                 break;
 
             case EV_END_FAST_PATH:
-                if (s.in_fast)
+                if (thr_state.in_fast)
                 {
-                    fast_intervals[e.tid].push_back({s.fast_start, e.ts});
-                    s.in_fast = false;
+                    fast_intervals[entry.tid].push_back({thr_state.fast_start, entry.ts});
+                    thr_state.in_fast = false;
                 }
                 break;
 
             case EV_COMPRESS_ATTEMPT:
             case EV_COMPRESS_STARTED:
-                if (!s.in_compress)
+                if (!thr_state.in_compress)
                 {
-                    s.in_compress    = true;
-                    s.compress_start = e.ts;
+                    thr_state.in_compress    = true;
+                    thr_state.compress_start = entry.ts;
                 }
                 break;
 
             case EV_COMPRESS_FINISHED:
             case EV_COMPRESS_ABORTED:
-                if (s.in_compress)
+                if (thr_state.in_compress)
                 {
-                    compress_intervals[e.tid].push_back({s.compress_start, e.ts});
-                    s.in_compress = false;
+                    compress_intervals[entry.tid].push_back({thr_state.compress_start, entry.ts});
+                    thr_state.in_compress = false;
                 }
                 break;
 
@@ -488,26 +489,26 @@ bool analyze_ring_sweep()
 
     for (auto& p : state)
     {
-        uint32_t     tid = p.first;
-        ThreadState& s   = p.second;
+        uint32_t     tid       = p.first;
+        ThreadState& thr_state = p.second;
 
-        if (s.in_fast)
+        if (thr_state.in_fast)
         {
             // only push if start < last_ts and duration large enough
-            if (s.fast_start < last_ts)
+            if (thr_state.fast_start < last_ts)
             {
-                push_fallback_if_needed(fast_intervals, tid, s.fast_start, last_ts);
+                push_fallback_if_needed(fast_intervals, tid, thr_state.fast_start, last_ts);
             }
-            s.in_fast = false;
+            thr_state.in_fast = false;
         }
 
-        if (s.in_compress)
+        if (thr_state.in_compress)
         {
-            if (s.compress_start < last_ts)
+            if (thr_state.compress_start < last_ts)
             {
-                push_fallback_if_needed(compress_intervals, tid, s.compress_start, last_ts);
+                push_fallback_if_needed(compress_intervals, tid, thr_state.compress_start, last_ts);
             }
-            s.in_compress = false;
+            thr_state.in_compress = false;
         }
     }
 
@@ -516,43 +517,43 @@ bool analyze_ring_sweep()
     for (auto& p : state)
     {
         uint32_t     tid = p.first;
-        ThreadState& s   = p.second;
+        ThreadState& thr_state   = p.second;
 
-        if (s.in_fast)
+        if (thr_state.in_fast)
         {
             // Check there isn't already a closed interval with last_ts
             bool already_closed = false;
             if (!fast_intervals[tid].empty())
             {
                 const Interval& last = fast_intervals[tid].back();
-                if (last.end == last_ts && last.start == s.fast_start)
+                if (last.end == last_ts && last.start == thr_state.fast_start)
                     already_closed = true;
             }
 
-            if (!already_closed && s.fast_start < last_ts)
+            if (!already_closed && thr_state.fast_start < last_ts)
             {
-                fast_intervals[tid].push_back({s.fast_start, last_ts, true});
+                fast_intervals[tid].push_back({thr_state.fast_start, last_ts, true});
             }
 
-            s.in_fast = false;
+            thr_state.in_fast = false;
         }
 
-        if (s.in_compress)
+        if (thr_state.in_compress)
         {
             bool already_closed = false;
             if (!compress_intervals[tid].empty())
             {
                 const Interval& last = compress_intervals[tid].back();
-                if (last.end == last_ts && last.start == s.compress_start)
+                if (last.end == last_ts && last.start == thr_state.compress_start)
                     already_closed = true;
             }
 
-            if (!already_closed && s.compress_start < last_ts)
+            if (!already_closed && thr_state.compress_start < last_ts)
             {
-                compress_intervals[tid].push_back({s.compress_start, last_ts, true});
+                compress_intervals[tid].push_back({thr_state.compress_start, last_ts, true});
             }
 
-            s.in_compress = false;
+            thr_state.in_compress = false;
         }
     }
     #endif
@@ -599,11 +600,11 @@ bool analyze_ring_sweep()
     std::cout << "🔢 Sorting endpoints (" << endpoints.size() << " endpoints)...\n";
     // show a simple wait spinner while sorting if endpoints large (sort is blocking but we can print once)
     std::sort(endpoints.begin(), endpoints.end(),
-              [](const Endpoint& a, const Endpoint& b)
+              [](const Endpoint& lhs, const Endpoint& rhs)
               {
-                  if (a.time != b.time)
-                      return a.time < b.time;
-                  return a.type < b.type;
+                  if (lhs.time != rhs.time)
+                      return lhs.time < rhs.time;
+                  return lhs.type < rhs.type;
               });
     std::cout << "✅ Sorting complete.\n";
 

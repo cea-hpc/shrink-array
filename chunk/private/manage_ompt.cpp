@@ -106,18 +106,18 @@ OmptSyncSlot* ompt_my_slot() noexcept
 {
     if (t_ompt_slot == nullptr)
     {
-        const int s = g_ompt_next_slot.fetch_add(1, std::memory_order_relaxed); // once per thread
-        if (s >= kOmptMaxSlots)
+        const int slot_idx = g_ompt_next_slot.fetch_add(1, std::memory_order_relaxed); // once per thread
+        if (slot_idx >= kOmptMaxSlots)
             return nullptr;
-        t_ompt_slot = &g_ompt_slots[s];
+        t_ompt_slot = &g_ompt_slots[slot_idx];
     }
     return t_ompt_slot;
 }
 
 /// Single-writer increment: the slot belongs to the calling thread.
-void ompt_bump(std::atomic<std::uint64_t>& c, std::uint64_t v = 1) noexcept
+void ompt_bump(std::atomic<std::uint64_t>& counter, std::uint64_t v = 1) noexcept
 {
-    c.store(c.load(std::memory_order_relaxed) + v, std::memory_order_relaxed);
+    counter.store(counter.load(std::memory_order_relaxed) + v, std::memory_order_relaxed);
 }
 
 const char* ompt_kind_name(int k) noexcept
@@ -169,9 +169,9 @@ void ompt_finalize(ompt_data_t*)
                 tried += sl.flush_calls[k][e].load(std::memory_order_relaxed);
                 skip += sl.skipped_flag[k][e].load(std::memory_order_relaxed);
                 fl += sl.flushed[k][e].load(std::memory_order_relaxed);
-                const std::uint64_t t = sl.flush_ns[k][e].load(std::memory_order_relaxed);
-                ns += t;
-                ns_max = t > ns_max ? t : ns_max;
+                const std::uint64_t flush_ns = sl.flush_ns[k][e].load(std::memory_order_relaxed);
+                ns += flush_ns;
+                ns_max = flush_ns > ns_max ? flush_ns : ns_max;
             }
             if (calls == 0)
                 continue;
@@ -324,14 +324,14 @@ void on_barrier_end(ompt_sync_region_t kind, ompt_scope_endpoint_t endpoint, omp
 
     OmptSyncSlot* slot = nullptr;
     int           k    = 0;
-    int           e    = 0;
+    int           ep   = 0;
     if (g_ompt_stats) [[unlikely]]
     {
         slot = ompt_my_slot();
         k    = (static_cast<int>(kind) > 0 && static_cast<int>(kind) < kOmptKinds) ? static_cast<int>(kind) : 0;
-        e    = endpoint == ompt_scope_begin ? 0 : 1;
+        ep   = endpoint == ompt_scope_begin ? 0 : 1;
         if (slot)
-            ompt_bump(slot->calls[k][e]);
+            ompt_bump(slot->calls[k][ep]);
     }
 
     // Same suppression as on_parallel_end: the rechunk rebuild's own parallel
@@ -346,10 +346,10 @@ void on_barrier_end(ompt_sync_region_t kind, ompt_scope_endpoint_t endpoint, omp
             const auto t0      = std::chrono::steady_clock::now();
             const bool flushed = shrink_array::finalize_barrier_phase();
             const auto dt      = std::chrono::steady_clock::now() - t0;
-            ompt_bump(slot->flush_calls[k][e]);
+            ompt_bump(slot->flush_calls[k][ep]);
             if (flushed)
-                ompt_bump(slot->flushed[k][e]);
-            ompt_bump(slot->flush_ns[k][e],
+                ompt_bump(slot->flushed[k][ep]);
+            ompt_bump(slot->flush_ns[k][ep],
                       static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(dt).count()));
         }
         else
@@ -361,7 +361,7 @@ void on_barrier_end(ompt_sync_region_t kind, ompt_scope_endpoint_t endpoint, omp
     {
         // Skipped because ANOTHER thread's flush_all_deferred() had cleared
         // the flag for the duration of its own pass.
-        ompt_bump(slot->skipped_flag[k][e]);
+        ompt_bump(slot->skipped_flag[k][ep]);
     }
 }
 
@@ -379,8 +379,8 @@ void on_barrier_end(ompt_sync_region_t kind, ompt_scope_endpoint_t endpoint, omp
 int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
 {
     {
-        const char* s = std::getenv("CHUNK_OMPT_STATS");
-        g_ompt_stats  = s && s[0] && s[0] != '0'; // before any team: no race
+        const char* env = std::getenv("CHUNK_OMPT_STATS");
+        g_ompt_stats    = env && env[0] && env[0] != '0'; // before any team: no race
     }
 
     auto ompt_set_callback = (ompt_set_callback_t)lookup("ompt_set_callback");

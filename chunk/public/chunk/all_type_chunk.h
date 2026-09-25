@@ -146,7 +146,7 @@ struct AllTypeChunkParallelInterface<Derived, true>
      *        rank's first allocation). Any thread, no parallel region.
      * @param block_size Number of chunks per allocation block.
      */
-    void init_manager(ManagerChunkInt& m, int block_size) const;
+    void init_manager(ManagerChunkInt& manager, int block_size) const;
 
     /// Allocates the first block of each per-thread allocator (no-op in std-alloc builds).
     void alloc_chunk_allocator_thr() const;
@@ -181,7 +181,7 @@ struct AllTypeChunkParallelInterface<Derived, false>
      * @param block_size Number of chunks per allocation block.
      * @note No-op in std-alloc builds.
      */
-    void init_manager(ManagerChunkInt& m, int block_size) const;
+    void init_manager(ManagerChunkInt& manager, int block_size) const;
 
     /// Destroys the single chunk allocator of every type (no-op in std-alloc builds).
     void delete_chunk_allocator() const;
@@ -342,8 +342,8 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     ///         published so far, read without a lock (see the members above).
     [[nodiscard]] std::span<const std::unique_ptr<ManagerChunkInt>> getListTypeChunk() const noexcept
     {
-        const auto n = static_cast<std::size_t>(nb_managers_.load(std::memory_order_acquire));
-        return {managers_.data(), n};
+        const auto count = static_cast<std::size_t>(nb_managers_.load(std::memory_order_acquire));
+        return {managers_.data(), count};
     }
 
     /// Resizes every manager's compression-candidate list to the current thread count.

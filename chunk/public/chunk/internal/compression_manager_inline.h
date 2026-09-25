@@ -35,10 +35,10 @@ namespace shrink_array
 // global lock (CPU_PAUSE, yield after 1000 spins). Guards the per-rank op-map
 // container arr[r] against concurrent structural mutation by another flusher.
 template <typename T, typename ChunkType, bool Enabled>
-void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::rank_flush_acquire(int r) noexcept
+void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::rank_flush_acquire(int rank) noexcept
 {
     const int my = get_thr_rank_fast();
-    auto&     lk = xflush_lock_rank[r];
+    auto&     lk = xflush_lock_rank[rank];
 
     // Re-entrant acquire by the owner (write_body re-enqueue during a drain).
     if (lk.owner.load(std::memory_order_relaxed) == my)
@@ -66,9 +66,9 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::rank_flush_acquire(int 
 }
 
 template <typename T, typename ChunkType, bool Enabled>
-void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::rank_flush_release(int r) noexcept
+void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::rank_flush_release(int rank) noexcept
 {
-    auto& lk = xflush_lock_rank[r];
+    auto& lk = xflush_lock_rank[rank];
     if (--lk.depth > 0)
         return; // still nested inside the outer drain
     lk.owner.store(-1, std::memory_order_release);
@@ -103,10 +103,10 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
     rank_flush_acquire(thr);
     struct RankFlushGuard
     {
-        int r;
+        int rank;
         ~RankFlushGuard()
         {
-            rank_flush_release(r);
+            rank_flush_release(rank);
         }
     } xflush_guard{thr};
 
@@ -329,10 +329,10 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
         rank_flush_acquire(r);
         struct RankScopeGuard
         {
-            int r;
+            int rank;
             ~RankScopeGuard()
             {
-                rank_flush_release(r);
+                rank_flush_release(rank);
             }
         } rank_scope_guard{r};
 
@@ -368,9 +368,9 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
                 // there. Cross-thread path (flush_chunk_all_ranks).
                 if constexpr (build_config::any_check)
                 {
-                    DeferredOperationBase* raw = op_ptr.get();
-                    const auto             u   = reinterpret_cast<std::uintptr_t>(raw);
-                    if (raw == nullptr || u < 0x1000 || (u & 0x7) != 0)
+                    DeferredOperationBase* raw  = op_ptr.get();
+                    const auto             addr = reinterpret_cast<std::uintptr_t>(raw);
+                    if (raw == nullptr || addr < 0x1000 || (addr & 0x7) != 0)
                         INVARIANT_FAILED("[FLUSH_PROBE xrank] bad op_ptr in op_map: num={} op={} rank={}", num,
                                          static_cast<const void*>(raw), r);
                     const std::uintptr_t vptr = *reinterpret_cast<const std::uintptr_t*>(raw);
@@ -452,10 +452,10 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
     rank_flush_acquire(thr);
     struct RankFlushGuard
     {
-        int r;
+        int rank;
         ~RankFlushGuard()
         {
-            rank_flush_release(r);
+            rank_flush_release(rank);
         }
     } xflush_guard{thr};
 

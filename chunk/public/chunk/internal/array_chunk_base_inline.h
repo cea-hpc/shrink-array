@@ -78,13 +78,13 @@ void ArrayChunkBase<Derived>::set_value(ind_type i, in_t<T> v)
     // COMPLEX CASES (ArrayChunk2 / ArrayChunk2A):
     // We use the Proxy because it handles decompression,
     // compression lists, and asynchronous operations.
-    proxy_type p = chunk_t[num];
+    proxy_type proxy = chunk_t[num];
 
     // Arm ptr_on_array / num_chunk in ALL modes (see operator[] comment):
     // set_num_tab()/get_info_second_value() need ptr_on_array set even in
     // non-OpenMP builds, otherwise share_info lookups abort with
     // "key NOT FOUND".
-    p.set_this_and_num_chunk(this->registry_key(), num_chunk, num_tab);
+    proxy.set_this_and_num_chunk(this->registry_key(), num_chunk, num_tab);
 
     // Chunk2 only: arm the proxy with the address of this array's registry
     // mirror, so the write path copies the (second_value, ind, num_tab)
@@ -94,18 +94,18 @@ void ArrayChunkBase<Derived>::set_value(ind_type i, in_t<T> v)
     // registry.
     if constexpr (std::is_same_v<proxy_type, Proxy2<T>>)
     {
-        p.arm_inf_array(derived().registry_mirror());
+        proxy.arm_inf_array(derived().registry_mirror());
     }
     // Chunk2A: arm the proxy with the array's metadata rows (base +
     // num_chunk instead of three table lookups per write).
     else if constexpr (std::is_same_v<proxy_type, Proxy2A<T>>)
     {
-        p.arm_meta_bases(derived().meta_bases());
+        proxy.arm_meta_bases(derived().meta_bases());
     }
 
     // Assignment triggers Proxy::operator= which handles everything internally,
     // including calling derived().get_metadata(i) if needed
-    p = v;
+    proxy = v;
 }
 
 template <typename Derived>
@@ -136,38 +136,38 @@ ArrayChunkBase<Derived>::T& ArrayChunkBase<Derived>::operator()(ind_type i) noex
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int n) noexcept
+void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept
 {
-    size_policy_.set_size(n); // no-op under StaticChunkSize
+    size_policy_.set_size(new_chunk_size); // no-op under StaticChunkSize
     if constexpr (build_config::chunk_dynamic)
     {
-        // Multi-size support: make sure the value allocators for size n exist
-        // (sequential, idempotent), and record n as this thread's active
+        // Multi-size support: make sure the value allocators for size new_chunk_size exist
+        // (sequential, idempotent), and record new_chunk_size as this thread's active
         // size so later allocations on this thread route to the right pool.
-        register_runtime_chunk_size(n);
-        set_thread_chunk_size(n);
+        register_runtime_chunk_size(new_chunk_size);
+        set_thread_chunk_size(new_chunk_size);
     }
 }
 
 template <typename Derived>
 int ArrayChunkBase<Derived>::get_nb_chunk_written() const
 {
-    int  n   = 0;
-    auto lbd = [&](int j) { return static_cast<int>(is_written_at(j)); };
+    int  nb_written = 0;
+    auto lbd        = [&](int j) { return static_cast<int>(is_written_at(j)); };
 
     if (CHUNK_PMP_IN_PARALLEL_REGION)
     {
 #pragma omp for schedule(static) nowait
         for (int j = 0; j < nb_chunk; ++j)
-            n += lbd(j);
+            nb_written += lbd(j);
     }
     else
     {
-#pragma omp parallel for reduction(+ : n)
+#pragma omp parallel for reduction(+ : nb_written)
         for (int j = 0; j < nb_chunk; ++j)
-            n += lbd(j);
+            nb_written += lbd(j);
     }
-    return n;
+    return nb_written;
 }
 
 template <typename Derived>
@@ -209,24 +209,24 @@ void ArrayChunkBase<Derived>::assign(It first, It last)
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::reserve(ind_type n)
+void ArrayChunkBase<Derived>::reserve(ind_type new_capacity)
 {
-    if (static_cast<size_type>(n) <= capacity())
+    if (static_cast<size_type>(new_capacity) <= capacity())
         return;
-    // resize() builds the storage of n elements and sets the size to n; the
-    // size is what reserve() leaves alone. resize() to n allocates
-    // n / chunk_size + 1 chunks, so the capacity covers n afterwards.
+    // resize() builds the storage of new_capacity elements and sets the size to it; the
+    // size is what reserve() leaves alone. resize() to new_capacity allocates
+    // new_capacity / chunk_size + 1 chunks, so the capacity covers it afterwards.
     const ind_type keep = m_size;
-    derived().resize(n);
+    derived().resize(new_capacity);
     m_size = keep;
 }
 
 template <typename Derived>
 void ArrayChunkBase<Derived>::copy_from(const Derived& from)
 {
-    const ind_type n = from.m_size;
-    derived().resize(n);
-    for (ind_type i = 0; i < n; ++i)
+    const ind_type from_size = from.m_size;
+    derived().resize(from_size);
+    for (ind_type i = 0; i < from_size; ++i)
         (*this)[i] = std::as_const(from)[i];
 }
 

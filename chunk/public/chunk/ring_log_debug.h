@@ -142,13 +142,13 @@ struct ScopedRingLog
     [[maybe_unused]] uint32_t payload;
     [[maybe_unused]] bool     ended;
 
-    /// @param p Optional payload. 0 means no payload.
-    explicit ScopedRingLog(uint32_t p = 0) noexcept
+    /// @param payload_value Optional payload. 0 means no payload.
+    explicit ScopedRingLog(uint32_t payload_value = 0) noexcept
     {
         if constexpr (chunk_config::ring_log_debug)
         {
             tid     = get_tid();
-            payload = p;
+            payload = payload_value;
             ended   = false;
             ring_log_start(tid, BEGIN_EVENT, payload);
         }

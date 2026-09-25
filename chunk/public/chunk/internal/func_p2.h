@@ -19,12 +19,12 @@
 
 #include <cstddef> // size_t
 
-constexpr bool is_power_of_tow(int x) noexcept
+constexpr bool is_power_of_tow(int value) noexcept
 {
-    return ((x & (x - 1)) == 0) && (x != 0);
+    return ((value & (value - 1)) == 0) && (value != 0);
 }
 
-constexpr size_t log2int(size_t n)
+constexpr size_t log2int(size_t value)
 {
-    return (n < 2) ? 0 : 1 + log2int(n / 2);
+    return (value < 2) ? 0 : 1 + log2int(value / 2);
 }

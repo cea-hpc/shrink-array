@@ -68,40 +68,40 @@ template <typename ChunkType, typename T>
 inline constexpr bool relaxed_element_stores_v = std::is_same_v<ChunkType, Chunk2A<T>> && relaxed_element_access_v<T>;
 
 template <typename T>
-[[nodiscard]] T load_element_relaxed(const T* p) noexcept
+[[nodiscard]] T load_element_relaxed(const T* ptr) noexcept
 {
     static_assert(relaxed_element_access_v<T>);
     // atomic_ref<const T> is C++26; a load never writes through the reference.
-    return std::atomic_ref<T>(*const_cast<T*>(p)).load(std::memory_order_relaxed);
+    return std::atomic_ref<T>(*const_cast<T*>(ptr)).load(std::memory_order_relaxed);
 }
 
 template <typename T>
-void store_element_relaxed(T* p, T v) noexcept
+void store_element_relaxed(T* ptr, T v) noexcept
 {
     static_assert(relaxed_element_access_v<T>);
-    std::atomic_ref<T>(*p).store(v, std::memory_order_relaxed);
+    std::atomic_ref<T>(*ptr).store(v, std::memory_order_relaxed);
 }
 
 /**
  * @brief Run an in-place write body (++, --, the bitwise and compound
- *        operators) on element @p i of the buffer @p p.
+ *        operators) on element @p i of the buffer @p ptr.
  * @details The body takes the element by reference. Where the element stores
  *          must be relaxed atomics it works on a copy, stored back relaxed; the
  *          read of the copy stays plain -- the element is this writer's own,
  *          the other threads only read it.
  */
 template <typename ChunkType, typename T, typename Body>
-void modify_element(T* p, int i, Body&& body)
+void modify_element(T* ptr, int i, Body&& body)
 {
     if constexpr (relaxed_element_stores_v<ChunkType, T>)
     {
-        T e = p[i];
-        body(e);
-        store_element_relaxed(p + i, e);
+        T elem = ptr[i];
+        body(elem);
+        store_element_relaxed(ptr + i, elem);
     }
     else
     {
-        body(p[i]);
+        body(ptr[i]);
     }
 }
 

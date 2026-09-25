@@ -402,7 +402,7 @@ struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<boo
 
     using values_type_ref = Proxy2Base<Derived, bool, ChunkType>::values_type_ref;
 
-    explicit ProxySpec2A(values_type_ref v, int n, ChunkType& c) noexcept : Base2(v, n, c) {}
+    explicit ProxySpec2A(values_type_ref v, int num_, ChunkType& chunk_) noexcept : Base2(v, num_, chunk_) {}
     /*!
      * \brief Static container holding second values for each tab and chunk.
      * Indexed as tab_second_value[num_tab][num_chunk].
@@ -569,8 +569,8 @@ struct Proxy2AFastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2A<
 /// "could become uniform" filter of Proxy2A::should_mark_for_compression().
 inline const bool g_proxy2a_mark_legacy = []
 {
-    const char* e = std::getenv("CHUNK_PROXY2A_MARK_LEGACY");
-    return e != nullptr && e[0] != '\0' && e[0] != '0';
+    const char* env = std::getenv("CHUNK_PROXY2A_MARK_LEGACY");
+    return env != nullptr && env[0] != '\0' && env[0] != '0';
 }();
 
 template <typename T>
@@ -633,9 +633,9 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
   public:
     /// @brief Arm this proxy with the owning array's metadata rows
     ///        (ArrayChunk2A::meta_bases()). Called by operator[] / set_value.
-    void arm_meta_bases(const Proxy2AMetaBases<T>& b) const noexcept
+    void arm_meta_bases(const Proxy2AMetaBases<T>& bases) const noexcept
     {
-        meta_ = b;
+        meta_ = bases;
     }
 
     /**
@@ -1020,7 +1020,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     const T* operator&() const = delete;
 
     template <typename U>
-    friend std::ostream& operator<<(std::ostream& os, const Proxy2A<U>& a);
+    friend std::ostream& operator<<(std::ostream& os, const Proxy2A<U>& proxy);
 
     [[nodiscard]] T& getVal()
     {
@@ -1033,11 +1033,11 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
 };
 
 template <typename T>
-std::ostream& operator<<(std::ostream& os, const Proxy2A<T>& a)
+std::ostream& operator<<(std::ostream& os, const Proxy2A<T>& proxy)
 {
     // Through the proxy's read entry: indexing values[] directly prints a zero
     // for a compressed chunk under CHUNK_CST_VAL2_NO_ARRAYS.
-    os << a.read_values();
+    os << proxy.read_values();
     return os;
 }
 

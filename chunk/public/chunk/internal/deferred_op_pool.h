@@ -92,9 +92,9 @@ class DeferredOperationBase
 
 struct DeferredOpDeleter
 {
-    void operator()(DeferredOperationBase* p) const noexcept
+    void operator()(DeferredOperationBase* op) const noexcept
     {
-        (void)p;
+        (void)op;
     }
 };
 
@@ -117,7 +117,7 @@ struct FastAllocatorBase
     /// @brief Take a block (uninitialised).
     virtual void* allocate_raw() = 0;
     /// @brief Return a block to the pool.
-    virtual void recycle(void* p) = 0;
+    virtual void recycle(void* block) = 0;
     /// @brief The slab the blocks come from (the ledger's identity).
     [[nodiscard]] virtual const void* slab_addr() const noexcept = 0;
     virtual ~FastAllocatorBase()                                 = default;
@@ -285,20 +285,20 @@ struct FastAllocatorConcrete : FastAllocatorBase
     // Instead we ask the kernel directly whether the page is mapped, via msync():
     // it returns ENOMEM for an unmapped address and never faults. Only genuinely
     // unmapped / misaligned / null pointers trip the probe.
-    /// @brief Check-only: fail the invariant if @p p, returned by @p path,
+    /// @brief Check-only: fail the invariant if @p ptr, returned by @p path,
     ///        is null, misaligned or not a mapped page.
-    static void probe_returned_block(const void* p, const char* path) noexcept
+    static void probe_returned_block(const void* ptr, const char* path) noexcept
     {
         if constexpr (build_config::any_check)
         {
-            const auto u = reinterpret_cast<std::uintptr_t>(p);
+            const auto addr = reinterpret_cast<std::uintptr_t>(ptr);
 
-            if (p == nullptr)
+            if (ptr == nullptr)
                 INVARIANT_FAILED("[ALLOC_PROBE {}] allocate_raw returned NULL for T size={}", path, sizeof(T));
 
-            if ((u & (alignof(std::max_align_t) - 1)) != 0 && (u & 0x7) != 0)
+            if ((addr & (alignof(std::max_align_t) - 1)) != 0 && (addr & 0x7) != 0)
                 INVARIANT_FAILED("[ALLOC_PROBE {}] misaligned block p={} (T size={})", path,
-                                 static_cast<const void*>(p), sizeof(T));
+                                 static_cast<const void*>(ptr), sizeof(T));
 
             // Page-containing-p mapped? msync(MS_ASYNC) touches nothing but the
             // kernel's VMA table: 0 = mapped, -1/ENOMEM = not mapped. The whole
@@ -308,13 +308,13 @@ struct FastAllocatorConcrete : FastAllocatorBase
             // and the same for the last byte of the object.
             const long  pg   = ::sysconf(_SC_PAGESIZE);
             const auto  mask = static_cast<std::uintptr_t>(pg - 1);
-            const auto* base = static_cast<const char*>(p);
-            const void* pg0  = base - (u & mask);
-            const void* pg1  = base + (sizeof(T) - 1) - ((u + sizeof(T) - 1) & mask);
+            const auto* base = static_cast<const char*>(ptr);
+            const void* pg0  = base - (addr & mask);
+            const void* pg1  = base + (sizeof(T) - 1) - ((addr + sizeof(T) - 1) & mask);
 
             if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)
                 INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path,
-                                 static_cast<const void*>(p), sizeof(T),
+                                 static_cast<const void*>(ptr), sizeof(T),
                                  build_config::use_fast_alloc ? static_cast<const void*>(&allocator()) : nullptr);
         }
     }
@@ -336,7 +336,7 @@ struct FastAllocatorConcrete : FastAllocatorBase
         auto& fl = free_list();
         if (!fl.empty())
         {
-            T* p = fl.back();
+            T* block = fl.back();
             fl.pop_back();
             // Check-build guard: validate the pointer taken from the
             // thread-local free-list BEFORE returning it. The crash is a wild
@@ -344,20 +344,20 @@ struct FastAllocatorConcrete : FastAllocatorBase
             // catches it at the source and blames the free-list path (a corrupt
             // recycled pointer, e.g. a bad recycle() push) rather than the slab.
             if constexpr (build_config::any_check)
-                probe_returned_block(static_cast<void*>(p), "freelist");
-            return p;
+                probe_returned_block(static_cast<void*>(block), "freelist");
+            return block;
         }
 
         if constexpr (build_config::use_fast_alloc)
         {
-            std::byte* b = allocator().alloc();
+            std::byte* raw = allocator().alloc();
             // Check-build guard: validate the pointer fresh from the slab
             // bump-allocator. If THIS fires, the TCTypeAllocator itself produced
             // a wild address (corrupt block/bump state); if only the free-list
             // probe fires, recycling is the culprit.
             if constexpr (build_config::any_check)
-                probe_returned_block(static_cast<void*>(b), "slab");
-            return static_cast<void*>(b);
+                probe_returned_block(static_cast<void*>(raw), "slab");
+            return static_cast<void*>(raw);
         }
         else
         {
@@ -384,17 +384,17 @@ struct FastAllocatorConcrete : FastAllocatorBase
      * one-phase leak that is vastly preferable to a deferred use-after-free. The
      * block's real owner still frees its whole slab at teardown.
      */
-    void recycle(void* p) override
+    void recycle(void* block) override
     {
 #ifdef CHUNK_POOL_NO_REUSE
-        ::operator delete(p); // CHUNK_POOL_NO_REUSE: real free for ASan/TSan
+        ::operator delete(block); // CHUNK_POOL_NO_REUSE: real free for ASan/TSan
 #else
         if constexpr (build_config::use_fast_alloc)
         {
             // Only pool blocks owned by this thread's slab may go on this
             // thread's free_list. Foreign blocks (cross-thread drain) are
             // dropped to avoid a use-after-munmap when their owner's slab dies.
-            if (!allocator().is_free_able_elt(static_cast<std::byte*>(p)))
+            if (!allocator().is_free_able_elt(static_cast<std::byte*>(block)))
             {
                 if constexpr (build_config::any_check)
                 {
@@ -408,8 +408,8 @@ struct FastAllocatorConcrete : FastAllocatorBase
                     // CHUNK_RECYCLE_TRACE=1 restores one line per block.
                     static const bool trace = []
                     {
-                        const char* e = std::getenv("CHUNK_RECYCLE_TRACE");
-                        return e != nullptr && e[0] != '\0' && e[0] != '0';
+                        const char* env = std::getenv("CHUNK_RECYCLE_TRACE");
+                        return env != nullptr && env[0] != '\0' && env[0] != '0';
                     }();
                     static thread_local std::size_t n_foreign = 0;
                     ++n_foreign;
@@ -419,14 +419,14 @@ struct FastAllocatorConcrete : FastAllocatorBase
                                      "[RECYCLE] dropped FOREIGN block %p (not owned by this thread's slab) "
                                      "— cross-thread drain, would be use-after-munmap if recycled; "
                                      "%zu on this thread so far\n",
-                                     p, n_foreign);
+                                     block, n_foreign);
                         std::fflush(stderr);
                     }
                 }
                 return;
             }
         }
-        free_list().push_back(static_cast<T*>(p));
+        free_list().push_back(static_cast<T*>(block));
 #endif
     }
 };
@@ -559,16 +559,16 @@ template <typename T, typename... Args>
 // ============================================================================
 
 template <typename T>
-void free_op(T* p)
+void free_op(T* op)
 {
     // SEGV hunt: record which thread recycles this op block, with its address,
     // so dump_ring_for_addr can show if a free happened while the op was still
     // referenced by op_map (the use-after-free we're chasing).
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
-        ring_log_op(get_tid(), EV_OP_FREE, 0, static_cast<const void*>(p));
-    pool_ledger::on_op_free(static_cast<void*>(p));
+        ring_log_op(get_tid(), EV_OP_FREE, 0, static_cast<const void*>(op));
+    pool_ledger::on_op_free(static_cast<void*>(op));
     FastAllocatorBase* alloc = OpRegistry::get_or_create<T>();
-    alloc->recycle(static_cast<void*>(p));
+    alloc->recycle(static_cast<void*>(op));
     // SEGV hunt: poison the freed op block. Any read/write of it before the next
     // pool_new_op unpoisons it (e.g. the stray write that overwrites the vptr
     // with data bytes, or a flush of an already-freed op) is now reported by
@@ -577,11 +577,11 @@ void free_op(T* p)
 }
 
 template <typename T>
-void free_ctx(T* p)
+void free_ctx(T* context)
 {
-    pool_ledger::on_ctx_free(static_cast<void*>(p));
+    pool_ledger::on_ctx_free(static_cast<void*>(context));
     FastAllocatorBase* alloc = CtxRegistry::get_or_create<T>();
-    alloc->recycle(static_cast<void*>(p));
+    alloc->recycle(static_cast<void*>(context));
 }
 
 inline void reset_op_allocators()

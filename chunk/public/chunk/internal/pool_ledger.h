@@ -66,18 +66,18 @@ struct Rec
 
 inline std::mutex& mtx()
 {
-    static std::mutex m;
-    return m;
+    static std::mutex ledger_mutex;
+    return ledger_mutex;
 }
 inline ankerl::unordered_dense::map<void*, Rec>& ctx_live()
 {
-    static ankerl::unordered_dense::map<void*, Rec> m;
-    return m;
+    static ankerl::unordered_dense::map<void*, Rec> live;
+    return live;
 }
 inline ankerl::unordered_dense::map<void*, Rec>& op_live()
 {
-    static ankerl::unordered_dense::map<void*, Rec> m;
-    return m;
+    static ankerl::unordered_dense::map<void*, Rec> live;
+    return live;
 }
 
 // Standalone rank probe — no PMP_CHUNK dependency to keep include order clean.
@@ -123,41 +123,41 @@ inline constexpr bool pool_ledger_enabled = build_config::any_check;
 inline constexpr bool pool_ledger_enabled = build_config::any_check && !build_config::use_openmp;
 #endif
 
-inline void on_ctx_alloc(void* p, std::size_t sz, const void* slab = nullptr) noexcept
+inline void on_ctx_alloc(void* ptr, std::size_t sz, const void* slab = nullptr) noexcept
 {
     if constexpr (pool_ledger_enabled)
     {
         const std::scoped_lock lk(mtx());
-        if (auto it = op_live().find(p); it != op_live().end())
+        if (auto it = op_live().find(ptr); it != op_live().end())
             INVARIANT_FAILED("[POOL_LEDGER] ctx_alloc at {} but block is LIVE as op "
                              "(op_size={}, op_alloc_rank={}, ctx_size={}, op_slab={}, ctx_slab={})",
-                             p, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab);
-        if (auto it = ctx_live().find(p); it != ctx_live().end())
+                             ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab);
+        if (auto it = ctx_live().find(ptr); it != ctx_live().end())
             INVARIANT_FAILED("[POOL_LEDGER] ctx_alloc DOUBLE-alloc at {} — block already live as ctx "
                              "(prev_size={}, prev_alloc_rank={}, new_size={}, prev_slab={}, new_slab={}, "
                              "SLABS_{}). Means the ctx pool returned a still-live block → double-recycle "
                              "of this ctx, or the slab handed out a live block.",
-                             p, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
+                             ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
                              (it->second.slab == slab) ? "SAME" : "DIFF");
-        ctx_live().emplace(p, Rec{.size = sz, .alloc_rank = current_rank(), .slab = slab});
+        ctx_live().emplace(ptr, Rec{.size = sz, .alloc_rank = current_rank(), .slab = slab});
     }
 }
 
-inline void on_ctx_free(void* p) noexcept
+inline void on_ctx_free(void* ptr) noexcept
 {
     if constexpr (pool_ledger_enabled)
     {
         const std::scoped_lock lk(mtx());
-        if (auto it = op_live().find(p); it != op_live().end())
+        if (auto it = op_live().find(ptr); it != op_live().end())
             INVARIANT_FAILED("[POOL_LEDGER] ctx_free at {} but block is LIVE as op "
                              "(op_size={}, op_alloc_rank={})",
-                             p, it->second.size, it->second.alloc_rank);
-        if (ctx_live().erase(p) == 0)
-            INVARIANT_FAILED("[POOL_LEDGER] ctx_free at {} of an unknown/already-freed ctx block", p);
+                             ptr, it->second.size, it->second.alloc_rank);
+        if (ctx_live().erase(ptr) == 0)
+            INVARIANT_FAILED("[POOL_LEDGER] ctx_free at {} of an unknown/already-freed ctx block", ptr);
     }
 }
 
-inline void on_op_alloc(void* p, std::size_t sz, const void* slab = nullptr) noexcept
+inline void on_op_alloc(void* ptr, std::size_t sz, const void* slab = nullptr) noexcept
 {
     if constexpr (pool_ledger_enabled)
     {
@@ -167,33 +167,33 @@ inline void on_op_alloc(void* p, std::size_t sz, const void* slab = nullptr) noe
         //   ctx_slab == op_slab  -> ctx & op share one pool (ICF fold / tag fail)
         //   ctx_slab != op_slab  -> two distinct pools returned the same block
         //                           (TCTypeAllocator slab hands out overlapping mem)
-        if (auto it = ctx_live().find(p); it != ctx_live().end())
+        if (auto it = ctx_live().find(ptr); it != ctx_live().end())
             INVARIANT_FAILED("[POOL_LEDGER] op_alloc at {} but block is LIVE as ctx "
                              "(ctx_size={}, ctx_alloc_rank={}, op_size={}, ctx_slab={}, op_slab={}, "
                              "SLABS_{})",
-                             p, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
+                             ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
                              (it->second.slab == slab) ? "SHARED" : "DISTINCT");
-        if (auto it = op_live().find(p); it != op_live().end())
+        if (auto it = op_live().find(ptr); it != op_live().end())
             INVARIANT_FAILED("[POOL_LEDGER] op_alloc DOUBLE-alloc at {} — block already live as op "
                              "(prev_size={}, prev_alloc_rank={}, new_size={}, prev_slab={}, new_slab={}, "
                              "SLABS_{})",
-                             p, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
+                             ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
                              (it->second.slab == slab) ? "SAME" : "DIFF");
-        op_live().emplace(p, Rec{.size = sz, .alloc_rank = current_rank(), .slab = slab});
+        op_live().emplace(ptr, Rec{.size = sz, .alloc_rank = current_rank(), .slab = slab});
     }
 }
 
-inline void on_op_free(void* p) noexcept
+inline void on_op_free(void* ptr) noexcept
 {
     if constexpr (pool_ledger_enabled)
     {
         const std::scoped_lock lk(mtx());
-        if (auto it = ctx_live().find(p); it != ctx_live().end())
+        if (auto it = ctx_live().find(ptr); it != ctx_live().end())
             INVARIANT_FAILED("[POOL_LEDGER] op_free at {} but block is LIVE as ctx "
                              "(ctx_size={}, ctx_alloc_rank={})",
-                             p, it->second.size, it->second.alloc_rank);
-        if (op_live().erase(p) == 0)
-            INVARIANT_FAILED("[POOL_LEDGER] op_free at {} of an unknown/already-freed op block", p);
+                             ptr, it->second.size, it->second.alloc_rank);
+        if (op_live().erase(ptr) == 0)
+            INVARIANT_FAILED("[POOL_LEDGER] op_free at {} of an unknown/already-freed op block", ptr);
     }
 }
 
@@ -226,9 +226,9 @@ enum class BState : std::uint8_t
     PARKED = 2
 };
 
-inline const char* bstate_name(BState s) noexcept
+inline const char* bstate_name(BState state) noexcept
 {
-    switch (s)
+    switch (state)
     {
         case BState::FREE:
             return "FREE";
@@ -249,8 +249,8 @@ struct BRec
 
 inline ankerl::unordered_dense::map<const void*, BRec>& block_live()
 {
-    static ankerl::unordered_dense::map<const void*, BRec> m;
-    return m;
+    static ankerl::unordered_dense::map<const void*, BRec> live;
+    return live;
 }
 
 // ── End-of-run report (diagnostic) ───────────────────────────────────────────
@@ -266,39 +266,46 @@ inline void report_live_blocks() noexcept
     if constexpr (pool_ledger_enabled)
     {
         const std::scoped_lock lk(mtx());
-        std::size_t n_live = 0, n_parked = 0;
+        std::size_t            n_live = 0, n_parked = 0;
         // (state, site) -> count ; a plain array of pairs keeps this free of
         // any extra container dependency.
-        struct Row { int state; const char* site; std::size_t count; };
-        Row  rows[64];
-        int  n_rows = 0;
+        struct Row
+        {
+            int         state;
+            const char* site;
+            std::size_t count;
+        };
+        Row rows[64];
+        int n_rows = 0;
         for (const auto& kv : block_live())
         {
-            const BRec& r = kv.second;
-            if (r.state == BState::FREE)
+            const BRec& rec = kv.second;
+            if (rec.state == BState::FREE)
                 continue;
-            if (r.state == BState::LIVE)
+            if (rec.state == BState::LIVE)
                 ++n_live;
             else
                 ++n_parked;
             int i = 0;
             for (; i < n_rows; ++i)
-                if (rows[i].state == static_cast<int>(r.state) && rows[i].site == r.last_site)
+                if (rows[i].state == static_cast<int>(rec.state) && rows[i].site == rec.last_site)
                     break;
             if (i == n_rows)
             {
                 if (n_rows == 64)
                     continue; // table full: still counted in the totals above
-                rows[n_rows++] = Row{static_cast<int>(r.state), r.last_site, 0};
+                rows[n_rows++] = Row{static_cast<int>(rec.state), rec.last_site, 0};
             }
             ++rows[i].count;
         }
-        std::fprintf(stderr, "\n[POOL_LEDGER/REPORT] blocks still recorded at exit: "
-                             "%zu LIVE, %zu PARKED\n", n_live, n_parked);
+        std::fprintf(stderr,
+                     "\n[POOL_LEDGER/REPORT] blocks still recorded at exit: "
+                     "%zu LIVE, %zu PARKED\n",
+                     n_live, n_parked);
         for (int i = 0; i < n_rows; ++i)
             std::fprintf(stderr, "[POOL_LEDGER/REPORT]   %-7s %8zu  last site: %s\n",
-                         rows[i].state == static_cast<int>(BState::LIVE) ? "LIVE" : "PARKED",
-                         rows[i].count, rows[i].site);
+                         rows[i].state == static_cast<int>(BState::LIVE) ? "LIVE" : "PARKED", rows[i].count,
+                         rows[i].site);
         if (n_live == 0 && n_parked == 0)
             std::fprintf(stderr, "[POOL_LEDGER/REPORT]   (none) -- any LSan leak comes "
                                  "from a path the ledger does not trace\n");
@@ -319,10 +326,11 @@ inline void maybe_register_live_report() noexcept
 {
     if constexpr (pool_ledger_enabled)
     {
-        static const bool registered = [] {
+        static const bool registered = []
+        {
             if (std::getenv("CHUNK_LEDGER_REPORT") != nullptr)
             {
-                (void)block_live();                       // construct the map FIRST
+                (void)block_live();                        // construct the map FIRST
                 std::atexit([] { report_live_blocks(); }); // ...then register
             }
             return true;
@@ -335,7 +343,7 @@ inline void maybe_register_live_report() noexcept
 // Core transition. `allow_unknown` is true only for b_alloc: a never-seen
 // pointer is implicitly FREE and becomes LIVE. For pop/park/release, an unknown
 // pointer is itself a bug (we lost track of its birth, or it is foreign).
-inline void block_transition(const void* p,
+inline void block_transition(const void* block,
                              BState      expected,
                              BState      next,
                              const char* site,
@@ -358,7 +366,7 @@ inline void block_transition(const void* p,
         //    are set. (Standard ASan on aarch64 does not tag pointers; if hwasan/
         //    MTE tagging is ever enabled, strip the top byte before this check.)
         {
-            const auto up = reinterpret_cast<std::uintptr_t>(p);
+            const auto up = reinterpret_cast<std::uintptr_t>(block);
 #ifdef __aarch64__
             const bool bad_high = (up >> 52) != 0;
 #else
@@ -366,7 +374,7 @@ inline void block_transition(const void* p,
 #endif
             if (bad_high || (up & 0x7) != 0)
             {
-                std::fprintf(stderr, "[LEDGER_BADPTR] non-canonical block key %p op=%s site=%s\n", p, op, site);
+                std::fprintf(stderr, "[LEDGER_BADPTR] non-canonical block key %p op=%s site=%s\n", block, op, site);
                 std::fflush(stderr);
                 print_backtrace();
                 std::abort();
@@ -375,12 +383,12 @@ inline void block_transition(const void* p,
 
         const std::scoped_lock lk(mtx());
 
-        auto it = block_live().find(p);
+        auto it = block_live().find(block);
 #ifdef RECHUNK_LEDGERTRACE
         {
             const char* cur = (it == block_live().end()) ? "ABSENT" : bstate_name(it->second.state);
-            std::fprintf(stderr, "[LEDGER] %p op=%s cur=%s -> %s site=%s sz=%zu\n", p, op, cur, bstate_name(next), site,
-                         block_live().size());
+            std::fprintf(stderr, "[LEDGER] %p op=%s cur=%s -> %s site=%s sz=%zu\n", block, op, cur, bstate_name(next),
+                         site, block_live().size());
         }
 #endif
         if (it == block_live().end())
@@ -388,11 +396,11 @@ inline void block_transition(const void* p,
             if (!allow_unknown)
                 INVARIANT_FAILED("[POOL_LEDGER/BLOCK] {} of UNTRACKED block {} — site='{}' rank={} "
                                  "(expected state {}) → foreign or already-recycled pointer",
-                                 op, p, site, rank, bstate_name(expected));
+                                 op, block, site, rank, bstate_name(expected));
             // Don't record a brand-new entry as FREE: a released unknown block
             // should simply not be tracked (see erase rationale below).
             if (next != BState::FREE)
-                block_live().emplace(p, BRec{.state = next, .last_rank = rank, .last_site = site});
+                block_live().emplace(block, BRec{.state = next, .last_rank = rank, .last_site = site});
             return;
         }
 
@@ -400,7 +408,7 @@ inline void block_transition(const void* p,
         if (info.state != expected)
             INVARIANT_FAILED("[POOL_LEDGER/BLOCK] ILLEGAL {} of block {} — site='{}' rank={} : "
                              "state={} (expected {}), last op by rank={} at site='{}'",
-                             op, p, site, rank, bstate_name(info.state), bstate_name(expected), info.last_rank,
+                             op, block, site, rank, bstate_name(info.state), bstate_name(expected), info.last_rank,
                              info.last_site);
 
         // Released back to the system (svfree): remove the entry. A released
@@ -418,34 +426,34 @@ inline void block_transition(const void* p,
     }
 }
 
-inline void on_block_alloc(const void* p, const char* site) noexcept
+inline void on_block_alloc(const void* block, const char* site) noexcept
 {
     maybe_register_live_report();
-    block_transition(p, BState::FREE, BState::LIVE, site, "b_alloc", /*allow_unknown=*/true);
+    block_transition(block, BState::FREE, BState::LIVE, site, "b_alloc", /*allow_unknown=*/true);
 }
-inline void on_block_pop(const void* p, const char* site) noexcept
+inline void on_block_pop(const void* block, const char* site) noexcept
 {
-    block_transition(p, BState::PARKED, BState::LIVE, site, "b_pop", /*allow_unknown=*/false);
+    block_transition(block, BState::PARKED, BState::LIVE, site, "b_pop", /*allow_unknown=*/false);
 }
-inline void on_block_park(const void* p, const char* site) noexcept
+inline void on_block_park(const void* block, const char* site) noexcept
 {
-    block_transition(p, BState::LIVE, BState::PARKED, site, "b_park", /*allow_unknown=*/false);
+    block_transition(block, BState::LIVE, BState::PARKED, site, "b_park", /*allow_unknown=*/false);
 }
-inline void on_block_release(const void* p, const char* site) noexcept
+inline void on_block_release(const void* block, const char* site) noexcept
 {
     // allow_unknown=true: a release of a never-tracked address is non-fatal here
     // (foreign/reused block), letting the real svfree proceed so an ASan build
     // still reports the double-free with both stacks. A release of a *tracked*
     // block in the wrong state (e.g. already FREE) still trips the ILLEGAL branch
     // with the first release site, thanks to the FREE tombstone above.
-    block_transition(p, BState::LIVE, BState::FREE, site, "b_release", /*allow_unknown=*/true);
+    block_transition(block, BState::LIVE, BState::FREE, site, "b_release", /*allow_unknown=*/true);
 }
 // Discard a PARKED block (in a reuse free-list) straight back to the system.
 // Used when draining a reuse-list whose buffers are being svfree'd: they are
 // PARKED (not LIVE), so a plain release would be an illegal transition.
-inline void on_block_discard(const void* p, const char* site) noexcept
+inline void on_block_discard(const void* block, const char* site) noexcept
 {
-    block_transition(p, BState::PARKED, BState::FREE, site, "b_discard", /*allow_unknown=*/false);
+    block_transition(block, BState::PARKED, BState::FREE, site, "b_discard", /*allow_unknown=*/false);
 }
 
 } // namespace shrink_array::pool_ledger

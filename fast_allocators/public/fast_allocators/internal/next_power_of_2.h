@@ -14,9 +14,9 @@
 // std::bit_ceil is UB for 0 and returns 1 for 1, so inputs <= 1 are clamped to
 // 1; every call site passes a block size (element size + header), always >= 2,
 // so the clamp is pure defense and never triggers in practice.
-[[nodiscard]] inline unsigned long NextPowerOf2(unsigned long x) noexcept
+[[nodiscard]] inline unsigned long NextPowerOf2(unsigned long value) noexcept
 {
-    return x <= 1UL ? 1UL : std::bit_ceil(x);
+    return value <= 1UL ? 1UL : std::bit_ceil(value);
 }
 
 // Legacy implementation (pre-C++20), retained for reference:

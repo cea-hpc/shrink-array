@@ -44,15 +44,15 @@ void* ChunkOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk<T>* v, std::size_t n) noexcept
+void ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk<T>* v, std::size_t count) noexcept
 {
-    chunk_array_new::init_chunks(v, n, [](Chunk<T>& c) { c.init_values_cst_val(); });
+    chunk_array_new::init_chunks(v, count, [](Chunk<T>& chunk) { chunk.init_values_cst_val(); });
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::operator delete[](void* p)
+void ChunkOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
-    ::operator delete(p);
+    ::operator delete(ptr);
 }
 
 template <typename T, typename Derived, bool Enabled>
@@ -73,10 +73,10 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_pa
 
         // Pass the chunk's OWN geometry, captured at enqueue -- not this
         // thread's ambient size, which may belong to a different array.
-        const auto n = ll_compt.size();
+        const auto count = ll_compt.size();
         chunk_t->fill_list_to_compress(ll_compt, num_chunk, num_tab, std::get<3>(tup).count());
         // Not selected by the scan: the writers may have it back now.
-        if (ll_compt.size() == n)
+        if (ll_compt.size() == count)
             chunk_t->steal_unmark();
     }
 }
@@ -199,7 +199,7 @@ bool ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int max_th
 
 /**
  * @brief Zero-fill an about-to-be-published v1 buffer, mirroring alloc_values(true).
- * @param p buffer of shrink_array::alloc_chunk_count() elements
+ * @param vals buffer of shrink_array::alloc_chunk_count() elements
  * @details svcalloc_align already returns zeroed memory, so the fill is only
  *          needed for the pooled allocator, whose blocks carry whatever the
  *          previous owner left. Skipping it under the std allocator used to be
@@ -209,11 +209,11 @@ bool ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int max_th
  *          hide because its pooled blocks are usually already zero.
  */
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::zero_fill_fresh(T* p) noexcept
+void ChunkOmpPolicy<T, Derived, Enabled>::zero_fill_fresh(T* vals) noexcept
 {
     if constexpr (build_config::use_fast_alloc)
     {
-        std::fill_n(p, alloc_chunk_count(), Base::zero);
+        std::fill_n(vals, alloc_chunk_count(), Base::zero);
     }
 }
 
@@ -238,7 +238,7 @@ void ChunkOmpPolicy<T, Derived, Enabled>::create_value(int thr_rank) noexcept
     // same initialiser to both branches.
     T* values_loc = Base::allocate_chunk_internal(
         thr_rank, [](T*) noexcept { /* recycled: already zero, see above */ },
-        [](T* p) noexcept { zero_fill_fresh(p); });
+        [](T* vals) noexcept { zero_fill_fresh(vals); });
 
     if (compare_and_swap(values_loc))
     {
@@ -270,11 +270,11 @@ void ChunkOmpPolicy<T, Derived, false>::create_value() noexcept
     // ChunkAllocPolicy specialisation, which accepts and ignores it).
     values = Base::allocate_chunk_internal(
         0, [](T*) noexcept {},
-        [](T* p) noexcept
+        [](T* vals) noexcept
         {
             if constexpr (build_config::use_fast_alloc)
             {
-                std::fill_n(p, alloc_chunk_count(), Base::zero);
+                std::fill_n(vals, alloc_chunk_count(), Base::zero);
             }
         });
 }

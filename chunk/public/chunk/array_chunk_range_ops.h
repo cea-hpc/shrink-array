@@ -52,7 +52,7 @@
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
 #include "chunk/internal/conditional_counter.h" // counter_value_t
 #include "chunk/config.h"
-#include "chunk/chunk_traits.h"                // Chunk / Chunk2 / Chunk2A: the type traits below
+#include "chunk/chunk_traits.h"                        // Chunk / Chunk2 / Chunk2A: the type traits below
 #include "chunk/vector_range_ops.h"                    // detail::ChunkedArray + the std::vector fallback
 #include "chunk/internal/write_compress_sync_policy.h" // fill_range_mt: the writer side of the Dekker handshake
 #include "chunk/internal/compression_manager.h"        // fill_range_mt: must_defer_write / wait_out_compressor
@@ -153,7 +153,7 @@ inline constexpr bool track_chunk2_counts_v = is_v2_v<Arr> && chunk_config::use_
  *          exactly as Proxy2 counts it.
  */
 template <typename Arr, typename Chunk, typename T>
-void resync_counters(Arr& a, Chunk& ch, std::size_t c_begin, const T* dst, unsigned int S)
+void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, unsigned int S)
 {
     if constexpr (track_zeros_v<Arr>)
     {
@@ -161,11 +161,11 @@ void resync_counters(Arr& a, Chunk& ch, std::size_t c_begin, const T* dst, unsig
         for (unsigned int k = 0; k < S; ++k)
             if (dst[k] == static_cast<T>(Chunk::first_value))
                 ++nz;
-        a[static_cast<typename Arr::ind_type>(c_begin)].resync_nb_val_eq_zero(nz);
+        arr[static_cast<typename Arr::ind_type>(c_begin)].resync_nb_val_eq_zero(nz);
     }
-    else if constexpr (track_chunk2_counts_v<Arr> && requires { a.get_second_value(); })
+    else if constexpr (track_chunk2_counts_v<Arr> && requires { arr.get_second_value(); })
     {
-        const T         sv = static_cast<T>(a.get_second_value());
+        const T         sv = static_cast<T>(arr.get_second_value());
         counter_value_t n1 = 0;
         counter_value_t n2 = 0;
         for (unsigned int k = 0; k < S; ++k)
@@ -259,10 +259,10 @@ void fill_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::si
 /// @brief The array's second-value index for Chunk2 (non-bool), -1 otherwise.
 ///        Read once per range call: it is a registry lookup.
 template <typename Arr>
-[[nodiscard]] int second_value_index(const Arr& a) noexcept
+[[nodiscard]] int second_value_index(const Arr& arr) noexcept
 {
     if constexpr (has_second_value_v<Arr>)
-        return a.get_ind_second_value();
+        return arr.get_ind_second_value();
     else
         return -1;
 }
@@ -293,7 +293,7 @@ template <typename Arr, typename Chunk>
  *          builds only (the serial counters are resynced by the caller).
  */
 template <typename Arr>
-void queue_for_compression(Arr& a, std::size_t i)
+void queue_for_compression(Arr& arr, std::size_t i)
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -301,24 +301,24 @@ void queue_for_compression(Arr& a, std::size_t i)
         // arrays that called set_second_value() -- skip the others, as the
         // element path's pre-check does (Proxy2::has_candidate_list).
         if constexpr (has_second_value_v<Arr> &&
-                      requires { Arr::proxy_type::has_candidate_list(a.get_second_value()); })
+                      requires { Arr::proxy_type::has_candidate_list(arr.get_second_value()); })
         {
-            if (!Arr::proxy_type::has_candidate_list(a.get_second_value()))
+            if (!Arr::proxy_type::has_candidate_list(arr.get_second_value()))
                 return;
         }
-        auto p = a[static_cast<decltype(a.size())>(i)];
+        auto proxy = arr[static_cast<decltype(arr.size())>(i)];
         // Chunk2 FIRST: Proxy2 also has set_num_tab_ptr_is_inside_chunk() (from
         // the shared base), but that one does not load the second value -- the
         // key of Chunk2's candidate list -- so the chunk landed in the list of
         // T{} (first_value), which no pass ever drains. set_info_on_chunk()
         // loads (second_value, ind, num_tab) and the flag pointer.
         if constexpr (std::is_same_v<typename Arr::proxy_type, Proxy2<typename Arr::value_type>>)
-            p.set_info_on_chunk(); // Proxy2
-        else if constexpr (requires { p.set_num_tab_ptr_is_inside_chunk(); })
-            p.set_num_tab_ptr_is_inside_chunk(); // Proxy2A
+            proxy.set_info_on_chunk(); // Proxy2
+        else if constexpr (requires { proxy.set_num_tab_ptr_is_inside_chunk(); })
+            proxy.set_num_tab_ptr_is_inside_chunk(); // Proxy2A
         else
-            p.set_info_on_chunk(); // Proxy (v1)
-        p.add_to_compression_list();
+            proxy.set_info_on_chunk(); // Proxy (v1)
+        proxy.add_to_compression_list();
     }
 }
 
@@ -342,23 +342,23 @@ void queue_for_compression(Arr& a, std::size_t i)
  *          bool (bit-packed chunks) takes the per-element path throughout --
  *          still correct, just without the speedup. See detail::raw_fillable_v.
  *
- * @param a     target array
+ * @param arr   target array
  * @param first first index, inclusive (clamped to size())
  * @param last  last index, exclusive (clamped to size())
  * @param v     value to store
  */
 template <detail::ChunkedArray Arr, typename U>
-void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool drain = true)
+void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool drain = true)
 {
     using T          = Arr::value_type;
-    using ind_type   = decltype(a.size());
+    using ind_type   = decltype(arr.size());
     using chunk_type = Arr::chunk_type;
 
-    const auto n = static_cast<std::size_t>(a.size());
-    if (first >= last || first >= n)
+    const auto size = static_cast<std::size_t>(arr.size());
+    if (first >= last || first >= size)
         return;
-    if (last > n)
-        last = n;
+    if (last > size)
+        last = size;
 
     // Drain this array's pending deferred writes FIRST.
     //
@@ -373,11 +373,11 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
     // Forced: the pending-ops counter has been seen to read 0 while ops were
     // still queued, so the usual gate cannot be trusted here either.
     if (drain)
-        a.flush_pending_deferred_ops(/*force=*/true);
+        arr.flush_pending_deferred_ops(/*force=*/true);
 
-    const unsigned int S     = a.chunk_size();
+    const unsigned int S     = arr.chunk_size();
     const in_t<T>      value = static_cast<T>(v);
-    const int          ind2  = detail::second_value_index(a); // Chunk2's written(ind)
+    const int          ind2  = detail::second_value_index(arr); // Chunk2's written(ind)
 
     // Pin the ambient geometry once for the whole operation: every
     // materialisation below must size its buffer from THIS array's chunk_size,
@@ -398,7 +398,7 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
         const std::size_t hi      = last < c_end ? last : c_end;
         const bool        whole   = (lo == c_begin) && (hi == c_end);
 
-        auto& ch = a.chunk_ref(ci);
+        auto& ch = arr.chunk_ref(ci);
 
         // ── Whole chunk set to the compressible constant: no storage needed ──
         //
@@ -415,8 +415,9 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
         // the constant to compress to, silently, and the serial branch would
         // fail to compile on the zero-argument call that Chunk2 lacks. Only v1
         // offers both, so requiring both is what actually names v1 here.
-        constexpr bool can_release = requires(chunk_type& c, int thr, unsigned int n) { c.clear_st(thr, n); } &&
-                                     requires(chunk_type& c) { c.clear_st(); };
+        constexpr bool can_release = requires(chunk_type& chunk, int thr, unsigned int count) {
+            chunk.clear_st(thr, count);
+        } && requires(chunk_type& chunk) { chunk.clear_st(); };
 
         if constexpr (can_release)
         {
@@ -437,7 +438,7 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
         if constexpr (!detail::raw_fillable_v<T>)
         {
             for (std::size_t i = lo; i < hi; ++i)
-                a[static_cast<ind_type>(i)] = value;
+                arr[static_cast<ind_type>(i)] = value;
         }
         else
         {
@@ -450,12 +451,12 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
             // "Materialises" is written(), not !is_cst_val1(): see
             // detail::materialised for the Chunk2A second-constant trap.
             std::size_t i = lo;
-            while (i < hi && !detail::materialised(a, ch, ind2))
+            while (i < hi && !detail::materialised(arr, ch, ind2))
             {
-                a[static_cast<ind_type>(i)] = value;
+                arr[static_cast<ind_type>(i)] = value;
                 ++i;
             }
-            if (!detail::materialised(a, ch, ind2))
+            if (!detail::materialised(arr, ch, ind2))
                 continue; // still constant: the range held only that constant
 
             T* dst = ch.values_load();
@@ -463,15 +464,15 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
                 dst[k - c_begin] = value;
 
             // Restore the per-chunk counters the bulk store bypassed.
-            detail::resync_counters(a, ch, c_begin, dst, S);
+            detail::resync_counters(arr, ch, c_begin, dst, S);
 
             // The chunk may be constant now: a fill of first_value, or on
             // chunk2a of any value (a uniform run is its second constant).
             bool compressible_value = value_is_cst1 || detail::is_v2a_v<Arr>;
-            if constexpr (detail::is_v2_v<Arr> && requires { a.get_second_value(); })
-                compressible_value = compressible_value || value == static_cast<T>(a.get_second_value());
+            if constexpr (detail::is_v2_v<Arr> && requires { arr.get_second_value(); })
+                compressible_value = compressible_value || value == static_cast<T>(arr.get_second_value());
             if (compressible_value && detail::may_be_uniform(dst, S))
-                detail::queue_for_compression(a, c_begin);
+                detail::queue_for_compression(arr, c_begin);
         }
     }
 }
@@ -484,22 +485,22 @@ void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, bool dr
  *          constant only when the arming loop finds every value to be the
  *          compressible constant.
  *
- * @param a         target array
+ * @param arr       target array
  * @param first     first target index, inclusive (clamped to size())
  * @param last      last target index, exclusive (clamped to size())
- * @param src_first source iterator; must not alias @p a
+ * @param src_first source iterator; must not alias @p arr
  */
 template <detail::ChunkedArray Arr, typename It>
-void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, bool drain = true)
+void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, bool drain = true)
 {
     using T        = Arr::value_type;
-    using ind_type = decltype(a.size());
+    using ind_type = decltype(arr.size());
 
-    const auto n = static_cast<std::size_t>(a.size());
-    if (first >= last || first >= n)
+    const auto size = static_cast<std::size_t>(arr.size());
+    if (first >= last || first >= size)
         return;
-    if (last > n)
-        last = n;
+    if (last > size)
+        last = size;
 
     // Drain this array's pending deferred writes FIRST.
     //
@@ -514,10 +515,10 @@ void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, bool 
     // Forced: the pending-ops counter has been seen to read 0 while ops were
     // still queued, so the usual gate cannot be trusted here either.
     if (drain)
-        a.flush_pending_deferred_ops(/*force=*/true);
+        arr.flush_pending_deferred_ops(/*force=*/true);
 
-    const unsigned int S    = a.chunk_size();
-    const int          ind2 = detail::second_value_index(a); // Chunk2's written(ind)
+    const unsigned int S    = arr.chunk_size();
+    const int          ind2 = detail::second_value_index(arr); // Chunk2's written(ind)
 
     if constexpr (build_config::chunk_dynamic)
         set_thread_chunk_size(S);
@@ -532,34 +533,34 @@ void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, bool 
         const std::size_t lo      = first > c_begin ? first : c_begin;
         const std::size_t hi      = last < c_end ? last : c_end;
 
-        auto& ch = a.chunk_ref(ci);
+        auto& ch = arr.chunk_ref(ci);
 
         if constexpr (!detail::raw_fillable_v<T>)
         {
             for (std::size_t i = lo; i < hi; ++i)
-                a[static_cast<ind_type>(i)] = static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first)));
+                arr[static_cast<ind_type>(i)] = static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first)));
         }
         else
         {
             std::size_t i = lo;
-            while (i < hi && !detail::materialised(a, ch, ind2))
+            while (i < hi && !detail::materialised(arr, ch, ind2))
             {
-                a[static_cast<ind_type>(i)] = static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first)));
+                arr[static_cast<ind_type>(i)] = static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first)));
                 ++i;
             }
-            if (!detail::materialised(a, ch, ind2))
+            if (!detail::materialised(arr, ch, ind2))
                 continue; // the whole span was the chunk's constant
 
             T* dst = ch.values_load();
             for (std::size_t k = i; k < hi; ++k)
                 dst[k - c_begin] = static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(k - first)));
 
-            detail::resync_counters(a, ch, c_begin, dst, S); // as fill_range
+            detail::resync_counters(arr, ch, c_begin, dst, S); // as fill_range
 
             // The source is not known to be uniform: the pass decides -- for
             // the chunks that can be.
             if (detail::may_be_uniform(dst, S))
-                detail::queue_for_compression(a, c_begin);
+                detail::queue_for_compression(arr, c_begin);
         }
     }
 }
@@ -567,17 +568,17 @@ void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, bool 
 /// @copydoc fill_range
 /// @note The assume_drained_t tag: caller guarantees the deferred queue is already drained
 template <detail::ChunkedArray Arr, typename U>
-void fill_range(Arr& a, std::size_t first, std::size_t last, const U& v, assume_drained_t)
+void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, assume_drained_t)
 {
-    fill_range(a, first, last, v, /*drain=*/false);
+    fill_range(arr, first, last, v, /*drain=*/false);
 }
 
 /// @copydoc copy_range
 /// @note The assume_drained_t tag: caller guarantees the deferred queue is already drained
 template <detail::ChunkedArray Arr, typename It>
-void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, assume_drained_t)
+void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, assume_drained_t)
 {
-    copy_range(a, first, last, src_first, /*drain=*/false);
+    copy_range(arr, first, last, src_first, /*drain=*/false);
 }
 
 
@@ -624,24 +625,24 @@ void copy_range(Arr& a, std::size_t first, std::size_t last, It src_first, assum
  *
  * @pre   Called inside or outside a parallel region; concurrent callers write
  *        DISJOINT indices (any chunk may be shared). No rechunk_to() / resize /
- *        clear of @p a meanwhile (the usual contract of those).
- * @param a     target array
+ *        clear of @p arr meanwhile (the usual contract of those).
+ * @param arr   target array
  * @param first first index, inclusive (clamped to size())
  * @param last  last index, exclusive (clamped to size())
  * @param v     value to store
  */
 template <detail::ChunkedArray Arr, typename U>
-void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
+void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
 {
     using T          = Arr::value_type;
-    using ind_type   = decltype(a.size());
+    using ind_type   = decltype(arr.size());
     using chunk_type = Arr::chunk_type;
 
-    const auto n = static_cast<std::size_t>(a.size());
-    if (first >= last || first >= n)
+    const auto size = static_cast<std::size_t>(arr.size());
+    if (first >= last || first >= size)
         return;
-    if (last > n)
-        last = n;
+    if (last > size)
+        last = size;
 
     const in_t<T> value = static_cast<T>(v);
 
@@ -651,15 +652,15 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
     if constexpr (!session)
     {
         for (std::size_t i = first; i < last; ++i)
-            a[static_cast<ind_type>(i)] = value;
+            arr[static_cast<ind_type>(i)] = value;
     }
     else
     {
         using Policy = WriteCompressSyncPolicy<typename Arr::proxy_type>;
         using Mgr    = CompressionManager<T, chunk_type>;
 
-        const unsigned int S    = a.chunk_size();
-        const int          ind2 = detail::second_value_index(a); // Chunk2's written(ind)
+        const unsigned int S    = arr.chunk_size();
+        const int          ind2 = detail::second_value_index(arr); // Chunk2's written(ind)
         if constexpr (build_config::chunk_dynamic)
             set_thread_chunk_size(S);
         const int thr = get_thr_rank_fast();
@@ -674,13 +675,13 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
             const std::size_t lo      = first > c_begin ? first : c_begin;
             const std::size_t hi      = last < c_end ? last : c_end;
 
-            auto& ch = a.chunk_ref(ci);
+            auto& ch = arr.chunk_ref(ci);
 
             // Materialise through the element path, outside any session.
             std::size_t i = lo;
-            while (i < hi && !detail::materialised(a, ch, ind2))
+            while (i < hi && !detail::materialised(arr, ch, ind2))
             {
-                a[static_cast<ind_type>(i)] = value;
+                arr[static_cast<ind_type>(i)] = value;
                 ++i;
             }
             if (i == hi)
@@ -693,8 +694,8 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
                 if (Mgr::must_defer_write(ch)) // 2. a compressor on it: wait (bounded)
                     Mgr::wait_out_compressor(ch);
 
-                Policy::announce_write(thr, &ch);                                                         // 3.
-                if (!Mgr::must_defer_write(ch) && !ch.pending_any() && detail::materialised(a, ch, ind2)) // 4.
+                Policy::announce_write(thr, &ch);                                                           // 3.
+                if (!Mgr::must_defer_write(ch) && !ch.pending_any() && detail::materialised(arr, ch, ind2)) // 4.
                 {
                     T* dst = ch.values_load(); // 5.
                     if constexpr (detail::relaxed_element_stores_v<chunk_type, T>)
@@ -719,9 +720,9 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
                         // uniform by construction; a partial one is not queued.
                         if constexpr (detail::is_v1_v<Arr>)
                             uniform = static_cast<T>(value) == static_cast<T>(chunk_type::first_value);
-                        else if constexpr (detail::is_v2_v<Arr> && requires { a.get_second_value(); })
+                        else if constexpr (detail::is_v2_v<Arr> && requires { arr.get_second_value(); })
                             uniform = static_cast<T>(value) == static_cast<T>(chunk_type::first_value) ||
-                                      static_cast<T>(value) == static_cast<T>(a.get_second_value());
+                                      static_cast<T>(value) == static_cast<T>(arr.get_second_value());
                         else
                             uniform = (i == c_begin && hi == c_end);
                     }
@@ -733,12 +734,12 @@ void fill_range_mt(Arr& a, std::size_t first, std::size_t last, const U& v)
             if (!done)
             {
                 for (; i < hi; ++i)
-                    a[static_cast<ind_type>(i)] = value;
+                    arr[static_cast<ind_type>(i)] = value;
                 continue; // the element path queued the chunk itself
             }
 
             if (uniform) // 7. only a chunk that can be uniform
-                detail::queue_for_compression(a, c_begin);
+                detail::queue_for_compression(arr, c_begin);
         }
     }
 }
