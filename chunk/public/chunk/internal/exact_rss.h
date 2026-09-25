@@ -24,8 +24,9 @@
  * shrink_bench_chunk2a_dyn) VmRSS stayed at ~11.82 GiB for the whole run
  * while smaps_rollup showed the process growing from 12.4 to 13.4 GiB, and it
  * was 2.1 GiB behind during the initialisation. smaps_rollup walks the page
- * tables when it is read: exact, at a few milliseconds per read -- fine for
- * traces and checkpoints, not for a hot path.
+ * tables when it is read: exact, but the cost grows with the resident size --
+ * ~10-20 ms on a 13 GB process, so ~200 reads inside shrink_bench's timed loop
+ * cost ~3 s. Fine for traces and checkpoints; never on a periodic hot path.
  */
 
 #include <algorithm>

@@ -117,15 +117,15 @@ double convert_memory(double memoryValue)
 }
 
 /// @brief The exact-peak sampler of the bench: started with the program
-///        (static initialisation), period SHRINK_BENCH_RSS_SAMPLE_MS (default
-///        200 ms; 0 = off).
+///        (static initialisation) when SHRINK_BENCH_RSS_SAMPLE_MS=<ms> asks
+///        for it; OFF by default (each sample walks the page tables).
 static shrink_array::RssPeakSampler& bench_rss_sampler()
 {
     static shrink_array::RssPeakSampler sampler(
         []
         {
             const char* e = std::getenv("SHRINK_BENCH_RSS_SAMPLE_MS");
-            return e != nullptr ? std::atoi(e) : 200;
+            return e != nullptr ? std::atoi(e) : 0;
         }());
     return sampler;
 }
@@ -166,10 +166,23 @@ void memory_consumption(const std::string& msg)
             if (statm >> total_pages >> res_pages)
                 cur_kb = res_pages * (sysconf(_SC_PAGESIZE) / 1024);
         }
-        // Exact current size (smaps_rollup) when available -- statm above is
-        // the same lagging counter as VmRSS, kept only as a fallback.
-        if (const long exact = shrink_array::exact_rss_kib(); exact > 0)
-            cur_kb = exact;
+        // Exact current size (smaps_rollup) at the checkpoints that matter --
+        // "after init" and "end" -- or on every line with
+        // SHRINK_BENCH_EXACT_RSS=1. Not on the periodic lines by default: in
+        // --mode perf they run every 10 iterations INSIDE the timed loop, and
+        // smaps_rollup walks the page tables of the whole process at each read
+        // (~200 reads cost ~3 s on the 64-thread chunk2a_dyn bench). statm
+        // above lags at many threads (exact_rss.h) but costs nothing.
+        static const bool exact_every_line = []
+        {
+            const char* e = std::getenv("SHRINK_BENCH_EXACT_RSS");
+            return e != nullptr && e[0] != '\0' && e[0] != '0';
+        }();
+        if (exact_every_line || msg == "end" || msg == "after init")
+        {
+            if (const long exact = shrink_array::exact_rss_kib(); exact > 0)
+                cur_kb = exact;
+        }
         bench_rss_sampler().note(cur_kb);
         const long rss = std::max({rss_hwm, cur_kb, bench_rss_sampler().peak_kib()});
 
