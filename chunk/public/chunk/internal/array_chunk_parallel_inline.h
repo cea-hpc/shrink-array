@@ -42,7 +42,7 @@ void FastBlockSupport<Derived, true>::make_block_compression()
 
     if (!CHUNK_PMP_IN_PARALLEL_REGION)
     {
-        for (int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
+        for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)
         {
             chunk_type::make_block_compression(thr, nullptr);
         }

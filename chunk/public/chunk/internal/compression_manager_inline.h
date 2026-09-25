@@ -265,7 +265,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
     using Policy = WriteCompressSyncPolicy<typename ChunkType::ProxyType>;
 
     const int self_rank = get_thr_rank_fast();
-    const int max_thr   = CHUNK_PMP_MAX_THREADS;
+    const int max_thr   = CHUNK_PMP_RANK_BOUND;
 
     const uint32_t payload = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(chunk) >> 4) & 0x00FFFFFFU;
 
@@ -548,7 +548,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
     add_compression_active();
     increm_chunk_gate_start<ChunkType>();
 
-    const int max_thr = CHUNK_PMP_MAX_THREADS;
+    const int max_thr = CHUNK_PMP_RANK_BOUND;
 
     // ─── Yield to flush_deferred (priority inversion fix) ─────────────
     // After incrementing compression_active and the seq_cst fence, check

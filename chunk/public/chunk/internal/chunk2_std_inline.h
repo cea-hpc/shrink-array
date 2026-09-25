@@ -357,9 +357,10 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress(const
                 team = CHUNK_PMP_NUM_THREADS;
             compress_chunk_to_compress_in_par(thr, inf_array, apply);
         }
-        // Lists are sized by CHUNK_PMP_MAX_THREADS; a team smaller than that
-        // leaves the upper ranks unswept. Serial mop-up, empty lists are cheap.
-        for (int thr_rank = team; thr_rank < CHUNK_PMP_MAX_THREADS; ++thr_rank)
+        // Lists are sized by the thread capacity; a team smaller than the
+        // ranks seen leaves the upper ranks unswept. Serial mop-up up to
+        // CHUNK_PMP_RANK_BOUND, empty lists are cheap.
+        for (int thr_rank = team; thr_rank < CHUNK_PMP_RANK_BOUND; ++thr_rank)
             compress_chunk_to_compress_in_par(thr_rank, inf_array, apply);
     }
 
@@ -392,7 +393,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool(
                     team = CHUNK_PMP_NUM_THREADS;
                 compress_chunk_to_compress_bool_in_par(thr, apply);
             }
-            for (int thr_rank = team; thr_rank < CHUNK_PMP_MAX_THREADS; ++thr_rank)
+            for (int thr_rank = team; thr_rank < CHUNK_PMP_RANK_BOUND; ++thr_rank)
                 compress_chunk_to_compress_bool_in_par(thr_rank, apply);
         }
         chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);

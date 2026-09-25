@@ -509,7 +509,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
             }
             if constexpr (build_config::use_openmp)
             {
-                for (int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
+                for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                 {
                     auto& slot = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr][T{}];
                     if (!slot)

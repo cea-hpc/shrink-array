@@ -60,9 +60,9 @@
  *       each thread re-reads only elements it wrote itself.
  */
 template <typename Arr, typename Result>
-inline void sb_check_compound(Arr& arr, Int idx, Result&& result, const char* expr)
+void sb_check_compound(Arr& arr, Int idx, Result&& result, const char* expr)
 {
-    using T = typename std::decay_t<Arr>::value_type;
+    using T = std::decay_t<Arr>::value_type;
     static_assert(std::is_trivially_copyable_v<T>, "bit-wise comparison needs a trivially copyable element");
     if (!mode_check)
         return;

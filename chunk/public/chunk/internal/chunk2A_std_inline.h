@@ -581,7 +581,7 @@ void Chunk2A<T>::compress_chunk_to_compress(bool apply)
                     team = CHUNK_PMP_NUM_THREADS;
                 make_block_compression(thr, nullptr);
             }
-            for (int thr = team; thr < CHUNK_PMP_MAX_THREADS; ++thr)
+            for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
                 make_block_compression(thr, nullptr);
         }
         else

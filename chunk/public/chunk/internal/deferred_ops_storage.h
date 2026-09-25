@@ -61,7 +61,7 @@ class DeferredOpsStorage
         if (arr_raw.load(std::memory_order_relaxed) != nullptr)
             return;
 
-        auto maps = std::make_unique<per_thread_map[]>(CHUNK_PMP_MAX_THREADS);
+        auto maps = std::make_unique<per_thread_map[]>(CHUNK_PMP_THREAD_CAPACITY);
         arr_owner = std::move(maps);
         // Publish last, with release, so a reader that acquire-observes the
         // pointer also sees the constructed maps.
