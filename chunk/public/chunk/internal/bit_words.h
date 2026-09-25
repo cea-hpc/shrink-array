@@ -167,6 +167,35 @@ enum class Uniform
     return Uniform::mixed;
 }
 
+/**
+ * @brief Classify the @p n bits starting at bit @p first -- any alignment:
+ *        whole words where the range covers them, masked words at its ends.
+ * @details The sub-block scan of the chunk-size advisor (a finer geometry's
+ *          sub-chunk inside a materialised chunk). @p n = 0 is all_false.
+ */
+[[nodiscard]] inline Uniform scan_range(const word_t* w, std::size_t first, std::size_t n) noexcept
+{
+    bool              any_one  = false;
+    bool              all_ones = true;
+    std::size_t       i        = first;
+    const std::size_t end      = first + n;
+    while (i < end)
+    {
+        const std::size_t off  = i % word_bits;
+        const std::size_t take = (end - i < word_bits - off) ? end - i : word_bits - off;
+        const word_t      m    = (take == word_bits ? word_ones : ((word_t{1} << take) - 1)) << off;
+        const word_t      x    = w[i / word_bits] & m;
+        any_one                = any_one || x != 0;
+        all_ones               = all_ones && x == m;
+        if (any_one && !all_ones)
+            return Uniform::mixed;
+        i += take;
+    }
+    if (!any_one)
+        return Uniform::all_false;
+    return Uniform::all_true;
+}
+
 /// @brief Number of 1 bits among the @p n bits (tail masked).
 [[nodiscard]] inline std::size_t count_ones(const word_t* w, std::size_t n) noexcept
 {

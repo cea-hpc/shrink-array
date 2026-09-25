@@ -120,7 +120,7 @@ inline constexpr bool is_v2a_v = std::is_same_v<typename Arr::chunk_type, Chunk2
 
 /** @brief Chunk2 on a non-bool T: the variant with a second value (and written(ind)). */
 template <typename Arr>
-inline constexpr bool has_second_value_v = is_v2_v<Arr> && !std::is_same_v<typename Arr::value_type, bool>;
+inline constexpr bool has_second_value_v = is_v2_v<Arr> && !is_bool_like_v<typename Arr::value_type>; // bool, Bit: no index
 
 /** @brief Only v1 in counter mode carries a per-chunk zero count to restore. */
 template <typename Arr>

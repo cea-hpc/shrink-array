@@ -135,6 +135,44 @@ void scans(std::size_t n)
     }
 }
 
+void ranges(std::mt19937_64& rng)
+{
+    // scan_range over every (first, n) of a 3-word buffer, against a bit loop.
+    std::vector<bits::word_t> w(3);
+    for (int trial = 0; trial < 40; ++trial)
+    {
+        for (auto& x : w)
+            x = rng();
+        if (trial % 4 == 1)
+            w.assign(3, 0);
+        if (trial % 4 == 2)
+            w.assign(3, bits::word_ones);
+        if (trial % 4 == 3) // a single 0 in a sea of 1
+        {
+            w.assign(3, bits::word_ones);
+            bits::set_bit(w.data(), static_cast<std::size_t>(rng() % 192), false);
+        }
+        for (std::size_t first = 0; first < 192; first += 7)
+            for (std::size_t n = 0; first + n <= 192; n += 5)
+            {
+                bool any = false, all = true;
+                for (std::size_t i = first; i < first + n; ++i)
+                {
+                    any = any || bits::get_bit(w.data(), i);
+                    all = all && bits::get_bit(w.data(), i);
+                }
+                const bits::Uniform expect = !any ? bits::Uniform::all_false
+                                             : all ? bits::Uniform::all_true
+                                                   : bits::Uniform::mixed;
+                if (bits::scan_range(w.data(), first, n) != expect)
+                {
+                    check(false, "scan_range", n);
+                    return;
+                }
+            }
+    }
+}
+
 void concurrent(std::size_t n, int rounds)
 {
     constexpr int             n_thr = 8;
@@ -178,6 +216,7 @@ int main()
         against_vector(n, rng);
         scans(n);
     }
+    ranges(rng);
     for (std::size_t n : {64, 256, 4096})
         concurrent(n, 2000);
 

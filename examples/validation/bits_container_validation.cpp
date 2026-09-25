@@ -29,7 +29,13 @@
 //      thread;
 //   4. the element surface: `bool b = a[i]`, `a[i] = !b`, `a[i] == b`;
 //   5. |= &= ^= with a bool operand, element-wise against std::vector<bool>,
-//      in parallel over neighbouring elements (schedule(static,1)).
+//      in parallel over neighbouring elements (schedule(static,1));
+//   6. the chunk-size advisor: the exact row (materialised count, memory at
+//      S/8 bytes per materialised chunk) and the finer row S/2, whose
+//      sub-blocks it classifies word by word -- chunks half all-true, half
+//      mixed must read as one compressible half each. Also an
+//      ArrayChunk2<bool> (it did not compile: no second-value index for bool);
+//   7. re-chunk (dyn builds): down and up, contents against the reference.
 //
 // Chunk2 builds only (ArrayChunkBits is ArrayChunk2<Bit>). Exit 0 = pass.
 
@@ -39,6 +45,7 @@
 
 #include "chunk/chunk_traits.h"
 #include "chunk/array_chunk_bits.h"
+#include "chunk/chunk_size_advisor.h"
 #include "chunk/param_chunk.h"
 #include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"
@@ -283,6 +290,112 @@ int logical_ops(long N)
     return fails;
 }
 
+int advisor_and_rechunk(long N)
+{
+    ArrayChunkBits<> a(N);
+    int              fails = 0;
+    if constexpr (build_config::chunk_dynamic)
+        a.rechunk_to(256); // room for a finer row (the advisor stops at 64)
+    const long S = static_cast<long>(a.chunk_size());
+
+    // Runs of whole chunks: all false, all true, and chunks whose first half
+    // is all true and second half mixed.
+    const auto pattern = [S](long i)
+    {
+        const long run = (i / kRun) % 3;
+        if (run != 2)
+            return run == 1;
+        return (i % S) < S / 2 ? true : varied(i);
+    };
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for
+        for (long i = 0; i < N; ++i)
+            a[i] = pattern(i);
+    }
+    end_phase();
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp single
+        a.compress();
+    }
+    end_phase();
+    std::vector<bool> ref(static_cast<std::size_t>(N));
+    for (long i = 0; i < N; ++i)
+        ref[static_cast<std::size_t>(i)] = pattern(i);
+    fails += compare(a, ref, "advisor setup") != 0;
+
+    const long mat_expected = (N / kRun) / 3 * (kRun / S);
+    const auto rep          = ChunkSizeAdvisor<Bit>::analyze(a);
+    if (rep.cur < 0)
+    {
+        std::printf("[bits] FAIL advisor: no row for the current size %ld\n", S);
+        return fails + 1;
+    }
+    const auto& cur = rep.table[static_cast<std::size_t>(rep.cur)];
+    const double data_bytes = cur.mem_bytes - static_cast<double>(cur.n_chunks) * rep.meta_bytes;
+    if (cur.mat != mat_expected || data_bytes != static_cast<double>(mat_expected) * static_cast<double>(S) / 8.)
+    {
+        std::printf("[bits] FAIL advisor exact row: mat %lld (expected %ld), data %.0f B (expected %.0f)\n",
+                    static_cast<long long>(cur.mat), mat_expected, data_bytes,
+                    static_cast<double>(mat_expected) * static_cast<double>(S) / 8.);
+        ++fails;
+    }
+    // At S/2 each such chunk is one compressible half (all true) and one mixed.
+    bool seen_half = false;
+    for (const auto& row : rep.table)
+        if (static_cast<long>(row.size) == S / 2)
+        {
+            seen_half = true;
+            const double r = static_cast<double>(row.mat) / static_cast<double>(mat_expected);
+            if (r < 0.98 || r > 1.02)
+            {
+                std::printf("[bits] FAIL advisor finer row S=%ld: mat %lld, expected ~%ld\n", S / 2,
+                            static_cast<long long>(row.mat), mat_expected);
+                ++fails;
+            }
+        }
+    if (!seen_half)
+    {
+        std::printf("[bits] FAIL advisor: no finer row at S=%ld\n", S / 2);
+        ++fails;
+    }
+
+    // bool (one byte per element): the advisor analyses it too.
+    {
+        ArrayChunk2<bool> b(N);
+        for (long i = 0; i < N; ++i)
+            b[i] = pattern(i);
+        const auto rb = ChunkSizeAdvisor<bool>::analyze(b);
+        fails += rb.cur < 0;
+        b.clear();
+    }
+
+    if constexpr (build_config::chunk_dynamic)
+    {
+        for (const unsigned to : {static_cast<unsigned>(S / 2), static_cast<unsigned>(S * 2), static_cast<unsigned>(S)})
+        {
+            a.rechunk_to(to);
+            if (a.chunk_size() != to)
+            {
+                std::printf("[bits] FAIL rechunk: geometry %u, expected %u\n", a.chunk_size(), to);
+                ++fails;
+            }
+            char step[48];
+            std::snprintf(step, sizeof step, "after rechunk_to(%u)", to);
+            fails += compare(a, ref, step) != 0;
+        }
+    }
+
+    if (fails == 0)
+        std::printf("[bits] OK advisor (exact row, S/8 bytes, finer row by word)%s\n",
+                    build_config::chunk_dynamic ? ", rechunk down and up" : "");
+    a.clear();
+    return fails;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -297,6 +410,7 @@ int main(int argc, char** argv)
     fails += round_trip(N);
     fails += neighbours(N);
     fails += logical_ops(N);
+    fails += advisor_and_rechunk(N);
 
     release_chunk_pools();
     destroy_block_chunk();
