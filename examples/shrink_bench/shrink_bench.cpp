@@ -84,6 +84,109 @@ inline constexpr bool has_advisor = chunk_config::is_shrink_enabled && build_con
 template <typename T>
 using Array = ActiveArray<T>;
 
+// ── --test_prealloc: alloc_chunk() before a partial loop ─────────────────────
+// alloc_chunk(i) materialises the chunk holding element i ahead of the loop
+// that writes it: the loop then only stores into buffers that exist, instead
+// of materialising chunks one write at a time inside the parallel region. It
+// exists on the three variants (ArrayChunk, ArrayChunk2, ArrayChunk2A) and had
+// no caller. The window is PARTIAL (an eighth of the array, from its first
+// quarter): the chunks around it must stay compressed, or preallocating would
+// prove nothing. bool goes through its own materialiser on Chunk2 / Chunk2A.
+
+/// @brief One element type: preallocate the window, check which chunks are
+///        materialised, run the loop over the window, read everything back
+///        against a std::vector. @return the number of failures.
+template <typename T>
+static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
+{
+    Array<T>       a(n);
+    std::vector<T> ref(static_cast<std::size_t>(n), T{});
+    const Int      beg   = n / 4;
+    const Int      end   = beg + n / 8;
+    long           fails = 0;
+
+    if constexpr (requires {
+                      a.alloc_chunk(Int{0});
+                      a.chunk_size();
+                      a.written(Int{0});
+                  })
+    {
+        const Int step = static_cast<Int>(a.chunk_size());
+#pragma omp parallel
+        {
+            begin_parallel_phase_g();
+#pragma omp for schedule(static)
+            for (Int c = beg / step; c <= (end - 1) / step; ++c)
+            {
+                if constexpr (build_config::use_openmp)
+                    a.alloc_chunk(c * step, get_thr_rank_fast());
+                else
+                    a.alloc_chunk(c * step);
+            }
+            finalize_parallel_phase_only_flush_g();
+        }
+        finalize_parallel_phase_after_flush_g();
+
+        // Materialised exactly over the window: every chunk it touches, and
+        // not the chunks around it.
+        long in = 0, out = 0;
+        for (Int c = 0; c * step < n; ++c)
+        {
+            const bool in_window = c >= beg / step && c <= (end - 1) / step;
+            const bool written   = a.written(c * step);
+            in += in_window && written;
+            out += !in_window && written;
+            if (written != in_window && fails < 3)
+                std::cout << "[prealloc] " << name << ": chunk " << c << (in_window ? " not" : "") << " materialised\n";
+            fails += written != in_window;
+        }
+        std::cout << "[prealloc] " << name << ": " << in << " chunks preallocated in [" << beg << ", " << end << "), "
+                  << out << " outside\n";
+    }
+
+    // The loop over the window: stores into chunks that already exist.
+#pragma omp parallel
+    {
+        begin_parallel_phase_g();
+#pragma omp for schedule(static)
+        for (Int i = beg; i < end; ++i)
+            a[i] = value_at(i);
+        finalize_parallel_phase_only_flush_g();
+    }
+    finalize_parallel_phase_after_flush_g();
+    for (Int i = beg; i < end; ++i)
+        ref[static_cast<std::size_t>(i)] = value_at(i);
+
+    // Read back through the read operator, window and surroundings.
+    for (Int i = 0; i < n; ++i)
+    {
+        const T v = a[i];
+        if (!(v == ref[static_cast<std::size_t>(i)]))
+        {
+            if (fails < 5)
+                std::cout << "[prealloc] " << name << ": MISMATCH at " << i << "\n";
+            ++fails;
+        }
+    }
+    return fails;
+}
+
+/// @brief The --test_prealloc checks; exits 1 on a failure.
+static void run_prealloc_checks(Int n)
+{
+    long fails = 0;
+    fails +=
+        prealloc_check<double>("double", n, [](Int i) { return i % 5 == 0 ? 0.0 : 0.5 * static_cast<double>(i % 97); });
+    fails += prealloc_check<int>("int", n, [](Int i) { return static_cast<int>(i % 13); });
+    fails += prealloc_check<bool>("bool", n, [](Int i) { return i % 3 != 0; });
+    if (fails)
+    {
+        std::cout << "[prealloc] FAILED (" << fails << ")\n";
+        std::exit(1);
+    }
+    std::cout << "[prealloc] ALL PASSED\n";
+}
+
 int main(int argc, char* argv[])
 {
     // Optionally cap the glibc arenas, BEFORE any parallel region creates them.
@@ -412,6 +515,9 @@ int main(int argc, char* argv[])
     std::cout << tc.WHITE << "Elapsed time creation : " << tc.BOLD << elapsed_seconds.count() << "s" << tc.RESET
               << "\n";
     // useless in chunk mode arrays are set to zero by default
+
+    if (bench_args.test_prealloc)
+        run_prealloc_checks(sz);
 
     // Initial fill: a 200-line omp parallel region, moved to
     // bench_phase_fill.cpp (see bench_phases.h).

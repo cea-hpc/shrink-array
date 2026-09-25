@@ -686,7 +686,11 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     {
         if (this->is_cst_val())
         {
-            create_value(false, ptr_second_value);
+            // bool has its own materialiser (the second value is the flag).
+            if constexpr (is_not_bool)
+                create_value(false, ptr_second_value);
+            else
+                create_value_bool(false);
         }
     }
 
@@ -705,11 +709,17 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
 
             if constexpr (build_config::use_openmp)
             {
-                create_value(false, ptr_second_value, thr_rank);
+                if constexpr (is_not_bool)
+                    create_value(false, ptr_second_value, thr_rank);
+                else
+                    create_value_bool(false, thr_rank);
             }
             else
             {
-                create_value(false, ptr_second_value);
+                if constexpr (is_not_bool)
+                    create_value(false, ptr_second_value);
+                else
+                    create_value_bool(false);
             }
         }
     }

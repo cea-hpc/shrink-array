@@ -22,6 +22,7 @@
 #include "chunk/chunk2_std.h"
 #include "chunk/internal/proxy2.h"
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
+#include "chunk/internal/dependent_false.h"     // dependent_false_v (wrong-type branches)
 
 /**
  * @file chunk2_std_inline.h
@@ -794,10 +795,8 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int      
     }
     else
     {
-        if constexpr (build_config::is_debug)
-        {
-            std::abort();
-        }
+        static_assert(dependent_false_v<T>, "make_block_compression(thr, inf_array, proxy) is for non-bool elements: "
+                                            "use make_block_compression_bool()");
     }
 }
 
@@ -818,10 +817,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_bool(int 
     }
     else
     {
-        if constexpr (build_config::is_debug)
-        {
-            std::abort();
-        }
+        static_assert(
+            dependent_false_v<T>,
+            "make_block_compression_bool() is for bool elements: use make_block_compression(thr, inf_array, proxy)");
     }
 }
 
@@ -1058,10 +1056,10 @@ void Chunk2OmpPolicy<T, Derived, false>::create_value(bool need_set_second_value
         create_value_serial_impl(need_set_second_value,
                                  [&inf_array](T* ptr) { BaseSpec::init_block_2nd_value(ptr, inf_array); });
     }
-    else if constexpr (build_config::is_debug)
+    else
     {
-        std::cerr << "Chunk2_std_inline::create_value() called" << '\n';
-        std::abort();
+        static_assert(dependent_false_v<T>,
+                      "create_value(bool, inf_array) is for non-bool elements: use create_value_bool()");
     }
 }
 
@@ -1076,10 +1074,10 @@ void Chunk2OmpPolicy<T, Derived, false>::create_value_bool(bool need_set_second_
     {
         create_value_serial_impl(need_set_second_value, [](T* ptr) { BaseSpec::init_block_2nd_value(ptr); });
     }
-    else if constexpr (build_config::is_debug)
+    else
     {
-        std::cerr << "Chunk2_std_inline::create_value_bool() called" << '\n';
-        std::abort();
+        static_assert(dependent_false_v<T>,
+                      "create_value_bool() is for bool elements: use create_value(bool, inf_array)");
     }
 }
 

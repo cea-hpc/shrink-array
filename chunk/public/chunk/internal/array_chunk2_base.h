@@ -67,8 +67,9 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         // ctx->num_chunk)); the visibility protocol itself lives in
         // DeferredReadGate (chunk_base.h). Marking num_chunk here instead
         // would ENABLE the read gate for freshly-allocated chunks — a
-        // behaviour change this dead-code path must not smuggle in (and the
+        // behaviour change a preallocation must not smuggle in (and the
         // matching ArrayChunk v1 alloc_chunk never marked either).
+        // Exercised by shrink_bench --test_prealloc.
         chunk_list[num_chunk].alloc_chunk(derived().get_metadata(i));
     }
 
