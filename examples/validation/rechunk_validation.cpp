@@ -23,9 +23,25 @@
 // don't need this (no-op).
 //
 // Compile NON-OMP (or OMP), dyn, check. Exit 0 = every invariant holds.
+//
+// Each case runs twice by default (--mode both): SERIALLY, as it always did,
+// then with its writes and checks in parallel regions (--mode parallel) --
+// the candidate lists per rank, the deferred path and the ambient chunk size
+// of worker threads around a re-chunk, which the serial pass never reaches.
+// rechunk_to() itself is always called outside any region.
+//
+//   rechunk_validation [N [target [rounds]]] [--case NAME] [--mode serial|parallel|both] [--list]
+//
+// --case runs one case: CMake registers one test per case, so `ctest -j`
+// spreads them over the cores (the cases share global re-chunk state -- the
+// ambient chunk size, the registries -- so they run in separate processes,
+// never side by side in one).
 
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
+#include <functional>
+#include <string>
 #include <vector>
 #include <cmath>
 #include <type_traits>
@@ -73,6 +89,61 @@ void drain_compression_backlog()
         shrink_array::finalize_parallel_phase();
 }
 
+// ── Serial or parallel passes ────────────────────────────────────────────────
+bool g_parallel = false; ///< --mode: the pass being run
+
+/// @brief f(i) for i in [0, N): a plain loop, or a work-shared parallel
+///        region (static schedule) followed by the phase-end drain.
+template <typename F>
+void for_each_index(long N, F&& f)
+{
+    if (!g_parallel)
+    {
+        for (long i = 0; i < N; ++i)
+            f(i);
+        return;
+    }
+#pragma omp parallel
+    {
+        if constexpr (build_config::has_not_ompt)
+            shrink_array::begin_parallel_phase();
+#pragma omp for schedule(static)
+        for (long i = 0; i < N; ++i)
+            f(i);
+    }
+    drain_compression_backlog();
+}
+
+/// @brief How many i in [0, N) satisfy bad(i) -- the checks, in the same
+///        serial or parallel pass. Details are then printed by a serial scan.
+template <typename F>
+long count_if_index(long N, F&& bad)
+{
+    long n = 0;
+    if (!g_parallel)
+    {
+        for (long i = 0; i < N; ++i)
+            n += bad(i) ? 1 : 0;
+        return n;
+    }
+#pragma omp parallel reduction(+ : n)
+    {
+        if constexpr (build_config::has_not_ompt)
+            shrink_array::begin_parallel_phase();
+#pragma omp for schedule(static)
+        for (long i = 0; i < N; ++i)
+            n += bad(i) ? 1 : 0;
+    }
+    drain_compression_backlog();
+    return n;
+}
+
+/// @brief The case label with the pass it runs in.
+std::string pass_label(const char* label)
+{
+    return std::string(label) + (g_parallel ? "@par" : "@ser");
+}
+
 } // namespace
 
 // --- Active variant selection (same shape as shrink_bench.cpp) -------
@@ -117,6 +188,9 @@ int check_invariance(const char* label,
                      T   sv_value    = T(1),
                      int post_rounds = 0)
 {
+    const std::string lab_s = pass_label(label);
+    label                   = lab_s.c_str();
+
     Array<T> arr(N);
     maybe_set_second_value(arr, sv_value); // no-op on chunk v1; required on chunk2
 
@@ -124,24 +198,22 @@ int check_invariance(const char* label,
             arr.chunk_size());
 
     std::vector<T> ref(N);
-    for (long i = 0; i < N; ++i)
-    {
-        T v    = gen(i);
-        arr[i] = v;
-        ref[i] = v;
-    }
+    for_each_index(N,
+                   [&](long i)
+                   {
+                       T v    = gen(i);
+                       arr[i] = v;
+                       ref[i] = v;
+                   });
 
     const unsigned old_size = arr.chunk_size();
 
     // (a) pre-rechunk DIAGNOSTIC: is the content read at the old geometry correct?
-    long pre_bad = 0, pre_first = -1;
-    for (long i = 0; i < N; ++i)
+    const long pre_bad   = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
+    long       pre_first = -1;
+    for (long i = 0; pre_bad && pre_first < 0 && i < N; ++i)
         if (arr[i] != ref[i])
-        {
-            if (pre_first < 0)
-                pre_first = i;
-            ++pre_bad;
-        }
+            pre_first = i;
     if (pre_bad)
     {
         printf("[%s/%s] PRE-FAIL: %ld mismatches BEFORE rechunk (setup/read bug, not rechunk); "
@@ -164,17 +236,17 @@ int check_invariance(const char* label,
         printf("[%s/%s] FAIL: size %ld -> %ld\n", variant_name(), label, N, (long)arr.size());
         return 1;
     }
-    long mismatches = 0, first = -1;
-    for (long i = 0; i < N; ++i)
+    const long mismatches = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
+    long       first      = -1;
+    for (long i = 0, shown = 0; mismatches && shown < 5 && i < N; ++i)
     {
         if (arr[i] != ref[i])
         {
             if (first < 0)
                 first = i;
-            if (mismatches < 5)
-                printf("[%s/%s] MISMATCH i=%ld got=%.17g exp=%.17g (new-chunk #%ld, offset %ld)\n", variant_name(),
-                       label, i, (double)arr[i], (double)ref[i], i / (long)new_size, i % (long)new_size);
-            ++mismatches;
+            printf("[%s/%s] MISMATCH i=%ld got=%.17g exp=%.17g (new-chunk #%ld, offset %ld)\n", variant_name(), label,
+                   i, (double)arr[i], (double)ref[i], i / (long)new_size, i % (long)new_size);
+            ++shown;
         }
     }
     if (mismatches)
@@ -190,31 +262,27 @@ int check_invariance(const char* label,
     //    invariance against the ground-truth ref.
     for (int round = 0; round < post_rounds; ++round)
     {
-        for (long i = 0; i < N; ++i)
-        {
-            T v    = gen(i + (long)round * 7919);
-            arr[i] = v;
-            ref[i] = v;
-        }
-        // compress_int signature differs across variants: v1 (CHUNK) takes a
-        // verbose bool; CHUNK2 / CHUNK2A take none. rechunk_validation.cpp is
-        // compiled once per variant, so guard the call.
+        for_each_index(N,
+                       [&](long i)
+                       {
+                           T v    = gen(i + (long)round * 7919);
+                           arr[i] = v;
+                           ref[i] = v;
+                       });
         // Hand the queued candidates to the compression pass before asking for
         // the result -- see drain_compression_backlog() above.
         drain_compression_backlog();
-#if defined(CHUNK2A) || defined(CHUNK2)
-        arr.compress_int();
-#else
-        arr.compress_int(false);
-#endif
-        long bad = 0, firstb = -1;
-        for (long i = 0; i < N; ++i)
+        // compress_int signature differs across variants: v1 (CHUNK) takes a
+        // verbose bool; CHUNK2 / CHUNK2A take none.
+        if constexpr (requires { arr.compress_int(false); })
+            arr.compress_int(false);
+        else
+            arr.compress_int();
+        const long bad    = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
+        long       firstb = -1;
+        for (long i = 0; bad && firstb < 0 && i < N; ++i)
             if (arr[i] != ref[i])
-            {
-                if (firstb < 0)
-                    firstb = i;
-                ++bad;
-            }
+                firstb = i;
         if (bad)
         {
             printf(
@@ -244,29 +312,41 @@ int check_coexistence(const char* label, long N, unsigned moved_size, int rounds
 {
     using Arr = Array<T>;
 
+    const std::string lab_s = pass_label(label);
+    label                   = lab_s.c_str();
+
     Arr moved(static_cast<int>(N)); // will be re-chunked
     Arr fixed(static_cast<int>(N)); // stays at the ambient geometry
 
-    for (long i = 0; i < N; ++i)
-    {
-        moved[i] = static_cast<T>((i % 7) ? 0 : i);
-        fixed[i] = static_cast<T>((i % 5) ? 0 : i);
-    }
+    for_each_index(N,
+                   [&](long i)
+                   {
+                       moved[i] = static_cast<T>((i % 7) ? 0 : i);
+                       fixed[i] = static_cast<T>((i % 5) ? 0 : i);
+                   });
 
     moved.rechunk_to(moved_size);
 
     // Alternate writes between the two geometries, the way the bench's loop does.
     for (int r = 0; r < rounds; ++r)
-        for (long i = 0; i < N; ++i)
-        {
-            moved[i] = static_cast<T>((i + r) % 11 ? 0 : (i + r));
-            fixed[i] = static_cast<T>((i + r) % 13 ? 0 : (i + r));
-        }
+        for_each_index(N,
+                       [&](long i)
+                       {
+                           moved[i] = static_cast<T>((i + r) % 11 ? 0 : (i + r));
+                           fixed[i] = static_cast<T>((i + r) % 13 ? 0 : (i + r));
+                       });
 
     // Verify both arrays still read back what was last written.
-    int       bad = 0;
-    const int r   = rounds - 1;
-    for (long i = 0; i < N && bad < 5; ++i)
+    const int  r = rounds - 1;
+    const long nbad =
+        count_if_index(N,
+                       [&](long i)
+                       {
+                           return !(static_cast<T>(moved[i]) == static_cast<T>((i + r) % 11 ? 0 : (i + r))) ||
+                                  !(static_cast<T>(fixed[i]) == static_cast<T>((i + r) % 13 ? 0 : (i + r)));
+                       });
+    int bad = 0;
+    for (long i = 0; nbad && i < N && bad < 5; ++i)
     {
         const T em = static_cast<T>((i + r) % 11 ? 0 : (i + r));
         const T ef = static_cast<T>((i + r) % 13 ? 0 : (i + r));
@@ -294,6 +374,9 @@ template <typename T>
 int check_range_ops(const char* label, long N)
 {
     using Arr = Array<T>;
+
+    const std::string lab_s = pass_label(label);
+    label                   = lab_s.c_str();
 
     Arr viaRange(static_cast<int>(N));
     Arr viaElem(static_cast<int>(N));
@@ -346,14 +429,13 @@ int check_range_ops(const char* label, long N)
         src[static_cast<std::size_t>(i)] = static_cast<T>((i % 11) ? 0 : i);
     const std::size_t ca = 3, cb = static_cast<std::size_t>(N) - 3;
     shrink_array::copy_range(viaRange, ca, cb, src.begin() + 0);
-    printf("[dbg] apres copy: range[3]=%g  S=%u  range[320]=%g elem[320]=%g src[317]=%g\n",
-           (double)static_cast<T>(viaRange[3]), viaRange.chunk_size(), (double)static_cast<T>(viaRange[320]),
-           (double)static_cast<T>(viaElem[320]), (double)src[317]);
     for (std::size_t i = ca; i < cb; ++i)
         viaElem[static_cast<long>(i)] = src[i - ca];
 
+    const long nbad =
+        count_if_index(N, [&](long i) { return !(static_cast<T>(viaRange[i]) == static_cast<T>(viaElem[i])); });
     int bad = 0;
-    for (long i = 0; i < N && bad < 5; ++i)
+    for (long i = 0; nbad && i < N && bad < 5; ++i)
     {
         const T r = static_cast<T>(viaRange[i]);
         const T e = static_cast<T>(viaElem[i]);
@@ -368,75 +450,184 @@ int check_range_ops(const char* label, long N)
     return bad ? 1 : 0;
 }
 
+namespace
+{
+/// @brief One case: its name (--case), the geometry it starts from, its body.
+struct Case
+{
+    const char*          name;
+    unsigned             start_size;
+    std::function<int()> run;
+};
+
+/// @brief Declare @p size as the ambient geometry, to the arrays AND to the
+///        allocators. set_active_chunk_size() only moves the ARRAY-side
+///        geometry: without the registration, arrays report chunk_size() ==
+///        size but draw their buffers from whatever size init_indexes()
+///        primed, and every read past that width returns another chunk's data.
+void set_start_geometry(unsigned size)
+{
+    set_active_chunk_size(size);
+    set_thread_chunk_size(size);
+    ParamChunk::register_chunk_size(size);
+}
+} // namespace
+
 int main(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
 
-    // Scale repro: N and the 64->target geometry are configurable, to hunt the
-    // size-dependent rechunk crash under ASan without the perf bench's weight.
-    //   argv[1] = N (default 1e6)   argv[2] = target size (default 1024)
-    const long     N_scale = argc > 1 ? atol(argv[1]) : 1000000L;
-    const unsigned tgt     = argc > 2 ? (unsigned)atoi(argv[2]) : 1024u;
-    const int      rounds  = argc > 3 ? atoi(argv[3]) : 200;
+    // Positional arguments (the scale repro: N and the 64->target geometry are
+    // configurable, to hunt a size-dependent rechunk crash under ASan without
+    // the perf bench's weight):  [N (1e6)] [target size (1024)] [rounds (200)]
+    // Flags: --case NAME, --mode serial|parallel|both (both), --list.
+    std::vector<const char*> pos;
+    const char*              only = nullptr;
+    const char*              mode = "both";
+    bool                     list = false;
+    for (int a = 1; a < argc; ++a)
+    {
+        if (!std::strcmp(argv[a], "--case") && a + 1 < argc)
+            only = argv[++a];
+        else if (!std::strcmp(argv[a], "--mode") && a + 1 < argc)
+            mode = argv[++a];
+        else if (!std::strcmp(argv[a], "--list"))
+            list = true;
+        else
+            pos.push_back(argv[a]);
+    }
+    const long     N_scale = pos.size() > 0 ? atol(pos[0]) : 1000000L;
+    const unsigned tgt     = pos.size() > 1 ? (unsigned)atoi(pos[1]) : 1024u;
+    const int      rounds  = pos.size() > 2 ? atoi(pos[2]) : 200;
+    const bool     run_ser = std::strcmp(mode, "parallel") != 0;
+    const bool     run_par = std::strcmp(mode, "serial") != 0;
+    if (!run_ser && !run_par)
+    {
+        printf("unknown --mode '%s' (serial, parallel or both)\n", mode);
+        return 2;
+    }
+
+    const long N = 1000000;
+    // Each case declares a second_value present in its data (value -> val2
+    // compression actually kicks in). On chunk2 this is REQUIRED; on 2A / v1
+    // it is a no-op. The first three start at 64 (the scale case grows it to
+    // the target, as the perf bench does), the others at 512.
+    const std::vector<Case> cases = {
+        // Coexistence first: it is the cheapest and the one the bench actually hits.
+        {"coexistence", 64, [] { return check_coexistence<double>("coexistence-64-and-256", 200000L, 256u, 3); }},
+        {"range-ops", 64, [] { return check_range_ops<double>("range-ops", 200000L); }},
+        {"scale-64-to-tgt", 64,
+         [&]
+         {
+             return check_invariance<double>(
+                 "scale-64-to-tgt", N_scale, tgt, [](long i) -> double { return double((i / 5000) % 3); },
+                 /*sv_value=*/2.0, /*post_rounds=*/rounds);
+         }},
+        {"mostly-constant", 512,
+         [&]
+         {
+             return check_invariance<double>(
+                 "mostly-constant", N, 2048, [](long i) -> double { return double((i / 5000) % 3); },
+                 /*sv_value=*/2.0);
+         }},
+        {"sin-quantized", 512,
+         [&]
+         {
+             return check_invariance<double>(
+                 "sin-quantized", N, 4096,
+                 [](long i) -> double { return std::floor(std::sin(double(i) * 0.001) * 4.0); }, /*sv_value=*/1.0);
+         }},
+        {"shrink-to-smaller", 512,
+         [&]
+         {
+             return check_invariance<double>(
+                 "shrink-to-smaller", N, 256, [](long i) -> double { return double((i / 1000) % 2); },
+                 /*sv_value=*/1.0);
+         }},
+        // 4096, not 8192: rechunk_to() refuses anything above cst_buffer_size
+        // (CHUNK_DYN_MAX_SIZE, 4096 by default) because the shared cst_val1/cst_val2
+        // buffers are sized to that ceiling and a wider chunk would read them out of
+        // bounds. Asking for 8192 made this case fail with a bare
+        // "geometry 512 -> 512": the explanatory message in rechunk_to is gated on
+        // build_config::any_check (is_debug || check_optim), which the -DCHECK
+        // targets do NOT satisfy, so the refusal was silent. Raise the target here
+        // only together with -DCHUNK_DYN_MAX_SIZE.
+        {"all-same", 512,
+         [&]
+         {
+             return check_invariance<double>(
+                 "all-same", N, 4096, [](long) -> double { return 42.0; },
+                 /*sv_value=*/42.0);
+         }},
+        {"all-different", 512,
+         []
+         {
+             return check_invariance<double>(
+                 "all-different", 100000, 1024, [](long i) -> double { return double(i); }, /*sv_value=*/1.0);
+         }},
+        // Growth 512 -> 2048 with val2: targets the tab_m_ptr_cst_val2 queue
+        // (chunk2) + the second_value round-trip.
+        {"val2-grow", 512,
+         [&]
+         {
+             return check_invariance<double>(
+                 "val2-grow", N, 2048, [](long i) -> double { return double((i / 5000) % 3); }, /*sv_value=*/2.0);
+         }},
+        // Shrink with val2 (queue never read past S', must pass).
+        {"val2-shrink", 512,
+         [&]
+         {
+             return check_invariance<double>(
+                 "val2-shrink", N, 256, [](long i) -> double { return double((i / 1000) % 2); },
+                 /*sv_value=*/1.0);
+         }},
+    };
+
+    if (list)
+    {
+        for (const Case& c : cases)
+            printf("%s\n", c.name);
+        return 0;
+    }
+    if (only)
+    {
+        bool known = false;
+        for (const Case& c : cases)
+            known = known || !std::strcmp(c.name, only);
+        if (!known)
+        {
+            printf("unknown --case '%s' (--list gives the names)\n", only);
+            return 2;
+        }
+    }
 
     ParamChunk::init_indexes(true);
 
-    printf("=== rechunk_validation [variant = %s]  N_scale=%ld  64->%u ===\n", variant_name(), N_scale, tgt);
+    printf("=== rechunk_validation [variant = %s]  N_scale=%ld  64->%u  case=%s  mode=%s ===\n", variant_name(),
+           N_scale, tgt, only ? only : "all", mode);
 
-    int fails = 0;
-
-    // ── SCALE CASE: start at 64, grow to tgt (reproduces the perf-bench crash) ──
-    set_active_chunk_size(64);
-    set_thread_chunk_size(64);
-    // Declare the geometry to the allocators. set_active_chunk_size() only moves
-    // the ARRAY-side geometry: without this, arrays report chunk_size()==64 but
-    // draw their buffers from whatever size init_indexes() primed, and every read
-    // past that width returns another chunk's data.
-    ParamChunk::register_chunk_size(64);
-    // Coexistence first: it is the cheapest and the one the bench actually hits.
-    fails += check_coexistence<double>("coexistence-64-and-256", 200000L, 256u, 3);
-
-    fails += check_range_ops<double>("range-ops", 200000L);
-
-    fails += check_invariance<double>(
-        "scale-64-to-tgt", N_scale, tgt, [](long i) -> double { return double((i / 5000) % 3); }, /*sv_value=*/2.0,
-        /*post_rounds=*/rounds);
-
-    // ── existing 512-start checks (unchanged) ──
-    set_active_chunk_size(512);
-    set_thread_chunk_size(512);
-    ParamChunk::register_chunk_size(512); // see the note above the 64 registration
-
-    const long N = 1000000;
-
-    // Each case declares a second_value present in its data (value -> val2
-    // compression actually kicks in). On chunk2 this is REQUIRED; on 2A / v1 it's a no-op.
-    fails += check_invariance<double>(
-        "mostly-constant", N, 2048, [](long i) -> double { return double((i / 5000) % 3); }, /*sv_value=*/2.0);
-    fails += check_invariance<double>(
-        "sin-quantized", N, 4096, [](long i) -> double { return std::floor(std::sin(double(i) * 0.001) * 4.0); },
-        /*sv_value=*/1.0);
-    fails += check_invariance<double>(
-        "shrink-to-smaller", N, 256, [](long i) -> double { return double((i / 1000) % 2); }, /*sv_value=*/1.0);
-    // 4096, not 8192: rechunk_to() refuses anything above cst_buffer_size
-    // (CHUNK_DYN_MAX_SIZE, 4096 by default) because the shared cst_val1/cst_val2
-    // buffers are sized to that ceiling and a wider chunk would read them out of
-    // bounds. Asking for 8192 made this case fail with a bare
-    // "geometry 512 -> 512": the explanatory message in rechunk_to is gated on
-    // build_config::any_check (is_debug || check_optim), which the -DCHECK
-    // targets do NOT satisfy, so the refusal was silent. Raise the target here
-    // only together with -DCHUNK_DYN_MAX_SIZE.
-    fails += check_invariance<double>("all-same", N, 4096, [](long) -> double { return 42.0; }, /*sv_value=*/42.0);
-    fails += check_invariance<double>(
-        "all-different", 100000, 1024, [](long i) -> double { return double(i); }, /*sv_value=*/1.0);
-
-    // Growth 512 -> 2048 with val2: targets the tab_m_ptr_cst_val2 queue
-    // (chunk2) + the second_value round-trip.
-    fails += check_invariance<double>(
-        "val2-grow", N, 2048, [](long i) -> double { return double((i / 5000) % 3); }, /*sv_value=*/2.0);
-    // Shrink with val2 (queue never read past S', must pass).
-    fails += check_invariance<double>(
-        "val2-shrink", N, 256, [](long i) -> double { return double((i / 1000) % 2); }, /*sv_value=*/1.0);
+    int      fails    = 0;
+    unsigned geometry = 0;
+    for (const Case& c : cases)
+    {
+        if (only && std::strcmp(c.name, only) != 0)
+            continue;
+        if (c.start_size != geometry)
+        {
+            set_start_geometry(c.start_size);
+            geometry = c.start_size;
+        }
+        if (run_ser)
+        {
+            g_parallel = false;
+            fails += c.run();
+        }
+        if (run_par)
+        {
+            g_parallel = true;
+            fails += c.run();
+        }
+    }
 
     printf("\n[%s] %s\n", variant_name(),
            fails == 0 ? "=== ALL INVARIANCE CHECKS PASSED ===" : "=== INVARIANCE FAILURES ===");

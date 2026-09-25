@@ -3,7 +3,10 @@
 # executable per chunk variant, dyn-geometry builds only.
 #
 #   rechunk_validation      content invariance across rechunk_to(), and the
-#                           location of the first mismatch when it fails
+#                           location of the first mismatch when it fails;
+#                           each case in a serial and a parallel pass, one
+#                           ctest per case (--case) so `ctest -j` runs them
+#                           side by side
 #   dyn_geometry_validation an array reads back what was written at EVERY
 #                           registered runtime chunk size -- the pairing between
 #                           set_active_chunk_size (array side) and
@@ -110,9 +113,22 @@ if (CHUNK_BUILD_DYN)
           $<$<AND:$<BOOL:${RECHUNK_TRACE_POOL}>,$<STREQUAL:${_harness},rechunk_validation>>:RECHUNK_TRACE_POOL>)
       validation_setup_target(${_tgt})
 
-      add_test(NAME ${_tgt} COMMAND ${_tgt})
-      set_property(TEST ${_tgt} PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
-      set_property(TEST ${_tgt} PROPERTY LABELS validation)
+      if (_harness STREQUAL "rechunk_validation")
+        # One test per case (rechunk_validation --list), each in its serial and
+        # parallel passes: `ctest -j` spreads them over the cores. The names
+        # must match the case table of rechunk_validation.cpp -- an unknown
+        # --case fails the test, so a drift shows up at once.
+        foreach(_case coexistence range-ops scale-64-to-tgt mostly-constant sin-quantized
+                      shrink-to-smaller all-same all-different val2-grow val2-shrink)
+          add_test(NAME ${_tgt}_${_case} COMMAND ${_tgt} --case ${_case})
+          set_property(TEST ${_tgt}_${_case} PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
+          set_property(TEST ${_tgt}_${_case} PROPERTY LABELS validation)
+        endforeach()
+      else()
+        add_test(NAME ${_tgt} COMMAND ${_tgt})
+        set_property(TEST ${_tgt} PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
+        set_property(TEST ${_tgt} PROPERTY LABELS validation)
+      endif()
     endforeach()
   endforeach()
 
