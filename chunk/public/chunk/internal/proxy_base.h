@@ -28,6 +28,7 @@
 #include <vector>
 #include <memory>
 
+#include "chunk/internal/element_access.h" // elem_get / elem_set, is_packed_bit_v: Bit buffers are words of bits
 #include "chunk/chunk_def.h"
 #include "chunk/chunk_define.h"
 #include "chunk/internal/chunk_stats.h"
@@ -987,6 +988,57 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
     {
         bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs ^ rhs; });
+        return derived();
+    }
+
+    // ------------------------------------------------------------------------
+    // ArrayChunkBits (T = Bit, bit.h): |= &= ^= with a bool operand.
+    //
+    // Bit is not integral, so the three above do not apply. A logical
+    // operation needs no read-modify-write when the operand decides the result:
+    // `|= true` is `= true`, `&= false` is `= false`, and the other operand
+    // leaves the element as it is -- a plain write through the proxy's
+    // operator=, with its whole protocol (marking, deferral), and no write at
+    // all when nothing changes. Only `^= true` reads: the element, then its
+    // negation written back -- as for a plain bool, two threads updating the
+    // SAME element race; different elements of one word do not.
+    // ------------------------------------------------------------------------
+
+    /// @brief The operand kinds the Bit operators take: bool, Bit, or a proxy
+    ///        of either.
+    template <typename U>
+    static constexpr bool bit_operand_v = std::is_same_v<base_t<U>, bool> || is_packed_bit_v<base_t<U>>;
+
+    /// @brief `a[i] |= b` for ArrayChunkBits: sets the element when @p v is true.
+    template <typename U>
+    Derived operator|=(const U& v) noexcept
+        requires is_packed_bit_v<T> && bit_operand_v<U>
+    {
+        if (static_cast<bool>(v))
+            derived() = true;
+        return derived();
+    }
+
+    /// @brief `a[i] &= b` for ArrayChunkBits: clears the element when @p v is false.
+    template <typename U>
+    Derived operator&=(const U& v) noexcept
+        requires is_packed_bit_v<T> && bit_operand_v<U>
+    {
+        if (!static_cast<bool>(v))
+            derived() = false;
+        return derived();
+    }
+
+    /// @brief `a[i] ^= b` for ArrayChunkBits: flips the element when @p v is true.
+    template <typename U>
+    Derived operator^=(const U& v) noexcept
+        requires is_packed_bit_v<T> && bit_operand_v<U>
+    {
+        if (static_cast<bool>(v))
+        {
+            const bool cur = static_cast<bool>(read_pure()); // synchronised read, as operator bool()
+            derived()      = !cur;
+        }
         return derived();
     }
 

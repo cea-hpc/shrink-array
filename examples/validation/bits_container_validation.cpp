@@ -27,7 +27,9 @@
 //      element i by thread i % nthr, so every word is written by all of them
 //      at once) -- none lost. OpenMP builds; serial builds run it on one
 //      thread;
-//   4. the element surface: `bool b = a[i]`, `a[i] = !b`, `a[i] == b`.
+//   4. the element surface: `bool b = a[i]`, `a[i] = !b`, `a[i] == b`;
+//   5. |= &= ^= with a bool operand, element-wise against std::vector<bool>,
+//      in parallel over neighbouring elements (schedule(static,1)).
 //
 // Chunk2 builds only (ArrayChunkBits is ArrayChunk2<Bit>). Exit 0 = pass.
 
@@ -218,6 +220,69 @@ int surface()
     return fails;
 }
 
+int logical_ops(long N)
+{
+    ArrayChunkBits<>  a(N);
+    std::vector<bool> ref(static_cast<std::size_t>(N), false);
+    const auto        opnd = [](long i, int k) { return ((i * 7 + k * 3) % 5) < 2; };
+    int               fails = 0;
+
+    // Start from a pattern with constant runs, so |= / &= also meet compressed chunks.
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for
+        for (long i = 0; i < N; ++i)
+            a[i] = ((i / kRun) % 3 == 1) || ((i / kRun) % 3 == 2 && i % 2 == 0);
+    }
+    end_phase();
+    for (long i = 0; i < N; ++i)
+        ref[static_cast<std::size_t>(i)] = ((i / kRun) % 3 == 1) || ((i / kRun) % 3 == 2 && i % 2 == 0);
+
+    for (int k = 0; k < 3; ++k)
+    {
+#pragma omp parallel
+        {
+            begin_phase();
+#pragma omp for schedule(static, 1)
+            for (long i = 0; i < N; ++i)
+            {
+                const bool b = opnd(i, k);
+                if (k == 0)
+                    a[i] |= b;
+                else if (k == 1)
+                    a[i] &= b;
+                else
+                    a[i] ^= b;
+            }
+        }
+        end_phase();
+        for (long i = 0; i < N; ++i)
+        {
+            const auto j = static_cast<std::size_t>(i);
+            const bool b = opnd(i, k);
+            ref[j]       = k == 0 ? (ref[j] || b) : k == 1 ? (ref[j] && b) : (ref[j] != b);
+        }
+        static const char* const names[] = {"|=", "&=", "^="};
+        fails += compare(a, ref, names[k]) != 0;
+    }
+
+    // A proxy of the same container as the operand.
+    ArrayChunkBits<> m(8);
+    m[0] = true;
+    a[0] = false;
+    a[0] |= m[0];
+    a[1] = true;
+    a[1] &= m[1];
+    fails += !(a[0] == true && a[1] == false);
+
+    if (fails == 0)
+        std::printf("[bits] OK |= &= ^= against std::vector<bool>, neighbouring elements in parallel\n");
+    m.clear();
+    a.clear();
+    return fails;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -231,6 +296,7 @@ int main(int argc, char** argv)
     fails += surface();
     fails += round_trip(N);
     fails += neighbours(N);
+    fails += logical_ops(N);
 
     release_chunk_pools();
     destroy_block_chunk();
