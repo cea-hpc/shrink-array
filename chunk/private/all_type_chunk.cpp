@@ -26,6 +26,7 @@
 #include "chunk/singleton.h"
 #include "chunk/internal/manager_chunk.h"
 #include "chunk/all_type_chunk.h"
+#include "chunk/internal/churn_counters.h" // churn::note_phase_end
 #include "chunk/PMP_CHUNK.h"                 // for CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK, __fast...
 #include "chunk/chunk_define.h"              // for HAVE_EMBEDDED_COMPRESSION_WITH_OMPT
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
@@ -87,6 +88,7 @@ void begin_parallel_phase()
 
 void finalize_parallel_phase_only_flush()
 {
+    churn::note_phase_end(); // one compression phase (churn_counters.h)
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
 // Barrier + flush must both happen inside the same enclosing

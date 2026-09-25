@@ -46,6 +46,7 @@
 #include "chunk/manage_ompt.h"
 
 #include "chunk/all_type_chunk.h"
+#include "chunk/internal/churn_counters.h" // churn::note_phase_end
 
 #ifdef HAVE_OMPT
     #include <omp-tools.h>
@@ -227,6 +228,7 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
  */
 static void parallel_end_chunk_work()
 {
+    shrink_array::churn::note_phase_end(); // one compression phase (churn_counters.h)
     // Vector-mode build: chunk lib is inactive, nothing to finalize.
     if constexpr (!chunk_config::is_shrink_enabled)
         return;

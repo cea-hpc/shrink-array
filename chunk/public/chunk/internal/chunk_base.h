@@ -26,6 +26,7 @@
 #include <sys/mman.h>
 
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement, asserted on ChunkBase
+#include "chunk/internal/churn_counters.h" // churn::note_materialisation
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/internal/in_t.h"            // in_t<T>: the scans' constants, by value or by reference
 #include "chunk/internal/relaxed_element.h" // element_at<true>: the marking filter's reads
@@ -483,6 +484,9 @@ struct ChunkAllocPolicy<T, Derived, true>
         // array's own slabs, so affinity survives recycling.
         const unsigned int alloc_key = thread_alloc_key();
         CHUNK_FREEPATH_ALLOC(alloc_key);
+        // Churn measurement (churn_counters.h): one materialisation of the
+        // array this key names -- rank-local, dynamic builds only.
+        churn::note_materialisation<T>(thr_rank, alloc_key);
         if (const auto nb_free = static_cast<int>(self.get_manager().get_list_block_free_thr_size(thr_rank, alloc_key));
             nb_free > 0)
         {
