@@ -1,4 +1,5 @@
 #pragma once
+#include "chunk/internal/exact_rss.h" // exact_rss_kib ([RECHUNK-MEM])
 #include <unistd.h> // sysconf
 #include "fast_allocators/slab_arena.h" // fast_alloc::value_arena (CHUNK_RECHUNK_MEMTRACE)
 #include <cstring> // std::strcmp (CHUNK_ADVISOR_TABLE)
@@ -349,15 +350,9 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             if (memtrace && tick != last_mem_tick)
             {
                 last_mem_tick = tick;
-                long rss_mb = -1;
-                if (std::FILE* f = std::fopen("/proc/self/statm", "r"))
-                {
-                    long size_pages = 0, rss_pages = 0;
-                    if (std::fscanf(f, "%ld %ld", &size_pages, &rss_pages) == 2)
-                        rss_mb = static_cast<long>(static_cast<double>(rss_pages) *
-                                                   static_cast<double>(::sysconf(_SC_PAGESIZE)) / 1048576.);
-                    std::fclose(f);
-                }
+                // Exact (smaps_rollup): statm lags by gigabytes at 64 threads.
+                const long rss_kib = shrink_array::exact_rss_kib();
+                const long rss_mb  = rss_kib >= 0 ? rss_kib / 1024 : -1;
                 const auto& va     = fast_alloc::value_arena();
                 const long  res_mb = static_cast<long>(static_cast<double>(va.resident_bytes()) / 1048576.);
                 std::fprintf(stderr,

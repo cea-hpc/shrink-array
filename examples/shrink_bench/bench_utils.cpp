@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "bench_utils.h"
+#include "chunk/internal/exact_rss.h" // exact current and peak memory
 
 #include "chunk/all_type_chunk.h" // reuse_pool_bytes, the retention split of memory_consumption
 #ifdef FAST_ALLOC
@@ -115,12 +116,30 @@ double convert_memory(double memoryValue)
     return megabytes;
 }
 
+/// @brief The exact-peak sampler of the bench: started with the program
+///        (static initialisation), period SHRINK_BENCH_RSS_SAMPLE_MS (default
+///        200 ms; 0 = off).
+static shrink_array::RssPeakSampler& bench_rss_sampler()
+{
+    static shrink_array::RssPeakSampler sampler(
+        []
+        {
+            const char* e = std::getenv("SHRINK_BENCH_RSS_SAMPLE_MS");
+            return e != nullptr ? std::atoi(e) : 200;
+        }());
+    return sampler;
+}
+[[maybe_unused]] static const bool g_bench_rss_sampler_started = (bench_rss_sampler(), true);
+
 void memory_consumption(const std::string& msg)
 {
     rusage usage{};
     if (getrusage(RUSAGE_SELF, &usage) == 0)
     {
-        const long rss = usage.ru_maxrss; // PEAK resident set size in KB (high-water mark)
+        // ru_maxrss: the kernel's high-water mark -- of the per-thread RSS
+        // counters, which lag by gigabytes at 64 threads (exact_rss.h). Kept
+        // as a floor; the reported peak is the max with the exact samples.
+        const long rss_hwm = usage.ru_maxrss;
 
         // Also report the CURRENT resident size. ru_maxrss is a high-water mark
         // that never comes back down, so on its own it cannot distinguish
@@ -147,6 +166,12 @@ void memory_consumption(const std::string& msg)
             if (statm >> total_pages >> res_pages)
                 cur_kb = res_pages * (sysconf(_SC_PAGESIZE) / 1024);
         }
+        // Exact current size (smaps_rollup) when available -- statm above is
+        // the same lagging counter as VmRSS, kept only as a fallback.
+        if (const long exact = shrink_array::exact_rss_kib(); exact > 0)
+            cur_kb = exact;
+        bench_rss_sampler().note(cur_kb);
+        const long rss = std::max({rss_hwm, cur_kb, bench_rss_sampler().peak_kib()});
 
         std::cout << "Memory consumption " << msg << " : " << convert_memory(static_cast<double>(rss) * 1024.0)
                   << " Mo (peak)";
