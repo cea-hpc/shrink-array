@@ -36,8 +36,7 @@
  *     a drop-in.
  */
 
-#include <chrono>  // __chunk_stats_t0, the rates in print_chunk_stats
-#include <complex> // std::complex (ChunkStatsZeroComparable)
+#include <chrono> // __chunk_stats_t0, the rates in print_chunk_stats
 #include <cstdio>
 #include <map>
 #include <mutex>
@@ -354,16 +353,18 @@ void increm_chunk_write() noexcept
  * @brief Whether V can be compared to a zero-initialised V, so
  *        increm_chunk_write(V) can skip counting a write that is itself a
  *        compressible zero.
- * @details Element types differ widely here: plain arithmetic types compare
- *          to 0, std::complex needs a complex zero (no
- *          operator!=(complex,int)), and V can even be a Proxy
- *          (proxy-to-proxy assign), which is neither default-constructible
- *          nor comparable to 0.
+ * @details The zero is V{}, the value the library compresses: 0 for an
+ *          arithmetic type, a complex zero, the all-zero aggregate. Not
+ *          V(0): for an aggregate (Point3, Pair16) it initialises the first
+ *          member only (-Wmissing-field-initializers), and std::complex has
+ *          no operator!=(complex, int). V can even be a Proxy (proxy-to-proxy
+ *          assign), which is not default-constructible: not zero-comparable,
+ *          every such write is counted.
  * @tparam V Type being written.
  */
 template <typename V>
 concept ChunkStatsZeroComparable = requires(const V& value) {
-    { value != V(0) } -> std::convertible_to<bool>;
+    { value != V{} } -> std::convertible_to<bool>;
 };
 
 /**
@@ -380,7 +381,7 @@ void increm_chunk_write(V v) noexcept
 {
     if constexpr (ChunkStatsZeroComparable<V>)
     {
-        if (v != V(0))
+        if (v != V{})
             __chunk_stats_slot(C::stat_variant).write++;
     }
     else
