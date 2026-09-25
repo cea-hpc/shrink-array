@@ -21,6 +21,7 @@
 #include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (operator new[])
 #include "chunk/chunk2_std.h"
 #include "chunk/internal/proxy2.h"
+#include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 
 /**
  * @file chunk2_std_inline.h
@@ -674,6 +675,14 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
         if constexpr (build_config::chunk_dynamic)
             shrink_array::set_thread_chunk_size(proxy2->chunk_size());
 
+        // A flush in progress makes start() decline: ask first, before
+        // marking -- see block_pass_precheck.h.
+        if (block_pass_yields_to_flush<Proxy2<T>, Chunk2<T>>(CHUNK_PMP_MAX_THREADS))
+        {
+            if constexpr (build_config::chunk_dynamic)
+                set_thread_chunk_size(saved_sz);
+            return;
+        }
         // Per-chunk exclusion (ChunkBase::steal_mark_): claim every candidate
         // BEFORE start(), whose heavy barrier publishes the marks; released
         // per chunk as the pass goes, and all again at the end.
