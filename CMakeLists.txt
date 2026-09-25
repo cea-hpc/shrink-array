@@ -412,11 +412,23 @@ set_property(CACHE CHUNK_CXX_STANDARD PROPERTY STRINGS 20 23)
 if (NOT CHUNK_CXX_STANDARD MATCHES "^(20|23)$")
   message(FATAL_ERROR "CHUNK_CXX_STANDARD must be 20 or 23 (got ${CHUNK_CXX_STANDARD})")
 endif()
-message(STATUS "C++ standard: C++${CHUNK_CXX_STANDARD} (CHUNK_CXX_STANDARD)")
+# The portable request (target_compile_features cxx_std_NN) needs CMake to know
+# that feature for this compiler. NVHPC is never in its table, and an older
+# CMake may not list cxx_std_23 for a newer compiler (IntelLLVM 2026.0 with the
+# cluster's default cmake module): then the -std flag is passed directly.
+if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC" OR NOT "cxx_std_${CHUNK_CXX_STANDARD}" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+  set(CHUNK_CXX_STD_FLAG "-std=gnu++${CHUNK_CXX_STANDARD}")
+  message(STATUS "C++ standard: C++${CHUNK_CXX_STANDARD} (CHUNK_CXX_STANDARD), passed as ${CHUNK_CXX_STD_FLAG}: "
+                 "CMake ${CMAKE_VERSION} knows no cxx_std_${CHUNK_CXX_STANDARD} for ${CMAKE_CXX_COMPILER_ID} "
+                 "${CMAKE_CXX_COMPILER_VERSION}")
+else()
+  set(CHUNK_CXX_STD_FLAG "")
+  message(STATUS "C++ standard: C++${CHUNK_CXX_STANDARD} (CHUNK_CXX_STANDARD)")
+endif()
 
 function(chunk_require_cxx_std target scope)
-  if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
-    target_compile_options(${target} ${scope} -std=gnu++${CHUNK_CXX_STANDARD})
+  if (CHUNK_CXX_STD_FLAG)
+    target_compile_options(${target} ${scope} ${CHUNK_CXX_STD_FLAG})
   else()
     target_compile_features(${target} ${scope} cxx_std_${CHUNK_CXX_STANDARD})
   endif()

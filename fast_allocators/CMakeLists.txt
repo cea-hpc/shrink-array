@@ -67,7 +67,10 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
 else()
   set(_fa_cxx_std 23)
 endif()
-if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
+# Same fallback as the umbrella project: the -std flag directly when this CMake
+# does not know cxx_std_NN for the compiler (NVHPC always; an older CMake with
+# a newer compiler, e.g. IntelLLVM 2026.0).
+if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC" OR NOT "cxx_std_${_fa_cxx_std}" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
   target_compile_options(fast_allocators PRIVATE -std=gnu++${_fa_cxx_std})
 else()
   target_compile_features(fast_allocators PRIVATE cxx_std_${_fa_cxx_std})
