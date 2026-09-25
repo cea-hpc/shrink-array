@@ -16,10 +16,10 @@
 #include <algorithm> // std::find, the registered sizes
 #include <cstddef>   // std::size_t (the reuse-pool byte counts)
 #include <mutex>
-#include <atomic> // for atomic_thread_fence, memory_order_seq_cst, atomic
-#include <memory> // for unique_ptr
+#include <atomic>   // for atomic_thread_fence, memory_order_seq_cst, atomic
+#include <memory>   // for unique_ptr
 #include <optional> // SerialFlushOwnership
-#include <vector> // for vector
+#include <vector>   // for vector
 #include <malloc.h>
 
 #include "chunk/config.h"
@@ -54,7 +54,10 @@ std::atomic_flag g_serial_flush_owner{};
 /// Releases g_serial_flush_owner on every exit path of the serial flush.
 struct SerialFlushOwnership
 {
-    ~SerialFlushOwnership() { g_serial_flush_owner.clear(std::memory_order_release); }
+    ~SerialFlushOwnership()
+    {
+        g_serial_flush_owner.clear(std::memory_order_release);
+    }
 };
 } // namespace
 
@@ -293,14 +296,14 @@ void AllTypeChunkParallelInterface<Derived, true>::resize_all_list_block_free_th
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::init_manager(ManagerChunkInt& m, int block_size) const
+void AllTypeChunkParallelInterface<Derived, true>::init_manager(ManagerChunkInt& manager, int block_size) const
 {
     // The sequence ParamChunk::init_indexes() used to run over the whole
     // registry, for one manager, at its registration. Everything here is a
     // slot indexed by rank; nothing needs the rank's own thread. Reached
     // through Derived's alias so that the calls stay dependent: the other
     // thread model's interface does not declare them.
-    typename Derived::manager_int_t& mm = m;
+    typename Derived::manager_int_t& mm = manager;
     mm.resize_all_list_block_free_thr();
     // std-alloc: the two below are no-ops on the manager.
     mm.alloc_chunk_allocator_thr();
@@ -404,16 +407,16 @@ void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr()
             }
         };
 
-        for_each_bucket([](const auto& elm, int b) { elm->clear_list_block_free_screen(b); });
+        for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_screen(bucket); });
 #pragma omp barrier
-        for_each_bucket([](const auto& elm, int b) { elm->clear_list_block_free_sort(b); });
+        for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_sort(bucket); });
 #pragma omp barrier
         for (const auto& elm : types)
         {
             elm->clear_list_block_free_dedup(thr_rank, nthr);
         }
 #pragma omp barrier
-        for_each_bucket([](const auto& elm, int b) { elm->clear_list_block_free_thr(b); });
+        for_each_bucket([](const auto& elm, int bucket) { elm->clear_list_block_free_thr(bucket); });
     }
 }
 
@@ -440,11 +443,11 @@ bool AllTypeChunkParallelInterface<Derived, true>::need_load_balance_list_block_
 
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, false>::init_manager(ManagerChunkInt& m, int block_size) const
+void AllTypeChunkParallelInterface<Derived, false>::init_manager(ManagerChunkInt& manager, int block_size) const
 {
     // std-alloc: the manager's init_allocator() is a no-op. Through Derived's
     // alias so that the call stays dependent (see the OpenMP body).
-    typename Derived::manager_int_t& mm = m;
+    typename Derived::manager_int_t& mm = manager;
     mm.init_allocator(block_size);
 }
 

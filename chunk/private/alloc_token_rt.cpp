@@ -87,14 +87,14 @@ inline void note(std::uint64_t token, std::size_t bytes) noexcept
     std::size_t i = static_cast<std::size_t>((token * 0x9E3779B97F4A7C15ULL) >> (64 - kSlotBits));
     for (std::size_t probe = 0; probe < kSlots; ++probe)
     {
-        Slot&         s = g_table[i];
-        std::uint64_t k = s.key.load(std::memory_order_relaxed);
-        if (k == 0 && s.key.compare_exchange_strong(k, key, std::memory_order_relaxed))
+        Slot&         slot = g_table[i];
+        std::uint64_t k    = slot.key.load(std::memory_order_relaxed);
+        if (k == 0 && slot.key.compare_exchange_strong(k, key, std::memory_order_relaxed))
             k = key; // we claimed the slot; a lost race leaves the winner's key in k
         if (k == key)
         {
-            s.allocs.fetch_add(1, std::memory_order_relaxed);
-            s.bytes.fetch_add(bytes, std::memory_order_relaxed);
+            slot.allocs.fetch_add(1, std::memory_order_relaxed);
+            slot.bytes.fetch_add(bytes, std::memory_order_relaxed);
             return;
         }
         i = (i + 1) & kSlotMask;
@@ -132,7 +132,7 @@ __attribute__((destructor)) void report()
             return;
     }
 
-    std::size_t   n          = 0;
+    std::size_t   count      = 0;
     std::uint64_t tot_allocs = 0;
     std::uint64_t tot_bytes  = 0;
     for (const Slot& s : g_table)
@@ -140,31 +140,31 @@ __attribute__((destructor)) void report()
         const std::uint64_t k = s.key.load(std::memory_order_relaxed);
         if (k == 0)
             continue;
-        g_entries[n++] =
+        g_entries[count++] =
             Entry{k - 1, s.allocs.load(std::memory_order_relaxed), s.bytes.load(std::memory_order_relaxed)};
-        tot_allocs += g_entries[n - 1].allocs;
-        tot_bytes += g_entries[n - 1].bytes;
+        tot_allocs += g_entries[count - 1].allocs;
+        tot_bytes += g_entries[count - 1].bytes;
     }
-    std::sort(g_entries, g_entries + n, [](const Entry& a, const Entry& b) { return a.bytes > b.bytes; });
+    std::sort(g_entries, g_entries + count, [](const Entry& lhs, const Entry& rhs) { return lhs.bytes > rhs.bytes; });
 
     std::fprintf(stderr, "\n===== ALLOC_TOKEN (per-type allocation census, -fsanitize=alloc-token) =====\n");
-    std::fprintf(stderr, "  %zu distinct tokens, %llu allocations, %llu MiB requested", n,
+    std::fprintf(stderr, "  %zu distinct tokens, %llu allocations, %llu MiB requested", count,
                  static_cast<unsigned long long>(tot_allocs), static_cast<unsigned long long>(tot_bytes >> 20));
-    if (const auto d = g_dropped.load(std::memory_order_relaxed); d != 0)
+    if (const auto dropped = g_dropped.load(std::memory_order_relaxed); dropped != 0)
         std::fprintf(stderr, "  (table full: %llu allocations / %llu MiB NOT counted)",
-                     static_cast<unsigned long long>(d),
+                     static_cast<unsigned long long>(dropped),
                      static_cast<unsigned long long>(g_dropped_bytes.load(std::memory_order_relaxed) >> 20));
     std::fprintf(stderr, "\n  %-18s  %-3s  %14s  %18s\n", "token", "ptr", "allocs", "bytes");
-    for (std::size_t i = 0; i < n && i < top; ++i)
+    for (std::size_t i = 0; i < count && i < top; ++i)
     {
-        const Entry& e = g_entries[i];
-        std::fprintf(stderr, "  0x%016llx  %-3s  %14llu  %18llu%s\n", static_cast<unsigned long long>(e.token),
-                     e.token >= kPointerHalf ? "yes" : "no", static_cast<unsigned long long>(e.allocs),
-                     static_cast<unsigned long long>(e.bytes),
-                     e.token == 0 ? "  untyped (C malloc/calloc/realloc)" : "");
+        const Entry& entry = g_entries[i];
+        std::fprintf(stderr, "  0x%016llx  %-3s  %14llu  %18llu%s\n", static_cast<unsigned long long>(entry.token),
+                     entry.token >= kPointerHalf ? "yes" : "no", static_cast<unsigned long long>(entry.allocs),
+                     static_cast<unsigned long long>(entry.bytes),
+                     entry.token == 0 ? "  untyped (C malloc/calloc/realloc)" : "");
     }
-    if (n > top)
-        std::fprintf(stderr, "  ... %zu more (ALLOC_TOKEN_REPORT=all)\n", n - top);
+    if (count > top)
+        std::fprintf(stderr, "  ... %zu more (ALLOC_TOKEN_REPORT=all)\n", count - top);
     std::fprintf(stderr, "  names: python3 python/alloc_token_names.py <binary> <this output>\n");
     std::fflush(stderr);
 }
@@ -185,16 +185,16 @@ extern "C"
         return std::malloc(size);
     }
 
-    void* __alloc_token_calloc(std::size_t n, std::size_t size, std::uint64_t token)
+    void* __alloc_token_calloc(std::size_t nmemb, std::size_t size, std::uint64_t token)
     {
-        note(token, n * size);
-        return std::calloc(n, size);
+        note(token, nmemb * size);
+        return std::calloc(nmemb, size);
     }
 
-    void* __alloc_token_realloc(void* p, std::size_t size, std::uint64_t token)
+    void* __alloc_token_realloc(void* ptr, std::size_t size, std::uint64_t token)
     {
         note(token, size);
-        return std::realloc(p, size);
+        return std::realloc(ptr, size);
     }
 
     void* __alloc_token_aligned_alloc(std::size_t align, std::size_t size, std::uint64_t token)

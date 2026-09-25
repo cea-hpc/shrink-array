@@ -134,8 +134,8 @@ struct ChunkSpec2
      */
     [[nodiscard]] static bool is_cst_val2_any(const T* v) noexcept
     {
-        const int n = static_cast<int>(tab_m_ptr_cst_val2.size());
-        for (int i = 0; i < n; ++i)
+        const int nb_cst_val2 = static_cast<int>(tab_m_ptr_cst_val2.size());
+        for (int i = 0; i < nb_cst_val2; ++i)
             if (v == get_cst_val2(i))
                 return true;
         return false;
@@ -369,14 +369,14 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
     ///          their own loops.
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
-    void operator delete[](void* p);
+    void operator delete[](void* ptr);
     /// @brief Point @p n freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
     ///          parallel region (inside one it stays on the calling thread: an
     ///          allocation is made by one thread, and an orphaned `omp for`
     ///          would hang waiting for the others). Shared by the three
     ///          variants -- chunk_array_new::init_chunks.
-    static void init_chunks_cst_val(Chunk2<T>* v, std::size_t n) noexcept;
+    static void init_chunks_cst_val(Chunk2<T>* v, std::size_t count) noexcept;
 
     /**
      * \brief Shared body of create_value() and create_value_bool().
@@ -642,9 +642,9 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
                                                                                        in_t<T> second_value) noexcept
     {
         // find(), not operator[]: see Proxy2::get_vec_tuple_to_compress_potentially_thr.
-        auto&      m  = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
-        const auto it = m.find(second_value);
-        if (it == m.end() || it->second == nullptr) [[unlikely]]
+        auto&      lists_by_value = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
+        const auto it             = lists_by_value.find(second_value);
+        if (it == lists_by_value.end() || it->second == nullptr) [[unlikely]]
             chunk2_missing_candidate_list(thr);
         return *it->second;
     }
@@ -1086,8 +1086,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      *          one fixed in Chunk v1 (chunk_std.h). `values` is atomic, so it
      *          cannot come through a base copy and is copied by hand below.
      */
-    Chunk2(const Chunk2& other)
-        : Chunk2CounterPolicy<chunk_config::use_compression_with_counter>(other)
+    Chunk2(const Chunk2& other) : Chunk2CounterPolicy<chunk_config::use_compression_with_counter>(other)
     {
         if constexpr (build_config::use_openmp)
         {
@@ -1130,18 +1129,18 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
 
     /*!
      * \brief Stores a pointer to the chunk's values.
-     * \param p Pointer to store.
+     * \param ptr Pointer to store.
      */
 
-    void values_store(T* p) noexcept
+    void values_store(T* ptr) noexcept
     {
         if constexpr (build_config::use_openmp)
         {
-            values.store(p, std::memory_order_release);
+            values.store(ptr, std::memory_order_release);
         }
         else
         {
-            values = p;
+            values = ptr;
         }
     }
 

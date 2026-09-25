@@ -245,14 +245,14 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
     ///          their own loops.
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
-    void operator delete[](void* p);
+    void operator delete[](void* ptr);
     /// @brief Point @p n freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
     ///          parallel region (inside one it stays on the calling thread: an
     ///          allocation is made by one thread, and an orphaned `omp for`
     ///          would hang waiting for the others). Public: an application
     ///          that placement-news an array of chunks initialises it here.
-    static void init_chunks_cst_val(Chunk<T>* v, std::size_t n) noexcept;
+    static void init_chunks_cst_val(Chunk<T>* v, std::size_t count) noexcept;
 
     /// @brief CAS this chunk's values pointer into place.
     /// @param values_loc buffer to publish
@@ -264,10 +264,10 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
 
     /**
      * @brief Zero-fill a buffer that allocate_chunk_internal has just created.
-     * @param p freshly allocated buffer of shrink_array::alloc_chunk_count() elements
+     * @param vals freshly allocated buffer of shrink_array::alloc_chunk_count() elements
      * @note Only the fresh-allocation branch needs it -- see create_value().
      */
-    static void zero_fill_fresh(T* p) noexcept;
+    static void zero_fill_fresh(T* vals) noexcept;
 
     /**
      * @brief Materialise this chunk's storage from @p thr_rank's free-list.

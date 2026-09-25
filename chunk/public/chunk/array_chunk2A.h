@@ -108,15 +108,15 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     ///        Proxy2A::meta_from_armed().
     void sync_meta_bases() noexcept
     {
-        Proxy2AMetaBases<T> b;
+        Proxy2AMetaBases<T> bases;
         if (num_tab >= 0 && nb_chunk > 0)
         {
-            b.type   = Proxy2A<T>::tab_type_cst_val[num_tab].data();
-            b.inside = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab).get();
+            bases.type   = Proxy2A<T>::tab_type_cst_val[num_tab].data();
+            bases.inside = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab).get();
             if constexpr (!std::is_same_v<T, bool>)
-                b.sv = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab).get();
+                bases.sv = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab).get();
         }
-        meta_bases_ = b;
+        meta_bases_ = bases;
     }
 
   private:

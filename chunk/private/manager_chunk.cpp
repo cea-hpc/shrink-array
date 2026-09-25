@@ -44,16 +44,16 @@ std::atomic<bool> __global_need_flush_deferred{true};
 // during static initialisation, before any thread exists; never written after.
 const bool g_barrier_flush_legacy = []
 {
-    const char* e = std::getenv("CHUNK_BARRIER_FLUSH_LEGACY");
-    return e != nullptr && e[0] != '\0' && e[0] != '0';
+    const char* env = std::getenv("CHUNK_BARRIER_FLUSH_LEGACY");
+    return env != nullptr && env[0] != '\0' && env[0] != '0';
 }();
 
 // CHUNK_SERIAL_DRAIN_LEGACY=1: the serial flush opens its drain regions even
 // when no op is pending, as before (A/B, bisection). Same reading rules.
 const bool g_serial_drain_legacy = []
 {
-    const char* e = std::getenv("CHUNK_SERIAL_DRAIN_LEGACY");
-    return e != nullptr && e[0] != '\0' && e[0] != '0';
+    const char* env = std::getenv("CHUNK_SERIAL_DRAIN_LEGACY");
+    return env != nullptr && env[0] != '\0' && env[0] != '0';
 }();
 
 // Template method bodies now live in chunk/manager_chunk_inline.h (included
