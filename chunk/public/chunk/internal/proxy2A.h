@@ -1022,12 +1022,30 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     template <typename U>
     friend std::ostream& operator<<(std::ostream& os, const Proxy2A<U>& proxy);
 
-    [[nodiscard]] T& getVal()
+    /**
+     * @brief Escape hatch for callers that need a real `T&` (e.g. passing
+     *        `a[i]` to a function expecting `T&`). Materialises the chunk
+     *        first if compressed, like Proxy::getVal() and Proxy2::getVal().
+     * @note FIX: this used to be `create_value(Base::is_cst_val())`, two
+     *       compile errors at the first instantiation, never caught because
+     *       getVal() has no caller in the tree (a class-template member
+     *       function body is only instantiated on use): a bool passed to
+     *       create_value(SecondValueRef<T>), and is_cst_val(), which lives in
+     *       Proxy2Base (Base2), not ProxyBase. It also materialised
+     *       unconditionally. Same fix as Proxy2::getVal(), with Proxy2A's
+     *       materialisers as the write path (set_value) calls them, gated on
+     *       Base2::is_cst_val().
+     * @return Reference to this element's live value.
+     */
+    [[nodiscard]] T& getVal() noexcept
     {
-        const bool need_alloc = Base::is_cst_val();
-
-        create_value(need_alloc);
-
+        if (Base2::is_cst_val())
+        {
+            if constexpr (is_not_bool)
+                create_value(BaseSpec::ptr_second_value);
+            else
+                create_value_bool();
+        }
         return values[num];
     }
 };
