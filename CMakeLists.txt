@@ -109,8 +109,22 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lc++ -lc++abi")
     else()
-        set(GCC_TOOLCHAIN_DIR "/ccc/products/gcc-15.2.0" CACHE PATH "Path to GCC toolchain")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libstdc++ --gcc-toolchain=${GCC_TOOLCHAIN_DIR}")
+        # The CEA default only where it exists: on a workstation an empty
+        # GCC_TOOLCHAIN_DIR leaves clang its own libstdc++ (the system one).
+        if(EXISTS "/ccc/products/gcc-15.2.0")
+            set(_chunk_default_gcc_toolchain "/ccc/products/gcc-15.2.0")
+        else()
+            set(_chunk_default_gcc_toolchain "")
+        endif()
+        set(GCC_TOOLCHAIN_DIR "${_chunk_default_gcc_toolchain}" CACHE PATH "Path to GCC toolchain (empty: the driver's default)")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libstdc++")
+        if(GCC_TOOLCHAIN_DIR AND NOT EXISTS "${GCC_TOOLCHAIN_DIR}")
+            # A cache made before this check (or copied from the CEA) would
+            # otherwise hide every standard header.
+            message(WARNING "GCC_TOOLCHAIN_DIR=${GCC_TOOLCHAIN_DIR} does not exist: using the driver's default")
+        elseif(GCC_TOOLCHAIN_DIR)
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --gcc-toolchain=${GCC_TOOLCHAIN_DIR}")
+        endif()
     endif()
 endif()
 
