@@ -1142,8 +1142,12 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation
                 {
                     proxy.execute_operation_async(
                         ctx,
-                        [ctx, proxy](T* values)
+                        // By reference: execute_operation_async() calls it at once,
+                        // while the outer lambda's proxy is alive. Read only by the
+                        // checked builds' invariants, hence the explicit discard.
+                        [ctx, &proxy](T* values)
                         {
+                            static_cast<void>(proxy);
                             const in_t<T>  current = values[ctx->num];
                             const CalcType intermediate =
                                 ctx->operation(static_cast<CalcType>(current), static_cast<CalcType>(ctx->operand));
