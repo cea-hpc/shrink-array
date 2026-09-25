@@ -185,6 +185,10 @@ parser.add_argument("--numa-interleave", choices=list(_numa.MODES), default="aut
                     help="auto: launch under `numactl --interleave=<nodes>` when the run spans "
                          "2+ NUMA nodes (the CPU nodes of the cores it uses). off: never.")
 
+parser.add_argument("--keep-stderr", action="store_true",
+                    help="Keep the stderr of SUCCESSFUL runs as stderr_<run>_<build>_<exe>.txt "
+                         "(default: removed; error_*.txt is kept for failed runs only).")
+
 args = parser.parse_args()
 
 # Everything below works from --run-dir: outputs, CSV, log, and the oracle the
@@ -243,7 +247,7 @@ no_io = args.no_io
 # 🧹 Clean up previous output and error files (only if IO is enabled)
 if not no_io:
     print("🧹 Cleaning up old files...")
-    for file in glob.glob('output_*.txt') + glob.glob('error_*.txt'):
+    for file in glob.glob('output_*.txt') + glob.glob('error_*.txt') + glob.glob('stderr_*.txt'):
         os.remove(file)
 
 # 🔧 Executables list: VARIANTS x SIZES, filtered by what actually exists on
@@ -490,9 +494,19 @@ for i in range(n):
             wall_seconds = time.perf_counter() - t0
             returncode = result.returncode
 
-            if not no_io and os.path.isfile(stderr_file) and os.stat(stderr_file).st_size == 0:
-                os.remove(stderr_file)
-                stderr_file = ""
+            # error_*.txt only for a FAILED run: a successful one may still
+            # write to stderr (the stats builds' [RECHUNK-DECIDE] trace), which
+            # used to leave an "error" file behind with return code 0.
+            if not no_io and os.path.isfile(stderr_file):
+                if os.stat(stderr_file).st_size == 0:
+                    os.remove(stderr_file)
+                    stderr_file = ""
+                elif returncode == 0:
+                    if args.keep_stderr:
+                        os.replace(stderr_file, "stderr_" + stderr_file[len("error_"):])
+                    else:
+                        os.remove(stderr_file)
+                    stderr_file = ""
 
             with open(summary_file, "a", newline="") as csvf:
                 writer = csv.writer(csvf)
