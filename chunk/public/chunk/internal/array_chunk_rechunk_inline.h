@@ -704,8 +704,10 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                             continue; // still needed by the next new chunk
                     }
                     auto& och = self().chunk_list[static_cast<std::size_t>(oc)];
+                    // release_st, not clear_st: a release once copied, not a
+                    // compression (CHUNK_STATS counted every rebuilt chunk as one).
                     if (!och.is_cst_val1())
-                        och.clear_st(thr, old_size);
+                        och.release_st(thr, old_size);
                 }
             }
 

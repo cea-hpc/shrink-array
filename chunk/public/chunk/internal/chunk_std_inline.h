@@ -453,13 +453,23 @@ void ChunkOmpPolicy<T, Derived, Enabled>::clear_st(int thr_rank, unsigned int n_
     // CHUNK_STATS: a compression completing -- the buffer is parked and the chunk
     // returns to the constant. Counted here rather than in init_values_cst_val:
     // that one is also reached from teardown and neutralisation paths, which are
-    // not compressions (it reported 1175% success against `attempts`).
+    // not compressions (it reported 1175% success against `attempts`). The
+    // re-chunk rebuild releases old chunks through release_st() instead: counted
+    // here, every rebuilt chunk was also a "compression" (198% success, and
+    // ~29 GB of phantom compress bytes on a 64-thread shrink_bench run).
     if constexpr (chunk_config::stats)
     {
         increm_chunk_compress<Chunk<T>>();
         add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) * static_cast<long>(n_elems));
-        increm_chunk_release_park<Chunk<T>>();
     }
+    release_st(thr_rank, n_elems);
+}
+
+template <typename T, typename Derived, bool Enabled>
+void ChunkOmpPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigned int n_elems)
+{
+    if constexpr (chunk_config::stats)
+        increm_chunk_release_park<Chunk<T>>();
 
     if constexpr (build_config::any_check)
     {
@@ -494,14 +504,22 @@ void ChunkOmpPolicy<T, Derived, Enabled>::clear_st(int thr_rank, unsigned int n_
 template <typename T, typename Derived>
 void ChunkOmpPolicy<T, Derived, false>::clear_st()
 {
-    // CHUNK_STATS: serial twin of the OpenMP clear_st above.
+    // CHUNK_STATS: serial twin of the OpenMP clear_st above -- count the
+    // compression, then release.
     if constexpr (chunk_config::stats)
     {
         increm_chunk_compress<Chunk<T>>();
         add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) *
                                         static_cast<long>(shrink_array::alloc_chunk_count()));
-        increm_chunk_release_free<Chunk<T>>();
     }
+    release_st();
+}
+
+template <typename T, typename Derived>
+void ChunkOmpPolicy<T, Derived, false>::release_st()
+{
+    if constexpr (chunk_config::stats)
+        increm_chunk_release_free<Chunk<T>>();
 
     if constexpr (build_config::is_debug)
     {

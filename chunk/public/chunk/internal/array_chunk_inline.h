@@ -308,7 +308,9 @@ void ArrayChunk<T, ind_type>::clear_core()
                 {
                     increm_chunk_teardown_clear<Chunk<T>>();
                 }
-                chunk_list[j].clear_st();
+                // release_st: counted as teardown_clear above, not also as a
+                // compression.
+                chunk_list[j].release_st();
             }
         }
     }
