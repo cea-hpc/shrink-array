@@ -1578,7 +1578,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         const std::size_t units = Derived::storage_units(n_elems);
         if constexpr ((std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>) || is_packed)
         {
-            std::memset(values_loc, 0, units * sizeof(T)); // Bit: all words 0, every bit false
+            std::memset(static_cast<void*>(values_loc), 0, units * sizeof(T)); // Bit: all words 0, every bit false
         }
         else
         {
@@ -1608,7 +1608,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         if constexpr ((std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>) || is_packed)
         {
             // For trivially constructible scalar types: use memset (fastest option)
-            std::memset(values_loc, 0, units * sizeof(T));
+            std::memset(static_cast<void*>(values_loc), 0, units * sizeof(T)); // Bit: raw words, not Bit objects
         }
         else
         {

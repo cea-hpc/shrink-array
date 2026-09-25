@@ -174,7 +174,7 @@ struct ChunkSpec2<T>
     {
         std::array<T, cst_buffer_size> arr{};
         if constexpr (is_packed_bit_v<T>)
-            std::memset(arr.data(), 0xFF, sizeof(arr));
+            std::memset(static_cast<void*>(arr.data()), 0xFF, sizeof(arr)); // raw words, not Bit objects
         else
             arr.fill(true); // Initialize everything to 'true'
         return arr;
