@@ -17,7 +17,8 @@
 
 #pragma once
 
-#include <thread> // std::this_thread — used HERE, not by our includers
+#include <exception> // std::exception (erase failures)
+#include <thread>    // std::this_thread — used HERE, not by our includers
 
 #include <type_traits>                          // FIX: remove_reference_t for swap-drain batch type
 #include "chunk/internal/compression_manager.h" // the declarations these bodies belong to
@@ -417,10 +418,20 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
         // promises.
         if (op_map->empty())
         {
-            thread_map.erase(it_chunk);
-            // Drop the chunk from rank r's dangerous-list set so a later
-            // flush_deferred(r) doesn't try to re-find an absent entry.
-            deferred_chunk_per_thread[r].erase(chunk);
+            // ankerl's erase throws on a key it finds changed (a corrupted
+            // map); this function is noexcept: say where instead of terminate.
+            try
+            {
+                thread_map.erase(it_chunk);
+                // Drop the chunk from rank r's dangerous-list set so a later
+                // flush_deferred(r) doesn't try to re-find an absent entry.
+                deferred_chunk_per_thread[r].erase(chunk);
+            }
+            catch (const std::exception& e)
+            {
+                INVARIANT_FAILED("flush_chunk_all_ranks: erase failed: {} (rank {}, chunk {})", e.what(), r,
+                                 static_cast<const void*>(chunk));
+            }
         }
     }
 
@@ -490,7 +501,15 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
         it_op->second->write_body();
     }
     it_op->second->destroy();
-    op_map->erase(it_op);
+    try // ankerl's erase throws on a key it finds changed; this function is noexcept
+    {
+        op_map->erase(it_op);
+    }
+    catch (const std::exception& e)
+    {
+        INVARIANT_FAILED("erase_own_rank_op: erase failed: {} (rank {}, chunk {}, offset {})", e.what(), thr,
+                         static_cast<const void*>(chunk), num);
+    }
 
     // Exact bookkeeping of the flush erase path.
     dec_pending_ops(thr, 1);
@@ -502,8 +521,16 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
     // structures exactly as flush_deferred does.
     if (op_map->empty())
     {
-        thread_map.erase(it_chunk);
-        deferred_chunk_per_thread[thr].erase(chunk);
+        try // ankerl's erase throws on a key it finds changed; this function is noexcept
+        {
+            thread_map.erase(it_chunk);
+            deferred_chunk_per_thread[thr].erase(chunk);
+        }
+        catch (const std::exception& e)
+        {
+            INVARIANT_FAILED("erase_own_rank_op: chunk erase failed: {} (rank {}, chunk {})", e.what(), thr,
+                             static_cast<const void*>(chunk));
+        }
         if (thread_map.empty())
             clear_thread_has_ops(thr);
     }
