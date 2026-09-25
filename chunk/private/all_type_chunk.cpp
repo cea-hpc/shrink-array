@@ -88,7 +88,11 @@ void begin_parallel_phase()
 
 void finalize_parallel_phase_only_flush()
 {
-    churn::note_phase_end(); // one compression phase (churn_counters.h)
+    // One compression phase (churn_counters.h). This function runs on EVERY
+    // thread of the region: count it once, on rank 0, or each phase counts
+    // max_threads times on one shared atomic.
+    if (CHUNK_PMP_THREAD_RANK == 0)
+        churn::note_phase_end();
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
 // Barrier + flush must both happen inside the same enclosing
