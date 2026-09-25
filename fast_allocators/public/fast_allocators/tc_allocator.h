@@ -1898,7 +1898,13 @@ struct TCAllocatorEB
         const auto block_size_max = static_cast<uintptr_t>(uintptr_t{1} << ((szt * 8) - 1));
         DBG_ASSERT(_BlockSize < block_size_max);
 #endif
-        alloc_block();
+        // alloc() inserts the slab right after this constructor returns: a
+        // slab without a block (or without its back-pointer) would be handed
+        // out and corrupt memory silently. Abort, as the other families do.
+        if (alloc_block() != 0)
+        {
+            std::abort();
+        }
     }
 
     /// @brief Returns the block to whichever allocator alloc_block() used.
@@ -1916,10 +1922,16 @@ struct TCAllocatorEB
 
     /**
      * @brief Obtain the block and lay it out.
-     * @return 0. The value is not used.
+     * @return 0, or 1 when no block could be obtained (posix_memalign failed);
+     *         the constructor aborts then.
      * @details The block must be aligned on its own power-of-two size, because
-     *          addr_to_block() masks with #BlockAddrMask. mmap gives that for
-     *          free; the posix_memalign path asks for it explicitly.
+     *          addr_to_block() masks with #BlockAddrMask. The mmap path maps
+     *          twice the size and unmaps the unaligned head and the tail; the
+     *          posix_memalign path asks for the alignment explicitly.
+     *          A failed trimming munmap (ENOMEM once vm.max_map_count is
+     *          reached) is not a failure: the aligned block is mapped and
+     *          usable, only the surplus stays mapped. It is reported and the
+     *          block is laid out as usual.
      */
     int alloc_block()
     {
@@ -1941,17 +1953,11 @@ struct TCAllocatorEB
             const uintptr_t lng = reinterpret_cast<uintptr_t>(data) - reinterpret_cast<uintptr_t>(a);
             if (lng != 0 && munmap(a, lng) == -1)
             {
-                if (lng != 0)
-                {
-                    std::cerr << "munmap failed: " << std::strerror(errno) << '\n';
-                }
-                return 1;
+                std::cerr << "munmap (head trim) failed: " << std::strerror(errno) << " -- surplus left mapped\n";
             }
-            if (munmap(data + BlockSize, 2 * BlockSize - (reinterpret_cast<uintptr_t>(data) -
-                                                          reinterpret_cast<uintptr_t>(a) + BlockSize)) == -1)
+            if (munmap(data + BlockSize, 2 * BlockSize - (lng + BlockSize)) == -1)
             {
-                std::cerr << "munmap failed: " << std::strerror(errno) << '\n';
-                return 1;
+                std::cerr << "munmap (tail trim) failed: " << std::strerror(errno) << " -- surplus left mapped\n";
             }
         }
         else
