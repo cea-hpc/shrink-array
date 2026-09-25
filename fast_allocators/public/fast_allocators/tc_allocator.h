@@ -1069,8 +1069,10 @@ struct TCTypeAllocator final : public VTCTypeAllocator
     /**
      * @brief free_elt() for a power-of-two element size, using a shift.
      * @param ptr Same precondition as free_elt().
-     * @pre #ElementSize is a power of two; otherwise the index is wrong and the
-     *      free lands on another element.
+     * @pre #ElementSize is a power of two when sizeof(ElementType) is, i.e.
+     *      the element count given to init() is a power of two; otherwise the
+     *      shift picks the wrong index and the free lands on another element
+     *      (asserted in debug).
      */
     void free_elt_pow2(const ElementType* ptr) noexcept
     {
@@ -1092,6 +1094,13 @@ struct TCTypeAllocator final : public VTCTypeAllocator
         // power of two exactly when sizeof(ElementType) is: the shift then,
         // the division otherwise (a 24-byte struct, say) -- folded at compile
         // time, the pow2 path keeps its single instruction.
+        // Precondition, not checked in release: the COUNT given to init() is a
+        // power of two (chunk sizes are). A TCTypeAllocator<std::byte> sized to
+        // a 40-byte op would pick the shift (sizeof(std::byte) == 1) and free
+        // the wrong element; the deferred-op pool is such an allocator and
+        // never frees through here. The assertion catches a new caller.
+        DBG_ASSERT(!std::has_single_bit(sizeof(ElementType)) ||
+                   std::has_single_bit(static_cast<unsigned int>(slab->ElementSize)));
         const int i = std::has_single_bit(sizeof(ElementType)) ? slab->num_block_pow2(ptr) : slab->num_block(ptr);
 
         slab->free_block(i);
@@ -1621,7 +1630,10 @@ struct TCTypeCAllocator
     void free_elt_pow2(const ElementType* ptr, TCCAllocator* slab) noexcept
     {
         // See TCTypeAllocator::free_elt_pow2: the shift only when
-        // sizeof(ElementType) is a power of two, the division otherwise.
+        // sizeof(ElementType) is a power of two, the division otherwise; the
+        // element count must be a power of two (checked in debug).
+        DBG_ASSERT(!std::has_single_bit(sizeof(ElementType)) ||
+                   std::has_single_bit(static_cast<unsigned int>(slab->ElementSize)));
         const int i = std::has_single_bit(sizeof(ElementType)) ? slab->num_block_pow2(ptr) : slab->num_block(ptr);
 
         slab->free_block(i);
