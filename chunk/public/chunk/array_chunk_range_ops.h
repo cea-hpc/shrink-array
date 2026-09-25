@@ -425,6 +425,11 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
             {
                 if (!ch.is_cst_val1())
                 {
+                    // CHUNK_STATS: a compression reached without a scan -- count
+                    // its (trivially successful) attempt with it, so the
+                    // attempts/compress yield stays a yield.
+                    if constexpr (chunk_config::stats)
+                        increm_chunk_compress_attempt<chunk_type>();
                     if constexpr (build_config::use_openmp)
                         ch.clear_st(get_thr_rank_fast(), S); // frees the buffer, marks cst1
                     else

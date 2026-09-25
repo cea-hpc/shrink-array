@@ -303,8 +303,13 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
         return old;
     }
 
-    /// @brief Release this chunk's buffer to @p thr_rank's reuse list.
+    /// @brief Compress: release this chunk's buffer to @p thr_rank's reuse
+    ///        list and count it as a compression (CHUNK_STATS).
     void clear_st(int thr_rank, unsigned int n_elems);
+    /// @brief Release this chunk's buffer to @p thr_rank's reuse list WITHOUT
+    ///        counting a compression -- the re-chunk rebuild releasing an old
+    ///        chunk once copied (clear_st = count + release_st).
+    void release_st(int thr_rank, unsigned int n_elems);
     /// @brief Release the buffer outright, without parking it for reuse.
     void clear_int_st(int thr_rank);
 
@@ -335,8 +340,13 @@ struct ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
     /// @details Allocates directly: there is no per-thread free-list to consult.
     void create_value() noexcept;
 
-    /// @brief Release this chunk's buffer.
+    /// @brief Compress: release this chunk's buffer and count it as a
+    ///        compression (CHUNK_STATS).
     void clear_st();
+    /// @brief Release this chunk's buffer WITHOUT counting a compression --
+    ///        the teardown, counted as teardown_clear (clear_st = count +
+    ///        release_st).
+    void release_st();
 };
 
 /**
