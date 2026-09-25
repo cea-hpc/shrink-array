@@ -50,7 +50,7 @@ namespace shrink_array::chunk_array_new
 inline constexpr std::size_t kParallelInitMinChunks = 500;
 
 /**
- * @brief Run @p init on each of the @p n chunks at @p v, in parallel past
+ * @brief Run @p init on each of the @p count chunks at @p v, in parallel past
  *        kParallelInitMinChunks.
  *
  * @details The initialiser is one store per chunk, so this is a memory-bound
@@ -76,25 +76,25 @@ inline constexpr std::size_t kParallelInitMinChunks = 500;
  * @tparam C    chunk type
  * @tparam Init callable `void(C&)`
  * @param v    first chunk
- * @param n    how many
+ * @param count    how many
  * @param init what to run on each
  */
 template <typename C, typename Init>
-void init_chunks(C* v, std::size_t n, Init init) noexcept
+void init_chunks(C* v, std::size_t count, Init init) noexcept
 {
     if constexpr (build_config::use_openmp)
     {
-        if (n >= kParallelInitMinChunks && CHUNK_PMP_MAX_THREADS >= 2 && !CHUNK_PMP_IN_PARALLEL_REGION)
+        if (count >= kParallelInitMinChunks && CHUNK_PMP_MAX_THREADS >= 2 && !CHUNK_PMP_IN_PARALLEL_REGION)
         {
 #pragma omp parallel for simd
-            for (std::size_t k = 0; k < n; ++k)
+            for (std::size_t k = 0; k < count; ++k)
                 init(v[k]);
             return;
         }
     }
 
 #pragma omp simd
-    for (std::size_t k = 0; k < n; ++k)
+    for (std::size_t k = 0; k < count; ++k)
         init(v[k]);
 }
 

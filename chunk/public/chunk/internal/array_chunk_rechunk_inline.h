@@ -51,13 +51,13 @@ namespace shrink_array::rechunk_detail
 ///          CHUNK_RECHUNK_TRACE path reads it, once per slice.
 inline long rss_mib_now() noexcept
 {
-    std::FILE* f = std::fopen("/proc/self/statm", "r");
-    if (f == nullptr)
+    std::FILE* file = std::fopen("/proc/self/statm", "r");
+    if (file == nullptr)
         return -1;
     long      size = 0, resident = 0;
-    const int n = std::fscanf(f, "%ld %ld", &size, &resident);
-    std::fclose(f);
-    if (n != 2)
+    const int nread = std::fscanf(file, "%ld %ld", &size, &resident);
+    std::fclose(file);
+    if (nread != 2)
         return -1;
     const long ps = ::sysconf(_SC_PAGESIZE);
     return ps > 0 ? (resident * ps) >> 20 : -1;
@@ -80,17 +80,17 @@ struct RebuildSchedule
 
 inline const RebuildSchedule& rebuild_schedule() noexcept
 {
-    static const RebuildSchedule s = []
+    static const RebuildSchedule schedule = []
     {
-        RebuildSchedule r;
-        const char*     e = std::getenv("CHUNK_RECHUNK_SCHEDULE");
-        if (e == nullptr || e[0] == '\0')
-            return r;
+        RebuildSchedule parsed;
+        const char*     env = std::getenv("CHUNK_RECHUNK_SCHEDULE");
+        if (env == nullptr || env[0] == '\0')
+            return parsed;
         char        kind[16] = {};
         int         chunk    = 0;
-        const int   n        = std::sscanf(e, "%15[a-z],%d", kind, &chunk);
+        const int   nfields  = std::sscanf(env, "%15[a-z],%d", kind, &chunk);
         omp_sched_t k        = omp_sched_static;
-        bool        ok       = n >= 1 && chunk >= 0;
+        bool        ok       = nfields >= 1 && chunk >= 0;
         if (ok)
         {
             const std::string_view kv(kind);
@@ -110,15 +110,15 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
             std::fprintf(stderr,
                          "[RECHUNK] CHUNK_RECHUNK_SCHEDULE=\"%s\" not understood "
                          "(kind[,chunk], kind = static|dynamic|guided|auto): keeping guided,16\n",
-                         e);
-            return r;
+                         env);
+            return parsed;
         }
-        r.kind  = k;
-        r.chunk = chunk; // 0: the runtime's default for this kind
-        std::snprintf(r.text, sizeof r.text, "%s,%d", kind, chunk);
-        return r;
+        parsed.kind  = k;
+        parsed.chunk = chunk; // 0: the runtime's default for this kind
+        std::snprintf(parsed.text, sizeof parsed.text, "%s,%d", kind, chunk);
+        return parsed;
     }();
-    return s;
+    return schedule;
 }
 #endif
 } // namespace shrink_array::rechunk_detail
@@ -165,8 +165,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // set_chunk_size) routes each allocation to the right element size, so the
     // old and new geometries coexist safely for the duration of the refill.
 
-    const ind_type n = self().m_size;
-    if (n <= 0)
+    const ind_type total = self().m_size;
+    if (total <= 0)
     {
         self().set_chunk_size(new_size); // legal on an empty array
         return;
@@ -183,8 +183,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // re-chunk spends it (tmp creation, refill, flush+swap, tmp teardown).
     static const bool trace_phases = std::getenv("CHUNK_RECHUNK_TRACE") != nullptr;
     auto              t_now        = [] { return std::chrono::steady_clock::now(); };
-    auto              t_ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
-    const auto        t0   = t_now();
+    auto t_ms = [](auto start, auto stop) { return std::chrono::duration<double, std::milli>(stop - start).count(); };
+    const auto                            t0 = t_now();
     std::chrono::steady_clock::time_point t1_out;
     std::chrono::steady_clock::time_point t2_out;
     std::chrono::steady_clock::time_point t3_out;
@@ -240,7 +240,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     {
         t1_out    = t_now();
         r_pre_tmp = rss_now();
-        Derived tmp(n); // born at S', own num_tab, primed pool
+        Derived tmp(total); // born at S', own num_tab, primed pool
 
         // Seed variant state into tmp BEFORE refill (Chunk2 second_value,
         // so its compression decisions use the same value).
@@ -447,8 +447,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
                 set_thread_chunk_size(old_size);
                 for (int r = 0; r < CHUNK_PMP_MAX_THREADS; ++r)
                 {
-                    auto& a = chunk_type::get_chunk_allocator(r, key);
-                    for (auto* node : {a.block, a.block_full})
+                    auto& allocator = chunk_type::get_chunk_allocator(r, key);
+                    for (auto* node : {allocator.block, allocator.block_full})
                         for (; node != nullptr; node = node->next)
                         {
                             ++slabs;
@@ -510,7 +510,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
     // chunks are bit-packed (raw-fill would corrupt them) and use tiled.
     if constexpr (chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a)
     {
-        const ind_type n     = self().m_size;
+        const ind_type total = self().m_size;
         const int      n_new = tmp.nb_chunk;
         // Geometry is per-array (this.size_=old, tmp.size_=new), so operator[]
         // maps correctly without the global. Only alloc_chunk_count()
@@ -587,13 +587,13 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             long folded  = 0;
             long refused = 0;
         };
-        auto rebuild_one = [&](int c, std::vector<T>& buf, RebuildTally& tally)
+        auto rebuild_one = [&](int new_chunk, std::vector<T>& buf, RebuildTally& tally)
         {
-            const ind_type base = static_cast<ind_type>(c) * static_cast<ind_type>(new_size);
-            if (base >= n)
+            const ind_type base = static_cast<ind_type>(new_chunk) * static_cast<ind_type>(new_size);
+            if (base >= total)
                 return;
-            const ind_type end = (base + new_size) < n ? (base + new_size) : n;
-            const ind_type m   = end - base;
+            const ind_type end = (base + new_size) < total ? (base + new_size) : total;
+            const ind_type len = end - base;
 
             const int old_first = static_cast<int>(base / old_size);
             const int old_last  = static_cast<int>((end - 1) / old_size);
@@ -647,7 +647,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
 
             // read *this at OLD (const operator[] = pure read); TLS is per-thread
             set_thread_chunk_size(old_size);
-            for (ind_type k = 0; k < m; ++k)
+            for (ind_type k = 0; k < len; ++k)
                 buf[static_cast<std::size_t>(k)] = static_cast<T>(std::as_const(self())[base + k]);
 
             // Release the source chunks this span has just consumed, NOW rather
@@ -765,8 +765,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 if (all_folded)
                 {
                     ++tally.folded;
-                    auto& nch = tmp.chunk_list[static_cast<std::size_t>(c)];
-                    nch.compress(get_thr_rank_fast(), c, tmp.num_tab,
+                    auto& nch = tmp.chunk_list[static_cast<std::size_t>(new_chunk)];
+                    nch.compress(get_thr_rank_fast(), new_chunk, tmp.num_tab,
                                  /*apply=*/true, ChunkElems{static_cast<unsigned>(new_size)});
                     // Every source chunk WAS a constant here, so a refusal means
                     // the span merged constants that differ -- the genuine cost
@@ -806,7 +806,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     if (all_folded)
                     {
                         ++tally.folded;
-                        auto& nch = tmp.chunk_list[static_cast<std::size_t>(c)];
+                        auto& nch = tmp.chunk_list[static_cast<std::size_t>(new_chunk)];
                         nch.compress(get_thr_rank_fast(), inf_new2,
                                      /*apply=*/true, static_cast<unsigned int>(new_size));
                         if (!nch.is_cst_val1() && !nch.is_cst_val2(std::get<1>(inf_new2)))
@@ -872,8 +872,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // floor: that floor is the two geometries coexisting at slab
             // granularity, not blocks scattered across the index.
             n_slices = 16;
-            if (const char* e = std::getenv("CHUNK_RECHUNK_SLICES"))
-                n_slices = std::max(1, static_cast<int>(std::strtol(e, nullptr, 10)));
+            if (const char* env = std::getenv("CHUNK_RECHUNK_SLICES"))
+                n_slices = std::max(1, static_cast<int>(std::strtol(env, nullptr, 10)));
             // Not worth slicing an array too small to empty a slab per slice.
             n_slices = std::min(n_slices, std::max(1, n_new / 4096));
         }
@@ -961,17 +961,17 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
                 if (slice_trace)
                 {
-                    const long r = rechunk_detail::rss_mib_now();
+                    const long rss_mib = rechunk_detail::rss_mib_now();
                     std::fprintf(stderr, "[RECHUNK-SLICE] %d/%d after-drain rss=%ld MB  (%+ld since start)\n", sl + 1,
-                                 n_slices, r, r - rss_start);
+                                 n_slices, rss_mib, rss_mib - rss_start);
                 }
             }
         }
         if (slice_trace)
         {
-            const long r = rechunk_detail::rss_mib_now();
+            const long rss_mib = rechunk_detail::rss_mib_now();
             std::fprintf(stderr, "[RECHUNK-SLICE] %d/%d end         rss=%ld MB  (%+ld since start)\n", n_slices,
-                         n_slices, r, r - rss_start);
+                         n_slices, rss_mib, rss_mib - rss_start);
         }
         g_in_rechunk_rebuild = false;
 #ifdef _OPENMP
@@ -1024,20 +1024,20 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
     {
         // bool chunks (bit-packed) and anything not covered above: tiled
         // element transcription through the proxy (no raw-fill).
-        const ind_type     n    = self().m_size;
-        constexpr ind_type TILE = ind_type{1} << 20;
-        const ind_type     bsz  = n < TILE ? n : TILE;
+        const ind_type     total = self().m_size;
+        constexpr ind_type TILE  = ind_type{1} << 20;
+        const ind_type     bsz   = total < TILE ? total : TILE;
         std::vector<T>     buf(static_cast<std::size_t>(bsz));
-        for (ind_type base = 0; base < n; base += bsz)
+        for (ind_type base = 0; base < total; base += bsz)
         {
-            const ind_type m = (n - base) < bsz ? (n - base) : bsz;
+            const ind_type len = (total - base) < bsz ? (total - base) : bsz;
             set_active_chunk_size(old_size);
             set_thread_chunk_size(old_size);
-            for (ind_type k = 0; k < m; ++k)
+            for (ind_type k = 0; k < len; ++k)
                 buf[static_cast<std::size_t>(k)] = static_cast<T>(self()[base + k]);
             set_active_chunk_size(new_size);
             set_thread_chunk_size(new_size);
-            for (ind_type k = 0; k < m; ++k)
+            for (ind_type k = 0; k < len; ++k)
                 tmp[base + k] = static_cast<T>(buf[static_cast<std::size_t>(k)]);
         }
     }

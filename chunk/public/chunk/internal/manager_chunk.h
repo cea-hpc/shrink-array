@@ -380,15 +380,15 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     /// @brief Recompute the candidate-list length that triggers a compression pass.
     static void compute_size_max_number_of_chunk_to_check_compress();
 
-    /// @brief Add @p s to the running total of chunks created (statistics).
-    static void increm_somme_chunk_create(int s)
+    /// @brief Add @p count to the running total of chunks created (statistics).
+    static void increm_somme_chunk_create(int count)
     {
-        somme_chunk_create += s;
+        somme_chunk_create += count;
     }
-    /// @brief Subtract @p s from the running total of chunks created (statistics).
-    static void decrem_somme_chunk_create(int s)
+    /// @brief Subtract @p count from the running total of chunks created (statistics).
+    static void decrem_somme_chunk_create(int count)
     {
-        somme_chunk_create -= s;
+        somme_chunk_create -= count;
     }
     /// @brief Chunks created minus chunks destroyed -- what the compression
     ///        threshold is computed from, so it must track the chunks alive.
@@ -770,10 +770,10 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                     return;
                 while (lst.size() > keep_per_thread)
                 {
-                    T* b = lst.back();
+                    T* block = lst.back();
                     lst.pop_back();
-                    CHUNK_LEDGER_DISCARD(b, "trim_reuse_pools");
-                    svfree(b);
+                    CHUNK_LEDGER_DISCARD(block, "trim_reuse_pools");
+                    svfree(block);
                     freed += elem_count * sizeof(T);
                 }
                 // A vector that shrank keeps its capacity, so a pool that peaked
@@ -939,29 +939,29 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                             static_cast<std::size_t>(n_thr),
                             std::vector<std::vector<T*>>(static_cast<std::size_t>(n_thr)));
 
-                        auto sort_own_list = [&](int q) noexcept
+                        auto sort_own_list = [&](int rank) noexcept
                         {
-                            if (q < 0 || q >= n_thr)
+                            if (rank < 0 || rank >= n_thr)
                                 return;
-                            auto& lst = per_thr[q].list;
+                            auto& lst = per_thr[rank].list;
                             if (lst.empty())
                                 return;
-                            auto&       row  = bucket[static_cast<std::size_t>(q)];
+                            auto&       row  = bucket[static_cast<std::size_t>(rank)];
                             std::size_t kept = 0;
                             for (std::size_t i = 0; i < lst.size(); ++i)
                             {
-                                T*          b    = lst[i];
-                                const auto* slab = geometry->slab_of(b);
+                                T*          block = lst[i];
+                                const auto* slab  = geometry->slab_of(block);
                                 if (slab && slab->owner && slab->owner_rank >= 0 && slab->owner_rank < n_thr)
-                                    row[static_cast<std::size_t>(slab->owner_rank)].push_back(b);
+                                    row[static_cast<std::size_t>(slab->owner_rank)].push_back(block);
                                 else
-                                    lst[kept++] = b; // no owner claims it: stays parked
+                                    lst[kept++] = block; // no owner claims it: stays parked
                             }
                             lst.resize(kept);
                         };
-                        auto free_own_buckets = [&](int r) noexcept
+                        auto free_own_buckets = [&](int rank) noexcept
                         {
-                            if (r < 0 || r >= n_thr)
+                            if (rank < 0 || rank >= n_thr)
                                 return;
                             // Route to the `size` allocator: get_chunk_allocator keys on
                             // the per-thread active size. Freeing a size-`size` block
@@ -971,7 +971,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                             // rank r (its slab said so); free it through THAT instance.
                             for (int q = 0; q < n_thr; ++q)
                             {
-                                auto& cell = bucket[static_cast<std::size_t>(q)][static_cast<std::size_t>(r)];
+                                auto& cell = bucket[static_cast<std::size_t>(q)][static_cast<std::size_t>(rank)];
                                 for (T* b : cell)
                                 {
                                     CHUNK_FREEPATH_INC(freed);
@@ -1112,8 +1112,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         auto in_range = [lo, hi](const auto& tup)
         {
-            const void* p = static_cast<const void*>(std::get<0>(tup));
-            return p >= lo && p < hi;
+            const void* ptr = static_cast<const void*>(std::get<0>(tup));
+            return ptr >= lo && ptr < hi;
         };
         if constexpr (build_config::use_openmp)
         {

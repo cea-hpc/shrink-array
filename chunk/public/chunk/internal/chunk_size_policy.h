@@ -107,10 +107,10 @@ inline thread_local unsigned int t_active_chunk_size = 0; // 0 = "unset, use glo
  */
 void register_runtime_chunk_size(unsigned int size);
 
-inline void set_active_chunk_size(unsigned int n) noexcept
+inline void set_active_chunk_size(unsigned int size) noexcept
 {
-    g_active_chunk_size = n;
-    register_runtime_chunk_size(n);
+    g_active_chunk_size = size;
+    register_runtime_chunk_size(size);
 }
 [[nodiscard]] inline unsigned int active_chunk_size() noexcept
 {
@@ -119,9 +119,9 @@ inline void set_active_chunk_size(unsigned int n) noexcept
 
 // Per-thread active size: set by array ops before allocating; read by the
 // allocator routing. Falls back to the process-wide seed when unset.
-inline void set_thread_chunk_size(unsigned int n) noexcept
+inline void set_thread_chunk_size(unsigned int size) noexcept
 {
-    t_active_chunk_size = n;
+    t_active_chunk_size = size;
 }
 
 // Per-thread active ALLOCATION KEY: the affinity key of the array whose chunk
@@ -169,10 +169,10 @@ struct DynChunkSizeGuard
 {
     [[maybe_unused]] unsigned int saved_ = t_active_chunk_size;
 
-    explicit DynChunkSizeGuard([[maybe_unused]] unsigned int n) noexcept
+    explicit DynChunkSizeGuard([[maybe_unused]] unsigned int size) noexcept
     {
         if constexpr (build_config::chunk_dynamic)
-            t_active_chunk_size = n;
+            t_active_chunk_size = size;
     }
     ~DynChunkSizeGuard() noexcept
     {
@@ -194,7 +194,7 @@ struct DynChunkSizeGuard
 struct ChunkElems
 {
     ChunkElems() = delete;
-    constexpr explicit ChunkElems(unsigned int n) noexcept : n_(n) {}
+    constexpr explicit ChunkElems(unsigned int count) noexcept : n_(count) {}
 
     /// @brief The element count.
     [[nodiscard]] constexpr unsigned int count() const noexcept
@@ -267,13 +267,13 @@ struct DynamicChunkSize
     }
 
     /// @brief Set a new geometry at run time, and make it the process-wide
-    ///        active size. @p n must be a power of two.
-    void set_size(unsigned int n) noexcept
+    ///        active size. @p size must be a power of two.
+    void set_size(unsigned int size) noexcept
     {
-        size_               = n;
-        decalage_           = static_cast<unsigned int>(log2int(static_cast<std::size_t>(n)));
-        modulo_             = n - 1u;
-        g_active_chunk_size = n; // keep the allocator-facing runtime size in sync
+        size_               = size;
+        decalage_           = static_cast<unsigned int>(log2int(static_cast<std::size_t>(size)));
+        modulo_             = size - 1u;
+        g_active_chunk_size = size; // keep the allocator-facing runtime size in sync
     }
 };
 

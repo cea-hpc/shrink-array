@@ -267,19 +267,19 @@ class PointerMapChunk2
         {
             // -1 means "outside any parallel region"; CHUNK_PMP_* already
             // folds to that in a serial build.
-            const int    rank = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
-            const size_t n    = vec.size();
+            const int    rank  = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
+            const size_t count = vec.size();
 
             std::fprintf(stderr,
                          "[share_info %s] KEY NOT FOUND: this=%p rank=%d searched_key=%p "
                          "vec.size=%zu\n  valid keys:",
-                         site, static_cast<const void*>(this), rank, key, n);
+                         site, static_cast<const void*>(this), rank, key, count);
             // Bound the dump so a corrupt size can't run away.
-            const size_t lim = (n > 64u) ? 64u : n;
+            const size_t lim = (count > 64u) ? 64u : count;
             for (size_t i = 0; i < lim; ++i)
                 std::fprintf(stderr, " [%p num_tab=%d]", static_cast<const void*>(vec[i].first),
                              std::get<2>(vec[i].second));
-            std::fprintf(stderr, "%s\n", (n > lim) ? " …(truncated)" : "");
+            std::fprintf(stderr, "%s\n", (count > lim) ? " …(truncated)" : "");
             std::fflush(stderr);
         }
     }
@@ -462,13 +462,13 @@ class PointerMapChunk2
                 // concurrent append cannot free the slots we read here (unlike the
                 // old vector, whose realloc freed the whole buffer mid-scan). We
                 // still snapshot n so a concurrent append can't move the loop bound.
-                const size_t n = vec.size();
+                const size_t count = vec.size();
 
-                if (n > (1u << 30))
+                if (count > (1u << 30))
                     INVARIANT_FAILED("[share_info get] corrupt vec: this={} size={} key={}",
-                                     static_cast<const void*>(this), n, key);
+                                     static_cast<const void*>(this), count, key);
 
-                for (size_t i = 0; i < n; ++i)
+                for (size_t i = 0; i < count; ++i)
                 {
                     if (vec[i].first == key)
                         return vec[i].second;
@@ -476,13 +476,13 @@ class PointerMapChunk2
                 INVARIANT_FAILED("[share_info get] key NOT FOUND: this={} size={} key={} "
                                  "(dangling ctx->ptr_on_array, or array destroyed while a deferred op "
                                  "still referenced it?)",
-                                 static_cast<const void*>(this), n, key);
+                                 static_cast<const void*>(this), count, key);
             }
             else
             {
                 // deque: snapshot size() and index stable slots (see above).
-                const size_t n = vec.size();
-                for (size_t i = 0; i < n; ++i)
+                const size_t count = vec.size();
+                for (size_t i = 0; i < count; ++i)
                 {
                     if (vec[i].first == key)
                         return vec[i].second;
@@ -499,8 +499,8 @@ class PointerMapChunk2
             // the wrong array's tab_is_inside_chunk_list_to_compress (heap
             // overflow during bool re-chunk). Same "first match shadows tmp"
             // hazard the erase() comment below describes for the non-bool path.
-            const size_t n = vec.size();
-            for (size_t i = 0; i < n; ++i)
+            const size_t count = vec.size();
+            for (size_t i = 0; i < count; ++i)
             {
                 if (vec[i].first == key)
                     return vec[i].second;

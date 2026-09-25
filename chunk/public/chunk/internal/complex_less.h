@@ -24,12 +24,12 @@
 template <typename T>
 struct ComplexLess
 {
-    bool operator()(const std::complex<T>& a, const std::complex<T>& b) const
+    bool operator()(const std::complex<T>& lhs, const std::complex<T>& rhs) const
     {
-        if (a.real() < b.real())
+        if (lhs.real() < rhs.real())
             return true;
-        if (a.real() > b.real())
+        if (lhs.real() > rhs.real())
             return false;
-        return a.imag() < b.imag();
+        return lhs.imag() < rhs.imag();
     }
 };

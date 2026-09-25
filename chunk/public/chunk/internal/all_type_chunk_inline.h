@@ -56,29 +56,29 @@ void AllTypeChunk::register_manager()
                    stderr);
         std::abort();
     }
-    const int n = nb_managers_.load(std::memory_order_relaxed);
-    if (n >= kMaxManagers)
+    const int count = nb_managers_.load(std::memory_order_relaxed);
+    if (count >= kMaxManagers)
     {
         std::fprintf(stderr, "shrink_array: more than %d (chunk template, element type) pairs in one process.\n",
                      kMaxManagers);
         std::abort();
     }
 
-    auto m = std::make_unique<ManagerT>();
+    auto manager = std::make_unique<ManagerT>();
 
     // The whole per-type setup, before anyone can see the manager: the
     // compression-candidate lists, the per-rank structures and allocators
     // (init_manager, by thread model), the runtime geometries declared so far.
-    m->resize_chunk_to_compress_potentially();
-    init_manager(*m, block_size_);
+    manager->resize_chunk_to_compress_potentially();
+    init_manager(*manager, block_size_);
     if constexpr (build_config::chunk_dynamic)
     {
         for (const unsigned int size : registered_sizes_)
-            m->register_chunk_size(size, block_size_);
+            manager->register_chunk_size(size, block_size_);
     }
 
-    managers_[static_cast<std::size_t>(n)] = std::move(m);
-    nb_managers_.store(n + 1, std::memory_order_release); // publishes the slot
+    managers_[static_cast<std::size_t>(count)] = std::move(manager);
+    nb_managers_.store(count + 1, std::memory_order_release); // publishes the slot
 }
 
 template <typename ManagerT>

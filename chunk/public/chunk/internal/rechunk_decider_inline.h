@@ -60,10 +60,10 @@ inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool ba
     double best_mem = rep.table[static_cast<std::size_t>(rep.cur)].mem_bytes;
     for (std::size_t i = 0; i < rep.table.size(); ++i)
     {
-        const auto& e = rep.table[i];
-        if (e.size > cur_size && e.size <= cap_sz && e.mem_bytes < best_mem)
+        const auto& entry = rep.table[i];
+        if (entry.size > cur_size && entry.size <= cap_sz && entry.mem_bytes < best_mem)
         {
-            best_mem = e.mem_bytes;
+            best_mem = entry.mem_bytes;
             pick     = static_cast<int>(i);
         }
     }
@@ -85,15 +85,15 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     const unsigned best_sz    = best_e.size;
     const double   gain_b     = cur_e.mem_bytes - best_e.mem_bytes;
     const auto     gain_bytes = static_cast<std::size_t>(gain_b > 0. ? gain_b : 0.);
-    Hist&          h          = hist_[key];
+    Hist&          hist       = hist_[key];
 
     // Damping bookkeeping: is `best` the same as last tick?
-    if (best_sz == h.last_best_size)
-        ++h.stable_count;
+    if (best_sz == hist.last_best_size)
+        ++hist.stable_count;
     else
     {
-        h.last_best_size = best_sz;
-        h.stable_count   = 1;
+        hist.last_best_size = best_sz;
+        hist.stable_count   = 1;
     }
 
     const char* reason = nullptr;
@@ -135,10 +135,10 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     // deadband" at every tick, on every chunk-family variant.
     static const std::size_t env_min_gain = []()
     {
-        const char* e = std::getenv("CHUNK_ADVISOR_MIN_GAIN_MB");
-        if (e == nullptr || e[0] == '\0')
+        const char* env = std::getenv("CHUNK_ADVISOR_MIN_GAIN_MB");
+        if (env == nullptr || env[0] == '\0')
             return static_cast<std::size_t>(-1); // unset: keep the policy
-        const double mb = std::strtod(e, nullptr);
+        const double mb = std::strtod(env, nullptr);
         return mb > 0. ? static_cast<std::size_t>(mb * 1024. * 1024.) : 0u;
     }();
     const std::size_t min_gain = env_min_gain == static_cast<std::size_t>(-1) ? pol_.min_gain_bytes : env_min_gain;
@@ -174,10 +174,10 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         // the move to fire.
         static const std::size_t env_meta_floor = []() -> std::size_t
         {
-            const char* e = std::getenv("CHUNK_COARSEN_MIN_META_MB");
-            if (e == nullptr || e[0] == '\0')
+            const char* env = std::getenv("CHUNK_COARSEN_MIN_META_MB");
+            if (env == nullptr || env[0] == '\0')
                 return static_cast<std::size_t>(-1); // unset: keep the policy
-            const double mb = std::strtod(e, nullptr);
+            const double mb = std::strtod(env, nullptr);
             return mb > 0. ? static_cast<std::size_t>(mb * 1024. * 1024.) : 0u;
         }();
         const std::size_t policy_floor =
@@ -197,7 +197,7 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     bool reverting = false;
     if (pol_.anti_reversal_ticks > 0)
         for (int _i = 0; _i < Hist::kVisited; ++_i)
-            if (h.visited_size[_i] == best_sz && tick - h.visited_tick[_i] < pol_.anti_reversal_ticks)
+            if (hist.visited_size[_i] == best_sz && tick - hist.visited_tick[_i] < pol_.anti_reversal_ticks)
             {
                 reverting = true;
                 break;
@@ -205,13 +205,13 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
 
     if (best_sz == cur_size)
         reason = "already optimal";
-    else if (pol_.cooldown_ticks > 0 && tick - h.last_action_tick < pol_.cooldown_ticks)
+    else if (pol_.cooldown_ticks > 0 && tick - hist.last_action_tick < pol_.cooldown_ticks)
         reason = "cooldown";
     else if (reverting)
         reason = "anti-reversal"; // would return to a recently-occupied size -> oscillation
     else if (!clears_gate)
         reason = "gain below deadband";
-    else if (h.stable_count < pol_.stability_ticks)
+    else if (hist.stable_count < pol_.stability_ticks)
         reason = "best not yet stable";
     else
     {
@@ -225,20 +225,20 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
                      "[RECHUNK-DECIDE] %s: %s S=%u -> S'=%u "
                      "(gain %.1f MB = meta %.1f + data %.1f, stable %d ticks)%s\n",
                      name, pol_.dry_run ? "[dry-run] would re-chunk" : "re-chunk", cur_size, best_sz,
-                     gain_b / (1024. * 1024.), gain_meta / (1024. * 1024.), gain_data / (1024. * 1024.), h.stable_count,
-                     pol_.dry_run ? "" : " [APPLIED]");
+                     gain_b / (1024. * 1024.), gain_meta / (1024. * 1024.), gain_data / (1024. * 1024.),
+                     hist.stable_count, pol_.dry_run ? "" : " [APPLIED]");
         std::fflush(stderr);
 
-        h.last_action_tick = tick;
-        h.stable_count     = 0;        // must re-stabilise before next move
-        h.last_from_size   = cur_size; // remember what we left (single-step)
+        hist.last_action_tick = tick;
+        hist.stable_count     = 0;        // must re-stabilise before next move
+        hist.last_from_size   = cur_size; // remember what we left (single-step)
         // Record the size we just left in the visited ring (multi-step
         // anti-reversal): a later best == this size within the window is
         // refused, killing the 512->..->16->256 oscillation.
-        h.visited_size[h.visited_head] = cur_size;
-        h.visited_tick[h.visited_head] = tick;
-        h.visited_head                 = (h.visited_head + 1) % Hist::kVisited;
-        h.last_best_size               = best_sz;
+        hist.visited_size[hist.visited_head] = cur_size;
+        hist.visited_tick[hist.visited_head] = tick;
+        hist.visited_head                    = (hist.visited_head + 1) % Hist::kVisited;
+        hist.last_best_size                  = best_sz;
         // In dry-run we do NOT change the array; a real phase would re-chunk
         // here and update the array's current geometry.
     }
@@ -283,8 +283,8 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         // 0/unset disables. Read once.
         static const unsigned force_sz = []
         {
-            const char* e = std::getenv("CHUNK_FORCE_RECHUNK");
-            return e ? static_cast<unsigned>(std::atoi(e)) : 0u;
+            const char* env = std::getenv("CHUNK_FORCE_RECHUNK");
+            return env ? static_cast<unsigned>(std::atoi(env)) : 0u;
         }();
         // CHUNK_FORCE_RECHUNK_AT=<iter> delays the forced rechunk until iter >=
         // this (default 0 = at the first tick). Forcing at iter 0 rechunks fresh,
@@ -292,8 +292,8 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         // pending deferred ops -- the state under which the real bug appears.
         static const int force_at = []
         {
-            const char* e = std::getenv("CHUNK_FORCE_RECHUNK_AT");
-            return e ? std::atoi(e) : 0;
+            const char* env = std::getenv("CHUNK_FORCE_RECHUNK_AT");
+            return env ? std::atoi(env) : 0;
         }();
         // CHUNK_FORCE_RECHUNK_TOGGLE=1 rechunks at EVERY tick (iter>=force_at),
         // alternating force_sz <-> CHUNK_FORCE_RECHUNK_ALT (default 64). Combined
@@ -302,13 +302,13 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         // rechunk-triggered corruption. Default (0) keeps the one-shot behaviour.
         static const unsigned force_alt = []
         {
-            const char* e = std::getenv("CHUNK_FORCE_RECHUNK_ALT");
-            return e ? static_cast<unsigned>(std::atoi(e)) : 64u;
+            const char* env = std::getenv("CHUNK_FORCE_RECHUNK_ALT");
+            return env ? static_cast<unsigned>(std::atoi(env)) : 64u;
         }();
         static const bool force_toggle = []
         {
-            const char* e = std::getenv("CHUNK_FORCE_RECHUNK_TOGGLE");
-            return e && std::atoi(e) != 0;
+            const char* env = std::getenv("CHUNK_FORCE_RECHUNK_TOGGLE");
+            return env && std::atoi(env) != 0;
         }();
         if (force_sz != 0u && !pol_.dry_run && iter >= force_at)
         {

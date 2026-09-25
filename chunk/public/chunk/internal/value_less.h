@@ -53,14 +53,14 @@ namespace shrink_array
 template <typename T>
 struct ValueLess
 {
-    bool operator()(const T& a, const T& b) const noexcept
+    bool operator()(const T& lhs, const T& rhs) const noexcept
     {
         if constexpr (ComplexType<T>)
-            return ComplexLess<typename T::value_type>{}(a, b);
+            return ComplexLess<typename T::value_type>{}(lhs, rhs);
         else if constexpr (std::totally_ordered<T>)
-            return a < b;
+            return lhs < rhs;
         else if constexpr (std::has_unique_object_representations_v<T>)
-            return std::memcmp(&a, &b, sizeof(T)) < 0;
+            return std::memcmp(&lhs, &rhs, sizeof(T)) < 0;
         else
             static_assert(std::totally_ordered<T>,
                           "chunk2 orders second values: this element type needs an operator< "

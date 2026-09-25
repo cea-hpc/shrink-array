@@ -320,17 +320,17 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
             // drop, no per-phase leak. There is no way to push into another
             // thread's thread_local free_list, so draining-on-owner is the only
             // route that keeps recycling local.
-            auto drain_index = [&](int t)
+            auto drain_index = [&](int rank)
             {
-                if (t < 0 || t >= max_thr || arr[t].empty())
+                if (rank < 0 || rank >= max_thr || arr[rank].empty())
                     return;
 
                 std::fprintf(
                     stderr,
-                    "[LEAK] destroy_after_flush: thr=%d has %zu chunks with deferred ops (draining defensively)\n", t,
-                    arr[t].size());
+                    "[LEAK] destroy_after_flush: thr=%d has %zu chunks with deferred ops (draining defensively)\n",
+                    rank, arr[rank].size());
 
-                for (auto& [chunk_ptr, ops_map_ptr] : arr[t])
+                for (auto& [chunk_ptr, ops_map_ptr] : arr[rank])
                 {
                     if (!ops_map_ptr)
                         continue;
@@ -341,7 +341,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
                     }
                     ops_map_ptr->clear();
                 }
-                arr[t].clear();
+                arr[rank].clear();
             };
 
             if constexpr (chunk_config::not_use_compression_with_ompt)
@@ -578,9 +578,9 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::init_allocators([[maybe_unused]
             // value slab's address could be reobtained by the op pool's
             // sctk_mmap(nullptr) and overwrite a live op (or vice-versa). Value slabs
             // are long-lived (data), so few become empty and retained memory is modest.
-            auto& a = CHUNK_T<T>::get_chunk_allocator(thr_rank);
-            a.set_rank(thr_rank); // stamped into every slab as owner_rank
-            a.init(shrink_array::alloc_chunk_count(), block_size / v, -1);
+            auto& allocator = CHUNK_T<T>::get_chunk_allocator(thr_rank);
+            allocator.set_rank(thr_rank); // stamped into every slab as owner_rank
+            allocator.init(shrink_array::alloc_chunk_count(), block_size / v, -1);
         }
     }
 }
@@ -726,9 +726,9 @@ namespace detail
 template <typename T>
 struct PtrLess
 {
-    bool operator()(const T* a, const T* b) const noexcept
+    bool operator()(const T* lhs, const T* rhs) const noexcept
     {
-        return std::less<const T*>{}(a, b);
+        return std::less<const T*>{}(lhs, rhs);
     }
 };
 } // namespace detail
@@ -793,16 +793,16 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_screen(in
 
     if (bucket < 0 || static_cast<std::size_t>(bucket) >= to_free.size())
         return;
-    const auto r   = static_cast<std::size_t>(bucket);
-    auto&      out = to_free[r];
+    const auto bucket_idx = static_cast<std::size_t>(bucket);
+    auto&      out        = to_free[bucket_idx];
 
     // The legacy store is not guaranteed to be sized to max_thr (see
     // allocate_chunk_internal): a slot that was never sized simply has nothing
     // to drain.
     // RAW default list container, NOT the size-aware overload.
-    if (auto& legacy = mgr::get_list_block_free_thr(); r < legacy.size())
+    if (auto& legacy = mgr::get_list_block_free_thr(); bucket_idx < legacy.size())
     {
-        auto& lbf = legacy[r].list;
+        auto& lbf = legacy[bucket_idx].list;
         // std-alloc (svalloc/malloc) owns each block, so it must be freed on
         // teardown; the fast allocator's arena reclaims in bulk, nothing to do.
         if constexpr (!build_config::use_fast_alloc)
@@ -823,9 +823,9 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_screen(in
     {
         for (auto& size_kv : mgr::list_block_free_thr_by_size_)
         {
-            if (r >= size_kv.second.size())
+            if (bucket_idx >= size_kv.second.size())
                 continue;
-            auto& lst = size_kv.second[r].list;
+            auto& lst = size_kv.second[bucket_idx].list;
             if constexpr (!build_config::use_fast_alloc)
             {
                 out.insert(out.end(), lst.begin(), lst.end());
@@ -837,9 +837,9 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_screen(in
     // parked there is a block like any other, just filed under its array.
     for (auto& key_kv : mgr::list_block_free_thr_keyed_)
     {
-        if (r >= key_kv.second.size())
+        if (bucket_idx >= key_kv.second.size())
             continue;
-        auto& lst = key_kv.second[r].list;
+        auto& lst = key_kv.second[bucket_idx].list;
         if constexpr (!build_config::use_fast_alloc)
         {
             out.insert(out.end(), lst.begin(), lst.end());
@@ -866,18 +866,18 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_sort([[ma
 
     if (bucket < 0 || static_cast<std::size_t>(bucket) >= to_free.size())
         return;
-    auto& b = to_free[static_cast<std::size_t>(bucket)];
+    auto& blocks = to_free[static_cast<std::size_t>(bucket)];
 
-    std::ranges::sort(b, detail::PtrLess<T>{});
-    for (std::size_t i = 1; i < b.size(); ++i)
+    std::ranges::sort(blocks, detail::PtrLess<T>{});
+    for (std::size_t i = 1; i < blocks.size(); ++i)
     {
-        if (b[i] == b[i - 1])
+        if (blocks[i] == blocks[i - 1])
             std::fprintf(stderr,
                          "[DOUBLE-FREE] %p queued twice for free in bucket %d "
                          "-- NOT freeing again\n",
-                         static_cast<void*>(b[i]), bucket);
+                         static_cast<void*>(blocks[i]), bucket);
     }
-    b.erase(std::ranges::unique(b).begin(), b.end());
+    blocks.erase(std::ranges::unique(blocks).begin(), blocks.end());
 #endif
 }
 
@@ -932,10 +932,10 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
     }
     std::ranges::sort(samples, less);
 
-    auto splitter = [&](int s) -> T*
+    auto splitter = [&](int split) -> T*
     {
         // Splitter s bounds slices s-1 | s; there are nslices-1 of them.
-        const std::size_t idx = samples.size() * static_cast<std::size_t>(s) / static_cast<std::size_t>(nslices);
+        const std::size_t idx = samples.size() * static_cast<std::size_t>(split) / static_cast<std::size_t>(nslices);
         return samples[idx];
     };
     const bool has_lo = slice > 0 && !samples.empty();
@@ -953,18 +953,19 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
         std::size_t pos;
         std::size_t end;
     };
-    auto greater = [&](const Head& a, const Head& b) { return less(b.p, a.p) || (a.p == b.p && a.bucket > b.bucket); };
+    auto greater = [&](const Head& lhs, const Head& rhs)
+    { return less(rhs.p, lhs.p) || (lhs.p == rhs.p && lhs.bucket > rhs.bucket); };
 
     std::vector<Head> heap;
     heap.reserve(k);
     for (std::size_t bi = 0; bi < k; ++bi)
     {
-        const auto& b     = to_free[bi];
-        const auto  first = has_lo ? std::ranges::lower_bound(b, lo, less) : b.begin();
-        const auto  last  = has_hi ? std::lower_bound(first, b.end(), hi, less) : b.end();
+        const auto& blocks = to_free[bi];
+        const auto  first  = has_lo ? std::ranges::lower_bound(blocks, lo, less) : blocks.begin();
+        const auto  last   = has_hi ? std::lower_bound(first, blocks.end(), hi, less) : blocks.end();
         if (first != last)
-            heap.push_back(Head{*first, bi, static_cast<std::size_t>(first - b.begin()),
-                                static_cast<std::size_t>(last - b.begin())});
+            heap.push_back(Head{*first, bi, static_cast<std::size_t>(first - blocks.begin()),
+                                static_cast<std::size_t>(last - blocks.begin())});
     }
     std::ranges::make_heap(heap, greater);
 
@@ -975,27 +976,27 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
     while (!heap.empty())
     {
         std::ranges::pop_heap(heap, greater);
-        Head h = heap.back();
+        Head head = heap.back();
         heap.pop_back();
 
-        if (have && h.p == prev)
+        if (have && head.p == prev)
         {
             // Same pointer as the one just produced from a lower bucket: this
             // one is the repeat, skipped when ITS bucket is freed.
             std::fprintf(stderr,
                          "[DOUBLE-FREE] %p queued for free in buckets %zu and %zu "
                          "-- NOT freeing again\n",
-                         static_cast<void*>(h.p), prev_bucket, h.bucket);
-            repeats.push_back(detail::TeardownRepeat<T>{h.bucket, h.p});
+                         static_cast<void*>(head.p), prev_bucket, head.bucket);
+            repeats.push_back(detail::TeardownRepeat<T>{head.bucket, head.p});
         }
-        prev        = h.p;
-        prev_bucket = h.bucket;
+        prev        = head.p;
+        prev_bucket = head.bucket;
         have        = true;
 
-        if (++h.pos < h.end)
+        if (++head.pos < head.end)
         {
-            h.p = to_free[h.bucket][h.pos];
-            heap.push_back(h);
+            head.p = to_free[head.bucket][head.pos];
+            heap.push_back(head);
             std::ranges::push_heap(heap, greater);
         }
     }
@@ -1027,14 +1028,14 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_thr(int b
 
     if (bucket < 0 || static_cast<std::size_t>(bucket) >= to_free.size())
         return;
-    const auto r = static_cast<std::size_t>(bucket);
-    auto&      b = to_free[r];
+    const auto bucket_idx = static_cast<std::size_t>(bucket);
+    auto&      blocks     = to_free[bucket_idx];
 
     std::unordered_set<T*> skip;
     for (const auto& per_slice : mgr::teardown_repeats_)
     {
         for (const auto& rep : per_slice)
-            if (rep.bucket == r)
+            if (rep.bucket == bucket_idx)
                 skip.insert(rep.ptr);
     }
 
@@ -1044,7 +1045,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_thr(int b
     // CHUNK_LEDGER_REPORT output that masked any real leak.
     if (skip.empty())
     {
-        for (auto* elm : b)
+        for (auto* elm : blocks)
         {
             CHUNK_LEDGER_DISCARD(elm, "clear_list_block_free_thr.drain");
             svfree(elm);
@@ -1052,14 +1053,14 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_thr(int b
     }
     else
     {
-        for (auto* elm : b)
+        for (auto* elm : blocks)
             if (!skip.contains(elm))
             {
                 CHUNK_LEDGER_DISCARD(elm, "clear_list_block_free_thr.drain");
                 svfree(elm);
             }
     }
-    b.clear();
+    blocks.clear();
 }
 
 /**

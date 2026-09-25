@@ -37,16 +37,16 @@ struct for_each_type_impl<std::tuple<Ts...>>
 {
     /// @brief Call `f.template operator()<T>()` for each T of the tuple, in order.
     template <typename F>
-    static void apply(F&& f)
+    static void apply(F&& fn)
     {
-        (f.template operator()<Ts>(), ...);
+        (fn.template operator()<Ts>(), ...);
     }
 };
 
 template <typename TypeList, typename F>
-void for_each_type(F&& f)
+void for_each_type(F&& fn)
 {
-    for_each_type_impl<TypeList>::apply(std::forward<F>(f));
+    for_each_type_impl<TypeList>::apply(std::forward<F>(fn));
 }
 
 } // namespace shrink_array

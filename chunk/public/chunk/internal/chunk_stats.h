@@ -134,10 +134,10 @@ extern ChunkStatsThr __chunk_stats[CHUNK_STATS_N_VARIANT][CHUNK_STATS_MAX_THR];
  */
 inline ChunkStatsThr& __chunk_stats_slot(int variant) noexcept
 {
-    int r = get_thr_rank_fast();
-    if (r < 0 || r >= CHUNK_STATS_MAX_THR)
-        r = 0;
-    return __chunk_stats[variant][r];
+    int rank = get_thr_rank_fast();
+    if (rank < 0 || rank >= CHUNK_STATS_MAX_THR)
+        rank = 0;
+    return __chunk_stats[variant][rank];
 }
 
 // ---- increments (templated on the chunk type; no atomics) ------------------
@@ -185,25 +185,25 @@ void increm_chunk_list()
     __chunk_stats_slot(C::stat_variant).list++;
 }
 /// @brief Add `b` bytes from a fresh allocation (alloc event).
-/// @param b Bytes allocated.
+/// @param bytes Bytes allocated.
 template <typename C>
-void add_chunk_bytes_alloc(long b)
+void add_chunk_bytes_alloc(long bytes)
 {
-    __chunk_stats_slot(C::stat_variant).bytes_alloc += b;
+    __chunk_stats_slot(C::stat_variant).bytes_alloc += bytes;
 }
 /// @brief Add `b` bytes handed out from the reuse list (list event).
-/// @param b Bytes reused.
+/// @param bytes Bytes reused.
 template <typename C>
-void add_chunk_bytes_reused(long b)
+void add_chunk_bytes_reused(long bytes)
 {
-    __chunk_stats_slot(C::stat_variant).bytes_reused += b;
+    __chunk_stats_slot(C::stat_variant).bytes_reused += bytes;
 }
 /// @brief Add `b` bytes returned by a real compression (compress event).
-/// @param b Bytes freed.
+/// @param bytes Bytes freed.
 template <typename C>
-void add_chunk_bytes_freed(long b)
+void add_chunk_bytes_freed(long bytes)
 {
-    __chunk_stats_slot(C::stat_variant).bytes_freed += b;
+    __chunk_stats_slot(C::stat_variant).bytes_freed += bytes;
 }
 /// @brief Count one chunk swept by clear_st at teardown (NOT a compression).
 template <typename C>
@@ -306,11 +306,11 @@ void increm_chunk_gate_deferred()
 template <typename C>
 void increm_chunk_gate_wait(int yields, bool mark_hit)
 {
-    auto& s = __chunk_stats_slot(C::stat_variant);
-    s.gate_wait++;
-    s.gate_wait_yields += yields;
+    auto& slot = __chunk_stats_slot(C::stat_variant);
+    slot.gate_wait++;
+    slot.gate_wait_yields += yields;
     if (mark_hit)
-        s.gate_mark_hit++;
+        slot.gate_mark_hit++;
 }
 /// @brief Count one element read done BY a compression-candidate scan (not an application read).
 template <typename C>
@@ -318,11 +318,11 @@ void increm_chunk_scan_read()
 {
     __chunk_stats_slot(C::stat_variant).scan_read++;
 }
-/// @brief Count @p n element reads done by one scan (ChunkBase::scan_constants and friends).
+/// @brief Count @p count element reads done by one scan (ChunkBase::scan_constants and friends).
 template <typename C>
-void add_chunk_scan_read(long n)
+void add_chunk_scan_read(long count)
 {
-    __chunk_stats_slot(C::stat_variant).scan_read += n;
+    __chunk_stats_slot(C::stat_variant).scan_read += count;
 }
 /// @brief Count one rechunk_to() operation (geometry change).
 template <typename C>
@@ -362,8 +362,8 @@ void increm_chunk_write()
  * @tparam V Type being written.
  */
 template <typename V>
-concept ChunkStatsZeroComparable = requires(const V& a) {
-    { a != V(0) } -> std::convertible_to<bool>;
+concept ChunkStatsZeroComparable = requires(const V& value) {
+    { value != V(0) } -> std::convertible_to<bool>;
 };
 
 /**
@@ -460,41 +460,41 @@ inline ChunkStatsThr reduce_chunk_stats(int variant) noexcept
     const int     nthr = CHUNK_PMP_MAX_THREADS < CHUNK_STATS_MAX_THR ? CHUNK_PMP_MAX_THREADS : CHUNK_STATS_MAX_THR;
     for (int t = 0; t < nthr; ++t)
     {
-        const ChunkStatsThr& s = __chunk_stats[variant][t];
-        acc.alloc += s.alloc;
-        acc.write += s.write;
-        acc.read += s.read;
-        acc.read_cst += s.read_cst;
-        acc.read_sync += s.read_sync;
-        acc.read_sync_cross += s.read_sync_cross;
-        acc.create += s.create;
-        acc.list += s.list;
-        acc.bytes_alloc += s.bytes_alloc;
-        acc.bytes_reused += s.bytes_reused;
-        acc.bytes_freed += s.bytes_freed;
-        acc.teardown_clear += s.teardown_clear;
-        acc.still_compressed_at_exit += s.still_compressed_at_exit;
-        acc.compress += s.compress;
-        acc.release_park += s.release_park;
-        acc.release_pool += s.release_pool;
-        acc.release_free += s.release_free;
-        acc.compress_attempt += s.compress_attempt;
-        acc.mark_ok += s.mark_ok;
-        acc.mark_refused += s.mark_refused;
-        acc.scan_read += s.scan_read;
-        acc.rechunk += s.rechunk;
-        acc.rechunk_rebuilt += s.rechunk_rebuilt;
-        acc.rechunk_skipped += s.rechunk_skipped;
-        acc.gate_start += s.gate_start;
-        acc.gate_start_flush_yield += s.gate_start_flush_yield;
-        acc.gate_start_yield_late += s.gate_start_yield_late;
-        acc.gate_start_deferred += s.gate_start_deferred;
-        acc.gate_flush += s.gate_flush;
-        acc.gate_driver += s.gate_driver;
-        acc.gate_deferred += s.gate_deferred;
-        acc.gate_wait += s.gate_wait;
-        acc.gate_wait_yields += s.gate_wait_yields;
-        acc.gate_mark_hit += s.gate_mark_hit;
+        const ChunkStatsThr& slot = __chunk_stats[variant][t];
+        acc.alloc += slot.alloc;
+        acc.write += slot.write;
+        acc.read += slot.read;
+        acc.read_cst += slot.read_cst;
+        acc.read_sync += slot.read_sync;
+        acc.read_sync_cross += slot.read_sync_cross;
+        acc.create += slot.create;
+        acc.list += slot.list;
+        acc.bytes_alloc += slot.bytes_alloc;
+        acc.bytes_reused += slot.bytes_reused;
+        acc.bytes_freed += slot.bytes_freed;
+        acc.teardown_clear += slot.teardown_clear;
+        acc.still_compressed_at_exit += slot.still_compressed_at_exit;
+        acc.compress += slot.compress;
+        acc.release_park += slot.release_park;
+        acc.release_pool += slot.release_pool;
+        acc.release_free += slot.release_free;
+        acc.compress_attempt += slot.compress_attempt;
+        acc.mark_ok += slot.mark_ok;
+        acc.mark_refused += slot.mark_refused;
+        acc.scan_read += slot.scan_read;
+        acc.rechunk += slot.rechunk;
+        acc.rechunk_rebuilt += slot.rechunk_rebuilt;
+        acc.rechunk_skipped += slot.rechunk_skipped;
+        acc.gate_start += slot.gate_start;
+        acc.gate_start_flush_yield += slot.gate_start_flush_yield;
+        acc.gate_start_yield_late += slot.gate_start_yield_late;
+        acc.gate_start_deferred += slot.gate_start_deferred;
+        acc.gate_flush += slot.gate_flush;
+        acc.gate_driver += slot.gate_driver;
+        acc.gate_deferred += slot.gate_deferred;
+        acc.gate_wait += slot.gate_wait;
+        acc.gate_wait_yields += slot.gate_wait_yields;
+        acc.gate_mark_hit += slot.gate_mark_hit;
     }
     return acc;
 }

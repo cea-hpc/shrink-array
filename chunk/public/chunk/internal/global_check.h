@@ -54,7 +54,7 @@ static void global_check_nan(const std::complex<double>& val, long i)
 }
 
 template <typename T>
-void global_check_nan(const T& val, long n)
+void global_check_nan(const T& val, long i)
 {
 }
 

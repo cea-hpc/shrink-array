@@ -94,29 +94,29 @@ concept IsCleanShiftOp = std::is_integral_v<std::remove_cvref_t<T>> && std::is_i
 // std::plus or the atomic apply. std::complex has the four arithmetic ones and
 // no ++/--, bool has the arithmetic ones (through int) and no ++.
 template <typename T>
-concept ElementAddable = requires(T a, T b) {
-    { a + b } -> std::convertible_to<T>;
+concept ElementAddable = requires(T lhs, T rhs) {
+    { lhs + rhs } -> std::convertible_to<T>;
 };
 template <typename T>
-concept ElementSubtractable = requires(T a, T b) {
-    { a - b } -> std::convertible_to<T>;
+concept ElementSubtractable = requires(T lhs, T rhs) {
+    { lhs - rhs } -> std::convertible_to<T>;
 };
 template <typename T>
-concept ElementMultipliable = requires(T a, T b) {
-    { a * b } -> std::convertible_to<T>;
+concept ElementMultipliable = requires(T lhs, T rhs) {
+    { lhs * rhs } -> std::convertible_to<T>;
 };
 template <typename T>
-concept ElementDivisible = requires(T a, T b) {
-    { a / b } -> std::convertible_to<T>;
+concept ElementDivisible = requires(T lhs, T rhs) {
+    { lhs / rhs } -> std::convertible_to<T>;
 };
 template <typename T>
-concept ElementModulable = requires(T a, T b) {
-    { a % b } -> std::convertible_to<T>;
+concept ElementModulable = requires(T lhs, T rhs) {
+    { lhs % rhs } -> std::convertible_to<T>;
 };
 template <typename T>
-concept ElementIncrementable = requires(T a) {
-    ++a;
-    --a;
+concept ElementIncrementable = requires(T elem) {
+    ++elem;
+    --elem;
 };
 
 } // namespace shrink_array
