@@ -325,7 +325,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     friend struct ManagerChunkParallelImpl;
 
   private:
-    const int max_thr   = CHUNK_PMP_MAX_THREADS;
+    const int max_thr   = CHUNK_PMP_THREAD_CAPACITY;
     using p_vector_char = std::vector<char>*;
     using inf_array_t   = std::tuple<T, int, p_vector_char>;
 
@@ -339,11 +339,12 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
   public:
     /**
-     * @brief Captures the team size once, at construction.
+     * @brief Captures the thread capacity once, at construction.
      *
-     * @note max_thr is fixed here and never revisited, so every per-thread
-     *       container this manager sizes is sized for the team that existed when
-     *       the manager was created.
+     * @note max_thr is the thread capacity (CHUNK_PMP_THREAD_CAPACITY), fixed
+     *       for the process: every per-thread container this manager sizes
+     *       holds a slot for every rank that may run, including a team raised
+     *       after the manager was created, up to that capacity.
      */
     ManagerChunk()           = default;
     ~ManagerChunk() override = default;

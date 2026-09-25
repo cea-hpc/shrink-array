@@ -673,7 +673,7 @@ void ArrayChunk2A<T, ind_type>::make_block_compression()
     //     else
     //     {
     // we can do in // because tab_m_ptr_cst_val2 is not by thread
-    for (int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
+    for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)
     {
         Chunk2A<T>::make_block_compression(thr, nullptr);
     }

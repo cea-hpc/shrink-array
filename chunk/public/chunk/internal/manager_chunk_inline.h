@@ -141,7 +141,7 @@ void ManagerChunk<CHUNK_T, T>::force_chunk_to_compress() const
 template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunk<CHUNK_T, T>::resize_chunk_to_compress_potentially() const
 {
-    const int nthr = CHUNK_PMP_MAX_THREADS; // the team NOW, not the max_thr the manager was built with
+    const int nthr = CHUNK_PMP_THREAD_CAPACITY; // every rank that may run, as the manager's max_thr
 
     // --- Standard Chunk case ---
     if constexpr (chunk_config::use_fast_block_compression)
@@ -310,7 +310,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
         auto* arr = storage.get();
         if (arr)
         {
-            const int max_thr = CHUNK_PMP_MAX_THREADS;
+            const int max_thr = CHUNK_PMP_RANK_BOUND;
 
             // Drain arr[t] fully. Crucially, op_ptr->destroy() recycles the op
             // block into the free_list of whichever thread PHYSICALLY RUNS this
@@ -507,7 +507,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
         // blocks. We report presence; the caller can escalate if it recurs.
         if constexpr (build_config::any_check && !chunk_config::have_agressive_compression)
         {
-            if (self.have_chunk_to_compress_potentially(self.max_thr))
+            if (self.have_chunk_to_compress_potentially(CHUNK_PMP_RANK_BOUND))
             {
                 std::fprintf(stderr, "[COMPRESS-AUDIT] blocks left to compress after final flush "
                                      "(non-aggressive) — compression pass skipped some blocks. "
@@ -1109,9 +1109,12 @@ bool ManagerChunk<CHUNK_T, T>::register_alloc_key([[maybe_unused]] unsigned int 
         // exist and fall back to the legacy single allocator.
         if (key == 0 || registered_block_size_ == 0)
             return false;
-        const int max_thr = CHUNK_PMP_MAX_THREADS;
-        CHUNK_T<T>::register_chunk_size(size, max_thr, registered_block_size_, key);
-        register_free_list_key(key, size, max_thr);
+        // The per-rank sets are sized for every rank that may ever run (the
+        // capacity); the budget is shared by the team that runs now.
+        const int capacity = CHUNK_PMP_THREAD_CAPACITY;
+        const int max_thr  = CHUNK_PMP_MAX_THREADS;
+        CHUNK_T<T>::register_chunk_size(size, capacity, registered_block_size_, key);
+        register_free_list_key(key, size, capacity);
         // The array's own share per rank, where the global budget uses the
         // process-wide somme_chunk_create.
         set_size_buffer_reuse(key, nb_chunk / (Chunk2ADef::factor_div_somme_chunk_buffer_resuse * max_thr));

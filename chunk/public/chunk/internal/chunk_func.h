@@ -40,7 +40,7 @@ namespace shrink_array
 template <typename T>
 bool need_load_balance_list_block_free_thr()
 {
-    const int max_thr = CHUNK_PMP_MAX_THREADS;
+    const int max_thr = CHUNK_PMP_RANK_BOUND; // the ranks that may hold a free list
 
     int lg = 0;
 
@@ -70,7 +70,7 @@ void load_balance_list_block_free_thr()
 {
     int lg = 0;
 
-    const int max_thr = CHUNK_PMP_MAX_THREADS;
+    const int max_thr = CHUNK_PMP_RANK_BOUND; // the ranks that may hold a free list
 
     for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
     {

@@ -259,13 +259,13 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
 
                 if (sz <= ind)
                 {
-                    for (int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
+                    for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                     {
                         manager_chunk2::chunk2_to_compress_potentially_thr[thr].resize(ind + 1);
                     }
                 }
 
-                for (int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
+                for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                 {
                     auto& vec_ref    = manager_chunk2::chunk2_to_compress_potentially_thr[thr][ind];
                     auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk2, T>>(vec_ref);
@@ -357,7 +357,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
         }
         if constexpr (build_config::use_openmp)
         {
-            for (int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
+            for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
             {
                 manager_chunk2::chunk2_to_compress_potentially_thr[thr].resize(1);
                 auto& vec_ref    = manager_chunk2::chunk2_to_compress_potentially_thr[thr][0];

@@ -556,11 +556,11 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     /**
      * @brief Allocate the per-rank deferred-op structures.
      * @post The chunk sets, pending-op shards and flush locks are all sized to
-     *       CHUNK_PMP_MAX_THREADS and zero-initialised.
+     *       the thread capacity (CHUNK_PMP_THREAD_CAPACITY) and zero-initialised.
      */
     static void init_deferred_queues()
     {
-        const int max_thr         = CHUNK_PMP_MAX_THREADS;
+        const int max_thr         = CHUNK_PMP_THREAD_CAPACITY;
         deferred_chunk_per_thread = std::make_unique<unordered_set_deferred_chunks[]>(max_thr);
         pending_ops_shard         = std::make_unique<PaddedPendingCounter[]>(max_thr);
         for (int i = 0; i < max_thr; ++i)
@@ -630,7 +630,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         // rank has an unflushed op; we then take the (rare) scan path.
         if (!pending_ops_shard)
             return false;
-        const int max_thr = CHUNK_PMP_MAX_THREADS;
+        const int max_thr = CHUNK_PMP_RANK_BOUND;
         int64_t   total   = 0;
         for (int i = 0; i < max_thr; ++i)
             total += pending_ops_shard[i].v.load(std::memory_order_acquire);
@@ -849,13 +849,14 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
 
     /**
      * @brief Initializes the tracking array for dangerous lists per thread.
-     * @details Allocates and initializes the atomic counters based on CHUNK_PMP_MAX_THREADS.
+     * @details Allocates and initializes the atomic counters, one per rank of the thread capacity
+     * (CHUNK_PMP_THREAD_CAPACITY).
      */
 
     /// @brief Allocate the per-rank dangerous-list counters.
     static void init_dangerous_lists_tracking()
     {
-        const int max_thr          = CHUNK_PMP_MAX_THREADS;
+        const int max_thr          = CHUNK_PMP_THREAD_CAPACITY;
         dangerous_lists_per_thread = std::make_unique<PaddedDangerousFlag[]>(max_thr);
 
         for (int i = 0; i < max_thr; ++i)

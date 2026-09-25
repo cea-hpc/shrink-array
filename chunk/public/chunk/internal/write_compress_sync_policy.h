@@ -229,7 +229,7 @@ class WriteCompressSyncPolicy
 
     /**
      * @brief Allocate the per-thread writer flags, once per instantiation.
-     * @post per_thread_writing holds CHUNK_PMP_MAX_THREADS flags and
+     * @post per_thread_writing holds CHUNK_PMP_THREAD_CAPACITY flags and
      *       num_thread_flushing is zero.
      * @note Idempotent (std::call_once); callers may invoke it freely.
      */
@@ -239,7 +239,7 @@ class WriteCompressSyncPolicy
         std::call_once(flag,
                        []()
                        {
-                           per_thread_writing = std::make_unique<WritingFlag[]>(CHUNK_PMP_MAX_THREADS);
+                           per_thread_writing = std::make_unique<WritingFlag[]>(CHUNK_PMP_THREAD_CAPACITY);
                            num_thread_flushing.store(0, std::memory_order_relaxed);
                            // Process-wide and idempotent; done here so it precedes
                            // the first parallel write of this variant.

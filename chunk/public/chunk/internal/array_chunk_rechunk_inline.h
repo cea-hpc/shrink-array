@@ -416,7 +416,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     {
         const unsigned int saved_sz = thread_chunk_size();
         set_thread_chunk_size(old_size);
-        for (int r = 0; r < CHUNK_PMP_MAX_THREADS; ++r)
+        for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
         {
             if (old_key != 0)
                 chunk_type::get_chunk_allocator(r, old_key).reclaim_empty_slabs_now();
@@ -445,7 +445,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
             {
                 const unsigned int saved = thread_chunk_size();
                 set_thread_chunk_size(old_size);
-                for (int r = 0; r < CHUNK_PMP_MAX_THREADS; ++r)
+                for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
                 {
                     auto& allocator = chunk_type::get_chunk_allocator(r, key);
                     for (auto* node : {allocator.block, allocator.block_full})
@@ -955,7 +955,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
                 {
                     if (old_key_refill != 0)
-                        for (int r = 0; r < CHUNK_PMP_MAX_THREADS; ++r)
+                        for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
                             chunk_type::get_chunk_allocator(r, old_key_refill).reclaim_empty_slabs_now();
                 }
                 set_thread_chunk_size(static_cast<unsigned int>(new_size));

@@ -212,7 +212,7 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
 }
 bool AllTypeChunk::have_chunk_to_compress_potentially() const
 {
-    const int max_thr = CHUNK_PMP_MAX_THREADS;
+    const int max_thr = CHUNK_PMP_RANK_BOUND;
 
     for (const auto& elm : getListTypeChunk())
     {
