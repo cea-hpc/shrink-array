@@ -129,7 +129,7 @@ struct InfoFreeElt
     }
 
     /// @brief Forget the batch. Call only after its blocks have been released.
-    void reset(int thr_rank)
+    void reset(int thr_rank) noexcept
     {
         somme_sz[thr_rank] = compt[thr_rank] = 0;
     }

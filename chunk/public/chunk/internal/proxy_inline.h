@@ -92,7 +92,7 @@ void Proxy<T>::perform_core_assignment(in_t<T> v) const noexcept
             [[maybe_unused]] bool was_cst;
 
             // Captured before allocation to determine correct counter initialization
-            void capture(const Proxy* proxy)
+            void capture(const Proxy* proxy) noexcept
             {
                 if constexpr (chunk_config::use_compression_with_counter)
                     was_cst = proxy->is_cst_val();

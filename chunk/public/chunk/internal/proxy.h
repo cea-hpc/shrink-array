@@ -257,7 +257,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      *        pointer, so later compression bookkeeping can find its way
      *        back to this chunk.
      */
-    void set_info_on_chunk()
+    void set_info_on_chunk() noexcept
     {
         set_num_tab(); // this policy's no-arg overload (below); Proxy's `using Base::set_num_tab` would hide it through
                        // derived()
@@ -269,7 +269,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param thr Thread rank whose candidate list to fetch.
      * @return Reference to thread thr's candidate list.
      */
-    auto& get_vec_tuple_to_compress_potentially_thr(int thr) const
+    auto& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
     {
         return manager_chunk::chunk_to_compress_potentially_thr[thr];
     }
@@ -387,7 +387,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      *          ordering, which is a decision about the flag's visibility, not a
      *          deduplication.
      */
-    static void reset_tab_inside_list_to_compress(int num_tab, int num_chunk)
+    static void reset_tab_inside_list_to_compress(int num_tab, int num_chunk) noexcept
     {
         tab_is_inside_chunk_list_to_compress[num_tab][num_chunk] = 0;
     }
@@ -865,7 +865,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     /// @brief Functor wrapping operator% for apply_compound_operation().
     struct modulo
     {
-        constexpr T operator()(in_t<T> lhs, in_t<T> rhs) const
+        constexpr T operator()(in_t<T> lhs, in_t<T> rhs) const noexcept
         {
             return lhs % rhs;
         }

@@ -475,7 +475,7 @@ struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<boo
      * \param v Value to assign.
      */
 
-    static void set(int num_tab, int i, bool v)
+    static void set(int num_tab, int i, bool v) noexcept
     {
         tab_second_value[num_tab][i] = v;
     }
@@ -518,14 +518,14 @@ struct Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
     using Base::chunk;
 
     /// @brief Rank @p thr's Chunk2A candidate list.
-    TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const
+    TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
     {
         return chunk.get_vec_tuple_to_compress_potentially_thr(thr);
     }
 
     /// @brief Common initialisation of the fast path: table number, then the
     ///        "already queued" flag pointer.
-    void set_num_tab_ptr_is_inside_chunk()
+    void set_num_tab_ptr_is_inside_chunk() noexcept
     {
         derived().set_num_tab(); // Proxy2A's no-arg overload (looks the table up)
         Base::set_ptr_is_inside_chunk_list_to_compress();
@@ -546,7 +546,7 @@ struct Proxy2AFastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2A<
     using Base::chunk;
 
     /// @brief The single candidate list of a serial build (Chunk2AOmpPolicy<false>).
-    TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially() const
+    TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially() const noexcept
     {
         return chunk.get_vec_tuple_to_compress_potentially();
     }

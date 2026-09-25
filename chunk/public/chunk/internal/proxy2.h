@@ -147,7 +147,7 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      *        set_info_second_value_ind().
      * @return The second constant value.
      */
-    T get_second_value() const
+    T get_second_value() const noexcept
     {
         return second_value;
     }
@@ -159,7 +159,7 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      *        full metadata load rather than the lighter-weight one.
      * @return The second constant value.
      */
-    T make_second_value() const
+    T make_second_value() const noexcept
     {
         return std::get<0>(inf_array);
     }
@@ -170,7 +170,7 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      * @brief The cached (second_value, ind, num_tab) metadata tuple.
      * @return Reference to inf_array.
      */
-    const inf_array_t& get_inf_array() const
+    const inf_array_t& get_inf_array() const noexcept
     {
         return inf_array;
     }
@@ -313,7 +313,7 @@ struct ProxySpec2<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2<bool>
      * @brief Bool-only: the second constant is always `true`.
      * @return true.
      */
-    constexpr bool make_second_value()
+    constexpr bool make_second_value() noexcept
     {
         return true;
     }
@@ -362,7 +362,7 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *        already carries ptr_on_array directly, so this is a plain cast.
      * @param ctx Async write context.
      */
-    static const T* get_ptr_on_array_async(auto* ctx)
+    static const T* get_ptr_on_array_async(auto* ctx) noexcept
     {
         return static_cast<const T*>(ctx->ptr_on_array);
     }
@@ -958,7 +958,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *       never indexed.
      */
 
-    void set_num_tab_ptr_is_inside_chunk()
+    void set_num_tab_ptr_is_inside_chunk() noexcept
     {
         set_num_tab();
 

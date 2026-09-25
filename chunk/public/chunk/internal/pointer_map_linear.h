@@ -155,13 +155,13 @@ class PointerMapLinear
      * @brief Whether @p key is currently registered.
      * @param key the array address to test.
      */
-    [[nodiscard]] bool exists(const void* key) const
+    [[nodiscard]] bool exists(const void* key) const noexcept
     {
         return find_payload(key) != nullptr;
     }
 
     /// @brief Number of registered keys.
-    [[nodiscard]] int size() const
+    [[nodiscard]] int size() const noexcept
     {
         return static_cast<int>(vec.size());
     }

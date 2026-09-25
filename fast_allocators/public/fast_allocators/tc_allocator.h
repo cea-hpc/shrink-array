@@ -459,25 +459,25 @@ struct alignas(64) TCCAllocator
     inline void free_block(int i) noexcept;
 
     /// @brief No element of this slab is out. Only then may it be released.
-    bool is_empty() const
+    bool is_empty() const noexcept
     {
         return nn_ref == 0;
     }
 
     /// @brief This free brought the slab back from full; it must leave block_full.
-    bool was_full() const
+    bool was_full() const noexcept
     {
         return nn_ref == BlockSize - 1;
     }
 
     /// @brief Every element is out; the slab must move to block_full.
-    bool is_full() const
+    bool is_full() const noexcept
     {
         return nn_ref == BlockSize;
     }
 
     /// @brief Complement of is_full().
-    bool is_not_full() const
+    bool is_not_full() const noexcept
     {
         return nn_ref < BlockSize;
     }
@@ -2001,7 +2001,7 @@ struct TCAllocatorEB
      * @note Static, unlike the other families' version: the mask and the offset
      *       are both compile-time constants here, so no instance is needed.
      */
-    static TCAllocatorEB* addr_to_block(const void* ptr)
+    static TCAllocatorEB* addr_to_block(const void* ptr) noexcept
     {
         // char * debutBlock = (char*)( (uintptr_t)ptr & size_t(BlockAddrMask) );
         // this pointer stored at the end of the block
@@ -2074,19 +2074,19 @@ struct TCAllocatorEB
     }
 
     /// @brief No element of this slab is out. Only then may it be deleted.
-    bool is_empty() const
+    bool is_empty() const noexcept
     {
         return nn_ref == 0;
     }
 
     /// @brief This free brought the slab back from full.
-    bool was_full() const
+    bool was_full() const noexcept
     {
         return nn_ref == MaxElements - 1;
     }
 
     /// @brief Every element is out; the slab must move to block_full.
-    bool is_full() const
+    bool is_full() const noexcept
     {
         return nn_ref == MaxElements;
     }

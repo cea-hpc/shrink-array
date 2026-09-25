@@ -547,7 +547,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
     /// @brief Does this chunk hold a real buffer?
     /// @return false while it is compressed to cst_val1
-    [[nodiscard]] bool written() const
+    [[nodiscard]] bool written() const noexcept
     {
         return values != Base::get_cst_val1();
     }

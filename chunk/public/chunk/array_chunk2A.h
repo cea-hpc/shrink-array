@@ -324,7 +324,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @param i element index
      * @return false while that chunk is still compressed to a constant
      */
-    [[nodiscard]] bool written(ind_type i) const
+    [[nodiscard]] bool written(ind_type i) const noexcept
     {
         return chunk_list[this->chunk_index_of(i)].written();
     }
@@ -365,7 +365,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @note Compares decompressed values, so two arrays that are equal but
      *       compressed differently still compare equal.
      */
-    bool operator==(const ArrayChunk2A& other) const
+    bool operator==(const ArrayChunk2A& other) const noexcept
     {
         if (m_size != other.m_size)
             return false;
@@ -417,7 +417,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
 
     /// @brief Read-only access to the underlying chunk list.
     /// @return const reference to the chunks backing this array
-    [[nodiscard]] const std::vector<Chunk2A<T>>& getChunkList() const
+    [[nodiscard]] const std::vector<Chunk2A<T>>& getChunkList() const noexcept
     {
         return chunk_list;
     }
