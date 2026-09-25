@@ -162,8 +162,12 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
 
     /// @brief Queue the chunk @p ctx names as a compression candidate, on the
     ///        replay path.
-    // Explicit object parameter (C++23) in place of CRTPSupport::derived().
+#if CRTP_USE_DEDUCING_THIS
+    // C++23: explicit object parameter replaces CRTPSupport::derived().
     void add_to_compression_list_async(this auto const& self, auto* ctx);
+#else
+    void add_to_compression_list_async(auto* ctx) const;
+#endif
 };
 
 /**

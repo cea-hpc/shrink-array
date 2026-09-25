@@ -1,8 +1,8 @@
 # Builds for multi_launch_stress.py --builds build_x86_64.txt, on the
 # x86-64 cluster: every optimised (Release / RelWithDebInfo) OpenMP build that
 # compile_all.sh and compile_all_gnu.sh make there -- the ten of build_arm.txt
-# (GNU and LLVM), plus the x86-only oneapi (icpx, Release). aocc and nvhpc
-# are not built by default (no C++23, which the library requires),
+# (GNU and LLVM), plus the two x86-only compilers: oneapi (icpx, Release) and
+# aocc (AMD clang, RelWithDebInfo). nvhpc is left out on purpose, as on ARM,
 # and the -cs build only exists when asked for (--llvm-cs=<size>). No debug,
 # no sanitizer build: those have runners of their own (bench_and_test.py
 # --sanitizers). The non-OpenMP builds are not in: the random thread count is
@@ -19,3 +19,4 @@ omp-llvm-std-alloc
 omp-llvm-stats
 omp-llvm-check
 omp-oneapi
+omp-aocc

@@ -416,7 +416,7 @@ function(chunk_add_variant target_name variant_define size is_dyn)
   # HARDENING / WARNINGS toggles above.
   target_link_libraries(${target_name} PUBLIC chunk_hardening chunk_warnings)
   
-  chunk_require_cxx_std(${target_name} PRIVATE)
+  chunk_require_cxx20(${target_name} PRIVATE)
   if (CHUNK_OMP)
     target_link_libraries(${target_name} PRIVATE OpenMP::OpenMP_CXX)
   endif ()

@@ -50,9 +50,17 @@
 #endif
 
 // ---------------------------------------------------------------------------
-// SA_ASSUME(expr) — C++23 [[assume(expr)]] (the library requires C++23). NOTE:
-// expr MUST be side-effect free -- no function call either: clang drops an
-// assumption it cannot prove side-effect free (-Wassume) -- and the compiler
-// treats it as UB-if-false and may choose not to evaluate it.
+// SA_ASSUME(expr) — C++23 [[assume(expr)]], STRICTLY under C++23 (__cplusplus >=
+// 202302L) and only where the compiler advertises the attribute; a no-op
+// otherwise. Also excluded for nvc++ (__NVCOMPILER) as a safety measure. NOTE:
+// expr MUST be side-effect free; the compiler treats it as UB-if-false and may
+// choose not to evaluate it.
 // ---------------------------------------------------------------------------
-#define SA_ASSUME(expr) [[assume(expr)]]
+#if defined(__has_cpp_attribute) && !defined(__NVCOMPILER) && (__cplusplus >= 202302L)
+    #if __has_cpp_attribute(assume) >= 202207L
+        #define SA_ASSUME(expr) [[assume(expr)]]
+    #endif
+#endif
+#ifndef SA_ASSUME
+    #define SA_ASSUME(expr) ((void)0)
+#endif

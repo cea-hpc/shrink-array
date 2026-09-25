@@ -218,11 +218,11 @@ DEFAULT_CONFIGS = [
     "cmake-build-omp-llvm",                            # release LLVM
     "cmake-build-omp-llvm-have-agressive-compression",
     "cmake-build-omp-llvm-std-alloc",
-    # x86-64 only: the other OpenMP compiler compile_all.sh builds there (an
-    # OMPT build). On ARM its directory does not exist and the absent-config
-    # step drops it with one note. AOCC is not built by default any more
-    # (AOCC 5 has no working C++23 with libstdc++ 15; compile_all.sh --with-aocc).
+    # x86-64 only: the other two OpenMP compilers compile_all.sh builds there
+    # (both OMPT builds). On ARM their directories do not exist and the
+    # absent-config step drops them with one note.
     "cmake-build-omp-oneapi",                          # release oneAPI (icpx)
+    "cmake-build-omp-aocc",                            # RelWithDebInfo AOCC (AMD clang)
     # Non-OpenMP builds — cover the `if constexpr(!use_openmp)` code paths so a
     # serial-path regression is caught. Build them with -DOMP:BOOL=OFF; if the
     # directory is absent it is skipped with a single note (see

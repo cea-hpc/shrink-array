@@ -51,15 +51,15 @@ set_target_properties(fast_allocators PROPERTIES
   SOVERSION ${ALLOCATORS_MAJOR_VERSION}
 )
 
-# C++23, required, as for the whole library. The -std flag directly when this
-# CMake does not know cxx_std_23 for the compiler (NVHPC always; an older CMake
-# with a newer compiler, e.g. IntelLLVM 2026.0 with CMake 3.20). Kept inline
-# (not a shared root-level helper) so this file still configures when built
-# standalone via its own project().
-if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC" OR NOT "cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
-  target_compile_options(fast_allocators PRIVATE -std=gnu++23)
+# NVHPC: CMake's compile-feature table for nvc++ 26.3 doesn't advertise
+# cxx_std_20, so target_compile_features() errors even though nvc++ supports
+# C++20. Set the standard flag directly for NVHPC; keep the portable feature
+# request for every other compiler. Kept inline (not a shared root-level helper)
+# so this file still configures when built standalone via its own project().
+if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
+  target_compile_options(fast_allocators PRIVATE -std=gnu++20)
 else()
-  target_compile_features(fast_allocators PRIVATE cxx_std_23)
+  target_compile_features(fast_allocators PRIVATE cxx_std_20)
 endif()
 
 target_include_directories(fast_allocators

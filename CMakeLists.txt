@@ -383,36 +383,21 @@ if(NOT USE_MOLD STREQUAL "OFF")
     endif()
 endif()
 
-# ── C++ standard: C++23, required ────────────────────────────────────────────
-# The code uses C++23 unconditionally (deducing this in the CRTP bases,
-# [[assume]], std::unreachable), so every target is built with it; a compiler
-# without it -- nvc++, AOCC 5 (LLVM 17 with libstdc++ 15) -- cannot build the
-# library.
-#
-# The portable request (target_compile_features cxx_std_23) needs CMake to know
-# that feature for this compiler. An older CMake may not list it for a newer
-# compiler (IntelLLVM 2026.0 with CMake 3.20), and NVHPC is never in its table:
-# then the -std flag is passed directly. Defined before the first
-# add_subdirectory(), so it is visible in chunk/ and examples/. fast_allocators
-# keeps its own inline equivalent because it is installable standalone (own
-# project()) and must not depend on this umbrella-level helper.
-# CHUNK_CXX_STANDARD (a 20-or-23 switch for a few days) is gone: drop a stale
-# cache entry so it does not suggest it still does something.
-unset(CHUNK_CXX_STANDARD CACHE)
-if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC" OR NOT "cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
-  set(CHUNK_CXX_STD_FLAG "-std=gnu++23")
-  message(STATUS "C++ standard: C++23 via ${CHUNK_CXX_STD_FLAG} (CMake ${CMAKE_VERSION} has no cxx_std_23 entry "
-                 "for ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION})")
-else()
-  set(CHUNK_CXX_STD_FLAG "")
-  message(STATUS "C++ standard: C++23")
-endif()
-
-function(chunk_require_cxx_std target scope)
-  if (CHUNK_CXX_STD_FLAG)
-    target_compile_options(${target} ${scope} ${CHUNK_CXX_STD_FLAG})
+# ── C++20 requirement (portable, with NVHPC workaround) ───────────────────────
+# CMake's compile-feature table for nvc++ (NVHPC 26.x) doesn't advertise
+# cxx_std_20, so target_compile_features(<t> ... cxx_std_20) hard-errors with
+# "feature cxx_std_20 is not known to CXX compiler NVHPC" even though nvc++ fully
+# supports C++20. Centralise the requirement: pass the -std flag directly for
+# NVHPC, keep the portable feature request for every other compiler. Defined
+# before the first add_subdirectory(), so it is visible in chunk/ and examples/.
+# fast_allocators keeps its own inline equivalent because it is installable
+# standalone (own project()) and must not depend on this umbrella-level helper.
+# Drop the NVHPC branch once the baseline CMake knows nvc++'s C++20 support.
+function(chunk_require_cxx20 target scope)
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
+    target_compile_options(${target} ${scope} -std=gnu++20)
   else()
-    target_compile_features(${target} ${scope} cxx_std_23)
+    target_compile_features(${target} ${scope} cxx_std_20)
   endif()
 endfunction()
 

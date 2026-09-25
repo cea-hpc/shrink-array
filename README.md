@@ -65,7 +65,7 @@ cmake --build build_dir
 ```
 
 See [compile_all.sh](./scripts/compile_all.sh) for more details.
-The library and examples require C++23. They build with g++ (14 or later), LLVM clang (18 or later) and Intel oneAPI (icpx). nvhpc and AOCC 5 have no usable C++23 and are no longer built by default (`compile_all.sh --with-nvhpc` / `--with-aocc`).
+The library and examples can be compiled with different c++ compiler: g++, OneAPI, aocc, nvhpc, llvm. Compiler must support at least c++17. remark we use c++20 in the CMakeLists.txt 
 
 ## Examples
 

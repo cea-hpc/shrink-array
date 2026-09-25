@@ -336,12 +336,13 @@ ProxyType ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::make_proxy_wi
  * Chunk2 keeps its candidates in a context-dependent list, hence the
  * `IsChunk2` branch on which per-thread list to push onto.
  *
- * @param self The proxy, deduced (explicit object parameter).
+ * @param self The proxy, deduced (C++23 deducing-this variant).
  * @param ctx  Deferred-operation context being replayed.
  */
-// Deducing this: `self` replaces derived(). The class still has its Derived
-// parameter, so Derived::tab_... and the CRTPSupport base are unchanged; only
-// the derived() calls become self.
+#if CRTP_USE_DEDUCING_THIS
+// C++23 deducing-this variant: `self` replaces derived(). The class still has
+// its Derived parameter, so Derived::tab_... and the CRTPSupport base are
+// unchanged; only the derived() calls become self.
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression_list_async(this auto const& self,
                                                                                             auto*            ctx)
@@ -383,6 +384,50 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression
         push_to_compress_list(vec, &ctx->chunk, ctx->num_chunk, num_tab, self.chunk_size());
     }
 }
+#else
+/// @copydoc ProxyBaseFastCompPolicy::add_to_compression_list_async
+/// Pre-C++23 variant: `derived()` in place of the deduced `self`.
+template <typename Derived, typename T, typename ChunkType, bool Enabled>
+void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression_list_async(auto* ctx) const
+{
+    auto&     chunk = ctx->chunk;
+    const int num   = ctx->num;
+
+    using ProxyType = std::remove_cvref_t<decltype(derived())>;
+
+    // Rebuild a fresh proxy from current chunk state
+    std::atomic<T*>& atomic_values = chunk.values;
+    ProxyType        proxy(atomic_values, num, chunk);
+
+    // Compute num_tab for this array/chunk
+    const int num_tab = get_num_tab_async_helper(ctx, proxy, ctx->ptr_on_array);
+
+    // Get the flag for "already in compression list"
+    auto& flag = Derived::tab_is_inside_chunk_list_to_compress[num_tab][ctx->num_chunk];
+
+    // Fast path: cheap relaxed load before the expensive CAS.
+    // If the chunk is already marked (common case during active compression),
+    // we avoid the acq_rel CAS entirely — ~1 cycle vs ~15-20 cycles.
+    if (flag.load(std::memory_order_relaxed) != 0)
+        return;
+
+    char expected = 0;
+    if (flag.compare_exchange_strong(expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
+    {
+        const int thr = get_thr_rank_fast();
+
+        auto& vec = [&]() -> auto&
+        {
+            if constexpr (IsChunk2<chunk_template_of<ChunkType>::template type, T>)
+                return derived().get_vec_tuple_to_compress_potentially_async_thr(ctx, thr);
+            else
+                return derived().get_vec_tuple_to_compress_potentially_thr(thr);
+        }();
+
+        push_to_compress_list(vec, &ctx->chunk, ctx->num_chunk, num_tab, derived().chunk_size());
+    }
+}
+#endif
 
 /**
  * @brief Runs a write body against the compressor, or reports that it must be deferred.
