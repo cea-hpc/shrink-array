@@ -36,16 +36,16 @@ namespace shrink_array
 ///       the three guarded fences.
 inline const bool g_proxy2_acq_fence = []
 {
-    const char* e = std::getenv("CHUNK_PROXY2_ACQ_FENCE");
-    return e != nullptr && e[0] != '\0' && e[0] != '0';
+    const char* env = std::getenv("CHUNK_PROXY2_ACQ_FENCE");
+    return env != nullptr && env[0] != '\0' && env[0] != '0';
 }();
 
 /// A/B switch: CHUNK_PROXY2_ARM_LEGACY=1 (read once, at load) makes every
 /// proxy resolve its tuple through share_info_array again, armed or not.
 inline const bool g_proxy2_arm_legacy = []
 {
-    const char* e = std::getenv("CHUNK_PROXY2_ARM_LEGACY");
-    return e != nullptr && e[0] != '\0' && e[0] != '0';
+    const char* env = std::getenv("CHUNK_PROXY2_ARM_LEGACY");
+    return env != nullptr && env[0] != '\0' && env[0] != '0';
 }();
 
 template <typename T, typename Derived>

@@ -39,8 +39,8 @@ namespace rechunk_detail
 /// them first -- the behaviour before Sept '26.
 inline const bool g_rechunk_drop_legacy = []
 {
-    const char* e = std::getenv("CHUNK_RECHUNK_DROP_LEGACY");
-    return e != nullptr && e[0] != '\0' && e[0] != '0';
+    const char* env = std::getenv("CHUNK_RECHUNK_DROP_LEGACY");
+    return env != nullptr && env[0] != '\0' && env[0] != '0';
 }();
 } // namespace rechunk_detail
 #endif

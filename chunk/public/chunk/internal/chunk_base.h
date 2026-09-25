@@ -187,8 +187,8 @@ struct DeferredReadGate<Derived, DeferReadGate::None>
     void pending_publish([[maybe_unused]] int thr) noexcept {}
 
     /// @brief No-op: no per-chunk pending counter exists in a serial build.
-    /// @param n Number of operations retired; unused.
-    void pending_retire([[maybe_unused]] int32_t n) noexcept {}
+    /// @param count Number of operations retired; unused.
+    void pending_retire([[maybe_unused]] int32_t count) noexcept {}
 
     /// @brief Always false: nothing can ever be pending in a serial build.
     /// @return Always false.
@@ -222,8 +222,8 @@ struct DeferredReadGate<Derived, DeferReadGate::Coarse>
     void pending_publish([[maybe_unused]] int thr) noexcept {}
 
     /// @brief No-op: this build has no per-chunk pending counter.
-    /// @param n Number of operations retired; unused.
-    void pending_retire([[maybe_unused]] int32_t n) noexcept {}
+    /// @param count Number of operations retired; unused.
+    void pending_retire([[maybe_unused]] int32_t count) noexcept {}
 
     /// @brief Always false: this build has no per-chunk pending counter to
     ///        report on.
@@ -259,9 +259,9 @@ struct DeferredReadGate<Derived, DeferReadGate::Coarse>
     /// @param i Element offset being read.
     void reader_sync(int i) const noexcept
     {
-        const auto& d = static_cast<const Derived&>(*this);
-        if (d.is_not_available())
-            d.wait_for_availability(i);
+        const auto& self = static_cast<const Derived&>(*this);
+        if (self.is_not_available())
+            self.wait_for_availability(i);
     }
 };
 
@@ -295,11 +295,11 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
 
     /// @brief Sign-extend the low 20 bits of the pending word (the count is
     ///        stored as two's-complement inside those 20 bits).
-    /// @param w Raw pending word.
+    /// @param word Raw pending word.
     /// @return The count, sign-extended to a full int32_t.
-    [[nodiscard]] static constexpr int32_t sign_extend_count(uint32_t w) noexcept
+    [[nodiscard]] static constexpr int32_t sign_extend_count(uint32_t word) noexcept
     {
-        return static_cast<int32_t>(w << (32 - kCountBits)) >> (32 - kCountBits);
+        return static_cast<int32_t>(word << (32 - kCountBits)) >> (32 - kCountBits);
     }
 
     /// @brief Publish a newly-enqueued deferred op: increment the per-chunk
@@ -309,11 +309,11 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
     /// @param thr Calling (publishing) thread's rank.
     void pending_publish([[maybe_unused]] int thr) noexcept
     {
-        auto& w = static_cast<Derived&>(*this).pending_ops_;
+        auto& pending = static_cast<Derived&>(*this).pending_ops_;
         {
             const uint32_t me =
                 (static_cast<uint32_t>(thr) + 1u < kOwnerMulti) ? static_cast<uint32_t>(thr) + 1u : kOwnerMulti;
-            auto cur = static_cast<uint32_t>(w.load(std::memory_order_acquire));
+            auto cur = static_cast<uint32_t>(pending.load(std::memory_order_acquire));
             for (;;)
             {
                 // count = SIGNED 20-bit (two's complement), reproducing the
@@ -329,32 +329,32 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
                 const uint32_t ncnt     = static_cast<uint32_t>(cnt + 1) & kCountMask;
                 const uint32_t nw       = (nown << kCountBits) | ncnt;
                 auto           expected = static_cast<int32_t>(cur);
-                if (w.compare_exchange_weak(expected, static_cast<int32_t>(nw), std::memory_order_acq_rel,
-                                            std::memory_order_acquire))
+                if (pending.compare_exchange_weak(expected, static_cast<int32_t>(nw), std::memory_order_acq_rel,
+                                                  std::memory_order_acquire))
                     return;
                 cur = static_cast<uint32_t>(expected);
             }
         }
     }
-    /// @brief Retire `n` deferred ops that have now been applied: decrement
+    /// @brief Retire `count` deferred ops that have now been applied: decrement
     ///        the per-chunk pending count (clearing the owner once it
     ///        reaches <= 0).
-    /// @param n Number of operations being retired.
-    void pending_retire(int32_t n) noexcept
+    /// @param count Number of operations being retired.
+    void pending_retire(int32_t count) noexcept
     {
-        auto& w = static_cast<Derived&>(*this).pending_ops_;
+        auto& pending = static_cast<Derived&>(*this).pending_ops_;
         {
-            auto cur = static_cast<uint32_t>(w.load(std::memory_order_acquire));
+            auto cur = static_cast<uint32_t>(pending.load(std::memory_order_acquire));
             for (;;)
             {
                 const int32_t  cnt      = sign_extend_count(cur);
-                const int32_t  ncnt     = cnt - n;                                  // may go NEGATIVE: two's
+                const int32_t  ncnt     = cnt - count;                              // may go NEGATIVE: two's
                 const uint32_t bits     = static_cast<uint32_t>(ncnt) & kCountMask; // complement in 20 bits
                 const uint32_t nw       = (ncnt <= 0) ? bits                        // owner cleared while <= 0
                                                       : ((cur >> kCountBits) << kCountBits) | bits;
                 auto           expected = static_cast<int32_t>(cur);
-                if (w.compare_exchange_weak(expected, static_cast<int32_t>(nw), std::memory_order_acq_rel,
-                                            std::memory_order_acquire))
+                if (pending.compare_exchange_weak(expected, static_cast<int32_t>(nw), std::memory_order_acq_rel,
+                                                  std::memory_order_acquire))
                     return;
                 cur = static_cast<uint32_t>(expected);
             }
@@ -455,7 +455,7 @@ struct ChunkAllocPolicy<T, Derived, true>
     template <typename InitReused, typename InitFresh>
     T* allocate_chunk_internal(int thr_rank, InitReused init_reused, InitFresh init_fresh)
     {
-        auto& d = static_cast<Derived&>(*this);
+        auto& self = static_cast<Derived&>(*this);
         T*    values_loc;
 
         // The per-thread reuse list is only indexable once
@@ -483,10 +483,11 @@ struct ChunkAllocPolicy<T, Derived, true>
         // array's own slabs, so affinity survives recycling.
         const unsigned int alloc_key = thread_alloc_key();
         CHUNK_FREEPATH_ALLOC(alloc_key);
-        if (const auto n = static_cast<int>(d.get_manager().get_list_block_free_thr_size(thr_rank, alloc_key)); n > 0)
+        if (const auto nb_free = static_cast<int>(self.get_manager().get_list_block_free_thr_size(thr_rank, alloc_key));
+            nb_free > 0)
         {
-            // Safe now: n > 0 implies the slot for thr_rank exists.
-            auto& ll_block_free_thr = d.get_manager().get_list_block_free_thr(thr_rank, alloc_key);
+            // Safe now: nb_free > 0 implies the slot for thr_rank exists.
+            auto& ll_block_free_thr = self.get_manager().get_list_block_free_thr(thr_rank, alloc_key);
             if constexpr (chunk_config::stats)
             {
                 increm_chunk_list<Derived>();
@@ -511,7 +512,7 @@ struct ChunkAllocPolicy<T, Derived, true>
             }
             if constexpr (build_config::use_fast_alloc)
             {
-                values_loc = d.get_chunk_allocator(thr_rank).alloc();
+                values_loc = self.get_chunk_allocator(thr_rank).alloc();
                 CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.fast");
                 CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.fast_alloc");
                 init_fresh(values_loc);
@@ -575,7 +576,7 @@ struct ChunkAllocPolicy<T, Derived, false>
                                [[maybe_unused]] InitReused init_reused,
                                InitFresh                   init_fresh)
     {
-        auto& d = static_cast<Derived&>(*this);
+        auto& self = static_cast<Derived&>(*this);
         T*    values_loc;
 
         if constexpr (chunk_config::stats)
@@ -587,7 +588,7 @@ struct ChunkAllocPolicy<T, Derived, false>
 
         if constexpr (build_config::use_fast_alloc)
         {
-            values_loc = d.get_chunk_allocator(0).alloc();
+            values_loc = self.get_chunk_allocator(0).alloc();
             CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.fast_serial");
             // Ledger: FREE -> LIVE. The non-OMP path previously skipped this,
             // leaving every serially-allocated chunk UNTRACKED, so free_values
@@ -689,17 +690,17 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
     ///   - The acq_rel CAS on success provides the only ordering we rely on.
     [[nodiscard]] bool compare_and_swap_gen(T* values_loc, T* m_ptr_cst_val) noexcept
     {
-        auto& d = static_cast<Derived&>(*this);
-        CHUNK_CHECK_VALUES_PTR_C(values_loc, "CAS.values_loc", &d);
-        CHUNK_CHECK_VALUES_PTR_C(m_ptr_cst_val, "CAS.expected_cst", &d);
+        auto& self = static_cast<Derived&>(*this);
+        CHUNK_CHECK_VALUES_PTR_C(values_loc, "CAS.values_loc", &self);
+        CHUNK_CHECK_VALUES_PTR_C(m_ptr_cst_val, "CAS.expected_cst", &self);
 
-        if (d.values.load(std::memory_order_relaxed) != m_ptr_cst_val) [[unlikely]]
+        if (self.values.load(std::memory_order_relaxed) != m_ptr_cst_val) [[unlikely]]
         {
             return true; // failed (already changed)
         }
 
-        return !d.values.compare_exchange_strong(m_ptr_cst_val, values_loc, std::memory_order_acq_rel,
-                                                 std::memory_order_acquire);
+        return !self.values.compare_exchange_strong(m_ptr_cst_val, values_loc, std::memory_order_acq_rel,
+                                                    std::memory_order_acquire);
     }
 
     /// @brief Compare-and-swap against first constant value
@@ -715,14 +716,14 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
     /// @param thr_rank Thread rank/ID
     void recup_value(T* values_loc, int thr_rank)
     {
-        auto& d = static_cast<Derived&>(*this);
+        auto& self = static_cast<Derived&>(*this);
         // Ledger: LIVE -> PARKED. This block was just allocated by create_value
         // and lost the install CAS; parking a block that is not LIVE (e.g. one
         // another thread already owns) trips here.
         CHUNK_LEDGER_PARK(values_loc, "recup_value");
         // Back to the list it was taken from / would have been taken from: the
         // array's, on this rank.
-        auto& ll_block_free_thr = d.get_manager().get_list_block_free_thr(thr_rank, thread_alloc_key());
+        auto& ll_block_free_thr = self.get_manager().get_list_block_free_thr(thr_rank, thread_alloc_key());
         ll_block_free_thr.push_back(values_loc);
     }
 
@@ -871,7 +872,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
         {
             return; // already registered
         }
-        auto a = std::make_unique<TCTypeAllocator<T>>();
+        auto allocator = std::make_unique<TCTypeAllocator<T>>();
         // FIX (op/value slab aliasing, non-OMP dynamic): tag this pool's slabs as
         // Value so they draw from value_arena() instead of silently defaulting to
         // arena_kind::Op (TCAllocator's default) -- which put value-chunk slabs and
@@ -880,9 +881,9 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
         // block/block_full linked list with the other's slab header (observed:
         // sl_remove SIGSEGV on a node whose arena_kind read back as Op, with
         // ElementSize/BlockSize matching op-pool geometry, not this T's).
-        a->set_arena(fast_alloc::ArenaKind::Value);
-        a->init(static_cast<size_t>(size), static_cast<uintptr_t>(block_size), -1);
-        allocator_pool_serial_.emplace(size, std::move(a));
+        allocator->set_arena(fast_alloc::ArenaKind::Value);
+        allocator->init(static_cast<size_t>(size), static_cast<uintptr_t>(block_size), -1);
+        allocator_pool_serial_.emplace(size, std::move(allocator));
     }
 
     // ── Routing ──
@@ -1180,27 +1181,27 @@ class ChunkBase : public CRTPSupport<Derived>,
             if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
             {
                 static_assert(
-                    requires(const Derived& d, const T* q) {
-                        d.is_cst_val2_ptr_of(q);
-                        d.second_value_from_ptr(q);
+                    requires(const Derived& obj, const T* ptr) {
+                        obj.is_cst_val2_ptr_of(ptr);
+                        obj.second_value_from_ptr(ptr);
                     }, "Chunk2A must provide is_cst_val2_ptr_of() and second_value_from_ptr() "
                        "when second values carry identifiers (see CHUNK_CST_VAL2_FILLED_ARRAYS)");
-                const T* const p = values_load();
-                if (derived().is_cst_val2_ptr_of(p)) [[unlikely]]
-                    return derived().second_value_from_ptr(p);
-                return load_at<Relaxed>(p, i);
+                const T* const vals = values_load();
+                if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
+                    return derived().second_value_from_ptr(vals);
+                return load_at<Relaxed>(vals, i);
             }
         }
         return load_at<Relaxed>(values_load(), i);
     }
 
     template <bool Relaxed>
-    [[nodiscard]] static T load_at(const T* p, int i) noexcept
+    [[nodiscard]] static T load_at(const T* vals, int i) noexcept
     {
         if constexpr (Relaxed)
-            return detail::load_element_relaxed(p + i);
+            return detail::load_element_relaxed(vals + i);
         else
-            return p[i];
+            return vals[i];
     }
 
     /// @brief Load the values pointer with appropriate memory ordering
@@ -1218,17 +1219,17 @@ class ChunkBase : public CRTPSupport<Derived>,
     }
 
     /// @brief Store a pointer to the values with appropriate memory ordering
-    /// @param p Pointer to store
-    void values_store(T* p) noexcept
+    /// @param new_values Pointer to store
+    void values_store(T* new_values) noexcept
     {
-        CHUNK_CHECK_VALUES_PTR_C(p, "values_store", this);
+        CHUNK_CHECK_VALUES_PTR_C(new_values, "values_store", this);
         if constexpr (build_config::use_openmp)
         {
-            values.store(p, std::memory_order_release);
+            values.store(new_values, std::memory_order_release);
         }
         else
         {
-            values = p;
+            values = new_values;
         }
     }
 
@@ -1328,12 +1329,12 @@ class ChunkBase : public CRTPSupport<Derived>,
      *
      * @param first_v  first hypothesis, usually first_value
      * @param second_v second hypothesis
-     * @param n        elements to scan -- the chunk's OWN geometry, never the
+     * @param count        elements to scan -- the chunk's OWN geometry, never the
      *                 ambient size (a candidate is scanned by whichever thread
      *                 drains it, whose ambient size may differ after a re-chunk)
      * @pre The chunk is materialised: `values` points at a real buffer.
      */
-    [[nodiscard]] ConstantScan scan_constants(in_t<T> first_v, in_t<T> second_v, unsigned int n) const noexcept
+    [[nodiscard]] ConstantScan scan_constants(in_t<T> first_v, in_t<T> second_v, unsigned int count) const noexcept
     {
         // Block-wise, branch-free inside a block: an early exit per element
         // kept the compiler from vectorising the walk, and on the perf bench
@@ -1343,30 +1344,30 @@ class ChunkBase : public CRTPSupport<Derived>,
         // reductions of comparisons, which vectorise (AVX2 / NEON); the early
         // exit survives between blocks, so a chunk disproved at its first
         // element still costs one block, not the whole chunk.
-        const T*     p = values_load();
-        ConstantScan r{true, true};
+        const T*     vals = values_load();
+        ConstantScan scan{true, true};
         unsigned int i = 0;
-        while (i < n)
+        while (i < count)
         {
-            const unsigned int e          = std::min(n, i + kScanBlock);
+            const unsigned int block_end  = std::min(count, i + kScanBlock);
             unsigned int       not_first  = 0;
             unsigned int       not_second = 0;
-            for (unsigned int j = i; j < e; ++j)
+            for (unsigned int j = i; j < block_end; ++j)
             {
-                not_first |= static_cast<unsigned int>(p[j] != first_v);
-                not_second |= static_cast<unsigned int>(p[j] != second_v);
+                not_first |= static_cast<unsigned int>(vals[j] != first_v);
+                not_second |= static_cast<unsigned int>(vals[j] != second_v);
             }
-            i        = e;
-            r.first  = r.first && not_first == 0;
-            r.second = r.second && not_second == 0;
-            if (!r.first && !r.second)
+            i           = block_end;
+            scan.first  = scan.first && not_first == 0;
+            scan.second = scan.second && not_second == 0;
+            if (!scan.first && !scan.second)
                 break;
         }
         if constexpr (chunk_config::stats)
             add_chunk_scan_read<Derived>(static_cast<long>(i)); // block granularity
-        if (r.first)
-            r.second = false;
-        return r;
+        if (scan.first)
+            scan.second = false;
+        return scan;
     }
 
     /// @brief Elements per branch-free block of the constant scans.
@@ -1374,20 +1375,20 @@ class ChunkBase : public CRTPSupport<Derived>,
     ///        block long enough for the vector loop to matter.
     static constexpr unsigned int kScanBlock = 64;
 
-    /// @brief Is the materialised buffer all @p v over its first @p n elements?
+    /// @brief Is the materialised buffer all @p v over its first @p count elements?
     /// @pre The chunk is materialised.
-    [[nodiscard]] bool is_constant_to(in_t<T> v, unsigned int n) const noexcept
+    [[nodiscard]] bool is_constant_to(in_t<T> v, unsigned int count) const noexcept
     {
         // Same shape as scan_constants(): branch-free blocks, exit between them.
-        const T*     p = values_load();
-        unsigned int i = 0;
-        while (i < n)
+        const T*     vals = values_load();
+        unsigned int i    = 0;
+        while (i < count)
         {
-            const unsigned int e   = std::min(n, i + kScanBlock);
-            unsigned int       bad = 0;
-            for (unsigned int j = i; j < e; ++j)
-                bad |= static_cast<unsigned int>(p[j] != v);
-            i = e;
+            const unsigned int block_end = std::min(count, i + kScanBlock);
+            unsigned int       bad       = 0;
+            for (unsigned int j = i; j < block_end; ++j)
+                bad |= static_cast<unsigned int>(vals[j] != v);
+            i = block_end;
             if (bad != 0)
             {
                 if constexpr (chunk_config::stats)
@@ -1396,16 +1397,16 @@ class ChunkBase : public CRTPSupport<Derived>,
             }
         }
         if constexpr (chunk_config::stats)
-            add_chunk_scan_read<Derived>(static_cast<long>(n));
+            add_chunk_scan_read<Derived>(static_cast<long>(count));
         return true;
     }
 
-    /// @brief The one value the materialised buffer holds over @p n elements, if any.
+    /// @brief The one value the materialised buffer holds over @p count elements, if any.
     /// @return that value, or nullopt when at least two elements differ
-    /// @pre The chunk is materialised and @p n > 0.
-    [[nodiscard]] std::optional<T> constant_value(unsigned int n) const noexcept
+    /// @pre The chunk is materialised and @p count > 0.
+    [[nodiscard]] std::optional<T> constant_value(unsigned int count) const noexcept
     {
-        if (const in_t<T> v0 = element_at(0); is_constant_to(v0, n))
+        if (const in_t<T> v0 = element_at(0); is_constant_to(v0, count))
             return v0;
         return std::nullopt;
     }

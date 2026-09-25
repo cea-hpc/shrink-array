@@ -82,7 +82,7 @@ namespace shrink_array
  * @see ArrayChunkBase::is_written_at
  */
 template <typename D>
-inline constexpr bool has_chunk_written_v = requires(const D& d, int j) { d.chunk_written(j); };
+inline constexpr bool has_chunk_written_v = requires(const D& obj, int j) { obj.chunk_written(j); };
 
 /**
  * @brief Common implementation of the chunked arrays, injected by CRTP.
@@ -258,14 +258,14 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @details Only meaningful with DynamicChunkSize; with StaticChunkSize the
      *          geometry is fixed at compile time and this is a no-op (guarded by
      *          if constexpr so it compiles in both modes). In a dynamic build it
-     *          also registers the value allocators for @p n and records @p n as
+     *          also registers the value allocators for @p new_chunk_size and records @p new_chunk_size as
      *          the calling thread's active size.
      *
-     * @param n the new chunk size (power of two)
+     * @param new_chunk_size the new chunk size (power of two)
      * @warning Must be called on an empty container, before any
      *          resize/allocation, since it changes how indices map to chunks.
      */
-    void set_chunk_size([[maybe_unused]] unsigned int n) noexcept;
+    void set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept;
 
     /** @brief Right shift turning a global index into a chunk index: `i >> chunk_decalage()`. */
     [[nodiscard]] unsigned int chunk_decalage() const noexcept
@@ -365,12 +365,12 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     }
 
     /**
-     * @brief Have room for @p n elements without a further resize().
-     * @details A no-op when the capacity already covers @p n; otherwise the
-     *          storage of a resize() to @p n, with the size left where it is.
+     * @brief Have room for @p new_capacity elements without a further resize().
+     * @details A no-op when the capacity already covers @p new_capacity; otherwise the
+     *          storage of a resize() to @p new_capacity, with the size left where it is.
      *          The new chunks are at the first constant, like any fresh chunk.
      */
-    void reserve(ind_type n);
+    void reserve(ind_type new_capacity);
 
     /**
      * @brief Append one element, growing the container by one.
@@ -473,9 +473,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         /** @brief Post-increment; prefer the prefix form on the hot path. */
         const_iterator operator++(int) noexcept
         {
-            auto t = *this;
+            auto prev = *this;
             ++*this;
-            return t;
+            return prev;
         }
 
         /** @brief Step back one element, entering (and syncing) the previous chunk on underflow. */
@@ -497,20 +497,20 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         /** @brief Post-decrement; prefer the prefix form on the hot path. */
         const_iterator operator--(int) noexcept
         {
-            auto t = *this;
+            auto prev = *this;
             --*this;
-            return t;
+            return prev;
         }
 
         /** @brief Two iterators are equal when they sit on the same absolute index. */
-        [[nodiscard]] friend bool operator==(const const_iterator& a, const const_iterator& b) noexcept
+        [[nodiscard]] friend bool operator==(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
-            return a.lin_ == b.lin_;
+            return lhs.lin_ == rhs.lin_;
         }
         /** @brief Negation of operator==. */
-        [[nodiscard]] friend bool operator!=(const const_iterator& a, const const_iterator& b) noexcept
+        [[nodiscard]] friend bool operator!=(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
-            return a.lin_ != b.lin_;
+            return lhs.lin_ != rhs.lin_;
         }
 
       private:

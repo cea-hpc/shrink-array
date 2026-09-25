@@ -85,15 +85,15 @@ void* Chunk2AOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 }
 
 template <typename T, typename Derived, bool Enabled>
-void Chunk2AOmpPolicy<T, Derived, Enabled>::operator delete[](void* p)
+void Chunk2AOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
-    ::operator delete(p);
+    ::operator delete(ptr);
 }
 
 template <typename T, typename Derived, bool Enabled>
-void Chunk2AOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk2A<T>* v, std::size_t n) noexcept
+void Chunk2AOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk2A<T>* v, std::size_t count) noexcept
 {
-    chunk_array_new::init_chunks(v, n, [](Chunk2A<T>& c) { c.init_after_constructor(); });
+    chunk_array_new::init_chunks(v, count, [](Chunk2A<T>& chunk) { chunk.init_after_constructor(); });
 }
 
 /**
@@ -867,10 +867,10 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool              need_
 
         // Reuse the unified CAS/Recycle logic from Chunk2Base.
         Base::apply_cas_or_recup(values_loc, thr_rank,
-                                 [this, need_set_second_value](T* p)
+                                 [this, need_set_second_value](T* cst_ptr)
                                  {
                                      // Single CAS operation targeting the specific constant pointer.
-                                     return this->compare_and_swap(p, need_set_second_value);
+                                     return this->compare_and_swap(cst_ptr, need_set_second_value);
                                  });
     }
 
@@ -912,10 +912,10 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_seco
         T* values_loc = Base::allocate_chunk_internal(thr_rank, init_func);
 
         Base::apply_cas_or_recup(values_loc, thr_rank,
-                                 [this, need_set_second_value](bool* p)
+                                 [this, need_set_second_value](bool* cst_ptr)
                                  {
                                      // Single CAS operation targeting the specific constant pointer.
-                                     return this->compare_and_swap(p, need_set_second_value);
+                                     return this->compare_and_swap(cst_ptr, need_set_second_value);
                                  });
     }
     else if constexpr (build_config::is_debug)

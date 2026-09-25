@@ -92,21 +92,21 @@ void Proxy<T>::perform_core_assignment(in_t<T> v) const noexcept
             [[maybe_unused]] bool was_cst;
 
             // Captured before allocation to determine correct counter initialization
-            void capture(const Proxy* p)
+            void capture(const Proxy* proxy)
             {
                 if constexpr (chunk_config::use_compression_with_counter)
-                    was_cst = p->is_cst_val();
+                    was_cst = proxy->is_cst_val();
             }
 
             // Applied after allocation to sync counters with the new heap block
-            void apply(const Proxy* p, T val)
+            void apply(const Proxy* proxy, T val)
             {
                 if constexpr (chunk_config::use_compression_with_counter)
                 {
                     if (was_cst)
-                        p->chunk.set_nb_val_eq_zero(p->chunk_size() - 1);
+                        proxy->chunk.set_nb_val_eq_zero(proxy->chunk_size() - 1);
                     else if (val == Chunk<T>::first_value)
-                        p->chunk.inc_nb_val_eq_zero();
+                        proxy->chunk.inc_nb_val_eq_zero();
                 }
             }
         } state;

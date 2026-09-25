@@ -536,9 +536,9 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
         const auto second_value = get_second_value();
         // find(), not operator[]: operator[] INSERTS a null entry for a missing
         // key, which have_chunk_to_compress() would dereference later.
-        auto&      m  = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
-        const auto it = m.find(second_value);
-        if (it == m.end() || it->second == nullptr) [[unlikely]]
+        auto&      candidates = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
+        const auto it         = candidates.find(second_value);
+        if (it == candidates.end() || it->second == nullptr) [[unlikely]]
             chunk2_missing_candidate_list(thr);
         return *it->second;
     }
@@ -554,9 +554,9 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
         const auto second_value = get_second_value(ctx);
         // find(), not operator[]: operator[] INSERTS a null entry for a missing
         // key, which have_chunk_to_compress() would dereference later.
-        auto&      m  = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
-        const auto it = m.find(second_value);
-        if (it == m.end() || it->second == nullptr) [[unlikely]]
+        auto&      candidates = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
+        const auto it         = candidates.find(second_value);
+        if (it == candidates.end() || it->second == nullptr) [[unlikely]]
             chunk2_missing_candidate_list(thr);
         return *it->second;
     }
@@ -771,9 +771,9 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
             const int   thr     = get_thr_rank_fast();
             if (thr < 0 || static_cast<std::size_t>(thr) >= per_thr.size()) [[unlikely]]
                 return false;
-            const auto& m  = per_thr[thr];
-            const auto  it = m.find(second_val);
-            return it != m.end() && it->second != nullptr;
+            const auto& candidates = per_thr[thr];
+            const auto  it         = candidates.find(second_val);
+            return it != candidates.end() && it->second != nullptr;
         }
         else
         {
@@ -968,12 +968,12 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     /**
      * @brief Look up the (second_value, ind, num_tab) metadata tuple
      *        registered for array pointer `p`.
-     * @param p Array pointer to look up.
+     * @param ptr Array pointer to look up.
      * @return The registered metadata tuple.
      */
-    [[nodiscard]] static inf_array_t get_info_second_value(const void* p)
+    [[nodiscard]] static inf_array_t get_info_second_value(const void* ptr)
     {
-        return share_info_array.get_info_second_value(p);
+        return share_info_array.get_info_second_value(ptr);
     }
 
   private:
@@ -1116,7 +1116,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     Proxy2(const Proxy2& other)                 = default;
 
     template <typename U>
-    friend std::ostream& operator<<(std::ostream& os, const Proxy2<U>& a);
+    friend std::ostream& operator<<(std::ostream& os, const Proxy2<U>& proxy);
 
     /**
      * @brief Escape hatch for callers that need a real `T&` (e.g. passing
@@ -1151,12 +1151,12 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
 };
 
 template <typename T>
-std::ostream& operator<<(std::ostream& os, const Proxy2<T>& a)
+std::ostream& operator<<(std::ostream& os, const Proxy2<T>& proxy)
 {
     // Through the proxy's read entry, like operator T(): the raw values[num]
     // snapshot is stale while a deferred op pends on this offset (forced-
     // defer builds print 0 right after the write).
-    os << a.read_pure();
+    os << proxy.read_pure();
     return os;
 }
 

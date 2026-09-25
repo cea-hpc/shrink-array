@@ -923,12 +923,12 @@ void ArrayChunk2<T, ind_type>::compress_int()
             auto healed_indices = [](const std::vector<int>& scanned, const std::vector<int>& kept)
             {
                 std::string out;
-                int         n = 0;
+                int         shown = 0;
                 for (const int j : scanned)
                 {
                     if (std::ranges::find(kept, j) != kept.end())
                         continue;
-                    if (n++ == 8)
+                    if (shown++ == 8)
                     {
                         out += " ...";
                         break;

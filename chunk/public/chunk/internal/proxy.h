@@ -274,12 +274,12 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     /**
      * @brief Async-context version of the table-number lookup: resolves
      *        which array a given chunk pointer belongs to.
-     * @param p Chunk pointer to look up.
+     * @param ptr Chunk pointer to look up.
      * @return The table number `p` belongs to.
      */
-    [[nodiscard]] static int get_num_tab_async(auto* /*ctx*/, const void* p)
+    [[nodiscard]] static int get_num_tab_async(auto* /*ctx*/, const void* ptr)
     {
-        return Derived::share_info_array.get_num_tab(p);
+        return Derived::share_info_array.get_num_tab(ptr);
     }
 
     /**
@@ -704,12 +704,12 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
 
     /**
      * @brief Resolve which array (table) a given pointer belongs to.
-     * @param p Pointer to look up.
+     * @param ptr Pointer to look up.
      * @return The table number `p` belongs to.
      */
-    [[nodiscard]] static int get_num_tab(const void* p)
+    [[nodiscard]] static int get_num_tab(const void* ptr)
     {
-        return share_info_array.get_num_tab(p);
+        return share_info_array.get_num_tab(ptr);
     }
 
     /**
@@ -862,9 +862,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     /// @brief Functor wrapping operator% for apply_compound_operation().
     struct modulo
     {
-        constexpr T operator()(in_t<T> x, in_t<T> y) const
+        constexpr T operator()(in_t<T> lhs, in_t<T> rhs) const
         {
-            return x % y;
+            return lhs % rhs;
         }
     };
 
@@ -881,7 +881,10 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     Proxy operator%=(const U& v) noexcept
     {
         if constexpr (std::is_integral_v<T>)
-            { apply_compound_operation<U>(v, typename Base::modulo{}); return *this; }
+        {
+            apply_compound_operation<U>(v, typename Base::modulo{});
+            return *this;
+        }
         else
             return *this;
     }
@@ -899,7 +902,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     const Proxy& operator=(const Proxy& from) noexcept;
 
     template <typename U>
-    friend std::ostream& operator<<(std::ostream& os, const Proxy<U>& a);
+    friend std::ostream& operator<<(std::ostream& os, const Proxy<U>& proxy);
 
     /**
      * @brief Implicit read conversion: returns the element's current value.
@@ -983,12 +986,12 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
 };
 
 template <typename T>
-std::ostream& operator<<(std::ostream& os, const Proxy<T>& a)
+std::ostream& operator<<(std::ostream& os, const Proxy<T>& proxy)
 {
     // Through the proxy's read entry, like operator T(): the raw values[num]
     // snapshot is stale while a deferred op pends on this offset (forced-
     // defer builds print 0 right after the write).
-    os << a.read_pure();
+    os << proxy.read_pure();
     return os;
 }
 

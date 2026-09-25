@@ -78,15 +78,15 @@ void* Chunk2OmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 }
 
 template <typename T, typename Derived, bool Enabled>
-void Chunk2OmpPolicy<T, Derived, Enabled>::operator delete[](void* p)
+void Chunk2OmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
-    ::operator delete(p);
+    ::operator delete(ptr);
 }
 
 template <typename T, typename Derived, bool Enabled>
-void Chunk2OmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk2<T>* v, std::size_t n) noexcept
+void Chunk2OmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk2<T>* v, std::size_t count) noexcept
 {
-    chunk_array_new::init_chunks(v, n, [](Chunk2<T>& c) { c.init_after_constructor(); });
+    chunk_array_new::init_chunks(v, count, [](Chunk2<T>& chunk) { chunk.init_after_constructor(); });
 }
 
 
@@ -913,17 +913,17 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::create_value_impl(int                
     if constexpr (chunk_config::use_fast_block_compression)
     {
         Base::apply_cas_or_recup(values_loc, thr_rank,
-                                 [this, ind, need_set_second_value](T* p)
+                                 [this, ind, need_set_second_value](T* cst_ptr)
                                  {
                                      if constexpr (IsBoolCas)
                                      {
                                          (void)ind; // only the non-bool CAS takes the index
-                                         return derived().compare_and_swap_bool(p, need_set_second_value);
+                                         return derived().compare_and_swap_bool(cst_ptr, need_set_second_value);
                                      }
                                      else
                                          // Propagate the observed state to the CAS so it refuses a
                                          // wrong-side transition after a cst_val1 <-> cst_val2 race.
-                                         return derived().compare_and_swap(p, ind, need_set_second_value);
+                                         return derived().compare_and_swap(cst_ptr, ind, need_set_second_value);
                                  });
     }
     else

@@ -87,7 +87,7 @@ void push_to_compress_list(Vec& vec, ChunkPtr chunk, int num_chunk, int num_tab,
  *
  * @param ctx   Deferred-operation context being replayed.
  * @param proxy Proxy rebuilt from that context.
- * @param p     Array pointer recorded at enqueue time.
+ * @param ptr     Array pointer recorded at enqueue time.
  * @return The table number of the chunk.
  *
  * @note The detection probes the SYNCHRONOUS `get_num_tab(p)`, not the async
@@ -98,10 +98,10 @@ void push_to_compress_list(Vec& vec, ChunkPtr chunk, int num_chunk, int num_tab,
  *       `get_num_tab_async(ctx)` overload exists for it to bind to.
  */
 template <typename ProxyType>
-constexpr int get_num_tab_async_helper(auto* ctx, const ProxyType& proxy, const void* p)
+constexpr int get_num_tab_async_helper(auto* ctx, const ProxyType& proxy, const void* ptr)
 {
-    if constexpr (requires { proxy.get_num_tab(p); })
-        return proxy.get_num_tab_async(ctx, p);
+    if constexpr (requires { proxy.get_num_tab(ptr); })
+        return proxy.get_num_tab_async(ctx, ptr);
     else
         return proxy.get_num_tab_async(ctx);
 }
@@ -308,7 +308,7 @@ ProxyType ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::make_proxy_wi
         proxy.BaseSpec::set_info_second_value_ind_from_key(ctx->ptr_on_array);
     }
 
-    if constexpr (requires(ProxyType p) { p.set_num_tab(0); })
+    if constexpr (requires(ProxyType proxy) { proxy.set_num_tab(0); })
     {
         proxy.set_num_tab(ctx->num_tab);
     }
@@ -530,11 +530,11 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
         }
         struct OwnReplayExclGuard
         {
-            int r;
+            int rank;
             ~OwnReplayExclGuard()
             {
-                if (r >= 0)
-                    CompressionManagerType::enqueue_unlock(r);
+                if (rank >= 0)
+                    CompressionManagerType::enqueue_unlock(rank);
             }
         } own_replay_excl_guard{own_replay_excl_rank};
 
@@ -902,15 +902,15 @@ void ProxyBase<Derived, T, ChunkType>::enqueue_async_arithmetic(const U& v, Op o
  * only Chunk2 / Chunk2A carry a second constant value, and the plain Chunk
  * proxy simply answers false.
  *
- * @param p Proxy to test.
- * @return True if @p p exposes is_cst_val2() and it holds.
+ * @param proxy Proxy to test.
+ * @return True if @p proxy exposes is_cst_val2() and it holds.
  */
 template <typename P>
-constexpr bool check_is_cst_val2([[maybe_unused]] const P& p)
+constexpr bool check_is_cst_val2([[maybe_unused]] const P& proxy)
 {
-    if constexpr (requires { p.is_cst_val2(); })
+    if constexpr (requires { proxy.is_cst_val2(); })
     {
-        return p.is_cst_val2();
+        return proxy.is_cst_val2();
     }
     else
     {
@@ -1225,7 +1225,6 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation
     {
         op_lambda();
     }
-
 }
 // bitwise_assign (declared in proxy_base.h): the single engine of the bitwise
 // compound operators. It operates on the raw values array
@@ -1258,10 +1257,10 @@ void ProxyBase<Derived, T, ChunkType>::bitwise_assign(in_t<U> v, Op operation) n
     auto op_lambda = [this, &v, operation] // v: the call's parameter, alive for the call
     {
         derived().execute_inplace_operation(
-            [&v, operation](T& e)
+            [&v, operation](T& elem)
             {
-                const CalcType intermediate = operation(static_cast<CalcType>(e), static_cast<CalcType>(v));
-                e                           = static_cast<T>(intermediate);
+                const CalcType intermediate = operation(static_cast<CalcType>(elem), static_cast<CalcType>(v));
+                elem                        = static_cast<T>(intermediate);
             });
     };
 
@@ -1280,11 +1279,11 @@ void ProxyBase<Derived, T, ChunkType>::bitwise_assign(in_t<U> v, Op operation) n
                                      {
                                          proxy.execute_inplace_operation_async(
                                              ctx,
-                                             [ctx](T& e)
+                                             [ctx](T& elem)
                                              {
                                                  const CalcType intermediate = ctx->operation(
-                                                     static_cast<CalcType>(e), static_cast<CalcType>(ctx->operand));
-                                                 e = static_cast<T>(intermediate);
+                                                     static_cast<CalcType>(elem), static_cast<CalcType>(ctx->operand));
+                                                 elem = static_cast<T>(intermediate);
                                              });
                                      });
         }
