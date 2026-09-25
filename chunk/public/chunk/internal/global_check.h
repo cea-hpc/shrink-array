@@ -23,13 +23,13 @@
     #include <cstdlib>  // std::abort
     #include <iostream> // std::cerr
 
-static void global_check_nan(long i)
+static void global_check_nan(long i) noexcept
 {
     std::cerr << " ** FATAL: Element : " << i << " of the array is nan\n\n";
     std::abort();
 }
 
-static void global_check_nan(const double& val, long i)
+static void global_check_nan(const double& val, long i) noexcept
 {
     if (std::isnan(val))
     {
@@ -37,7 +37,7 @@ static void global_check_nan(const double& val, long i)
     }
 }
 
-static void global_check_nan(const float& val, long i)
+static void global_check_nan(const float& val, long i) noexcept
 {
     if (std::isnan(val))
     {
@@ -45,7 +45,7 @@ static void global_check_nan(const float& val, long i)
     }
 }
 
-static void global_check_nan(const std::complex<double>& val, long i)
+static void global_check_nan(const std::complex<double>& val, long i) noexcept
 {
     if (std::isnan(val.real()) && std::isnan(val.imag()))
     {
@@ -54,7 +54,7 @@ static void global_check_nan(const std::complex<double>& val, long i)
 }
 
 template <typename T>
-void global_check_nan(const T& val, long i)
+void global_check_nan(const T& val, long i) noexcept
 {
 }
 
