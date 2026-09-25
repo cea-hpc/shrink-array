@@ -21,6 +21,7 @@
 #include "chunk/internal/pointer_map_linear.h" // scan lineaire partage avec PointerMapChunk2
 #include "chunk/internal/chunk_size_config.h"
 #include "chunk/internal/in_t.h"
+#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 #include "chunk/chunk_def.h"
 #include "chunk/internal/conditional_counter.h" // counter_value_t — resync_nb_val_eq_zero
 #include "chunk/chunk_define.h"
@@ -179,7 +180,7 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
      * @brief Update the table number registered for an existing key.
      * @param key Key to update.
      * @param val New table number.
-     * @throws std::runtime_error if `key` is not registered.
+     * @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
      */
     void replace(void* key, in_t<T> val)
     {
@@ -192,14 +193,15 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
             }
         }
 
-        throw std::runtime_error("Key not found in the vector!");
+        INVARIANT_FAILED("[PointerMapChunk replace] key NOT FOUND: this={} size={} key={}",
+                         static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
     }
 
     /**
      * @brief Look up the table number registered for a key.
      * @param key Key to look up.
      * @return The registered table number.
-     * @throws std::runtime_error if `key` is not registered.
+     * @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
      */
     [[nodiscard]] int get_num_tab(const void* key) const
     {
@@ -211,7 +213,8 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
             }
         }
 
-        throw std::runtime_error("Key not found in the vector!");
+        INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}",
+                         static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
     }
 
     /**

@@ -16,10 +16,9 @@
 
 #pragma once
 
-#include <cstdlib>   // std::abort (debug stubs)
-#include <iostream>  // std::cerr (debug stubs)
-#include <memory>    // std::unique_ptr
-#include <stdexcept> // std::runtime_error (PointerMapChunk2A::get)
+#include <cstdlib>  // std::abort (debug stubs)
+#include <iostream> // std::cerr (debug stubs)
+#include <memory>   // std::unique_ptr
 #include <type_traits>
 #include <utility> // std::pair, std::swap
 #include <vector>
@@ -81,7 +80,7 @@ class PointerMapChunk2A
      * @brief Look up the table number registered for a key.
      * @param key Key to look up.
      * @return The registered table number.
-     * @throws std::runtime_error if `key` is not registered.
+     * @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
      */
     int get_num_tab(const void* key) const
     {
@@ -92,12 +91,14 @@ class PointerMapChunk2A
                 if (k == key)
                     return tab;
             }
-            throw std::runtime_error("Key not found");
+            INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
+                             static_cast<const void*>(this), small.size(), key);
         }
 
         if (const auto it = big.find(key); it != big.end())
             return it->second;
-        throw std::runtime_error("Key not found");
+        INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
+                         static_cast<const void*>(this), big.size(), key);
     }
 
     /**
