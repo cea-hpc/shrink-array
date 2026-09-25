@@ -180,7 +180,7 @@ static int check_beyond(const char* self)
     std::remove(log.c_str());
 
     const bool stopped = status != -1 && !(WIFEXITED(status) && WEXITSTATUS(status) == 0);
-    const bool message = out.find("thread capacity") != std::string::npos;
+    const bool message = out.contains("thread capacity");
     std::printf("[beyond] team past the capacity: %s, %s\n", stopped ? "stopped" : "RAN ON",
                 message ? "capacity message printed" : "NO capacity message");
     if (!stopped || !message)

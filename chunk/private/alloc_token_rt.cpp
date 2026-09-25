@@ -70,7 +70,7 @@ struct Slot
 };
 
 constexpr unsigned    kSlotBits = 14;
-constexpr std::size_t kSlots    = std::size_t{1} << kSlotBits; ///< 16384 distinct types
+constexpr std::size_t kSlots    = 1uz << kSlotBits; ///< 16384 distinct types
 constexpr std::size_t kSlotMask = kSlots - 1;
 
 Slot g_table[kSlots]; ///< Open addressing, linear probing, never resized.

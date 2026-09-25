@@ -319,7 +319,7 @@ void read_check_binary_file(Int                ind,
 
             std::getline(trace_file, line);
             // Detect tab_name
-            if (line.find(" not equal !") != std::string::npos)
+            if (line.contains(" not equal !"))
             {
                 const size_t bracket_pos = line.find('[');
                 if (bracket_pos != std::string::npos)
@@ -348,12 +348,12 @@ void read_check_binary_file(Int                ind,
             [[maybe_unused]] bool is_cst_val2 = false; // read only by the chunk2 / chunk2a traces
             while (std::getline(trace_file, line))
             {
-                if (line.find("is_values") != std::string::npos)
+                if (line.contains("is_values"))
                 {
                     is_values = true;
                     break;
                 }
-                if (line.find("is_cst_val1") != std::string::npos)
+                if (line.contains("is_cst_val1"))
                 {
                     is_cst_val1 = true;
                     break;
@@ -363,7 +363,7 @@ void read_check_binary_file(Int                ind,
                 // `if constexpr` written with the preprocessor.
                 if constexpr (chunk_config::use_chunk2or2a)
                 {
-                    if (line.find("is_cst_val2") != std::string::npos)
+                    if (line.contains("is_cst_val2"))
                     {
                         is_cst_val2 = true;
                         break;

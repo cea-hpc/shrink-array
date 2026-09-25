@@ -453,7 +453,7 @@ class ChunkSizeAdvisor
             const auto   gain_bytes = static_cast<std::size_t>(rep.best_gain_bytes() > 0 ? rep.best_gain_bytes() : 0.);
             // Observation-phase thresholds (not a decision, just a hint label):
             // >= 1 Mo gained and <= 50 ms spent reads as clearly worth it.
-            const bool worth = rechunk_is_worth_it(gain_bytes, cost_ms, std::size_t{1} << 20, 50.0);
+            const bool worth = rechunk_is_worth_it(gain_bytes, cost_ms, 1uz << 20, 50.0);
             std::printf("   estimated re-chunk cost       : %.3f ms  (%s)\n", cost_ms, worth ? "worth it" : "marginal");
         }
     }

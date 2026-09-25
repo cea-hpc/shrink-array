@@ -161,7 +161,7 @@ static int check_nested_active(const char* self)
     std::remove(log.c_str());
 
     const bool stopped = status != -1 && !(WIFEXITED(status) && WEXITSTATUS(status) == 0);
-    const bool message = out.find("nested ACTIVE") != std::string::npos;
+    const bool message = out.contains("nested ACTIVE");
     std::printf("[nested-active] two active levels: %s, %s\n", stopped ? "stopped" : "RAN ON",
                 message ? "invariant message printed" : "NO invariant message");
     if (!stopped || !message)

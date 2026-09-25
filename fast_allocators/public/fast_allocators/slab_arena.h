@@ -300,7 +300,7 @@ class SlabArena
      * @param reservation_chunk Size of each mmap reservation. A request larger
      *        than this gets its own region, rounded up to 2 MiB.
      */
-    explicit SlabArena(const char* name, std::size_t reservation_chunk = (static_cast<std::size_t>(256) << 20))
+    explicit SlabArena(const char* name, std::size_t reservation_chunk = (256uz << 20))
         : name_(name), reservation_chunk_(reservation_chunk)
     {
     }
@@ -458,7 +458,7 @@ class SlabArena
     {
         std::size_t want = reservation_chunk_;
         if (min_bytes > want)
-            want = align_up(min_bytes, static_cast<std::size_t>(1) << 21); // round to 2 MiB
+            want = align_up(min_bytes, 1uz << 21); // round to 2 MiB
 
         void* base = ::mmap(nullptr, want, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (base == MAP_FAILED)

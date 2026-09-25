@@ -150,7 +150,7 @@ int main()
     int fails = 0;
     // 1 and 5000 are the plain cases; 499 / 500 / 501 bracket the threshold.
     for (const std::size_t n :
-         {std::size_t(1), std::size_t(499), std::size_t(500), std::size_t(501), std::size_t(5000)})
+         {1uz, 499uz, 500uz, 501uz, 5000uz})
     {
         fails += one_case(n, /*in_region=*/false);
         fails += one_case(n, /*in_region=*/true);

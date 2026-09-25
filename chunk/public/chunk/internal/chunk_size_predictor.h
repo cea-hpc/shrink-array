@@ -100,7 +100,7 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
     if (nb_chunk <= 0)
         return;
 
-    PredictorPoint best{S, ~std::size_t{0}, 0, 0};
+    PredictorPoint best{S, ~0uz, 0, 0};
     PredictorPoint current{};
     bool           have_current = false;
 

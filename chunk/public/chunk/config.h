@@ -50,7 +50,7 @@ inline constexpr bool chunk_dynamic = false;
 ///        shared pool is used: with ~240 KB slabs a small array would pay one
 ///        slab per rank for nothing. 0 disables affinity altogether.
 #ifndef CHUNK_ALLOC_AFFINITY_MIN_BYTES
-    #define CHUNK_ALLOC_AFFINITY_MIN_BYTES (std::size_t(16) << 20)
+    #define CHUNK_ALLOC_AFFINITY_MIN_BYTES (16uz << 20)
 #endif
 inline constexpr std::size_t alloc_affinity_min_bytes =
     CHUNK_ALLOC_AFFINITY_MIN_BYTES; // -D to override (0 = off; tiny = every array, for tests)
@@ -207,13 +207,13 @@ inline constexpr bool do_check = true;
 inline constexpr bool do_check = false;
 #endif
 
-// std::size_t{2}, not 2: the product is otherwise computed in int and then
+// 2uz (a std::size_t), not 2: the product is otherwise computed in int and then
 // widened (bugprone-implicit-widening-of-multiplication-result). It fits in an
 // int today; expressing the type once means it still will if the value grows.
 // Single source of the deferred-pool granularity (deferred_op_pool.h): a
 // level-dependent chunk_config twin once shadowed it here, unconsumed; removed
 // — the pool ran at this 2 MiB in every SHRINK_LEVEL, so this keeps that.
-constexpr std::size_t deferred_pool_granularity = std::size_t{2} * 1024 * 1024;
+constexpr std::size_t deferred_pool_granularity = 2uz * 1024 * 1024;
 
 static constexpr bool verbose = false;
 

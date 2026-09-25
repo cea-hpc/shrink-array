@@ -304,7 +304,7 @@ struct GlobalVecHolder
     // value_by_id. Exhausting it aborts with the count, it is not a silent
     // fallback -- a fallback array would break the range test.
 #ifndef CHUNK_CST_VAL2_REGION_BYTES
-    #define CHUNK_CST_VAL2_REGION_BYTES (std::size_t{2} << 30)
+    #define CHUNK_CST_VAL2_REGION_BYTES (2uz << 30)
 #endif
     static constexpr std::size_t kRegionBytes = CHUNK_CST_VAL2_REGION_BYTES;
 
@@ -335,11 +335,11 @@ struct GlobalVecHolder
     ///          shape. The default leaves four thousand times the headroom a
     ///          real workload was measured to need.
 #ifndef CHUNK_CST_VAL2_MAX_IDS
-    #define CHUNK_CST_VAL2_MAX_IDS (std::size_t{4} << 20)
+    #define CHUNK_CST_VAL2_MAX_IDS (4uz << 20)
 #endif
     static constexpr std::size_t kIdStride =
         build_config::cst_val2_no_arrays
-            ? std::size_t{64}
+            ? 64uz
             : (build_config::use_mm_protect
                    ? ((static_cast<std::size_t>(cst_buffer_size) * sizeof(T) + 4095u) & ~std::size_t{4095u})
                    : ((static_cast<std::size_t>(cst_buffer_size) * sizeof(T) + 63u) & ~std::size_t{63u}));
@@ -380,7 +380,7 @@ struct GlobalVecHolder
         // and it takes the capacity from 65 536 values to 33 million while no
         // page is ever backed.
         const std::size_t bytes =
-            build_config::cst_val2_no_arrays ? std::size_t{64} : static_cast<std::size_t>(cst_buffer_size) * sizeof(T);
+            build_config::cst_val2_no_arrays ? 64uz : static_cast<std::size_t>(cst_buffer_size) * sizeof(T);
         std::size_t stride;
         if constexpr (build_config::use_mm_protect && !build_config::cst_val2_no_arrays)
         {
