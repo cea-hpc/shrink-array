@@ -44,6 +44,7 @@
 
 #include "chunk/config.h"
 #include "chunk/chunk_traits.h"
+#include "chunk/internal/crp_helper.h" // crtp_cast_t
 #include "chunk/internal/array_chunk_for.h" // ArrayChunkCore -- rechunk_all_to's registry keys
 
 namespace shrink_array
@@ -201,15 +202,12 @@ class RechunkSupport<Derived, true>
     /** @} */
 
   protected:
-    /** @brief CRTP down-cast: the concrete array this mixin is a base of. */
-    [[nodiscard]] Derived& self() noexcept
+    /** @brief CRTP down-cast: the concrete array this mixin is a base of,
+     *         const on a const object (one member for both: deducing this). */
+    template <typename Self>
+    [[nodiscard]] auto& self(this Self&& obj) noexcept
     {
-        return static_cast<Derived&>(*this);
-    }
-    /** @copydoc self() */
-    [[nodiscard]] const Derived& self() const noexcept
-    {
-        return static_cast<const Derived&>(*this);
+        return static_cast<crtp_cast_t<Self, Derived>&>(obj);
     }
 };
 
@@ -261,15 +259,12 @@ class RechunkSupport<Derived, false>
     /** @} */
 
   protected:
-    /** @brief CRTP down-cast: the concrete array this mixin is a base of. */
-    [[nodiscard]] Derived& self() noexcept
+    /** @brief CRTP down-cast: the concrete array this mixin is a base of,
+     *         const on a const object (one member for both: deducing this). */
+    template <typename Self>
+    [[nodiscard]] auto& self(this Self&& obj) noexcept
     {
-        return static_cast<Derived&>(*this);
-    }
-    /** @copydoc self() */
-    [[nodiscard]] const Derived& self() const noexcept
-    {
-        return static_cast<const Derived&>(*this);
+        return static_cast<crtp_cast_t<Self, Derived>&>(obj);
     }
 };
 

@@ -46,6 +46,7 @@
 
 #include "chunk/config.h"
 #include "chunk/chunk_traits.h"
+#include "chunk/internal/crp_helper.h" // crtp_cast_t
 
 namespace shrink_array
 {
@@ -99,15 +100,12 @@ class RechunkHooks<Derived, true>
     bool rechunk_swap_identity(Derived& tmp);
 
   protected:
-    /** @brief CRTP down-cast: the concrete array this mixin is a base of. */
-    [[nodiscard]] Derived& self() noexcept
+    /** @brief CRTP down-cast: the concrete array this mixin is a base of,
+     *         const on a const object (one member for both: deducing this). */
+    template <typename Self>
+    [[nodiscard]] auto& self(this Self&& obj) noexcept
     {
-        return static_cast<Derived&>(*this);
-    }
-    /** @copydoc self() */
-    [[nodiscard]] const Derived& self() const noexcept
-    {
-        return static_cast<const Derived&>(*this);
+        return static_cast<crtp_cast_t<Self, Derived>&>(obj);
     }
 };
 

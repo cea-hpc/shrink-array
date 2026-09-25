@@ -113,15 +113,9 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
      *
      * @param i chunk index; the caller guarantees 0 <= i < nb_chunk
      */
-    [[nodiscard]] chunk_type& chunk_ref(std::size_t i) noexcept
+    [[nodiscard]] auto& chunk_ref(this auto& self, std::size_t i) noexcept
     {
-        return chunk_list[i];
-    }
-
-    /// @copydoc chunk_ref
-    [[nodiscard]] const chunk_type& chunk_ref(std::size_t i) const noexcept
-    {
-        return chunk_list[i];
+        return self.chunk_list[i]; // const on a const array (deducing this)
     }
 
     /**

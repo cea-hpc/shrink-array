@@ -36,6 +36,7 @@
 #include "chunk/chunk2A_def.h"
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/internal/chunk2_base.h"
+#include "chunk/internal/crp_helper.h" // crtp_cast_t
 #include "chunk/internal/chunk_stats.h"
 
 #ifdef FAST_ALLOC
@@ -77,13 +78,11 @@ struct Chunk2AConcurrentOps
     using Holder                      = TabCstVal2Holder<T>;
     static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
 
-    Derived* self() noexcept
+    /// @brief The chunk, const on a const object (deducing this: one member).
+    template <typename Self>
+    auto* self(this Self&& obj) noexcept
     {
-        return static_cast<Derived*>(this);
-    }
-    const Derived* self() const noexcept
-    {
-        return static_cast<const Derived*>(this);
+        return &static_cast<crtp_cast_t<Self, Derived>&>(obj);
     }
     Base* base() noexcept
     {

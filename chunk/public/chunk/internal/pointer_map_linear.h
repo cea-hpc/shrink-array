@@ -78,18 +78,10 @@ class PointerMapLinear
      *          destroyed array would otherwise shadow a live one that reused its
      *          address, which is exactly what erase() exists to prevent.
      */
-    [[nodiscard]] Payload* find_payload(const void* key) noexcept
+    /// @note Const on a const map: one member for both (deducing this).
+    [[nodiscard]] auto find_payload(this auto& self, const void* key) noexcept -> decltype(&self.vec.begin()->second)
     {
-        for (auto& item : vec)
-            if (item.first == key)
-                return &item.second;
-        return nullptr;
-    }
-
-    /// @copydoc find_payload
-    [[nodiscard]] const Payload* find_payload(const void* key) const noexcept
-    {
-        for (const auto& item : vec)
+        for (auto& item : self.vec)
             if (item.first == key)
                 return &item.second;
         return nullptr;

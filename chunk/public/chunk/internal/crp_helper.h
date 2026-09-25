@@ -24,8 +24,20 @@
 // Derived parameter and the CRTPSupport base, so a conversion stays local to the
 // method bodies converted.
 
+#include <memory>      // std::addressof
+#include <type_traits> // std::conditional_t, std::is_const_v
+
 namespace shrink_array
 {
+
+/**
+ * @brief `Derived`, const when the object `Self` names is: the target of a CRTP
+ *        down-cast made from a `this Self&& self` member, so that ONE member
+ *        serves a const and a non-const object (C++23 deducing this) where a
+ *        const / non-const pair used to repeat the same cast.
+ */
+template <typename Self, typename Derived>
+using crtp_cast_t = std::conditional_t<std::is_const_v<std::remove_reference_t<Self>>, const Derived, Derived>;
 
 /**
  * @brief Simple mixin to provide derived() and self() cast helpers for CRTP.
@@ -33,25 +45,18 @@ namespace shrink_array
 template <typename Derived>
 struct CRTPSupport
 {
-    /// @brief `*this` as the derived class.
-    Derived& derived() noexcept
+    /// @brief `*this` as the derived class, const on a const object.
+    template <typename Self>
+    auto& derived(this Self&& self) noexcept
     {
-        return static_cast<Derived&>(*this);
-    }
-    /// @copydoc derived()
-    const Derived& derived() const noexcept
-    {
-        return static_cast<const Derived&>(*this);
+        return static_cast<crtp_cast_t<Self, Derived>&>(self);
     }
 
-    Derived* self() noexcept
+    /// @brief derived()'s address. std::addressof: the proxies delete operator&.
+    template <typename Self>
+    auto* self(this Self&& obj) noexcept
     {
-        return static_cast<Derived*>(this);
-    }
-
-    const Derived* self() const noexcept
-    {
-        return static_cast<const Derived*>(this);
+        return std::addressof(static_cast<crtp_cast_t<Self, Derived>&>(obj));
     }
 };
 
