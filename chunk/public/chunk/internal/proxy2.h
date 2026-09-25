@@ -531,7 +531,7 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *          This allows grouping chunks with the same second_value for batch compression.
      */
 
-    VectorTuple4ChunkInt2<Chunk2, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const
+    VectorTuple4ChunkInt2<Chunk2, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
     {
         const auto second_value = get_second_value();
         // find(), not operator[]: operator[] INSERTS a null entry for a missing
@@ -854,7 +854,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *       indexed second constant -- use the no-arg overload below).
      */
 
-    [[nodiscard]] bool is_cst_val2(int ind) const
+    [[nodiscard]] bool is_cst_val2(int ind) const noexcept
     {
         if constexpr (is_not_bool)
         {
@@ -873,7 +873,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *        single shared second constant.
      * @return true if the chunk is compressed to the second constant.
      */
-    [[nodiscard]] bool is_cst_val2() const
+    [[nodiscard]] bool is_cst_val2() const noexcept
     {
         if constexpr (is_not_bool)
         {

@@ -134,7 +134,7 @@ class PointerMapLinear
      * @param key_b the second array address.
      * @return false unless BOTH keys are present, in which case nothing changed.
      */
-    bool swap_entries(const void* key_a, const void* key_b)
+    bool swap_entries(const void* key_a, const void* key_b) noexcept
     {
         Payload* pa = nullptr;
         Payload* pb = nullptr;
