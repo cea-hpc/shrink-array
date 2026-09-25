@@ -5,6 +5,9 @@
 # so the cores are SHARED between the concurrent builds instead of being
 # multiplied by them. Set it in the environment to override.
 
+# Site layer: paths, compilers, Environment Modules or not (site_env.sh).
+source "$(dirname "${BASH_SOURCE[0]}")/site_env.sh"
+
 # Targeted module unloads instead of a module purge (avoids datadir conflicts on ARM)
 module unload gcc 2>/dev/null || true
 module unload cmake 2>/dev/null || true
@@ -109,13 +112,13 @@ else
     export CHUNK_HARDENING="${CHUNK_HARDENING:-on}"
 fi
 
-source ./functions_for_compile.sh
+source "$CHUNK_SCRIPT_DIR/functions_for_compile.sh"
 
 # --target=<glob> that matches none of this script's configurations: stop here
 # with the closest names (skipped when compile_all.sh already checked).
 check_target_arg $(known_build_names "$0")
 
-build_rep="$CCCWORKDIR/shrink-array"
+build_rep="$CHUNK_BUILD_REP"
 
 create_build_rep
 
@@ -131,8 +134,14 @@ else
     ARCH_FLAGS="-DCMAKE_CXX_FLAGS=-march=native"
 fi
 
-# Fetch the g++ path from the loaded module
-gxx="$(command -v g++ 2>/dev/null)"
+# Fetch the g++ path from the loaded module (without modules: CHUNK_GXX,
+# the newest g++-N on PATH, see site_env.sh)
+if [ "$CHUNK_HAVE_MODULES" = true ]; then
+    gxx="$(command -v g++ 2>/dev/null)"
+else
+    gxx="$(command -v "$CHUNK_GXX" 2>/dev/null)"
+    echo "[site] no modules: gcc is $CHUNK_GXX"
+fi
 [ -z "$gxx" ] && gxx="g++"  # dry-run fallback: bare name, resolved at configure time
 export CXX="$gxx"
 

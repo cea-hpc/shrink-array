@@ -917,7 +917,7 @@ compile_with_cmake() {
     if [ "$DRYRUN" = true ]; then
         if [ "$BUILD_ONLY" = false ]; then
             maybe_wipe_cache "$build_dir"
-            echo "CXX=${compiler} cmake -S ~/shrink-array -B \"$build_dir\" $cmake_args -G Ninja"
+            echo "CXX=${compiler} cmake -S \"$CHUNK_SRC_DIR\" -B \"$build_dir\" $cmake_args -G Ninja"
         fi
         launch_build "$build_dir"
         return 0
@@ -925,7 +925,7 @@ compile_with_cmake() {
 
     if [ "$BUILD_ONLY" = false ]; then
         maybe_wipe_cache "$build_dir"
-        if ! CXX="${compiler}" cmake -S ~/shrink-array -B "$build_dir" $cmake_args -G Ninja; then
+        if ! CXX="${compiler}" cmake -S "$CHUNK_SRC_DIR" -B "$build_dir" $cmake_args -G Ninja; then
             echo "Error configuring CMake for $build_name"
             N_FAILED=$(( N_FAILED + 1 ))  # visible in the final exit code
             return 1
