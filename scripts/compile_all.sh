@@ -108,8 +108,11 @@ enable_aocc=true
 # Per-compiler / sanitizer switches (default on). Toggle here, or via CLI:
 #   --no-gnu --no-oneapi --no-nvhpc --no-llvm --no-aocc --no-sanitizers
 #   --only=<gnu|oneapi|nvhpc|llvm|aocc>   (build just that compiler)
+# nvhpc is OFF by default for now: about 1h30 per build on x86, no
+# performance gain over the others, and C++20 only. --with-nvhpc or
+# --only=nvhpc turns it back on.
 enable_gnu=true
-enable_nvhpc=true
+enable_nvhpc=false
 enable_llvm=true
 enable_sanitizers=true   # the llvm debug thread/address-sanitizer builds
 llvm_cs_size=""          # on-demand llvm build with a custom CHUNK_SIZE (e.g. 1024); empty = off
@@ -150,6 +153,8 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                    is an error (exit 1) naming the closest targets. Combine with
                    --target=<glob> to also restrict which build dirs are configured.
   --no-<c>         Skip compiler <c> (gnu|oneapi|nvhpc|llvm|aocc).
+  --with-nvhpc     Also build nvhpc, off by default (slow: ~1h30 on x86,
+                   no performance gain; C++20 only).
   --no-sanitizers  Skip the llvm thread/address-sanitizer builds.
   --jobs=N         Build at most N configurations at once (default 4). The core
                    budget is split across them, so this bounds the total number
@@ -183,6 +188,7 @@ for arg in "$@"; do
         --no-gnu)        enable_gnu=false;        shift ;;
         --no-oneapi)     enable_oneapi=false;     shift ;;
         --no-nvhpc)      enable_nvhpc=false;      shift ;;
+        --with-nvhpc)    enable_nvhpc=true;       shift ;;
         --no-llvm)       enable_llvm=false;       shift ;;
         --no-aocc)       enable_aocc=false;       shift ;;
         --no-sanitizers) enable_sanitizers=false; shift ;;
