@@ -133,6 +133,55 @@ inline void fill_bits(word_t* w, std::size_t n, bool v) noexcept
         w[nw - 1] &= tail_mask(n);
 }
 
+/// @brief Mask of bits [@p lo, @p hi) inside one word, 0 <= lo < hi <= 64.
+[[nodiscard]] constexpr word_t span_mask(std::size_t lo, std::size_t hi) noexcept
+{
+    const word_t upto_hi = hi == word_bits ? word_ones : (word_t{1} << hi) - 1;
+    return upto_hi & ~((word_t{1} << lo) - 1);
+}
+
+/**
+ * @brief Set bits [@p lo, @p hi) to @p v: whole words stored, the two edge
+ *        words masked. The buffer must not be written concurrently (the
+ *        edge words are a plain read-modify-write).
+ */
+inline void fill_bit_range(word_t* w, std::size_t lo, std::size_t hi, bool v) noexcept
+{
+    std::size_t i = lo;
+    while (i < hi)
+    {
+        const std::size_t k   = i / word_bits;
+        const std::size_t off = i % word_bits;
+        const std::size_t end = (hi - k * word_bits) < word_bits ? hi - k * word_bits : word_bits;
+        const word_t      m   = span_mask(off, end);
+        w[k]                  = v ? (w[k] | m) : (w[k] & ~m);
+        i                     = k * word_bits + end;
+    }
+}
+
+/**
+ * @brief Store bits [@p lo, @p hi) from @p get(i) (a bool for bit i), 64 at a
+ *        time: each word is assembled, then stored under its mask. Same
+ *        concurrency contract as fill_bit_range().
+ */
+template <typename Get>
+inline void store_bit_range(word_t* w, std::size_t lo, std::size_t hi, Get&& get)
+{
+    std::size_t i = lo;
+    while (i < hi)
+    {
+        const std::size_t k   = i / word_bits;
+        const std::size_t off = i % word_bits;
+        const std::size_t end = (hi - k * word_bits) < word_bits ? hi - k * word_bits : word_bits;
+        word_t            x   = 0;
+        for (std::size_t b = off; b < end; ++b)
+            x |= static_cast<word_t>(static_cast<bool>(get(k * word_bits + b))) << b;
+        const word_t m = span_mask(off, end);
+        w[k]           = (w[k] & ~m) | x;
+        i              = k * word_bits + end;
+    }
+}
+
 /// @brief What a scan of a buffer found.
 enum class Uniform
 {

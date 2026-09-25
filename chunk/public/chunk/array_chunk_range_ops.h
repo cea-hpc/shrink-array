@@ -48,6 +48,7 @@
 #include <type_traits>
 
 #include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/internal/element_access.h" // detail::as_words: Bit chunks are words of bits
 #include "chunk/internal/in_t.h"                // in_t<T>: the element snapshots
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
@@ -323,6 +324,53 @@ void queue_for_compression(Arr& arr, std::size_t i)
     }
 }
 
+/**
+ * @brief ArrayChunkBits (T = Bit): store [@p lo, @p hi) of one chunk, bits
+ *        packed 64 per word.
+ *
+ * @details Same shape as the byte path: real proxy writes (@p value_at) until
+ *          the chunk materialises -- which allocates its buffer and registers
+ *          the bookkeeping -- then the rest in one go through @p store_bits
+ *          (word-wide stores, masked edges), under fill_range's serial
+ *          contract. Then what the bypassed element writes would have done:
+ *          the counters recounted (one popcount, serial builds), and the chunk
+ *          queued if it came out uniform -- an exact word scan, not a
+ *          three-element guess.
+ */
+template <typename Arr, typename Chunk, typename ValueAt, typename StoreBits>
+void packed_chunk_store(Arr& arr, Chunk& ch, std::size_t c_begin, std::size_t lo, std::size_t hi, unsigned int S,
+                        int ind2, ValueAt&& value_at, StoreBits&& store_bits)
+{
+    using ind_type = decltype(arr.size());
+    std::size_t i  = lo;
+    while (i < hi && !materialised(arr, ch, ind2))
+    {
+        arr[static_cast<ind_type>(i)] = value_at(i);
+        ++i;
+    }
+    if (!materialised(arr, ch, ind2))
+        return; // the whole span was the chunk's constant
+
+    bits::word_t* w = shrink_array::detail::as_words(ch.values_load());
+    store_bits(w, i - c_begin, hi - c_begin);
+
+    if constexpr (track_chunk2_counts_v<Arr>)
+    {
+        // Counter mode (serial builds): the element write that brings a count
+        // to S compresses the chunk on the spot (manage_full_*), and there is
+        // no pass to queue for -- so do what that last write would have done.
+        const auto ones = static_cast<counter_value_t>(bits::count_ones(w, S));
+        ch.set_nb_val_eq_first_value(static_cast<counter_value_t>(S) - ones);
+        ch.set_nb_val_eq_second_value(ones);
+        if (ones == static_cast<counter_value_t>(S))
+            arr[static_cast<ind_type>(c_begin)].manage_full_second_value();
+        else if (ones == 0)
+            arr[static_cast<ind_type>(c_begin)].manage_full_first_value();
+    }
+    else if (bits::scan_words(w, S) != bits::Uniform::mixed)
+        queue_for_compression(arr, c_begin);
+}
+
 } // namespace detail
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -340,8 +388,10 @@ void queue_for_compression(Arr& arr, std::size_t i)
  *            materialises, then store the remainder straight into its buffer
  *            and restore the zero counter the bulk store bypassed.
  *
- *          bool (bit-packed chunks) takes the per-element path throughout --
- *          still correct, just without the speedup. See detail::raw_fillable_v.
+ *          bool (one byte per element, its second-value state in the proxy)
+ *          takes the per-element path throughout -- still correct, just
+ *          without the speedup. See detail::raw_fillable_v. ArrayChunkBits
+ *          (Bit) stores 64 elements per word: detail::packed_chunk_store.
  *
  * @param arr   target array
  * @param first first index, inclusive (clamped to size())
@@ -440,8 +490,19 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
             }
         }
 
+        // ── ArrayChunkBits: word-wide stores ─────────────────────────────────
+        if constexpr (is_packed_bit_v<T>)
+        {
+            // Whole chunk already at that constant: nothing to write.
+            if (whole && (value_is_cst1 ? ch.is_cst_val1() : ch.is_cst_val2()))
+                continue;
+            const bool bit = static_cast<bool>(value);
+            detail::packed_chunk_store(
+                arr, ch, c_begin, lo, hi, S, ind2, [&](std::size_t) { return static_cast<T>(value); },
+                [bit](bits::word_t* w, std::size_t a, std::size_t b) { bits::fill_bit_range(w, a, b, bit); });
+        }
         // ── Variants whose second-value state lives in the proxy ─────────────
-        if constexpr (!detail::raw_fillable_v<T>)
+        else if constexpr (!detail::raw_fillable_v<T>)
         {
             for (std::size_t i = lo; i < hi; ++i)
                 arr[static_cast<ind_type>(i)] = value;
@@ -541,7 +602,19 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
 
         auto& ch = arr.chunk_ref(ci);
 
-        if constexpr (!detail::raw_fillable_v<T>)
+        if constexpr (is_packed_bit_v<T>)
+        {
+            // ArrayChunkBits: the source read once per element, stored 64 at a time.
+            const auto src_at = [&](std::size_t i)
+            { return static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first))); };
+            detail::packed_chunk_store(arr, ch, c_begin, lo, hi, S, ind2, src_at,
+                                       [&](bits::word_t* w, std::size_t a, std::size_t b)
+                                       {
+                                           bits::store_bit_range(w, a, b, [&](std::size_t bi)
+                                                                 { return static_cast<bool>(src_at(c_begin + bi)); });
+                                       });
+        }
+        else if constexpr (!detail::raw_fillable_v<T>)
         {
             for (std::size_t i = lo; i < hi; ++i)
                 arr[static_cast<ind_type>(i)] = static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first)));

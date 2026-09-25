@@ -35,10 +35,15 @@
 //      sub-blocks it classifies word by word -- chunks half all-true, half
 //      mixed must read as one compressible half each. Also an
 //      ArrayChunk2<bool> (it did not compile: no second-value index for bool);
-//   7. re-chunk (dyn builds): down and up, contents against the reference.
+//   7. re-chunk (dyn builds): down and up, contents against the reference;
+//   8. fill_range / copy_range (bits stored 64 per word): random spans --
+//      whole chunks, partial edges, across chunk boundaries -- over constant
+//      and mixed chunks, against std::vector<bool>; then a pass compresses
+//      the chunks a fill left constant.
 //
 // Chunk2 builds only (ArrayChunkBits is ArrayChunk2<Bit>). Exit 0 = pass.
 
+#include <algorithm> // std::min
 #include <cstdio>
 #include <unistd.h>
 #include <vector>
@@ -46,6 +51,8 @@
 #include "chunk/chunk_traits.h"
 #include "chunk/array_chunk_bits.h"
 #include "chunk/chunk_size_advisor.h"
+#include "chunk/array_chunk_range_ops.h" // fill_range, copy_range
+#include <random>
 #include "chunk/param_chunk.h"
 #include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"
@@ -396,6 +403,84 @@ int advisor_and_rechunk(long N)
     return fails;
 }
 
+int bulk_ranges(long N)
+{
+    ArrayChunkBits<>  a(N);
+    std::vector<bool> ref(static_cast<std::size_t>(N), false);
+    const long        S     = static_cast<long>(a.chunk_size());
+    int               fails = 0;
+
+    // A start with constant and mixed chunks.
+    for (long i = 0; i < N; ++i)
+    {
+        const bool v                     = ((i / kRun) % 3 == 1) || ((i / kRun) % 3 == 2 && varied(i));
+        a[i]                             = v;
+        ref[static_cast<std::size_t>(i)] = v;
+    }
+
+    std::mt19937_64 rng(4242);
+    std::vector<bool> src(static_cast<std::size_t>(N));
+    for (long i = 0; i < N; ++i)
+        src[static_cast<std::size_t>(i)] = ((i * 2654435761L) >> 7) % 3 == 0;
+
+    for (int round = 0; round < 400; ++round)
+    {
+        long first = static_cast<long>(rng() % static_cast<std::uint64_t>(N));
+        long len   = static_cast<long>(rng() % static_cast<std::uint64_t>(4 * S)) + 1;
+        if (round % 5 == 0) // whole chunks
+        {
+            first = first / S * S;
+            len   = S * (1 + static_cast<long>(rng() % 3));
+        }
+        const long last = std::min(N, first + len);
+        if (round % 2 == 0)
+        {
+            const bool v = (rng() & 1) != 0;
+            fill_range(a, static_cast<std::size_t>(first), static_cast<std::size_t>(last), v);
+            for (long i = first; i < last; ++i)
+                ref[static_cast<std::size_t>(i)] = v;
+        }
+        else
+        {
+            copy_range(a, static_cast<std::size_t>(first), static_cast<std::size_t>(last), src.begin() + first);
+            for (long i = first; i < last; ++i)
+                ref[static_cast<std::size_t>(i)] = src[static_cast<std::size_t>(i)];
+        }
+    }
+    fails += compare(a, ref, "fill_range / copy_range") != 0;
+
+    // Whole chunks filled with each constant must compress in the next pass.
+    const long c0 = (N / S) / 4, c1 = (N / S) / 2;
+    fill_range(a, static_cast<std::size_t>(c0 * S), static_cast<std::size_t>((c0 + 3) * S), false);
+    fill_range(a, static_cast<std::size_t>(c1 * S), static_cast<std::size_t>((c1 + 3) * S), true);
+    for (long i = c0 * S; i < (c0 + 3) * S; ++i)
+        ref[static_cast<std::size_t>(i)] = false;
+    for (long i = c1 * S; i < (c1 + 3) * S; ++i)
+        ref[static_cast<std::size_t>(i)] = true;
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp single
+        a.compress();
+    }
+    end_phase();
+    fails += compare(a, ref, "after the pass") != 0;
+    for (long c = 0; c < 3; ++c)
+        if (a.getChunkList()[static_cast<std::size_t>(c0 + c)].written() ||
+            a.getChunkList()[static_cast<std::size_t>(c1 + c)].written())
+        {
+            std::printf("[bits] FAIL fill_range: whole chunk %ld / %ld filled with a constant still materialised\n",
+                        c0 + c, c1 + c);
+            ++fails;
+            break;
+        }
+
+    if (fails == 0)
+        std::printf("[bits] OK fill_range / copy_range (64 per word), constant chunks compressed after the pass\n");
+    a.clear();
+    return fails;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -411,6 +496,7 @@ int main(int argc, char** argv)
     fails += neighbours(N);
     fails += logical_ops(N);
     fails += advisor_and_rechunk(N);
+    fails += bulk_ranges(N);
 
     release_chunk_pools();
     destroy_block_chunk();
