@@ -736,9 +736,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief The element's value, negated. Does not modify it.
     [[nodiscard]] T operator-() const noexcept
     {
-        const in_t<T> vv = -read_pure();
-
-        return vv;
+        return -read_pure();
     }
 
     /// @brief The element's value divided by @p v. Does not modify it.
@@ -746,9 +744,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     [[nodiscard]] T operator/(const U& v) const noexcept
         requires(!std::is_same_v<U, std::complex<T>>)
     {
-        const in_t<T> vv = read_pure() / static_cast<T>(v);
-
-        return vv;
+        return read_pure() / static_cast<T>(v);
     }
 
     /// @brief Read the element. This is what makes a proxy behave like a value.
