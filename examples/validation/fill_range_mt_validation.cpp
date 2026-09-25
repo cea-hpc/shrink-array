@@ -53,6 +53,7 @@
 #include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"
+#include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
 int __mem_page_size = 0;
 
@@ -233,7 +234,7 @@ static void run_perf(long N)
 int main(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
-    const long N    = argc > 1 ? std::atol(argv[1]) : (1L << 20) + 777;
+    const long N    = argc > 1 ? shrink_array::arg_number<long>(argv[1], (1L << 20) + 777, "N") : (1L << 20) + 777;
     ParamChunk::init_indexes(true);
 
     if (argc > 2 && std::strcmp(argv[2], "perf") == 0)
@@ -241,7 +242,7 @@ int main(int argc, char** argv)
         run_perf(N);
         return 0;
     }
-    const int rounds = argc > 2 ? std::atoi(argv[2]) : 30;
+    const int rounds = argc > 2 ? shrink_array::arg_number<int>(argv[2], 30, "rounds") : 30;
     std::printf("=== fill_range_mt_validation [variant = %s]  N=%ld  threads=%d ===\n", variant_name(), N,
                 CHUNK_PMP_MAX_THREADS);
     const int fails = run_validation(N, rounds);

@@ -49,6 +49,7 @@
 #include "chunk/param_chunk.h"
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size, set_active_chunk_size, set_thread_chunk_size
 #include "chunk/config.h"                     // chunk_config::use_chunk*
+#include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
 
 using namespace shrink_array;
 
@@ -153,7 +154,7 @@ int main(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
 
-    const long N = argc > 1 ? atol(argv[1]) : 200000L;
+    const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], 200000L, "N") : 200000L;
 
     ParamChunk::init_indexes(true);
 

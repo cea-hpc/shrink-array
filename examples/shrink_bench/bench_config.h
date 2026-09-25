@@ -21,9 +21,10 @@
 // (or fall back to plain functions if INPUT_DATA is set, in which case the
 // sizes become runtime-configurable via std::cin).
 
-#include <cstdlib> // std::getenv / std::atoi (CHUNK_BENCH_MEM_PERIOD)
+#include <cstdlib> // std::getenv
 
 #include "bench_prelude.h"
+#include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
 // PRINT_MEM is enabled by default to preserve historical behaviour.
 #ifndef PRINT_MEM
@@ -346,12 +347,8 @@ inline Int get_freq_conso_mem()
     // whatever the mode. =1 turns the ten iterations before an advisor tick
     // from a blind spot into a curve, which is what locating a transient
     // peak needs. Decided once at startup, like every other CONSTEXPR site.
-    if (const char* e = std::getenv("CHUNK_BENCH_MEM_PERIOD"))
-    {
-        const Int n = std::atoi(e);
-        if (n > 0)
-            return n;
-    }
+    if (const Int n = shrink_array::env_number<Int>("CHUNK_BENCH_MEM_PERIOD", 0); n > 0)
+        return n;
     if (mode_check)
         return 1;
     else if (mode_perf)

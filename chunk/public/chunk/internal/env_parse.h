@@ -105,6 +105,21 @@ template <typename T>
     return fallback;
 }
 
+/**
+ * @brief The number in command-line argument @p text (called @p what in the
+ *        warning), or @p fallback when it is not a number of type T.
+ */
+template <typename T>
+[[nodiscard]] inline T arg_number(const char* text, T fallback, const char* what) noexcept
+{
+    T v{};
+    if (parse_number(text, v))
+        return v;
+    std::fprintf(stderr, "[arg] %s \"%s\" is not a valid value: ignored, the default is kept\n", what,
+                 text != nullptr ? text : "");
+    return fallback;
+}
+
 /// @brief A switch: @p name set, non-empty, and not starting with '0' -- the
 ///        rule the library's `env && env[0] && env[0] != '0'` tests spell out.
 [[nodiscard]] inline bool env_flag(const char* name) noexcept
