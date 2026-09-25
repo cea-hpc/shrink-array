@@ -22,7 +22,25 @@
 namespace shrink_array
 {
 inline thread_local int __fast_omp_rank = -1;
-}
+
+/// @brief The loop schedules a `schedule(runtime)` loop can be given -- the
+///        values of omp_sched_t (OpenMP 5.x: static 1, dynamic 2, guided 3,
+///        auto 4), in a type that exists in a serial build too.
+enum class chunk_pmp_sched : int
+{
+    sched_static  = 1,
+    sched_dynamic = 2,
+    sched_guided  = 3,
+    sched_auto    = 4,
+};
+
+/// @brief A runtime schedule: its kind and chunk (0: the runtime's default).
+struct chunk_pmp_schedule
+{
+    chunk_pmp_sched kind  = chunk_pmp_sched::sched_static;
+    int             chunk = 0;
+};
+} // namespace shrink_array
 
 #ifdef _OPENMP
     #include <algorithm>
@@ -135,6 +153,23 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
     const int seen = pmp_detail::g_rank_high_water.load(std::memory_order_seq_cst);
     return std::min(chunk_thread_capacity(), std::max(omp_get_max_threads(), seen));
 }
+/// @brief The calling task's run-sched-var (omp_get_schedule).
+[[nodiscard]] inline chunk_pmp_schedule chunk_pmp_get_schedule() noexcept
+{
+    omp_sched_t kind  = omp_sched_static;
+    int         chunk = 0;
+    omp_get_schedule(&kind, &chunk);
+    // As is, modifier bits included (omp_sched_monotonic): the enum's int
+    // holds them, so a get / set round trip restores the caller's exactly.
+    return {static_cast<chunk_pmp_sched>(kind), chunk};
+}
+
+/// @brief Set the calling task's run-sched-var (omp_set_schedule): the
+///        schedule of the `schedule(runtime)` loops it then opens.
+inline void chunk_pmp_set_schedule(chunk_pmp_schedule schedule) noexcept
+{
+    omp_set_schedule(static_cast<omp_sched_t>(schedule.kind), schedule.chunk);
+}
 } // namespace shrink_array
 
 inline int get_thr_rank_fast() noexcept
@@ -200,6 +235,17 @@ inline int chunk_pmp_thread_rank() noexcept
     #endif
 
 #else
+
+namespace shrink_array
+{
+/// @copydoc chunk_pmp_get_schedule -- serial build: no runtime schedule.
+[[nodiscard]] inline chunk_pmp_schedule chunk_pmp_get_schedule() noexcept
+{
+    return {};
+}
+/// @copydoc chunk_pmp_set_schedule -- serial build: nothing to set.
+inline void chunk_pmp_set_schedule(chunk_pmp_schedule) noexcept {}
+} // namespace shrink_array
 
 inline int get_thr_rank_fast() noexcept
 {
