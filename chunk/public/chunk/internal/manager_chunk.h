@@ -381,12 +381,12 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     static void compute_size_max_number_of_chunk_to_check_compress();
 
     /// @brief Add @p count to the running total of chunks created (statistics).
-    static void increm_somme_chunk_create(int count)
+    static void increm_somme_chunk_create(int count) noexcept
     {
         somme_chunk_create += count;
     }
     /// @brief Subtract @p count from the running total of chunks created (statistics).
-    static void decrem_somme_chunk_create(int count)
+    static void decrem_somme_chunk_create(int count) noexcept
     {
         somme_chunk_create -= count;
     }
@@ -427,7 +427,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         return blocks;
     }
     /// @brief Maximum number of buffers a thread keeps parked for reuse.
-    [[nodiscard]] static int get_size_buffer_reuse()
+    [[nodiscard]] static int get_size_buffer_reuse() noexcept
     {
         return size_buffer_reuse;
     }
@@ -562,7 +562,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         return get_list_block_free_thr(thr_rank).size();
     }
     /// @brief The whole legacy (unsized) per-thread reuse list container.
-    static std::vector<PerThreadFreeList>& get_list_block_free_thr()
+    static std::vector<PerThreadFreeList>& get_list_block_free_thr() noexcept
     {
         return list_block_free_thr;
     }

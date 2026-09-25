@@ -239,7 +239,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *       to another size; this still returns the compile-time value. Use
      *       shrink_array::active_chunk_size() for the geometry currently in effect.
      */
-    static constexpr unsigned int get_chunk_size()
+    static constexpr unsigned int get_chunk_size() noexcept
     {
         return __chunk_size;
     }
@@ -267,7 +267,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      * @brief Right-shift turning a global element index into a chunk index.
      * @return log2(__chunk_size); `chunk = i >> get_decalage_chunk()`
      */
-    static constexpr unsigned int get_decalage_chunk()
+    static constexpr unsigned int get_decalage_chunk() noexcept
     {
         return __decalage_chunk;
     }
@@ -283,7 +283,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      * @param chunk_size the candidate size
      * @return true if it is a power of two
      */
-    static bool check_pow2(int chunk_size)
+    static bool check_pow2(int chunk_size) noexcept
     {
         return is_power_of_tow(chunk_size);
     }
@@ -305,7 +305,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      * @brief Mask extracting the offset of an element inside its chunk.
      * @return __chunk_size - 1; `offset = i & get_modulo_chunk()`
      */
-    static constexpr unsigned int get_modulo_chunk()
+    static constexpr unsigned int get_modulo_chunk() noexcept
     {
         return __modulo_chunk;
     }
@@ -423,13 +423,13 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      * @brief Set the allocation block size, in bytes.
      * @param bz block size; normally computed by init_indexes()
      */
-    static void set_block_size(int bz)
+    static void set_block_size(int bz) noexcept
     {
         block_size = bz;
     }
 
     /// @brief Allocation block size in bytes, as set by init_indexes().
-    static int get_block_size()
+    static int get_block_size() noexcept
     {
         return block_size;
     }

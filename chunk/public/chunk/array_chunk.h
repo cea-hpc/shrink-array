@@ -271,7 +271,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     }
 
     /// @brief Read-only access to the underlying chunk list.
-    [[nodiscard]] const std::vector<Chunk<T>>& getChunkList() const
+    [[nodiscard]] const std::vector<Chunk<T>>& getChunkList() const noexcept
     {
         return chunk_list;
     }

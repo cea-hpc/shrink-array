@@ -22,7 +22,7 @@ class DeferredOpsStorage
      * Uses 'static inline' (C++17) to ensure the instance is initialized
      * at program load time, avoiding the "Magic Static" lock check.
      */
-    static DeferredOpsStorage& instance()
+    static DeferredOpsStorage& instance() noexcept
     {
         return global_instance;
     }

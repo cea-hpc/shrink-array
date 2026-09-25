@@ -611,7 +611,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *       std::vector keeps it: one decrement, no resize(). Invalidates all
      *       iterators.
      */
-    void pop_back()
+    void pop_back() noexcept
     {
         if (!empty())
             --m_size;

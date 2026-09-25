@@ -426,7 +426,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @post ptr_is_inside_chunk_list_to_compress points to correct atomic flag
      */
 
-    void set_ptr_is_inside_chunk_list_to_compress()
+    void set_ptr_is_inside_chunk_list_to_compress() noexcept
     {
         ptr_is_inside_chunk_list_to_compress =
             &FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab][num_chunk];
@@ -706,7 +706,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
          * @param rhs Divisor
          * @return x % y
          */
-        constexpr T operator()(T lhs, T rhs) const
+        constexpr T operator()(T lhs, T rhs) const noexcept
         {
             return lhs % rhs;
         }
