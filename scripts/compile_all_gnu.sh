@@ -121,10 +121,10 @@ create_build_rep
 
 # --- Architecture detection & compiler/flags selection ---
 if [ "$(uname -m)" = "aarch64" ]; then
-    echo "[ARM/aarch64 detected] Loading gcc/16.1.0 with C++23 & -mcpu=native"
+    echo "[ARM/aarch64 detected] Loading gcc/16.1.0 with -mcpu=native"
     module load binutils/2.43
     module load gcc/16.1.0
-    ARCH_FLAGS="-DCMAKE_CXX_FLAGS=-mcpu=native -DCMAKE_CXX_STANDARD=23"
+    ARCH_FLAGS="-DCMAKE_CXX_FLAGS=-mcpu=native" # C++23: required by the CMakeLists itself
 else
     echo "[x86_64 detected] Loading gcc/15.2.0 with -march=native"
     module load gcc/15.2.0

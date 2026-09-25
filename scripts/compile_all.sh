@@ -104,14 +104,16 @@ load_mold
 enable_oneapi=true
 
 # AOCC (AMD Optimizing C/C++ Compiler, clang-based) — x86-only, like oneapi.
-# Flip to false to skip. Auto-detects the newest aocc-compiler/<ver> module.
-enable_aocc=true
+# OFF by default: the library requires C++23, and AOCC 5 (LLVM 17) cannot
+# compile libstdc++ 15 in C++23 mode. --with-aocc or --only=aocc turns it back
+# on (a newer AOCC). Auto-detects the newest aocc-compiler/<ver> module.
+enable_aocc=false
 
 # Per-compiler / sanitizer switches (default on). Toggle here, or via CLI:
 #   --no-gnu --no-oneapi --no-nvhpc --no-llvm --no-aocc --no-sanitizers
 #   --only=<gnu|oneapi|nvhpc|llvm|aocc>   (build just that compiler)
-# nvhpc is OFF by default for now: about 1h30 per build on x86, no
-# performance gain over the others, and C++20 only. --with-nvhpc or
+# nvhpc is OFF by default: about 1h30 per build on x86, no performance gain
+# over the others, and no C++23, which the library requires. --with-nvhpc or
 # --only=nvhpc turns it back on.
 enable_gnu=true
 enable_nvhpc=false
@@ -156,7 +158,9 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                    --target=<glob> to also restrict which build dirs are configured.
   --no-<c>         Skip compiler <c> (gnu|oneapi|nvhpc|llvm|aocc).
   --with-nvhpc     Also build nvhpc, off by default (slow: ~1h30 on x86,
-                   no performance gain; C++20 only).
+                   no performance gain; no C++23).
+  --with-aocc      Also build aocc, off by default (AOCC 5 cannot compile
+                   libstdc++ 15 in C++23 mode).
   --no-sanitizers  Skip the llvm thread/address-sanitizer builds.
   --jobs=N         Build at most N configurations at once (default 4). The core
                    budget is split across them, so this bounds the total number
@@ -191,6 +195,7 @@ for arg in "$@"; do
         --no-oneapi)     enable_oneapi=false;     shift ;;
         --no-nvhpc)      enable_nvhpc=false;      shift ;;
         --with-nvhpc)    enable_nvhpc=true;       shift ;;
+        --with-aocc)     enable_aocc=true;        shift ;;
         --no-llvm)       enable_llvm=false;       shift ;;
         --no-aocc)       enable_aocc=false;       shift ;;
         --no-sanitizers) enable_sanitizers=false; shift ;;
