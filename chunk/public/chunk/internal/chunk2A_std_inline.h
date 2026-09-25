@@ -30,6 +30,7 @@
 #include "chunk/chunk2A_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/proxy2A.h"
 #include "chunk/internal/manager_chunk.h"
+#include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 
 /**
  * @file chunk2A_std_inline.h
@@ -278,6 +279,10 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
             // writers whose flag points to a marked chunk). Each chunk
             // is released as the pass is done with it (scanned and left, or
             // stolen), and all of them again at the end, whatever happened.
+            // A flush in progress makes start() decline: ask first, before
+            // marking -- see block_pass_precheck.h.
+            if (block_pass_yields_to_flush<Proxy2A<T>, Chunk2A<T>>(CHUNK_PMP_MAX_THREADS))
+                return;
             for (int k = 0; k < sz; ++k)
             {
                 if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))

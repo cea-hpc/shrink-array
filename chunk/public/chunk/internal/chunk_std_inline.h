@@ -21,12 +21,13 @@
 #include <tuple>     // the candidate-list entries
 
 #include "chunk/chunk_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/internal/chunk_array_new.h"   // chunk_array_new::init_chunks (operator new[])
-#include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count
-#include "chunk/internal/chunk_stats.h"       // increm_chunk_* / add_chunk_* (CHUNK_STATS)
-#include "chunk/internal/manager_chunk.h"     // manager_chunk:: candidate lists
-#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_*
-#include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_*
+#include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
+#include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
+#include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)
+#include "chunk/internal/manager_chunk.h"       // manager_chunk:: candidate lists
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
+#include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_*
+#include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 
 namespace shrink_array
 {
@@ -305,6 +306,11 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
 
     if (proxy && max_thr > 1)
     {
+        // A flush in progress makes start() decline: ask first, before
+        // marking -- see block_pass_precheck.h (10 million mark/unmark rounds
+        // at 128 threads on Grace otherwise).
+        if (block_pass_yields_to_flush<Proxy<T>, Chunk<T>>(max_thr))
+            return;
         // Per-chunk exclusion (ChunkBase::steal_mark_): claim every candidate
         // BEFORE start(), whose heavy barrier publishes the marks; released
         // per chunk as the pass goes, and all again at the end.
