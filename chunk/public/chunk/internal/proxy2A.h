@@ -82,7 +82,7 @@ class PointerMapChunk2A
      * @return The registered table number.
      * @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
      */
-    int get_num_tab(const void* key) const
+    [[nodiscard]] int get_num_tab(const void* key) const noexcept
     {
         if (!using_big)
         {
@@ -772,7 +772,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     /**
      * @brief Compute and store num_tab using share_info_array and ptr_on_array.
      */
-    void set_num_tab()
+    void set_num_tab() noexcept
     {
         // Armed by the array's operator[] (set_this_and_num_chunk with its
         // num_tab): nothing to look up. A proxy armed otherwise -- a replay

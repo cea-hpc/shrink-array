@@ -260,7 +260,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      * @brief The array-wide second constant, read from the shared registry.
      * @return the registered second value; always true for bool
      */
-    [[nodiscard]] T get_second_value() const
+    [[nodiscard]] T get_second_value() const noexcept
     {
         if constexpr (!std::is_same_v<T, bool>)
         {

@@ -98,7 +98,7 @@ void push_to_compress_list(Vec& vec, ChunkPtr chunk, int num_chunk, int num_tab,
  *       `get_num_tab_async(ctx)` overload exists for it to bind to.
  */
 template <typename ProxyType>
-constexpr int get_num_tab_async_helper(auto* ctx, const ProxyType& proxy, const void* ptr)
+constexpr int get_num_tab_async_helper(auto* ctx, const ProxyType& proxy, const void* ptr) noexcept
 {
     if constexpr (requires { proxy.get_num_tab(ptr); })
         return proxy.get_num_tab_async(ctx, ptr);
