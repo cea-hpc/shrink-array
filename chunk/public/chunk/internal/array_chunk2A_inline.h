@@ -449,7 +449,12 @@ void ArrayChunk2A<T, ind_type>::clear_core()
                 if (chunk_list[j].written_test())
                 {
                     if constexpr (chunk_config::stats)
+                    {
                         increm_chunk_teardown_clear<Chunk2A<T>>();
+                        // Released below without a compression: out of the live figures.
+                        add_chunk_released<Chunk2A<T>>(1, static_cast<long>(sizeof(T)) *
+                                                              static_cast<long>(this->size_policy_.size()));
+                    }
                     ll_chunk_loc.push_back(&chunk_list[j]);
                 }
             }

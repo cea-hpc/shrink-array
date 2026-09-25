@@ -176,7 +176,7 @@ void memory_consumption(const std::string& msg)
                 {
                     const shrink_array::ChunkStatsThr t = shrink_array::reduce_chunk_stats(v);
                     live_bytes += t.bytes_alloc + t.bytes_reused - t.bytes_freed;
-                    live_chunks += t.create - t.compress;
+                    live_chunks += t.create - t.compress - t.released;
                 }
                 std::cout << ", materialised " << convert_memory(static_cast<double>(live_bytes)) << " Mo ("
                           << live_chunks << " chunks)";

@@ -461,15 +461,21 @@ void ChunkOmpPolicy<T, Derived, Enabled>::clear_st(int thr_rank, unsigned int n_
     {
         increm_chunk_compress<Chunk<T>>();
         add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) * static_cast<long>(n_elems));
+        increm_chunk_release_park<Chunk<T>>();
     }
-    release_st(thr_rank, n_elems);
+    release_st(thr_rank, n_elems, /*count_release=*/false);
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigned int n_elems)
+void ChunkOmpPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigned int n_elems, bool count_release)
 {
+    // CHUNK_STATS: a release that is not a compression (the re-chunk rebuild's
+    // old chunks) -- its bytes leave the live figure all the same.
     if constexpr (chunk_config::stats)
-        increm_chunk_release_park<Chunk<T>>();
+    {
+        if (count_release)
+            add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(n_elems));
+    }
 
     if constexpr (build_config::any_check)
     {
@@ -511,15 +517,20 @@ void ChunkOmpPolicy<T, Derived, false>::clear_st()
         increm_chunk_compress<Chunk<T>>();
         add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) *
                                         static_cast<long>(shrink_array::alloc_chunk_count()));
+        increm_chunk_release_free<Chunk<T>>();
     }
-    release_st();
+    release_st(/*count_release=*/false);
 }
 
 template <typename T, typename Derived>
-void ChunkOmpPolicy<T, Derived, false>::release_st()
+void ChunkOmpPolicy<T, Derived, false>::release_st(bool count_release)
 {
     if constexpr (chunk_config::stats)
-        increm_chunk_release_free<Chunk<T>>();
+    {
+        if (count_release)
+            add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
+                                                static_cast<long>(shrink_array::alloc_chunk_count()));
+    }
 
     if constexpr (build_config::is_debug)
     {

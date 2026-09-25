@@ -80,6 +80,11 @@ struct alignas(64) ChunkStatsThr
     long bytes_reused    = 0; ///< bytes handed out from the reuse list (list events)
     long bytes_freed     = 0; ///< bytes returned by a real compression (compress events)
     long teardown_clear  = 0; ///< chunks swept by clear_st at teardown (NOT a compression)
+    /// buffers released WITHOUT a compression (a re-chunk's old storage, the
+    /// teardown sweeps); their bytes are in bytes_freed too, so the live
+    /// figures (alloc + reused - freed, create - compress - released) stay
+    /// right across re-chunks
+    long released = 0;
     /// chunks found at the constant when the array is destroyed (born-compressed +
     /// real compressions; see print_compression_stats)
     long still_compressed_at_exit = 0;
@@ -209,6 +214,13 @@ template <typename C>
 void increm_chunk_teardown_clear() noexcept
 {
     __chunk_stats_slot(C::stat_variant).teardown_clear++;
+}
+/// @brief Count @p n buffers released WITHOUT a compression, @p bytes in all.
+template <typename C>
+void add_chunk_released(long n, long bytes) noexcept
+{
+    __chunk_stats_slot(C::stat_variant).released += n;
+    __chunk_stats_slot(C::stat_variant).bytes_freed += bytes;
 }
 /// @brief Add `nb` chunks found at the constant when the array is destroyed.
 /// @param nb Number of still-compressed chunks found.
@@ -474,6 +486,7 @@ inline ChunkStatsThr reduce_chunk_stats(int variant) noexcept
         acc.bytes_reused += slot.bytes_reused;
         acc.bytes_freed += slot.bytes_freed;
         acc.teardown_clear += slot.teardown_clear;
+        acc.released += slot.released;
         acc.still_compressed_at_exit += slot.still_compressed_at_exit;
         acc.compress += slot.compress;
         acc.release_park += slot.release_park;
@@ -557,6 +570,10 @@ void add_chunk_bytes_freed(long) noexcept
 }
 template <typename C>
 void increm_chunk_teardown_clear() noexcept
+{
+}
+template <typename C>
+void add_chunk_released(long, long) noexcept
 {
 }
 template <typename C>
