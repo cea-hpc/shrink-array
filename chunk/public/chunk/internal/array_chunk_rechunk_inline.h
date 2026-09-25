@@ -1,4 +1,5 @@
 #pragma once
+#include "chunk/internal/exact_rss.h" // exact_rss_kib (rss_mib_now)
 
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
@@ -47,9 +48,6 @@
 
 namespace shrink_array::rechunk_detail
 {
-/// @brief Resident set size of this process in MiB, or -1 if unreadable.
-/// @details /proc/self/statm field 2 is resident pages. Only the
-///          CHUNK_RECHUNK_TRACE path reads it, once per slice.
 /// A/B switch: CHUNK_RECHUNK_INSTALL_LEGACY=1 (read once) makes the Chunk2A
 /// rebuild copy and fold spans whose sources are all the same second constant,
 /// as before, instead of installing that constant directly.
@@ -59,18 +57,14 @@ inline const bool g_install_legacy = []
     return env != nullptr && env[0] != '\0' && env[0] != '0';
 }();
 
+/// @brief Resident set size of this process in MiB, or -1 if unreadable.
+/// @details EXACT (smaps_rollup, see exact_rss.h): statm, used until Sept '26,
+///          lags by gigabytes at 64 threads. Only the CHUNK_RECHUNK_TRACE
+///          paths read it (per phase of a re-chunk, per slice).
 inline long rss_mib_now() noexcept
 {
-    std::FILE* file = std::fopen("/proc/self/statm", "r");
-    if (file == nullptr)
-        return -1;
-    long      size = 0, resident = 0;
-    const int nread = std::fscanf(file, "%ld %ld", &size, &resident);
-    std::fclose(file);
-    if (nread != 2)
-        return -1;
-    const long ps = ::sysconf(_SC_PAGESIZE);
-    return ps > 0 ? (resident * ps) >> 20 : -1;
+    const long kib = shrink_array::exact_rss_kib();
+    return kib >= 0 ? kib / 1024 : -1;
 }
 
 /// @brief The rebuild loop's schedule: CHUNK_RECHUNK_SCHEDULE="kind[,chunk]"

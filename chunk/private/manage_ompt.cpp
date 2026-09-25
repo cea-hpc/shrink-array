@@ -199,8 +199,18 @@ void ompt_finalize(ompt_data_t*)
  *
  * @param endpoint Which side of the implicit task is being reported.
  */
-void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, unsigned int, unsigned int, int)
+void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, unsigned int, unsigned int, int flags)
 {
+    // The INITIAL task is the program's own thread, not a parallel region: no
+    // phase to begin, and the rank cache is recomputed on demand. It must not
+    // be seeded here either: libomp reports it while the runtime initialises,
+    // i.e. from inside the program's first OpenMP call -- which can be the
+    // omp_get_max_threads() of chunk_thread_capacity()'s static initialiser.
+    // begin_parallel_phase() -> CHUNK_PMP_THREAD_RANK -> chunk_thread_capacity()
+    // then re-entered that initialisation: recursive_init_error at start-up in
+    // every clang/libomp OpenMP binary. gcc (no OMPT) never took this path.
+    if ((flags & ompt_task_initial) != 0)
+        return;
     if (endpoint != ompt_scope_begin || g_ompt_suspended.load(std::memory_order_relaxed) != 0)
     {
         shrink_array::__fast_omp_rank = -1; // recomputed on the next get_thr_rank_fast()
@@ -321,7 +331,8 @@ void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, 
 // it calls this at BOTH the begin and the end of EVERY sync region, whatever
 // its kind (barriers, taskwait, taskgroup, reductions). CHUNK_OMPT_STATS
 // counts them.
-void on_barrier_end(ompt_sync_region_t kind, ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, const void*)
+void on_barrier_end(ompt_sync_region_t kind, ompt_scope_endpoint_t endpoint, ompt_data_t* parallel_data, ompt_data_t*,
+                    const void*)
 {
     if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
         return;
@@ -337,6 +348,17 @@ void on_barrier_end(ompt_sync_region_t kind, ompt_scope_endpoint_t endpoint, omp
         if (slot)
             ompt_bump(slot->calls[k][ep]);
     }
+
+    // The end of the implicit barrier that closes a parallel region: a worker
+    // has LEFT the team by then (libomp reports it with parallel_data null,
+    // and older runtimes spell the kind ompt_sync_region_barrier_implicit), so
+    // the rank lookup of the flush below -- omp_get_level() -- reads a team
+    // that is gone: SIGSEGV in every clang/libomp OpenMP binary, on a worker,
+    // at the first region's end. Nothing is lost by skipping it: the master's
+    // on_parallel_end() runs finalize_parallel_phase() right after, which
+    // drains the deferred ops of EVERY rank.
+    if (endpoint == ompt_scope_end && (kind == ompt_sync_region_barrier_implicit_parallel || parallel_data == nullptr))
+        return;
 
     // Same suppression as on_parallel_end: the rechunk rebuild's own parallel
     // region ends with an implicit barrier; flushing the half-applied deferred
