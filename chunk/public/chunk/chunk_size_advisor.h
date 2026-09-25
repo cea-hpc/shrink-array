@@ -42,6 +42,7 @@
 #include <cstddef> // std::size_t
 #include <cstdint>
 #include <cstdio> // std::printf (print)
+#include <type_traits> // std::is_same_v (the bool second value)
 #include <vector>
 
 #include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
@@ -124,8 +125,12 @@ class ChunkSizeAdvisor
         // v1 has no cst2; 2A keys cst2 per chunk by the values_load() pointer.
         [[maybe_unused]] const int chunk2_ind = [&]
         {
-            if constexpr (chunk_config::use_chunk2)
+            // bool: one second value, `true`, no index -- get_ind_second_value()
+            // aborts for it; classify() below asks the unindexed is_cst_val2().
+            if constexpr (chunk_config::use_chunk2 && !std::is_same_v<T, bool>)
                 return tab.get_ind_second_value();
+            else if constexpr (chunk_config::use_chunk2)
+                return 0;
             else
                 return -1;
         }();
@@ -188,7 +193,12 @@ class ChunkSizeAdvisor
             }
             else if constexpr (chunk_config::use_chunk2)
             {
-                if (chunk2_ind >= 0 && chunk.is_cst_val2(chunk2_ind))
+                bool is_cst2 = false;
+                if constexpr (std::is_same_v<T, bool>)
+                    is_cst2 = chunk.is_cst_val2();
+                else
+                    is_cst2 = chunk2_ind >= 0 && chunk.is_cst_val2(chunk2_ind);
+                if (is_cst2)
                 {
                     static constexpr int cst2_sentinel = 0; // one address: array-level, all cst2 equal
                     key                                = &cst2_sentinel;
