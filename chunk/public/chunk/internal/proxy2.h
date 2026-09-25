@@ -1119,27 +1119,27 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     friend std::ostream& operator<<(std::ostream& os, const Proxy2<U>& proxy);
 
     /**
-     * @brief Escape hatch for callers that need a real `T&` (e.g. passing
-     *        `a[i]` to a function expecting `T&`). Always materialises the
-     *        chunk first if compressed, matching Proxy::getVal() and
-     *        Proxy2A::getVal().
-     * @note FIX: this used to be
-     *       `if constexpr (is_not_bool) { create_value(Base::is_cst_val()); }`.
-     *       Two separate problems: (1) create_value(bool) does not exist
-     *       for Proxy2<T> -- only the no-arg create_value() does -- so the
-     *       non-bool branch was a latent compile error, never caught
-     *       because getVal() has zero callers anywhere in the tree (a
-     *       class-template member function body is only instantiated on
-     *       actual use); (2) the bool branch skipped materialisation
-     *       entirely, unlike Proxy::getVal() and Proxy2A::getVal(), which
-     *       both always materialise. Fixed to call the existing, working
-     *       create_value() (which already handles bool/non-bool
-     *       internally), gated on is_cst_val() like its siblings.
+     * @brief UNSAFE: a raw `T&` into this element's chunk buffer, for callers
+     *        that must bind a real reference (e.g. passing `a[i]` to a
+     *        function taking `T&`). Materialises the chunk first if it is
+     *        compressed.
+     * @warning A write through the returned reference bypasses the proxy:
+     *          the chunk is not marked as a compression candidate, deferred
+     *          ops are not replayed first, and nothing orders it against
+     *          other threads. The reference dangles as soon as the chunk is
+     *          recompressed or freed. Prefer the proxy's own operators.
+     * @note FIX (as getVal()): it called `create_value(Base::is_cst_val())`
+     *       under `if constexpr (is_not_bool)`: create_value(bool) does not
+     *       exist for Proxy2<T>, a latent compile error (no caller, so never
+     *       instantiated), and the bool branch skipped materialisation. It
+     *       calls the no-arg create_value(), gated on Base2::is_cst_val()
+     *       (the first fix still read Base::is_cst_val(), which ProxyBase
+     *       does not have: still a compile error, as in Proxy2A).
      * @return Reference to this element's live value.
      */
-    [[nodiscard]] T& getVal() noexcept
+    [[nodiscard]] T& unsafe_ref() noexcept
     {
-        if (Base::is_cst_val())
+        if (Base2::is_cst_val())
         {
             create_value();
         }
