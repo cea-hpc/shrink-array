@@ -20,6 +20,15 @@
  */
 #pragma once
 
+/*
+ * Two copies of this header exist, chunk/internal/svalloc.h and
+ * fast_allocators/internal/svalloc.h: fast_allocators must not depend on
+ * chunk, and a std-alloc build has no fast_allocators on its include path.
+ * A translation unit can include both, so they MUST stay identical: a macro
+ * redefined with the same tokens is accepted silently, a different one draws
+ * -Wmacro-redefined and the last definition silently wins.
+ */
+
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h> // memset / memcpy in the macros below
@@ -150,7 +159,7 @@
 #define svalloc(var, type, thesz)                     \
     do                                                \
     {                                                 \
-        size_t __size = (thesz);                      \
+        const size_t __size = (thesz);                \
                                                       \
         assert((long)__size);                         \
         (var) = (type*)malloc(__size * sizeof(type)); \
@@ -160,7 +169,7 @@
 #define svcalloc(var, type, thesz)                   \
     do                                               \
     {                                                \
-        size_t __size = (thesz);                     \
+        const size_t __size = (thesz);               \
                                                      \
         assert((long)__size);                        \
         (var) = (type*)calloc(__size, sizeof(type)); \
@@ -195,7 +204,7 @@
 #define svalloca(var, type, thesz)                    \
     do                                                \
     {                                                 \
-        size_t __size = (thesz);                      \
+        const size_t __size = (thesz);                \
                                                       \
         assert((long)__size);                         \
         (var) = (type*)alloca(__size * sizeof(type)); \
@@ -205,7 +214,7 @@
 #define svrealloc(var, type, thesz)                           \
     do                                                        \
     {                                                         \
-        size_t __size = (thesz);                              \
+        const size_t __size = (thesz);                        \
                                                               \
         assert((long)__size);                                 \
         (var) = (type*)realloc((var), __size * sizeof(type)); \
