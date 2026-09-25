@@ -425,6 +425,8 @@ void ParamChunk::ChunkStats()
         // teardown_clear: chunks swept by the end-of-life clear_st pass -- NOT a
         // compression (compress counts those). Normally 0 in a perf run.
         std::cout << "  teardown_clear = " << stats.teardown_clear << "\n";
+        std::cout << "  released       = " << stats.released
+                  << "  (buffers released without a compression: re-chunk sources, teardown sweeps)\n";
         if (stats.gate_start || stats.gate_flush || stats.gate_driver)
         {
             const double secs =
