@@ -418,9 +418,9 @@ endif()
 # cluster's default cmake module): then the -std flag is passed directly.
 if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC" OR NOT "cxx_std_${CHUNK_CXX_STANDARD}" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
   set(CHUNK_CXX_STD_FLAG "-std=gnu++${CHUNK_CXX_STANDARD}")
-  message(STATUS "C++ standard: C++${CHUNK_CXX_STANDARD} (CHUNK_CXX_STANDARD), passed as ${CHUNK_CXX_STD_FLAG}: "
-                 "CMake ${CMAKE_VERSION} knows no cxx_std_${CHUNK_CXX_STANDARD} for ${CMAKE_CXX_COMPILER_ID} "
-                 "${CMAKE_CXX_COMPILER_VERSION}")
+  message(STATUS "C++ standard: C++${CHUNK_CXX_STANDARD} via ${CHUNK_CXX_STD_FLAG} (CMake ${CMAKE_VERSION} has no "
+                 "cxx_std_${CHUNK_CXX_STANDARD} entry for ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}; "
+                 "the compiler supports it)")
 else()
   set(CHUNK_CXX_STD_FLAG "")
   message(STATUS "C++ standard: C++${CHUNK_CXX_STANDARD} (CHUNK_CXX_STANDARD)")

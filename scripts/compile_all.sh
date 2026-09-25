@@ -15,7 +15,9 @@ BUILD_FLAGS=""
 # Unload/reload the main build tools
 module unload cmake 2>/dev/null || true
 module unload ninja 2>/dev/null || true
-module load cmake
+# The same CMake as compile_all_gnu.sh: the default module (3.20) has no
+# cxx_std_23 entry for IntelLLVM 2026 (the CMakeLists then passes -std itself).
+module load cmake/3.31.4 2>/dev/null || module load cmake
 module load ninja
 
 # Default value for dry-run mode
@@ -291,7 +293,7 @@ reset_compiler_modules() {
 
 
 run_cmd "module load ninja"
-run_cmd "module load cmake"
+run_cmd "module load cmake/3.31.4 2>/dev/null || module load cmake"
 
 source ./functions_for_compile.sh
 
