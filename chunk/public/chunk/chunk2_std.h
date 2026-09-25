@@ -24,6 +24,7 @@
 
 #include "chunk/internal/chunk_size_config.h"
 #include "chunk/internal/chunk_size_policy.h"
+#include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
 
 #include "chunk/internal/in_t.h"
 #include "chunk/config.h"
@@ -418,10 +419,10 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
         {
             create_value(need_set_second_value, inf_array, get_thr_rank_fast());
         }
-        else if constexpr (build_config::is_debug)
+        else
         {
-            std::cerr << "Chunk2_std::create_value() called" << '\n';
-            std::abort();
+            static_assert(dependent_false_v<T>,
+                          "create_value(bool, inf_array) is for non-bool elements: use create_value_bool()");
         }
     }
 
@@ -437,10 +438,10 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
         {
             create_value_bool(need_set_second_value, get_thr_rank_fast());
         }
-        else if constexpr (build_config::is_debug)
+        else
         {
-            std::cerr << "Chunk2_std::create_value_bool() called" << '\n';
-            std::abort();
+            static_assert(dependent_false_v<T>,
+                          "create_value_bool() is for bool elements: use create_value(bool, inf_array)");
         }
     }
 
@@ -1189,12 +1190,9 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
             }
             else
             {
-                if constexpr (build_config::any_check)
-                {
-                    std::cerr << "Logic Error: init_values_cst_val called for boolean type with index "
-                              << num_compress_value << ". Use init_values_cst_val_bool instead." << '\n';
-                    std::abort();
-                }
+                static_assert(
+                    dependent_false_v<T>,
+                    "Logic Error: init_values_cst_val is for non-bool elements: use init_values_cst_val_bool instead.");
             }
         }
     }
@@ -1212,12 +1210,8 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            // This branch is reached if the method is called on a non-boolean chunk
-            if constexpr (build_config::is_debug)
-            {
-                std::cerr << "Logic Error: init_values_cst_val_bool called on a non-boolean chunk type." << '\n';
-                std::abort();
-            }
+            static_assert(dependent_false_v<T>,
+                          "Logic Error: init_values_cst_val_bool called on a non-boolean chunk type.");
         }
     }
 
@@ -1311,14 +1305,8 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            // This version is only for boolean chunks
-            if constexpr (build_config::is_debug)
-            {
-                std::cerr << "Logic Error: written() called on a non-boolean chunk. "
-                          << "For non-bool types, use written(int ind) instead." << '\n';
-                std::abort();
-            }
-            return false;
+            static_assert(dependent_false_v<T>, "Logic Error: written() called on a non-boolean chunk. For non-bool "
+                                                "types, use written(int ind) instead.");
         }
     }
 
@@ -1358,14 +1346,8 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            // This version expects an index, which boolean chunks do not use
-            if constexpr (build_config::is_debug)
-            {
-                std::cerr << "Logic Error: written(int ind) called on a boolean chunk. "
-                          << "Boolean chunks use a single shared second value, use written() instead." << '\n';
-                std::abort();
-            }
-            return false;
+            static_assert(dependent_false_v<T>, "Logic Error: written(int ind) called on a boolean chunk. Boolean "
+                                                "chunks use a single shared second value, use written() instead.");
         }
     }
 
@@ -1383,13 +1365,8 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            if constexpr (build_config::is_debug)
-            {
-                std::cerr << "Logic Error: is_cst_val2(int ind) called on a boolean chunk. "
-                          << "Boolean chunks do not use indexed constants." << '\n';
-                std::abort();
-            }
-            return false;
+            static_assert(dependent_false_v<T>, "Logic Error: is_cst_val2(int ind) called on a boolean chunk. Boolean "
+                                                "chunks do not use indexed constants.");
         }
     }
 
@@ -1406,13 +1383,9 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            if constexpr (build_config::is_debug)
-            {
-                std::cerr << "Logic Error: is_cst_val2() called on a non-boolean chunk. "
-                          << "Non-bool types require an index (int ind)." << '\n';
-                std::abort();
-            }
-            return false;
+            static_assert(
+                dependent_false_v<T>,
+                "Logic Error: is_cst_val2() called on a non-boolean chunk. Non-bool types require an index (int ind).");
         }
     }
 
@@ -1430,12 +1403,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            if constexpr (build_config::is_debug)
-            {
-                std::cerr << "Logic Error: is_not_cst_val2(int ind) called on a boolean chunk." << '\n';
-                std::abort();
-            }
-            return true;
+            static_assert(dependent_false_v<T>, "Logic Error: is_not_cst_val2(int ind) called on a boolean chunk.");
         }
     }
 
@@ -1451,12 +1419,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            if constexpr (build_config::is_debug)
-            {
-                std::cerr << "Logic Error: is_not_cst_val2() called on a non-boolean chunk." << '\n';
-                std::abort();
-            }
-            return true;
+            static_assert(dependent_false_v<T>, "Logic Error: is_not_cst_val2() called on a non-boolean chunk.");
         }
     }
 
@@ -1474,12 +1437,8 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            if constexpr (build_config::is_debug)
-            {
-                std::cerr << "Logic Error: is_cst_val() without index called on a non-boolean chunk." << '\n';
-                std::abort();
-            }
-            return false;
+            static_assert(dependent_false_v<T>,
+                          "Logic Error: is_cst_val() without index called on a non-boolean chunk.");
         }
     }
 
@@ -1511,19 +1470,14 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      */
     void alloc_chunk(const inf_array_t& inf_array)
     {
-        if constexpr (is_not_bool)
+        if (is_cst_val(std::get<1>(inf_array)))
         {
-            if (is_cst_val(std::get<1>(inf_array)))
-            {
+            // bool has its own materialiser: the bool branch used to call the
+            // non-bool create_value -- a no-op in release (see its static_assert).
+            if constexpr (is_not_bool)
                 create_value(false, inf_array);
-            }
-        }
-        else
-        {
-            if (is_cst_val())
-            {
-                create_value(false, inf_array);
-            }
+            else
+                create_value_bool(false);
         }
     }
 
@@ -1545,11 +1499,17 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
 
             if constexpr (build_config::use_openmp)
             {
-                create_value(false, inf_array, thr_rank);
+                if constexpr (is_not_bool)
+                    create_value(false, inf_array, thr_rank);
+                else
+                    create_value_bool(false, thr_rank);
             }
             else
             {
-                create_value(false, inf_array);
+                if constexpr (is_not_bool)
+                    create_value(false, inf_array);
+                else
+                    create_value_bool(false);
             }
         }
     }

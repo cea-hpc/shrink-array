@@ -35,6 +35,7 @@
 #include "chunk/internal/compression_manager.h"
 #include "chunk/internal/proxy_base.h"
 #include "chunk/internal/proxy2_base.h"
+#include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
 
 namespace shrink_array
 {
@@ -712,10 +713,10 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         {
             chunk.create_value(is_cst_val2(), ptr_second_value);
         }
-        else if constexpr (build_config::is_debug)
+        else
         {
-            std::cerr << "Chunk2A_std_inline::create_value() called\n";
-            std::abort();
+            static_assert(dependent_false_v<T>,
+                          "create_value(..., second value) is for non-bool elements: use create_value_bool()");
         }
     }
 
@@ -732,10 +733,10 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         {
             chunk.create_value_bool(is_cst_val2());
         }
-        else if constexpr (build_config::is_debug)
+        else
         {
-            std::cerr << "Chunk2A_std_inline::create_value_bool() called\n";
-            std::abort();
+            static_assert(dependent_false_v<T>,
+                          "create_value_bool() is for bool elements: use create_value(..., second value)");
         }
     }
 

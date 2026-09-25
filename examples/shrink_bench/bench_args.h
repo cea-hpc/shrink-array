@@ -39,6 +39,9 @@ struct BenchArgs
     bool write_trace = false; ///< --write_trace
     bool read_trace  = false; ///< --read_trace
     bool test_stl    = false; ///< --test_stl: run the STL-interface self-checks
+    /// --test_prealloc: alloc_chunk() over a partial window, then the loop
+    /// that uses it (shrink_bench.cpp, run_prealloc_checks).
+    bool test_prealloc = false;
     /// --no_struct: leave out the two struct arrays (Point3, Cell; bench_struct.h).
     /// They add 32 bytes per element to the std::vector baseline (+35 % of its
     /// memory, +28 % of its wall at 6 threads) and ~9 % to a chunk build's
