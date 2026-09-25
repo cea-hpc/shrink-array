@@ -329,7 +329,7 @@ class PointerMapChunk2
      * @param ind New index to assign.
      * @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
      */
-    void replace_all_other_elm(void* key, T val, int ind)
+    void replace_all_other_elm(void* key, T val, int ind) noexcept
     {
         for (auto& item : vec)
         {
@@ -399,7 +399,7 @@ class PointerMapChunk2
     /// @brief Change the second value and its table index recorded for
     ///        array @p key.
     /// @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
-    void replace(void* key, T val, int ind)
+    void replace(void* key, T val, int ind) noexcept
     {
         for (auto& item : vec)
         {
@@ -418,7 +418,7 @@ class PointerMapChunk2
 
     /// @brief The second value recorded for array @p key (true for bool).
     /// @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
-    [[nodiscard]] T get_second_value(void* key) const
+    [[nodiscard]] T get_second_value(void* key) const noexcept
     {
         if constexpr (is_not_bool)
         {
@@ -440,7 +440,7 @@ class PointerMapChunk2
     }
     /// @brief The num_tab recorded for array @p key.
     /// @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
-    [[nodiscard]] int get_num_tab(void* key) const
+    [[nodiscard]] int get_num_tab(void* key) const noexcept
     {
         for (const auto& item : vec)
         {
@@ -456,7 +456,7 @@ class PointerMapChunk2
 
     /// @brief The whole (second value, index, num_tab) tuple recorded for
     ///        array @p key.
-    [[nodiscard]] inf_array_t get_info_second_value(const void* key) const
+    [[nodiscard]] inf_array_t get_info_second_value(const void* key) const noexcept
     {
         if constexpr (is_not_bool)
         {

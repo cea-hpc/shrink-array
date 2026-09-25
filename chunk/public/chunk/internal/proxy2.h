@@ -928,7 +928,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @pre inf_array must be populated via get_info_second_value()
      * @post num_tab contains valid tab index
      */
-    void set_num_tab()
+    void set_num_tab() noexcept
     {
         num_tab = std::get<2>(inf_array);
     }
@@ -971,7 +971,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @param ptr Array pointer to look up.
      * @return The registered metadata tuple.
      */
-    [[nodiscard]] static inf_array_t get_info_second_value(const void* ptr)
+    [[nodiscard]] static inf_array_t get_info_second_value(const void* ptr) noexcept
     {
         return share_info_array.get_info_second_value(ptr);
     }

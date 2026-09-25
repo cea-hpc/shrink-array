@@ -182,7 +182,7 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
      * @param val New table number.
      * @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
      */
-    void replace(void* key, in_t<T> val)
+    void replace(void* key, in_t<T> val) noexcept
     {
         for (auto& item : vec)
         {
@@ -203,7 +203,7 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
      * @return The registered table number.
      * @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
      */
-    [[nodiscard]] int get_num_tab(const void* key) const
+    [[nodiscard]] int get_num_tab(const void* key) const noexcept
     {
         for (const auto& [k, v] : vec)
         {
@@ -280,7 +280,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param ptr Chunk pointer to look up.
      * @return The table number `p` belongs to.
      */
-    [[nodiscard]] static int get_num_tab_async(auto* /*ctx*/, const void* ptr)
+    [[nodiscard]] static int get_num_tab_async(auto* /*ctx*/, const void* ptr) noexcept
     {
         return Derived::share_info_array.get_num_tab(ptr);
     }
@@ -365,7 +365,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     /**
      * @brief Resolve and cache this proxy's table number from ptr_on_array.
      */
-    void set_num_tab()
+    void set_num_tab() noexcept
     {
         // Armed by the array's operator[] (see Proxy2A::set_num_tab): the
         // registry lookup only for a proxy armed otherwise.
@@ -710,7 +710,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @param ptr Pointer to look up.
      * @return The table number `p` belongs to.
      */
-    [[nodiscard]] static int get_num_tab(const void* ptr)
+    [[nodiscard]] static int get_num_tab(const void* ptr) noexcept
     {
         return share_info_array.get_num_tab(ptr);
     }
