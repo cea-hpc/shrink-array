@@ -732,7 +732,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /// @brief Is the element's value falsy?
-    [[nodiscard]] bool operator!() const
+    [[nodiscard]] bool operator!() const noexcept
     {
         return !read_pure();
     }
