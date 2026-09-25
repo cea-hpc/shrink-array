@@ -102,7 +102,7 @@ struct PointerMapInfArrayPolicy
      * @param key Value to look up.
      * @return The registered pointer, or nullptr if `key` is not registered.
      */
-    [[nodiscard]] inf_array_t* find_inf_array(in_t<T> key) const
+    [[nodiscard]] inf_array_t* find_inf_array(in_t<T> key) const noexcept
     {
         const auto it = map_inf_array.find(key);
         if (it != map_inf_array.end())
@@ -225,7 +225,7 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
      * @param key_b second key.
      * @return false si l'une des deux cles est absente (rien n'est modifie).
      */
-    bool swap_keys(const void* key_a, const void* key_b)
+    bool swap_keys(const void* key_a, const void* key_b) noexcept
     {
         return this->swap_entries(key_a, key_b);
     }
@@ -930,7 +930,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      *          reader_sync. The bitset folds to a constant false when it is
      *          compiled out (serial builds), taking the whole branch with it.
      */
-    operator T() const
+    operator T() const noexcept
     {
         if constexpr (chunk_config::stats)
         {

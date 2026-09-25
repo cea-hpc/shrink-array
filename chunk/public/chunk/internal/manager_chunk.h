@@ -436,7 +436,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     ///        the share of THAT array a rank can expect to recycle -- set at
     ///        the array's creation by set_size_buffer_reuse(key, ...). Key 0
     ///        and unknown keys fall back to the global budget.
-    [[nodiscard]] static int get_size_buffer_reuse(unsigned int key)
+    [[nodiscard]] static int get_size_buffer_reuse(unsigned int key) noexcept
     {
         if (key != 0)
         {
@@ -508,7 +508,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     /// @brief Reuse list of (thr_rank, key) at the ambient geometry. Key 0 is
     ///        get_list_block_free_thr(thr_rank); an unregistered key falls back
     ///        to the shared pool rather than indexing blindly.
-    static std::vector<T*>& get_list_block_free_thr(int thr_rank, unsigned int key)
+    static std::vector<T*>& get_list_block_free_thr(int thr_rank, unsigned int key) noexcept
     {
         if (key != 0)
         {
@@ -520,7 +520,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     }
     /// @brief Number of blocks parked in rank @p thr_rank's reuse list for
     ///        @p key at the ambient geometry.
-    [[nodiscard]] static size_t get_list_block_free_thr_size(int thr_rank, unsigned int key)
+    [[nodiscard]] static size_t get_list_block_free_thr_size(int thr_rank, unsigned int key) noexcept
     {
         if (key != 0)
         {
@@ -531,7 +531,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         return get_list_block_free_thr_size(thr_rank);
     }
     /// @brief Number of buffers currently parked for @p thr_rank at the ambient geometry.
-    [[nodiscard]] static size_t get_list_block_free_thr_size(int thr_rank)
+    [[nodiscard]] static size_t get_list_block_free_thr_size(int thr_rank) noexcept
     {
         // Bounds-checked on purpose: every reuse container is only indexable
         // once resize_all_list_block_free_thr() has sized it to max_thr, and that is
@@ -574,7 +574,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      * @warning Correct only when the ambient size is the buffer's own geometry.
      *          At teardown or recycle, use get_list_block_free_thr_for_size().
      */
-    static std::vector<T*>& get_list_block_free_thr(int thr_rank)
+    static std::vector<T*>& get_list_block_free_thr(int thr_rank) noexcept
     {
         if constexpr (chunk_config::chunk_dynamic)
         {

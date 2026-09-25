@@ -173,7 +173,7 @@ class PointerMapChunk2A
      * @return false if the key was not present (caller error: nothing to
      *         re-map); true otherwise.
      */
-    bool set_num_tab(const void* key, int new_num_tab)
+    bool set_num_tab(const void* key, int new_num_tab) noexcept
     {
         if (!using_big)
         {
@@ -204,7 +204,7 @@ class PointerMapChunk2A
      * @param key_b Second key.
      * @return true if both keys were found (and swapped); false otherwise.
      */
-    bool swap_keys(const void* key_a, const void* key_b)
+    bool swap_keys(const void* key_a, const void* key_b) noexcept
     {
         int  na = 0;
         int  nb = 0;
