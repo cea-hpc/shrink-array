@@ -490,14 +490,14 @@ template <bool Enabled>
 struct OMPTcc
 {
     /// @brief No switch to move.
-    static void update([[maybe_unused]] bool state) {}
+    static void update([[maybe_unused]] bool state) noexcept {}
     /// @brief Always off.
-    static bool is_enabled()
+    static bool is_enabled() noexcept
     {
         return false;
     }
     /// @brief Complement of is_enabled().
-    static bool is_not_enabled()
+    static bool is_not_enabled() noexcept
     {
         return !is_enabled();
     }
@@ -513,7 +513,7 @@ struct OMPTcc<true>
     ///          The resume never takes the count below zero, so an extra
     ///          update(true) is a no-op, as it was with the former flag.
     ///          relaxed: a switch, publishing no data.
-    static void update(bool state)
+    static void update(bool state) noexcept
     {
         if (!state)
         {
@@ -521,18 +521,17 @@ struct OMPTcc<true>
             return;
         }
         int cur = ::g_ompt_suspended.load(std::memory_order_relaxed);
-        while (cur > 0 &&
-               !::g_ompt_suspended.compare_exchange_weak(cur, cur - 1, std::memory_order_relaxed))
+        while (cur > 0 && !::g_ompt_suspended.compare_exchange_weak(cur, cur - 1, std::memory_order_relaxed))
         {
         }
     }
     /// @brief Read the switch.
-    static bool is_enabled()
+    static bool is_enabled() noexcept
     {
         return ::g_ompt_suspended.load(std::memory_order_relaxed) == 0;
     }
     /// @brief Complement of is_enabled().
-    static bool is_not_enabled()
+    static bool is_not_enabled() noexcept
     {
         return !is_enabled();
     }
@@ -544,11 +543,11 @@ template <bool Enabled>
 struct CheckNaN
 {
     /// @brief No switch to move.
-    static void update([[maybe_unused]] bool state) {}
+    static void update([[maybe_unused]] bool state) noexcept {}
     /// @brief No check.
-    static void maybe([[maybe_unused]] auto val, [[maybe_unused]] long i) {}
+    static void maybe([[maybe_unused]] auto val, [[maybe_unused]] long i) noexcept {}
     /// @brief Always off.
-    static constexpr bool is_enabled()
+    static constexpr bool is_enabled() noexcept
     {
         return false;
     }
@@ -561,18 +560,18 @@ struct CheckNaN<true>
     static inline bool check_nan{true}; ///< the switch, on by default
 
     /// @brief Set the switch.
-    static void update(bool state)
+    static void update(bool state) noexcept
     {
         check_nan = state;
     }
     /// @brief global_check_nan(@p val, @p i) if the switch is on.
-    static void maybe(auto val, long i)
+    static void maybe(auto val, long i) noexcept
     {
         if (check_nan)
             global_check_nan(val, i);
     }
     /// @brief Compiled in (the switch may still be off at run time).
-    static constexpr bool is_enabled()
+    static constexpr bool is_enabled() noexcept
     {
         return true;
     }
