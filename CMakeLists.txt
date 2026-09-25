@@ -383,21 +383,42 @@ if(NOT USE_MOLD STREQUAL "OFF")
     endif()
 endif()
 
-# ── C++20 requirement (portable, with NVHPC workaround) ───────────────────────
+# ── C++ standard (C++23 by default; C++20 for NVHPC) ─────────────────────────
+# CHUNK_CXX_STANDARD picks the standard every target is built with: 23 by
+# default, 20 under NVHPC (nvc++ is kept at C++20). -DCMAKE_CXX_STANDARD=<n>,
+# as the older compile scripts pass it, still works: it becomes the default.
+# The code needs C++20 and uses C++23 features where the compiler offers them
+# (feature-test macros, e.g. [[assume]] in def_force_inline.h).
+#
 # CMake's compile-feature table for nvc++ (NVHPC 26.x) doesn't advertise
 # cxx_std_20, so target_compile_features(<t> ... cxx_std_20) hard-errors with
 # "feature cxx_std_20 is not known to CXX compiler NVHPC" even though nvc++ fully
-# supports C++20. Centralise the requirement: pass the -std flag directly for
-# NVHPC, keep the portable feature request for every other compiler. Defined
-# before the first add_subdirectory(), so it is visible in chunk/ and examples/.
+# supports C++20: for NVHPC the -std flag is passed directly, every other
+# compiler gets the portable feature request. Defined before the first
+# add_subdirectory(), so it is visible in chunk/ and examples/.
 # fast_allocators keeps its own inline equivalent because it is installable
-# standalone (own project()) and must not depend on this umbrella-level helper.
-# Drop the NVHPC branch once the baseline CMake knows nvc++'s C++20 support.
-function(chunk_require_cxx20 target scope)
+# standalone (own project()) and must not depend on this umbrella-level helper;
+# it reads CHUNK_CXX_STANDARD when built from here.
+if (DEFINED CMAKE_CXX_STANDARD)
+  set(_chunk_cxx_std_default ${CMAKE_CXX_STANDARD})
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
+  set(_chunk_cxx_std_default 20)
+else()
+  set(_chunk_cxx_std_default 23)
+endif()
+set(CHUNK_CXX_STANDARD ${_chunk_cxx_std_default} CACHE STRING
+    "C++ standard of every target: 23 by default, 20 for NVHPC")
+set_property(CACHE CHUNK_CXX_STANDARD PROPERTY STRINGS 20 23)
+if (NOT CHUNK_CXX_STANDARD MATCHES "^(20|23)$")
+  message(FATAL_ERROR "CHUNK_CXX_STANDARD must be 20 or 23 (got ${CHUNK_CXX_STANDARD})")
+endif()
+message(STATUS "C++ standard: C++${CHUNK_CXX_STANDARD} (CHUNK_CXX_STANDARD)")
+
+function(chunk_require_cxx_std target scope)
   if (CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
-    target_compile_options(${target} ${scope} -std=gnu++20)
+    target_compile_options(${target} ${scope} -std=gnu++${CHUNK_CXX_STANDARD})
   else()
-    target_compile_features(${target} ${scope} cxx_std_20)
+    target_compile_features(${target} ${scope} cxx_std_${CHUNK_CXX_STANDARD})
   endif()
 endfunction()
 

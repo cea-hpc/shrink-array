@@ -12,7 +12,7 @@ if (CHUNK_BUILD_DYN)
         find_package(OpenMP REQUIRED)
         target_link_libraries(advisor_demo PUBLIC OpenMP::OpenMP_CXX)
     endif ()
-    chunk_require_cxx20(advisor_demo PRIVATE)
+    chunk_require_cxx_std(advisor_demo PRIVATE)
 
     add_test(NAME advisor_demo COMMAND advisor_demo)
     set_property(TEST advisor_demo PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)

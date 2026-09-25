@@ -31,7 +31,7 @@ function(multi_mat_setup_target tgt)
         target_link_libraries(${tgt} PUBLIC OpenMP::OpenMP_CXX)
     endif ()
 
-    chunk_require_cxx20(${tgt} PRIVATE)
+    chunk_require_cxx_std(${tgt} PRIVATE)
 
     # A library carrying BOTH variant defines: the three field arrays are
     # ArrayChunk<double> (v1), the presence fraction ArrayChunk2<double>.

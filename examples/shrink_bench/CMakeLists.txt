@@ -104,7 +104,7 @@ function(sa2_setup_target tgt)
     if (OMP)
         target_link_libraries(${tgt} PUBLIC OpenMP::OpenMP_CXX)
     endif ()
-    chunk_require_cxx20(${tgt} PRIVATE)
+    chunk_require_cxx_std(${tgt} PRIVATE)
     target_link_libraries(${tgt} PRIVATE BZip2::BZip2)
 endfunction()
 

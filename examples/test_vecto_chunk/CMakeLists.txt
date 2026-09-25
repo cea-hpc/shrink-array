@@ -10,7 +10,7 @@ endif ()
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
     target_compile_options(test_vecto_chunk PRIVATE -O3 -mavx2 -qopt-report=5 -qopt-report-file=vectorization_report.txt)
 endif ()
-chunk_require_cxx20(test_vecto_chunk PRIVATE)
+chunk_require_cxx_std(test_vecto_chunk PRIVATE)
 
 # test_vecto_chunk doesn't use CHUNK/CHUNK2/CHUNK2A → chunk_vector.
 # The v1 (Chunk<T>) variant at the default static size, not the bare

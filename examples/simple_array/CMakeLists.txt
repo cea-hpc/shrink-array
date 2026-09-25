@@ -7,8 +7,8 @@ if (OMP)
     target_link_libraries(simple_array_chunk  PUBLIC OpenMP::OpenMP_CXX)
 endif()
 
-chunk_require_cxx20(simple_array_vector PRIVATE)
-chunk_require_cxx20(simple_array_chunk PRIVATE)
+chunk_require_cxx_std(simple_array_vector PRIVATE)
+chunk_require_cxx_std(simple_array_chunk PRIVATE)
 
 # Link the matching chunk variant so is_shrink_enabled sees the same value
 # on both sides of the library boundary (see chunk/CMakeLists.txt header).
