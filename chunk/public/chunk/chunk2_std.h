@@ -1044,7 +1044,15 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     using vec_tuple_chunk2p_int2 = std::vector<std::tuple<Chunk2*, int, int>>;
 
     using manager_chunk2 = ManagerChunk<Chunk2, T>;
-    using inf_array_t    = std::tuple<T, int, int>;
+    // (second value, index, num_tab). Redeclared here on purpose: the policy
+    // bases declare the same name, and this one hides theirs so Chunk2's own
+    // members see one type. It must stay THEIR type -- checked below.
+    using inf_array_t = std::tuple<T, int, int>;
+    static_assert(
+        std::is_same_v<
+            inf_array_t,
+            typename Chunk2FastCompPolicy<T, Chunk2<T>, chunk_config::use_fast_block_compression>::inf_array_t>,
+        "Chunk2::inf_array_t must be the policies' inf_array_t");
 
     /// @brief Get reference to the chunk manager (static access)
     /// @return Reference to the manager_chunk2 static instance

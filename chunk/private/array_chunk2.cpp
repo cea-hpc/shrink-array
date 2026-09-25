@@ -17,11 +17,9 @@
 // Template method bodies now live in chunk/array_chunk2_inline.h, included
 // transitively via chunk/array_chunk2.h.
 //
-// STEP 1 of the "remove static type list" refactor: the bodies have moved to
-// the inline header (so any consumer TU can auto-instantiate ArrayChunk2<T>),
-// but the explicit instantiations below are kept for now as a safety net so
-// this build stays byte-for-byte compatible. Once the consumer side is
-// confirmed to auto-instantiate every needed T, this list can be removed and
-// the file reduced to just the include (see array_chunk2A.cpp / chunk27).
+// STEP 1 of the "remove static type list" refactor: bodies moved to the inline
+// header (consumer TUs can auto-instantiate ArrayChunk2<T>); the explicit
+// instantiations have been removed (Stage 5b): each ArrayChunk2<T> the
+// consumer uses auto-instantiates at its use site (weak-symbol dedup).
 
 #include "chunk/array_chunk2.h"

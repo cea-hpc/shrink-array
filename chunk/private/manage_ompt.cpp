@@ -388,17 +388,14 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
     auto ompt_set_callback = (ompt_set_callback_t)lookup("ompt_set_callback");
     if (ompt_set_callback)
     {
-        printf("Callback 'on_parallel_end' defined\n");
         ompt_set_callback(ompt_callback_parallel_end, (ompt_callback_t)on_parallel_end);
-        printf("Callback 'on_barrier' defined\n");
         ompt_set_callback(ompt_callback_sync_region, (ompt_callback_t)on_barrier_end);
 
-        printf("Callback 'on_implicit_task' defined (for rank cache)\n");
         ompt_set_callback(ompt_callback_implicit_task, (ompt_callback_t)on_implicit_task);
     }
     else
     {
-        printf("Erreur: 'ompt_set_callback' est nullptr\n");
+        std::fprintf(stderr, "[OMPT] ompt_set_callback is null: the chunk library's callbacks are not installed\n");
     }
     return 1;
 }

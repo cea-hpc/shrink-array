@@ -411,13 +411,13 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *
      * @tparam T the element type concerned
      * @param second_value the additional value to store as a constant
-     * @warning Declared only — no definition is provided by the library, so any
-     *          use fails at link time. It is a placeholder for the second-constant
-     *          support that the chunk2A variant implements through its own
-     *          per-array constant table.
+     * @warning Not implemented: deleted, so a use fails at compile time (it
+     *          used to be declared only, and failed at link time). A placeholder
+     *          for the second-constant support that ArrayChunk2 offers per array
+     *          (ArrayChunk2::set_second_value) and chunk2A per chunk.
      */
     template <typename T>
-    static void set_second_value(T second_value);
+    static void set_second_value(T second_value) = delete;
 
     /**
      * @brief Set the allocation block size, in bytes.

@@ -43,3 +43,7 @@ apply_*.py
 
 # ShAIrLock: session vault backup
 .git_vault/
+
+# Editor / patch fossils (backups and one-shot fix scripts): never part of the tree.
+*.bak*
+fix_*.py
