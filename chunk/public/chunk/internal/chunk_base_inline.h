@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+#include <exception>   // std::exception (deferred enqueue)
 #include <memory>      // std::make_unique
 #include <type_traits> // std::remove_reference_t
 #include <vector>
@@ -164,44 +165,57 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
     CompressionManager<T, Derived>::enqueue_lock(thr_rank);
     Policy::announce_write(thr_rank, chunk_ptr); // flag + seq_cst fence, one Dekker verb
 
-    per_thread_map& thread_map = arr[thr_rank];
-
-    // Get or create the per-chunk map.
-    auto& ops_map_ptr = thread_map[chunk_ptr];
-
-    // Allocate the inner map if this is the first deferred op for this chunk.
-    if (!ops_map_ptr)
+    // The container steps below allocate (the per-chunk map, its entries)
+    // and ankerl's maps throw on a bucket overflow or a key found changed.
+    // Callers are noexcept (the proxies' write operators), so an escaping
+    // exception would be a silent std::terminate: turn it into an invariant
+    // failure that says where. Out of memory here is fatal either way.
+    try
     {
-        ops_map_ptr = std::make_unique<unordered_map_deferred_operations>();
+        per_thread_map& thread_map = arr[thr_rank];
+
+        // Get or create the per-chunk map.
+        auto& ops_map_ptr = thread_map[chunk_ptr];
+
+        // Allocate the inner map if this is the first deferred op for this chunk.
+        if (!ops_map_ptr)
+        {
+            ops_map_ptr = std::make_unique<unordered_map_deferred_operations>();
+        }
+
+        // ── Same-offset re-enqueue: REPLACE, do not double-count ──────────────
+        // A second deferred write to the SAME offset on the SAME rank supersedes
+        // the queued one. The old blind `map[num] = op` replaced the entry while
+        // pending_publish/inc_pending_ops had been counted for BOTH: the counters
+        // drifted up one per replacement and NEVER returned to zero for the chunk
+        // (stuck owner word, perpetual spurious drains/gates, any_pending_ops
+        // pinned), and the replaced op was never destroy()ed (no-op deleter ->
+        // leaked pool slot). Publish/inc only for genuinely NEW entries; for a
+        // replacement the count is already right (still one op at this offset)
+        // and the reader window is already closed by the existing op's publish.
+        auto it_existing = ops_map_ptr->find(num);
+        if (it_existing != ops_map_ptr->end())
+        {
+            it_existing->second->destroy(); // idempotent teardown of the superseded op
+            it_existing->second = DeferredOpPtr(static_cast<DeferredOperationBase*>(v), DeferredOpDeleter{});
+        }
+        else
+        {
+            // Per-chunk pending counter: publish BEFORE inserting the op — the read
+            // gate is `dirty && pending_any()`; publishing first makes pending>0
+            // hold for the op's ENTIRE lifetime (the op itself is published to
+            // flushers via the Dekker write flag, not this counter).
+            chunk_ptr->pending_publish(thr_rank); // owner-tagged; no-op when counterless
+            (*ops_map_ptr)[num] = DeferredOpPtr(static_cast<DeferredOperationBase*>(v), DeferredOpDeleter{});
+            // Publish globally BEFORE releasing the writing flag, so a flusher that
+            // observes !is_thread_writing(r) and proceeds to scan also observes it.
+            CompressionManager<T, Derived>::inc_pending_ops(thr_rank);
+        }
     }
-
-    // ── Same-offset re-enqueue: REPLACE, do not double-count ──────────────
-    // A second deferred write to the SAME offset on the SAME rank supersedes
-    // the queued one. The old blind `map[num] = op` replaced the entry while
-    // pending_publish/inc_pending_ops had been counted for BOTH: the counters
-    // drifted up one per replacement and NEVER returned to zero for the chunk
-    // (stuck owner word, perpetual spurious drains/gates, any_pending_ops
-    // pinned), and the replaced op was never destroy()ed (no-op deleter ->
-    // leaked pool slot). Publish/inc only for genuinely NEW entries; for a
-    // replacement the count is already right (still one op at this offset)
-    // and the reader window is already closed by the existing op's publish.
-    auto it_existing = ops_map_ptr->find(num);
-    if (it_existing != ops_map_ptr->end())
+    catch (const std::exception& e)
     {
-        it_existing->second->destroy(); // idempotent teardown of the superseded op
-        it_existing->second = DeferredOpPtr(static_cast<DeferredOperationBase*>(v), DeferredOpDeleter{});
-    }
-    else
-    {
-        // Per-chunk pending counter: publish BEFORE inserting the op — the read
-        // gate is `dirty && pending_any()`; publishing first makes pending>0
-        // hold for the op's ENTIRE lifetime (the op itself is published to
-        // flushers via the Dekker write flag, not this counter).
-        chunk_ptr->pending_publish(thr_rank); // owner-tagged; no-op when counterless
-        (*ops_map_ptr)[num] = DeferredOpPtr(static_cast<DeferredOperationBase*>(v), DeferredOpDeleter{});
-        // Publish globally BEFORE releasing the writing flag, so a flusher that
-        // observes !is_thread_writing(r) and proceeds to scan also observes it.
-        CompressionManager<T, Derived>::inc_pending_ops(thr_rank);
+        INVARIANT_FAILED("deferred enqueue failed: {} (rank {}, chunk {}, offset {})", e.what(), thr_rank,
+                         static_cast<const void*>(chunk_ptr), num);
     }
 
     Policy::end_write(thr_rank);

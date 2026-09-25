@@ -16,9 +16,10 @@
 
 #pragma once
 
-#include <cstdlib>  // std::abort (debug stubs)
-#include <iostream> // std::cerr (debug stubs)
-#include <memory>   // std::unique_ptr
+#include <cstdlib>   // std::abort (debug stubs)
+#include <exception> // std::exception (PointerMapChunk2A::erase)
+#include <iostream>  // std::cerr (debug stubs)
+#include <memory>    // std::unique_ptr
 #include <type_traits>
 #include <utility> // std::pair, std::swap
 #include <vector>
@@ -112,7 +113,7 @@ class PointerMapChunk2A
      *        corruption. Idempotent.
      * @param key Key to remove.
      */
-    void erase(const void* key)
+    void erase(const void* key) noexcept
     {
         if (!using_big)
         {
@@ -127,7 +128,17 @@ class PointerMapChunk2A
         }
         else
         {
-            big.erase(key);
+            // ankerl's erase throws on a key it finds changed; ~ArrayChunk2A
+            // calls this and is noexcept: fail with the key instead.
+            try
+            {
+                big.erase(key);
+            }
+            catch (const std::exception& e)
+            {
+                INVARIANT_FAILED("[PointerMapChunk2A erase] failed: {} (this={} key={})", e.what(),
+                                 static_cast<const void*>(this), key);
+            }
         }
     }
 

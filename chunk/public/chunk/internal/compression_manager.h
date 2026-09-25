@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cstdint>
+#include <exception> // std::exception (record_enqueue_deferred)
 #include <utility>
 #include <atomic>
 
@@ -643,7 +644,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
      * @post The chunk joins this rank's deferred set and the rank is flagged as
      *       possibly holding ops.
      */
-    static void record_enqueue_deferred(int thr_rank, ChunkType& chunk)
+    static void record_enqueue_deferred(int thr_rank, ChunkType& chunk) noexcept
     {
         // Record the chunk pointer UNDER rank thr_rank's shard lock. The
         // cross-rank flush (flush_chunk_all_ranks) erases from this same set
@@ -657,7 +658,18 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         // the op-map insert, so bracketing the chunk-set insert with it closes
         // the last unsynchronised access to deferred_chunk_per_thread.
         enqueue_lock(thr_rank);
-        deferred_chunk_per_thread[thr_rank].insert(&chunk);
+        // The insert allocates, and ankerl throws on a bucket overflow; the
+        // writers calling this are noexcept: fail with the context instead of
+        // a silent std::terminate.
+        try
+        {
+            deferred_chunk_per_thread[thr_rank].insert(&chunk);
+        }
+        catch (const std::exception& e)
+        {
+            INVARIANT_FAILED("record_enqueue_deferred: insert failed: {} (rank {}, chunk {})", e.what(), thr_rank,
+                             static_cast<const void*>(&chunk));
+        }
         enqueue_unlock(thr_rank);
 
         mark_thread_has_ops(thr_rank);
