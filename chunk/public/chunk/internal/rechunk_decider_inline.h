@@ -339,6 +339,15 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             {
                 RechunkEvent& ev = log_[it->second];
                 ev.mem_after     = rep.table[static_cast<std::size_t>(rep.cur)].mem_bytes;
+                // The OLD size evaluated on the SAME data (a finer row once
+                // coarsened, a coarser one once refined): the drift-free
+                // reference. mem_before is one advisor period older, and the
+                // data moved in between (tab_complex: +290 MB between two
+                // moves), which alone turned correct forecasts into "freed
+                // -6.5 MB" and banned coarsening on it.
+                for (const auto& row : rep.table)
+                    if (row.size == ev.old_size)
+                        ev.mem_after_old = row.mem_bytes;
 
                 // Outcome feedback. Everything needed was already recorded
                 // and never looked at: compare what the move actually
@@ -350,7 +359,10 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                 if (pol_.coarsen_trust_ratio > 0. && ev.new_size > ev.old_size)
                 {
                     const double predicted = ev.mem_before - ev.mem_pred;
-                    const double measured  = ev.mem_before - ev.mem_after;
+                    // Drift-free when the table had the old size, else the
+                    // before/after difference, as before.
+                    const double measured =
+                        ev.mem_after_old >= 0. ? ev.mem_after_old - ev.mem_after : ev.mem_before - ev.mem_after;
                     if (predicted > 0. && measured < pol_.coarsen_trust_ratio * predicted)
                     {
                         hist_[&arr].coarsen_banned = true;
@@ -396,11 +408,18 @@ inline void RechunkDecider::print_rechunk_log(std::FILE* out) const
     for (const RechunkEvent& e : log_)
     {
         const double d_meas = e.mem_before - e.mem_after;
-        std::fprintf(out,
-                     "  iter %-6d %-12s S %5u -> %-5u   mem %7.1f -> %7.1f MB "
-                     "(freed %6.1f MB; advisor predicted %6.1f)\n",
-                     e.iter, e.name.c_str(), e.old_size, e.new_size, e.mem_before / 1e6, e.mem_after / 1e6,
-                     d_meas / 1e6, (e.mem_before - e.mem_pred) / 1e6);
+        if (e.mem_after_old >= 0.)
+            std::fprintf(out,
+                         "  iter %-6d %-12s S %5u -> %-5u   mem %7.1f -> %7.1f MB "
+                         "(freed %6.1f MB, %6.1f at unchanged data; advisor predicted %6.1f)\n",
+                         e.iter, e.name.c_str(), e.old_size, e.new_size, e.mem_before / 1e6, e.mem_after / 1e6,
+                         d_meas / 1e6, (e.mem_after_old - e.mem_after) / 1e6, (e.mem_before - e.mem_pred) / 1e6);
+        else
+            std::fprintf(out,
+                         "  iter %-6d %-12s S %5u -> %-5u   mem %7.1f -> %7.1f MB "
+                         "(freed %6.1f MB; advisor predicted %6.1f)\n",
+                         e.iter, e.name.c_str(), e.old_size, e.new_size, e.mem_before / 1e6, e.mem_after / 1e6,
+                         d_meas / 1e6, (e.mem_before - e.mem_pred) / 1e6);
     }
 }
 
