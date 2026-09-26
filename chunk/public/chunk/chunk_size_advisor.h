@@ -38,6 +38,7 @@
 // ops drained). The walk reads chunk states and, for finer sizes, chunk data.
 // ============================================================================
 
+#include <algorithm> // std::ranges::min_element (best)
 #include <cmath>   // std::lround (the extrapolated materialised count)
 #include <cstddef> // std::size_t
 #include <cstdint>
@@ -425,11 +426,9 @@ class ChunkSizeAdvisor
             push(S << l, nchunks, mat_at[static_cast<std::size_t>(l)], /*exact=*/true);
         }
 
-        rep.best = 0;
-
-        for (std::size_t i = 1; i < rep.table.size(); ++i)
-            if (rep.table[i].mem_bytes < rep.table[static_cast<std::size_t>(rep.best)].mem_bytes)
-                rep.best = static_cast<int>(i);
+        // The first of the smallest footprints: on a tie the smaller size wins.
+        rep.best = static_cast<int>(std::ranges::min_element(rep.table, {}, &ChunkSizeEstimate::mem_bytes) -
+                                    rep.table.begin());
         return rep;
     }
 

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <algorithm> // std::find, the registered sizes
+#include <algorithm> // std::ranges::contains, the registered sizes
 #include <cstddef>   // std::size_t (the reuse-pool byte counts)
 #include <mutex>
 #include <atomic>   // for atomic_thread_fence, memory_order_seq_cst, atomic
@@ -478,7 +478,7 @@ void AllTypeChunkDynInterface<Derived, true>::register_chunk_size(this Derived& 
     // exist. Both under the registry mutex: a first array of a new type may be
     // registering on another thread.
     const std::lock_guard<std::mutex> lock(self.registry_mutex_);
-    if (std::find(self.registered_sizes_.begin(), self.registered_sizes_.end(), size) == self.registered_sizes_.end())
+    if (!std::ranges::contains(self.registered_sizes_, size))
         self.registered_sizes_.push_back(size);
     for (auto& elm : self.getListTypeChunk())
     {

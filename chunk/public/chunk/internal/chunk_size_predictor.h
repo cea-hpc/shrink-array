@@ -28,9 +28,10 @@
 // Sizes < current are out of scope here (need intra-chunk re-reading, usually
 // lose on metadata). Gated by the caller on any_check — never in production.
 
+#include <algorithm> // std::min, std::ranges::all_of
 #include <cstddef>
 #include <cstdio>
-#include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -51,33 +52,19 @@ template <typename T>
 predict_at_multiple(const std::vector<std::pair<bool, T>>& summary, unsigned S, unsigned k, std::size_t meta_per_block)
 {
     const unsigned Sp       = S * k;
-    const int      nchunks  = static_cast<int>(summary.size());
     int            n_blocks = 0, n_const = 0;
 
-    for (int base = 0; base < nchunks; base += static_cast<int>(k))
+    // One block of S' = S*k per k consecutive chunks, the trailing one partial.
+    // It is constant when every chunk in it is, all at the same value.
+    // (Not views::chunk(k): libc++ does not have it yet.)
+    const std::span<const std::pair<bool, T>> all(summary);
+    for (std::size_t base = 0; base < all.size(); base += k)
     {
         ++n_blocks;
-        bool             all_const = true;
-        std::optional<T> ref;
-        for (unsigned j = 0; j < k; ++j)
-        {
-            const int idx = base + static_cast<int>(j);
-            if (idx >= nchunks)
-                break; // partial trailing block
-            if (!summary[idx].first)
-            {
-                all_const = false;
-                break;
-            }
-            if (!ref)
-                ref = summary[idx].second;
-            else if (*ref != summary[idx].second)
-            {
-                all_const = false;
-                break;
-            }
-        }
-        if (all_const)
+        const auto block                   = all.subspan(base, std::min<std::size_t>(k, all.size() - base));
+        const auto& [head_const, head_val] = block.front();
+        if (head_const &&
+            std::ranges::all_of(block.subspan(1), [&](const auto& c) { return c.first && c.second == head_val; }))
             ++n_const;
     }
 

@@ -17,7 +17,9 @@
 #pragma once
 
 #include <algorithm>
+#include <functional> // std::plus (parked_blocks)
 #include <map>
+#include <ranges> // fold_left, views::transform / values (parked_blocks)
 #include <vector>
 #include <tuple>
 #include <cstdio>  // fprintf (pool breakdown)
@@ -398,17 +400,21 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         return somme_chunk_create;
     }
 
+    /// @brief Buffers parked in @p ranks, one reuse list per rank.
+    [[nodiscard]] static std::size_t parked_blocks(const std::vector<PerThreadFreeList>& ranks) noexcept
+    {
+        return std::ranges::fold_left(ranks | std::views::transform([](const auto& ptf) { return ptf.list.size(); }),
+                                      0uz, std::plus{});
+    }
+
     /// @brief Buffers parked for reuse, every rank, every geometry.
     [[nodiscard]] static std::size_t reuse_pool_blocks() noexcept
     {
-        std::size_t blocks = 0;
-        for (const auto& ptf : list_block_free_thr)
-            blocks += ptf.list.size();
+        std::size_t blocks = parked_blocks(list_block_free_thr);
         if constexpr (chunk_config::chunk_dynamic)
         {
-            for (const auto& kv : list_block_free_thr_by_size_)
-                for (const auto& ptf : kv.second)
-                    blocks += ptf.list.size();
+            for (const auto& ranks : list_block_free_thr_by_size_ | std::views::values)
+                blocks += parked_blocks(ranks);
         }
         return blocks;
     }
@@ -422,8 +428,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         {
             const auto it = list_block_free_thr_by_size_.find(size);
             if (it != list_block_free_thr_by_size_.end())
-                for (const auto& ptf : it->second)
-                    blocks += ptf.list.size();
+                blocks = parked_blocks(it->second);
         }
         return blocks;
     }
@@ -649,9 +654,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      */
     static void print_reuse_pool_breakdown(const char* label) noexcept
     {
-        std::size_t legacy_blocks = 0;
-        for (const auto& ptf : list_block_free_thr)
-            legacy_blocks += ptf.list.size();
+        const std::size_t legacy_blocks = parked_blocks(list_block_free_thr);
 
         if (legacy_blocks != 0)
         {
@@ -666,14 +669,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         {
             for (const auto& kv : list_block_free_thr_by_size_)
             {
-                std::size_t blocks          = 0;
-                std::size_t non_empty_ranks = 0;
-                for (const auto& ptf : kv.second)
-                {
-                    blocks += ptf.list.size();
-                    if (!ptf.list.empty())
-                        ++non_empty_ranks;
-                }
+                const std::size_t blocks          = parked_blocks(kv.second);
+                const auto        non_empty_ranks = static_cast<std::size_t>(
+                    std::ranges::count_if(kv.second, [](const auto& ptf) { return !ptf.list.empty(); }));
                 if (blocks == 0)
                     continue;
                 std::fprintf(stderr,
@@ -704,22 +702,12 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      */
     [[nodiscard]] static std::size_t reuse_pool_bytes() noexcept
     {
-        std::size_t total         = 0;
-        std::size_t legacy_blocks = 0;
-
-        for (const auto& ptf : list_block_free_thr)
-            legacy_blocks += ptf.list.size();
-        total += legacy_blocks * sizeof(T) * thread_chunk_size();
+        std::size_t total = parked_blocks(list_block_free_thr) * sizeof(T) * thread_chunk_size();
 
         if constexpr (chunk_config::chunk_dynamic)
         {
-            for (const auto& kv : list_block_free_thr_by_size_)
-            {
-                std::size_t blocks = 0;
-                for (const auto& ptf : kv.second)
-                    blocks += ptf.list.size();
-                total += blocks * sizeof(T) * kv.first;
-            }
+            for (const auto& [size, ranks] : list_block_free_thr_by_size_)
+                total += parked_blocks(ranks) * sizeof(T) * size;
         }
         return total;
     }
@@ -843,9 +831,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 std::size_t ranks  = 0;
                 if (probe != list_block_free_thr_by_size_.end())
                 {
-                    ranks = probe->second.size();
-                    for (const auto& ptf : probe->second)
-                        blocks += ptf.list.size();
+                    ranks  = probe->second.size();
+                    blocks = parked_blocks(probe->second);
                 }
                 std::fprintf(stderr,
                              "[DRAIN] %-22s size %-6u : %-26s %3zu rank(s), %8zu block(s)"
