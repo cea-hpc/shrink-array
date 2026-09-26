@@ -532,7 +532,12 @@ if(SHRINK_INTEL_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
         # kept as a DIRECT dependency even under --as-needed: libimf needs it,
         # and the executable's RUNPATH only serves its direct dependencies.
         link_libraries("${SHRINK_LIBIMF}" "-Wl,--push-state,--no-as-needed" "${SHRINK_LIBINTLC}" "-Wl,--pop-state")
-        add_link_options("LINKER:-rpath,${_imf_dir}")
+        # -L too: oneAPI's libintlc.so is a linker script, INPUT (libintlc.so.5).
+        # GNU ld also looks next to the script; mold only searches the library
+        # path, so without -L the link worked only with the oneAPI environment
+        # loaded (LIBRARY_PATH) and failed with "library not found: intlc" on a
+        # workstation that merely has oneAPI installed.
+        add_link_options("-L${_imf_dir}" "LINKER:-rpath,${_imf_dir}")
     else()
         message(STATUS "Intel libm: not found -- glibc libm (set INTEL_LIBM_DIR, or load the oneAPI environment)")
     endif()
