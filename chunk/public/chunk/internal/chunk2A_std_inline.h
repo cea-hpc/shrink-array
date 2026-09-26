@@ -20,7 +20,6 @@
 #include "chunk/internal/in_t.h"            // in_t<T>: the element snapshots
 #include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED (steal-mark check)
-#include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
 #include <cstdlib>                          // std::abort
 #include <iostream>                         // std::cerr (debug aborts in create_value*)
 
@@ -882,8 +881,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool              need_
 
     else
     {
-        static_assert(dependent_false_v<T>,
-                      "create_value(..., second value) is for non-bool elements: use create_value_bool()");
+        static_assert(false, "create_value(..., second value) is for non-bool elements: use create_value_bool()");
     }
 }
 
@@ -926,8 +924,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_seco
     }
     else
     {
-        static_assert(dependent_false_v<T>,
-                      "create_value_bool() is for bool elements: use create_value(..., second value)");
+        static_assert(false, "create_value_bool() is for bool elements: use create_value(..., second value)");
     }
 }
 

@@ -24,7 +24,6 @@
 
 #include "chunk/internal/chunk_size_config.h"
 #include "chunk/internal/chunk_size_policy.h"
-#include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
 
 #include "chunk/internal/in_t.h"
 #include "chunk/config.h"
@@ -409,7 +408,7 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
     /*!
      * \brief Convenience overload of create_value() that resolves the
      *        calling thread's rank automatically (get_thr_rank_fast()).
-     *        Non-bool only; aborts in debug builds otherwise.
+     *        Non-bool only; a compile error otherwise.
      * \param need_set_second_value Whether to also register the second-value slot.
      * \param inf_array (second_value, ...) tuple describing the target state.
      */
@@ -421,15 +420,14 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
         }
         else
         {
-            static_assert(dependent_false_v<T>,
-                          "create_value(bool, inf_array) is for non-bool elements: use create_value_bool()");
+            static_assert(false, "create_value(bool, inf_array) is for non-bool elements: use create_value_bool()");
         }
     }
 
     /*!
      * \brief Convenience overload of create_value_bool() that resolves the
      *        calling thread's rank automatically (get_thr_rank_fast()).
-     *        Bool-only; aborts in debug builds otherwise.
+     *        Bool-only; a compile error otherwise.
      * \param need_set_second_value Whether to also register the second-value slot.
      */
     void create_value_bool(bool need_set_second_value) noexcept
@@ -440,8 +438,7 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
         }
         else
         {
-            static_assert(dependent_false_v<T>,
-                          "create_value_bool() is for bool elements: use create_value(bool, inf_array)");
+            static_assert(false, "create_value_bool() is for bool elements: use create_value(bool, inf_array)");
         }
     }
 
@@ -683,7 +680,8 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
         }
         else
         {
-            std::abort();
+            static_assert(
+                false, "compare_and_swap(values_loc, ind, ...) is for non-bool elements: use compare_and_swap_bool()");
         }
     }
 
@@ -705,7 +703,8 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
         }
         else
         {
-            std::abort();
+            static_assert(false,
+                          "compare_and_swap_bool() is for bool elements: use compare_and_swap(values_loc, ind, ...)");
         }
     }
 
@@ -1199,7 +1198,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
             else
             {
                 static_assert(
-                    dependent_false_v<T>,
+                    false,
                     "Logic Error: init_values_cst_val is for non-bool elements: use init_values_cst_val_bool instead.");
             }
         }
@@ -1218,8 +1217,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            static_assert(dependent_false_v<T>,
-                          "Logic Error: init_values_cst_val_bool called on a non-boolean chunk type.");
+            static_assert(false, "Logic Error: init_values_cst_val_bool called on a non-boolean chunk type.");
         }
     }
 
@@ -1313,8 +1311,8 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            static_assert(dependent_false_v<T>, "Logic Error: written() called on a non-boolean chunk. For non-bool "
-                                                "types, use written(int ind) instead.");
+            static_assert(false, "Logic Error: written() called on a non-boolean chunk. For non-bool "
+                                 "types, use written(int ind) instead.");
         }
     }
 
@@ -1354,8 +1352,8 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            static_assert(dependent_false_v<T>, "Logic Error: written(int ind) called on a boolean chunk. Boolean "
-                                                "chunks use a single shared second value, use written() instead.");
+            static_assert(false, "Logic Error: written(int ind) called on a boolean chunk. Boolean "
+                                 "chunks use a single shared second value, use written() instead.");
         }
     }
 
@@ -1373,8 +1371,8 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            static_assert(dependent_false_v<T>, "Logic Error: is_cst_val2(int ind) called on a boolean chunk. Boolean "
-                                                "chunks do not use indexed constants.");
+            static_assert(false, "Logic Error: is_cst_val2(int ind) called on a boolean chunk. Boolean "
+                                 "chunks do not use indexed constants.");
         }
     }
 
@@ -1392,7 +1390,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         else
         {
             static_assert(
-                dependent_false_v<T>,
+                false,
                 "Logic Error: is_cst_val2() called on a non-boolean chunk. Non-bool types require an index (int ind).");
         }
     }
@@ -1411,7 +1409,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            static_assert(dependent_false_v<T>, "Logic Error: is_not_cst_val2(int ind) called on a boolean chunk.");
+            static_assert(false, "Logic Error: is_not_cst_val2(int ind) called on a boolean chunk.");
         }
     }
 
@@ -1427,7 +1425,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            static_assert(dependent_false_v<T>, "Logic Error: is_not_cst_val2() called on a non-boolean chunk.");
+            static_assert(false, "Logic Error: is_not_cst_val2() called on a non-boolean chunk.");
         }
     }
 
@@ -1445,8 +1443,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            static_assert(dependent_false_v<T>,
-                          "Logic Error: is_cst_val() without index called on a non-boolean chunk.");
+            static_assert(false, "Logic Error: is_cst_val() without index called on a non-boolean chunk.");
         }
     }
 

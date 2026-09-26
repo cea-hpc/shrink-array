@@ -850,7 +850,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @brief Check if chunk is compressed to the second constant at index `ind`.
      * @param ind Index of the second constant to check.
      * @return true if the chunk is compressed to the second constant at ind.
-     * @note Non-bool only: aborts if called on a bool chunk (bool has no
+     * @note Non-bool only: a compile error on a bool chunk (bool has no
      *       indexed second constant -- use the no-arg overload below).
      */
 
@@ -862,7 +862,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         }
         else
         {
-            std::abort();
+            static_assert(false, "is_cst_val2(int ind) is for non-bool elements: use is_cst_val2()");
         }
     }
 

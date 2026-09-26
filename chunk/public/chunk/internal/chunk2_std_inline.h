@@ -22,7 +22,6 @@
 #include "chunk/chunk2_std.h"
 #include "chunk/internal/proxy2.h"
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
-#include "chunk/internal/dependent_false.h"     // dependent_false_v (wrong-type branches)
 
 /**
  * @file chunk2_std_inline.h
@@ -775,7 +774,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
 
 // make_block_compression (declared in chunk2_std.h). Binds the non-bool scan and
 // clear callables and hands them to the shared sweep. Instantiating it for bool
-// is a programming error: it aborts in debug builds and does nothing otherwise.
+// is a programming error, and a compile error.
 template <typename T, typename Derived, bool Enabled>
 void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int                thr_rank,
                                                                        const inf_array_t& inf_array,
@@ -795,14 +794,14 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int      
     }
     else
     {
-        static_assert(dependent_false_v<T>, "make_block_compression(thr, inf_array, proxy) is for non-bool elements: "
-                                            "use make_block_compression_bool()");
+        static_assert(false, "make_block_compression(thr, inf_array, proxy) is for non-bool elements: "
+                             "use make_block_compression_bool()");
     }
 }
 
 // make_block_compression_bool (declared in chunk2_std.h). Same binding for bool:
 // second value is `true`, and the clear goes through clear_int_st_bool, which
-// needs no index. Mirror image of the guard above -- non-bool aborts here.
+// needs no index. Mirror image of the guard above -- non-bool fails to compile here.
 template <typename T, typename Derived, bool Enabled>
 void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_bool(int thr_rank, Proxy2<T>* proxy2)
 {
@@ -818,7 +817,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_bool(int 
     else
     {
         static_assert(
-            dependent_false_v<T>,
+            false,
             "make_block_compression_bool() is for bool elements: use make_block_compression(thr, inf_array, proxy)");
     }
 }
@@ -979,7 +978,7 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::create_value(bool               need_
     }
     else
     {
-        std::abort();
+        static_assert(false, "create_value(bool, inf_array, thr) is for non-bool elements: use create_value_bool()");
     }
 }
 
@@ -1058,8 +1057,7 @@ void Chunk2OmpPolicy<T, Derived, false>::create_value(bool need_set_second_value
     }
     else
     {
-        static_assert(dependent_false_v<T>,
-                      "create_value(bool, inf_array) is for non-bool elements: use create_value_bool()");
+        static_assert(false, "create_value(bool, inf_array) is for non-bool elements: use create_value_bool()");
     }
 }
 
@@ -1076,8 +1074,7 @@ void Chunk2OmpPolicy<T, Derived, false>::create_value_bool(bool need_set_second_
     }
     else
     {
-        static_assert(dependent_false_v<T>,
-                      "create_value_bool() is for bool elements: use create_value(bool, inf_array)");
+        static_assert(false, "create_value_bool() is for bool elements: use create_value(bool, inf_array)");
     }
 }
 
