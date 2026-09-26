@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <bit> // std::bit_cast (calculate_checksum)
 #include <chrono>
 #include <iostream>
 #include <random>
@@ -58,9 +59,10 @@ uint64_t calculate_checksum(const V& vec)
 
         if (element != zero)
         {
-            const uint64_t* p = reinterpret_cast<uint64_t*>(const_cast<double*>(&element));
-            checksum          = (checksum >> 1) + ((checksum & 1) << 63);
-            checksum += *p;
+            // The bits of the value: bit_cast, not a uint64_t* on a double
+            // (undefined behaviour under strict aliasing).
+            checksum = (checksum >> 1) + ((checksum & 1) << 63);
+            checksum += std::bit_cast<uint64_t>(element);
         }
     }
     return checksum;

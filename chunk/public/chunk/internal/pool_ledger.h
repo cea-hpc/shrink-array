@@ -271,7 +271,7 @@ inline void report_live_blocks() noexcept
         // any extra container dependency.
         struct Row
         {
-            int         state;
+            BState      state;
             const char* site;
             std::size_t count;
         };
@@ -288,13 +288,13 @@ inline void report_live_blocks() noexcept
                 ++n_parked;
             int i = 0;
             for (; i < n_rows; ++i)
-                if (rows[i].state == static_cast<int>(rec.state) && rows[i].site == rec.last_site)
+                if (rows[i].state == rec.state && rows[i].site == rec.last_site)
                     break;
             if (i == n_rows)
             {
                 if (n_rows == 64)
                     continue; // table full: still counted in the totals above
-                rows[n_rows++] = Row{static_cast<int>(rec.state), rec.last_site, 0};
+                rows[n_rows++] = Row{rec.state, rec.last_site, 0};
             }
             ++rows[i].count;
         }
@@ -303,9 +303,8 @@ inline void report_live_blocks() noexcept
                      "%zu LIVE, %zu PARKED\n",
                      n_live, n_parked);
         for (int i = 0; i < n_rows; ++i)
-            std::fprintf(stderr, "[POOL_LEDGER/REPORT]   %-7s %8zu  last site: %s\n",
-                         rows[i].state == static_cast<int>(BState::LIVE) ? "LIVE" : "PARKED", rows[i].count,
-                         rows[i].site);
+            std::fprintf(stderr, "[POOL_LEDGER/REPORT]   %-7s %8zu  last site: %s\n", bstate_name(rows[i].state),
+                         rows[i].count, rows[i].site);
         if (n_live == 0 && n_parked == 0)
             std::fprintf(stderr, "[POOL_LEDGER/REPORT]   (none) -- any LSan leak comes "
                                  "from a path the ledger does not trace\n");
