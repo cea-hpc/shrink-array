@@ -318,6 +318,14 @@ run_cmd "echo $build_rep"
 
 run_cmd "create_build_rep"
 
+# Without modules, icpx comes from PATH or from oneAPI's setvars.sh. Neither:
+# oneAPI is not installed here, and its three configures could only fail.
+if [ "$enable_oneapi" = true ] && [ "$CHUNK_HAVE_MODULES" = false ] \
+   && ! command -v icpx >/dev/null 2>&1 && [ ! -f "$CHUNK_ONEAPI_SETVARS" ]; then
+    echo "[INFO] no icpx in PATH and no $CHUNK_ONEAPI_SETVARS: oneapi not installed"
+    enable_oneapi=false
+fi
+
 if [ "$enable_oneapi" = true ] && [ "$is_arm" = false ]; then
 
 set_build_header 'Compiling oneapi openmp:'
@@ -477,9 +485,13 @@ if [ -z "$latest_llvm" ]; then
 fi
 
 echo "Using $latest_llvm (latest available)"
-run_cmd "module load $latest_llvm"
-# Reload ninja in case loading LLVM unloaded it
-run_cmd "module load ninja"
+# Without modules latest_llvm is "clang++-N (PATH)", a label, not a module:
+# eval'ed by run_cmd, its parenthesis is a shell syntax error.
+if [ "$CHUNK_HAVE_MODULES" = true ]; then
+    run_cmd "module load $latest_llvm"
+    # Reload ninja in case loading LLVM unloaded it
+    run_cmd "module load ninja"
+fi
 
 if [ "$CHUNK_HAVE_MODULES" = true ]; then
     clangxx="$(command -v clang++ 2>/dev/null)"

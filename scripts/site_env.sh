@@ -15,7 +15,10 @@
 #                             local the repository itself (as CLion does)
 #   CHUNK_GCC_TOOLCHAIN_DIR the libstdc++ that clang / icpx / nvc++ use:
 #                             cea   /ccc/products/gcc-15.2.0/system/default
-#                             local empty (the compilers' own default)
+#                             local the newest ~/opt/gcc-X.Y.Z or /opt/gcc-X.Y.Z
+#                                   built from source (CHUNK_LOCAL_GCC_DIR,
+#                                   also the gnu compiler), else empty (the
+#                                   compilers' own default)
 #   CHUNK_HAVE_MODULES      true when Environment Modules is available
 #
 # Each can be set in the environment first to override. The build names
@@ -33,12 +36,25 @@ if [ -z "${CHUNK_SITE:-}" ]; then
     if [ -d /ccc/products/gcc-15.2.0 ]; then CHUNK_SITE=cea; else CHUNK_SITE=local; fi
 fi
 
+# chunk_local_gcc: the newest GCC built from source under ~/opt or /opt
+# (<root>/gcc-X.Y.Z/bin/g++, i.e. configure --prefix=$HOME/opt/gcc-16.2.0),
+# the workstation's counterpart of /ccc/products/gcc-X.Y.Z. Empty if none.
+chunk_local_gcc() {
+    ls -d "$HOME"/opt/gcc-[0-9]*.[0-9]*.[0-9]* /opt/gcc-[0-9]*.[0-9]*.[0-9]* 2>/dev/null \
+        | while read -r d; do [ -x "$d/bin/g++" ] && echo "$d"; done \
+        | sort -t- -k2 -V | tail -1
+}
+
 if [ "$CHUNK_SITE" = cea ]; then
     : "${CHUNK_BUILD_REP:=$CCCWORKDIR/shrink-array}"
     : "${CHUNK_GCC_TOOLCHAIN_DIR:=/ccc/products/gcc-15.2.0/system/default}"
 else
     : "${CHUNK_BUILD_REP:=$CHUNK_SRC_DIR}"
-    : "${CHUNK_GCC_TOOLCHAIN_DIR:=}"
+    # A GCC built from source is both the gnu compiler (CHUNK_GXX below) and
+    # the libstdc++ of clang / icpx, as gcc-15.2.0 is at CEA. None: the
+    # drivers' own default.
+    : "${CHUNK_LOCAL_GCC_DIR:=$(chunk_local_gcc)}"
+    : "${CHUNK_GCC_TOOLCHAIN_DIR:=$CHUNK_LOCAL_GCC_DIR}"
 fi
 
 # Environment Modules: absent on a workstation. A stand-in that fails quietly
@@ -53,7 +69,7 @@ else
     module() { return 1; }
 fi
 
-export CHUNK_SITE CHUNK_SRC_DIR CHUNK_BUILD_REP CHUNK_GCC_TOOLCHAIN_DIR CHUNK_HAVE_MODULES CHUNK_SCRIPT_DIR
+export CHUNK_SITE CHUNK_SRC_DIR CHUNK_BUILD_REP CHUNK_GCC_TOOLCHAIN_DIR CHUNK_LOCAL_GCC_DIR CHUNK_HAVE_MODULES CHUNK_SCRIPT_DIR
 
 # chunk_module_load_first <module>...: load the first module of the list that
 # exists; the last one is loaded unconditionally (the fallback, e.g. the bare
@@ -79,12 +95,13 @@ chunk_module_load_first() {
 # clang++-22), else <tool> itself -- what a workstation without modules has.
 # A version N.0.0 (no point release yet: clang 23.0.0 in Sept. '26) is
 # skipped by default: the calculators do not have it yet, and the CLion
-# `clang` toolchain points at the newest N.x.y (clang-22). CHUNK_CLANGXX /
-# CHUNK_GXX pick another one explicitly.
+# `clang` toolchain points at the newest N.x.y (clang-22). So is a GCC
+# snapshot, "(experimental)" (the toolchain PPA's g++-16 16.0.1 of March '26).
+# CHUNK_CLANGXX / CHUNK_GXX pick another one explicitly.
 chunk_newest() {
     local tool=$1 cand
     for cand in $(compgen -c "$tool-" 2>/dev/null | grep -E "^${tool//+/\\+}-[0-9]+$" | sort -t- -k2 -n -r -u); do
-        if ! "$cand" --version 2>/dev/null | head -1 | grep -qE 'version [0-9]+\.0\.0([^.0-9]|$)|\(trunk\)'; then
+        if ! "$cand" --version 2>/dev/null | head -1 | grep -qE 'version [0-9]+\.0\.0([^.0-9]|$)|\(trunk\)|\(experimental\)'; then
             echo "$cand"
             return
         fi
@@ -94,6 +111,9 @@ chunk_newest() {
 
 # Local compilers (the modules decide them at CEA): override with these.
 if [ "$CHUNK_HAVE_MODULES" = false ]; then
+    if [ -n "${CHUNK_LOCAL_GCC_DIR:-}" ]; then
+        : "${CHUNK_GXX:=$CHUNK_LOCAL_GCC_DIR/bin/g++}"
+    fi
     # RHEL-likes: the newest gcc-toolset before the system g++.
     if [ -z "${CHUNK_GXX:-}" ]; then
         CHUNK_GXX=$(ls -d /opt/rh/gcc-toolset-*/root/usr/bin/g++ 2>/dev/null | sort -V | tail -1)
@@ -121,4 +141,4 @@ chunk_gcc_toolchain_opt() {
     esac
 }
 
-echo "[site] $CHUNK_SITE: sources $CHUNK_SRC_DIR, builds under $CHUNK_BUILD_REP, modules $CHUNK_HAVE_MODULES"
+echo "[site] $CHUNK_SITE: sources $CHUNK_SRC_DIR, builds under $CHUNK_BUILD_REP, modules $CHUNK_HAVE_MODULES${CHUNK_GCC_TOOLCHAIN_DIR:+, libstdc++ from $CHUNK_GCC_TOOLCHAIN_DIR}"
