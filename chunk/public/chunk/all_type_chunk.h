@@ -112,7 +112,7 @@ template <typename Derived>
 struct AllTypeChunkParallelInterface<Derived, true>
 {
     /// Resizes every manager's per-thread free-block lists to the current thread count.
-    void resize_all_list_block_free_thr() const;
+    void resize_all_list_block_free_thr(this const Derived& self);
 
     /**
      * @brief Releases the buffers freed by a preceding flush, for every type.
@@ -120,7 +120,7 @@ struct AllTypeChunkParallelInterface<Derived, true>
      * @param in_parallel True when called from inside a parallel region (each
      *        thread then handles its own share); false for a joined, serial call.
      */
-    void destroy_after_flush(bool in_parallel);
+    void destroy_after_flush(this Derived& self, bool in_parallel);
 
     /**
      * @brief Applies the pending deferred write ops of every type.
@@ -135,7 +135,7 @@ struct AllTypeChunkParallelInterface<Derived, true>
      *        buffer reclaim is left to a later destroy_after_flush().
      * @return True when at least one deferred op was applied.
      */
-    bool flush_all_deferred(bool in_parallel);
+    bool flush_all_deferred(this Derived& self, bool in_parallel);
 
     /**
      * @brief The per-rank structures of ONE manager, at its registration:
@@ -149,19 +149,19 @@ struct AllTypeChunkParallelInterface<Derived, true>
     void init_manager(ManagerChunkInt& manager, int block_size) const;
 
     /// Allocates the first block of each per-thread allocator (no-op in std-alloc builds).
-    void alloc_chunk_allocator_thr() const;
+    void alloc_chunk_allocator_thr(this const Derived& self);
 
     /// Redistributes the free blocks of every type across threads.
-    void load_balance_list_block_free() const;
+    void load_balance_list_block_free(this const Derived& self);
 
     /// @return True as soon as one type's free lists are unbalanced enough to be worth a pass.
-    bool need_load_balance_list_block_free() const;
+    bool need_load_balance_list_block_free(this const Derived& self);
 
     /// Empties the per-thread free-block lists of every type (teardown).
-    void clear_list_block_free_thr();
+    void clear_list_block_free_thr(this Derived& self);
 
     /// Destroys the per-thread free-block list containers themselves (teardown).
-    void delete_list_block_chunk_free_itself() const;
+    void delete_list_block_chunk_free_itself(this const Derived& self);
 };
 
 /// @brief Serial builds: one allocator per type, and nothing deferred.
@@ -184,7 +184,7 @@ struct AllTypeChunkParallelInterface<Derived, false>
     void init_manager(ManagerChunkInt& manager, int block_size) const;
 
     /// Destroys the single chunk allocator of every type (no-op in std-alloc builds).
-    void delete_chunk_allocator() const;
+    void delete_chunk_allocator(this const Derived& self);
 };
 
 /**
@@ -211,7 +211,7 @@ struct AllTypeChunkDynInterface<Derived, true>
      * @param size       Chunk size, in elements, being registered.
      * @param block_size Number of chunks per allocation block for that size.
      */
-    void register_chunk_size(unsigned int size, int block_size);
+    void register_chunk_size(this Derived& self, unsigned int size, int block_size);
 };
 
 /// @brief Fixed-geometry builds: no geometry to declare.

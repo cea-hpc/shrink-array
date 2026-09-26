@@ -232,16 +232,16 @@ bool AllTypeChunk::have_chunk_to_compress_potentially() const
 
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::destroy_after_flush(bool in_parallel)
+void AllTypeChunkParallelInterface<Derived, true>::destroy_after_flush(this Derived& self, bool in_parallel)
 {
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (auto& elm : self.getListTypeChunk())
     {
         elm->destroy_after_flush(in_parallel);
     }
 }
 
 template <typename Derived>
-bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_parallel)
+bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(this Derived& self, bool in_parallel)
 {
     bool have_flushed = false;
 
@@ -260,7 +260,7 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_pa
     if (!in_parallel)
         serial_ownership.emplace();
 
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (auto& elm : self.getListTypeChunk())
     {
         elm->flush_all_deferred(in_parallel, have_flushed);
     }
@@ -272,7 +272,7 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_pa
 
     if (have_flushed && !in_parallel)
     {
-        destroy_after_flush(false);
+        self.destroy_after_flush(false);
     }
 
     //  #pragma omp barrier // dead lock with ompt
@@ -284,18 +284,18 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_pa
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::load_balance_list_block_free() const
+void AllTypeChunkParallelInterface<Derived, true>::load_balance_list_block_free(this const Derived& self)
 {
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (auto& elm : self.getListTypeChunk())
     {
         elm->load_balance_list_block_free();
     }
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::resize_all_list_block_free_thr() const
+void AllTypeChunkParallelInterface<Derived, true>::resize_all_list_block_free_thr(this const Derived& self)
 {
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (auto& elm : self.getListTypeChunk())
     {
         elm->resize_all_list_block_free_thr();
     }
@@ -316,10 +316,10 @@ void AllTypeChunkParallelInterface<Derived, true>::init_manager(ManagerChunkInt&
     mm.init_allocators(block_size);
 }
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::alloc_chunk_allocator_thr() const
+void AllTypeChunkParallelInterface<Derived, true>::alloc_chunk_allocator_thr(this const Derived& self)
 {
     // std-alloc: each manager's alloc_chunk_allocator_thr() is a no-op.
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (auto& elm : self.getListTypeChunk())
     {
         elm->alloc_chunk_allocator_thr();
     }
@@ -364,7 +364,7 @@ void print_all_reuse_pool_breakdown(const char* label)
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr()
+void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr(this Derived& self)
 {
     // ONE region for all nine element types, four phases separated by
     // barriers -- see ManagerChunkParallelImpl::clear_list_block_free_* for
@@ -387,7 +387,7 @@ void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr()
     // to release through the one it came from.
     //
     // Called at teardown, outside any other parallel region.
-    const auto& types = static_cast<const Derived&>(*this).getListTypeChunk();
+    const auto& types = self.getListTypeChunk();
 
     std::vector<std::size_t> nb_buckets;
     nb_buckets.reserve(types.size());
@@ -427,18 +427,18 @@ void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr()
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, true>::delete_list_block_chunk_free_itself() const
+void AllTypeChunkParallelInterface<Derived, true>::delete_list_block_chunk_free_itself(this const Derived& self)
 {
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (auto& elm : self.getListTypeChunk())
     {
         elm->delete_list_block_chunk_free_itself();
     }
 }
 
 template <typename Derived>
-bool AllTypeChunkParallelInterface<Derived, true>::need_load_balance_list_block_free() const
+bool AllTypeChunkParallelInterface<Derived, true>::need_load_balance_list_block_free(this const Derived& self)
 {
-    for (const auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (const auto& elm : self.getListTypeChunk())
     {
         if (elm->need_load_balance_list_block_free())
             return true;
@@ -458,10 +458,10 @@ void AllTypeChunkParallelInterface<Derived, false>::init_manager(ManagerChunkInt
 }
 
 template <typename Derived>
-void AllTypeChunkParallelInterface<Derived, false>::delete_chunk_allocator() const
+void AllTypeChunkParallelInterface<Derived, false>::delete_chunk_allocator(this const Derived& self)
 {
     // std-alloc: each manager's delete_chunk_allocator() is a no-op.
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (auto& elm : self.getListTypeChunk())
     {
         elm->delete_chunk_allocator();
     }
@@ -471,17 +471,16 @@ void AllTypeChunkParallelInterface<Derived, false>::delete_chunk_allocator() con
 // separately, character for character, in the days when the split was made with
 // the preprocessor; the interface is now specialised on a bool instead.
 template <typename Derived>
-void AllTypeChunkDynInterface<Derived, true>::register_chunk_size(unsigned int size, int block_size)
+void AllTypeChunkDynInterface<Derived, true>::register_chunk_size(this Derived& self, unsigned int size, int block_size)
 {
     // Remembered first, so that a manager registered from now on gets it
     // (register_manager replays the list); then declared to the managers that
     // exist. Both under the registry mutex: a first array of a new type may be
     // registering on another thread.
-    auto&                             reg = static_cast<Derived&>(*this);
-    const std::lock_guard<std::mutex> lock(reg.registry_mutex_);
-    if (std::find(reg.registered_sizes_.begin(), reg.registered_sizes_.end(), size) == reg.registered_sizes_.end())
-        reg.registered_sizes_.push_back(size);
-    for (auto& elm : reg.getListTypeChunk())
+    const std::lock_guard<std::mutex> lock(self.registry_mutex_);
+    if (std::find(self.registered_sizes_.begin(), self.registered_sizes_.end(), size) == self.registered_sizes_.end())
+        self.registered_sizes_.push_back(size);
+    for (auto& elm : self.getListTypeChunk())
     {
         elm->register_chunk_size(size, block_size);
     }

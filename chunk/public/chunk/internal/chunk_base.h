@@ -241,26 +241,26 @@ struct DeferredReadGate<Derived, DeferReadGate::Coarse>
     /// @param thr Calling thread's rank; unused (no owner tracking in this mode).
     /// @param i Element offset being written; unused -- the check is per-chunk.
     /// @return Derived::is_not_available() -- the coarse, map-scan-based check.
-    [[nodiscard]] bool foreign_pending([[maybe_unused]] int thr, [[maybe_unused]] int i) const noexcept
+    [[nodiscard]] bool
+    foreign_pending(this const Derived& self, [[maybe_unused]] int thr, [[maybe_unused]] int i) noexcept
     {
-        return static_cast<const Derived&>(*this).is_not_available();
+        return self.is_not_available();
     }
 
     /// @brief Read-side gate check, using the coarse map-scan since no
     ///        per-chunk counter exists in this build.
     /// @param i Element offset being read; unused -- the check is per-chunk.
     /// @return Derived::is_not_available().
-    [[nodiscard]] bool read_gate_should_wait([[maybe_unused]] int i) const noexcept
+    [[nodiscard]] bool read_gate_should_wait(this const Derived& self, [[maybe_unused]] int i) noexcept
     {
-        return static_cast<const Derived&>(*this).is_not_available();
+        return self.is_not_available();
     }
 
     /// @brief Drain this chunk if the coarse check says something might be
     ///        pending on it.
     /// @param i Element offset being read.
-    void reader_sync(int i) const noexcept
+    void reader_sync(this const Derived& self, int i) noexcept
     {
-        const auto& self = static_cast<const Derived&>(*this);
         if (self.is_not_available())
             self.wait_for_availability(i);
     }
@@ -308,9 +308,9 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
     ///        the owner). See the class comment above for the dual OFF/ON
     ///        encoding.
     /// @param thr Calling (publishing) thread's rank.
-    void pending_publish([[maybe_unused]] int thr) noexcept
+    void pending_publish(this Derived& self, [[maybe_unused]] int thr) noexcept
     {
-        auto& pending = static_cast<Derived&>(*this).pending_ops_;
+        auto& pending = self.pending_ops_;
         {
             const uint32_t me =
                 (static_cast<uint32_t>(thr) + 1u < kOwnerMulti) ? static_cast<uint32_t>(thr) + 1u : kOwnerMulti;
@@ -341,9 +341,9 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
     ///        the per-chunk pending count (clearing the owner once it
     ///        reaches <= 0).
     /// @param count Number of operations being retired.
-    void pending_retire(int32_t count) noexcept
+    void pending_retire(this Derived& self, int32_t count) noexcept
     {
-        auto& pending = static_cast<Derived&>(*this).pending_ops_;
+        auto& pending = self.pending_ops_;
         {
             auto cur = static_cast<uint32_t>(pending.load(std::memory_order_acquire));
             for (;;)
@@ -364,9 +364,9 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
     /// @brief Whether anything is currently pending on this chunk (either
     ///        OFF or ON encoding, decoded correctly either way).
     /// @return true if the (sign-extended) pending count is > 0.
-    [[nodiscard]] bool pending_any() const noexcept
+    [[nodiscard]] bool pending_any(this const Derived& self) noexcept
     {
-        const auto raw = static_cast<const Derived&>(*this).pending_ops_.load(std::memory_order_acquire);
+        const auto raw = self.pending_ops_.load(std::memory_order_acquire);
         return sign_extend_count(static_cast<uint32_t>(raw)) > 0;
     }
 
@@ -376,11 +376,11 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
     /// @param thr Calling (writing) thread's rank.
     /// @param i Element offset being written; unused (the check is per-chunk).
     /// @return true iff something is pending and it was not published by `thr`.
-    [[nodiscard]] bool foreign_pending([[maybe_unused]] int thr, [[maybe_unused]] int i) const noexcept
+    [[nodiscard]] bool
+    foreign_pending(this const Derived& self, [[maybe_unused]] int thr, [[maybe_unused]] int i) noexcept
     {
         {
-            const auto w =
-                static_cast<uint32_t>(static_cast<const Derived&>(*this).pending_ops_.load(std::memory_order_acquire));
+            const auto w = static_cast<uint32_t>(self.pending_ops_.load(std::memory_order_acquire));
             return sign_extend_count(w) > 0 && (w >> kCountBits) != static_cast<uint32_t>(thr) + 1u;
         }
     }
@@ -405,17 +405,17 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
     ///        reading element `i`? See the fw13 note above for why this
     ///        must go through pending_any() rather than a raw sign compare.
     /// @return pending_any(). (`i` unused: the check is per-chunk, not per-offset.)
-    [[nodiscard]] bool read_gate_should_wait(int /*i*/) const noexcept
+    [[nodiscard]] bool read_gate_should_wait(this const Derived& self, int /*i*/) noexcept
     {
-        return pending_any();
+        return self.pending_any();
     }
 
     /// @brief Drain this chunk across all ranks if anything is pending on it.
     /// @param i Element offset being read.
-    void reader_sync(int i) const noexcept
+    void reader_sync(this const Derived& self, int i) noexcept
     {
-        if (pending_any()) [[unlikely]]
-            static_cast<const Derived&>(*this).wait_for_availability(i);
+        if (self.pending_any()) [[unlikely]]
+            self.wait_for_availability(i);
     }
 };
 
@@ -424,10 +424,13 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
 // build_config::use_openmp. Unlike DeferredReadGate/the deferred-ops machinery/CAS,
 // this is a genuine two-implementation split: BOTH modes allocate a chunk,
 // initialize it, and keep stats/ledger/leak-tracking in sync -- only the
-// OpenMP version additionally tries the per-thread free list first. Same
-// style as DeferredReadGate: static_cast<Derived&>(*this) inline rather than
-// inheriting CRTPSupport<Derived> a second time, which would make ChunkBase's
-// own derived()/self() ambiguous (two paths to the same stateless mixin).
+// OpenMP version additionally tries the per-thread free list first.
+// static_cast<Derived&>(*this) inline rather than inheriting CRTPSupport<Derived>
+// a second time, which would make ChunkBase's own derived()/self() ambiguous
+// (two paths to the same stateless mixin). Not an explicit object parameter
+// as in DeferredReadGate: allocate_chunk_internal is called as
+// Base::allocate_chunk_internal(...) from sibling policies (Chunk2OmpPolicy,
+// ...), whose *this is not a Derived and would not bind to `this Derived&`.
 // ----------------------------------------------------------------------------
 template <typename T, typename Derived, bool UseOpenMP = build_config::use_openmp>
 struct ChunkAllocPolicy; // primary left undefined: only the 2 specializations exist
@@ -640,9 +643,11 @@ struct ChunkAllocPolicy<T, Derived, false>
 // Storage note: `values` (ChunkBase's own atomic pointer) and `pending_ops_`
 // stay declared on ChunkBase itself for object-layout stability (same
 // principle as DeferredReadGate above); this policy only owns the access,
-// reaching back via static_cast<Derived&>(*this) -- matching DeferredReadGate's
-// own style, not CRTPSupport<Derived>, to avoid making ChunkBase's
-// derived()/self() ambiguous.
+// reaching back via static_cast<Derived&>(*this), not CRTPSupport<Derived>, to
+// avoid making ChunkBase's derived()/self() ambiguous -- and not through an
+// explicit object parameter, for the reason given at ChunkAllocPolicy:
+// compare_and_swap_gen / recup_value are called as Base::... from sibling
+// policies whose *this is not a Derived.
 // ----------------------------------------------------------------------------
 template <typename T, typename Derived, bool UseOpenMP = build_config::use_openmp>
 struct ChunkDeferredOpsPolicy; // primary left undefined: only the 2 specializations exist

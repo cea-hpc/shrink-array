@@ -84,13 +84,17 @@ struct Chunk2AConcurrentOps
     {
         return &static_cast<crtp_cast_t<Self, Derived>&>(obj);
     }
-    Base* base() noexcept
+    /// @brief The chunk's Chunk2Base / TabCstVal2Holder, const on a const
+    ///        object (deducing this, as self()).
+    template <typename Self>
+    auto* base(this Self&& obj) noexcept
     {
-        return static_cast<Base*>(self());
+        return static_cast<crtp_cast_t<Self, Base>*>(obj.self());
     }
-    Holder* holder() noexcept
+    template <typename Self>
+    auto* holder(this Self&& obj) noexcept
     {
-        return static_cast<Holder*>(self());
+        return static_cast<crtp_cast_t<Self, Holder>*>(obj.self());
     }
 
     /// @brief Compact identity of this chunk for the ring log: its address past
@@ -210,8 +214,8 @@ struct Chunk2AConcurrentOps
 // pointer (cst_val1 / cst_val2 / written). The read counterpart to
 // Chunk2AConcurrentOps' CAS writes, but BUILD-AGNOSTIC: these are needed in both
 // serial and OMP builds, so this base is mixed into Chunk2A UNCONDITIONALLY (not
-// gated on use_openmp like Chunk2AConcurrentOps). Same CRTP accessor pattern,
-// const-qualified since every query is a pure read.
+// gated on use_openmp like Chunk2AConcurrentOps). Same CRTP accessors, which
+// resolve to const here since every query is a pure read.
 template <typename T, typename Derived>
 struct Chunk2AStateQueries
 {
@@ -219,17 +223,24 @@ struct Chunk2AStateQueries
     using Holder                      = TabCstVal2Holder<T>;
     static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
 
-    const Derived* self() const noexcept
+    /// @brief The chunk, const on a const object (deducing this, as in
+    ///        Chunk2AConcurrentOps; every query below is const).
+    template <typename Self>
+    auto* self(this Self&& obj) noexcept
     {
-        return static_cast<const Derived*>(this);
+        return &static_cast<crtp_cast_t<Self, Derived>&>(obj);
     }
-    const Base* base() const noexcept
+    /// @brief The chunk's Chunk2Base / TabCstVal2Holder, const on a const
+    ///        object (deducing this, as self()).
+    template <typename Self>
+    auto* base(this Self&& obj) noexcept
     {
-        return static_cast<const Base*>(self());
+        return static_cast<crtp_cast_t<Self, Base>*>(obj.self());
     }
-    const Holder* holder() const noexcept
+    template <typename Self>
+    auto* holder(this Self&& obj) noexcept
     {
-        return static_cast<const Holder*>(self());
+        return static_cast<crtp_cast_t<Self, Holder>*>(obj.self());
     }
 
     /// @brief Is the chunk compressed to a second value (its values pointer
