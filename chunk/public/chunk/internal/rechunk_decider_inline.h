@@ -1,7 +1,9 @@
 #pragma once
 #include "chunk/internal/exact_rss.h" // exact_rss_kib ([RECHUNK-MEM])
 #include <unistd.h> // sysconf
-#include "fast_allocators/slab_arena.h" // fast_alloc::value_arena (CHUNK_RECHUNK_MEMTRACE)
+#if !defined CHUNK_STD_ALLOC                // std-alloc builds have no fast_allocators include path
+    #include "fast_allocators/slab_arena.h" // fast_alloc::value_arena (CHUNK_RECHUNK_MEMTRACE)
+#endif
 #include <cstring> // std::strcmp (CHUNK_ADVISOR_TABLE)
 
 /*
@@ -353,6 +355,11 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                 // Exact (smaps_rollup): statm lags by gigabytes at 64 threads.
                 const long rss_kib = shrink_array::exact_rss_kib();
                 const long rss_mb  = rss_kib >= 0 ? rss_kib / 1024 : -1;
+#if defined CHUNK_STD_ALLOC
+                // std-alloc: the values are plain mallocs, no arena to split off.
+                std::fprintf(stderr, "[RECHUNK-MEM] tick %d iter %d: rss %ld MB (std-alloc: no values arena)\n", tick,
+                             iter, rss_mb);
+#else
                 const auto& va     = fast_alloc::value_arena();
                 const long  res_mb = static_cast<long>(static_cast<double>(va.resident_bytes()) / 1048576.);
                 std::fprintf(stderr,
@@ -361,6 +368,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                              tick, iter, rss_mb, res_mb, rss_mb - res_mb,
                              static_cast<long>(static_cast<double>(va.mapped_bytes()) / 1048576.),
                              static_cast<long>(static_cast<double>(va.live_bytes()) / 1048576.));
+#endif
                 std::fflush(stderr);
             }
         }
