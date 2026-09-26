@@ -29,6 +29,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib> // std::getenv -- CHUNK_FORCE_RECHUNK debug hooks
+#include <optional>
 #include <string>
 
 #include "chunk/rechunk_decider.h"
@@ -40,6 +41,12 @@
 
 namespace shrink_array
 {
+
+// A size in MB from an environment variable, in bytes; 0 or less is 0.
+inline std::size_t mb_to_bytes(double mb) noexcept
+{
+    return mb > 0. ? static_cast<std::size_t>(mb * 1024. * 1024.) : 0u;
+}
 
 // Cap a coarsening move to at most pol_.max_coarsen_factor x cur_size per
 // rechunk. A large coarsening (e.g. x16) leans on the least reliable part of
@@ -141,20 +148,10 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     // the 8 MB policy value still gated the coarsening branch after
     // CHUNK_COARSEN_MIN_META_MB=0 had cleared the floor -- "gain below
     // deadband" at every tick, on every chunk-family variant.
-    static const std::size_t env_min_gain = []()
-    {
-        const char* env = std::getenv("CHUNK_ADVISOR_MIN_GAIN_MB");
-        if (env == nullptr || env[0] == '\0')
-            return static_cast<std::size_t>(-1); // unset: keep the policy
-        double mb = 0.;
-        if (!shrink_array::parse_number(env, mb))
-        {
-            shrink_array::warn_invalid_env("CHUNK_ADVISOR_MIN_GAIN_MB", env);
-            return static_cast<std::size_t>(-1); // not a number: keep the policy
-        }
-        return mb > 0. ? static_cast<std::size_t>(mb * 1024. * 1024.) : 0u;
-    }();
-    const std::size_t min_gain = env_min_gain == static_cast<std::size_t>(-1) ? pol_.min_gain_bytes : env_min_gain;
+    // Unset, or not a number: nothing, and the policy value is kept.
+    static const std::optional<std::size_t> env_min_gain =
+        shrink_array::env_optional<double>("CHUNK_ADVISOR_MIN_GAIN_MB").transform(mb_to_bytes);
+    const std::size_t min_gain = env_min_gain.value_or(pol_.min_gain_bytes);
 
     const auto  rel_gate  = static_cast<std::size_t>(pol_.min_gain_frac * static_cast<double>(cur_e.mem_bytes));
     std::size_t data_gate = std::max(min_gain, rel_gate);
@@ -185,21 +182,9 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         // should not need a rebuild. The feature test needs it for the
         // opposite reason: it shrinks its arrays on purpose and still wants
         // the move to fire.
-        static const std::size_t env_meta_floor = []() -> std::size_t
-        {
-            const char* env = std::getenv("CHUNK_COARSEN_MIN_META_MB");
-            if (env == nullptr || env[0] == '\0')
-                return static_cast<std::size_t>(-1); // unset: keep the policy
-            double mb = 0.;
-            if (!shrink_array::parse_number(env, mb))
-            {
-                shrink_array::warn_invalid_env("CHUNK_COARSEN_MIN_META_MB", env);
-                return static_cast<std::size_t>(-1); // not a number: keep the policy
-            }
-            return mb > 0. ? static_cast<std::size_t>(mb * 1024. * 1024.) : 0u;
-        }();
-        const std::size_t policy_floor =
-            env_meta_floor == static_cast<std::size_t>(-1) ? pol_.coarsen_min_meta_gain_bytes : env_meta_floor;
+        static const std::optional<std::size_t> env_meta_floor =
+            shrink_array::env_optional<double>("CHUNK_COARSEN_MIN_META_MB").transform(mb_to_bytes);
+        const std::size_t policy_floor = env_meta_floor.value_or(pol_.coarsen_min_meta_gain_bytes);
         const auto meta_floor = std::max(min_gain, policy_floor);
         clears_gate =
             (gain_meta >= static_cast<double>(meta_floor) && gain_bytes >= min_gain) || gain_bytes >= data_gate;

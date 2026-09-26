@@ -347,16 +347,8 @@ int main(int argc, char* argv[])
     // Every iteration was a full sweep of every array plus a self-heal that
     // made debug compress more than the inline path alone. SHRINK_BENCH_AUDIT_FREQ
     // overrides (1 = every iteration, the former behaviour).
-    [[maybe_unused]] const Int freq_audit = [iter_max]() -> Int
-    {
-        if (const char* e = std::getenv("SHRINK_BENCH_AUDIT_FREQ"); e != nullptr && *e != '\0')
-        {
-            if (Int v = 0; shrink_array::parse_number(e, v))
-                return std::max<Int>(1, v);
-            shrink_array::warn_invalid_env("SHRINK_BENCH_AUDIT_FREQ", e);
-        }
-        return std::max<Int>(1, iter_max / 10);
-    }();
+    [[maybe_unused]] const Int freq_audit =
+        std::max<Int>(1, shrink_array::env_number<Int>("SHRINK_BENCH_AUDIT_FREQ", iter_max / 10));
 
     const Int freq_raz = get_freq_raz(iter_max);
 
@@ -636,16 +628,7 @@ int main(int argc, char* argv[])
     // are largest, and the tick count stays bounded. The floor of 10 stops a
     // very short run from examining every other iteration.
     // CHUNK_ADVISOR_PERIOD overrides; 0 still disables.
-    const Int advisor_period = [iter_max]() -> Int
-    {
-        if (const char* e = std::getenv("CHUNK_ADVISOR_PERIOD"); e != nullptr && *e != '\0')
-        {
-            if (Int v = 0; shrink_array::parse_number(e, v))
-                return v;
-            shrink_array::warn_invalid_env("CHUNK_ADVISOR_PERIOD", e);
-        }
-        return std::max<Int>(10, iter_max / 20);
-    }();
+    const Int advisor_period = shrink_array::env_number<Int>("CHUNK_ADVISOR_PERIOD", std::max<Int>(10, iter_max / 20));
     // Phase-3A decider (dry-run): persists across ticks, keyed by array address.
     // `advisor_call` increments once per advisor_tick so cooldown/stability count
     // in ticks, not iterations. Policy defaults: 3 stable ticks, 8 MB deadband,

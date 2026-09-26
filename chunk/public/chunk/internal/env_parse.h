@@ -39,70 +39,117 @@
 #include <cstdio>       // std::fprintf
 #include <cstdlib>      // std::getenv, std::strtod
 #include <cstring>      // std::strlen
+#include <expected>     // std::expected, std::unexpected (parse_number)
+#include <optional>     // std::optional (env_optional)
 #include <system_error> // std::errc
 #include <type_traits>
 
 namespace shrink_array
 {
 
+/// @brief Why a text is not a number of the requested type.
+enum class ParseError
+{
+    empty,          ///< null or ""
+    not_a_number,   ///< no number at the start (a '-' for an unsigned type included)
+    trailing_chars, ///< a number followed by something else, e.g. "1o"
+    out_of_range    ///< a number too large (or too small) for the type
+};
+
+/// @brief The reason, as the warnings print it.
+[[nodiscard]] constexpr const char* to_string(ParseError e) noexcept
+{
+    switch (e)
+    {
+        case ParseError::empty:
+            return "empty";
+        case ParseError::not_a_number:
+            return "not a number";
+        case ParseError::trailing_chars:
+            return "trailing characters";
+        case ParseError::out_of_range:
+            return "out of range";
+    }
+    return "?";
+}
+
 /**
  * @brief Parse ALL of @p text as a @p T.
- * @return true and @p out set when @p text is exactly a number of type T;
- *         false (and @p out untouched) when it is empty, not a number, has
- *         trailing characters, is out of T's range, or negative for an
- *         unsigned T.
+ * @return the number when @p text is exactly a number of type T; otherwise why
+ *         it is not: empty, not a number (a negative value for an unsigned T
+ *         included), trailing characters, or out of T's range.
  */
 template <typename T>
-[[nodiscard]] bool parse_number(const char* text, T& out) noexcept
+[[nodiscard]] std::expected<T, ParseError> parse_number(const char* text) noexcept
 {
     static_assert(std::is_arithmetic_v<T> && !std::is_same_v<T, bool>, "parse_number: a number type");
     if (text == nullptr || *text == '\0')
-        return false;
+        return std::unexpected(ParseError::empty);
     if constexpr (std::is_integral_v<T>)
     {
         const char* const end = text + std::strlen(text);
         T                 v{};
         const auto [ptr, ec] = std::from_chars(text, end, v);
-        if (ec != std::errc{} || ptr != end)
-            return false;
-        out = v;
-        return true;
+        if (ec == std::errc::result_out_of_range)
+            return std::unexpected(ParseError::out_of_range);
+        if (ec != std::errc{})
+            return std::unexpected(ParseError::not_a_number);
+        if (ptr != end)
+            return std::unexpected(ParseError::trailing_chars);
+        return v;
     }
     else
     {
         char* end      = nullptr;
         errno          = 0;
         const double v = std::strtod(text, &end);
-        if (end == text || *end != '\0' || errno == ERANGE)
-            return false;
-        out = static_cast<T>(v);
-        return true;
+        if (end == text)
+            return std::unexpected(ParseError::not_a_number);
+        if (*end != '\0')
+            return std::unexpected(ParseError::trailing_chars);
+        if (errno == ERANGE)
+            return std::unexpected(ParseError::out_of_range);
+        return static_cast<T>(v);
     }
 }
 
 /// @brief The warning of a variable whose value is not the number expected.
-inline void warn_invalid_env(const char* name, const char* value) noexcept
+inline void warn_invalid_env(const char* name, const char* value, ParseError why) noexcept
 {
-    std::fprintf(stderr, "[env] %s=\"%s\" is not a valid value: ignored, the default is kept\n", name, value);
+    std::fprintf(stderr, "[env] %s=\"%s\" is not a valid value (%s): ignored, the default is kept\n", name, value,
+                 to_string(why));
+}
+
+/**
+ * @brief The number in environment variable @p name, if it holds one.
+ * @return nothing when the variable is unset or empty, and when its value is
+ *         not a number of type T (with a warning on stderr: a typo such as
+ *         CHUNK_RECHUNK_SLICES=1o no longer passes unnoticed).
+ */
+template <typename T>
+[[nodiscard]] std::optional<T> env_optional(const char* name) noexcept
+{
+    const char* env = std::getenv(name);
+    if (env == nullptr || *env == '\0')
+        return std::nullopt;
+    const auto v = parse_number<T>(env);
+    if (!v)
+    {
+        warn_invalid_env(name, env, v.error());
+        return std::nullopt;
+    }
+    return *v;
 }
 
 /**
  * @brief The number in environment variable @p name, or @p fallback.
  * @return @p fallback when the variable is unset or empty, and when its value
- *         is not a number of type T (with a warning on stderr: a typo such as
- *         CHUNK_RECHUNK_SLICES=1o no longer passes unnoticed).
+ *         is not a number of type T (with a warning, see env_optional).
  */
 template <typename T>
 [[nodiscard]] T env_number(const char* name, T fallback) noexcept
 {
-    const char* env = std::getenv(name);
-    if (env == nullptr || *env == '\0')
-        return fallback;
-    T v{};
-    if (parse_number(env, v))
-        return v;
-    warn_invalid_env(name, env);
-    return fallback;
+    return env_optional<T>(name).value_or(fallback);
 }
 
 /**
@@ -112,11 +159,11 @@ template <typename T>
 template <typename T>
 [[nodiscard]] inline T arg_number(const char* text, T fallback, const char* what) noexcept
 {
-    T v{};
-    if (parse_number(text, v))
-        return v;
-    std::fprintf(stderr, "[arg] %s \"%s\" is not a valid value: ignored, the default is kept\n", what,
-                 text != nullptr ? text : "");
+    const auto v = parse_number<T>(text);
+    if (v)
+        return *v;
+    std::fprintf(stderr, "[arg] %s \"%s\" is not a valid value (%s): ignored, the default is kept\n", what,
+                 text != nullptr ? text : "", to_string(v.error()));
     return fallback;
 }
 
