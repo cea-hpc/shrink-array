@@ -31,6 +31,7 @@
 #include <sys/types.h>
 #include <unistd.h> // unlink
 #include <format>
+#include <print>
 
 #include "bench_utils.h"
 #include "chunk/ring_log_debug.h" // SEGV hunt: analyze_ring_sweep / dump_ring decls
@@ -114,22 +115,22 @@ void write_binary_file(const std::string& filename,
         std::ofstream file(filename, std::ios::binary);
         if (!file)
         {
-            std::cerr << std::format("Error open file : {}\n", filename);
+            std::println(stderr, "Error open file : {}", filename);
             return;
         }
 
         std::ofstream file_check_sum(filename_check_sum, std::ios::binary);
         if (!file_check_sum)
         {
-            std::cerr << std::format("Error open file : {}\n", filename_check_sum);
+            std::println(stderr, "Error open file : {}", filename_check_sum);
             return;
         }
         const size_t size = data.size();
 
 #pragma omp critical
         {
-            std::cout << std::format("Write : {}\n", filename_check_sum);
-            std::cout << std::format("Write : {}\n", filename);
+            std::println("Write : {}", filename_check_sum);
+            std::println("Write : {}", filename);
         }
 
         file_check_sum.write(reinterpret_cast<const char*>(&checksum), sizeof(uint64_t));
@@ -165,7 +166,7 @@ void write_binary_file(const std::string& filename,
     }
     else
     {
-        std::cout << std::format("write is not avalaible on chunk vector\n");
+        std::println("write is not avalaible on chunk vector");
         std::abort();
     }
 
@@ -177,7 +178,7 @@ void write_binary_file(const std::string& filename,
         compress_file(filename, filename_gz);
 #pragma omp critical
         {
-            std::cout << std::format("Compression : {} -> {}\n", filename, filename_gz);
+            std::println("Compression : {} -> {}", filename, filename_gz);
         }
         unlink(filename.c_str());
     }
@@ -215,12 +216,12 @@ void read_check_binary_file(Int                ind,
     uint64_t lchs_read;
 #pragma omp critical
     {
-        std::cout << std::format("Read : {}\n", filename_check_sum);
+        std::println("Read : {}", filename_check_sum);
     }
     std::ifstream file_check_sum(filename_check_sum, std::ios::binary);
     if (!file_check_sum)
     {
-        std::cerr << "Error open file  : " << filename_check_sum << '\n';
+        std::println(stderr, "Error open file  : {}", filename_check_sum);
         std::abort();
     }
 
@@ -275,7 +276,7 @@ void read_check_binary_file(Int                ind,
     std::ifstream file(filename, std::ios::binary);
     if (!file)
     {
-        std::cerr << "Error open file  : " << filename << '\n';
+        std::println(stderr, "Error open file  : {}", filename);
         return;
     }
 

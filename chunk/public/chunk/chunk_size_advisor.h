@@ -41,7 +41,8 @@
 #include <cmath>   // std::lround (the extrapolated materialised count)
 #include <cstddef> // std::size_t
 #include <cstdint>
-#include <cstdio> // std::printf (print)
+#include <print>       // std::println (print)
+#include <ranges>      // std::views::enumerate (print)
 #include <type_traits> // std::is_same_v (the bool second value)
 #include <vector>
 
@@ -435,19 +436,17 @@ class ChunkSizeAdvisor
     /// @brief Print @p rep as a table on stdout, headed by @p name.
     static void print(const ChunkSizeReport& rep, const char* name)
     {
-        std::printf("── ChunkSizeAdvisor [%s] current S=%u, meta=%.1f B/chunk ──\n", name, rep.current_size,
-                    rep.meta_bytes);
-        for (std::size_t i = 0; i < rep.table.size(); ++i)
+        std::println("── ChunkSizeAdvisor [{}] current S={}, meta={:.1f} B/chunk ──", name, rep.current_size,
+                     rep.meta_bytes);
+        for (const auto& [i, row] : std::views::enumerate(rep.table))
         {
-            const auto& row = rep.table[i];
-            std::printf("   S=%5u : chunks=%9lld  mat=%9lld (%5.1f%%)  mem=%9.2f Mo %s%s%s\n", row.size,
-                        static_cast<long long>(row.n_chunks), static_cast<long long>(row.mat),
-                        row.n_chunks ? 100. * static_cast<double>(row.mat) / static_cast<double>(row.n_chunks) : 0.,
-                        row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~",
-                        static_cast<int>(i) == rep.cur ? " <- current" : "",
-                        static_cast<int>(i) == rep.best ? "  ** BEST **" : "");
+            std::println("   S={:5} : chunks={:9}  mat={:9} ({:5.1f}%)  mem={:9.2f} Mo {}{}{}", row.size, row.n_chunks,
+                         row.mat,
+                         row.n_chunks ? 100. * static_cast<double>(row.mat) / static_cast<double>(row.n_chunks) : 0.,
+                         row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~", i == rep.cur ? " <- current" : "",
+                         i == rep.best ? "  ** BEST **" : "");
         }
-        std::printf("   estimated gain best vs current : %.2f Mo\n", rep.best_gain_bytes() / (1024. * 1024.));
+        std::println("   estimated gain best vs current : {:.2f} Mo", rep.best_gain_bytes() / (1024. * 1024.));
 
         // Re-chunk cost (phase 2 model): only meaningful when best != current.
         // Uses the materialized-chunk counts the table already holds. The gain
@@ -464,7 +463,8 @@ class ChunkSizeAdvisor
             // Observation-phase thresholds (not a decision, just a hint label):
             // >= 1 Mo gained and <= 50 ms spent reads as clearly worth it.
             const bool worth = rechunk_is_worth_it(gain_bytes, cost_ms, 1uz << 20, 50.0);
-            std::printf("   estimated re-chunk cost       : %.3f ms  (%s)\n", cost_ms, worth ? "worth it" : "marginal");
+            std::println("   estimated re-chunk cost       : {:.3f} ms  ({})", cost_ms,
+                         worth ? "worth it" : "marginal");
         }
     }
 };
