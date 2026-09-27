@@ -2,7 +2,6 @@
 #pragma once
 
 #include <bit> // std::bit_ceil (C++20)
-#include <cstddef>
 
 // Smallest power of two >= x. Modern replacement for the hand-rolled bit-smear
 // (kept in comments below): std::bit_ceil is correct on every 64-bit target

@@ -123,6 +123,12 @@ class ManageTCTypeAllocator
     ManageTCTypeAllocator()  = default;
     ~ManageTCTypeAllocator() = default;
 
+    // A singleton: one registry per process.
+    ManageTCTypeAllocator(const ManageTCTypeAllocator&)            = delete;
+    ManageTCTypeAllocator& operator=(const ManageTCTypeAllocator&) = delete;
+    ManageTCTypeAllocator(ManageTCTypeAllocator&&)                 = delete;
+    ManageTCTypeAllocator& operator=(ManageTCTypeAllocator&&)      = delete;
+
   protected:
     // Filled in a serial build only (no concurrent insert); left empty under
     // OpenMP, where the allocators are not enrolled.
@@ -142,16 +148,14 @@ class ManageTCTypeAllocator
     void removeTCTypeAllocatorInst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
     {
         if constexpr (!alloc_config::use_openmp)
-            set_allocator.erase(ptr_tcallocator); // not sure this is thread-safe
+            set_allocator.erase(ptr_tcallocator); // serial builds only: no concurrent erase
     }
 
     /// @brief Add every enrolled allocator's footprint to the totals.
     /// @details Adds nothing in an OpenMP build; the set is empty by design.
-    void addAllocatedSize([[maybe_unused]] size_t& sum_UsedSize,
-                          [[maybe_unused]] size_t& sum_nn_ref,
-                          [[maybe_unused]] size_t& alloc_sz)
+    void addAllocatedSize(size_t& sum_UsedSize, size_t& sum_nn_ref, size_t& alloc_sz) const
     {
-        for (VTCTypeAllocator* inst : set_allocator)
+        for (const VTCTypeAllocator* inst : set_allocator)
         {
             inst->addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
         }

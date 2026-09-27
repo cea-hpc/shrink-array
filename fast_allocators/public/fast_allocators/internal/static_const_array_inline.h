@@ -119,7 +119,6 @@ inline void* StaticConstArray::getBlockAllocInt(unsigned int sz)
             }
         }
     }
-    //    return 0;
 }
 
 /// @copydoc StaticConstArray::getBlockAlloc
@@ -144,7 +143,7 @@ inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
     // Tree: unbalanced: favor speed on small blocks
     if (sz <= MAX_CONST_BLOCK_SIZE)
     {
-        void* vv;
+        void* vv = nullptr;
         if (PMP_IN_PARALLEL_REGION)
         {
 #pragma omp critical
@@ -156,25 +155,8 @@ inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
         {
             vv = getBlockAllocInt(sz);
         }
-        //
-        // #if defined(DEBUG) || defined(_OPENMP)
-        //         int i = 0;
-        //         if (PMP_IN_PARALLEL_REGION)
-        //         {
-        //             i++;
-        //         }
-        // #endif
-
         return vv;
     }
-
-    // #if defined(DEBUG) || defined(_OPENMP)
-    //     int i = 0;
-    //     if (PMP_IN_PARALLEL_REGION)
-    //     {
-    //         i++;
-    //     }
-    // #endif
 
     return nullptr;
 }
@@ -258,7 +240,6 @@ inline void* StaticConstArray::getBlockAllocAlignInt(int sz)
             }
         }
     }
-    //    return 0;
 }
 
 /// @copydoc StaticConstArray::getBlockAllocAlign
@@ -282,7 +263,7 @@ inline void* StaticConstArray::getBlockAllocAlign(int sz)
     // Tree: unbalanced: favor speed on small blocks
     if (sz <= MAX_CONST_BLOCK_SIZE)
     {
-        void* vv;
+        void* vv = nullptr;
         if (PMP_IN_PARALLEL_REGION)
         {
 #pragma omp critical
@@ -294,26 +275,8 @@ inline void* StaticConstArray::getBlockAllocAlign(int sz)
         {
             vv = getBlockAllocAlignInt(sz);
         }
-        //
-        // #if defined(DEBUG) || defined(_OPENMP)
-        //         int i = 0;
-        //         if (PMP_IN_PARALLEL_REGION)
-        //         {
-        //             i++;
-        //         }
-        // #endif
-
         return vv;
     }
-    //
-    // #if defined(DEBUG) || defined(_OPENMP)
-    //     int i = 0;
-    //     if (PMP_IN_PARALLEL_REGION)
-    //     {
-    //         i++;
-    //     }
-    // #endif
-
     return nullptr;
 }
 

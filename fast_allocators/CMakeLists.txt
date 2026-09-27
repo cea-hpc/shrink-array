@@ -92,7 +92,7 @@ include(CMakePackageConfigHelpers)
 configure_package_config_file(fast_allocators-config.cmake.in fast_allocators-config.cmake
   INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/fast_allocators/cmake
   PATH_VARS ALLOCATORS_VERSION)
-  
+
 write_basic_package_version_file(fast_allocators-config-version.cmake
   VERSION ${ALLOCATORS_VERSION}
   COMPATIBILITY SameMajorVersion)

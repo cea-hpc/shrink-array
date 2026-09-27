@@ -61,7 +61,7 @@ void int_alloc_align(T*& var, size_t size)
 
 inline void* int_alloc(size_t size)
 {
-    char* ptr;
+    char* ptr = nullptr;
 
     if constexpr (alloc_config::alloc_align)
     {
@@ -77,7 +77,7 @@ inline void* int_alloc(size_t size)
 
 inline void* int_alloc_align(size_t size)
 {
-    char* ptr;
+    char* ptr = nullptr;
 
     svalloc_align(ptr, char, size);
 

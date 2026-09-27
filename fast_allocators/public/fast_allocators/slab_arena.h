@@ -300,7 +300,7 @@ class SlabArena
      * @param reservation_chunk Size of each mmap reservation. A request larger
      *        than this gets its own region, rounded up to 2 MiB.
      */
-    explicit SlabArena(const char* name, std::size_t reservation_chunk = (static_cast<std::size_t>(256) << 20))
+    explicit SlabArena(const char* name, std::size_t reservation_chunk = (static_cast<std::size_t>(256) << 20U))
         : name_(name), reservation_chunk_(reservation_chunk)
     {
     }
@@ -323,7 +323,7 @@ class SlabArena
         std::lock_guard<std::mutex> lk(mtx_);
 
         // Reuse a same-size slab from this arena's free-list if available.
-        auto it = free_lists_.find(size);
+        const auto it = free_lists_.find(size);
         if (it != free_lists_.end() && !it->second.empty())
         {
             void* block = it->second.back();
@@ -397,7 +397,7 @@ class SlabArena
     /// @note Linear in the region count, and takes the lock. Diagnostics only.
     bool owns(const void* ptr) const noexcept
     {
-        auto                        v = reinterpret_cast<std::uintptr_t>(ptr);
+        const auto                  v = reinterpret_cast<std::uintptr_t>(ptr);
         std::lock_guard<std::mutex> lk(mtx_);
         for (const auto& r : regions_)
             if (v >= r.begin && v < r.end)
@@ -405,20 +405,6 @@ class SlabArena
         return false;
     }
 
-    /**
-     * @brief Print one line of arena accounting on stderr.
-     * @param when Free-text label for the moment of the call.
-     *
-     * @details The four numbers answer different questions and are routinely
-     *          confused:
-     *          - `mapped`   virtual reservation, the sum of the mmap regions.
-     *                       Never shrinks, and is NOT resident memory -- a 256
-     *                       MiB reservation costs nothing until touched.
-     *          - `live`     bytes currently handed out.
-     *          - `high`     high-water mark of `live` since the run began.
-     *          - `freelist` bytes deallocated and recycled internally but still
-     *                       RESIDENT. This is the reclaim target.
-     */
     /**
      * @brief Bytes of this arena's mappings resident RIGHT NOW (mincore()).
      * @details `live` counts slabs handed out, madvise'd ones included, and the
@@ -429,11 +415,11 @@ class SlabArena
     [[nodiscard]] std::size_t resident_bytes() const noexcept
     {
         std::lock_guard<std::mutex> lk(mtx_);
-        const long page = ::sysconf(_SC_PAGESIZE);
+        const long                  page = ::sysconf(_SC_PAGESIZE);
         if (page <= 0)
             return 0;
-        const auto        psz = static_cast<std::size_t>(page);
-        std::size_t       res = 0;
+        const auto                 psz = static_cast<std::size_t>(page);
+        std::size_t                res = 0;
         std::vector<unsigned char> vec;
         for (const auto& r : regions_)
         {
@@ -442,7 +428,7 @@ class SlabArena
             vec.resize(pages);
             if (::mincore(reinterpret_cast<void*>(r.begin), len, vec.data()) != 0)
                 continue;
-            for (unsigned char v : vec)
+            for (const unsigned char v : vec)
                 res += (v & 1u) ? psz : 0;
         }
         return res;
@@ -459,12 +445,26 @@ class SlabArena
     [[nodiscard]] std::size_t mapped_bytes() const noexcept
     {
         std::lock_guard<std::mutex> lk(mtx_);
-        std::size_t mapped = 0;
+        std::size_t                 mapped = 0;
         for (const auto& r : regions_)
             mapped += (r.end - r.begin);
         return mapped;
     }
 
+    /**
+     * @brief Print one line of arena accounting on stderr.
+     * @param when Free-text label for the moment of the call.
+     *
+     * @details The four numbers answer different questions and are routinely
+     *          confused:
+     *          - `mapped`   virtual reservation, the sum of the mmap regions.
+     *                       Never shrinks, and is NOT resident memory -- a 256
+     *                       MiB reservation costs nothing until touched.
+     *          - `live`     bytes currently handed out.
+     *          - `high`     high-water mark of `live` since the run began.
+     *          - `freelist` bytes deallocated and recycled internally but still
+     *                       RESIDENT. This is the reclaim target.
+     */
     void report(const char* when) const noexcept
     {
         std::lock_guard<std::mutex> lk(mtx_);
@@ -477,8 +477,8 @@ class SlabArena
         std::fprintf(stderr,
                      "[ARENA %-6s] %-16s mapped=%8zu KiB  live=%8zu KiB  high=%8zu KiB  "
                      "freelist=%8zu KiB  regions=%zu  allocs=%zu  deallocs=%zu  deallocMiB=%zu\n",
-                     name_, when, mapped >> 10, bytes_live_ >> 10, bytes_high_ >> 10, freelist >> 10, regions_.size(),
-                     alloc_calls_, dealloc_calls_, dealloc_bytes_ >> 20);
+                     name_, when, mapped >> 10U, bytes_live_ >> 10U, bytes_high_ >> 10U, freelist >> 10U,
+                     regions_.size(), alloc_calls_, dealloc_calls_, dealloc_bytes_ >> 20U);
         std::fflush(stderr);
     }
 
@@ -504,7 +504,7 @@ class SlabArena
     {
         std::size_t want = reservation_chunk_;
         if (min_bytes > want)
-            want = align_up(min_bytes, static_cast<std::size_t>(1) << 21); // round to 2 MiB
+            want = align_up(min_bytes, static_cast<std::size_t>(1) << 21U); // round to 2 MiB
 
         void* base = ::mmap(nullptr, want, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (base == MAP_FAILED)
@@ -639,7 +639,7 @@ inline void report_all_arenas(const char* when) noexcept
         stderr,
         "[RECLAIM] %-16s madvise_calls=%zu  advised=%zu MiB  "
         "(emptied-slab calls=%zu, skipped: still-live=%zu unaligned=%zu too-small=%zu)\n",
-        when, reclaim_calls().load(std::memory_order_relaxed), reclaim_bytes().load(std::memory_order_relaxed) >> 20,
+        when, reclaim_calls().load(std::memory_order_relaxed), reclaim_bytes().load(std::memory_order_relaxed) >> 20U,
         reclaim_entered().load(std::memory_order_relaxed), reclaim_skip_live().load(std::memory_order_relaxed),
         reclaim_skip_unaligned().load(std::memory_order_relaxed), reclaim_skip_small().load(std::memory_order_relaxed));
     std::fprintf(stderr, "[FREEPATH] %-15s freed=%zu  parked_own=%zu  parked_foreign=%zu  kept_no_migrate=%zu\n", when,
