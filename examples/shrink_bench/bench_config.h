@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <iostream>
 #include <limits>
+#include <string>
 
 // Bench-mode configuration. Defines whether we run in --check or --perf mode
 // and the derived sizing / frequency constants. All functions are constexpr
@@ -143,7 +144,7 @@ inline constexpr bool have_bzip2 = false;
 //
 // Kept as a macro rather than deleted: it marks, at each of its call sites in
 // shrink_bench.cpp, the values that USED to be compile-time constants. Reading
-// `CONSTEXPR bool stats = have_stats();` still says "this is fixed for the whole
+// `CONSTEXPR const bool stats = have_stats();` still says "this is fixed for the whole
 // run, decided once at startup", which is exactly the contract.
 #define CONSTEXPR
 
@@ -215,7 +216,7 @@ inline long long get_size_base_data()
 /// @brief floor(base * multiplier / divisor), in 64-bit: --multiply is real.
 inline long long scaled_size(long long base, double multiplier, Int divisor)
 {
-    return static_cast<long long>(std::floor(static_cast<double>(base) * multiplier / divisor));
+    return static_cast<long long>(std::floor(static_cast<double>(base) * multiplier / static_cast<double>(divisor)));
 }
 
 inline Int get_size_interval(double multiplier = 1.0, Int divisor = 1)
@@ -253,7 +254,7 @@ inline Int get_size_data(double multiplier = 1.0, Int divisor = 1)
 inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
 {
     // %.10g: the default stream precision printed 1.9999999 as "2".
-    auto real = [](double v)
+    const auto real = [](double v)
     {
         char b[32];
         std::snprintf(b, sizeof b, "%.10g", v);
@@ -278,7 +279,7 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
     }
 
     const long long margin = std::max({2LL * iter_max, 65536LL});
-    auto            reach  = [&](double m)
+    const auto      reach  = [&](double m)
     {
         const long long sz_m = scaled_size(base_data, m, divisor);
         return std::max(2 * sz_m + 65536LL, sz_m + std::max(scaled_size(base_itv, m, divisor), margin));
@@ -292,10 +293,11 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
     //   2 * sz + 65536   <= int_max  ->  m <= (int_max - 65536) * d / (2 * base_data)
     //   sz + margin      <= int_max  ->  m <= (int_max - margin) * d / base_data
     //   sz + interval    <= int_max  ->  m <= int_max * d / (base_data + base_itv)
-    const double d     = divisor;
-    double       m_max = std::min({(int_max - 65536.0) * d / (2.0 * static_cast<double>(base_data)),
-                                   (int_max - static_cast<double>(margin)) * d / static_cast<double>(base_data),
-                                   int_max * d / static_cast<double>(base_data + base_itv)});
+    const double d     = static_cast<double>(divisor);
+    const double top   = static_cast<double>(int_max); // 2^63 in the int64 build: the loop below re-checks exactly
+    double       m_max = std::min({(top - 65536.0) * d / (2.0 * static_cast<double>(base_data)),
+                                   (top - static_cast<double>(margin)) * d / static_cast<double>(base_data),
+                                   top * d / static_cast<double>(base_data + base_itv)});
     m_max              = std::floor(m_max * 1e6) / 1e6; // printed to 6 decimals: round DOWN
     while (m_max > 0.0 && reach(m_max) > int_max)
         m_max -= 1e-6;

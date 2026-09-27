@@ -4,11 +4,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <signal.h> // sigaction, siginfo_t (POSIX, not in <csignal>)
 #include <unistd.h>
 #include <execinfo.h> // backtrace, backtrace_symbols_fd
-#include <sys/types.h>
 #include <sys/syscall.h>
-#include <cerrno>
 
 namespace crash_bt
 {
@@ -50,17 +49,14 @@ inline void handler(int sig, siginfo_t* info, void* /*ucontext*/)
     // Optional: dump a full core via gcore (works even when ulimit -c = 0,
     // because gcore uses ptrace on ourselves from a forked child). Enable by
     // setting env CRASH_BT_GCORE=1. The core lands in CWD as core.<pid>.
-    if (const char* g = std::getenv("CRASH_BT_GCORE"))
+    if (const char* g = std::getenv("CRASH_BT_GCORE"); g != nullptr && g[0] == '1')
     {
-        if (g[0] == '1')
-        {
-            char cmd[256];
-            std::snprintf(cmd, sizeof(cmd), "gcore -o core %d >/dev/null 2>&1", static_cast<int>(getpid()));
-            // system() in a signal handler is not async-signal-safe, but we're
-            // already crashing; best-effort postmortem.
-            const int r = std::system(cmd);
-            (void)r;
-        }
+        char cmd[256];
+        std::snprintf(cmd, sizeof(cmd), "gcore -o core %d >/dev/null 2>&1", static_cast<int>(getpid()));
+        // system() in a signal handler is not async-signal-safe, but we're
+        // already crashing; best-effort postmortem.
+        const int r = std::system(cmd);
+        (void)r;
     }
 
     // Restore default handler and re-raise so the process still dies with the
@@ -73,8 +69,7 @@ inline void handler(int sig, siginfo_t* info, void* /*ucontext*/)
 
 inline void install_crash_backtrace()
 {
-    struct sigaction sa;
-    std::memset(&sa, 0, sizeof(sa));
+    struct sigaction sa{};
     sa.sa_sigaction = crash_bt::handler;
     sa.sa_flags     = SA_SIGINFO | SA_RESTART;
     sigemptyset(&sa.sa_mask);

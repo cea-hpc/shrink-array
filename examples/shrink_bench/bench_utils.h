@@ -19,7 +19,6 @@
 #include <type_traits>
 #include <vector>
 
-#include "chunk/ring_log_debug.h" // SEGV hunt: ring_init/analyze_ring_sweep decls
 #include "chunk/PMP_CHUNK.h"
 
 // -----------------------------------------------------------------------------
@@ -162,12 +161,6 @@ struct VectorChecksum
     const V&                      vec;
     std::vector<uint64_t_padding> checksum_thr;
 };
-
-template <typename... Args>
-void calculate_checksum_for_all(VectorChecksum<Args>... vec_chs)
-{
-    (calculate_checksum_0(vec_chs.vec, vec_chs.checksum_thr), ...);
-}
 
 // -----------------------------------------------------------------------------
 // Detect at compile time whether the array type has a set_second_value(v)

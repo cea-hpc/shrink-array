@@ -17,12 +17,12 @@
 /// @file bench_phase_fill.cpp
 /// @brief The initial fill phase. See bench_phases.h for why it lives here.
 
-#include <cmath> // std::round, std::sin (tab_quant)
+#include <algorithm> // std::min
+#include <cmath>     // std::round, std::sin (tab_quant)
 #include <chrono>
 #include <iostream>
 
 #include "bench_phases.h"
-#include "chunk/term_color.h"
 
 void bench_phase_fill(BenchArrays&                           bench_arr,
                       std::chrono::steady_clock::time_point& start,

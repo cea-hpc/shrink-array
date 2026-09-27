@@ -16,9 +16,12 @@
 
 #ifdef BZIP2
 
+    #include <bzlib.h>
+    #include <cstdlib> // std::abort
     #include <fstream>
     #include <iostream>
     #include <iterator>
+    #include <string>
     #include <vector>
 
 void compress_file(const std::string& source_file, const std::string& dest_file)
@@ -71,7 +74,7 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
         std::abort();
     }
 
-    unsigned int originalLen;
+    unsigned int originalLen = 0;
     in_file.read(reinterpret_cast<char*>(&originalLen), sizeof(originalLen)); // Read the original size
     if (!in_file)
     {

@@ -160,9 +160,9 @@ struct BenchArrays
     Array<Point3>&         tab_point; ///< an aggregate element: three doubles (bench_struct.h)
     Array<Cell>&           tab_cell;  ///< an aggregate element: an Int and a float
 
-    Int sz;       ///< element count of the double arrays (others are sz, 2*sz or sz/2)
-    Int interval; ///< the workload's stride, get_size_interval()
+    Int sz       = 0; ///< element count of the double arrays (others are sz, 2*sz or sz/2)
+    Int interval = 0; ///< the workload's stride, get_size_interval()
     /// false under --no_struct: tab_point and tab_cell are of size 1 and every
     /// phase, check, stat and checksum of theirs is skipped.
-    bool with_struct;
+    bool with_struct = true;
 };

@@ -9,6 +9,7 @@
  */
 #include <algorithm>
 #include <cmath>
+#include <cstdlib> // std::getenv, std::atoi
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -21,6 +22,7 @@
 #include <vector>
 
 #include "bench_utils.h"
+#include "chunk/internal/env_parse.h" // env_flag
 #include "chunk/internal/exact_rss.h" // exact current and peak memory
 
 #include "chunk/all_type_chunk.h" // reuse_pool_bytes, the retention split of memory_consumption
@@ -173,11 +175,7 @@ void memory_consumption(const std::string& msg)
         // smaps_rollup walks the page tables of the whole process at each read
         // (~200 reads cost ~3 s on the 64-thread chunk2a_dyn bench). statm
         // above lags at many threads (exact_rss.h) but costs nothing.
-        static const bool exact_every_line = []
-        {
-            const char* e = std::getenv("SHRINK_BENCH_EXACT_RSS");
-            return e != nullptr && e[0] != '\0' && e[0] != '0';
-        }();
+        static const bool exact_every_line = shrink_array::env_flag("SHRINK_BENCH_EXACT_RSS");
         if (exact_every_line || msg == "end" || msg == "after init")
         {
             if (const long exact = shrink_array::exact_rss_kib(); exact > 0)

@@ -29,6 +29,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <vector>
 
 #include "bench_array.h"
 

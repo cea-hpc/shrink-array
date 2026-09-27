@@ -19,10 +19,12 @@
 ///        they live here rather than in main().
 
 #include <algorithm>
+#include <cstddef> // std::size_t
 #include <iostream>
-#include <numeric>   // std::accumulate -- STL self-checks
-#include <stdexcept> // std::out_of_range -- STL self-checks
-#include <utility>   // std::as_const -- STL self-checks
+#include <numeric>     // std::accumulate -- STL self-checks
+#include <stdexcept>   // std::out_of_range -- STL self-checks
+#include <type_traits> // std::is_same_v -- STL self-checks
+#include <utility>     // std::as_const -- STL self-checks
 #include <vector>
 
 #include "bench_array.h"
@@ -93,7 +95,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         {
             const double acc = std::accumulate(v.begin(), v.end(), 0.0);
             expect(acc == oracle_sum, "std::accumulate == oracle");
-            auto it = std::find(v.begin(), v.end(), 512.0);
+            const auto it = std::find(v.begin(), v.end(), 512.0);
             expect(it != v.end() && *it == 512.0, "std::find locates value across a chunk boundary");
         }
 
@@ -219,7 +221,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         {
             std::vector<double> src(NS);
             for (Int i = 0; i < NS; ++i)
-                src[static_cast<std::size_t>(i)] = 0.5 * i;
+                src[static_cast<std::size_t>(i)] = 0.5 * static_cast<double>(i);
             Array<double> r(src.begin(), src.end());
             bool          ok = static_cast<std::size_t>(r.size()) == src.size();
             for (Int i = 0; ok && i < NS; ++i)
@@ -259,8 +261,8 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             for (Int i = 0; same && i < NS; ++i)
                 same = std::as_const(d)[i] == std::as_const(v)[i];
             expect(same, "copy-assignment over a larger array: sized and equal");
-            auto& d_alias = d;       // through an alias: clang flags a literal `d = d`
-            d             = d_alias; // self-assignment: a no-op
+            const auto& d_alias = d;       // through an alias: clang flags a literal `d = d`
+            d                   = d_alias; // self-assignment: a no-op
             expect(std::as_const(d)[7] == 7.0, "self-assignment is a no-op");
             c.clear();
             d.clear();
