@@ -725,7 +725,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::load_balance_list_block_free()
 // unordered_set fed sequentially by one thread; sorting per bucket and merging
 // per address slice does the same job with every thread busy.
 // Compile with -DCHUNK_NO_FREE_GUARD to skip the sort and dedup phases.
-namespace detail
+namespace internal
 {
 /// @brief Pointer order: std::less is the one comparison guaranteed total on pointers.
 template <typename T>
@@ -736,7 +736,7 @@ struct PtrLess
         return std::less<const T*>{}(lhs, rhs);
     }
 };
-} // namespace detail
+} // namespace internal
 
 /**
  * @brief Size the teardown buckets (sequential, before the region).
@@ -767,7 +767,7 @@ std::size_t ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_pr
     // One repeat list per address slice, and the slices are the team, whose
     // size is only known inside the region: max_thr bounds it.
     mgr::teardown_repeats_.assign(std::max(nb, static_cast<std::size_t>(CHUNK_PMP_MAX_THREADS)),
-                                  std::vector<detail::TeardownRepeat<T>>{});
+                                  std::vector<internal::TeardownRepeat<T>>{});
     return nb;
 }
 
@@ -875,7 +875,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_sort([[ma
         return;
     auto& blocks = to_free[static_cast<std::size_t>(bucket)];
 
-    std::ranges::sort(blocks, detail::PtrLess<T>{});
+    std::ranges::sort(blocks, internal::PtrLess<T>{});
     for (std::size_t i = 1; i < blocks.size(); ++i)
     {
         if (blocks[i] == blocks[i - 1])
@@ -912,7 +912,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
 
     using mgr           = ManagerChunk<CHUNK_T, T>;
     const auto& to_free = mgr::teardown_to_free_;
-    const auto  less    = detail::PtrLess<T>{};
+    const auto  less    = internal::PtrLess<T>{};
 
     if (slice < 0 || nslices <= 0 || slice >= nslices)
         return;
@@ -995,7 +995,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
                          "[DOUBLE-FREE] %p queued for free in buckets %zu and %zu "
                          "-- NOT freeing again\n",
                          static_cast<void*>(head.p), prev_bucket, head.bucket);
-            repeats.push_back(detail::TeardownRepeat<T>{head.bucket, head.p});
+            repeats.push_back(internal::TeardownRepeat<T>{head.bucket, head.p});
         }
         prev        = head.p;
         prev_bucket = head.bucket;

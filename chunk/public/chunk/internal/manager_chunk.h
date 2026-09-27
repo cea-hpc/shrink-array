@@ -41,7 +41,7 @@
 
 namespace shrink_array
 {
-namespace detail
+namespace internal
 {
 /// @brief One repeat seen by the teardown dedup phase: skip @p ptr when freeing bucket @p bucket.
 /// @see ManagerChunkParallelImpl::clear_list_block_free_dedup
@@ -51,7 +51,7 @@ struct TeardownRepeat
     std::size_t bucket;
     T*          ptr;
 };
-} // namespace detail
+} // namespace internal
 
 /**
  * @brief The CHUNK_DYNAMIC-only half of the manager interface.
@@ -1298,7 +1298,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *          sharing), read by the free phase after the barrier. Empty on any
      *          sane run.
      */
-    static inline std::vector<std::vector<detail::TeardownRepeat<T>>> teardown_repeats_;
+    static inline std::vector<std::vector<internal::TeardownRepeat<T>>> teardown_repeats_;
 };
 
 } // namespace shrink_array

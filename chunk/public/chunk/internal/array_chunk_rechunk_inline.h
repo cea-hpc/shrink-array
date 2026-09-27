@@ -48,7 +48,7 @@
 #include "chunk/chunk_traits.h"
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size / set_active_chunk_size
 
-namespace shrink_array::rechunk_detail
+namespace shrink_array::internal
 {
 /// A/B switch: CHUNK_RECHUNK_INSTALL_LEGACY=1 (read once) makes the Chunk2A
 /// rebuild copy and fold spans whose sources are all the same second constant,
@@ -124,7 +124,7 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
     }();
     return schedule;
 }
-} // namespace shrink_array::rechunk_detail
+} // namespace shrink_array::internal
 
 namespace shrink_array
 {
@@ -196,7 +196,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // wall times. The slice trace inside rechunk_refill brackets the refill;
     // this brackets everything around it, where the remaining part of the
     // peak was measured to sit.
-    const auto rss_now = [&] { return trace_phases ? rechunk_detail::rss_mib_now() : -1L; };
+    const auto rss_now = [&] { return trace_phases ? internal::rss_mib_now() : -1L; };
     const long r_entry = rss_now();
     long       r_flush = -1, r_pre_tmp = -1, r_refill = -1, r_swap = -1, r_teardown = -1;
 
@@ -674,8 +674,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // reachable by no other thread until the swap, so no CAS.
             if constexpr (chunk_config::use_chunk2a && !std::is_same_v<T, bool>)
             {
-                if (all_folded && same_cst2 && !any_cst1_src && cst2_src != nullptr &&
-                    !rechunk_detail::g_install_legacy)
+                if (all_folded && same_cst2 && !any_cst1_src && cst2_src != nullptr && !internal::g_install_legacy)
                 {
                     set_thread_chunk_size(old_size);
                     // auto: SecondValueRef is not declared in every TU that
@@ -939,12 +938,12 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // of its own and the flag costs it nothing.
         // The rebuild loop is schedule(runtime): set the chosen schedule on this
         // task (the slice regions inherit it) and restore the caller's after
-        // the slices. See rechunk_detail::rebuild_schedule(). Both calls are
+        // the slices. See internal::rebuild_schedule(). Both calls are
         // no-ops in a serial build (PMP_CHUNK.h).
         const chunk_pmp_schedule caller_schedule = chunk_pmp_get_schedule();
         if constexpr (build_config::use_openmp)
         {
-            const auto& rs = rechunk_detail::rebuild_schedule();
+            const auto& rs = internal::rebuild_schedule();
             chunk_pmp_set_schedule(rs.schedule);
             if (std::getenv("CHUNK_RECHUNK_TRACE"))
                 std::fprintf(stderr, "[RECHUNK] rebuild schedule: %s\n", rs.text);
@@ -958,7 +957,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // wanted again if Chunk2/2A ever release their sources during the copy
         // and become sliceable.
         const bool slice_trace = std::getenv("CHUNK_RECHUNK_TRACE_SLICES") != nullptr;
-        const long rss_start   = slice_trace ? rechunk_detail::rss_mib_now() : -1;
+        const long rss_start   = slice_trace ? internal::rss_mib_now() : -1;
         if (slice_trace)
             std::fprintf(stderr, "[RECHUNK-SLICE] 0/%d start       rss=%ld MB\n", n_slices, rss_start);
         for (int sl = 0; sl < n_slices; ++sl)
@@ -984,7 +983,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 std::vector<T>                                               buf(static_cast<std::size_t>(new_size));
                 RebuildTally tally; // this thread's fold counts for this slice
                                     // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
-                                    // (rechunk_detail::rebuild_schedule).
+                                    // (internal::rebuild_schedule).
 #pragma omp for schedule(runtime)
                 for (int c = c0; c < c1; ++c)
                     rebuild_one(c, buf, tally);
@@ -1010,7 +1009,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
                 if (slice_trace)
                 {
-                    const long rss_mib = rechunk_detail::rss_mib_now();
+                    const long rss_mib = internal::rss_mib_now();
                     std::fprintf(stderr, "[RECHUNK-SLICE] %d/%d after-drain rss=%ld MB  (%+ld since start)\n", sl + 1,
                                  n_slices, rss_mib, rss_mib - rss_start);
                 }
@@ -1018,7 +1017,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         }
         if (slice_trace)
         {
-            const long rss_mib = rechunk_detail::rss_mib_now();
+            const long rss_mib = internal::rss_mib_now();
             std::fprintf(stderr, "[RECHUNK-SLICE] %d/%d end         rss=%ld MB  (%+ld since start)\n", n_slices,
                          n_slices, rss_mib, rss_mib - rss_start);
         }

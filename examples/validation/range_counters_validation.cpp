@@ -25,7 +25,7 @@
 // write proxy maintains incrementally: how many elements equal the first value
 // (v1, Chunk2) and the array's second value (Chunk2). fill_range / copy_range
 // store most of a chunk straight into its buffer, past those counters, so they
-// must recount afterwards (detail::resync_counters). Chunk2 was once left out:
+// must recount afterwards (internal::resync_counters). Chunk2 was once left out:
 // its stale counts reached chunk_size on a MIXED chunk and the pass folded it
 // to a constant, losing everything else in it (rechunk_validation_chunk2_dyn,
 // 34819 elements of 1e6).

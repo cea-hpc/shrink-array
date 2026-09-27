@@ -80,11 +80,11 @@ namespace shrink_array
     return capacity;
 }
 
-namespace pmp_detail
+namespace internal
 {
 /// One past the highest rank ever cached (chunk_pmp_checked_rank); starts at 0.
 inline std::atomic<int> g_rank_high_water{0};
-} // namespace pmp_detail
+} // namespace internal
 
 /**
  * @brief Validate a rank against the capacity and record it; returns it.
@@ -101,9 +101,9 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
                          "omp_set_num_threads) to the largest team before creating the arrays, or raise "
                          "CHUNK_THREAD_CAPACITY.",
                          rank, chunk_thread_capacity());
-    int seen = pmp_detail::g_rank_high_water.load(std::memory_order_relaxed);
+    int seen = internal::g_rank_high_water.load(std::memory_order_relaxed);
     while (rank >= seen &&
-           !pmp_detail::g_rank_high_water.compare_exchange_weak(seen, rank + 1, std::memory_order_seq_cst))
+           !internal::g_rank_high_water.compare_exchange_weak(seen, rank + 1, std::memory_order_seq_cst))
     {
     }
     return rank;
@@ -149,7 +149,7 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
  */
 [[nodiscard]] inline int chunk_rank_bound() noexcept
 {
-    const int seen = pmp_detail::g_rank_high_water.load(std::memory_order_seq_cst);
+    const int seen = internal::g_rank_high_water.load(std::memory_order_seq_cst);
     return std::min(chunk_thread_capacity(), std::max(omp_get_max_threads(), seen));
 }
 /// @brief The calling task's run-sched-var (omp_get_schedule).
