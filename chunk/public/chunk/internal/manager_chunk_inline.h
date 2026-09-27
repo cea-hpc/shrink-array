@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <iostream> // std::cout (DEBUG_SET_SIZE)
 //#include <cstdlib>
 #include <algorithm>
 #include <functional>
@@ -860,7 +861,9 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_screen(in
 template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_sort([[maybe_unused]] int bucket)
 {
-#ifndef CHUNK_NO_FREE_GUARD
+    if constexpr (!build_config::free_guard)
+        return;
+
     using mgr     = ManagerChunk<CHUNK_T, T>;
     auto& to_free = mgr::teardown_to_free_;
 
@@ -878,7 +881,6 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_sort([[ma
                          static_cast<void*>(blocks[i]), bucket);
     }
     blocks.erase(std::ranges::unique(blocks).begin(), blocks.end());
-#endif
 }
 
 /**
@@ -901,7 +903,9 @@ template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[maybe_unused]] int slice,
                                                                              [[maybe_unused]] int nslices)
 {
-#ifndef CHUNK_NO_FREE_GUARD
+    if constexpr (!build_config::free_guard)
+        return;
+
     using mgr           = ManagerChunk<CHUNK_T, T>;
     const auto& to_free = mgr::teardown_to_free_;
     const auto  less    = detail::PtrLess<T>{};
@@ -1000,7 +1004,6 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
             std::ranges::push_heap(heap, greater);
         }
     }
-#endif
 }
 
 /**
@@ -1141,7 +1144,6 @@ void ManagerChunk<CHUNK_T, T>::compute_size_buffer_reuse()
     size_buffer_reuse = std::max(size_buffer_reuse, Chunk2ADef::size_min_buffer_reuse);
 }
 
-#ifdef DEBUG_SET_SIZE
 inline void print_mem_estimate(const char* label, std::size_t count, std::size_t elem_size)
 {
     long double bytes = static_cast<long double>(count) * static_cast<long double>(elem_size);
@@ -1169,7 +1171,6 @@ inline void print_mem_estimate(const char* label, std::size_t count, std::size_t
         std::cout << bytes << " bytes\n";
     }
 }
-#endif
 
 // compute_size_max_number_of_chunk_to_check_compress (documented in
 // manager_chunk.h): sets the threshold past which a rank's candidate list is
@@ -1230,47 +1231,44 @@ void ManagerChunk<CHUNK_T, T>::compute_size_max_number_of_chunk_to_check_compres
     }
 
     set_size_max_number_of_chunk_to_check_compress(threshold);
-#ifdef DEBUG_SET_SIZE
-    std::cout << "somme_chunk_create : " << somme_chunk_create << "\n";
-    std::cout << "VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS : "
-              << VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS << "\n";
-
-#endif
-
-#ifdef DEBUG_SET_SIZE
-    const int max_chunks = get_size_max_number_of_chunk_to_check_compress();
-    std::cout << "size_max_number_of_chunk_to_check_compress : " << max_chunks << "\n";
-
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::debug_set_size)
     {
-        std::cout << "\n=== Estimated memory footprint per container ===\n";
+        std::cout << "somme_chunk_create : " << somme_chunk_create << "\n";
+        std::cout << "VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS : "
+                  << VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS << "\n";
 
-        std::cout << "Threads (CHUNK_PMP_MAX_THREADS): " << CHUNK_PMP_MAX_THREADS << "\n";
-        std::cout << "Total estimated memory = above values × number of threads\n";
+        const int max_chunks = get_size_max_number_of_chunk_to_check_compress();
+        std::cout << "size_max_number_of_chunk_to_check_compress : " << max_chunks << "\n";
 
-        if constexpr (IsChunk2<CHUNK_T, T>)
+        if constexpr (build_config::use_openmp)
         {
-            using Chunk2Cont = std::decay_t<decltype(chunk2_to_compress_potentially_thr[0])>;
-            print_mem_estimate("chunk2_to_compress_potentially_thr (per thread)", max_chunks,
-                               sizeof(typename Chunk2Cont::value_type));
+            std::cout << "\n=== Estimated memory footprint per container ===\n";
+
+            std::cout << "Threads (CHUNK_PMP_MAX_THREADS): " << CHUNK_PMP_MAX_THREADS << "\n";
+            std::cout << "Total estimated memory = above values × number of threads\n";
+
+            if constexpr (IsChunk2<CHUNK_T, T>)
+            {
+                using Chunk2Cont = std::decay_t<decltype(chunk2_to_compress_potentially_thr[0])>;
+                print_mem_estimate("chunk2_to_compress_potentially_thr (per thread)", max_chunks,
+                                   sizeof(typename Chunk2Cont::value_type));
+            }
+            else if constexpr (IsChunk2A<CHUNK_T, T>)
+            {
+                using Chunk2ACont = std::decay_t<decltype(chunk2A_to_compress_potentially_thr[0])>;
+
+                print_mem_estimate("chunk2A_to_compress_potentially_thr (per thread)", max_chunks,
+                                   sizeof(typename Chunk2ACont::value_type));
+            }
+            else
+            {
+                using ChunkCont = std::decay_t<decltype(chunk_to_compress_potentially_thr[0])>;
+
+                print_mem_estimate("chunk_to_compress_potentially_thr (per thread)", max_chunks,
+                                   sizeof(typename ChunkCont::value_type));
+            };
         }
-        else if constexpr (IsChunk2A<CHUNK_T, T>)
-        {
-            using Chunk2ACont = std::decay_t<decltype(chunk2A_to_compress_potentially_thr[0])>;
-
-            print_mem_estimate("chunk2A_to_compress_potentially_thr (per thread)", max_chunks,
-                               sizeof(typename Chunk2ACont::value_type));
-        }
-        else
-        {
-            using ChunkCont = std::decay_t<decltype(chunk_to_compress_potentially_thr[0])>;
-
-            print_mem_estimate("chunk_to_compress_potentially_thr (per thread)", max_chunks,
-                               sizeof(typename ChunkCont::value_type));
-        };
     }
-
-#endif
     const size_t element_size = sizeof(std::tuple<CHUNK_T<T>*, int, int>);
 
     global_stats.record(type_name<CHUNK_T<T>>(), somme_chunk_create, threshold, element_size);

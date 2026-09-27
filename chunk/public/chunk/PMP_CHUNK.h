@@ -169,6 +169,14 @@ inline void chunk_pmp_set_schedule(chunk_pmp_schedule schedule) noexcept
 {
     omp_set_schedule(static_cast<omp_sched_t>(schedule.kind), schedule.chunk);
 }
+
+/// @brief The calling thread's number in its current team (omp_get_thread_num),
+///        unchecked: for diagnostics that must work from anywhere, where
+///        CHUNK_PMP_THREAD_RANK would check nesting and the rank bound.
+[[nodiscard]] inline int chunk_pmp_team_rank() noexcept
+{
+    return omp_get_thread_num();
+}
 } // namespace shrink_array
 
 inline int get_thr_rank_fast() noexcept
@@ -244,6 +252,11 @@ namespace shrink_array
 }
 /// @copydoc chunk_pmp_set_schedule -- serial build: nothing to set.
 inline void chunk_pmp_set_schedule(chunk_pmp_schedule) noexcept {}
+/// @copydoc chunk_pmp_team_rank -- serial build: always 0.
+[[nodiscard]] inline int chunk_pmp_team_rank() noexcept
+{
+    return 0;
+}
 } // namespace shrink_array
 
 inline int get_thr_rank_fast() noexcept

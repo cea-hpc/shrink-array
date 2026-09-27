@@ -20,6 +20,7 @@
     #include <omp.h>
 #endif
 
+#include "chunk/PMP_CHUNK.h" // chunk_pmp_team_rank (get_tid)
 #include "chunk/ring_log_debug.h"
 
 #ifdef RING_LOG_ANY
@@ -274,14 +275,15 @@ void dump_ring_for_addr(const void* target)
 
 uint32_t get_tid()
 {
-    #ifdef _OPENMP
-    return static_cast<uint32_t>(omp_get_thread_num());
-    #else
-    // Create a hash function object over std::thread::id
-    auto hasher = std::hash<std::thread::id>{};
-    auto raw    = hasher(std::this_thread::get_id());
-    return static_cast<uint32_t>(raw & 0xFFFFFFFFu);
-    #endif
+    if constexpr (build_config::use_openmp)
+        return static_cast<uint32_t>(chunk_pmp_team_rank());
+    else
+    {
+        // Create a hash function object over std::thread::id
+        auto hasher = std::hash<std::thread::id>{};
+        auto raw    = hasher(std::this_thread::get_id());
+        return static_cast<uint32_t>(raw & 0xFFFFFFFFu);
+    }
 }
 
 struct Interval

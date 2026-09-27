@@ -742,9 +742,8 @@ void ArrayChunk2<T, ind_type>::compress_int()
     // builds keep it. NB: do NOT gate on build_config::any_check here -- that is
     // is_debug||check_optim (DEBUG/CHECK_OPTIM) and does NOT match the _check
     // target's CHECK macro, so it would silently disable the scan in check builds.
-#ifdef PERF
-    return;
-#endif
+    if constexpr (build_config::perf_build)
+        return;
 
     // Pin the ambient size to THIS array's geometry: the frees below route on
     // thread_chunk_size(), not on the buffer (see clear_core()). Left to

@@ -126,11 +126,10 @@ inline void heavy_barrier() noexcept
 {
     if constexpr (!chunk_config::asymmetric_dekker)
     {
-#if defined(CHUNK_TSAN_BUILD)
-        return "symmetric (fences; ThreadSanitizer build)";
-#else
-        return "symmetric (fences; no membarrier on this platform)";
-#endif
+        if constexpr (chunk_config::tsan_build)
+            return "symmetric (fences; ThreadSanitizer build)";
+        else
+            return "symmetric (fences; no membarrier on this platform)";
     }
     else
         return membarrier_ready.load(std::memory_order_relaxed)

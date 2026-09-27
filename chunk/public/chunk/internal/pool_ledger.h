@@ -384,13 +384,12 @@ inline void block_transition(const void* block,
         const std::scoped_lock lk(mtx());
 
         auto it = block_live().find(block);
-#ifdef RECHUNK_LEDGERTRACE
+        if constexpr (build_config::rechunk_ledger_trace)
         {
             const char* cur = (it == block_live().end()) ? "ABSENT" : bstate_name(it->second.state);
             std::fprintf(stderr, "[LEDGER] %p op=%s cur=%s -> %s site=%s sz=%zu\n", block, op, cur, bstate_name(next),
                          site, block_live().size());
         }
-#endif
         if (it == block_live().end())
         {
             if (!allow_unknown)
