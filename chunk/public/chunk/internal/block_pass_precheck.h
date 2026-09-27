@@ -41,7 +41,7 @@
 namespace shrink_array
 {
 
-namespace block_pass_detail
+namespace internal
 {
 /// A/B switch: CHUNK_BLOCK_PRECHECK_LEGACY=1 (read once) disables the early-out
 /// -- the pass marks its candidates first, as before Sept '26.
@@ -50,7 +50,7 @@ inline const bool g_precheck_legacy = []
     const char* env = std::getenv("CHUNK_BLOCK_PRECHECK_LEGACY");
     return env != nullptr && env[0] != '\0' && env[0] != '0';
 }();
-} // namespace block_pass_detail
+} // namespace internal
 
 /**
  * @brief Would compression_mgr.start() decline right now because a flush is in
@@ -66,7 +66,7 @@ template <typename ProxyType, typename ChunkType>
         return false;
     else
     {
-        if (block_pass_detail::g_precheck_legacy)
+        if (internal::g_precheck_legacy)
             return false;
         if (!WriteCompressSyncPolicy<ProxyType>::any_thread_flushing(max_thr))
             return false;

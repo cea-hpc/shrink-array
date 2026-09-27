@@ -53,7 +53,7 @@
 #include "chunk/internal/conditional_counter.h" // counter_value_t
 #include "chunk/config.h"
 #include "chunk/chunk_traits.h"                        // Chunk / Chunk2 / Chunk2A: the type traits below
-#include "chunk/vector_range_ops.h"                    // detail::ChunkedArray + the std::vector fallback
+#include "chunk/vector_range_ops.h"                    // internal::ChunkedArray + the std::vector fallback
 #include "chunk/internal/write_compress_sync_policy.h" // fill_range_mt: the writer side of the Dekker handshake
 #include "chunk/internal/compression_manager.h"        // fill_range_mt: must_defer_write / wait_out_compressor
 #include "chunk/internal/relaxed_element.h"            // fill_range_mt: Chunk2A's shared elements
@@ -64,7 +64,7 @@ namespace shrink_array
 // assume_drained_t / assume_drained: in vector_range_ops.h, so the tag form
 // of the call compiles against std::vector too.
 
-namespace detail
+namespace internal
 {
 
 /**
@@ -322,7 +322,7 @@ void queue_for_compression(Arr& arr, std::size_t i)
     }
 }
 
-} // namespace detail
+} // namespace internal
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ArrayChunk overloads
@@ -340,14 +340,14 @@ void queue_for_compression(Arr& arr, std::size_t i)
  *            and restore the zero counter the bulk store bypassed.
  *
  *          bool (bit-packed chunks) takes the per-element path throughout --
- *          still correct, just without the speedup. See detail::raw_fillable_v.
+ *          still correct, just without the speedup. See internal::raw_fillable_v.
  *
  * @param arr   target array
  * @param first first index, inclusive (clamped to size())
  * @param last  last index, exclusive (clamped to size())
  * @param v     value to store
  */
-template <detail::ChunkedArray Arr, typename U>
+template <internal::ChunkedArray Arr, typename U>
 void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool drain = true)
 {
     using T          = Arr::value_type;
@@ -377,7 +377,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
 
     const unsigned int S     = arr.chunk_size();
     const in_t<T>      value = static_cast<T>(v);
-    const int          ind2  = detail::second_value_index(arr); // Chunk2's written(ind)
+    const int          ind2  = internal::second_value_index(arr); // Chunk2's written(ind)
 
     // Pin the ambient geometry once for the whole operation: every
     // materialisation below must size its buffer from THIS array's chunk_size,
@@ -440,7 +440,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
         }
 
         // ── Variants whose second-value state lives in the proxy ─────────────
-        if constexpr (!detail::raw_fillable_v<T>)
+        if constexpr (!internal::raw_fillable_v<T>)
         {
             for (std::size_t i = lo; i < hi; ++i)
                 arr[static_cast<ind_type>(i)] = value;
@@ -454,14 +454,14 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
             // can walk the whole range without materialising -- in which case
             // the chunk is genuinely constant and there is nothing left to do.
             // "Materialises" is written(), not !is_cst_val1(): see
-            // detail::materialised for the Chunk2A second-constant trap.
+            // internal::materialised for the Chunk2A second-constant trap.
             std::size_t i = lo;
-            while (i < hi && !detail::materialised(arr, ch, ind2))
+            while (i < hi && !internal::materialised(arr, ch, ind2))
             {
                 arr[static_cast<ind_type>(i)] = value;
                 ++i;
             }
-            if (!detail::materialised(arr, ch, ind2))
+            if (!internal::materialised(arr, ch, ind2))
                 continue; // still constant: the range held only that constant
 
             T* dst = ch.values_load();
@@ -469,15 +469,15 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
                 dst[k - c_begin] = value;
 
             // Restore the per-chunk counters the bulk store bypassed.
-            detail::resync_counters(arr, ch, c_begin, dst, S);
+            internal::resync_counters(arr, ch, c_begin, dst, S);
 
             // The chunk may be constant now: a fill of first_value, or on
             // chunk2a of any value (a uniform run is its second constant).
-            bool compressible_value = value_is_cst1 || detail::is_v2a_v<Arr>;
-            if constexpr (detail::is_v2_v<Arr> && requires { arr.get_second_value(); })
+            bool compressible_value = value_is_cst1 || internal::is_v2a_v<Arr>;
+            if constexpr (internal::is_v2_v<Arr> && requires { arr.get_second_value(); })
                 compressible_value = compressible_value || value == static_cast<T>(arr.get_second_value());
-            if (compressible_value && detail::may_be_uniform(dst, S))
-                detail::queue_for_compression(arr, c_begin);
+            if (compressible_value && internal::may_be_uniform(dst, S))
+                internal::queue_for_compression(arr, c_begin);
         }
     }
 }
@@ -495,7 +495,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
  * @param last      last target index, exclusive (clamped to size())
  * @param src_first source iterator; must not alias @p arr
  */
-template <detail::ChunkedArray Arr, typename It>
+template <internal::ChunkedArray Arr, typename It>
 void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, bool drain = true)
 {
     using T        = Arr::value_type;
@@ -523,7 +523,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
         arr.flush_pending_deferred_ops(/*force=*/true);
 
     const unsigned int S    = arr.chunk_size();
-    const int          ind2 = detail::second_value_index(arr); // Chunk2's written(ind)
+    const int          ind2 = internal::second_value_index(arr); // Chunk2's written(ind)
 
     if constexpr (build_config::chunk_dynamic)
         set_thread_chunk_size(S);
@@ -540,7 +540,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
 
         auto& ch = arr.chunk_ref(ci);
 
-        if constexpr (!detail::raw_fillable_v<T>)
+        if constexpr (!internal::raw_fillable_v<T>)
         {
             for (std::size_t i = lo; i < hi; ++i)
                 arr[static_cast<ind_type>(i)] = static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first)));
@@ -548,31 +548,31 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
         else
         {
             std::size_t i = lo;
-            while (i < hi && !detail::materialised(arr, ch, ind2))
+            while (i < hi && !internal::materialised(arr, ch, ind2))
             {
                 arr[static_cast<ind_type>(i)] = static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first)));
                 ++i;
             }
-            if (!detail::materialised(arr, ch, ind2))
+            if (!internal::materialised(arr, ch, ind2))
                 continue; // the whole span was the chunk's constant
 
             T* dst = ch.values_load();
             for (std::size_t k = i; k < hi; ++k)
                 dst[k - c_begin] = static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(k - first)));
 
-            detail::resync_counters(arr, ch, c_begin, dst, S); // as fill_range
+            internal::resync_counters(arr, ch, c_begin, dst, S); // as fill_range
 
             // The source is not known to be uniform: the pass decides -- for
             // the chunks that can be.
-            if (detail::may_be_uniform(dst, S))
-                detail::queue_for_compression(arr, c_begin);
+            if (internal::may_be_uniform(dst, S))
+                internal::queue_for_compression(arr, c_begin);
         }
     }
 }
 
 /// @copydoc fill_range
 /// @note The assume_drained_t tag: caller guarantees the deferred queue is already drained
-template <detail::ChunkedArray Arr, typename U>
+template <internal::ChunkedArray Arr, typename U>
 void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, assume_drained_t)
 {
     fill_range(arr, first, last, v, /*drain=*/false);
@@ -580,7 +580,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, assum
 
 /// @copydoc copy_range
 /// @note The assume_drained_t tag: caller guarantees the deferred queue is already drained
-template <detail::ChunkedArray Arr, typename It>
+template <internal::ChunkedArray Arr, typename It>
 void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, assume_drained_t)
 {
     copy_range(arr, first, last, src_first, /*drain=*/false);
@@ -636,7 +636,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, ass
  * @param last  last index, exclusive (clamped to size())
  * @param v     value to store
  */
-template <detail::ChunkedArray Arr, typename U>
+template <internal::ChunkedArray Arr, typename U>
 void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
 {
     using T          = Arr::value_type;
@@ -651,9 +651,9 @@ void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
 
     const in_t<T> value = static_cast<T>(v);
 
-    constexpr bool session = (detail::is_v2a_v<Arr> || detail::is_v2_v<Arr> || detail::is_v1_v<Arr>) &&
+    constexpr bool session = (internal::is_v2a_v<Arr> || internal::is_v2_v<Arr> || internal::is_v1_v<Arr>) &&
                              build_config::use_openmp && chunk_config::use_fast_block_compression &&
-                             detail::raw_fillable_v<T>;
+                             internal::raw_fillable_v<T>;
     if constexpr (!session)
     {
         for (std::size_t i = first; i < last; ++i)
@@ -665,7 +665,7 @@ void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
         using Mgr    = CompressionManager<T, chunk_type>;
 
         const unsigned int S    = arr.chunk_size();
-        const int          ind2 = detail::second_value_index(arr); // Chunk2's written(ind)
+        const int          ind2 = internal::second_value_index(arr); // Chunk2's written(ind)
         if constexpr (build_config::chunk_dynamic)
             set_thread_chunk_size(S);
         const int thr = get_thr_rank_fast();
@@ -684,7 +684,7 @@ void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
 
             // Materialise through the element path, outside any session.
             std::size_t i = lo;
-            while (i < hi && !detail::materialised(arr, ch, ind2))
+            while (i < hi && !internal::materialised(arr, ch, ind2))
             {
                 arr[static_cast<ind_type>(i)] = value;
                 ++i;
@@ -699,16 +699,16 @@ void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
                 if (Mgr::must_defer_write(ch)) // 2. a compressor on it: wait (bounded)
                     Mgr::wait_out_compressor(ch);
 
-                Policy::announce_write(thr, &ch);                                                           // 3.
-                if (!Mgr::must_defer_write(ch) && !ch.pending_any() && detail::materialised(arr, ch, ind2)) // 4.
+                Policy::announce_write(thr, &ch);                                                             // 3.
+                if (!Mgr::must_defer_write(ch) && !ch.pending_any() && internal::materialised(arr, ch, ind2)) // 4.
                 {
                     T* dst = ch.values_load(); // 5.
-                    if constexpr (detail::relaxed_element_stores_v<chunk_type, T>)
+                    if constexpr (internal::relaxed_element_stores_v<chunk_type, T>)
                     {
                         // Other writers of this chunk read some of these
                         // elements, and write the ones this span reads.
-                        detail::fill_span_relaxed_edges(dst, i - c_begin, hi - c_begin, S, static_cast<T>(value));
-                        uniform = detail::may_be_uniform_relaxed(dst, S); // buffer pinned by the session
+                        internal::fill_span_relaxed_edges(dst, i - c_begin, hi - c_begin, S, static_cast<T>(value));
+                        uniform = internal::may_be_uniform_relaxed(dst, S); // buffer pinned by the session
                     }
                     else
                     {
@@ -723,9 +723,9 @@ void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
                         // array's second value. Chunk2A aggregates (no lock-free
                         // atomic_ref): only a span covering the whole chunk,
                         // uniform by construction; a partial one is not queued.
-                        if constexpr (detail::is_v1_v<Arr>)
+                        if constexpr (internal::is_v1_v<Arr>)
                             uniform = static_cast<T>(value) == static_cast<T>(chunk_type::first_value);
-                        else if constexpr (detail::is_v2_v<Arr> && requires { arr.get_second_value(); })
+                        else if constexpr (internal::is_v2_v<Arr> && requires { arr.get_second_value(); })
                             uniform = static_cast<T>(value) == static_cast<T>(chunk_type::first_value) ||
                                       static_cast<T>(value) == static_cast<T>(arr.get_second_value());
                         else
@@ -744,7 +744,7 @@ void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
             }
 
             if (uniform) // 7. only a chunk that can be uniform
-                detail::queue_for_compression(arr, c_begin);
+                internal::queue_for_compression(arr, c_begin);
         }
     }
 }

@@ -1211,7 +1211,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     [[nodiscard]] static T load_at(const T* vals, int i) noexcept
     {
         if constexpr (Relaxed)
-            return detail::load_element_relaxed(vals + i);
+            return internal::load_element_relaxed(vals + i);
         else
             return vals[i];
     }
@@ -1307,7 +1307,7 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     /// @brief read_value_scan() of an element another thread may be writing:
     ///        a relaxed atomic load (relaxed_element.h). The marking filter's.
-    /// @pre detail::relaxed_element_access_v<T>.
+    /// @pre internal::relaxed_element_access_v<T>.
     [[nodiscard]] T read_value_scan_relaxed(int i) const noexcept
     {
         if constexpr (chunk_config::stats)

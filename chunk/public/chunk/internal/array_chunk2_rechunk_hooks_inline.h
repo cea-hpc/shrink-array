@@ -35,7 +35,7 @@ namespace shrink_array
 // variants must see a single definition.
 #ifndef SHRINK_ARRAY_RECHUNK_DROP_LEGACY_DEFINED
     #define SHRINK_ARRAY_RECHUNK_DROP_LEGACY_DEFINED
-namespace rechunk_detail
+namespace internal
 {
 /// A/B switch: CHUNK_RECHUNK_DROP_LEGACY=1 (read once) makes
 /// rechunk_drop_candidates() drop the array's candidates WITHOUT compressing
@@ -45,7 +45,7 @@ inline const bool g_rechunk_drop_legacy = []
     const char* env = std::getenv("CHUNK_RECHUNK_DROP_LEGACY");
     return env != nullptr && env[0] != '\0' && env[0] != '0';
 }();
-} // namespace rechunk_detail
+} // namespace internal
 #endif
 
 template <typename Derived>
@@ -64,7 +64,7 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
         const int num_tab = proxy_type::share_info_array.get_num_tab(self().registry_key());
         if constexpr (Derived::is_not_bool && build_config::use_openmp)
         {
-            if (!rechunk_detail::g_rechunk_drop_legacy)
+            if (!internal::g_rechunk_drop_legacy)
             {
                 const auto inf = self().get_info_second_value();
                 const int  thr = get_thr_rank_fast();

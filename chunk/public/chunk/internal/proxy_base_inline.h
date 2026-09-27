@@ -1226,8 +1226,8 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation
                                 ring_log(get_tid(), EV_LAMBDA_ASYNC_ARITH, info);
                             }
 
-                            if constexpr (detail::relaxed_element_stores_v<ChunkType, T>)
-                                detail::store_element_relaxed(values + ctx->num, static_cast<T>(final_val));
+                            if constexpr (internal::relaxed_element_stores_v<ChunkType, T>)
+                                internal::store_element_relaxed(values + ctx->num, static_cast<T>(final_val));
                             else
                                 values[ctx->num] = final_val;
                         });

@@ -465,10 +465,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         }
         // Chunk2A: the marking filter of another writer may be reading this
         // element -- relaxed atomic store, see relaxed_element.h.
-        if constexpr (detail::relaxed_element_stores_v<ChunkType, T>)
+        if constexpr (internal::relaxed_element_stores_v<ChunkType, T>)
         {
             T* const vals = values;
-            detail::store_element_relaxed(vals + num, static_cast<T>(v));
+            internal::store_element_relaxed(vals + num, static_cast<T>(v));
         }
         else
         {

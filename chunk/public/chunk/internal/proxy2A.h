@@ -912,7 +912,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     ///          queues as it did before it: correct, only without the saving.
     [[nodiscard]] bool may_become_uniform(in_t<T> v) const noexcept
     {
-        if constexpr (!detail::relaxed_element_access_v<T>)
+        if constexpr (!internal::relaxed_element_access_v<T>)
         {
             return true;
         }
