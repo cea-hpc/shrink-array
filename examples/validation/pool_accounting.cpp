@@ -32,7 +32,6 @@
 //
 // Compile OMP or non-OMP, static or dyn, check. Exit 0 = every count matches.
 
-#include <cstdlib>
 #include <cstdio>
 #include <type_traits>
 #include <unistd.h>

@@ -43,7 +43,6 @@
 // Exit 0 = every check holds. Any thread count (the tests run it at 1 and 8).
 
 #include <cstdio>
-#include <cstdlib>
 #include <type_traits>
 #include <utility>
 #include <vector>

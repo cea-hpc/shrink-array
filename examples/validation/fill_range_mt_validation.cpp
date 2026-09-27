@@ -108,7 +108,7 @@ static int run_validation(long N, int rounds)
         const double fill_v = (r % 3 == 0) ? 0.0 : (r % 3 == 1) ? 9.0 : 100.0 + r;
         // Which blocks are filled this round: a pattern that moves with r, so a
         // block alternates between the two kinds of writer over the rounds.
-        auto is_fill = [r](long b) { return ((b / 3 + r) % 2) == 0; };
+        const auto is_fill = [r](long b) { return ((b / 3 + r) % 2) == 0; };
 
 #pragma omp parallel
         {
@@ -185,12 +185,12 @@ static void run_perf(long N)
 {
     Array<double> arr(N);
     const long    nblk = (N + kPerfBlk - 1) / kPerfBlk;
-    auto          now  = [] { return std::chrono::steady_clock::now(); };
+    const auto    now  = [] { return std::chrono::steady_clock::now(); };
     double        t_el = 0, t_mt = 0;
     for (int rep = 0; rep < 6; ++rep)
     {
         const double v  = 1.0 + rep;
-        auto         vb = [v](long b) { return v + 0.25 * static_cast<double>(b & 1); }; // neighbours differ
+        const auto   vb = [v](long b) { return v + 0.25 * static_cast<double>(b & 1); }; // neighbours differ
         const auto   t0 = now();
 #pragma omp parallel
         {

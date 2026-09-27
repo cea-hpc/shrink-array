@@ -303,8 +303,8 @@ int main(int argc, char** argv)
     // members, reserve/capacity, the (first, last) and {...} constructors, a
     // deep copy. Sequential, as those are.
     {
-        int  bad   = 0;
-        auto check = [&](bool ok, const char* what)
+        int        bad   = 0;
+        const auto check = [&](bool ok, const char* what)
         {
             if (!ok)
             {

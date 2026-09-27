@@ -152,13 +152,13 @@ int check_past_int_max()
     const long              I = INT_MAX;
     const std::vector<long> pos{0,     1,         S - 1, S,         I - S,     I - 1, I,    I + 1,
                                 I + 2, I + S - 1, I + S, I + 2 * S, N - S - 1, N - 2, N - 1};
-    auto                    value_at = [](std::size_t k) { return static_cast<char>(1 + (k % 7)); };
+    const auto              value_at = [](std::size_t k) { return static_cast<char>(1 + (k % 7)); };
 
     // (1) sequential writes
     for (std::size_t k = 0; k < pos.size(); ++k)
         big[pos[k]] = value_at(k);
 
-    auto verify = [&](const char* step, auto expected) -> int
+    const auto verify = [&](const char* step, auto expected) -> int
     {
         int         nbad = 0;
         const auto& cbig = std::as_const(big);
@@ -275,7 +275,7 @@ int check_mixed()
     maybe_set_second_value(b, 100.0);
     maybe_set_second_value(c, 7.0);
 
-    auto fill = [&](long round)
+    const auto fill = [&](long round)
     {
 #pragma omp parallel
         {
