@@ -19,14 +19,15 @@
 
 #include <algorithm> // std::max (name_padding)
 #include <complex>
-#include <cstdio>
+#include <cstddef> // std::size_t
+#include <cstdio>  // std::fflush
 #include <print>
 #include <sstream> // the label of the second value (its operator<<)
 #include <string>
 #include <type_traits>
 
-#include "bench_config.h"
-#include "bench_prelude.h" // Proxy2<T>::share_info_array (share_info line) // the CONSTEXPR macro
+#include "bench_config.h"  // the CONSTEXPR macro
+#include "bench_prelude.h" // Proxy2<T>::share_info_array (share_info line)
 #include "bench_phases.h"
 #include "bench_utils.h" // calculate_checksum
 
@@ -169,7 +170,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         }
     };
 
-    auto lbd_stats = [&]()
+    const auto lbd_stats = [&]
     {
         if CONSTEXPR (stats)
         {
@@ -256,7 +257,7 @@ void bench_print_checksums(BenchArrays& bench_arr, bool check_sum)
     auto& tab_point   = bench_arr.tab_point;
     auto& tab_cell    = bench_arr.tab_cell;
 
-    auto lbd_check_sum = [&]()
+    const auto lbd_check_sum = [&]
     {
         if CONSTEXPR (check_sum)
         {

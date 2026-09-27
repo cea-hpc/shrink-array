@@ -74,7 +74,7 @@ enum class ParseError
 }
 
 /**
- * @brief Parse ALL of @p text as a @p T.
+ * @brief Parse ALL of @p text as a T.
  * @return the number when @p text is exactly a number of type T; otherwise why
  *         it is not: empty, not a number (a negative value for an unsigned T
  *         included), trailing characters, or out of T's range.

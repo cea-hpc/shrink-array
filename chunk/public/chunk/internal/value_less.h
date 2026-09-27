@@ -19,7 +19,6 @@
 
 #pragma once
 
-#include <complex>
 #include <concepts>
 #include <cstring>     // std::memcmp
 #include <type_traits> // std::has_unique_object_representations_v

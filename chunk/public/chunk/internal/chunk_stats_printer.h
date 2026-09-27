@@ -5,8 +5,8 @@
 #include <iterator> // std::back_inserter
 #include <ostream>
 #include <string>
-#include <vector>   // std::vector
-#include <unistd.h> // Pour isatty et fileno
+#include <stdio.h>  // fileno: POSIX, not declared by <cstdio>
+#include <unistd.h> // isatty
 
 namespace shrink_array
 {

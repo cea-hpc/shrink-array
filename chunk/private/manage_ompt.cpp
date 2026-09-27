@@ -22,7 +22,7 @@
  * @brief OMPT tool wiring the chunk library into the OpenMP runtime.
  *
  * Compiled as a real tool only under `HAVE_EMBEDDED_COMPRESSION_WITH_OMPT`.
- * The runtime discovers it through ompt_start_tool(), which registers four
+ * The runtime discovers it through ompt_start_tool(), which registers three
  * callbacks; each of them maps a point of the OpenMP lifecycle onto one of the
  * phase transitions declared in chunk/manage_ompt.h, so an application built
  * this way needs no explicit call at all.
@@ -66,11 +66,13 @@
     #endif
 
 /**
- * @brief Master switch of the OMPT callbacks, true in this build.
+ * @brief Suspension counter of the OMPT callbacks, 0 (active) at start in
+ *        this build.
  *
- * Every callback returns immediately when it is false, which lets a program
- * disable the embedded compression hooks at runtime (e.g. around a region that
- * must not trigger a flush) without unregistering the tool.
+ * Every callback returns immediately while it is non-zero, which lets a
+ * program suspend the embedded compression hooks at runtime (e.g. around a
+ * region that must not trigger a flush) without unregistering the tool. A
+ * counter, not a flag: see its declaration in chunk/config.h.
  */
 std::atomic<int> g_ompt_suspended{0}; // 0 = callbacks active
 
@@ -331,7 +333,10 @@ void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, 
 // it calls this at BOTH the begin and the end of EVERY sync region, whatever
 // its kind (barriers, taskwait, taskgroup, reductions). CHUNK_OMPT_STATS
 // counts them.
-void on_barrier_end(ompt_sync_region_t kind, ompt_scope_endpoint_t endpoint, ompt_data_t* parallel_data, ompt_data_t*,
+void on_barrier_end(ompt_sync_region_t    kind,
+                    ompt_scope_endpoint_t endpoint,
+                    ompt_data_t*          parallel_data,
+                    ompt_data_t*,
                     const void*)
 {
     if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
@@ -427,8 +432,8 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
 /**
  * @brief OMPT entry point looked up by the OpenMP runtime at program start.
  *
- * Advertises ompt_initialize() as the tool initialiser (no finaliser needed:
- * nothing is allocated by the tool itself).
+ * Advertises ompt_initialize() as the tool initialiser and ompt_finalize() as
+ * its finaliser (the CHUNK_OMPT_STATS report; the tool allocates nothing).
  *
  * @return Pointer to a function-local static result, valid for the whole run.
  */

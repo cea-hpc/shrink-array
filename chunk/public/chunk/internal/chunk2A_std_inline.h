@@ -20,12 +20,13 @@
 #include "chunk/internal/in_t.h"            // in_t<T>: the element snapshots
 #include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED (steal-mark check)
+#include <algorithm>                        // std::fill_n (the create_value fills)
 #include <cstdlib>                          // std::abort
-#include <iostream>                         // std::cerr (debug aborts in create_value*)
+#include <optional>                         // std::nullopt (the clears)
 
-#include "chunk/internal/chunk_size_config.h" // ChunkElems
+#include "chunk/internal/chunk_size_policy.h" // ChunkElems, set_thread_chunk_size
 #include "chunk/PMP_CHUNK.h"
-#include "chunk/chunk_define.h"
+#include "chunk/config.h"
 #include "chunk/internal/cpu_pause.h" // CPU_PAUSE (spin in create_value*)
 #include "chunk/chunk2A_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/proxy2A.h"
@@ -335,16 +336,16 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
         if constexpr (build_config::chunk_dynamic)
             shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
 
-        char* ptr_type_cst = &(Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk]);
+        char* ptr_type_cst = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
 
         // Long form in both modes: thr is 0 with OpenMP off. clear_int_st(5-arg)
         // is now available in non-OMP (step 1).
-        SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+        const SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
         chunk_ptr->clear_int_st(0, ptr_type_cst, ptr_second_value, thr);
         chunk_ptr->steal_unmark();
     }
 
-    for (auto& tup : ll_compt2)
+    for (const auto& tup : ll_compt2)
     {
         auto [chunk_ptr, second_v, num_chunk, num_tab, csize] = tup;
 
@@ -356,13 +357,14 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
         {
             if (second_v != T{})
             {
-                char* ptr_type_cst = &(Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk]);
+                char* ptr_type_cst = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
 
                 // Type-2 registration, identical in both modes. find_or_set records
                 // the second value in the chunk's slot and returns the shared
                 // array; clear_int_st installs it as the chunk's values pointer
                 // (the CAS). thr is 0 with OpenMP off.
-                SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+                const SecondValueRef<T> ptr_second_value =
+                    Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
 
                 T* new_cst_val2_ptr =
                     chunk_ptr->tab_cst_val2_holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
@@ -378,9 +380,9 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
                 chunk_ptr->tab_cst_val2_holder::find_or_set_ind_cst_val2();
             }
 
-            char* ptr_type_cst = &(Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk]);
+            char* ptr_type_cst = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
 
-            SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            const SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
             chunk_ptr->clear_int_st(1, ptr_type_cst, ptr_second_value, thr);
         }
         chunk_ptr->steal_unmark();
@@ -496,11 +498,11 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
             // which find_or_set registers and the clear commits. Scanning
             // against the registered value alone (until Sept '26) left such a
             // chunk materialised for good, until it passed through first_value.
-            SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            const in_t<T>     second_v         = Base::read_value_scan(0);
-            const auto        scan             = Base::scan_constants(first_value, second_v, size.count());
-            compact1                           = scan.first;
-            compact2                           = scan.second;
+            const SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            const in_t<T>           second_v         = Base::read_value_scan(0);
+            const auto              scan             = Base::scan_constants(first_value, second_v, size.count());
+            compact1                                 = scan.first;
+            compact2                                 = scan.second;
             if (compact2)
                 new_cst_val2_ptr = tab_cst_val2_holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
         }
@@ -526,8 +528,8 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
         // wants, so every build reads it the same way.
         if (apply)
         {
-            SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
-            char*             ptr_type_cst     = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
+            const SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
+            char*                   ptr_type_cst     = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
             if (compact1)
                 clear_int_st(0, ptr_type_cst, ptr_second_value, thr_rank);
             if (compact2)
@@ -854,7 +856,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool              need_
         wait_before_materialise<T>(derived());
 
         // Lambda to select the right initialization function
-        auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
+        const auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
         {
             if (!need_set_second_value)
             {
@@ -906,7 +908,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_seco
         // wait_before_materialise() for the condition.
         wait_before_materialise<T>(derived());
 
-        auto init_func = [need_set_second_value](bool* ptr)
+        const auto init_func = [need_set_second_value](bool* ptr)
         {
             // need_set_second_value is false (0) or true (1),
             // matching exactly the required initialization state.
@@ -959,7 +961,7 @@ template <typename T, typename Derived>
 void Chunk2AOmpPolicy<T, Derived, false>::create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value)
 {
     // Lambda to select the right initialization function
-    auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
+    const auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
     {
         if (!need_set_second_value)
         {

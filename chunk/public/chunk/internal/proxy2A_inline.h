@@ -16,21 +16,28 @@
 
 #pragma once
 
-#include <atomic>   // std::atomic<char> (the "queued" flags)
-#include <cstdio>   // std::fprintf (check-build trace)
-#include <cstdlib>  // std::getenv (CHUNK_PROXY2A_META_LEGACY)
-#include <iostream> // std::cerr (verbose)
-#include <memory>   // std::make_unique
-#include <utility>  // std::move, std::cmp_greater_equal
+#include <atomic>          // std::atomic<char> (the "queued" flags)
+#include <cstdio>          // std::fprintf (check-build trace)
+#include <cstdlib>         // std::getenv (CHUNK_PROXY2A_META_LEGACY)
+#include <iostream>        // std::cerr (verbose)
+#include <memory>          // std::make_unique
+#include <source_location> // std::source_location
+#include <type_traits>     // std::remove_cvref_t
+#include <utility>         // std::move, std::cmp_greater_equal
 
+#include "chunk/internal/proxy2A.h" // the declarations these bodies belong to
 #include "chunk/internal/in_t.h"
 #include "chunk/array_chunk2A.h"
+#include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h" // get_thr_rank_fast
+#include "chunk/internal/arithmetic_context.h"
+#include "chunk/internal/array_chunk_for.h"
+#include "chunk/internal/concept_is_clean_assignement.h"
+#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 #include "chunk/internal/deferred_op_pool.h"
 #include "chunk/internal/bad_ptr_check.h"     // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/internal/invariant_check.h"   // INVARIANT_FAILED
 #include "chunk/internal/chunk_stats.h"       // increm_chunk_* (CHUNK_STATS)
-#include "chunk/internal/chunk_size_config.h" // __chunk_size
 #include "chunk/internal/chunk_size_policy.h" // DynChunkSizeGuard, set_thread_chunk_size
 
 /**
@@ -286,7 +293,7 @@ void Proxy2A<T>::resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk)
 template <typename T>
 void Proxy2A<T>::trigger_compression_if_needed(int thr_rank)
 {
-    auto& vec_to_compress_potantially = manager_chunk2A::get_chunk2A_to_compress_potentially(thr_rank);
+    const auto& vec_to_compress_potantially = manager_chunk2A::get_chunk2A_to_compress_potentially(thr_rank);
 
     if constexpr (build_config::use_openmp)
     {
@@ -324,7 +331,7 @@ void Proxy2A<T>::perform_compression() noexcept
 
     const int thr_rank = get_thr_rank_fast();
 
-    auto& vec_to_compress_potantially = manager_chunk2A::get_chunk2A_to_compress_potentially(thr_rank);
+    const auto& vec_to_compress_potantially = manager_chunk2A::get_chunk2A_to_compress_potentially(thr_rank);
 
     const int sz_before = static_cast<int>(vec_to_compress_potantially.size());
 
@@ -332,12 +339,6 @@ void Proxy2A<T>::perform_compression() noexcept
 
     if (sz_before > sz_threshold)
     {
-        // to create a bug
-        // if (thr_rank == 10)
-        // {
-        //     chunk.values[10] += 1;
-        // }
-
         // flush_deferred drains per-thread deferred write ops. Those are only
         // ever enqueued on the OMP write path; the non-OMP write executes
         // write_body() directly (no deferral), so there is nothing to drain — and
@@ -387,8 +388,8 @@ void Proxy2A<T>::ensure_writable_storage()
         {
             const unsigned int frozen = this->chunk_size_frozen_;
             const unsigned int live =
-                (this->ptr_on_array) ? static_cast<const ArrayChunkFor_t<ChunkType>*>(this->ptr_on_array)->chunk_size()
-                                     : 0;
+                this->ptr_on_array ? static_cast<const ArrayChunkFor_t<ChunkType>*>(this->ptr_on_array)->chunk_size()
+                                   : 0;
             const unsigned int used = this->chunk_size();
             if (used != live || frozen != 0U)
                 std::fprintf(stderr, "[EWS] used=%u live=%u frozen=%u\n", used, live, frozen);
@@ -510,8 +511,6 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::ensure_writable_stor
 template <typename T>
 void Proxy2A<T>::perform_core_assignment(in_t<T> v) const
 {
-    bool need_alloc;
-
     if constexpr (is_not_bool)
     {
         if (v == static_cast<T>(BaseSpec::ptr_second_value.get()))
@@ -551,12 +550,10 @@ void Proxy2A<T>::perform_core_assignment(in_t<T> v) const
         increm_chunk_write<ChunkType>(v);
     }
 
-    need_alloc = Base2::is_cst_val();
+    const bool need_alloc = Base2::is_cst_val();
 
     if (need_alloc)
     {
-        // nano_sleeper.sleepRandomNano();
-
         if constexpr (is_not_bool)
         {
             create_value(BaseSpec::ptr_second_value);
@@ -666,20 +663,20 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
         return v;
     }
 
-    [[maybe_unused]] bool need_async;
+    [[maybe_unused]] bool need_async = false;
 
     if constexpr (is_not_bool)
     {
         // By reference: v is this call's parameter (a value, or the caller's
         // object through the large-operand operator=), alive for the whole
         // synchronous call; the deferred path below copies it into its context.
-        auto assignment_body = [this, &v]() { handle_no_bool_assignment(v); };
+        const auto assignment_body = [this, &v] { handle_no_bool_assignment(v); };
 
         need_async = Base2::write_with_optional_lock_with_set_ptr(assignment_body);
     }
     else
     {
-        auto assignment_body_bool = [this, &v]() { handle_bool_assignment(v); };
+        const auto assignment_body_bool = [this, &v] { handle_bool_assignment(v); };
 
         need_async = Base2::write_with_optional_lock_with_set_ptr(assignment_body_bool);
     }
@@ -696,7 +693,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
             // Capture only location + operand
             auto* ctx = pool_new_ctx<CtxType>(*this, v, ptr_on_array);
 
-            auto lbd_equal_asynch = [ctx]() // the operand lives in the context: no second copy in the closure
+            auto lbd_equal_asynch = [ctx] // the operand lives in the context: no second copy in the closure
             {
                 auto&      chunk = ctx->chunk;
                 const int  num   = ctx->num;
@@ -792,7 +789,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                     values_before[num] = static_cast<T>(ctx->operand);
 
                     // Post-store confirmation.
-                    T* values_after = chunk.values_load();
+                    const T* values_after = chunk.values_load();
                     if (values_after != values_before) [[unlikely]]
                     {
                         if constexpr (build_config::any_check)
@@ -918,7 +915,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_opera
         operation(values_before);
 
         // Post-store confirmation
-        T* values_after = ctx->chunk.values_load();
+        const T* values_after = ctx->chunk.values_load();
         if (values_after != values_before) [[unlikely]]
         {
             if constexpr (build_config::any_check)
@@ -1084,7 +1081,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                 // Decompress path: lbd will re-read and store
                 ctx->chunk.create_value(true, proxy.ptr_second_value);
 
-                T* values_before = ctx->chunk.values_load();
+                const T* values_before = ctx->chunk.values_load();
 
                 // Pre-store guard inside the decompressed-path branch
                 if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
@@ -1102,7 +1099,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                 lbd(op);
 
                 // Post-store: did `values` change?
-                T* values_after = ctx->chunk.values_load();
+                const T* values_after = ctx->chunk.values_load();
                 if (values_after != values_before) [[unlikely]]
                 {
                     if constexpr (build_config::any_check)
@@ -1120,7 +1117,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
             }
             if (proxy.is_not_cst_val2())
             {
-                T* values_before = ctx->chunk.values_load();
+                const T* values_before = ctx->chunk.values_load();
 
                 // Pre-store guard
                 if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
@@ -1138,7 +1135,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                 Base::store_value_async(ctx, v_new_truncated);
 
                 // Post-store confirmation
-                T* values_after = ctx->chunk.values_load();
+                const T* values_after = ctx->chunk.values_load();
                 if (values_after != values_before) [[unlikely]]
                 {
                     if constexpr (build_config::any_check)
@@ -1269,7 +1266,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
         detail::modify_element<ChunkType, T>(values_before, ctx->num, operation);
 
         // Post-store confirmation
-        T* values_after = ctx->chunk.values_load();
+        const T* values_after = ctx->chunk.values_load();
         if (values_after != values_before) [[unlikely]]
         {
             if constexpr (build_config::any_check)

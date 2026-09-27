@@ -23,7 +23,8 @@
 #include <type_traits>     // std::is_same_v
 #include <utility>         // std::forward
 
-#include "chunk/internal/chunk_size_config.h"
+#include "chunk/config.h"
+#include "chunk/PMP_CHUNK.h" // get_thr_rank_fast (the constant-buffer write check)
 #include "chunk/internal/chunk_base.h"
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef, the Chunk2A second-value slot handle
 #include "chunk/type_name.h"
@@ -239,7 +240,7 @@ class Chunk2Base : public ChunkBase<T, Derived>
         if constexpr (!build_config::any_check)
             return;
 
-        auto* c1 = static_cast<const void*>(Chunk2Base::get_cst_val1());
+        const auto* c1 = static_cast<const void*>(Chunk2Base::get_cst_val1());
 
         const void* c2 = nullptr;
 
@@ -266,7 +267,7 @@ class Chunk2Base : public ChunkBase<T, Derived>
                              "Illegal Memory Write: Attempted to write into an immutable shared constant buffer. "
                              "Type: {} | Chunk Addr: {} | Target Ptr: {} | Cst1: {} | Cst2: {} | Thread: {}",
                              type_name<T>(), static_cast<const void*>(this), static_cast<const void*>(target_ptr), c1,
-                             (c2 ? c2 : nullptr), get_thr_rank_fast());
+                             c2, get_thr_rank_fast());
         }
     }
 };

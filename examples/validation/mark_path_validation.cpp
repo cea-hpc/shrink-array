@@ -56,7 +56,6 @@
 
 #include <cstdint> // std::uint8_t (the Kind enum's base)
 #include <cstdio>
-#include <cstdlib>
 #include <print>
 #include <type_traits>
 #include <utility> // std::as_const

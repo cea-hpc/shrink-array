@@ -17,21 +17,24 @@
 #pragma once
 
 #include <concepts>
+#include <functional>
+#include <ostream>
+#include <utility>
+#include <vector>
 
-#include "chunk/internal/pointer_map_linear.h" // scan lineaire partage avec PointerMapChunk2
-#include "chunk/internal/chunk_size_config.h"
+#include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk2
+#include "chunk/config.h"
+#include "chunk/internal/array_chunk_for.h"
+#include "chunk/internal/chunk_size_policy.h"
+#include "chunk/internal/concept_is_clean_assignement.h"
 #include "chunk/internal/in_t.h"
-#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
-#include "chunk/chunk_def.h"
+#include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED
 #include "chunk/internal/conditional_counter.h" // counter_value_t — resync_nb_val_eq_zero
-#include "chunk/chunk_define.h"
 #include "chunk/internal/manager_chunk.h"
-#include "chunk/PMP_CHUNK.h"
 #include "chunk/internal/map_helper.h"
 #include "chunk/internal/arithmetic_context.h"
-#include "chunk/internal/proxy_operators.h"
 #include "chunk/internal/proxy_base.h"
-#include "chunk_stats.h"
+#include "chunk/internal/chunk_stats.h" // increm_chunk_read<> (a dependent call the include tools cannot attribute)
 
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
@@ -152,11 +155,11 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
     /// Internal alias for tuple representing a value with index and table number.
     using inf_array_t = int;
 
-    // Le stockage (un std::vector) et les operations de parcours viennent de
-    // PointerMapLinear. Le conteneur y est un parametre template : celui de
-    // PointerMapChunk2 est un std::deque, pour une raison documentee la-bas.
+    // The storage (a std::vector) and the traversal operations come from
+    // PointerMapLinear. The container is a template parameter there:
+    // PointerMapChunk2's is a std::deque, for a reason documented over there.
     using Linear = PointerMapLinear<inf_array_t, std::vector<std::pair<const void*, inf_array_t>>>;
-    /// Remet le stockage du socle dans la portee de cette classe (base dependante).
+    /// Brings the base's storage back into this class's scope (dependent base).
     using Linear::vec;
 
   public:
@@ -230,8 +233,8 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
         return this->swap_entries(key_a, key_b);
     }
 
-    // erase(), swap_entries(), exists(), size() et for_each_key() viennent de
-    // PointerMapLinear : c'etaient les memes parcours que dans PointerMapChunk2.
+    // erase(), swap_entries(), exists(), size() and for_each_key() come from
+    // PointerMapLinear: they were the same traversals as in PointerMapChunk2.
 };
 
 /**
@@ -278,7 +281,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @brief Async-context version of the table-number lookup: resolves
      *        which array a given chunk pointer belongs to.
      * @param ptr Chunk pointer to look up.
-     * @return The table number `p` belongs to.
+     * @return The table number @p ptr belongs to.
      */
     [[nodiscard]] static int get_num_tab_async(auto* /*ctx*/, const void* ptr) noexcept
     {
@@ -650,7 +653,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     template <typename WriteFn>
     bool write_with_optional_lock(WriteFn write_fn) noexcept
     {
-        auto lbd_info = [this]()
+        const auto lbd_info = [this]
         {
             if constexpr (chunk_config::use_fast_block_compression)
             {
@@ -708,7 +711,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     /**
      * @brief Resolve which array (table) a given pointer belongs to.
      * @param ptr Pointer to look up.
-     * @return The table number `p` belongs to.
+     * @return The table number @p ptr belongs to.
      */
     [[nodiscard]] static int get_num_tab(const void* ptr) noexcept
     {

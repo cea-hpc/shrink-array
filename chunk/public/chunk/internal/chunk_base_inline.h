@@ -18,13 +18,18 @@
 #include <exception>   // std::exception (deferred enqueue)
 #include <memory>      // std::make_unique
 #include <type_traits> // std::remove_reference_t
-#include <vector>
 
 #include "chunk/internal/chunk_base.h"  // the declarations these bodies belong to
 #include "chunk/config.h"               // build_config::use_fast_alloc, chunk_config::
 #include "chunk/internal/chunk_stats.h" // increm_chunk_read_sync / _cross (CHUNK_STATS)
 #include "chunk/internal/pool_ledger.h" // CHUNK_LEDGER_PARK / CHUNK_LEDGER_RELEASE
 #include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/internal/deferred_op_pool.h"
+#include "chunk/internal/deferred_ops_storage.h"
+#include "chunk/internal/freepath_counters.h" // CHUNK_FREEPATH_INC
+#include "chunk/internal/invariant_check.h"   // INVARIANT_FAILED
+#include "chunk/internal/svalloc.h"
+#include "chunk/internal/write_compress_sync_policy.h"
 
 namespace shrink_array
 {
@@ -193,7 +198,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
         // leaked pool slot). Publish/inc only for genuinely NEW entries; for a
         // replacement the count is already right (still one op at this offset)
         // and the reader window is already closed by the existing op's publish.
-        auto it_existing = ops_map_ptr->find(num);
+        const auto it_existing = ops_map_ptr->find(num);
         if (it_existing != ops_map_ptr->end())
         {
             it_existing->second->destroy(); // idempotent teardown of the superseded op

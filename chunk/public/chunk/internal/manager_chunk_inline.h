@@ -1,24 +1,31 @@
 #pragma once
 
 // Template method definitions for ManagerChunk<CHUNK_T, T>. Kept in a dedicated
-// inline header (included at the end of chunk/ManagerChunk.h) so that every
+// inline header (included at the end of chunk/internal/manager_chunk.h) so that every
 // (CHUNK_T, T) the consumer uses auto-instantiates at its use site. Bodies are
 // the CURRENT branch versions (with the kMaxDrainPasses drain and the defensive
 // destroy_after_flush drain) — NOT the older gen-dev-27 versions.
 
 #include <atomic>
 #include <cstdio>
-#include <print> // std::println (DEBUG_SET_SIZE)
-//#include <cstdlib>
+#include <cstdlib> // std::getenv (the trace switches)
+#include <print>   // std::println (DEBUG_SET_SIZE)
 #include <algorithm>
 #include <functional>
+#include <tuple> // std::tuple (the memory estimate)
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
+#include "chunk/internal/manager_chunk.h" // the declarations these bodies belong to
+#include "chunk/config.h"
 #include "chunk/internal/svalloc.h" // svfree
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/internal/chunk_size_policy.h"
-//#include "chunk/internal/invariant_check.h"
+#include "chunk/internal/compression_manager.h"  // CompressionManager (the barrier flushes)
+#include "chunk/internal/deferred_op_pool.h"     // fast_alloc::ArenaKind (its std-alloc stand-in too)
+#include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
+#include "chunk/internal/pool_ledger.h"          // CHUNK_LEDGER_DISCARD
 #include "chunk/chunk_std.h"
 #include "chunk/chunk2_std.h"
 #include "chunk/chunk2A_std.h"
@@ -37,7 +44,7 @@
 namespace shrink_array
 {
 // Forward declarations breaking the include cycle
-// chunk_func.h -> chunk_std.h -> proxy.h -> ManagerChunk.h -> THIS file ->
+// chunk_func.h -> chunk_std.h -> proxy.h -> manager_chunk.h -> THIS file ->
 // chunk_func.h: when chunk_func.h is the ENTRY point, its include of
 // chunk_std.h re-enters this file while chunk_func.h's own templates are not
 // yet declared (#pragma once skips the in-progress header), and the explicit
@@ -105,7 +112,7 @@ extern const bool g_serial_drain_legacy;
 template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunk<CHUNK_T, T>::force_chunk_to_compress() const
 {
-    auto lbd = [&]()
+    const auto lbd = [&]
     {
         const int thr = CHUNK_PMP_THREAD_RANK;
 
@@ -145,13 +152,10 @@ void ManagerChunk<CHUNK_T, T>::resize_chunk_to_compress_potentially() const
     const int nthr = CHUNK_PMP_THREAD_CAPACITY; // every rank that may run, as the manager's max_thr
 
     // --- Standard Chunk case ---
-    if constexpr (chunk_config::use_fast_block_compression)
+    if constexpr (chunk_config::use_fast_block_compression && IsChunk<CHUNK_T, T>)
     {
-        if constexpr (IsChunk<CHUNK_T, T>)
-        {
-            // Resize the list of chunks potentially needing compression
-            chunk_to_compress_potentially_thr.resize(nthr);
-        }
+        // Resize the list of chunks potentially needing compression
+        chunk_to_compress_potentially_thr.resize(nthr);
     }
 
     // --- Complex types (Chunk2/2A) multi-threading logic ---
@@ -321,7 +325,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
             // drop, no per-phase leak. There is no way to push into another
             // thread's thread_local free_list, so draining-on-owner is the only
             // route that keeps recycling local.
-            auto drain_index = [&](int rank)
+            const auto drain_index = [&](int rank)
             {
                 if (rank < 0 || rank >= max_thr || arr[rank].empty())
                     return;
@@ -936,7 +940,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
     }
     std::ranges::sort(samples, less);
 
-    auto splitter = [&](int split) -> T*
+    const auto splitter = [&](int split) -> T*
     {
         // Splitter s bounds slices s-1 | s; there are nslices-1 of them.
         const std::size_t idx = samples.size() * static_cast<std::size_t>(split) / static_cast<std::size_t>(nslices);
@@ -957,7 +961,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
         std::size_t pos;
         std::size_t end;
     };
-    auto greater = [&](const Head& lhs, const Head& rhs)
+    const auto greater = [&](const Head& lhs, const Head& rhs)
     { return less(rhs.p, lhs.p) || (lhs.p == rhs.p && lhs.bucket > rhs.bucket); };
 
     std::vector<Head> heap;
@@ -974,7 +978,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
     std::ranges::make_heap(heap, greater);
 
     auto&       repeats     = mgr::teardown_repeats_[static_cast<std::size_t>(slice)];
-    T*          prev        = nullptr;
+    const T*    prev        = nullptr;
     std::size_t prev_bucket = 0;
     bool        have        = false;
     while (!heap.empty())
@@ -1146,11 +1150,11 @@ void ManagerChunk<CHUNK_T, T>::compute_size_buffer_reuse()
 
 inline void print_mem_estimate(const char* label, std::size_t count, std::size_t elem_size)
 {
-    long double bytes = static_cast<long double>(count) * static_cast<long double>(elem_size);
+    const long double bytes = static_cast<long double>(count) * static_cast<long double>(elem_size);
 
-    long double kib = bytes / 1024.0L;
-    long double mib = kib / 1024.0L;
-    long double gib = mib / 1024.0L;
+    const long double kib = bytes / 1024.0L;
+    const long double mib = kib / 1024.0L;
+    const long double gib = mib / 1024.0L;
 
     // {:g}: the six significant digits std::cout printed.
     if (gib >= 1.0L)

@@ -22,11 +22,11 @@
 
 #include <cstddef> // std::size_t
 #include <iostream>
-#include <tuple>   // std::tuple (the inf_array entries)
 #include <utility> // std::cmp_not_equal
 
-#include "chunk/chunk_define.h"
+#include "chunk/config.h"
 #include "chunk/internal/chunk_size_config.h"
+#include "chunk/internal/chunk_size_policy.h" // active_chunk_size
 #include "chunk/internal/func_p2.h"
 #include "chunk/singleton.h"
 #include "chunk/all_type_chunk.h"

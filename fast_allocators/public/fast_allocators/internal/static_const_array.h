@@ -52,6 +52,7 @@
  */
 
 #include <cassert> // TypeAllocator::alloc: the size its free will route by
+#include <cstddef> // std::size_t
 
 #include "fast_allocators/internal/svalloc.h"
 #include "fast_allocators/internal/pmp_alloc.h" // PMP_MAX_THREADS / PMP_THREAD_RANK / PMP_IN_PARALLEL_REGION
@@ -59,7 +60,7 @@
 #include "fast_allocators/internal/int_alloc.h"
 #include "fast_allocators/internal/alloc_config.h" // constexpr mirror of STD_ALLOC
 #include "fast_allocators/tc_allocator.h"
-#include "fast_allocators/internal/static_const_array_define.h"
+#include "fast_allocators/internal/static_const_array_define.h" // MAX_CONST_BLOCK_SIZE, for the _inline.h part
 
 /**
  * @brief A per-thread batch of blocks freed but not yet returned to the ladder.
@@ -141,6 +142,12 @@ struct InfoFreeElt
 
     /// @brief Frees them. Does NOT release blocks still held in a batch.
     ~InfoFreeElt();
+
+    // Owns the four arrays: a copy would free them twice.
+    InfoFreeElt(const InfoFreeElt&)            = delete;
+    InfoFreeElt& operator=(const InfoFreeElt&) = delete;
+    InfoFreeElt(InfoFreeElt&&)                 = delete;
+    InfoFreeElt& operator=(InfoFreeElt&&)      = delete;
 };
 
 /**
@@ -247,9 +254,6 @@ class StaticConstArray
     static void freeBlockWithAlignInt(int sz, void* ptr);
 
   public:
-    StaticConstArray()  = default;
-    ~StaticConstArray() = default;
-
     /**
      * @brief Take a block of at least @p sz bytes from the ladder.
      * @param sz Requested size in bytes.
@@ -315,7 +319,6 @@ struct BlkAllocator : public StaticConstArray
             if (!ptr)
             {
                 int_alloc((char*&)ptr, size);
-                return ptr;
             }
 
             return ptr;
@@ -338,7 +341,7 @@ struct BlkAllocator : public StaticConstArray
         {
             // freeBlock() returns false for a size the ladder does not serve --
             // it came from int_alloc(), so it goes back to int_free().
-            if (freeBlock(size, ptr))
+            if (freeBlock(static_cast<int>(size), ptr))
             {
                 return;
             }
@@ -362,7 +365,7 @@ struct BlkAllocator : public StaticConstArray
             ptr = (int*)int_alloc_align(size + __ALIGNEMENT__);
         }
 
-        ptr[0] = size;
+        ptr[0] = static_cast<int>(size);
 
         char* user_ptr = (char*)ptr;
 
@@ -381,7 +384,7 @@ struct BlkAllocator : public StaticConstArray
 
         const int size = m_ptr[0];
 
-        if (!freeBlock(size + __ALIGNEMENT__, m_ptr))
+        if (!freeBlock(static_cast<int>(size + __ALIGNEMENT__), m_ptr))
         {
             int_free_align(m_ptr);
         }
@@ -400,9 +403,6 @@ struct BlkAllocator : public StaticConstArray
 template <typename _ElementType>
 struct FixedSizeAllocator : private StaticConstArray
 {
-    // 12 and 24 are very common sizes in the code --> specialized
-    // for the AutoPtr case, otherwise it's 8 and 24
-
   private:
     /// @brief Allocator8 / Allocator24 are plain buckets, no more thread-safe
     ///        than the ladder's: same guard as getBlockAlloc(). Serially
@@ -413,7 +413,7 @@ struct FixedSizeAllocator : private StaticConstArray
     {
         if (PMP_IN_PARALLEL_REGION)
         {
-            void* ptr;
+            void* ptr = nullptr;
 #pragma omp critical
             {
                 ptr = bucket.alloc();
@@ -444,8 +444,7 @@ struct FixedSizeAllocator : private StaticConstArray
     {
         if constexpr (alloc_config::use_std_alloc)
         {
-            size_t sz = sizeof(_ElementType);
-            return int_alloc(sz);
+            return int_alloc(sizeof(_ElementType));
         }
         else
         {
@@ -502,8 +501,8 @@ struct FixedSizeAllocator : private StaticConstArray
 
     /// @brief Give back a block from either alloc_block() overload.
     /// @warning Routes by `sizeof(_ElementType)`, NOT by the size the block was
-    ///          actually taken with. A block from `alloc_block(s)` with
-    ///          `s != sizeof(_ElementType)` goes back to the wrong bucket;
+    ///          actually taken with. A block from `alloc_block(size)` with
+    ///          `size != sizeof(_ElementType)` goes back to the wrong bucket;
     ///          TypeAllocator::alloc() asserts it never is.
     static void free_block(void* ptr)
     {
@@ -535,39 +534,6 @@ struct FixedSizeAllocator : private StaticConstArray
             }
         }
     }
-    //
-    //    static inline void* alloc_tab(size_t s)
-    //    {
-    //        int* ptr = (int*)getBlockAlloc(s + __ALIGNEMENT__);
-    //
-    //        if (!ptr)
-    //        {
-    //            ptr = (int*)int_alloc_align(s + __ALIGNEMENT__);
-    //        }
-    //
-    //        ptr[0] = s;
-    //
-    //        char* p = (char*)ptr;
-    //
-    //        p += __ALIGNEMENT__;
-    //
-    //        return p;
-    //    }
-    //
-    //    static inline void free_tab(void* p)
-    //    {
-    //        if (p == nullptr)
-    //            return;
-    //
-    //        int* m_ptr = (int*)((char*)p - __ALIGNEMENT__);
-    //
-    //        int s = m_ptr[0];
-    //
-    //        if (!freeBlock(s + __ALIGNEMENT__, m_ptr))
-    //        {
-    //            int_free_align(m_ptr);
-    //        }
-    //    }
 };
 
 /**
@@ -584,7 +550,7 @@ template <typename T>
 struct TypeAllocator
 {
     /// @brief A block of @p size bytes for a T.
-    /// @pre `s == sizeof(T)`: free() routes by sizeof(T), so any other size
+    /// @pre `size == sizeof(T)`: free() routes by sizeof(T), so any other size
     ///      (an operator new reached by a larger derived class) would go back
     ///      to the wrong bucket.
     static void* alloc(size_t size)

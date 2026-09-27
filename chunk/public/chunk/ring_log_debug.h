@@ -182,15 +182,12 @@ struct ScopedRingLog
     /// Explicit end. For Manual mode. Idempotent: calling twice is OK.
     void end() noexcept
     {
-        if constexpr (chunk_config::ring_log_debug)
+        if constexpr (chunk_config::ring_log_debug && Manual)
         {
-            if constexpr (Manual)
+            if (!ended)
             {
-                if (!ended)
-                {
-                    ring_log_end(tid, END_EVENT, payload);
-                    ended = true;
-                }
+                ring_log_end(tid, END_EVENT, payload);
+                ended = true;
             }
         }
     }

@@ -115,8 +115,8 @@ int one_case(std::size_t n, bool in_region)
         p = Ch::operator new[](n * sizeof(Ch));
     }
 
-    auto*     v   = static_cast<Ch*>(p);
-    const int bad = materialised(v, n);
+    const auto* v   = static_cast<Ch*>(p);
+    const int   bad = materialised(v, n);
     std::println("[{}/array-new] {:<6} n={:5} : {}", variant_name(), in_region ? "region" : "serial", n,
                  bad ? "FAIL" : "ok, every chunk at the first constant");
     if (bad)
@@ -129,8 +129,8 @@ int one_case(std::size_t n, bool in_region)
 ///        constructor runs to overwrite the initialisation.
 int placement_case(std::size_t n)
 {
-    void* p = Ch::operator new[](n * sizeof(Ch));
-    auto* v = static_cast<Ch*>(p);
+    void*       p = Ch::operator new[](n * sizeof(Ch));
+    const auto* v = static_cast<Ch*>(p);
 
     const int bad = materialised(v, n);
     std::println("[{}/array-new] placement n={:5} : {}", variant_name(), n,

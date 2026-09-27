@@ -18,6 +18,8 @@
  */
 #pragma once
 
+#include "chunk/chunk_define.h" // FAST_ALLOC
+
 #ifdef FAST_ALLOC
     #include <atomic>
     #include "fast_allocators/slab_arena.h"

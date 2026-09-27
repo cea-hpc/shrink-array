@@ -14,22 +14,17 @@
 #include "bench_prelude.h"
 
 #include <algorithm>
-#include <atomic>
-#include <bit> // std::has_single_bit
 #include <cfenv>
 #include <chrono>
-#include <cmath>  // std::fmod (bound stress workload)
+#include <cmath>  // std::sin (the range-API checks)
 #include <cstdio> // std::fprintf
 #include <cstdlib>
-#include <dlfcn.h>
 #include <iostream> // std::cin, std::getline (INPUT_DATA)
-#include <numeric> // std::accumulate — STL self-checks
 #include <print>
 #include <random>
-#include <stdexcept> // std::out_of_range — STL self-checks
+#include <stdexcept> // std::invalid_argument (the INPUT_DATA prompt)
 #include <string>
 #include <unistd.h>
-#include <utility> // std::as_const — STL self-checks
 #include <vector>
 
 // The bulk range API (the chunked arrays' overloads or the std::vector
@@ -42,23 +37,18 @@
 // seed I/O, help/suggest, memory report).
 #include "bench_utils.h"
 
-// Binary-file I/O (write_binary_file, read_check_binary_file).
-#include "bench_io.h"
-
 // The phases extracted from main() and their shared context: the array type,
 // the second_value_* constants, the BenchArrays handle, and the OMPT phase
 // wrappers (which lived here until the parallel regions left).
 #include "bench_phases.h"
 
-// The --test_stl self-checks, in their own translation unit.
+// The command line (BenchArgs, parse_bench_args).
 #include "bench_args.h"
-#include "bench_stl_checks.h"
 
 
 #include "crash_backtrace.h"          // TEMPORARY (SEGV hunt): native backtrace on crash
 #include "chunk/ring_log_debug.h"     // SEGV hunt: ring_init/analyze_ring_sweep decls
-#include "chunk/chunk_size_advisor.h" // step-0 observation (acts in dyn builds only)
-#include "chunk/rechunk_decider.h"    // phase-3A: re-chunk decisions (idem)
+#include "chunk/rechunk_decider.h"    // phase-3A: re-chunk decisions (acts in dyn builds only)
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
 using namespace shrink_array;
@@ -323,7 +313,7 @@ int main(int argc, char* argv[])
 
     const Int freq_check_sum = have_check_sum() ? std::max<Int>(1, iter_max / 4) : 1000000000;
 
-    CONSTEXPR Int freq_conso_mem = get_freq_conso_mem();
+    CONSTEXPR const Int freq_conso_mem = get_freq_conso_mem();
 
     // Cadence of the per-iteration checksum line. Defaults to the memory
     // line's, so the two land on the same iterations and a checksum can be read
@@ -355,8 +345,8 @@ int main(int argc, char* argv[])
     // and the literal 1 without, so no #ifdef is needed here any more.
     const Int max_thr = CHUNK_PMP_MAX_THREADS;
 
-    CONSTEXPR bool stats     = have_stats();
-    CONSTEXPR bool check_sum = have_check_sum();
+    CONSTEXPR const bool stats     = have_stats();
+    CONSTEXPR const bool check_sum = have_check_sum();
 
     if (sz < 512)
     {
@@ -414,13 +404,13 @@ int main(int argc, char* argv[])
 
     // Lambda template for printing `sizeof(ChunkType<T>)` with proper formatting
 
-    [[maybe_unused]] auto print_chunk_size =
+    [[maybe_unused]] const auto print_chunk_size =
         [&type_instances, &get_max_length]<template <typename> typename ChunkType>(const std::string& chunk_name)
     {
         // 1. Display section header in Bold Cyan
         std::print("{}{}\n=== {} ===\n{}", tc.BOLD, tc.CYAN, chunk_name, tc.RESET);
 
-        size_t max_width = get_max_length.operator()<ChunkType>();
+        const size_t max_width = get_max_length.operator()<ChunkType>();
 
         // 2. Iterate through each type stored in type_instances tuple
         std::apply(
@@ -640,19 +630,22 @@ int main(int argc, char* argv[])
     // cheap, so we gate purely on memory gain + hysteresis, not CPU cost).
     RechunkDecider rechunk_decider{RechunkPolicy{.dry_run = false}};
     Int            advisor_call = 0;
-    auto           advisor_tick = [&](Int k_iter)
+    const auto     advisor_tick = [&](Int k_iter)
     {
         if constexpr (has_advisor)
         {
             if (advisor_period <= 0 || (k_iter % advisor_period) != 0)
                 return;
-            const Int tick = advisor_call++;
-            rechunk_decider.consider<double>(tab1, tick, k_iter, "tab1");
-            rechunk_decider.consider<double>(tab2, tick, k_iter, "tab2");
-            rechunk_decider.consider<short>(tab_short, tick, k_iter, "tab_short");
-            rechunk_decider.consider<complex_double>(tab_complex, tick, k_iter, "tab_complex");
+            // consider() counts ticks and iterations in int; Int is `long` in
+            // the int64 build, and both counts stay far below INT_MAX.
+            const int tick = static_cast<int>(advisor_call++);
+            const int iter = static_cast<int>(k_iter);
+            rechunk_decider.consider<double>(tab1, tick, iter, "tab1");
+            rechunk_decider.consider<double>(tab2, tick, iter, "tab2");
+            rechunk_decider.consider<short>(tab_short, tick, iter, "tab_short");
+            rechunk_decider.consider<complex_double>(tab_complex, tick, iter, "tab_complex");
             if (!no_struct)
-                rechunk_decider.consider<Point3>(tab_point, tick, k_iter, "tab_point");
+                rechunk_decider.consider<Point3>(tab_point, tick, iter, "tab_point");
             if constexpr (chunk_config::use_chunk2a)
             {
                 if (std::getenv("CHUNK_CST2_PROBE")) // only prints when requested
@@ -688,7 +681,7 @@ int main(int argc, char* argv[])
             advisor_tick(k);
         if (k % 100 == 0)
         {
-            auto now = std::chrono::steady_clock::now();
+            const auto now = std::chrono::steady_clock::now();
             std::println("iter {} : time : {:.6f}", k, std::chrono::duration<double>(now - last).count());
             std::fflush(stdout);
             last = now;
@@ -829,7 +822,7 @@ int main(int argc, char* argv[])
             // (so the copy lands on chunks that compress right after).
             std::vector<double> src(r1 - r0);
             for (std::size_t i = 0; i < src.size(); ++i)
-                src[i] = std::sin(static_cast<double>(r0 + i) + k);
+                src[i] = std::sin(static_cast<double>(r0 + i) + static_cast<double>(k));
 
             copy_range(tab4, r0, r1, src.begin(), assume_drained);
             for (std::size_t i = 0; i < src.size(); ++i)

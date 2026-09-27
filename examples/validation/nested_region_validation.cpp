@@ -32,9 +32,10 @@
 #include <cstdlib>
 #include <print>
 #include <string>
+#include <type_traits>
 #include <vector>
 #include <unistd.h>
-#include <sys/wait.h>
+#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 
 #include "chunk/chunk_traits.h"
 #include "chunk/array_chunk.h"
@@ -155,13 +156,13 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
     if (FILE* f = std::fopen(log.c_str(), "r"))
     {
         char buf[4096];
-        for (std::size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;)
+        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, f)) > 0;)
             out.append(buf, n);
         std::fclose(f);
     }
     std::remove(log.c_str());
 
-    const bool stopped = status != -1 && !(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    const bool stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
     const bool message = out.contains("nested ACTIVE");
     std::println("[nested-active] two active levels: {}, {}", stopped ? "stopped" : "RAN ON",
                  message ? "invariant message printed" : "NO invariant message");

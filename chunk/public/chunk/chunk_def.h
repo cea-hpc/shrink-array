@@ -37,10 +37,7 @@ struct ChunkDef
     constexpr static int nb_max_compress_value = 2;
 
     constexpr static int size_min_list_chunk_to_check_compress = 100;
-    // constexpr static int factor_div_nb_chunk_for_compress     = 500;
-    // constexpr static int factor_div_nb_chunk_for_compress     = 25;
-    constexpr static int factor_div_nb_chunk_for_compress     = 100;
-    constexpr static int size_min_buffer_reuse                = 100;
-    constexpr static int factor_div_nb_chunk_for_buffer_reuse = 100;
-    // constexpr static int size_buffer_reuse = 10000;
+    constexpr static int factor_div_nb_chunk_for_compress      = 100;
+    constexpr static int size_min_buffer_reuse                 = 100;
+    constexpr static int factor_div_nb_chunk_for_buffer_reuse  = 100;
 };

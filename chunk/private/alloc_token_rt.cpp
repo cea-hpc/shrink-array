@@ -54,6 +54,7 @@
 #include <cstdlib>  // malloc & co, std::getenv
 #include <cstring>  // std::strcmp
 #include <malloc.h> // memalign
+#include <stdlib.h> // ::posix_memalign: POSIX, not declared by <cstdlib>
 #include <new>
 #include "chunk/internal/env_parse.h" // env_number / env_flag (checked, not atoi)
 

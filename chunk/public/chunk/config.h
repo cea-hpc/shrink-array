@@ -50,7 +50,7 @@ inline constexpr bool chunk_dynamic = false;
 ///        shared pool is used: with ~240 KB slabs a small array would pay one
 ///        slab per rank for nothing. 0 disables affinity altogether.
 #ifndef CHUNK_ALLOC_AFFINITY_MIN_BYTES
-    #define CHUNK_ALLOC_AFFINITY_MIN_BYTES (16uz << 20)
+    #define CHUNK_ALLOC_AFFINITY_MIN_BYTES (16uz << 20U)
 #endif
 inline constexpr std::size_t alloc_affinity_min_bytes =
     CHUNK_ALLOC_AFFINITY_MIN_BYTES; // -D to override (0 = off; tiny = every array, for tests)

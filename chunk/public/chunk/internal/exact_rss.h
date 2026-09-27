@@ -29,7 +29,6 @@
  * cost ~3 s. Fine for traces and checkpoints; never on a periodic hot path.
  */
 
-#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -56,8 +55,9 @@ inline long exact_rss_kib() noexcept
     }
     if (std::FILE* f = std::fopen("/proc/self/statm", "r"))
     {
-        long size = 0, res = 0;
-        const int n = std::fscanf(f, "%ld %ld", &size, &res);
+        long      size = 0;
+        long      res  = 0;
+        const int n    = std::fscanf(f, "%ld %ld", &size, &res);
         std::fclose(f);
         const long ps = ::sysconf(_SC_PAGESIZE);
         if (n == 2 && ps > 0)
@@ -88,8 +88,11 @@ class RssPeakSampler
         if (thread_.joinable())
             thread_.join();
     }
+    // Owns the sampling thread, which captured `this`: neither copied nor moved.
     RssPeakSampler(const RssPeakSampler&)            = delete;
     RssPeakSampler& operator=(const RssPeakSampler&) = delete;
+    RssPeakSampler(RssPeakSampler&&)                 = delete;
+    RssPeakSampler& operator=(RssPeakSampler&&)      = delete;
 
     /// @brief Fold in a sample taken elsewhere.
     void note(long kib) noexcept

@@ -31,9 +31,10 @@
 #include <cstdlib>
 #include <print>
 #include <string>
+#include <type_traits>
 #include <vector>
 #include <unistd.h>
-#include <sys/wait.h>
+#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 
 #include "chunk/chunk_traits.h"
 #include "chunk/array_chunk.h"
@@ -172,13 +173,13 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
     if (FILE* f = std::fopen(log.c_str(), "r"))
     {
         char buf[4096];
-        for (std::size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;)
+        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, f)) > 0;)
             out.append(buf, n);
         std::fclose(f);
     }
     std::remove(log.c_str());
 
-    const bool stopped = status != -1 && !(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    const bool stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
     const bool message = out.contains("thread capacity");
     std::println("[beyond] team past the capacity: {}, {}", stopped ? "stopped" : "RAN ON",
                  message ? "capacity message printed" : "NO capacity message");

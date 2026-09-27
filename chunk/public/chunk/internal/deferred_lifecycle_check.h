@@ -36,8 +36,6 @@
 
 #include <cstdint>
 
-#include "chunk/config.h"
-
 namespace shrink_array::deferred_lifecycle
 {
 

@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <cstddef>  // std::size_t
+#include <cstdlib>  // std::abort
 #include <iostream> // std::cerr
 #include <vector>
 
@@ -27,8 +27,11 @@
 #include "chunk/internal/manager_chunk.h"       // per-size free lists, candidate filter
 #include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
 #include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_PARK / DISCARD
-#include "chunk/internal/svalloc.h"             // svfree
 #include "chunk/type_name.h"
+#include "chunk/config.h"
+#include "chunk/internal/chunk_size_policy.h"
+#include "chunk/internal/concept_array_chunk_element.h"
+#include "chunk/internal/in_t.h"
 
 namespace shrink_array
 {
@@ -102,8 +105,8 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
     if (nb_chunk == 0)
         return;
 
-    auto&     sh_inf  = Proxy<T>::share_info_array;
-    const int num_tab = sh_inf.get_num_tab(const_cast<void*>(this->registry_key()));
+    const auto& sh_inf  = Proxy<T>::share_info_array;
+    const int   num_tab = sh_inf.get_num_tab(this->registry_key());
 
     // Plain Chunk classification: a block that is NOT written() is stored in its
     // compressed (constant == first_value) form; written() means it is
@@ -196,8 +199,8 @@ void ArrayChunk<T, ind_type>::clear_core()
     // relies on this to keep the shared list free of foreign-geometry chunks.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        auto&     sh_inf   = Proxy<T>::share_info_array;
-        const int num_tab_ = sh_inf.get_num_tab(this->registry_key());
+        const auto& sh_inf   = Proxy<T>::share_info_array;
+        const int   num_tab_ = sh_inf.get_num_tab(this->registry_key());
         manager_chunk::remove_from_compress_list_chunk_by_num_tab(num_tab_);
     }
 
@@ -430,7 +433,7 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
         make_block_compression();
     }
 
-    auto& sh_inf = Proxy<T>::share_info_array;
+    const auto& sh_inf = Proxy<T>::share_info_array;
 
     const int num_tab = sh_inf.get_num_tab(this->registry_key());
 
@@ -479,7 +482,7 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz, in_t<T> val)
 
     resize(newsz);
 
-    auto lbd_init = [this, old_size, newsz, val]()
+    const auto lbd_init = [this, old_size, newsz, val]
     {
 #pragma omp for schedule(static) nowait
         for (ind_type i = old_size; i < newsz; ++i)

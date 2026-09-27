@@ -25,8 +25,7 @@
 /// on two of them.
 
 #include <algorithm> // std::min (bench_phase_range_mt)
-#include <complex>
-#include <cstddef> // std::size_t (bench_phase_range_mt)
+#include <cstddef>   // std::size_t (bench_phase_range_mt)
 #include <print>
 
 #include "bench_phases.h"
@@ -241,9 +240,9 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, 
 
     std::println("interval : [{}, {}] size : {}", start0, end0, size);
 
-    Int i;
+    Int i = start0;
 
-    for (i = start0; i < sz; ++i)
+    for (; i < sz; ++i)
     {
         if (tab1[i] != 0)
         {

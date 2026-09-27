@@ -18,7 +18,8 @@
 
 #include <memory>
 #include <atomic>
-#include <mutex> // std::once_flag / std::call_once — NOT just std::mutex; do not remove again
+#include <cstdint> // uint32_t (the ring_log payloads)
+#include <mutex>   // std::once_flag / std::call_once — NOT just std::mutex; do not remove again
 
 #include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h"
@@ -236,7 +237,7 @@ class WriteCompressSyncPolicy
     {
         static std::once_flag flag;
         std::call_once(flag,
-                       []()
+                       []
                        {
                            per_thread_writing = std::make_unique<WritingFlag[]>(CHUNK_PMP_THREAD_CAPACITY);
                            num_thread_flushing.store(0, std::memory_order_relaxed);

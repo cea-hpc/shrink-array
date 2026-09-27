@@ -30,7 +30,8 @@
 ///  - the reduction is on a double built from the members, since a struct
 ///    is not a reduction type.
 
-#include <cstdint> // int32_t
+#include <algorithm> // std::min
+#include <cstdint>   // int32_t
 #include <vector>
 
 #include "bench_phases.h"

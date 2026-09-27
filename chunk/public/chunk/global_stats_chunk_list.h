@@ -18,7 +18,8 @@
  * limitations under the License.
  */
 
-#include <format> // std::format (format_memory)
+#include <cstddef> // std::size_t
+#include <format>  // std::format (format_memory)
 #include <map>
 #include <print> // std::println (print)
 #include <string>
@@ -31,14 +32,6 @@ namespace shrink_array
 
 struct GlobalStatsChunkList
 {
-    // const std::string RESET  = "\033[0m";
-    // const std::string BOLD   = "\033[1m";
-    // const std::string RED    = "\033[31m";
-    // const std::string GREEN  = "\033[32m";
-    // const std::string YELLOW = "\033[33m";
-    // const std::string CYAN   = "\033[36m";
-    // const std::string WHITE  = "\033[37m";
-
     struct TypeStats
     {
         long   allocated_chunks;  // Total number of data chunks managed

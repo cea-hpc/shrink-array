@@ -15,13 +15,17 @@
  */
 
 #include <bit> // std::bit_cast (calculate_checksum)
+#include <cassert>
 #include <chrono>
+#include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <print>
 #include <random>
 #include <array>
 #include <fstream>
-#include <complex>
+#include <string>
 
 #include <type_traits> // std::conditional_t (Array)
 #include <vector>
@@ -32,7 +36,11 @@
 // chunk_vector, simple_array_chunk chunk_v1.
 #include "chunk/param_chunk.h"
 #include "chunk/array_chunk.h"
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
+#include "chunk/chunk_def.h"                  // ChunkDef
+#include "chunk/chunk_std.h"                  // destroy_block_chunk
+#include "chunk/config.h"                     // chunk_config::use_chunk*, stats
+#include "chunk/internal/chunk_size_config.h" // __chunk_size
 
 int __mem_page_size = 0;
 
@@ -42,7 +50,7 @@ uint64_t calculate_checksum(const V& vec)
     uint64_t checksum = 0;
 
     using T      = V::value_type;
-    const int nn = vec.size();
+    const int nn = static_cast<int>(vec.size());
 
     constexpr T zero = 0;
 
@@ -55,7 +63,7 @@ uint64_t calculate_checksum(const V& vec)
         {
             // The bits of the value: bit_cast, not a uint64_t* on a double
             // (undefined behaviour under strict aliasing).
-            checksum = (checksum >> 1) + ((checksum & 1) << 63);
+            checksum = (checksum >> 1U) + ((checksum & 1U) << 63U);
             checksum += std::bit_cast<uint64_t>(element);
         }
     }
@@ -66,21 +74,15 @@ double convert_memory(double memoryValue)
 {
     constexpr double BYTE_TO_KB = 1.0 / 1024;
     constexpr double KB_TO_MB   = 1.0 / 1024;
-    // const double MB_TO_GB   = 1.0 / 1024;
 
     const double kilobytes = memoryValue * BYTE_TO_KB;
     const double megabytes = kilobytes * KB_TO_MB;
-    //  double gigabytes = megabytes * MB_TO_GB;
 
     std::ofstream fichier("memory_mo.txt");
 
     if (fichier.is_open())
     {
-        // Écrire un scalaire dans le fichier
-
         fichier << megabytes;
-
-        // Fermer le fichier
         fichier.close();
     }
     else
@@ -194,7 +196,6 @@ int main()
 
     constexpr int sz = 1000000000;
     //  constexpr int sz = 100000;
-    // constexpr int iter_max = 10000;
     constexpr int iter_max = 10000;
 
     constexpr int freq_check_sum = iter_max / 5;
@@ -232,12 +233,10 @@ int main()
     start           = end;
     std::println("\nElapsed time Initialisation to zero: {:g}s", elapsed_seconds.count());
 
-    int min = 1;
-    int max = sz;
+    const int min = 1;
+    const int max = sz;
 
     // Initialize the random number generator
-    // std::random_device rd;
-    //  std::mt19937       rng(rd());
     const std::string str            = std::to_string(iter_max);
     const std::string seed_file_name = "seed" + str + ".txt"; // File to store the seed
     std::mt19937      rng;                                    // Random number generator
@@ -251,14 +250,13 @@ int main()
 
     std::println("Iteration ...");
 
-    std::array<int, iter_max> tab_size, tab_start, tab_nba1, tab_nba2;
+    std::array<int, iter_max> tab_size{}, tab_start{}, tab_nba1{}, tab_nba2{};
 
-    // #pragma omp parallel for
     for (int k = 0; k < iter_max; ++k)
     {
         const int size   = sizeDistribution(rng);
         const int start0 = startDistribution(rng);
-        int       end0   = start0 + size;
+        const int end0   = start0 + size;
         tab_size[k]      = size;
         tab_start[k]     = start0;
 
@@ -274,12 +272,10 @@ int main()
 
     double v = 0;
 
-    // #pragma omp parallel reduction(+ : v)
     for (int k = 0; k < iter_max; ++k)
     {
-        //  std::cout << "iter : " << k << "\n";
         const int size   = tab_size[k];
-        int       start0 = tab_start[k];
+        const int start0 = tab_start[k];
 
         int end0 = start0 + size;
 
@@ -288,13 +284,11 @@ int main()
 
         if (k != 0 && k % freq_raz == 0)
         {
-            // #pragma omp single
-            //   {
             std::println("Interval : [{}, {}] size : {}", start0, end0, size);
 
-            int i;
+            int i = start0;
 
-            for (i = start0; i < sz; ++i)
+            for (; i < sz; ++i)
             {
                 if (tab1[i] != 0)
                 {
@@ -310,7 +304,6 @@ int main()
                 tab1[i] = tab2[i] = tab3[i] = 0;
                 i++;
             }
-            //  }
         }
         else
         {
@@ -378,10 +371,10 @@ int main()
         },
         tab1, tab2, tab3);
 
-    struct rusage usage;
+    struct rusage usage{};
     if (getrusage(RUSAGE_SELF, &usage) == 0)
     {
-        long rss = usage.ru_maxrss; // Résident Set Size en kilo-octets
+        const long rss = usage.ru_maxrss; // Resident Set Size in kilobytes
         // {:.2f}: what the chunk builds printed (the filling-rate lines above
         // left std::fixed on std::cout); the vector build printed %g.
         std::println("\nMemory consumption : {:.2f} Mo \n", convert_memory(static_cast<double>(rss * 1024)));

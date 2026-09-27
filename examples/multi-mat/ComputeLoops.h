@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2024 CEA (www.cea.fr)
  *
@@ -36,6 +35,7 @@
 #include <vector>
 #include <cmath>
 #include <functional>
+#include <type_traits>
 
 #include "config.h"
 #include "Containers.h"
@@ -247,8 +247,8 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo,
 
                                  using vec_chunk_real = VectChunk<double>;
 
-                                 // Compression only exists for 'chunk' arrays: the SFINAE programming technique is
-                                 // used.
+                                 // Compression only exists for 'chunk' arrays: `if constexpr` keeps the call out
+                                 // of the std::vector instantiation.
 
                                  if constexpr (std::is_same_v<V, vec_chunk_real>)
                                  {

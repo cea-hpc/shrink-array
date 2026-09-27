@@ -140,10 +140,10 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
      */
     [[no_unique_address]] ActiveSizePolicy size_policy_{};
 
-    std::vector<chunk_type> chunk_list; ///< The chunks, in index order.
-    int                     nb_chunk;   ///< Number of live chunks in @ref chunk_list.
+    std::vector<chunk_type> chunk_list;  ///< The chunks, in index order.
+    int                     nb_chunk{0}; ///< Number of live chunks in @ref chunk_list.
 
-    int num_tab; ///< Identity of this array in the per-type registries.
+    int num_tab{0}; ///< Identity of this array in the per-type registries.
     /// @brief Number of arrays of this element type created so far (source of
     ///        num_tab), all index types together: num_tab indexes the per-T
     ///        tables of the proxies.

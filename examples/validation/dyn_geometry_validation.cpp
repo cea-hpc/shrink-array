@@ -36,7 +36,6 @@
 //
 // Compile OMP or non-OMP, dyn, check. Exit 0 = every size round-trips.
 
-#include <cstdlib>
 #include <cstdio>
 #include <print>
 #include <type_traits>

@@ -92,7 +92,7 @@ inline thread_local unsigned int t_active_chunk_size = 0; // 0 = "unset, use glo
  * @brief Seed the process-wide runtime geometry.
  *
  * @warning Setting the size is NOT enough: the per-size reuse free-list needs a
- *          slot for @p n, created by register_runtime_chunk_size(). Only
+ *          slot for @p size, created by register_runtime_chunk_size(). Only
  *          rechunk_to() and ArrayChunkBase::set_chunk_size() ever called it, so
  *          the STARTING geometry -- the one every array is born with -- had no
  *          entry, and get_list_block_free_thr_for_size() fell back to the legacy
@@ -159,7 +159,7 @@ inline void                      set_thread_alloc_key(unsigned int k) noexcept
         return __chunk_size;
 }
 
-// RAII: pin the per-thread active chunk size to `n` (dynamic builds only) and
+// RAII: pin the per-thread active chunk size to `size` (dynamic builds only) and
 // restore the previous value on scope exit. Used on deferred-replay paths where
 // create_value / allocate_chunk_internal must size a buffer at the op's FROZEN
 // geometry (proxy.chunk_size()), not the flushing thread's ambient -- and must

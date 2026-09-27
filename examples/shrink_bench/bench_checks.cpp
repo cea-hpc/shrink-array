@@ -17,7 +17,6 @@
 /// @file bench_checks.cpp
 /// @brief The reference-file verification pass. See bench_phases.h.
 
-#include <complex>
 #include <cstdint> // std::uint64_t
 #include <print>
 #include <string>
@@ -80,7 +79,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
         }
     };
 
-    auto lbd_check_all = [&](Int ind)
+    const auto lbd_check_all = [&](Int ind)
     {
         if (no_io)
         {
@@ -112,13 +111,9 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
             VectorChecksum vec_point_ch(tab_point);
             VectorChecksum vec_cell_ch(tab_cell);
 
-            // it seems that there is a problem with the variadic template and the OpenMP reduction
-            //
-            // #pragma omp parallel
-            //             {
-            //                 calculate_checksum_for_all(vec1_ch, vec2_ch, vec3_ch, vec_int_ch, vec_bool_ch,
-            //                 vec_complex_ch);
-            //             }
+            // One calculate_checksum_0 call per array, not a variadic fold over
+            // them: the fold helper (removed) took its VectorChecksum arguments by
+            // value, so the per-thread sums went into copies and were lost.
 
             std::println("");
 

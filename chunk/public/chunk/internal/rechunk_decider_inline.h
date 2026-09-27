@@ -1,10 +1,4 @@
 #pragma once
-#include "chunk/internal/exact_rss.h" // exact_rss_kib ([RECHUNK-MEM])
-#include <unistd.h> // sysconf
-#if !defined CHUNK_STD_ALLOC                // std-alloc builds have no fast_allocators include path
-    #include "fast_allocators/slab_arena.h" // fast_alloc::value_arena (CHUNK_RECHUNK_MEMTRACE)
-#endif
-#include <cstring> // std::strcmp (CHUNK_ADVISOR_TABLE)
 
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
@@ -29,15 +23,19 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib> // std::getenv -- CHUNK_FORCE_RECHUNK debug hooks
+#include <cstring> // std::strcmp (CHUNK_ADVISOR_TABLE)
 #include <optional>
 #include <string>
 
 #include "chunk/rechunk_decider.h"
 #include "chunk/chunk_size_advisor.h"
-#include "chunk/config.h"                     // build_config::chunk_dynamic
-#include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size
-#include "chunk/internal/env_parse.h"         // env_number / env_flag (checked, not atoi)
-#include "chunk/internal/churn_counters.h" // CHUNK_RECHUNK_CHURN
+#include "chunk/config.h"                   // build_config::chunk_dynamic
+#include "chunk/internal/env_parse.h"       // env_number / env_flag (checked, not atoi)
+#include "chunk/internal/churn_counters.h"  // CHUNK_RECHUNK_CHURN
+#include "chunk/internal/exact_rss.h"       // exact_rss_kib ([RECHUNK-MEM])
+#if !defined CHUNK_STD_ALLOC                // std-alloc builds have no fast_allocators include path
+    #include "fast_allocators/slab_arena.h" // fast_alloc::value_arena (CHUNK_RECHUNK_MEMTRACE)
+#endif
 
 namespace shrink_array
 {
@@ -387,8 +385,8 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                                  "tick (%.0f/phase), resident materialised %ld -> %ld: transient ~%.0f "
                                  "chunks/phase = %.1f MB at S=%u; at S=64: %.1f MB if scattered, %.1f MB if "
                                  "grouped\n",
-                                 name, S, d_creates, d_phases, static_cast<double>(d_creates) / d_phases,
-                                 h.churn_mat, mat_now, transient, mb_S, S, mb_64s, mb_S);
+                                 name, S, d_creates, d_phases, static_cast<double>(d_creates) / d_phases, h.churn_mat,
+                                 mat_now, transient, mb_S, S, mb_64s, mb_S);
                 }
                 else
                 {

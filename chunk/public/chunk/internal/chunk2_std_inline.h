@@ -17,8 +17,15 @@
 
 #pragma once
 
+#include <cstddef>  // std::size_t
+#include <cstdlib>  // std::abort
+#include <optional> // std::nullopt (the clears)
+
+#include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h"
-#include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (operator new[])
+#include "chunk/internal/chunk_array_new.h"   // chunk_array_new::init_chunks (operator new[])
+#include "chunk/internal/chunk_size_policy.h" // ChunkElems, set_thread_chunk_size
+#include "chunk/internal/in_t.h"
 #include "chunk/chunk2_std.h"
 #include "chunk/internal/proxy2.h"
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
@@ -143,7 +150,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_bool(vec_t
                                                                            unsigned int            n_elems)
 {
     fill_list_to_compress_impl(
-        ll_compt1, ll_compt2, num_chunk, num_tab, []() { return true; }, derived().is_not_cst_val2(), n_elems);
+        ll_compt1, ll_compt2, num_chunk, num_tab, [] { return true; }, derived().is_not_cst_val2(), n_elems);
 }
 
 /**
@@ -284,7 +291,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress([[maybe_unused]] int th
         return;
 
     compress_impl(
-        apply, n_elems, [&inf_array]() { return std::get<0>(inf_array); },
+        apply, n_elems, [&inf_array] { return std::get<0>(inf_array); },
         [this, thr_rank, &inf_array](int num_compress_value)
         { this->clear_int_st(num_compress_value, std::get<1>(inf_array), thr_rank); });
 }
@@ -309,7 +316,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_bool([[maybe_unused]] i
         if (!derived().written()) // see compress(): a stale entry for a chunk already at a constant
             return;
         compress_impl(
-            apply, n_elems, []() { return true; },
+            apply, n_elems, [] { return true; },
             [this, thr_rank](int num_compress_value) { this->clear_int_st_bool(num_compress_value, thr_rank); });
     }
 }
@@ -452,7 +459,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
     if (is_vec_tuple_to_compress_potentially_empty_thr())
         return;
 
-    auto& vec_tuple = *(manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][key]);
+    auto& vec_tuple = *manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][key];
 
     // Geometry: this list mixes chunks of every array sharing `key` -- e.g. an
     // array and the tmp rechunk_to() builds from it, at two chunk sizes. The
@@ -542,7 +549,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_p
                                                                                         in_t<T>  key,
                                                                                         ScanFn&& scan_one)
 {
-    const auto& vec_tuple = *(manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][key]);
+    const auto& vec_tuple = *manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][key];
 
     const int nn = vec_tuple.size();
 
@@ -637,27 +644,27 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
                                                                             FillFunc&&  fill_func,
                                                                             ClearFunc&& clear_func)
 {
-    // FIX (SIGABRT sur un tableau neuf): find, PAS operator[]. La table est un
-    // map<T, shared_ptr<...>> par rang ; operator[] sur une cle absente y insere
-    // un shared_ptr NUL, que le dereferencement suivant faisait exploser --
-    // assertion __shared_ptr_deref, ou SIGSEGV en release.
+    // FIX (SIGABRT on a new array): find, NOT operator[]. The table is a
+    // map<T, shared_ptr<...>> per rank; operator[] on a missing key inserts a
+    // NULL shared_ptr there, which the next dereference blew up on --
+    // __shared_ptr_deref assertion, or SIGSEGV in release.
     //
-    // La cle absente n'est pas une anomalie : elle signifie que personne n'a
-    // declare cette seconde valeur sur ce rang, donc qu'il n'y a aucun candidat
-    // a compresser. C'est exactement le cas `sz == 0` traite juste apres, et on
-    // sort pareil. Un ArrayChunk2 construit sans add_second_value prealable --
-    // ce que font les auto-tests --test_stl -- tombait dedans des sa
-    // construction, via resize_common -> make_block_compression.
+    // A missing key is not an anomaly: it means nobody declared this second
+    // value on this rank, so there is no candidate to compress. That is
+    // exactly the `sz == 0` case handled just below, and the exit is the same.
+    // An ArrayChunk2 built without a prior add_second_value -- what the
+    // --test_stl self-tests do -- fell into it right at construction, through
+    // resize_common -> make_block_compression.
     //
-    // is_vec_tuple_to_compress_potentially_empty_thr() ne suffisait pas ici : il
-    // ne teste que « aucune cle nulle part », pas « cette cle sur ce rang ».
+    // is_vec_tuple_to_compress_potentially_empty_thr() was not enough here: it
+    // only tests "no key anywhere", not "this key on this rank".
     auto&      map_thr = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
     const auto it      = map_thr.find(second_value);
 
     if (it == map_thr.end() || !it->second)
         return;
 
-    auto& vec_tuple_to_compress = *(it->second);
+    auto& vec_tuple_to_compress = *it->second;
 
     const int sz = vec_tuple_to_compress.size();
 
@@ -784,7 +791,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int      
     {
         const in_t<T> second_value = std::get<0>(inf_array); // the caller's tuple, alive for the call
 
-        auto lbd_clear_func = [thr_rank, &inf_array](auto* chunk_t, int clear_type)
+        const auto lbd_clear_func = [thr_rank, &inf_array](auto* chunk_t, int clear_type)
         { chunk_t->clear_int_st(clear_type, std::get<1>(inf_array), thr_rank); };
 
         make_block_compression_impl(
@@ -807,7 +814,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_bool(int 
 {
     if constexpr (is_bool)
     {
-        auto lbd_clear_func = [thr_rank](auto* chunk_t, int clear_type)
+        const auto lbd_clear_func = [thr_rank](auto* chunk_t, int clear_type)
         { chunk_t->clear_int_st_bool(clear_type, thr_rank); };
 
         make_block_compression_impl(
@@ -840,7 +847,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr_r
             const auto    it = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank].find(second_val);
             if (it == manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank].end())
                 continue;
-            auto* vec_tuple_p = it->second.get();
+            const auto* vec_tuple_p = it->second.get();
 
             if (vec_tuple_p)
             {
@@ -867,7 +874,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr_r
         if (it == manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank].end())
             return;
 
-        auto* vec_tuple_p = it->second.get();
+        const auto* vec_tuple_p = it->second.get();
 
         if (vec_tuple_p)
         {
@@ -1027,7 +1034,7 @@ template <typename Init2ndFn>
 void Chunk2OmpPolicy<T, Derived, false>::create_value_serial_impl(bool        need_set_second_value,
                                                                   Init2ndFn&& init_2nd) noexcept
 {
-    auto init_func = [this, need_set_second_value, &init_2nd](T* ptr)
+    const auto init_func = [this, need_set_second_value, &init_2nd](T* ptr)
     {
         // The counter reset is CROSSED on purpose: filling with one constant
         // invalidates the count kept for the OTHER one, which is the one that

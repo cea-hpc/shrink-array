@@ -24,6 +24,9 @@
 #include "chunk/internal/manager_chunk.h" // manager_type — candidate store + reuse free-lists
 #include <cstdlib>                        // std::getenv (CHUNK_RECHUNK_DROP_LEGACY)
 #include <tuple>                          // std::get on candidate tuples
+#include "chunk/config.h"
+#include "chunk/PMP_CHUNK.h"                  // get_thr_rank_fast
+#include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
 
 namespace shrink_array
 {
@@ -66,8 +69,8 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
                 const auto inf = self().get_info_second_value();
                 const int  thr = get_thr_rank_fast();
                 shrink_array::set_thread_chunk_size(self().size_policy_.size());
-                for (auto& per_rank : manager_type::map_chunk2_to_compress_potentially_thr)
-                    for (auto& kv : per_rank)
+                for (const auto& per_rank : manager_type::map_chunk2_to_compress_potentially_thr)
+                    for (const auto& kv : per_rank)
                     {
                         if (!kv.second)
                             continue;

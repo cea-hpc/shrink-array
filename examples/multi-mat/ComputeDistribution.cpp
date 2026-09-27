@@ -21,9 +21,11 @@
  *        every iteration, drawn up front.
  */
 
+#include <cassert>
 #include <print>
 #include <random>
 
+#include "Containers.h" // dispatch
 #include "Simu.h"
 
 void Simu::computeDistribution()
@@ -54,7 +56,8 @@ void Simu::computeDistribution()
 
         for (int mat = 0; mat < nbmat; ++mat)
         {
-            int size, begin;
+            int size  = 0;
+            int begin = 0;
             if (dispatch.isChunk(mat))
             {
                 size  = size_distribution_chunk(rng_chunk);

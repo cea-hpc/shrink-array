@@ -37,9 +37,6 @@
 class Loops
 {
   public:
-    Loops()  = default;
-    ~Loops() = default;
-
     /// @brief `lbd(k)` for k in [kdeb, kfin), shared by the team, no barrier.
     template <typename LBD>
     static void omp_for_nowait_simd(int kdeb, int kfin, const LBD& lbd)
@@ -82,14 +79,14 @@ class Loops
     template <typename LBD, typename LL>
     void omp_simd_foreach(const LL& ll, const LBD& lbd) const
     {
-        omp_simd_foreach_int(ll, lbd, ll.size());
+        omp_simd_foreach_int(ll, lbd, static_cast<int>(ll.size()));
     }
 
     /// @brief omp_simd_foreach() without the barrier at the end.
     template <typename LBD, typename LL>
     void omp_simd_foreach_nowait(const LL& ll, const LBD& lbd) const
     {
-        omp_simd_foreach_nowait_int(ll, lbd, ll.size());
+        omp_simd_foreach_nowait_int(ll, lbd, static_cast<int>(ll.size()));
     }
 
     /**
@@ -102,9 +99,10 @@ class Loops
     template <typename LBD, typename LL, typename T>
     static void omp_foreach_simd_red_sum(const LL& ll, T& red, const LBD& lbd) noexcept
     {
-        const int nn = ll.size();
+        const int nn = static_cast<int>(ll.size());
 
-        int kdeb, kfin;
+        int kdeb             = 0;
+        int kfin             = 0;
         std::tie(kdeb, kfin) = get_parallel_loop_boundaries(multi_mat::thread_rank(), multi_mat::max_threads(), nn);
 
         for (int k = kdeb; k < kfin; ++k)
@@ -123,9 +121,6 @@ class Loops
 class LoopsSimd
 {
   public:
-    LoopsSimd()  = default;
-    ~LoopsSimd() = default;
-
     /// @copydoc Loops::omp_simd_foreach_int
     template <typename LBD, typename LL>
     static void omp_simd_foreach_int(const LL& ll, const LBD& lbd, int nn)
@@ -156,14 +151,14 @@ class LoopsSimd
     template <typename LBD, typename LL>
     void omp_simd_foreach(const LL& ll, const LBD& lbd) const
     {
-        omp_simd_foreach_int(ll, lbd, ll.size());
+        omp_simd_foreach_int(ll, lbd, static_cast<int>(ll.size()));
     }
 
     /// @copydoc Loops::omp_simd_foreach_nowait
     template <typename LBD, typename LL>
     void omp_simd_foreach_nowait(const LL& ll, const LBD& lbd) const
     {
-        omp_simd_foreach_nowait_int(ll, lbd, ll.size());
+        omp_simd_foreach_nowait_int(ll, lbd, static_cast<int>(ll.size()));
     }
 
     /// @copydoc Loops::omp_for_nowait_simd
@@ -186,9 +181,10 @@ class LoopsSimd
     template <typename LBD, typename LL, typename T>
     void omp_foreach_simd_red_sum(const LL& ll, T& red, const LBD& lbd) const noexcept
     {
-        const int nn = ll.size();
+        const int nn = static_cast<int>(ll.size());
 
-        int kdeb, kfin;
+        int kdeb             = 0;
+        int kfin             = 0;
         std::tie(kdeb, kfin) = get_parallel_loop_boundaries(multi_mat::thread_rank(), multi_mat::max_threads(), nn);
 
         T redl = red;

@@ -53,10 +53,10 @@
 
 #include "chunk/config.h"
 #include "chunk/manage_ompt.h"
-#include "config.h"
 
-/// @brief The switch the library reads (chunk_config::OMPTcc): the callbacks
-///        below are live.
+/// @brief The suspension counter the library reads and updates
+///        (chunk_config::OMPTcc, declared in chunk/config.h): the callbacks
+///        below run only while it is zero, which it is at start.
 std::atomic<int> g_ompt_suspended{0}; // 0 = callbacks active
 
 namespace

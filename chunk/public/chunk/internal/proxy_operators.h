@@ -16,7 +16,6 @@
 
 #pragma once
 
-#include <concepts>
 #include <type_traits>
 
 #include "chunk/internal/concept_composite_arithmetic.h"

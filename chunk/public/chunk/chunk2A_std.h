@@ -20,21 +20,22 @@
 #pragma once
 
 #include <atomic>          // std::memory_order_* on the values pointer
+#include <cstddef>         // std::size_t
 #include <cstdint>         // uint32_t / uintptr_t (the ring-log chunk id)
 #include <source_location> // std::source_location::current() in the invariants
+#include <tuple>           // the candidate-list entries
 #include <type_traits>     // std::is_same_v (concurrent-ops base)
 #include <vector>
 
-#include "chunk/internal/chunk_size_config.h"
 #include "chunk/config.h"
 #include "chunk/internal/invariant_check.h"
-#include "chunk/internal/write_compress_sync_policy.h"
 #include "chunk/internal/tab_cst_val2_holder.h"
-#include "chunk/chunk_define.h"
-#include "chunk/type_name.h"
+#include "chunk/chunk_define.h" // FAST_ALLOC
 #include "chunk/chunk_def.h"
-#include "chunk/chunk2A_def.h"
 #include "chunk/PMP_CHUNK.h"
+#include "chunk/ring_log_debug.h"             // ScopedRingLog, ring_log_* (RING_LOG builds)
+#include "chunk/internal/chunk_size_policy.h" // ChunkElems
+#include "chunk/internal/compression_manager.h"
 #include "chunk/internal/chunk2_base.h"
 #include "chunk/internal/crp_helper.h" // crtp_cast_t
 #include "chunk/internal/chunk_stats.h"
@@ -102,7 +103,7 @@ struct Chunk2AConcurrentOps
     ///        the top byte. Was written out identically at three sites.
     [[nodiscard]] uint32_t ring_chunk_id() const noexcept
     {
-        return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(self()) >> 4);
+        return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(self()) >> 4U);
     }
 
     /// @brief Publish @p values_loc as this chunk's buffer, expecting the
@@ -123,7 +124,7 @@ struct Chunk2AConcurrentOps
         // pointer is not in the second-value region, report the CAS as failed
         // without attempting it; the caller recycles our buffer, as it does
         // when the CAS itself fails.
-        T* expected;
+        T* expected = nullptr;
         if constexpr (is_not_bool)
         {
             if (expected_is_cst_val2)
@@ -161,7 +162,7 @@ struct Chunk2AConcurrentOps
         {
             const uint32_t chunk_id = ring_chunk_id();
             const uint32_t info =
-                (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(expected_is_cst_val2 ? 2 : 1) << 24);
+                (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(expected_is_cst_val2 ? 2 : 1) << 24U);
             ring_log(get_tid(), failed ? EV_CAS_VALUES_FAIL : EV_CAS_VALUES_FROM_CST, info);
         }
         return failed;
@@ -181,7 +182,7 @@ struct Chunk2AConcurrentOps
         if constexpr (chunk_config::ring_log_debug)
         {
             const uint32_t chunk_id = ring_chunk_id();
-            const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24);
+            const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
             ring_log(get_tid(), EV_COMPRESS_ATTEMPT, info);
         }
 
@@ -203,7 +204,7 @@ struct Chunk2AConcurrentOps
         if constexpr (chunk_config::ring_log_debug)
         {
             const uint32_t chunk_id = ring_chunk_id();
-            const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24);
+            const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
             ring_log(get_tid(), EV_CAS_VALUES_TO_CST, info);
         }
         return old;
@@ -394,7 +395,7 @@ struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurren
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
     void operator delete[](void* ptr);
-    /// @brief Point @p n freshly allocated chunks at the first constant.
+    /// @brief Point @p count freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
     ///          parallel region (inside one it stays on the calling thread: an
     ///          allocation is made by one thread, and an orphaned `omp for`

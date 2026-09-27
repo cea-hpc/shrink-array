@@ -203,9 +203,9 @@ int check_invariance(const char* label,
     for_each_index(N,
                    [&](long i)
                    {
-                       T v    = gen(i);
-                       arr[i] = v;
-                       ref[i] = v;
+                       const T v = gen(i);
+                       arr[i]    = v;
+                       ref[i]    = v;
                    });
 
     const unsigned old_size = arr.chunk_size();
@@ -268,9 +268,9 @@ int check_invariance(const char* label,
         for_each_index(N,
                        [&](long i)
                        {
-                           T v    = gen(i + (long)round * 7919);
-                           arr[i] = v;
-                           ref[i] = v;
+                           const T v = gen(i + (long)round * 7919);
+                           arr[i]    = v;
+                           ref[i]    = v;
                        });
         // Hand the queued candidates to the compression pass before asking for
         // the result -- see drain_compression_backlog() above.
@@ -384,7 +384,7 @@ int check_range_ops(const char* label, long N)
     Arr viaRange(static_cast<int>(N));
     Arr viaElem(static_cast<int>(N));
 
-    auto expected = [](long i) -> T
+    const auto expected = [](long i) -> T
     {
         // Long constant runs (so chunks really do compress) with scattered
         // non-constant values, which is what makes the two paths diverge if the
@@ -415,7 +415,7 @@ int check_range_ops(const char* label, long N)
 
     // 3) partial fills straddling chunk boundaries, deliberately unaligned
     const unsigned S = viaRange.chunk_size();
-    for (long off : {1L, (long)S - 1, (long)S + 1, (long)(2 * S) + 3})
+    for (const long off : {1L, (long)S - 1, (long)S + 1, (long)(2 * S) + 3})
     {
         const auto a0 = static_cast<std::size_t>(off);
         const auto b0 = static_cast<std::size_t>(off) + (5 * static_cast<std::size_t>(S)) + 7;
@@ -500,7 +500,7 @@ int main(int argc, char** argv)
         else
             pos.push_back(argv[a]);
     }
-    const long     N_scale = pos.size() > 0 ? shrink_array::arg_number<long>(pos[0], 1000000L, "N") : 1000000L;
+    const long     N_scale = !pos.empty() ? shrink_array::arg_number<long>(pos[0], 1000000L, "N") : 1000000L;
     const unsigned tgt     = pos.size() > 1 ? shrink_array::arg_number<unsigned>(pos[1], 1024u, "target size") : 1024u;
     const int      rounds  = pos.size() > 2 ? shrink_array::arg_number<int>(pos[2], 200, "rounds") : 200;
     const bool     run_ser = std::strcmp(mode, "parallel") != 0;

@@ -23,15 +23,18 @@
 
 #include "bench_prelude.h"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib> // std::abort
 #include <fstream>
 #include <sstream> // the diagnostic strings (format_val, the address dumps)
 #include <string>
-#include <sys/types.h>
 #include <unistd.h> // unlink
 #include <format>
 #include <print>
+#include <vector>
 
 #include "bench_utils.h"
 #include "chunk/ring_log_debug.h" // SEGV hunt: analyze_ring_sweep / dump_ring decls
@@ -213,7 +216,7 @@ void read_check_binary_file(Int                ind,
     const std::string filename_gz        = filename + ".bz2";
     const std::string filename_check_sum = filename + "_check_sum";
 
-    uint64_t lchs_read;
+    uint64_t lchs_read = 0;
 #pragma omp critical
     {
         std::println("Read : {}", filename_check_sum);
@@ -282,7 +285,7 @@ void read_check_binary_file(Int                ind,
     }
 
     // Helper lambda to format values as strings, handling char-to-Int conversion
-    auto format_val = [&](auto val) -> std::string
+    const auto format_val = [&](auto val) -> std::string
     {
         if constexpr (std::is_same_v<T, char> || std::is_same_v<T, unsigned char> || std::is_same_v<T, signed char>)
         {
@@ -305,7 +308,7 @@ void read_check_binary_file(Int                ind,
     // branch, and an explicit capture that the std::vector instantiation
     // never reads draws -Wunused-lambda-capture from clang.
     [[maybe_unused]]
-    auto lbd_check_trace = [&](std::ifstream& trace_file, Int k, auto& value)
+    const auto lbd_check_trace = [&](std::ifstream& trace_file, Int k, auto& value)
     {
         // The body as a whole, not statement by statement: everything below
         // reads data_check, whose type is the DEPENDENT template parameter, so
@@ -394,7 +397,7 @@ void read_check_binary_file(Int                ind,
                 }
             }
 
-            auto lbd_print = [&]()
+            const auto lbd_print = [&]
             {
                 std::println(stderr, "value               : {}", format_val(value));
                 std::println(stderr, "chunk number        : {}", num_chunk);
@@ -464,8 +467,8 @@ void read_check_binary_file(Int                ind,
                     }
                     else
                     {
-                        bool all_equal = true;
-                        auto first     = chunk_t.values[0];
+                        bool       all_equal = true;
+                        const auto first     = chunk_t.values[0];
 
                         for (UInt p = 1; p < data_check.chunk_size(); ++p)
                         {
@@ -570,7 +573,7 @@ void read_check_binary_file(Int                ind,
             if (value != value_check)
             {
                 // Lambda to log to stderr and optionally to the trace file
-                auto log_message = [&](const std::string& msg)
+                const auto log_message = [&](const std::string& msg)
                 {
                     std::print(stderr, "{}", msg);
                     if (write_trace && trace_file_write.is_open())
@@ -602,7 +605,7 @@ void read_check_binary_file(Int                ind,
                     const auto& chunk_t = data_check.getChunkList()[num_chunk];
                     using ValueType     = decltype(chunk_t.values); // infer the type
 
-                    T* raw_ptr;
+                    T* raw_ptr = nullptr;
 
                     if constexpr (is_atomic_pointer<ValueType>::value)
                     {
@@ -619,7 +622,7 @@ void read_check_binary_file(Int                ind,
                     const std::string s0 = std::format("0x{:x}", addr);
 
                     log_message("address values       : " + s0 + "\n");
-                    addr = reinterpret_cast<std::uintptr_t>(&(raw_ptr[num]));
+                    addr = reinterpret_cast<std::uintptr_t>(&raw_ptr[num]);
                     std::ostringstream oss1;
                     oss1 << "0x" << std::hex << addr;
                     const std::string s1  = oss1.str();
@@ -719,7 +722,7 @@ void read_check_binary_file(Int                ind,
                     trace_file_write << k << "\n";
                 }
 
-                auto log_message = [&](const std::string& msg)
+                const auto log_message = [&](const std::string& msg)
                 {
                     std::print(stderr, "{}", msg);
                     if (write_trace && trace_file_write.is_open())
@@ -766,7 +769,7 @@ void read_check_binary_file(Int                ind,
 
                     // Detect whether a type is an atomic of a pointer, regardless of the pointed-to type
 
-                    T* raw_ptr;
+                    T* raw_ptr = nullptr;
 
                     using ValueType = decltype(chunk_t.values);
 
@@ -795,9 +798,9 @@ void read_check_binary_file(Int                ind,
 
                     log_message("address values       : " + s0 + "\n");
 
-                    addr = reinterpret_cast<std::uintptr_t>(&(raw_ptr[num]));
+                    addr = reinterpret_cast<std::uintptr_t>(&raw_ptr[num]);
                     std::ostringstream oss1;
-                    oss1 << std::hex << &(raw_ptr[num]);
+                    oss1 << std::hex << &raw_ptr[num];
                     const std::string s1 = oss1.str();
 
                     log_message("address values[" + std::to_string(num) + "] : " + s1 + "\n");
@@ -874,8 +877,8 @@ void read_check_binary_file(Int                ind,
                     }
                     else
                     {
-                        bool all_equal = true;
-                        auto first_v   = chunk_t.values[0];
+                        bool       all_equal = true;
+                        const auto first_v   = chunk_t.values[0];
 
                         for (UInt i = 1; i < data_check.chunk_size(); ++i)
                         {

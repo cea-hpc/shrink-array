@@ -66,15 +66,18 @@ class Simu
     int option_chunk =
         3; ///< Storage of the materials: 1 all chunk, 2 all vector, 3 random 50/50, 4 random at chunk_rate
     int freq_rtz_default = std::max(iter_max_default / 10, 5);
-    int freq_rtz; ///< Every this many iterations the fields are zeroed instead of written
+    int freq_rtz         = freq_rtz_default; ///< Every this many iterations the fields are zeroed instead of written
 
-    int freq_compress; ///< Manual mode: every this many iterations the fields are compressed
+    int freq_compress = 0; ///< Manual mode: every this many iterations the fields are compressed (inputData())
 
     bool all_chunk  = false; ///< Every material is a chunk one
     bool all_vector = false; ///< Every material is a vector one
 
-    int interval_chunk;  ///< Largest interval of a chunk material, cells
-    int interval_vector; ///< Largest interval of a vector material, cells
+    // Largest intervals, set by computeInterval() for the kinds in use. The
+    // other one stays 1: computeDistribution() builds the distributions of
+    // both kinds, and [1, 1] is a valid range where an unset value was not.
+    int interval_chunk  = 1; ///< Largest interval of a chunk material, cells
+    int interval_vector = 1; ///< Largest interval of a vector material, cells
 
     // 3 arrays multi - mat
     std::array<MultiArray<double>, 3> tabs; ///< The three fields of every material

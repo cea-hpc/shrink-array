@@ -34,7 +34,6 @@
  */
 
 #include "chunk/config.h"
-#include "chunk/chunk_traits.h"
 #include "chunk/internal/array_chunk_parallel_common.h"
 
 namespace shrink_array

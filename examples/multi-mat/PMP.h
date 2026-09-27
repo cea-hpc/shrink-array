@@ -94,7 +94,8 @@ inline void get_parallel_loop_boundaries(const int trank, const int nb_max_tasks
 /// @brief get_parallel_loop_boundaries() returning the pair {kdeb, kfin}.
 inline std::pair<int, int> get_parallel_loop_boundaries(const int trank, const int nb_max_tasks, const int nb)
 {
-    int kdeb, kfin;
+    int kdeb = 0;
+    int kfin = 0;
     get_parallel_loop_boundaries(trank, nb_max_tasks, nb, kdeb, kfin);
     return std::make_pair(kdeb, kfin);
 }

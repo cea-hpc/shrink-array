@@ -70,11 +70,11 @@ int check_pair(int small_bytes, int large_bytes, std::uintptr_t budget)
     int bad = 0;
     for (auto* a : {&a_small, &a_large})
     {
-        auto* const   other = (a == &a_small) ? &a_large : &a_small;
-        const char*   p     = a->alloc();
-        TCCAllocator* own   = a->slab_of(p);
-        TCCAllocator* seen  = other->slab_of(p);
-        const bool    ok    = own != nullptr && seen == own && own->owner == static_cast<const void*>(a);
+        const auto* const other = (a == &a_small) ? &a_large : &a_small;
+        const char*       p     = a->alloc();
+        TCCAllocator*     own   = a->slab_of(p);
+        TCCAllocator*     seen  = other->slab_of(p);
+        const bool        ok    = own != nullptr && seen == own && own->owner == static_cast<const void*>(a);
         if (!ok)
         {
             std::println("FAIL budget {}: {}-byte block, slab {} from its allocator, {} through the {}-byte one",

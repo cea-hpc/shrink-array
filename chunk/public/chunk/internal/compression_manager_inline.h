@@ -17,11 +17,21 @@
 
 #pragma once
 
-#include <exception> // std::exception (erase failures)
-#include <thread>    // std::this_thread — used HERE, not by our includers
+#include <atomic>
+#include <cstdint>
+#include <exception>   // std::exception (erase failures)
+#include <iostream>    // std::cerr (the counter checks)
+#include <thread>      // std::this_thread — used HERE, not by our includers
+#include <type_traits> // std::remove_reference_t (the swap-drain batch type)
 
-#include <type_traits>                          // FIX: remove_reference_t for swap-drain batch type
 #include "chunk/internal/compression_manager.h" // the declarations these bodies belong to
+#include "chunk/config.h"
+#include "chunk/PMP_CHUNK.h"                 // get_thr_rank_fast, CHUNK_PMP_RANK_BOUND
+#include "chunk/ring_log_debug.h"            // ScopedRingLogManualEnd, ring_log_op
+#include "chunk/internal/cpu_pause.h"        // CPU_PAUSE
+#include "chunk/internal/deferred_op_pool.h" // DeferredOperationBase
+#include "chunk/internal/invariant_check.h"  // INVARIANT_FAILED
+#include "chunk/internal/write_compress_sync_policy.h"
 
 namespace shrink_array
 {
@@ -168,17 +178,17 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
 
     for (ChunkType* chunk : deferred_chunk_loc)
     {
-        auto it_chunk = thread_map.find(chunk);
+        const auto it_chunk = thread_map.find(chunk);
         if (it_chunk == thread_map.end())
             continue;
 
-        auto& ops_map_ptr = it_chunk->second;
+        const auto& ops_map_ptr = it_chunk->second;
         if (!ops_map_ptr)
             continue;
 
         auto* op_map = ops_map_ptr.get();
 
-        const uint32_t payload = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(chunk) >> 4) & 0x00FFFFFFU;
+        const uint32_t payload = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(chunk) >> 4U) & 0x00FFFFFFU;
         // ─── Dekker held — execute deferred ops ───────────────────────────
 
         using FlushLog = ScopedRingLogManualEnd<EV_FLUSH_BEGIN, EV_FLUSH_END>;
@@ -267,7 +277,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
     const int self_rank = get_thr_rank_fast();
     const int max_thr   = CHUNK_PMP_RANK_BOUND;
 
-    const uint32_t payload = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(chunk) >> 4) & 0x00FFFFFFU;
+    const uint32_t payload = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(chunk) >> 4U) & 0x00FFFFFFU;
 
     // ─── Cross-flush mutual exclusion is now PER RANK ─────────────────────
     // The double-free guard (two flushers draining the same arr[r][chunk] and
@@ -348,7 +358,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
         if (it_chunk == thread_map.end())
             continue;
 
-        auto& ops_map_ptr = it_chunk->second;
+        const auto& ops_map_ptr = it_chunk->second;
         if (!ops_map_ptr)
             continue;
 
@@ -371,7 +381,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
                 {
                     DeferredOperationBase* raw  = op_ptr.get();
                     const auto             addr = reinterpret_cast<std::uintptr_t>(raw);
-                    if (raw == nullptr || addr < 0x1000 || (addr & 0x7) != 0)
+                    if (raw == nullptr || addr < 0x1000 || (addr & 0x7U) != 0)
                         INVARIANT_FAILED("[FLUSH_PROBE xrank] bad op_ptr in op_map: num={} op={} rank={}", num,
                                          static_cast<const void*>(raw), r);
                     const std::uintptr_t vptr = *reinterpret_cast<const std::uintptr_t*>(raw);
@@ -470,17 +480,17 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
         }
     } xflush_guard{thr};
 
-    auto& thread_map = arr[thr];
-    auto  it_chunk   = thread_map.find(chunk);
+    auto&      thread_map = arr[thr];
+    const auto it_chunk   = thread_map.find(chunk);
     if (it_chunk == thread_map.end())
         return;
 
-    auto& ops_map_ptr = it_chunk->second;
+    const auto& ops_map_ptr = it_chunk->second;
     if (!ops_map_ptr)
         return;
     auto* op_map = ops_map_ptr.get();
 
-    auto it_op = op_map->find(num);
+    const auto it_op = op_map->find(num);
     if (it_op == op_map->end())
         return; // no older op at this offset — the direct write is unshadowed
 
@@ -620,7 +630,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
     // pass MARKED" -- the writers of the other chunks are not in the way and
     // are neither waited for nor steered away; without the marks it is "no
     // writer anywhere", as it always was.
-    auto window_shut = [max_thr]
+    const auto window_shut = [max_thr]
     {
         if constexpr (chunk_config::use_chunk_steal_mark)
             return WriteCompressSyncPolicy<ProxyType>::template any_thread_writing_on_marked<ChunkType>(max_thr);
@@ -739,10 +749,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::wait_out_compressor(con
 template <typename T, typename ChunkType, bool Enabled>
 template <typename ProxyType>
 void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::finish([[maybe_unused]] bool log)
-{ // If any slow-path is active globally, no thread is allowed to use the fast-path.
-
-    //  ScopedRingLog<EV_COMPRESS_FINISHED, EV_COMPRESS_FINISHED> compress_log;
-
+{
     // Undo the Parked -> Stealing transition FIRST: waiters on
     // stealing_inflight_ (create_value, flush drains) may proceed as soon as
     // we are no longer allowed to steal; hard follows for the gate/remaining
