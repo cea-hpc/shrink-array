@@ -1,4 +1,3 @@
-
 #pragma once
 
 /*
@@ -24,7 +23,7 @@
 #include <type_traits> // std::conditional_t (TChunk2CompMap)
 
 #include "chunk/internal/value_less.h"
-#include "chunk/chunk_def.h"                  // ComplexType concept
+#include "chunk/config.h"                     // build_config::use_openmp (TChunk2CompMap)
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems (VectorTuple4ChunkInt2)
 
 namespace shrink_array

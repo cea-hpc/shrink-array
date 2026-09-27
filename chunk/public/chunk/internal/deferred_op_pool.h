@@ -34,6 +34,7 @@
 #include "chunk/ring_log_debug.h"
 
 #ifdef FAST_ALLOC
+    #include "fast_allocators/slab_arena.h" // fast_alloc::ArenaKind
     #include "fast_allocators/tc_allocator.h"
 #else
 /**
@@ -48,7 +49,7 @@ enum class ArenaKind
     Ctx,
     Value
 };
-}
+} // namespace fast_alloc
 
 /// @brief std-alloc stand-in for the fast allocator: operator new/delete
 ///        behind the same call surface (init/set_arena no-ops, every
@@ -165,6 +166,14 @@ template <typename T>
 struct DeferredFreeListSlot
 {
     std::vector<T*> fl;
+
+    DeferredFreeListSlot() = default;
+    // Owns the parked blocks in std-alloc builds (see the destructor): a copy
+    // would delete them twice.
+    DeferredFreeListSlot(const DeferredFreeListSlot&)            = delete;
+    DeferredFreeListSlot& operator=(const DeferredFreeListSlot&) = delete;
+    DeferredFreeListSlot(DeferredFreeListSlot&&)                 = delete;
+    DeferredFreeListSlot& operator=(DeferredFreeListSlot&&)      = delete;
 
     // fw15c (std-alloc leak): in std-alloc, allocate_raw() hands out blocks via
     // ::operator new and recycle() parks them here in `fl` for reuse. Nothing
@@ -296,7 +305,7 @@ struct FastAllocatorConcrete : FastAllocatorBase
             if (ptr == nullptr)
                 INVARIANT_FAILED("[ALLOC_PROBE {}] allocate_raw returned NULL for T size={}", path, sizeof(T));
 
-            if ((addr & (alignof(std::max_align_t) - 1)) != 0 && (addr & 0x7) != 0)
+            if ((addr & (alignof(std::max_align_t) - 1)) != 0 && (addr & 0x7U) != 0)
                 INVARIANT_FAILED("[ALLOC_PROBE {}] misaligned block p={} (T size={})", path,
                                  static_cast<const void*>(ptr), sizeof(T));
 

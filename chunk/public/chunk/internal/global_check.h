@@ -54,9 +54,8 @@ static void global_check_nan(const std::complex<double>& val, long i) noexcept
 }
 
 template <typename T>
-void global_check_nan(const T& val, long i) noexcept
+void global_check_nan([[maybe_unused]] const T& val, [[maybe_unused]] long i) noexcept
 {
 }
 
 #endif
-// extern void global_check_nan(long n, const char* name);

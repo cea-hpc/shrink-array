@@ -56,11 +56,13 @@
 #include <sys/mman.h>
 #include <cstring>
 #include <cstdint>
+#include <cstdlib> // std::abort
 #include <unistd.h>
 #include <atomic>
 #include <array>
 #include <memory>
 #include <mutex>
+#include <type_traits>
 #include <vector> // index_generations
 // <iostream> is included directly: it used to come through param_chunk.h,
 // whose include created a heavy circular dependency (ParamChunk ->
@@ -68,7 +70,6 @@
 // symbol.
 #include <iostream>
 
-#include "chunk/internal/define_mm_protect.h"
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/config.h"
 
@@ -128,7 +129,7 @@ template <typename T>
 struct SecondValueTraits
 {
     static constexpr bool indexed = build_config::second_value_indexed && sizeof(T) > 4;
-    using slot_t = std::conditional_t<indexed, std::uint32_t, T>;
+    using slot_t                  = std::conditional_t<indexed, std::uint32_t, T>;
 };
 
 /**
@@ -300,7 +301,7 @@ struct GlobalVecHolder
     // value_by_id. Exhausting it aborts with the count, it is not a silent
     // fallback -- a fallback array would break the range test.
 #ifndef CHUNK_CST_VAL2_REGION_BYTES
-    #define CHUNK_CST_VAL2_REGION_BYTES (std::size_t{2} << 30)
+    #define CHUNK_CST_VAL2_REGION_BYTES (std::size_t{2} << 30U)
 #endif
     static constexpr std::size_t kRegionBytes = CHUNK_CST_VAL2_REGION_BYTES;
 
@@ -331,7 +332,7 @@ struct GlobalVecHolder
     ///          shape. The default leaves four thousand times the headroom a
     ///          real workload was measured to need.
 #ifndef CHUNK_CST_VAL2_MAX_IDS
-    #define CHUNK_CST_VAL2_MAX_IDS (std::size_t{4} << 20)
+    #define CHUNK_CST_VAL2_MAX_IDS (std::size_t{4} << 20U)
 #endif
     static constexpr std::size_t kIdStride =
         build_config::cst_val2_no_arrays
@@ -364,7 +365,7 @@ struct GlobalVecHolder
         void*     raw  = mmap(nullptr, kRegionBytes, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
         if (raw == MAP_FAILED) [[unlikely]]
         {
-            std::cerr << "[cst_val2] cannot reserve the second-value region (" << (kRegionBytes >> 20) << " MiB)\n";
+            std::cerr << "[cst_val2] cannot reserve the second-value region (" << (kRegionBytes >> 20U) << " MiB)\n";
             std::abort();
         }
         // Every array is carved at a multiple of the stride: page-rounded under
@@ -377,7 +378,7 @@ struct GlobalVecHolder
         // page is ever backed.
         const std::size_t bytes =
             build_config::cst_val2_no_arrays ? std::size_t{64} : static_cast<std::size_t>(cst_buffer_size) * sizeof(T);
-        std::size_t stride;
+        std::size_t stride = 0;
         if constexpr (build_config::use_mm_protect && !build_config::cst_val2_no_arrays)
         {
             const auto pagesize = static_cast<std::size_t>(sysconf(_SC_PAGESIZE));
@@ -429,7 +430,7 @@ struct GlobalVecHolder
             if (warned.compare_exchange_strong(expected, true, std::memory_order_relaxed))
             {
                 std::cerr << "[cst_val2] second-value region past half full: " << (off / bytes) << " of "
-                          << (kRegionBytes / bytes) << " arrays of " << bytes << " bytes (" << (kRegionBytes >> 20)
+                          << (kRegionBytes / bytes) << " arrays of " << bytes << " bytes (" << (kRegionBytes >> 20U)
                           << " MiB). Raise CHUNK_CST_VAL2_REGION_BYTES if the count keeps "
                           << "growing; exhausting the region aborts.\n";
             }
@@ -437,7 +438,7 @@ struct GlobalVecHolder
         if (off + bytes > kRegionBytes) [[unlikely]]
         {
             std::cerr << "[cst_val2] second-value region exhausted after " << (off / bytes) << " arrays of " << bytes
-                      << " bytes (" << (kRegionBytes >> 20) << " MiB). Raise CHUNK_CST_VAL2_REGION_BYTES, or reduce "
+                      << " bytes (" << (kRegionBytes >> 20U) << " MiB). Raise CHUNK_CST_VAL2_REGION_BYTES, or reduce "
                       << "the number of DISTINCT second values the workload registers.\n";
             std::abort();
         }
@@ -539,7 +540,7 @@ struct GlobalVecHolder
         if constexpr (build_config::cst_val2_no_arrays)
         {
             const char* base = region_begin.load(std::memory_order_relaxed);
-            const auto  id = static_cast<std::size_t>((reinterpret_cast<const char*>(ptr) - base) / region_stride) + 1u;
+            const auto  id   = (reinterpret_cast<const char*>(ptr) - base) / region_stride + 1u;
             return value_by_id[id];
         }
         else
@@ -555,11 +556,11 @@ struct GlobalVecHolder
     {
         uint64_t bits = 0;
         std::memcpy(&bits, &v, sizeof(T) < sizeof(uint64_t) ? sizeof(T) : sizeof(uint64_t));
-        bits ^= bits >> 33;
+        bits ^= bits >> 33U;
         bits *= 0xff51afd7ed558ccdULL;
-        bits ^= bits >> 33;
+        bits ^= bits >> 33U;
         bits *= 0xc4ceb9fe1a85ec53ULL;
-        bits ^= bits >> 33;
+        bits ^= bits >> 33U;
         return static_cast<size_t>(bits);
     }
 
@@ -607,7 +608,7 @@ struct GlobalVecHolder
      */
     static IndexTable* index_grow() noexcept
     {
-        IndexTable*       old = index_tab.load(std::memory_order_relaxed);
+        const IndexTable* old = index_tab.load(std::memory_order_relaxed);
         const std::size_t cap = old == nullptr ? INDEX_CAP : old->cap * 2;
         auto              nt  = std::make_unique<IndexTable>(cap);
         if (old != nullptr)
@@ -660,7 +661,7 @@ struct GlobalVecHolder
             for (int probe = 0; probe < INDEX_MAX_PROBE; ++probe)
             {
                 const size_t idx = (slot + probe) & mask;
-                T*           cur = table->slots[idx].load(std::memory_order_acquire);
+                const T*     cur = table->slots[idx].load(std::memory_order_acquire);
                 if (cur != nullptr)
                 {
                     if (value_of_ptr(cur) == v)
@@ -895,7 +896,7 @@ struct TabCstVal2Holder
         if (!gvh::index_degraded.load(std::memory_order_relaxed))
             return nullptr;
         const std::scoped_lock lk(gvh::insert_mutex);
-        for (Segment<T>* seg = gvh::head.load(std::memory_order_acquire); seg != nullptr; seg = seg->next)
+        for (const Segment<T>* seg = gvh::head.load(std::memory_order_acquire); seg != nullptr; seg = seg->next)
         {
             for (int i = 0; i < seg->used; ++i)
             {
@@ -1122,8 +1123,8 @@ struct TabCstVal2Holder
 
         if (degraded) [[unlikely]]
         {
-            for (segment_t* seg = global_vec_holder::head.load(std::memory_order_acquire); seg != nullptr;
-                 seg            = seg->next)
+            for (const segment_t* seg = global_vec_holder::head.load(std::memory_order_acquire); seg != nullptr;
+                 seg                  = seg->next)
             {
                 for (int i = 0; i < seg->used; ++i)
                 {

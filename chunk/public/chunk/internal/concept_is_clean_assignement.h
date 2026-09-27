@@ -17,8 +17,9 @@
  */
 #pragma once
 
-#include <type_traits>
 #include <complex>
+#include <concepts> // std::convertible_to
+#include <type_traits>
 
 namespace shrink_array
 {

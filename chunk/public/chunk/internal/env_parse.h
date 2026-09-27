@@ -46,7 +46,7 @@ namespace shrink_array
 {
 
 /**
- * @brief Parse ALL of @p text as a @p T.
+ * @brief Parse ALL of @p text as a T.
  * @return true and @p out set when @p text is exactly a number of type T;
  *         false (and @p out untouched) when it is empty, not a number, has
  *         trailing characters, is out of T's range, or negative for an

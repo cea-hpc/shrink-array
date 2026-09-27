@@ -46,6 +46,7 @@
 #include <mutex>
 
 #include "chunk/config.h"
+#include "chunk/debug.h" // print_backtrace
 #include "chunk/internal/invariant_check.h"
 
 #include "ankerl/unordered_dense.h" // the live maps
@@ -128,11 +129,11 @@ inline void on_ctx_alloc(void* ptr, std::size_t sz, const void* slab = nullptr) 
     if constexpr (pool_ledger_enabled)
     {
         const std::scoped_lock lk(mtx());
-        if (auto it = op_live().find(ptr); it != op_live().end())
+        if (const auto it = op_live().find(ptr); it != op_live().end())
             INVARIANT_FAILED("[POOL_LEDGER] ctx_alloc at {} but block is LIVE as op "
                              "(op_size={}, op_alloc_rank={}, ctx_size={}, op_slab={}, ctx_slab={})",
                              ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab);
-        if (auto it = ctx_live().find(ptr); it != ctx_live().end())
+        if (const auto it = ctx_live().find(ptr); it != ctx_live().end())
             INVARIANT_FAILED("[POOL_LEDGER] ctx_alloc DOUBLE-alloc at {} — block already live as ctx "
                              "(prev_size={}, prev_alloc_rank={}, new_size={}, prev_slab={}, new_slab={}, "
                              "SLABS_{}). Means the ctx pool returned a still-live block → double-recycle "
@@ -148,7 +149,7 @@ inline void on_ctx_free(void* ptr) noexcept
     if constexpr (pool_ledger_enabled)
     {
         const std::scoped_lock lk(mtx());
-        if (auto it = op_live().find(ptr); it != op_live().end())
+        if (const auto it = op_live().find(ptr); it != op_live().end())
             INVARIANT_FAILED("[POOL_LEDGER] ctx_free at {} but block is LIVE as op "
                              "(op_size={}, op_alloc_rank={})",
                              ptr, it->second.size, it->second.alloc_rank);
@@ -167,13 +168,13 @@ inline void on_op_alloc(void* ptr, std::size_t sz, const void* slab = nullptr) n
         //   ctx_slab == op_slab  -> ctx & op share one pool (ICF fold / tag fail)
         //   ctx_slab != op_slab  -> two distinct pools returned the same block
         //                           (TCTypeAllocator slab hands out overlapping mem)
-        if (auto it = ctx_live().find(ptr); it != ctx_live().end())
+        if (const auto it = ctx_live().find(ptr); it != ctx_live().end())
             INVARIANT_FAILED("[POOL_LEDGER] op_alloc at {} but block is LIVE as ctx "
                              "(ctx_size={}, ctx_alloc_rank={}, op_size={}, ctx_slab={}, op_slab={}, "
                              "SLABS_{})",
                              ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
                              (it->second.slab == slab) ? "SHARED" : "DISTINCT");
-        if (auto it = op_live().find(ptr); it != op_live().end())
+        if (const auto it = op_live().find(ptr); it != op_live().end())
             INVARIANT_FAILED("[POOL_LEDGER] op_alloc DOUBLE-alloc at {} — block already live as op "
                              "(prev_size={}, prev_alloc_rank={}, new_size={}, prev_slab={}, new_slab={}, "
                              "SLABS_{})",
@@ -188,7 +189,7 @@ inline void on_op_free(void* ptr) noexcept
     if constexpr (pool_ledger_enabled)
     {
         const std::scoped_lock lk(mtx());
-        if (auto it = ctx_live().find(ptr); it != ctx_live().end())
+        if (const auto it = ctx_live().find(ptr); it != ctx_live().end())
             INVARIANT_FAILED("[POOL_LEDGER] op_free at {} but block is LIVE as ctx "
                              "(ctx_size={}, ctx_alloc_rank={})",
                              ptr, it->second.size, it->second.alloc_rank);
@@ -266,7 +267,8 @@ inline void report_live_blocks() noexcept
     if constexpr (pool_ledger_enabled)
     {
         const std::scoped_lock lk(mtx());
-        std::size_t            n_live = 0, n_parked = 0;
+        std::size_t            n_live   = 0;
+        std::size_t            n_parked = 0;
         // (state, site) -> count ; a plain array of pairs keeps this free of
         // any extra container dependency.
         struct Row
@@ -368,11 +370,11 @@ inline void block_transition(const void* block,
         {
             const auto up = reinterpret_cast<std::uintptr_t>(block);
 #ifdef __aarch64__
-            const bool bad_high = (up >> 52) != 0;
+            const bool bad_high = (up >> 52U) != 0;
 #else
-            const bool bad_high = (up >> 47) != 0;
+            const bool bad_high = (up >> 47U) != 0;
 #endif
-            if (bad_high || (up & 0x7) != 0)
+            if (bad_high || (up & 0x7U) != 0)
             {
                 std::fprintf(stderr, "[LEDGER_BADPTR] non-canonical block key %p op=%s site=%s\n", block, op, site);
                 std::fflush(stderr);
@@ -383,7 +385,7 @@ inline void block_transition(const void* block,
 
         const std::scoped_lock lk(mtx());
 
-        auto it = block_live().find(block);
+        const auto it = block_live().find(block);
         if constexpr (build_config::rechunk_ledger_trace)
         {
             const char* cur = (it == block_live().end()) ? "ABSENT" : bstate_name(it->second.state);

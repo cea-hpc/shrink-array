@@ -39,6 +39,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <ratio> // std::nano
 #include <cstring>
 #include <vector>
 
