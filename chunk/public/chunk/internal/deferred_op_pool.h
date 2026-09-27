@@ -324,15 +324,16 @@ struct FastAllocatorConcrete : FastAllocatorBase
      */
     void* allocate_raw() override
     {
-#ifdef CHUNK_POOL_NO_REUSE
-        // Diagnostic mode (CHUNK_POOL_NO_REUSE): bypass the free-list AND the fast pool.
-        // Every block is a fresh global allocation, so a later recycle() is a
-        // real ::operator delete. This gives ASan/TSan full visibility into
-        // use-after-free / double-free of deferred ctx/op blocks — which the
-        // recycling free-list normally hides (freed blocks stay mapped and
-        // readable, so a use-after-recycle silently returns stale data).
-        return ::operator new(sizeof(T));
-#else
+        if constexpr (build_config::pool_no_reuse)
+        {
+            // Diagnostic mode (CHUNK_POOL_NO_REUSE): bypass the free-list AND the fast pool.
+            // Every block is a fresh global allocation, so a later recycle() is a
+            // real ::operator delete. This gives ASan/TSan full visibility into
+            // use-after-free / double-free of deferred ctx/op blocks — which the
+            // recycling free-list normally hides (freed blocks stay mapped and
+            // readable, so a use-after-recycle silently returns stale data).
+            return ::operator new(sizeof(T));
+        }
         auto& fl = free_list();
         if (!fl.empty())
         {
@@ -363,7 +364,6 @@ struct FastAllocatorConcrete : FastAllocatorBase
         {
             return ::operator new(sizeof(T));
         }
-#endif
     }
 
     /**
@@ -386,9 +386,11 @@ struct FastAllocatorConcrete : FastAllocatorBase
      */
     void recycle(void* block) override
     {
-#ifdef CHUNK_POOL_NO_REUSE
-        ::operator delete(block); // CHUNK_POOL_NO_REUSE: real free for ASan/TSan
-#else
+        if constexpr (build_config::pool_no_reuse)
+        {
+            ::operator delete(block); // CHUNK_POOL_NO_REUSE: real free for ASan/TSan
+            return;
+        }
         if constexpr (build_config::use_fast_alloc)
         {
             // Only pool blocks owned by this thread's slab may go on this
@@ -427,7 +429,6 @@ struct FastAllocatorConcrete : FastAllocatorBase
             }
         }
         free_list().push_back(static_cast<T*>(block));
-#endif
     }
 };
 
@@ -506,16 +507,17 @@ using CtxRegistry = AllocatorRegistry<CtxTag>;
 template <typename T>
 void chunk_align_probe([[maybe_unused]] const char* site, [[maybe_unused]] void* mem) noexcept
 {
-#ifdef CHUNK_ALIGN_CHECK
-    if ((reinterpret_cast<std::uintptr_t>(mem) & (alignof(T) - 1)) != 0)
+    if constexpr (build_config::align_check)
     {
-        std::fprintf(stderr,
-                     "[SLAB MISALIGN] %s: ptr=%p alignof=%zu sizeof=%zu (block from slab is under-aligned for T)\n",
-                     site, mem, static_cast<size_t>(alignof(T)), sizeof(T));
-        std::fflush(stderr);
-        std::abort();
+        if ((reinterpret_cast<std::uintptr_t>(mem) & (alignof(T) - 1)) != 0)
+        {
+            std::fprintf(stderr,
+                         "[SLAB MISALIGN] %s: ptr=%p alignof=%zu sizeof=%zu (block from slab is under-aligned for T)\n",
+                         site, mem, static_cast<size_t>(alignof(T)), sizeof(T));
+            std::fflush(stderr);
+            std::abort();
+        }
     }
-#endif
 }
 
 /**

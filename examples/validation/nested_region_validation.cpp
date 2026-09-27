@@ -146,7 +146,7 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
 
 /// Re-runs this executable with --nested-active and checks that it stopped on
 /// the nested-active invariant.
-static int check_nested_active(const char* self)
+[[maybe_unused]] static int check_nested_active(const char* self) // OpenMP builds only
 {
     const std::string log    = "/tmp/nested_region_active_" + std::to_string(getpid()) + ".log";
     const std::string cmd    = std::string("\"") + self + "\" --nested-active > \"" + log + "\" 2>&1";
@@ -178,9 +178,7 @@ int main(int argc, char** argv)
     __mem_page_size          = getpagesize();
     const bool nested_active = argc > 1 && std::string(argv[1]) == "--nested-active";
 
-#ifdef _OPENMP
-    omp_set_max_active_levels(nested_active ? 2 : 1);
-#endif
+    chunk_pmp_set_max_active_levels(nested_active ? 2 : 1);
     ParamChunk::init_indexes(true);
 
     const long       N = 1L << 16;

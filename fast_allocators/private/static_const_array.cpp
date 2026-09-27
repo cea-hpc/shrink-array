@@ -15,12 +15,7 @@
  */
 
 #include <cstdlib>
-// Declaration-level guards below, so they stay directives: the registry of
-// allocator instances only exists in serial builds (an OpenMP build has no
-// synchronisation for it), and InfoFreeElt has no meaning without threads.
-#ifndef _OPENMP
-    #include <set>
-#endif
+#include <set> // the registry of allocator instances, filled in serial builds only
 
 #include "fast_allocators/internal/singleton.h"
 #include "fast_allocators/tc_allocator.h"
@@ -129,27 +124,25 @@ class ManageTCTypeAllocator
     ~ManageTCTypeAllocator() = default;
 
   protected:
-#ifndef _OPENMP
+    // Filled in a serial build only (no concurrent insert); left empty under
+    // OpenMP, where the allocators are not enrolled.
     using set_allocator_t = std::set<VTCTypeAllocator*>;
 
     set_allocator_t set_allocator;
-#endif
 
   public:
     /// @brief Enrol an allocator. No-op in an OpenMP build.
     void addTCTypeAllocatorInst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
     {
-#ifndef _OPENMP
-        set_allocator.insert(ptr_tcallocator); // serial builds only: no concurrent insert
-#endif
+        if constexpr (!alloc_config::use_openmp)
+            set_allocator.insert(ptr_tcallocator); // serial builds only: no concurrent insert
     }
 
     /// @brief Withdraw one. No-op in an OpenMP build.
     void removeTCTypeAllocatorInst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
     {
-#ifndef _OPENMP
-        set_allocator.erase(ptr_tcallocator); // not sure this is thread-safe
-#endif
+        if constexpr (!alloc_config::use_openmp)
+            set_allocator.erase(ptr_tcallocator); // not sure this is thread-safe
     }
 
     /// @brief Add every enrolled allocator's footprint to the totals.
@@ -158,14 +151,10 @@ class ManageTCTypeAllocator
                           [[maybe_unused]] size_t& sum_nn_ref,
                           [[maybe_unused]] size_t& alloc_sz)
     {
-#ifndef _OPENMP
         for (VTCTypeAllocator* inst : set_allocator)
         {
             inst->addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
         }
-#else
-//        PMP_MODE_NOT_VALID;
-#endif
     }
 };
 

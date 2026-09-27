@@ -127,11 +127,7 @@ struct TabCstVal2Holder;
 template <typename T>
 struct SecondValueTraits
 {
-#ifdef CHUNK_SECOND_VALUE_INDEXED
-    static constexpr bool indexed = (sizeof(T) > 4);
-#else
-    static constexpr bool indexed = false;
-#endif
+    static constexpr bool indexed = build_config::second_value_indexed && sizeof(T) > 4;
     using slot_t = std::conditional_t<indexed, std::uint32_t, T>;
 };
 

@@ -31,6 +31,6 @@ void TCAllocator::operator delete(void* ptr)
     TypeAllocator<TCAllocator>::free(ptr);
 }
 #endif
-#if defined(DEBUG) || defined(_OPENMP)
+// Defined in every build (tc_allocator.h declares it in every build); only
+// alloc_config::debug_mem_observable builds read it.
 bool __debug_mem = false;
-#endif
