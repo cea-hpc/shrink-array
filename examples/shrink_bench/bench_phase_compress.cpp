@@ -39,7 +39,8 @@ void compress_one(auto& tab)
 
 /// @brief One line naming the array about to be compressed, flushed (it was
 ///        std::endl): one statement, so it still fits under `omp single`.
-static void announce(const char* name)
+///        Unused in the std::vector build (nothing is compressed there).
+[[maybe_unused]] void announce(const char* name)
 {
     std::println("{}", name);
     std::fflush(stdout);
