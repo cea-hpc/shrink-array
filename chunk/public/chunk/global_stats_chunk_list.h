@@ -18,10 +18,9 @@
  * limitations under the License.
  */
 
-#include <iomanip>
-#include <iostream>
+#include <format> // std::format (format_memory)
 #include <map>
-#include <sstream> // std::ostringstream
+#include <print> // std::println (print)
 #include <string>
 
 #include "chunk/term_color.h"
@@ -62,19 +61,13 @@ struct GlobalStatsChunkList
         const long double mib = kib / 1024.0L;
         const long double gib = mib / 1024.0L;
 
-        std::ostringstream oss;
-        oss << std::fixed << std::setprecision(2);
-
         if (gib >= 1.0L)
-            oss << gib << " Go";
-        else if (mib >= 1.0L)
-            oss << mib << " Mo";
-        else if (kib >= 1.0L)
-            oss << kib << " Ko";
-        else
-            oss << (long long)bytes << " bytes";
-
-        return oss.str();
+            return std::format("{:.2f} Go", gib);
+        if (mib >= 1.0L)
+            return std::format("{:.2f} Mo", mib);
+        if (kib >= 1.0L)
+            return std::format("{:.2f} Ko", kib);
+        return std::format("{} bytes", static_cast<long long>(bytes));
     }
 
     /**
@@ -95,20 +88,22 @@ struct GlobalStatsChunkList
         long double total_metadata_mem = 0;
         const int   nb_threads         = CHUNK_PMP_MAX_THREADS;
 
+        const std::string rule_eq(total_width, '=');
+        const std::string rule_dash(total_width, '-');
+
         // Header Cyan
-        std::cout << "\n" << tc.CYAN << std::string(total_width, '=') << tc.RESET << "\n";
-        std::cout << tc.BOLD << tc.CYAN << std::string((total_width - 35) / 2, ' ')
-                  << "GLOBAL COMPRESSION LISTS MONITORING" << tc.RESET << "\n";
-        std::cout << tc.WHITE << " Configuration: " << tc.BOLD << nb_threads << tc.RESET << tc.WHITE
-                  << " active threads" << tc.RESET << "\n";
-        std::cout << tc.CYAN << std::string(total_width, '=') << tc.RESET << "\n";
+        std::println("\n{}{}{}", tc.CYAN, rule_eq, tc.RESET);
+        std::println("{}{}{:{}}GLOBAL COMPRESSION LISTS MONITORING{}", tc.BOLD, tc.CYAN, "", (total_width - 35) / 2,
+                     tc.RESET);
+        std::println("{} Configuration: {}{}{}{} active threads{}", tc.WHITE, tc.BOLD, nb_threads, tc.RESET, tc.WHITE,
+                     tc.RESET);
+        std::println("{}{}{}", tc.CYAN, rule_eq, tc.RESET);
 
         // Titles Bold White
-        std::cout << tc.BOLD << std::left << std::setw(col_type) << "Chunk Type Instance" << std::right
-                  << std::setw(col_data) << "Allocated Chunks" << std::right << std::setw(col_list)
-                  << "Op-List Capacity" << std::right << std::setw(col_mem) << "List Memory" << tc.RESET << "\n";
+        std::println("{}{:<{}}{:>{}}{:>{}}{:>{}}{}", tc.BOLD, "Chunk Type Instance", col_type, "Allocated Chunks",
+                     col_data, "Op-List Capacity", col_list, "List Memory", col_mem, tc.RESET);
 
-        std::cout << std::string(total_width, '-') << "\n";
+        std::println("{}", rule_dash);
 
         for (auto const& [name, stats] : all_stats)
         {
@@ -116,17 +111,16 @@ struct GlobalStatsChunkList
             const long double type_list_bytes     = static_cast<long double>(total_list_capacity) * stats.element_size;
             total_metadata_mem += type_list_bytes;
 
-            std::cout << std::left << std::setw(col_type) << name << tc.GREEN << std::right << std::setw(col_data)
-                      << stats.allocated_chunks << tc.RESET << tc.YELLOW << std::right << std::setw(col_list)
-                      << total_list_capacity << tc.RESET << tc.RED << std::right << std::setw(col_mem)
-                      << format_memory(type_list_bytes) << tc.RESET << "\n";
+            std::println("{:<{}}{}{:>{}}{}{}{:>{}}{}{}{:>{}}{}", name, col_type, tc.GREEN, stats.allocated_chunks,
+                         col_data, tc.RESET, tc.YELLOW, total_list_capacity, col_list, tc.RESET, tc.RED,
+                         format_memory(type_list_bytes), col_mem, tc.RESET);
         }
 
-        std::cout << std::string(total_width, '-') << "\n";
-        std::cout << tc.BOLD << "AGGREGATED METADATA OVERHEAD:" << tc.RESET << "\n";
-        std::cout << std::left << std::setw(40) << " Total footprint for tracking lists"
-                  << ": " << tc.BOLD << tc.GREEN << format_memory(total_metadata_mem) << tc.RESET << "\n";
-        std::cout << tc.CYAN << std::string(total_width, '=') << tc.RESET << "\n\n";
+        std::println("{}", rule_dash);
+        std::println("{}AGGREGATED METADATA OVERHEAD:{}", tc.BOLD, tc.RESET);
+        std::println("{:<40}: {}{}{}{}", " Total footprint for tracking lists", tc.BOLD, tc.GREEN,
+                     format_memory(total_metadata_mem), tc.RESET);
+        std::println("{}{}{}\n", tc.CYAN, rule_eq, tc.RESET);
     }
 };
 

@@ -1,8 +1,9 @@
 #pragma once
 
-#include <iomanip>
-#include <iostream>
-#include <sstream>
+#include <cstdio>   // stdout, fileno (colour detection)
+#include <format>   // std::format / std::format_to
+#include <iterator> // std::back_inserter
+#include <ostream>
 #include <string>
 #include <vector>   // std::vector
 #include <unistd.h> // Pour isatty et fileno
@@ -88,56 +89,36 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
                                       : CYAN + "Chunk useful vs std::vector" + RESET;
     }
 
-    // Write everything into a local stringstream first, to guarantee thread-safety.
-    std::stringstream ss;
-    const auto        sflags = ss.flags();
-    const auto        sprec  = ss.precision();
-
+    // The whole line is built first and written at once, so that lines from
+    // several threads do not interleave.
     const std::string tab_label = "[tab_" + std::to_string(num_tab) + " " + type_name + "]";
 
-    // Step 1: the left-aligned prefix.
-    ss << std::left << std::setw(30) << tab_label << RESET;
+    // Left-aligned prefix, then the overall compression statistics.
+    std::string line = std::format("{:<30}{}{:>6}/{:>6} chunks compressed ({:>5.1f}%)", tab_label, RESET, n_compressed,
+                                   nb_chunk, pct_total);
 
-    // Step 2: overall compression statistics.
-    ss << std::right << std::setw(6) << n_compressed << "/" << std::setw(6) << nb_chunk << " chunks compressed ("
-       << std::fixed << std::setprecision(1) << std::setw(5) << pct_total << "%)";
-
-    // Step 3: aligned type-2 statistics.
+    // Aligned type-2 statistics, or blanks of the same width.
     if (n_t1 > 0)
-    {
-        ss << ", " << BOLD << std::setw(6) << n_t1 << RESET << " type-2 (" << std::setw(5) << pct_t1 << "%)";
-    }
+        std::format_to(std::back_inserter(line), ", {}{:>6}{} type-2 ({:>5.1f}%)", BOLD, n_t1, RESET, pct_t1);
     else
-    {
-        ss << std::setw(23) << " ";
-    }
+        line.append(23, ' ');
 
-    // Step 4: final verdict.
-    ss << "  →  " << verdict;
+    // Final verdict.
+    std::format_to(std::back_inserter(line), "  →  {}", verdict);
 
-    // Step 5: cross-variant probe ("a richer variant would have helped").
-    // Shown only when measured (n_cross >= 0) and non-trivial.
+    // Cross-variant probe ("a richer variant would have helped"). Shown only
+    // when measured (n_cross >= 0) and non-trivial.
     if (n_cross >= 0 && !cross_name.empty())
     {
         if (n_cross == 0)
-        {
-            ss << GREY << "   [" << cross_name << " would not have helped]" << RESET;
-        }
+            std::format_to(std::back_inserter(line), "{}   [{} would not have helped]{}", GREY, cross_name, RESET);
         else
-        {
-            ss << YELLOW << "   [+" << n_cross << " blocks (" << std::fixed << std::setprecision(1) << pct_cross
-               << "%) " << cross_name << " would have compressed]" << RESET;
-        }
+            std::format_to(std::back_inserter(line), "{}   [+{} blocks ({:.1f}%) {} would have compressed]{}", YELLOW,
+                           n_cross, pct_cross, cross_name, RESET);
     }
 
-    ss << '\n';
-
-    // Restore the local stream's state.
-    ss.flags(sflags);
-    ss.precision(sprec);
-
-    // Write it all at once (atomic with respect to other threads).
-    os << ss.str();
+    line += '\n';
+    os << line;
 }
 
 } // namespace shrink_array

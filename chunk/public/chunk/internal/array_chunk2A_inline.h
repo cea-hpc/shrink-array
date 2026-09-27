@@ -18,8 +18,8 @@
 
 #include <cstddef>  // std::size_t
 #include <cstdio>   // std::fprintf (check-build trace)
-#include <iomanip>  // std::setw (print_type_name)
-#include <iostream> // std::cout / std::cerr
+#include <iostream> // std::cerr (compress-residual dumps)
+#include <print>    // std::println (print_type_name)
 #include <string>   // the type name in print_type_name
 #include <utility>  // std::pair (the clear() summary)
 #include <vector>
@@ -128,8 +128,7 @@ void print_type_name(int nb_val2)
 {
     // type_name<T>() already demangles; this used to carry its own copy of
     // the abi::__cxa_demangle dance.
-    std::cout << std::left << std::setw(30) << ("Type: " + type_name<T>())
-              << " → Number of compression values : " << nb_val2 << "\n";
+    std::println("{:<30} → Number of compression values : {}", "Type: " + type_name<T>(), nb_val2);
 }
 
 template <ArrayChunkElement T, typename ind_type>

@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <print> // std::println (DEBUG_SET_SIZE)
 //#include <cstdlib>
 #include <algorithm>
 #include <functional>
@@ -1150,24 +1151,15 @@ inline void print_mem_estimate(const char* label, std::size_t count, std::size_t
     long double mib = kib / 1024.0L;
     long double gib = mib / 1024.0L;
 
-    std::cout << label << " : " << count << " elements, approx ";
-
+    // {:g}: the six significant digits std::cout printed.
     if (gib >= 1.0L)
-    {
-        std::cout << gib << " Go\n";
-    }
+        std::println("{} : {} elements, approx {:g} Go", label, count, gib);
     else if (mib >= 1.0L)
-    {
-        std::cout << mib << " Mo\n";
-    }
+        std::println("{} : {} elements, approx {:g} Mo", label, count, mib);
     else if (kib >= 1.0L)
-    {
-        std::cout << kib << " Ko\n";
-    }
+        std::println("{} : {} elements, approx {:g} Ko", label, count, kib);
     else
-    {
-        std::cout << bytes << " bytes\n";
-    }
+        std::println("{} : {} elements, approx {:g} bytes", label, count, bytes);
 }
 #endif
 
@@ -1231,22 +1223,21 @@ void ManagerChunk<CHUNK_T, T>::compute_size_max_number_of_chunk_to_check_compres
 
     set_size_max_number_of_chunk_to_check_compress(threshold);
 #ifdef DEBUG_SET_SIZE
-    std::cout << "somme_chunk_create : " << somme_chunk_create << "\n";
-    std::cout << "VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS : "
-              << VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS << "\n";
+    std::println("somme_chunk_create : {}", somme_chunk_create);
+    std::println("VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS : {}",
+                 VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS);
 
 #endif
 
 #ifdef DEBUG_SET_SIZE
     const int max_chunks = get_size_max_number_of_chunk_to_check_compress();
-    std::cout << "size_max_number_of_chunk_to_check_compress : " << max_chunks << "\n";
+    std::println("size_max_number_of_chunk_to_check_compress : {}", max_chunks);
 
     if constexpr (build_config::use_openmp)
     {
-        std::cout << "\n=== Estimated memory footprint per container ===\n";
-
-        std::cout << "Threads (CHUNK_PMP_MAX_THREADS): " << CHUNK_PMP_MAX_THREADS << "\n";
-        std::cout << "Total estimated memory = above values × number of threads\n";
+        std::println("\n=== Estimated memory footprint per container ===");
+        std::println("Threads (CHUNK_PMP_MAX_THREADS): {}", CHUNK_PMP_MAX_THREADS);
+        std::println("Total estimated memory = above values × number of threads");
 
         if constexpr (IsChunk2<CHUNK_T, T>)
         {
