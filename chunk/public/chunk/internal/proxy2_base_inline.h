@@ -3,6 +3,7 @@
 
 #include <utility>                      // std::forward
 #include "chunk/internal/proxy2_base.h" // the declarations these bodies belong to
+#include "chunk/internal/in_t.h"
 
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)

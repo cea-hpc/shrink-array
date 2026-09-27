@@ -16,11 +16,16 @@
 
 #pragma once
 
-#include <algorithm> // std::fill_n (init_block)
-#include <iostream>  // std::cerr (debug-build clear guard)
-#include <tuple>     // the candidate-list entries
+#include <algorithm>       // std::fill_n (init_block)
+#include <atomic>          // std::atomic_thread_fence
+#include <cstddef>         // std::size_t
+#include <iostream>        // std::cerr (debug-build clear guard)
+#include <source_location> // std::source_location
+#include <tuple>           // the candidate-list entries
 
 #include "chunk/chunk_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
+#include "chunk/config.h"
+#include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)

@@ -36,8 +36,8 @@
  *     a drop-in.
  */
 
+// All of these serve the CHUNK_STATS half of the file only.
 #include <chrono> // __chunk_stats_t0, the rates in print_chunk_stats
-#include <cstdio>
 #include <map>
 #include <mutex>
 #include <concepts>          // ChunkStatsZeroComparable
@@ -188,21 +188,21 @@ void increm_chunk_list() noexcept
 {
     __chunk_stats_slot(C::stat_variant).list++;
 }
-/// @brief Add `b` bytes from a fresh allocation (alloc event).
+/// @brief Add @p bytes bytes from a fresh allocation (alloc event).
 /// @param bytes Bytes allocated.
 template <typename C>
 void add_chunk_bytes_alloc(long bytes) noexcept
 {
     __chunk_stats_slot(C::stat_variant).bytes_alloc += bytes;
 }
-/// @brief Add `b` bytes handed out from the reuse list (list event).
+/// @brief Add @p bytes bytes handed out from the reuse list (list event).
 /// @param bytes Bytes reused.
 template <typename C>
 void add_chunk_bytes_reused(long bytes) noexcept
 {
     __chunk_stats_slot(C::stat_variant).bytes_reused += bytes;
 }
-/// @brief Add `b` bytes returned by a real compression (compress event).
+/// @brief Add @p bytes bytes returned by a real compression (compress event).
 /// @param bytes Bytes freed.
 template <typename C>
 void add_chunk_bytes_freed(long bytes) noexcept
@@ -216,6 +216,8 @@ void increm_chunk_teardown_clear() noexcept
     __chunk_stats_slot(C::stat_variant).teardown_clear++;
 }
 /// @brief Count @p n buffers released WITHOUT a compression, @p bytes in all.
+/// @param n     Buffers released.
+/// @param bytes Their total size in bytes.
 template <typename C>
 void add_chunk_released(long n, long bytes) noexcept
 {
@@ -425,9 +427,9 @@ void add_chunk_compress(long nb) noexcept
 /// @brief Reset every (variant, thread) counter slot to zero.
 inline void init_all_stats() noexcept
 {
-    for (int v = 0; v < CHUNK_STATS_N_VARIANT; ++v)
-        for (int t = 0; t < CHUNK_STATS_MAX_THR; ++t)
-            __chunk_stats[v][t] = ChunkStatsThr{};
+    for (auto& per_variant : __chunk_stats)
+        for (ChunkStatsThr& slot : per_variant)
+            slot = ChunkStatsThr{};
 }
 
 /**

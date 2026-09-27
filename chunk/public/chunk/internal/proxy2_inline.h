@@ -16,10 +16,20 @@
 
 #pragma once
 
+#include <atomic>
+#include <cstdlib>     // std::getenv (CHUNK_PROXY2_NO_ACQ_FENCE)
+#include <iostream>    // std::cerr (verbose)
+#include <type_traits> // std::remove_cvref_t
+
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
-#include <cstdlib>                        // std::getenv (CHUNK_PROXY2_NO_ACQ_FENCE)
 #include "chunk/internal/proxy2.h"        // the declarations these bodies belong to
+#include "chunk/config.h"
+#include "chunk/PMP_CHUNK.h"
+#include "chunk/internal/arithmetic_context.h"
+#include "chunk/internal/chunk_size_policy.h"
+#include "chunk/internal/concept_is_clean_assignement.h"
+#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 
 namespace shrink_array
 {
@@ -49,7 +59,7 @@ inline const bool g_proxy2_arm_legacy = []
 }();
 
 template <typename T, typename Derived>
-typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
+ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
 {
     if (inf_array_src_ != nullptr && !g_proxy2_arm_legacy) [[likely]]
     {
@@ -71,7 +81,7 @@ typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_ar
 }
 
 template <typename Derived>
-typename ProxySpec2<bool, Derived>::inf_array_t ProxySpec2<bool, Derived>::load_inf_array() const
+ProxySpec2<bool, Derived>::inf_array_t ProxySpec2<bool, Derived>::load_inf_array() const
 {
     if (inf_array_src_ != nullptr && !g_proxy2_arm_legacy) [[likely]]
     {
@@ -165,12 +175,13 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::trigger_compression_i
         derived().second_value = derived().make_second_value();
     }
 
-    auto* vec_tuple_p = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][derived().second_value].get();
+    const auto* vec_tuple_p =
+        manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][derived().second_value].get();
 
     if (!vec_tuple_p)
         return;
 
-    auto& vec_tuple = *vec_tuple_p;
+    const auto& vec_tuple = *vec_tuple_p;
 
     const int sz  = static_cast<int>(vec_tuple.size());
     const int szm = manager_chunk2::get_size_max_number_of_chunk_to_check_compress();
@@ -200,7 +211,8 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression()
             // in_t: the map key, by reference when T is large (a struct), by
             // value when it is a scalar. The map is not touched in the loop.
             const in_t<T> second_val = elm.first;
-            auto* vec_tuple_p = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][second_val].get();
+            const auto*   vec_tuple_p =
+                manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][second_val].get();
             if (vec_tuple_p)
             {
                 const int sz_before = static_cast<int>(vec_tuple_p->size());
@@ -209,7 +221,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression()
                 {
                     static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));
 
-                    auto* inf_ptr = Derived::share_info_array.find_inf_array(second_val);
+                    const auto* inf_ptr = Derived::share_info_array.find_inf_array(second_val);
                     Chunk2<T>::make_block_compression(thr_rank, *inf_ptr, self());
 
                     derived().set_info_on_chunk();
@@ -219,7 +231,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression()
     }
     else
     {
-        auto* vec_tuple_p = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][true].get();
+        const auto* vec_tuple_p = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][true].get();
         if (vec_tuple_p)
         {
             const int sz_before = static_cast<int>(vec_tuple_p->size());
@@ -242,8 +254,6 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression()
 template <typename T>
 void Proxy2<T>::perform_core_assignment(in_t<T> v) const noexcept
 {
-    bool need_alloc;
-
     if constexpr (chunk_config::use_compression_with_counter)
     {
         if (v == static_cast<T>(Chunk2<T>::first_value))
@@ -309,7 +319,7 @@ void Proxy2<T>::perform_core_assignment(in_t<T> v) const noexcept
         increm_chunk_write<ChunkType>(v);
     }
 
-    need_alloc = Base2::is_cst_val();
+    const bool need_alloc = Base2::is_cst_val();
 
     if (need_alloc)
     {
@@ -404,7 +414,7 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
     // Synchronous core path (fast path)
     // By reference: v is this call's parameter, alive for the synchronous
     // call (see Proxy2A::assign_impl); the deferred path copies it.
-    auto lbd_equal_core = [this, &v]()
+    const auto lbd_equal_core = [this, &v]
     {
         if constexpr (chunk_config::use_compression_without_counter)
         {
@@ -425,7 +435,7 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
             // Capture only location + operand
             auto* ctx = pool_new_ctx<CtxType>(*this, v, ptr_on_array);
 
-            auto lbd_equal_asynch = [ctx]() // the operand lives in the context: no second copy in the closure
+            auto lbd_equal_asynch = [ctx] // the operand lives in the context: no second copy in the closure
             {
                 auto&     chunk = ctx->chunk;
                 const int num   = ctx->num;
@@ -444,7 +454,7 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
                 {
                     if constexpr (is_not_bool)
                     {
-                        auto inf = Proxy2<T>::get_info_second_value(ctx->ptr_on_array);
+                        const auto inf = Proxy2<T>::get_info_second_value(ctx->ptr_on_array);
                         chunk.create_value(is_cst2, inf);
                     }
                     else
@@ -510,7 +520,7 @@ void Proxy2<T>::ensure_writable_storage()
         this->set_info_second_value_ind();
     }
 
-    bool is_val2;
+    bool is_val2 = false;
     if constexpr (is_not_bool)
         is_val2 = is_cst_val2(BaseSpec::ind);
     else
@@ -869,7 +879,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_opera
     {
         if constexpr (is_not_bool)
         {
-            auto inf = Proxy2<T>::get_info_second_value(ctx->ptr_on_array);
+            const auto inf = Proxy2<T>::get_info_second_value(ctx->ptr_on_array);
             chunk.create_value(is_val2, inf);
         }
         else

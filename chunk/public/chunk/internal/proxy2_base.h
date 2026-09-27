@@ -22,6 +22,8 @@
 #include <type_traits> // std::is_integral_v, std::is_same_v
 #include <utility>     // std::forward
 
+#include "chunk/config.h"
+#include "chunk/internal/concept_is_clean_assignement.h"
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/proxy_base.h"
 
@@ -353,7 +355,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     template <typename WriteFn>
     bool write_with_optional_lock_with_set_ptr(WriteFn write_fn) noexcept
     {
-        auto lbd_info = [this]()
+        const auto lbd_info = [this]
         {
             if constexpr (chunk_config::use_fast_block_compression)
             {

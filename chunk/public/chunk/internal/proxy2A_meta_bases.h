@@ -40,9 +40,9 @@ namespace shrink_array
 template <typename T>
 struct Proxy2AMetaBases
 {
-    char*                               type   = nullptr;
-    std::atomic<char>*                  inside = nullptr;
-    typename SecondValueRef<T>::slot_t* sv     = nullptr; ///< unused for bool
+    char*                      type   = nullptr;
+    std::atomic<char>*         inside = nullptr;
+    SecondValueRef<T>::slot_t* sv     = nullptr; ///< unused for bool
 };
 
 } // namespace shrink_array
