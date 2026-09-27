@@ -38,6 +38,7 @@
 
 #include <cstdlib>
 #include <cstdio>
+#include <print>
 #include <type_traits>
 #include <unistd.h>
 #include <vector>
@@ -114,7 +115,7 @@ static int round_trip_at(unsigned int csz, long N)
 
     if (arr.chunk_size() != csz)
     {
-        printf("[%s/size=%u] FAIL: array built at chunk_size=%u\n", variant_name(), csz, arr.chunk_size());
+        std::println("[{}/size={}] FAIL: array built at chunk_size={}", variant_name(), csz, arr.chunk_size());
         return 1;
     }
 
@@ -139,14 +140,14 @@ static int round_trip_at(unsigned int csz, long N)
     {
         // The offset of the first mismatch is the useful number: it is the width
         // the buffer actually had, which names the geometry the allocator used.
-        printf("[%s/size=%u] FAIL: %ld/%ld mismatches, first at i=%ld "
-               "(chunk #%ld, offset %ld) got=%g expected=%g\n",
-               variant_name(), csz, bad, N, first, first / (long)csz, first % (long)csz, (double)arr[first],
-               ref[first]);
+        std::println("[{}/size={}] FAIL: {}/{} mismatches, first at i={} "
+                     "(chunk #{}, offset {}) got={:g} expected={:g}",
+                     variant_name(), csz, bad, N, first, first / (long)csz, first % (long)csz, (double)arr[first],
+                     ref[first]);
         return 1;
     }
 
-    printf("[%s/size=%u] OK: %ld elements round-trip\n", variant_name(), csz, N);
+    std::println("[{}/size={}] OK: {} elements round-trip", variant_name(), csz, N);
     return 0;
 }
 
@@ -158,7 +159,7 @@ int main(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    printf("=== dyn_geometry_validation [variant = %s]  N=%ld ===\n", variant_name(), N);
+    std::println("=== dyn_geometry_validation [variant = {}]  N={} ===", variant_name(), N);
 
     int fails = 0;
 
@@ -168,7 +169,7 @@ int main(int argc, char** argv)
     for (unsigned int csz = 64; csz <= shrink_array::cst_buffer_size; csz <<= 1)
         fails += round_trip_at(csz, N);
 
-    printf("\n[%s] %s\n", variant_name(),
-           fails == 0 ? "=== ALL GEOMETRIES ROUND-TRIP ===" : "=== GEOMETRY FAILURES ===");
+    std::println("\n[{}] {}", variant_name(),
+                 fails == 0 ? "=== ALL GEOMETRIES ROUND-TRIP ===" : "=== GEOMETRY FAILURES ===");
     return fails;
 }

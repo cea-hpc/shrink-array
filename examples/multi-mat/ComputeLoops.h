@@ -31,7 +31,7 @@
  * to the library (config.h).
  */
 
-#include <iostream>
+#include <print>
 #include <array>
 #include <vector>
 #include <cmath>
@@ -53,7 +53,7 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo,
     if (verbose)
     {
 #pragma omp single nowait
-        std::cout << "\nInitialisation... \n";
+        std::println("\nInitialisation... ");
     }
 
     mm_algo.loop(0, nbmat,
@@ -85,15 +85,15 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo,
         if (verbose)
         {
 #pragma omp single nowait
-            std::cout << "Iteration : " << it << "\n";
+            std::println("Iteration : {}", it);
         }
 #pragma omp for // Parallelization on this loop : it is not easy to parallelize the inside loop
         for (int mat = 0; mat < nbmat; ++mat)
         {
             auto& ll_ind = ll[mat];
 
-            const int size  = tab_size[it][mat];
-            const int start = tab_start[it][mat];
+            const int size  = tab_size[it, mat];
+            const int start = tab_start[it, mat];
 
             const int end = start + size;
 
@@ -132,16 +132,15 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo,
                          // The material's interval this iteration: ll_ind[p] == start + p,
                          // so nn - start is the position of a cell in the interval, what
                          // the presence fraction depends on.
-                         const int start = tab_start[it][mat];
-                         const int size  = tab_size[it][mat];
+                         const int start = tab_start[it, mat];
+                         const int size  = tab_size[it, mat];
 
                          if (it % freq_rtz == 0)
                          {
                              if (verbose && mat == 0)
                              {
 #pragma omp single nowait
-                                 std::cout << "Reset to zero some elements "
-                                           << "\n";
+                                 std::println("Reset to zero some elements ");
                              }
 
                              // Vectorize loop when tab*_ind is vector
@@ -235,7 +234,7 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo,
             if (verbose)
             {
 #pragma omp single nowait
-                std::cout << "Compression " << "\n";
+                std::println("Compression ");
             }
 
             mm_algo.loop(0, nbmat,

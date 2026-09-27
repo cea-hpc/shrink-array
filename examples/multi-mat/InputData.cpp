@@ -25,7 +25,10 @@
  * behind `if constexpr`, compiled in every build.
  */
 
-#include <iostream>
+#include <format>
+#include <type_traits> // std::is_floating_point_v (shown)
+#include <iostream>    // std::cin, std::getline
+#include <print>
 #include <random>
 #include <string>
 #include <stdexcept>
@@ -47,17 +50,27 @@ namespace
  * @param valid   Range check on the parsed value; a refusal is reported and
  *                the default kept.
  */
+/// @brief @p v as a default ostream showed it: {:g} for a floating-point one.
+template <typename T>
+std::string shown(const T& v)
+{
+    if constexpr (std::is_floating_point_v<T>)
+        return std::format("{:g}", v);
+    else
+        return std::format("{}", v);
+}
+
 template <typename T, typename Parse, typename Valid>
 void ask(const char* prompt, const char* name, T& value, Parse parse, Valid valid)
 {
-    std::cout << prompt << " (default " << value << ") : ";
+    std::print("{} (default {}) : ", prompt, shown(value));
 
     std::string data;
     std::getline(std::cin, data);
 
     if (data.empty())
     {
-        std::cout << "default : " << value << " " << name << "\n";
+        std::println("default : {} {}", shown(value), name);
         return;
     }
     try
@@ -66,15 +79,15 @@ void ask(const char* prompt, const char* name, T& value, Parse parse, Valid vali
         if (!valid(v))
             throw std::out_of_range("The value is not in the specified range.");
         value = v;
-        std::cout << "You give : " << value << " " << name << "\n";
+        std::println("You give : {} {}", shown(value), name);
     }
     catch (const std::invalid_argument&)
     {
-        std::cerr << "Error: Conversion failed. The string is not a valid number" << '\n';
+        std::println(stderr, "Error: Conversion failed. The string is not a valid number");
     }
     catch (const std::out_of_range& e)
     {
-        std::cerr << "Error: " << e.what() << " default kept: " << value << std::endl;
+        std::println(stderr, "Error: {} default kept: {}", e.what(), shown(value));
     }
 }
 
@@ -120,11 +133,11 @@ void Simu::inputData()
 
         ask_int("Number of iterations", "number of iterations", iter_max);
 
-        std::cout << "Option : \n";
-        std::cout << "   all chunk                        : 1\n";
-        std::cout << "   all vector                       : 2\n";
-        std::cout << "   random vector / chunk (default)  : 3\n";
-        std::cout << "   random vector / chunk with rate  : 4\n";
+        std::println("Option : ");
+        std::println("   all chunk                        : 1");
+        std::println("   all vector                       : 2");
+        std::println("   random vector / chunk (default)  : 3");
+        std::println("   random vector / chunk with rate  : 4");
         ask(
             "Option", "option", option_chunk, [](const std::string& s) { return std::stoi(s); },
             [](int v) { return v >= 1 && v <= 4; });
@@ -167,10 +180,10 @@ void Simu::inputData()
             {
                 dis[m] = distrib(gen) < threshold;
                 nb_chunk += dis[m];
-                std::cout << "Material #" << m << ": " << (dis[m] ? "chunk" : "vector") << "\n";
+                std::println("Material #{}: {}", m, dis[m] ? "chunk" : "vector");
             }
 
-            std::cout << "\nNumber of chunk array : " << nb_chunk << " on " << nbmat << " materials \n\n";
+            std::println("\nNumber of chunk array : {} on {} materials \n", nb_chunk, nbmat);
 
             if (nb_chunk == nbmat)
             {
@@ -199,7 +212,7 @@ void Simu::inputData()
 
         ask_int("reset to zero frequency", "reset to zero frequency", freq_rtz);
 
-        std::cout << "\n";
+        std::println("");
 
         if (!all_vector)
             ask_percentage("Average percentage occupation for chunk material", "%", pc_chunk);
@@ -209,13 +222,13 @@ void Simu::inputData()
     }
     else
     {
-        std::cout << nbmat << " materials\n";
-        std::cout << mesh_size << " mesh size\n";
-        std::cout << iter_max << " number of iterations\n";
-        std::cout << option_chunk << " option chunk\n";
-        std::cout << pc_chunk << "% fill rate chunk\n";
-        std::cout << pc_vector << "% fill rate vector\n";
-        std::cout << freq_rtz << " frequency reset to zero frequency\n";
-        std::cout << freq_compress << " frequency compression frequency\n";
+        std::println("{} materials", nbmat);
+        std::println("{} mesh size", mesh_size);
+        std::println("{} number of iterations", iter_max);
+        std::println("{} option chunk", option_chunk);
+        std::println("{:g}% fill rate chunk", pc_chunk);
+        std::println("{:g}% fill rate vector", pc_vector);
+        std::println("{} frequency reset to zero frequency", freq_rtz);
+        std::println("{} frequency compression frequency", freq_compress);
     }
 }

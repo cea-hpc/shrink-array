@@ -30,6 +30,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <print>
 #include <string>
 #include <vector>
 #include <unistd.h>
@@ -136,7 +137,7 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
         if (v != ref[i])
         {
             if (fails < 5)
-                std::printf("  MISMATCH i=%ld  %d (ref %d)\n", i, v, ref[i]);
+                std::println("  MISMATCH i={}  {} (ref {})", i, v, ref[i]);
             ++fails;
         }
     }
@@ -162,11 +163,11 @@ static int check_nested_active(const char* self)
 
     const bool stopped = status != -1 && !(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     const bool message = out.contains("nested ACTIVE");
-    std::printf("[nested-active] two active levels: %s, %s\n", stopped ? "stopped" : "RAN ON",
-                message ? "invariant message printed" : "NO invariant message");
+    std::println("[nested-active] two active levels: {}, {}", stopped ? "stopped" : "RAN ON",
+                 message ? "invariant message printed" : "NO invariant message");
     if (!stopped || !message)
     {
-        std::printf("---- child output ----\n%s----------------------\n", out.c_str());
+        std::println("---- child output ----\n{}----------------------", out.c_str());
         return 1;
     }
     return 0;
@@ -186,15 +187,15 @@ int main(int argc, char** argv)
     Array<int>       a(N);
     std::vector<int> ref(N, 0);
 
-    std::printf("=== nested_region_validation [variant = %s]  outer team 4, nested regions %s ===\n", variant_name(),
-                nested_active ? "ACTIVE (--nested-active)" : "serialised");
+    std::println("=== nested_region_validation [variant = {}]  outer team 4, nested regions {} ===", variant_name(),
+                 nested_active ? "ACTIVE (--nested-active)" : "serialised");
     std::fflush(stdout);
 
     long fails = run_nested(a, ref, 3);
 
     if (nested_active)
     {
-        std::printf("[nested-active] two active levels ran without an invariant failure\n");
+        std::println("[nested-active] two active levels ran without an invariant failure");
         return 1;
     }
 
@@ -203,9 +204,9 @@ int main(int argc, char** argv)
 
     if (fails)
     {
-        std::printf("=== NESTED REGION FAILED (%ld) ===\n", fails);
+        std::println("=== NESTED REGION FAILED ({}) ===", fails);
         return 1;
     }
-    std::printf("=== NESTED REGION OK ===\n");
+    std::println("=== NESTED REGION OK ===");
     return 0;
 }

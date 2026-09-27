@@ -44,6 +44,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <print>
 #include <type_traits>
 #include <utility>
 #include <unistd.h>
@@ -178,13 +179,13 @@ int run_case(Case c)
         if (got != want)
         {
             if (bad < 5)
-                std::printf("[%s/%s] FAIL [%ld] = %g, expected %g\n", variant_name(), case_name(c), i, got, want);
+                std::println("[{}/{}] FAIL [{}] = {:g}, expected {:g}", variant_name(), case_name(c), i, got, want);
             ++bad;
         }
     }
     if (!bad)
-        std::printf("[%s/%s] OK: raw span of %ld plain values + one %s value, compressed, read back\n", variant_name(),
-                    case_name(c), S, c == Case::second ? "second" : "first");
+        std::println("[{}/{}] OK: raw span of {} plain values + one {} value, compressed, read back", variant_name(),
+                     case_name(c), S, c == Case::second ? "second" : "first");
     return bad ? 1 : 0;
 }
 
@@ -195,8 +196,8 @@ int main()
     __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
 
-    std::printf("=== range_counters_validation [variant = %s]  counters=%s ===\n", variant_name(),
-                chunk_config::use_compression_with_counter ? "on" : "off (nothing to check)");
+    std::println("=== range_counters_validation [variant = {}]  counters={} ===", variant_name(),
+                 chunk_config::use_compression_with_counter ? "on" : "off (nothing to check)");
 
     int fails = 0;
     fails += run_case(Case::first);
@@ -206,6 +207,6 @@ int main()
     release_chunk_pools();
     destroy_block_chunk();
 
-    std::printf("\n[%s] %s\n", variant_name(), fails ? "=== RANGE COUNTERS FAILED ===" : "=== RANGE COUNTERS OK ===");
+    std::println("\n[{}] {}", variant_name(), fails ? "=== RANGE COUNTERS FAILED ===" : "=== RANGE COUNTERS OK ===");
     return fails ? 1 : 0;
 }

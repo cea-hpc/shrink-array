@@ -57,6 +57,7 @@
 #include <cstdint> // std::uint8_t (the Kind enum's base)
 #include <cstdio>
 #include <cstdlib>
+#include <print>
 #include <type_traits>
 #include <utility> // std::as_const
 #include <unistd.h>
@@ -193,11 +194,11 @@ static int check(const char* scenario, const char* step, const Array<double>& ar
     const int exp = expect_after(k);
     if (got != exp)
     {
-        printf("[%s/%s] FAIL after '%s': %d chunk(s) materialised, expected %d\n", variant_name(), scenario, step, got,
-               exp);
+        std::println("[{}/{}] FAIL after '{}': {} chunk(s) materialised, expected {}", variant_name(), scenario, step,
+                     got, exp);
         return 1;
     }
-    printf("[%s/%s] ok    after '%-10s': %3d materialised\n", variant_name(), scenario, step, got);
+    std::println("[{}/{}] ok    after '{:<10}': {:3} materialised", variant_name(), scenario, step, got);
     return 0;
 }
 
@@ -210,8 +211,8 @@ int main()
     const int S = static_cast<int>(Array<double>(1).chunk_size());
     const int N = kChunks * S;
 
-    printf("=== mark_path_validation [variant = %s]  chunk_size=%d  chunks=%d  threads=%d ===\n", variant_name(), S,
-           kChunks, CHUNK_PMP_MAX_THREADS);
+    std::println("=== mark_path_validation [variant = {}]  chunk_size={}  chunks={}  threads={} ===", variant_name(), S,
+                 kChunks, CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 
@@ -260,7 +261,7 @@ int main()
             bad += (std::as_const(c)[i] != 0.0);
         if (bad)
         {
-            printf("[%s/C] FAIL: %ld element(s) do not read back 0\n", variant_name(), bad);
+            std::println("[{}/C] FAIL: {} element(s) do not read back 0", variant_name(), bad);
             ++fails;
         }
         c.clear();
@@ -271,7 +272,7 @@ int main()
     release_chunk_pools();
     destroy_block_chunk();
 
-    printf("\n[%s] %s\n", variant_name(),
-           fails == 0 ? "=== MARK PATH OK, TEARDOWN OK ===" : "=== MARK PATH FAILURES ===");
+    std::println("\n[{}] {}", variant_name(),
+                 fails == 0 ? "=== MARK PATH OK, TEARDOWN OK ===" : "=== MARK PATH FAILURES ===");
     return fails ? 1 : 0;
 }

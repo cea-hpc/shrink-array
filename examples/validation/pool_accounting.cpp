@@ -34,6 +34,7 @@
 
 #include <cstdlib>
 #include <cstdio>
+#include <print>
 #include <type_traits>
 #include <unistd.h>
 
@@ -104,10 +105,10 @@ static int  g_fails = 0;
 static void expect(bool ok, const char* what, long got, long want)
 {
     if (ok)
-        printf("[%s] OK   %-58s %ld\n", variant_name(), what, got);
+        std::println("[{}] OK   {:<58} {}", variant_name(), what, got);
     else
     {
-        printf("[%s] FAIL %-58s got=%ld expected=%ld\n", variant_name(), what, got, want);
+        std::println("[{}] FAIL {:<58} got={} expected={}", variant_name(), what, got, want);
         ++g_fails;
     }
 }
@@ -133,7 +134,7 @@ int main(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    printf("=== pool_accounting [variant = %s]  N=%ld  threads=%d ===\n", variant_name(), N, CHUNK_PMP_MAX_THREADS);
+    std::println("=== pool_accounting [variant = {}]  N={}  threads={} ===", variant_name(), N, CHUNK_PMP_MAX_THREADS);
 
     const long base = Manager::get_somme_chunk_create();
     expect(Manager::reuse_pool_blocks() == 0, "pools empty at start", (long)Manager::reuse_pool_blocks(), 0);
@@ -227,7 +228,7 @@ int main(int argc, char** argv)
     release_chunk_pools();
     destroy_block_chunk();
 
-    printf("\n[%s] %s\n", variant_name(),
-           g_fails == 0 ? "=== POOL ACCOUNTING OK, TEARDOWN OK ===" : "=== POOL ACCOUNTING FAILURES ===");
+    std::println("\n[{}] {}", variant_name(),
+                 g_fails == 0 ? "=== POOL ACCOUNTING OK, TEARDOWN OK ===" : "=== POOL ACCOUNTING FAILURES ===");
     return g_fails;
 }

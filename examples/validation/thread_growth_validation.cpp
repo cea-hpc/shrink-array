@@ -29,6 +29,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <print>
 #include <string>
 #include <vector>
 #include <unistd.h>
@@ -155,7 +156,7 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
         if (ai != ra[i] || di != rd[i])
         {
             if (fails < 5)
-                std::printf("  MISMATCH i=%ld  int %d (ref %d)  double %g (ref %g)\n", i, ai, ra[i], di, rd[i]);
+                std::println("  MISMATCH i={}  int {} (ref {})  double {:g} (ref {:g})", i, ai, ra[i], di, rd[i]);
             ++fails;
         }
     }
@@ -181,11 +182,11 @@ static int check_beyond(const char* self)
 
     const bool stopped = status != -1 && !(WIFEXITED(status) && WEXITSTATUS(status) == 0);
     const bool message = out.contains("thread capacity");
-    std::printf("[beyond] team past the capacity: %s, %s\n", stopped ? "stopped" : "RAN ON",
-                message ? "capacity message printed" : "NO capacity message");
+    std::println("[beyond] team past the capacity: {}, {}", stopped ? "stopped" : "RAN ON",
+                 message ? "capacity message printed" : "NO capacity message");
     if (!stopped || !message)
     {
-        std::printf("---- child output ----\n%s----------------------\n", out.c_str());
+        std::println("---- child output ----\n{}----------------------", out.c_str());
         return 1;
     }
     return 0;
@@ -212,15 +213,15 @@ int main(int argc, char** argv)
     const int capacity = CHUNK_PMP_THREAD_CAPACITY;
     const int grown    = beyond ? capacity + 4 : capacity;
     set_team(grown);
-    std::printf("=== thread_growth_validation [variant = %s]  created at 2 threads, now %d (capacity %d)%s ===\n",
-                variant_name(), grown, capacity, beyond ? "  --beyond" : "");
+    std::println("=== thread_growth_validation [variant = {}]  created at 2 threads, now {} (capacity {}){} ===",
+                 variant_name(), grown, capacity, beyond ? "  --beyond" : "");
     std::fflush(stdout);
 
     fails += run_regions(a, ra, d, rd, 4);
 
     if (beyond)
     {
-        std::printf("[beyond] the team ran past the capacity without an invariant failure\n");
+        std::println("[beyond] the team ran past the capacity without an invariant failure");
         return 1;
     }
 
@@ -230,9 +231,9 @@ int main(int argc, char** argv)
 
     if (fails)
     {
-        std::printf("=== THREAD GROWTH FAILED (%ld) ===\n", fails);
+        std::println("=== THREAD GROWTH FAILED ({}) ===", fails);
         return 1;
     }
-    std::printf("=== THREAD GROWTH OK ===\n");
+    std::println("=== THREAD GROWTH OK ===");
     return 0;
 }

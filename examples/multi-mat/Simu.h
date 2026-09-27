@@ -22,6 +22,8 @@
  *        runs in order.
  */
 
+#include <cstddef>
+#include <mdspan>
 #include <vector>
 #include <array>
 #include <functional>
@@ -92,8 +94,31 @@ class Simu
 
     using VecInt2D = std::vector<std::vector<int>>;
 
-    VecInt2D tab_size;  ///< [iteration][material] size of the interval
-    VecInt2D tab_start; ///< [iteration][material] first cell of the interval
+    /// @brief An [iteration][material] table: one contiguous buffer, read and
+    ///        written as t[it, mat] through a 2D mdspan over it.
+    class IterMatTable
+    {
+      public:
+        void resize(int n_iter, int n_mat)
+        {
+            extents_ = Extents(static_cast<std::size_t>(n_iter), static_cast<std::size_t>(n_mat));
+            data_.assign(extents_.extent(0) * extents_.extent(1), 0);
+        }
+
+        /// int& on a mutable table, const int& on a const one.
+        auto& operator[](this auto& self, int it, int mat)
+        {
+            return std::mdspan(self.data_.data(), self.extents_)[it, mat];
+        }
+
+      private:
+        using Extents = std::dextents<std::size_t, 2>;
+        std::vector<int> data_;
+        Extents          extents_{0, 0};
+    };
+
+    IterMatTable tab_size;  ///< [iteration, material] size of the interval
+    IterMatTable tab_start; ///< [iteration, material] first cell of the interval
 
     VecInt2D ll; ///< [material] the cells of its current interval (indirection)
 

@@ -39,6 +39,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <print>
 #include <type_traits>
 #include <unistd.h>
 
@@ -116,10 +117,10 @@ int one_case(std::size_t n, bool in_region)
 
     auto*     v   = static_cast<Ch*>(p);
     const int bad = materialised(v, n);
-    printf("[%s/array-new] %-6s n=%5zu : %s\n", variant_name(), in_region ? "region" : "serial", n,
-           bad ? "FAIL" : "ok, every chunk at the first constant");
+    std::println("[{}/array-new] {:<6} n={:5} : {}", variant_name(), in_region ? "region" : "serial", n,
+                 bad ? "FAIL" : "ok, every chunk at the first constant");
     if (bad)
-        printf("  %d of %zu chunk(s) not initialised\n", bad, n);
+        std::println("  {} of {} chunk(s) not initialised", bad, n);
     Ch::operator delete[](p);
     return bad ? 1 : 0;
 }
@@ -132,8 +133,8 @@ int placement_case(std::size_t n)
     auto* v = static_cast<Ch*>(p);
 
     const int bad = materialised(v, n);
-    printf("[%s/array-new] placement n=%5zu : %s\n", variant_name(), n,
-           bad ? "FAIL" : "ok, every chunk at the first constant");
+    std::println("[{}/array-new] placement n={:5} : {}", variant_name(), n,
+                 bad ? "FAIL" : "ok, every chunk at the first constant");
     Ch::operator delete[](p);
     return bad ? 1 : 0;
 }
@@ -145,7 +146,8 @@ int main()
     __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
 
-    printf("=== chunk_array_new_validation [variant = %s]  threads=%d ===\n", variant_name(), CHUNK_PMP_MAX_THREADS);
+    std::println("=== chunk_array_new_validation [variant = {}]  threads={} ===", variant_name(),
+                 CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
     // 1 and 5000 are the plain cases; 499 / 500 / 501 bracket the threshold.
@@ -157,6 +159,6 @@ int main()
     }
     fails += placement_case(1000);
 
-    printf("\n[%s] %s\n", variant_name(), fails == 0 ? "=== ARRAY-NEW OK ===" : "=== ARRAY-NEW FAILURES ===");
+    std::println("\n[{}] {}", variant_name(), fails == 0 ? "=== ARRAY-NEW OK ===" : "=== ARRAY-NEW FAILURES ===");
     return fails ? 1 : 0;
 }

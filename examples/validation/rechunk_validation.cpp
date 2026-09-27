@@ -40,6 +40,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <print>
 #include <functional>
 #include <string>
 #include <vector>
@@ -217,10 +218,10 @@ int check_invariance(const char* label,
             pre_first = i;
     if (pre_bad)
     {
-        printf("[%s/%s] PRE-FAIL: %ld mismatches BEFORE rechunk (setup/read bug, not rechunk); "
-               "first at i=%ld (chunk #%ld, offset %ld) got=%g expected=%g\n",
-               variant_name(), label, pre_bad, pre_first, pre_first / (long)old_size, pre_first % (long)old_size,
-               (double)arr[pre_first], (double)ref[pre_first]);
+        std::println("[{}/{}] PRE-FAIL: {} mismatches BEFORE rechunk (setup/read bug, not rechunk); "
+                     "first at i={} (chunk #{}, offset {}) got={:g} expected={:g}",
+                     variant_name(), label, pre_bad, pre_first, pre_first / (long)old_size, pre_first % (long)old_size,
+                     (double)arr[pre_first], (double)ref[pre_first]);
         return 1;
     }
 
@@ -229,12 +230,13 @@ int check_invariance(const char* label,
 
     if (got_size != new_size)
     {
-        printf("[%s/%s] FAIL: geometry %u -> %u (expected %u)\n", variant_name(), label, old_size, got_size, new_size);
+        std::println("[{}/{}] FAIL: geometry {} -> {} (expected {})", variant_name(), label, old_size, got_size,
+                     new_size);
         return 1;
     }
     if ((long)arr.size() != N)
     {
-        printf("[%s/%s] FAIL: size %ld -> %ld\n", variant_name(), label, N, (long)arr.size());
+        std::println("[{}/{}] FAIL: size {} -> {}", variant_name(), label, N, (long)arr.size());
         return 1;
     }
     const long mismatches = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
@@ -245,15 +247,15 @@ int check_invariance(const char* label,
         {
             if (first < 0)
                 first = i;
-            printf("[%s/%s] MISMATCH i=%ld got=%.17g exp=%.17g (new-chunk #%ld, offset %ld)\n", variant_name(), label,
-                   i, (double)arr[i], (double)ref[i], i / (long)new_size, i % (long)new_size);
+            std::println("[{}/{}] MISMATCH i={} got={:.17g} exp={:.17g} (new-chunk #{}, offset {})", variant_name(),
+                         label, i, (double)arr[i], (double)ref[i], i / (long)new_size, i % (long)new_size);
             ++shown;
         }
     }
     if (mismatches)
     {
-        printf("[%s/%s] FAIL: %ld/%ld mismatches after rechunk %u->%u (first at i=%ld)\n", variant_name(), label,
-               mismatches, N, old_size, new_size, first);
+        std::println("[{}/{}] FAIL: {}/{} mismatches after rechunk {}->{} (first at i={})", variant_name(), label,
+                     mismatches, N, old_size, new_size, first);
         return 1;
     }
     // ── POST-RECHUNK PHASE: rewrite + compress in rounds, mimicking the bench.
@@ -286,14 +288,14 @@ int check_invariance(const char* label,
                 firstb = i;
         if (bad)
         {
-            printf(
-                "[%s/%s] POST-FAIL round %d: %ld/%ld mismatches after compress (first i=%ld, new-chunk #%ld off %ld)\n",
+            std::println(
+                "[{}/{}] POST-FAIL round {}: {}/{} mismatches after compress (first i={}, new-chunk #{} off {})",
                 variant_name(), label, round, bad, N, firstb, firstb / (long)new_size, firstb % (long)new_size);
             return 1;
         }
     }
-    printf("[%s/%s] OK: %ld elements invariant, geometry %u->%u (second_value=%.17g)%s\n", variant_name(), label, N,
-           old_size, new_size, (double)sv_value, post_rounds ? " [+post-rechunk compress rounds]" : "");
+    std::println("[{}/{}] OK: {} elements invariant, geometry {}->{} (second_value={:.17g}){}", variant_name(), label,
+                 N, old_size, new_size, (double)sv_value, post_rounds ? " [+post-rechunk compress rounds]" : "");
     return 0;
 }
 
@@ -353,14 +355,14 @@ int check_coexistence(const char* label, long N, unsigned moved_size, int rounds
         const T ef = static_cast<T>((i + r) % 13 ? 0 : (i + r));
         if (!(static_cast<T>(moved[i]) == em) || !(static_cast<T>(fixed[i]) == ef))
         {
-            printf("[%s/%s] MISMATCH at %ld: moved=%g exp %g | fixed=%g exp %g\n", variant_name(), label, i,
-                   (double)static_cast<T>(moved[i]), (double)em, (double)static_cast<T>(fixed[i]), (double)ef);
+            std::println("[{}/{}] MISMATCH at {}: moved={:g} exp {:g} | fixed={:g} exp {:g}", variant_name(), label, i,
+                         (double)static_cast<T>(moved[i]), (double)em, (double)static_cast<T>(fixed[i]), (double)ef);
             ++bad;
         }
     }
     if (!bad)
-        printf("[%s/%s] OK: %ld elements, geometries %u and ambient coexisting\n", variant_name(), label, N,
-               moved_size);
+        std::println("[{}/{}] OK: {} elements, geometries {} and ambient coexisting", variant_name(), label, N,
+                     moved_size);
     return bad ? 1 : 0;
 }
 
@@ -442,12 +444,13 @@ int check_range_ops(const char* label, long N)
         const T e = static_cast<T>(viaElem[i]);
         if (!(r == e))
         {
-            printf("[%s/%s] MISMATCH at %ld: range=%g element=%g\n", variant_name(), label, i, (double)r, (double)e);
+            std::println("[{}/{}] MISMATCH at {}: range={:g} element={:g}", variant_name(), label, i, (double)r,
+                         (double)e);
             ++bad;
         }
     }
     if (!bad)
-        printf("[%s/%s] OK: %ld elements, range ops match the element path\n", variant_name(), label, N);
+        std::println("[{}/{}] OK: {} elements, range ops match the element path", variant_name(), label, N);
     return bad ? 1 : 0;
 }
 
@@ -504,7 +507,7 @@ int main(int argc, char** argv)
     const bool     run_par = std::strcmp(mode, "serial") != 0;
     if (!run_ser && !run_par)
     {
-        printf("unknown --mode '%s' (serial, parallel or both)\n", mode);
+        std::println("unknown --mode '{}' (serial, parallel or both)", mode);
         return 2;
     }
 
@@ -587,7 +590,7 @@ int main(int argc, char** argv)
     if (list)
     {
         for (const Case& c : cases)
-            printf("%s\n", c.name);
+            std::println("{}", c.name);
         return 0;
     }
     if (only)
@@ -597,15 +600,15 @@ int main(int argc, char** argv)
             known = known || !std::strcmp(c.name, only);
         if (!known)
         {
-            printf("unknown --case '%s' (--list gives the names)\n", only);
+            std::println("unknown --case '{}' (--list gives the names)", only);
             return 2;
         }
     }
 
     ParamChunk::init_indexes(true);
 
-    printf("=== rechunk_validation [variant = %s]  N_scale=%ld  64->%u  case=%s  mode=%s ===\n", variant_name(),
-           N_scale, tgt, only ? only : "all", mode);
+    std::println("=== rechunk_validation [variant = {}]  N_scale={}  64->{}  case={}  mode={} ===", variant_name(),
+                 N_scale, tgt, only ? only : "all", mode);
 
     int      fails    = 0;
     unsigned geometry = 0;
@@ -630,7 +633,7 @@ int main(int argc, char** argv)
         }
     }
 
-    printf("\n[%s] %s\n", variant_name(),
-           fails == 0 ? "=== ALL INVARIANCE CHECKS PASSED ===" : "=== INVARIANCE FAILURES ===");
+    std::println("\n[{}] {}", variant_name(),
+                 fails == 0 ? "=== ALL INVARIANCE CHECKS PASSED ===" : "=== INVARIANCE FAILURES ===");
     return fails;
 }

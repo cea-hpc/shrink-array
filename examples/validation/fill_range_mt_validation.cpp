@@ -40,6 +40,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <print>
 #include <type_traits>
 #include <unistd.h>
 #include <vector>
@@ -160,18 +161,18 @@ static int run_validation(long N, int rounds)
             if (got != ref[static_cast<std::size_t>(i)])
             {
                 if (bad < 5)
-                    std::printf("[%s] FAIL round %d: arr[%ld] = %g, expected %g\n", variant_name(), r, i, got,
-                                ref[static_cast<std::size_t>(i)]);
+                    std::println("[{}] FAIL round {}: arr[{}] = {:g}, expected {:g}", variant_name(), r, i, got,
+                                 ref[static_cast<std::size_t>(i)]);
                 ++bad;
             }
         }
     }
     arr.clear();
     if (bad)
-        std::printf("[%s] %ld mismatch(es)\n", variant_name(), bad);
+        std::println("[{}] {} mismatch(es)", variant_name(), bad);
     else
-        std::printf("[%s] OK: %d rounds, N=%ld, fills and element writes interleaved on shared chunks\n",
-                    variant_name(), rounds, N);
+        std::println("[{}] OK: {} rounds, N={}, fills and element writes interleaved on shared chunks", variant_name(),
+                     rounds, N);
     return bad ? 1 : 0;
 }
 
@@ -226,8 +227,8 @@ static void run_perf(long N)
             t_mt += std::chrono::duration<double>(t2 - t1).count();
         }
     }
-    std::printf("[%s] perf N=%ld threads=%d: element loop %.3f s, fill_range_mt %.3f s (x%.2f)\n", variant_name(), N,
-                CHUNK_PMP_MAX_THREADS, t_el, t_mt, t_mt > 0 ? t_el / t_mt : 0.);
+    std::println("[{}] perf N={} threads={}: element loop {:.3f} s, fill_range_mt {:.3f} s (x{:.2f})", variant_name(),
+                 N, CHUNK_PMP_MAX_THREADS, t_el, t_mt, t_mt > 0 ? t_el / t_mt : 0.);
     arr.clear();
 }
 
@@ -243,9 +244,9 @@ int main(int argc, char** argv)
         return 0;
     }
     const int rounds = argc > 2 ? shrink_array::arg_number<int>(argv[2], 30, "rounds") : 30;
-    std::printf("=== fill_range_mt_validation [variant = %s]  N=%ld  threads=%d ===\n", variant_name(), N,
-                CHUNK_PMP_MAX_THREADS);
+    std::println("=== fill_range_mt_validation [variant = {}]  N={}  threads={} ===", variant_name(), N,
+                 CHUNK_PMP_MAX_THREADS);
     const int fails = run_validation(N, rounds);
-    std::printf("[%s] === %s ===\n", variant_name(), fails ? "FILL_RANGE_MT FAILED" : "FILL_RANGE_MT OK");
+    std::println("[{}] === {} ===", variant_name(), fails ? "FILL_RANGE_MT FAILED" : "FILL_RANGE_MT OK");
     return fails;
 }

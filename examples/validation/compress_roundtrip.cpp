@@ -54,6 +54,7 @@
 
 #include <cstdlib>
 #include <cstdio>
+#include <print>
 #include <type_traits>
 #include <unistd.h>
 
@@ -206,15 +207,15 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
     const long csz = static_cast<long>(arr.chunk_size());
     if (bad)
     {
-        printf("[%s/%s] FAIL: %ld/%ld mismatches, first at i=%ld (chunk #%ld, offset %ld, run %ld) "
-               "got=%g expected=%g\n",
-               variant_name(), label, bad, N, first, first / csz, first % csz, (first / kRun) % 3, (double)got_first,
-               (double)exp_first);
+        std::println("[{}/{}] FAIL: {}/{} mismatches, first at i={} (chunk #{}, offset {}, run {}) "
+                     "got={:g} expected={:g}",
+                     variant_name(), label, bad, N, first, first / csz, first % csz, (first / kRun) % 3,
+                     (double)got_first, (double)exp_first);
     }
     else
     {
-        printf("[%s/%s] OK: %ld elements round-trip through compress() at chunk_size=%ld\n", variant_name(), label, N,
-               csz);
+        std::println("[{}/{}] OK: {} elements round-trip through compress() at chunk_size={}", variant_name(), label, N,
+                     csz);
     }
 
     arr.clear();
@@ -229,7 +230,8 @@ int main(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    printf("=== compress_roundtrip [variant = %s]  N=%ld  threads=%d ===\n", variant_name(), N, CHUNK_PMP_MAX_THREADS);
+    std::println("=== compress_roundtrip [variant = {}]  N={}  threads={} ===", variant_name(), N,
+                 CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
 
@@ -251,7 +253,7 @@ int main(int argc, char** argv)
     release_chunk_pools();
     destroy_block_chunk();
 
-    printf("\n[%s] %s\n", variant_name(),
-           fails == 0 ? "=== ROUND-TRIP OK, TEARDOWN OK ===" : "=== ROUND-TRIP FAILURES ===");
+    std::println("\n[{}] {}", variant_name(),
+                 fails == 0 ? "=== ROUND-TRIP OK, TEARDOWN OK ===" : "=== ROUND-TRIP FAILURES ===");
     return fails;
 }

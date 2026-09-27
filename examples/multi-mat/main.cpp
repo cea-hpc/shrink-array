@@ -33,7 +33,8 @@
  * manage_ompt.cpp drive the library.
  */
 
-#include <iomanip>
+#include <cstdio>
+#include <print>
 #include <array>
 #include <random>
 #include <vector>
@@ -77,7 +78,7 @@ double convert_memory(double memoryValue)
     }
     else
     {
-        std::cerr << "Error: unable to open the file.\n";
+        std::println(stderr, "Error: unable to open the file.");
     }
 
     return megabytes;
@@ -129,32 +130,30 @@ int main()
 {
     const int max_thr = multi_mat::max_threads();
 
-    std::cout << "Number of threads : " << max_thr << "\n";
-    std::cout << "Compression       : "
-              << (multi_mat::embedded_compression ? "embedded (OMPT tool of manage_ompt.cpp, no call from here)"
-                                                  : "manual (explicit compress() on the field arrays)")
-              << "\n";
-    std::cout << "Phases            : "
-              << (multi_mat::embedded_compression ? "OMPT callbacks (manage_ompt.cpp)" : "phase calls from the program")
-              << "\n\n";
+    std::println("Number of threads : {}", max_thr);
+    std::println("Compression       : {}", multi_mat::embedded_compression
+                                               ? "embedded (OMPT tool of manage_ompt.cpp, no call from here)"
+                                               : "manual (explicit compress() on the field arrays)");
+    std::println("Phases            : {}\n",
+                 multi_mat::embedded_compression ? "OMPT callbacks (manage_ompt.cpp)" : "phase calls from the program");
 
     __mem_page_size          = getpagesize();
     constexpr int chunk_size = static_cast<int>(shrink_array::__chunk_size);
 
     if constexpr (chunk_size == 0)
     {
-        std::cerr << "The chunk size can't be null\n";
+        std::println(stderr, "The chunk size can't be null");
     }
 
     if (const bool is_pow2 = ParamChunk::check_pow2(chunk_size); !is_pow2)
     {
-        std::cerr << "The chunk size must be power of two";
+        std::print(stderr, "The chunk size must be power of two");
     }
 
     if constexpr (chunk_size < ParamChunk::size_min || chunk_size > ParamChunk::size_max)
     {
-        std::cerr << "The chunk size must must be superior or equal to " << ParamChunk::size_min
-                  << " and inferior or equal to " << ParamChunk::size_max << "\n";
+        std::println(stderr, "The chunk size must must be superior or equal to {} and inferior or equal to {}",
+                     ParamChunk::size_min, ParamChunk::size_max);
         std::abort();
     }
 
@@ -175,7 +174,7 @@ int main()
 
     auto start = std::chrono::steady_clock::now();
 
-    std::cout << "\nCreate array :" << '\n';
+    std::println("\nCreate array :");
 
     dispatch.create(nbmat);
     dispatch.set(simu.getDis());
@@ -183,8 +182,8 @@ int main()
 
     auto                          end             = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;
-    std::cout << "\nElapsed time create array : " << elapsed_seconds.count() << "s\n\n";
-    std::cout << "Compute distribution for all cycles (sequential)\n\n";
+    std::println("\nElapsed time create array : {:g}s\n", elapsed_seconds.count());
+    std::println("Compute distribution for all cycles (sequential)\n");
 
     simu.computeDistribution();
 
@@ -206,7 +205,7 @@ int main()
                      {
                          const auto& tab0_ind = get_mat_vec(simu.getTabs(0));
 
-                         std::cout << "Material : " << mat << "\n";
+                         std::println("Material : {}", mat);
 
                          if (dispatch.isChunk(mat))
                          {
@@ -221,8 +220,7 @@ int main()
                              {
                                  const double sz0 = only_first_chunk ? tab0_ind.stats_seq() : tab0_ind.stats();
 
-                                 std::cout << "  Chunk filling rate : " << std::fixed << std::setprecision(2) << sz0
-                                           << "%" << '\n';
+                                 std::println("  Chunk filling rate : {:.2f}%", sz0);
 
                                  // The presence fraction, a Chunk2 array: only its
                                  // interface chunks should be materialised, the
@@ -231,8 +229,7 @@ int main()
                                  const auto&  frac_ind = get_mat_vec(simu.getFrac());
                                  const double szf      = only_first_chunk ? frac_ind.stats_seq() : frac_ind.stats();
 
-                                 std::cout << "  Fraction chunk filling rate (Chunk2) : " << std::fixed
-                                           << std::setprecision(2) << szf << "%" << '\n';
+                                 std::println("  Fraction chunk filling rate (Chunk2) : {:.2f}%", szf);
                              }
 
                              if (only_first_chunk)
@@ -250,13 +247,12 @@ int main()
                              }
                              const double sz = static_cast<double>(s) / static_cast<double>(mesh_size) * 100.;
 
-                             std::cout << "  Real filling rate : " << std::fixed << std::setprecision(2) << sz << "%"
-                                       << '\n';
+                             std::println("  Real filling rate : {:.2f}%", sz);
                          }
                      });
     };
 
-    std::cout << "\nCompute loops for all cycles (parallel)\n";
+    std::println("\nCompute loops for all cycles (parallel)");
 
 #pragma omp parallel reduction(+ : value_compute)
     {
@@ -265,26 +261,28 @@ int main()
     multi_mat::end_parallel_phase_after_region(); // manual executable only
 
     if (simu.isVerbose())
-        std::cout << "\nEnd iteration\n\n";
+        std::println("\nEnd iteration\n");
 
     lbd_stats_chunk(false);
 
     end             = std::chrono::steady_clock::now();
     elapsed_seconds = end - start;
 
-    std::cout << "\nResult = " << value_compute << '\n';
+    // {:.2f}: the format the filling-rate lines just above always left on
+    // std::cout for these three (the output is unchanged).
+    std::println("\nResult = {:.2f}", value_compute);
 
-    std::cout << "\n\nElapsed time  : " << elapsed_seconds.count() << "s\n\n";
+    std::println("\n\nElapsed time  : {:.2f}s\n", elapsed_seconds.count());
 
     rusage usage;
     if (getrusage(RUSAGE_SELF, &usage) == 0)
     {
         const long rss = usage.ru_maxrss; // Resident Set Size in kilobytes
-        std::cout << "Memory consumption : " << convert_memory(static_cast<double>(rss * 1024)) << " Mo\n\n";
+        std::println("Memory consumption : {:.2f} Mo\n", convert_memory(static_cast<double>(rss * 1024)));
     }
     else
     {
-        std::cerr << "Unable to retrieve information from memory." << '\n';
+        std::println(stderr, "Unable to retrieve information from memory.");
     }
 
     if constexpr (multi_mat::chunk_stats)

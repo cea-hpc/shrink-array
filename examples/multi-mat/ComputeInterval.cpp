@@ -22,6 +22,7 @@
  */
 
 #include <cmath>
+#include <print>
 
 #include "Simu.h"
 
@@ -31,13 +32,13 @@ void Simu::computeInterval()
     {
         interval_chunk = static_cast<int>(std::round(static_cast<double>(mesh_size) * pc_chunk / 100));
 
-        std::cout << "\nAverage interval chunk : " << interval_chunk << "\n";
+        std::println("\nAverage interval chunk : {}", interval_chunk);
     }
 
     if (!all_chunk)
     {
         interval_vector = static_cast<int>(std::round(static_cast<double>(mesh_size) * pc_vector / 100));
 
-        std::cout << "\nAverage interval vector : " << interval_vector << "\n";
+        std::println("\nAverage interval vector : {}", interval_vector);
     }
 }

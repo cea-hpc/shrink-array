@@ -21,6 +21,7 @@
  *        every iteration, drawn up front.
  */
 
+#include <print>
 #include <random>
 
 #include "Simu.h"
@@ -44,14 +45,11 @@ void Simu::computeDistribution()
 
     ll.resize(nbmat);
 
-    tab_size.resize(iter_max);
-    tab_start.resize(iter_max);
+    tab_size.resize(iter_max, nbmat);
+    tab_start.resize(iter_max, nbmat);
 
     for (int it = 0; it < iter_max; ++it)
     {
-        tab_size[it].resize(nbmat);
-        tab_start[it].resize(nbmat);
-
         //  we store the distribution in tables this allows the parallelization of the next loops
 
         for (int mat = 0; mat < nbmat; ++mat)
@@ -70,15 +68,15 @@ void Simu::computeDistribution()
                 assert(size <= interval_vector);
             }
 
-            tab_size[it][mat]  = size;
-            tab_start[it][mat] = begin;
+            tab_size[it, mat]  = size;
+            tab_start[it, mat] = begin;
 
             if (isVerbose())
             {
                 const int end = begin + size;
 
-                std::cout << "Iteration : " << it << " : distribution material #" << mat << " start : " << begin
-                          << " end : " << end << " size : " << size << "\n";
+                std::println("Iteration : {} : distribution material #{} start : {} end : {} size : {}", it, mat, begin,
+                             end, size);
             }
         }
     }

@@ -52,6 +52,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <print>
 #include <type_traits>
 #include <vector>
 #include <unistd.h>
@@ -216,10 +217,10 @@ static long compare(const char* label, const char* stage, const Array<T>& arr, c
     if (bad)
     {
         const long csz = static_cast<long>(arr.chunk_size());
-        printf("[%s/%s] FAIL after %s: %ld/%ld mismatches, first at i=%ld (chunk #%ld, offset %ld) "
-               "got=%g expected=%g\n",
-               variant_name(), label, stage, bad, N, first, first / csz, first % csz, (double)got_first,
-               (double)exp_first);
+        std::println("[{}/{}] FAIL after {}: {}/{} mismatches, first at i={} (chunk #{}, offset {}) "
+                     "got={:g} expected={:g}",
+                     variant_name(), label, stage, bad, N, first, first / csz, first % csz, (double)got_first,
+                     (double)exp_first);
     }
     return bad;
 }
@@ -361,8 +362,8 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     fails += compare(label, "copy(other)", other, ref_other);
 
     if (!fails)
-        printf("[%s/%s] OK: %ld elements, chunk_size=%ld\n", variant_name(), label, N,
-               static_cast<long>(arr.chunk_size()));
+        std::println("[{}/{}] OK: {} elements, chunk_size={}", variant_name(), label, N,
+                     static_cast<long>(arr.chunk_size()));
 
     arr.clear();
     other.clear();
@@ -381,8 +382,8 @@ int main(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    printf("=== deferred_path_validation [variant = %s]  N=%ld  threads=%d  force_defer_every=%u ===\n", variant_name(),
-           N, CHUNK_PMP_MAX_THREADS, build_config::force_defer_every);
+    std::println("=== deferred_path_validation [variant = {}]  N={}  threads={}  force_defer_every={} ===",
+                 variant_name(), N, CHUNK_PMP_MAX_THREADS, build_config::force_defer_every);
 
     int fails = 0;
 
@@ -400,11 +401,11 @@ int main(int argc, char** argv)
         long deferred = 0;
         for (int v = 0; v < CHUNK_STATS_N_VARIANT; ++v)
             deferred += reduce_chunk_stats(v).gate_deferred;
-        printf("[%s] writes deferred: %ld\n", variant_name(), deferred);
+        std::println("[{}] writes deferred: {}", variant_name(), deferred);
         if (deferred == 0)
         {
-            printf("[%s] FAIL: the knob is on and nothing was deferred -- the path was not exercised\n",
-                   variant_name());
+            std::println("[{}] FAIL: the knob is on and nothing was deferred -- the path was not exercised",
+                         variant_name());
             ++fails;
         }
     }
@@ -413,6 +414,7 @@ int main(int argc, char** argv)
     release_chunk_pools();
     destroy_block_chunk();
 
-    printf("\n[%s] %s\n", variant_name(), fails == 0 ? "=== DEFERRED PATH OK ===" : "=== DEFERRED PATH FAILURES ===");
+    std::println("\n[{}] {}", variant_name(),
+                 fails == 0 ? "=== DEFERRED PATH OK ===" : "=== DEFERRED PATH FAILURES ===");
     return fails;
 }
