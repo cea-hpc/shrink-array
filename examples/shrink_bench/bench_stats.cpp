@@ -19,8 +19,9 @@
 
 #include <algorithm> // std::max (name_padding)
 #include <complex>
-#include <iomanip>
-#include <iostream>
+#include <cstdio>
+#include <print>
+#include <sstream> // the label of the second value (its operator<<)
 #include <string>
 #include <type_traits>
 
@@ -114,15 +115,12 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         const double pcz = double(nbz) / double(sz);
         const double pcv = double(nbv) / double(sz);
 
-        std::cout << std::fixed << std::setprecision(2);
-
-        // int, not Int: a display width handed to std::setw(int), never an
-        // array index -- Int widens to 64 bits under BENCH_INT64 and would
-        // narrow back at setw().
+        // int, not Int: a display width handed to the format string, never an
+        // array index -- Int widens to 64 bits under BENCH_INT64.
         constexpr int name_width = 20;
         // Signed: a name longer than the width pads by 0, not by (size_t)-1 / 2.
         const int name_padding = std::max<int>(0, (name_width - static_cast<int>(name.length())) / 2);
-        std::cout << std::setw(name_padding) << "" << "\nstatistics " << name << "\n";
+        std::println("{:{}}\nstatistics {}", "", name_padding, name);
 
         constexpr Int label_width = 22;
         constexpr Int value_width = 10;
@@ -130,16 +128,14 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         // The colon is now output as a separate token to ensure alignment.
         if constexpr (is_not_bool)
         {
-            std::cout << std::setw(label_width) << std::left << "Numbers of values" << ":" << std::setw(value_width)
-                      << std::right << nb << std::setw(value_width) << std::right << (pc * 100) << " %" << "\n";
+            std::println("{:<{}}:{:>{}}{:>{}.2f} %", "Numbers of values", label_width, nb, value_width, pc * 100,
+                         value_width);
         }
 
         // First output line: label "Numbers of 0"
         const std::string label0 = "Numbers of 0";
-        std::cout << std::setw(label_width) << std::left << label0
-                  << ":" // Ensures the colon is always in the same position
-                  << std::setw(value_width) << std::right << nbz << std::setw(value_width) << std::right << (pcz * 100)
-                  << " %" << "\n";
+        // The colon right after the padded label: always in the same position.
+        std::println("{:<{}}:{:>{}}{:>{}.2f} %", label0, label_width, nbz, value_width, pcz * 100, value_width);
 
         // Second output line: build the label dynamically with a suffix.
         std::ostringstream oss;
@@ -151,13 +147,11 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
             oss << sec_val;
 
         const std::string label = oss.str();
-        std::cout << std::setw(label_width) << std::left << label << ":" // Ensures consistent colon alignment
-                  << std::setw(value_width) << std::right << nbv << std::setw(value_width) << std::right << (pcv * 100)
-                  << " %" << "\n";
+        std::println("{:<{}}:{:>{}}{:>{}.2f} %", label, label_width, nbv, value_width, pcv * 100, value_width);
     };
 
     if constexpr (chunk_config::is_shrink_enabled)
-        std::cout << "\n";
+        std::println("");
 
     // One lambda instead of two. The body of a generic lambda is a TEMPLATE, so
     // here `if constexpr` really discards: tab.stats(), which std::vector has
@@ -170,8 +164,8 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         if constexpr (chunk_config::is_shrink_enabled)
         {
             const double sz0 = tab.stats();
-            std::cout << name << " chunk filling rate : " << std::fixed << std::setprecision(3) << sz0 << "%"
-                      << std::endl;
+            std::println("{} chunk filling rate : {:.3f}%", name, sz0);
+            std::fflush(stdout);
         }
     };
 
@@ -200,7 +194,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
 
             if (chunk_config::is_shrink_enabled)
             {
-                std::cout << "\n";
+                std::println("");
 
                 lbd_fill_chunk("tab1", tab1);
                 lbd_fill_chunk("tab2", tab2);
@@ -234,10 +228,9 @@ namespace
 template <typename... Tabs>
 void print_checksums(const char* const* names, const Tabs&... tabs)
 {
-    std::cout << std::hex;
     std::size_t i = 0;
-    ((std::cout << "\n" << names[i++] << " check_sum = " << calculate_checksum(tabs)), ...);
-    std::cout << std::dec << "\n";
+    (std::print("\n{} check_sum = {:x}", names[i++], calculate_checksum(tabs)), ...);
+    std::println("");
 }
 
 } // namespace

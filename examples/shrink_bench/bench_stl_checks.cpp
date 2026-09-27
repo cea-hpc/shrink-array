@@ -19,7 +19,7 @@
 ///        they live here rather than in main().
 
 #include <algorithm>
-#include <iostream>
+#include <print>
 #include <numeric>   // std::accumulate -- STL self-checks
 #include <stdexcept> // std::out_of_range -- STL self-checks
 #include <utility>   // std::as_const -- STL self-checks
@@ -45,17 +45,17 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
     // interaction; assign/swap are serial and localised to this section.
     if (test_stl)
     {
-        std::cout << tc.BOLD << tc.CYAN << "\n=== STL interface self-checks ===\n" << tc.RESET;
+        std::print("{}{}\n=== STL interface self-checks ===\n{}", tc.BOLD, tc.CYAN, tc.RESET);
         Int  failures = 0;
         auto expect   = [&](bool ok, const char* what)
         {
             if (!ok)
             {
                 ++failures;
-                std::cout << "  [FAIL] " << what << "\n";
+                std::println("  [FAIL] {}", what);
             }
             else
-                std::cout << "  [ ok ] " << what << "\n";
+                std::println("  [ ok ] {}", what);
         };
 
         // Fresh, deterministic array so the checks don't depend on the compute
@@ -302,9 +302,9 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         }
 
         if (failures == 0)
-            std::cout << tc.BOLD << tc.GREEN << "STL self-checks: ALL PASSED\n" << tc.RESET;
+            std::print("{}{}STL self-checks: ALL PASSED\n{}", tc.BOLD, tc.GREEN, tc.RESET);
         else
-            std::cout << tc.BOLD << "STL self-checks: " << failures << " FAILURE(S)\n" << tc.RESET;
+            std::print("{}STL self-checks: {} FAILURE(S)\n{}", tc.BOLD, failures, tc.RESET);
     }
 
     // === read-idempotence self-checks (--test_stl) ==========================
@@ -322,7 +322,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
     // OpenMP the reads are already pure, so it trivially holds.
     if (test_stl)
     {
-        std::cout << tc.BOLD << tc.CYAN << "\n=== read-idempotence self-checks ===\n" << tc.RESET;
+        std::print("{}{}\n=== read-idempotence self-checks ===\n{}", tc.BOLD, tc.CYAN, tc.RESET);
 
         // Size spans many chunks (≈195 at chunk_size 512) so reads cross chunk
         // boundaries. Mixed data (mostly second_value, some distinct) exercises
@@ -365,12 +365,11 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         }
 
         if (idem_bad == 0 && ne_bad == 0)
-            std::cout << tc.BOLD << tc.GREEN << "read-idempotence: ALL PASSED\n" << tc.RESET;
+            std::print("{}{}read-idempotence: ALL PASSED\n{}", tc.BOLD, tc.GREEN, tc.RESET);
         else
-            std::cout << tc.BOLD << "read-idempotence: FAILURE(S) — " << idem_bad << " non-idempotent reads, " << ne_bad
-                      << " operator!=/operatorT disagreements"
-                      << " (first at i=" << first_i << ")\n"
-                      << tc.RESET;
+            std::print("{}read-idempotence: FAILURE(S) — {} non-idempotent reads, {} operator!=/operatorT "
+                       "disagreements (first at i={})\n{}",
+                       tc.BOLD, idem_bad, ne_bad, first_i, tc.RESET);
 
         r.clear();
     }

@@ -17,7 +17,8 @@
 /// @file bench_phase_compress.cpp
 /// @brief The compression dispatch. See bench_phases.h.
 
-#include <iostream>
+#include <cstdio>
+#include <print>
 
 #include "bench_phases.h"
 
@@ -34,6 +35,14 @@ void compress_one(auto& tab)
 {
     if constexpr (chunk_config::is_shrink_enabled)
         tab.compress();
+}
+
+/// @brief One line naming the array about to be compressed, flushed (it was
+///        std::endl): one statement, so it still fits under `omp single`.
+static void announce(const char* name)
+{
+    std::println("{}", name);
+    std::fflush(stdout);
 }
 } // namespace
 
@@ -85,54 +94,54 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
 #pragma omp parallel
         {
 #pragma omp single nowait
-            std::cout << "  tab1" << std::endl;
+            announce("  tab1");
             compress_one(tab1);
 #pragma omp single nowait
-            std::cout << "  tab2" << std::endl;
+            announce("  tab2");
             compress_one(tab2);
 #pragma omp single nowait
-            std::cout << "  tab3" << std::endl;
+            announce("  tab3");
             compress_one(tab3);
 #pragma omp single nowait
-            std::cout << "  tab4" << std::endl;
+            announce("  tab4");
             compress_one(tab4);
 #pragma omp single nowait
-            std::cout << "  tab5" << std::endl;
+            announce("  tab5");
             compress_one(tab5);
 #pragma omp single nowait
-            std::cout << "  tab_int" << std::endl;
+            announce("  tab_int");
             compress_one(tab_int);
 #pragma omp single nowait
-            std::cout << "  tab_bool" << std::endl;
+            announce("  tab_bool");
             compress_one(tab_bool);
 #pragma omp single nowait
-            std::cout << " tab_complex" << std::endl;
+            announce(" tab_complex");
             compress_one(tab_complex);
 #pragma omp single nowait
-            std::cout << " tab_float" << std::endl;
+            announce(" tab_float");
             compress_one(tab_float);
 #pragma omp single nowait
-            std::cout << " tab_char" << std::endl;
+            announce(" tab_char");
             compress_one(tab_char);
 #pragma omp single nowait
-            std::cout << " tab_short" << std::endl;
+            announce(" tab_short");
             compress_one(tab_short);
 #pragma omp single nowait
-            std::cout << " tab_long" << std::endl;
+            announce(" tab_long");
             compress_one(tab_long);
 #pragma omp single nowait
-            std::cout << " tab_ulong" << std::endl;
+            announce(" tab_ulong");
             compress_one(tab_ulong);
 #pragma omp single nowait
-            std::cout << " tab_quant" << std::endl;
+            announce(" tab_quant");
             compress_one(tab_quant);
             if (bench_arr.with_struct) // --no_struct
             {
 #pragma omp single nowait
-                std::cout << " tab_point" << std::endl;
+                announce(" tab_point");
                 compress_one(tab_point);
 #pragma omp single nowait
-                std::cout << " tab_cell" << std::endl;
+                announce(" tab_cell");
                 compress_one(tab_cell);
             }
         }

@@ -18,7 +18,7 @@
 /// @brief Array release, final report and library shutdown. See bench_phases.h.
 
 #include <cstdlib>
-#include <iostream>
+#include <print>
 
 #include "bench_config.h" // check_compression, and chunk_config:: through bench_prelude.h
 #include "bench_phases.h"
@@ -106,11 +106,11 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     // such map.
     if constexpr (chunk_config::use_chunk2)
     {
-        std::cout << "\n[share_info] entries still mapped after clear():"
-                  << "  double " << shrink_array::Proxy2<double>::share_info_array.share_info_entries() << "  Int "
-                  << shrink_array::Proxy2<int>::share_info_array.share_info_entries() << "  float "
-                  << shrink_array::Proxy2<float>::share_info_array.share_info_entries() << "  short "
-                  << shrink_array::Proxy2<short>::share_info_array.share_info_entries() << "\n";
+        std::println("\n[share_info] entries still mapped after clear():  double {}  Int {}  float {}  short {}",
+                     shrink_array::Proxy2<double>::share_info_array.share_info_entries(),
+                     shrink_array::Proxy2<int>::share_info_array.share_info_entries(),
+                     shrink_array::Proxy2<float>::share_info_array.share_info_entries(),
+                     shrink_array::Proxy2<short>::share_info_array.share_info_entries());
     }
 
     // bench_phase_compress_all() is declared in bench_phases.h and defined in
@@ -118,7 +118,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     // directive -- unlike the block just below.
     if constexpr (chunk_config::is_shrink_enabled && check_compression)
     {
-        std::cout << "\nCheck compression  : " << "\n";
+        std::println("\nCheck compression  : ");
         bench_phase_compress_all(bench_arrays);
     }
 

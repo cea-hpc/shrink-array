@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
-#include <iostream>
+#include <print>
 #include <limits>
 #include <random> // std::mt19937 / std::random_device (initializeRNG)
 #include <string>
@@ -48,7 +48,7 @@ const std::vector<std::string> valid_args = {"--no_io",    "--compress",      "-
 // -----------------------------------------------------------------------------
 void save_seed_to_file(unsigned seed, const std::string& filename)
 {
-    std::cout << "\nSave seed in file\n";
+    std::println("\nSave seed in file");
 
     std::ofstream file(filename);
     if (file.is_open())
@@ -58,7 +58,7 @@ void save_seed_to_file(unsigned seed, const std::string& filename)
     }
     else
     {
-        std::cerr << "Unable to open file for saving seed." << '\n';
+        std::println(stderr, "Unable to open file for saving seed.");
     }
 }
 
@@ -72,9 +72,9 @@ unsigned load_seed_to_file(const std::string& filename)
     }
     else
     {
-        std::cerr << "Unable to open file for loading seed. --> create new one" << '\n';
+        std::println(stderr, "Unable to open file for loading seed. --> create new one");
     }
-    std::cout << "\nLoad seed in file\n";
+    std::println("\nLoad seed in file");
 
     return seed;
 }
@@ -110,7 +110,7 @@ double convert_memory(double memoryValue)
     }
     else
     {
-        std::cerr << "Error : can't open the file.\n";
+        std::println(stderr, "Error : can't open the file.");
     }
 
     return megabytes;
@@ -186,10 +186,9 @@ void memory_consumption(const std::string& msg)
         bench_rss_sampler().note(cur_kb);
         const long rss = std::max({rss_hwm, cur_kb, bench_rss_sampler().peak_kib()});
 
-        std::cout << "Memory consumption " << msg << " : " << convert_memory(static_cast<double>(rss) * 1024.0)
-                  << " Mo (peak)";
+        std::print("Memory consumption {} : {:.3f} Mo (peak)", msg, convert_memory(static_cast<double>(rss) * 1024.0));
         if (cur_kb > 0)
-            std::cout << ", " << convert_memory(static_cast<double>(cur_kb) * 1024.0) << " Mo (current)";
+            std::print(", {:.3f} Mo (current)", convert_memory(static_cast<double>(cur_kb) * 1024.0));
         // Where the resident memory is, at this moment, as far as the library
         // knows: the buffers parked in the per-rank reuse pools (blocks a
         // compression released and nothing took back yet), and the buffers
@@ -201,7 +200,7 @@ void memory_consumption(const std::string& msg)
         {
             const std::size_t parked =
                 shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef().reuse_pool_bytes();
-            std::cout << ", parked " << convert_memory(static_cast<double>(parked)) << " Mo";
+            std::print(", parked {:.3f} Mo", convert_memory(static_cast<double>(parked)));
             // Preprocessor guard, not `if constexpr`: ChunkStatsThr and
             // reduce_chunk_stats() only exist in a CHUNK_STATS build, and a
             // discarded branch of a non-template function still looks its
@@ -216,12 +215,12 @@ void memory_consumption(const std::string& msg)
                     live_bytes += t.bytes_alloc + t.bytes_reused - t.bytes_freed;
                     live_chunks += t.create - t.compress - t.released;
                 }
-                std::cout << ", materialised " << convert_memory(static_cast<double>(live_bytes)) << " Mo ("
-                          << live_chunks << " chunks)";
+                std::print(", materialised {:.3f} Mo ({} chunks)", convert_memory(static_cast<double>(live_bytes)),
+                           live_chunks);
             }
 #endif
         }
-        std::cout << " \n";
+        std::println(" ");
         // The slab arenas' own view (stderr): mapped / live / free-listed slab
         // bytes. Against "materialised + parked" above, `live` says how much of
         // the slabs handed out is neither: blocks freed back to their slab, and
@@ -236,7 +235,7 @@ void memory_consumption(const std::string& msg)
     }
     else
     {
-        std::cerr << "Unable to retrieve information from memory." << '\n';
+        std::println(stderr, "Unable to retrieve information from memory.");
     }
 }
 
@@ -285,10 +284,10 @@ Int levenshtein(const std::string& a, const std::string& b)
 
 void print_help()
 {
-    std::cout << "Available options:\n";
+    std::println("Available options:");
     for (const auto& arg : valid_args)
     {
-        std::cout << "  " << arg << "\n";
+        std::println("  {}", arg);
     }
 }
 

@@ -19,7 +19,7 @@
 
 #include <cmath> // std::round, std::sin (tab_quant)
 #include <chrono>
-#include <iostream>
+#include <print>
 
 #include "bench_phases.h"
 #include "chunk/term_color.h"
@@ -123,7 +123,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
             end             = std::chrono::steady_clock::now();
             elapsed_seconds = end - start;
             start           = end;
-            std::cout << "\nElapsed time init zero loops : " << elapsed_seconds.count() << "s\n";
+            std::println("\nElapsed time init zero loops : {:.6f}s", elapsed_seconds.count());
         }
 
         BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
@@ -176,7 +176,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
             end             = std::chrono::steady_clock::now();
             elapsed_seconds = end - start;
             start           = end;
-            std::cout << "\nElapsed time init 2nd values loops : " << elapsed_seconds.count() << "s\n";
+            std::println("\nElapsed time init 2nd values loops : {:.6f}s", elapsed_seconds.count());
         }
 
         begin_i = end_i;
@@ -253,7 +253,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
             end             = std::chrono::steady_clock::now();
             elapsed_seconds = end - start;
             start           = end;
-            std::cout << "\nElapsed time other loops : " << elapsed_seconds.count() << "s\n";
+            std::println("\nElapsed time other loops : {:.6f}s", elapsed_seconds.count());
         }
 
         finalize_parallel_phase_only_flush_g();

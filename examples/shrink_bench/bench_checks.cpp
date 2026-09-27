@@ -19,7 +19,7 @@
 
 #include <complex>
 #include <cstdint> // std::uint64_t
-#include <iostream>
+#include <print>
 #include <string>
 
 #include "bench_config.h" // the CONSTEXPR macro, empty since the check/perf merge
@@ -120,7 +120,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
             //                 vec_complex_ch);
             //             }
 
-            std::cout << "\n";
+            std::println("");
 
 #pragma omp parallel
             {
@@ -185,7 +185,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
             tab_point_ch = ~tab_point_ch;
             tab_cell_ch  = ~tab_cell_ch;
 
-            std::cout << "\n";
+            std::println("");
 
 #pragma omp parallel
             {

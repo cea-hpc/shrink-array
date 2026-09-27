@@ -18,7 +18,8 @@
 /// @brief Geometry validation and library start-up. See bench_phases.h.
 
 #include <cstdlib>
-#include <iostream>
+#include <cstdio>
+#include <print>
 #include <unistd.h> // getpagesize
 
 #include "bench_phases.h"
@@ -43,20 +44,20 @@ void bench_init_library()
 
         if constexpr (chunk_size == 0)
         {
-            std::cerr << "The chunk size can't be null\n";
+            std::println(stderr, "The chunk size can't be null");
             std::abort();
         }
 
         if (const bool is_pow2 = ParamChunk::check_pow2(chunk_size); !is_pow2)
         {
-            std::cerr << "The chunk size must be power of two";
+            std::print(stderr, "The chunk size must be power of two");
             std::abort();
         }
 
         if constexpr (chunk_size < ParamChunk::size_min || chunk_size > ParamChunk::size_max)
         {
-            std::cerr << "The chunk size must must be superior or equal to " << ParamChunk::size_min
-                      << " and inferior or equal to " << ParamChunk::size_max << "\n";
+            std::println(stderr, "The chunk size must must be superior or equal to {} and inferior or equal to {}",
+                         ParamChunk::size_min, ParamChunk::size_max);
             std::abort();
         }
 

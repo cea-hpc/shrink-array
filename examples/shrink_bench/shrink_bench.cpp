@@ -22,9 +22,9 @@
 #include <cstdio> // std::fprintf
 #include <cstdlib>
 #include <dlfcn.h>
-#include <iomanip>
-#include <iostream>
+#include <iostream> // std::cin, std::getline (INPUT_DATA)
 #include <numeric> // std::accumulate — STL self-checks
+#include <print>
 #include <random>
 #include <stdexcept> // std::out_of_range — STL self-checks
 #include <string>
@@ -138,11 +138,10 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
             in += in_window && written;
             out += !in_window && written;
             if (written != in_window && fails < 3)
-                std::cout << "[prealloc] " << name << ": chunk " << c << (in_window ? " not" : "") << " materialised\n";
+                std::println("[prealloc] {}: chunk {}{} materialised", name, c, in_window ? " not" : "");
             fails += written != in_window;
         }
-        std::cout << "[prealloc] " << name << ": " << in << " chunks preallocated in [" << beg << ", " << end << "), "
-                  << out << " outside\n";
+        std::println("[prealloc] {}: {} chunks preallocated in [{}, {}), {} outside", name, in, beg, end, out);
     }
 
     // The loop over the window: stores into chunks that already exist.
@@ -165,7 +164,7 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
         if (!(v == ref[static_cast<std::size_t>(i)]))
         {
             if (fails < 5)
-                std::cout << "[prealloc] " << name << ": MISMATCH at " << i << "\n";
+                std::println("[prealloc] {}: MISMATCH at {}", name, i);
             ++fails;
         }
     }
@@ -182,10 +181,10 @@ static void run_prealloc_checks(Int n)
     fails += prealloc_check<bool>("bool", n, [](Int i) { return i % 3 != 0; });
     if (fails)
     {
-        std::cout << "[prealloc] FAILED (" << fails << ")\n";
+        std::println("[prealloc] FAILED ({})", fails);
         std::exit(1);
     }
-    std::cout << "[prealloc] ALL PASSED\n";
+    std::println("[prealloc] ALL PASSED");
 }
 
 int main(int argc, char* argv[])
@@ -251,13 +250,13 @@ int main(int argc, char* argv[])
 
     // Example behavior based on flags
     if (no_io_v)
-        std::cout << "I/O operations will be skipped.\n";
+        std::println("I/O operations will be skipped.");
     if (compress_v)
-        std::cout << "Compression is enabled.\n";
+        std::println("Compression is enabled.");
     if (write_trace)
-        std::cout << "Trace information will be written.\n";
+        std::println("Trace information will be written.");
     if (read_trace)
-        std::cout << "Trace information will be read.\n";
+        std::println("Trace information will be read.");
 
     // The second_value_* constants and zero_complex live in bench_array.h: the
     // extracted phases need them as much as main() does.
@@ -281,27 +280,27 @@ int main(int argc, char* argv[])
         std::string data;
 
         if constexpr (chunk_config::is_shrink_enabled)
-            std::cout << "no io (default 0) / read data and check (2) : ";
+            std::print("no io (default 0) / read data and check (2) : ");
         else
-            std::cout << "no io (default 0) / write data (1) / read data and check (2) : ";
+            std::print("no io (default 0) / write data (1) / read data and check (2) : ");
 
         std::getline(std::cin, data);
 
         // Checks if the user entered data or pressed Enter (carriage return)
         if (data.empty())
         {
-            std::cout << "default io_res: " << io_res << "\n";
+            std::println("default io_res: {}", io_res);
         }
         else
         {
             try
             {
                 io_res = std::stoi(data); // Convert string to integer
-                std::cout << "You give : " << io_res << "\n";
+                std::println("You give : {}", io_res);
             }
             catch (const std::invalid_argument& e)
             {
-                std::cerr << "Error: Conversion failed. The string is not a valid number" << '\n';
+                std::println(stderr, "Error: Conversion failed. The string is not a valid number");
             }
         }
     }
@@ -310,7 +309,7 @@ int main(int argc, char* argv[])
     bench_init_library();
 
     const Int iter_max = iter_max_arg;
-    std::cout << "iter_max = " << iter_max << "\n";
+    std::println("iter_max = {}", iter_max);
 
     const Int iter_stop = get_iter_stop(iter_max);
 
@@ -361,42 +360,45 @@ int main(int argc, char* argv[])
 
     if (sz < 512)
     {
-        std::cerr << "sz too small !\n";
+        std::println(stderr, "sz too small !");
         std::abort();
     }
-    std::cout << "Number of threads : " << max_thr << "\n";
-    std::cout << "Pid : " << getpid() << std::endl;
+    std::println("Number of threads : {}", max_thr);
+    std::println("Pid : {}", getpid());
+    std::fflush(stdout);
 
     if constexpr (chunk_config::use_chunk)
     {
-        std::cout << tc.BOLD << tc.MAGENTA << "MODE: " << tc.RESET << "CHUNK (Single Value)\n";
+        std::println("{}{}MODE: {}CHUNK (Single Value)", tc.BOLD, tc.MAGENTA, tc.RESET);
     }
     else if constexpr (chunk_config::use_chunk2)
     {
-        std::cout << tc.BOLD << tc.MAGENTA << "MODE: " << tc.RESET << "CHUNK2 (Dual Value)\n";
+        std::println("{}{}MODE: {}CHUNK2 (Dual Value)", tc.BOLD, tc.MAGENTA, tc.RESET);
     }
     else if constexpr (chunk_config::use_chunk2a)
     {
-        std::cout << tc.BOLD << tc.MAGENTA << "MODE: " << tc.RESET << "CHUNK2A (Advanced Dual Value)\n";
+        std::println("{}{}MODE: {}CHUNK2A (Advanced Dual Value)", tc.BOLD, tc.MAGENTA, tc.RESET);
     }
     else
     {
-        std::cout << "VECTOR MODE\n";
+        std::println("VECTOR MODE");
     }
 
     if constexpr (build_config::use_fast_alloc)
     {
-        std::cout << tc.BOLD << tc.GREEN << "ALLOC: " << tc.RESET << "FAST_ALLOC (Thread-Local Pools)\n";
+        std::println("{}{}ALLOC: {}FAST_ALLOC (Thread-Local Pools)", tc.BOLD, tc.GREEN, tc.RESET);
     }
     else
     {
-        std::cout << tc.BOLD << tc.YELLOW << "ALLOC: " << tc.RESET << "STD_ALLOC (System Malloc)\n";
+        std::println("{}{}ALLOC: {}STD_ALLOC (System Malloc)", tc.BOLD, tc.YELLOW, tc.RESET);
     }
 
     auto start = std::chrono::steady_clock::now();
 
-    std::cout << "Initialisation ..." << std::endl;
-    std::cout << "Creation of arrays ..." << std::endl;
+    std::println("Initialisation ...");
+    std::fflush(stdout);
+    std::println("Creation of arrays ...");
+    std::fflush(stdout);
     [[maybe_unused]] auto type_instances =
         std::tuple<double, int, bool, std::complex<double>, float, unsigned char, Point3, Cell>{};
 
@@ -416,7 +418,7 @@ int main(int argc, char* argv[])
         [&type_instances, &get_max_length]<template <typename> typename ChunkType>(const std::string& chunk_name)
     {
         // 1. Display section header in Bold Cyan
-        std::cout << tc.BOLD << tc.CYAN << "\n=== " << chunk_name << " ===\n" << tc.RESET;
+        std::print("{}{}\n=== {} ===\n{}", tc.BOLD, tc.CYAN, chunk_name, tc.RESET);
 
         size_t max_width = get_max_length.operator()<ChunkType>();
 
@@ -432,10 +434,9 @@ int main(int argc, char* argv[])
 
                         // Print the line with a dedicated color scheme:
                         // [Label in White] [= in Cyan] [Value in Bold Yellow] [Unit in Green]
-                        std::cout << tc.WHITE << std::left << std::setw(max_width + 10) << label << tc.RESET << tc.CYAN
-                                  << " = " << tc.RESET << tc.BOLD << tc.YELLOW << std::setw(5)
-                                  << sizeof(ChunkType<decltype(t)>) << tc.RESET << tc.GREEN << " bytes" << tc.RESET
-                                  << "\n";
+                        std::println("{}{:<{}}{}{} = {}{}{}{:<5}{}{} bytes{}", tc.WHITE, label, max_width + 10,
+                                     tc.RESET, tc.CYAN, tc.RESET, tc.BOLD, tc.YELLOW, sizeof(ChunkType<decltype(t)>),
+                                     tc.RESET, tc.GREEN, tc.RESET);
                     }(dataTypes),
                     ...); // C++17 Fold expression
             },
@@ -504,8 +505,7 @@ int main(int argc, char* argv[])
     std::chrono::duration<double> elapsed_seconds = end - start;
     start                                         = end;
 
-    std::cout << tc.WHITE << "Elapsed time creation : " << tc.BOLD << elapsed_seconds.count() << "s" << tc.RESET
-              << "\n";
+    std::println("{}Elapsed time creation : {}{:.6f}s{}", tc.WHITE, tc.BOLD, elapsed_seconds.count(), tc.RESET);
     // useless in chunk mode arrays are set to zero by default
 
     if (bench_args.test_prealloc)
@@ -533,13 +533,13 @@ int main(int argc, char* argv[])
     // already paid for that.
     if constexpr (print_mem)
     {
-        std::cout << "\n";
+        std::println("");
         memory_consumption("after init");
     }
     end             = std::chrono::steady_clock::now();
     elapsed_seconds = end - start;
     start           = end;
-    std::cout << "\nElapsed time Initialisation to zero: " << elapsed_seconds.count() << "s\n";
+    std::println("\nElapsed time Initialisation to zero: {:.6f}s", elapsed_seconds.count());
 
     const Int min = 1;
     const Int max = sz;
@@ -556,7 +556,8 @@ int main(int argc, char* argv[])
     // Create a uniform distribution for the starting points of the intervals
     std::uniform_int_distribution<Int> startDistribution(min, max);
 
-    std::cout << "Iteration ..." << std::endl;
+    std::println("Iteration ...");
+    std::fflush(stdout);
 
     std::vector<Int> tab_size(iter_max), tab_start(iter_max), tab_nba1(iter_max), tab_nba2(iter_max);
 
@@ -577,7 +578,7 @@ int main(int argc, char* argv[])
     end             = std::chrono::steady_clock::now();
     elapsed_seconds = end - start;
     start           = end;
-    std::cout << "\nElapsed time distribution : " << elapsed_seconds.count() << "s\n";
+    std::println("\nElapsed time distribution : {:.6f}s", elapsed_seconds.count());
 
     double         val_sum      = 0;
     complex_double cv_val_sum   = zero_complex;
@@ -688,7 +689,8 @@ int main(int argc, char* argv[])
         if (k % 100 == 0)
         {
             auto now = std::chrono::steady_clock::now();
-            std::cout << "iter " << k << " : time : " << std::chrono::duration<double>(now - last).count() << std::endl;
+            std::println("iter {} : time : {:.6f}", k, std::chrono::duration<double>(now - last).count());
+            std::fflush(stdout);
             last = now;
         }
 
@@ -710,7 +712,8 @@ int main(int argc, char* argv[])
         {
             if (r == 0 && k == cycle_alea)
             {
-                std::cout << "Triggering abort()! cycle : " << k << std::endl;
+                std::println("Triggering abort()! cycle : {}", k);
+                std::fflush(stdout);
                 std::abort(); // triggers an abrupt program abort
             }
         }
@@ -865,8 +868,9 @@ int main(int argc, char* argv[])
                 !std::isfinite(val_sum) || !std::isfinite(cv_val_sum.real()) || !std::isfinite(cv_val_sum.imag());
             if (k % ksum_period == 0 || k == 0 || k == iter_max - 1 || ksum_bad)
             {
-                std::cout << "k : " << k << " val_sum = " << val_sum << " long_val_sum = " << long_val_sum
-                          << " cv_val_sum = " << cv_val_sum << " point_sum = " << point_sum << std::endl;
+                std::println("k : {} val_sum = {} long_val_sum = {} cv_val_sum = ({},{}) point_sum = {}", k, val_sum,
+                             long_val_sum, cv_val_sum.real(), cv_val_sum.imag(), point_sum);
+                std::fflush(stdout);
             }
         }
 
@@ -943,7 +947,7 @@ int main(int argc, char* argv[])
                 {
                     if (audit_now)
                     {
-                        std::cout << "Check compression " << "\n";
+                        std::println("Check compression ");
                         bench_phase_compress_all(bench_arrays);
                     }
                 }
@@ -961,15 +965,16 @@ int main(int argc, char* argv[])
 
         if (k > iter_stop)
         {
-            std::cout << "\nStop by iter_stop\n";
+            std::println("\nStop by iter_stop");
             break;
         }
     }
 
-    std::cout << "\nval_sum    = " << val_sum << "\n";
-    std::cout << "\nlong_val_sum = " << long_val_sum << "\n";
-    std::cout << "\ncv_val_sum = " << cv_val_sum << std::endl;
-    std::cout << "\npoint_sum  = " << point_sum << "\n";
+    std::println("\nval_sum    = {}", val_sum);
+    std::println("\nlong_val_sum = {}", long_val_sum);
+    std::println("\ncv_val_sum = ({},{})", cv_val_sum.real(), cv_val_sum.imag());
+    std::fflush(stdout);
+    std::println("\npoint_sum  = {}", point_sum);
 
     bench_print_checksums(bench_arrays, check_sum);
 
@@ -980,10 +985,10 @@ int main(int argc, char* argv[])
 
     end             = std::chrono::steady_clock::now();
     elapsed_seconds = end - start;
-    std::cout << "\nElapsed time computation : " << elapsed_seconds.count() << "s\n\n";
+    std::println("\nElapsed time computation : {:.6f}s\n", elapsed_seconds.count());
 
     memory_consumption("end");
-    std::cout << "\n";
+    std::println("");
 
     // Number of committed re-chunks performed during the run (dynamic builds only;
     // static builds never re-chunk, so the line is omitted entirely there).
@@ -992,14 +997,14 @@ int main(int argc, char* argv[])
         // Full re-chunk report: the advisor/decider runs in every dynamic-chunked
         // build (CHUNK / CHUNK2 / CHUNK2A), so rechunk_decider (and its per-event
         // log) exists here for all of them.
-        std::cout << tc.BOLD;
+        std::print("{}", tc.BOLD);
         rechunk_decider.print_rechunk_log(stdout);
-        std::cout << tc.RESET << "\n";
+        std::println("{}", tc.RESET);
     }
     else if constexpr (build_config::chunk_dynamic)
     {
         // A dynamic build with no advisor wired: just the committed count.
-        std::cout << tc.BOLD << "Re-chunks performed: " << tc.RESET << g_rechunk_count << "\n\n";
+        std::println("{}Re-chunks performed: {}{}\n", tc.BOLD, tc.RESET, g_rechunk_count);
     }
 
     // Self-checks, array release, final report and library shutdown: moved to

@@ -13,7 +13,7 @@
 #include <cstdio>
 
 #include <algorithm>
-#include <iostream>
+#include <print>
 #include <limits>
 
 // Bench-mode configuration. Defines whether we run in --check or --perf mode
@@ -252,17 +252,11 @@ inline Int get_size_data(double multiplier = 1.0, Int divisor = 1)
  */
 inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
 {
-    // %.10g: the default stream precision printed 1.9999999 as "2".
-    auto real = [](double v)
-    {
-        char b[32];
-        std::snprintf(b, sizeof b, "%.10g", v);
-        return std::string(b);
-    };
+    // {:.10g} on --multiply: the default stream precision printed 1.9999999 as "2".
     if (!std::isfinite(multiplier) || multiplier <= 0.0 || divisor < 1)
     {
-        std::cerr << "error: --multiply must be a real > 0 and --divisor an integer >= 1 (got " << real(multiplier)
-                  << ", " << divisor << ")\n";
+        std::println(stderr, "error: --multiply must be a real > 0 and --divisor an integer >= 1 (got {:.10g}, {})",
+                     multiplier, divisor);
         std::exit(1);
     }
     const long long base_data = get_size_base_data();
@@ -272,8 +266,9 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
 
     if (scaled_size(base_itv, multiplier, divisor) < 1)
     {
-        std::cerr << "error: --multiply " << real(multiplier) << " --divisor " << divisor
-                  << " leaves an empty interval (the interval base is " << base_itv << ")\n";
+        std::println(stderr,
+                     "error: --multiply {:.10g} --divisor {} leaves an empty interval (the interval base is {})",
+                     multiplier, divisor, base_itv);
         std::exit(1);
     }
 
@@ -300,19 +295,19 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
     while (m_max > 0.0 && reach(m_max) > int_max)
         m_max -= 1e-6;
 
-    char buf[64];
-    std::snprintf(buf, sizeof buf, "%.6f", m_max);
-    std::cerr << "error: --multiply " << real(multiplier) << " --divisor " << divisor << " gives "
-              << scaled_size(base_data, multiplier, divisor) << " elements; the bench's Int arithmetic would reach "
-              << reach(multiplier) << " > the Int range (" << int_max << ").\n";
+    std::println(
+        stderr,
+        "error: --multiply {:.10g} --divisor {} gives {} elements; the bench's Int arithmetic would reach {} > "
+        "the Int range ({}).",
+        multiplier, divisor, scaled_size(base_data, multiplier, divisor), reach(multiplier), int_max);
     if (m_max > 0.0)
-        std::cerr << "       Largest valid --multiply for --divisor " << divisor << " (iter_max " << iter_max
-                  << "): " << buf << "\n";
+        std::println(stderr, "       Largest valid --multiply for --divisor {} (iter_max {}): {:.6f}", divisor,
+                     iter_max, m_max);
     else
-        std::cerr << "       No --multiply fits with --divisor " << divisor << ": raise --divisor.\n";
-    std::cerr << "       Beyond that the bench and the library (ind_type = Int) need 64-bit indices:\n"
-                 "       rebuild with -DSHRINK_BENCH_INT64=ON and run the int64 executable\n"
-                 "       (shrink_bench_<variant>_int64_<1024|dyn>, perf only).\n";
+        std::println(stderr, "       No --multiply fits with --divisor {}: raise --divisor.", divisor);
+    std::println(stderr, "       Beyond that the bench and the library (ind_type = Int) need 64-bit indices:\n"
+                         "       rebuild with -DSHRINK_BENCH_INT64=ON and run the int64 executable\n"
+                         "       (shrink_bench_<variant>_int64_<1024|dyn>, perf only).");
     std::exit(1);
 }
 

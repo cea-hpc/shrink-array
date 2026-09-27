@@ -21,7 +21,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <exception> // std::exception (the stoi guard below)
-#include <iostream>
+#include <print>
 #include <string>
 
 #include "bench_args.h"
@@ -48,7 +48,7 @@ Int parse_int_arg(const char* opt, const char* text)
         // the same message as a partially parsed one, just below. Catching is
         // what turns stoi's throw into that message.
     }
-    std::cerr << "error: " << opt << " expects an integer (got \"" << text << "\")\n";
+    std::println(stderr, "error: {} expects an integer (got \"{}\")", opt, text);
     std::exit(1);
 }
 
@@ -59,7 +59,7 @@ double parse_positive_real_arg(const char* opt, const char* text)
     const double value = std::strtod(text, &end);
     if (end != text && *end == '\0' && std::isfinite(value) && value > 0.0)
         return value;
-    std::cerr << "error: " << opt << " expects a real > 0 (got \"" << text << "\")\n";
+    std::println(stderr, "error: {} expects a real > 0 (got \"{}\")", opt, text);
     std::exit(1);
 }
 } // namespace
@@ -117,7 +117,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
                         set_bench_mode(BenchMode::check);
                     else
                     {
-                        std::cout << "Unknown --mode '" << m << "' (expected check or perf)\n";
+                        std::println("Unknown --mode '{}' (expected check or perf)", m);
                         // exit, not return: this function returns a BenchArgs,
                         // and the other error paths of this loop already leave
                         // this way. Exit code 1 is preserved.
@@ -144,7 +144,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
                     iter_max_arg = parse_int_arg("--iter_max", argv[++i]);
                     if (iter_max_arg <= 0)
                     {
-                        std::cerr << "--iter_max must be a positive integer (got " << iter_max_arg << ")\n";
+                        std::println(stderr, "--iter_max must be a positive integer (got {})", iter_max_arg);
                         exit(1);
                     }
                 }
@@ -154,12 +154,12 @@ BenchArgs parse_bench_args(int argc, char* argv[])
                 print_help();
                 exit(0);
             }
-            std::cout << "Recognized argument: " << arg << "\n";
+            std::println("Recognized argument: {}", arg);
         }
         else
         {
             const std::string suggestion = suggest_closest(arg);
-            std::cout << "Unknown argument: " << arg << "\nDid you mean '" << suggestion << "'?\n";
+            std::println("Unknown argument: {}\nDid you mean '{}'?", arg, suggestion);
             exit(0);
         }
     }

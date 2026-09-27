@@ -30,7 +30,8 @@
 
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
+#include <cstdio>
+#include <print>
 #include <type_traits>
 #include <utility>
 
@@ -70,8 +71,8 @@ void sb_check_compound(Arr& arr, Int idx, Result&& result, const char* expr)
     const T stored   = arr[idx];
     if (std::memcmp(&returned, &stored, sizeof(T)) != 0)
     {
-        std::cerr << "[CHECK] compound assignment returned a value that is not the stored one: " << expr
-                  << "  (i = " << idx << ")\n";
+        std::println(stderr, "[CHECK] compound assignment returned a value that is not the stored one: {}  (i = {})",
+                     expr, idx);
         std::abort();
     }
 }

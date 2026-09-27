@@ -17,7 +17,8 @@
 #ifdef BZIP2
 
     #include <fstream>
-    #include <iostream>
+    #include <cstdio>
+    #include <print>
     #include <iterator>
     #include <vector>
 
@@ -26,14 +27,14 @@ void compress_file(const std::string& source_file, const std::string& dest_file)
     std::ifstream in_file(source_file, std::ios_base::binary);
     if (!in_file)
     {
-        std::cerr << "Error opening source file for compression" << '\n';
+        std::println(stderr, "Error opening source file for compression");
         return;
     }
 
     std::ofstream out_file(dest_file, std::ios_base::binary);
     if (!out_file)
     {
-        std::cerr << "Error opening destination file for compression" << '\n';
+        std::println(stderr, "Error opening destination file for compression");
         return;
     }
 
@@ -47,7 +48,7 @@ void compress_file(const std::string& source_file, const std::string& dest_file)
 
     if (result != BZ_OK)
     {
-        std::cerr << "Error during compression : " << result << '\n';
+        std::println(stderr, "Error during compression : {}", result);
         return;
     }
 
@@ -60,14 +61,14 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
     std::ifstream in_file(source_file, std::ios_base::binary);
     if (!in_file)
     {
-        std::cerr << "Error when opening source file for decompression : " << source_file << '\n';
+        std::println(stderr, "Error when opening source file for decompression : {}", source_file);
         std::abort();
     }
 
     std::ofstream out_file(dest_file, std::ios_base::binary);
     if (!out_file)
     {
-        std::cerr << "Error opening destination file for decompression: " << dest_file << '\n';
+        std::println(stderr, "Error opening destination file for decompression: {}", dest_file);
         std::abort();
     }
 
@@ -75,7 +76,7 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
     in_file.read(reinterpret_cast<char*>(&originalLen), sizeof(originalLen)); // Read the original size
     if (!in_file)
     {
-        std::cerr << "Error reading compressed data size." << '\n';
+        std::println(stderr, "Error reading compressed data size.");
         std::abort();
     }
 
@@ -96,33 +97,34 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
 
     if (result != BZ_OK)
     {
-        std::cerr << "Error during decompression : " << result << '\n';
+        std::println(stderr, "Error during decompression : {}", result);
         switch (result)
         {
             case BZ_CONFIG_ERROR:
-                std::cerr << "Configuration error." << '\n';
+                std::println(stderr, "Configuration error.");
                 break;
             case BZ_PARAM_ERROR:
-                std::cerr << "Parameter error." << '\n';
+                std::println(stderr, "Parameter error.");
                 break;
             case BZ_MEM_ERROR:
-                std::cerr << "Memory error." << '\n';
+                std::println(stderr, "Memory error.");
                 break;
             case BZ_DATA_ERROR:
-                std::cerr << "Data integrity error." << '\n';
+                std::println(stderr, "Data integrity error.");
                 break;
             case BZ_DATA_ERROR_MAGIC:
-                std::cerr << "Data error, magic number mismatch." << '\n';
+                std::println(stderr, "Data error, magic number mismatch.");
                 break;
             default:
-                std::cerr << "Unknown error." << '\n';
+                std::println(stderr, "Unknown error.");
                 break;
         }
         std::abort();
     }
 
     out_file.write(dest_buffer.data(), dest_len);
-    std::cout << "Successful decompression : " << source_file << " -> " << dest_file << std::endl;
+    std::println("Successful decompression : {} -> {}", source_file, dest_file);
+    std::fflush(stdout);
 }
 
 #endif // BZIP2

@@ -24,9 +24,9 @@
 #include "bench_prelude.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <fstream>
-#include <iostream>
-#include <sstream>
+#include <sstream> // the diagnostic strings (format_val, the address dumps)
 #include <string>
 #include <sys/types.h>
 #include <unistd.h> // unlink
@@ -56,7 +56,7 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
 // are rendered as "v ...xN... v" (N = run length — keeping the count visible
 // is deliberate: a 64-long run and a 512-long run must not look alike when
 // hunting geometry bugs); short runs are printed element by element. `sink`
-// receives std::string fragments (log_message, or a std::cerr wrapper) and
+// receives std::string fragments (log_message, or a stderr wrapper) and
 // `fmt` formats one value (the local format_val lambdas).
 template <typename Sink, typename Fmt, typename T>
 static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, UInt count)
@@ -231,21 +231,21 @@ void read_check_binary_file(Int                ind,
     {
 #pragma omp critical
         {
-            std::cout << tab_name << " Checksum OK !\n";
+            std::println("{} Checksum OK !", tab_name);
         }
         return;
     }
     else
     {
         if (!read_trace)
-            std::cerr << tab_name << "\nError checksum ! checksum read : " << lchs_read
-                      << " checksum calculate : " << lchs;
+            std::print(stderr, "{}\nError checksum ! checksum read : {} checksum calculate : {}", tab_name, lchs_read,
+                       lchs);
 
         if (!no_compress)
         {
-            std::cerr << " --> we decompress and read the file : " << tab_name;
+            std::print(stderr, " --> we decompress and read the file : {}", tab_name);
         }
-        std::cerr << "\n";
+        std::println(stderr, "");
     }
 
     const Int sz = data_check.size();
@@ -271,7 +271,8 @@ void read_check_binary_file(Int                ind,
     }
 #pragma omp critical
     {
-        std::cout << "Read : " << filename << std::endl;
+        std::println("Read : {}", filename);
+        std::fflush(stdout);
     }
     std::ifstream file(filename, std::ios::binary);
     if (!file)
@@ -395,14 +396,14 @@ void read_check_binary_file(Int                ind,
 
             auto lbd_print = [&]()
             {
-                std::cerr << "value               : " << value << "\n";
-                std::cerr << "chunk number        : " << num_chunk << "\n";
-                std::cerr << "number inside chunk : " << num << "\n";
-                std::cerr << "is values           : " << is_values << "\n";
-                std::cerr << "is_cst_val1         : " << is_val1 << "\n";
+                std::println(stderr, "value               : {}", format_val(value));
+                std::println(stderr, "chunk number        : {}", num_chunk);
+                std::println(stderr, "number inside chunk : {}", num);
+                std::println(stderr, "is values           : {:d}", is_values);
+                std::println(stderr, "is_cst_val1         : {:d}", is_val1);
                 if constexpr (chunk_config::use_chunk2or2a)
                 {
-                    std::cerr << "is_cst_val2         : " << is_val2 << "\n";
+                    std::println(stderr, "is_cst_val2         : {:d}", is_val2);
                 }
 
                 if constexpr (chunk_config::ring_log_debug)
@@ -414,12 +415,12 @@ void read_check_binary_file(Int                ind,
             {
                 if (is_val1)
                 {
-                    std::cerr << "\nwas cst_val1 it is\n";
+                    std::println(stderr, "\nwas cst_val1 it is");
                     lbd_print();
                     exit(0);
                 }
 
-                std::cerr << "\nwas cst_val1 is not!\n";
+                std::println(stderr, "\nwas cst_val1 is not!");
                 lbd_print();
                 exit(0);
             }
@@ -430,12 +431,12 @@ void read_check_binary_file(Int                ind,
                 {
                     if (is_val2)
                     {
-                        std::cerr << "\nwas cst_val2 it is\n";
+                        std::println(stderr, "\nwas cst_val2 it is");
                         lbd_print();
                         exit(0);
                     }
 
-                    std::cerr << "\nwas cst_val2 is not!\n";
+                    std::println(stderr, "\nwas cst_val2 is not!");
                     lbd_print();
                     exit(0);
                 }
@@ -444,7 +445,7 @@ void read_check_binary_file(Int                ind,
             {
                 if (!is_val1 && !is_val2)
                 {
-                    std::cerr << "\nwas values it is\n";
+                    std::println(stderr, "\nwas values it is");
                     lbd_print();
                     constexpr T v{}; // T{}: the struct elements have no conversion from 0
                     bool        te = true;
@@ -459,7 +460,7 @@ void read_check_binary_file(Int                ind,
 
                     if (te)
                     {
-                        std::cerr << "should be cst_val1\n";
+                        std::println(stderr, "should be cst_val1");
                     }
                     else
                     {
@@ -477,21 +478,21 @@ void read_check_binary_file(Int                ind,
 
                         if (all_equal)
                         {
-                            std::cerr << "All values of chunk are identical: " << first << "\n";
+                            std::println(stderr, "All values of chunk are identical: {}", format_val(first));
                         }
                         else
                         {
-                            std::cerr << "All values of chunk (compacted):\n";
+                            std::println(stderr, "All values of chunk (compacted):");
                             const T* vals = chunk_t.values; // atomic<T*> implicit load or plain ptr
-                            log_values_compacted([](const std::string& m) { std::cerr << m; }, format_val, vals,
-                                                 data_check.chunk_size());
+                            log_values_compacted([](const std::string& m) { std::print(stderr, "{}", m); }, format_val,
+                                                 vals, data_check.chunk_size());
                         }
                     }
 
                     exit(0);
                 }
 
-                std::cerr << "\nwas values is not!\n";
+                std::println(stderr, "\nwas values is not!");
                 lbd_print();
                 exit(0);
             }
@@ -510,7 +511,7 @@ void read_check_binary_file(Int                ind,
         trace_file_write.open("trace_err.txt");
         if (!trace_file_write.is_open())
         {
-            std::cerr << "Failed to open trace_err.txt\n";
+            std::println(stderr, "Failed to open trace_err.txt");
         }
     }
 
@@ -519,7 +520,7 @@ void read_check_binary_file(Int                ind,
         trace_file_read.open("trace_err.txt");
         if (!trace_file_read.is_open())
         {
-            std::cerr << "Failed to open trace_err.txt\n";
+            std::println(stderr, "Failed to open trace_err.txt");
         }
     }
     Int ind_read = -1;
@@ -568,10 +569,10 @@ void read_check_binary_file(Int                ind,
             }
             if (value != value_check)
             {
-                // Lambda to log to std::cerr and optionally to the trace file
+                // Lambda to log to stderr and optionally to the trace file
                 auto log_message = [&](const std::string& msg)
                 {
-                    std::cerr << msg;
+                    std::print(stderr, "{}", msg);
                     if (write_trace && trace_file_write.is_open())
                     {
                         trace_file_write << msg;
@@ -588,7 +589,7 @@ void read_check_binary_file(Int                ind,
                 log_message(full_tab_name + " not equal! read: " + std::to_string(value) +
                             " != " + std::to_string(data_check[k]) + "\n");
 
-                std::cerr << "iteration: " + std::to_string(ind) + "\n";
+                std::println(stderr, "iteration: {}", ind);
                 // One `if constexpr` over both former blocks: the CHUNK2 one below
                 // reads chunk_t, declared here, so they cannot be split.
                 if constexpr (chunk_config::is_shrink_enabled)
@@ -720,7 +721,7 @@ void read_check_binary_file(Int                ind,
 
                 auto log_message = [&](const std::string& msg)
                 {
-                    std::cerr << msg;
+                    std::print(stderr, "{}", msg);
                     if (write_trace && trace_file_write.is_open())
                     {
                         trace_file_write << msg;
@@ -914,13 +915,11 @@ void read_check_binary_file(Int                ind,
 
         if (nn)
         {
-            std::cerr << nn << " : values are not perfectly equal ! : error max = ";
-            std::cerr << std::scientific << ratio_max << "\n";
-            std::cerr << std::defaultfloat;
+            std::println(stderr, "{} : values are not perfectly equal ! : error max = {:e}", nn, ratio_max);
         }
         else if (!read_trace)
         {
-            std::cout << "no data error (but checksum error...)\n";
+            std::println("no data error (but checksum error...)");
         }
 
         file.close();

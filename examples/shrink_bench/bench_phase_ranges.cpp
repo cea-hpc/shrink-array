@@ -27,7 +27,7 @@
 #include <algorithm> // std::min (bench_phase_range_mt)
 #include <complex>
 #include <cstddef> // std::size_t (bench_phase_range_mt)
-#include <iostream>
+#include <print>
 
 #include "bench_phases.h"
 
@@ -239,7 +239,7 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, 
     const Int   sz           = bench_arr.sz;
     auto&       bench_arrays = bench_arr;
 
-    std::cout << "interval " << ": [" << start0 << ", " << end0 << "]" << " size : " << size << "\n";
+    std::println("interval : [{}, {}] size : {}", start0, end0, size);
 
     Int i;
 
@@ -264,7 +264,7 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, 
             }
 
             bench_phase_range_a(bench_arrays, beg, i);
-            std::cout << "set : " << i - beg << " values to : 0" << "\n";
+            std::println("set : {} values to : 0", i - beg);
         }
         else if (k % 16 == 0)
         {
@@ -276,7 +276,7 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, 
 
             bench_phase_range_b(bench_arrays, beg, i);
 
-            std::cout << "set : " << i - beg << " values to : " << second_value_d << "\n";
+            std::println("set : {} values to : {:g}", i - beg, second_value_d);
         }
         else
         {
@@ -289,7 +289,7 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, 
 
             bench_phase_range_c(bench_arrays, beg, seg_end);
 
-            std::cout << "set : " << seg_end - beg << " values to : " << second_value_d0 << "\n";
+            std::println("set : {} values to : {:g}", seg_end - beg, second_value_d0);
         }
     }
     else
@@ -304,7 +304,7 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, 
 
         bench_phase_range_d(bench_arrays, beg, seg_end);
 
-        std::cout << "set : " << seg_end - deb << " values to : " << second_value_d << "\n";
+        std::println("set : {} values to : {:g}", seg_end - deb, second_value_d);
     }
 }
 
