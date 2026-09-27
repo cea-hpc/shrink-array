@@ -87,6 +87,15 @@ class DirtyBitsetSupport;
 template <typename Derived>
 class DirtyBitsetSupport<Derived, true>
 {
+    // One bit per CHUNK, whatever the chunk size: the 64 below is the width of
+    // a word (64 chunks per word), not a chunk geometry. chunk_idx >> 6 and
+    // chunk_idx & 63 read like the decalage / modulo of a 64-element chunk,
+    // which they are not.
+    static constexpr int kChunksPerWord = 64;                 ///< Bits in a uint64_t word.
+    static constexpr int kWordShift     = 6;                  ///< log2(kChunksPerWord).
+    static constexpr int kBitInWordMask = kChunksPerWord - 1; ///< chunk_idx -> bit within its word.
+    static_assert(kChunksPerWord == 1 << kWordShift, "kWordShift must be log2(kChunksPerWord)");
+
   public:
     /**
      * @brief Allocate a fresh, all-clear bitset for @p nb_chunk chunks.
@@ -164,14 +173,15 @@ class DirtyBitsetSupport<Derived, true>
 
     /**
      * @brief Mark a chunk as having received a deferred operation.
-     * @param chunk_idx The global index of the chunk.
+     * @param chunk_idx The global index of the chunk (not of an element: one
+     *        bit per chunk, whatever the chunk size).
      * @note Concurrent: an acq_rel fetch_or, called from the deferred-enqueue
      *       path on any thread.
      */
     void mark_chunk_dirty(int chunk_idx) noexcept
     {
-        const int      word_idx = chunk_idx >> 6;
-        const uint64_t bit_mask = 1ULL << (chunk_idx & 63);
+        const int      word_idx = chunk_idx >> kWordShift;
+        const uint64_t bit_mask = 1ULL << (chunk_idx & kBitInWordMask);
         bitset_[word_idx].word.fetch_or(bit_mask, std::memory_order_acq_rel);
         // Raise the "some bit was set" flag (read first: raised once per phase,
         // then every later mark is a plain load).
@@ -182,15 +192,14 @@ class DirtyBitsetSupport<Derived, true>
 
     /**
      * @brief Checks if a chunk is marked as dirty.
-     * @param chunk_idx The global index of the chunk.
+     * @param chunk_idx The global index of the chunk (not of an element).
      * @return true if a deferred operation was queued for this chunk during the
      *         current phase (the bit is sticky until clear_dirty_bitset()).
      */
     [[nodiscard]] bool is_chunk_dirty(int chunk_idx) const noexcept
     {
-        const int      word_idx = chunk_idx >> 6;
-        const int      bit_pos  = chunk_idx & 63;
-        const uint64_t bit_mask = 1ULL << bit_pos;
+        const int      word_idx = chunk_idx >> kWordShift;
+        const uint64_t bit_mask = 1ULL << (chunk_idx & kBitInWordMask);
 
         // Use acquire to synchronize with previous mark_chunk_safe/dirty calls
         return (bitset_[word_idx].word.load(std::memory_order_acquire) & bit_mask) != 0;
@@ -236,10 +245,10 @@ class DirtyBitsetSupport<Derived, true>
         return bitset_[static_cast<std::size_t>(nb_words_)].word;
     }
 
-    /** @brief Number of 64-bit words needed to hold @p nb_chunk bits. */
+    /** @brief Number of 64-bit words needed to hold @p nb_chunk bits (one per chunk). */
     [[nodiscard]] static constexpr int words_for(int nb_chunk) noexcept
     {
-        return (nb_chunk + 63) / 64;
+        return (nb_chunk + kChunksPerWord - 1) / kChunksPerWord;
     }
 
     std::unique_ptr<PaddedDirtyWord[]> bitset_;      ///< One bit per chunk, one cache line per 64 chunks.

@@ -1,5 +1,4 @@
 #pragma once
-#include "chunk/internal/exact_rss.h" // exact_rss_kib (rss_mib_now)
 
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
@@ -22,11 +21,11 @@
 // after the class, so the CRTP self() down-cast sees a complete Derived and so
 // the heavy includes below (compression manager, stats) stay out of the
 // container declaration itself.
-#pragma once
 
 #include <algorithm>   // std::min / std::max (CHUNK_RECHUNK_SLICES)
 #include <atomic>      // std::atomic<long> n_folded (CHUNK_RECHUNK_TRACE)
 #include <chrono>      // CHUNK_RECHUNK_TRACE phase timers
+#include <ratio>       // std::milli (the same timers)
 #include <cstddef>     // std::size_t
 #include <cstdio>      // std::fprintf (CHUNK_RECHUNK_TRACE)
 #include <cstdlib>     // std::getenv (CHUNK_POOL_BREAKDOWN, CHUNK_RECHUNK_TRACE, CHUNK_RECHUNK_SLICES)
@@ -41,10 +40,13 @@
 #include "chunk/array_chunk_range_ops.h"        // copy_range -- the public bulk fill
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_rechunk* (CHUNK_STATS)
 #include "chunk/internal/compression_manager.h" // CompressionManager<>::FlushReplayGuard in rechunk_refill
-#include "chunk/internal/conditional_counter.h" // counter_value_t -- nb_val_eq_zero resync after the raw-fill
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
 #include "chunk/internal/env_parse.h"           // env_number / env_flag (checked, not atoi)
-#include <unistd.h>                             // sysconf(_SC_PAGESIZE) -- the per-slice RSS trace
+#include "chunk/internal/exact_rss.h"           // exact_rss_kib (rss_mib_now)
+#include "chunk/vector_range_ops.h"             // assume_drained
+#include "chunk/config.h"
+#include "chunk/chunk_traits.h"
+#include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size / set_active_chunk_size
 
 namespace shrink_array::rechunk_detail
 {
@@ -132,7 +134,6 @@ namespace shrink_array
 /// include cycle through array_chunk2A.h. Canonical declaration lives there.
 void print_all_reuse_pool_breakdown(const char* label);
 
-
 template <typename Derived>
 void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 {
@@ -183,8 +184,9 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // CHUNK_RECHUNK_TRACE=1: per-phase wall time, to see where a slow
     // re-chunk spends it (tmp creation, refill, flush+swap, tmp teardown).
     static const bool trace_phases = std::getenv("CHUNK_RECHUNK_TRACE") != nullptr;
-    auto              t_now        = [] { return std::chrono::steady_clock::now(); };
-    auto t_ms = [](auto start, auto stop) { return std::chrono::duration<double, std::milli>(stop - start).count(); };
+    const auto        t_now        = [] { return std::chrono::steady_clock::now(); };
+    const auto        t_ms         = [](auto start, auto stop)
+    { return std::chrono::duration<double, std::milli>(stop - start).count(); };
     const auto                            t0 = t_now();
     std::chrono::steady_clock::time_point t1_out;
     std::chrono::steady_clock::time_point t2_out;
@@ -194,7 +196,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // wall times. The slice trace inside rechunk_refill brackets the refill;
     // this brackets everything around it, where the remaining part of the
     // peak was measured to sit.
-    auto       rss_now = [&] { return trace_phases ? rechunk_detail::rss_mib_now() : -1L; };
+    const auto rss_now = [&] { return trace_phases ? rechunk_detail::rss_mib_now() : -1L; };
     const long r_entry = rss_now();
     long       r_flush = -1, r_pre_tmp = -1, r_refill = -1, r_swap = -1, r_teardown = -1;
 
@@ -247,10 +249,9 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // so its compression decisions use the same value).
         tmp.rechunk_seed_fresh(state);
 
-        // 3) Refill tmp from *this (OLD -> NEW geometry). Per-variant
-        //    hook: the base does a bounded tiled element transcription
-        //    (below); v1 overrides with a chunk-level rebuild that skips
-        //    constant regions (only materialised chunks are written).
+        // 3) Refill tmp from *this (OLD -> NEW geometry): rechunk_refill()
+        //    rebuilds chunk by chunk and skips the spans still at the first
+        //    constant (only materialised chunks are written).
         // CHUNK_STATS: one geometry change, plus the per-chunk work it costs
         // (counted inside rebuild_one below).
         increm_chunk_rechunk<chunk_type>();
@@ -440,7 +441,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // never routed home and never gives its pages back. A slab there
         // mixes several arrays' blocks and cannot empty on one array's
         // re-chunk, by construction.
-        auto scan = [&](unsigned int key, std::size_t& slabs, std::size_t& live, std::size_t& empty)
+        const auto scan = [&](unsigned int key, std::size_t& slabs, std::size_t& live, std::size_t& empty)
         {
             if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
             {
@@ -448,8 +449,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
                 set_thread_chunk_size(old_size);
                 for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
                 {
-                    auto& allocator = chunk_type::get_chunk_allocator(r, key);
-                    for (auto* node : {allocator.block, allocator.block_full})
+                    const auto& allocator = chunk_type::get_chunk_allocator(r, key);
+                    for (const auto* node : {allocator.block, allocator.block_full})
                         for (; node != nullptr; node = node->next)
                         {
                             ++slabs;
@@ -471,8 +472,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
                      "[RECHUNK-POOL] S=%u key=%u after drain: slabs=%zu  live_blocks=%zu (%zu MB)  "
                      "empty_slabs=%zu | key=0 (shared, never swept): slabs=%zu  live_blocks=%zu (%zu MB)  "
                      "empty_slabs=%zu\n",
-                     old_size, old_key, slabs, live_blocks, (live_blocks * blk) >> 20, empty_slabs, s0, l0,
-                     (l0 * blk) >> 20, e0);
+                     old_size, old_key, slabs, live_blocks, (live_blocks * blk) >> 20U, empty_slabs, s0, l0,
+                     (l0 * blk) >> 20U, e0);
         std::fflush(stderr);
     }
     if (trace_phases)
@@ -495,20 +496,20 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 template <typename Derived>
 void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, int new_size)
 {
-    // Level-2 chunk-level rebuild (2A): build each non-cst1 new chunk
-    // by ARMING it via ONE real proxy write (create_value + the write path's
-    // compression bookkeeping — set_ptr_is_inside_chunk_list_to_compress etc.),
-    // advancing to the first element that materialises, then RAW-filling the
-    // rest. cst1 regions are skipped. ~13x faster than tiled (108s -> 8s),
-    // validated correct at 1/8/64 threads + real runs. Other variants and the
-    // -DCHUNK_RECHUNK_TILED fallback use the tiled transcription.
-    // Level-2 applies to all non-bool chunk variants. Materialisation is
-    // tracked with is_cst_val1() (values == the cst1 sentinel), which is
-    // universal and index-free — unlike written()/is_cst_val() on chunk2,
-    // which need the second_value index. During the arming loop a chunk only
-    // goes cst1 -> real buffer (never cst2, which is a compression result), so
-    // "still cst1" == "not yet materialised" holds for every variant. bool
-    // chunks are bit-packed (raw-fill would corrupt them) and use tiled.
+    // Level-2 chunk-level rebuild, for each of the three chunk variants: every
+    // non-cst1 new chunk is ARMED by a real proxy write (the write path's
+    // compression bookkeeping -- set_ptr_is_inside_chunk_list_to_compress
+    // etc.) and the rest RAW-filled, which copy_range() does (bool, bit-packed,
+    // element by element); cst1 spans are skipped. ~13x faster than the tiled
+    // transcription (108s -> 8s), validated correct at 1/8/64 threads + real
+    // runs. The tiled transcription (else branch) remains for a build that
+    // selects no chunk variant.
+    // Materialisation is tracked with is_cst_val1() (values == the cst1
+    // sentinel), which is universal and index-free -- unlike
+    // written()/is_cst_val() on chunk2, which need the second_value index. While
+    // it is filled a chunk only goes cst1 -> real buffer (never cst2, which is a
+    // compression result), so "still cst1" == "not yet materialised" holds for
+    // every variant.
     if constexpr (chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a)
     {
         const ind_type total = self().m_size;
@@ -590,7 +591,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             long refused   = 0;
             long installed = 0; // 2A: constant installed without a buffer
         };
-        auto rebuild_one = [&](int new_chunk, std::vector<T>& buf, RebuildTally& tally)
+        const auto rebuild_one = [&](int new_chunk, std::vector<T>& buf, RebuildTally& tally)
         {
             const ind_type base = static_cast<ind_type>(new_chunk) * static_cast<ind_type>(new_size);
             if (base >= total)
@@ -680,10 +681,10 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     // auto: SecondValueRef is not declared in every TU that
                     // instantiates this file (array_chunk2.cpp), and the name
                     // would be looked up even in a discarded branch.
-                    const T v   = static_cast<T>(std::as_const(self())[base]);
-                    auto&   nch = tmp.chunk_list[static_cast<std::size_t>(new_chunk)];
-                    auto    psv = Proxy2A<T>::BaseSpec::get_tab_second_value(tmp.num_tab, new_chunk);
-                    char*   ptc = &Proxy2A<T>::tab_type_cst_val[tmp.num_tab][new_chunk];
+                    const T    v   = static_cast<T>(std::as_const(self())[base]);
+                    auto&      nch = tmp.chunk_list[static_cast<std::size_t>(new_chunk)];
+                    const auto psv = Proxy2A<T>::BaseSpec::get_tab_second_value(tmp.num_tab, new_chunk);
+                    char*      ptc = &Proxy2A<T>::tab_type_cst_val[tmp.num_tab][new_chunk];
                     (void)nch.find_or_set_ind_cst_val2(v, psv);
                     chunk_type::set_cst_val_to_cst_val2(ptc);
                     nch.init_values_cst_val(ptc, psv);

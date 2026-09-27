@@ -40,8 +40,6 @@
  * @see chunk_size_policy.h for the geometry policies this switches between
  */
 
-#include <vector> // std::vector
-
 #include "chunk/config.h"
 #include "chunk/chunk_traits.h"
 #include "chunk/internal/array_chunk_for.h" // ArrayChunkCore -- rechunk_all_to's registry keys
@@ -149,25 +147,32 @@ class RechunkSupport<Derived, true>
     /**
      * @brief Refill @p tmp from *this across a geometry change.
      *
-     * @details Bounded tiled element transcription — stream in ~1M-element tiles,
-     *          toggling the ambient geometry per tile (read *this at OLD, write
-     *          tmp at NEW). Peak extra RAM is tile*sizeof(T), not n*sizeof(T).
-     *          Read side is parallel pure-read (operator[] is const); bool stays
-     *          serial (std::vector<bool> bit-packing). Runs at a quiescent serial
-     *          point, so the t_active toggles are safe.
+     * @details Chunk-level rebuild: each new chunk is rebuilt from the old
+     *          chunks its span covers, in parallel over the new chunks (schedule
+     *          from CHUNK_RECHUNK_SCHEDULE) and, for v1 with the fast allocator
+     *          under OpenMP, in slices with a drain between them
+     *          (CHUNK_RECHUNK_SLICES). A span whose sources are all cst1 stays
+     *          compressed; a Chunk2A span whose sources are all the same second
+     *          constant gets that constant installed without a buffer; the others
+     *          are read from *this at OLD and filled through copy_range() at NEW,
+     *          then folded back at once when every source was a constant (Chunk2,
+     *          Chunk2A). v1 releases each source chunk as soon as it has been
+     *          transcribed. A build that selects no chunk variant falls back to a
+     *          tiled element transcription (~1M-element tiles through the proxy).
+     *          Runs at a quiescent serial point: rechunk_to() has flushed the
+     *          deferred ops.
      *
      * @param tmp the fresh array at the NEW geometry, to be filled
      * @param old_size chunk size of *this (the read side)
      * @param new_size chunk size of @p tmp (the write side)
      *
-     * @note A chunk-level rebuild that SKIPS constant regions is much faster, but
-     *       skipping leaves those tmp chunks fresh — never routed through the
-     *       write path that ARMS the lazy per-chunk pointers (ptr_second_value /
-     *       compression bookkeeping). Unarmed chunks double-free in the later
-     *       compression/clear at scale (seen on the 2A perf run; rechunk_validation
-     *       is too small to trip it). The fast path therefore needs DIRECT chunk
-     *       construction that arms the chunk (Level-2), not a plain skip. Kept as
-     *       the safe element transcription for now.
+     * @note A new chunk that gets a buffer must be ARMED by a real proxy write
+     *       (the lazy per-chunk pointers: ptr_second_value, compression
+     *       bookkeeping), which copy_range() does: unarmed chunks double-freed in
+     *       the later compression/clear at scale (seen on the 2A perf run;
+     *       rechunk_validation is too small to trip it). The skipped cst1 spans
+     *       need no arming, and the 2A install commits what a type-2 compression
+     *       does, with no buffer to arm.
      */
     void rechunk_refill(Derived& tmp, int old_size, int new_size);
 

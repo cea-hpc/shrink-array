@@ -19,12 +19,16 @@
 // Out-of-line template method bodies for ArrayChunkBase<Derived>. Included at the
 // end of array_chunk_base.h (after the class), so every TU that uses the class
 // sees the definitions. Kept separate to keep array_chunk_base.h to declarations.
+#include <iterator>  // std::forward_iterator, std::distance (assign)
 #include <limits>    // std::numeric_limits (max_size)
 #include <stdexcept> // std::out_of_range (at())
 
 #include "chunk/internal/array_chunk_base.h"
-#include "chunk/internal/compression_manager.h" // CompressionManager<>::FlushReplayGuard in rechunk_refill
-#include "chunk/internal/chunk_stats.h"         // increm_chunk_rechunk* (CHUNK_STATS)
+#include "chunk/config.h"
+#include "chunk/internal/chunk_size_policy.h" // register_runtime_chunk_size / set_thread_chunk_size
+#include "chunk/internal/in_t.h"
+#include "chunk/internal/process_verbs.h" // compress_now_and_trim_pools -- shrink_to_fit()
+#include "chunk/PMP_CHUNK.h"              // CHUNK_PMP_IN_PARALLEL_REGION
 
 namespace shrink_array
 {
@@ -152,8 +156,8 @@ void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_c
 template <typename Derived>
 int ArrayChunkBase<Derived>::get_nb_chunk_written() const
 {
-    int  nb_written = 0;
-    auto lbd        = [&](int j) { return static_cast<int>(is_written_at(j)); };
+    int        nb_written = 0;
+    const auto lbd        = [&](int j) { return static_cast<int>(is_written_at(j)); };
 
     if (CHUNK_PMP_IN_PARALLEL_REGION)
     {

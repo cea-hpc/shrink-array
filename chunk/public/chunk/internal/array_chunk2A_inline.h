@@ -16,12 +16,15 @@
 
 #pragma once
 
-#include <cstddef>  // std::size_t
-#include <cstdio>   // std::fprintf (check-build trace)
-#include <iomanip>  // std::setw (print_type_name)
-#include <iostream> // std::cout / std::cerr
-#include <string>   // the type name in print_type_name
-#include <utility>  // std::pair (the clear() summary)
+#include <atomic>      // std::memory_order (the missed-compression audit)
+#include <cstddef>     // std::size_t
+#include <cstdio>      // std::fprintf (check-build trace)
+#include <cstdlib>     // std::getenv, std::abort
+#include <iomanip>     // std::setw (print_type_name)
+#include <iostream>    // std::cout / std::cerr
+#include <string>      // the type name in print_type_name
+#include <type_traits> // std::remove_reference_t
+#include <utility>     // std::pair (the clear() summary)
 #include <vector>
 
 #include "chunk/array_chunk2A.h"
@@ -33,6 +36,11 @@
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_*, get_size_max_tab_omp
 #include "chunk/singleton.h"
 #include "chunk/type_name.h"
+#include "chunk/config.h"
+#include "chunk/internal/chunk_size_policy.h"
+#include "chunk/internal/concept_array_chunk_element.h"
+#include "chunk/internal/in_t.h"
+#include "chunk/internal/pool_ledger.h" // CHUNK_LEDGER_* (check builds)
 
 namespace shrink_array
 {
@@ -237,8 +245,8 @@ void ArrayChunk2A<T, ind_type>::clear()
                 const auto v0                        = ck.constant_value(csz);
                 summary[static_cast<std::size_t>(j)] = {v0.has_value(), v0.value_or(T{})};
             }
-            auto&     sh_inf   = Proxy2A<T>::share_info_array;
-            const int num_tab_ = sh_inf.get_num_tab(this->registry_key());
+            const auto& sh_inf   = Proxy2A<T>::share_info_array;
+            const int   num_tab_ = sh_inf.get_num_tab(this->registry_key());
             report_size_prediction<T>(summary, csz, num_tab_, "chunk2a",
                                       sizeof(std::remove_reference_t<decltype(chunk_list[0])>));
         }
@@ -374,12 +382,12 @@ void ArrayChunk2A<T, ind_type>::clear_core()
         if constexpr (build_config::any_check && !chunk_config::have_agressive_compression)
         {
             const auto  csz          = static_cast<unsigned int>(this->size_policy_.size());
-            auto&       inside       = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab);
+            const auto& inside       = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab);
             std::size_t missed_first = 0, missed_second = 0, stuck = 0;
 
             for (int j = 0; j < nb_chunk; ++j)
             {
-                auto& ck = chunk_list[j];
+                const auto& ck = chunk_list[j];
                 if (!ck.written())
                     continue; // already constant/compressed — nothing owed
                 if (inside[j].load(std::memory_order_acquire) != 0)
@@ -428,7 +436,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
                 if constexpr (chunk_config::stats)
                     increm_chunk_teardown_clear<Chunk2A<T>>();
                 chunk_list[j].clear_st(&Proxy2A<T>::tab_type_cst_val[num_tab][j],
-                                       (Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, j)));
+                                       Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, j));
             }
         }
     }
@@ -687,7 +695,7 @@ void ArrayChunk2A<T, ind_type>::make_block_compression()
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
 {
-    auto& sh_inf = Proxy2A<T>::share_info_array;
+    const auto& sh_inf = Proxy2A<T>::share_info_array;
 
     const int num_tab      = sh_inf.get_num_tab(this->registry_key());
     const int old_nb_chunk = nb_chunk;
