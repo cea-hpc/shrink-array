@@ -149,4 +149,12 @@ inline std::size_t reclaim_min_empty_slabs() noexcept
  */
 inline constexpr bool debug_mem_observable = is_debug || use_openmp;
 
+/// @brief int_alloc / int_free go through the aligned allocation (ALLOC_ALIGN).
+inline constexpr bool alloc_align =
+#ifdef ALLOC_ALIGN
+    true;
+#else
+    false;
+#endif
+
 } // namespace alloc_config
