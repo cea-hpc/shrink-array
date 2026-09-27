@@ -317,14 +317,8 @@ inline int get_size_max_tab_omp(int nn)
         const int pp = nn / std::max(1, max_thr) + max_thr;
         return pp;
     }
-    else
-    {
-        return nn;
-    }
-
-#else
-    return nn;
 #endif
+    return nn;
 }
 
 inline int get_size_max_tab_omp(int nn, [[maybe_unused]] int nb_static)
@@ -341,12 +335,6 @@ inline int get_size_max_tab_omp(int nn, [[maybe_unused]] int nb_static)
 
         return pp;
     }
-    else
-    {
-        return nn;
-    }
-
-#else
-    return nn;
 #endif
+    return nn;
 }

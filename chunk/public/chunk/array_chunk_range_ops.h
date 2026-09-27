@@ -161,7 +161,7 @@ void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, uns
         for (unsigned int k = 0; k < S; ++k)
             if (dst[k] == static_cast<T>(Chunk::first_value))
                 ++nz;
-        arr[static_cast<typename Arr::ind_type>(c_begin)].resync_nb_val_eq_zero(nz);
+        arr[static_cast<Arr::ind_type>(c_begin)].resync_nb_val_eq_zero(nz);
     }
     else if constexpr (track_chunk2_counts_v<Arr> && requires { arr.get_second_value(); })
     {

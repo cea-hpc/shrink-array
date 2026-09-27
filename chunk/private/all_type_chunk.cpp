@@ -26,9 +26,8 @@
 #include "chunk/singleton.h"
 #include "chunk/internal/manager_chunk.h"
 #include "chunk/all_type_chunk.h"
-#include "chunk/internal/churn_counters.h" // churn::note_phase_end
-#include "chunk/PMP_CHUNK.h"                 // for CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK, __fast...
-#include "chunk/chunk_define.h"              // for HAVE_EMBEDDED_COMPRESSION_WITH_OMPT
+#include "chunk/internal/churn_counters.h"   // churn::note_phase_end
+#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, __fast_omp_rank
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
 #include "chunk/manage_ompt.h"               // the declarations of the five phase functions below
@@ -55,6 +54,12 @@ std::atomic_flag g_serial_flush_owner{};
 /// Releases g_serial_flush_owner on every exit path of the serial flush.
 struct SerialFlushOwnership
 {
+    SerialFlushOwnership()                                       = default;
+    SerialFlushOwnership(const SerialFlushOwnership&)            = delete;
+    SerialFlushOwnership& operator=(const SerialFlushOwnership&) = delete;
+    SerialFlushOwnership(SerialFlushOwnership&&)                 = delete;
+    SerialFlushOwnership& operator=(SerialFlushOwnership&&)      = delete;
+
     ~SerialFlushOwnership()
     {
         g_serial_flush_owner.clear(std::memory_order_release);
@@ -195,7 +200,7 @@ bool finalize_barrier_phase()
 
 void AllTypeChunk::resize_chunk_to_compress_potentially() const
 {
-    for (auto& elm : getListTypeChunk())
+    for (const auto& elm : getListTypeChunk())
     {
         elm->resize_chunk_to_compress_potentially();
     }
@@ -203,7 +208,7 @@ void AllTypeChunk::resize_chunk_to_compress_potentially() const
 
 void AllTypeChunk::force_chunk_to_compress() const
 {
-    for (auto& elm : getListTypeChunk())
+    for (const auto& elm : getListTypeChunk())
     {
         elm->force_chunk_to_compress();
     }
@@ -211,7 +216,7 @@ void AllTypeChunk::force_chunk_to_compress() const
 
 void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
 {
-    for (auto& elm : getListTypeChunk())
+    for (const auto& elm : getListTypeChunk())
     {
         elm->compress_chunk_to_compress_potentially(apply);
     }
@@ -234,7 +239,7 @@ bool AllTypeChunk::have_chunk_to_compress_potentially() const
 template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::destroy_after_flush(bool in_parallel)
 {
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (const auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
     {
         elm->destroy_after_flush(in_parallel);
     }
@@ -260,7 +265,7 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_pa
     if (!in_parallel)
         serial_ownership.emplace();
 
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (const auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
     {
         elm->flush_all_deferred(in_parallel, have_flushed);
     }
@@ -286,7 +291,7 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_pa
 template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::load_balance_list_block_free() const
 {
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (const auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
     {
         elm->load_balance_list_block_free();
     }
@@ -295,7 +300,7 @@ void AllTypeChunkParallelInterface<Derived, true>::load_balance_list_block_free(
 template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::resize_all_list_block_free_thr() const
 {
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (const auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
     {
         elm->resize_all_list_block_free_thr();
     }
@@ -319,7 +324,7 @@ template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::alloc_chunk_allocator_thr() const
 {
     // std-alloc: each manager's alloc_chunk_allocator_thr() is a no-op.
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (const auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
     {
         elm->alloc_chunk_allocator_thr();
     }
@@ -401,7 +406,7 @@ void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr()
         const int thr_rank = CHUNK_PMP_THREAD_RANK;
         const int nthr     = CHUNK_PMP_NUM_THREADS; // 1 without OpenMP
 
-        auto for_each_bucket = [&](auto&& phase)
+        const auto for_each_bucket = [&](auto&& phase)
         {
             for (std::size_t i = 0; i < types.size(); ++i)
             {
@@ -429,7 +434,7 @@ void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr()
 template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::delete_list_block_chunk_free_itself() const
 {
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (const auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
     {
         elm->delete_list_block_chunk_free_itself();
     }
@@ -461,7 +466,7 @@ template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, false>::delete_chunk_allocator() const
 {
     // std-alloc: each manager's delete_chunk_allocator() is a no-op.
-    for (auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
+    for (const auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
     {
         elm->delete_chunk_allocator();
     }
@@ -481,7 +486,7 @@ void AllTypeChunkDynInterface<Derived, true>::register_chunk_size(unsigned int s
     const std::lock_guard<std::mutex> lock(reg.registry_mutex_);
     if (std::find(reg.registered_sizes_.begin(), reg.registered_sizes_.end(), size) == reg.registered_sizes_.end())
         reg.registered_sizes_.push_back(size);
-    for (auto& elm : reg.getListTypeChunk())
+    for (const auto& elm : reg.getListTypeChunk())
     {
         elm->register_chunk_size(size, block_size);
     }
@@ -491,7 +496,7 @@ void AllTypeChunkDynInterface<Derived, true>::register_chunk_size(unsigned int s
 void AllTypeChunk::destroy_block_chunk() const
 {
     // std-alloc: each manager's destroy_block_chunk() is a no-op (NullValueAllocator).
-    for (auto& elm : getListTypeChunk())
+    for (const auto& elm : getListTypeChunk())
     {
         elm->destroy_block_chunk();
     }

@@ -64,6 +64,9 @@ class SingletonChk
   public:
     SingletonChk(const SingletonChk&)            = delete;
     SingletonChk& operator=(const SingletonChk&) = delete;
+    SingletonChk(SingletonChk&&)                 = delete;
+    SingletonChk& operator=(SingletonChk&&)      = delete;
+    ~SingletonChk()                              = default;
 
     static T* getInstance()
     {

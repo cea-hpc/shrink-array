@@ -335,8 +335,11 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     using manager_int_t = ManagerChunkInt;
 
     /// Non-copyable: the registry owns the managers and is a singleton.
-    AllTypeChunk(const AllTypeChunk& ref) = delete;
-    virtual ~AllTypeChunk()               = default;
+    AllTypeChunk(const AllTypeChunk&)            = delete;
+    AllTypeChunk& operator=(const AllTypeChunk&) = delete;
+    AllTypeChunk(AllTypeChunk&&)                 = delete;
+    AllTypeChunk& operator=(AllTypeChunk&&)      = delete;
+    virtual ~AllTypeChunk()                      = default;
 
     /// @return The registered managers, in registration order: the prefix
     ///         published so far, read without a lock (see the members above).

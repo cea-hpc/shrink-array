@@ -24,7 +24,6 @@
 #include <tuple>       // for tuple
 #include <type_traits> // for is_same_v
 #include <utility>     // for get, move
-#include <variant>     // for tuple
 #include <vector>      // for vector
 
 #include <initializer_list>                   // the {a, b, c} constructor
@@ -34,10 +33,12 @@
 #include "chunk/internal/array_chunk2_parallel.h"       // ParallelSupport2 — OpenMP-only mixin
 #include "chunk/internal/array_chunk2_rechunk_hooks.h"  // RechunkHooks2 — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
-#include "chunk/chunk_define.h"                         // for HAVE_EMBEDDED_FAST_BLOCK_COMPRESSION
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for use_fast_block_compression, use_openmp
 #include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
+#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_THREAD_CAPACITY
+#include "chunk/chunk2_std.h"                           // Chunk2<T>
+#include "chunk/internal/proxy2.h"                      // Proxy2<T> and its registry
 
 namespace shrink_array
 {
@@ -214,12 +215,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
         clear();
         Proxy2<T>::share_info_array.erase(this->registry_key());
 
-        if constexpr (chunk_config::use_fast_block_compression)
+        if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
         {
-            if constexpr (is_not_bool)
-            {
-                Proxy2<T>::share_info_array.erase_inf_array_by_ptr(&inf_array);
-            }
+            Proxy2<T>::share_info_array.erase_inf_array_by_ptr(&inf_array);
         }
     }
 

@@ -16,12 +16,10 @@
 
 #include <cstddef> // std::size_t
 
-#include "chunk/internal/manager_chunk.h"
 #include "chunk/all_type_chunk.h"
-#include "chunk/chunk_define.h"
 #include "chunk/chunk_std.h"
-#include "chunk/internal/chunk_func.h"
-#include "chunk/PMP_CHUNK.h"
+#include "chunk/config.h"
+#include "chunk/internal/chunk_stats.h" // ChunkStatsThr (CHUNK_STATS only)
 #include "chunk/singleton.h"
 
 namespace shrink_array

@@ -28,7 +28,7 @@
 namespace shrink_array
 {
 
-static constexpr size_t RING_SIZE = 1 << 24;
+static constexpr size_t RING_SIZE = size_t{1} << 24U;
 
 static std::unique_ptr<RingEntry[]> ring_buf = std::make_unique<RingEntry[]>(RING_SIZE);
 
@@ -61,32 +61,35 @@ static inline uint64_t rdtsc_end()
     #else
 inline uint64_t now_cycles()
 {
-    unsigned int lo, hi;
+    unsigned int lo = 0;
+    unsigned int hi = 0;
     __asm__ __volatile__("cpuid\n\t" // Serialize to avoid out-of-order execution
                          "rdtsc\n\t"
                          : "=a"(lo), "=d"(hi)
                          : "a"(0)
                          : "%ebx", "%ecx");
-    return ((uint64_t)hi << 32) | lo;
+    return ((uint64_t)hi << 32U) | lo;
 }
 
 static inline uint64_t rdtsc_start()
 {
-    unsigned int eax, edx;
+    unsigned int eax = 0;
+    unsigned int edx = 0;
     __asm__ __volatile__("cpuid\n\t"
                          "rdtsc\n\t"
                          : "=a"(eax), "=d"(edx)
                          : "a"(0)
                          : "rbx", "rcx");
-    return ((uint64_t)edx << 32) | eax;
+    return ((uint64_t)edx << 32U) | eax;
 }
 
 static inline uint64_t rdtsc_end()
 {
-    unsigned int eax, edx;
+    unsigned int eax = 0;
+    unsigned int edx = 0;
     __asm__ __volatile__("rdtscp\n\t" : "=a"(eax), "=d"(edx) : : "rcx");
     __asm__ __volatile__("cpuid" ::: "rax", "rbx", "rcx", "rdx");
-    return ((uint64_t)edx << 32) | eax;
+    return ((uint64_t)edx << 32U) | eax;
 }
 
     #endif
@@ -98,7 +101,7 @@ void ring_init()
 
 void ring_log(uint32_t tid, EventCode ev, uint32_t info)
 {
-    uint32_t idx       = ring_head.fetch_add(1, std::memory_order_relaxed) & (RING_SIZE - 1);
+    const uint32_t idx = ring_head.fetch_add(1, std::memory_order_relaxed) & (RING_SIZE - 1);
     ring_buf[idx].ts   = now_cycles();
     ring_buf[idx].tid  = tid;
     ring_buf[idx].ev   = ev;
@@ -109,7 +112,7 @@ void ring_log(uint32_t tid, EventCode ev, uint32_t info)
 // SEGV hunt: record an op-lifecycle event with the op's full address.
 void ring_log_op(uint32_t tid, EventCode ev, uint32_t num, const void* addr)
 {
-    uint32_t idx       = ring_head.fetch_add(1, std::memory_order_relaxed) & (RING_SIZE - 1);
+    const uint32_t idx = ring_head.fetch_add(1, std::memory_order_relaxed) & (RING_SIZE - 1);
     ring_buf[idx].ts   = now_cycles();
     ring_buf[idx].tid  = tid;
     ring_buf[idx].ev   = ev;
@@ -119,7 +122,7 @@ void ring_log_op(uint32_t tid, EventCode ev, uint32_t num, const void* addr)
 
 void ring_log_start(uint32_t tid, EventCode ev, uint32_t info)
 {
-    uint32_t idx       = ring_head.fetch_add(1, std::memory_order_relaxed) & (RING_SIZE - 1);
+    const uint32_t idx = ring_head.fetch_add(1, std::memory_order_relaxed) & (RING_SIZE - 1);
     ring_buf[idx].ts   = rdtsc_start();
     ring_buf[idx].tid  = tid;
     ring_buf[idx].ev   = ev;
@@ -129,7 +132,7 @@ void ring_log_start(uint32_t tid, EventCode ev, uint32_t info)
 
 void ring_log_end(uint32_t tid, EventCode ev, uint32_t info)
 {
-    uint32_t idx       = ring_head.fetch_add(1, std::memory_order_relaxed) & (RING_SIZE - 1);
+    const uint32_t idx = ring_head.fetch_add(1, std::memory_order_relaxed) & (RING_SIZE - 1);
     ring_buf[idx].ts   = rdtsc_end();
     ring_buf[idx].tid  = tid;
     ring_buf[idx].ev   = ev;
@@ -280,8 +283,8 @@ uint32_t get_tid()
     else
     {
         // Create a hash function object over std::thread::id
-        auto hasher = std::hash<std::thread::id>{};
-        auto raw    = hasher(std::this_thread::get_id());
+        const auto hasher = std::hash<std::thread::id>{};
+        const auto raw    = hasher(std::this_thread::get_id());
         return static_cast<uint32_t>(raw & 0xFFFFFFFFu);
     }
 }
@@ -315,11 +318,11 @@ static bool is_stdout_tty()
 {
     // Cached result to avoid repeated syscalls
     static std::atomic<int> cached{-1};
-    int                     v = cached.load(std::memory_order_acquire);
+    const int               v = cached.load(std::memory_order_acquire);
     if (v != -1)
         return v != 0;
 
-    int result = isatty(fileno(stdout)) ? 1 : 0;
+    const int result = isatty(fileno(stdout)) ? 1 : 0;
     cached.store(result, std::memory_order_release);
     return result != 0;
 }
@@ -332,10 +335,10 @@ static constexpr int PROGRESS_PERCENT_STEP = 5;
 static void
 print_progress_line(const std::string& icon, const std::string& stage, size_t done, size_t total, size_t spinner_idx)
 {
-    const char spinner_chars[] = {'|', '/', '-', '\\'};
-    double     pct_double      = total ? (100.0 * done / total) : 100.0;
-    int        pct             = static_cast<int>(pct_double);
-    char       spinner         = spinner_chars[spinner_idx % 4];
+    const char   spinner_chars[] = {'|', '/', '-', '\\'};
+    const double pct_double      = total ? (100.0 * static_cast<double>(done) / static_cast<double>(total)) : 100.0;
+    const int    pct             = static_cast<int>(pct_double);
+    const char   spinner         = spinner_chars[spinner_idx % 4];
 
     if (is_stdout_tty())
     {
@@ -357,7 +360,7 @@ print_progress_line(const std::string& icon, const std::string& stage, size_t do
         else if (PROGRESS_PERCENT_STEP > 0)
         {
             // Log when crossing multiples of PROGRESS_PERCENT_STEP
-            int bucket = (pct / PROGRESS_PERCENT_STEP) * PROGRESS_PERCENT_STEP;
+            const int bucket = (pct / PROGRESS_PERCENT_STEP) * PROGRESS_PERCENT_STEP;
             if (bucket != last_logged_pct)
             {
                 last_logged_pct = bucket;
@@ -465,7 +468,7 @@ bool analyze_ring_sweep()
     // End scanning progress line
     std::cout << "\r✅ Scanning complete.                            \n";
     // Close open intervals conservatively at last_ts (robust, with minimal-duration filter)
-    auto push_fallback_if_needed =
+    const auto push_fallback_if_needed =
         [&](std::unordered_map<uint32_t, std::vector<Interval>>& map, uint32_t tid, uint64_t start_ts, uint64_t end_ts)
     {
         if (end_ts <= start_ts)
@@ -480,7 +483,7 @@ bool analyze_ring_sweep()
         {
             const Interval& last = vec.back();
             // if last interval has same start (or overlaps to end_ts), assume already recorded
-            if (last.start == start_ts || !(end_ts > last.end && start_ts < last.end))
+            if (last.start == start_ts || end_ts <= last.end || start_ts >= last.end)
             {
                 // If the last interval already covers this range or has identical start, skip
                 return;
@@ -491,8 +494,8 @@ bool analyze_ring_sweep()
 
     for (auto& p : state)
     {
-        uint32_t     tid       = p.first;
-        ThreadState& thr_state = p.second;
+        const uint32_t tid       = p.first;
+        ThreadState&   thr_state = p.second;
 
         if (thr_state.in_fast)
         {
@@ -564,12 +567,12 @@ bool analyze_ring_sweep()
     std::vector<Endpoint> endpoints;
     endpoints.reserve((fast_intervals.size() + compress_intervals.size()) * 2);
 
-    auto add_endpoints = [&](const std::unordered_map<uint32_t, std::vector<Interval>>& map, bool isCompress)
+    const auto add_endpoints = [&](const std::unordered_map<uint32_t, std::vector<Interval>>& map, bool isCompress)
     {
         for (const auto& p : map)
         {
-            uint32_t    tid = p.first;
-            const auto& vec = p.second;
+            const uint32_t tid = p.first;
+            const auto&    vec = p.second;
             for (size_t i = 0; i < vec.size(); ++i)
             {
                 const Interval& iv = vec[i];
@@ -623,7 +626,7 @@ bool analyze_ring_sweep()
     active_list.reserve(64);
     std::unordered_map<uint64_t, size_t> active_index_by_key;
 
-    auto make_key = [](uint32_t tid, size_t idx) -> uint64_t { return ((uint64_t)tid << 32) | (uint64_t)idx; };
+    const auto make_key = [](uint32_t tid, size_t idx) -> uint64_t { return ((uint64_t)tid << 32U) | (uint64_t)idx; };
 
     struct Overlap
     {
@@ -655,9 +658,9 @@ bool analyze_ring_sweep()
                     std::cerr << "❌ Invalid compress index " << ep.idx << " for TID " << ep.tid << "\n";
                     continue;
                 }
-                const Interval& iv = compress_intervals[ep.tid][ep.idx];
-                ActiveCompress  ac{ep.tid, ep.idx, iv.start, iv.end};
-                uint64_t        key      = make_key(ep.tid, ep.idx);
+                const Interval&      iv = compress_intervals[ep.tid][ep.idx];
+                const ActiveCompress ac{ep.tid, ep.idx, iv.start, iv.end};
+                const uint64_t       key = make_key(ep.tid, ep.idx);
                 active_index_by_key[key] = active_list.size();
                 active_list.push_back(ac);
                 break;
@@ -665,15 +668,15 @@ bool analyze_ring_sweep()
 
             case COMP_END:
             {
-                uint64_t key = make_key(ep.tid, ep.idx);
-                auto     it  = active_index_by_key.find(key);
+                const uint64_t key = make_key(ep.tid, ep.idx);
+                const auto     it  = active_index_by_key.find(key);
                 if (it != active_index_by_key.end())
                 {
-                    size_t pos = it->second;
+                    const size_t pos = it->second;
                     if (pos + 1 != active_list.size())
                     {
                         active_list[pos]               = active_list.back();
-                        uint64_t moved_key             = make_key(active_list[pos].tid, active_list[pos].idx);
+                        const uint64_t moved_key       = make_key(active_list[pos].tid, active_list[pos].idx);
                         active_index_by_key[moved_key] = pos;
                     }
                     active_list.pop_back();
@@ -694,8 +697,8 @@ bool analyze_ring_sweep()
                 {
                     if (ac.tid == ep.tid)
                         continue;
-                    uint64_t ov_start = std::max(fiv.start, ac.start);
-                    uint64_t ov_end   = std::min(fiv.end, ac.end);
+                    const uint64_t ov_start = std::max(fiv.start, ac.start);
+                    const uint64_t ov_end   = std::min(fiv.end, ac.end);
                     if (ov_start < ov_end)
                     {
                         overlaps.push_back({ep.tid, ep.idx, ac.tid, ac.idx, ov_start, ov_end});
