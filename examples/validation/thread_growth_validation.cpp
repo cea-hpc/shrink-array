@@ -73,11 +73,9 @@ constexpr const char* variant_name()
         return "chunk";
 }
 
-static void set_team([[maybe_unused]] int n)
+static void set_team(int n)
 {
-#ifdef _OPENMP
-    omp_set_num_threads(n);
-#endif
+    chunk_pmp_set_num_threads(n);
 }
 
 /// Runs of 2048 elements alternate zero / varied, so each region leaves
@@ -164,7 +162,7 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
 
 /// Re-runs this executable with --beyond and checks that it stopped on the
 /// capacity invariant.
-static int check_beyond(const char* self)
+[[maybe_unused]] static int check_beyond(const char* self) // OpenMP builds only
 {
     const std::string log    = "/tmp/thread_growth_beyond_" + std::to_string(getpid()) + ".log";
     const std::string cmd    = std::string("\"") + self + "\" --beyond > \"" + log + "\" 2>&1";

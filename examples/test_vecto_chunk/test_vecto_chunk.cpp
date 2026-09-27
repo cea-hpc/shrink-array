@@ -21,10 +21,6 @@
 #include <fstream>
 #include <algorithm> // For std::shuffle
 
-#ifdef _OPENMP
-    #include <omp.h>
-#endif
-
 #include <sys/resource.h>
 
 #include <vector>
@@ -34,13 +30,12 @@
 
 #include "chunk/param_chunk.h"
 #include "chunk/array_chunk.h"
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
 
 
 using namespace shrink_array;
 
-#ifdef FAST_ALLOC
-int __mem_page_size = 0;
-#endif
+int __mem_page_size = 0; // read by the fast allocator; unused otherwise
 
 double convert_memory(double memoryValue)
 {
@@ -222,11 +217,7 @@ int main()
     constexpr int freq_raz = iter_max / 50;
     constexpr int interval = 20000;
 
-#ifdef _OPENMP
-    const int max_thr = omp_get_max_threads();
-#else
-    const int max_thr = 1;
-#endif
+    const int max_thr = CHUNK_PMP_MAX_THREADS;
 
     std::cout << "Number of threads : " << max_thr << '\n';
 
@@ -430,9 +421,8 @@ int main()
     lbd(tab_chunk2);
     lbd(tab_chunk3);
 
-#ifdef CHUNK_STATS
-    ParamChunk::ChunkStats();
-#endif
+    if constexpr (chunk_config::stats)
+        ParamChunk::ChunkStats();
 
     struct rusage usage;
     if (getrusage(RUSAGE_SELF, &usage) == 0)

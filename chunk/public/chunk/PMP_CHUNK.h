@@ -177,6 +177,18 @@ inline void chunk_pmp_set_schedule(chunk_pmp_schedule schedule) noexcept
 {
     return omp_get_thread_num();
 }
+
+/// @brief The team size of the next parallel regions (omp_set_num_threads).
+inline void chunk_pmp_set_num_threads(int n) noexcept
+{
+    omp_set_num_threads(n);
+}
+
+/// @brief How many nested levels may be active (omp_set_max_active_levels).
+inline void chunk_pmp_set_max_active_levels(int levels) noexcept
+{
+    omp_set_max_active_levels(levels);
+}
 } // namespace shrink_array
 
 inline int get_thr_rank_fast() noexcept
@@ -257,6 +269,10 @@ inline void chunk_pmp_set_schedule(chunk_pmp_schedule) noexcept {}
 {
     return 0;
 }
+/// @copydoc chunk_pmp_set_num_threads -- serial build: no team to size.
+inline void chunk_pmp_set_num_threads(int) noexcept {}
+/// @copydoc chunk_pmp_set_max_active_levels -- serial build: no levels.
+inline void chunk_pmp_set_max_active_levels(int) noexcept {}
 } // namespace shrink_array
 
 inline int get_thr_rank_fast() noexcept

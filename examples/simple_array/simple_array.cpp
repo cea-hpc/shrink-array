@@ -21,23 +21,17 @@
 #include <fstream>
 #include <complex>
 
-#ifdef _OPENMP
-    #include <omp.h>
-#endif
-
+#include <iomanip>
+#include <type_traits> // std::conditional_t (Array)
+#include <vector>
 #include <sys/resource.h>
+#include <unistd.h>
 
-#if defined CHUNK || defined CHUNK2
-    #include <iomanip>
-    #include <unistd.h>
-
-    #include "chunk/param_chunk.h"
-    #include "chunk/array_chunk.h"
-
-
-#else
-    #include <vector>
-#endif
+// Both executables have the chunk headers: simple_array_vector links
+// chunk_vector, simple_array_chunk chunk_v1.
+#include "chunk/param_chunk.h"
+#include "chunk/array_chunk.h"
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
 
 int __mem_page_size = 0;
 
@@ -148,39 +142,53 @@ void initializeRNG(std::mt19937& rng, const std::string& seed_file_name)
     rng.seed(seed);
 }
 
-#if defined CHUNK || defined CHUNK2
 using namespace shrink_array;
-#endif
+
+/// simple_array_chunk (CHUNK, or CHUNK2) runs on ArrayChunk, simple_array_vector
+/// on std::vector.
+constexpr bool use_chunk_array = chunk_config::use_chunk || chunk_config::use_chunk2;
+using Array                    = std::conditional_t<use_chunk_array, ArrayChunk<double>, std::vector<double>>;
+
+/// @brief Calls @p f on @p arrays in simple_array_chunk only. @p f is a generic
+///        lambda using ArrayChunk's members (compress, stats): its body is then
+///        instantiated with ArrayChunk alone. The same call in a discarded branch
+///        of main(), which is not a template, would be compiled for std::vector.
+template <typename F, typename... A>
+void if_chunk(F&& f, A&... arrays)
+{
+    if constexpr (use_chunk_array)
+        f(arrays...);
+}
 
 int main()
 {
-#if defined CHUNK || defined CHUNK2
-    __mem_page_size          = getpagesize();
-    constexpr int chunk_size = static_cast<int>(shrink_array::__chunk_size);
-
-    assert(chunk_size <= ChunkDef::size_max);
-
-
-    if constexpr (chunk_size == 0)
+    if constexpr (use_chunk_array)
     {
-        std::cerr << "The chunk size can't be null\n";
+        __mem_page_size          = getpagesize();
+        constexpr int chunk_size = static_cast<int>(shrink_array::__chunk_size);
+
+        assert(chunk_size <= ChunkDef::size_max);
+
+
+        if constexpr (chunk_size == 0)
+        {
+            std::cerr << "The chunk size can't be null\n";
+        }
+
+        if (const bool is_pow2 = ParamChunk::check_pow2(chunk_size); !is_pow2)
+        {
+            std::cerr << "The chunk size must be power of two";
+        }
+
+        if constexpr (chunk_size < ParamChunk::size_min || chunk_size > ParamChunk::size_max)
+        {
+            std::cerr << "The chunk size must must be superior or equal to " << ParamChunk::size_min
+                      << " and inferior or equal to " << ParamChunk::size_max << "\n";
+            std::abort();
+        }
+
+        ParamChunk::init_indexes(true);
     }
-
-    if (const bool is_pow2 = ParamChunk::check_pow2(chunk_size); !is_pow2)
-    {
-        std::cerr << "The chunk size must be power of two";
-    }
-
-    if constexpr (chunk_size < ParamChunk::size_min || chunk_size > ParamChunk::size_max)
-    {
-        std::cerr << "The chunk size must must be superior or equal to " << ParamChunk::size_min
-                  << " and inferior or equal to " << ParamChunk::size_max << "\n";
-        std::abort();
-    }
-
-    ParamChunk::init_indexes(true);
-
-#endif
 
     constexpr int sz = 1000000000;
     //  constexpr int sz = 100000;
@@ -189,18 +197,12 @@ int main()
 
     constexpr int freq_check_sum = iter_max / 5;
 
-#if defined CHUNK || defined CHUNK2
-    constexpr int freq_compress = iter_max / 10;
-#endif
+    constexpr int freq_compress = iter_max / 10; // chunk arrays only
     // constexpr int freq_raz = iter_max / 500;
     constexpr int freq_raz = iter_max / 50;
     constexpr int interval = 20000;
 
-#ifdef _OPENMP
-    const int max_thr = omp_get_max_threads();
-#else
-    const int max_thr = 1;
-#endif
+    const int max_thr = CHUNK_PMP_MAX_THREADS;
 
     std::cout << "Number of threads : " << max_thr << '\n';
 
@@ -210,11 +212,7 @@ int main()
     std::cout << "Creation of arrays ..." << '\n';
 
     // constexpr int interval = 2000;
-#if defined CHUNK || defined CHUNK2
-    ArrayChunk<double> tab1(sz), tab2(sz), tab3(sz);
-#else
-    std::vector<double> tab1(sz), tab2(sz), tab3(sz);
-#endif
+    Array tab1(sz), tab2(sz), tab3(sz);
 
     auto                          end             = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;
@@ -351,17 +349,14 @@ int main()
             std::cout << "tab3 check_sum = " << calculate_checksum(tab3) << '\n';
         }
 
-#if defined CHUNK || defined CHUNK2
         if (k % freq_compress == 0)
-        {
-            std::cout << "Compression\n";
-
-            tab1.compress();
-            tab2.compress();
-            tab3.compress();
-        }
-
-#endif
+            if_chunk(
+                [](auto&... tabs)
+                {
+                    std::cout << "Compression\n";
+                    (tabs.compress(), ...);
+                },
+                tab1, tab2, tab3);
     }
 
     std::cout << "\nv = " << v << '\n';
@@ -372,22 +367,16 @@ int main()
 
     std::cout << tab2[2] << '\n';
 
-#if defined CHUNK || defined CHUNK2
-    auto lbd = [](const ArrayChunk<double>& tab)
-    {
-        const double sz0 = tab.stats();
-        std::cout << "Chunk filling rate : " << std::fixed << std::setprecision(2) << sz0 << "%" << '\n';
-    };
+    if_chunk(
+        [](const auto&... tabs)
+        {
+            for (const double sz0 : {tabs.stats()...})
+                std::cout << "Chunk filling rate : " << std::fixed << std::setprecision(2) << sz0 << "%" << '\n';
 
-    lbd(tab1);
-    lbd(tab2);
-    lbd(tab3);
-
-    #ifdef CHUNK_STATS
-    ParamChunk::ChunkStats();
-    #endif
-
-#endif
+            if constexpr (chunk_config::stats)
+                ParamChunk::ChunkStats();
+        },
+        tab1, tab2, tab3);
 
     struct rusage usage;
     if (getrusage(RUSAGE_SELF, &usage) == 0)
@@ -404,8 +393,7 @@ int main()
     tab2.clear();
     tab3.clear();
 
-#if defined CHUNK || defined CHUNK2
-    destroy_block_chunk();
-#endif
+    if constexpr (use_chunk_array)
+        destroy_block_chunk();
     return 0;
 }
