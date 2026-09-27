@@ -27,5 +27,6 @@
 
 #include <atomic>
 
-/// @brief Read by chunk_config::OMPTcc: no callback exists in this binary.
-std::atomic<int> g_ompt_suspended{1}; // no callback exists in this binary
+/// @brief The suspension counter read by chunk_config::OMPTcc (chunk/config.h),
+///        non-zero: no callback exists in this binary.
+std::atomic<int> g_ompt_suspended{1};

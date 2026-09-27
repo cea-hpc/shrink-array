@@ -1,12 +1,15 @@
 // Step-0 validation harness for ChunkSizeAdvisor: build the SAME data at
 // several REAL chunk sizes, then compare the advisor's per-size predictions
-// (made from ONE size) against ground truth at each size.
+// (each set made from ONE reference size: 256, then 1024) against ground
+// truth at each size.
 #include <cstdio>
 #include <iterator> // std::size
 #include <vector>
 
 #include "chunk/array_chunk2A.h"
+#include "chunk/chunk2A_std.h" // Chunk2A
 #include "chunk/chunk_size_advisor.h"
+#include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/param_chunk.h"
 
 using namespace shrink_array;
@@ -74,7 +77,7 @@ int main()
     const unsigned     sizes[] = {64, 128, 256, 512, 1024};
     std::vector<Truth> truths;
     double             meta = 0.;
-    for (unsigned cs : sizes)
+    for (const unsigned cs : sizes)
     {
         set_thread_chunk_size(cs);
         ArrayChunk2A<double> tab(1); // proven pattern (test_multisize):
@@ -83,7 +86,7 @@ int main()
         fill_and_compress(tab);
         if (meta == 0.)
         {
-            ChunkSizeAdvisor<double>::Options o;
+            const ChunkSizeAdvisor<double>::Options o;
             meta = sizeof(Chunk2A<double>) + o.meta_extra_bytes;
         }
         truths.push_back(ground_truth(tab, meta));
@@ -107,15 +110,14 @@ int main()
         ChunkSizeAdvisor<double>::Options opt;
         opt.coarser_levels = 2;
         opt.finer_levels   = 2;
-        auto rep           = ChunkSizeAdvisor<double>::analyze(ref, opt);
-        char title[32];
+        const auto rep     = ChunkSizeAdvisor<double>::analyze(ref, opt);
+        char       title[32];
         std::snprintf(title, sizeof title, "ref S=%u", ref_size);
         ChunkSizeAdvisor<double>::print(rep, title);
 
         std::printf("\n── prediction (from S=%u) vs ground truth ──\n", ref_size);
-        for (size_t i = 0; i < rep.table.size(); ++i)
+        for (const auto& e : rep.table)
         {
-            const auto& e = rep.table[i];
             // find matching real size
             for (size_t k = 0; k < std::size(sizes); ++k)
             {

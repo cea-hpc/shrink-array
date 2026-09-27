@@ -14,23 +14,31 @@
  * limitations under the License.
  */
 
+#include <cassert>
 #include <chrono>
+#include <cmath>
+#include <cstdlib>
+#include <ctime>
 #include <iostream>
 #include <random>
 #include <array>
 #include <fstream>
 #include <algorithm> // For std::shuffle
+#include <string>
 
 #include <sys/resource.h>
 
 #include <vector>
 #include <iomanip>
-#include <unistd.h>
 
 
 #include "chunk/param_chunk.h"
 #include "chunk/array_chunk.h"
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
+#include "chunk/chunk_def.h"                  // ChunkDef
+#include "chunk/chunk_std.h"                  // destroy_block_chunk
+#include "chunk/config.h"                     // chunk_config::stats
+#include "chunk/internal/chunk_size_config.h" // __chunk_size
 
 
 using namespace shrink_array;
@@ -41,21 +49,15 @@ double convert_memory(double memoryValue)
 {
     const double BYTE_TO_KB = 1.0 / 1024;
     const double KB_TO_MB   = 1.0 / 1024;
-    // const double MB_TO_GB   = 1.0 / 1024;
 
     const double kilobytes = memoryValue * BYTE_TO_KB;
     const double megabytes = kilobytes * KB_TO_MB;
-    //  double gigabytes = megabytes * MB_TO_GB;
 
     std::ofstream fichier("memory_mo.txt");
 
     if (fichier.is_open())
     {
-        // Écrire un scalaire dans le fichier
-
         fichier << megabytes;
-
-        // Fermer le fichier
         fichier.close();
     }
     else
@@ -122,14 +124,14 @@ void initializeRNG(std::mt19937& rng, const std::string& seed_file_name)
 constexpr int iter_max = 10000;
 
 template <typename V>
-void init(int                        start0,
-          int                        end0,
-          int                        k,
-          std::array<int, iter_max>& tab_nba1,
-          std::array<int, iter_max>& tab_nba2,
-          V&                         tab1,
-          V&                         tab2,
-          V&                         tab3)
+void init(int                              start0,
+          int                              end0,
+          int                              k,
+          const std::array<int, iter_max>& tab_nba1,
+          const std::array<int, iter_max>& tab_nba2,
+          V&                               tab1,
+          V&                               tab2,
+          V&                               tab3)
 {
 #pragma omp for schedule(static) nowait
     for (int i = start0; i < end0; ++i)
@@ -143,14 +145,14 @@ void init(int                        start0,
 }
 
 template <typename V>
-void calculate(double               val,
-               int                  start0,
-               int                  end0,
-               std::vector<int>&    index,
-               std::vector<double>& tab_vec,
-               const V&             tab1,
-               const V&             tab2,
-               const V&             tab3)
+void calculate(double                  val,
+               int                     start0,
+               int                     end0,
+               const std::vector<int>& index,
+               std::vector<double>&    tab_vec,
+               const V&                tab1,
+               const V&                tab2,
+               const V&                tab3)
 {
 #pragma omp for simd nowait // simd good for V vector but bad for V chunk
     for (int i = start0; i < end0; ++i)
@@ -163,14 +165,14 @@ void calculate(double               val,
 }
 
 template <typename V>
-void calculate1(double               val,
-                int                  start0,
-                int                  end0,
-                std::vector<int>&    index,
-                std::vector<double>& tab_vec,
-                V&                   tab1,
-                const V&             tab2,
-                const V&             tab3)
+void calculate1(double                     val,
+                int                        start0,
+                int                        end0,
+                const std::vector<int>&    index,
+                const std::vector<double>& tab_vec,
+                V&                         tab1,
+                const V&                   tab2,
+                const V&                   tab3)
 {
 #pragma omp for simd nowait // simd good for V vector but false for V chunk (*)
     for (int i = start0; i < end0; ++i)
@@ -249,12 +251,10 @@ int main()
     start           = end;
     std::cout << "\nElapsed time Initialisation to zero: " << elapsed_seconds.count() << "s\n";
 
-    int min = 1;
-    int max = sz;
+    const int min = 1;
+    const int max = sz;
 
     // Initialize the random number generator
-    // std::random_device rd;
-    //  std::mt19937       rng(rd());
     const std::string str            = std::to_string(iter_max);
     const std::string seed_file_name = "seed" + str + ".txt"; // File to store the seed
     std::mt19937      rng;                                    // Random number generator
@@ -268,13 +268,13 @@ int main()
 
     std::cout << "Iteration ..." << '\n';
 
-    std::array<int, iter_max> tab_size, tab_start, tab_nba1, tab_nba2;
+    std::array<int, iter_max> tab_size{}, tab_start{}, tab_nba1{}, tab_nba2{};
 
     for (int k = 0; k < iter_max; ++k)
     {
         const int size   = sizeDistribution(rng);
         const int start0 = startDistribution(rng);
-        int       end0   = start0 + size;
+        const int end0   = start0 + size;
         tab_size[k]      = size;
         tab_start[k]     = start0;
 
@@ -292,9 +292,8 @@ int main()
 
     for (int k = 0; k < iter_max; ++k)
     {
-        //  std::cout << "iter : " << k << "\n";
         const int size   = tab_size[k];
-        int       start0 = tab_start[k];
+        const int start0 = tab_start[k];
 
         int end0 = start0 + size;
 
@@ -306,15 +305,8 @@ int main()
         // Initialize the random number generator with the current time
         std::srand(static_cast<unsigned int>(std::time(nullptr)));
 
-        // Generate unique random numbers and store them in the set
-        //        while (unique_numbers.size() < nsz)
-        //        {
-        //            const int random_number = std::rand() % nsz; // Generate numbers between 0 and RANGE-1
-        //            unique_numbers.insert(random_number);
-        //        }
-
-        // Copy the unique elements from the set to the array
-
+        // The indirection: the cells of the interval in order, then shuffled
+        // by windows below.
         index.resize(nsz);
 
         for (int p = 0; p < nsz; ++p)
@@ -345,9 +337,9 @@ int main()
                       << ": [" << start0 << ", " << end0 << "]"
                       << " size : " << size << "\n";
 
-            int i;
+            int i = start0;
 
-            for (i = start0; i < sz; ++i)
+            for (; i < sz; ++i)
             {
                 if (tab1[i] != 0)
                 {
@@ -387,9 +379,9 @@ int main()
                 }
             }
         }
-        double progress = (static_cast<double>(k) / iter_max) * 100;
+        const double progress = (static_cast<double>(k) / iter_max) * 100;
 
-        // Afficher la progression en pourcentage tous les 10%
+        // Print the progress every 10%
         if (k % progress_interval == 0)
         {
             std::cout << "Progression : " << std::fixed << std::setprecision(2) << progress << "%" << '\n';
@@ -411,7 +403,7 @@ int main()
 
     std::cout << tab2[2] << '\n';
 
-    auto lbd = [](const ArrayChunk<double>& tab)
+    const auto lbd = [](const ArrayChunk<double>& tab)
     {
         const double sz0 = tab.stats();
         std::cout << "Chunk filling rate : " << std::fixed << std::setprecision(2) << sz0 << "%" << '\n';
@@ -424,10 +416,10 @@ int main()
     if constexpr (chunk_config::stats)
         ParamChunk::ChunkStats();
 
-    struct rusage usage;
+    struct rusage usage{};
     if (getrusage(RUSAGE_SELF, &usage) == 0)
     {
-        long rss = usage.ru_maxrss; // Résident Set Size en kilo-octets
+        const long rss = usage.ru_maxrss; // Resident Set Size in kilobytes
         std::cout << "\nMemory consumption : " << convert_memory(static_cast<double>(rss * 1024)) << " Mo \n\n";
     }
     else
