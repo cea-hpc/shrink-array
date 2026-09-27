@@ -310,6 +310,9 @@ N_FAILED=0
 # Override either knob from the environment: CHUNK_MAX_JOBS=1 serialises
 # entirely (useful when a build gets OOM-killed), and an explicitly set
 # CMAKE_BUILD_PARALLEL_LEVEL is always respected as-is.
+# Remember whether --jobs / CHUNK_MAX_JOBS was given: only the default is
+# narrowed to what --target selects (below, once __target_wants exists).
+__max_jobs_given="${CHUNK_MAX_JOBS:+1}"
 CHUNK_MAX_JOBS="${CHUNK_MAX_JOBS:-4}"
 
 # How many cores to plan for. nproc is the right answer: it already reflects the
@@ -385,6 +388,22 @@ __mem_cap_jobs() {
     [ "$n" -lt 1 ] && n=1
     echo "$n"
 }
+
+# A --target that keeps fewer configurations than CHUNK_MAX_JOBS leaves the
+# other slots empty, and their share of the cores with them: --target=omp-gnu
+# alone ran ONE build with a quarter of the budget (2 compile jobs on a
+# 24-thread machine). Size the slots by what can actually run.
+if [ -n "${CHUNK_BUILD_TARGET:-}" ] && [ -z "$__max_jobs_given" ]; then
+    __n_selected=0
+    for __n in $(known_build_names "$(dirname "${BASH_SOURCE[0]}")/compile_all.sh" \
+                                   "$(dirname "${BASH_SOURCE[0]}")/compile_all_gnu.sh"); do
+        __target_wants "$__n" && __n_selected=$(( __n_selected + 1 ))
+    done
+    if [ "$__n_selected" -ge 1 ] && [ "$__n_selected" -lt "$CHUNK_MAX_JOBS" ]; then
+        CHUNK_MAX_JOBS="$__n_selected"
+        export CHUNK_MAX_JOBS # compile_all_gnu.sh, run by compile_all.sh, shares the slots
+    fi
+fi
 
 if [ -z "${CMAKE_BUILD_PARALLEL_LEVEL:-}" ]; then
     __ncores="$(__usable_cores)"
