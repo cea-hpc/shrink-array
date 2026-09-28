@@ -59,19 +59,8 @@ inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool ba
     // before Sept '26's fixes (lagging VmRSS, Chunk2A's leaked metadata rows,
     // folds through a buffer); this measures whether larger steps are safe
     // now, without a rebuild.
-    static const unsigned env_factor = []() -> unsigned
-    {
-        const char* env = std::getenv("CHUNK_RECHUNK_MAX_COARSEN");
-        if (env == nullptr || env[0] == '\0')
-            return 0u; // unset: keep the policy
-        unsigned n = 0;
-        if (!shrink_array::parse_number(env, n) || n == 0)
-        {
-            shrink_array::warn_invalid_env("CHUNK_RECHUNK_MAX_COARSEN", env);
-            return 0u; // invalid: keep the policy
-        }
-        return n;
-    }();
+    // Unset, not a number (warned) or 0: keep the policy.
+    static const unsigned env_factor = shrink_array::env_optional<unsigned>("CHUNK_RECHUNK_MAX_COARSEN").value_or(0u);
     const unsigned max_factor = env_factor != 0 ? env_factor : pol_.max_coarsen_factor;
 
     if (rep.best < 0 || rep.cur < 0 || max_factor <= 1)
