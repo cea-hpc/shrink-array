@@ -36,6 +36,7 @@
 #include <atomic>
 #include <cstddef>
 #include <mutex>
+#include <vector>
 
 #include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h"
@@ -68,9 +69,8 @@ struct Materialisations
         std::array<long, kKeys> n;
     };
 
-    static inline RankSlot*     slots_   = nullptr;
-    static inline int           n_ranks_ = 0;
-    static inline std::once_flag once_;
+    static inline std::vector<RankSlot> slots_; ///< one per rank, sized once (ensure)
+    static inline std::once_flag        once_;
 
     static void ensure() noexcept
     {
@@ -78,8 +78,7 @@ struct Materialisations
                        []
                        {
                            const int n = CHUNK_PMP_MAX_THREADS;
-                           slots_      = new RankSlot[static_cast<std::size_t>(n > 0 ? n : 1)]();
-                           n_ranks_    = n > 0 ? n : 1;
+                           slots_.resize(static_cast<std::size_t>(n > 0 ? n : 1)); // value-initialised: 0
                        });
     }
 
@@ -87,19 +86,19 @@ struct Materialisations
     static void note(int thr, unsigned key) noexcept
     {
         ensure();
-        if (thr < 0 || thr >= n_ranks_)
+        if (thr < 0 || static_cast<std::size_t>(thr) >= slots_.size())
             return;
-        ++slots_[thr].n[key % kKeys];
+        ++slots_[static_cast<std::size_t>(thr)].n[key % kKeys];
     }
 
     /// @brief All ranks' materialisations of array @p key (quiescent point).
     [[nodiscard]] static long total(unsigned key) noexcept
     {
-        if (key == 0 || slots_ == nullptr)
+        if (key == 0)
             return 0;
         long s = 0;
-        for (int r = 0; r < n_ranks_; ++r)
-            s += slots_[r].n[key % kKeys];
+        for (const RankSlot& slot : slots_)
+            s += slot.n[key % kKeys];
         return s;
     }
 };
