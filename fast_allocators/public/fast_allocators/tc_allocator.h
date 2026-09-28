@@ -862,7 +862,7 @@ struct TCTypeAllocator final : public VTCTypeAllocator
     {
         destroy_int();
 
-        block_empty = {}; // releases the reserve's storage
+        decltype(block_empty)().swap(block_empty); // releases the reserve's storage
 
         ElementSize = 0;
         block_full = block = nullptr;
@@ -1272,7 +1272,7 @@ struct TCTypeCAllocator
     {
         destroy_int();
 
-        block_empty = {}; // releases the reserve's storage
+        decltype(block_empty)().swap(block_empty); // releases the reserve's storage
 
         ElementSize = 0;
         block_full = block = nullptr;

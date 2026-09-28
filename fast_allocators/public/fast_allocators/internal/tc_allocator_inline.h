@@ -136,7 +136,8 @@ inline void TCCAllocator::alloc_block()
 
 inline void TCCAllocator::destroy()
 {
-    tab_firstFree = {}; // releases the free-list links
+    std::vector<unsigned short>().swap(tab_firstFree); // releases the free-list links
+    // (not `= {}`: that is operator=(initializer_list), which keeps the capacity)
 
     // FIX (op/value slab aliasing): return the value slab to the VALUE arena's
     // free-list, never to the glibc.
