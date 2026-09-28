@@ -922,33 +922,34 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr_r
  */
 template <typename T, typename Derived, bool Enabled>
 template <bool IsBoolCas, typename InitFn>
-void Chunk2OmpPolicy<T, Derived, Enabled>::create_value_impl(int                   thr_rank,
+void Chunk2OmpPolicy<T, Derived, Enabled>::create_value_impl(this Derived&         self,
+                                                             int                   thr_rank,
                                                              InitFn&&              init_func,
                                                              [[maybe_unused]] int  ind,
                                                              [[maybe_unused]] bool need_set_second_value) noexcept
 {
-    T* values_loc = Base::allocate_chunk_internal(thr_rank, std::forward<InitFn>(init_func));
+    T* values_loc = self.Base::allocate_chunk_internal(thr_rank, std::forward<InitFn>(init_func));
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        Base::apply_cas_or_recup(values_loc, thr_rank,
-                                 [this, ind, need_set_second_value](T* cst_ptr)
-                                 {
-                                     if constexpr (IsBoolCas)
-                                     {
-                                         (void)ind; // only the non-bool CAS takes the index
-                                         return derived().compare_and_swap_bool(cst_ptr, need_set_second_value);
-                                     }
-                                     else
-                                         // Propagate the observed state to the CAS so it refuses a
-                                         // wrong-side transition after a cst_val1 <-> cst_val2 race.
-                                         return derived().compare_and_swap(cst_ptr, ind, need_set_second_value);
-                                 });
+        self.Base::apply_cas_or_recup(values_loc, thr_rank,
+                                      [&self, ind, need_set_second_value](T* cst_ptr)
+                                      {
+                                          if constexpr (IsBoolCas)
+                                          {
+                                              (void)ind; // only the non-bool CAS takes the index
+                                              return self.compare_and_swap_bool(cst_ptr, need_set_second_value);
+                                          }
+                                          else
+                                              // Propagate the observed state to the CAS so it refuses a
+                                              // wrong-side transition after a cst_val1 <-> cst_val2 race.
+                                              return self.compare_and_swap(cst_ptr, ind, need_set_second_value);
+                                      });
     }
     else
     {
         // apply_cas_or_recup takes its non-CAS branch in this mode anyway.
-        Base::apply_cas_or_recup(values_loc, thr_rank, [](T*) { return false; });
+        self.Base::apply_cas_or_recup(values_loc, thr_rank, [](T*) { return false; });
     }
 }
 
@@ -971,13 +972,14 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::create_value_impl(int                
  *       apply_cas_or_recup().
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2OmpPolicy<T, Derived, Enabled>::create_value(bool               need_set_second_value,
+void Chunk2OmpPolicy<T, Derived, Enabled>::create_value(this Derived&      self,
+                                                        bool               need_set_second_value,
                                                         const inf_array_t& inf_array,
                                                         int                thr_rank) noexcept
 {
     if constexpr (is_not_bool)
     {
-        create_value_impl</*IsBoolCas=*/false>(
+        self.template create_value_impl</*IsBoolCas=*/false>(
             thr_rank,
             [need_set_second_value, &inf_array](T* ptr)
             {
@@ -1003,9 +1005,11 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::create_value(bool               need_
  * @param thr_rank              Rank whose allocator provides the buffer.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2OmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_second_value, int thr_rank) noexcept
+void Chunk2OmpPolicy<T, Derived, Enabled>::create_value_bool(this Derived& self,
+                                                             bool          need_set_second_value,
+                                                             int           thr_rank) noexcept
 {
-    create_value_impl</*IsBoolCas=*/true>(
+    self.template create_value_impl</*IsBoolCas=*/true>(
         thr_rank,
         [need_set_second_value](T* ptr)
         {
@@ -1036,10 +1040,11 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_secon
  */
 template <typename T, typename Derived>
 template <typename Init2ndFn>
-void Chunk2OmpPolicy<T, Derived, false>::create_value_serial_impl(bool        need_set_second_value,
-                                                                  Init2ndFn&& init_2nd) noexcept
+void Chunk2OmpPolicy<T, Derived, false>::create_value_serial_impl(this Derived& self,
+                                                                  bool          need_set_second_value,
+                                                                  Init2ndFn&&   init_2nd) noexcept
 {
-    const auto init_func = [this, need_set_second_value, &init_2nd](T* ptr)
+    const auto init_func = [&self, need_set_second_value, &init_2nd](T* ptr)
     {
         // The counter reset is CROSSED on purpose: filling with one constant
         // invalidates the count kept for the OTHER one, which is the one that
@@ -1047,25 +1052,27 @@ void Chunk2OmpPolicy<T, Derived, false>::create_value_serial_impl(bool        ne
         if (!need_set_second_value)
         {
             Base::init_block(ptr);
-            derived().reset_nb_val_eq_second_value();
+            self.reset_nb_val_eq_second_value();
         }
         else
         {
             init_2nd(ptr);
-            derived().reset_nb_val_eq_first_value();
+            self.reset_nb_val_eq_first_value();
         }
     };
 
-    values = Base::allocate_chunk_internal(0, init_func);
+    self.values = self.Base::allocate_chunk_internal(0, init_func);
 }
 
 template <typename T, typename Derived>
-void Chunk2OmpPolicy<T, Derived, false>::create_value(bool need_set_second_value, const inf_array_t& inf_array) noexcept
+void Chunk2OmpPolicy<T, Derived, false>::create_value(this Derived&      self,
+                                                      bool               need_set_second_value,
+                                                      const inf_array_t& inf_array) noexcept
 {
     if constexpr (is_not_bool)
     {
-        create_value_serial_impl(need_set_second_value,
-                                 [&inf_array](T* ptr) { BaseSpec::init_block_2nd_value(ptr, inf_array); });
+        self.create_value_serial_impl(need_set_second_value,
+                                      [&inf_array](T* ptr) { BaseSpec::init_block_2nd_value(ptr, inf_array); });
     }
     else
     {
@@ -1078,11 +1085,11 @@ void Chunk2OmpPolicy<T, Derived, false>::create_value(bool need_set_second_value
  * @param need_set_second_value True to pre-fill with `true`, false for first_value.
  */
 template <typename T, typename Derived>
-void Chunk2OmpPolicy<T, Derived, false>::create_value_bool(bool need_set_second_value) noexcept
+void Chunk2OmpPolicy<T, Derived, false>::create_value_bool(this Derived& self, bool need_set_second_value) noexcept
 {
     if constexpr (is_bool)
     {
-        create_value_serial_impl(need_set_second_value, [](T* ptr) { BaseSpec::init_block_2nd_value(ptr); });
+        self.create_value_serial_impl(need_set_second_value, [](T* ptr) { BaseSpec::init_block_2nd_value(ptr); });
     }
     else
     {
@@ -1110,16 +1117,16 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::clear(int ind, int thr_rank)
  * @param ind Index of the array's second value, used by that assertion.
  */
 template <typename T, typename Derived>
-void Chunk2OmpPolicy<T, Derived, false>::clear_st(int ind)
+void Chunk2OmpPolicy<T, Derived, false>::clear_st(this Derived& self, int ind)
 {
-    Base::debug_check_written(ind);
+    self.Base::debug_check_written(ind);
 
-    Base::free_values(values);
-    derived().init_values_cst_val1();
+    self.Base::free_values(self.values);
+    self.init_values_cst_val1();
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        derived().reset_nb_val_eq_value();
+        self.reset_nb_val_eq_value();
     }
 }
 
@@ -1150,7 +1157,7 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::block_clear(int num_compress_value, i
 /// Serial build: frees the buffer outright instead of parking it in a rank
 /// pool, and resets the per-chunk element counters.
 template <typename T, typename Derived>
-void Chunk2OmpPolicy<T, Derived, false>::block_clear(int num_compress_value, int ind, int)
+void Chunk2OmpPolicy<T, Derived, false>::block_clear(this Derived& self, int num_compress_value, int ind, int)
 {
     // CHUNK_STATS: one materialised block released by a successful compression.
     // Counted here because block_clear is the single point every variant and
@@ -1158,12 +1165,12 @@ void Chunk2OmpPolicy<T, Derived, false>::block_clear(int num_compress_value, int
     // plain-chunk sweep, so chunk2/chunk2a always reported 0).
     increm_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
-    Base::free_values(values);
+    self.Base::free_values(self.values);
 
-    derived().init_values_cst_val(num_compress_value, ind);
+    self.init_values_cst_val(num_compress_value, ind);
     if constexpr (chunk_config::use_compression_with_counter)
     {
-        derived().reset_nb_val_eq_value();
+        self.reset_nb_val_eq_value();
     }
 }
 
@@ -1211,7 +1218,7 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::clear_int_st_bool(int num_compress_va
  * @pre The chunk is materialised (debug-only assertion).
  */
 template <typename T, typename Derived>
-void Chunk2OmpPolicy<T, Derived, false>::clear_int_st(int num_compress_value, int ind)
+void Chunk2OmpPolicy<T, Derived, false>::clear_int_st(this Derived& self, int num_compress_value, int ind)
 {
     // --- check only on debug ---
 
@@ -1219,9 +1226,9 @@ void Chunk2OmpPolicy<T, Derived, false>::clear_int_st(int num_compress_value, in
     // written check and the bool-specific reinit. Non-bool uses the indexed
     // path. (Matches the counter-policy split in the reference implementation.)
     if constexpr (is_bool)
-        Base::debug_check_written();
+        self.Base::debug_check_written();
     else
-        Base::debug_check_written(ind);
+        self.Base::debug_check_written(ind);
 
     // CHUNK_STATS: this is the non-OMP twin of block_clear -- reached from
     // compress_int's sweep via clear_st(num_compress_value, ind), which
@@ -1237,21 +1244,21 @@ void Chunk2OmpPolicy<T, Derived, false>::clear_int_st(int num_compress_value, in
     increm_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
 
-    Base::free_values(values);
+    self.Base::free_values(self.values);
 
     if (num_compress_value == 0)
     {
-        derived().reset_nb_val_eq_first_value();
+        self.reset_nb_val_eq_first_value();
     }
     else
     {
-        derived().reset_nb_val_eq_second_value();
+        self.reset_nb_val_eq_second_value();
     }
 
     if constexpr (is_bool)
-        derived().init_values_cst_val_bool(num_compress_value);
+        self.init_values_cst_val_bool(num_compress_value);
     else
-        derived().init_values_cst_val(num_compress_value, ind);
+        self.init_values_cst_val(num_compress_value, ind);
 }
 
 // clear_st(int num_compress_value, int ind) -- the entry point that supplies

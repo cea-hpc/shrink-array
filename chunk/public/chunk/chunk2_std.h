@@ -404,7 +404,11 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \tparam InitFn callable (T*) pre-filling the allocated block.
      */
     template <bool IsBoolCas, typename InitFn>
-    void create_value_impl(int thr_rank, InitFn&& init_func, int ind, bool need_set_second_value) noexcept;
+    void create_value_impl(this Derived& self,
+                           int           thr_rank,
+                           InitFn&&      init_func,
+                           int           ind,
+                           bool          need_set_second_value) noexcept;
 
     /*!
      * \brief Materialise this chunk's buffer (allocate + init), for a
@@ -414,14 +418,15 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \param inf_array (second_value, ...) tuple describing the target state.
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-    void create_value(bool need_set_second_value, const inf_array_t& inf_array, int thr_rank) noexcept;
+    void
+    create_value(this Derived& self, bool need_set_second_value, const inf_array_t& inf_array, int thr_rank) noexcept;
 
     /*!
      * \brief Bool specialization of create_value().
      * \param need_set_second_value Whether to also register the second-value slot.
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-    void create_value_bool(bool need_set_second_value, int thr_rank) noexcept;
+    void create_value_bool(this Derived& self, bool need_set_second_value, int thr_rank) noexcept;
 
     /*!
      * \brief Convenience overload of create_value() that resolves the
@@ -430,11 +435,11 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \param need_set_second_value Whether to also register the second-value slot.
      * \param inf_array (second_value, ...) tuple describing the target state.
      */
-    void create_value(bool need_set_second_value, const inf_array_t& inf_array) noexcept
+    void create_value(this Derived& self, bool need_set_second_value, const inf_array_t& inf_array) noexcept
     {
         if constexpr (is_not_bool)
         {
-            create_value(need_set_second_value, inf_array, get_thr_rank_fast());
+            self.create_value(need_set_second_value, inf_array, get_thr_rank_fast());
         }
         else
         {
@@ -448,11 +453,11 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      *        Bool-only; a compile error otherwise.
      * \param need_set_second_value Whether to also register the second-value slot.
      */
-    void create_value_bool(bool need_set_second_value) noexcept
+    void create_value_bool(this Derived& self, bool need_set_second_value) noexcept
     {
         if constexpr (is_bool)
         {
-            create_value_bool(need_set_second_value, get_thr_rank_fast());
+            self.create_value_bool(need_set_second_value, get_thr_rank_fast());
         }
         else
         {
@@ -538,13 +543,13 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      *                               chunk's second-value slot.
      * \param inf_array (second_value, ...) tuple describing the target state.
      */
-    void create_value(bool need_set_second_value, const inf_array_t& inf_array) noexcept;
+    void create_value(this Derived& self, bool need_set_second_value, const inf_array_t& inf_array) noexcept;
 
     /*!
      * \brief Bool specialization of create_value() (serial builds).
      * \param need_set_second_value Whether to also register the second-value slot.
      */
-    void create_value_bool(bool need_set_second_value) noexcept;
+    void create_value_bool(this Derived& self, bool need_set_second_value) noexcept;
 
     /**
      * \brief Shared body of the two serial create_value entry points: they
@@ -552,7 +557,7 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \tparam Init2ndFn callable (T*) filling the block with the second value.
      */
     template <typename Init2ndFn>
-    void create_value_serial_impl(bool need_set_second_value, Init2ndFn&& init_2nd) noexcept;
+    void create_value_serial_impl(this Derived& self, bool need_set_second_value, Init2ndFn&& init_2nd) noexcept;
 
     /*!
      * \brief Compress this chunk to the second constant at index `ind`
@@ -562,7 +567,7 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \param ind Index of the second constant (unused when
      *            num_compress_value == 0).
      */
-    void clear_int_st(int num_compress_value, int ind);
+    void clear_int_st(this Derived& self, int num_compress_value, int ind);
 
     /*!
      * \brief Compress this chunk to its first constant (serial/counter
@@ -571,7 +576,7 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      *            check; the compression itself always targets the first
      *            constant regardless of ind.
      */
-    void clear_st(int ind);
+    void clear_st(this Derived& self, int ind);
 
     /*!
      * \brief Compress this chunk to a constant (serial twin of the OpenMP
@@ -579,9 +584,9 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \param num_compress_value 0 for the first constant, non-zero for the second.
      * \param ind Index of the second constant (unused when num_compress_value == 0).
      */
-    void clear_st(int num_compress_value, int ind)
+    void clear_st(this Derived& self, int num_compress_value, int ind)
     {
-        clear_int_st(num_compress_value, ind);
+        self.clear_int_st(num_compress_value, ind);
     }
 
     /*!
@@ -591,7 +596,7 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \param num_compress_value 0 for the first constant, non-zero for the second.
      * \param ind Index of the second constant (unused when num_compress_value == 0).
      */
-    void block_clear(int num_compress_value, int ind, int);
+    void block_clear(this Derived& self, int num_compress_value, int ind, int);
 };
 
 // --- In chunk2_std.h ---
