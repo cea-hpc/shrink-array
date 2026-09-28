@@ -307,6 +307,9 @@ class SlabArena
 
     /**
      * @brief Hand out @p size bytes aligned to @p align.
+     * @param fresh If not null, set to whether the slab is fresh from mmap
+     *        (never handed out, so still all zeros) or recycled from the free
+     *        list (holds its previous occupant's bytes).
      * @return Never null: a failed mmap aborts, matching what posix_memalign
      *         failure used to do here.
      * @details Prefers an exactly-@p size slab from the free list, falls back to
@@ -318,9 +321,11 @@ class SlabArena
      *          check is unconditional and fatal on purpose: it is cheap here,
      *          and silent recovery would hide exactly the bug worth finding.
      */
-    void* allocate(std::size_t size, std::size_t align)
+    void* allocate(std::size_t size, std::size_t align, bool* fresh = nullptr)
     {
         std::lock_guard<std::mutex> lk(mtx_);
+        if (fresh != nullptr)
+            *fresh = false;
 
         // Reuse a same-size slab from this arena's free-list if available.
         const auto it = free_lists_.find(size);
@@ -356,6 +361,8 @@ class SlabArena
             aligned = align_up(cursor_, align);
         }
         cursor_ = aligned + size;
+        if (fresh != nullptr)
+            *fresh = true; // below the cursor was never handed out: mmap's zeros
         live_.insert(aligned);
         bytes_live_ += size;
         bytes_high_ = std::max(bytes_high_, bytes_live_);

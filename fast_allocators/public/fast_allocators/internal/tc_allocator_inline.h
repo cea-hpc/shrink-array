@@ -114,7 +114,8 @@ inline void TCCAllocator::alloc_block()
     // VALUE arena (disjoint from the op arena, never returned to the OS). Value
     // slabs live in their own address space and can never land on an op slab's
     // address. Recycled within the value arena's own free-list in destroy().
-    data = static_cast<char*>(fast_alloc::value_arena().allocate(BlockAllocator, BlockAllocator));
+    bool fresh = false;
+    data       = static_cast<char*>(fast_alloc::value_arena().allocate(BlockAllocator, BlockAllocator, &fresh));
 
     if (data == nullptr) [[unlikely]]
     {
@@ -122,12 +123,16 @@ inline void TCCAllocator::alloc_block()
         std::abort();
     }
 
-    // Arena slabs are fresh-mmap zeroed on first use, but recycled slabs may hold
-    // stale bytes; the pool relies on zero-initialized elements, so clear them --
-    // the BlockSize elements only: when BlockSize is capped by the side array,
-    // the tail up to the back-pointer is never handed out, and leaving it
-    // untouched keeps it out of the resident set (slab_bytes_for()).
-    std::memset(data, 0, static_cast<std::size_t>(BlockSize) * static_cast<std::size_t>(ElementSize));
+    // The pool promises zero-initialised elements. A recycled slab holds stale
+    // bytes, so clear its BlockSize elements (not the tail up to the
+    // back-pointer, which is never handed out when BlockSize is capped by the
+    // side array: slab_bytes_for()). A fresh slab is mmap's zeros already, and
+    // clearing it anyway made the WHOLE slab resident at the first alloc of a
+    // rank: 2 MiB for a 16-chunk array of bools (init_indexes(true), one
+    // thread), one full slab per (rank, type, size) that ever allocated. Left
+    // alone, its pages become resident as the elements are handed out.
+    if (!fresh)
+        std::memset(data, 0, static_cast<std::size_t>(BlockSize) * static_cast<std::size_t>(ElementSize));
 
     *reinterpret_cast<TCCAllocator**>(data + BlockAllocator - sizeof(void*)) = this;
 
