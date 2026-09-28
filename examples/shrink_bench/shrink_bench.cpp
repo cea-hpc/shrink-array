@@ -14,6 +14,7 @@
 #include "bench_prelude.h"
 
 #include <algorithm>
+#include <limits> // std::numeric_limits (tab_mask's size)
 #include <cfenv>
 #include <chrono>
 #include <cmath>  // std::sin (the range-API checks)
@@ -495,7 +496,20 @@ int main(int argc, char* argv[])
     // whole constant segments (bench_phase_mask.cpp). ArrayChunkBits in a
     // chunk2 build, std::vector<bool> in the baseline (BenchMaskArray).
     // Size 1 under --no_mask: its phases are skipped (BenchArrays::with_mask).
-    BenchMaskArray tab_mask(no_mask ? 1 : bench_mask_factor * sz);
+    // bench_mask_factor * sz overflows a 32-bit Int at the default size
+    // (8 x 10^9 wrapped to -589934592: ArrayChunk2A<bool, int> threw
+    // std::length_error resizing its chunk list). Computed in 64 bits and capped
+    // at the largest whole number of 1024-element blocks the build's Int holds;
+    // the int64 builds take the full size.
+    const long long mask_want = static_cast<long long>(bench_mask_factor) * static_cast<long long>(sz);
+    const Int       mask_sz =
+        mask_want > static_cast<long long>(std::numeric_limits<Int>::max())
+                  ? static_cast<Int>(static_cast<long long>(std::numeric_limits<Int>::max()) & ~0x3FFLL)
+                  : static_cast<Int>(mask_want);
+    if (!no_mask && static_cast<long long>(mask_sz) != mask_want)
+        std::cout << "Note: tab_mask capped at " << mask_sz << " elements (" << mask_want
+                  << " requested; Int is 32-bit here, the int64 build takes the full size)\n";
+    BenchMaskArray tab_mask(no_mask ? 1 : mask_sz);
 
     // Handle on the fifteen arrays, passed to the extracted phases. References,
     // so main() stays the owner -- it builds them and destroys them.
