@@ -364,7 +364,13 @@ int advisor_and_rechunk(long N)
     fails += compare(a, ref, "advisor setup") != 0;
 
     const long mat_expected = (N / kRun) / 3 * (kRun / S);
-    const auto rep          = ChunkSizeAdvisor<Bit>::analyze(a);
+    // The advisor does not evaluate below Options::min_size (64): at S=64 the
+    // S/2 row exists only if asked for, so ask -- the finer path is what this
+    // check is about. No change for S >= 128.
+    typename ChunkSizeAdvisor<Bit>::Options opt;
+    if (static_cast<long>(opt.min_size) > S / 2)
+        opt.min_size = static_cast<uint32_t>(S / 2);
+    const auto rep = ChunkSizeAdvisor<Bit>::analyze(a, opt);
     if (rep.cur < 0)
     {
         std::printf("[bits] FAIL advisor: no row for the current size %ld\n", S);

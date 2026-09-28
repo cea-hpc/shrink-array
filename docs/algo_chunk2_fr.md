@@ -1,7 +1,10 @@
 # L'algorithme d'`ArrayChunk2`
 
 *État du code : fin septembre 2026 (opérations sur plages ouvertes à Chunk2, compression des
-candidats avant un rechunk, fin de phase sans OMPT allégée). Ce document remplace l'ancienne présentation, qui décrivait
+candidats avant un rechunk, fin de phase sans OMPT allégée). La géométrie dynamique est détaillée dans
+[`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md), la méthode de mesure dans
+[`mesures_performance_fr.md`](mesures_performance_fr.md), et l'index de la documentation dans
+[`README.md`](README.md). Ce document remplace l'ancienne présentation, qui décrivait
 une version antérieure (verrous par élément, `__decalage_chunk` global, taille de chunk fixée
 à 64, parallélisation « sans solution satisfaisante »). Les noms de fonctions et de fichiers
 cités sont ceux de l'arbre actuel ; en cas de doute, c'est le code qui fait foi.*
@@ -409,9 +412,17 @@ Les tampons de chunks viennent de `fast_allocators` : des **arènes de blocs** (
 rang et par taille de chunk, avec des **listes de réutilisation** alimentées par les
 compressions. Un tampon libéré par un autre rang que son propriétaire est mis de côté
 (« parked ») puis rendu à sa réserve d'origine. Les tableaux assez gros (au-delà de
-`alloc_affinity_min_bytes`, 16 Mio par défaut) ont leur propre jeu d'allocateurs (clé
-d'affinité), ce qui permet de restituer leur mémoire d'un bloc à leur destruction ; avec
-`CHUNK_RECLAIM_EMPTY_SLABS`, les slabs vides sont rendus au système.
+`alloc_affinity_min_bytes`, 16 Mio par défaut) peuvent avoir leur propre jeu d'allocateurs
+(clé d'affinité), ce qui permet de restituer leur mémoire d'un bloc quand ils sont
+reconstruits ou détruits ; avec `CHUNK_RECLAIM_EMPTY_SLABS`, les slabs vides sont rendus au
+système.
+
+Pour Chunk2, ce jeu n'est créé qu'au **premier rechunk** du tableau (affinité paresseuse) :
+chaque jeu coûte un slab entamé par rang et par taille, soit ~780 Mio sur les 16 tableaux de
+`shrink_bench` à 64 threads, et un tableau jamais reconstruit n'en tire aucun bénéfice. Un
+run dynamique consomme ainsi, au départ, exactement comme le statique à la même taille
+(Chunk2 : 19 999 contre 20 009 Mo après l'initialisation). `CHUNK_ALLOC_AFFINITY_EAGER=1`
+crée le jeu dès la création. Détails et mesures : [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md) §5.
 
 ### 9.2 Le rechunk (géométrie dynamique)
 
@@ -439,6 +450,14 @@ décision du **décideur** (`ChunkSizeAdvisor::analyze`, qui estime la mémoire 
 5. **échanger les identités** : `num_tab` et les clés du registre changent de main, et le
    miroir est relu des deux côtés ;
 6. détruire l'ancien stockage.
+
+L'ancien stockage est détruit sous son propre identifiant (`num_tab`), que rien ne réutilise :
+tout ce qui lui était indexé doit être **libéré**, pas seulement vidé. Pour Chunk2, ce sont
+les indicateurs « en liste de compression » (un octet par chunk), libérés à la fin de
+`clear_core()`, après la purge des candidats. Le seuil de déclenchement des passes de
+compression et le budget des réserves, qui dépendent du nombre total de chunks, sont
+recalculés à la destruction comme à la création. Le décideur, ses critères et les résultats
+mesurés sont décrits dans [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md).
 
 `CHUNK_RECHUNK_TRACE=1` affiche le temps de chaque phase et les compteurs de repliement.
 
@@ -509,6 +528,10 @@ types sans atomique sans verrou, et pour Chunk et Chunk2, ce sont des lectures o
 
 ## 11. Variables d'environnement utiles
 
+La liste complète, avec les macros et les options CMake, est dans
+[`variables_environnement_fr.md`](variables_environnement_fr.md). Celles qui concernent le plus
+Chunk2 :
+
 | variable | effet |
 |---|---|
 | `CHUNK_RECHUNK_SCHEDULE=kind[,chunk]` | ordonnancement de la reconstruction du rechunk (`guided,16` par défaut) |
@@ -519,6 +542,10 @@ types sans atomique sans verrou, et pour Chunk et Chunk2, ce sont des lectures o
 | `CHUNK_SERIAL_DRAIN_LEGACY=1` | ancien vidage en série en fin de région |
 | `CHUNK_OMPT_STATS=1` | statistiques des régions de synchronisation (build OMPT) |
 | `CHUNK_RECHUNK_DROP_LEGACY=1` | au rechunk, retire les candidats du tableau sans les compresser d'abord (ancien comportement) |
+| `CHUNK_RECHUNK_DRY_RUN=1` | le décideur analyse et journalise, mais n'applique aucun rechunk (mesurer le coût des analyses) |
+| `CHUNK_RECHUNK_MAX_COARSEN=<n>` | facteur maximal d'un grossissement (4 par défaut) |
+| `CHUNK_ALLOC_AFFINITY_EAGER=1` | jeu d'allocateurs par tableau dès sa création (paresseux par défaut pour Chunk2) |
+| `CHUNK_THRESHOLD_TEARDOWN_LEGACY=1` | ne pas recalculer les seuils de compression à la destruction d'un stockage (ancien comportement) |
 
 Option de compilation utile pour la validation : `CHUNK_FORCE_DEFER_EVERY=N` force une
 écriture sur N à passer par le chemin différé (à utiliser à 32 threads au plus).

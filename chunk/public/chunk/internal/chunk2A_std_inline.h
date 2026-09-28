@@ -392,7 +392,15 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
     {
         const auto& tup       = vec_tuple_to_compress[k];
         const int   num_chunk = std::get<1>(tup);
-        if (num_chunk != -1)
+        // Formerly `num_chunk != -1`: nothing sets -1 any more (purged entries
+        // are erased from the lists), so a negative num_chunk is a corrupt entry
+        // -- reported in check builds, skipped otherwise.
+        if constexpr (build_config::any_check)
+        {
+            if (num_chunk < 0) [[unlikely]]
+                INVARIANT_FAILED("Chunk2A block pass: candidate {} of {} has num_chunk={}", k, sz, num_chunk);
+        }
+        if (num_chunk >= 0)
         {
             const int num_tab = std::get<2>(tup);
 

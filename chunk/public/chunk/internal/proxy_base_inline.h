@@ -187,8 +187,16 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list([[maybe_unused]] 
         {
             if constexpr (build_config::is_debug)
             {
-                if (num_chunk < 0 || num_tab < 0 || num_tab > 100)
-                    std::abort();
+                // num_tab is never reused -- every array, and every re-chunk's new
+                // storage, takes the next one -- so no fixed ceiling holds (a former
+                // `num_tab > 100` aborted debug runs with nothing wrong). The bounds are
+                // the flag table's: its outer size, and this array's row.
+                const auto& flags = FastCompPolicy::tab_is_inside_chunk_list_to_compress;
+                if (num_chunk < 0 || num_tab < 0 || static_cast<std::size_t>(num_tab) >= flags.size() ||
+                    static_cast<std::size_t>(num_chunk) >= flags[static_cast<std::size_t>(num_tab)].size()) [[unlikely]]
+                    INVARIANT_FAILED("add_to_compression_list: num_chunk={} num_tab={} outside the flag table "
+                                     "({} tables)",
+                                     num_chunk, num_tab, flags.size());
             }
             // CHUNK_STATS: this write newly flagged the chunk as a candidate.
             if constexpr (chunk_config::stats)
@@ -260,8 +268,18 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list(this const Derive
 
                 if constexpr (build_config::is_debug)
                 {
-                    if (self.num_chunk < 0 || self.num_tab < 0 || self.num_tab > 100)
-                        std::abort();
+                    // num_tab is never reused -- every array, and every re-chunk's new
+                    // storage, takes the next one -- so no fixed ceiling holds (a former
+                    // `num_tab > 100` aborted debug runs with nothing wrong). The bounds are
+                    // the flag table's: its outer size, and this array's row.
+                    const auto& flags = FastCompPolicy::tab_is_inside_chunk_list_to_compress;
+                    if (self.num_chunk < 0 || self.num_tab < 0 ||
+                        static_cast<std::size_t>(self.num_tab) >= flags.size() ||
+                        static_cast<std::size_t>(self.num_chunk) >=
+                            flags[static_cast<std::size_t>(self.num_tab)].size()) [[unlikely]]
+                        INVARIANT_FAILED("add_to_compression_list: num_chunk={} num_tab={} outside the flag table "
+                                         "({} tables)",
+                                         self.num_chunk, self.num_tab, flags.size());
                 }
 
                 push_to_compress_list(vec, &self.chunk, self.num_chunk, self.num_tab, ChunkElems{self.chunk_size()});

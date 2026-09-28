@@ -1,0 +1,169 @@
+# Mesurer la mémoire et le temps sans se tromper
+
+*État : fin septembre 2026. Ce document rassemble ce que les campagnes de septembre 2026 sur
+Grace (aarch64, pages de 64 Kio, RHEL 9.6, 64 threads) ont appris, souvent à nos dépens :
+plusieurs conclusions ont dû être retirées parce que l'instrument de mesure mentait.*
+
+---
+
+## 1. La mémoire
+
+### 1.1 `VmRSS` est faux à plusieurs threads
+
+`VmRSS` (`/proc/self/status`), `/proc/self/statm` et `ru_maxrss` (`getrusage`) lisent les
+compteurs de mémoire résidente du noyau. Ces compteurs sont tenus **par thread**, et reportés
+dans le total du processus seulement de temps en temps. Avec 64 threads qui font des défauts
+de page, le total prend du retard. Mesuré sur `shrink_bench_chunk2a_dyn` :
+
+| moment | `VmRSS` | exact (`smaps_rollup`) | retard |
+|---|---|---|---|
+| initialisation | 9 576 Mio | 11 675 Mio | 2 099 Mio |
+| début du régime | 11 820 Mio | 12 436 Mio | 616 Mio |
+| fin du run | 11 870 Mio | 13 442 Mio | 1 571 Mio |
+
+`VmRSS` était resté à ~11,8 Gio pendant tout le run, alors que le processus grossissait d'un
+gigaoctet : on en avait conclu à tort que les rechunks ne faisaient rien gagner.
+
+### 1.2 La mesure exacte : `smaps_rollup`
+
+`/proc/self/smaps_rollup` parcourt les tables de pages au moment de la lecture : c'est exact.
+Mais le coût croît avec la mémoire résidente (~10 à 20 ms pour un processus de 13 Go) : à
+réserver aux points de contrôle, jamais à un chemin périodique chaud (les 200 lectures que
+faisait la boucle chronométrée du banc lui coûtaient 1 à 2 s).
+
+Dans la bibliothèque : `shrink_array::exact_rss_kib()` (`internal/exact_rss.h`). Dans le banc :
+
+- les lignes « Memory consumption **after init** » et « **end** » sont exactes ;
+- les lignes périodiques relisent `statm` (en retard, mais gratuit), sauf avec
+  `SHRINK_BENCH_EXACT_RSS=1` ;
+- le « peak » est le maximum de `ru_maxrss` et des lectures exactes ;
+  `SHRINK_BENCH_RSS_SAMPLE_MS=<ms>` ajoute un échantillonnage de fond ;
+- les traces des rechunks (`[RECHUNK-RSS]`, `[RECHUNK-MEM]`) lisent la valeur exacte.
+
+### 1.3 Localiser la mémoire
+
+| question | outil |
+|---|---|
+| combien dans les tampons de chunks, combien ailleurs ? | `CHUNK_RECHUNK_MEMTRACE=1` : à chaque passage de l'advisor, la mémoire exacte, dont la part résidente de l'arène des tampons (`mincore`) |
+| que font les slabs ? | `CHUNK_ARENA_REPORT=1` (slabs distribués, rendus au système) |
+| quelle zone de l'espace d'adressage grossit ? | deux `pmap -x <pid>` à deux instants, comparés par zone |
+| que rend chaque rechunk ? | `CHUNK_RECHUNK_TRACE=1` : ligne `[RECHUNK-RSS]` (mémoire à chaque étape, `end-entry`) |
+
+Un piège : le compteur « materialised » du build stats est une différence de compteurs
+(alloué − libéré). Il n'est juste que si chaque libération est comptée, ce qui n'était pas le
+cas des libérations sans compression (rechunk, destruction) jusqu'à fin septembre 2026 : on
+avait vu 12 982 Mo « matérialisés » dans un processus de 12 012 Mo.
+
+**Les mesures de mémoire, elles, sont reproductibles** : d'un run à l'autre et d'un build à
+l'autre, au mégaoctet près. Un seul run suffit.
+
+## 2. Le temps
+
+### 2.1 Trois sources de bruit, bien plus grandes que les effets cherchés
+
+- **La bimodalité, fixée au démarrage.** Sur dix runs identiques sans advisor, sept à
+  6,4-6,8 s et trois à 7,7-8,0 s (+18 %). `perf stat` : même fréquence (3,26 GHz), même nombre
+  d'instructions, mêmes défauts du dernier niveau de cache, mais un IPC de 3,45 au lieu de
+  3,95 et +10 points de cycles bloqués sur la mémoire. Chaque accès mémoire coûte plus cher,
+  sans doute selon la disposition physique des pages reçues au démarrage. Chunk2 a un mode
+  lent encore plus marqué (~+40 %, des runs à 16 s au lieu de 11).
+- **La dérive entre fenêtres de temps.** Un même binaire, sans aucune recompilation : 10,75 à
+  11,53 s dans une fenêtre, 9,49 à 10,08 s une heure plus tard.
+- **L'écart entre deux builds du même code.** Même commit, mêmes options, aucune modification
+  locale : un build à 10,5 s, un autre à 9,7 s, de façon stable. Vraisemblablement la
+  disposition du code en mémoire (alignement des boucles chaudes).
+
+Un **test A/A** (le même code, deux fois, en alternance) donne la mesure du bruit : sur les
+bancs dynamiques à 64 threads, ~10 % d'écart entre extrêmes.
+
+### 2.2 La règle
+
+**Ne comparer des temps que sur un même binaire**, en changeant le comportement par une
+variable d'environnement, en **alternant** les modes dans la même fenêtre de temps, sur **au
+moins trois tours**, et en comparant les **moyennes**. Ne retenir qu'un écart nettement
+au-dessus de 10 %.
+
+Comparer deux builds (même le même jour, avec les mêmes options) n'est pas fiable en dessous
+de ±10-15 %. Quand c'est inévitable (mesurer une modification du code), construire les deux
+dans des répertoires neufs avec la même configuration, alterner, et se méfier.
+
+### 2.3 Les interrupteurs faits pour ça
+
+| comparer… | interrupteur |
+|---|---|
+| sans advisor / analyses seules / avec rechunks | `CHUNK_ADVISOR_PERIOD=0` / `CHUNK_RECHUNK_DRY_RUN=1` / rien |
+| affinité paresseuse / immédiate | `CHUNK_ALLOC_AFFINITY_EAGER=0` / `=1` |
+| taille maximale d'un pas de grossissement | `CHUNK_RECHUNK_MAX_COARSEN=<n>` |
+| recalcul des seuils à la destruction | `CHUNK_THRESHOLD_TEARDOWN_LEGACY=1` |
+| installation directe des constantes (Chunk2A) | `CHUNK_RECHUNK_INSTALL_LEGACY=1` |
+| compression des candidats avant un rechunk | `CHUNK_RECHUNK_DROP_LEGACY=1` |
+| ordonnancement de la reconstruction | `CHUNK_RECHUNK_SCHEDULE=…` |
+
+La liste complète est dans [`variables_environnement_fr.md`](variables_environnement_fr.md).
+Attention : `CHUNK_ADVISOR_MIN_GAIN_MB=1000000` ne bloque plus les grossissements depuis le
+critère « gain par coût » ; utiliser `CHUNK_RECHUNK_DRY_RUN=1`.
+
+## 3. Recettes
+
+**Le coût de l'advisor sur un même binaire** (trois tours, moyennes) :
+
+```
+rm -f /tmp/modes.txt
+for r in 1 2 3; do
+  for mode in "CHUNK_ADVISOR_PERIOD=0" "CHUNK_RECHUNK_DRY_RUN=1" "X_NORMAL=1"; do
+    t=$(env $mode OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores $BIN --mode perf --no_io 2>/dev/null \
+        | grep -oE "Elapsed time computation : [0-9.]+" | awk '{print $NF}')
+    echo "$mode $t" >> /tmp/modes.txt
+  done
+done
+awk '{ s[$1] += $2; n[$1]++ } END { for (k in s) printf "%-26s %.2f s\n", k, s[k] / n[k] }' /tmp/modes.txt
+```
+
+**La durée de chaque intervalle entre deux passages de l'advisor**, pour voir si un
+ralentissement vient des rechunks ou de ce qui les suit :
+
+```
+tick_times() {
+  env "$@" CHUNK_RECHUNK_MEMTRACE=1 OMP_NUM_THREADS=64 OMP_PROC_BIND=close OMP_PLACES=cores \
+    $BIN --mode perf --no_io 2>&1 >/dev/null \
+  | while read -r l; do
+      case "$l" in
+        *"RECHUNK-MEM]"*) echo "T $(date +%s.%N) ${l#*tick }" ;;
+        *APPLIED*)        echo "R" ;;
+      esac
+    done \
+  | awk '$1 == "R" { nr++; next }
+         { t = $2; k = $3; if (p != "") printf "  %2d->%-2d %5.2f s%s\n", pk, k, t - p, nr ? sprintf("   (%d rechunks)", nr) : ""; p = t; pk = k; nr = 0 }'
+}
+```
+
+**Le comportement seconde par seconde** (cœurs occupés, IPC, cycles bloqués sur la mémoire) :
+
+```
+perf stat -I 1000 -x, -e task-clock,cycles:u,instructions:u,stall_backend_mem:u -o /tmp/pi.csv -- $BIN --mode perf --no_io
+```
+
+Le nombre de cœurs occupés est `task-clock / 1000` pour chaque seconde. C'est ce qui a montré
+que v1, après son rechunk, n'occupait plus que ~40 cœurs au lieu de ~52.
+
+**Temps utilisateur, temps système, défauts de page** :
+`/usr/bin/time -f "%e s réel, %U s utilisateur, %S s système, %R défauts mineurs" $BIN …`.
+
+**La fragmentation de la mémoire du nœud** : `cat /proc/buddyinfo`. Sur un noyau à pages de
+64 Kio, la dernière colonne compte les blocs libres de 512 Mio.
+
+## 4. Pièges rencontrés
+
+- **Un binaire qui n'a pas été reconstruit**, ou un script qui n'a pas été appliqué : une
+  variable d'environnement qu'aucun code ne lit est ignorée sans message. Vérifier avec
+  `strings $BIN | grep NOM_DE_LA_VARIABLE`, ou par l'effet attendu.
+- **Un cache CMake hérité** : des options de configurations anciennes restent dans
+  `CMakeCache.txt`. En cas de doute, reconfigurer dans un répertoire neuf. Pour comparer deux
+  builds, la commande `ninja -C <build> -t commands <cible>` montre les options réellement
+  utilisées.
+- **Un build neuf n'a pas les options voulues** : `OMP` vaut `OFF` par défaut, et un banc sans
+  OpenMP tourne sur un seul cœur. Vérifier `ldd $BIN | grep gomp`.
+- **L'assembleur trop ancien** pour `-mcpu=native` avec GCC 16 (« unknown architecture ») :
+  charger des `binutils` récents.
+- **La taille d'un tableau calculée en `int`** : 8 × 10⁹ déborde et devient négatif. Les
+  cibles à indice 64 bits (`_int64`) n'ont pas ce problème.
