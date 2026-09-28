@@ -131,6 +131,8 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
     m_size = sz;
 }
 
+/// @brief Print the demangled name of T and @p nb_val2 on std::cout.
+/// @param nb_val2 Number of compression values to report.
 template <ArrayChunkElement T>
 void print_type_name(int nb_val2)
 {
@@ -389,9 +391,11 @@ void ArrayChunk2A<T, ind_type>::clear_core()
         // production (any_check false).
         if constexpr (build_config::any_check && !chunk_config::have_agressive_compression)
         {
-            const auto  csz          = static_cast<unsigned int>(this->size_policy_.size());
-            const auto& inside       = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab);
-            std::size_t missed_first = 0, missed_second = 0, stuck = 0;
+            const auto  csz           = static_cast<unsigned int>(this->size_policy_.size());
+            const auto& inside        = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab);
+            std::size_t missed_first  = 0;
+            std::size_t missed_second = 0;
+            std::size_t stuck         = 0;
 
             for (int j = 0; j < nb_chunk; ++j)
             {

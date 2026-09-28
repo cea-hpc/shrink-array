@@ -134,14 +134,20 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
         this->swap_storage_and_identity(other);
     }
 
+    /// @brief Build an array of std::distance(@p first, @p last) elements and assign them from the range.
+    /// @param first Start of the source range.
+    /// @param last End of the source range.
     template <std::forward_iterator It>
     ArrayChunk(It first, It last) : ArrayChunk(static_cast<ind_type>(std::distance(first, last)))
     {
         this->assign(first, last);
     }
 
+    /// @brief Build an array holding the elements of @p il.
+    /// @param il Source values.
     ArrayChunk(std::initializer_list<T> il) : ArrayChunk(il.begin(), il.end()) {}
 
+    /// @brief clear() the array, then erase its entry from Proxy<T>::share_info_array.
     ~ArrayChunk()
     {
         clear();

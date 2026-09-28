@@ -225,7 +225,7 @@ template <typename T>
     if (S == 0)
         return true;
     const T v0 = load_element_relaxed(dst);
-    return v0 == load_element_relaxed(dst + S / 2) && v0 == load_element_relaxed(dst + S - 1);
+    return v0 == load_element_relaxed(dst + (S / 2)) && v0 == load_element_relaxed(dst + S - 1);
 }
 
 /**

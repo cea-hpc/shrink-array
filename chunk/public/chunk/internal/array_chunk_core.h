@@ -89,10 +89,12 @@ inline bool g_building_rechunk_storage = false;
 /// @brief RAII scope for g_building_rechunk_storage.
 struct RechunkStorageScope
 {
+    /// @brief Set g_building_rechunk_storage.
     RechunkStorageScope() noexcept
     {
         g_building_rechunk_storage = true;
     }
+    /// @brief Reset g_building_rechunk_storage to false.
     ~RechunkStorageScope()
     {
         g_building_rechunk_storage = false;
@@ -114,6 +116,8 @@ inline const bool g_legacy = []
 }();
 } // namespace teardown_threshold_detail
 
+/// @brief The index-type-independent part of a chunked array of ChunkType (see the description at the top of
+///        this file).
 template <typename ChunkType>
 class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
 {
@@ -268,6 +272,7 @@ struct RegistryKeyCanary
 {
     std::uint64_t registry_key_canary_{0};
 };
+/// @brief Empty stand-in for RegistryKeyCanary when any_check is off.
 struct NoRegistryKeyCanary
 {
 };
