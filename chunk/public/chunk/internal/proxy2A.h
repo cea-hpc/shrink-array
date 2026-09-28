@@ -799,6 +799,8 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         // re-chunk (new storage under a new num_tab, the old one destroyed)
         // left one byte per old chunk behind.
         std::vector<char>().swap(tab_type_cst_val[num_tab]);
+        // And the candidate flags (one byte per chunk), which leaked the same way.
+        Base::release_tab_is_int(num_tab);
     }
 
     /**

@@ -335,6 +335,11 @@ void ArrayChunk<T, ind_type>::clear_core()
     // back per array. Same hook as ArrayChunk2 / ArrayChunk2A.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
         ManagerChunk<Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
+
+    // The candidate flags (one byte per chunk): released now that the purge
+    // at the top has run and the chunks are gone -- a re-chunk's old storage
+    // dies under its own num_tab, which nothing reuses.
+    Proxy<T>::release_tab_is_int(this->num_tab);
 }
 
 template <ArrayChunkElement T, typename ind_type>

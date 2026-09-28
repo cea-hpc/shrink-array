@@ -65,6 +65,18 @@ static_assert(sizeof(Bit) == 1 && std::is_trivially_copyable_v<Bit>);
 template <typename T>
 inline constexpr bool is_packed_bit_v = std::is_same_v<T, Bit>;
 
+/// @brief Dynamic geometry: an array of packed bits is born with chunks this
+///        many times the process-wide size, capped at cst_buffer_size.
+/// @details At the size of the other arrays, a chunk of bits holds S/8 bytes
+///          for a 16-byte header plus ~3 bytes of tables: at S=64, 8 bytes of
+///          data for 19 of metadata, 2.5 times a std::vector<bool>. Eight
+///          times the size gives a chunk the bytes of a bool chunk. The
+///          re-chunk decider would not correct it: its deadband is absolute
+///          (8 MB), and an array of bits rarely weighs that much -- shrink_bench
+///          tab_mask, 3.1 M elements born at 64: 1.0 MB, 0.3 MB at 256, and
+///          refused at every tick. Static geometry is one size for every array.
+inline constexpr unsigned int packed_bit_birth_factor = 8;
+
 /// @brief T takes chunk2's bool path: a single second value, `true`.
 template <typename T>
 inline constexpr bool is_bool_like_v = std::is_same_v<T, bool> || is_packed_bit_v<T>;

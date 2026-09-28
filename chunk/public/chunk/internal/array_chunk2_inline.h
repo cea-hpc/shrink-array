@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <algorithm> // std::ranges::find (the healed-chunk report)
+#include <algorithm> // std::ranges::find (the healed-chunk report), std::min (the birth size of bits)
 #include <atomic>    // std::memory_order
 #include <cstddef>   // std::size_t
 #include <cstdlib>   // std::abort
@@ -111,6 +111,25 @@ void ArrayChunk2<T, ind_type>::create(ind_type sz)
     {
         Proxy2<T>::resize_tab_is_int(nb_tab);
         register_no_second_value_key();
+    }
+
+    // Packed bits are born with larger chunks (packed_bit_birth_factor), except
+    // rechunk_to()'s temporary, whose refill writes at the size it asked for.
+    // set_chunk_size() registers the size's allocators, but also makes it the
+    // process-wide and this thread's active size: both are put back, or every
+    // array created after this one would be born at it.
+    if constexpr (build_config::chunk_dynamic && is_packed_bit_v<T>)
+    {
+        const unsigned int birth =
+            std::min(this->size_policy_.size() * packed_bit_birth_factor, shrink_array::cst_buffer_size);
+        if (!t_birth_at_active_size && birth != this->size_policy_.size())
+        {
+            const unsigned int global = g_active_chunk_size;
+            const unsigned int thread = t_active_chunk_size;
+            this->set_chunk_size(birth);
+            g_active_chunk_size = global;
+            set_thread_chunk_size(thread);
+        }
     }
 
     // Geometry-dependent allocation is factored into rebuild_storage() so that
@@ -752,6 +771,11 @@ void ArrayChunk2<T, ind_type>::clear_core()
     // back per array.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
         ManagerChunk<Chunk2, T>::drain_reuse_list_for_size(this->size_policy_.size());
+
+    // The candidate flags (one byte per chunk): released HERE, after the
+    // purge (clear_is_int() above runs before it and must stay a no-op) and
+    // after the chunks -- a re-chunk's old storage dies under its own num_tab.
+    Proxy2<T>::release_tab_is_int(this->num_tab);
 }
 
 template <ArrayChunkElement T, typename ind_type>
