@@ -26,6 +26,10 @@ namespace shrink_array
 ///                      -1 means "not measured" and hides the line.
 /// @param cross_name    the richer variant the probe refers to ("Chunk2" /
 ///                      "Chunk2A"). Only used when n_cross >= 0.
+/// @param bool_elements the elements are bool: their second constant can only
+///                      be `true`, one for the type, so Chunk2 stores every
+///                      type-2 chunk Chunk2A does -- a Chunk2A is never the
+///                      verdict for them.
 inline void print_formatted_chunk_stats(std::ostream&      os,
                                         int                num_tab,
                                         const std::string& type_name,
@@ -34,7 +38,8 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
                                         int                n_t1,
                                         const std::string& chunk_name,      // ex: "Chunk", "Chunk2" ou "Chunk2A"
                                         int                n_cross    = -1, // cross-variant probe count (-1 = none)
-                                        const std::string& cross_name = "") // richer variant the probe refers to
+                                        const std::string& cross_name = "", // richer variant the probe refers to
+                                        bool bool_elements = false)         // bool: one second value, true
 {
     if (nb_chunk == 0)
         return;
@@ -72,6 +77,13 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
         // Chunk2/Chunk2A carrying no, or almost no, type-2: the second value
         // never paid.
         verdict = GREY + chunk_name + " overkill — plain Chunk would suffice" + RESET;
+    }
+    else if (chunk_name == "Chunk2A" && bool_elements)
+    {
+        // Type-2 chunks of bools are all-true chunks: Chunk2's single second
+        // value (true) stores every one of them. The per-chunk second value of
+        // Chunk2A has nothing to add.
+        verdict = GREY + std::string("Chunk2A no better than Chunk2 for bool (one second value: true)") + RESET;
     }
     else if (chunk_name != "Chunk" && pct_t1 < 40.0)
     {
