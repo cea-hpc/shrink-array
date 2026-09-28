@@ -73,6 +73,7 @@ struct ChunkSizeReport
 {
     uint32_t                       current_size = 0;
     double                         meta_bytes   = 0.;
+    double                         elem_bytes   = 0.; // per element in a materialised chunk (1/8 for Bit)
     std::vector<ChunkSizeEstimate> table;     // ascending sizes
     int                            best = -1; // index into table
     int                            cur  = -1; // index of current size
@@ -123,6 +124,7 @@ class ChunkSizeAdvisor
         const int64_t  nc = tab.nb_chunk;
         rep.current_size  = S;
         rep.meta_bytes    = static_cast<double>(sizeof(typename Arr::chunk_type)) + opt.meta_extra_bytes;
+        rep.elem_bytes    = S != 0 ? static_cast<double>(Arr::chunk_type::storage_units(S)) * sizeof(T) / S : 0.;
 
         if (nc <= 0)
             return rep;
@@ -508,16 +510,15 @@ class ChunkSizeAdvisor
         std::println("   estimated gain best vs current : {:.2f} Mo", rep.best_gain_bytes() / (1024. * 1024.));
 
         // Re-chunk cost (phase 2 model): only meaningful when best != current.
-        // Uses the materialized-chunk counts the table already holds. The gain
-        // is memory (bytes), the cost is time (ms) — different units, shown side
-        // by side so the reader can judge the trade-off. Constants are hardware
-        // specific; calibrate_rechunk_cost<T>() should be called once on the
-        // target, else these defaults are a (pessimistic) x86 proxy.
+        // Uses the chunk and materialised-chunk counts the table already holds.
+        // The gain is memory (bytes), the cost is time (ms) — different units,
+        // shown side by side so the reader can judge the trade-off. Constants
+        // are hardware specific (rechunk_cost_model.h: fitted on ARM, 64
+        // threads).
         if (rep.best >= 0 && rep.cur >= 0 && rep.best != rep.cur)
         {
             const auto&  cur_e      = rep.table[static_cast<std::size_t>(rep.cur)];
-            const auto&  best_e     = rep.table[static_cast<std::size_t>(rep.best)];
-            const double cost_ms    = rechunk_cost_ms(cur_e.mat, cur_e.size, best_e.mat, best_e.size);
+            const double cost_ms    = rechunk_cost_ms(cur_e.n_chunks, cur_e.size, cur_e.mat, rep.elem_bytes);
             const auto   gain_bytes = static_cast<std::size_t>(rep.best_gain_bytes() > 0 ? rep.best_gain_bytes() : 0.);
             // Observation-phase thresholds (not a decision, just a hint label):
             // >= 1 Mo gained and <= 50 ms spent reads as clearly worth it.

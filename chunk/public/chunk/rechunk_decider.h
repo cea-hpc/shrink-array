@@ -74,22 +74,38 @@ struct RechunkPolicy
                                             // so the next tick still measures the move
                                             // at unchanged data, and a bad step can be
                                             // seen and reverted.
-    std::size_t coarsen_min_meta_gain_bytes = 24u << 20;
+    std::size_t coarsen_min_meta_gain_bytes = 1u << 20;
     // A coarsening must gain at least this
-    // much METADATA to be worth doing at
-    // all. The metadata term is exact, so
-    // it needs no margin for trust -- this
-    // is about cost: a coarsening is a full
-    // rebuild, ~0.6 s per array on the
-    // 64-thread bench, and the gains fall
-    // geometrically (tab1, 6.1 GB: 211 MB,
-    // 105, 52, 25, then 11). The last step
-    // cleared the 8 MB absolute deadband on
-    // an exact 10.9 MB forecast and returned
-    // 3.7 -- the forecast stops being
-    // trustworthy at the same step the gain
-    // stops being worth having. 0 disables
-    // (absolute deadband only).
+    // much METADATA to be counted at all:
+    // below it the gain is not measurable.
+    // Whether it is worth a rebuild is
+    // coarsen_min_meta_rate's question.
+    // 24 MB until Sept '26, which made the
+    // decision depend on scale: the same
+    // arrays re-chunked at full size (64 ->
+    // 256, 211 MB each) and never at a
+    // tenth of it (21 MB, -18% at the end
+    // of the run refused). 0 disables.
+    double coarsen_min_meta_rate = 250.;
+    // ... and at least this many MB of
+    // metadata per second of rebuild, as
+    // rechunk_cost_ms() estimates it. Gain
+    // and rebuild time both grow with the
+    // array, so the ratio does not depend
+    // on its size. Measured (Grace, 64
+    // threads): 64 -> 256 returns 1.2 to
+    // 2.2 GB/s, 256 -> 1024 380 MB/s to
+    // 1.0 GB/s,
+    // 1024 -> 4096 (tab_quant, 13 MB for
+    // 93 ms) 145 MB/s, and made no
+    // difference to the end of the run.
+    // The gains fall geometrically (tab1,
+    // 6.1 GB: 211 MB, 105, 52, 25, then
+    // 11), and the step where they stop
+    // being worth a rebuild is also where
+    // the data forecast stops being
+    // trustworthy (an exact 10.9 MB
+    // forecast returned 3.7). 0 disables.
     unsigned coarsen_gain_multiple = 3; // coarsening must clear this many times
                                         // the normal gain gate. The model is
                                         // reliable when fining (constant chunks

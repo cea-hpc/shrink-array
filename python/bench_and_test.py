@@ -1801,9 +1801,13 @@ def run_rechunk_phase(args, extra_ldpath, errors):
 
       * no --compress            : quiescent between-phase path (no in-loop compr).
       * CHUNK_ADVISOR_PERIOD=4    : tick often so a verdict lands within the run.
-      * CHUNK_COARSEN_MIN_META_MB : the floor that decides a coarsening; 0 here
-                                    so the move fires on the shrunk arrays this
-                                    test uses.
+      * CHUNK_COARSEN_MIN_META_MB : the floor of a coarsening's metadata gain;
+                                    0 here so the move fires on the shrunk
+                                    arrays this test uses.
+      * CHUNK_COARSEN_MIN_META_RATE : its other gate, MB per second of
+                                    estimated rebuild; scale-free, so it would
+                                    pass anyway, but 0 keeps the test about
+                                    the pipeline, not the policy.
       * CHUNK_ADVISOR_MIN_GAIN_MB : the absolute deadband (8 MB by policy); 0
                                     here for the same reason -- at --divisor 200
                                     the 64 -> 128 metadata gain is ~0.7 MB, and
@@ -1841,10 +1845,11 @@ def run_rechunk_phase(args, extra_ldpath, errors):
     env_common = {
         "OMP_NUM_THREADS":      str(args.check_threads),
         "CHUNK_ADVISOR_PERIOD": "4",
-        # Both gates of a coarsening, off: the metadata floor and the absolute
-        # deadband (the decider takes the larger of the two, so one alone
-        # still refused the ~0.7 MB gain of the arrays --divisor leaves).
+        # The gates of a coarsening, off: the metadata floor and rate, and the
+        # absolute deadband of the data branch (the ~0.7 MB gain of the
+        # arrays --divisor leaves must fire).
         "CHUNK_COARSEN_MIN_META_MB": "0",
+        "CHUNK_COARSEN_MIN_META_RATE": "0",
         "CHUNK_ADVISOR_MIN_GAIN_MB": "0",
     }
 
@@ -1899,7 +1904,7 @@ def run_rechunk_phase(args, extra_ldpath, errors):
                         f"RECHUNK_FEATURE_FAIL: {exe} "
                         f"{' '.join(stage_extra_args[stage])} stage={stage} code={code}\n"
                         f"  (expected '[APPLIED]'; env CHUNK_ADVISOR_PERIOD=4 "
-                        f"CHUNK_COARSEN_MIN_META_MB=0 CHUNK_ADVISOR_MIN_GAIN_MB=0)\n"
+                        f"CHUNK_COARSEN_MIN_META_MB=0 CHUNK_COARSEN_MIN_META_RATE=0 CHUNK_ADVISOR_MIN_GAIN_MB=0)\n"
                         f"  stderr_tail:\n    " + err_tail.replace('\n', '\n    ')
                     )
                     errors.append(_entry)
