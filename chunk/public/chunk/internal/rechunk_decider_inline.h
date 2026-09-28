@@ -141,6 +141,13 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     // gain. Zero re-chunks in 2000 iterations; the dyn build stayed at its
     // deliberately sub-optimal start size and paid ~4-5 GB over static 256.
     const bool   coarsening = best_sz > cur_size;
+    // Logged only, next to the gain: what the cost model expects the rebuild
+    // to take, to be set against CHUNK_RECHUNK_TRACE's measured total, with
+    // the chunk and materialised-chunk counts it could be refitted on. It
+    // counts the materialised elements alone; measured on shrink_bench (chunk2
+    // dyn, Debug, 64 -> 256, arrays of 40-260 MB) it said 0-19 ms for rebuilds
+    // of 370-1070 ms.
+    const double est_cost_ms = rechunk_cost_ms(cur_e.mat, cur_size, best_e.mat, best_sz);
     const double gain_meta  = static_cast<double>(cur_e.n_chunks - best_e.n_chunks) * rep.meta_bytes;
     const double gain_data  = gain_b - gain_meta;
 
@@ -257,10 +264,11 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     {
         std::fprintf(stderr,
                      "[RECHUNK-DECIDE] %s: %s S=%u -> S'=%u "
-                     "(gain %.1f MB = meta %.1f + data %.1f, stable %d ticks)%s\n",
+                     "(gain %.1f MB = meta %.1f + data %.1f, stable %d ticks, est. cost %.0f ms, chunks %lld mat %lld)%s\n",
                      name, pol_.dry_run ? "[dry-run] would re-chunk" : "re-chunk", cur_size, best_sz,
                      gain_b / (1024. * 1024.), gain_meta / (1024. * 1024.), gain_data / (1024. * 1024.),
-                     hist.stable_count, pol_.dry_run ? "" : " [APPLIED]");
+                     hist.stable_count, est_cost_ms, static_cast<long long>(cur_e.n_chunks),
+                     static_cast<long long>(cur_e.mat), pol_.dry_run ? "" : " [APPLIED]");
         std::fflush(stderr);
 
         hist.last_action_tick = tick;
@@ -283,10 +291,10 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         std::fprintf(stderr,
                      "[RECHUNK-DECIDE] %s: wait (%s) "
                      "S=%u best=%u gain %.1f MB "
-                     "(meta %.1f + data %.1f; cur %.1f MB, data gate %.1f MB)\n",
+                     "(meta %.1f + data %.1f; cur %.1f MB, data gate %.1f MB, est. cost %.0f ms)\n",
                      name, reason, cur_size, best_sz, gain_b / (1024. * 1024.), gain_meta / (1024. * 1024.),
                      gain_data / (1024. * 1024.), cur_e.mem_bytes / (1024. * 1024.),
-                     static_cast<double>(gain_gate) / (1024. * 1024.));
+                     static_cast<double>(gain_gate) / (1024. * 1024.), est_cost_ms);
         std::fflush(stderr);
     }
     return act;
