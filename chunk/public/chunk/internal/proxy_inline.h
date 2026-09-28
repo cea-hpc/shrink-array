@@ -142,7 +142,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(in_t<T>
     // Check if transition qualifies for compression OR if a data race occurred (value changed)
     if (should_mark_for_compression(old_value, new_value) || (read_values() != expected_in_memory)) [[unlikely]]
     {
-        Base::add_to_compression_list();
+        derived().add_to_compression_list();
     }
 }
 

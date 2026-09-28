@@ -41,7 +41,7 @@ void Proxy2Base<Derived, T, ChunkType>::mark_for_compression_core(in_t<T> old_va
     if (isv && (derived().should_mark_for_compression(old_value, new_value, std::forward<Args>(compression_args)...) ||
                 (Base::load_value() != expected_in_memory))) [[unlikely]]
     {
-        add_to_compression_list();
+        derived().add_to_compression_list();
     }
 
     // NOTE: a dead check was removed here. It consulted

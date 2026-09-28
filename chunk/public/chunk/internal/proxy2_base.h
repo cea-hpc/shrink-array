@@ -377,7 +377,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         };
 
         // wrap the call in a lambda that calls write_fn(v)
-        return Base::write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
+        return derived().write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
     }
 
     /**

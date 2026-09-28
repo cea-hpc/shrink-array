@@ -223,26 +223,26 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list([[maybe_unused]] 
  *      `build_config::any_check`).
  */
 template <typename Derived, typename T, typename ChunkType>
-void ProxyBase<Derived, T, ChunkType>::add_to_compression_list() const
+void ProxyBase<Derived, T, ChunkType>::add_to_compression_list(this const Derived& self)
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
         if constexpr (build_config::any_check)
         {
-            if (ptr_is_inside_chunk_list_to_compress == nullptr) [[unlikely]]
+            if (self.ptr_is_inside_chunk_list_to_compress == nullptr) [[unlikely]]
             {
                 INVARIANT_FAILED("add_to_compression_list (fast-block): chunk={} num={} "
                                  "num_chunk={} num_tab={} "
                                  "ptr_is_inside_chunk_list_to_compress is null "
                                  "(set_info_on_chunk not called on this write path?)",
-                                 static_cast<const void*>(&chunk), num, num_chunk, num_tab);
+                                 static_cast<const void*>(&self.chunk), self.num, self.num_chunk, self.num_tab);
             }
         }
         // CHUNK_STATS: the flag gates queueing. mark_refused counts the writes that
         // find it ALREADY at 1: normal while the chunk waits in the list, but if the
         // flag is never reset after the compression sweep the chunk can never be
         // queued again -- refused then grows without bound while queued stays flat.
-        if (ptr_is_inside_chunk_list_to_compress->load(std::memory_order_relaxed) != 0)
+        if (self.ptr_is_inside_chunk_list_to_compress->load(std::memory_order_relaxed) != 0)
         {
             if constexpr (chunk_config::stats)
                 increm_chunk_mark_refused<ChunkType>();
@@ -250,21 +250,21 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list() const
         else
         {
             char expected = 0;
-            if (ptr_is_inside_chunk_list_to_compress->compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
-                                                                              std::memory_order_acquire))
+            if (self.ptr_is_inside_chunk_list_to_compress->compare_exchange_strong(
+                    expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
             {
                 if constexpr (chunk_config::stats)
                     increm_chunk_mark_ok<ChunkType>();
                 const int thr = get_thr_rank_fast();
-                auto&     vec = derived().get_vec_tuple_to_compress_potentially_thr(thr);
+                auto&     vec = self.get_vec_tuple_to_compress_potentially_thr(thr);
 
                 if constexpr (build_config::is_debug)
                 {
-                    if (num_chunk < 0 || num_tab < 0 || num_tab > 100)
+                    if (self.num_chunk < 0 || self.num_tab < 0 || self.num_tab > 100)
                         std::abort();
                 }
 
-                push_to_compress_list(vec, &chunk, num_chunk, num_tab, ChunkElems{this->chunk_size()});
+                push_to_compress_list(vec, &self.chunk, self.num_chunk, self.num_tab, ChunkElems{self.chunk_size()});
             }
         }
     }
@@ -272,11 +272,11 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list() const
     {
         if constexpr (build_config::not_use_openmp)
         {
-            if (!(*ptr_is_inside_chunk_list_to_compress))
+            if (!(*self.ptr_is_inside_chunk_list_to_compress))
             {
-                *ptr_is_inside_chunk_list_to_compress = 1;
-                auto& vec                             = derived().get_vec_tuple_to_compress_potentially();
-                push_to_compress_list(vec, &chunk, num_chunk, num_tab, ChunkElems{this->chunk_size()});
+                *self.ptr_is_inside_chunk_list_to_compress = 1;
+                auto& vec                                  = self.get_vec_tuple_to_compress_potentially();
+                push_to_compress_list(vec, &self.chunk, self.num_chunk, self.num_tab, ChunkElems{self.chunk_size()});
             }
         }
     }
@@ -436,8 +436,9 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression
 template <typename Derived, typename T, typename ChunkType>
 template <typename WriteCallable, typename LBD_INFO>
 [[nodiscard]] bool
-ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&&           write_body,
-                                                                [[maybe_unused]] LBD_INFO lbd_info) noexcept
+ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]] this Derived& self,
+                                                                WriteCallable&&                write_body,
+                                                                [[maybe_unused]] LBD_INFO      lbd_info) noexcept
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -484,12 +485,12 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
         [[maybe_unused]] int own_replay_excl_rank = -1;
         if constexpr (build_config::use_openmp)
         {
-            if (chunk.pending_any()) [[unlikely]]
+            if (self.chunk.pending_any()) [[unlikely]]
             {
                 const int thr_entry = get_thr_rank_fast();
-                if (chunk.foreign_pending(thr_entry, num))
-                    chunk.reader_sync(num);
-                if (chunk.pending_any()) // own ops remain queued: exclude their replay
+                if (self.chunk.foreign_pending(thr_entry, self.num))
+                    self.chunk.reader_sync(self.num);
+                if (self.chunk.pending_any()) // own ops remain queued: exclude their replay
                 {
                     CompressionManagerType::enqueue_lock(thr_entry);
                     own_replay_excl_rank = thr_entry;
@@ -534,9 +535,9 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
         // here, so waiting shuts no window, and a window is a few hundred
         // microseconds against an enqueue and a replay per write (see
         // wait_out_compressor).
-        if (compression_mgr.must_defer_write(chunk)) [[unlikely]]
+        if (compression_mgr.must_defer_write(self.chunk)) [[unlikely]]
         {
-            compression_mgr.wait_out_compressor(chunk);
+            compression_mgr.wait_out_compressor(self.chunk);
         }
 
         // Test knob (build_config::force_defer_every): one write in N takes
@@ -556,7 +557,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
             }
         }
 
-        if (!force_defer_1 && !compression_mgr.must_defer_write(chunk)) [[likely]]
+        if (!force_defer_1 && !compression_mgr.must_defer_write(self.chunk)) [[likely]]
         {
             const int thr = get_thr_rank_fast();
 
@@ -567,7 +568,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
             // rest), a seq_cst store + fence under the symmetric one. One
             // policy verb, so no call site can forget the ordering; both
             // arguments live with it (write_compress_sync_policy.h).
-            WriteCompressSyncPolicy<Derived>::announce_write(thr, &chunk);
+            WriteCompressSyncPolicy<Derived>::announce_write(thr, &self.chunk);
 
             // ─── Invariant: our flag must be observably set ─────────────────
             if constexpr (build_config::any_check)
@@ -583,7 +584,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
             //     see inflight>0 then the compressor's scan of
             //     per_thread_writing[thr] sees our flag and spins -- see
             //     announce_write() for why, in either handshake shape.
-            if (!force_defer_2 && !compression_mgr.must_defer_write(chunk)) [[likely]]
+            if (!force_defer_2 && !compression_mgr.must_defer_write(self.chunk)) [[likely]]
             {
                 // Dekker established. chunk.values cannot be mutated by any
                 // compressor until we call end_write. Concurrent writers on the
@@ -618,8 +619,8 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
                 // body names OpenMP-only machinery).
                 if constexpr (build_config::use_openmp)
                 {
-                    if (chunk.pending_any()) [[unlikely]]
-                        CompressionManagerType::erase_own_rank_op(thr, &chunk, num);
+                    if (self.chunk.pending_any()) [[unlikely]]
+                        CompressionManagerType::erase_own_rank_op(thr, &self.chunk, self.num);
                 }
 
                 std::forward<WriteCallable>(write_body)();
@@ -650,7 +651,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
                 // crossing, not one per write.
                 if (compression_mgr.is_dangerous_list(thr)) [[unlikely]]
                 {
-                    compression_mgr.run_slow_path([&] { derived().perform_compression(); });
+                    compression_mgr.run_slow_path([&] { self.perform_compression(); });
                 }
                 else
                 {
@@ -672,7 +673,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
                             }
                         }
                     }
-                    derived().trigger_compression_if_needed(thr);
+                    self.trigger_compression_if_needed(thr);
                 }
                 return false;
             }
@@ -693,7 +694,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
                 }
             }
 
-            drive_compression_if_dangerous(thr);
+            self.drive_compression_if_dangerous(thr);
             return true;
         }
 
@@ -712,7 +713,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
             }
         }
 
-        drive_compression_if_dangerous(get_thr_rank_fast());
+        self.drive_compression_if_dangerous(get_thr_rank_fast());
         return true;
     }
     else
@@ -739,7 +740,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
             // (TCAllocator sl_contains assert) / use-after-free. The OMP write path
             // already early-returns on in_flush_replay (see above); mirror that here.
             if (!compression_mgr.in_flush_replay)
-                derived().perform_compression();
+                self.perform_compression();
         }
         return false;
     }

@@ -457,7 +457,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     void add_to_compression_list([[maybe_unused]] auto& vec_tuple) const;
 
     /// @brief add_to_compression_list() on the calling thread's own list.
-    void add_to_compression_list() const;
+    void add_to_compression_list(this const Derived& self);
 
     // ========================================================================
     // Common I/O operations
@@ -588,7 +588,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *       actually needed -- it is a no-op without fast block compression.
      */
     template <typename WriteCallable, typename LBD_INFO>
-    [[nodiscard]] bool write_with_optional_lock_impl(WriteCallable&&           write_body,
+    [[nodiscard]] bool write_with_optional_lock_impl(this Derived&             self,
+                                                     WriteCallable&&           write_body,
                                                      [[maybe_unused]] LBD_INFO lbd_info) noexcept;
 
     // Removed: the [[deprecated]] write_with_optional_lock() overload that armed
@@ -649,11 +650,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *
      * @param thr Calling thread's rank.
      */
-    void drive_compression_if_dangerous(int thr) noexcept
+    void drive_compression_if_dangerous(this Derived& self, int thr) noexcept
     {
         if (CompressionManagerType::is_dangerous_list(thr)) [[unlikely]]
         {
-            compression_mgr.run_slow_path([&] { derived().perform_compression(); });
+            compression_mgr.run_slow_path([&] { self.perform_compression(); });
         }
     }
 
