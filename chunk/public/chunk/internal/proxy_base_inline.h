@@ -1030,7 +1030,7 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
                                 }
                                 // Additional sanity: the stored value should be readable back
                                 // from the current pointer.
-                                const in_t<T> readback = values_after[ctx->num];
+                                const in_t<T> readback = elem_get(values_after, static_cast<std::size_t>(ctx->num));
                                 const auto    expected = static_cast<T>(res);
                                 if (readback != expected)
                                 {
@@ -1116,7 +1116,7 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation
                         [ctx, &proxy](T* values)
                         {
                             static_cast<void>(proxy);
-                            const in_t<T>  current = values[ctx->num];
+                            const in_t<T>  current = elem_get(values, static_cast<std::size_t>(ctx->num));
                             const CalcType intermediate =
                                 ctx->operation(static_cast<CalcType>(current), static_cast<CalcType>(ctx->operand));
                             const auto final_val = static_cast<T>(intermediate);
@@ -1184,7 +1184,7 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation
                             if constexpr (internal::relaxed_element_stores_v<ChunkType, T>)
                                 internal::store_element_relaxed(values + ctx->num, static_cast<T>(final_val));
                             else
-                                values[ctx->num] = final_val;
+                                elem_set(values, static_cast<std::size_t>(ctx->num), static_cast<T>(final_val));
                         });
                 });
         }

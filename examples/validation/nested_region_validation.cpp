@@ -26,6 +26,10 @@
 //      2-thread inner team writing the arrays, which must stop with the
 //      "nested ACTIVE" invariant failure.
 // In a serial build there is no nesting: A runs single-threaded, B is skipped.
+//
+// The outer team is num_threads(4) whatever OMP_NUM_THREADS says: where the job
+// sees fewer than 4 cores, run it with CHUNK_THREAD_CAPACITY=4 (the ctest
+// entries do), or the per-thread capacity refuses rank 3 -- rightly.
 // ============================================================================
 
 #include <cstdio>

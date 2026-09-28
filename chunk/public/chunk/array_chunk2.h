@@ -28,6 +28,7 @@
 
 #include <initializer_list>                   // the {a, b, c} constructor
 #include <iterator>                           // std::forward_iterator, std::distance -- the (first, last) constructor
+#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"              // in_t<T>: the element snapshots
 #include "chunk/internal/array_chunk2_base.h" // for ArrayChunk2Base
 #include "chunk/internal/array_chunk2_parallel.h"       // ParallelSupport2 — OpenMP-only mixin
@@ -123,7 +124,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     using Hooks2::rechunk_seed_fresh;
     using Hooks2::rechunk_swap_identity;
 
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
     /**
@@ -260,7 +261,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      */
     [[nodiscard]] T get_second_value() const noexcept
     {
-        if constexpr (!std::is_same_v<T, bool>)
+        if constexpr (!is_bool_like_v<T>)
         {
             auto* key = const_cast<void*>(this->registry_key());
             return Proxy2<T>::share_info_array.get_second_value(key);
@@ -436,7 +437,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     ///        not declared it yet.
     void copy_second_value_from(const ArrayChunk2& from)
     {
-        if constexpr (!std::is_same_v<T, bool>)
+        if constexpr (!is_bool_like_v<T>)
         {
             const in_t<T> sv = from.get_second_value();
             if (sv != T{} && get_second_value() != sv)

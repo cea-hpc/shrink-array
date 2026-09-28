@@ -28,6 +28,7 @@
 #include <cstdint>     // pool keys (drain_reuse_list_for_size, keyed lists)
 #include <type_traits> // remove_reference_t / remove_pointer_t (same)
 
+#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/chunk_def.h" // ChunkDef::size_min_buffer_reuse
 #include "chunk/config.h"
 #include "chunk/internal/chunk_size_policy.h"
@@ -329,7 +330,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     using p_vector_char = std::vector<char>*;
     using inf_array_t   = std::tuple<T, int, p_vector_char>;
 
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
     struct alignas(128) PerThreadFreeList
@@ -660,7 +661,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                          "[POOLS] %s %-22s legacy store        : %9zu block(s), %8.1f MB"
                          " (sized by the ambient %u)\n",
                          label, type_name<T>().data(), legacy_blocks,
-                         (double)(legacy_blocks * sizeof(T) * thread_chunk_size()) / 1e6, thread_chunk_size());
+                         (double)(legacy_blocks * sizeof(T) * CHUNK_T<T>::storage_units(thread_chunk_size())) / 1e6, thread_chunk_size());
         }
 
         if constexpr (chunk_config::chunk_dynamic)
@@ -676,7 +677,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                              "[POOLS] %s %-22s size %-6u        : %9zu block(s), %8.1f MB"
                              " across %zu/%zu rank(s)\n",
                              label, type_name<T>().data(), kv.first, blocks,
-                             (double)(blocks * sizeof(T) * kv.first) / 1e6, non_empty_ranks, kv.second.size());
+                             (double)(blocks * sizeof(T) * CHUNK_T<T>::storage_units(kv.first)) / 1e6, non_empty_ranks, kv.second.size());
             }
         }
     }
@@ -700,12 +701,12 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      */
     [[nodiscard]] static std::size_t reuse_pool_bytes() noexcept
     {
-        std::size_t total = parked_blocks(list_block_free_thr) * sizeof(T) * thread_chunk_size();
+        std::size_t total = parked_blocks(list_block_free_thr) * sizeof(T) * CHUNK_T<T>::storage_units(thread_chunk_size());
 
         if constexpr (chunk_config::chunk_dynamic)
         {
             for (const auto& [size, ranks] : list_block_free_thr_by_size_)
-                total += parked_blocks(ranks) * sizeof(T) * size;
+                total += parked_blocks(ranks) * sizeof(T) * CHUNK_T<T>::storage_units(size);
         }
         return total;
     }
@@ -761,7 +762,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                     lst.pop_back();
                     CHUNK_LEDGER_DISCARD(block, "trim_reuse_pools");
                     svfree(block);
-                    freed += elem_count * sizeof(T);
+                    freed += CHUNK_T<T>::storage_units(elem_count) * sizeof(T);
                 }
                 // A vector that shrank keeps its capacity, so a pool that peaked
                 // once holds on to the pointer array for good. Hand that back too.

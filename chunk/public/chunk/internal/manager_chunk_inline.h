@@ -585,7 +585,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::init_allocators([[maybe_unused]
             // are long-lived (data), so few become empty and retained memory is modest.
             auto& allocator = CHUNK_T<T>::get_chunk_allocator(thr_rank);
             allocator.set_rank(thr_rank); // stamped into every slab as owner_rank
-            allocator.init(shrink_array::alloc_chunk_count(), block_size / v, -1);
+            allocator.init(CHUNK_T<T>::storage_units(shrink_array::alloc_chunk_count()), block_size / v, -1);
         }
     }
 }
@@ -605,7 +605,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, false>::init_allocator(int block_size)
     // in chunk_base.h for the full rationale (same bug, this is the static/
     // non-CHUNK_DYNAMIC and unregistered-size-fallback allocator).
     CHUNK_T<T>::allocator_data.set_arena(fast_alloc::ArenaKind::Value);
-    CHUNK_T<T>::allocator_data.init(shrink_array::alloc_chunk_count(), block_size, -1);
+    CHUNK_T<T>::allocator_data.init(CHUNK_T<T>::storage_units(shrink_array::alloc_chunk_count()), block_size, -1);
 }
 
 /**
