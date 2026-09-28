@@ -93,9 +93,9 @@ struct Segment
 {
     static constexpr int SIZE = 64; ///< Slots per segment.
 
-    std::array<T*, SIZE> slots{}; ///< The shared arrays, one per registered value.
-    int      used        = 0;       ///< How many leading slots are occupied.
-    Segment* next        = nullptr; ///< Next block, or null at the tail.
+    std::array<T*, SIZE> slots{};        ///< The shared arrays, one per registered value.
+    int                  used = 0;       ///< How many leading slots are occupied.
+    Segment*             next = nullptr; ///< Next block, or null at the tail.
 };
 
 template <typename T>
@@ -473,9 +473,13 @@ struct GlobalVecHolder
     // arrays are freed (single-threaded clear paths) so a lookup never
     // dereferences a freed array.
 #ifndef CHUNK_CST_VAL2_INDEX_LOG2
-    #define CHUNK_CST_VAL2_INDEX_LOG2 18 // 2^18 = 262144 slots, 2 Mio/type; <11% load at 30k values
+    static constexpr int chunk_cst_val2_index_loc = 18;
+    // 2^18 = 262144 slots, 2 Mio/type; <11% load at 30k values
+#else
+    static constexpr int chunk_cst_val2_index_loc = CHUNK_CST_VAL2_INDEX_LOG2;
 #endif
-    static constexpr size_t INDEX_CAP       = size_t{1} << CHUNK_CST_VAL2_INDEX_LOG2; ///< Initial capacity.
+
+    static constexpr size_t INDEX_CAP       = size_t{1} << chunk_cst_val2_index_loc; ///< Initial capacity.
     static constexpr int    INDEX_MAX_PROBE = 64; ///< Bounded; giving up means fallback.
     /**
      * @brief One generation of the open-addressed value -> shared array table.
@@ -500,9 +504,9 @@ struct GlobalVecHolder
      */
     struct IndexTable
     {
-        std::size_t                        cap  = 0; ///< Slot count, a power of two.
-        std::size_t                        used = 0; ///< Published entries (single writer).
-        std::vector<std::atomic<T*>>       slots;    ///< `cap` slots, null = empty.
+        std::size_t                  cap  = 0; ///< Slot count, a power of two.
+        std::size_t                  used = 0; ///< Published entries (single writer).
+        std::vector<std::atomic<T*>> slots;    ///< `cap` slots, null = empty.
         // A value-initialised atomic pointer is null (C++20): no clearing loop.
         explicit IndexTable(std::size_t capacity) : cap(capacity), slots(capacity) {}
     };
