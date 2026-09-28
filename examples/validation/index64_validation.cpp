@@ -130,7 +130,7 @@ int check_past_int_max()
 
     // Three chunks' worth past INT_MAX at the largest geometry (4096), and an
     // odd tail so the last chunk is partial.
-    const long N = static_cast<long>(INT_MAX) + 3L * 4096 + 5;
+    const long N = static_cast<long>(INT_MAX) + (3L * 4096) + 5;
     Big        big(N);
     maybe_set_second_value(big, char(9));
     const long S = static_cast<long>(big.chunk_size());
@@ -150,8 +150,8 @@ int check_past_int_max()
 
     // Both sides of 2^31, and the chunk boundaries around it.
     const long              I = INT_MAX;
-    const std::vector<long> pos{0,     1,         S - 1, S,         I - S,     I - 1, I,    I + 1,
-                                I + 2, I + S - 1, I + S, I + 2 * S, N - S - 1, N - 2, N - 1};
+    const std::vector<long> pos{0,     1,         S - 1, S,           I - S,     I - 1, I,    I + 1,
+                                I + 2, I + S - 1, I + S, I + (2 * S), N - S - 1, N - 2, N - 1};
     const auto              value_at = [](std::size_t k) { return static_cast<char>(1 + (k % 7)); };
 
     // (1) sequential writes
@@ -267,7 +267,7 @@ int check_mixed()
     Array<double, long> b;
     Array<double, int>  c;
     const long          S = static_cast<long>(a.chunk_size());
-    const long          M = 50 * S + 7;
+    const long          M = (50 * S) + 7;
     a.resize(static_cast<int>(M));
     b.resize(M);
     c.resize(static_cast<int>(M));

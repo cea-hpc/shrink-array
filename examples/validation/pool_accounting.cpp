@@ -138,7 +138,8 @@ int main(int argc, char** argv)
     expect(Manager::reuse_pool_blocks() == 0, "pools empty at start", (long)Manager::reuse_pool_blocks(), 0);
 
     // --- 1. count alive: two arrays, then one cleared, then both ------------
-    long chunks_a = 0, chunks_b = 0;
+    long chunks_a = 0;
+    long chunks_b = 0;
     {
         Array<double> a(N);
         maybe_set_second_value(a, 3.5);
