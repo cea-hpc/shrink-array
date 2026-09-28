@@ -224,6 +224,14 @@ void ArrayChunk<T, ind_type>::clear_core()
     // compressions. rechunk_to() goes clear_core() -> rebuild_storage(), so the
     // decrement here keeps that path balanced too.
     manager_chunk::decrem_somme_chunk_create(nb_chunk);
+    // And recompute what derives from the total, as rebuild_storage() does
+    // after its increment: a re-chunk creates the new storage while the old
+    // one still counts, then destroys the old one here -- without this the
+    // compression threshold stayed sized for the geometry it just left (v1
+    // doubles 64 -> 1024: ~3400 candidates where ~900 is right; 1.5x less
+    // throughput for the rest of the 64-thread chunk_dyn bench).
+    manager_chunk::compute_size_buffer_reuse();
+    manager_chunk::compute_size_max_number_of_chunk_to_check_compress();
 
     if constexpr (build_config::use_openmp)
     {
