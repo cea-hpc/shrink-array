@@ -227,6 +227,39 @@ foreach(_geom IN LISTS _rt_geometries)
 endforeach()
 endif()
 
+# --- bits_container_validation: ArrayChunkBits (ArrayChunk2<Bit>) against
+# std::vector<bool>: round trip through compress(), the pass compresses the
+# constant runs, neighbouring elements written by different threads. Chunk2
+# libraries only, every geometry of the round-trip harnesses.
+foreach(_geom IN LISTS _rt_geometries)
+  set(_tgt bits_container_validation_${_geom})
+  add_executable(${_tgt} bits_container_validation.cpp)
+  target_link_libraries(${_tgt} PRIVATE chunk_v2_${_geom})
+  if (_geom STREQUAL "dyn")
+    target_compile_definitions(${_tgt} PRIVATE CHUNK2 CHUNK_DYNAMIC DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
+  else()
+    target_compile_definitions(${_tgt} PRIVATE CHUNK2)
+  endif()
+  validation_setup_target(${_tgt})
+  foreach(_nthr 1 8)
+    add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
+    set_property(TEST ${_tgt}_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
+    set_property(TEST ${_tgt}_${_nthr}thr PROPERTY LABELS validation)
+  endforeach()
+endforeach()
+
+# --- bit_words_validation: the bit-packed storage kernel of ArrayChunkBits
+# alone (header only, no variant, no library): get/set against
+# std::vector<bool>, the word scans, and concurrent writes to neighbouring
+# bits of one word through the atomic read-modify-write.
+find_package(Threads REQUIRED)
+add_executable(bit_words_validation bit_words_validation.cpp)
+target_include_directories(bit_words_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public)
+target_link_libraries(bit_words_validation PRIVATE Threads::Threads)
+chunk_require_cxx20(bit_words_validation PRIVATE)
+add_test(NAME bit_words_validation COMMAND bit_words_validation)
+set_property(TEST bit_words_validation PROPERTY LABELS validation)
+
 # --- slab_geometry_validation: the zeroed value allocator alone (no variant).
 # Every allocator of one element type must cut its slabs at one size whatever
 # the element size, or slab_of() through the ambient-size allocator misses the

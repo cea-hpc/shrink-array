@@ -33,6 +33,8 @@
 #include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
 
 #include "chunk/internal/in_t.h"
+#include "chunk/internal/element_access.h" // Bit buffers: words of bits
+#include <cstring>                           // std::memset (the Bit second constant)
 #include "chunk/config.h"
 #include "chunk/internal/invariant_check.h"
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
@@ -167,13 +169,20 @@ struct ChunkSpec2
     }
 };
 
-template <>
-struct ChunkSpec2<bool>
+// bool and Bit (bit.h): the second constant is `true`, one for the type.
+template <typename T>
+    requires is_bool_like_v<T>
+struct ChunkSpec2<T>
 {
-    static inline std::array<bool, cst_buffer_size> m_ptr_cst_val2 = []
+    // Bit: every BIT set -- the buffer is read as 64-bit words, hence the
+    // bytes 0xFF (a Bit{true} object is the byte 0x01) and the alignment.
+    alignas(bits::word_t) static inline std::array<T, cst_buffer_size> m_ptr_cst_val2 = []
     {
-        std::array<bool, cst_buffer_size> arr{};
-        arr.fill(true); // Initialize everything to 'true'
+        std::array<T, cst_buffer_size> arr{};
+        if constexpr (is_packed_bit_v<T>)
+            std::memset(static_cast<void*>(arr.data()), 0xFF, sizeof(arr)); // raw words, not Bit objects
+        else
+            arr.fill(true); // Initialize everything to 'true'
         return arr;
     }();
 
@@ -181,7 +190,7 @@ struct ChunkSpec2<bool>
      * \brief Gets the pointer to the (single, shared) second constant value.
      * \return Pointer to the constant value array.
      */
-    [[nodiscard]] static bool* get_cst_val2() noexcept
+    [[nodiscard]] static T* get_cst_val2() noexcept
     {
         return m_ptr_cst_val2.data();
     }
@@ -192,7 +201,7 @@ struct ChunkSpec2<bool>
      * \param values Pointer to compare.
      * \return True if values equals the second constant.
      */
-    [[nodiscard]] static bool is_cst_val2(const bool* values) noexcept
+    [[nodiscard]] static bool is_cst_val2(const T* values) noexcept
     {
         return values == get_cst_val2();
     }
@@ -202,7 +211,7 @@ struct ChunkSpec2<bool>
      * \param values Pointer to compare.
      * \return True if values does NOT equal the second constant.
      */
-    [[nodiscard]] static bool is_not_cst_val2(const bool* values) noexcept
+    [[nodiscard]] static bool is_not_cst_val2(const T* values) noexcept
     {
         return !is_cst_val2(values);
     }
@@ -212,9 +221,12 @@ struct ChunkSpec2<bool>
      *        possible second value).
      * \param values_loc Buffer to fill.
      */
-    static void init_block_2nd_value(bool* values_loc)
+    static void init_block_2nd_value(T* values_loc)
     {
-        std::fill_n(values_loc, alloc_chunk_count(), true);
+        if constexpr (is_packed_bit_v<T>)
+            bits::fill_bits(internal::as_words(values_loc), alloc_chunk_count(), true);
+        else
+            std::fill_n(values_loc, alloc_chunk_count(), true);
     }
 };
 
@@ -598,7 +610,7 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
     using Base::first_value;
     using Base::values;
 
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
     /**
      * @brief Checks if the per-thread compression candidate map is empty.
@@ -702,11 +714,11 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
      *                             second constant (vs the first).
      * @return true on failure (caller owns values_loc), false on success.
      */
-    [[nodiscard]] bool compare_and_swap_bool(bool* values_loc, bool expected_is_cst_val2) noexcept
+    [[nodiscard]] bool compare_and_swap_bool(T* values_loc, bool expected_is_cst_val2) noexcept
     {
         if constexpr (is_bool)
         {
-            bool* expected = expected_is_cst_val2 ? BaseSpec::get_cst_val2() : Base::get_cst_val1();
+            T* expected = expected_is_cst_val2 ? BaseSpec::get_cst_val2() : Base::get_cst_val1();
             return Base::compare_and_swap_gen(values_loc, expected);
         }
         else
@@ -1034,7 +1046,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     using OmpPolicy::create_value_bool;
 
   private:
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
   public:

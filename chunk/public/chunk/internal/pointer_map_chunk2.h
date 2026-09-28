@@ -55,6 +55,7 @@
 #include <utility>     // std::swap (swap_entries), std::pair
 #include <vector>
 
+#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
 #include "chunk/internal/value_less.h"
@@ -247,7 +248,7 @@ class PointerMapChunk2
     /// Map from values to constant index values.
     MapType map_ind_cst_val2;
 
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
     // Check-build diagnostic (from the ARM lookup crash) — dump full context at a failed key lookup.

@@ -25,6 +25,7 @@
 #include <memory>
 #include <ostream>
 
+#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"
 #include "chunk/config.h"
 #include "chunk/internal/crp_helper.h"
@@ -211,15 +212,17 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
   public:
 };
 
-template <typename Derived>
-struct ProxySpec2<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2<bool>>
+// bool and Bit (bit.h): the second constant is `true`, only num_tab is per array.
+template <typename T, typename Derived>
+    requires is_bool_like_v<T>
+struct ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
 {
-    using Base = Proxy2Base<Derived, bool, Chunk2<bool>>;
+    using Base = Proxy2Base<Derived, T, Chunk2<T>>;
     using Base::derived;
 
     static constexpr bool second_value = true;
 
-    using inf_array_t = std::tuple<bool, int, int>;
+    using inf_array_t = std::tuple<T, int, int>;
 
     /**
      * @brief Cached compression metadata tuple
@@ -253,9 +256,9 @@ struct ProxySpec2<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2<bool>
     mutable const inf_array_t* inf_array_src_ = nullptr;
 
   public:
-    using ChunkType = Chunk2<bool>;
+    using ChunkType = Chunk2<T>;
 
-    using values_type_ref = Proxy2Base<Derived, bool, ChunkType>::values_type_ref;
+    using values_type_ref = Proxy2Base<Derived, T, ChunkType>::values_type_ref;
 
     using Base::Base;
 
@@ -263,7 +266,7 @@ struct ProxySpec2<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2<bool>
      * @brief Pointer to the owning array (used as the compression-metadata
      *        map key).
      */
-    [[nodiscard]] const bool* get_ptr_on_array() const noexcept
+    [[nodiscard]] const T* get_ptr_on_array() const noexcept
     {
         return derived().get_ptr_on_array();
     }
@@ -277,7 +280,7 @@ struct ProxySpec2<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2<bool>
      * @brief Async-context counterpart of get_ptr_on_array().
      * @param ctx Async write context.
      */
-    const bool* get_ptr_on_array_async(auto* ctx) const noexcept
+    const T* get_ptr_on_array_async(auto* ctx) const noexcept
     {
         return derived().get_ptr_on_array_async(ctx);
     }
@@ -329,7 +332,7 @@ struct ProxySpec2<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2<bool>
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
 {
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
     using Base2 = Proxy2Base<Derived, T, Chunk2<T>>;
@@ -622,7 +625,7 @@ struct Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T,
     // specialisation declares its own equivalents). `chunk` comes from the
     // dependent base ProxyBase, so it must be imported explicitly for
     // unqualified use -- two-phase lookup does not search dependent bases.
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
     using Base = ProxyBase<Derived, T, Chunk2<T>>;
@@ -800,7 +803,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     using BaseSpec::inf_array;
     using inf_array_t = BaseSpec::inf_array_t;
 
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
     using values_type_ref = Base::atomic_ptr_ref_t; // C++20: no typename in an alias
@@ -1142,6 +1145,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      */
     [[nodiscard]] T& unsafe_ref() noexcept
     {
+        static_assert(!is_packed_bit_v<T>, "unsafe_ref returns T&: a Bit has no address (bit.h)");
         if (Base2::is_cst_val())
         {
             create_value();

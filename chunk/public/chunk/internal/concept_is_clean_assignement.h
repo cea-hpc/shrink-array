@@ -21,6 +21,8 @@
 #include <concepts> // std::convertible_to
 #include <type_traits>
 
+#include "chunk/bit.h" // Bit: the packed bool, assigned from bool
+
 namespace shrink_array
 {
 
@@ -75,7 +77,10 @@ concept IsCleanAssignment =
     // Rule 5: Small integers from standard int
     ((std::is_same_v<std::remove_cvref_t<T>, short> || std::is_same_v<std::remove_cvref_t<T>, unsigned char> ||
       std::is_same_v<std::remove_cvref_t<T>, char>) &&
-     std::is_same_v<base_t<U>, int>);
+     std::is_same_v<base_t<U>, int>) ||
+
+    // Rule 6: the packed bool (ArrayChunkBits) receiving a bool
+    (shrink_array::is_packed_bit_v<std::remove_cvref_t<T>> && std::is_same_v<base_t<U>, bool>);
 
 template <typename T, typename U>
 concept IsCleanCompoundOp = IsCleanAssignment<T, U>;

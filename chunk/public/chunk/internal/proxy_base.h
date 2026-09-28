@@ -31,6 +31,7 @@
 #include <vector>
 #include <memory>
 
+#include "chunk/internal/element_access.h" // elem_get / elem_set, is_packed_bit_v: Bit buffers are words of bits
 #include "chunk/config.h"
 #include "chunk/internal/chunk_stats.h" // increm_chunk_* in the bodies (dependent calls the include tools cannot attribute)
 #include "chunk/internal/in_t.h"
@@ -133,8 +134,8 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     ///          when the write was enqueued may since have been reallocated.
     static void store_value_async(auto* ctx, in_t<T> v) noexcept
     {
-        T* const values_loc  = ctx->chunk.values_load();
-        values_loc[ctx->num] = v;
+        T* const values_loc = ctx->chunk.values_load();
+        elem_set(values_loc, static_cast<std::size_t>(ctx->num), static_cast<T>(v));
     }
 
     /**
@@ -154,7 +155,7 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     [[nodiscard]] static T read_values_async(auto* ctx) noexcept
     {
         const T* const values_loc = ctx->chunk.values_load();
-        return values_loc[ctx->num];
+        return elem_get(values_loc, static_cast<std::size_t>(ctx->num));
     }
 
     /// @brief set_ptr_is_inside_chunk_list_to_compress() for the replay path,
@@ -443,6 +444,20 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // Common I/O operations
     //
 
+    /// @brief This element, read raw: `values[num]`, or its bit for Bit
+    ///        (element_access.h). No sync, no check -- the old spelling.
+    [[nodiscard]] T raw_elem() const noexcept
+    {
+        return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
+    }
+
+    /// @brief This element, written raw: `values[num] = v`, or an atomic RMW
+    ///        of its word for Bit. No sync, no check -- the old spelling.
+    void raw_elem_set(in_t<T> v) const noexcept
+    {
+        elem_set(static_cast<T*>(values), static_cast<std::size_t>(num), static_cast<T>(v));
+    }
+
     /// @brief Write @p v straight through #values, with no synchronisation.
     /// @pre The chunk is materialised and the caller holds the write path.
     void store_value(in_t<T> v) const noexcept
@@ -472,7 +487,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         }
         else
         {
-            values[num] = v;
+            // Bit: an atomic RMW of the word (element_access.h); values[num] otherwise.
+            elem_set(static_cast<T*>(values), static_cast<std::size_t>(num), static_cast<T>(v));
         }
     }
 
@@ -513,7 +529,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
                 return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
             return vals[num];
         }
-        return values[num];
+        return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
     }
 
     // PURE-READ entry (operator T(), the *=1 / /=1 early-outs). Under
@@ -757,6 +773,15 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return read_pure();
     }
 
+    /// @brief ArrayChunkBits: read the element straight as a bool. Through
+    ///        operator T() it would be two user conversions (proxy -> Bit ->
+    ///        bool), which C++ does not chain, so `bool b = a[i]` needs this one.
+    [[nodiscard]] operator bool() const noexcept
+        requires is_packed_bit_v<T>
+    {
+        return static_cast<bool>(read_pure());
+    }
+
     /**
      * @brief Record a write to be applied later, when the fast path refuses it.
      * @param ctx Captures everything the replay needs -- offset, chunk indices,
@@ -962,6 +987,57 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
     {
         bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs ^ rhs; });
+        return derived();
+    }
+
+    // ------------------------------------------------------------------------
+    // ArrayChunkBits (T = Bit, bit.h): |= &= ^= with a bool operand.
+    //
+    // Bit is not integral, so the three above do not apply. A logical
+    // operation needs no read-modify-write when the operand decides the result:
+    // `|= true` is `= true`, `&= false` is `= false`, and the other operand
+    // leaves the element as it is -- a plain write through the proxy's
+    // operator=, with its whole protocol (marking, deferral), and no write at
+    // all when nothing changes. Only `^= true` reads: the element, then its
+    // negation written back -- as for a plain bool, two threads updating the
+    // SAME element race; different elements of one word do not.
+    // ------------------------------------------------------------------------
+
+    /// @brief The operand kinds the Bit operators take: bool, Bit, or a proxy
+    ///        of either.
+    template <typename U>
+    static constexpr bool bit_operand_v = std::is_same_v<base_t<U>, bool> || is_packed_bit_v<base_t<U>>;
+
+    /// @brief `a[i] |= b` for ArrayChunkBits: sets the element when @p v is true.
+    template <typename U>
+    Derived operator|=(const U& v) noexcept
+        requires is_packed_bit_v<T> && bit_operand_v<U>
+    {
+        if (static_cast<bool>(v))
+            derived() = true;
+        return derived();
+    }
+
+    /// @brief `a[i] &= b` for ArrayChunkBits: clears the element when @p v is false.
+    template <typename U>
+    Derived operator&=(const U& v) noexcept
+        requires is_packed_bit_v<T> && bit_operand_v<U>
+    {
+        if (!static_cast<bool>(v))
+            derived() = false;
+        return derived();
+    }
+
+    /// @brief `a[i] ^= b` for ArrayChunkBits: flips the element when @p v is true.
+    template <typename U>
+    Derived operator^=(const U& v) noexcept
+        requires is_packed_bit_v<T> && bit_operand_v<U>
+    {
+        if (static_cast<bool>(v))
+        {
+            const bool cur = static_cast<bool>(read_pure()); // synchronised read, as operator bool()
+            derived()      = !cur;
+        }
         return derived();
     }
 

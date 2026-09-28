@@ -8,6 +8,7 @@
 // chunk sizes, without re-chunking anything:
 //
 //     mem(S) ≈ n_chunks(S) * meta_bytes_per_chunk  +  U_mat(S) * S * sizeof(T)
+//     (S / 8 bytes per materialised chunk for Bit, ArrayChunkBits: storage_units)
 //
 //   meta term  : fixed per-chunk cost (sizeof(chunk) + tracking list + dirty
 //                bitset + slack), pushes toward LARGER chunks.
@@ -46,6 +47,8 @@
 #include <vector>
 
 #include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
+#include "chunk/bit.h"                    // is_bool_like_v, is_packed_bit_v
+#include "chunk/internal/element_access.h" // internal::as_words: Bit sub-blocks scanned by word
 #include "chunk/config.h"        // chunk_config::use_chunk2 / use_chunk2a
 #include "chunk/internal/rechunk_cost_model.h"
 #include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size
@@ -125,9 +128,10 @@ class ChunkSizeAdvisor
         // v1 has no cst2; 2A keys cst2 per chunk by the values_load() pointer.
         [[maybe_unused]] const int chunk2_ind = [&]
         {
-            // bool: one second value, `true`, no index -- get_ind_second_value()
-            // aborts for it; classify() below asks the unindexed is_cst_val2().
-            if constexpr (chunk_config::use_chunk2 && !std::is_same_v<T, bool>)
+            // bool / Bit: one second value, `true`, no index --
+            // get_ind_second_value() aborts for them; classify() below asks
+            // the unindexed is_cst_val2().
+            if constexpr (chunk_config::use_chunk2 && !is_bool_like_v<T>)
                 return tab.get_ind_second_value();
             else if constexpr (chunk_config::use_chunk2)
                 return 0;
@@ -194,7 +198,7 @@ class ChunkSizeAdvisor
             else if constexpr (chunk_config::use_chunk2)
             {
                 bool is_cst2 = false;
-                if constexpr (std::is_same_v<T, bool>)
+                if constexpr (is_bool_like_v<T>)
                     is_cst2 = chunk.is_cst_val2();
                 else
                     is_cst2 = chunk2_ind >= 0 && chunk.is_cst_val2(chunk2_ind);
@@ -349,12 +353,26 @@ class ChunkSizeAdvisor
                         for (uint32_t b = 0; b < S; b += sub)
                         {
                             bool cst = true;
-                            for (uint32_t i = 1; i < sub; ++i)
-                                if (!(v[b + i] == v[b]))
-                                {
-                                    cst = false;
-                                    break;
-                                }
+                            T    run{}; // the sub-block's value, when uniform
+                            if constexpr (is_packed_bit_v<T>)
+                            {
+                                // Bit: v is words of bits (bit.h), a sub-block
+                                // is a bit range -- classified word by word.
+                                const bits::Uniform u = bits::scan_range(internal::as_words(v), b, sub);
+                                cst                   = u != bits::Uniform::mixed;
+                                run                   = T{u == bits::Uniform::all_true};
+                            }
+                            else
+                            {
+                                for (uint32_t i = 1; i < sub; ++i)
+                                    if (!(v[b + i] == v[b]))
+                                    {
+                                        cst = false;
+                                        break;
+                                    }
+                                if (cst)
+                                    run = v[b];
+                            }
                             // A sub-block that is merely uniform is NOT compressible:
                             // the runtime only ever stores a chunk as a constant when
                             // that constant is one it can REPRESENT -- cst_val1 (the
@@ -366,7 +384,7 @@ class ChunkSizeAdvisor
                             // measured one was 251 MB, and the decider acted on it.
                             // Gate on the value, not just on the uniformity.
                             if (cst)
-                                cst = compressible_value(v[b]);
+                                cst = compressible_value(run);
                             fine_loc[static_cast<std::size_t>(k)] += cst ? 1 : 0;
                         }
                     }
@@ -390,7 +408,8 @@ class ChunkSizeAdvisor
             est.cst       = nchunks - mat;
             est.exact     = exact;
             est.mem_bytes = (static_cast<double>(nchunks) * rep.meta_bytes) +
-                            (static_cast<double>(mat) * static_cast<double>(size) * sizeof(T));
+                            (static_cast<double>(mat) * static_cast<double>(Arr::chunk_type::storage_units(size)) *
+                             sizeof(T)); // Bit: size / 8 bytes, not size
             rep.table.push_back(est);
         };
 

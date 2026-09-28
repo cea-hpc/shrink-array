@@ -35,6 +35,7 @@
 #include "chunk/internal/churn_counters.h"              // churn::note_materialisation
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/internal/in_t.h"            // in_t<T>: the scans' constants, by value or by reference
+#include "chunk/internal/element_access.h"  // elem_get: Bit buffers are words of bits
 #include "chunk/internal/relaxed_element.h" // element_at<true>: the marking filter's reads
 #include "chunk/internal/svalloc.h"
 #include "chunk/config.h"
@@ -503,7 +504,7 @@ struct ChunkAllocPolicy<T, Derived, true>
             if constexpr (chunk_config::stats)
             {
                 increm_chunk_list<Derived>();
-                add_chunk_bytes_reused<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
+                add_chunk_bytes_reused<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(Derived::storage_units(alloc_chunk_count())));
             }
             values_loc = ll_block_free_thr.back();
             CHUNK_CHECK_VALUES_PTR(values_loc, "freelist.pop");
@@ -520,7 +521,7 @@ struct ChunkAllocPolicy<T, Derived, true>
             if constexpr (chunk_config::stats)
             {
                 increm_chunk_alloc<Derived>();
-                add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
+                add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(Derived::storage_units(alloc_chunk_count())));
             }
             if constexpr (build_config::use_fast_alloc)
             {
@@ -538,7 +539,7 @@ struct ChunkAllocPolicy<T, Derived, true>
                 // Every caller's initialiser returns void, so the guard was
                 // always true; it only stood in the way of ever writing one
                 // that did not.
-                svcalloc_align(values_loc, T, alloc_chunk_count());
+                svcalloc_align(values_loc, T, Derived::storage_units(alloc_chunk_count()));
                 CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.svcalloc");
                 CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.svcalloc");
                 init_fresh(values_loc);
@@ -595,7 +596,7 @@ struct ChunkAllocPolicy<T, Derived, false>
         {
             increm_chunk_create<Derived>();
             increm_chunk_alloc<Derived>();
-            add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
+            add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(Derived::storage_units(alloc_chunk_count())));
         }
 
         if constexpr (build_config::use_fast_alloc)
@@ -611,7 +612,7 @@ struct ChunkAllocPolicy<T, Derived, false>
         }
         else
         {
-            svcalloc_align(values_loc, T, alloc_chunk_count());
+            svcalloc_align(values_loc, T, Derived::storage_units(alloc_chunk_count()));
             CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.svcalloc_serial");
             CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.svcalloc_serial");
             init_fresh(values_loc);
@@ -852,7 +853,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
         {
             arr[thr].set_rank(thr); // stamped into every slab as owner_rank
             arr[thr].set_key(key);  // ... and owner_key
-            arr[thr].init(static_cast<int>(size), block_size / v, -1);
+            arr[thr].init(static_cast<int>(Derived::storage_units(size)), block_size / v, -1);
         }
         allocator_pool_.emplace(pool_key(key, size), std::move(arr));
     }
@@ -894,7 +895,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
         // sl_remove SIGSEGV on a node whose arena_kind read back as Op, with
         // ElementSize/BlockSize matching op-pool geometry, not this T's).
         allocator->set_arena(fast_alloc::ArenaKind::Value);
-        allocator->init(static_cast<size_t>(size), static_cast<uintptr_t>(block_size), -1);
+        allocator->init(static_cast<size_t>(Derived::storage_units(size)), static_cast<uintptr_t>(block_size), -1);
         allocator_pool_serial_.emplace(size, std::move(allocator));
     }
 
@@ -986,8 +987,11 @@ class ChunkBase : public CRTPSupport<Derived>,
 
   public:
     // Type traits
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    // bool and Bit (bit.h) share chunk2's bool path: one second value, true.
+    static constexpr bool is_bool     = is_bool_like_v<T>;
     static constexpr bool is_not_bool = !is_bool;
+    /// The buffer is words of bits (Bit), not an array of T.
+    static constexpr bool is_packed = is_packed_bit_v<T>;
 
     static constexpr bool use_mm_protect = build_config::use_mm_protect;
     constexpr static T    zero{};
@@ -1210,7 +1214,9 @@ class ChunkBase : public CRTPSupport<Derived>,
     template <bool Relaxed>
     [[nodiscard]] static T load_at(const T* vals, int i) noexcept
     {
-        if constexpr (Relaxed)
+        if constexpr (is_packed)
+            return elem_get(vals, static_cast<std::size_t>(i)); // relaxed word load under OpenMP
+        else if constexpr (Relaxed)
             return internal::load_element_relaxed(vals + i);
         else
             return vals[i];
@@ -1356,7 +1362,20 @@ class ChunkBase : public CRTPSupport<Derived>,
         // reductions of comparisons, which vectorise (AVX2 / NEON); the early
         // exit survives between blocks, so a chunk disproved at its first
         // element still costs one block, not the whole chunk.
-        const T*     vals = values_load();
+        const T* vals = values_load();
+        if constexpr (is_packed)
+        {
+            // One compare per 64 elements (bit_words.h).
+            const bits::Uniform u        = bits::scan_words(internal::as_words(vals), count);
+            const auto          all_of_v = [u](bool v) noexcept
+            { return u == (v ? bits::Uniform::all_true : bits::Uniform::all_false); };
+            if constexpr (chunk_config::stats)
+                add_chunk_scan_read<Derived>(static_cast<long>(count));
+            ConstantScan packed{all_of_v(first_v), all_of_v(second_v)};
+            if (packed.first)
+                packed.second = false;
+            return packed;
+        }
         ConstantScan scan{true, true};
         unsigned int i = 0;
         while (i < count)
@@ -1391,6 +1410,13 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @pre The chunk is materialised.
     [[nodiscard]] bool is_constant_to(in_t<T> v, unsigned int count) const noexcept
     {
+        if constexpr (is_packed)
+        {
+            if constexpr (chunk_config::stats)
+                add_chunk_scan_read<Derived>(static_cast<long>(count));
+            return bits::scan_words(internal::as_words(values_load()), count) ==
+                   (static_cast<bool>(v) ? bits::Uniform::all_true : bits::Uniform::all_false);
+        }
         // Same shape as scan_constants(): branch-free blocks, exit between them.
         const T*     vals = values_load();
         unsigned int i    = 0;
@@ -1467,6 +1493,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             if (derived().is_cst_val2()) [[unlikely]]
                 derived().materialise_for_address();
         }
+        static_assert(!is_packed, "print_adr: a Bit has no address (bit.h)");
         return &values_load()[i];
     }
 
@@ -1533,6 +1560,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             if (!derived().written()) [[unlikely]]
                 INVARIANT_FAILED("operator()(int) on a chunk that is not materialised");
         }
+        static_assert(!is_packed, "operator()(int) returns T&: a Bit has no address (bit.h)");
         return values_load()[i];
     }
 
@@ -1549,28 +1577,45 @@ class ChunkBase : public CRTPSupport<Derived>,
     ///                   buffer allocated at a different geometry.
     static void init_block(T* values_loc, unsigned int n_elems) noexcept
     {
-        if constexpr (std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>)
+        const std::size_t units = Derived::storage_units(n_elems);
+        if constexpr ((std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>) || is_packed)
         {
-            std::memset(values_loc, 0, n_elems * sizeof(T));
+            std::memset(static_cast<void*>(values_loc), 0, units * sizeof(T)); // Bit: all words 0, every bit false
         }
         else
         {
-            std::fill_n(values_loc, n_elems, T{});
+            std::fill_n(values_loc, units, T{});
         }
     }
 
-    /// @brief init_block() over the active geometry's element count.
+    /**
+     * @brief Units of T to allocate for a chunk of @p n_elems elements.
+     * @details One per element: element i is values[i]. A packed chunk
+     *          (ChunkBits: 8 bools per byte) hides this with fewer, and every
+     *          allocation, allocator geometry and byte count goes through
+     *          Derived::storage_units(), never through the element count alone.
+     */
+    [[nodiscard]] static constexpr std::size_t storage_units(std::size_t n_elems) noexcept
+    {
+        if constexpr (is_packed)
+            return bits::bytes_for(n_elems) / sizeof(T); // whole 64-bit words
+        else
+            return n_elems;
+    }
+
+    /// @brief init_block() over the active geometry's storage.
     static void init_block(T* values_loc) noexcept
     {
-        if constexpr (std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>)
+        const std::size_t units = Derived::storage_units(alloc_chunk_count());
+        if constexpr ((std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>) || is_packed)
         {
             // For trivially constructible scalar types: use memset (fastest option)
-            std::memset(values_loc, 0, alloc_chunk_count() * sizeof(T));
+            std::memset(static_cast<void*>(values_loc), 0, units * sizeof(T)); // Bit: raw words, not Bit objects
         }
         else
         {
             // For all other cases (composite_arithmetic, non-trivial types, etc.)
-            std::fill_n(values_loc, alloc_chunk_count(), T{});
+            std::fill_n(values_loc, units, T{});
         }
     }
 
@@ -1832,7 +1877,9 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     using cst_val1_type = std::conditional_t<build_config::use_mm_protect, T*, std::array<T, cst_buffer_size>>;
 
-    static inline cst_val1_type m_ptr_cst_val1 = []
+    // alignas: a Bit chunk compressed to the first constant points here, and
+    // its reads load 64-bit words (element_access.h).
+    alignas(bits::word_t) static inline cst_val1_type m_ptr_cst_val1 = []
     {
         if constexpr (build_config::use_mm_protect)
         {
