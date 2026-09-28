@@ -718,6 +718,8 @@ struct Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T,
     }
 };
 
+/// @brief Proxy to one element of a Chunk2<T> chunk: reads, assignments and compound operators on it.
+/// @tparam T Element type.
 template <typename T>
 class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config::use_fast_block_compression>
 {
@@ -1121,6 +1123,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     const Proxy2& operator=(const Proxy2& from) = delete;
     Proxy2(const Proxy2& other)                 = default;
 
+    /// @brief Stream output of the element's value (defined below).
     template <typename U>
     friend std::ostream& operator<<(std::ostream& os, const Proxy2<U>& proxy);
 
@@ -1157,6 +1160,8 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     const T* operator&() const = delete;
 };
 
+/// @brief Write the element's value, read through proxy.read_pure(), to @p os.
+/// @return @p os.
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const Proxy2<T>& proxy)
 {

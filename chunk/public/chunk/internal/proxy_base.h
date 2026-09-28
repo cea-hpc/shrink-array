@@ -56,11 +56,13 @@ struct ArithmeticOperationProxyContext;
 template <typename T>
 class Proxy;
 
+/// @brief Whether T is a Proxy<U> (Proxy2 and Proxy2A are not): false by default.
 template <typename T>
 struct is_simple_proxy : std::false_type
 {
 };
 
+/// @brief Proxy<T> is a simple proxy.
 template <typename T>
 struct is_simple_proxy<Proxy<T>> : std::true_type
 {
@@ -181,7 +183,7 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     ///        replay path.
 #if CRTP_USE_DEDUCING_THIS
     // C++23: explicit object parameter replaces CRTPSupport::derived().
-    void add_to_compression_list_async(this auto const& self, auto* ctx);
+    void add_to_compression_list_async(this const auto& self, auto* ctx);
 #else
     void add_to_compression_list_async(auto* ctx) const;
 #endif

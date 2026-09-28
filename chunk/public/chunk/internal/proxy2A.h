@@ -316,6 +316,7 @@ void realloc_unique(std::unique_ptr<T[]>& ptr, std::size_t old_size, std::size_t
     ptr = std::move(new_ptr);
 }
 
+/// @brief Per-table, per-chunk second-value storage used by Proxy2A (see the description above realloc_unique).
 template <typename T, typename Derived>
 struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
 {
@@ -430,6 +431,10 @@ struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<boo
 
     using values_type_ref = Proxy2Base<Derived, bool, ChunkType>::values_type_ref;
 
+    /// @brief Forward the element reference, index and chunk to Proxy2Base.
+    /// @param v Reference to the chunk's values.
+    /// @param num_ Index of the element in the chunk.
+    /// @param chunk_ Owning chunk.
     explicit ProxySpec2A(values_type_ref v, int num_, ChunkType& chunk_) noexcept : Base2(v, num_, chunk_) {}
     /*!
      * \brief Static container holding second values for each tab and chunk.
@@ -606,6 +611,8 @@ inline const bool g_proxy2a_mark_legacy = []
     return env != nullptr && env[0] != '\0' && env[0] != '0';
 }();
 
+/// @brief Proxy to one element of a Chunk2A<T> chunk (see the class description above g_proxy2a_mark_legacy).
+/// @tparam T Element type.
 template <typename T>
 class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_config::use_fast_block_compression>
 {
@@ -1057,6 +1064,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     T*       operator&()       = delete;
     const T* operator&() const = delete;
 
+    /// @brief Stream output of the element's value (defined below).
     template <typename U>
     friend std::ostream& operator<<(std::ostream& os, const Proxy2A<U>& proxy);
 
@@ -1091,6 +1099,8 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     }
 };
 
+/// @brief Write the element's value, read through proxy.read_values(), to @p os.
+/// @return @p os.
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const Proxy2A<T>& proxy)
 {

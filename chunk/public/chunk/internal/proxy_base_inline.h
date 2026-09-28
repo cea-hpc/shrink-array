@@ -375,7 +375,7 @@ ProxyType ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::make_proxy_wi
 // its Derived parameter, so Derived::tab_... and the CRTPSupport base are
 // unchanged; only the derived() calls become self.
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
-void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression_list_async(this auto const& self,
+void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression_list_async(this const auto& self,
                                                                                             auto*            ctx)
 {
     auto&     chunk = ctx->chunk;
