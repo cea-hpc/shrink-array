@@ -36,6 +36,7 @@
 // top of the std::vector fallback they include. Also what drags in the
 // ArrayChunk* definitions the alias below selects between.
 #include "chunk/array_chunk_range_ops.h"
+#include "chunk/array_chunk_bits.h" // BENCH_BOOL_BITS: tab_bool packed 8 per byte
 
 namespace shrink_array
 {
@@ -117,7 +118,17 @@ inline constexpr complex_double zero_complex = std::complex<double>(0., 0.);
 ///        Array<bool>; the std::vector baseline uses short, because
 ///        std::vector<bool>'s proxy is useless here. The asymmetry predates the
 ///        split -- this alias just names it so BenchArrays can hold a reference.
+///
+///        BENCH_BOOL_BITS (the shrink_bench_chunk2bits_* targets): tab_bool is
+///        an ArrayChunkBits -- bools packed 8 per byte -- instead, everything
+///        else unchanged, so the two builds compare the containers on the same
+///        workload and against the same data_tab_bool_*.bin references.
+#ifdef BENCH_BOOL_BITS
+static_assert(chunk_config::use_chunk2, "BENCH_BOOL_BITS: ArrayChunkBits is ArrayChunk2<Bit>, a chunk2 build");
+using BenchBoolArray = shrink_array::ArrayChunkBits<Int>;
+#else
 using BenchBoolArray = std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, std::vector<short>>;
+#endif
 
 /// @brief Distinct levels tab_quant may take, hence the distinct second values
 ///        it registers.

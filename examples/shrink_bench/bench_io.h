@@ -379,7 +379,7 @@ void read_check_binary_file(Int                ind,
             bool is_val2 = false;
             if constexpr (chunk_config::use_chunk2)
             {
-                static constexpr bool is_bool     = std::is_same_v<T, bool>;
+                static constexpr bool is_bool     = shrink_array::is_bool_like_v<T>; // bool, Bit
                 static constexpr bool is_not_bool = !is_bool;
 
                 if constexpr (is_not_bool)
@@ -831,7 +831,8 @@ void read_check_binary_file(Int                ind,
                     else if (
                         [&]
                         {
-                            if constexpr (chunk_config::use_chunk2)
+                            // bool / Bit: one second value, no index.
+                            if constexpr (chunk_config::use_chunk2 && !shrink_array::is_bool_like_v<T>)
                                 return chunk_t.is_cst_val2(data_check.get_ind_second_value());
                             else
                                 return chunk_t.is_cst_val2();
