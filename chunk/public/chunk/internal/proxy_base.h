@@ -527,7 +527,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
             const T* const vals = values;
             if (TabCstVal2Holder<T>::is_cst_val2_ptr(vals)) [[unlikely]]
                 return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
-            return vals[num];
+            // elem_get, not vals[num]: for Bit that indexed BYTES, up to
+            // chunk_size of them in a chunk_size / 8 byte buffer.
+            return elem_get(vals, static_cast<std::size_t>(num));
         }
         return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
     }
