@@ -662,6 +662,29 @@ int main(int argc, char* argv[])
             rechunk_decider.consider<complex_double>(tab_complex, tick, iter, "tab_complex");
             if (!no_struct)
                 rechunk_decider.consider<Point3>(tab_point, tick, iter, "tab_point");
+            // SHRINK_BENCH_ADVISE_ALL=1: every other array too, so a dynamic run
+            // can head for the static-256 memory -- the 11 arrays above used to
+            // stay at the starting S=64 for the whole run. tab_bool excepted: the
+            // re-chunk of a bit-packed bool array has no validation harness yet.
+            static const bool advise_all = []
+            {
+                const char* e = std::getenv("SHRINK_BENCH_ADVISE_ALL");
+                return e != nullptr && e[0] != '\0' && e[0] != '0';
+            }();
+            if (advise_all)
+            {
+                rechunk_decider.consider<double>(tab3, tick, iter, "tab3");
+                rechunk_decider.consider<double>(tab4, tick, iter, "tab4");
+                rechunk_decider.consider<double>(tab5, tick, iter, "tab5");
+                rechunk_decider.consider<int>(tab_int, tick, iter, "tab_int");
+                rechunk_decider.consider<float>(tab_float, tick, iter, "tab_float");
+                rechunk_decider.consider<unsigned char>(tab_char, tick, iter, "tab_char");
+                rechunk_decider.consider<long>(tab_long, tick, iter, "tab_long");
+                rechunk_decider.consider<unsigned long>(tab_ulong, tick, iter, "tab_ulong");
+                rechunk_decider.consider<double>(tab_quant, tick, iter, "tab_quant");
+                if (!no_struct)
+                    rechunk_decider.consider<Cell>(tab_cell, tick, iter, "tab_cell");
+            }
             if constexpr (chunk_config::use_chunk2a)
             {
                 if (std::getenv("CHUNK_CST2_PROBE")) // only prints when requested
