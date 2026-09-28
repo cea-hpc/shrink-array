@@ -34,7 +34,7 @@
 
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/element_access.h" // Bit buffers: words of bits
-#include <cstring>                           // std::memset (the Bit second constant)
+#include <cstring>                         // std::memset (the Bit second constant)
 #include "chunk/config.h"
 #include "chunk/internal/invariant_check.h"
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)

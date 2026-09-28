@@ -36,10 +36,10 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
                                         int                n_compressed,
                                         int                nb_chunk,
                                         int                n_t1,
-                                        const std::string& chunk_name,      // ex: "Chunk", "Chunk2" ou "Chunk2A"
-                                        int                n_cross    = -1, // cross-variant probe count (-1 = none)
-                                        const std::string& cross_name = "", // richer variant the probe refers to
-                                        bool bool_elements = false)         // bool: one second value, true
+                                        const std::string& chunk_name,         // ex: "Chunk", "Chunk2" ou "Chunk2A"
+                                        int                n_cross       = -1, // cross-variant probe count (-1 = none)
+                                        const std::string& cross_name    = "", // richer variant the probe refers to
+                                        bool               bool_elements = false)            // bool: one second value, true
 {
     if (nb_chunk == 0)
         return;

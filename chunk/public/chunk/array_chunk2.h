@@ -28,7 +28,7 @@
 
 #include <initializer_list>                   // the {a, b, c} constructor
 #include <iterator>                           // std::forward_iterator, std::distance -- the (first, last) constructor
-#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/bit.h"                        // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"              // in_t<T>: the element snapshots
 #include "chunk/internal/array_chunk2_base.h" // for ArrayChunk2Base
 #include "chunk/internal/array_chunk2_parallel.h"       // ParallelSupport2 — OpenMP-only mixin

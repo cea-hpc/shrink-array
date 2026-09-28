@@ -109,7 +109,7 @@ concept ElementSubtractable = requires(T lhs, T rhs) {
 };
 template <typename T>
 concept ElementMultipliable = requires(T lhs, T rhs) {
-    { lhs * rhs } -> std::convertible_to<T>;
+    { lhs* rhs } -> std::convertible_to<T>;
 };
 template <typename T>
 concept ElementDivisible = requires(T lhs, T rhs) {

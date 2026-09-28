@@ -55,7 +55,7 @@
 #include <utility>     // std::swap (swap_entries), std::pair
 #include <vector>
 
-#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
 #include "chunk/internal/value_less.h"

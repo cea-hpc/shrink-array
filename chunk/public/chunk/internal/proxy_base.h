@@ -199,9 +199,9 @@ template <typename Derived, typename T, typename ChunkType>
 struct ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSupport<Derived>
 {
     // Management members
-    static inline CompressionManager<T, ChunkType>                  compression_mgr;
-    std::atomic<char>*                                              ptr_is_inside_chunk_list_to_compress;
-    static inline std::vector<std::vector<std::atomic<char>>>       tab_is_inside_chunk_list_to_compress;
+    static inline CompressionManager<T, ChunkType>            compression_mgr;
+    std::atomic<char>*                                        ptr_is_inside_chunk_list_to_compress;
+    static inline std::vector<std::vector<std::atomic<char>>> tab_is_inside_chunk_list_to_compress;
 
 
     /// @brief No candidate flags in this configuration; nothing to size.

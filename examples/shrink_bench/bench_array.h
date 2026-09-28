@@ -158,10 +158,10 @@ inline constexpr Int bench_double_bands = 200000;
  *              and nothing compressed. Its phases write whole 64-element
  *              blocks, one thread per block, so no word of it has two writers.
  */
-using BenchMaskArray = std::conditional_t<
-    chunk_config::use_chunk2,
-    shrink_array::ArrayChunkBits<Int>,
-    std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, std::vector<bool>>>;
+using BenchMaskArray =
+    std::conditional_t<chunk_config::use_chunk2,
+                       shrink_array::ArrayChunkBits<Int>,
+                       std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, std::vector<bool>>>;
 
 /// @brief tab_mask's default size, as a fraction of sz (--mask_scale sets it).
 /// @details 1/32. Its per-iteration update writes ~1/16 of the random and
@@ -226,14 +226,14 @@ enum class BenchMaskKind
     const auto h = bench_mask_hash(static_cast<std::uint64_t>(i));
     switch (bench_mask_kind(i / bench_mask_segment))
     {
-    case BenchMaskKind::all_false:
-        return false;
-    case BenchMaskKind::all_true:
-        return true;
-    case BenchMaskKind::random:
-        return (h & 1u) != 0;
-    case BenchMaskKind::scattered:
-        return h % 32 == 0;
+        case BenchMaskKind::all_false:
+            return false;
+        case BenchMaskKind::all_true:
+            return true;
+        case BenchMaskKind::random:
+            return (h & 1u) != 0;
+        case BenchMaskKind::scattered:
+            return h % 32 == 0;
     }
     return false;
 }
@@ -266,7 +266,8 @@ struct BenchArrays
     Array<double>&         tab_quant; ///< quantised: up to bench_double_bands distinct second values
     Array<Point3>&         tab_point; ///< an aggregate element: three doubles (bench_struct.h)
     Array<Cell>&           tab_cell;  ///< an aggregate element: an Int and a float
-    BenchMaskArray&        tab_mask;  ///< mask_scale * sz bools (--mask_scale, default 1/32): masks and flags (bench_phase_mask.cpp)
+    BenchMaskArray&
+        tab_mask; ///< mask_scale * sz bools (--mask_scale, default 1/32): masks and flags (bench_phase_mask.cpp)
 
     Int sz       = 0; ///< element count of the double arrays (others are sz, 2*sz or sz/2)
     Int interval = 0; ///< the workload's stride, get_size_interval()

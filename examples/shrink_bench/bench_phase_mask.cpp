@@ -99,12 +99,12 @@ bool mask_block_written(Int b, Int k) noexcept
     const Int seg = b * bench_mask_block / bench_mask_segment;
     switch (bench_mask_kind(seg))
     {
-    case BenchMaskKind::all_false:
-    case BenchMaskKind::all_true:
-        return (seg + k) % 32 == 0;
-    case BenchMaskKind::random:
-    case BenchMaskKind::scattered:
-        return b % 16 == k % 16;
+        case BenchMaskKind::all_false:
+        case BenchMaskKind::all_true:
+            return (seg + k) % 32 == 0;
+        case BenchMaskKind::random:
+        case BenchMaskKind::scattered:
+            return b % 16 == k % 16;
     }
     return false;
 }

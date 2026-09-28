@@ -2239,8 +2239,8 @@ struct TCTypeAllocatorEBC : public VTCAllocatorEB
     TCAllocatorEBT* block_full; ///< Slabs with no room left.
     TCAllocatorEBT* block;      ///< Slabs with room. Never null: the ctor seeds one.
 
-    int             nb_block_empty;                  ///< Reserve occupancy.
-    std::array<TCAllocatorEBT*, nb_max_block_empty> block_empty{}; ///< The reserve, inline.
+    int                                             nb_block_empty; ///< Reserve occupancy.
+    std::array<TCAllocatorEBT*, nb_max_block_empty> block_empty{};  ///< The reserve, inline.
 };
 
 // SIZE_BLOCK: default slab size (1 MiB). constexpr rather than #define so it

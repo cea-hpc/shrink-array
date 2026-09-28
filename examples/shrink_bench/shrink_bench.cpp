@@ -505,10 +505,9 @@ int main(int argc, char* argv[])
     long long mask_want = std::llround(mask_scale * static_cast<double>(sz));
     if (mask_want < 1)
         mask_want = 1;
-    const Int       mask_sz =
-        mask_want > static_cast<long long>(std::numeric_limits<Int>::max())
-                  ? static_cast<Int>(static_cast<long long>(std::numeric_limits<Int>::max()) & ~0x3FFLL)
-                  : static_cast<Int>(mask_want);
+    const Int mask_sz = mask_want > static_cast<long long>(std::numeric_limits<Int>::max())
+                            ? static_cast<Int>(static_cast<long long>(std::numeric_limits<Int>::max()) & ~0x3FFLL)
+                            : static_cast<Int>(mask_want);
     if (!no_mask && static_cast<long long>(mask_sz) != mask_want)
         std::cout << "Note: tab_mask capped at " << mask_sz << " elements (" << mask_want
                   << " requested; Int is 32-bit here, the int64 build takes the full size)\n";
@@ -518,10 +517,9 @@ int main(int argc, char* argv[])
 
     // Handle on the fifteen arrays, passed to the extracted phases. References,
     // so main() stays the owner -- it builds them and destroys them.
-    BenchArrays bench_arrays{tab1,        tab2,      tab3,      tab4,     tab5,      tab_int,   tab_bool,
-                             tab_complex, tab_float, tab_short, tab_char, tab_long,  tab_ulong, tab_quant,
-                             tab_point,   tab_cell,  tab_mask,  sz,       interval,  !no_struct,
-                             !no_mask};
+    BenchArrays bench_arrays{tab1,        tab2,      tab3,      tab4,     tab5,     tab_int,    tab_bool,
+                             tab_complex, tab_float, tab_short, tab_char, tab_long, tab_ulong,  tab_quant,
+                             tab_point,   tab_cell,  tab_mask,  sz,       interval, !no_struct, !no_mask};
 
     SingletonChk<GlobalStatsChunkList>::getRef().print();
 

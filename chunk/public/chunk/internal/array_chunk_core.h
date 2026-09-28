@@ -89,8 +89,14 @@ inline bool g_building_rechunk_storage = false;
 /// @brief RAII scope for g_building_rechunk_storage.
 struct RechunkStorageScope
 {
-    RechunkStorageScope() noexcept { g_building_rechunk_storage = true; }
-    ~RechunkStorageScope() { g_building_rechunk_storage = false; }
+    RechunkStorageScope() noexcept
+    {
+        g_building_rechunk_storage = true;
+    }
+    ~RechunkStorageScope()
+    {
+        g_building_rechunk_storage = false;
+    }
     RechunkStorageScope(const RechunkStorageScope&)            = delete;
     RechunkStorageScope& operator=(const RechunkStorageScope&) = delete;
 };

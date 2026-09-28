@@ -79,8 +79,8 @@ void against_vector(std::size_t n, std::mt19937_64& rng)
     std::uniform_int_distribution<std::size_t> pick(0, n - 1);
     for (std::size_t k = 0; k < 4 * n; ++k)
     {
-        const std::size_t i = pick(rng);
-        const bool        v = (rng() & 1) != 0;
+        const std::size_t i   = pick(rng);
+        const bool        v   = (rng() & 1) != 0;
         const bool        old = (k % 2 == 0) ? bits::set_bit_atomic(w.data(), i, v) : bits::get_bit(w.data(), i);
         if (k % 2 != 0)
             bits::set_bit(w.data(), i, v);
@@ -163,7 +163,7 @@ void ranges(std::mt19937_64& rng)
                     any = any || bits::get_bit(w.data(), i);
                     all = all && bits::get_bit(w.data(), i);
                 }
-                const bits::Uniform expect = !any ? bits::Uniform::all_false
+                const bits::Uniform expect = !any  ? bits::Uniform::all_false
                                              : all ? bits::Uniform::all_true
                                                    : bits::Uniform::mixed;
                 if (bits::scan_range(w.data(), first, n) != expect)
@@ -212,7 +212,7 @@ void concurrent_ranges(std::size_t n, int rounds)
     // Spans of 1..37 bits handed out round-robin to 8 threads: every span
     // edge is a word shared with another thread's span. Each thread sets its
     // spans, then clears the odd ones -- fill_bit_range_atomic must lose none.
-    constexpr int                                     n_thr = 8;
+    constexpr int                                    n_thr = 8;
     std::vector<std::pair<std::size_t, std::size_t>> spans;
     for (std::size_t lo = 0, len = 1; lo < n; lo += len, len = len % 37 + 1)
         spans.emplace_back(lo, std::min(n, lo + len));

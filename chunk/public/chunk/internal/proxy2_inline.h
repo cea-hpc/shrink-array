@@ -740,8 +740,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_comp
 
     if (was_not_written)
     {
-        const CalcType intermediate =
-            op(static_cast<CalcType>(this->raw_elem()), static_cast<CalcType>(operand));
+        const CalcType intermediate = op(static_cast<CalcType>(this->raw_elem()), static_cast<CalcType>(operand));
         // Built where it is used (was a default-constructed `T res` at function
         // scope, then assigned: two writes of a struct for one value).
         const auto res = static_cast<T>(intermediate);
@@ -938,10 +937,11 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
                 // before it is written.
                 [this, &v](auto op_func, T* val_ptr)
                 {
-                    using LocalCalcType   = std::common_type_t<T, base_t<U>>;
-                    const T current = elem_get(val_ptr, static_cast<std::size_t>(num));
-                    elem_set(val_ptr, static_cast<std::size_t>(num),
-                             static_cast<T>(op_func(static_cast<LocalCalcType>(current), static_cast<LocalCalcType>(v))));
+                    using LocalCalcType = std::common_type_t<T, base_t<U>>;
+                    const T current     = elem_get(val_ptr, static_cast<std::size_t>(num));
+                    elem_set(
+                        val_ptr, static_cast<std::size_t>(num),
+                        static_cast<T>(op_func(static_cast<LocalCalcType>(current), static_cast<LocalCalcType>(v))));
                 });
 
             // Read after the operation, compared before each branch's action

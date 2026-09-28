@@ -232,8 +232,8 @@ enum class Uniform
     if (nw == 0)
         return Uniform::all_false;
     const word_t last = w[nw - 1] & tail_mask(n);
-    word_t       any  = last;                    // OR: some 1 bit
-    word_t       all  = last | ~tail_mask(n);    // AND: every bit 1 (tail forced to 1)
+    word_t       any  = last;                 // OR: some 1 bit
+    word_t       all  = last | ~tail_mask(n); // AND: every bit 1 (tail forced to 1)
     for (std::size_t k = 0; k + 1 < nw; ++k)
     {
         any |= w[k];

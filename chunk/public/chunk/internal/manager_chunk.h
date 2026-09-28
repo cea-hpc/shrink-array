@@ -26,7 +26,7 @@
 #include <cstdint>     // pool keys (drain_reuse_list_for_size, keyed lists)
 #include <type_traits> // remove_reference_t / remove_pointer_t (same)
 
-#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/bit.h"       // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/chunk_def.h" // ChunkDef::size_min_buffer_reuse
 #include "chunk/config.h"
 #include "chunk/internal/chunk_size_policy.h"
@@ -658,7 +658,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                          "[POOLS] %s %-22s legacy store        : %9zu block(s), %8.1f MB"
                          " (sized by the ambient %u)\n",
                          label, type_name<T>().data(), legacy_blocks,
-                         (double)(legacy_blocks * sizeof(T) * CHUNK_T<T>::storage_units(thread_chunk_size())) / 1e6, thread_chunk_size());
+                         (double)(legacy_blocks * sizeof(T) * CHUNK_T<T>::storage_units(thread_chunk_size())) / 1e6,
+                         thread_chunk_size());
         }
 
         if constexpr (chunk_config::chunk_dynamic)
@@ -679,7 +680,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                              "[POOLS] %s %-22s size %-6u        : %9zu block(s), %8.1f MB"
                              " across %zu/%zu rank(s)\n",
                              label, type_name<T>().data(), kv.first, blocks,
-                             (double)(blocks * sizeof(T) * CHUNK_T<T>::storage_units(kv.first)) / 1e6, non_empty_ranks, kv.second.size());
+                             (double)(blocks * sizeof(T) * CHUNK_T<T>::storage_units(kv.first)) / 1e6, non_empty_ranks,
+                             kv.second.size());
             }
         }
     }

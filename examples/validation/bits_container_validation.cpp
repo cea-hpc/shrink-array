@@ -187,8 +187,8 @@ int round_trip(long N)
     fails += compare(a, ref, "after refill") != 0;
 
     if (fails == 0)
-        std::printf("[bits] OK round trip: %ld elements, chunk_size=%u, %.1f%% of chunks written after the pass\n",
-                    N, a.chunk_size(), written);
+        std::printf("[bits] OK round trip: %ld elements, chunk_size=%u, %.1f%% of chunks written after the pass\n", N,
+                    a.chunk_size(), written);
     a.clear();
     return fails;
 }
@@ -267,7 +267,7 @@ int logical_ops(long N)
 {
     ArrayChunkBits<>  a(N);
     std::vector<bool> ref(static_cast<std::size_t>(N), false);
-    const auto        opnd = [](long i, int k) { return ((i * 7 + k * 3) % 5) < 2; };
+    const auto        opnd  = [](long i, int k) { return ((i * 7 + k * 3) % 5) < 2; };
     int               fails = 0;
 
     // Start from a pattern with constant runs, so |= / &= also meet compressed chunks.
@@ -376,7 +376,7 @@ int advisor_and_rechunk(long N)
         std::printf("[bits] FAIL advisor: no row for the current size %ld\n", S);
         return fails + 1;
     }
-    const auto& cur = rep.table[static_cast<std::size_t>(rep.cur)];
+    const auto&  cur        = rep.table[static_cast<std::size_t>(rep.cur)];
     const double data_bytes = cur.mem_bytes - static_cast<double>(cur.n_chunks) * rep.meta_bytes;
     if (cur.mat != mat_expected || data_bytes != static_cast<double>(mat_expected) * static_cast<double>(S) / 8.)
     {
@@ -390,7 +390,7 @@ int advisor_and_rechunk(long N)
     for (const auto& row : rep.table)
         if (static_cast<long>(row.size) == S / 2)
         {
-            seen_half = true;
+            seen_half      = true;
             const double r = static_cast<double>(row.mat) / static_cast<double>(mat_expected);
             if (r < 0.98 || r > 1.02)
             {
@@ -453,7 +453,7 @@ int bulk_ranges(long N)
         ref[static_cast<std::size_t>(i)] = v;
     }
 
-    std::mt19937_64 rng(4242);
+    std::mt19937_64   rng(4242);
     std::vector<bool> src(static_cast<std::size_t>(N));
     for (long i = 0; i < N; ++i)
         src[static_cast<std::size_t>(i)] = ((i * 2654435761L) >> 7) % 3 == 0;

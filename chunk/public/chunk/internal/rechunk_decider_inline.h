@@ -28,10 +28,10 @@
 
 #include "chunk/rechunk_decider.h"
 #include "chunk/chunk_size_advisor.h"
-#include "chunk/config.h"                   // build_config::chunk_dynamic
-#include "chunk/internal/env_parse.h"       // env_number / env_flag (checked, not atoi)
-#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_MAX_THREADS (the rebuild's team, for its cost)
-#include "chunk/internal/churn_counters.h"  // CHUNK_RECHUNK_CHURN
+#include "chunk/config.h"                      // build_config::chunk_dynamic
+#include "chunk/internal/env_parse.h"          // env_number / env_flag (checked, not atoi)
+#include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_MAX_THREADS (the rebuild's team, for its cost)
+#include "chunk/internal/churn_counters.h"     // CHUNK_RECHUNK_CHURN
 #include "chunk/internal/exact_rss.h"          // exact_rss_kib ([RECHUNK-MEM])
 #include "chunk/internal/values_arena_bytes.h" // the values arena, if the build has one ([RECHUNK-MEM])
 
@@ -155,14 +155,15 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     // multi-GB array's current memory is out of reach for any structural
     // gain. Zero re-chunks in 2000 iterations; the dyn build stayed at its
     // deliberately sub-optimal start size and paid ~4-5 GB over static 256.
-    const bool   coarsening = best_sz > cur_size;
+    const bool coarsening = best_sz > cur_size;
     // What the cost model expects the rebuild to take: gates a coarsening
     // (coarsen_min_meta_rate), and is logged with the chunk and
     // materialised-chunk counts, to be set against CHUNK_RECHUNK_TRACE's
     // measured total when the constants are refitted.
-    const double est_cost_ms = rechunk_cost_ms(cur_e.n_chunks, cur_size, cur_e.mat, rep.elem_bytes, CHUNK_PMP_MAX_THREADS);
-    const double gain_meta  = static_cast<double>(cur_e.n_chunks - best_e.n_chunks) * rep.meta_bytes;
-    const double gain_data  = gain_b - gain_meta;
+    const double est_cost_ms =
+        rechunk_cost_ms(cur_e.n_chunks, cur_size, cur_e.mat, rep.elem_bytes, CHUNK_PMP_MAX_THREADS);
+    const double gain_meta = static_cast<double>(cur_e.n_chunks - best_e.n_chunks) * rep.meta_bytes;
+    const double gain_data = gain_b - gain_meta;
     // MB of metadata per second of estimated rebuild (0 when the estimate is).
     const double meta_rate = est_cost_ms > 0. ? (gain_meta / (1024. * 1024.)) / (est_cost_ms / 1000.) : 0.;
 
@@ -254,8 +255,7 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         const double min_rate = env_meta_rate < 0. ? pol_.coarsen_min_meta_rate : env_meta_rate;
         // A zero-cost estimate (empty array) passes.
         const bool rate_ok = min_rate <= 0. || est_cost_ms <= 0. || meta_rate >= min_rate;
-        clears_gate = (gain_meta >= static_cast<double>(meta_floor) && rate_ok &&
-                       gain_bytes >= meta_floor) ||
+        clears_gate        = (gain_meta >= static_cast<double>(meta_floor) && rate_ok && gain_bytes >= meta_floor) ||
                       gain_bytes >= data_gate;
     }
     else
@@ -295,9 +295,10 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     {
         std::fprintf(stderr,
                      "[RECHUNK-DECIDE] %s: %s S=%u -> S'=%u "
-                     "(gain %.1f MB = meta %.1f + data %.1f, stable %d ticks, est. cost %.0f ms, %.0f MB/s, chunks %lld mat %lld)%s\n",
-                     name, (pol_.dry_run || rechunk_env_dry_run()) ? "[dry-run] would re-chunk" : "re-chunk", cur_size, best_sz,
-                     gain_b / (1024. * 1024.), gain_meta / (1024. * 1024.), gain_data / (1024. * 1024.),
+                     "(gain %.1f MB = meta %.1f + data %.1f, stable %d ticks, est. cost %.0f ms, %.0f MB/s, chunks "
+                     "%lld mat %lld)%s\n",
+                     name, (pol_.dry_run || rechunk_env_dry_run()) ? "[dry-run] would re-chunk" : "re-chunk", cur_size,
+                     best_sz, gain_b / (1024. * 1024.), gain_meta / (1024. * 1024.), gain_data / (1024. * 1024.),
                      hist.stable_count, est_cost_ms, meta_rate, static_cast<long long>(cur_e.n_chunks),
                      static_cast<long long>(cur_e.mat), (pol_.dry_run || rechunk_env_dry_run()) ? "" : " [APPLIED]");
         std::fflush(stderr);

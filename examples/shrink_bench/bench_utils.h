@@ -90,7 +90,8 @@ template <typename V>
 // jump-label pass of the serial build.
 __attribute__((optimize("O2")))
 #endif
-uint64_t calculate_checksum(const V& vec)
+uint64_t
+calculate_checksum(const V& vec)
 {
     uint64_t checksum = 0;
 

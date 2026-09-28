@@ -138,7 +138,8 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::set_ptr_is_inside_
     const int tab       = ctx->num_tab;
     const int num_chunk = ctx->num_chunk;
 
-    auto& arr = tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(tab)]; // not const: the flags are written through the pointer
+    auto& arr = tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(
+        tab)]; // not const: the flags are written through the pointer
 
     ptr_is_inside_chunk_list_to_compress = &arr[num_chunk];
 }
@@ -274,7 +275,8 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list() const
                     // the flag table's: its outer size, and this array's row.
                     const auto& flags = FastCompPolicy::tab_is_inside_chunk_list_to_compress;
                     if (num_chunk < 0 || num_tab < 0 || static_cast<std::size_t>(num_tab) >= flags.size() ||
-                        static_cast<std::size_t>(num_chunk) >= flags[static_cast<std::size_t>(num_tab)].size()) [[unlikely]]
+                        static_cast<std::size_t>(num_chunk) >= flags[static_cast<std::size_t>(num_tab)].size())
+                        [[unlikely]]
                         INVARIANT_FAILED("add_to_compression_list: num_chunk={} num_tab={} outside the flag table "
                                          "({} tables)",
                                          num_chunk, num_tab, flags.size());
