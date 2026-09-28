@@ -52,23 +52,28 @@ struct RechunkPolicy
     int anti_reversal_ticks = 30;           // do NOT re-chunk back to the size we
                                             // just left within this many ticks
                                             // (kills 512<->1024 oscillation). 0=off.
-    unsigned max_coarsen_factor = 2;        // cap a coarsening step to this factor x
-                                            // cur_size per rechunk. A big jump (x16)
-                                            // leans on the least reliable model
-                                            // extrapolation and can mispredict
-                                            // (64->1024 cost +40 MB); stepping via the
-                                            // intermediate size re-checks with real
-                                            // chunk data. 1 disables (fining never
-                                            // capped).
-                                            // Set to 2 (one doubling per decision):
-                                            // x8 still lands three rungs away in a
-                                            // single bet -- 512->4096 was taken on a
-                                            // 35.8 MB forecast and the run gained
-                                            // nothing. One rung at a time is
-                                            // self-correcting: a bad step is seen at
-                                            // the next tick and can be reverted, and
-                                            // a good one is repeated, reaching the
-                                            // same size in three checked moves.
+    unsigned max_coarsen_factor = 4;        // cap a coarsening step to this factor x
+                                            // cur_size per rechunk; 1 disables (fining
+                                            // is never capped). CHUNK_RECHUNK_MAX_COARSEN
+                                            // overrides it at run time.
+                                            // 4 since Sept '26 (was 2). Grace, 64
+                                            // threads, chunk2a_dyn with all 15 arrays
+                                            // advised: factor 2 -> 44 re-chunks, end
+                                            // 6.73 GB, 99% of the forecast gain met;
+                                            // factor 4 -> 33 re-chunks, end 6.54 GB,
+                                            // 98.8% met; factor 8 -> 20 re-chunks,
+                                            // fastest, but ends at 6.72 GB. The two
+                                            // bad jumps that had set 2 (64->1024:
+                                            // -91 MB forecast, +40 MB measured;
+                                            // 512->4096 on a 35.8 MB forecast, no
+                                            // gain) predate the fixes to the RSS
+                                            // measurement, Chunk2A's leaked rows and
+                                            // the folds through a buffer. Kept at 4,
+                                            // not higher: a re-chunk's old size stays
+                                            // within the advisor's two finer levels,
+                                            // so the next tick still measures the move
+                                            // at unchanged data, and a bad step can be
+                                            // seen and reverted.
     std::size_t coarsen_min_meta_gain_bytes = 24u << 20;
     // A coarsening must gain at least this
     // much METADATA to be worth doing at
