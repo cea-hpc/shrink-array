@@ -354,13 +354,13 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *          need tab/chunk information before writing.
      */
     template <typename WriteFn>
-    bool write_with_optional_lock_with_set_ptr(WriteFn write_fn) noexcept
+    bool write_with_optional_lock_with_set_ptr(this Derived& self, WriteFn write_fn) noexcept
     {
-        const auto lbd_info = [this]
+        const auto lbd_info = [&self]
         {
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                derived().set_num_tab_ptr_is_inside_chunk(); // common initialization required for the fast-path
+                self.set_num_tab_ptr_is_inside_chunk(); // common initialization required for the fast-path
             }
             else
             {
@@ -369,15 +369,15 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
                 // build never instantiates that branch and clang reports the
                 // capture as unused (-Wunused-lambda-capture; 13 reports for
                 // this one lambda on a chunk2 bench TU, and the same on
-                // chunk2a). Keeping `this` explicit and discarding it here
+                // chunk2a). Keeping `self` explicit and discarding it here
                 // says why it is there -- switching to [&] would silence the
                 // warning by hiding the intent.
-                static_cast<void>(this);
+                static_cast<void>(self);
             }
         };
 
         // wrap the call in a lambda that calls write_fn(v)
-        return derived().write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
+        return self.write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
     }
 
     /**
@@ -391,12 +391,12 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *         element unchanged.*/
     template <typename U>
         requires ElementMultipliable<T>
-    Derived operator*=(const U& v) noexcept
+    Derived operator*=(this auto&& self, const U& v) noexcept
     {
         if constexpr (is_bool)
         {
             std::cerr << "operator not implemented for bool\n";
-            return derived();
+            return self;
         }
         else
         {
@@ -406,12 +406,12 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
             // read-side gate under CHUNK_SYNC_ON_READ.
             // base_t<U> extracts the arithmetic type (e.g., double) even if U is a Proxy.
             if (v == static_cast<base_t<U>>(1))
-                return derived();
+                return self;
 
             // 2. Call the common math engine
             // We use the transparent functor std::multiplies<>
-            derived().template apply_compound_operation<U>(std::multiplies<>{}, v, true);
-            return derived();
+            self.template apply_compound_operation<U>(std::multiplies<>{}, v, true);
+            return self;
         }
     }
 
@@ -426,12 +426,12 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *         element unchanged.*/
     template <typename U>
         requires ElementDivisible<T>
-    Derived operator/=(const U& v) noexcept
+    Derived operator/=(this auto&& self, const U& v) noexcept
     {
         if constexpr (is_bool)
         {
             std::cerr << "operator not implemented for bool\n";
-            return derived();
+            return self;
         }
         else
         {
@@ -445,10 +445,10 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
             // nothing to read: reading the returned proxy goes through
             // operator T() -> read_pure() (see operator*=).
             if (v == static_cast<base_t<U>>(1))
-                return derived();
+                return self;
             // 2. Execution via the common engine
-            derived().template apply_compound_operation<U>(std::divides<>{}, v, true);
-            return derived();
+            self.template apply_compound_operation<U>(std::divides<>{}, v, true);
+            return self;
         }
     }
 
@@ -463,18 +463,18 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *         element unchanged.*/
     template <typename U>
         requires ElementModulable<T> || is_bool_like_v<T>
-    Derived operator%=(const U& v) noexcept
+    Derived operator%=(this auto&& self, const U& v) noexcept
     {
         if constexpr (std::is_integral_v<T> && is_not_bool)
         {
             // 2. Execution via the common engine
-            derived().template apply_compound_operation<U>(typename Base::modulo{}, v, false);
-            return derived();
+            self.template apply_compound_operation<U>(typename Base::modulo{}, v, false);
+            return self;
         }
         else
         {
             std::cerr << "operator not implemented (requires integral non-bool type)\n";
-            return derived();
+            return self;
         }
     }
 };
