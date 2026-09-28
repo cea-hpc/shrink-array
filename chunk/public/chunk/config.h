@@ -50,7 +50,7 @@ inline constexpr bool chunk_dynamic = false;
 ///        shared pool is used: with ~240 KB slabs a small array would pay one
 ///        slab per rank for nothing. 0 disables affinity altogether.
 #ifndef CHUNK_ALLOC_AFFINITY_MIN_BYTES
-    #define CHUNK_ALLOC_AFFINITY_MIN_BYTES (std::size_t(16) << 20)
+    #define CHUNK_ALLOC_AFFINITY_MIN_BYTES (std::size_t(16) << 20U)
 #endif
 inline constexpr std::size_t alloc_affinity_min_bytes =
     CHUNK_ALLOC_AFFINITY_MIN_BYTES; // -D to override (0 = off; tiny = every array, for tests)
@@ -216,6 +216,56 @@ inline constexpr bool do_check = false;
 constexpr std::size_t deferred_pool_granularity = std::size_t{2} * 1024 * 1024;
 
 static constexpr bool verbose = false;
+
+// --- Diagnostic switches: -D on the command line, or the CMake option that sets it ---
+#ifdef PERF
+/// Perf build: ArrayChunk2's diagnostic scan of missed compressions is skipped.
+inline constexpr bool perf_build = true;
+#else
+inline constexpr bool perf_build = false;
+#endif
+
+#ifdef CHUNK_POOL_NO_REUSE
+/// Deferred-op pool without free-list: every block a real new/delete (ASan / TSan).
+inline constexpr bool pool_no_reuse = true;
+#else
+inline constexpr bool pool_no_reuse = false;
+#endif
+
+#ifdef CHUNK_ALIGN_CHECK
+/// Abort on a slab block under-aligned for its type.
+inline constexpr bool align_check = true;
+#else
+inline constexpr bool align_check = false;
+#endif
+
+#ifdef RECHUNK_LEDGERTRACE
+/// Trace every pool-ledger state transition on stderr.
+inline constexpr bool rechunk_ledger_trace = true;
+#else
+inline constexpr bool rechunk_ledger_trace = false;
+#endif
+
+#ifdef CHUNK_NO_FREE_GUARD
+/// The teardown double-free guard (sort + dedup of the blocks to free).
+inline constexpr bool free_guard = false;
+#else
+inline constexpr bool free_guard = true;
+#endif
+
+#ifdef DEBUG_SET_SIZE
+/// Print the compression thresholds and the lists' memory estimate.
+inline constexpr bool debug_set_size = true;
+#else
+inline constexpr bool debug_set_size = false;
+#endif
+
+#ifdef CHUNK_SECOND_VALUE_INDEXED
+/// Chunk2A: second values of more than 4 bytes stored as 4-byte identifiers.
+inline constexpr bool second_value_indexed = true;
+#else
+inline constexpr bool second_value_indexed = false;
+#endif
 
 } // namespace build_config
 
@@ -392,6 +442,11 @@ inline constexpr bool use_fast_block_compression = use_openmp;
     #if __has_feature(thread_sanitizer)
         #define CHUNK_TSAN_BUILD 1
     #endif
+#endif
+#ifdef CHUNK_TSAN_BUILD
+inline constexpr bool tsan_build = true;
+#else
+inline constexpr bool tsan_build = false;
 #endif
 
 /**

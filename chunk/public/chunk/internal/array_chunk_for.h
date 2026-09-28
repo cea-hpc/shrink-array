@@ -17,8 +17,6 @@
 
 #pragma once
 
-#include "chunk/internal/concept_array_chunk_element.h"
-
 namespace shrink_array
 {
 

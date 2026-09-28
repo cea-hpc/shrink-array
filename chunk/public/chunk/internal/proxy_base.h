@@ -25,15 +25,17 @@
 
 #include <type_traits>
 #include <atomic>
+#include <complex>
+#include <cstdlib>
+#include <functional>
 #include <vector>
 #include <memory>
 
 #include "chunk/internal/element_access.h" // elem_get / elem_set, is_packed_bit_v: Bit buffers are words of bits
-#include "chunk/chunk_def.h"
-#include "chunk/chunk_define.h"
-#include "chunk/internal/chunk_stats.h"
-#include "chunk/internal/array_chunk_for.h"
-#include "chunk/internal/concept_chunk.h"
+#include "chunk/config.h"
+#include "chunk/internal/chunk_stats.h" // increm_chunk_* in the bodies (dependent calls the include tools cannot attribute)
+#include "chunk/internal/in_t.h"
+#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 #include "chunk/internal/proxy_operators.h"
 #include "chunk/internal/compression_manager.h"
 #include "chunk/internal/tab_cst_val2_holder.h" // TabCstVal2Holder (CHUNK_CST_VAL2_NO_ARRAYS)
@@ -41,7 +43,6 @@
 #include "chunk/internal/concept_is_clean_assignement.h"
 #include "chunk/internal/crp_helper.h"
 #include "chunk/internal/arithmetic_context.h"
-#include "chunk/ring_log_debug.h"
 
 namespace shrink_array
 {
@@ -479,10 +480,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         }
         // Chunk2A: the marking filter of another writer may be reading this
         // element -- relaxed atomic store, see relaxed_element.h.
-        if constexpr (detail::relaxed_element_stores_v<ChunkType, T>)
+        if constexpr (internal::relaxed_element_stores_v<ChunkType, T>)
         {
             T* const vals = values;
-            detail::store_element_relaxed(vals + num, static_cast<T>(v));
+            internal::store_element_relaxed(vals + num, static_cast<T>(v));
         }
         else
         {
@@ -503,32 +504,30 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // under the in-flight writer -> SIGSEGV. Same-offset visibility on the
         // write path is handled by the P2 WAW erase before the write body; pure
         // reads use read_pure() below. Kept raw in BOTH sync_on_read states.
-        if constexpr (build_config::cst_val2_no_arrays)
+        //
+        // ... but NOT raw under CHUNK_CST_VAL2_NO_ARRAYS: there the shared
+        // array of a second constant is never written, so this would read a
+        // zero page and the compression decision downstream would be taken
+        // against 0 instead of the chunk's constant. Resolving the registry
+        // is arithmetic plus one table load -- it does not sync, so the
+        // contract above still holds.
+        //
+        // The question is asked of the POINTER, not of the chunk. This
+        // function runs with a write in flight -- that is its reason to
+        // exist -- so the chunk's state and the pointer this proxy is about
+        // to index can disagree, and asking chunk.is_cst_val2() then
+        // converting a pointer that is NOT in the region gave an arbitrary
+        // index into value_by_id[] and a SIGSEGV. One load, one exact range
+        // test on it, one conversion of the same pointer.
+        if constexpr (build_config::cst_val2_no_arrays && requires(const T* ptr) {
+                          TabCstVal2Holder<T>::is_cst_val2_ptr(ptr);
+                          TabCstVal2Holder<T>::value_of_ptr_checked(ptr);
+                      })
         {
-            // ... but NOT raw under CHUNK_CST_VAL2_NO_ARRAYS: there the shared
-            // array of a second constant is never written, so this would read a
-            // zero page and the compression decision downstream would be taken
-            // against 0 instead of the chunk's constant. Resolving the registry
-            // is arithmetic plus one table load -- it does not sync, so the
-            // contract above still holds.
-            //
-            // The question is asked of the POINTER, not of the chunk. This
-            // function runs with a write in flight -- that is its reason to
-            // exist -- so the chunk's state and the pointer this proxy is about
-            // to index can disagree, and asking chunk.is_cst_val2() then
-            // converting a pointer that is NOT in the region gave an arbitrary
-            // index into value_by_id[] and a SIGSEGV. One load, one exact range
-            // test on it, one conversion of the same pointer.
-            if constexpr (requires(const T* ptr) {
-                              TabCstVal2Holder<T>::is_cst_val2_ptr(ptr);
-                              TabCstVal2Holder<T>::value_of_ptr_checked(ptr);
-                          })
-            {
-                const T* const vals = values;
-                if (TabCstVal2Holder<T>::is_cst_val2_ptr(vals)) [[unlikely]]
-                    return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
-                return vals[num];
-            }
+            const T* const vals = values;
+            if (TabCstVal2Holder<T>::is_cst_val2_ptr(vals)) [[unlikely]]
+                return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
+            return vals[num];
         }
         return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
     }
@@ -586,7 +585,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     template <typename WriteFn>
     [[nodiscard]] bool write_with_optional_lock_info(WriteFn write_fn)
     {
-        auto lbd_info = [this]()
+        const auto lbd_info = [this]
         {
             if constexpr (chunk_config::use_fast_block_compression)
             {
@@ -595,7 +594,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
             }
         };
 
-        return write_with_optional_lock_impl([&]() { write_fn(); }, lbd_info);
+        return write_with_optional_lock_impl([&] { write_fn(); }, lbd_info);
     }
 
     /**
@@ -656,7 +655,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /// @brief Same, with the array's own table number, so the write path
     ///        needs no registry lookup.
-    /// @param array_ptr          pointer to the array
+    /// @param array_ptr  pointer to the array
     /// @param num_chunk_ chunk index
     /// @param num_tab_   the array's num_tab (ArrayChunkBase::num_tab), the
     ///                   value it registered under its address
@@ -720,7 +719,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
          * @brief Apply modulo operation
          * @param lhs Dividend
          * @param rhs Divisor
-         * @return x % y
+         * @return lhs % rhs
          */
         constexpr T operator()(T lhs, T rhs) const noexcept
         {
@@ -1049,7 +1048,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *
      * @tparam U Type of the shift amount (must be integral)
      * @param v Number of positions to shift
-     * @return T Casted value of v (original behavior, not the actual value)
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
      */
@@ -1138,10 +1139,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires ElementIncrementable<T>
     {
         // Synchronous version
-        auto inc_operation = [this] { derived().execute_inplace_operation([](T& elem) { ++elem; }); };
+        const auto inc_operation = [this] { derived().execute_inplace_operation([](T& elem) { ++elem; }); };
 
         // Asynchronous version
-        auto inc_operation_async = [](auto* ctx, auto& proxy)
+        const auto inc_operation_async = [](auto* ctx, auto& proxy)
         { proxy.execute_inplace_operation_async(ctx, [](T& elem) { ++elem; }); };
 
         apply_inplace_operation(inc_operation, inc_operation_async);
@@ -1170,9 +1171,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     Derived operator--() noexcept
         requires ElementIncrementable<T>
     {
-        auto dec_operation = [this] { derived().execute_inplace_operation([](T& elem) { --elem; }); };
+        const auto dec_operation = [this] { derived().execute_inplace_operation([](T& elem) { --elem; }); };
 
-        auto dec_operation_async = [](auto* ctx, auto& proxy)
+        const auto dec_operation_async = [](auto* ctx, auto& proxy)
         { proxy.execute_inplace_operation_async(ctx, [](T& elem) { --elem; }); };
 
         apply_inplace_operation(dec_operation, dec_operation_async);
@@ -1202,9 +1203,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     {
         T temp(*this);
 
-        auto inc_operation = [this] { derived().execute_inplace_operation([](T& elem) { elem++; }); };
+        const auto inc_operation = [this] { derived().execute_inplace_operation([](T& elem) { elem++; }); };
 
-        auto inc_operation_async = [](auto* ctx, auto& proxy)
+        const auto inc_operation_async = [](auto* ctx, auto& proxy)
         { proxy.execute_inplace_operation_async(ctx, [](T& elem) { elem++; }); };
 
         apply_inplace_operation(inc_operation, inc_operation_async);
@@ -1221,10 +1222,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     T operator--(int) noexcept
         requires ElementIncrementable<T>
     {
-        T    temp(*this);
-        auto dec_operation = [this] { derived().execute_inplace_operation([](T& elem) { elem--; }); };
+        T          temp(*this);
+        const auto dec_operation = [this] { derived().execute_inplace_operation([](T& elem) { elem--; }); };
 
-        auto dec_operation_async = [](auto* ctx, auto& proxy)
+        const auto dec_operation_async = [](auto* ctx, auto& proxy)
         { proxy.execute_inplace_operation_async(ctx, [](T& elem) { elem--; }); };
 
         apply_inplace_operation(dec_operation, dec_operation_async);

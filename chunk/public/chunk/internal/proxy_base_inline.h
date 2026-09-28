@@ -41,10 +41,27 @@
  * @see proxy_base.h, compression_manager.h, write_compress_sync_policy.h
  */
 
+#include <atomic>
+#include <cstdint>
+#include <cstdlib>
+#include <source_location>
+#include <tuple>
+#include <type_traits>
 #include "chunk/internal/in_t.h"       // in_t<T>: the element snapshots
 #include "chunk/internal/proxy_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems — used HERE, not via includers
 #include "chunk/internal/phase_guard.h"       // check-build guard of the phase protocol
+#include "chunk/config.h"
+#include "chunk/chunk_traits.h"
+#include "chunk/PMP_CHUNK.h"
+#include "chunk/ring_log_debug.h"
+#include "chunk/internal/arithmetic_context.h"
+#include "chunk/internal/array_chunk_for.h"
+#include "chunk/internal/concept_chunk.h"
+#include "chunk/internal/concept_is_clean_assignement.h"
+#include "chunk/internal/crp_helper.h"
+#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
+#include "chunk/internal/write_compress_sync_policy.h"
 
 namespace shrink_array
 {
@@ -121,7 +138,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::set_ptr_is_inside_
     const int tab       = ctx->num_tab;
     const int num_chunk = ctx->num_chunk;
 
-    auto& arr = tab_is_inside_chunk_list_to_compress[tab];
+    const auto& arr = tab_is_inside_chunk_list_to_compress[tab];
 
     ptr_is_inside_chunk_list_to_compress = &arr[num_chunk];
 }
@@ -187,10 +204,6 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list([[maybe_unused]] 
             // mark_ok stays flat, which is exactly the signature to look for.
             increm_chunk_mark_refused<ChunkType>();
         }
-    }
-    else
-    {
-        //    add_null_sentinel_to_compression_list(vec_tuple);
     }
 }
 
@@ -950,7 +963,7 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
     // Promotion rule identical to STL
     using CalcType = std::common_type_t<T, base_t<U>>;
 
-    auto compute_operation = [this, operation, &v, v_old] // v: the call's parameter, alive for the call
+    const auto compute_operation = [this, operation, &v, v_old] // v: the call's parameter, alive for the call
     {
         std::ignore = v_old;
 
@@ -981,14 +994,14 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
                 }
 
                 // Snapshot the values pointer before the store
-                T* values_before = chunk.values_load();
+                const T* values_before = chunk.values_load();
 
                 store_value(static_cast<T>(res));
 
                 // ─── Post-store check: values pointer should not have been CASed away ───
                 if constexpr (build_config::any_check)
                 {
-                    T* values_after = chunk.values_load();
+                    const T* values_after = chunk.values_load();
                     if (values_after != values_before)
                     {
                         INVARIANT_FAILED("apply_atomic_op SYNC: chunk={} num={} values pointer CHANGED across store: "
@@ -1043,14 +1056,14 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
                                 op_func(static_cast<CalcType>(current), static_cast<CalcType>(ctx->operand));
 
                             // Snapshot before store
-                            T* values_before = ctx->chunk.values_load();
+                            const T* values_before = ctx->chunk.values_load();
 
                             proxy.store_value_async(ctx, static_cast<T>(res));
 
                             // ─── Post-store check: detect lost write due to concurrent compression ───
                             if constexpr (build_config::any_check)
                             {
-                                T* values_after = ctx->chunk.values_load();
+                                const T* values_after = ctx->chunk.values_load();
                                 if (values_after != values_before)
                                 {
                                     INVARIANT_FAILED("apply_atomic_op ASYNC lambda: chunk={} num={} values pointer "
@@ -1111,7 +1124,7 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation
 
     using CalcType = std::common_type_t<T, base_t<U>>;
 
-    auto op_lambda = [this, &v, operation] // v: the call's parameter, alive for the call
+    const auto op_lambda = [this, &v, operation] // v: the call's parameter, alive for the call
     {
         execute_operation(
             [this, &v, operation]
@@ -1213,8 +1226,8 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation
                                 ring_log(get_tid(), EV_LAMBDA_ASYNC_ARITH, info);
                             }
 
-                            if constexpr (detail::relaxed_element_stores_v<ChunkType, T>)
-                                detail::store_element_relaxed(values + ctx->num, static_cast<T>(final_val));
+                            if constexpr (internal::relaxed_element_stores_v<ChunkType, T>)
+                                internal::store_element_relaxed(values + ctx->num, static_cast<T>(final_val));
                             else
                                 elem_set(values, static_cast<std::size_t>(ctx->num), static_cast<T>(final_val));
                         });
@@ -1254,7 +1267,7 @@ void ProxyBase<Derived, T, ChunkType>::bitwise_assign(in_t<U> v, Op operation) n
     chunk.reader_sync(num);
     using CalcType = std::common_type_t<T, U>;
 
-    auto op_lambda = [this, &v, operation] // v: the call's parameter, alive for the call
+    const auto op_lambda = [this, &v, operation] // v: the call's parameter, alive for the call
     {
         derived().execute_inplace_operation(
             [&v, operation](T& elem)

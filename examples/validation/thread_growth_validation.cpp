@@ -30,9 +30,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <type_traits>
 #include <vector>
 #include <unistd.h>
-#include <sys/wait.h>
+#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 
 #include "chunk/chunk_traits.h"
 #include "chunk/array_chunk.h"
@@ -73,11 +74,9 @@ constexpr const char* variant_name()
         return "chunk";
 }
 
-static void set_team([[maybe_unused]] int n)
+static void set_team(int n)
 {
-#ifdef _OPENMP
-    omp_set_num_threads(n);
-#endif
+    chunk_pmp_set_num_threads(n);
 }
 
 /// Runs of 2048 elements alternate zero / varied, so each region leaves
@@ -164,7 +163,7 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
 
 /// Re-runs this executable with --beyond and checks that it stopped on the
 /// capacity invariant.
-static int check_beyond(const char* self)
+[[maybe_unused]] static int check_beyond(const char* self) // OpenMP builds only
 {
     const std::string log    = "/tmp/thread_growth_beyond_" + std::to_string(getpid()) + ".log";
     const std::string cmd    = std::string("\"") + self + "\" --beyond > \"" + log + "\" 2>&1";
@@ -173,13 +172,13 @@ static int check_beyond(const char* self)
     if (FILE* f = std::fopen(log.c_str(), "r"))
     {
         char buf[4096];
-        for (std::size_t n; (n = std::fread(buf, 1, sizeof buf, f)) > 0;)
+        for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, f)) > 0;)
             out.append(buf, n);
         std::fclose(f);
     }
     std::remove(log.c_str());
 
-    const bool stopped = status != -1 && !(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    const bool stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
     const bool message = out.find("thread capacity") != std::string::npos;
     std::printf("[beyond] team past the capacity: %s, %s\n", stopped ? "stopped" : "RAN ON",
                 message ? "capacity message printed" : "NO capacity message");

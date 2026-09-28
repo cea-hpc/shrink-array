@@ -42,19 +42,23 @@
 //
 
 #include <algorithm> // std::max
-#include <chrono>    // steady_clock, the gate rates
-#include <iomanip>   // std::setprecision (stats ratios)
+#include <chrono>    // steady_clock, the gate rates (CHUNK_STATS report only)
+#include <cstddef>   // std::size_t (CHUNK_STATS report only: the retention)
+#include <iomanip>   // std::setprecision (CHUNK_STATS report only: the ratios)
 #include <iostream>  // std::cout, std::cerr
+#include <mutex>     // std::lock_guard (CHUNK_STATS report only: the size distribution)
 #include <utility>   // std::cmp_greater
 #include <unistd.h>  // sysconf(_SC_PAGESIZE): page-aware slab floor
 
+#include "chunk/config.h"
 #include "chunk/singleton.h"
-#include "chunk/internal/chunk_stats.h" // per-variant stats reduce/print
+#include "chunk/internal/chunk_size_config.h" // __chunk_size
+#include "chunk/internal/chunk_size_policy.h" // active_chunk_size
+#include "chunk/internal/chunk_stats.h"       // per-variant stats reduce/print
 #include "chunk/param_chunk.h"
 #include "chunk/chunk_std.h"
 #include "chunk/PMP_CHUNK.h"
-#include "chunk/internal/manager_chunk.h"
-#include "chunk/internal/write_compress_sync_policy.h" // dekker::protocol_name
+#include "chunk/internal/write_compress_sync_policy.h" // dekker::protocol_name (CHUNK_STATS report only)
 #include "chunk/all_type_chunk.h"
 
 namespace shrink_array
@@ -79,7 +83,7 @@ void ParamChunkParallelInterface<true, AllT>::init_thread_structures()
     {
         std::cout << "Using \"fast allocator\" for chunks"
                   << "  [build: reclaim_empty_slabs=" << (build_config::reclaim_empty_slabs ? "ON" : "OFF")
-                  << ", alloc_affinity_min_bytes=" << (build_config::alloc_affinity_min_bytes >> 20) << "MiB]\n";
+                  << ", alloc_affinity_min_bytes=" << (build_config::alloc_affinity_min_bytes >> 20U) << "MiB]\n";
     }
 }
 
@@ -125,8 +129,6 @@ void ParamChunk::init_indexes(bool big_chunk_block)
         sz = std::max(sz, static_cast<int>(16 * ps));
 
     set_block_size(sz);
-
-    // int sz = 1024 * 1024 * 2;
 
     if (std::cmp_greater(__chunk_size, sz))
     {
@@ -319,11 +321,11 @@ void ParamChunk::ChunkStats()
         std::cout << "\n----- CHUNK_STATS [" << chunk_variant_name[v] << "] -----\n";
         std::cout << "  alloc          = " << stats.alloc << "\n";
         if (stats.bytes_alloc)
-            std::cout << "    bytes        = " << (stats.bytes_alloc / (1024 * 1024)) << " MB\n";
+            std::cout << "    bytes        = " << (stats.bytes_alloc / (1024L * 1024)) << " MB\n";
         if (stats.list)
             std::cout << "  list           = " << stats.list << "\n";
         if (stats.bytes_reused)
-            std::cout << "    bytes        = " << (stats.bytes_reused / (1024 * 1024)) << " MB\n";
+            std::cout << "    bytes        = " << (stats.bytes_reused / (1024L * 1024)) << " MB\n";
         const long   reads_all = stats.read + stats.read_cst;
         const long   total_rw  = stats.write + reads_all;
         const double pct_w = total_rw ? 100.0 * static_cast<double>(stats.write) / static_cast<double>(total_rw) : 0.0;
@@ -407,7 +409,7 @@ void ParamChunk::ChunkStats()
         // counting bug (this took a full debugging session to pin down).
         std::cout << "  compress (during exec) = " << stats.compress << "\n";
         if (stats.bytes_freed)
-            std::cout << "    bytes        = " << (stats.bytes_freed / (1024 * 1024)) << " MB\n";
+            std::cout << "    bytes        = " << (stats.bytes_freed / (1024L * 1024)) << " MB\n";
         // Scan yield: how many of the chunks examined as compression candidates
         // actually got compressed, and what those scans cost in element reads
         // (scan_read is kept out of `read` so the read hit-rate stays about the
@@ -431,7 +433,7 @@ void ParamChunk::ChunkStats()
         {
             const double secs =
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - __chunk_stats_t0).count();
-            auto rate = [secs](long count) { return secs > 0 ? static_cast<double>(count) / secs : 0.0; };
+            const auto rate = [secs](long count) { return secs > 0 ? static_cast<double>(count) / secs : 0.0; };
             std::cout << std::fixed << std::setprecision(0);
             std::cout << "  gate start     = " << stats.gate_start << "  (" << rate(stats.gate_start) << "/s; yield "
                       << stats.gate_start_flush_yield << " of which late " << stats.gate_start_yield_late
@@ -494,7 +496,7 @@ void ParamChunk::ChunkStats()
         const auto&       etc  = SingletonChk<AllTypeChunk>::getRef();
         const std::size_t pool = etc.reuse_pool_bytes();
         std::cout << "\n----- CHUNK_RETENTION -----\n";
-        std::cout << "  reuse pools    = " << (pool / (1024 * 1024)) << " MB parked at exit\n";
+        std::cout << "  reuse pools    = " << (pool / (std::size_t{1024} * 1024)) << " MB parked at exit\n";
     }
 }
 

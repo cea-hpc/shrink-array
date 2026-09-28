@@ -40,7 +40,7 @@
 namespace shrink_array
 {
 
-namespace detail
+namespace internal
 {
 template <typename T>
 [[nodiscard]] inline const bits::word_t* as_words(const T* v) noexcept
@@ -52,7 +52,7 @@ template <typename T>
 {
     return reinterpret_cast<bits::word_t*>(v);
 }
-} // namespace detail
+} // namespace internal
 
 /// @brief Read element @p i of the buffer @p v.
 template <typename T>
@@ -61,9 +61,9 @@ template <typename T>
     if constexpr (is_packed_bit_v<T>)
     {
         if constexpr (build_config::use_openmp)
-            return T{bits::get_bit_relaxed(detail::as_words(v), i)};
+            return T{bits::get_bit_relaxed(internal::as_words(v), i)};
         else
-            return T{bits::get_bit(detail::as_words(v), i)};
+            return T{bits::get_bit(internal::as_words(v), i)};
     }
     else
     {
@@ -78,9 +78,9 @@ inline void elem_set(T* v, std::size_t i, T x) noexcept
     if constexpr (is_packed_bit_v<T>)
     {
         if constexpr (build_config::use_openmp)
-            bits::set_bit_atomic(detail::as_words(v), i, static_cast<bool>(x));
+            bits::set_bit_atomic(internal::as_words(v), i, static_cast<bool>(x));
         else
-            bits::set_bit(detail::as_words(v), i, static_cast<bool>(x));
+            bits::set_bit(internal::as_words(v), i, static_cast<bool>(x));
     }
     else
     {

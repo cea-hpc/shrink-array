@@ -22,6 +22,7 @@
  */
 
 #include <cmath>
+#include <iostream>
 
 #include "Simu.h"
 

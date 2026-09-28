@@ -20,13 +20,14 @@
 #include <exception> // std::exception (record_enqueue_deferred)
 #include <utility>
 #include <atomic>
+#include <memory> // std::destroy_at, std::unique_ptr
 
 #include "ankerl/unordered_dense.h"
 
+#include "chunk/config.h"
+#include "chunk/PMP_CHUNK.h" // get_thr_rank_fast
 #include "chunk/internal/in_t.h"
 #include "chunk/ring_log_debug.h"
-#include "chunk/internal/cpu_pause.h"
-#include "chunk/internal/write_compress_sync_policy.h"
 #include "chunk/internal/invariant_check.h"
 #include "chunk/internal/chunk_size_policy.h" // t_active_chunk_size — per-op geometry pin in write_body
 #include "chunk/internal/deferred_op_pool.h"
@@ -292,7 +293,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
      */
     struct CmpDeferredOpBase : DeferredOperationBase
     {
-        int thread_rank; ///< rank that enqueued this op
+        int thread_rank = -1; ///< rank that enqueued this op (set by DeferredOperation)
 
         /// @brief Replay the deferred write. Implemented by DeferredOperation.
         void write_body() override    = 0;
@@ -337,14 +338,20 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
 
         /**
          * @brief Capture a write for later replay.
-         * @param context    context holding the frozen target metadata
-         * @param fn_  callable performing the write
-         * @param rank enqueuing thread's rank
+         * @param context context holding the frozen target metadata
+         * @param fn_     callable performing the write
+         * @param rank    enqueuing thread's rank
          */
         DeferredOperation(CTX* context, WriteFn&& fn_, int rank) : ctx(context), fn(std::move(fn_))
         {
             this->thread_rank = rank;
         }
+
+        // Owns ctx until destroy(): a copy would destroy it twice.
+        DeferredOperation(const DeferredOperation&)            = delete;
+        DeferredOperation& operator=(const DeferredOperation&) = delete;
+        DeferredOperation(DeferredOperation&&)                 = delete;
+        DeferredOperation& operator=(DeferredOperation&&)      = delete;
 
         /**
          * @brief Replay the captured write.
@@ -603,7 +610,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
 
     /// @brief Count @p count drained ops off @p thr_rank.
     /// @param thr_rank rank whose ops were drained
-    /// @param count        number of ops drained
+    /// @param count    number of ops drained
     static void dec_pending_ops(int thr_rank, int64_t count = 1) noexcept
     {
         pending_ops_shard[thr_rank].v.fetch_sub(count, std::memory_order_release);
@@ -797,7 +804,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     /**
      * @brief Run @p fn as the slow-path compression driver.
      * @tparam F callable to run inside the driver bracket
-     * @param fn  the driver body, typically perform_compression()
+     * @param fn the driver body, typically perform_compression()
      * @details Brackets @p fn with driver_inflight_. The counter lives here, not
      *          in WriteCompressSyncPolicy, because it is compression-lifecycle
      *          state rather than write/flush-handshake state.
@@ -848,12 +855,10 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     }
 
     /**
-     * @brief Initializes the tracking array for dangerous lists per thread.
-     * @details Allocates and initializes the atomic counters, one per rank of the thread capacity
-     * (CHUNK_PMP_THREAD_CAPACITY).
+     * @brief Allocate the per-rank dangerous-list counters.
+     * @details One zero-initialised counter per rank of the thread capacity
+     *          (CHUNK_PMP_THREAD_CAPACITY).
      */
-
-    /// @brief Allocate the per-rank dangerous-list counters.
     static void init_dangerous_lists_tracking()
     {
         const int max_thr          = CHUNK_PMP_THREAD_CAPACITY;

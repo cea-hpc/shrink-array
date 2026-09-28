@@ -16,7 +16,12 @@
 
 #pragma once
 
+#include <optional> // std::nullopt_t (the index-less overloads)
+
 #include "chunk/internal/chunk2_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
+#include "chunk/config.h"
+#include "chunk/PMP_CHUNK.h"
+#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 
 namespace shrink_array
 {
@@ -88,7 +93,7 @@ void Chunk2Base<T, Derived>::clear_impl(IndexType         index_opt,
                                         SecondValueRef<T> ptr_second_value)
 {
     // Check if written - use index if provided
-    bool is_written;
+    bool is_written = false;
     if constexpr (std::is_same_v<IndexType, std::nullopt_t>)
     {
         is_written = derived().written();
@@ -103,7 +108,7 @@ void Chunk2Base<T, Derived>::clear_impl(IndexType         index_opt,
 
     if constexpr (build_config::any_check)
     {
-        auto* current_ptr = static_cast<const void*>(values_load());
+        const auto* current_ptr = static_cast<const void*>(values_load());
         // Safety checks
         if (is_cst_val1())
         {

@@ -92,8 +92,8 @@ std::string invariant_fmt_arg(A&& arg)
     for (std::size_t i = 0; i < sizeof(V); ++i)
     {
         static constexpr char hex[] = "0123456789abcdef";
-        out += hex[bytes[i] >> 4];
-        out += hex[bytes[i] & 0xF];
+        out += hex[static_cast<unsigned>(bytes[i]) >> 4U];
+        out += hex[static_cast<unsigned>(bytes[i]) & 0xFU];
     }
     return out;
 }

@@ -16,8 +16,11 @@
  * limitations under the License.
  */
 
-#include "chunk/internal/global_check.h"
 #include "chunk/internal/array_chunk_base.h"
+#include "chunk/config.h"
+#include "chunk/chunk_traits.h"
+#include "chunk/internal/in_t.h"
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_IN_PARALLEL_REGION
 
 namespace shrink_array
 {
@@ -160,7 +163,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         const ind_type old_size = m_size;
         derived().resize(newsz); // calls derived resize(sz)
 
-        auto lbd = [this, old_size, newsz, val]()
+        const auto lbd = [this, old_size, newsz, val]
         {
 #pragma omp for schedule(static) nowait
             for (ind_type i = old_size; i < newsz; ++i)

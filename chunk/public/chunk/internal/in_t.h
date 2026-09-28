@@ -136,7 +136,7 @@ namespace shrink_array
 // ─────────────────────────────────────────────────────────────────────────────
 
 template <typename T>
-concept small_type = std::is_trivially_copyable_v<T> && sizeof(T) <= 2 * sizeof(void*); // 16 bytes sur 64-bit
+concept small_type = std::is_trivially_copyable_v<T> && sizeof(T) <= 2 * sizeof(void*); // 16 bytes on 64-bit
 
 template <typename T>
 using in_t = std::conditional_t<small_type<T>, T, const T&>;

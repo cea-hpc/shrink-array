@@ -17,8 +17,9 @@
  */
 #pragma once
 
-#include <type_traits>
 #include <complex>
+#include <concepts> // std::convertible_to
+#include <type_traits>
 
 #include "chunk/bit.h" // Bit: the packed bool, assigned from bool
 

@@ -80,11 +80,11 @@ namespace shrink_array
     return capacity;
 }
 
-namespace pmp_detail
+namespace internal
 {
 /// One past the highest rank ever cached (chunk_pmp_checked_rank); starts at 0.
 inline std::atomic<int> g_rank_high_water{0};
-} // namespace pmp_detail
+} // namespace internal
 
 /**
  * @brief Validate a rank against the capacity and record it; returns it.
@@ -101,9 +101,9 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
                          "omp_set_num_threads) to the largest team before creating the arrays, or raise "
                          "CHUNK_THREAD_CAPACITY.",
                          rank, chunk_thread_capacity());
-    int seen = pmp_detail::g_rank_high_water.load(std::memory_order_relaxed);
+    int seen = internal::g_rank_high_water.load(std::memory_order_relaxed);
     while (rank >= seen &&
-           !pmp_detail::g_rank_high_water.compare_exchange_weak(seen, rank + 1, std::memory_order_seq_cst))
+           !internal::g_rank_high_water.compare_exchange_weak(seen, rank + 1, std::memory_order_seq_cst))
     {
     }
     return rank;
@@ -149,7 +149,7 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
  */
 [[nodiscard]] inline int chunk_rank_bound() noexcept
 {
-    const int seen = pmp_detail::g_rank_high_water.load(std::memory_order_seq_cst);
+    const int seen = internal::g_rank_high_water.load(std::memory_order_seq_cst);
     return std::min(chunk_thread_capacity(), std::max(omp_get_max_threads(), seen));
 }
 /// @brief The calling task's run-sched-var (omp_get_schedule).
@@ -168,6 +168,26 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
 inline void chunk_pmp_set_schedule(chunk_pmp_schedule schedule) noexcept
 {
     omp_set_schedule(static_cast<omp_sched_t>(schedule.kind), schedule.chunk);
+}
+
+/// @brief The calling thread's number in its current team (omp_get_thread_num),
+///        unchecked: for diagnostics that must work from anywhere, where
+///        CHUNK_PMP_THREAD_RANK would check nesting and the rank bound.
+[[nodiscard]] inline int chunk_pmp_team_rank() noexcept
+{
+    return omp_get_thread_num();
+}
+
+/// @brief The team size of the next parallel regions (omp_set_num_threads).
+inline void chunk_pmp_set_num_threads(int n) noexcept
+{
+    omp_set_num_threads(n);
+}
+
+/// @brief How many nested levels may be active (omp_set_max_active_levels).
+inline void chunk_pmp_set_max_active_levels(int levels) noexcept
+{
+    omp_set_max_active_levels(levels);
 }
 } // namespace shrink_array
 
@@ -244,6 +264,15 @@ namespace shrink_array
 }
 /// @copydoc chunk_pmp_set_schedule -- serial build: nothing to set.
 inline void chunk_pmp_set_schedule(chunk_pmp_schedule) noexcept {}
+/// @copydoc chunk_pmp_team_rank -- serial build: always 0.
+[[nodiscard]] inline int chunk_pmp_team_rank() noexcept
+{
+    return 0;
+}
+/// @copydoc chunk_pmp_set_num_threads -- serial build: no team to size.
+inline void chunk_pmp_set_num_threads(int) noexcept {}
+/// @copydoc chunk_pmp_set_max_active_levels -- serial build: no levels.
+inline void chunk_pmp_set_max_active_levels(int) noexcept {}
 } // namespace shrink_array
 
 inline int get_thr_rank_fast() noexcept
@@ -288,14 +317,8 @@ inline int get_size_max_tab_omp(int nn)
         const int pp = nn / std::max(1, max_thr) + max_thr;
         return pp;
     }
-    else
-    {
-        return nn;
-    }
-
-#else
-    return nn;
 #endif
+    return nn;
 }
 
 inline int get_size_max_tab_omp(int nn, [[maybe_unused]] int nb_static)
@@ -312,12 +335,6 @@ inline int get_size_max_tab_omp(int nn, [[maybe_unused]] int nb_static)
 
         return pp;
     }
-    else
-    {
-        return nn;
-    }
-
-#else
-    return nn;
 #endif
+    return nn;
 }

@@ -42,13 +42,13 @@
 #include <cmath>   // std::lround (the extrapolated materialised count)
 #include <cstddef> // std::size_t
 #include <cstdint>
-#include <cstdio> // std::printf (print)
+#include <cstdio>      // std::printf (print)
 #include <type_traits> // std::is_same_v (the bool second value)
 #include <vector>
 
 #include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
 #include "chunk/bit.h"                    // is_bool_like_v, is_packed_bit_v
-#include "chunk/internal/element_access.h" // detail::as_words: Bit sub-blocks scanned by word
+#include "chunk/internal/element_access.h" // internal::as_words: Bit sub-blocks scanned by word
 #include "chunk/config.h"        // chunk_config::use_chunk2 / use_chunk2a
 #include "chunk/internal/rechunk_cost_model.h"
 #include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size
@@ -358,7 +358,7 @@ class ChunkSizeAdvisor
                             {
                                 // Bit: v is words of bits (bit.h), a sub-block
                                 // is a bit range -- classified word by word.
-                                const bits::Uniform u = bits::scan_range(detail::as_words(v), b, sub);
+                                const bits::Uniform u = bits::scan_range(internal::as_words(v), b, sub);
                                 cst                   = u != bits::Uniform::mixed;
                                 run                   = T{u == bits::Uniform::all_true};
                             }

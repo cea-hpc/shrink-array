@@ -23,6 +23,10 @@
 
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/proxy.h" // the declarations these bodies belong to
+#include "chunk/config.h"
+#include "chunk/PMP_CHUNK.h"
+#include "chunk/internal/arithmetic_context.h"
+#include "chunk/internal/concept_is_clean_assignement.h"
 
 namespace shrink_array
 {
@@ -89,7 +93,7 @@ void Proxy<T>::perform_core_assignment(in_t<T> v) const noexcept
         // Zero-overhead state helper: members exist only if Enabled is true
         struct
         {
-            [[maybe_unused]] bool was_cst;
+            [[maybe_unused]] bool was_cst = false;
 
             // Captured before allocation to determine correct counter initialization
             void capture(const Proxy* proxy) noexcept
@@ -282,7 +286,7 @@ T Proxy<T>::assign_impl(in_t<U> v) noexcept
 
     // By reference: v is this call's parameter, alive for the synchronous
     // call (see Proxy2A::assign_impl); the deferred path copies it.
-    [[maybe_unused]] auto lbd_equal_core = [this, &v]()
+    [[maybe_unused]] const auto lbd_equal_core = [this, &v]
     {
         // Capture the value that is there BEFORE the write, reading it THROUGH the
         // chunk. Two distinct traps sit here:
@@ -599,7 +603,7 @@ void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
 template <typename Derived, typename T, bool Enabled>
 void ProxyFastCompPolicy<Derived, T, Enabled>::trigger_compression_if_needed(int thr_rank) noexcept
 {
-    auto& vec_tuple = manager_chunk::chunk_to_compress_potentially_thr[thr_rank];
+    const auto& vec_tuple = manager_chunk::chunk_to_compress_potentially_thr[thr_rank];
 
     const int sz = static_cast<int>(vec_tuple.size());
 
@@ -622,7 +626,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression() const noexc
 
     const int szm = manager_chunk::get_size_max_number_of_chunk_to_check_compress();
 
-    auto& vec_tuple = manager_chunk::chunk_to_compress_potentially_thr[thr_rank];
+    const auto& vec_tuple = manager_chunk::chunk_to_compress_potentially_thr[thr_rank];
 
     const int sz_before = static_cast<int>(vec_tuple.size());
 

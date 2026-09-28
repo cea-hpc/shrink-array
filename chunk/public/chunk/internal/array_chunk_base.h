@@ -37,21 +37,18 @@
  * @see chunk_size_policy.h for the geometry policy (static vs dynamic)
  */
 
-#include <vector>
-#include <stdexcept> // std::out_of_range — at()/front()/back()
-#include <utility>   // std::swap
-#include <atomic>    // next_alloc_key_
-#include <iterator>  // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
+#include <cstddef>  // std::size_t (size_type)
+#include <utility>  // std::swap
+#include <iterator> // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
 
+#include "chunk/config.h"
 #include "chunk/internal/in_t.h"
 #include "chunk/chunk_traits.h"
-#include "chunk/internal/process_verbs.h" // compress_now_and_trim_pools -- shrink_to_fit()
 #include "chunk/internal/crp_helper.h"
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED — used HERE (swap check)
 #include "chunk/internal/def_force_inline.h"
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_* macros — used HERE, not via includers
 
 namespace shrink_array
 {

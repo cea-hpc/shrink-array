@@ -1,23 +1,31 @@
 #pragma once
 
 // Template method definitions for ManagerChunk<CHUNK_T, T>. Kept in a dedicated
-// inline header (included at the end of chunk/ManagerChunk.h) so that every
+// inline header (included at the end of chunk/internal/manager_chunk.h) so that every
 // (CHUNK_T, T) the consumer uses auto-instantiates at its use site. Bodies are
 // the CURRENT branch versions (with the kMaxDrainPasses drain and the defensive
 // destroy_after_flush drain) — NOT the older gen-dev-27 versions.
 
 #include <atomic>
 #include <cstdio>
-//#include <cstdlib>
+#include <cstdlib>  // std::getenv (the trace switches)
+#include <iostream> // std::cout (DEBUG_SET_SIZE)
 #include <algorithm>
 #include <functional>
+#include <tuple> // std::tuple (the memory estimate)
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
+#include "chunk/internal/manager_chunk.h" // the declarations these bodies belong to
+#include "chunk/config.h"
 #include "chunk/internal/svalloc.h" // svfree
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/internal/chunk_size_policy.h"
-//#include "chunk/internal/invariant_check.h"
+#include "chunk/internal/compression_manager.h"  // CompressionManager (the barrier flushes)
+#include "chunk/internal/deferred_op_pool.h"     // fast_alloc::ArenaKind (its std-alloc stand-in too)
+#include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
+#include "chunk/internal/pool_ledger.h"          // CHUNK_LEDGER_DISCARD
 #include "chunk/chunk_std.h"
 #include "chunk/chunk2_std.h"
 #include "chunk/chunk2A_std.h"
@@ -36,7 +44,7 @@
 namespace shrink_array
 {
 // Forward declarations breaking the include cycle
-// chunk_func.h -> chunk_std.h -> proxy.h -> ManagerChunk.h -> THIS file ->
+// chunk_func.h -> chunk_std.h -> proxy.h -> manager_chunk.h -> THIS file ->
 // chunk_func.h: when chunk_func.h is the ENTRY point, its include of
 // chunk_std.h re-enters this file while chunk_func.h's own templates are not
 // yet declared (#pragma once skips the in-progress header), and the explicit
@@ -104,7 +112,7 @@ extern const bool g_serial_drain_legacy;
 template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunk<CHUNK_T, T>::force_chunk_to_compress() const
 {
-    auto lbd = [&]()
+    const auto lbd = [&]
     {
         const int thr = CHUNK_PMP_THREAD_RANK;
 
@@ -144,13 +152,10 @@ void ManagerChunk<CHUNK_T, T>::resize_chunk_to_compress_potentially() const
     const int nthr = CHUNK_PMP_THREAD_CAPACITY; // every rank that may run, as the manager's max_thr
 
     // --- Standard Chunk case ---
-    if constexpr (chunk_config::use_fast_block_compression)
+    if constexpr (chunk_config::use_fast_block_compression && IsChunk<CHUNK_T, T>)
     {
-        if constexpr (IsChunk<CHUNK_T, T>)
-        {
-            // Resize the list of chunks potentially needing compression
-            chunk_to_compress_potentially_thr.resize(nthr);
-        }
+        // Resize the list of chunks potentially needing compression
+        chunk_to_compress_potentially_thr.resize(nthr);
     }
 
     // --- Complex types (Chunk2/2A) multi-threading logic ---
@@ -320,7 +325,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
             // drop, no per-phase leak. There is no way to push into another
             // thread's thread_local free_list, so draining-on-owner is the only
             // route that keeps recycling local.
-            auto drain_index = [&](int rank)
+            const auto drain_index = [&](int rank)
             {
                 if (rank < 0 || rank >= max_thr || arr[rank].empty())
                     return;
@@ -720,7 +725,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::load_balance_list_block_free()
 // unordered_set fed sequentially by one thread; sorting per bucket and merging
 // per address slice does the same job with every thread busy.
 // Compile with -DCHUNK_NO_FREE_GUARD to skip the sort and dedup phases.
-namespace detail
+namespace internal
 {
 /// @brief Pointer order: std::less is the one comparison guaranteed total on pointers.
 template <typename T>
@@ -731,7 +736,7 @@ struct PtrLess
         return std::less<const T*>{}(lhs, rhs);
     }
 };
-} // namespace detail
+} // namespace internal
 
 /**
  * @brief Size the teardown buckets (sequential, before the region).
@@ -762,7 +767,7 @@ std::size_t ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_pr
     // One repeat list per address slice, and the slices are the team, whose
     // size is only known inside the region: max_thr bounds it.
     mgr::teardown_repeats_.assign(std::max(nb, static_cast<std::size_t>(CHUNK_PMP_MAX_THREADS)),
-                                  std::vector<detail::TeardownRepeat<T>>{});
+                                  std::vector<internal::TeardownRepeat<T>>{});
     return nb;
 }
 
@@ -860,7 +865,9 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_screen(in
 template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_sort([[maybe_unused]] int bucket)
 {
-#ifndef CHUNK_NO_FREE_GUARD
+    if constexpr (!build_config::free_guard)
+        return;
+
     using mgr     = ManagerChunk<CHUNK_T, T>;
     auto& to_free = mgr::teardown_to_free_;
 
@@ -868,7 +875,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_sort([[ma
         return;
     auto& blocks = to_free[static_cast<std::size_t>(bucket)];
 
-    std::ranges::sort(blocks, detail::PtrLess<T>{});
+    std::ranges::sort(blocks, internal::PtrLess<T>{});
     for (std::size_t i = 1; i < blocks.size(); ++i)
     {
         if (blocks[i] == blocks[i - 1])
@@ -878,7 +885,6 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_sort([[ma
                          static_cast<void*>(blocks[i]), bucket);
     }
     blocks.erase(std::ranges::unique(blocks).begin(), blocks.end());
-#endif
 }
 
 /**
@@ -901,10 +907,12 @@ template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[maybe_unused]] int slice,
                                                                              [[maybe_unused]] int nslices)
 {
-#ifndef CHUNK_NO_FREE_GUARD
+    if constexpr (!build_config::free_guard)
+        return;
+
     using mgr           = ManagerChunk<CHUNK_T, T>;
     const auto& to_free = mgr::teardown_to_free_;
-    const auto  less    = detail::PtrLess<T>{};
+    const auto  less    = internal::PtrLess<T>{};
 
     if (slice < 0 || nslices <= 0 || slice >= nslices)
         return;
@@ -932,7 +940,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
     }
     std::ranges::sort(samples, less);
 
-    auto splitter = [&](int split) -> T*
+    const auto splitter = [&](int split) -> T*
     {
         // Splitter s bounds slices s-1 | s; there are nslices-1 of them.
         const std::size_t idx = samples.size() * static_cast<std::size_t>(split) / static_cast<std::size_t>(nslices);
@@ -953,7 +961,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
         std::size_t pos;
         std::size_t end;
     };
-    auto greater = [&](const Head& lhs, const Head& rhs)
+    const auto greater = [&](const Head& lhs, const Head& rhs)
     { return less(rhs.p, lhs.p) || (lhs.p == rhs.p && lhs.bucket > rhs.bucket); };
 
     std::vector<Head> heap;
@@ -970,7 +978,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
     std::ranges::make_heap(heap, greater);
 
     auto&       repeats     = mgr::teardown_repeats_[static_cast<std::size_t>(slice)];
-    T*          prev        = nullptr;
+    const T*    prev        = nullptr;
     std::size_t prev_bucket = 0;
     bool        have        = false;
     while (!heap.empty())
@@ -987,7 +995,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
                          "[DOUBLE-FREE] %p queued for free in buckets %zu and %zu "
                          "-- NOT freeing again\n",
                          static_cast<void*>(head.p), prev_bucket, head.bucket);
-            repeats.push_back(detail::TeardownRepeat<T>{head.bucket, head.p});
+            repeats.push_back(internal::TeardownRepeat<T>{head.bucket, head.p});
         }
         prev        = head.p;
         prev_bucket = head.bucket;
@@ -1000,7 +1008,6 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
             std::ranges::push_heap(heap, greater);
         }
     }
-#endif
 }
 
 /**
@@ -1141,14 +1148,13 @@ void ManagerChunk<CHUNK_T, T>::compute_size_buffer_reuse()
     size_buffer_reuse = std::max(size_buffer_reuse, Chunk2ADef::size_min_buffer_reuse);
 }
 
-#ifdef DEBUG_SET_SIZE
 inline void print_mem_estimate(const char* label, std::size_t count, std::size_t elem_size)
 {
-    long double bytes = static_cast<long double>(count) * static_cast<long double>(elem_size);
+    const long double bytes = static_cast<long double>(count) * static_cast<long double>(elem_size);
 
-    long double kib = bytes / 1024.0L;
-    long double mib = kib / 1024.0L;
-    long double gib = mib / 1024.0L;
+    const long double kib = bytes / 1024.0L;
+    const long double mib = kib / 1024.0L;
+    const long double gib = mib / 1024.0L;
 
     std::cout << label << " : " << count << " elements, approx ";
 
@@ -1169,7 +1175,6 @@ inline void print_mem_estimate(const char* label, std::size_t count, std::size_t
         std::cout << bytes << " bytes\n";
     }
 }
-#endif
 
 // compute_size_max_number_of_chunk_to_check_compress (documented in
 // manager_chunk.h): sets the threshold past which a rank's candidate list is
@@ -1230,47 +1235,44 @@ void ManagerChunk<CHUNK_T, T>::compute_size_max_number_of_chunk_to_check_compres
     }
 
     set_size_max_number_of_chunk_to_check_compress(threshold);
-#ifdef DEBUG_SET_SIZE
-    std::cout << "somme_chunk_create : " << somme_chunk_create << "\n";
-    std::cout << "VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS : "
-              << VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS << "\n";
-
-#endif
-
-#ifdef DEBUG_SET_SIZE
-    const int max_chunks = get_size_max_number_of_chunk_to_check_compress();
-    std::cout << "size_max_number_of_chunk_to_check_compress : " << max_chunks << "\n";
-
-    if constexpr (build_config::use_openmp)
+    if constexpr (build_config::debug_set_size)
     {
-        std::cout << "\n=== Estimated memory footprint per container ===\n";
+        std::cout << "somme_chunk_create : " << somme_chunk_create << "\n";
+        std::cout << "VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS : "
+                  << VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS << "\n";
 
-        std::cout << "Threads (CHUNK_PMP_MAX_THREADS): " << CHUNK_PMP_MAX_THREADS << "\n";
-        std::cout << "Total estimated memory = above values × number of threads\n";
+        const int max_chunks = get_size_max_number_of_chunk_to_check_compress();
+        std::cout << "size_max_number_of_chunk_to_check_compress : " << max_chunks << "\n";
 
-        if constexpr (IsChunk2<CHUNK_T, T>)
+        if constexpr (build_config::use_openmp)
         {
-            using Chunk2Cont = std::decay_t<decltype(chunk2_to_compress_potentially_thr[0])>;
-            print_mem_estimate("chunk2_to_compress_potentially_thr (per thread)", max_chunks,
-                               sizeof(typename Chunk2Cont::value_type));
+            std::cout << "\n=== Estimated memory footprint per container ===\n";
+
+            std::cout << "Threads (CHUNK_PMP_MAX_THREADS): " << CHUNK_PMP_MAX_THREADS << "\n";
+            std::cout << "Total estimated memory = above values × number of threads\n";
+
+            if constexpr (IsChunk2<CHUNK_T, T>)
+            {
+                using Chunk2Cont = std::decay_t<decltype(chunk2_to_compress_potentially_thr[0])>;
+                print_mem_estimate("chunk2_to_compress_potentially_thr (per thread)", max_chunks,
+                                   sizeof(typename Chunk2Cont::value_type));
+            }
+            else if constexpr (IsChunk2A<CHUNK_T, T>)
+            {
+                using Chunk2ACont = std::decay_t<decltype(chunk2A_to_compress_potentially_thr[0])>;
+
+                print_mem_estimate("chunk2A_to_compress_potentially_thr (per thread)", max_chunks,
+                                   sizeof(typename Chunk2ACont::value_type));
+            }
+            else
+            {
+                using ChunkCont = std::decay_t<decltype(chunk_to_compress_potentially_thr[0])>;
+
+                print_mem_estimate("chunk_to_compress_potentially_thr (per thread)", max_chunks,
+                                   sizeof(typename ChunkCont::value_type));
+            };
         }
-        else if constexpr (IsChunk2A<CHUNK_T, T>)
-        {
-            using Chunk2ACont = std::decay_t<decltype(chunk2A_to_compress_potentially_thr[0])>;
-
-            print_mem_estimate("chunk2A_to_compress_potentially_thr (per thread)", max_chunks,
-                               sizeof(typename Chunk2ACont::value_type));
-        }
-        else
-        {
-            using ChunkCont = std::decay_t<decltype(chunk_to_compress_potentially_thr[0])>;
-
-            print_mem_estimate("chunk_to_compress_potentially_thr (per thread)", max_chunks,
-                               sizeof(typename ChunkCont::value_type));
-        };
     }
-
-#endif
     const size_t element_size = sizeof(std::tuple<CHUNK_T<T>*, int, int>);
 
     global_stats.record(type_name<CHUNK_T<T>>(), somme_chunk_create, threshold, element_size);

@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <vector> // std::vector (les listes de reuse per-rank)
+#include <vector> // std::vector (the per-rank reuse lists)
 
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/chunk_std.h" // self-contained: needs Chunk<T>::manager_chunk
@@ -119,7 +119,7 @@ void load_balance_list_block_free_thr()
 
             const int pp = ll.size() - (lg - sz);
 
-            T** ll_loc = ll.data() + ll.size() - lg;
+            T* const* ll_loc = ll.data() + ll.size() - lg;
 
             for (int i = sz; i < lg; ++i)
             {

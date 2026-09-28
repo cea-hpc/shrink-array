@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include <algorithm> // std::min (the resize copy)
+#include <atomic>
 #include <cstdlib>   // std::abort (debug stubs)
 #include <exception> // std::exception (PointerMapChunk2A::erase)
 #include <iostream>  // std::cerr (debug stubs)
@@ -29,8 +31,15 @@
 
 #include <ankerl/unordered_dense.h> // PointerMapChunk2A::big
 
+#include "chunk/config.h"
+#include "chunk/internal/chunk_size_policy.h"
+#include "chunk/internal/concept_is_clean_assignement.h"
+#include "chunk/internal/crp_helper.h"
 #include "chunk/internal/in_t.h"
-#include "chunk/internal/proxy2A_meta_bases.h" // Proxy2AMetaBases
+#include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED
+#include "chunk/internal/proxy2A_meta_bases.h"  // Proxy2AMetaBases
+#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
+#include "chunk/internal/TChunk.h"
 #include "chunk/internal/manager_chunk.h"
 #include "chunk/internal/compression_manager.h"
 #include "chunk/internal/proxy_base.h"
@@ -903,7 +912,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     ///          queues as it did before it: correct, only without the saving.
     [[nodiscard]] bool may_become_uniform(in_t<T> v) const noexcept
     {
-        if constexpr (!detail::relaxed_element_access_v<T>)
+        if constexpr (!internal::relaxed_element_access_v<T>)
         {
             return true;
         }

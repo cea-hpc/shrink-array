@@ -45,7 +45,7 @@
 
 #include "chunk/chunk_traits.h" // Chunk2A fwd decl
 
-namespace shrink_array::detail
+namespace shrink_array::internal
 {
 
 template <typename T>
@@ -105,4 +105,4 @@ void modify_element(T* ptr, int i, Body&& body)
     }
 }
 
-} // namespace shrink_array::detail
+} // namespace shrink_array::internal

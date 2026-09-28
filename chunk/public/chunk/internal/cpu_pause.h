@@ -1,6 +1,6 @@
 #pragma once
 
-#include <thread> // std::this_thread — used HERE, not by our includers
+#include <thread> // std::this_thread::yield (the ARM and fallback CPU_PAUSE)
 
 /*
  * Copyright 2024-2025 CEA (www.cea.fr)

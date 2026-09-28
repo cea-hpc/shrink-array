@@ -38,7 +38,6 @@
 // All checks compile to nothing when build_config::any_check is false.
 // ============================================================================
 
-#include <array> // std::array
 #include <cstdint>
 #include <source_location>
 
@@ -57,7 +56,7 @@ namespace shrink_array::bad_ptr
  * because @p loc is defaulted to std::source_location::current() at the
  * call site, not inside this function.
  *
- * @param ptr          Pointer to validate (may be null).
+ * @param ptr        Pointer to validate (may be null).
  * @param site       Short static string identifying the producer site.
  * @param chunk_ptr  Optional pointer to the owning chunk, for cross-referencing.
  * @param loc        Auto-captured at the call site; do not pass explicitly.

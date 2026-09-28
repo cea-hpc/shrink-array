@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-#include <cstddef> // size_t
+#include <cstddef> // size_t (serial builds only: operator new below)
 
 #include "fast_allocators/tc_allocator.h"
-#include "fast_allocators/internal/static_const_array.h"
+#include "fast_allocators/internal/static_const_array.h" // TypeAllocator (serial builds only)
 
 #ifndef _OPENMP // openmp problem allocator remembers itself
                 // --> deadlock
@@ -31,6 +31,6 @@ void TCAllocator::operator delete(void* ptr)
     TypeAllocator<TCAllocator>::free(ptr);
 }
 #endif
-#if defined(DEBUG) || defined(_OPENMP)
+// Defined in every build (tc_allocator.h declares it in every build); only
+// alloc_config::debug_mem_observable builds read it.
 bool __debug_mem = false;
-#endif

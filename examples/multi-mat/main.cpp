@@ -33,13 +33,12 @@
  * manage_ompt.cpp drive the library.
  */
 
+#include <cstdlib>
 #include <iomanip>
-#include <array>
-#include <random>
+#include <iostream>
 #include <vector>
 #include <functional>
 #include <fstream>
-#include <tuple>
 #include <type_traits>
 #include <chrono>
 
@@ -47,14 +46,14 @@
 #include <sys/resource.h>
 
 #include "chunk/param_chunk.h"
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
+#include "chunk/internal/chunk_size_config.h" // __chunk_size
 
 #include "config.h"
 #include "MultiMatAlgo.h"
-#include "ComputeLoops.h"
+#include "ComputeLoops.h" // Simu::computeLoops, the template main() instantiates
 #include "Containers.h"
 #include "Dispatch.h"
+#include "Simu.h"
 
 using namespace shrink_array;
 
@@ -199,7 +198,7 @@ int main()
     // The filling rates: of the first chunk material only (only_first_chunk,
     // from inside the run) or of every material with its real rate (at the
     // end).
-    std::function<void(bool)> lbd_stats_chunk = [&](bool only_first_chunk)
+    const std::function<void(bool)> lbd_stats_chunk = [&](bool only_first_chunk)
     {
         mm_algo.loop(0, nbmat,
                      [&](int& mat, const auto& get_mat_vec, const auto&)
@@ -276,7 +275,7 @@ int main()
 
     std::cout << "\n\nElapsed time  : " << elapsed_seconds.count() << "s\n\n";
 
-    rusage usage;
+    rusage usage{};
     if (getrusage(RUSAGE_SELF, &usage) == 0)
     {
         const long rss = usage.ru_maxrss; // Resident Set Size in kilobytes

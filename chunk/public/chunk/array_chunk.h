@@ -20,6 +20,8 @@
 
 #pragma once
 
+#include <iostream> // std::cout: print_compression_stats' default stream
+#include <utility>  // std::swap
 #include <vector>
 
 #include <initializer_list> // the {a, b, c} constructor
@@ -28,13 +30,12 @@
 #include "chunk/internal/array_chunk_base.h"
 #include "chunk/internal/array_chunk_parallel.h"      // ParallelSupport — OpenMP-only mixin
 #include "chunk/internal/array_chunk_rechunk_hooks.h" // RechunkHooks — CHUNK_DYNAMIC-only mixin
-#include "chunk/internal/chunk_stats_printer.h"
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/internal/concept_array_chunk_element.h"
 #include "chunk/config.h"
 #include "chunk/internal/write_compress_sync_policy.h"
-// !
-//  * \brief Compressed "array" class
+#include "chunk/internal/in_t.h"  // in_t<T>: resize's fill value
+#include "chunk/internal/proxy.h" // Proxy<T>: the element proxy and its registry
 
 namespace shrink_array
 {
@@ -42,6 +43,13 @@ namespace shrink_array
 template <template <typename> typename CHUNK_T, typename T>
 class ManagerChunk;
 
+/**
+ * @brief Compressed array: chunks of @p T that each compress to the first
+ *        value (Chunk, variant v1).
+ *
+ * @tparam T        stored element type
+ * @tparam ind_type index type used for sizes and element positions
+ */
 template <ArrayChunkElement T, typename ind_type>
 class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
                    public ParallelSupport<ArrayChunk<T, ind_type>>,

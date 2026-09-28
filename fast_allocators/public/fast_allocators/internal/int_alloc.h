@@ -18,16 +18,20 @@
 
 #include <cstring>
 
+#include "fast_allocators/internal/alloc_config.h" // alloc_config::alloc_align
 #include "fast_allocators/internal/svalloc.h"
 
 template <typename T>
 void int_free(const T* var)
 {
-#ifdef ALLOC_ALIGN
-    svfree_align(var);
-#else
-    svfree(var);
-#endif
+    if constexpr (alloc_config::alloc_align)
+    {
+        svfree_align(var);
+    }
+    else
+    {
+        svfree(var);
+    }
 }
 
 template <typename T>
@@ -39,11 +43,14 @@ void int_free_align(const T* var)
 template <typename T>
 void int_alloc(T*& var, size_t size)
 {
-#ifdef ALLOC_ALIGN
-    svalloc_align(var, T, size);
-#else
-    svalloc(var, T, size);
-#endif
+    if constexpr (alloc_config::alloc_align)
+    {
+        svalloc_align(var, T, size);
+    }
+    else
+    {
+        svalloc(var, T, size);
+    }
 }
 
 template <typename T>
@@ -54,20 +61,23 @@ void int_alloc_align(T*& var, size_t size)
 
 inline void* int_alloc(size_t size)
 {
-    char* ptr;
+    char* ptr = nullptr;
 
-#ifdef ALLOC_ALIGN
-    svalloc_align(ptr, char, size);
-#else
-    svalloc(ptr, char, size);
-#endif
+    if constexpr (alloc_config::alloc_align)
+    {
+        svalloc_align(ptr, char, size);
+    }
+    else
+    {
+        svalloc(ptr, char, size);
+    }
 
     return (void*)ptr;
 }
 
 inline void* int_alloc_align(size_t size)
 {
-    char* ptr;
+    char* ptr = nullptr;
 
     svalloc_align(ptr, char, size);
 

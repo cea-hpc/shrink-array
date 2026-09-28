@@ -20,12 +20,14 @@
 // (register_manager / ensure_manager, called from the arrays' create) and the
 // up-front registration of a type list (initialize<Types>).
 
+#include <atomic>  // std::memory_order (nb_managers_)
 #include <cstdio>  // the refusal messages of register_manager
 #include <cstdlib> // std::abort
 #include <memory>
 #include <mutex>
-#include <tuple> // std::tuple (initialize<Types>)
 
+#include "chunk/all_type_chunk.h" // the declarations these bodies belong to
+#include "chunk/config.h"         // build_config::chunk_dynamic, chunk_config::use_chunk*
 #include "chunk/internal/for_each_type.h"
 #include "chunk/internal/manager_chunk.h"
 #include "chunk/singleton.h"    // SingletonChk<AllTypeChunk>, for ensure_manager
@@ -99,7 +101,7 @@ void AllTypeChunk::fillManagerChunk()
 {
     // For each T listed in Types (a std::tuple), register one ManagerChunk
     // for the (CHUNK_T, T) pair.
-    for_each_type<Types>([this]<typename T>() { this->template register_manager<ManagerChunk<CHUNK_T, T>>(); });
+    for_each_type<Types>([this]<typename T> { this->template register_manager<ManagerChunk<CHUNK_T, T>>(); });
 }
 
 template <typename Types>

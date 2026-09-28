@@ -17,15 +17,15 @@
 #include <typeinfo>
 
 #include <cxxabi.h>
-#include <memory>
+#include <cstdlib> // std::free
 #include <string>
 
 template <typename T>
 std::string type_name()
 {
-    int         status;
+    int         status    = -1;
     char*       demangled = abi::__cxa_demangle(typeid(T).name(), nullptr, nullptr, &status);
     std::string result    = (status == 0) ? demangled : typeid(T).name();
-    free(demangled);
+    std::free(demangled);
     return result;
 }

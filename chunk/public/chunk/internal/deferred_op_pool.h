@@ -34,6 +34,7 @@
 #include "chunk/ring_log_debug.h"
 
 #ifdef FAST_ALLOC
+    #include "fast_allocators/slab_arena.h" // fast_alloc::ArenaKind
     #include "fast_allocators/tc_allocator.h"
 #else
 /**
@@ -48,7 +49,7 @@ enum class ArenaKind
     Ctx,
     Value
 };
-}
+} // namespace fast_alloc
 
 /// @brief std-alloc stand-in for the fast allocator: operator new/delete
 ///        behind the same call surface (init/set_arena no-ops, every
@@ -165,6 +166,14 @@ template <typename T>
 struct DeferredFreeListSlot
 {
     std::vector<T*> fl;
+
+    DeferredFreeListSlot() = default;
+    // Owns the parked blocks in std-alloc builds (see the destructor): a copy
+    // would delete them twice.
+    DeferredFreeListSlot(const DeferredFreeListSlot&)            = delete;
+    DeferredFreeListSlot& operator=(const DeferredFreeListSlot&) = delete;
+    DeferredFreeListSlot(DeferredFreeListSlot&&)                 = delete;
+    DeferredFreeListSlot& operator=(DeferredFreeListSlot&&)      = delete;
 
     // fw15c (std-alloc leak): in std-alloc, allocate_raw() hands out blocks via
     // ::operator new and recycle() parks them here in `fl` for reuse. Nothing
@@ -296,7 +305,7 @@ struct FastAllocatorConcrete : FastAllocatorBase
             if (ptr == nullptr)
                 INVARIANT_FAILED("[ALLOC_PROBE {}] allocate_raw returned NULL for T size={}", path, sizeof(T));
 
-            if ((addr & (alignof(std::max_align_t) - 1)) != 0 && (addr & 0x7) != 0)
+            if ((addr & (alignof(std::max_align_t) - 1)) != 0 && (addr & 0x7U) != 0)
                 INVARIANT_FAILED("[ALLOC_PROBE {}] misaligned block p={} (T size={})", path,
                                  static_cast<const void*>(ptr), sizeof(T));
 
@@ -324,15 +333,16 @@ struct FastAllocatorConcrete : FastAllocatorBase
      */
     void* allocate_raw() override
     {
-#ifdef CHUNK_POOL_NO_REUSE
-        // Diagnostic mode (CHUNK_POOL_NO_REUSE): bypass the free-list AND the fast pool.
-        // Every block is a fresh global allocation, so a later recycle() is a
-        // real ::operator delete. This gives ASan/TSan full visibility into
-        // use-after-free / double-free of deferred ctx/op blocks — which the
-        // recycling free-list normally hides (freed blocks stay mapped and
-        // readable, so a use-after-recycle silently returns stale data).
-        return ::operator new(sizeof(T));
-#else
+        if constexpr (build_config::pool_no_reuse)
+        {
+            // Diagnostic mode (CHUNK_POOL_NO_REUSE): bypass the free-list AND the fast pool.
+            // Every block is a fresh global allocation, so a later recycle() is a
+            // real ::operator delete. This gives ASan/TSan full visibility into
+            // use-after-free / double-free of deferred ctx/op blocks — which the
+            // recycling free-list normally hides (freed blocks stay mapped and
+            // readable, so a use-after-recycle silently returns stale data).
+            return ::operator new(sizeof(T));
+        }
         auto& fl = free_list();
         if (!fl.empty())
         {
@@ -363,7 +373,6 @@ struct FastAllocatorConcrete : FastAllocatorBase
         {
             return ::operator new(sizeof(T));
         }
-#endif
     }
 
     /**
@@ -386,9 +395,11 @@ struct FastAllocatorConcrete : FastAllocatorBase
      */
     void recycle(void* block) override
     {
-#ifdef CHUNK_POOL_NO_REUSE
-        ::operator delete(block); // CHUNK_POOL_NO_REUSE: real free for ASan/TSan
-#else
+        if constexpr (build_config::pool_no_reuse)
+        {
+            ::operator delete(block); // CHUNK_POOL_NO_REUSE: real free for ASan/TSan
+            return;
+        }
         if constexpr (build_config::use_fast_alloc)
         {
             // Only pool blocks owned by this thread's slab may go on this
@@ -427,7 +438,6 @@ struct FastAllocatorConcrete : FastAllocatorBase
             }
         }
         free_list().push_back(static_cast<T*>(block));
-#endif
     }
 };
 
@@ -506,16 +516,17 @@ using CtxRegistry = AllocatorRegistry<CtxTag>;
 template <typename T>
 void chunk_align_probe([[maybe_unused]] const char* site, [[maybe_unused]] void* mem) noexcept
 {
-#ifdef CHUNK_ALIGN_CHECK
-    if ((reinterpret_cast<std::uintptr_t>(mem) & (alignof(T) - 1)) != 0)
+    if constexpr (build_config::align_check)
     {
-        std::fprintf(stderr,
-                     "[SLAB MISALIGN] %s: ptr=%p alignof=%zu sizeof=%zu (block from slab is under-aligned for T)\n",
-                     site, mem, static_cast<size_t>(alignof(T)), sizeof(T));
-        std::fflush(stderr);
-        std::abort();
+        if ((reinterpret_cast<std::uintptr_t>(mem) & (alignof(T) - 1)) != 0)
+        {
+            std::fprintf(stderr,
+                         "[SLAB MISALIGN] %s: ptr=%p alignof=%zu sizeof=%zu (block from slab is under-aligned for T)\n",
+                         site, mem, static_cast<size_t>(alignof(T)), sizeof(T));
+            std::fflush(stderr);
+            std::abort();
+        }
     }
-#endif
 }
 
 /**

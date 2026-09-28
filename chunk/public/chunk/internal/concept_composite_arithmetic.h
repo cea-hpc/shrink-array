@@ -16,8 +16,6 @@
  * limitations under the License.
  */
 
-#include <complex> // std::complex
-#include <concepts>
 #include <type_traits>
 
 namespace shrink_array

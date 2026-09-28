@@ -53,7 +53,7 @@ static const unsigned long bench_ulong_mask = []() -> unsigned long
     const unsigned long span = static_cast<unsigned long>(bands) * 256UL;
     unsigned long       m    = 1;
     while (m < span)
-        m <<= 1;
+        m <<= 1U;
     return m - 1UL;
 }();
 

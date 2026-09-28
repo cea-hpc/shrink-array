@@ -48,7 +48,7 @@
 // side is an ordered std::map.
 
 #include <cstdio> // fprintf / fflush in report_key_not_found
-#include <deque>  // FIX: share_info storage uses deque (no realloc invalidation)
+#include <deque>  // std::deque: share_info storage, no realloc invalidation
 #include <map>
 #include <tuple>       // std::tuple / std::get / std::make_tuple
 #include <type_traits> // std::is_same_v
@@ -470,7 +470,7 @@ class PointerMapChunk2
                 // still snapshot n so a concurrent append can't move the loop bound.
                 const size_t count = vec.size();
 
-                if (count > (1u << 30))
+                if (count > (1U << 30U))
                     INVARIANT_FAILED("[share_info get] corrupt vec: this={} size={} key={}",
                                      static_cast<const void*>(this), count, key);
 

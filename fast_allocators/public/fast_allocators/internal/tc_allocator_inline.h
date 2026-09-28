@@ -47,7 +47,7 @@ inline void TCAllocator::alloc_block()
 inline void* TCAllocator::alloc() noexcept
 {
     ++nn_ref;
-    char* elemPtr;
+    char* elemPtr = nullptr;
 
     if (firstFree != -1)
     {
@@ -168,7 +168,7 @@ inline void* TCCAllocator::alloc() noexcept
     }
 
     ++nn_ref;
-    char* elemPtr;
+    char* elemPtr = nullptr;
 
     if (firstFree != first_free_init)
     {

@@ -16,25 +16,35 @@
 
 #pragma once
 
+#include <algorithm> // std::ranges::find (the healed-chunk report)
+#include <atomic>    // std::memory_order
+#include <cstddef>   // std::size_t
+#include <cstdlib>   // std::abort
+#include <iostream>  // std::cerr
+#include <ostream>   // print_compression_stats(std::ostream&)
+#include <string>    // the healed-chunk report
 #include <vector>
 
+#include <sys/mman.h> // mprotect (use_mm_protect: the read-only cst_val2 blocks)
+#include <unistd.h>   // sysconf(_SC_PAGESIZE) (same)
+
 #include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
-#include "chunk/internal/chunk_size_config.h"
 #include "chunk/array_chunk2.h"
 #include "chunk/type_name.h"
 #include "chunk/singleton.h"
 #include "chunk/internal/proxy2.h"
 #include "chunk/internal/chunk_stats.h"
-#include "chunk/chunk2_def.h"
 #include "chunk/all_type_chunk.h"
-// Explicit includes for symbols used by clear_core() / rechunk_to() below:
-// ManagerChunk (per-size free-list + candidate-filter helpers), pool_ledger
-// (CHUNK_LEDGER_PARK/DISCARD), svalloc (svfree), chunk_size_policy (runtime
-// geometry). All pragma-once; reachable transitively today, made explicit here
-// so this TU never depends on the include chain staying that way.
+#include "chunk/config.h"
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_*
+#include "chunk/internal/concept_array_chunk_element.h"
+// Explicit includes for symbols used by clear_core() below: ManagerChunk
+// (per-size free-list + candidate-filter helpers), pool_ledger
+// (CHUNK_LEDGER_PARK/DISCARD), chunk_size_policy (runtime geometry). All
+// pragma-once; reachable transitively today, made explicit here so this TU
+// never depends on the include chain staying that way.
 #include "chunk/internal/manager_chunk.h"
 #include "chunk/internal/pool_ledger.h"
-//#include "chunk/internal/svalloc.h"
 #include "chunk/internal/chunk_size_policy.h"
 
 /**
@@ -267,8 +277,8 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
 
                 for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
                 {
-                    auto& vec_ref    = manager_chunk2::chunk2_to_compress_potentially_thr[thr][ind];
-                    auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk2, T>>(vec_ref);
+                    const auto& vec_ref    = manager_chunk2::chunk2_to_compress_potentially_thr[thr][ind];
+                    const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk2, T>>(vec_ref);
                     manager_chunk2::map_chunk2_to_compress_potentially_thr[thr][sec_value] = shared_vec;
                 }
             }
@@ -360,8 +370,8 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
             for (int thr = 0; thr < CHUNK_PMP_THREAD_CAPACITY; ++thr)
             {
                 manager_chunk2::chunk2_to_compress_potentially_thr[thr].resize(1);
-                auto& vec_ref    = manager_chunk2::chunk2_to_compress_potentially_thr[thr][0];
-                auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk2, T>>(vec_ref);
+                const auto& vec_ref    = manager_chunk2::chunk2_to_compress_potentially_thr[thr][0];
+                const auto  shared_vec = std::make_shared<VectorTuple4ChunkInt2<Chunk2, T>>(vec_ref);
                 manager_chunk2::map_chunk2_to_compress_potentially_thr[thr][sec_value] = shared_vec;
             }
         }
@@ -390,8 +400,8 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
     if (nb_chunk == 0)
         return;
 
-    auto&     sh_inf  = Proxy2<T>::share_info_array;
-    const int num_tab = sh_inf.get_num_tab(const_cast<void*>(this->registry_key()));
+    const auto& sh_inf  = Proxy2<T>::share_info_array;
+    const int   num_tab = sh_inf.get_num_tab(const_cast<void*>(this->registry_key()));
 
     // Chunk2-specific classification. FIXED: written(ind) tests
     // `values != cst_val1 && is_not_cst_val2(ind)` -- i.e. it is true for a
@@ -564,7 +574,7 @@ void ArrayChunk2<T, ind_type>::clear_core()
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        auto& sh_inf = Proxy2<T>::share_info_array;
+        const auto& sh_inf = Proxy2<T>::share_info_array;
 
         const int num_tab = sh_inf.get_num_tab(this->registry_key());
 
@@ -742,9 +752,8 @@ void ArrayChunk2<T, ind_type>::compress_int()
     // builds keep it. NB: do NOT gate on build_config::any_check here -- that is
     // is_debug||check_optim (DEBUG/CHECK_OPTIM) and does NOT match the _check
     // target's CHECK macro, so it would silently disable the scan in check builds.
-#ifdef PERF
-    return;
-#endif
+    if constexpr (build_config::perf_build)
+        return;
 
     // Pin the ambient size to THIS array's geometry: the frees below route on
     // thread_chunk_size(), not on the buffer (see clear_core()). Left to
@@ -787,7 +796,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
     const int nb_res = (nb_chunk / (50 * CHUNK_PMP_MAX_THREADS)) + 1;
     tab_nb1.reserve(nb_res);
     tab_nb2.reserve(nb_res);
-    T   second_value;
+    T   second_value{};
     int ind = 0;
 
     if constexpr (is_not_bool)
@@ -893,7 +902,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
     {
         const auto scanned1      = tab_nb1.size();
         const auto scanned2      = tab_nb2.size();
-        auto       still_written = [&](int jj) -> bool
+        const auto still_written = [&](int jj) -> bool
         {
             if constexpr (is_not_bool)
                 return chunk_list[jj].written(ind);
@@ -923,7 +932,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
             // The healed chunks are those the filter dropped: the scanned list
             // minus the kept one. A few indices name the chunk for whoever
             // wants to map it back to the writes that left it constant.
-            auto healed_indices = [](const std::vector<int>& scanned, const std::vector<int>& kept)
+            const auto healed_indices = [](const std::vector<int>& scanned, const std::vector<int>& kept)
             {
                 std::string out;
                 int         shown = 0;
@@ -1045,11 +1054,6 @@ void ArrayChunk2<T, ind_type>::compress_int()
         std::cerr << "the algorithm can miss certain blocks to compress: normally rare:"
                      " it’s an issue if there are many\n";
     }
-
-    // if (nb1 > 0 || nb2 > 0)
-    // {
-    //      std::abort();
-    // }
 }
 
 // Plain forwarder. The commented-out in-parallel-region test is kept as the

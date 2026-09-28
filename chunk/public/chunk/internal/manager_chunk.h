@@ -27,9 +27,11 @@
 #include <type_traits> // remove_reference_t / remove_pointer_t (same)
 
 #include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/chunk_def.h" // ChunkDef::size_min_buffer_reuse
+#include "chunk/config.h"
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/internal/TChunk.h"
-#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_MAX_THREADS (drain_reuse_list_for_size)
+#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_THREAD_CAPACITY (max_thr)
 #include "chunk/internal/pool_ledger.h" // CHUNK_LEDGER_DISCARD (drain_reuse_list_for_size)
 #include "chunk/type_name.h"            // type_name<T> (pool breakdown)
 #include "chunk/internal/svalloc.h"     // svfree (drain_reuse_list_for_size)
@@ -38,7 +40,7 @@
 
 namespace shrink_array
 {
-namespace detail
+namespace internal
 {
 /// @brief One repeat seen by the teardown dedup phase: skip @p ptr when freeing bucket @p bucket.
 /// @see ManagerChunkParallelImpl::clear_list_block_free_dedup
@@ -48,7 +50,7 @@ struct TeardownRepeat
     std::size_t bucket;
     T*          ptr;
 };
-} // namespace detail
+} // namespace internal
 
 /**
  * @brief The CHUNK_DYNAMIC-only half of the manager interface.
@@ -213,10 +215,6 @@ class ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtua
 
     // The build-dependent halves live in the three interface policies above.
 };
-
-// Helper structure for lazy instantiation of the map type.
-// For non-complex types, use the default std::map comparator;
-// for complex types, use a specialized comparator (ComplexLess).
 
 /**
  * @brief The CHUNK_DYNAMIC-only half of the manager IMPLEMENTATION.
@@ -473,7 +471,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         if constexpr (chunk_config::chunk_dynamic)
         {
-            auto it = list_block_free_thr_by_size_.find(size);
+            const auto it = list_block_free_thr_by_size_.find(size);
             if (it == list_block_free_thr_by_size_.end())
                 list_block_free_thr_by_size_[size].resize(max_thr);
         }
@@ -503,7 +501,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         if (key == 0)
             return; // the shared pool is register_free_list_size()'s
-        auto it = list_block_free_thr_keyed_.find(keyed_index(key, size));
+        const auto it = list_block_free_thr_keyed_.find(keyed_index(key, size));
         if (it == list_block_free_thr_keyed_.end())
             list_block_free_thr_keyed_[keyed_index(key, size)].resize(max_thr);
     }
@@ -941,7 +939,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                             static_cast<std::size_t>(n_thr),
                             std::vector<std::vector<T*>>(static_cast<std::size_t>(n_thr)));
 
-                        auto sort_own_list = [&](int rank) noexcept
+                        const auto sort_own_list = [&](int rank) noexcept
                         {
                             if (rank < 0 || rank >= n_thr)
                                 return;
@@ -961,7 +959,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                             }
                             lst.resize(kept);
                         };
-                        auto free_own_buckets = [&](int rank) noexcept
+                        const auto free_own_buckets = [&](int rank) noexcept
                         {
                             if (rank < 0 || rank >= n_thr)
                                 return;
@@ -1112,7 +1110,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      */
     static void remove_from_compress_list_chunk2a_by_ptr_range(const void* lo, const void* hi) noexcept
     {
-        auto in_range = [lo, hi](const auto& tup)
+        const auto in_range = [lo, hi](const auto& tup)
         {
             const void* ptr = static_cast<const void*>(std::get<0>(tup));
             return ptr >= lo && ptr < hi;
@@ -1201,9 +1199,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             {
                 // Chunk2 alone has this extra level: its candidates are bucketed
                 // by second value, so every bucket of every rank must be walked.
-                for (auto& kv : map_chunk2_to_compress_potentially_thr[thr])
+                for (const auto& kv : map_chunk2_to_compress_potentially_thr[thr])
                 {
-                    auto& sp = kv.second;
+                    const auto& sp = kv.second;
                     if (!sp)
                         continue;
                     erase_candidates_of_tab(*sp, num_tab);
@@ -1291,7 +1289,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     /// @brief Map key of list_block_free_thr_keyed_: (@p key << 32) | @p size.
     static constexpr std::uint64_t keyed_index(unsigned int key, unsigned int size) noexcept
     {
-        return (static_cast<std::uint64_t>(key) << 32) | size;
+        return (static_cast<std::uint64_t>(key) << 32U) | size;
     }
 
     /**
@@ -1314,7 +1312,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *          sharing), read by the free phase after the barrier. Empty on any
      *          sane run.
      */
-    static inline std::vector<std::vector<detail::TeardownRepeat<T>>> teardown_repeats_;
+    static inline std::vector<std::vector<internal::TeardownRepeat<T>>> teardown_repeats_;
 };
 
 } // namespace shrink_array

@@ -49,7 +49,7 @@ class MultiMatAlgo
     template <typename MA>
     static auto& getMatVecDir(const MA& gdr, int mat)
     {
-        using Vec = typename MA::vec_dir;
+        using Vec = MA::vec_dir;
 
         return *(static_cast<Vec*>(gdr[mat]));
     }
@@ -58,36 +58,36 @@ class MultiMatAlgo
     template <typename MA>
     static auto& getMatVecChunk(const MA& gdr, int mat)
     {
-        using Vec = typename MA::vec_chunk;
+        using Vec = MA::vec_chunk;
 
         return *(static_cast<Vec*>(gdr[mat]));
     }
 
     /// @brief The body on a std::vector material.
     template <typename LAM>
-    void single_direct_int(int& mat, const LAM& lbd_loop_body)
+    void single_direct_int(int& mat, const LAM& lbd_loop_body) const
     {
         const LOOPS loops;
 
-        auto lbd_get_mat_vec = [mat](const auto& gdr) -> auto& { return getMatVecDir(gdr, mat); };
+        const auto lbd_get_mat_vec = [mat](const auto& gdr) -> auto& { return getMatVecDir(gdr, mat); };
 
         lbd_loop_body(mat, lbd_get_mat_vec, loops);
     }
 
     /// @brief The body on a chunk material.
     template <typename LAM>
-    void single_chunk_int(int& mat, const LAM& lbd_loop_body)
+    void single_chunk_int(int& mat, const LAM& lbd_loop_body) const
     {
         const LOOPSCHUNK loops;
 
-        auto lbd_get_mat_vec = [mat](const auto& gdr) -> auto& { return getMatVecChunk(gdr, mat); };
+        const auto lbd_get_mat_vec = [mat](const auto& gdr) -> auto& { return getMatVecChunk(gdr, mat); };
 
         lbd_loop_body(mat, lbd_get_mat_vec, loops);
     }
 
     /// @brief The body on material @p mat, whichever its storage.
     template <typename LAM>
-    void single_int(int& mat, const LAM& lbd_loop_body)
+    void single_int(int& mat, const LAM& lbd_loop_body) const
     {
         const bool chunk = dispatch.isChunk(mat);
 
@@ -108,7 +108,7 @@ class MultiMatAlgo
      *       does, after the first chunk material).
      */
     template <typename LAM>
-    void loop(int matdeb, int matfin, const LAM& lbd_loop_body)
+    void loop(int matdeb, int matfin, const LAM& lbd_loop_body) const
     {
         for (int mat = matdeb; mat < matfin; ++mat)
         {

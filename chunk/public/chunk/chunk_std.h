@@ -16,13 +16,13 @@
 
 #pragma once
 
-// #define CHUNK_STATS
-
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 
+#include <atomic>
 #include <complex>
-#include <tuple> // the candidate-list entries
+#include <cstddef> // std::size_t
+#include <tuple>   // the candidate-list entries
 #include <vector>
 
 /// @brief The complex element type of the library (chunk_std.cpp instantiates it).
@@ -30,11 +30,14 @@ using complex_double = std::complex<double>;
 
 #include "chunk/internal/process_verbs.h" // compress_now_and_trim_pools, defined in chunk_std.cpp
 #include "chunk/internal/chunk_base.h"
-#include "chunk/chunk_define.h"               // build macros
+#include "chunk/config.h"
 #include "chunk/internal/chunk_size_config.h" // ChunkElems
+#include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"       // increm_chunk_write (CHUNK_STATS)
 #include "chunk/internal/conditional_counter.h"
 #include "chunk/internal/proxy.h"
+#include "chunk/internal/manager_chunk.h"       // ManagerChunk<Chunk, T>
+#include "chunk/internal/compression_manager.h" // CompressionManager
 
 namespace shrink_array
 {
@@ -246,7 +249,7 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
     void operator delete[](void* ptr);
-    /// @brief Point @p n freshly allocated chunks at the first constant.
+    /// @brief Point @p count freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
     ///          parallel region (inside one it stays on the calling thread: an
     ///          allocation is made by one thread, and an orphaned `omp for`
@@ -309,6 +312,8 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
     /// @brief Release this chunk's buffer to @p thr_rank's reuse list WITHOUT
     ///        counting a compression -- the re-chunk rebuild releasing an old
     ///        chunk once copied (clear_st = count + release_st).
+    /// @param count_release count it as a release (CHUNK_STATS `released`);
+    ///        clear_st passes false, having counted a compression instead
     void release_st(int thr_rank, unsigned int n_elems, bool count_release = true);
     /// @brief Release the buffer outright, without parking it for reuse.
     void clear_int_st(int thr_rank);
@@ -346,6 +351,7 @@ struct ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
     /// @brief Release this chunk's buffer WITHOUT counting a compression --
     ///        the teardown, counted as teardown_clear (clear_st = count +
     ///        release_st).
+    /// @param count_release as in the OpenMP policy's release_st
     void release_st(bool count_release = true);
 };
 

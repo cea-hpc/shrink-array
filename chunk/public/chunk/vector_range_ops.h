@@ -71,7 +71,7 @@ struct assume_drained_t
 };
 inline constexpr assume_drained_t assume_drained{};
 
-namespace detail
+namespace internal
 {
 
 /**
@@ -92,7 +92,7 @@ concept ChunkedArray = requires(A& arr, const A& ca, std::size_t i) {
     { ca.size() };
 };
 
-} // namespace detail
+} // namespace internal
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Generic fallback: anything with begin() and a random-access iterator,
@@ -108,7 +108,7 @@ concept ChunkedArray = requires(A& arr, const A& ca, std::size_t i) {
  * @param v         value to store
  */
 template <typename C, typename U>
-    requires(!detail::ChunkedArray<C>)
+    requires(!internal::ChunkedArray<C>)
 void fill_range(C& container, std::size_t first, std::size_t last, const U& v)
 {
     const auto size = static_cast<std::size_t>(container.size());
@@ -127,7 +127,7 @@ void fill_range(C& container, std::size_t first, std::size_t last, const U& v)
  * @param src_first iterator on the source range; must not alias @p container
  */
 template <typename C, typename It>
-    requires(!detail::ChunkedArray<C>)
+    requires(!internal::ChunkedArray<C>)
 void copy_range(C& container, std::size_t first, std::size_t last, It src_first)
 {
     const auto size = static_cast<std::size_t>(container.size());
@@ -142,7 +142,7 @@ void copy_range(C& container, std::size_t first, std::size_t last, It src_first)
 /// @note The assume_drained_t tag: nothing to drain on a plain container; accepted so
 ///        the tag form of the call is the same on every container
 template <typename C, typename U>
-    requires(!detail::ChunkedArray<C>)
+    requires(!internal::ChunkedArray<C>)
 void fill_range(C& container, std::size_t first, std::size_t last, const U& v, assume_drained_t)
 {
     fill_range(container, first, last, v);
@@ -151,7 +151,7 @@ void fill_range(C& container, std::size_t first, std::size_t last, const U& v, a
 /// @copydoc copy_range
 /// @note The assume_drained_t tag: see fill_range's tag overload
 template <typename C, typename It>
-    requires(!detail::ChunkedArray<C>)
+    requires(!internal::ChunkedArray<C>)
 void copy_range(C& container, std::size_t first, std::size_t last, It src_first, assume_drained_t)
 {
     copy_range(container, first, last, src_first);
@@ -166,7 +166,7 @@ void copy_range(C& container, std::size_t first, std::size_t last, It src_first,
  *          bit-packed words make neighbouring indices share storage.
  */
 template <typename C, typename U>
-    requires(!detail::ChunkedArray<C>)
+    requires(!internal::ChunkedArray<C>)
 void fill_range_mt(C& container, std::size_t first, std::size_t last, const U& v)
 {
     static_assert(!std::is_same_v<C, std::vector<bool>>,

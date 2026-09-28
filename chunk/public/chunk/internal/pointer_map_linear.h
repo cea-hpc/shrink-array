@@ -48,10 +48,7 @@
  *       linear scans at all. Folding it in here would trade that away.
  */
 
-#include <cstddef>
-#include <deque>   // std::deque
 #include <utility> // std::swap
-#include <vector>  // std::vector
 
 namespace shrink_array
 {

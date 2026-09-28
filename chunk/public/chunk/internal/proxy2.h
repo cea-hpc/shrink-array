@@ -19,24 +19,27 @@
 #include <type_traits>
 #include <tuple>
 #include <atomic>
-#include <algorithm>
 #include <concepts>
+#include <cstddef>
+#include <cstdlib>
+#include <memory>
+#include <ostream>
 
 #include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"
-#include "chunk/chunk_define.h"
+#include "chunk/config.h"
 #include "chunk/internal/crp_helper.h"
 #include "chunk/internal/manager_chunk.h"
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/internal/pointer_map_chunk2.h"
 #include "chunk/internal/concept_is_clean_assignement.h"
-#include "chunk/internal/chunk_size_config.h"
+#include "chunk/internal/chunk_size_policy.h"
+#include "chunk/internal/TChunk.h"
 
-#include "chunk/internal/proxy_operators.h"
 #include "chunk/internal/chunk2_candidate_list_check.h" // chunk2_missing_candidate_list
 #include "chunk/internal/proxy_base.h"
 #include "chunk/internal/proxy2_base.h"
-#include "chunk_stats.h"
+#include "chunk/internal/chunk_stats.h" // increm_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
 
 // compression_manager.h is already included unconditionally by proxy_base.h
 // (which this file includes above), and CompressionManagerType is referenced
@@ -970,7 +973,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
 
     /**
      * @brief Look up the (second_value, ind, num_tab) metadata tuple
-     *        registered for array pointer `p`.
+     *        registered for array pointer @p ptr.
      * @param ptr Array pointer to look up.
      * @return The registered metadata tuple.
      */

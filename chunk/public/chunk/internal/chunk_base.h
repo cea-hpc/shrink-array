@@ -22,22 +22,30 @@
 #include <type_traits>
 #include <atomic>
 #include <array>
+#include <cstddef>
+#include <cstdio> // perror (use_mm_protect: the cst_val1 buffer)
+#include <cstdlib>
+#include <cstring> // std::memset
+#include <iostream>
+#include <memory>
 #include <optional>
 #include <sys/mman.h>
 
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement, asserted on ChunkBase
-#include "chunk/internal/churn_counters.h" // churn::note_materialisation
+#include "chunk/internal/churn_counters.h"              // churn::note_materialisation
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/internal/in_t.h"            // in_t<T>: the scans' constants, by value or by reference
 #include "chunk/internal/element_access.h"  // elem_get: Bit buffers are words of bits
 #include "chunk/internal/relaxed_element.h" // element_at<true>: the marking filter's reads
 #include "chunk/internal/svalloc.h"
 #include "chunk/config.h"
-#include "chunk/ring_log_debug.h" // SEGV hunt: EV_VALUE_ALLOC/FREE to prove aliasing
-#include "chunk/internal/global_check.h"
+#include "chunk/PMP_CHUNK.h"
+#include "chunk/ring_log_debug.h"           // SEGV hunt: EV_VALUE_ALLOC/FREE to prove aliasing
+#include "chunk/internal/global_check.h"    // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
+#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
+#include "chunk/internal/deferred_op_pool.h"
 #include "chunk/internal/compression_manager.h"
 #include "chunk/internal/pool_ledger.h" // CHUNK_LEDGER_* block-lifecycle checks (check builds)
-#include "chunk/internal/define_mm_protect.h"
 #include "chunk/internal/chunk_stats.h"
 #include "chunk/internal/crp_helper.h"
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
@@ -457,8 +465,8 @@ struct ChunkAllocPolicy<T, Derived, true>
     template <typename InitReused, typename InitFresh>
     T* allocate_chunk_internal(int thr_rank, InitReused init_reused, InitFresh init_fresh)
     {
-        auto& self = static_cast<Derived&>(*this);
-        T*    values_loc;
+        auto& self       = static_cast<Derived&>(*this);
+        T*    values_loc = nullptr;
 
         // The per-thread reuse list is only indexable once
         // resize_all_list_block_free_thr() has sized it to max_thr, and that is NOT
@@ -581,8 +589,8 @@ struct ChunkAllocPolicy<T, Derived, false>
                                [[maybe_unused]] InitReused init_reused,
                                InitFresh                   init_fresh)
     {
-        auto& self = static_cast<Derived&>(*this);
-        T*    values_loc;
+        auto& self       = static_cast<Derived&>(*this);
+        T*    values_loc = nullptr;
 
         if constexpr (chunk_config::stats)
         {
@@ -821,7 +829,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
     ///        destruction of that array empties whole slabs.
     static constexpr std::uint64_t pool_key(unsigned int key, unsigned int size) noexcept
     {
-        return (static_cast<std::uint64_t>(key) << 32) | size;
+        return (static_cast<std::uint64_t>(key) << 32U) | size;
     }
     static inline std::map<std::uint64_t, std::unique_ptr<TCTypeCAllocator<T>[]>> allocator_pool_;
 
@@ -908,13 +916,13 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
     static auto& route_omp_dynamic_alloc(int thr_rank, unsigned int key = 0) noexcept
     {
         const unsigned int sz = thread_chunk_size();
-        if (auto it = allocator_pool_.find(pool_key(key, sz)); it != allocator_pool_.end())
+        if (const auto it = allocator_pool_.find(pool_key(key, sz)); it != allocator_pool_.end())
             return it->second[thr_rank];
         // Unregistered KEY at a registered size: the shared set of that size is
         // the right fallback -- allocator_data below is the legacy single pool,
         // whose geometry has nothing to do with `sz`.
         if (key != 0)
-            if (auto it0 = allocator_pool_.find(pool_key(0u, sz)); it0 != allocator_pool_.end())
+            if (const auto it0 = allocator_pool_.find(pool_key(0u, sz)); it0 != allocator_pool_.end())
                 return it0->second[thr_rank];
         // Fallback: not registered (shouldn't happen on the alloc path
         // once set_chunk_size ran) — use the legacy single pool so the
@@ -931,7 +939,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
     static auto& route_serial_dynamic_alloc() noexcept
     {
         const unsigned int sz = thread_chunk_size();
-        if (auto it = allocator_pool_serial_.find(sz); it != allocator_pool_serial_.end())
+        if (const auto it = allocator_pool_serial_.find(sz); it != allocator_pool_serial_.end())
             return *it->second; // deref unique_ptr
         // Fallback: unregistered size -> the legacy single allocator, so
         // single-size use and the free path keep working.
@@ -1209,7 +1217,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         if constexpr (is_packed)
             return elem_get(vals, static_cast<std::size_t>(i)); // relaxed word load under OpenMP
         else if constexpr (Relaxed)
-            return detail::load_element_relaxed(vals + i);
+            return internal::load_element_relaxed(vals + i);
         else
             return vals[i];
     }
@@ -1265,7 +1273,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @return true if chunk is compressed to first constant value
     [[nodiscard]] bool is_cst_val1() const noexcept
     {
-        T* current_value = values_load();
+        const T* current_value = values_load();
         return current_value == ChunkBase::get_cst_val1();
     }
 
@@ -1305,7 +1313,7 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     /// @brief read_value_scan() of an element another thread may be writing:
     ///        a relaxed atomic load (relaxed_element.h). The marking filter's.
-    /// @pre detail::relaxed_element_access_v<T>.
+    /// @pre internal::relaxed_element_access_v<T>.
     [[nodiscard]] T read_value_scan_relaxed(int i) const noexcept
     {
         if constexpr (chunk_config::stats)
@@ -1358,7 +1366,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         if constexpr (is_packed)
         {
             // One compare per 64 elements (bit_words.h).
-            const bits::Uniform u        = bits::scan_words(detail::as_words(vals), count);
+            const bits::Uniform u        = bits::scan_words(internal::as_words(vals), count);
             const auto          all_of_v = [u](bool v) noexcept
             { return u == (v ? bits::Uniform::all_true : bits::Uniform::all_false); };
             if constexpr (chunk_config::stats)
@@ -1406,7 +1414,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         {
             if constexpr (chunk_config::stats)
                 add_chunk_scan_read<Derived>(static_cast<long>(count));
-            return bits::scan_words(detail::as_words(values_load()), count) ==
+            return bits::scan_words(internal::as_words(values_load()), count) ==
                    (static_cast<bool>(v) ? bits::Uniform::all_true : bits::Uniform::all_false);
         }
         // Same shape as scan_constants(): branch-free blocks, exit between them.
@@ -1472,21 +1480,18 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @return Pointer to the value at index i
     [[nodiscard]] T* print_adr(int i) const noexcept
     {
-        if constexpr (build_config::cst_val2_no_arrays)
+        // An ADDRESS into the buffer, which the registry cannot stand in for:
+        // under CHUNK_CST_VAL2_NO_ARRAYS there is no buffer. Materialise first,
+        // so the address is real and the semantics are exactly what they were.
+        // Its only caller is ArrayChunkBase's re-export, itself never called
+        // internally -- this is a diagnostic path.
+        if constexpr (build_config::cst_val2_no_arrays && requires {
+                          derived().is_cst_val2();
+                          derived().materialise_for_address();
+                      })
         {
-            // An ADDRESS into the buffer, which the registry cannot stand in
-            // for: under the flag there is no buffer. Materialise first, so
-            // the address is real and the semantics are exactly what they
-            // were. Its only caller is ArrayChunkBase's re-export, itself
-            // never called internally -- this is a diagnostic path.
-            if constexpr (requires {
-                              derived().is_cst_val2();
-                              derived().materialise_for_address();
-                          })
-            {
-                if (derived().is_cst_val2()) [[unlikely]]
-                    derived().materialise_for_address();
-            }
+            if (derived().is_cst_val2()) [[unlikely]]
+                derived().materialise_for_address();
         }
         static_assert(!is_packed, "print_adr: a Bit has no address (bit.h)");
         return &values_load()[i];
@@ -1550,13 +1555,10 @@ class ChunkBase : public CRTPSupport<Derived>,
         // it -- true today, and a dereference of an unbacked page under
         // CHUNK_CST_VAL2_NO_ARRAYS. Checked builds say so; release is
         // unchanged.
-        if constexpr (build_config::any_check)
+        if constexpr (build_config::any_check && requires { derived().written(); })
         {
-            if constexpr (requires { derived().written(); })
-            {
-                if (!derived().written()) [[unlikely]]
-                    INVARIANT_FAILED("operator()(int) on a chunk that is not materialised");
-            }
+            if (!derived().written()) [[unlikely]]
+                INVARIANT_FAILED("operator()(int) on a chunk that is not materialised");
         }
         static_assert(!is_packed, "operator()(int) returns T&: a Bit has no address (bit.h)");
         return values_load()[i];
@@ -1904,7 +1906,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         else
         {
             // --- branch std::array ---
-            std::array<T, cst_buffer_size> arr;
+            std::array<T, cst_buffer_size> arr{};
             arr.fill(first_value);
             return arr;
         }

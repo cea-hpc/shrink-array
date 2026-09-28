@@ -19,8 +19,14 @@
 //
 #pragma once
 
-#include <vector>
+#include <algorithm> // std::fill_n
 #include <array>
+#include <atomic>
+#include <cstddef> // std::size_t
+#include <cstdlib> // std::abort
+#include <tuple>   // inf_array_t, the candidate-list entries
+#include <type_traits>
+#include <vector>
 
 #include "chunk/internal/chunk_size_config.h"
 #include "chunk/internal/chunk_size_policy.h"
@@ -30,9 +36,6 @@
 #include "chunk/internal/element_access.h" // Bit buffers: words of bits
 #include <cstring>                           // std::memset (the Bit second constant)
 #include "chunk/config.h"
-#include "chunk/chunk_define.h"
-//#include "chunk/chunk_def.h"
-//#include "chunk/chunk2_def.h"
 #include "chunk/internal/invariant_check.h"
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/PMP_CHUNK.h"
@@ -40,6 +43,9 @@
 #include "chunk/internal/proxy2.h"
 #include "chunk/internal/chunk2_base.h"
 #include "chunk/internal/conditional_counter.h"
+#include "chunk/internal/TChunk.h"              // VectorTuple4ChunkInt2 (the candidate lists)
+#include "chunk/internal/manager_chunk.h"       // ManagerChunk<Chunk2, T>
+#include "chunk/internal/compression_manager.h" // CompressionManager
 
 namespace shrink_array
 {
@@ -89,7 +95,7 @@ struct ChunkSpec2
             }
         }
 
-        T* ret;
+        T* ret = nullptr;
         if constexpr (use_mm_protect)
         {
             ret = tab_m_ptr_cst_val2[ind];
@@ -170,7 +176,7 @@ struct ChunkSpec2<T>
 {
     // Bit: every BIT set -- the buffer is read as 64-bit words, hence the
     // bytes 0xFF (a Bit{true} object is the byte 0x01) and the alignment.
-    alignas(bits::word_t) static inline std::array<T, cst_buffer_size> m_ptr_cst_val2 = []()
+    alignas(bits::word_t) static inline std::array<T, cst_buffer_size> m_ptr_cst_val2 = []
     {
         std::array<T, cst_buffer_size> arr{};
         if constexpr (is_packed_bit_v<T>)
@@ -218,7 +224,7 @@ struct ChunkSpec2<T>
     static void init_block_2nd_value(T* values_loc)
     {
         if constexpr (is_packed_bit_v<T>)
-            bits::fill_bits(detail::as_words(values_loc), alloc_chunk_count(), true);
+            bits::fill_bits(internal::as_words(values_loc), alloc_chunk_count(), true);
         else
             std::fill_n(values_loc, alloc_chunk_count(), true);
     }
@@ -383,7 +389,7 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
     void operator delete[](void* ptr);
-    /// @brief Point @p n freshly allocated chunks at the first constant.
+    /// @brief Point @p count freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
     ///          parallel region (inside one it stays on the calling thread: an
     ///          allocation is made by one thread, and an orphaned `omp for`

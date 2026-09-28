@@ -19,7 +19,6 @@
 
 #include <execinfo.h>
 #include <cxxabi.h>
-#include <cstdio>
 #include <cstdlib> // std::free (demangled name)
 #include <iostream>
 
@@ -34,9 +33,9 @@ inline void print_backtrace()
 
     for (int i = 0; i < nptrs; ++i)
     {
-        char* mangled_name = nullptr;
-        char* offset_begin = nullptr;
-        char* offset_end   = nullptr;
+        const char* mangled_name = nullptr;
+        char*       offset_begin = nullptr;
+        char*       offset_end   = nullptr;
 
         for (char* p = symbols[i]; *p; ++p)
         {
@@ -60,7 +59,7 @@ inline void print_backtrace()
             *offset_begin = '\0';
             *offset_end   = '\0';
 
-            int   status;
+            int   status    = -1;
             char* real_name = abi::__cxa_demangle(mangled_name, nullptr, nullptr, &status);
 
             if (status == 0 && real_name)

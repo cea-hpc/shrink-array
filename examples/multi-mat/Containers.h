@@ -40,9 +40,6 @@ class VectCom
   public:
     using value_type = T;
 
-    VectCom()  = default;
-    ~VectCom() = default;
-
     /// @brief The material this array belongs to.
     void setInd(int i)
     {
