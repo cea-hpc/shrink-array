@@ -38,6 +38,7 @@
 namespace shrink_array
 {
 
+/// @brief Thresholds of RechunkDecider: stability ticks, gain deadbands, cooldown, caps and dry-run switch.
 struct RechunkPolicy
 {
     int         stability_ticks = 3;        // best must hold this many ticks
@@ -130,9 +131,12 @@ struct RechunkPolicy
     bool dry_run = true;                // phase-3A: never mutate, only log
 };
 
+/// @brief Decides, per array, whether a re-chunk is worthwhile from ChunkSizeReport ticks and a RechunkPolicy.
 class RechunkDecider
 {
   public:
+    /// @brief Store the policy.
+    /// @param pol Decision thresholds.
     explicit RechunkDecider(RechunkPolicy pol = {}) : pol_(pol) {}
 
     /// @brief Table index to act on: rep.best, or a capped coarsening step

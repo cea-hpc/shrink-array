@@ -37,6 +37,7 @@
 namespace shrink_array
 {
 
+/// @brief Predicted figures at chunk size S_prime: memory, constant blocks and total blocks.
 struct PredictorPoint
 {
     unsigned    S_prime;
@@ -52,7 +53,8 @@ predict_at_multiple(const std::vector<std::pair<bool, T>>& summary, unsigned S, 
 {
     const unsigned Sp       = S * k;
     const int      nchunks  = static_cast<int>(summary.size());
-    int            n_blocks = 0, n_const = 0;
+    int            n_blocks = 0;
+    int            n_const  = 0;
 
     for (int base = 0; base < nchunks; base += static_cast<int>(k))
     {
@@ -81,8 +83,8 @@ predict_at_multiple(const std::vector<std::pair<bool, T>>& summary, unsigned S, 
             ++n_const;
     }
 
-    const std::size_t mem = static_cast<std::size_t>(n_blocks - n_const) * Sp * sizeof(T) +
-                            static_cast<std::size_t>(n_blocks) * meta_per_block;
+    const std::size_t mem = (static_cast<std::size_t>(n_blocks - n_const) * Sp * sizeof(T)) +
+                            (static_cast<std::size_t>(n_blocks) * meta_per_block);
     return {Sp, mem, n_const, n_blocks};
 }
 

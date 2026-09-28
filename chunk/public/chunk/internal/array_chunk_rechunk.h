@@ -190,7 +190,7 @@ class RechunkSupport<Derived, true>
     /** @brief Release this array's parked buffers held at the old geometry (default: none parked). */
     void rechunk_drain_reuse_list(unsigned int /*new_size*/) {}
     /** @brief Capture the variant state to carry across a re-chunk (default: none). */
-    T rechunk_capture_state() const
+    [[nodiscard]] T rechunk_capture_state() const
     {
         return T{};
     }
@@ -250,7 +250,7 @@ class RechunkSupport<Derived, false>
     /** @brief Nothing pooled by geometry. */
     void rechunk_drain_reuse_list(unsigned int /*new_size*/) {}
     /** @brief No state to carry. */
-    T rechunk_capture_state() const
+    [[nodiscard]] T rechunk_capture_state() const
     {
         return T{};
     }

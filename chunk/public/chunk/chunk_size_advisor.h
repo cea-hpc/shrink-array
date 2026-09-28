@@ -57,6 +57,7 @@
 namespace shrink_array
 {
 
+/// @brief Model figures for one candidate chunk size: chunk counts and estimated memory.
 struct ChunkSizeEstimate
 {
     uint32_t size      = 0;     // candidate chunk size (elements)
@@ -67,6 +68,7 @@ struct ChunkSizeEstimate
     bool     exact     = false; // true: exact fold; false: sampled estimate
 };
 
+/// @brief ChunkSizeAdvisor's result: one ChunkSizeEstimate per candidate size, with the best and current indices.
 struct ChunkSizeReport
 {
     uint32_t                       current_size = 0;
@@ -86,10 +88,13 @@ struct ChunkSizeReport
     }
 };
 
+/// @brief Estimates an array's model memory at other chunk sizes without re-chunking (see the header comment).
+/// @tparam T Element type.
 template <typename T>
 class ChunkSizeAdvisor
 {
   public:
+    /// @brief Which sizes analyze() evaluates, its scan cap and the per-chunk metadata cost it adds.
     struct Options
     {
         int     coarser_levels = 4;     // evaluate S*2 .. S*2^levels
@@ -297,7 +302,8 @@ class ChunkSizeAdvisor
 #pragma omp for schedule(dynamic, 1) nowait
                 for (int64_t p = 0; p < n_parts; ++p)
                 {
-                    int64_t j0 = 0, j1 = 0;
+                    int64_t j0 = 0;
+                    int64_t j1 = 0;
                     part_range(p, j0, j1);
                     int64_t m = 0;
                     for (int64_t j = j0; j < j1; ++j)
@@ -357,7 +363,8 @@ class ChunkSizeAdvisor
 #pragma omp for schedule(dynamic, 1)
                 for (int64_t p = 0; p < n_parts; ++p)
                 {
-                    int64_t j0 = 0, j1 = 0;
+                    int64_t j0 = 0;
+                    int64_t j1 = 0;
                     part_range(p, j0, j1);
                     int64_t seen = part_mat[static_cast<std::size_t>(p)];
                     auto&   mine = part_picks[static_cast<std::size_t>(p)];
