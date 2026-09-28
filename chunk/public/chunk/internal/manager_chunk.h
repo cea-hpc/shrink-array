@@ -232,6 +232,7 @@ class ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtua
 template <template <typename> typename CHUNK_T, typename T, bool IsDynamic = build_config::chunk_dynamic>
 struct ManagerChunkDynImpl; // primary left undefined: only the 2 specializations exist
 
+/// @brief Dynamic-geometry builds: implements register_chunk_size().
 template <template <typename> typename CHUNK_T, typename T>
 struct ManagerChunkDynImpl<CHUNK_T, T, true> : public virtual ManagerChunkDynInterface<true>
 {
@@ -258,6 +259,7 @@ struct ManagerChunkDynImpl<CHUNK_T, T, false> : public virtual ManagerChunkDynIn
 template <template <typename> class CHUNK_T, typename T, bool UseOpenMP = build_config::use_openmp>
 struct ManagerChunkParallelImpl; // primary left undefined: only the 2 specializations exist
 
+/// @brief OpenMP builds: the per-rank allocator and free-list overrides.
 template <template <typename> class CHUNK_T, typename T>
 struct ManagerChunkParallelImpl<CHUNK_T, T, true> : public virtual ManagerChunkParallelInterface<true>
 {

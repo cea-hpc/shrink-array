@@ -43,7 +43,7 @@ namespace shrink_array
 template <typename ManagerT>
 void AllTypeChunk::register_manager()
 {
-    const std::lock_guard<std::mutex> lock(registry_mutex_);
+    const std::scoped_lock lock(registry_mutex_);
 
     // Idempotent under the lock: initialize<Types>() may name a type whose
     // first array already registered it, or the other way round.

@@ -43,6 +43,7 @@
  */
 namespace fast_alloc
 {
+/// @brief Fallback arena kinds (op, ctx, value), matching the names of the fast allocator's enum.
 enum class ArenaKind
 {
     Op,
@@ -58,13 +59,17 @@ template <typename T>
 class TCTypeAllocator
 {
   public:
+    /// @brief No-op.
     void init(size_t, size_t, size_t) {}
+    /// @brief No-op.
     void set_arena(fast_alloc::ArenaKind) {}
+    /// @brief Always true.
     bool is_free_able_elt(std::byte*)
     {
         return true;
     }
 
+    /// @brief Allocate sizeof(T) bytes with ::operator new.
     std::byte* alloc()
     {
         return static_cast<std::byte*>(::operator new(sizeof(T)));
@@ -91,8 +96,10 @@ class DeferredOperationBase
     virtual ~DeferredOperationBase() noexcept = default;
 };
 
+/// @brief Deleter of DeferredOpPtr: does nothing with the pointer.
 struct DeferredOpDeleter
 {
+    /// @brief No-op: the operation is not destroyed or freed here.
     void operator()(DeferredOperationBase* op) const noexcept
     {
         (void)op;
@@ -262,6 +269,7 @@ struct FastAllocatorConcrete : FastAllocatorBase
         return slot.fl;
     }
 
+    /// @brief Set block_size to sizeof(T) and, under fast-alloc, create this thread's allocator.
     FastAllocatorConcrete()
     {
         block_size = sizeof(T);
@@ -448,6 +456,7 @@ struct FastAllocatorConcrete : FastAllocatorBase
 struct OpTag
 {
 };
+/// @brief Registry tag of the context allocators (CtxRegistry).
 struct CtxTag
 {
 };
@@ -480,6 +489,9 @@ struct AllocatorRegistry
         return v;
     }
 
+    /// @brief This thread's allocator for objects of sizeof(T) bytes, created on first request.
+    /// @tparam T Object type; allocators are shared between types of the same size.
+    /// @return The allocator whose block_size is sizeof(T).
     template <typename T>
     static FastAllocatorBase* get_or_create()
     {
@@ -587,6 +599,8 @@ void free_op(T* op)
     // because the block lives inside a mmap-managed pool.
 }
 
+/// @brief Record the release in the pool ledger and recycle @p context into its CtxRegistry allocator.
+/// @param context Context block to recycle; not destroyed here.
 template <typename T>
 void free_ctx(T* context)
 {
@@ -595,10 +609,12 @@ void free_ctx(T* context)
     alloc->recycle(static_cast<void*>(context));
 }
 
+/// @brief Destroy the calling thread's op allocators (OpRegistry::reset()).
 inline void reset_op_allocators()
 {
     OpRegistry::reset();
 }
+/// @brief Destroy the calling thread's context allocators (CtxRegistry::reset()).
 inline void reset_ctx_allocators()
 {
     CtxRegistry::reset();

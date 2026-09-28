@@ -57,7 +57,7 @@ class DeferredOpsStorage
         if (arr_raw.load(std::memory_order_acquire) != nullptr)
             return;
 
-        std::lock_guard<std::mutex> lk(alloc_mutex);
+        const std::scoped_lock lk(alloc_mutex);
         // Double-check under the lock.
         if (arr_raw.load(std::memory_order_relaxed) != nullptr)
             return;
@@ -76,7 +76,7 @@ class DeferredOpsStorage
      */
     void destroy()
     {
-        std::lock_guard<std::mutex> lk(alloc_mutex);
+        const std::scoped_lock lk(alloc_mutex);
         if (arr_raw.load(std::memory_order_relaxed) == nullptr)
             return;
 
