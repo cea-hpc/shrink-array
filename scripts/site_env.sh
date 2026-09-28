@@ -67,6 +67,26 @@ fi
 
 export CHUNK_SITE CHUNK_SRC_DIR CHUNK_BUILD_REP CHUNK_GCC_TOOLCHAIN_DIR CHUNK_LOCAL_GCC_DIR CHUNK_HAVE_MODULES CHUNK_SCRIPT_DIR
 
+# chunk_module_load_first <module>...: load the first module of the list that
+# exists; the last one is loaded unconditionally (the fallback, e.g. the bare
+# default `cmake`). A missing module is never TRIED: `module load cmake/4.0.3`
+# on a machine without it (the ARM calculators) printed "Unable to locate a
+# modulefile" even with 2>/dev/null, the module command reporting through the
+# shell it evaluates into. `module is-avail` answers silently (Environment
+# Modules >= 4.1, Lmod); `module -t avail` is the fallback for older ones.
+# Without modules (workstation) the stand-in above fails every load quietly.
+chunk_module_load_first() {
+    local m
+    for m in "${@:1:$#-1}"; do
+        if module is-avail "$m" >/dev/null 2>&1 ||
+            module -t avail "$m" 2>&1 | grep -qE "^${m//+/\\+}(\(.*\))?$"; then
+            module load "$m"
+            return
+        fi
+    done
+    module load "${@: -1}"
+}
+
 # chunk_newest <tool>: the highest versioned <tool>-N on PATH (g++-16,
 # clang++-22), else <tool> itself -- what a workstation without modules has.
 # A version N.0.0 (no point release yet: clang 23.0.0 in Sept. '26) is

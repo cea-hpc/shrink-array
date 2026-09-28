@@ -39,6 +39,7 @@
 // All hooks compile to nothing when build_config::any_check is false.
 // ============================================================================
 
+#include <array>
 #include <cstddef> // std::size_t
 #include <cstdint> // std::uintptr_t (the aarch64 alignment probe)
 #include <cstdio>  // std::fprintf
@@ -277,8 +278,8 @@ inline void report_live_blocks() noexcept
             const char* site;
             std::size_t count;
         };
-        Row rows[64];
-        int n_rows = 0;
+        std::array<Row, 64> rows{};
+        int                 n_rows = 0;
         for (const auto& kv : block_live())
         {
             const BRec& rec = kv.second;
@@ -294,7 +295,7 @@ inline void report_live_blocks() noexcept
                     break;
             if (i == n_rows)
             {
-                if (n_rows == 64)
+                if (n_rows == static_cast<int>(rows.size()))
                     continue; // table full: still counted in the totals above
                 rows[n_rows++] = Row{rec.state, rec.last_site, 0};
             }

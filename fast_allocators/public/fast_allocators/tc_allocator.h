@@ -38,6 +38,8 @@
  *          afterwards.
  */
 
+#include <vector>
+#include <array>
 #include <bit>     // std::has_single_bit: the shift or the division in free_elt_pow2
 #include <cerrno>  // errno, after a failed mmap
 #include <cstddef> // std::size_t
@@ -486,7 +488,7 @@ struct alignas(64) TCCAllocator
 
     /// @brief Free-list links, one per element. Kept out of the payload so a
     ///        recycled element is still all-zero.
-    unsigned short* tab_firstFree = nullptr;
+    std::vector<unsigned short> tab_firstFree;
 
     int       nn_ref;              ///< Elements currently out. 0 == releasable.
     int       UsedSize;            ///< Bump index: how far the linear carve reached.
@@ -794,7 +796,6 @@ struct TCTypeAllocator final : public VTCTypeAllocator
     /// @brief Empty and unusable until init(); enrols in the report registry.
     TCTypeAllocator() : block_full(nullptr), block(nullptr), nb_block_empty(0)
     {
-        block_empty = nullptr;
         ElementSize = 0;
 
         add_TCTypeAllocator_inst(this);
@@ -805,8 +806,6 @@ struct TCTypeAllocator final : public VTCTypeAllocator
         remove_TCTypeAllocator_inst(this);
 
         destroy_int();
-
-        delete[] block_empty;
     }
 
     // Owns its slabs and is enrolled by address in the report registry.
@@ -863,8 +862,7 @@ struct TCTypeAllocator final : public VTCTypeAllocator
     {
         destroy_int();
 
-        delete[] block_empty;
-        block_empty = nullptr;
+        decltype(block_empty)().swap(block_empty); // releases the reserve's storage
 
         ElementSize = 0;
         block_full = block = nullptr;
@@ -961,7 +959,7 @@ struct TCTypeAllocator final : public VTCTypeAllocator
     void manage_full_empty(TCAllocator* slab) noexcept
     {
         sl_manage_full_empty(
-            block, block_full, block_empty, nb_block_empty, nb_max_block_empty, slab,
+            block, block_full, block_empty.data(), nb_block_empty, nb_max_block_empty, slab,
             [](TCAllocator*) noexcept {}, // op/ctx: nothing to reclaim on keep
             [this](TCAllocator* evicted) noexcept { evict_slab(evicted); });
     }
@@ -1110,12 +1108,7 @@ struct TCTypeAllocator final : public VTCTypeAllocator
             // avoid new TCAllocator*[-1]).
             if (nb_max_block_empty > 0)
             {
-                block_empty = new TCAllocator*[nb_max_block_empty];
-
-                for (int i = 0; i < nb_max_block_empty; ++i)
-                {
-                    block_empty[i] = nullptr;
-                }
+                block_empty.assign(static_cast<std::size_t>(nb_max_block_empty), nullptr);
             }
         }
 
@@ -1183,8 +1176,8 @@ struct TCTypeAllocator final : public VTCTypeAllocator
     /// @brief Reserve capacity; negative = never release a slab. @see init
     int nb_max_block_empty = 0;
 
-    TCAllocator** block_empty;    ///< The reserve. Null when the capacity is <= 0.
-    int           nb_block_empty; ///< How much of the reserve is occupied.
+    std::vector<TCAllocator*> block_empty;    ///< The reserve. Empty when the capacity is <= 0.
+    int                       nb_block_empty; ///< How much of the reserve is occupied.
 };
 
 // Declaration-level switch, so it stays a directive: this type exists only in
@@ -1222,15 +1215,12 @@ struct TCTypeCAllocator
     /// @brief Empty and unusable until init().
     TCTypeCAllocator() : block_full(nullptr), block(nullptr), nb_block_empty(0)
     {
-        block_empty = nullptr;
         ElementSize = 0;
     }
 
     ~TCTypeCAllocator()
     {
         destroy_int();
-
-        delete[] block_empty;
     }
 
     // Owns its slabs, which also name it as their owner (TCCAllocator::owner).
@@ -1282,8 +1272,7 @@ struct TCTypeCAllocator
     {
         destroy_int();
 
-        delete[] block_empty;
-        block_empty = nullptr;
+        decltype(block_empty)().swap(block_empty); // releases the reserve's storage
 
         ElementSize = 0;
         block_full = block = nullptr;
@@ -1381,7 +1370,7 @@ struct TCTypeCAllocator
     void manage_full_empty(TCCAllocator* slab) noexcept
     {
         sl_manage_full_empty(
-            block, block_full, block_empty, nb_block_empty, nb_max_block_empty, slab,
+            block, block_full, block_empty.data(), nb_block_empty, nb_max_block_empty, slab,
             [](TCCAllocator* kept) noexcept
             {
                 // NO madvise here, whatever CHUNK_RECLAIM_EMPTY_SLABS says.
@@ -1617,12 +1606,7 @@ struct TCTypeCAllocator
             // don't allocate block_empty (and avoid new[...-1] / unsigned overflow).
             if (nb_max_block_empty > 0)
             {
-                block_empty = new TCCAllocator*[nb_max_block_empty];
-
-                for (int i = 0; i < nb_max_block_empty; ++i)
-                {
-                    block_empty[i] = nullptr;
-                }
+                block_empty.assign(static_cast<std::size_t>(nb_max_block_empty), nullptr);
             }
         }
 
@@ -1653,8 +1637,8 @@ struct TCTypeCAllocator
     /// @brief Reserve capacity; negative = never release a slab. @see init
     int nb_max_block_empty = 0; // FIX: was unsigned; int so -1 (never-munmap) works
 
-    TCCAllocator** block_empty;    ///< The reserve. Null when the capacity is <= 0.
-    int            nb_block_empty; ///< How much of the reserve is occupied.
+    std::vector<TCCAllocator*> block_empty;    ///< The reserve. Empty when the capacity is <= 0.
+    int                        nb_block_empty; ///< How much of the reserve is occupied.
 };
 
 #endif
@@ -2253,7 +2237,7 @@ struct TCTypeAllocatorEBC : public VTCAllocatorEB
     TCAllocatorEBT* block;      ///< Slabs with room. Never null: the ctor seeds one.
 
     int             nb_block_empty;                  ///< Reserve occupancy.
-    TCAllocatorEBT* block_empty[nb_max_block_empty]; ///< The reserve, inline.
+    std::array<TCAllocatorEBT*, nb_max_block_empty> block_empty{}; ///< The reserve, inline.
 };
 
 // SIZE_BLOCK: default slab size (1 MiB). constexpr rather than #define so it

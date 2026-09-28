@@ -54,7 +54,27 @@ inline std::size_t mb_to_bytes(double mb) noexcept
 // the table index to act on -- rep.best when no cap applies.
 inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool banned) const
 {
-    if (rep.best < 0 || rep.cur < 0 || pol_.max_coarsen_factor <= 1)
+    // CHUNK_RECHUNK_MAX_COARSEN=<n> overrides the policy's factor (1 = no
+    // cap), read once. The cap of 2 came from two bad big jumps measured
+    // before Sept '26's fixes (lagging VmRSS, Chunk2A's leaked metadata rows,
+    // folds through a buffer); this measures whether larger steps are safe
+    // now, without a rebuild.
+    static const unsigned env_factor = []() -> unsigned
+    {
+        const char* env = std::getenv("CHUNK_RECHUNK_MAX_COARSEN");
+        if (env == nullptr || env[0] == '\0')
+            return 0u; // unset: keep the policy
+        unsigned n = 0;
+        if (!shrink_array::parse_number(env, n) || n == 0)
+        {
+            shrink_array::warn_invalid_env("CHUNK_RECHUNK_MAX_COARSEN", env);
+            return 0u; // invalid: keep the policy
+        }
+        return n;
+    }();
+    const unsigned max_factor = env_factor != 0 ? env_factor : pol_.max_coarsen_factor;
+
+    if (rep.best < 0 || rep.cur < 0 || max_factor <= 1)
         return rep.best;
     const unsigned cur_size = rep.table[static_cast<std::size_t>(rep.cur)].size;
     const unsigned best_sz  = rep.table[static_cast<std::size_t>(rep.best)].size;
@@ -62,7 +82,7 @@ inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool ba
         return rep.best;
     if (banned) // this array already paid for one bad coarsening
         return rep.cur;
-    const unsigned cap_sz = cur_size * pol_.max_coarsen_factor;
+    const unsigned cap_sz = cur_size * max_factor;
     if (best_sz <= cap_sz)
         return rep.best; // within the cap
     // Jump exceeds the cap: pick the min-model-memory size in (cur_size,

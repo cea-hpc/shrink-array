@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <array>
 #include <execinfo.h>
 #include <cxxabi.h>
 #include <cstdlib> // std::free (demangled name)
@@ -26,10 +27,10 @@
 
 inline void print_backtrace()
 {
-    const int max_frames = 100;
-    void*     buffer[max_frames];
-    const int nptrs   = backtrace(buffer, max_frames);
-    char**    symbols = backtrace_symbols(buffer, nptrs);
+    constexpr int                 max_frames = 100;
+    std::array<void*, max_frames> buffer{};
+    const int                     nptrs   = backtrace(buffer.data(), max_frames);
+    char**                        symbols = backtrace_symbols(buffer.data(), nptrs);
 
     for (int i = 0; i < nptrs; ++i)
     {

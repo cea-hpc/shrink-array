@@ -108,7 +108,7 @@ inline void TCCAllocator::alloc_block()
     if (BlockSize > first_free_init - 1)
         BlockSize = first_free_init - 1;
 
-    tab_firstFree = new unsigned short[BlockSize];
+    tab_firstFree.resize(static_cast<std::size_t>(BlockSize));
 
     // FIX (op/value slab aliasing): allocate the value slab from the dedicated
     // VALUE arena (disjoint from the op arena, never returned to the OS). Value
@@ -136,7 +136,8 @@ inline void TCCAllocator::alloc_block()
 
 inline void TCCAllocator::destroy()
 {
-    delete[] tab_firstFree;
+    std::vector<unsigned short>().swap(tab_firstFree); // releases the free-list links
+    // (not `= {}`: that is operator=(initializer_list), which keeps the capacity)
 
     // FIX (op/value slab aliasing): return the value slab to the VALUE arena's
     // free-list, never to the glibc.

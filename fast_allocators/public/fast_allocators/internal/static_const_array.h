@@ -51,6 +51,7 @@
  * static_const_array_define.h only keeps MAX_CONST_BLOCK_SIZE.
  */
 
+#include <array>
 #include <cassert> // TypeAllocator::alloc: the size its free will route by
 #include <cstddef> // std::size_t
 
@@ -82,7 +83,7 @@ struct InfoFreeElt
     /// @brief Batch capacity, in blocks. The other bound is 4 MiB of payload.
     static constexpr int max_free_elt = 10000;
 
-    using IntMaxFreeElt  = int[max_free_elt];
+    using IntMaxFreeElt  = std::array<int, max_free_elt>;
     using VoidMaxFreeElt = void* [max_free_elt];
 
     VoidMaxFreeElt* tab_ptr;

@@ -268,12 +268,10 @@ template <typename T>
 void Proxy2A<T>::resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk)
 {
     BaseSpec::resize(num_tab, nb_chunk_old, nb_chunk);
-    Base::tab_is_inside_chunk_list_to_compress[num_tab] = std::make_unique<std::atomic<char>[]>(nb_chunk);
-
-    for (int i = nb_chunk_old; i < nb_chunk; ++i)
-    {
-        Base::tab_is_inside_chunk_list_to_compress[num_tab][i].store(0);
-    }
+    // Value-initialised, every flag 0 (make_unique<T[]> value-initialised too:
+    // the tail loop that followed it stored zeros over zeros).
+    Base::tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)] =
+        std::vector<std::atomic<char>>(static_cast<std::size_t>(nb_chunk));
     tab_type_cst_val[num_tab].resize(nb_chunk, 0);
 }
 

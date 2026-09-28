@@ -138,7 +138,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::set_ptr_is_inside_
     const int tab       = ctx->num_tab;
     const int num_chunk = ctx->num_chunk;
 
-    const auto& arr = tab_is_inside_chunk_list_to_compress[tab];
+    auto& arr = tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(tab)]; // not const: the flags are written through the pointer
 
     ptr_is_inside_chunk_list_to_compress = &arr[num_chunk];
 }

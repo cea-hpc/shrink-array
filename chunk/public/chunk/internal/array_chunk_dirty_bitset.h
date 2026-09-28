@@ -107,7 +107,8 @@ class DirtyBitsetSupport<Derived, true>
     {
         nb_words_ = words_for(nb_chunk);
         // + 1: the "some bit was set" flag (any_marked_word), after the bits.
-        bitset_ = std::make_unique<PaddedDirtyWord[]>(static_cast<std::size_t>(nb_words_) + 1);
+        // Built whole (atomic words are not movable), all clear.
+        bitset_ = std::vector<PaddedDirtyWord>(static_cast<std::size_t>(nb_words_) + 1);
     }
 
     /**
@@ -124,20 +125,21 @@ class DirtyBitsetSupport<Derived, true>
         const int old_nb_words = words_for(old_nb_chunk);
         const int new_nb_words = words_for(new_nb_chunk);
 
-        auto new_bitset = std::make_unique<PaddedDirtyWord[]>(static_cast<std::size_t>(new_nb_words) + 1);
+        std::vector<PaddedDirtyWord> new_bitset(static_cast<std::size_t>(new_nb_words) + 1);
 
-        if (bitset_)
+        if (!bitset_.empty())
         {
-            const int words_to_copy = std::min(old_nb_words, new_nb_words);
-            for (int i = 0; i < words_to_copy; ++i)
+            const auto words_to_copy = static_cast<std::size_t>(std::min(old_nb_words, new_nb_words));
+            for (std::size_t i = 0; i < words_to_copy; ++i)
             {
                 const uint64_t val = bitset_[i].word.load(std::memory_order_relaxed);
                 new_bitset[i].word.store(val, std::memory_order_relaxed);
             }
             // Carry the "some bit was set" flag (conservatively: it may now
             // cover only bits that were cut off, which costs one useless clear).
-            new_bitset[new_nb_words].word.store(bitset_[old_nb_words].word.load(std::memory_order_relaxed),
-                                                std::memory_order_relaxed);
+            new_bitset[static_cast<std::size_t>(new_nb_words)].word.store(
+                bitset_[static_cast<std::size_t>(old_nb_words)].word.load(std::memory_order_relaxed),
+                std::memory_order_relaxed);
         }
         bitset_   = std::move(new_bitset);
         nb_words_ = new_nb_words;
@@ -156,7 +158,7 @@ class DirtyBitsetSupport<Derived, true>
      */
     void clear_dirty_bitset() noexcept
     {
-        if (!bitset_)
+        if (bitset_.empty())
             return;
         // Nothing marked since the last clear: the words are already zero.
         // This is the common case -- only the deferred-enqueue path marks --
@@ -166,7 +168,7 @@ class DirtyBitsetSupport<Derived, true>
         // of a ~30 s shrink_bench_chunk2a_256 run on AMD Milan (GNU, 64 threads).
         if (any_marked_word().exchange(0, std::memory_order_acq_rel) == 0)
             return;
-        PaddedDirtyWord* const words = bitset_.get();
+        PaddedDirtyWord* const words = bitset_.data();
         for (int i = 0; i < nb_words_; ++i)
             words[i].word.store(0, std::memory_order_relaxed);
     }
@@ -251,8 +253,11 @@ class DirtyBitsetSupport<Derived, true>
         return (nb_chunk + kChunksPerWord - 1) / kChunksPerWord;
     }
 
-    std::unique_ptr<PaddedDirtyWord[]> bitset_;      ///< One bit per chunk, one cache line per 64 chunks.
-    int                                nb_words_{0}; ///< Length of @ref bitset_, so clearing needs no chunk count.
+    /// One bit per chunk, one cache line per 64 chunks, then the flag word.
+    /// mutable: the words are atomics, marked and read through const paths
+    /// (any_marked_word) as they were through the unique_ptr it replaces.
+    mutable std::vector<PaddedDirtyWord> bitset_;
+    int nb_words_{0}; ///< Words of bits in @ref bitset_ (its size - 1), so clearing needs no chunk count.
 };
 
 // ── Serial build: nothing at all ─────────────────────────────────────────────

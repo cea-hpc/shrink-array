@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -61,11 +62,10 @@ class DeferredOpsStorage
         if (arr_raw.load(std::memory_order_relaxed) != nullptr)
             return;
 
-        auto maps = std::make_unique<per_thread_map[]>(CHUNK_PMP_THREAD_CAPACITY);
-        arr_owner = std::move(maps);
+        arr_owner = std::vector<per_thread_map>(static_cast<std::size_t>(CHUNK_PMP_THREAD_CAPACITY));
         // Publish last, with release, so a reader that acquire-observes the
         // pointer also sees the constructed maps.
-        arr_raw.store(arr_owner.get(), std::memory_order_release);
+        arr_raw.store(arr_owner.data(), std::memory_order_release);
     }
 
     /**
@@ -83,7 +83,7 @@ class DeferredOpsStorage
         // Invalidate the global pointer so threads see it as null immediately,
         // then free.
         arr_raw.store(nullptr, std::memory_order_release);
-        arr_owner.reset();
+        std::vector<per_thread_map>().swap(arr_owner); // frees the maps and their storage
     }
 
   private:
@@ -91,11 +91,11 @@ class DeferredOpsStorage
 
     // Static inline ensures the singleton object itself exists for the entire
     // duration of the program. All members are constant-initializable
-    // (constexpr mutex/atomic ctors, null unique_ptr), so global_instance needs
+    // (constexpr mutex/atomic ctors, empty std::vector -- constexpr in C++20), so global_instance needs
     // NO dynamic initialization — no static-init-order hazard.
     static inline DeferredOpsStorage global_instance;
 
-    std::unique_ptr<per_thread_map[]> arr_owner;
+    std::vector<per_thread_map> arr_owner;
 
     // Atomic pointer used by worker threads for O(1) access
     alignas(64) std::atomic<per_thread_map*> arr_raw{nullptr};

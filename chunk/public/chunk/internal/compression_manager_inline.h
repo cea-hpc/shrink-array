@@ -88,7 +88,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::rank_flush_release(int 
 template <typename T, typename ChunkType, bool Enabled>
 bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr, bool /*wait_for_compression*/) noexcept
 {
-    if (!deferred_chunk_per_thread)
+    if (deferred_chunk_per_thread.empty())
         return false;
 
     auto& deferred_chunk_loc = deferred_chunk_per_thread[thr];

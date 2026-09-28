@@ -97,11 +97,11 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
 
     /**
      * @brief Per-tab array of atomic flags indicating whether each chunk is marked for compression.
-     * Each entry is a unique_ptr to an array of atomic<char> of size nb_chunk.
-     * can't use bool because vector<bool> is specialization...
+     * Each entry holds nb_chunk atomic<char> flags, built whole (atomics are not
+     * movable). char, not bool: vector<bool> is the packed specialisation.
      */
 
-    static inline std::vector<std::unique_ptr<std::atomic<char>[]>> tab_is_inside_chunk_list_to_compress;
+    static inline std::vector<std::vector<std::atomic<char>>> tab_is_inside_chunk_list_to_compress;
 
     /**
      * @brief Grow the per-array table of candidate-flag arrays to @p nb_tab entries.
@@ -116,17 +116,14 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      * @brief Allocate and zero one array's per-chunk candidate flags.
      * @param num_tab Which array's flags to (re)allocate.
      * @param nb_chunk How many chunks it holds.
-     * @note Replacing the unique_ptr frees the previous array, so this doubles
-     *       as the release path on a re-chunk.
+     * @note Replacing the vector frees the previous flags, so this doubles as
+     *       the release path on a re-chunk.
      */
     static void resize_tab_is_int(int num_tab, int nb_chunk)
     {
-        tab_is_inside_chunk_list_to_compress[num_tab] = std::make_unique<std::atomic<char>[]>(nb_chunk);
-
-        for (int i = 0; i < nb_chunk; ++i)
-        {
-            tab_is_inside_chunk_list_to_compress[num_tab][i].store(0);
-        }
+        // Value-initialised: every flag 0 (C++20 atomics).
+        tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)] =
+            std::vector<std::atomic<char>>(static_cast<std::size_t>(nb_chunk));
     }
 
     /// @brief Write @p v at the offset @p ctx recorded, on the replay path.
@@ -182,7 +179,7 @@ struct ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSuppor
     // Management members
     static inline CompressionManager<T, ChunkType>                  compression_mgr;
     std::atomic<char>*                                              ptr_is_inside_chunk_list_to_compress;
-    static inline std::vector<std::unique_ptr<std::atomic<char>[]>> tab_is_inside_chunk_list_to_compress;
+    static inline std::vector<std::vector<std::atomic<char>>>       tab_is_inside_chunk_list_to_compress;
 
 
     /// @brief No candidate flags in this configuration; nothing to size.
@@ -405,7 +402,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /// @brief The whole candidate-flag row for array @p num_tab.
-    static std::unique_ptr<std::atomic<char>[]>& get_tab_is_inside_list_to_compress(int num_tab) noexcept
+    static std::vector<std::atomic<char>>& get_tab_is_inside_list_to_compress(int num_tab) noexcept
     {
         return FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab];
     }

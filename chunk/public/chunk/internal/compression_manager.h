@@ -16,11 +16,12 @@
 
 #pragma once
 
+#include <vector>
 #include <cstdint>
 #include <exception> // std::exception (record_enqueue_deferred)
 #include <utility>
 #include <atomic>
-#include <memory> // std::destroy_at, std::unique_ptr
+#include <memory> // std::destroy_at
 
 #include "ankerl/unordered_dense.h"
 
@@ -232,7 +233,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         int              depth{0};  ///< nested acquire count, owner-only
     };
     /// One lock per rank; sized at init_deferred_queues() with max_thr entries.
-    static inline std::unique_ptr<PaddedFlushLock[]> xflush_lock_rank;
+    static inline std::vector<PaddedFlushLock> xflush_lock_rank;
 
     /// @brief Spin-acquire rank @p rank's flush lock (recursive for the owner).
     static void rank_flush_acquire(int rank) noexcept;
@@ -272,16 +273,13 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     /// Per rank: "this rank's candidate list has crossed the threshold and
     /// perform_compression() has not looked at it since". Read by the rank's
     /// own write engine after each write (write_with_optional_lock_impl).
-    static inline std::unique_ptr<PaddedDangerousFlag[]> dangerous_lists_per_thread;
+    static inline std::vector<PaddedDangerousFlag> dangerous_lists_per_thread;
 
     /// @brief "This rank may hold deferred ops" hint, padded to its own line.
     struct alignas(128) ThreadOpsFlag
     {
         std::atomic<bool> v{false};
     };
-
-    /// Per-rank hint letting a drain skip ranks that certainly hold no ops.
-    static inline std::unique_ptr<ThreadOpsFlag[]> threads_with_ops;
 
   public:
     static constexpr bool verbose = false;
@@ -478,7 +476,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     };
 
     using unordered_set_deferred_chunks = ankerl::unordered_dense::set<ChunkType*>;
-    static inline std::unique_ptr<unordered_set_deferred_chunks[]> deferred_chunk_per_thread;
+    static inline std::vector<unordered_set_deferred_chunks> deferred_chunk_per_thread;
 
     /// @brief Allocate the per-rank tracking structures this policy owns.
     CompressionManagerOmpPolicy()
@@ -567,16 +565,13 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
      */
     static void init_deferred_queues()
     {
-        const int max_thr         = CHUNK_PMP_THREAD_CAPACITY;
-        deferred_chunk_per_thread = std::make_unique<unordered_set_deferred_chunks[]>(max_thr);
-        pending_ops_shard         = std::make_unique<PaddedPendingCounter[]>(max_thr);
-        for (int i = 0; i < max_thr; ++i)
-            pending_ops_shard[i].v.store(0, std::memory_order_relaxed);
-
+        // Built whole, never resized: the atomics are not movable. The member
+        // initialisers give the zero counts and the free (-1) locks.
+        const auto max_thr        = static_cast<std::size_t>(CHUNK_PMP_THREAD_CAPACITY);
+        deferred_chunk_per_thread = std::vector<unordered_set_deferred_chunks>(max_thr);
+        pending_ops_shard         = std::vector<PaddedPendingCounter>(max_thr);
         // Per-rank flush lock shards (see xflush_lock_rank declaration).
-        xflush_lock_rank = std::make_unique<PaddedFlushLock[]>(max_thr);
-        for (int i = 0; i < max_thr; ++i)
-            xflush_lock_rank[i].owner.store(-1, std::memory_order_relaxed);
+        xflush_lock_rank = std::vector<PaddedFlushLock>(max_thr);
     }
 
     /**
@@ -595,7 +590,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     ///          decremented at flush AFTER the op is drained. A reader sums the
     ///          shards: zero means no chunk anywhere has a pending op, so the
     ///          sync can early-out without scanning.
-    static inline std::unique_ptr<PaddedPendingCounter[]> pending_ops_shard;
+    static inline std::vector<PaddedPendingCounter> pending_ops_shard;
 
     /// @brief Count one more pending op on @p thr_rank.
     /// @param thr_rank enqueuing rank
@@ -623,7 +618,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     ///       every shard. Used by the P3 threshold check.
     [[nodiscard]] static int64_t pending_ops_rank(int thr_rank) noexcept
     {
-        if (!pending_ops_shard)
+        if (pending_ops_shard.empty())
             return 0;
         return pending_ops_shard[thr_rank].v.load(std::memory_order_acquire);
     }
@@ -635,7 +630,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     {
         // acquire sum across shards. A non-zero result means at least one
         // rank has an unflushed op; we then take the (rare) scan path.
-        if (!pending_ops_shard)
+        if (pending_ops_shard.empty())
             return false;
         const int max_thr = CHUNK_PMP_RANK_BOUND;
         int64_t   total   = 0;
@@ -861,13 +856,9 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
      */
     static void init_dangerous_lists_tracking()
     {
-        const int max_thr          = CHUNK_PMP_THREAD_CAPACITY;
-        dangerous_lists_per_thread = std::make_unique<PaddedDangerousFlag[]>(max_thr);
-
-        for (int i = 0; i < max_thr; ++i)
-        {
-            dangerous_lists_per_thread[i].value.store(0, std::memory_order_relaxed);
-        }
+        // Built whole (atomics are not movable); the member initialiser gives 0.
+        dangerous_lists_per_thread =
+            std::vector<PaddedDangerousFlag>(static_cast<std::size_t>(CHUNK_PMP_THREAD_CAPACITY));
     }
 
     /**
