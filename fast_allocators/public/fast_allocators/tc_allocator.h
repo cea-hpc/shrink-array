@@ -1059,8 +1059,11 @@ struct TCTypeAllocator final : public VTCTypeAllocator
      *        NEGATIVE means "never release a slab", which also means the reserve
      *        is not allocated at all.
      *
-     * @note No slab is created here. The first alloc() makes one, which it has
-     *       to be able to do anyway.
+     * @note The first slab IS created here (unless bypassing), although alloc()
+     *       would make one anyway (alloc_slow() on a null #block). It costs its
+     *       address space and the page of its back-pointer, not the whole slab:
+     *       TCAllocator::alloc_block() does not clear it. TCTypeCAllocator::init()
+     *       is the one that creates none.
      */
     void init(size_t ElementSize_, uintptr_t BlockAllocator_, int nb_max_block_emptyl = 5)
     {
