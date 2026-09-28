@@ -31,10 +31,12 @@
 //
 // Exit status 0 when every check passes.
 
+#include <algorithm> // std::min
 #include <cstddef>
 #include <cstdio>
 #include <random>
 #include <thread>
+#include <utility> // std::pair
 #include <vector>
 
 #include "chunk/internal/bit_words.h"
@@ -205,6 +207,42 @@ void concurrent(std::size_t n, int rounds)
     check(same, "concurrent writes to neighbouring bits: none lost", n);
 }
 
+void concurrent_ranges(std::size_t n, int rounds)
+{
+    // Spans of 1..37 bits handed out round-robin to 8 threads: every span
+    // edge is a word shared with another thread's span. Each thread sets its
+    // spans, then clears the odd ones -- fill_bit_range_atomic must lose none.
+    constexpr int                                     n_thr = 8;
+    std::vector<std::pair<std::size_t, std::size_t>> spans;
+    for (std::size_t lo = 0, len = 1; lo < n; lo += len, len = len % 37 + 1)
+        spans.emplace_back(lo, std::min(n, lo + len));
+    std::vector<bits::word_t> w(bits::words_for(n));
+    bits::fill_bits(w.data(), n, false);
+
+    std::vector<std::thread> pool;
+    for (int t = 0; t < n_thr; ++t)
+        pool.emplace_back(
+            [&w, &spans, rounds, t]
+            {
+                for (int r = 0; r < rounds; ++r)
+                {
+                    for (std::size_t s = static_cast<std::size_t>(t); s < spans.size(); s += n_thr)
+                        bits::fill_bit_range_atomic(w.data(), spans[s].first, spans[s].second, true);
+                    for (std::size_t s = static_cast<std::size_t>(t); s < spans.size(); s += n_thr)
+                        if (s % 2 == 1)
+                            bits::fill_bit_range_atomic(w.data(), spans[s].first, spans[s].second, false);
+                }
+            });
+    for (auto& th : pool)
+        th.join();
+
+    bool same = true;
+    for (std::size_t s = 0; s < spans.size(); ++s)
+        for (std::size_t i = spans[s].first; i < spans[s].second; ++i)
+            same = same && bits::get_bit(w.data(), i) == (s % 2 == 0);
+    check(same, "concurrent fill_bit_range_atomic: no bit lost", n);
+}
+
 } // namespace
 
 int main()
@@ -219,6 +257,8 @@ int main()
     ranges(rng);
     for (std::size_t n : {64, 256, 4096})
         concurrent(n, 2000);
+    for (std::size_t n : {256, 4096})
+        concurrent_ranges(n, 500);
 
     if (g_fails == 0)
         std::printf("bit_words_validation: all checks passed\n");

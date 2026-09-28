@@ -39,13 +39,17 @@
 //   8. fill_range / copy_range (bits stored 64 per word): random spans --
 //      whole chunks, partial edges, across chunk boundaries -- over constant
 //      and mixed chunks, against std::vector<bool>; then a pass compresses
-//      the chunks a fill left constant.
+//      the chunks a fill left constant;
+//   9. fill_range_mt from every thread of a region, on spans of 1..97
+//      elements handed out round-robin (neighbouring spans of one word belong
+//      to different threads), twice over, against std::vector<bool>.
 //
 // Chunk2 builds only (ArrayChunkBits is ArrayChunk2<Bit>). Exit 0 = pass.
 
 #include <algorithm> // std::min
 #include <cstdio>
 #include <unistd.h>
+#include <utility> // std::pair
 #include <vector>
 
 #include "chunk/chunk_traits.h"
@@ -481,6 +485,45 @@ int bulk_ranges(long N)
     return fails;
 }
 
+int parallel_fill(long N)
+{
+    ArrayChunkBits<>  a(N);
+    std::vector<bool> ref(static_cast<std::size_t>(N), false);
+    int               fails = 0;
+
+    std::vector<std::pair<long, long>> spans;
+    for (long lo = 0, len = 1; lo < N; lo += len, len = len % 97 + 1)
+        spans.emplace_back(lo, std::min(N, lo + len));
+    const auto nspans = static_cast<long>(spans.size());
+
+    for (int pass = 0; pass < 2; ++pass)
+    {
+#pragma omp parallel
+        {
+            begin_phase();
+#pragma omp for schedule(static, 1)
+            for (long s = 0; s < nspans; ++s)
+            {
+                const bool v = pass == 0 ? (s % 3 != 0) : (s % 2 == 0);
+                fill_range_mt(a, static_cast<std::size_t>(spans[static_cast<std::size_t>(s)].first),
+                              static_cast<std::size_t>(spans[static_cast<std::size_t>(s)].second), v);
+            }
+        }
+        end_phase();
+        for (long s = 0; s < nspans; ++s)
+        {
+            const bool v = pass == 0 ? (s % 3 != 0) : (s % 2 == 0);
+            for (long i = spans[static_cast<std::size_t>(s)].first; i < spans[static_cast<std::size_t>(s)].second; ++i)
+                ref[static_cast<std::size_t>(i)] = v;
+        }
+        fails += compare(a, ref, pass == 0 ? "fill_range_mt pass 1" : "fill_range_mt pass 2") != 0;
+    }
+    if (fails == 0)
+        std::printf("[bits] OK fill_range_mt from %d threads, neighbouring spans in one word\n", CHUNK_PMP_MAX_THREADS);
+    a.clear();
+    return fails;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -497,6 +540,7 @@ int main(int argc, char** argv)
     fails += logical_ops(N);
     fails += advisor_and_rechunk(N);
     fails += bulk_ranges(N);
+    fails += parallel_fill(N);
 
     release_chunk_pools();
     destroy_block_chunk();
