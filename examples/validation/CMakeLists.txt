@@ -179,9 +179,18 @@ foreach(_geom IN LISTS _rt_geometries)
       target_compile_definitions(${_tgt} PRIVATE CHUNK_FORCE_DEFER_EVERY=7)
     endif()
 
+    # nested_region_validation opens its outer team with num_threads(4),
+    # whatever OMP_NUM_THREADS says. At 1 thread the per-thread capacity is
+    # max(omp_get_max_threads(), omp_get_num_procs()): 1 on a node that grants
+    # the job one core, and rank 3 is then (rightly) refused. The harness
+    # declares the team it uses.
+    set(_env_extra "")
+    if (_harness STREQUAL "nested_region_validation")
+      set(_env_extra "CHUNK_THREAD_CAPACITY=4")
+    endif()
     foreach(_nthr 1 8)
       add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
-      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
+      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr} ${_env_extra})
       set_property(TEST ${_tgt}_${_nthr}thr PROPERTY LABELS validation)
     endforeach()
   endforeach()
