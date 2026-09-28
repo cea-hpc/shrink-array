@@ -63,13 +63,22 @@ namespace shrink_array
 
 namespace alloc_affinity_detail
 {
-/// A/B switch: CHUNK_ALLOC_AFFINITY_EAGER=1 (read once) gives every large
-/// array its own allocator set at creation, as before Sept '26. Default: only
-/// the storage a re-chunk builds gets one (see assign_alloc_key()).
+/// Eager (an allocator set per large array at creation) or lazy (only the
+/// storage a re-chunk builds gets one, see assign_alloc_key()) -- eager by
+/// default for Chunk (v1), lazy for Chunk2 / Chunk2A. CHUNK_ALLOC_AFFINITY_EAGER
+/// (read once), when set, decides: =0 lazy, anything else eager.
+/// v1's memory is mostly data and its rebuild is sliced: with its source in
+/// the shared pool, whose slabs mix several arrays' blocks, no slab empties
+/// during the first re-chunk (+6.0 GB on 39.3 GB, 64-thread chunk_dyn bench;
+/// eager peaks 4.4 GB lower for the same end memory and time). Chunk2 /
+/// Chunk2A are not sliced and are metadata-heavy: a lazy start saves them the
+/// ~780 MiB of per-array slabs and matches the static build's memory.
 inline const bool g_eager = []
 {
     const char* e = std::getenv("CHUNK_ALLOC_AFFINITY_EAGER");
-    return e != nullptr && e[0] != '\0' && e[0] != '0';
+    if (e == nullptr || e[0] == '\0')
+        return chunk_config::use_chunk; // the variant's default
+    return e[0] != '0';
 }();
 
 /// True while rechunk_to() constructs its new storage (tmp): the storage that

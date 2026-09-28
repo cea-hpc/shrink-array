@@ -1007,9 +1007,15 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 self().rechunk_drain_reuse_list(static_cast<unsigned int>(old_size));
                 if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
                 {
-                    if (old_key_refill != 0)
-                        for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
-                            chunk_type::get_chunk_allocator(r, old_key_refill).reclaim_empty_slabs_now();
+                    // The old storage's allocator set -- the shared pool (key 0) too
+                    // when it lives there, which is every first re-chunk under
+                    // lazy affinity: skipping it held every released block's slab
+                    // until the final sweep (+4.7 GB during one 64 -> 256 rebuild of
+                    // the 64-thread chunk_dyn bench, 7.3 GB given back only at the
+                    // end). Safe for the final sweep's reason: a serial, quiescent
+                    // point, so a slab found empty is empty.
+                    for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
+                        chunk_type::get_chunk_allocator(r, old_key_refill).reclaim_empty_slabs_now();
                 }
                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
                 if (slice_trace)
