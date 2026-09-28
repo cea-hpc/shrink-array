@@ -215,7 +215,9 @@ int main()
     std::cout << "Creation of arrays ..." << '\n';
 
     // constexpr int interval = 2000;
-    Array tab1(sz), tab2(sz), tab3(sz);
+    Array tab1(sz);
+    Array tab2(sz);
+    Array tab3(sz);
 
     auto                          end             = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed_seconds = end - start;
@@ -250,7 +252,10 @@ int main()
 
     std::cout << "Iteration ..." << '\n';
 
-    std::array<int, iter_max> tab_size{}, tab_start{}, tab_nba1{}, tab_nba2{};
+    std::array<int, iter_max> tab_size{};
+    std::array<int, iter_max> tab_start{};
+    std::array<int, iter_max> tab_nba1{};
+    std::array<int, iter_max> tab_nba2{};
 
     for (int k = 0; k < iter_max; ++k)
     {

@@ -158,7 +158,7 @@ void calculate(double                  val,
     for (int i = start0; i < end0; ++i)
     {
         const int k = index[i - start0];
-        tab_vec[k] += tab1[k] + tab2[k] * tab3[i] - tab2[i] + val;
+        tab_vec[k] += tab1[k] + (tab2[k] * tab3[i]) - tab2[i] + val;
         //  tab_vec[k] += tab1[k] + tab2[k] * std::atan(tab3[k]) + std::cos(val);
         //     tab_vec[k] += std::cos(tab1[k]) + std::sin(tab2[k]) + std::atan(tab3[k]) + std::cos(val);
     }
@@ -181,7 +181,7 @@ void calculate1(double                     val,
         //  assert(k >= start0);
         //  assert(k <= end0);
 
-        tab1[k] += tab_vec[k] + tab2[k] * tab3[i] - tab2[i] + val;
+        tab1[k] += tab_vec[k] + (tab2[k] * tab3[i]) - tab2[i] + val;
     }
     // (*) one way to solve the problem is in the example multi-mat
 }
@@ -228,9 +228,14 @@ int main()
     std::cout << "Initialisation ..." << '\n';
     std::cout << "Creation of arrays ..." << '\n';
 
-    ArrayChunk<double> tab_chunk1(sz), tab_chunk2(sz), tab_chunk3(sz);
+    ArrayChunk<double> tab_chunk1(sz);
+    ArrayChunk<double> tab_chunk2(sz);
+    ArrayChunk<double> tab_chunk3(sz);
 
-    std::vector<double> tab1(sz), tab2(sz), tab3(sz), tab_vec(sz);
+    std::vector<double> tab1(sz);
+    std::vector<double> tab2(sz);
+    std::vector<double> tab3(sz);
+    std::vector<double> tab_vec(sz);
 
     std::vector<int> index;
 
@@ -268,7 +273,10 @@ int main()
 
     std::cout << "Iteration ..." << '\n';
 
-    std::array<int, iter_max> tab_size{}, tab_start{}, tab_nba1{}, tab_nba2{};
+    std::array<int, iter_max> tab_size{};
+    std::array<int, iter_max> tab_start{};
+    std::array<int, iter_max> tab_nba1{};
+    std::array<int, iter_max> tab_nba2{};
 
     for (int k = 0; k < iter_max; ++k)
     {
@@ -316,7 +324,7 @@ int main()
 
         for (int p = 0; p < 10; ++p)
         {
-            const int sz = std::rand() % (1 + nsz / 100) + 1;
+            const int sz = (std::rand() % (1 + (nsz / 100))) + 1;
             // A window [start, start + sz) strictly inside [1, nsz). Drawn
             // directly: the former rejection loop (draw start in [1, nsz],
             // retry while start + sz >= nsz) never terminates once nsz is
@@ -324,7 +332,7 @@ int main()
             // one such iteration hung the run for good.
             if (nsz - sz - 1 < 1)
                 break;
-            const int start = 1 + std::rand() % (nsz - sz - 1);
+            const int start = 1 + (std::rand() % (nsz - sz - 1));
 
             // Shuffle the vector to ensure the array is not ordered
             std::shuffle(index.begin() + start, index.begin() + start + sz,

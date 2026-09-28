@@ -60,7 +60,7 @@ static Truth ground_truth(const ArrayChunk2A<double>& tab, double meta)
         if (!c.is_cst_val1() && !c.is_cst_val2())
             ++t.mat;
     }
-    t.mem = static_cast<double>(t.chunks) * meta + double(t.mat) * tab.chunk_size() * sizeof(double);
+    t.mem = (static_cast<double>(t.chunks) * meta) + (double(t.mat) * tab.chunk_size() * sizeof(double));
     return t;
 }
 
