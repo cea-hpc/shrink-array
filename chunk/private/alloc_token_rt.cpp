@@ -46,6 +46,7 @@
  *       biggest tokens (default 40), =all prints them all.
  */
 
+#include <array>
 #include <algorithm> // std::sort, the report
 #include <atomic>
 #include <cstddef>
@@ -74,7 +75,7 @@ constexpr unsigned    kSlotBits = 14;
 constexpr std::size_t kSlots    = std::size_t{1} << kSlotBits; ///< 16384 distinct types
 constexpr std::size_t kSlotMask = kSlots - 1;
 
-Slot g_table[kSlots]; ///< Open addressing, linear probing, never resized.
+std::array<Slot, kSlots> g_table; ///< Open addressing, linear probing, never resized.
 
 std::atomic<std::uint64_t> g_dropped{0};       ///< Allocations that found the table full.
 std::atomic<std::uint64_t> g_dropped_bytes{0}; ///< ... and their bytes.
@@ -116,7 +117,7 @@ struct Entry
     std::uint64_t bytes;
 };
 
-Entry g_entries[kSlots]; ///< Static so the report allocates nothing either.
+std::array<Entry, kSlots> g_entries; ///< Static so the report allocates nothing either.
 
 /// @brief Print the census on stderr. Runs after every C++ static destructor
 ///        (a .fini_array entry runs after the __cxa_atexit ones), so the
@@ -147,7 +148,8 @@ __attribute__((destructor)) void report()
         tot_allocs += g_entries[count - 1].allocs;
         tot_bytes += g_entries[count - 1].bytes;
     }
-    std::sort(g_entries, g_entries + count, [](const Entry& lhs, const Entry& rhs) { return lhs.bytes > rhs.bytes; });
+    std::sort(g_entries.begin(), g_entries.begin() + static_cast<std::ptrdiff_t>(count),
+              [](const Entry& lhs, const Entry& rhs) { return lhs.bytes > rhs.bytes; });
 
     std::fprintf(stderr, "\n===== ALLOC_TOKEN (per-type allocation census, -fsanitize=alloc-token) =====\n");
     std::fprintf(stderr, "  %zu distinct tokens, %llu allocations, %llu MiB requested", count,

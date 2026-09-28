@@ -32,6 +32,7 @@
  * own key; key 0 (the shared pool) is not counted.
  */
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <mutex>
@@ -64,7 +65,7 @@ struct Materialisations
 
     struct alignas(128) RankSlot
     {
-        long n[kKeys];
+        std::array<long, kKeys> n;
     };
 
     static inline RankSlot*     slots_   = nullptr;

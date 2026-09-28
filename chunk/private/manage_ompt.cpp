@@ -34,6 +34,7 @@
  * @see chunk/manage_ompt.h for the semantics of the phase transitions.
  */
 
+#include <array>
 #include <algorithm> // std::min (CHUNK_OMPT_STATS report)
 #include <atomic>
 #include <chrono> // CHUNK_OMPT_STATS: time spent flushing
@@ -91,19 +92,21 @@ constexpr int kOmptMaxSlots = 1024;
 
 bool g_ompt_stats = false;
 
+/// Per [kind][endpoint: 0 begin, 1 end].
+using OmptCounters = std::array<std::array<std::atomic<std::uint64_t>, 2>, kOmptKinds>;
+
 struct alignas(128) OmptSyncSlot
 {
-    // [kind][endpoint: 0 begin, 1 end]
-    std::atomic<std::uint64_t> calls[kOmptKinds][2];
-    std::atomic<std::uint64_t> flush_calls[kOmptKinds][2];
-    std::atomic<std::uint64_t> skipped_flag[kOmptKinds][2];
-    std::atomic<std::uint64_t> flushed[kOmptKinds][2];
-    std::atomic<std::uint64_t> flush_ns[kOmptKinds][2];
+    OmptCounters calls;
+    OmptCounters flush_calls;
+    OmptCounters skipped_flag;
+    OmptCounters flushed;
+    OmptCounters flush_ns;
 };
 
-OmptSyncSlot               g_ompt_slots[kOmptMaxSlots];
-std::atomic<int>           g_ompt_next_slot{0};
-thread_local OmptSyncSlot* t_ompt_slot = nullptr;
+std::array<OmptSyncSlot, kOmptMaxSlots> g_ompt_slots;
+std::atomic<int>                        g_ompt_next_slot{0};
+thread_local OmptSyncSlot*              t_ompt_slot = nullptr;
 
 OmptSyncSlot* ompt_my_slot() noexcept
 {

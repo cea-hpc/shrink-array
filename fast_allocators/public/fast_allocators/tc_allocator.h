@@ -38,6 +38,7 @@
  *          afterwards.
  */
 
+#include <array>
 #include <bit>     // std::has_single_bit: the shift or the division in free_elt_pow2
 #include <cerrno>  // errno, after a failed mmap
 #include <cstddef> // std::size_t
@@ -2253,7 +2254,7 @@ struct TCTypeAllocatorEBC : public VTCAllocatorEB
     TCAllocatorEBT* block;      ///< Slabs with room. Never null: the ctor seeds one.
 
     int             nb_block_empty;                  ///< Reserve occupancy.
-    TCAllocatorEBT* block_empty[nb_max_block_empty]; ///< The reserve, inline.
+    std::array<TCAllocatorEBT*, nb_max_block_empty> block_empty{}; ///< The reserve, inline.
 };
 
 // SIZE_BLOCK: default slab size (1 MiB). constexpr rather than #define so it

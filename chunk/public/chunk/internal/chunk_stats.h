@@ -37,6 +37,7 @@
  */
 
 // All of these serve the CHUNK_STATS half of the file only.
+#include <array>
 #include <chrono> // __chunk_stats_t0, the rates in print_chunk_stats
 #include <map>
 #include <mutex>
@@ -122,7 +123,7 @@ struct alignas(64) ChunkStatsThr
 inline const std::chrono::steady_clock::time_point __chunk_stats_t0 = std::chrono::steady_clock::now();
 
 /// @brief [variant][thread] counter table. Defined once in chunk_std.cpp.
-extern ChunkStatsThr __chunk_stats[CHUNK_STATS_N_VARIANT][CHUNK_STATS_MAX_THR];
+extern std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, CHUNK_STATS_N_VARIANT> __chunk_stats;
 
 /**
  * @brief Current thread's counter slot for a variant.
@@ -443,9 +444,9 @@ inline void init_all_stats() noexcept
  *          same, fixed, compile-time size, so a distribution has nothing to
  *          say.
  */
-inline std::mutex __chunk_size_dist_mutex[CHUNK_STATS_N_VARIANT];
+inline std::array<std::mutex, CHUNK_STATS_N_VARIANT> __chunk_size_dist_mutex;
 /// @brief See __chunk_size_dist_mutex.
-inline std::map<unsigned int, long> __chunk_size_dist[CHUNK_STATS_N_VARIANT];
+inline std::array<std::map<unsigned int, long>, CHUNK_STATS_N_VARIANT> __chunk_size_dist;
 
 /**
  * @brief Record one array's current chunk size in the end-of-life size

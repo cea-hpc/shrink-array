@@ -93,7 +93,7 @@ struct Segment
 {
     static constexpr int SIZE = 64; ///< Slots per segment.
 
-    T*       slots[SIZE] = {};      ///< The shared arrays, one per registered value.
+    std::array<T*, SIZE> slots{}; ///< The shared arrays, one per registered value.
     int      used        = 0;       ///< How many leading slots are occupied.
     Segment* next        = nullptr; ///< Next block, or null at the tail.
 };
@@ -352,7 +352,7 @@ struct GlobalVecHolder
     ///        L1-resident for the values a run actually uses. Zero-initialised
     ///        static storage: the pages of identifiers never handed out are
     ///        never touched. Index 0 is "no second value" and stays T{}.
-    static inline T value_by_id[kMaxIds + 1]{};
+    static inline std::array<T, kMaxIds + 1> value_by_id{};
 
     /// @brief Reserve the region. Idempotent; called by init().
     static void region_init()
