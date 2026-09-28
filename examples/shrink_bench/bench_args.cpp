@@ -78,6 +78,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
     bool test_prealloc = false; // --test_prealloc: alloc_chunk before a partial loop
     bool no_struct     = false; // --no_struct: no Point3 / Cell arrays (bench_args.h)
     bool no_mask       = false; // --no_mask: no tab_mask (bench_args.h)
+    double mask_scale  = 1.0 / 32.0; // --mask_scale: tab_mask's size / sz (bench_args.h)
 
     // Nouveaux facteurs
     double multiply_factor = 1.0;
@@ -107,6 +108,11 @@ BenchArgs parse_bench_args(int argc, char* argv[])
                 no_struct = true;
             else if (arg == "--no_mask")
                 no_mask = true;
+            else if (arg == "--mask_scale")
+            {
+                if (i + 1 < argc)
+                    mask_scale = parse_positive_real_arg("--mask_scale", argv[++i]);
+            }
             else if (arg == "--mode")
             {
                 // check / perf: what used to be two separate binaries, built
@@ -175,6 +181,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
     args.test_prealloc   = test_prealloc;
     args.no_struct       = no_struct;
     args.no_mask         = no_mask;
+    args.mask_scale      = mask_scale;
     args.multiply_factor = multiply_factor;
     args.divisor_factor  = divisor_factor;
     args.iter_max_arg    = iter_max_arg;

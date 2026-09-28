@@ -163,8 +163,14 @@ using BenchMaskArray = std::conditional_t<
     shrink_array::ArrayChunkBits<Int>,
     std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, std::vector<bool>>>;
 
-/// @brief tab_mask holds this many elements per element of the double arrays.
-inline constexpr Int bench_mask_factor = 8;
+/// @brief tab_mask's default size, as a fraction of sz (--mask_scale sets it).
+/// @details 1/32. Its per-iteration update writes ~1/16 of the random and
+///          scattered blocks and 1/32 of the constant segments, element by
+///          element through the proxies in a chunk (v1) / chunk2A build: at the
+///          8 x sz it was created with (capped at 2^31 in the 32-bit builds) it
+///          took ~75% of a 43 s chunk2a run (64 threads) that is ~7 s without it.
+///          1/32 keeps thousands of 4096-element segments of each kind.
+inline constexpr double bench_mask_default_scale = 1.0 / 32.0;
 
 /// @brief Segment of tab_mask with one kind of content: whole chunks at every
 ///        geometry up to 4096, so a constant segment is constant chunks.
@@ -260,7 +266,7 @@ struct BenchArrays
     Array<double>&         tab_quant; ///< quantised: up to bench_double_bands distinct second values
     Array<Point3>&         tab_point; ///< an aggregate element: three doubles (bench_struct.h)
     Array<Cell>&           tab_cell;  ///< an aggregate element: an Int and a float
-    BenchMaskArray&        tab_mask;  ///< bench_mask_factor * sz bools: masks and flags (bench_phase_mask.cpp)
+    BenchMaskArray&        tab_mask;  ///< mask_scale * sz bools (--mask_scale, default 1/32): masks and flags (bench_phase_mask.cpp)
 
     Int sz       = 0; ///< element count of the double arrays (others are sz, 2*sz or sz/2)
     Int interval = 0; ///< the workload's stride, get_size_interval()

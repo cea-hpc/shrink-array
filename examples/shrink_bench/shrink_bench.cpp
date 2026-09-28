@@ -231,6 +231,7 @@ int main(int argc, char* argv[])
     const bool      test_stl        = bench_args.test_stl;
     const bool      no_struct       = bench_args.no_struct;
     const bool      no_mask         = bench_args.no_mask;
+    const double    mask_scale      = bench_args.mask_scale; // tab_mask's size / sz
     const double    multiply_factor = bench_args.multiply_factor;
     const Int       divisor_factor  = bench_args.divisor_factor;
     const Int       iter_max_arg    = bench_args.iter_max_arg;
@@ -496,12 +497,14 @@ int main(int argc, char* argv[])
     // whole constant segments (bench_phase_mask.cpp). ArrayChunkBits in a
     // chunk2 build, std::vector<bool> in the baseline (BenchMaskArray).
     // Size 1 under --no_mask: its phases are skipped (BenchArrays::with_mask).
-    // bench_mask_factor * sz overflows a 32-bit Int at the default size
-    // (8 x 10^9 wrapped to -589934592: ArrayChunk2A<bool, int> threw
-    // std::length_error resizing its chunk list). Computed in 64 bits and capped
-    // at the largest whole number of 1024-element blocks the build's Int holds;
-    // the int64 builds take the full size.
-    const long long mask_want = static_cast<long long>(bench_mask_factor) * static_cast<long long>(sz);
+    // mask_scale * sz (--mask_scale, default 1/32): computed in 64 bits and
+    // capped at the largest whole number of 1024-element blocks the build's Int
+    // holds -- at --mask_scale 8, the size tab_mask was created with, 8 x 10^9
+    // wrapped a 32-bit Int to -589934592 and ArrayChunk2A<bool, int> threw
+    // std::length_error. The int64 builds take the full size.
+    long long mask_want = std::llround(mask_scale * static_cast<double>(sz));
+    if (mask_want < 1)
+        mask_want = 1;
     const Int       mask_sz =
         mask_want > static_cast<long long>(std::numeric_limits<Int>::max())
                   ? static_cast<Int>(static_cast<long long>(std::numeric_limits<Int>::max()) & ~0x3FFLL)
@@ -510,6 +513,8 @@ int main(int argc, char* argv[])
         std::cout << "Note: tab_mask capped at " << mask_sz << " elements (" << mask_want
                   << " requested; Int is 32-bit here, the int64 build takes the full size)\n";
     BenchMaskArray tab_mask(no_mask ? 1 : mask_sz);
+    if (!no_mask)
+        std::cout << "tab_mask: " << mask_sz << " elements (--mask_scale " << mask_scale << ")\n";
 
     // Handle on the fifteen arrays, passed to the extracted phases. References,
     // so main() stays the owner -- it builds them and destroys them.

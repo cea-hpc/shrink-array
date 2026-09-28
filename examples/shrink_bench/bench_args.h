@@ -54,6 +54,10 @@ struct BenchArgs
     /// with the campaigns made before it existed. Its array is then of size 1
     /// and its phases, check and compression are skipped.
     bool no_mask = false;
+    /// --mask_scale: tab_mask holds mask_scale * sz bools (a real factor, like
+    /// --multiply). Default 1/32 (bench_mask_default_scale, bench_array.h);
+    /// 8 is the size tab_mask was created with.
+    double mask_scale = 1.0 / 32.0;
 
     double multiply_factor = 1.0; ///< --multiply (a real factor)
     Int    divisor_factor  = 1;   ///< --divisor
