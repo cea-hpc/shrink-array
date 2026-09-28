@@ -37,9 +37,40 @@ function(chunk_enable_fast_math target)
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang"
            AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
            AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        # glibc's libmvec (2.22+): the vector variants live in libm itself.
-        list(APPEND _fm -fveclib=libmvec)
-        message(STATUS "fast-math[${target}]: glibc libmvec")
+        # glibc's libmvec (2.22+): the vector variants live in libm itself --
+        # but not all of them: clang maps tan, atan (and more) to variants
+        # glibc only ships since 2.35 (_ZGVdN4v_tan, AVX2). On RHEL 8 (glibc
+        # 2.28) every perf target calling them failed to link. So check once
+        # per build tree that a simd loop calling what the benches call links
+        # with the targets' own flags; without it, no -fveclib (scalar calls).
+        if(NOT DEFINED CHUNK_LIBMVEC_LINKS)
+            include(CheckCXXSourceCompiles)
+            string(REPLACE ";" " " _fm_str "${_fm}")
+            set(_saved_flags "${CMAKE_REQUIRED_FLAGS}")
+            set(_saved_libs "${CMAKE_REQUIRED_LIBRARIES}")
+            set(CMAKE_REQUIRED_FLAGS "${CMAKE_CXX_FLAGS} ${_fm_str} -O3 -fopenmp-simd -fveclib=libmvec")
+            set(CMAKE_REQUIRED_LIBRARIES m)
+            check_cxx_source_compiles([=[
+#include <cmath>
+double a[4096], b[4096];
+int main()
+{
+#pragma omp simd
+    for (int i = 0; i < 4096; ++i)
+        b[i] = std::sin(a[i]) + std::cos(a[i]) + std::atan(a[i]) + std::tan(a[i]);
+    return b[7] > 1.0 ? 1 : 0;
+}
+]=] CHUNK_LIBMVEC_LINKS)
+            set(CMAKE_REQUIRED_FLAGS "${_saved_flags}")
+            set(CMAKE_REQUIRED_LIBRARIES "${_saved_libs}")
+        endif()
+        if(CHUNK_LIBMVEC_LINKS)
+            list(APPEND _fm -fveclib=libmvec)
+            message(STATUS "fast-math[${target}]: glibc libmvec")
+        else()
+            message(STATUS "fast-math[${target}]: glibc libmvec lacks the variants clang wants "
+                           "(tan/atan need glibc >= 2.35): no -fveclib, scalar math calls")
+        endif()
     elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 16)
         # gcc-16 x86_64 -O3 hits an ICE in the AVX2 expand pass on
         # shrink_bench.cpp's driver TU (see examples/shrink_bench/CMakeLists.txt);
