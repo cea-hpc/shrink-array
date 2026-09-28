@@ -691,14 +691,18 @@ int main(int argc, char* argv[])
             rechunk_decider.consider<complex_double>(tab_complex, tick, iter, "tab_complex");
             if (!no_struct)
                 rechunk_decider.consider<Point3>(tab_point, tick, iter, "tab_point");
-            // SHRINK_BENCH_ADVISE_ALL=1: every other array too, so a dynamic run
-            // can head for the static-256 memory -- the 11 arrays above used to
-            // stay at the starting S=64 for the whole run. tab_bool excepted: the
+            // Every other array too, advised by default: a dynamic run then
+            // starts like the static S=64 build and ends below the static S=256
+            // one (chunk2a, 64 threads: 6.57 GB against 7.26 GB). Until Sept '26
+            // only the five arrays above were, and the other ten stayed at the
+            // starting S=64 for the whole run (~12.5 GB at the end).
+            // SHRINK_BENCH_ADVISE_ALL=0 goes back to the five, for runs that
+            // must compare with earlier campaigns. tab_bool excepted: the
             // re-chunk of a bit-packed bool array has no validation harness yet.
             static const bool advise_all = []
             {
                 const char* e = std::getenv("SHRINK_BENCH_ADVISE_ALL");
-                return e != nullptr && e[0] != '\0' && e[0] != '0';
+                return e == nullptr || e[0] == '\0' || e[0] != '0';
             }();
             if (advise_all)
             {
