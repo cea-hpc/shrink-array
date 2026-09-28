@@ -330,7 +330,7 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
     ///        of its shared array (SecondValueTraits) -- 4 bytes per chunk
     ///        instead of 8 or 16.
     using second_value_slot_t = SecondValueTraits<T>::slot_t;
-    static inline std::vector<std::unique_ptr<second_value_slot_t[]>> tab_second_value;
+    static inline std::vector<std::vector<second_value_slot_t>> tab_second_value;
 
     /*!
      * \brief Retrieves a pointer to a specific second value in the chunk.
@@ -350,9 +350,9 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
      * \return Reference to the vector of second values.
      */
 
-    [[nodiscard]] static std::unique_ptr<second_value_slot_t[]>& get_tab_second_value(int num_tab) noexcept
+    [[nodiscard]] static std::vector<second_value_slot_t>& get_tab_second_value(int num_tab) noexcept
     {
-        return tab_second_value[num_tab];
+        return tab_second_value[static_cast<std::size_t>(num_tab)];
     }
 
     /*!
@@ -373,11 +373,13 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
 
     static void resize(int nb_tab, int nb_chunk_old, int nb_chunk)
     {
-        realloc_unique(tab_second_value[nb_tab], nb_chunk_old, nb_chunk);
-
+        auto& row = tab_second_value[static_cast<std::size_t>(nb_tab)];
+        row.resize(static_cast<std::size_t>(nb_chunk)); // keeps [0, min(old, new))
+        // The tail from the OLD count is cleared, as the reallocation did: the
+        // row may hold more than nb_chunk_old entries.
         for (int k = nb_chunk_old; k < nb_chunk; ++k)
         {
-            tab_second_value[nb_tab][k] = second_value_slot_t{};
+            row[static_cast<std::size_t>(k)] = second_value_slot_t{};
         }
     }
 
@@ -391,8 +393,9 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
         // The array's per-chunk second-value slots, released, not just emptied
         // (a re-chunk destroys the old storage under its own num_tab: this row
         // leaked 4 bytes per old chunk at every re-chunk until Sept '26).
+        // Swapped with an empty row: `= {}` would keep the capacity.
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_second_value.size())
-            tab_second_value[static_cast<std::size_t>(num_tab)].reset();
+            std::vector<second_value_slot_t>().swap(tab_second_value[static_cast<std::size_t>(num_tab)]);
     }
 
     /*!

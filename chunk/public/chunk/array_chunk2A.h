@@ -119,9 +119,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         if (num_tab >= 0 && nb_chunk > 0)
         {
             bases.type   = Proxy2A<T>::tab_type_cst_val[num_tab].data();
-            bases.inside = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab).get();
+            bases.inside = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab).data();
             if constexpr (!std::is_same_v<T, bool>)
-                bases.sv = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab).get();
+                bases.sv = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab).data();
         }
         meta_bases_ = bases;
     }
