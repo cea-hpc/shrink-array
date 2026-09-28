@@ -148,8 +148,8 @@ Un rechunk construit le nouveau stockage sous un **nouvel identifiant de tableau
 (`num_tab`) et détruit l'ancien. Tout ce qui était indexé par l'ancien identifiant doit être
 **libéré**, pas seulement vidé. Deux fuites de ce type ont été corrigées en septembre 2026 :
 
-- **Chunk2A** : les lignes de métadonnées par chunk (type de constante, 1 octet ; emplacement
-  de seconde valeur, 4 octets) étaient vidées par `clear()`, qui garde la capacité. Sur le
+- **Chunk2A** : les lignes de métadonnées par chunk (type de constante, 1 octet ; seconde
+  valeur, `sizeof(T)` octets par défaut) étaient vidées par `clear()`, qui garde la capacité. Sur le
   banc avec les 15 tableaux rechunkés : 10 276 → 6 730 Mo en fin de run ;
 - **les trois variantes** : l'indicateur « en liste de compression » (1 octet par chunk)
   n'était jamais libéré. Chunk2A −0,52 Go, v1 −0,75 Go.

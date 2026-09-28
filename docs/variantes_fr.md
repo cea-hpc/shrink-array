@@ -24,9 +24,9 @@ dynamique. Elles diffèrent par **ce qu'elles savent compresser**.
 
 | variante | build | un chunk est compressé s'il est uniforme à… | coût d'une constante |
 |---|---|---|---|
-| **Chunk** (v1) | `-DCHUNK=1` | la **première valeur** du tableau (en général 0) | rien : un pointeur sentinelle |
-| **Chunk2** | `-DCHUNK2=1` | la première valeur, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
-| **Chunk2A** | `-DCHUNK2A=1` | la première valeur, **ou n'importe quelle autre valeur**, choisie chunk par chunk | une entrée du registre des secondes valeurs (`TabCstVal2Holder`) par valeur distincte |
+| **Chunk** (v1) | `-DCHUNK=1` | **zéro** (`T{}`) | rien : un tampon constant partagé |
+| **Chunk2** | `-DCHUNK2=1` | zéro, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
+| **Chunk2A** | `-DCHUNK2A=1` | zéro, **ou n'importe quelle autre valeur**, choisie chunk par chunk | un tableau du registre des secondes valeurs (`tab_cst_val2_holder.h`) par valeur distincte, partagé par tout le processus |
 
 Les tableaux de booléens des builds Chunk2 peuvent en plus utiliser `ArrayChunkBits`, qui
 range 8 booléens par octet dans un chunk matérialisé.
@@ -39,8 +39,9 @@ l'objet chunk lui-même fait 16 octets. S'y ajoutent, par chunk :
 - un octet « déjà en liste de compression » (compression par bloc) ;
 - un bit dans le *dirty bitset* du tableau, et une part des listes de suivi (l'advisor compte
   environ 3 octets pour l'ensemble) ;
-- pour **Chunk2A** : un octet de type de constante et un emplacement de 4 octets pour la
-  seconde valeur du chunk.
+- pour **Chunk2A** : un octet de type de constante et un emplacement pour la seconde valeur
+  du chunk, de `sizeof(T)` octets (8 pour un `double`), ou de 4 octets avec l'option CMake
+  `CHUNK_SECOND_VALUE_INDEXED`.
 
 C'est ce coût qui rend les **petits chunks** chers en mémoire (4 fois plus de métadonnées à
 64 éléments qu'à 256), et qui justifie la géométrie dynamique : partir de petits chunks, qui
@@ -72,6 +73,6 @@ dans [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md).
 | sujet | document |
 |---|---|
 | lecture, écriture, parallélisme, compression en vol, opérations sur plages | [`algo_chunk2_fr.md`](algo_chunk2_fr.md) : décrit Chunk2, mais la machinerie de ses §5 à §8 et §10 est commune aux trois variantes |
-| ce que Chunk (v1) et Chunk2A font autrement | `algo_chunk_fr.md`, `algo_chunk2a_fr.md` (à venir) |
+| ce que Chunk (v1) et Chunk2A font autrement | [`algo_chunk_fr.md`](algo_chunk_fr.md), [`algo_chunk2a_fr.md`](algo_chunk2a_fr.md) |
 | géométrie dynamique et rechunk, pour les trois variantes | [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md) |
 | réglages | [`variables_environnement_fr.md`](variables_environnement_fr.md) |

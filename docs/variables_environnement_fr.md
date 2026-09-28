@@ -110,3 +110,11 @@ Tous valent `1` pour rétablir l'ancien comportement, afin de comparer sur un m�
 | `SHRINK_INTEL_LIBM` | `ON` | x86-64 : lier la libm d'Intel si elle est trouvée |
 | `SHRINK_ARM_LIBM` | `OFF` | aarch64 : lier `libamath` d'ArmPL (aucun gain mesuré sur Grace) |
 | `CHUNK_ICPX_O0_WORKAROUND` | `OFF` | contournement d'une erreur interne d'icpx sur trois fichiers |
+| `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | Chunk2A : l'emplacement de seconde valeur contient un identifiant de 4 octets au lieu de la valeur (moins de mémoire, +3 % de temps d'écriture) |
+
+Et une macro propre à Chunk2A : `CHUNK2A_COMPRESS_LEVEL=<0|1|2|3>` (0 par défaut) choisit le
+jeu de seuils de déclenchement des passes de compression (`chunk2A_def.h`).
+
+Pour les builds clang sur x86-64, `CHUNK_LIBMVEC_LINKS` (dans le cache, calculée à la
+configuration) indique si la bibliothèque vectorielle de la glibc fournit les fonctions
+mathématiques des bancs ; sinon, leurs boucles restent scalaires (glibc < 2.35).
