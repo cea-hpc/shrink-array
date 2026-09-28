@@ -126,6 +126,24 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
             std::vector<std::atomic<char>>(static_cast<std::size_t>(nb_chunk));
     }
 
+    /**
+     * @brief Release one array's candidate flags (its teardown).
+     * @details Called once the array's candidates are purged and its chunks
+     *          freed. Until Sept '26 nothing did: an entry was only replaced
+     *          when its num_tab was reused, and a re-chunk builds the new
+     *          storage under a NEW num_tab -- one byte per old chunk leaked
+     *          at every re-chunk. Swapped with an empty row, which frees a
+     *          vector's capacity as well as a unique_ptr's array. A later
+     *          resize_tab_is_int() reallocates.
+     * @param num_tab The dying array's index.
+     */
+    static void release_tab_is_int(int num_tab) noexcept
+    {
+        using row_t = typename decltype(tab_is_inside_chunk_list_to_compress)::value_type;
+        if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
+            row_t{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
+    }
+
     /// @brief Write @p v at the offset @p ctx recorded, on the replay path.
     /// @warning Reloads the chunk's value pointer from @p ctx: the one captured
     ///          when the write was enqueued may since have been reallocated.
@@ -193,6 +211,8 @@ struct ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSuppor
     static void resize_tab_is_int([[maybe_unused]] int nb_tab) noexcept {}
     /// @copydoc resize_tab_is_int(int)
     static void resize_tab_is_int([[maybe_unused]] int num_tab, [[maybe_unused]] int nb_chunk) noexcept {}
+    /// @copydoc resize_tab_is_int(int)
+    static void release_tab_is_int([[maybe_unused]] int num_tab) noexcept {}
 
     /// @brief Never callable in this configuration. Aborts.
     template <typename ProxyType, typename Ctx>
