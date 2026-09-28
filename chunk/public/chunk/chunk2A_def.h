@@ -16,6 +16,7 @@
 
 #pragma once
 
+/// @brief Compile-time settings of Chunk2A: CHUNK_SIZE bound, compression-list and buffer-reuse thresholds.
 struct Chunk2ADef
 {
     // Upper bound on CHUNK_SIZE. This is NOT the chunk geometry (use

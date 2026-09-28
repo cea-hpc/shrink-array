@@ -319,8 +319,8 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
     vec_tuple_chunkA2p_int2  ll_compt1;
     vec_tuple_chunkA2p_Tint2 ll_compt2;
 
-    ll_compt1.reserve(sz / 50 + 1);
-    ll_compt2.reserve(sz / 50 + 1);
+    ll_compt1.reserve((sz / 50) + 1);
+    ll_compt2.reserve((sz / 50) + 1);
 
     // `claimed`: the claim loop above runs only with a proxy. Without one
     // this is the resize path, outside any parallel region.
@@ -414,7 +414,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
     }
 
     vec_tuple_to_compress.clear();
-    vec_tuple_to_compress.reserve(sz / 10 + 1);
+    vec_tuple_to_compress.reserve((sz / 10) + 1);
 
     if (proxy2A)
     {

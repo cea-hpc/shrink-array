@@ -53,6 +53,8 @@ namespace shrink_array
 template <typename T>
 class Proxy2;
 
+/// @brief Static table of the registered second-constant arrays of element type T (tab_m_ptr_cst_val2),
+///        with the lookups and checks on it.
 template <typename T>
 struct ChunkSpec2
 {

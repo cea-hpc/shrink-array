@@ -67,6 +67,7 @@
 namespace shrink_array
 {
 
+/// @brief Names the map from a second value to its inf_array tuple (T, int, int), ordered by ValueLess<T>.
 template <typename T>
 struct ValueToInfTupleMapHelper
 {
@@ -366,7 +367,7 @@ class PointerMapChunk2
         map_ind_cst_val2[key] = ind;
     }
 
-    std::vector<T> get_all_second_value() const
+    [[nodiscard]] std::vector<T> get_all_second_value() const
     {
         std::vector<T> keys;
 

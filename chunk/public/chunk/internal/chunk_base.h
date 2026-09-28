@@ -1231,7 +1231,7 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     /// @brief Load the values pointer with appropriate memory ordering
     /// @return Pointer to the chunk data
-    T* values_load() const noexcept
+    [[nodiscard]] T* values_load() const noexcept
     {
         if constexpr (build_config::use_openmp)
         {

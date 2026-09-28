@@ -78,18 +78,21 @@ struct Chunk2AConcurrentOps
     using Holder                      = TabCstVal2Holder<T>;
     static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
 
+    /// @brief `this` as a pointer to the derived class.
     Derived* self() noexcept
     {
         return static_cast<Derived*>(this);
     }
-    const Derived* self() const noexcept
+    [[nodiscard]] const Derived* self() const noexcept
     {
         return static_cast<const Derived*>(this);
     }
+    /// @brief `this` as a pointer to the Chunk2Base base.
     Base* base() noexcept
     {
         return static_cast<Base*>(self());
     }
+    /// @brief `this` as a pointer to the TabCstVal2Holder base.
     Holder* holder() noexcept
     {
         return static_cast<Holder*>(self());
@@ -221,15 +224,15 @@ struct Chunk2AStateQueries
     using Holder                      = TabCstVal2Holder<T>;
     static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
 
-    const Derived* self() const noexcept
+    [[nodiscard]] const Derived* self() const noexcept
     {
         return static_cast<const Derived*>(this);
     }
-    const Base* base() const noexcept
+    [[nodiscard]] const Base* base() const noexcept
     {
         return static_cast<const Base*>(self());
     }
-    const Holder* holder() const noexcept
+    [[nodiscard]] const Holder* holder() const noexcept
     {
         return static_cast<const Holder*>(self());
     }
@@ -519,6 +522,9 @@ struct Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
     void block_clear(int num_compress_value, char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int, T* cst2_ptr);
 };
 
+/// @brief Chunk of values compressible to the first constant or to a second constant shared through the
+///        TabCstVal2Holder registry (see the class description above Chunk2AConcurrentOps).
+/// @tparam T Element type.
 template <typename T>
 class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
                 public TabCstVal2Holder<T>,
@@ -557,11 +563,14 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     Chunk2A()  = default;
     ~Chunk2A() = default;
 
+    /// @brief Copy the per-chunk state of @p other (Base::values_store(other.values_load())).
     Chunk2A(const Chunk2A& other)
     {
         Base::values_store(other.values_load()); // the whole per-chunk state
     }
 
+    /// @brief Copy the per-chunk state of @p other unless it is this chunk.
+    /// @return *this.
     Chunk2A& operator=(const Chunk2A& other)
     {
         if (this != &other)
