@@ -253,7 +253,23 @@ endforeach()
 # std::vector<bool>, the word scans, and concurrent writes to neighbouring
 # bits of one word through the atomic read-modify-write.
 find_package(Threads REQUIRED)
+# SANITIZER=token: -fsanitize=alloc-token rewrites every allocation into
+# __alloc_token_<name>(..., token), whose definitions (alloc_token_rt.cpp) are
+# compiled INTO each chunk variant archive. The executables below link none, so
+# they get their own copy -- uninstrumented, or its own malloc calls would
+# recurse. A no-op for every other sanitizer.
+function(chunk_add_alloc_token_rt target)
+  if (SANITIZER STREQUAL "token")
+    set(_rt ${PROJECT_SOURCE_DIR}/chunk/private/alloc_token_rt.cpp)
+    target_sources(${target} PRIVATE ${_rt})
+    set_source_files_properties(${_rt} DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+                                PROPERTIES COMPILE_OPTIONS "-fno-sanitize=alloc-token")
+    target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public) # env_parse.h
+  endif()
+endfunction()
+
 add_executable(bit_words_validation bit_words_validation.cpp)
+chunk_add_alloc_token_rt(bit_words_validation)
 target_include_directories(bit_words_validation PRIVATE ${PROJECT_SOURCE_DIR}/chunk/public)
 target_link_libraries(bit_words_validation PRIVATE Threads::Threads)
 chunk_require_cxx20(bit_words_validation PRIVATE)
@@ -268,6 +284,7 @@ set_property(TEST bit_words_validation PROPERTY LABELS validation)
 if (OMP AND NOT CHUNK_STD_ALLOC)
   add_executable(slab_geometry_validation slab_geometry_validation.cpp)
   target_link_libraries(slab_geometry_validation PRIVATE fast_allocators OpenMP::OpenMP_CXX)
+  chunk_add_alloc_token_rt(slab_geometry_validation)
   chunk_require_cxx20(slab_geometry_validation PRIVATE)
   add_test(NAME slab_geometry_validation COMMAND slab_geometry_validation)
   set_property(TEST slab_geometry_validation PROPERTY LABELS validation)
