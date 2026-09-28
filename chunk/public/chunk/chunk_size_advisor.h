@@ -520,7 +520,7 @@ class ChunkSizeAdvisor
         if (rep.best >= 0 && rep.cur >= 0 && rep.best != rep.cur)
         {
             const auto&  cur_e      = rep.table[static_cast<std::size_t>(rep.cur)];
-            const double cost_ms    = rechunk_cost_ms(cur_e.n_chunks, cur_e.size, cur_e.mat, rep.elem_bytes);
+            const double cost_ms    = rechunk_cost_ms(cur_e.n_chunks, cur_e.size, cur_e.mat, rep.elem_bytes, CHUNK_PMP_MAX_THREADS);
             const auto   gain_bytes = static_cast<std::size_t>(rep.best_gain_bytes() > 0 ? rep.best_gain_bytes() : 0.);
             // Observation-phase thresholds (not a decision, just a hint label):
             // >= 1 Mo gained and <= 50 ms spent reads as clearly worth it.

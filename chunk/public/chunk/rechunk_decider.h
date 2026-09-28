@@ -92,7 +92,12 @@ struct RechunkPolicy
     // rechunk_cost_ms() estimates it. Gain
     // and rebuild time both grow with the
     // array, so the ratio does not depend
-    // on its size. Measured (Grace, 64
+    // on its size. The estimate counts the
+    // threads the rebuild runs on: fewer
+    // make it longer, and the last steps
+    // are refused (at 16 threads, 256 ->
+    // 1024 below ~425 MB/s at 64).
+    // Measured (Grace, 64
     // threads): 64 -> 256 returns 1.2 to
     // 2.2 GB/s, 256 -> 1024 380 MB/s to
     // 1.0 GB/s,

@@ -30,6 +30,7 @@
 #include "chunk/chunk_size_advisor.h"
 #include "chunk/config.h"                   // build_config::chunk_dynamic
 #include "chunk/internal/env_parse.h"       // env_number / env_flag (checked, not atoi)
+#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_MAX_THREADS (the rebuild's team, for its cost)
 #include "chunk/internal/churn_counters.h"  // CHUNK_RECHUNK_CHURN
 #include "chunk/internal/exact_rss.h"          // exact_rss_kib ([RECHUNK-MEM])
 #include "chunk/internal/values_arena_bytes.h" // the values arena, if the build has one ([RECHUNK-MEM])
@@ -145,7 +146,7 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     // (coarsen_min_meta_rate), and is logged with the chunk and
     // materialised-chunk counts, to be set against CHUNK_RECHUNK_TRACE's
     // measured total when the constants are refitted.
-    const double est_cost_ms = rechunk_cost_ms(cur_e.n_chunks, cur_size, cur_e.mat, rep.elem_bytes);
+    const double est_cost_ms = rechunk_cost_ms(cur_e.n_chunks, cur_size, cur_e.mat, rep.elem_bytes, CHUNK_PMP_MAX_THREADS);
     const double gain_meta  = static_cast<double>(cur_e.n_chunks - best_e.n_chunks) * rep.meta_bytes;
     const double gain_data  = gain_b - gain_meta;
     // MB of metadata per second of estimated rebuild (0 when the estimate is).
