@@ -46,6 +46,20 @@ namespace shrink_array
 // with real chunks to scan (not an extrapolation) and step further only if
 // the gain is real. Fining (best < cur) is reliable and never capped. Returns
 // the table index to act on -- rep.best when no cap applies.
+/// @brief CHUNK_RECHUNK_DRY_RUN=1 (read once): analyse and log, never apply a
+///        move, whatever the policy says -- the way to measure the analyses'
+///        cost on the same binary (a huge CHUNK_ADVISOR_MIN_GAIN_MB no longer
+///        blocks moves since the gain-per-cost gate).
+inline bool rechunk_env_dry_run() noexcept
+{
+    static const bool v = []
+    {
+        const char* e = std::getenv("CHUNK_RECHUNK_DRY_RUN");
+        return e != nullptr && e[0] != '\0' && e[0] != '0';
+    }();
+    return v;
+}
+
 inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool banned) const
 {
     // CHUNK_RECHUNK_MAX_COARSEN=<n> overrides the policy's factor (1 = no
@@ -282,10 +296,10 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         std::fprintf(stderr,
                      "[RECHUNK-DECIDE] %s: %s S=%u -> S'=%u "
                      "(gain %.1f MB = meta %.1f + data %.1f, stable %d ticks, est. cost %.0f ms, %.0f MB/s, chunks %lld mat %lld)%s\n",
-                     name, pol_.dry_run ? "[dry-run] would re-chunk" : "re-chunk", cur_size, best_sz,
+                     name, (pol_.dry_run || rechunk_env_dry_run()) ? "[dry-run] would re-chunk" : "re-chunk", cur_size, best_sz,
                      gain_b / (1024. * 1024.), gain_meta / (1024. * 1024.), gain_data / (1024. * 1024.),
                      hist.stable_count, est_cost_ms, meta_rate, static_cast<long long>(cur_e.n_chunks),
-                     static_cast<long long>(cur_e.mat), pol_.dry_run ? "" : " [APPLIED]");
+                     static_cast<long long>(cur_e.mat), (pol_.dry_run || rechunk_env_dry_run()) ? "" : " [APPLIED]");
         std::fflush(stderr);
 
         hist.last_action_tick = tick;
@@ -362,7 +376,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         // rechunk-triggered corruption. Default (0) keeps the one-shot behaviour.
         static const unsigned force_alt    = shrink_array::env_number<unsigned>("CHUNK_FORCE_RECHUNK_ALT", 64u);
         static const bool     force_toggle = shrink_array::env_number<int>("CHUNK_FORCE_RECHUNK_TOGGLE", 0) != 0;
-        if (force_sz != 0u && !pol_.dry_run && iter >= force_at)
+        if (force_sz != 0u && !(pol_.dry_run || rechunk_env_dry_run()) && iter >= force_at)
         {
             const unsigned cur_sz = arr.chunk_size();
             const unsigned tgt    = force_toggle ? (cur_sz == force_sz ? force_alt : force_sz) : force_sz;
@@ -527,7 +541,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         }
 
         const bool act = observe(&arr, tick, rep, name);
-        if (act && !pol_.dry_run && rep.best >= 0)
+        if (act && !(pol_.dry_run || rechunk_env_dry_run()) && rep.best >= 0)
         {
             const int      eff_best = capped_best_index(rep, hist_[&arr].coarsen_banned);
             const auto&    cur_e    = rep.table[static_cast<std::size_t>(rep.cur)];
