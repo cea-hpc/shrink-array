@@ -463,20 +463,32 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
     }
     else
     {
-#pragma omp parallel for reduction(+ : n_t0) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
+        // bool (and Bit, ArrayChunkBits): the second constant is `true`, one
+        // for the type -- an all-true chunk is type-2, as a chunk at the
+        // second value is for the other types. Counting it as type-1 made the
+        // verdict "plain Chunk would suffice" for arrays whose true chunks a
+        // plain Chunk cannot compress.
+#pragma omp parallel for reduction(+ : n_t0, n_t1) if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
         for (int j = 0; j < nb_chunk; ++j)
         {
             const auto& ck = chunk_list[j];
             if (ck.written())
             {
-                if (!ck.constant_value(csz_audit))
+                const auto v0 = ck.constant_value(csz_audit);
+                if (!v0)
                 {
                     continue;
                 }
-                ++n_t0; // bool has only cst_val1
+                if (*v0 == Chunk2<T>::first_value)
+                    ++n_t0;
+                else
+                    ++n_t1;
                 continue;
             }
-            ++n_t0; // bool has only cst_val1
+            if (ck.is_cst_val1())
+                ++n_t0;
+            else
+                ++n_t1;
         }
     }
     const int n_compressed = n_t0 + n_t1;

@@ -211,7 +211,8 @@ void ArrayChunk2A<T, ind_type>::print_compression_stats(std::ostream& os) const
 
     // Centralized rendering: shared layout/colors/verdict with ArrayChunk2
     // (see chunk_stats_printer.h).
-    print_formatted_chunk_stats(os, num_tab, type_name<T>(), n_compressed, nb_chunk, n_t1, "Chunk2A");
+    print_formatted_chunk_stats(os, num_tab, type_name<T>(), n_compressed, nb_chunk, n_t1, "Chunk2A",
+                                /*n_cross=*/-1, /*cross_name=*/"", /*bool_elements=*/std::is_same_v<T, bool>);
 }
 
 template <ArrayChunkElement T, typename ind_type>
