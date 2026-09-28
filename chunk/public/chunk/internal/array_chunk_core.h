@@ -49,6 +49,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib> // std::getenv (CHUNK_ALLOC_AFFINITY_EAGER)
 #include <type_traits>
 #include <vector>
 
@@ -59,6 +60,32 @@
 
 namespace shrink_array
 {
+
+namespace alloc_affinity_detail
+{
+/// A/B switch: CHUNK_ALLOC_AFFINITY_EAGER=1 (read once) gives every large
+/// array its own allocator set at creation, as before Sept '26. Default: only
+/// the storage a re-chunk builds gets one (see assign_alloc_key()).
+inline const bool g_eager = []
+{
+    const char* e = std::getenv("CHUNK_ALLOC_AFFINITY_EAGER");
+    return e != nullptr && e[0] != '\0' && e[0] != '0';
+}();
+
+/// True while rechunk_to() constructs its new storage (tmp): the storage that
+/// assign_alloc_key() gives an allocator set of its own. Set and reset at a
+/// quiescent serial point, around one constructor call.
+inline bool g_building_rechunk_storage = false;
+
+/// @brief RAII scope for g_building_rechunk_storage.
+struct RechunkStorageScope
+{
+    RechunkStorageScope() noexcept { g_building_rechunk_storage = true; }
+    ~RechunkStorageScope() { g_building_rechunk_storage = false; }
+    RechunkStorageScope(const RechunkStorageScope&)            = delete;
+    RechunkStorageScope& operator=(const RechunkStorageScope&) = delete;
+};
+} // namespace alloc_affinity_detail
 
 template <typename ChunkType>
 class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
@@ -174,6 +201,13 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
                       !build_config::use_fast_alloc || !build_config::use_openmp)
             return;
         if (nb_chunk <= 0)
+            return;
+        // Lazy affinity: only the storage a re-chunk builds takes its own set
+        // (an array already keyed keeps its key). A set costs one partly-filled
+        // 1 MiB slab per (rank, size): ~780 MiB over the 64-thread chunk2a bench's
+        // 16 arrays, for a benefit -- whole slabs emptied by the NEXT re-chunk --
+        // that only an array that gets re-chunked ever collects.
+        if (alloc_key_ == 0 && !alloc_affinity_detail::g_eager && !alloc_affinity_detail::g_building_rechunk_storage)
             return;
         const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk) * sizeof(chunk_type);
         if (meta_bytes < build_config::alloc_affinity_min_bytes)

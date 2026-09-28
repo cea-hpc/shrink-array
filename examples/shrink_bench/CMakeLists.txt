@@ -36,6 +36,7 @@ set(SHRINK_BENCH_SOURCES
         bench_phase_fill.cpp
         bench_phase_compute.cpp
         bench_phase_struct.cpp
+        bench_phase_mask.cpp
         bench_phase_stress.cpp
         bench_phase_ranges.cpp
         bench_phase_compress.cpp

@@ -49,6 +49,11 @@ struct BenchArgs
     /// made before they existed. Their arrays are then of size 1 and their
     /// phases, checks, stats and checksums are skipped.
     bool no_struct = false;
+    /// --no_mask: leave out tab_mask, the large bool array of random masks and
+    /// scattered flags (bench_phase_mask.cpp) -- for a run that must compare
+    /// with the campaigns made before it existed. Its array is then of size 1
+    /// and its phases, check and compression are skipped.
+    bool no_mask = false;
 
     double multiply_factor = 1.0; ///< --multiply (a real factor)
     Int    divisor_factor  = 1;   ///< --divisor

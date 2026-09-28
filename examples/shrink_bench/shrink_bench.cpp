@@ -228,6 +228,7 @@ int main(int argc, char* argv[])
     const bool      read_trace      = bench_args.read_trace;
     const bool      test_stl        = bench_args.test_stl;
     const bool      no_struct       = bench_args.no_struct;
+    const bool      no_mask         = bench_args.no_mask;
     const double    multiply_factor = bench_args.multiply_factor;
     const Int       divisor_factor  = bench_args.divisor_factor;
     const Int       iter_max_arg    = bench_args.iter_max_arg;
@@ -483,11 +484,18 @@ int main(int argc, char* argv[])
     // #if defined CHUNK / CHUNK2 / CHUNK2A stood.
     BenchBoolArray tab_bool(sz);
 
+    // Large and mostly NOT constant: random masks and scattered flags between
+    // whole constant segments (bench_phase_mask.cpp). ArrayChunkBits in a
+    // chunk2 build, std::vector<bool> in the baseline (BenchMaskArray).
+    // Size 1 under --no_mask: its phases are skipped (BenchArrays::with_mask).
+    BenchMaskArray tab_mask(no_mask ? 1 : bench_mask_factor * sz);
+
     // Handle on the fifteen arrays, passed to the extracted phases. References,
     // so main() stays the owner -- it builds them and destroys them.
     BenchArrays bench_arrays{tab1,        tab2,      tab3,      tab4,     tab5,      tab_int,   tab_bool,
                              tab_complex, tab_float, tab_short, tab_char, tab_long,  tab_ulong, tab_quant,
-                             tab_point,   tab_cell,  sz,        interval, !no_struct};
+                             tab_point,   tab_cell,  tab_mask,  sz,       interval,  !no_struct,
+                             !no_mask};
 
     SingletonChk<GlobalStatsChunkList>::getRef().print();
 
@@ -505,6 +513,7 @@ int main(int argc, char* argv[])
     // bench_phase_fill.cpp (see bench_phases.h).
     bench_phase_fill(bench_arrays, start, end, elapsed_seconds);
     bench_phase_struct_fill(bench_arrays);
+    bench_phase_mask_fill(bench_arrays);
 
     // Verification pass (writing or reading back the reference files):
     // lbd_check and lbd_check_all moved to bench_checks.cpp.
@@ -574,6 +583,7 @@ int main(int argc, char* argv[])
     complex_double cv_val_sum   = zero_complex;
     long           long_val_sum = 0;
     double         point_sum    = 0; // the struct arrays' read sweep (bench_phase_struct.cpp)
+    long           mask_count   = 0; // tab_mask's read sweep (bench_phase_mask.cpp)
     double         v_real = 0, v_im = 0;
 
     // Checksums: moved to bench_stats.cpp.
@@ -646,6 +656,37 @@ int main(int argc, char* argv[])
             rechunk_decider.consider<complex_double>(tab_complex, tick, iter, "tab_complex");
             if (!no_struct)
                 rechunk_decider.consider<Point3>(tab_point, tick, iter, "tab_point");
+            // SHRINK_BENCH_ADVISE_ALL=1: every other array too, so a dynamic run
+            // can head for the static-256 memory -- the 11 arrays above used to
+            // stay at the starting S=64 for the whole run. tab_bool excepted: the
+            // re-chunk of a bit-packed bool array has no validation harness yet.
+            static const bool advise_all = []
+            {
+                const char* e = std::getenv("SHRINK_BENCH_ADVISE_ALL");
+                return e != nullptr && e[0] != '\0' && e[0] != '0';
+            }();
+            if (advise_all)
+            {
+                rechunk_decider.consider<double>(tab3, tick, iter, "tab3");
+                rechunk_decider.consider<double>(tab4, tick, iter, "tab4");
+                rechunk_decider.consider<double>(tab5, tick, iter, "tab5");
+                rechunk_decider.consider<int>(tab_int, tick, iter, "tab_int");
+                rechunk_decider.consider<float>(tab_float, tick, iter, "tab_float");
+                rechunk_decider.consider<unsigned char>(tab_char, tick, iter, "tab_char");
+                rechunk_decider.consider<long>(tab_long, tick, iter, "tab_long");
+                rechunk_decider.consider<unsigned long>(tab_ulong, tick, iter, "tab_ulong");
+                rechunk_decider.consider<double>(tab_quant, tick, iter, "tab_quant");
+                if (!no_struct)
+                    rechunk_decider.consider<Cell>(tab_cell, tick, iter, "tab_cell");
+            }
+            // tab_mask: an ArrayChunkBits in a chunk2 build, whose advisor
+            // knows the packed layout (the other variants' Array<bool> is not
+            // what this array is for).
+            if constexpr (chunk_config::use_chunk2)
+            {
+                if (!no_mask)
+                    rechunk_decider.consider<typename BenchMaskArray::value_type>(tab_mask, tick, iter, "tab_mask");
+            }
             if constexpr (chunk_config::use_chunk2a)
             {
                 if (std::getenv("CHUNK_CST2_PROBE")) // only prints when requested
@@ -722,6 +763,8 @@ int main(int argc, char* argv[])
             bench_phase_compute(bench_arrays, k, start0, end0, tab_nba1, tab_nba2, val_sum, long_val_sum, v_real, v_im);
             // The struct arrays' window, its own region (bench_phase_struct.cpp).
             bench_phase_struct_compute(bench_arrays, k, start0, end0, tab_nba1, tab_nba2, point_sum);
+            // tab_mask's update, its own region (bench_phase_mask.cpp).
+            bench_phase_mask_compute(bench_arrays, k, mask_count);
         }
 
         // ─── STRESS TESTS ──────────────────────────────────────────────────
@@ -861,8 +904,8 @@ int main(int argc, char* argv[])
                 !std::isfinite(val_sum) || !std::isfinite(cv_val_sum.real()) || !std::isfinite(cv_val_sum.imag());
             if (k % ksum_period == 0 || k == 0 || k == iter_max - 1 || ksum_bad)
             {
-                std::println("k : {} val_sum = {} long_val_sum = {} cv_val_sum = ({},{}) point_sum = {}", k, val_sum,
-                             long_val_sum, cv_val_sum.real(), cv_val_sum.imag(), point_sum);
+                std::println("k : {} val_sum = {} long_val_sum = {} cv_val_sum = ({},{}) point_sum = {} mask_count = {}",
+                             k, val_sum, long_val_sum, cv_val_sum.real(), cv_val_sum.imag(), point_sum, mask_count);
                 std::fflush(stdout);
             }
         }
@@ -968,6 +1011,7 @@ int main(int argc, char* argv[])
     std::println("\ncv_val_sum = ({},{})", cv_val_sum.real(), cv_val_sum.imag());
     std::fflush(stdout);
     std::println("\npoint_sum  = {}", point_sum);
+    std::println("mask_count = {}", mask_count);
 
     bench_print_checksums(bench_arrays, check_sum);
 
