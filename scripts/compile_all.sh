@@ -561,15 +561,6 @@ if [ "$BUILD_ONLY" = false ]; then
 fi
 launch_build "$build_rep/cmake-build-omp-llvm-debug/$arch"
 
-# Debug + CHUNK_STATS: the counters are cheap enough to keep in a debug build, and
-# a debug binary is what you want when a counter disagrees with reality (gdb on the
-# very path that increments it). Kept separate from the optimised -stats target.
-set_build_header 'Compiling llvm debug openmp with stats (CHUNK_STATS):'
-if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-stats/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_STATS:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
-fi
-launch_build "$build_rep/cmake-build-omp-llvm-debug-stats/$arch"
-
 if [ "$enable_sanitizers" = true ]; then
 
 # Token (alloc-token census) on the std_alloc axis only: it instruments
@@ -678,14 +669,6 @@ if [ "$BUILD_ONLY" = false ]; then
    run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-llvm-debug/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
 fi
 launch_build "$build_rep/cmake-build-llvm-debug/$arch"
-
-# Serial debug + CHUNK_STATS: same idea without OpenMP, so a counter can be checked
-# on the serial code path (no threads, no deferred ops) before blaming concurrency.
-set_build_header 'Compiling llvm debug with stats (CHUNK_STATS):'
-if [ "$BUILD_ONLY" = false ]; then
-   run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-llvm-debug-stats/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_STATS:BOOL=ON -DOMP:BOOL=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
-fi
-launch_build "$build_rep/cmake-build-llvm-debug-stats/$arch"
 
 # Non-OMP std-alloc Debug (no sanitizer): serial ledger repro of the rechunk
 # double-free without the ASan slowdown. Runs deterministically at small sizes
