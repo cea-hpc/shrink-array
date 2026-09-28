@@ -160,6 +160,36 @@ inline void fill_bit_range(word_t* w, std::size_t lo, std::size_t hi, bool v) no
 }
 
 /**
+ * @brief fill_bit_range() for a buffer other threads write and read at the
+ *        same time (fill_range_mt): each word is updated atomically.
+ * @details A word the range covers entirely belongs to this range alone (the
+ *          callers write disjoint indices): a relaxed atomic store. A word it
+ *          covers in part is shared with other writers: fetch_or / fetch_and
+ *          under the range's mask, so their bits are kept. Atomic both ways,
+ *          so the readers' relaxed word loads (get_bit_relaxed) race with
+ *          nothing.
+ */
+inline void fill_bit_range_atomic(word_t* w, std::size_t lo, std::size_t hi, bool v) noexcept
+{
+    std::size_t i = lo;
+    while (i < hi)
+    {
+        const std::size_t       k   = i / word_bits;
+        const std::size_t       off = i % word_bits;
+        const std::size_t       end = (hi - k * word_bits) < word_bits ? hi - k * word_bits : word_bits;
+        const word_t            m   = span_mask(off, end);
+        std::atomic_ref<word_t> word(w[k]);
+        if (m == word_ones)
+            word.store(v ? word_ones : 0, std::memory_order_relaxed);
+        else if (v)
+            word.fetch_or(m, std::memory_order_relaxed);
+        else
+            word.fetch_and(~m, std::memory_order_relaxed);
+        i = k * word_bits + end;
+    }
+}
+
+/**
  * @brief Store bits [@p lo, @p hi) from @p get(i) (a bool for bit i), 64 at a
  *        time: each word is assembled, then stored under its mask. Same
  *        concurrency contract as fill_bit_range().

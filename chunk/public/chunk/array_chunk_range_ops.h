@@ -693,8 +693,9 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, ass
  *          thread may be writing other elements of the same chunk, into that
  *          very buffer.
  *
- *          Chunk2A, Chunk2 and Chunk under OpenMP with fast block compression;
- *          everywhere else (bool, serial builds) it is the element loop
+ *          Chunk2A, Chunk2 and Chunk under OpenMP with fast block compression
+ *          (ArrayChunkBits too: bits::fill_bit_range_atomic, one atomic update
+ *          per word); everywhere else (bool, serial builds) it is the element loop
  *          -- correct in parallel, without the speed-up. Chunk: its zero
  *          counter, which a raw fill would have to resync from the whole chunk,
  *          does not exist with fast block compression; and the null sentinel
@@ -727,7 +728,7 @@ void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
 
     constexpr bool session = (internal::is_v2a_v<Arr> || internal::is_v2_v<Arr> || internal::is_v1_v<Arr>) &&
                              build_config::use_openmp && chunk_config::use_fast_block_compression &&
-                             internal::raw_fillable_v<T>;
+                             (internal::raw_fillable_v<T> || is_packed_bit_v<T>);
     if constexpr (!session)
     {
         for (std::size_t i = first; i < last; ++i)
@@ -777,7 +778,18 @@ void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
                 if (!Mgr::must_defer_write(ch) && !ch.pending_any() && internal::materialised(arr, ch, ind2)) // 4.
                 {
                     T* dst = ch.values_load(); // 5.
-                    if constexpr (internal::relaxed_element_stores_v<chunk_type, T>)
+                    if constexpr (is_packed_bit_v<T>)
+                    {
+                        // ArrayChunkBits: other threads write the other bits of
+                        // the span's edge words -- one atomic update per word
+                        // (fetch_or / fetch_and there, a store for the words
+                        // the span owns whole). Queued on the value, as Chunk2
+                        // below: false and true are both compressible.
+                        bits::fill_bit_range_atomic(internal::as_words(dst), i - c_begin, hi - c_begin,
+                                                    static_cast<bool>(value));
+                        uniform = true;
+                    }
+                    else if constexpr (internal::relaxed_element_stores_v<chunk_type, T>)
                     {
                         // Other writers of this chunk read some of these
                         // elements, and write the ones this span reads.
