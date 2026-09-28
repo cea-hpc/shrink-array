@@ -647,8 +647,11 @@ void ArrayChunk2<T, ind_type>::clear_core()
     ManagerChunk<Chunk2, T>::decrem_somme_chunk_create(nb_chunk);
     // Recompute what derives from the total -- see ArrayChunk::clear_core():
     // otherwise a re-chunk leaves the threshold sized for the geometry it just left.
-    ManagerChunk<Chunk2, T>::compute_size_buffer_reuse();
-    ManagerChunk<Chunk2, T>::compute_size_max_number_of_chunk_to_check_compress();
+    if (!teardown_threshold_detail::g_legacy) // CHUNK_THRESHOLD_TEARDOWN_LEGACY=1 skips it (A/B)
+    {
+        ManagerChunk<Chunk2, T>::compute_size_buffer_reuse();
+        ManagerChunk<Chunk2, T>::compute_size_max_number_of_chunk_to_check_compress();
+    }
 
     if constexpr (build_config::not_use_openmp)
     {

@@ -230,8 +230,12 @@ void ArrayChunk<T, ind_type>::clear_core()
     // compression threshold stayed sized for the geometry it just left (v1
     // doubles 64 -> 1024: ~3400 candidates where ~900 is right; 1.5x less
     // throughput for the rest of the 64-thread chunk_dyn bench).
-    manager_chunk::compute_size_buffer_reuse();
-    manager_chunk::compute_size_max_number_of_chunk_to_check_compress();
+    // CHUNK_THRESHOLD_TEARDOWN_LEGACY=1 skips it (A/B).
+    if (!teardown_threshold_detail::g_legacy)
+    {
+        manager_chunk::compute_size_buffer_reuse();
+        manager_chunk::compute_size_max_number_of_chunk_to_check_compress();
+    }
 
     if constexpr (build_config::use_openmp)
     {
