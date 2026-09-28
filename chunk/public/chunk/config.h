@@ -180,13 +180,13 @@ inline constexpr bool is_debug = false;
 // Use to hunt rare MT bugs that don't reproduce in -O0 -g builds.
 
 #ifdef CHECK_OPTIM
-constexpr bool check_optim = true;
+inline constexpr bool check_optim = true;
 #else
-constexpr bool check_optim = false;
+inline constexpr bool check_optim = false;
 #endif
 
 // Convenience predicate: any kind of debug or runtime-check active
-constexpr bool any_check = is_debug || check_optim;
+inline constexpr bool any_check = is_debug || check_optim;
 
 #ifdef HAVE_OMPT
 inline constexpr bool has_ompt = true;
@@ -215,9 +215,9 @@ inline constexpr bool do_check = false;
 // Single source of the deferred-pool granularity (deferred_op_pool.h): a
 // level-dependent chunk_config twin once shadowed it here, unconsumed; removed
 // — the pool ran at this 2 MiB in every SHRINK_LEVEL, so this keeps that.
-constexpr std::size_t deferred_pool_granularity = std::size_t{2} * 1024 * 1024;
+inline constexpr std::size_t deferred_pool_granularity = std::size_t{2} * 1024 * 1024;
 
-static constexpr bool verbose = false;
+inline constexpr bool verbose = false;
 
 // --- Diagnostic switches: -D on the command line, or the CMake option that sets it ---
 #ifdef PERF
