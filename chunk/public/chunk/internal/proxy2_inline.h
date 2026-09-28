@@ -59,61 +59,63 @@ inline const bool g_proxy2_arm_legacy = []
 }();
 
 template <typename T, typename Derived>
-ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
+ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array(this const Derived& self)
 {
-    if (inf_array_src_ != nullptr && !g_proxy2_arm_legacy) [[likely]]
+    if (self.inf_array_src_ != nullptr && !g_proxy2_arm_legacy) [[likely]]
     {
         if constexpr (build_config::any_check)
         {
             // ind and num_tab only: ind maps one-to-one to the value, and a
             // value compare would raise a false alarm on a NaN second value.
-            const inf_array_t reg = Derived::get_info_second_value(get_ptr_on_array());
-            if (std::get<1>(reg) != std::get<1>(*inf_array_src_) || std::get<2>(reg) != std::get<2>(*inf_array_src_))
+            const inf_array_t reg = Derived::get_info_second_value(self.get_ptr_on_array());
+            if (std::get<1>(reg) != std::get<1>(*self.inf_array_src_) ||
+                std::get<2>(reg) != std::get<2>(*self.inf_array_src_))
                 INVARIANT_FAILED(
                     "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
-                    std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg), std::get<2>(reg),
-                    static_cast<const void*>(get_ptr_on_array()));
+                    std::get<1>(*self.inf_array_src_), std::get<2>(*self.inf_array_src_), std::get<1>(reg),
+                    std::get<2>(reg), static_cast<const void*>(self.get_ptr_on_array()));
         }
-        return *inf_array_src_;
+        return *self.inf_array_src_;
     }
-    return Derived::get_info_second_value(get_ptr_on_array());
+    return Derived::get_info_second_value(self.get_ptr_on_array());
 }
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
+typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array(this const Derived& self)
 {
-    if (inf_array_src_ != nullptr && !g_proxy2_arm_legacy) [[likely]]
+    if (self.inf_array_src_ != nullptr && !g_proxy2_arm_legacy) [[likely]]
     {
         if constexpr (build_config::any_check)
         {
             // ind and num_tab only: ind maps one-to-one to the value, and a
             // value compare would raise a false alarm on a NaN second value.
-            const inf_array_t reg = Derived::get_info_second_value(get_ptr_on_array());
-            if (std::get<1>(reg) != std::get<1>(*inf_array_src_) || std::get<2>(reg) != std::get<2>(*inf_array_src_))
+            const inf_array_t reg = Derived::get_info_second_value(self.get_ptr_on_array());
+            if (std::get<1>(reg) != std::get<1>(*self.inf_array_src_) ||
+                std::get<2>(reg) != std::get<2>(*self.inf_array_src_))
                 INVARIANT_FAILED(
                     "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
-                    std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg), std::get<2>(reg),
-                    static_cast<const void*>(get_ptr_on_array()));
+                    std::get<1>(*self.inf_array_src_), std::get<2>(*self.inf_array_src_), std::get<1>(reg),
+                    std::get<2>(reg), static_cast<const void*>(self.get_ptr_on_array()));
         }
-        return *inf_array_src_;
+        return *self.inf_array_src_;
     }
-    return Derived::get_info_second_value(get_ptr_on_array());
+    return Derived::get_info_second_value(self.get_ptr_on_array());
 }
 
 template <typename T, typename Derived>
-void ProxySpec2<T, Derived>::set_info_on_chunk()
+void ProxySpec2<T, Derived>::set_info_on_chunk(this Derived& self)
 {
-    inf_array    = load_inf_array();
-    second_value = std::get<0>(inf_array);
-    ind          = std::get<1>(inf_array);
-    derived().set_num_tab();
+    self.ProxySpec2::inf_array = self.load_inf_array();
+    self.second_value          = std::get<0>(self.ProxySpec2::inf_array);
+    self.ind                   = std::get<1>(self.ProxySpec2::inf_array);
+    self.set_num_tab();
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        derived().set_ptr_is_inside_chunk_list_to_compress();
+        self.set_ptr_is_inside_chunk_list_to_compress();
     }
 
     if (g_proxy2_acq_fence) [[unlikely]] // transition switch, see its declaration
@@ -121,11 +123,11 @@ void ProxySpec2<T, Derived>::set_info_on_chunk()
 }
 
 template <typename T, typename Derived>
-void ProxySpec2<T, Derived>::set_info_second_value_ind()
+void ProxySpec2<T, Derived>::set_info_second_value_ind(this Derived& self)
 {
-    inf_array    = load_inf_array();
-    second_value = std::get<0>(inf_array);
-    ind          = std::get<1>(inf_array);
+    self.ProxySpec2::inf_array = self.load_inf_array();
+    self.second_value          = std::get<0>(self.ProxySpec2::inf_array);
+    self.ind                   = std::get<1>(self.ProxySpec2::inf_array);
 
     if (g_proxy2_acq_fence) [[unlikely]] // transition switch, see its declaration
         std::atomic_thread_fence(std::memory_order_acquire);
@@ -140,23 +142,16 @@ void ProxySpec2<T, Derived>::set_info_second_value_ind_from_key(const void* key)
 }
 
 template <typename T, typename Derived>
-void ProxySpec2<T, Derived>::set_second_value()
-{
-    inf_array    = load_inf_array();
-    second_value = std::get<0>(inf_array);
-}
-
-template <typename T, typename Derived>
     requires is_bool_like_v<T>
-void ProxySpec2<T, Derived>::set_info_on_chunk()
+void ProxySpec2<T, Derived>::set_info_on_chunk(this Derived& self)
 {
-    inf_array = load_inf_array();
+    self.ProxySpec2::inf_array = self.load_inf_array();
 
-    derived().set_num_tab();
+    self.set_num_tab();
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        derived().set_ptr_is_inside_chunk_list_to_compress();
+        self.set_ptr_is_inside_chunk_list_to_compress();
     }
 
     if (g_proxy2_acq_fence) [[unlikely]] // transition switch, see its declaration
@@ -170,15 +165,15 @@ void ProxySpec2<T, Derived>::set_info_on_chunk()
 // looked at by a serial build. No preprocessor guard needed.
 
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::trigger_compression_if_needed(int thr_rank) noexcept
+void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::trigger_compression_if_needed(this Derived& self,
+                                                                                         int thr_rank) noexcept
 {
     if constexpr (is_not_bool)
     {
-        derived().second_value = derived().make_second_value();
+        self.second_value = self.make_second_value();
     }
 
-    const auto* vec_tuple_p =
-        manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][derived().second_value].get();
+    const auto* vec_tuple_p = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][self.second_value].get();
 
     if (!vec_tuple_p)
         return;
@@ -198,7 +193,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::trigger_compression_i
 }
 
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression() noexcept
+void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression(this Derived& self) noexcept
 {
     const int szm          = manager_chunk2::get_size_max_number_of_chunk_to_check_compress();
     const int thr_rank     = get_thr_rank_fast();
@@ -224,9 +219,9 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression()
                     static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));
 
                     const auto* inf_ptr = Derived::share_info_array.find_inf_array(second_val);
-                    Chunk2<T>::make_block_compression(thr_rank, *inf_ptr, self());
+                    Chunk2<T>::make_block_compression(thr_rank, *inf_ptr, std::addressof(self));
 
-                    derived().set_info_on_chunk();
+                    self.set_info_on_chunk();
                 }
             }
         }
@@ -242,9 +237,9 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression()
             {
                 static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));
 
-                Chunk2<T>::make_block_compression_bool(thr_rank, self());
+                Chunk2<T>::make_block_compression_bool(thr_rank, std::addressof(self));
 
-                derived().set_info_on_chunk();
+                self.set_info_on_chunk();
             }
         }
     }
@@ -646,9 +641,10 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operat
  */
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 template <typename OP, typename LAMBDA, typename U>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_compound_operation(OP       op,
-                                                                                                 const U& operand,
-                                                                                                 LAMBDA   operation)
+void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_compound_operation(this Derived& self,
+                                                                                                 OP            op,
+                                                                                                 const U&      operand,
+                                                                                                 LAMBDA operation)
 {
     // Same fix as ensure_writable_storage(): this function may call
     // chunk.create_value() below (via the will_be_not_second_value branch)
@@ -656,33 +652,33 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_co
     // wrapper -- pin the ambient size to THIS array's own geometry first.
     if constexpr (build_config::chunk_dynamic)
     {
-        shrink_array::set_thread_chunk_size(this->chunk_size());
-        shrink_array::set_thread_alloc_key(this->alloc_key());
+        shrink_array::set_thread_chunk_size(self.chunk_size());
+        shrink_array::set_thread_alloc_key(self.alloc_key());
     }
 
     using CalcType = std::common_type_t<T, U>;
 
-    const in_t<T> v_old = read_values();
+    const in_t<T> v_old = self.Base::read_values();
 
     // Perform math in high precision
     const CalcType v_new_precise = op(static_cast<CalcType>(v_old), static_cast<CalcType>(operand));
 
     if constexpr (is_not_bool)
-        second_value = derived().make_second_value();
+        self.second_value = self.make_second_value();
 
     // Compare the PRECISE result with the second constant value
     const bool will_be_not_second_value =
-        (v_new_precise != static_cast<CalcType>(second_value)) && derived().is_cst_val2();
+        (v_new_precise != static_cast<CalcType>(self.second_value)) && self.is_cst_val2();
 
     if (will_be_not_second_value)
     {
-        chunk.create_value(true, inf_array);
+        self.Base::chunk.create_value(true, self.ProxySpec2<T, Derived>::inf_array);
         operation(op);
     }
-    else if (Base2::is_not_cst_val2())
+    else if (self.Base2::is_not_cst_val2())
     {
-        this->raw_elem_set(static_cast<T>(v_new_precise));
-        this->mark_for_compression_if_needed_with_value(v_old, static_cast<T>(v_new_precise));
+        self.raw_elem_set(static_cast<T>(v_new_precise));
+        self.mark_for_compression_if_needed_with_value(v_old, static_cast<T>(v_new_precise));
     }
 }
 
@@ -723,42 +719,42 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_co
  */
 template <typename Derived, typename T, typename ChunkType>
 template <typename OP, typename LAMBDA, typename U>
-void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_compound_operation(OP       op,
-                                                                                               const U& operand,
-                                                                                               LAMBDA   operation)
+void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_compound_operation(this Derived& self,
+                                                                                               OP            op,
+                                                                                               const U&      operand,
+                                                                                               LAMBDA        operation)
 {
     // Same fix as ensure_writable_storage(): see that function's comment.
     if constexpr (build_config::chunk_dynamic)
     {
-        shrink_array::set_thread_chunk_size(this->chunk_size());
-        shrink_array::set_thread_alloc_key(this->alloc_key());
+        shrink_array::set_thread_chunk_size(self.chunk_size());
+        shrink_array::set_thread_alloc_key(self.alloc_key());
     }
 
     using CalcType = std::common_type_t<T, base_t<U>>;
 
-    const bool was_not_written = !chunk.written(this->ind);
+    const bool was_not_written = !self.Base::chunk.written(self.ind);
 
     if (was_not_written)
     {
-        const CalcType intermediate =
-            op(static_cast<CalcType>(this->raw_elem()), static_cast<CalcType>(operand));
+        const CalcType intermediate = op(static_cast<CalcType>(self.raw_elem()), static_cast<CalcType>(operand));
         // Built where it is used (was a default-constructed `T res` at function
         // scope, then assigned: two writes of a struct for one value).
         const auto res = static_cast<T>(intermediate);
 
-        const bool will_be_not_second_value = (res != second_value) && derived().is_cst_val2();
+        const bool will_be_not_second_value = (res != self.second_value) && self.is_cst_val2();
 
         if (will_be_not_second_value)
         {
-            chunk.create_value(true, inf_array);
+            self.Base::chunk.create_value(true, self.ProxySpec2<T, Derived>::inf_array);
             if constexpr (chunk_config::use_compression_with_counter)
-                chunk.set_nb_val_eq_second_value(this->chunk_size() - 1);
-            operation(op, Base::values);
+                self.Base::chunk.set_nb_val_eq_second_value(self.chunk_size() - 1);
+            operation(op, self.Base::values);
             return;
         }
     }
 
-    operation(op, Base::values);
+    operation(op, self.Base::values);
 }
 
 /**
@@ -789,7 +785,7 @@ void Proxy2<T>::execute_inplace_operation(LAMBDA operation)
         this->set_info_second_value_ind();
     }
 
-    const bool is_val2 = Base2::is_cst_val2();
+    const bool is_val2 = is_cst_val2();
     const bool is_val1 = Base::is_cst_val1();
 
     [[maybe_unused]] T v_old{};

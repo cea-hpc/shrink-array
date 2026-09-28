@@ -30,18 +30,19 @@ namespace shrink_array
 
 template <typename Derived, typename T, typename ChunkType>
 template <typename... Args>
-void Proxy2Base<Derived, T, ChunkType>::mark_for_compression_core(in_t<T> old_value,
-                                                                  in_t<T> new_value,
-                                                                  in_t<T> expected_in_memory,
-                                                                  bool    isv,
-                                                                  Args&&... compression_args) const
+void Proxy2Base<Derived, T, ChunkType>::mark_for_compression_core(this const Derived& self,
+                                                                  in_t<T>             old_value,
+                                                                  in_t<T>             new_value,
+                                                                  in_t<T>             expected_in_memory,
+                                                                  bool                isv,
+                                                                  Args&&... compression_args)
 {
     // Check if transition is valid for compression OR if memory changed unexpectedly (Race)
     // isv (Is Valid) guards the entire check for performance.
-    if (isv && (derived().should_mark_for_compression(old_value, new_value, std::forward<Args>(compression_args)...) ||
-                (Base::load_value() != expected_in_memory))) [[unlikely]]
+    if (isv && (self.should_mark_for_compression(old_value, new_value, std::forward<Args>(compression_args)...) ||
+                (self.Base::load_value() != expected_in_memory))) [[unlikely]]
     {
-        derived().add_to_compression_list();
+        self.add_to_compression_list();
     }
 
     // NOTE: a dead check was removed here. It consulted

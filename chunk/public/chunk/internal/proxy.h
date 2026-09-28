@@ -260,11 +260,12 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      *        pointer, so later compression bookkeeping can find its way
      *        back to this chunk.
      */
-    void set_info_on_chunk() noexcept
+    void set_info_on_chunk(this Derived& self) noexcept
     {
-        set_num_tab(); // this policy's no-arg overload (below); Proxy's `using Base::set_num_tab` would hide it through
-                       // derived()
-        derived().Base::set_ptr_is_inside_chunk_list_to_compress();
+        // Qualified: this policy's no-arg overload (below); Proxy's `using
+        // Base::set_num_tab` would hide it from an unqualified self.set_num_tab().
+        self.ProxyFastCompPolicy::set_num_tab();
+        self.Base::set_ptr_is_inside_chunk_list_to_compress();
     }
 
     /**
@@ -422,7 +423,10 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      *                           memory (mismatch means a concurrent writer
      *                           raced this one).
      */
-    void mark_for_compression_core(in_t<T> old_value, in_t<T> new_value, in_t<T> expected_in_memory) const;
+    void mark_for_compression_core(this const Derived& self,
+                                   in_t<T>             old_value,
+                                   in_t<T>             new_value,
+                                   in_t<T>             expected_in_memory);
 
     // Wrapper for post-write check: we expect the 'new_value' to be in memory
 
@@ -433,7 +437,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param old_value Value before the write.
      * @param new_value Value after the write.
      */
-    void mark_for_compression_impl(in_t<T> old_value, in_t<T> new_value) const
+    void mark_for_compression_impl(this const Derived& self, in_t<T> old_value, in_t<T> new_value)
     {
         // BUG FIX: this used to be gated behind
         // `if constexpr (chunk_config::stats) if (new_value==zero && old_value!=zero)`
@@ -445,7 +449,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         // slow-path fallback (is_slow_path_active()) for the vast majority
         // of writes, in every build. mark_for_compression_core must run on
         // EVERY write; it already tests should_mark_for_compression itself.
-        mark_for_compression_core(old_value, new_value, new_value);
+        self.mark_for_compression_core(old_value, new_value, new_value);
     }
 
     /**
@@ -454,13 +458,13 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param old_value Value before the write.
      * @param new_value Value after the write.
      */
-    void mark_for_compression_if_needed_with_value(in_t<T> old_value, in_t<T> new_value) const
+    void mark_for_compression_if_needed_with_value(this const Derived& self, in_t<T> old_value, in_t<T> new_value)
     {
         // BUG FIX: same accidental double-guard as mark_for_compression_impl
         // above -- was a complete no-op without CHUNK_STATS, and skipped the
         // race-check/slow-path fallback for non-zero-transition writes even
         // with it on. Call unconditionally.
-        mark_for_compression_impl(old_value, new_value);
+        self.mark_for_compression_impl(old_value, new_value);
     }
 };
 

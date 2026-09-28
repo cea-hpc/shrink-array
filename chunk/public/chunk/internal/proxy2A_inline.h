@@ -880,14 +880,16 @@ void Proxy2A<T>::execute_simple_operation(ModifyFn modify_fn)
  */
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 template <typename LAMBDA>
-void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operation_async(auto* ctx, LAMBDA operation)
+void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operation_async(this Derived& self,
+                                                                                           auto*         ctx,
+                                                                                           LAMBDA        operation)
 {
     [[maybe_unused]] int retry_count = 0;
 
     while (true)
     {
         const Proxy2A proxy = Base::template make_proxy_with_info<Derived>(ctx);
-        derived().ensure_writable_storage_async(proxy);
+        self.ensure_writable_storage_async(proxy);
 
         const in_t<T> v_old = Base::read_values_async(ctx);
 
@@ -929,7 +931,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_opera
             continue;
         }
 
-        Base2::mark_for_compression_if_needed_with_value_async(proxy, v_old, derived().read_values());
+        Base2::mark_for_compression_if_needed_with_value_async(proxy, v_old, self.read_values());
         break;
     }
 }
@@ -1226,8 +1228,9 @@ void Proxy2A<T>::execute_inplace_operation(ModifyFn modify_fn)
 // constant state while we were writing it.
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 template <typename LAMBDA>
-void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_operation_async(auto*  ctx,
-                                                                                            LAMBDA operation) const
+void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_operation_async(this const Derived& self,
+                                                                                            auto*               ctx,
+                                                                                            LAMBDA operation)
 {
     [[maybe_unused]] int retry_count = 0;
 
@@ -1240,7 +1243,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
         const Proxy2A proxy = Base::template make_proxy_with_info<Derived>(ctx);
 
         // Ensure heap storage (decompresses if needed)
-        derived().ensure_writable_storage_async(proxy);
+        self.ensure_writable_storage_async(proxy);
 
         // Fresh load of values pointer for the actual store
         T* values_before = ctx->chunk.values_load();
@@ -1297,7 +1300,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
         }
 
         // Success — mark for compression and exit
-        Base2::mark_for_compression_if_needed_with_value_async(proxy, v_old, derived().read_values());
+        Base2::mark_for_compression_if_needed_with_value_async(proxy, v_old, self.read_values());
         break;
     }
 }

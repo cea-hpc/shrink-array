@@ -83,45 +83,37 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
 
   public:
     // ========================================================================
-    // CRTP: Access to derived class
+    // Constant-state queries. is_cst_val2() itself is the derived proxy's:
+    // only it knows the index/ind for non-bool types. These reach it through
+    // self; the delegating is_cst_val2() this class used to declare for them
+    // is gone.
     // ========================================================================
-
-    /**
-     * @brief Whether the owning chunk is currently compressed to its second
-     *        constant (delegates to the derived class, which knows the
-     *        index/ind for non-bool types).
-     * @return true if the chunk is compressed to the second constant.
-     */
-    [[nodiscard]] bool is_cst_val2() const noexcept
-    {
-        return derived().is_cst_val2();
-    }
 
     /**
      * @brief Negation of is_cst_val2().
      * @return true if the chunk is NOT compressed to the second constant.
      */
-    [[nodiscard]] bool is_not_cst_val2() const noexcept
+    [[nodiscard]] bool is_not_cst_val2(this const Derived& self) noexcept
     {
-        return !is_cst_val2();
+        return !self.is_cst_val2();
     }
 
     /**
      * @brief Whether the chunk is compressed to EITHER constant (first or second).
      * @return true if the chunk is compressed.
      */
-    [[nodiscard]] bool is_cst_val() const noexcept
+    [[nodiscard]] bool is_cst_val(this const Derived& self) noexcept
     {
-        return is_cst_val1() || is_cst_val2();
+        return self.is_cst_val1() || self.is_cst_val2();
     }
 
     /**
      * @brief Negation of is_cst_val().
      * @return true if the chunk is materialised (compressed to neither constant).
      */
-    [[nodiscard]] bool is_not_cst_val() const noexcept
+    [[nodiscard]] bool is_not_cst_val(this const Derived& self) noexcept
     {
-        return !is_cst_val();
+        return !self.is_cst_val();
     }
 
     /**
@@ -149,8 +141,10 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @return true if the chunk is at cst_val1 and new_value == second_val,
      *         or at cst_val2 and new_value == first_value.
      */
-    bool
-    is_cst_val_new_value_is_other_cst_val(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
+    bool is_cst_val_new_value_is_other_cst_val(this const Derived& self,
+                                               in_t<T>             new_value,
+                                               in_t<T>             first_value,
+                                               in_t<T>             second_val) noexcept
     {
         // CRTP dispatch: each variant owns its fast pre-check. Chunk2 keeps the
         // "a constant is written" test below; Chunk2A widens it (see
@@ -162,7 +156,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         // only a performance filter; if it rejects a qualifying write the chunk
         // is silently never queued for compression and its buffer is never
         // returned to the reuse list.
-        return derived().pre_check_mark_for_compression(new_value, first_value, second_val);
+        return self.pre_check_mark_for_compression(new_value, first_value, second_val);
     }
 
     /**
@@ -233,11 +227,12 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @param compression_args Extra args forwarded to should_mark_for_compression().
      */
     template <typename... Args>
-    void mark_for_compression_core(in_t<T> old_value,
-                                   in_t<T> new_value,
-                                   in_t<T> expected_in_memory,
-                                   bool    isv,
-                                   Args&&... compression_args) const;
+    void mark_for_compression_core(this const Derived& self,
+                                   in_t<T>             old_value,
+                                   in_t<T>             new_value,
+                                   in_t<T>             expected_in_memory,
+                                   bool                isv,
+                                   Args&&... compression_args);
 
     /**
      * @brief Post-write wrapper around mark_for_compression_core(), passing
@@ -249,9 +244,10 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @param args Extra args forwarded to mark_for_compression_core().
      */
     template <typename... Args>
-    void mark_for_compression_impl(in_t<T> old_value, in_t<T> new_value, bool isv, Args&&... args) const
+    void
+    mark_for_compression_impl(this const Derived& self, in_t<T> old_value, in_t<T> new_value, bool isv, Args&&... args)
     {
-        mark_for_compression_core(old_value, new_value, new_value, isv, std::forward<Args>(args)...);
+        self.mark_for_compression_core(old_value, new_value, new_value, isv, std::forward<Args>(args)...);
     }
 
     // --- Boolean overloads ---
@@ -261,15 +257,15 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @note Uses false and true as constant values for comparison
      */
 
-    void mark_for_compression_if_needed(bool new_value) const
+    void mark_for_compression_if_needed(this const Derived& self, bool new_value)
     {
-        const bool isv = is_cst_val_new_value_is_other_cst_val(new_value, false, true);
+        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, false, true);
         // Base::read_values(), not values[num]: inherited from a dependent
         // base, so it must be qualified. This is the write path's read
         // entry and the only one that resolves a compressed chunk's
         // constant under CHUNK_CST_VAL2_NO_ARRAYS. Indexing here read a
         // zero page and the decision below was taken against 0.
-        mark_for_compression_impl(Base::read_values(), new_value, isv, false, true);
+        self.mark_for_compression_impl(self.Base::read_values(), new_value, isv, false, true);
     }
 
     /**
@@ -278,10 +274,11 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @param new_value The new value to be set
      * @param first_value The first constant value
      */
-    void mark_for_compression_if_needed(in_t<T> second_val, in_t<T> new_value, in_t<T> first_value) const
+    void
+    mark_for_compression_if_needed(this const Derived& self, in_t<T> second_val, in_t<T> new_value, in_t<T> first_value)
     {
-        const bool isv = is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
-        mark_for_compression_impl(Base::read_values(), new_value, isv, second_val, first_value);
+        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
+        self.mark_for_compression_impl(self.Base::read_values(), new_value, isv, second_val, first_value);
     }
 
     /**
@@ -295,11 +292,14 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *          old value, so its check fired on every write that changes the
      *          value and queued the chunk whatever should_mark said.
      */
-    void mark_for_compression_before_store(in_t<T> second_val, in_t<T> new_value, in_t<T> first_value) const
+    void mark_for_compression_before_store(this const Derived& self,
+                                           in_t<T>             second_val,
+                                           in_t<T>             new_value,
+                                           in_t<T>             first_value)
     {
-        const bool isv = is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
-        const T    old = Base::read_values();
-        mark_for_compression_core(old, new_value, old, isv, second_val, first_value);
+        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
+        const T    old = self.Base::read_values();
+        self.mark_for_compression_core(old, new_value, old, isv, second_val, first_value);
     }
 
     /**
@@ -309,10 +309,10 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @param old_value The previous boolean value.
      * @param new_value The new boolean value.
      */
-    void mark_for_compression_if_needed(bool old_value, bool new_value) const
+    void mark_for_compression_if_needed(this const Derived& self, bool old_value, bool new_value)
     {
-        const bool isv = is_cst_val_new_value_is_other_cst_val(new_value, false, true);
-        mark_for_compression_impl(old_value, new_value, isv, true, false);
+        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, false, true);
+        self.mark_for_compression_impl(old_value, new_value, isv, true, false);
     }
 
     /**
@@ -323,11 +323,14 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @param first_value The first constant value
      */
 
-    void
-    mark_for_compression_if_needed(in_t<T> second_val, in_t<T> old_value, in_t<T> new_value, in_t<T> first_value) const
+    void mark_for_compression_if_needed(this const Derived& self,
+                                        in_t<T>             second_val,
+                                        in_t<T>             old_value,
+                                        in_t<T>             new_value,
+                                        in_t<T>             first_value)
     {
-        const bool isv = is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
-        mark_for_compression_impl(old_value, new_value, isv, second_val, first_value);
+        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
+        self.mark_for_compression_impl(old_value, new_value, isv, second_val, first_value);
     }
 
     /**

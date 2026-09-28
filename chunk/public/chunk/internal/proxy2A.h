@@ -534,13 +534,13 @@ struct Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
     void                  ensure_writable_storage_async(const Derived& proxy) const;
 
     template <typename LAMBDA>
-    void execute_simple_operation_async(auto* ctx, LAMBDA operation);
+    void execute_simple_operation_async(this Derived& self, auto* ctx, LAMBDA operation);
 
     /**
      * @brief Executes an in-place modification (bitwise, inc/dec) asynchronously.
      */
     template <typename LAMBDA>
-    void execute_inplace_operation_async(auto* ctx, LAMBDA operation) const;
+    void execute_inplace_operation_async(this const Derived& self, auto* ctx, LAMBDA operation);
 
     template <typename OP, typename LBD, typename U>
     void execute_arithmetic_compound_operation_async(auto* ctx, OP op, const U& v, LBD lbd) const;
@@ -556,10 +556,10 @@ struct Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
 
     /// @brief Common initialisation of the fast path: table number, then the
     ///        "already queued" flag pointer.
-    void set_num_tab_ptr_is_inside_chunk() noexcept
+    void set_num_tab_ptr_is_inside_chunk(this Derived& self) noexcept
     {
-        derived().set_num_tab(); // Proxy2A's no-arg overload (looks the table up)
-        Base::set_ptr_is_inside_chunk_list_to_compress();
+        self.set_num_tab(); // Proxy2A's no-arg overload (looks the table up)
+        self.Base::set_ptr_is_inside_chunk_list_to_compress();
     }
 };
 /**

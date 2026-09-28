@@ -135,14 +135,15 @@ void Proxy<T>::perform_core_assignment(in_t<T> v) const noexcept
  * Handles both standard and 'pre' checks by comparing memory with an expected state.
  */
 template <typename Derived, typename T, bool Enabled>
-void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(in_t<T> old_value,
-                                                                         in_t<T> new_value,
-                                                                         in_t<T> expected_in_memory) const
+void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(this const Derived& self,
+                                                                         in_t<T>             old_value,
+                                                                         in_t<T>             new_value,
+                                                                         in_t<T>             expected_in_memory)
 {
     // Check if transition qualifies for compression OR if a data race occurred (value changed)
-    if (should_mark_for_compression(old_value, new_value) || (read_values() != expected_in_memory)) [[unlikely]]
+    if (should_mark_for_compression(old_value, new_value) || (self.read_values() != expected_in_memory)) [[unlikely]]
     {
-        derived().add_to_compression_list();
+        self.add_to_compression_list();
     }
 }
 

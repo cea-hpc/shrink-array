@@ -73,27 +73,6 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
     using Base::Base;
 
     /**
-     * @brief Pointer to the owning array (used as the compression-metadata
-     *        map key).
-     */
-    const T* get_ptr_on_array() const noexcept
-    {
-        return derived().get_ptr_on_array();
-    }
-
-    // Template (auto* ctx): never instantiated unless actually called, so it
-    // needs no build-mode guard. The real implementation lives in
-    // Proxy2FastCompPolicy<..., true>.
-    /**
-     * @brief Async-context counterpart of get_ptr_on_array().
-     * @param ctx Async write context.
-     */
-    const T* get_ptr_on_array_async(auto* ctx) const noexcept
-    {
-        return derived().get_ptr_on_array_async(ctx);
-    }
-
-    /**
      * @brief Most common non-zero value in the chunk
      * @details Used for second-level compression. When a chunk contains mostly
      *          this value (and first_value), it can be compressed to save memory.
@@ -109,21 +88,13 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
     int ind;
 
     /**
-     * @brief Initialize only the second_value field
-     * @details Minimal metadata load for operations that only need second_value.
-     * @post second_value is valid; ind and num_tab unchanged
-     */
-
-    void set_second_value();
-
-    /**
      * @brief Initialize second_value and index without full metadata load
      * @details Lighter-weight alternative to set_info_chunk() when tab/chunk info
      *          is not immediately needed.
      * @post second_value and ind are valid; num_tab unchanged
      */
 
-    void set_info_second_value_ind();
+    void set_info_second_value_ind(this Derived& self);
 
     /**
      * @brief Like set_info_second_value_ind(), but resolves the metadata
@@ -144,10 +115,10 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      * @note For bool specialization, this is a no-op as metadata is fixed
      */
 
-    void set_info_on_chunk();
+    void set_info_on_chunk(this Derived& self);
 
     /**
-     * @brief The cached second_value field, as set by set_second_value() /
+     * @brief The cached second_value field, as set by set_info_on_chunk() /
      *        set_info_second_value_ind().
      * @return The second constant value.
      */
@@ -203,7 +174,7 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
     /// @brief The (second_value, ind, num_tab) tuple: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
     ///        two are compared (model: Proxy2A::set_num_tab).
-    [[nodiscard]] inf_array_t load_inf_array() const;
+    [[nodiscard]] inf_array_t load_inf_array(this const Derived& self);
 
   private:
     /// Owning array's registry mirror; nullptr until armed.
@@ -249,7 +220,7 @@ struct ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
     /// @brief The (second_value, ind, num_tab) tuple: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
     ///        two are compared (model: Proxy2A::set_num_tab).
-    [[nodiscard]] inf_array_t load_inf_array() const;
+    [[nodiscard]] inf_array_t load_inf_array(this const Derived& self);
 
   private:
     /// Owning array's registry mirror; nullptr until armed.
@@ -262,28 +233,9 @@ struct ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
 
     using Base::Base;
 
-    /**
-     * @brief Pointer to the owning array (used as the compression-metadata
-     *        map key).
-     */
-    [[nodiscard]] const T* get_ptr_on_array() const noexcept
-    {
-        return derived().get_ptr_on_array();
-    }
-
     /// @brief Bool specialization of set_info_on_chunk(). See
     ///        set_info_second_value_ind() below for why this is NOT a no-op.
-    void set_info_on_chunk();
-
-    // See the non-bool ProxySpec2 above: template, so no guard needed.
-    /**
-     * @brief Async-context counterpart of get_ptr_on_array().
-     * @param ctx Async write context.
-     */
-    const T* get_ptr_on_array_async(auto* ctx) const noexcept
-    {
-        return derived().get_ptr_on_array_async(ctx);
-    }
+    void set_info_on_chunk(this Derived& self);
 
     // NOT a no-op. bool's second_value (true) and ind (0) are fixed, but num_tab
     // is PER-ARRAY. Leaving inf_array at its default (num_tab 0) was correct only
@@ -299,9 +251,9 @@ struct ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
      *        metadata map (second_value/ind stay their constexpr values).
      * @post inf_array's num_tab is valid for this proxy's own array.
      */
-    void set_info_second_value_ind()
+    void set_info_second_value_ind(this Derived& self)
     {
-        inf_array = load_inf_array();
+        self.ProxySpec2::inf_array = self.load_inf_array();
     }
 
     /**
@@ -310,9 +262,9 @@ struct ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
      *        ptr_on_array.
      * @param key Array pointer to resolve num_tab for.
      */
-    void set_info_second_value_ind_from_key(const void* key)
+    void set_info_second_value_ind_from_key(this Derived& self, const void* key)
     {
-        inf_array = derived().get_info_second_value(key);
+        self.ProxySpec2::inf_array = self.get_info_second_value(key);
     }
 
     /**
@@ -381,12 +333,12 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @note Thread safety: Sets atomic slow-path flag visible to all threads
      */
 
-    void trigger_compression_if_needed(int thr_rank) noexcept;
+    void trigger_compression_if_needed(this Derived& self, int thr_rank) noexcept;
 
     /**
      * @brief Performs actual block compression for the current thread's candidates.
      */
-    void perform_compression() noexcept;
+    void perform_compression(this Derived& self) noexcept;
 
     /**
      * @brief Async-context counterpart of execute_inplace_operation():
@@ -445,7 +397,7 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @tparam U Type of the operand.
      */
     template <typename OP, typename LAMBDA, typename U>
-    void execute_arithmetic_compound_operation(OP op, const U& operand, LAMBDA operation);
+    void execute_arithmetic_compound_operation(this Derived& self, OP op, const U& operand, LAMBDA operation);
 
     // ------------------------------------------------------------------
     // Compression-tracking surface. Every member below needs the per-tab
@@ -592,9 +544,9 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @note Thread safety: Uses compare_exchange for atomic list insertion
      */
 
-    void mark_for_compression_if_needed(in_t<T> new_value) const
+    void mark_for_compression_if_needed(this const Derived& self, in_t<T> new_value)
     {
-        Base2::mark_for_compression_if_needed(second_value, new_value, Chunk2<T>::first_value);
+        self.Base2::mark_for_compression_if_needed(self.second_value, new_value, Chunk2<T>::first_value);
     }
 
     /**
@@ -605,9 +557,9 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      *          race conditions in multi-threaded environments.
      */
 
-    void mark_for_compression_if_needed_with_value(in_t<T> old_value, in_t<T> new_value) const
+    void mark_for_compression_if_needed_with_value(this const Derived& self, in_t<T> old_value, in_t<T> new_value)
     {
-        Base2::mark_for_compression_if_needed(second_value, old_value, new_value, Chunk2<T>::first_value);
+        self.Base2::mark_for_compression_if_needed(self.second_value, old_value, new_value, Chunk2<T>::first_value);
     }
 };
 
@@ -642,7 +594,7 @@ struct Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T,
      * @tparam LAMBDA Callable `(op, T* values)`.
      */
     template <typename OP, typename LAMBDA, typename U>
-    void execute_arithmetic_compound_operation(OP op, const U& operand, LAMBDA operation);
+    void execute_arithmetic_compound_operation(this Derived& self, OP op, const U& operand, LAMBDA operation);
 
     // Non-OpenMP (no embedded fast block compression): Proxy2 has no compression
     // tracking tabs, so these are no-op stubs. They must still exist because
