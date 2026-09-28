@@ -16,6 +16,8 @@ set(CHUNK_VERSION
 if (CHUNK_OMP)
   find_package(OpenMP REQUIRED)
 endif ()
+# Threads::Threads, linked PUBLIC by every variant (see chunk_add_variant).
+find_package(Threads REQUIRED)
 
 option(CHUNK_STD_ALLOC "Use standard allocator for chunk." OFF)
 
@@ -420,6 +422,12 @@ function(chunk_add_variant target_name variant_define size is_dyn)
   if (CHUNK_OMP)
     target_link_libraries(${target_name} PRIVATE OpenMP::OpenMP_CXX)
   endif ()
+  # The library and its headers use threads (std::thread, std::call_once:
+  # exact_rss.h's RSS sampler, the flush waits, the ring log), OpenMP or not.
+  # On a glibc older than 2.34 (RHEL 8) pthread_create is in libpthread,
+  # which only OpenMP's runtime brought in: a serial icpx build of
+  # shrink_bench failed to link. PUBLIC, so every consumer links it.
+  target_link_libraries(${target_name} PUBLIC Threads::Threads)
 
   target_include_directories(${target_name}
           PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/public>
