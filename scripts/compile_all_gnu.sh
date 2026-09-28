@@ -16,7 +16,8 @@ module unload c/gcc 2>/dev/null || true
 module unload c++/gcc 2>/dev/null || true
 module unload fortran/gcc 2>/dev/null || true
 
-module load cmake/3.31.4 2>/dev/null || module load cmake
+# The newest CMake the modules offer (4.0.3), else 3.31.4, else the default.
+module load cmake/4.0.3 2>/dev/null || module load cmake/3.31.4 2>/dev/null || module load cmake
 module load ninja
 
 # Parse command-line arguments
