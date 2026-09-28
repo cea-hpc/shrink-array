@@ -141,15 +141,15 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     // gain. Zero re-chunks in 2000 iterations; the dyn build stayed at its
     // deliberately sub-optimal start size and paid ~4-5 GB over static 256.
     const bool   coarsening = best_sz > cur_size;
-    // Logged only, next to the gain: what the cost model expects the rebuild
-    // to take, to be set against CHUNK_RECHUNK_TRACE's measured total, with
-    // the chunk and materialised-chunk counts it could be refitted on. It
-    // counts the materialised elements alone; measured on shrink_bench (chunk2
-    // dyn, Debug, 64 -> 256, arrays of 40-260 MB) it said 0-19 ms for rebuilds
-    // of 370-1070 ms.
-    const double est_cost_ms = rechunk_cost_ms(cur_e.mat, cur_size, best_e.mat, best_sz);
+    // What the cost model expects the rebuild to take: gates a coarsening
+    // (coarsen_min_meta_rate), and is logged with the chunk and
+    // materialised-chunk counts, to be set against CHUNK_RECHUNK_TRACE's
+    // measured total when the constants are refitted.
+    const double est_cost_ms = rechunk_cost_ms(cur_e.n_chunks, cur_size, cur_e.mat, rep.elem_bytes);
     const double gain_meta  = static_cast<double>(cur_e.n_chunks - best_e.n_chunks) * rep.meta_bytes;
     const double gain_data  = gain_b - gain_meta;
+    // MB of metadata per second of estimated rebuild (0 when the estimate is).
+    const double meta_rate = est_cost_ms > 0. ? (gain_meta / (1024. * 1024.)) / (est_cost_ms / 1000.) : 0.;
 
     // Gate for the forecast (data) term: the LARGER of the absolute
     // deadband and a fraction of the current memory. On a large array a
@@ -193,21 +193,21 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     bool clears_gate;
     if (coarsening)
     {
-        // The metadata branch carries its own floor. min_gain_bytes asks
-        // whether the gain is measurable; this asks whether it is worth a
-        // rebuild. Both have to hold, because an exact gain that is too small
-        // to pay for the work it costs is still a bad move -- and it is the
-        // step where the data forecast starts missing badly, so refusing it
-        // also keeps the decision inside the range where the model is sound.
-        // CHUNK_COARSEN_MIN_META_MB overrides the policy value, in MB; 0
-        // disables the floor. Read once, here, which runs once per array per
-        // advisor tick -- the same shape as the library's other run-time
-        // knobs. The 24 MB default came from one workload's knee (tab1 at
-        // 6.1 GB returned 211 MB, 105, 52, 25, then 3.7, for the same ~0.6 s
-        // rebuild each time); another workload's is elsewhere, and finding it
-        // should not need a rebuild. The feature test needs it for the
-        // opposite reason: it shrinks its arrays on purpose and still wants
-        // the move to fire.
+        // The metadata branch carries its own gates: a floor (is the gain
+        // measurable?) and a rate (is it worth a rebuild?). Both have to hold,
+        // because an exact gain too small to pay for the work it costs is
+        // still a bad move -- and it is the step where the data forecast
+        // starts missing badly, so refusing it also keeps the decision inside
+        // the range where the model is sound. Both are relative to nothing
+        // but the move itself: an absolute floor (24 MB until Sept '26) let
+        // the same arrays re-chunk at full size and never at a tenth of it.
+        // CHUNK_COARSEN_MIN_META_MB overrides the floor, in MB, and
+        // CHUNK_COARSEN_MIN_META_RATE the rate, in MB per second of estimated
+        // rebuild; 0 disables either. Read once, here, which runs once per
+        // array per advisor tick -- the same shape as the library's other
+        // run-time knobs. The feature test needs them for the opposite
+        // reason: it shrinks its arrays on purpose and still wants the move
+        // to fire.
         static const std::size_t env_meta_floor = []() -> std::size_t
         {
             const char* env = std::getenv("CHUNK_COARSEN_MIN_META_MB");
@@ -221,11 +221,27 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
             }
             return mb > 0. ? static_cast<std::size_t>(mb * 1024. * 1024.) : 0u;
         }();
-        const std::size_t policy_floor =
+        static const double env_meta_rate = []() -> double
+        {
+            const char* env = std::getenv("CHUNK_COARSEN_MIN_META_RATE");
+            if (env == nullptr || env[0] == '\0')
+                return -1.; // unset: keep the policy
+            double rate = 0.;
+            if (!shrink_array::parse_number(env, rate) || rate < 0.)
+            {
+                shrink_array::warn_invalid_env("CHUNK_COARSEN_MIN_META_RATE", env);
+                return -1.; // not a number: keep the policy
+            }
+            return rate;
+        }();
+        const std::size_t meta_floor =
             env_meta_floor == static_cast<std::size_t>(-1) ? pol_.coarsen_min_meta_gain_bytes : env_meta_floor;
-        const auto meta_floor = std::max(min_gain, policy_floor);
-        clears_gate =
-            (gain_meta >= static_cast<double>(meta_floor) && gain_bytes >= min_gain) || gain_bytes >= data_gate;
+        const double min_rate = env_meta_rate < 0. ? pol_.coarsen_min_meta_rate : env_meta_rate;
+        // A zero-cost estimate (empty array) passes.
+        const bool rate_ok = min_rate <= 0. || est_cost_ms <= 0. || meta_rate >= min_rate;
+        clears_gate = (gain_meta >= static_cast<double>(meta_floor) && rate_ok &&
+                       gain_bytes >= meta_floor) ||
+                      gain_bytes >= data_gate;
     }
     else
         clears_gate = gain_bytes >= data_gate;
@@ -264,10 +280,10 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     {
         std::fprintf(stderr,
                      "[RECHUNK-DECIDE] %s: %s S=%u -> S'=%u "
-                     "(gain %.1f MB = meta %.1f + data %.1f, stable %d ticks, est. cost %.0f ms, chunks %lld mat %lld)%s\n",
+                     "(gain %.1f MB = meta %.1f + data %.1f, stable %d ticks, est. cost %.0f ms, %.0f MB/s, chunks %lld mat %lld)%s\n",
                      name, pol_.dry_run ? "[dry-run] would re-chunk" : "re-chunk", cur_size, best_sz,
                      gain_b / (1024. * 1024.), gain_meta / (1024. * 1024.), gain_data / (1024. * 1024.),
-                     hist.stable_count, est_cost_ms, static_cast<long long>(cur_e.n_chunks),
+                     hist.stable_count, est_cost_ms, meta_rate, static_cast<long long>(cur_e.n_chunks),
                      static_cast<long long>(cur_e.mat), pol_.dry_run ? "" : " [APPLIED]");
         std::fflush(stderr);
 
@@ -291,10 +307,10 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         std::fprintf(stderr,
                      "[RECHUNK-DECIDE] %s: wait (%s) "
                      "S=%u best=%u gain %.1f MB "
-                     "(meta %.1f + data %.1f; cur %.1f MB, data gate %.1f MB, est. cost %.0f ms)\n",
+                     "(meta %.1f + data %.1f; cur %.1f MB, data gate %.1f MB, est. cost %.0f ms, %.0f MB/s)\n",
                      name, reason, cur_size, best_sz, gain_b / (1024. * 1024.), gain_meta / (1024. * 1024.),
                      gain_data / (1024. * 1024.), cur_e.mem_bytes / (1024. * 1024.),
-                     static_cast<double>(gain_gate) / (1024. * 1024.), est_cost_ms);
+                     static_cast<double>(gain_gate) / (1024. * 1024.), est_cost_ms, meta_rate);
         std::fflush(stderr);
     }
     return act;

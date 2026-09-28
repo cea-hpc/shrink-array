@@ -4,62 +4,59 @@
 // Re-chunk cost model (phase 2 of adaptive chunk sizing)
 // ============================================================================
 //
-// Estimates the time cost of re-chunking one array from geometry S_old to
-// S_new, so the phase-3 decision can weigh it against the memory gain the
-// ChunkSizeAdvisor predicts. Objective recap: minimum memory; this module
-// supplies the "what does it cost to get there" half.
-//
-// Key insight (measured): a re-chunk only pays for MATERIALISED chunks.
-// Compressed (constant) chunks carry no private buffer — their value lives in
-// the shared cst buffer — so re-chunking them is a pointer/metadata operation,
-// negligible next to copying real data. With ~0.1% of chunks materialised in
-// practice, re-chunking a compressible array is cheap (sub-millisecond on the
-// data the advisor was run against).
+// Estimates the time cost of re-chunking one array from geometry S_old to a
+// coarser or finer one, so the phase-3 decision can weigh it against the memory
+// gain the ChunkSizeAdvisor predicts. Objective recap: minimum memory; this
+// module supplies the "what does it cost to get there" half.
 //
 // Cost formula:
-//   cost = (mat_old * S_old) * cost_copy_ns          [re-write materialised data]
-//        + (mat_old + mat_new) * cost_allocfree_ns    [free old + alloc new bufs]
+//   cost = n_elems      * cost_elem_ns    [the refill walks every element]
+//        + n_chunks_old * cost_chunk_ns   [and every chunk: state, tables,
+//                                          temporary, teardown, pool drain]
+//        + data_bytes   * cost_byte_ns    [materialised data re-written]
 //
-//   mat_old / mat_new : number of MATERIALISED chunks before / after (the
-//                       advisor already counts these per candidate size).
-//   S_old             : old chunk width (elements).
-//   cost_copy_ns      : per-element re-write cost (memory-bandwidth bound).
-//   cost_allocfree_ns : per-chunk alloc+free cost (roughly size-independent).
+//   n_chunks_old : chunks at the current size; n_elems = n_chunks_old * S_old.
+//   data_bytes   : mat_old * S_old * elem_bytes, the materialised chunks'
+//                  bytes (elem_bytes is 1/8 for packed bits).
 //
-// The two constants are HARDWARE-SPECIFIC. The defaults below were measured on
-// a local x86 dev box with ::operator new/delete (a pessimistic proxy — the
-// real fast-alloc pool is faster, so the default cost_allocfree is an upper
-// bound, which is the safe side for a "should we re-chunk?" decision). On ARM
-// Grace with the real pool they will differ: call calibrate_rechunk_cost()
-// once at startup to overwrite them with measured values, or set them from a
-// config. The formula's SHAPE is hardware-independent; only the scalars move.
+// Compressed chunks carry no buffer, but they are not free: the first model
+// counted the materialised data alone and said 5 ms for rebuilds measured at
+// 85 ms on sparse arrays (tab_long, 7% of the chunks materialised), 10 to 20
+// times short, and 0-19 ms for 370-1070 ms in a Debug build.
 //
-// This module has no side effects and is not gated: it is pure arithmetic plus
-// an opt-in calibration routine. Callers decide when (if ever) to invoke it.
+// The constants were fitted (least squares) on 61 rebuilds measured with
+// CHUNK_RECHUNK_TRACE: shrink_bench_chunk2_dyn, Release, ARM, 64 threads,
+// --divisor 1 and 10, 64 -> 256, 256 -> 1024 and 1024 -> 4096, fifteen
+// element types of 1 to 24 bytes, 11 to 179 ms. Median error 7%, worst 33%.
+// They are HARDWARE- and THREAD-COUNT-specific (the refill is parallel);
+// elsewhere the formula's shape holds and the scalars move. The
+// [RECHUNK-DECIDE] lines log the estimate, the chunk and materialised counts,
+// and CHUNK_RECHUNK_TRACE the measured total, which is what a refit needs.
+//
+// This module has no side effects and is not gated: it is pure arithmetic.
 
-#include <chrono>
 #include <cstddef>
-#include <ratio> // std::nano
-#include <cstring>
-#include <vector>
+#include <cstdint>
 
 namespace shrink_array
 {
 
-// Hardware-specific scalars. Defaults are local-x86 measurements; recalibrate
-// on the target (see calibrate_rechunk_cost). Mutable so calibration can update
-// them in place.
-inline double g_rechunk_cost_copy_ns      = 0.65; // per re-written element
-inline double g_rechunk_cost_allocfree_ns = 25.0; // per chunk buffer alloc+free
+// Hardware-specific scalars (see above). Mutable so a caller can set measured
+// values for its machine.
+inline double g_rechunk_cost_elem_ns  = 0.032; // per element of the array
+inline double g_rechunk_cost_chunk_ns = 4.2;   // per chunk at the current size
+inline double g_rechunk_cost_byte_ns  = 0.042; // per byte of materialised data
 
-// Estimated re-chunk time in milliseconds for one array going S_old -> S_new,
-// given how many chunks are materialised before (mat_old) and after (mat_new).
-// Compressed chunks are intentionally omitted (near-zero cost).
-[[nodiscard]] inline double rechunk_cost_ms(long mat_old, unsigned S_old, long mat_new, unsigned /*S_new*/) noexcept
+// Estimated re-chunk time in milliseconds for one array leaving S_old, given
+// its chunk count and materialised-chunk count there, and the bytes one
+// element takes in a materialised chunk.
+[[nodiscard]] inline double rechunk_cost_ms(std::int64_t n_chunks_old, unsigned S_old, std::int64_t mat_old,
+                                            double elem_bytes) noexcept
 {
-    const double elems_to_copy = static_cast<double>(mat_old) * static_cast<double>(S_old);
-    const double alloc_ops     = static_cast<double>(mat_old) + static_cast<double>(mat_new);
-    const double ns            = elems_to_copy * g_rechunk_cost_copy_ns + alloc_ops * g_rechunk_cost_allocfree_ns;
+    const double n_elems    = static_cast<double>(n_chunks_old) * static_cast<double>(S_old);
+    const double data_bytes = static_cast<double>(mat_old) * static_cast<double>(S_old) * elem_bytes;
+    const double ns         = n_elems * g_rechunk_cost_elem_ns +
+                      static_cast<double>(n_chunks_old) * g_rechunk_cost_chunk_ns + data_bytes * g_rechunk_cost_byte_ns;
     return ns / 1.0e6;
 }
 
@@ -71,60 +68,6 @@ inline double g_rechunk_cost_allocfree_ns = 25.0; // per chunk buffer alloc+free
 rechunk_is_worth_it(std::size_t gain_bytes, double cost_ms, std::size_t min_gain_bytes, double max_cost_ms) noexcept
 {
     return gain_bytes >= min_gain_bytes && cost_ms <= max_cost_ms;
-}
-
-// Measure cost_copy_ns and cost_allocfree_ns on the CURRENT hardware and store
-// them into the globals above. Call once at startup on the target machine. T is
-// the element type whose buffers you actually allocate (sizeof matters for the
-// alloc cost). sample_size tunes the copy measurement; alloc_reps the alloc one.
-// NOTE: this uses ::operator new/delete as a portable proxy. If you want the
-// exact fast-alloc pool figure, feed a lambda variant (left as an extension) —
-// the pool is faster, so this proxy stays a safe upper bound.
-template <typename T>
-void calibrate_rechunk_cost(std::size_t sample_size = (16u << 20),
-                            unsigned    chunk_size  = 2048,
-                            int         alloc_reps  = 200000) noexcept
-{
-    using clk  = std::chrono::steady_clock;
-    auto to_ns = [](clk::duration dur) { return std::chrono::duration<double, std::nano>(dur).count(); };
-
-    // --- copy component ---
-    {
-        std::vector<T> src(sample_size), dst(sample_size);
-        for (std::size_t i = 0; i < sample_size; ++i)
-            src[i] = static_cast<T>(i & 1023);
-        std::memcpy(dst.data(), src.data(), (sample_size < 4096 ? sample_size : 4096) * sizeof(T));
-        const auto t0 = clk::now();
-        for (std::size_t i = 0; i < sample_size; ++i)
-            dst[i] = src[i];
-        const auto t1 = clk::now();
-        // prevent the loop being optimised away
-        volatile T sink = dst[sample_size / 2];
-        (void)sink;
-        g_rechunk_cost_copy_ns = to_ns(t1 - t0) / static_cast<double>(sample_size);
-    }
-
-    // --- alloc+free component ---
-    {
-        const std::size_t bytes = static_cast<std::size_t>(chunk_size) * sizeof(T);
-        for (int i = 0; i < 1000; ++i)
-        {
-            void* ptr = ::operator new(bytes);
-            ::operator delete(ptr);
-        }
-        volatile std::size_t sink  = 0;
-        const auto           start = clk::now();
-        for (int i = 0; i < alloc_reps; ++i)
-        {
-            void* ptr = ::operator new(bytes);
-            std::memset(ptr, 0, 64);
-            sink += reinterpret_cast<std::size_t>(ptr);
-            ::operator delete(ptr);
-        }
-        const auto stop = clk::now();
-        (void)sink;
-        g_rechunk_cost_allocfree_ns = to_ns(stop - start) / static_cast<double>(alloc_reps);
-    }
 }
 
 } // namespace shrink_array
