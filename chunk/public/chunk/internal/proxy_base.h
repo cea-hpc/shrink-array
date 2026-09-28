@@ -244,6 +244,12 @@ struct ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSuppor
  * ++/-- return the proxy by value: discarding it, as `a[i] += x;` does, keeps
  * the operation fully deferrable, while `T y = (a[i] += x);` reads the result.
  * The postfix ++/-- return the old value as a T.
+ *
+ * Those operators take the proxy as an explicit object parameter deduced as
+ * `this auto&& self` (C++23), not the `this Derived& self` ArrayChunkBase
+ * uses: `a[i]` is a prvalue, which a typed lvalue reference would not bind.
+ * The reason ArrayChunkBase types its self -- a deduced one would outrank the
+ * const read overloads -- does not arise, none of them having a const form.
  */
 template <typename Derived, typename T, typename ChunkType>
 class ProxyBase : public ProxyOperators<Derived, T>,
@@ -869,20 +875,20 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
     template <typename U>
         requires IsCleanCompoundOp<T, U> && ElementAddable<T>
-    Derived operator+=(const U& v) noexcept
+    Derived operator+=(this auto&& self, const U& v) noexcept
     {
-        arithmetic_assign<T>(static_cast<T>(v), std::plus<T>{});
-        return derived();
+        self.template arithmetic_assign<T>(static_cast<T>(v), std::plus<T>{});
+        return self;
     }
 
     /** @brief Compound addition — type mismatch (e.g. float += double). Precision warning. */
     template <typename U>
         requires(!IsCleanCompoundOp<T, U>) && std::is_convertible_v<U, T> && ElementAddable<T>
     [[deprecated("HPC WARNING: Type mismatch in +=. Possible precision loss. Use 'f' suffix for floats.")]]
-    Derived operator+=(const U& v) noexcept
+    Derived operator+=(this auto&& self, const U& v) noexcept
     {
-        arithmetic_assign<T>(static_cast<T>(v), std::plus<T>{});
-        return derived();
+        self.template arithmetic_assign<T>(static_cast<T>(v), std::plus<T>{});
+        return self;
     }
 
     /**
@@ -900,10 +906,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
     template <typename U>
         requires IsCleanCompoundOp<T, U> && ElementSubtractable<T>
-    Derived operator-=(const U& v) noexcept
+    Derived operator-=(this auto&& self, const U& v) noexcept
     {
-        arithmetic_assign<T>(static_cast<T>(v), std::minus<T>{});
-        return derived();
+        self.template arithmetic_assign<T>(static_cast<T>(v), std::minus<T>{});
+        return self;
     }
 
     /** @brief Compound subtraction — type mismatch. */
@@ -911,10 +917,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     template <typename U>
         requires(!IsCleanCompoundOp<T, U>) && std::is_constructible_v<T, U> && ElementSubtractable<T>
     [[deprecated("HPC WARNING: Precision mismatch.")]]
-    Derived operator-=(const U& v) noexcept
+    Derived operator-=(this auto&& self, const U& v) noexcept
     {
-        arithmetic_assign<T>(static_cast<T>(v), std::minus<T>{});
-        return derived();
+        self.template arithmetic_assign<T>(static_cast<T>(v), std::minus<T>{});
+        return self;
     }
     /**
      * @brief Engine of every bitwise compound operator (&= |= ^= <<= >>=).
@@ -954,11 +960,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
 
     template <typename U>
-    Derived operator&=(const U& v) noexcept
+    Derived operator&=(this auto&& self, const U& v) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
     {
-        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs & rhs; });
-        return derived();
+        self.template bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs & rhs; });
+        return self;
     }
 
     /**
@@ -976,11 +982,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
 
     template <typename U>
-    Derived operator|=(const U& v) noexcept
+    Derived operator|=(this auto&& self, const U& v) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
     {
-        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs | rhs; });
-        return derived();
+        self.template bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs | rhs; });
+        return self;
     }
 
     /**
@@ -998,11 +1004,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
 
     template <typename U>
-    Derived operator^=(const U& v) noexcept
+    Derived operator^=(this auto&& self, const U& v) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<base_t<U>>
     {
-        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs ^ rhs; });
-        return derived();
+        self.template bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs ^ rhs; });
+        return self;
     }
 
     // ------------------------------------------------------------------------
@@ -1025,35 +1031,35 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /// @brief `a[i] |= b` for ArrayChunkBits: sets the element when @p v is true.
     template <typename U>
-    Derived operator|=(const U& v) noexcept
+    Derived operator|=(this auto&& self, const U& v) noexcept
         requires is_packed_bit_v<T> && bit_operand_v<U>
     {
         if (static_cast<bool>(v))
-            derived() = true;
-        return derived();
+            self = true;
+        return self;
     }
 
     /// @brief `a[i] &= b` for ArrayChunkBits: clears the element when @p v is false.
     template <typename U>
-    Derived operator&=(const U& v) noexcept
+    Derived operator&=(this auto&& self, const U& v) noexcept
         requires is_packed_bit_v<T> && bit_operand_v<U>
     {
         if (!static_cast<bool>(v))
-            derived() = false;
-        return derived();
+            self = false;
+        return self;
     }
 
     /// @brief `a[i] ^= b` for ArrayChunkBits: flips the element when @p v is true.
     template <typename U>
-    Derived operator^=(const U& v) noexcept
+    Derived operator^=(this auto&& self, const U& v) noexcept
         requires is_packed_bit_v<T> && bit_operand_v<U>
     {
         if (static_cast<bool>(v))
         {
-            const bool cur = static_cast<bool>(read_pure()); // synchronised read, as operator bool()
-            derived()      = !cur;
+            const bool cur = static_cast<bool>(self.read_pure()); // synchronised read, as operator bool()
+            self           = !cur;
         }
-        return derived();
+        return self;
     }
 
     /**
@@ -1073,21 +1079,21 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /** @brief Bitwise shift left — clean types (Integral <<= Integral). */
     template <typename U>
         requires IsCleanShiftOp<T, U>
-    Derived operator<<=(const U& v) noexcept
+    Derived operator<<=(this auto&& self, const U& v) noexcept
     {
-        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs << rhs; });
-        return derived();
+        self.template bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs << rhs; });
+        return self;
     }
 
     /** @brief Bitwise shift left — trap for non-integral shift amount. */
     template <typename U>
         requires(!IsCleanShiftOp<T, U>) && std::is_integral_v<T>
     [[deprecated("HPC WARNING: Shift amount must be an integer to avoid precision issues.")]]
-    Derived operator<<=(const U& v) noexcept
+    Derived operator<<=(this auto&& self, const U& v) noexcept
     {
         // Force conversion to int for the shift amount
-        bitwise_assign<int>(static_cast<int>(v), [](auto lhs, auto rhs) { return lhs << rhs; });
-        return derived();
+        self.template bitwise_assign<int>(static_cast<int>(v), [](auto lhs, auto rhs) { return lhs << rhs; });
+        return self;
     }
 
     /**
@@ -1106,20 +1112,20 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
     template <typename U>
         requires IsCleanShiftOp<T, U>
-    Derived operator>>=(const U& v) noexcept
+    Derived operator>>=(this auto&& self, const U& v) noexcept
     {
-        bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs >> rhs; });
-        return derived();
+        self.template bitwise_assign<U>(v, [](auto lhs, auto rhs) { return lhs >> rhs; });
+        return self;
     }
 
     /** @brief Bitwise shift right — trap. */
     template <typename U>
         requires(!IsCleanShiftOp<T, U>) && std::is_integral_v<T>
     [[deprecated("HPC WARNING: Shift amount must be an integer.")]]
-    Derived operator>>=(const U& v) noexcept
+    Derived operator>>=(this auto&& self, const U& v) noexcept
     {
-        bitwise_assign<int>(static_cast<int>(v), [](auto lhs, auto rhs) { return lhs >> rhs; });
-        return derived();
+        self.template bitwise_assign<int>(static_cast<int>(v), [](auto lhs, auto rhs) { return lhs >> rhs; });
+        return self;
     }
 
     [[nodiscard]] T operator~() const noexcept
@@ -1150,17 +1156,17 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @details Implements: ++proxy
      * Returns the value after increment.
      */
-    Derived operator++() noexcept
+    Derived operator++(this auto&& self) noexcept
         requires ElementIncrementable<T>
     {
         // Synchronous version
-        const auto inc_operation = [this] { derived().execute_inplace_operation([](T& elem) { ++elem; }); };
+        const auto inc_operation = [&self] { self.execute_inplace_operation([](T& elem) { ++elem; }); };
 
         // Asynchronous version
         const auto inc_operation_async = [](auto* ctx, auto& proxy)
         { proxy.execute_inplace_operation_async(ctx, [](T& elem) { ++elem; }); };
 
-        apply_inplace_operation(inc_operation, inc_operation_async);
+        self.apply_inplace_operation(inc_operation, inc_operation_async);
 
         // Return the proxy, not a value. Reading the element here would have to
         // go through read_pure(), never `values[num]`: `values` is the ctor-time
@@ -1172,7 +1178,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // applied state, then reads live through the chunk. So `y = ++a[i]`
         // gets the right value, and the read -- with its sync -- is only paid
         // when the value is actually used.
-        return derived();
+        return self;
     }
 
     /**
@@ -1183,15 +1189,15 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @details Implements: --proxy
      * Returns the value after decrement.
      */
-    Derived operator--() noexcept
+    Derived operator--(this auto&& self) noexcept
         requires ElementIncrementable<T>
     {
-        const auto dec_operation = [this] { derived().execute_inplace_operation([](T& elem) { --elem; }); };
+        const auto dec_operation = [&self] { self.execute_inplace_operation([](T& elem) { --elem; }); };
 
         const auto dec_operation_async = [](auto* ctx, auto& proxy)
         { proxy.execute_inplace_operation_async(ctx, [](T& elem) { --elem; }); };
 
-        apply_inplace_operation(dec_operation, dec_operation_async);
+        self.apply_inplace_operation(dec_operation, dec_operation_async);
 
         // Return the proxy, not a value. Reading the element here would have to
         // go through read_pure(), never `values[num]`: `values` is the ctor-time
@@ -1203,7 +1209,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // applied state, then reads live through the chunk. So `y = ++a[i]`
         // gets the right value, and the read -- with its sync -- is only paid
         // when the value is actually used.
-        return derived();
+        return self;
     }
 
     /**
@@ -1213,17 +1219,17 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @details Implements: proxy++
      * Returns the original value before increment.
      */
-    T operator++(int) noexcept
+    T operator++(this auto&& self, int) noexcept
         requires ElementIncrementable<T>
     {
-        T temp(*this);
+        T temp(self);
 
-        const auto inc_operation = [this] { derived().execute_inplace_operation([](T& elem) { elem++; }); };
+        const auto inc_operation = [&self] { self.execute_inplace_operation([](T& elem) { elem++; }); };
 
         const auto inc_operation_async = [](auto* ctx, auto& proxy)
         { proxy.execute_inplace_operation_async(ctx, [](T& elem) { elem++; }); };
 
-        apply_inplace_operation(inc_operation, inc_operation_async);
+        self.apply_inplace_operation(inc_operation, inc_operation_async);
         return temp;
     }
 
@@ -1234,16 +1240,16 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @details Implements: proxy--
      * Returns the original value before decrement.
      */
-    T operator--(int) noexcept
+    T operator--(this auto&& self, int) noexcept
         requires ElementIncrementable<T>
     {
-        T          temp(*this);
-        const auto dec_operation = [this] { derived().execute_inplace_operation([](T& elem) { elem--; }); };
+        T          temp(self);
+        const auto dec_operation = [&self] { self.execute_inplace_operation([](T& elem) { elem--; }); };
 
         const auto dec_operation_async = [](auto* ctx, auto& proxy)
         { proxy.execute_inplace_operation_async(ctx, [](T& elem) { elem--; }); };
 
-        apply_inplace_operation(dec_operation, dec_operation_async);
+        self.apply_inplace_operation(dec_operation, dec_operation_async);
         return temp;
     }
 };
