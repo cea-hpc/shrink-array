@@ -388,8 +388,11 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
 
     static void clear([[maybe_unused]] int num_tab)
     {
-        // Nothing per tab to release: the per-chunk second values are freed
-        // with the array (clear_tab_is_int / the type table), not here.
+        // The array's per-chunk second-value slots, released, not just emptied
+        // (a re-chunk destroys the old storage under its own num_tab: this row
+        // leaked 4 bytes per old chunk at every re-chunk until Sept '26).
+        if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_second_value.size())
+            tab_second_value[static_cast<std::size_t>(num_tab)].reset();
     }
 
     /*!
@@ -487,7 +490,12 @@ struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<boo
      * \param num_tab Index of the tab to clear.
      */
 
-    static void clear([[maybe_unused]] int num_tab) {}
+    static void clear([[maybe_unused]] int num_tab)
+    {
+        // Released, not just emptied -- see the non-bool specialisation.
+        if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_second_value.size())
+            tab_second_value[static_cast<std::size_t>(num_tab)].reset();
+    }
 
     /*!
      * \brief Sets a specific second value in a tab and chunk.
@@ -787,7 +795,10 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     static void clear_tab_is_int(int num_tab)
     {
         BaseSpec::clear(num_tab);
-        tab_type_cst_val[num_tab].clear();
+        // released, not just emptied: clear() kept the capacity, so every
+        // re-chunk (new storage under a new num_tab, the old one destroyed)
+        // left one byte per old chunk behind.
+        std::vector<char>().swap(tab_type_cst_val[num_tab]);
     }
 
     /**
