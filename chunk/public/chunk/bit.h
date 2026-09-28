@@ -52,7 +52,9 @@ struct Bit
     bool v = false;
 
     constexpr Bit() noexcept = default;
+    /// @brief Implicit conversion from bool.
     constexpr Bit(bool b) noexcept : v(b) {} // NOLINT(google-explicit-constructor): a Bit IS a bool
+    /// @brief Implicit conversion to bool: the stored value.
     constexpr operator bool() const noexcept // NOLINT(google-explicit-constructor)
     {
         return v;

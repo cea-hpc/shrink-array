@@ -116,8 +116,8 @@ inline void set_bit(word_t* w, std::size_t i, bool v) noexcept
  */
 inline bool set_bit_atomic(word_t* w, std::size_t i, bool v) noexcept
 {
-    std::atomic_ref<word_t> word(w[i / word_bits]);
-    const word_t            m = bit_mask(i);
+    const std::atomic_ref<word_t> word(w[i / word_bits]);
+    const word_t                  m = bit_mask(i);
     const word_t old = v ? word.fetch_or(m, std::memory_order_relaxed) : word.fetch_and(~m, std::memory_order_relaxed);
     return (old & m) != 0;
 }
@@ -152,10 +152,10 @@ inline void fill_bit_range(word_t* w, std::size_t lo, std::size_t hi, bool v) no
     {
         const std::size_t k   = i / word_bits;
         const std::size_t off = i % word_bits;
-        const std::size_t end = (hi - k * word_bits) < word_bits ? hi - k * word_bits : word_bits;
+        const std::size_t end = (hi - (k * word_bits)) < word_bits ? hi - (k * word_bits) : word_bits;
         const word_t      m   = span_mask(off, end);
         w[k]                  = v ? (w[k] | m) : (w[k] & ~m);
-        i                     = k * word_bits + end;
+        i                     = (k * word_bits) + end;
     }
 }
 
@@ -174,18 +174,18 @@ inline void fill_bit_range_atomic(word_t* w, std::size_t lo, std::size_t hi, boo
     std::size_t i = lo;
     while (i < hi)
     {
-        const std::size_t       k   = i / word_bits;
-        const std::size_t       off = i % word_bits;
-        const std::size_t       end = (hi - k * word_bits) < word_bits ? hi - k * word_bits : word_bits;
-        const word_t            m   = span_mask(off, end);
-        std::atomic_ref<word_t> word(w[k]);
+        const std::size_t             k   = i / word_bits;
+        const std::size_t             off = i % word_bits;
+        const std::size_t             end = (hi - (k * word_bits)) < word_bits ? hi - (k * word_bits) : word_bits;
+        const word_t                  m   = span_mask(off, end);
+        const std::atomic_ref<word_t> word(w[k]);
         if (m == word_ones)
             word.store(v ? word_ones : 0, std::memory_order_relaxed);
         else if (v)
             word.fetch_or(m, std::memory_order_relaxed);
         else
             word.fetch_and(~m, std::memory_order_relaxed);
-        i = k * word_bits + end;
+        i = (k * word_bits) + end;
     }
 }
 
@@ -202,13 +202,13 @@ inline void store_bit_range(word_t* w, std::size_t lo, std::size_t hi, Get&& get
     {
         const std::size_t k   = i / word_bits;
         const std::size_t off = i % word_bits;
-        const std::size_t end = (hi - k * word_bits) < word_bits ? hi - k * word_bits : word_bits;
+        const std::size_t end = (hi - (k * word_bits)) < word_bits ? hi - (k * word_bits) : word_bits;
         word_t            x   = 0;
         for (std::size_t b = off; b < end; ++b)
-            x |= static_cast<word_t>(static_cast<bool>(get(k * word_bits + b))) << b;
+            x |= static_cast<word_t>(static_cast<bool>(get((k * word_bits) + b))) << b;
         const word_t m = span_mask(off, end);
         w[k]           = (w[k] & ~m) | x;
-        i              = k * word_bits + end;
+        i              = (k * word_bits) + end;
     }
 }
 

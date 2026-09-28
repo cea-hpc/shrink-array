@@ -66,16 +66,19 @@ struct Rec
     const void* slab = nullptr; // identity of the pool that served this block (aliasing check)
 };
 
+/// @brief The global mutex guarding every ledger map.
 inline std::mutex& mtx()
 {
     static std::mutex ledger_mutex;
     return ledger_mutex;
 }
+/// @brief Live ctx blocks, keyed by address.
 inline ankerl::unordered_dense::map<void*, Rec>& ctx_live()
 {
     static ankerl::unordered_dense::map<void*, Rec> live;
     return live;
 }
+/// @brief Live op blocks, keyed by address.
 inline ankerl::unordered_dense::map<void*, Rec>& op_live()
 {
     static ankerl::unordered_dense::map<void*, Rec> live;
@@ -125,6 +128,10 @@ inline constexpr bool pool_ledger_enabled = build_config::any_check;
 inline constexpr bool pool_ledger_enabled = build_config::any_check && !build_config::use_openmp;
 #endif
 
+/// @brief Record a ctx block allocation; fails an invariant if @p ptr is already live as ctx or as op.
+/// @param ptr Block address.
+/// @param sz Block size.
+/// @param slab Identity of the pool that served the block.
 inline void on_ctx_alloc(void* ptr, std::size_t sz, const void* slab = nullptr) noexcept
 {
     if constexpr (pool_ledger_enabled)
@@ -145,6 +152,8 @@ inline void on_ctx_alloc(void* ptr, std::size_t sz, const void* slab = nullptr) 
     }
 }
 
+/// @brief Record a ctx block release; fails an invariant if @p ptr is live as op or not live as ctx.
+/// @param ptr Block address.
 inline void on_ctx_free(void* ptr) noexcept
 {
     if constexpr (pool_ledger_enabled)
@@ -159,6 +168,10 @@ inline void on_ctx_free(void* ptr) noexcept
     }
 }
 
+/// @brief Record an op block allocation; fails an invariant if @p ptr is already live as ctx or as op.
+/// @param ptr Block address.
+/// @param sz Block size.
+/// @param slab Identity of the pool that served the block.
 inline void on_op_alloc(void* ptr, std::size_t sz, const void* slab = nullptr) noexcept
 {
     if constexpr (pool_ledger_enabled)
@@ -185,6 +198,8 @@ inline void on_op_alloc(void* ptr, std::size_t sz, const void* slab = nullptr) n
     }
 }
 
+/// @brief Record an op block release; fails an invariant if @p ptr is live as ctx or not live as op.
+/// @param ptr Block address.
 inline void on_op_free(void* ptr) noexcept
 {
     if constexpr (pool_ledger_enabled)
@@ -228,6 +243,8 @@ enum class BState : std::uint8_t
     PARKED = 2
 };
 
+/// @brief Name of a block state.
+/// @return "FREE", "LIVE", "PARKED", or "??" for any other value.
 inline const char* bstate_name(BState state) noexcept
 {
     switch (state)
@@ -242,6 +259,7 @@ inline const char* bstate_name(BState state) noexcept
     return "??";
 }
 
+/// @brief Block ledger record: current state and the rank and site of the last transition.
 struct BRec
 {
     BState      state     = BState::FREE;
@@ -249,6 +267,7 @@ struct BRec
     const char* last_site = "";
 };
 
+/// @brief Tracked value blocks, keyed by address.
 inline ankerl::unordered_dense::map<const void*, BRec>& block_live()
 {
     static ankerl::unordered_dense::map<const void*, BRec> live;
@@ -428,19 +447,31 @@ inline void block_transition(const void* block,
     }
 }
 
+/// @brief Record a fresh block (FREE -> LIVE); an untracked block is accepted.
+/// @param block Block address.
+/// @param site Label of the calling site.
 inline void on_block_alloc(const void* block, const char* site) noexcept
 {
     maybe_register_live_report();
     block_transition(block, BState::FREE, BState::LIVE, site, "b_alloc", /*allow_unknown=*/true);
 }
+/// @brief Record a block popped from a free-list (PARKED -> LIVE).
+/// @param block Block address.
+/// @param site Label of the calling site.
 inline void on_block_pop(const void* block, const char* site) noexcept
 {
     block_transition(block, BState::PARKED, BState::LIVE, site, "b_pop", /*allow_unknown=*/false);
 }
+/// @brief Record a block pushed into a free-list (LIVE -> PARKED).
+/// @param block Block address.
+/// @param site Label of the calling site.
 inline void on_block_park(const void* block, const char* site) noexcept
 {
     block_transition(block, BState::LIVE, BState::PARKED, site, "b_park", /*allow_unknown=*/false);
 }
+/// @brief Record a block returned to the allocator (LIVE -> FREE); an untracked block is accepted.
+/// @param block Block address.
+/// @param site Label of the calling site.
 inline void on_block_release(const void* block, const char* site) noexcept
 {
     // allow_unknown=true: a release of a never-tracked address is non-fatal here

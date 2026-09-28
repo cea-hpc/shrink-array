@@ -26,6 +26,7 @@
 
 namespace shrink_array
 {
+/// @brief Names std::map<T, int, ValueLess<T>>, the map from a second value to its index.
 template <typename T>
 struct ValueToIntMapHelper
 {

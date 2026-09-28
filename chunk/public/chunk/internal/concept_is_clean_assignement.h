@@ -52,6 +52,7 @@ template <typename T>
 struct is_cplx : std::false_type
 {
 };
+/// @brief std::complex<T> is complex.
 template <typename T>
 struct is_cplx<std::complex<T>> : std::true_type
 {

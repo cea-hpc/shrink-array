@@ -48,6 +48,8 @@
 namespace shrink_array::internal
 {
 
+/// @brief Whether T is trivially copyable and std::atomic_ref<T> is always lock-free with a required
+///        alignment equal to alignof(T).
 template <typename T>
 consteval bool relaxed_element_access()
 {
@@ -75,6 +77,9 @@ template <typename T>
     return std::atomic_ref<T>(*const_cast<T*>(ptr)).load(std::memory_order_relaxed);
 }
 
+/// @brief Store @p v to @p *ptr through a relaxed std::atomic_ref.
+/// @param ptr Element to write.
+/// @param v Value to store.
 template <typename T>
 void store_element_relaxed(T* ptr, T v) noexcept
 {

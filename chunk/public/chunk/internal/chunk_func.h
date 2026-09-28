@@ -37,6 +37,10 @@
 
 namespace shrink_array
 {
+/// @brief Whether the per-rank free-block lists of Chunk<T> are unbalanced.
+/// @tparam T Element type.
+/// @return true when the lists are not all empty and some rank's list size lies outside [0.9, 1.1] times the
+///         mean size over CHUNK_PMP_RANK_BOUND ranks.
 template <typename T>
 bool need_load_balance_list_block_free_thr()
 {
@@ -65,6 +69,9 @@ bool need_load_balance_list_block_free_thr()
     return false;
 }
 
+/// @brief Even out the per-rank free-block lists of Chunk<T>: blocks past the mean size are moved from the
+///        longer lists to the shorter ones. Does nothing when the total is below the rank count.
+/// @tparam T Element type.
 template <typename T>
 void load_balance_list_block_free_thr()
 {

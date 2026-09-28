@@ -191,6 +191,8 @@ inline void chunk_pmp_set_max_active_levels(int levels) noexcept
 }
 } // namespace shrink_array
 
+/// @brief Rank of the calling thread in the active OpenMP team, read from the thread-local cache.
+/// @return The cached rank; filled from the OpenMP library on first use when the cache holds -1.
 inline int get_thr_rank_fast() noexcept
 {
     // If OMPT is working, this value is already set at the start of the region.
@@ -217,6 +219,8 @@ inline int get_thr_rank_fast() noexcept
 
     #ifndef CHUNK_PMP_THREAD_RANK
 
+/// @brief Rank of the calling thread, queried from the OpenMP library and checked.
+/// @return chunk_pmp_checked_rank() of chunk_pmp_library_rank().
 inline int chunk_pmp_thread_rank() noexcept
 {
     return ::shrink_array::chunk_pmp_checked_rank(::shrink_array::chunk_pmp_library_rank());
@@ -275,6 +279,7 @@ inline void chunk_pmp_set_num_threads(int) noexcept {}
 inline void chunk_pmp_set_max_active_levels(int) noexcept {}
 } // namespace shrink_array
 
+/// @brief Serial build: the calling thread's rank, always 0.
 inline int get_thr_rank_fast() noexcept
 {
     return 0;
@@ -308,19 +313,28 @@ inline int get_thr_rank_fast() noexcept
 
 #endif
 
+/// @brief Size of a per-thread table for @p nn elements.
+/// @param nn Number of elements.
+/// @return nn / max_threads + max_threads inside a parallel region when nn exceeds the thread count (>1),
+///         otherwise @p nn.
 inline int get_size_max_tab_omp(int nn)
 {
 #ifdef _OPENMP
     const int max_thr = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_MAX_THREADS : 1;
     if (nn > max_thr && max_thr > 1)
     {
-        const int pp = nn / std::max(1, max_thr) + max_thr;
+        const int pp = (nn / std::max(1, max_thr)) + max_thr;
         return pp;
     }
 #endif
     return nn;
 }
 
+/// @brief Size of a per-thread table for @p nn elements, the per-thread share rounded to static blocks.
+/// @param nn Number of elements.
+/// @param nb_static Block size the per-thread share (nn / max_threads) is rounded up past.
+/// @return ((nn / max_threads) / nb_static + 1) * nb_static + max_threads inside a parallel region when nn
+///         exceeds the thread count (>1), otherwise @p nn.
 inline int get_size_max_tab_omp(int nn, [[maybe_unused]] int nb_static)
 {
 #ifdef _OPENMP
@@ -331,7 +345,7 @@ inline int get_size_max_tab_omp(int nn, [[maybe_unused]] int nb_static)
         int       pp  = nn / max_thr;
         const int nbs = pp / nb_static;
 
-        pp = (nbs + 1) * nb_static + max_thr;
+        pp = ((nbs + 1) * nb_static) + max_thr;
 
         return pp;
     }

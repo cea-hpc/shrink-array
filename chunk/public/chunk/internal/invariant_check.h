@@ -37,6 +37,7 @@
 namespace std
 {
 
+/// @brief std::format support for std::complex<T>, printed as "(re+imi)".
 template <typename T>
 struct formatter<std::complex<T>, char>
 {
@@ -81,12 +82,15 @@ A&& invariant_fmt_arg(A&& arg)
     return std::forward<A>(arg);
 }
 
+/// @brief Overload for a type with no formatter: the bytes of @p arg in hex, prefixed with "0x".
+/// @param arg Value to dump.
+/// @return The hex string, two digits per byte in memory order.
 template <typename A>
 std::string invariant_fmt_arg(A&& arg)
 {
     using V = std::remove_cvref_t<A>;
     std::string out;
-    out.reserve(2 + 2 * sizeof(V));
+    out.reserve(2 + (2 * sizeof(V)));
     out += "0x";
     const auto* bytes = reinterpret_cast<const unsigned char*>(&arg);
     for (std::size_t i = 0; i < sizeof(V); ++i)

@@ -19,11 +19,15 @@
 
 #include <cstddef> // size_t
 
+/// @brief Whether @p value is a power of two.
+/// @return true when @p value is non-zero and has a single bit set.
 constexpr bool is_power_of_tow(int value) noexcept
 {
     return ((value & (value - 1)) == 0) && (value != 0);
 }
 
+/// @brief Integer base-2 logarithm, rounded down.
+/// @return floor(log2(@p value)); 0 for values below 2.
 constexpr size_t log2int(size_t value) noexcept
 {
     return (value < 2) ? 0 : 1 + log2int(value / 2);

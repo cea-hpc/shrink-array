@@ -49,17 +49,18 @@ struct CRTPSupport
         return static_cast<Derived&>(*this);
     }
     /// @copydoc derived()
-    const Derived& derived() const noexcept
+    [[nodiscard]] const Derived& derived() const noexcept
     {
         return static_cast<const Derived&>(*this);
     }
 
+    /// @brief `this` as a pointer to the derived class.
     Derived* self() noexcept
     {
         return static_cast<Derived*>(this);
     }
 
-    const Derived* self() const noexcept
+    [[nodiscard]] const Derived* self() const noexcept
     {
         return static_cast<const Derived*>(this);
     }

@@ -31,8 +31,10 @@
 namespace shrink_array
 {
 
+/// @brief Per element type figures of the compression lists, keyed by type name, and their memory report.
 struct GlobalStatsChunkList
 {
+    /// @brief Figures recorded for one element type.
     struct TypeStats
     {
         long   allocated_chunks;  // Total number of data chunks managed
@@ -103,7 +105,7 @@ struct GlobalStatsChunkList
 
         std::cout << std::string(total_width, '-') << "\n";
 
-        for (auto const& [name, stats] : all_stats)
+        for (const auto& [name, stats] : all_stats)
         {
             const long        total_list_capacity = static_cast<long>(nb_threads) * stats.threshold_per_thr;
             const long double type_list_bytes     = static_cast<long double>(total_list_capacity) * stats.element_size;

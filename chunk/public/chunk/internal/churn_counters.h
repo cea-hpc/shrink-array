@@ -64,6 +64,7 @@ struct Materialisations
 {
     static constexpr unsigned kKeys = 128; ///< key slots per rank (key % kKeys)
 
+    /// @brief One rank's counters, one per key slot.
     struct alignas(128) RankSlot
     {
         std::array<long, kKeys> n;
@@ -72,6 +73,7 @@ struct Materialisations
     static inline std::vector<RankSlot> slots_; ///< one per rank, sized once (ensure)
     static inline std::once_flag        once_;
 
+    /// @brief Size slots_ once to CHUNK_PMP_MAX_THREADS entries (at least 1), zero-initialised.
     static void ensure() noexcept
     {
         std::call_once(once_,

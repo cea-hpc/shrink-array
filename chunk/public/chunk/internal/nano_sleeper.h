@@ -31,6 +31,7 @@ class NanoSleeper
     std::uniform_int_distribution<int> dist; // Random number generator
 
   public:
+    /// @brief Seed the generator from std::random_device; delays are drawn in [100, 10000] ns.
     NanoSleeper() : gen(std::random_device{}()), dist(100, 10000) {} //  One-time initialization
 
     /// @brief Busy-wait a random 100 ns to 10 us (a back-off that does not

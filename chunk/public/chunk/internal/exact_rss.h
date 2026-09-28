@@ -77,11 +77,14 @@ inline long exact_rss_kib() noexcept
 class RssPeakSampler
 {
   public:
+    /// @brief Start the sampling thread when @p period_ms is positive.
+    /// @param period_ms Sampling period, in milliseconds.
     explicit RssPeakSampler(int period_ms) : period_ms_(period_ms)
     {
         if (period_ms_ > 0)
             thread_ = std::thread([this] { run(); });
     }
+    /// @brief Signal the sampling thread to stop and join it.
     ~RssPeakSampler()
     {
         stop_.store(true, std::memory_order_relaxed);

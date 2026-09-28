@@ -52,6 +52,8 @@ namespace shrink_array
 template <typename T>
 struct ValueLess
 {
+    /// @brief Compare two values with the ordering selected for T (see above).
+    /// @return true when @p lhs orders before @p rhs.
     bool operator()(const T& lhs, const T& rhs) const noexcept
     {
         if constexpr (ComplexType<T>)
