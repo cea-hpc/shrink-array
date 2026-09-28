@@ -50,6 +50,7 @@
 #include "chunk/bit.h"                    // is_bool_like_v, is_packed_bit_v
 #include "chunk/internal/element_access.h" // internal::as_words: Bit sub-blocks scanned by word
 #include "chunk/config.h"        // chunk_config::use_chunk2 / use_chunk2a
+#include "chunk/PMP_CHUNK.h"     // CHUNK_PMP_NUM_THREADS (the parts per thread)
 #include "chunk/internal/rechunk_cost_model.h"
 #include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size
 
@@ -217,34 +218,33 @@ class ChunkSizeAdvisor
         // Level l aggregates blocks of 2^l consecutive chunks. A block aggregate
         // is {kind, key}: kind CST1 / CST2(key) / MAT; folding a child into a
         // block degrades it per the merge rule above.
-        // Classify every chunk ONCE, in parallel. This is the expensive part
-        // (is_cst_val1 / is_cst_val2 / values_load per chunk over up to millions
-        // of chunks) and it is strictly PURE-READ: those accessors are const and
-        // mutate nothing (is_cst_val2 only compares a pointer to a stable shared
-        // sentinel), so concurrent reads are race-free. We store each chunk's
-        // (kind, key) so the coarser fold below can stay SERIAL and byte-identical
-        // (it reads the arrays instead of re-classifying). Only this classification
-        // is parallel; the sequential fold is never parallelised. analyze() is
-        // called at a quiescent serial point, so spawning a region here is safe.
-        std::vector<std::uint8_t> kindv(static_cast<std::size_t>(nc));
-        std::vector<const void*>  keyv(static_cast<std::size_t>(nc), nullptr);
-
+        // ── Classification, coarser fold and sampling selection ─────────────
+        // No per-chunk scratch array: each pass classifies the chunks it reads
+        // (classify() is pure-read -- const accessors, a pointer compare against
+        // stable sentinels -- so concurrent reads are race-free; analyze() is
+        // called at a quiescent serial point, so spawning a region here is safe).
+        // Until Sept '26 the classification was stored in
+        //     std::vector<std::uint8_t> kindv(nc); std::vector<const void*> keyv(nc);
+        // so that the fold and the selection would not classify twice: 9 bytes
+        // per chunk, 140 MB for a 15.6-million-chunk array, zeroed by the calling
+        // thread and faulted in page by page at EVERY call. On the 64-thread
+        // chunk2a_dyn bench the analyses cost 1-2 s of a 6.5 s run that way;
+        // classifying twice costs a fraction of that.
+        //
+        // Work unit: a PART, a contiguous run of whole super-blocks of 2^L chunks.
+        //  - the coarser fold: every level-l block (l <= L) lies inside one
+        //    super-block, so each part folds independently with its own run[],
+        //    and the per-level counts are summed -- the same integers as the
+        //    sequential fold;
+        //  - each part counts its materialised chunks; the selection gives part p
+        //    the running count of the parts before it, so it picks exactly the
+        //    chunks the sequential walk picked (every stride-th materialised
+        //    chunk), and the parts' picks are concatenated in part order: the same
+        //    list, in the same order. The report is byte-identical.
+        // Parts are indexed by the loop, never by a thread rank, so a serial build
+        // runs the same code in order.
         int64_t mat0 = 0;
 
-        // ── Coarser fold and finer sampling: parallel too, same results.
-        // Both used to run SERIALLY after the classification, and the sampling
-        // re-classified every chunk (classify() again, kindv already held the
-        // answer): the master thread spent 3.7 s of a 17 s run here (four arrays,
-        // 64 threads, the other 63 idle). Both are now shared out, and every
-        // count they produce is an integer computed exactly as before, so the
-        // report is byte-identical:
-        //  - the fold is split into super-blocks of 2^L chunks: every level-l
-        //    block (l <= L) lies inside one super-block, so each super-block
-        //    folds independently with its own run[] and the per-level counts are
-        //    summed;
-        //  - the sampling SELECTION stays sequential (it depends on the running
-        //    count of materialised chunks) but reads kindv, and only the chosen
-        //    chunks' DATA are scanned in parallel.
         const int coarser = opt.coarser_levels;
         struct Agg
         {
@@ -261,35 +261,49 @@ class ChunkSizeAdvisor
         const int64_t super   = int64_t{1} << (coarser > 0 ? coarser : 0);
         const int64_t n_super = (nc + super - 1) / super;
 
+        int64_t                           n_parts  = 1;
+        int64_t                           stride   = 1;
+        bool                              sampling = false;
+        std::vector<int64_t>              part_mat;   // materialised chunks per part, then their offsets
+        std::vector<std::vector<int64_t>> part_picks; // the chunks each part selected
+
+        // Chunks [j0, j1) of part p (whole super-blocks).
+        const auto part_range = [&](int64_t p, int64_t& j0, int64_t& j1)
+        {
+            const int64_t s0 = n_super * p / n_parts;
+            const int64_t s1 = n_super * (p + 1) / n_parts;
+            j0               = s0 * super;
+            j1               = (s1 * super) < nc ? (s1 * super) : nc;
+        };
+
 #pragma omp parallel if (nc > 16384)
         {
-#pragma omp for schedule(static) reduction(+ : mat0)
-            for (int64_t j = 0; j < nc; ++j)
+#pragma omp single
             {
-                const void* key                    = nullptr;
-                const int   kind                   = classify(tab.chunk_list[j], key);
-                kindv[static_cast<std::size_t>(j)] = static_cast<std::uint8_t>(kind);
-                keyv[static_cast<std::size_t>(j)]  = key;
-                if (kind != 0 && kind != 1)
-                {
-                    ++mat0;
-                }
+                n_parts = static_cast<int64_t>(CHUNK_PMP_NUM_THREADS) * 4;
+                if (n_parts > n_super)
+                    n_parts = n_super > 0 ? n_super : 1;
+                part_mat.assign(static_cast<std::size_t>(n_parts), 0);
+                part_picks.assign(static_cast<std::size_t>(n_parts), {});
             }
-            // (implicit barrier: kindv, keyv and mat0 are complete)
+            // (implicit barrier: n_parts and the per-part vectors are set)
 
-            // Coarser fold, one super-block of 2^L chunks per iteration.
+            // Coarser fold + materialised count, one part per iteration.
             {
                 std::vector<Agg>     run(static_cast<std::size_t>(coarser) + 1, Agg{0, nullptr});
                 std::vector<int64_t> mat_loc(static_cast<std::size_t>(coarser) + 1, 0);
-#pragma omp for schedule(static) nowait
-                for (int64_t s = 0; s < n_super; ++s)
+#pragma omp for schedule(dynamic, 1) nowait
+                for (int64_t p = 0; p < n_parts; ++p)
                 {
-                    const int64_t j0 = s * super;
-                    const int64_t j1 = (j0 + super) < nc ? (j0 + super) : nc;
+                    int64_t j0 = 0, j1 = 0;
+                    part_range(p, j0, j1);
+                    int64_t m = 0;
                     for (int64_t j = j0; j < j1; ++j)
                     {
-                        const int   kind = kindv[static_cast<std::size_t>(j)];
-                        const void* key  = keyv[static_cast<std::size_t>(j)];
+                        const void* key  = nullptr;
+                        const int   kind = classify(tab.chunk_list[j], key);
+                        if (kind == 2)
+                            ++m;
 
                         for (int l = 1; l <= coarser; ++l)
                         {
@@ -303,6 +317,7 @@ class ChunkSizeAdvisor
                                     ++mat_loc[static_cast<std::size_t>(l)]; // commit block at boundary
                         }
                     }
+                    part_mat[static_cast<std::size_t>(p)] = m;
                 }
                 for (int l = 1; l <= coarser; ++l)
                     if (mat_loc[static_cast<std::size_t>(l)] != 0)
@@ -311,29 +326,55 @@ class ChunkSizeAdvisor
                         mat_at[static_cast<std::size_t>(l)] += mat_loc[static_cast<std::size_t>(l)];
                     }
             }
+#pragma omp barrier
 
-            // ── Finer sizes: sample the DATA of materialized chunks ───────────
-            // Selection: the same chunks as the former sequential loop -- every
-            // stride-th materialised chunk, at most max_mat_scans -- read from
-            // kindv instead of classify()ing every chunk again.
+            // mat0, the sampling stride, and each part's starting rank among the
+            // materialised chunks (exclusive prefix sum, in place).
 #pragma omp single
             {
-                if (finer > 0 && mat0 > 0 && S >= opt.min_size * 2)
+                int64_t run_count = 0;
+                for (int64_t p = 0; p < n_parts; ++p)
                 {
-                    const int64_t stride =
-                        mat0 > opt.max_mat_scans ? (mat0 + opt.max_mat_scans - 1) / opt.max_mat_scans : 1;
-                    int64_t seen = 0;
-                    picks.reserve(static_cast<std::size_t>(mat0 < opt.max_mat_scans ? mat0 : opt.max_mat_scans));
-                    for (int64_t j = 0; j < nc && static_cast<int64_t>(picks.size()) < opt.max_mat_scans; ++j)
+                    const int64_t m                       = part_mat[static_cast<std::size_t>(p)];
+                    part_mat[static_cast<std::size_t>(p)] = run_count;
+                    run_count += m;
+                }
+                mat0     = run_count;
+                sampling = finer > 0 && mat0 > 0 && S >= opt.min_size * 2;
+                if (sampling)
+                    stride = mat0 > opt.max_mat_scans ? (mat0 + opt.max_mat_scans - 1) / opt.max_mat_scans : 1;
+            }
+            // (implicit barrier: mat0, stride and the offsets are set)
+
+            // ── Finer sizes: sample the DATA of materialized chunks ───────────
+            // Selection: every stride-th materialised chunk -- at most
+            // max_mat_scans, since stride = ceil(mat0 / max_mat_scans) -- the same
+            // chunks as the sequential walk, found part by part.
+            if (sampling)
+            {
+#pragma omp for schedule(dynamic, 1)
+                for (int64_t p = 0; p < n_parts; ++p)
+                {
+                    int64_t j0 = 0, j1 = 0;
+                    part_range(p, j0, j1);
+                    int64_t seen = part_mat[static_cast<std::size_t>(p)];
+                    auto&   mine = part_picks[static_cast<std::size_t>(p)];
+                    for (int64_t j = j0; j < j1; ++j)
                     {
-                        if (kindv[static_cast<std::size_t>(j)] != 2) // skip cst1 / cst2 (only mat has data)
+                        const void* key = nullptr;
+                        if (classify(tab.chunk_list[j], key) != 2) // skip cst1 / cst2 (only mat has data)
                             continue;
                         if ((seen++ % stride) != 0)
                             continue;
-                        picks.push_back(j);
+                        mine.push_back(j);
                     }
-                    scanned = static_cast<int64_t>(picks.size());
                 }
+            }
+#pragma omp single
+            {
+                for (const auto& mine : part_picks)
+                    picks.insert(picks.end(), mine.begin(), mine.end());
+                scanned = static_cast<int64_t>(picks.size());
             }
             // (implicit barrier: picks is complete)
 
