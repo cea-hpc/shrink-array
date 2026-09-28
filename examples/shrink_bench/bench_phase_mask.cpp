@@ -42,7 +42,8 @@ namespace
 ///        mixed segments, a different set each iteration.
 constexpr bool mask_flips(Int i, Int k) noexcept
 {
-    return bench_mask_hash(static_cast<std::uint64_t>(i) * 131u + static_cast<std::uint64_t>(k) * 0x9E37u) % 61 == 0;
+    return bench_mask_hash((static_cast<std::uint64_t>(i) * 131u) + (static_cast<std::uint64_t>(k) * 0x9E37u)) % 61 ==
+           0;
 }
 
 } // namespace

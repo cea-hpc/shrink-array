@@ -45,6 +45,7 @@ inline void begin_parallel_phase_g()
         shrink_array::begin_parallel_phase();
 }
 
+/// @brief Without OMPT: `omp barrier`, then shrink_array::finalize_barrier_phase(); no-op otherwise.
 inline void finalize_barrier_phase_g()
 {
     if constexpr (build_config::has_not_ompt)
@@ -54,12 +55,14 @@ inline void finalize_barrier_phase_g()
     }
 }
 
+/// @brief Without OMPT: shrink_array::finalize_parallel_phase_only_flush(); no-op otherwise.
 inline void finalize_parallel_phase_only_flush_g()
 {
     if constexpr (build_config::has_not_ompt)
         shrink_array::finalize_parallel_phase_only_flush();
 }
 
+/// @brief Without OMPT: shrink_array::finalize_parallel_phase_after_flush(); no-op otherwise.
 inline void finalize_parallel_phase_after_flush_g()
 {
     if constexpr (build_config::has_not_ompt)
@@ -87,6 +90,11 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
                       std::chrono::steady_clock::time_point& end,
                       std::chrono::duration<double>&         elapsed_seconds);
 
+/// @brief Store sqrt(@p v) at index @p i of @p tab. For a v1 chunk array, the raw reference tab(i) is used only
+///        when the chunk is written, operator[] otherwise.
+/// @param tab Destination array.
+/// @param i Element index.
+/// @param v Value whose square root is stored.
 template <class Arr, typename T>
 void neutral_sqrt_assign(Arr& tab, Int i, T v)
 {

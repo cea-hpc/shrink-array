@@ -12,6 +12,8 @@
 namespace crash_bt
 {
 
+/// @brief Kernel thread id of the caller.
+/// @return syscall(SYS_gettid) when available and positive, getpid() otherwise.
 inline long get_thread_id()
 {
 #if defined(SYS_gettid)
@@ -22,6 +24,10 @@ inline long get_thread_id()
     return static_cast<long>(getpid()); // fallback
 }
 
+/// @brief Signal handler: print the signal, fault address, thread id and a backtrace on stderr, run gcore when
+///        CRASH_BT_GCORE=1, then restore the default handler and re-raise @p sig.
+/// @param sig Signal number.
+/// @param info Signal information (si_addr is printed).
 inline void handler(int sig, siginfo_t* info, void* /*ucontext*/)
 {
     // async-signal-safe-ish: we use write()/backtrace which are acceptable here
@@ -67,6 +73,7 @@ inline void handler(int sig, siginfo_t* info, void* /*ucontext*/)
 
 } // namespace crash_bt
 
+/// @brief Install crash_bt::handler for SIGSEGV, SIGABRT and SIGBUS.
 inline void install_crash_backtrace()
 {
     struct sigaction sa{};

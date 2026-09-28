@@ -181,6 +181,8 @@ inline void set_bench_mode(BenchMode m)
     mode_perf    = (m == BenchMode::perf);
 }
 
+/// @brief I/O mode of the run.
+/// @return check mode: 2 in a shrink build, 1 otherwise; perf mode: 0; no mode chosen: -1.
 inline Int get_io_mode()
 {
     // The two branches only ever differed by the check-mode value (2 reads the
@@ -219,11 +221,19 @@ inline long long scaled_size(long long base, double multiplier, Int divisor)
     return static_cast<long long>(std::floor(static_cast<double>(base) * multiplier / static_cast<double>(divisor)));
 }
 
+/// @brief Interval size: the per-mode base scaled by @p multiplier / @p divisor (scaled_size()).
+/// @param multiplier --multiply factor.
+/// @param divisor --divisor value.
+/// @return The scaled size, converted to Int.
 inline Int get_size_interval(double multiplier = 1.0, Int divisor = 1)
 {
     return static_cast<Int>(scaled_size(get_size_base_interval(), multiplier, divisor));
 }
 
+/// @brief Array size: the per-mode base scaled by @p multiplier / @p divisor (scaled_size()).
+/// @param multiplier --multiply factor.
+/// @param divisor --divisor value.
+/// @return The scaled size, converted to Int.
 inline Int get_size_data(double multiplier = 1.0, Int divisor = 1)
 {
     return static_cast<Int>(scaled_size(get_size_base_data(), multiplier, divisor));
@@ -282,7 +292,7 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
     const auto      reach  = [&](double m)
     {
         const long long sz_m = scaled_size(base_data, m, divisor);
-        return std::max(2 * sz_m + 65536LL, sz_m + std::max(scaled_size(base_itv, m, divisor), margin));
+        return std::max((2 * sz_m) + 65536LL, sz_m + std::max(scaled_size(base_itv, m, divisor), margin));
     };
 
     constexpr long long int_max = std::numeric_limits<Int>::max();
@@ -318,6 +328,9 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
     std::exit(1);
 }
 
+/// @brief Iteration count of the run.
+/// @param iter_max Iteration count used in perf mode.
+/// @return 33 in check mode, @p iter_max in perf mode, -1 with no mode chosen.
 inline Int get_iter_stop(Int iter_max)
 {
     if (mode_check)
@@ -327,6 +340,9 @@ inline Int get_iter_stop(Int iter_max)
     return -1;
 }
 
+/// @brief Period, in iterations, of the reset step.
+/// @param iter_max Iteration count, used in perf mode.
+/// @return 4 in check mode, max(iter_max / 10, 1) in perf mode, -1 with no mode chosen.
 inline Int get_freq_raz(Int iter_max)
 {
     if (mode_check)
@@ -343,6 +359,9 @@ inline Int get_freq_raz(Int iter_max)
     return -1;
 }
 
+/// @brief Period, in iterations, of the memory line.
+/// @return CHUNK_BENCH_MEM_PERIOD when set and positive; otherwise 1 in check mode, 10 in perf mode, -1 with no
+///         mode chosen.
 inline Int get_freq_conso_mem()
 {
     // CHUNK_BENCH_MEM_PERIOD=<n>: print the memory line every n iterations,
@@ -358,6 +377,7 @@ inline Int get_freq_conso_mem()
     return -1;
 }
 
+/// @brief Whether statistics are printed: true in check mode only.
 inline bool have_stats()
 {
     if (mode_check)
@@ -367,6 +387,7 @@ inline bool have_stats()
     return false;
 }
 
+/// @brief Whether checksums are computed: same answer as have_stats().
 inline bool have_check_sum()
 {
     return have_stats();

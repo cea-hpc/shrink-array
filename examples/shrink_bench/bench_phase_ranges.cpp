@@ -334,8 +334,8 @@ void bench_phase_range_mt(BenchArrays& bench_arr, Int k, Int beg_s, Int end_s)
 #pragma omp for schedule(static, 1) nowait
         for (Int b = 0; b < nblk; ++b)
         {
-            const auto lo = static_cast<std::size_t>(beg_s + b * kBlk);
-            const auto hi = static_cast<std::size_t>(std::min(beg_s + (b + 1) * kBlk, end_s));
+            const auto lo = static_cast<std::size_t>(beg_s + (b * kBlk));
+            const auto hi = static_cast<std::size_t>(std::min(beg_s + ((b + 1) * kBlk), end_s));
 
             // shrink_array:: spelled out: this file has no using-directive, and
             // the std::vector baseline resolves to vector_range_ops.h.

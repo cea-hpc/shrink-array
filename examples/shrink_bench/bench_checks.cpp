@@ -89,10 +89,23 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 
         if CONSTEXPR (io_res)
         {
-            std::uint64_t tab1_ch = 0, tab2_ch = 0, tab3_ch = 0, tab4_ch = 0, tab5_ch = 0, tab_int_ch = 0,
-                          tab_bool_ch = 0, tab_complex_ch = 0, tab_float_ch = 0, tab_char_ch = 0, tab_short_ch = 0,
-                          tab_long_ch = 0, tab_ulong_ch = 0, tab_quant_ch = 0, tab_point_ch = 0, tab_cell_ch = 0,
-                          tab_mask_ch = 0;
+            std::uint64_t tab1_ch        = 0;
+            std::uint64_t tab2_ch        = 0;
+            std::uint64_t tab3_ch        = 0;
+            std::uint64_t tab4_ch        = 0;
+            std::uint64_t tab5_ch        = 0;
+            std::uint64_t tab_int_ch     = 0;
+            std::uint64_t tab_bool_ch    = 0;
+            std::uint64_t tab_complex_ch = 0;
+            std::uint64_t tab_float_ch   = 0;
+            std::uint64_t tab_char_ch    = 0;
+            std::uint64_t tab_short_ch   = 0;
+            std::uint64_t tab_long_ch    = 0;
+            std::uint64_t tab_ulong_ch   = 0;
+            std::uint64_t tab_quant_ch   = 0;
+            std::uint64_t tab_point_ch   = 0;
+            std::uint64_t tab_cell_ch    = 0;
+            std::uint64_t tab_mask_ch    = 0;
 
             VectorChecksum vec1_ch(tab1);
             VectorChecksum vec2_ch(tab2);

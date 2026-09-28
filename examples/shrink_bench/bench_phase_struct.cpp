@@ -59,7 +59,7 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
         begin_parallel_phase_g();
 
         Int begin_i = sz / 2;
-        Int end_i   = sz - sz / 3;
+        Int end_i   = sz - (sz / 3);
 
         BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int i = begin_i; i < end_i; ++i)
@@ -69,7 +69,7 @@ void bench_phase_struct_fill(BenchArrays& bench_arr)
         }
 
         begin_i = end_i;
-        end_i   = sz - sz / 4;
+        end_i   = sz - (sz / 4);
 
         BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int i = begin_i; i < end_i; ++i)
@@ -152,8 +152,8 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
             {
                 const Point3& p = tab_point[i];
                 const Cell&   c = tab_cell[i];
-                tab_point[i]    = Point3{p.x + 0.5 * dk, 0.5 * p.y + 1., p.z + p.x};
-                tab_cell[i]     = Cell{(c.material + 1) & 7, 0.5f * c.fraction + 0.25f};
+                tab_point[i]    = Point3{p.x + (0.5 * dk), (0.5 * p.y) + 1., p.z + p.x};
+                tab_cell[i]     = Cell{(c.material + 1) & 7, (0.5f * c.fraction) + 0.25f};
             }
         }
 
@@ -167,7 +167,7 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
                 continue;
             const Point3& p = tab_point[i];
             const Cell&   c = tab_cell[i];
-            sum += p.x + p.y * static_cast<double>(c.fraction) + p.z + static_cast<double>(c.material);
+            sum += p.x + (p.y * static_cast<double>(c.fraction)) + p.z + static_cast<double>(c.material);
         }
 
         finalize_parallel_phase_only_flush_g();

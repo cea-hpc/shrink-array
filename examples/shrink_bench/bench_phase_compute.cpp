@@ -249,8 +249,8 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 tab2[i]        = 0;
                 tab3[i]        = std::sin(i + k);
                 tab4[i]        = 0;
-                tab5[i]        = std::cos(i + 2 * k);
-                tab_complex[i] = complex_double(std::tan(i + 2 * k), std::cos(i - k));
+                tab5[i]        = std::cos(i + (2 * k));
+                tab_complex[i] = complex_double(std::tan(i + (2 * k)), std::cos(i - k));
                 tab_int[i]     = static_cast<int>(i - k);
                 tab_float[i]   = 0;
                 tab_short[i]   = static_cast<short>(interpolation(i, sz, std::numeric_limits<short>::max()));
@@ -381,10 +381,10 @@ void bench_phase_compute(BenchArrays&            bench_arr,
         const Int interval_loc = end0 - start0;
         const Int interval10   = interval_loc / 10;
 
-        const Int beg_loc = start0 + 4 * interval10;
-        const Int end_loc = start0 + 5 * interval10;
+        const Int beg_loc = start0 + (4 * interval10);
+        const Int end_loc = start0 + (5 * interval10);
 
-        const Int beg_loc0 = static_cast<Int>(static_cast<double>(start0) + 4.8 * static_cast<double>(interval10));
+        const Int beg_loc0 = static_cast<Int>(static_cast<double>(start0) + (4.8 * static_cast<double>(interval10)));
 
         for (Int p = 0; p < 20; ++p)
         {
@@ -415,8 +415,8 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 #pragma omp for schedule(static, 1) nowait
             for (Int blk = 0; blk < n_blocks; ++blk)
             {
-                const Int lo = std::max(start0, sched_base + blk * sched_blk);
-                const Int hi = std::min(end0, sched_base + (blk + 1) * sched_blk);
+                const Int lo = std::max(start0, sched_base + (blk * sched_blk));
+                const Int hi = std::min(end0, sched_base + ((blk + 1) * sched_blk));
                 BENCH_OMP_SIMD_RED(p_val_sum, p_long_val_sum, p_v_real, p_v_im)
                 for (Int i = lo; i < hi; ++i)
                 {
@@ -472,7 +472,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 val_sum -= tab_float[i] + tab_short[i] - tab_char[i];
                 if (i > end0 - interval10)
                 {
-                    tab1[i] = tab2[i] * tab3[i] * std::sin(tab1[i]) + std::cos(val);
+                    tab1[i] = (tab2[i] * tab3[i] * std::sin(tab1[i])) + std::cos(val);
                     SB_CHECKED_RMW(tab1, i, += tab2[i] - std::exp(std::fmod(static_cast<double>(tab3[i]), 700.0)));
                     SB_CHECKED_RMW(tab1, i, -= tab3[i] + std::tan(tab2[i]));
                     SB_CHECKED_RMW(tab1, i, += 1);

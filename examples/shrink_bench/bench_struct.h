@@ -62,11 +62,15 @@ struct Cell
     auto         operator<=>(const Cell&) const = default;
 };
 
+/// @brief Print @p p as "(x, y, z)".
+/// @return @p os.
 inline std::ostream& operator<<(std::ostream& os, const Point3& p)
 {
     return os << "(" << p.x << ", " << p.y << ", " << p.z << ")";
 }
 
+/// @brief Print @p c as "{material, fraction}".
+/// @return @p os.
 inline std::ostream& operator<<(std::ostream& os, const Cell& c)
 {
     return os << "{" << c.material << ", " << c.fraction << "}";

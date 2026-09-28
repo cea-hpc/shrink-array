@@ -94,7 +94,7 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
     Array<T>       a(n);
     std::vector<T> ref(static_cast<std::size_t>(n), T{});
     const Int      beg   = n / 4;
-    const Int      end   = beg + n / 8;
+    const Int      end   = beg + (n / 8);
     long           fails = 0;
 
     if constexpr (requires {
@@ -121,7 +121,8 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
 
         // Materialised exactly over the window: every chunk it touches, and
         // not the chunks around it.
-        long in = 0, out = 0;
+        long in  = 0;
+        long out = 0;
         for (Int c = 0; c * step < n; ++c)
         {
             const bool in_window = c >= beg / step && c <= (end - 1) / step;
@@ -443,7 +444,11 @@ int main(int argc, char* argv[])
             type_instances);
     };
 
-    Array<double>         tab1(sz), tab2(sz), tab3(sz), tab4(sz), tab5(sz);
+    Array<double>         tab1(sz);
+    Array<double>         tab2(sz);
+    Array<double>         tab3(sz);
+    Array<double>         tab4(sz);
+    Array<double>         tab5(sz);
     Array<int>            tab_int(sz);
     Array<complex_double> tab_complex(sz);
 
@@ -582,7 +587,10 @@ int main(int argc, char* argv[])
 
     std::cout << "Iteration ..." << std::endl;
 
-    std::vector<Int> tab_size(iter_max), tab_start(iter_max), tab_nba1(iter_max), tab_nba2(iter_max);
+    std::vector<Int> tab_size(iter_max);
+    std::vector<Int> tab_start(iter_max);
+    std::vector<Int> tab_nba1(iter_max);
+    std::vector<Int> tab_nba2(iter_max);
 
     // no parallel in OpenMP
     for (Int k = 0; k < iter_max; ++k)
@@ -608,7 +616,8 @@ int main(int argc, char* argv[])
     long           long_val_sum = 0;
     double         point_sum    = 0; // the struct arrays' read sweep (bench_phase_struct.cpp)
     long           mask_count   = 0; // tab_mask's read sweep (bench_phase_mask.cpp)
-    double         v_real = 0, v_im = 0;
+    double         v_real       = 0;
+    double         v_im         = 0;
 
     // Checksums: moved to bench_stats.cpp.
 
@@ -828,7 +837,7 @@ int main(int argc, char* argv[])
         {
             const Int team  = std::max<Int>(max_thr, 2);
             const Int beg_s = std::max<Int>(start0 / 2, 0);
-            const Int end_s = std::min(beg_s + interval / 4, sz);
+            const Int end_s = std::min(beg_s + (interval / 4), sz);
 
             bench_phase_stress_teams(bench_arrays, team, beg_s, end_s);
         }
@@ -849,7 +858,7 @@ int main(int argc, char* argv[])
         if (k % 5 == 3)
         {
             const Int beg_s = std::max<Int>(start0 / 2, 0);
-            const Int end_s = std::min(beg_s + interval / 4, sz);
+            const Int end_s = std::min(beg_s + (interval / 4), sz);
             // NOT __chunk_size: in dynamic builds that is the compile-time
             // default (64), while arrays run at chunk_dyn_size (512) — grain
             // would be 16, i.e. 32 tasks per 512-chunk instead of the 4
@@ -921,7 +930,7 @@ int main(int argc, char* argv[])
         if (k % 5 == 1)
         {
             const Int beg_s = std::max<Int>(start0 / 3, 0) + 7;
-            const Int end_s = std::min(beg_s + interval / 2, sz);
+            const Int end_s = std::min(beg_s + (interval / 2), sz);
 
             bench_phase_range_mt(bench_arrays, k, beg_s, end_s);
         }
