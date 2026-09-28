@@ -116,7 +116,8 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk2<T>* v, std
  * @param n_elems    This chunk's own element count, captured when it was queued.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(vec_tuple_chunk2p_int2& ll_compt1,
+void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Derived&           self,
+                                                                      vec_tuple_chunk2p_int2& ll_compt1,
                                                                       vec_tuple_chunk2p_int2& ll_compt2,
                                                                       const inf_array_t&      inf_array,
                                                                       int                     num_chunk,
@@ -125,9 +126,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(vec_tuple_
 {
     // in_t: a reference into the (const, caller-owned) tuple when T is large.
     const in_t<T> second_v = std::get<0>(inf_array);
-    fill_list_to_compress_impl(
+    self.fill_list_to_compress_impl(
         ll_compt1, ll_compt2, num_chunk, num_tab, [&second_v]() -> in_t<T> { return second_v; },
-        derived().is_not_cst_val2(std::get<1>(inf_array)), n_elems);
+        self.is_not_cst_val2(std::get<1>(inf_array)), n_elems);
 }
 
 /**
@@ -143,14 +144,15 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(vec_tuple_
  * @param n_elems    This chunk's own element count, captured when it was queued.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_bool(vec_tuple_chunk2p_int2& ll_compt1,
+void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_bool(this Derived&           self,
+                                                                           vec_tuple_chunk2p_int2& ll_compt1,
                                                                            vec_tuple_chunk2p_int2& ll_compt2,
                                                                            int                     num_chunk,
                                                                            int                     num_tab,
                                                                            unsigned int            n_elems)
 {
-    fill_list_to_compress_impl(
-        ll_compt1, ll_compt2, num_chunk, num_tab, [] { return true; }, derived().is_not_cst_val2(), n_elems);
+    self.fill_list_to_compress_impl(
+        ll_compt1, ll_compt2, num_chunk, num_tab, [] { return true; }, self.is_not_cst_val2(), n_elems);
 }
 
 /**
@@ -178,7 +180,8 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_bool(vec_t
  */
 template <typename T, typename Derived, bool Enabled>
 template <typename SecondValueFunc>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_impl(vec_tuple_chunk2p_int2& ll_compt1,
+void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_impl(this Derived&           self,
+                                                                           vec_tuple_chunk2p_int2& ll_compt1,
                                                                            vec_tuple_chunk2p_int2& ll_compt2,
                                                                            int                     num_chunk,
                                                                            int                     num_tab,
@@ -190,22 +193,22 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_impl(vec_t
     // or to the one holding the second values (in which case, no further action is required)
     // The is_not_cst_val2 argument is used to access the array for the second compression value
 
-    if (Base::is_not_cst_val1() && check_cst_val2)
+    if (self.Base::is_not_cst_val1() && check_cst_val2)
     {
         // CHUNK_STATS: one compression candidate scanned (see chunk2a).
         increm_chunk_compress_attempt<Derived>();
 
         // n_elems: see Chunk2<T>::compress() -- the chunk's own geometry,
         // captured at enqueue, never the ambient alloc_chunk_count().
-        const auto scan = Base::scan_constants(first_value, get_second_value(), n_elems);
+        const auto scan = self.Base::scan_constants(first_value, get_second_value(), n_elems);
 
         if (scan.first)
         {
-            ll_compt1.emplace_back(std::make_tuple(&derived(), num_chunk, num_tab, n_elems));
+            ll_compt1.emplace_back(std::make_tuple(&self, num_chunk, num_tab, n_elems));
         }
         if (scan.second)
         {
-            ll_compt2.emplace_back(std::make_tuple(&derived(), num_chunk, num_tab, n_elems));
+            ll_compt2.emplace_back(std::make_tuple(&self, num_chunk, num_tab, n_elems));
         }
     }
 }
@@ -274,7 +277,8 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(bool            ap
 }
 
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress([[maybe_unused]] int thr_rank,
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress(this Derived&        self,
+                                                         [[maybe_unused]] int thr_rank,
                                                          const inf_array_t&   inf_array,
                                                          bool                 apply,
                                                          unsigned int         n_elems)
@@ -287,13 +291,13 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress([[maybe_unused]] int th
     // it constant, and cleared it a second time -- freeing that shared block
     // in release builds (rechunk_validation on clang/OMPT: values wrong
     // before any re-chunk). fill_list_to_compress_impl always tested both.
-    if (!derived().written(std::get<1>(inf_array)))
+    if (!self.written(std::get<1>(inf_array)))
         return;
 
-    compress_impl(
+    self.compress_impl(
         apply, n_elems, [&inf_array] { return std::get<0>(inf_array); },
-        [this, thr_rank, &inf_array](int num_compress_value)
-        { this->clear_int_st(num_compress_value, std::get<1>(inf_array), thr_rank); });
+        [&self, thr_rank, &inf_array](int num_compress_value)
+        { self.clear_int_st(num_compress_value, std::get<1>(inf_array), thr_rank); });
 }
 
 /**
@@ -307,17 +311,18 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress([[maybe_unused]] int th
  *          verdict is dropped.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_bool([[maybe_unused]] int thr_rank,
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_bool(this Derived&        self,
+                                                              [[maybe_unused]] int thr_rank,
                                                               bool                 apply,
                                                               unsigned int         n_elems)
 {
     if constexpr (is_bool)
     {
-        if (!derived().written()) // see compress(): a stale entry for a chunk already at a constant
+        if (!self.written()) // see compress(): a stale entry for a chunk already at a constant
             return;
-        compress_impl(
+        self.compress_impl(
             apply, n_elems, [] { return true; },
-            [this, thr_rank](int num_compress_value) { this->clear_int_st_bool(num_compress_value, thr_rank); });
+            [&self, thr_rank](int num_compress_value) { self.clear_int_st_bool(num_compress_value, thr_rank); });
     }
 }
 

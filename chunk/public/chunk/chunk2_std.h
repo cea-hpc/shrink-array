@@ -849,7 +849,7 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
      * \param apply The scan always runs; the compression only happens when
      *              this is true.
      */
-    void compress(int thr_rank, const inf_array_t& inf_array, bool apply, unsigned int n_elems);
+    void compress(this Derived& self, int thr_rank, const inf_array_t& inf_array, bool apply, unsigned int n_elems);
 
     /*!
      * \brief Bool specialization of compress().
@@ -858,7 +858,7 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
      * \param apply The scan always runs; the compression only happens when
      *              this is true.
      */
-    void compress_bool(int thr_rank, bool apply, unsigned int n_elems);
+    void compress_bool(this Derived& self, int thr_rank, bool apply, unsigned int n_elems);
 
     /**
      * \brief Shared body of compress() and compress_bool(): they differ only in
@@ -921,7 +921,8 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
      *                        to hold the second constant).
      */
     template <typename SecondValueFunc>
-    void fill_list_to_compress_impl(vec_tuple_chunk2p_int2& ll_compt1,
+    void fill_list_to_compress_impl(this Derived&           self,
+                                    vec_tuple_chunk2p_int2& ll_compt1,
                                     vec_tuple_chunk2p_int2& ll_compt2,
                                     int                     num_chunk,
                                     int                     num_tab,
@@ -938,7 +939,8 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
      * \param num_chunk This chunk's index within its array.
      * \param num_tab Which array this chunk belongs to.
      */
-    void fill_list_to_compress(vec_tuple_chunk2p_int2& ll_compt1,
+    void fill_list_to_compress(this Derived&           self,
+                               vec_tuple_chunk2p_int2& ll_compt1,
                                vec_tuple_chunk2p_int2& ll_compt2,
                                const inf_array_t&      inf_array,
                                int                     num_chunk,
@@ -953,7 +955,8 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
      * \param num_chunk This chunk's index within its array.
      * \param num_tab Which array this chunk belongs to.
      */
-    void fill_list_to_compress_bool(vec_tuple_chunk2p_int2& ll_compt1,
+    void fill_list_to_compress_bool(this Derived&           self,
+                                    vec_tuple_chunk2p_int2& ll_compt1,
                                     vec_tuple_chunk2p_int2& ll_compt2,
                                     int                     num_chunk,
                                     int                     num_tab,

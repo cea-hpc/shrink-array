@@ -88,25 +88,26 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_pa
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(vec_tuple_chunkp_int2& ll_compt,
+void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Derived&          self,
+                                                                     vec_tuple_chunkp_int2& ll_compt,
                                                                      int                    num_chunk,
                                                                      int                    num_tab,
                                                                      unsigned int           n_elems)
 {
-    if (derived().written())
+    if (self.written())
     {
         // CHUNK_STATS: one compression candidate scanned (counted as scan
         // reads, never as application reads).
         increm_chunk_compress_attempt<Derived>();
-        if (derived().is_constant_to(zero, n_elems))
+        if (self.is_constant_to(zero, n_elems))
         {
-            ll_compt.push_back(std::make_tuple(self(), num_chunk, num_tab, ChunkElems{n_elems}));
+            ll_compt.push_back(std::make_tuple(std::addressof(self), num_chunk, num_tab, ChunkElems{n_elems}));
         }
     }
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::compress(int thr_rank, unsigned int n_elems)
+void ChunkOmpPolicy<T, Derived, Enabled>::compress(this Derived& self, int thr_rank, unsigned int n_elems)
 {
     // Already compressed -> nothing to do. Chunk2A::compress() has always
     // guarded this way; v1 did not, and the consequence is not benign. A chunk
@@ -118,18 +119,18 @@ void ChunkOmpPolicy<T, Derived, Enabled>::compress(int thr_rank, unsigned int n_
     // there it is handed out as an ordinary chunk buffer. A check build trips
     // the invariant inside clear_st first ("trying to clear a chunk that is not
     // written"); a release build reports nothing at all.
-    if (!derived().written())
+    if (!self.written())
         return;
 
-    Base::debug_check_written();
+    self.Base::debug_check_written();
 
     // CHUNK_STATS: counted here so the scan yield reflects what actually runs.
     if constexpr (chunk_config::stats)
         increm_chunk_compress_attempt<ChunkType>();
 
-    if (Base::is_constant_to(T{}, n_elems))
+    if (self.Base::is_constant_to(T{}, n_elems))
     {
-        this->clear_st(thr_rank, n_elems);
+        self.clear_st(thr_rank, n_elems);
     }
 }
 
@@ -430,7 +431,7 @@ void Chunk<T>::block_clear([[maybe_unused]] int thr_rank)
     else
     {
         Base::free_values();
-        derived().init_values_cst_val();
+        init_values_cst_val();
     }
 }
 

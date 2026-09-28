@@ -1487,7 +1487,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @brief Get the address of a value at given index
     /// @param i Index in the chunk
     /// @return Pointer to the value at index i
-    [[nodiscard]] T* print_adr(int i) const noexcept
+    [[nodiscard]] T* print_adr(this const Derived& self, int i) noexcept
     {
         // An ADDRESS into the buffer, which the registry cannot stand in for:
         // under CHUNK_CST_VAL2_NO_ARRAYS there is no buffer. Materialise first,
@@ -1495,15 +1495,15 @@ class ChunkBase : public CRTPSupport<Derived>,
         // Its only caller is ArrayChunkBase's re-export, itself never called
         // internally -- this is a diagnostic path.
         if constexpr (build_config::cst_val2_no_arrays && requires {
-                          derived().is_cst_val2();
-                          derived().materialise_for_address();
+                          self.is_cst_val2();
+                          self.materialise_for_address();
                       })
         {
-            if (derived().is_cst_val2()) [[unlikely]]
-                derived().materialise_for_address();
+            if (self.is_cst_val2()) [[unlikely]]
+                self.materialise_for_address();
         }
         static_assert(!is_packed, "print_adr: a Bit has no address (bit.h)");
-        return &values_load()[i];
+        return &self.values_load()[i];
     }
 
     // ========================================================================
@@ -1538,9 +1538,9 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @brief Proxy access for read-write operations
     /// @param i Index in the chunk
     /// @return Proxy object for lazy write
-    ProxyType operator[](int i) noexcept
+    ProxyType operator[](this Derived& self, int i) noexcept
     {
-        return ProxyType(values, i, derived());
+        return ProxyType(self.values, i, self);
     }
 
     // ========================================================================
@@ -1550,7 +1550,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @brief Direct read-write access to chunk elements without safety checks
     /// @param i Index in the chunk
     /// @return Reference to value at index i
-    T& operator()(int i) const noexcept
+    T& operator()(this const Derived& self, int i) noexcept
     {
         if constexpr (chunk_config::stats)
         {
@@ -1564,13 +1564,13 @@ class ChunkBase : public CRTPSupport<Derived>,
         // it -- true today, and a dereference of an unbacked page under
         // CHUNK_CST_VAL2_NO_ARRAYS. Checked builds say so; release is
         // unchanged.
-        if constexpr (build_config::any_check && requires { derived().written(); })
+        if constexpr (build_config::any_check && requires { self.written(); })
         {
-            if (!derived().written()) [[unlikely]]
+            if (!self.written()) [[unlikely]]
                 INVARIANT_FAILED("operator()(int) on a chunk that is not materialised");
         }
         static_assert(!is_packed, "operator()(int) returns T&: a Bit has no address (bit.h)");
-        return values_load()[i];
+        return self.values_load()[i];
     }
 
     // ========================================================================

@@ -233,7 +233,8 @@ class Chunk2Base : public ChunkBase<T, Derived>
      * @brief Ensures the provided pointer does not target shared constant memory.
      * @param target_ptr The pointer about to be used for a write operation.
      */
-    void assert_writable_buffer(const T*                   target_ptr,
+    void assert_writable_buffer(this Derived&              self,
+                                const T*                   target_ptr,
                                 const std::source_location loc = std::source_location::current()) noexcept
     {
         // Skip entirely if safety checks are disabled
@@ -247,16 +248,16 @@ class Chunk2Base : public ChunkBase<T, Derived>
         // Chunk2A: the secondary constants live in one region -- the test is
         // a range test on the target, not a pointer to compare with.
         bool target_in_cst2_region = false;
-        if constexpr (requires { derived().tab_cst_val2_holder::is_cst_val2_ptr(target_ptr); })
+        if constexpr (requires { self.tab_cst_val2_holder::is_cst_val2_ptr(target_ptr); })
         {
-            target_in_cst2_region = derived().tab_cst_val2_holder::is_cst_val2_ptr(target_ptr);
+            target_in_cst2_region = self.tab_cst_val2_holder::is_cst_val2_ptr(target_ptr);
             if (target_in_cst2_region)
                 c2 = static_cast<const void*>(target_ptr);
         }
-        else if constexpr (requires { derived().get_cst_val2(); })
+        else if constexpr (requires { self.get_cst_val2(); })
         {
             // Special case for Chunk2 (boolean or shared table)
-            c2 = static_cast<const void*>(derived().get_cst_val2());
+            c2 = static_cast<const void*>(self.get_cst_val2());
         }
 
         // Violation check: if target matches ANY immutable constant buffer
@@ -266,8 +267,9 @@ class Chunk2Base : public ChunkBase<T, Derived>
             invariant_failed(loc,
                              "Illegal Memory Write: Attempted to write into an immutable shared constant buffer. "
                              "Type: {} | Chunk Addr: {} | Target Ptr: {} | Cst1: {} | Cst2: {} | Thread: {}",
-                             type_name<T>(), static_cast<const void*>(this), static_cast<const void*>(target_ptr), c1,
-                             c2, get_thr_rank_fast());
+                             type_name<T>(),
+                             static_cast<const void*>(static_cast<const Chunk2Base*>(std::addressof(self))),
+                             static_cast<const void*>(target_ptr), c1, c2, get_thr_rank_fast());
         }
     }
 };

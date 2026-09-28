@@ -326,7 +326,7 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
      *                 allocated at another geometry
      * @note The queue consumer's per-chunk step (Chunk::compress_chunk_to_compress).
      */
-    void compress(int thr_rank, unsigned int n_elems);
+    void compress(this Derived& self, int thr_rank, unsigned int n_elems);
 };
 
 /**
@@ -402,7 +402,11 @@ struct ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
      * @param n_elems   THIS chunk's element count -- never the ambient size, see
      *                  TChunk.h's note on the field it is carried in
      */
-    void fill_list_to_compress(vec_tuple_chunkp_int2& ll_compt, int num_chunk, int num_tab, unsigned int n_elems);
+    void fill_list_to_compress(this Derived&          self,
+                               vec_tuple_chunkp_int2& ll_compt,
+                               int                    num_chunk,
+                               int                    num_tab,
+                               unsigned int           n_elems);
 
     /**
      * @brief Compress every chunk @p thr has queued, in one batch.
