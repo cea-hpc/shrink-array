@@ -46,6 +46,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
     auto& tab_quant   = bench_arr.tab_quant;
     auto& tab_point   = bench_arr.tab_point;
     auto& tab_cell    = bench_arr.tab_cell;
+    auto& tab_mask    = bench_arr.tab_mask;
 
     // The flags the two lambdas captured from main(), under their original
     // names so the bodies below are VERBATIM.
@@ -90,7 +91,8 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
         {
             std::uint64_t tab1_ch = 0, tab2_ch = 0, tab3_ch = 0, tab4_ch = 0, tab5_ch = 0, tab_int_ch = 0,
                           tab_bool_ch = 0, tab_complex_ch = 0, tab_float_ch = 0, tab_char_ch = 0, tab_short_ch = 0,
-                          tab_long_ch = 0, tab_ulong_ch = 0, tab_quant_ch = 0, tab_point_ch = 0, tab_cell_ch = 0;
+                          tab_long_ch = 0, tab_ulong_ch = 0, tab_quant_ch = 0, tab_point_ch = 0, tab_cell_ch = 0,
+                          tab_mask_ch = 0;
 
             VectorChecksum vec1_ch(tab1);
             VectorChecksum vec2_ch(tab2);
@@ -110,6 +112,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
             VectorChecksum vec_quant_ch(tab_quant);
             VectorChecksum vec_point_ch(tab_point);
             VectorChecksum vec_cell_ch(tab_cell);
+            VectorChecksum vec_mask_ch(tab_mask);
 
             // One calculate_checksum_0 call per array, not a variadic fold over
             // them: the fold helper (removed) took its VectorChecksum arguments by
@@ -137,6 +140,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                 calculate_checksum_0(vec_quant_ch.vec, vec_quant_ch.checksum_thr);
                 calculate_checksum_0(vec_point_ch.vec, vec_point_ch.checksum_thr);
                 calculate_checksum_0(vec_cell_ch.vec, vec_cell_ch.checksum_thr);
+                calculate_checksum_0(vec_mask_ch.vec, vec_mask_ch.checksum_thr);
             }
 
             for (Int thr = 0; thr < CHUNK_PMP_MAX_THREADS; ++thr)
@@ -159,6 +163,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                 tab_quant_ch += vec_quant_ch.checksum_thr[thr];
                 tab_point_ch += vec_point_ch.checksum_thr[thr];
                 tab_cell_ch += vec_cell_ch.checksum_thr[thr];
+                tab_mask_ch += vec_mask_ch.checksum_thr[thr];
             }
 
             tab1_ch = ~tab1_ch;
@@ -179,6 +184,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
             tab_quant_ch = ~tab_quant_ch;
             tab_point_ch = ~tab_point_ch;
             tab_cell_ch  = ~tab_cell_ch;
+            tab_mask_ch  = ~tab_mask_ch;
 
             std::cout << "\n";
 
@@ -252,6 +258,11 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
                     {
                         if (bench_arr.with_struct)
                             lbd_check(ind, "tab_cell", tab_cell, tab_cell_ch);
+                    }
+#pragma omp section
+                    {
+                        if (bench_arr.with_mask) // --no_mask: no reference file either
+                            lbd_check(ind, "tab_mask", tab_mask, tab_mask_ch, true /* one byte per bool */);
                     }
                 }
             }
