@@ -247,7 +247,9 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // The new storage takes its own allocator set (lazy affinity: an array
         // gets one at its first re-chunk, see assign_alloc_key()).
         std::optional<alloc_affinity_detail::RechunkStorageScope> affinity_scope(std::in_place);
-        Derived tmp(total); // born at S', own num_tab, primed pool
+        t_birth_at_active_size = true; // exactly S', whatever the element type
+        Derived tmp(total);            // born at S', own num_tab, primed pool
+        t_birth_at_active_size = false;
         affinity_scope.reset();
 
         // Seed variant state into tmp BEFORE refill (Chunk2 second_value,

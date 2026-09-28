@@ -42,7 +42,10 @@
 //      the chunks a fill left constant;
 //   9. fill_range_mt from every thread of a region, on spans of 1..97
 //      elements handed out round-robin (neighbouring spans of one word belong
-//      to different threads), twice over, against std::vector<bool>.
+//      to different threads), twice over, against std::vector<bool>;
+//  10. birth size (dyn builds): born at packed_bit_birth_factor times the
+//      active size (capped at cst_buffer_size), which it leaves unchanged --
+//      an array of another type created next is born at it.
 //
 // Chunk2 builds only (ArrayChunkBits is ArrayChunk2<Bit>). Exit 0 = pass.
 
@@ -220,6 +223,28 @@ int neighbours(long N)
     if (fails == 0)
         std::printf("[bits] OK neighbouring elements written by %d threads: none lost\n", CHUNK_PMP_MAX_THREADS);
     a.clear();
+    return fails;
+}
+
+int birth_size()
+{
+    if constexpr (!build_config::chunk_dynamic)
+        return 0;
+    const unsigned int active = active_chunk_size();
+    const unsigned int expect = std::min(active * packed_bit_birth_factor, cst_buffer_size);
+    ArrayChunkBits<>   a(1L << 16);
+    ArrayChunk2<bool>  b(1L << 16);
+    int                fails = 0;
+    if (a.chunk_size() != expect || active_chunk_size() != active || b.chunk_size() != active)
+    {
+        std::printf("[bits] FAIL birth size: bits %u (expected %u), then active %u and bool %u (expected %u)\n",
+                    a.chunk_size(), expect, active_chunk_size(), b.chunk_size(), active);
+        ++fails;
+    }
+    else
+        std::printf("[bits] OK birth size: bits at %u, the active size stays %u\n", a.chunk_size(), active);
+    a.clear();
+    b.clear();
     return fails;
 }
 
@@ -534,6 +559,7 @@ int main(int argc, char** argv)
 
     std::printf("=== bits_container_validation  N=%ld  threads=%d ===\n", N, CHUNK_PMP_MAX_THREADS);
     int fails = 0;
+    fails += birth_size();
     fails += surface();
     fails += round_trip(N);
     fails += neighbours(N);
