@@ -1,4 +1,5 @@
 #pragma once
+#include <optional> // the affinity scope around tmp
 
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
@@ -243,7 +244,11 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     {
         t1_out    = t_now();
         r_pre_tmp = rss_now();
+        // The new storage takes its own allocator set (lazy affinity: an array
+        // gets one at its first re-chunk, see assign_alloc_key()).
+        std::optional<alloc_affinity_detail::RechunkStorageScope> affinity_scope(std::in_place);
         Derived tmp(total); // born at S', own num_tab, primed pool
+        affinity_scope.reset();
 
         // Seed variant state into tmp BEFORE refill (Chunk2 second_value,
         // so its compression decisions use the same value).
