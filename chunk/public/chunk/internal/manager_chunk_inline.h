@@ -542,7 +542,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::alloc_chunk_allocator_thr()
     // std-alloc: allocator_data is NullValueAllocator (no per-thread array to build).
     if constexpr (build_config::use_openmp && build_config::use_fast_alloc)
     {
-        CHUNK_T<T>::allocator_data = std::make_unique<TCTypeCAllocator<T>[]>(self.max_thr);
+        // Built whole: an allocator is not movable.
+        CHUNK_T<T>::allocator_data = std::vector<TCTypeCAllocator<T>>(static_cast<std::size_t>(self.max_thr));
     }
 }
 

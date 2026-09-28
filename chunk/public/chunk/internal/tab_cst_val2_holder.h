@@ -502,12 +502,9 @@ struct GlobalVecHolder
     {
         std::size_t                        cap  = 0; ///< Slot count, a power of two.
         std::size_t                        used = 0; ///< Published entries (single writer).
-        std::unique_ptr<std::atomic<T*>[]> slots;    ///< `cap` slots, null = empty.
-        explicit IndexTable(std::size_t capacity) : cap(capacity), slots(new std::atomic<T*>[capacity])
-        {
-            for (std::size_t i = 0; i < capacity; ++i)
-                slots[i].store(nullptr, std::memory_order_relaxed);
-        }
+        std::vector<std::atomic<T*>>       slots;    ///< `cap` slots, null = empty.
+        // A value-initialised atomic pointer is null (C++20): no clearing loop.
+        explicit IndexTable(std::size_t capacity) : cap(capacity), slots(capacity) {}
     };
     /// @brief The live table. Null until the first publish; readers that see
     ///        null miss and take the cold path, which is always correct.

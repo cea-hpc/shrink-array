@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 
+#include <vector>
 #include <memory>
 #include <atomic>
 #include <cstdint> // uint32_t (the ring_log payloads)
@@ -205,7 +206,7 @@ class WriteCompressSyncPolicy
     //  alignas(128) static inline std::atomic<int> active_writer_count{0}; --> very bad perf
 
     /// One writer flag per thread rank, sized by ensure_initialized().
-    static inline std::unique_ptr<WritingFlag[]> per_thread_writing;
+    static inline std::vector<WritingFlag> per_thread_writing;
 
     /// Number of threads currently inside a flush critical section
     /// (begin_flush()/end_flush()).
@@ -239,7 +240,8 @@ class WriteCompressSyncPolicy
         std::call_once(flag,
                        []
                        {
-                           per_thread_writing = std::make_unique<WritingFlag[]>(CHUNK_PMP_THREAD_CAPACITY);
+                           per_thread_writing =
+                               std::vector<WritingFlag>(static_cast<std::size_t>(CHUNK_PMP_THREAD_CAPACITY));
                            num_thread_flushing.store(0, std::memory_order_relaxed);
                            // Process-wide and idempotent; done here so it precedes
                            // the first parallel write of this variant.

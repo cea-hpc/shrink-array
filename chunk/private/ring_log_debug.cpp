@@ -30,7 +30,7 @@ namespace shrink_array
 
 static constexpr size_t RING_SIZE = size_t{1} << 24U;
 
-static std::unique_ptr<RingEntry[]> ring_buf = std::make_unique<RingEntry[]>(RING_SIZE);
+static std::vector<RingEntry> ring_buf(RING_SIZE);
 
 static std::atomic<uint32_t> ring_head{0};
 

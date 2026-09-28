@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 #include "chunk/chunk_traits.h" // Chunk2A fwd decl (element_at variant gate)
+#include <vector>
 #include <unistd.h>
 #include <algorithm> // std::min, the constant scans
 #include <map>
@@ -831,7 +832,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
     {
         return (static_cast<std::uint64_t>(key) << 32U) | size;
     }
-    static inline std::map<std::uint64_t, std::unique_ptr<TCTypeCAllocator<T>[]>> allocator_pool_;
+    static inline std::map<std::uint64_t, std::vector<TCTypeCAllocator<T>>> allocator_pool_;
 
     /// @brief Register (create + init) the per-thread allocator array for
     ///        `size`, once.
@@ -847,13 +848,16 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
         {
             return; // already registered
         }
-        auto          arr = std::make_unique<TCTypeCAllocator<T>[]>(max_thr);
-        constexpr int v   = std::max(static_cast<int>(8 / sizeof(T)), 1);
+        // Built whole (an allocator is not movable); moving the vector into the
+        // map moves its buffer, not the allocators.
+        std::vector<TCTypeCAllocator<T>> arr(static_cast<std::size_t>(max_thr));
+        constexpr int                    v = std::max(static_cast<int>(8 / sizeof(T)), 1);
         for (int thr = 0; thr < max_thr; ++thr)
         {
-            arr[thr].set_rank(thr); // stamped into every slab as owner_rank
-            arr[thr].set_key(key);  // ... and owner_key
-            arr[thr].init(static_cast<int>(Derived::storage_units(size)), block_size / v, -1);
+            auto& allocator = arr[static_cast<std::size_t>(thr)];
+            allocator.set_rank(thr); // stamped into every slab as owner_rank
+            allocator.set_key(key);  // ... and owner_key
+            allocator.init(static_cast<int>(Derived::storage_units(size)), block_size / v, -1);
         }
         allocator_pool_.emplace(pool_key(key, size), std::move(arr));
     }
@@ -1032,7 +1036,7 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     using AllocatorType = std::conditional_t<
         build_config::use_fast_alloc,
-        std::conditional_t<build_config::use_openmp, std::unique_ptr<TCTypeCAllocator<T>[]>, TCTypeAllocator<T>>,
+        std::conditional_t<build_config::use_openmp, std::vector<TCTypeCAllocator<T>>, TCTypeAllocator<T>>,
         NullValueAllocator>;
 
     static inline AllocatorType allocator_data;
