@@ -169,7 +169,7 @@ class alignas(64) TCAllocator
     }
 
     /// @brief Leaves the slab unusable; init() is what makes it a slab.
-    TCAllocator() : firstFree(-1), nn_ref(0), UsedSize(0), ElementSize(0), BlockSize(0) {}
+    TCAllocator() {}
 
     // FIX (op/ctx/value slab aliasing): which disjoint arena this slab draws
     // from. Op and ctx pools share the TCAllocator class but MUST NOT share an
@@ -290,15 +290,15 @@ class alignas(64) TCAllocator
     int Log2ElementSize = 0; ///< log2(#ElementSize), for num_block_pow2().
 
   public:
-    int firstFree; ///< Head of the free list, an element index; -1 if empty.
+    int firstFree{-1}; ///< Head of the free list, an element index; -1 if empty.
 
-    int nn_ref; ///< Elements currently out. 0 == releasable, #BlockSize == full.
+    int nn_ref{0}; ///< Elements currently out. 0 == releasable, #BlockSize == full.
 
-    int UsedSize; ///< Bump index: how far the linear carve has reached.
+    int UsedSize{0}; ///< Bump index: how far the linear carve has reached.
 
-    int ElementSize; ///< Element size in BYTES.
+    int ElementSize{0}; ///< Element size in BYTES.
 
-    int BlockSize; ///< Capacity of the block, in elements.
+    int BlockSize{0}; ///< Capacity of the block, in elements.
 
     // for the linked list
 
@@ -371,7 +371,7 @@ struct alignas(64) TCCAllocator
     }
 
     /// @brief Leaves the slab unusable; init() is what makes it a slab.
-    TCCAllocator() : firstFree(first_free_init), nn_ref(0), UsedSize(0), ElementSize(0), BlockSize(0) {}
+    TCCAllocator() {}
 
     /// @brief Returns the block to the value arena.
     ~TCCAllocator()
@@ -456,25 +456,25 @@ struct alignas(64) TCCAllocator
     inline void free_block(int i) noexcept;
 
     /// @brief No element of this slab is out. Only then may it be released.
-    bool is_empty() const noexcept
+    [[nodiscard]] bool is_empty() const noexcept
     {
         return nn_ref == 0;
     }
 
     /// @brief This free brought the slab back from full; it must leave block_full.
-    bool was_full() const noexcept
+    [[nodiscard]] bool was_full() const noexcept
     {
         return nn_ref == BlockSize - 1;
     }
 
     /// @brief Every element is out; the slab must move to block_full.
-    bool is_full() const noexcept
+    [[nodiscard]] bool is_full() const noexcept
     {
         return nn_ref == BlockSize;
     }
 
     /// @brief Complement of is_full().
-    bool is_not_full() const noexcept
+    [[nodiscard]] bool is_not_full() const noexcept
     {
         return nn_ref < BlockSize;
     }
@@ -484,18 +484,18 @@ struct alignas(64) TCCAllocator
     /// @brief Free-list terminator, and the exclusive upper bound on #BlockSize.
     static constexpr short first_free_init = 32767;
 
-    unsigned short firstFree; ///< Head of the free list; #first_free_init if empty.
+    unsigned short firstFree{first_free_init}; ///< Head of the free list; #first_free_init if empty.
 
     /// @brief Free-list links, one per element. Kept out of the payload so a
     ///        recycled element is still all-zero.
     std::vector<unsigned short> tab_firstFree;
 
-    int       nn_ref;              ///< Elements currently out. 0 == releasable.
-    int       UsedSize;            ///< Bump index: how far the linear carve reached.
+    int       nn_ref{0};           ///< Elements currently out. 0 == releasable.
+    int       UsedSize{0};         ///< Bump index: how far the linear carve reached.
     uintptr_t BlockAllocator = 0;  ///< Block size in bytes; a power of two.
-    int       ElementSize;         ///< Element size in BYTES.
+    int       ElementSize{0};      ///< Element size in BYTES.
     int       Log2ElementSize = 0; ///< log2(#ElementSize), for num_block_pow2().
-    int       BlockSize;           ///< Capacity in elements; < #first_free_init.
+    int       BlockSize{0};        ///< Capacity in elements; < #first_free_init.
 
     // for the linked list
 
@@ -758,7 +758,7 @@ struct TCTypeAllocator final : public VTCTypeAllocator
 
     /// @brief Rank (thread) this instance serves; stamped into every slab it
     ///        creates (TCAllocator::owner_rank). -1 = unranked (serial pools).
-    int rank() const noexcept
+    [[nodiscard]] int rank() const noexcept
     {
         return rank_;
     }
@@ -769,7 +769,7 @@ struct TCTypeAllocator final : public VTCTypeAllocator
     }
     /// @brief Affinity key this instance serves (0 = shared pool of the rank);
     ///        stamped into its slabs as owner_key.
-    unsigned key() const noexcept
+    [[nodiscard]] unsigned key() const noexcept
     {
         return key_;
     }
@@ -794,13 +794,14 @@ struct TCTypeAllocator final : public VTCTypeAllocator
     }
 
     /// @brief Empty and unusable until init(); enrols in the report registry.
-    TCTypeAllocator() : block_full(nullptr), block(nullptr), nb_block_empty(0)
+    TCTypeAllocator()
     {
         ElementSize = 0;
 
         add_TCTypeAllocator_inst(this);
     }
 
+    /// @brief Unregisters from the instance list, then frees every slab.
     ~TCTypeAllocator() override
     {
         remove_TCTypeAllocator_inst(this);
@@ -1173,14 +1174,14 @@ struct TCTypeAllocator final : public VTCTypeAllocator
     int       rank_          = -1; ///< Rank served; stamped into slabs as owner_rank.
     unsigned  key_           = 0;  ///< Affinity key served; stamped into slabs as owner_key.
 
-    TCAllocator* block_full; ///< Slabs with no room left.
-    TCAllocator* block;      ///< Slabs with room. Null until the first alloc().
+    TCAllocator* block_full{nullptr}; ///< Slabs with no room left.
+    TCAllocator* block{nullptr};      ///< Slabs with room. Null until the first alloc().
 
     /// @brief Reserve capacity; negative = never release a slab. @see init
     int nb_max_block_empty = 0;
 
-    std::vector<TCAllocator*> block_empty;    ///< The reserve. Empty when the capacity is <= 0.
-    int                       nb_block_empty; ///< How much of the reserve is occupied.
+    std::vector<TCAllocator*> block_empty;       ///< The reserve. Empty when the capacity is <= 0.
+    int                       nb_block_empty{0}; ///< How much of the reserve is occupied.
 };
 
 // Declaration-level switch, so it stays a directive: this type exists only in
@@ -1216,11 +1217,12 @@ struct TCTypeCAllocator
     using ElementType = _ElementType;
 
     /// @brief Empty and unusable until init().
-    TCTypeCAllocator() : block_full(nullptr), block(nullptr), nb_block_empty(0)
+    TCTypeCAllocator()
     {
         ElementSize = 0;
     }
 
+    /// @brief Frees every slab.
     ~TCTypeCAllocator()
     {
         destroy_int();
@@ -1468,7 +1470,7 @@ struct TCTypeCAllocator
     }
     /// @brief Rank this instance serves; stamped into its slabs
     ///        (TCCAllocator::owner_rank). -1 = unranked.
-    int rank() const noexcept
+    [[nodiscard]] int rank() const noexcept
     {
         return rank_;
     }
@@ -1478,7 +1480,7 @@ struct TCTypeCAllocator
         rank_ = rank;
     }
     /// @brief Affinity key this instance serves; stamped as owner_key.
-    unsigned key() const noexcept
+    [[nodiscard]] unsigned key() const noexcept
     {
         return key_;
     }
@@ -1634,14 +1636,14 @@ struct TCTypeCAllocator
     int       rank_          = -1; ///< Rank served; stamped into slabs as owner_rank.
     unsigned  key_           = 0;  ///< Affinity key served; stamped into slabs as owner_key.
 
-    TCCAllocator* block_full; ///< Slabs with no room left.
-    TCCAllocator* block;      ///< Slabs with room. Null until the first alloc().
+    TCCAllocator* block_full{nullptr}; ///< Slabs with no room left.
+    TCCAllocator* block{nullptr};      ///< Slabs with room. Null until the first alloc().
 
     /// @brief Reserve capacity; negative = never release a slab. @see init
     int nb_max_block_empty = 0; // FIX: was unsigned; int so -1 (never-munmap) works
 
-    std::vector<TCCAllocator*> block_empty;    ///< The reserve. Empty when the capacity is <= 0.
-    int                        nb_block_empty; ///< How much of the reserve is occupied.
+    std::vector<TCCAllocator*> block_empty;       ///< The reserve. Empty when the capacity is <= 0.
+    int                        nb_block_empty{0}; ///< How much of the reserve is occupied.
 };
 
 #endif
@@ -1797,11 +1799,11 @@ struct TCAllocatorEB
     // A free element holds the index of the next free one, in T -- a type
     // sized from the element. The block must be addressable by it: a
     // compile-time check (it was a runtime DBG_ASSERT, DEBUG builds only).
-    static_assert(static_cast<uintptr_t>(_BlockSize) < (uintptr_t{1} << (sizeof(T) * 8 - 1)),
+    static_assert(static_cast<uintptr_t>(_BlockSize) < (uintptr_t{1} << ((sizeof(T) * 8) - 1)),
                   "TCAllocatorEB: block too large for the element's free-list index type");
 
     /// @brief Takes its block straight away -- there is no separate init().
-    TCAllocatorEB() : firstFree(-1), nn_ref(0), UsedSize(0)
+    TCAllocatorEB()
     {
         // alloc() inserts the slab right after this constructor returns: a
         // slab without a block (or without its back-pointer) would be handed
@@ -1866,7 +1868,7 @@ struct TCAllocatorEB
             {
                 std::cerr << "munmap (head trim) failed: " << std::strerror(errno) << " -- surplus left mapped\n";
             }
-            if (munmap(data + BlockSize, 2 * BlockSize - (lng + BlockSize)) == -1)
+            if (munmap(data + BlockSize, (2 * BlockSize) - (lng + BlockSize)) == -1)
             {
                 std::cerr << "munmap (tail trim) failed: " << std::strerror(errno) << " -- surplus left mapped\n";
             }
@@ -1922,12 +1924,12 @@ struct TCAllocatorEB
 
         if (firstFree != -1)
         {
-            elemPtr   = data + firstFree * ElementSize;
+            elemPtr   = data + (firstFree * ElementSize);
             firstFree = *(T*)elemPtr;
         }
         else
         {
-            elemPtr = data + UsedSize * ElementSize;
+            elemPtr = data + (UsedSize * ElementSize);
             ++UsedSize;
         }
         return static_cast<void*>(elemPtr);
@@ -1955,40 +1957,40 @@ struct TCAllocatorEB
     {
         if (i == (UsedSize - 1))
         {
-            *(T*)(data + i * ElementSize) = -1;
+            *(T*)(data + (i * ElementSize)) = -1;
             --UsedSize;
         }
         else
         {
-            *(T*)(data + i * ElementSize) = firstFree;
-            firstFree                     = i;
+            *(T*)(data + (i * ElementSize)) = firstFree;
+            firstFree                       = i;
         }
         --nn_ref;
     }
 
     /// @brief No element of this slab is out. Only then may it be deleted.
-    bool is_empty() const noexcept
+    [[nodiscard]] bool is_empty() const noexcept
     {
         return nn_ref == 0;
     }
 
     /// @brief This free brought the slab back from full.
-    bool was_full() const noexcept
+    [[nodiscard]] bool was_full() const noexcept
     {
         return nn_ref == MaxElements - 1;
     }
 
     /// @brief Every element is out; the slab must move to block_full.
-    bool is_full() const noexcept
+    [[nodiscard]] bool is_full() const noexcept
     {
         return nn_ref == MaxElements;
     }
 
     char* data = nullptr; ///< The block itself, aligned on #BlockSizePOT.
-    int   firstFree;      ///< Head of the free list, an element index; -1 if empty.
+    int   firstFree{-1};  ///< Head of the free list, an element index; -1 if empty.
 
-    int nn_ref;   ///< Elements currently out. 0 == deletable.
-    int UsedSize; ///< Bump index: how far the linear carve has reached.
+    int nn_ref{0};   ///< Elements currently out. 0 == deletable.
+    int UsedSize{0}; ///< Bump index: how far the linear carve has reached.
 
     // for the linked list
 
@@ -2030,7 +2032,7 @@ struct TCTypeAllocatorEBC : public VTCAllocatorEB
     using TCAllocatorEBT = TCAllocatorEB<ElementSize, BlockSize>;
 
     /// @brief Creates the first slab immediately; there is no init() to call.
-    TCTypeAllocatorEBC() : block_full(nullptr), block(nullptr), nb_block_empty(0)
+    TCTypeAllocatorEBC() : block_full(nullptr), block(nullptr)
     {
         auto* slab = new TCAllocatorEBT;
 
@@ -2239,8 +2241,8 @@ struct TCTypeAllocatorEBC : public VTCAllocatorEB
     TCAllocatorEBT* block_full; ///< Slabs with no room left.
     TCAllocatorEBT* block;      ///< Slabs with room. Never null: the ctor seeds one.
 
-    int                                             nb_block_empty; ///< Reserve occupancy.
-    std::array<TCAllocatorEBT*, nb_max_block_empty> block_empty{};  ///< The reserve, inline.
+    int                                             nb_block_empty{0}; ///< Reserve occupancy.
+    std::array<TCAllocatorEBT*, nb_max_block_empty> block_empty{};     ///< The reserve, inline.
 };
 
 // SIZE_BLOCK: default slab size (1 MiB). constexpr rather than #define so it
