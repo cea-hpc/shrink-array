@@ -167,6 +167,20 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
 void bench_phase_struct_raz(BenchArrays& bench_arr, Int start0, Int end0);
 
 /**
+ * @brief tab_mask's starting pattern (bench_phase_mask.cpp): whole segments of
+ *        each constant, of random masks and of scattered flags
+ *        (bench_mask_initial). Its own region, after bench_phase_fill.
+ */
+void bench_phase_mask_fill(BenchArrays& bench_arr);
+
+/**
+ * @brief tab_mask's iteration @p k: flips in one mixed block in 16, a constant
+ *        segment in 32 turned whole to the other constant, then a read sweep of
+ *        the blocks written into @p mask_count.
+ */
+void bench_phase_mask_compute(BenchArrays& bench_arr, Int k, long& mask_count);
+
+/**
  * @brief Stress (a): a team one thread SHORT of the default, over [beg_s, end_s).
  * @details Moved verbatim. Runs on ~1/5 of iterations (disjoint k-modulo gate in
  *          main()), enough to surface rare bugs without dominating the baseline.

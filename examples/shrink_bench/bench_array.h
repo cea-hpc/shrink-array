@@ -25,10 +25,12 @@
 
 #pragma once
 
+#include <cstdint> // std::uint64_t (bench_mask_hash)
 #include <type_traits>
-#include <vector>
+#include <vector> // std::vector<bool>: tab_mask in the baseline
 
 #include "bench_prelude.h"
+
 #include "bench_struct.h" // Point3, Cell: the aggregate element types
 
 // The bulk range API: the chunked arrays' overloads (constrained on the
@@ -143,6 +145,94 @@ using BenchBoolArray = std::conditional_t<chunk_config::is_shrink_enabled, Array
 inline constexpr Int bench_double_bands = 200000;
 
 /**
+ * @brief What tab_mask is: a large bool array of random masks and scattered
+ *        flags (bench_phase_mask.cpp), where bools are NOT mostly constant.
+ *
+ * @details The array a bit-packed container is for, and the one std::vector's
+ *          own bit packing is the reference of:
+ *            - chunk2 builds: ArrayChunkBits (bit.h), 8 bools per byte in a
+ *              materialised chunk, and constant chunks at no data cost;
+ *            - chunk (v1) / chunk2a builds: the variant's Array<bool>, one byte
+ *              per bool -- ArrayChunkBits is chunk2's machinery;
+ *            - the std::vector baseline: std::vector<bool>, one bit per bool
+ *              and nothing compressed. Its phases write whole 64-element
+ *              blocks, one thread per block, so no word of it has two writers.
+ */
+using BenchMaskArray = std::conditional_t<
+    chunk_config::use_chunk2,
+    shrink_array::ArrayChunkBits<Int>,
+    std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, std::vector<bool>>>;
+
+/// @brief tab_mask holds this many elements per element of the double arrays.
+inline constexpr Int bench_mask_factor = 8;
+
+/// @brief Segment of tab_mask with one kind of content: whole chunks at every
+///        geometry up to 4096, so a constant segment is constant chunks.
+inline constexpr Int bench_mask_segment = 4096;
+
+/// @brief Elements per block of the tab_mask phases: one 64-bit word of a
+///        packed layout, written by one thread.
+inline constexpr Int bench_mask_block = 64;
+
+/// @brief A 64-bit mix (splitmix64's finaliser): the deterministic "random"
+///        of tab_mask -- integers only, so every build computes the same bits.
+[[nodiscard]] constexpr std::uint64_t bench_mask_hash(std::uint64_t x) noexcept
+{
+    x += 0x9E3779B97F4A7C15ull;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
+    return x ^ (x >> 31);
+}
+
+/// @brief What a segment of tab_mask holds.
+enum class BenchMaskKind
+{
+    all_false, ///< 30 %: a constant chunk -- compressible
+    all_true,  ///< 30 %: the other constant -- compressible
+    random,    ///< 25 %: a random mask, half the bits set
+    scattered  ///< 15 %: scattered flags, ~3 % set
+};
+
+// Why 60 % constant. ArrayChunkBits costs ~16 bytes of header per chunk plus
+// S/8 bytes per chunk that is not constant; std::vector<bool> costs S/8 per
+// chunk's worth of elements. With a fraction c of constant chunks the ratio is
+// 16 / (S/8) + (1 - c): at S = 256, 0.5 + 0.4 = 0.9 of std::vector<bool>
+// (break-even at c = 0.5), at S = 1024, 0.125 + 0.4 = 0.53. Past a slab
+// allocator's floor (about 512 KiB per thread rank): below a few million
+// elements that floor, not the layout, is what a measurement sees.
+
+/// @brief The kind of segment @p seg (fixed for the run).
+[[nodiscard]] constexpr BenchMaskKind bench_mask_kind(Int seg) noexcept
+{
+    const auto h = bench_mask_hash(static_cast<std::uint64_t>(seg) * 0x51ED27ull) % 100;
+    if (h < 30)
+        return BenchMaskKind::all_false;
+    if (h < 60)
+        return BenchMaskKind::all_true;
+    if (h < 85)
+        return BenchMaskKind::random;
+    return BenchMaskKind::scattered;
+}
+
+/// @brief The starting value of tab_mask[i].
+[[nodiscard]] constexpr bool bench_mask_initial(Int i) noexcept
+{
+    const auto h = bench_mask_hash(static_cast<std::uint64_t>(i));
+    switch (bench_mask_kind(i / bench_mask_segment))
+    {
+    case BenchMaskKind::all_false:
+        return false;
+    case BenchMaskKind::all_true:
+        return true;
+    case BenchMaskKind::random:
+        return (h & 1u) != 0;
+    case BenchMaskKind::scattered:
+        return h % 32 == 0;
+    }
+    return false;
+}
+
+/**
  * @brief The fifteen arrays the workload drives, by reference, plus their
  *        geometry.
  *
@@ -170,10 +260,14 @@ struct BenchArrays
     Array<double>&         tab_quant; ///< quantised: up to bench_double_bands distinct second values
     Array<Point3>&         tab_point; ///< an aggregate element: three doubles (bench_struct.h)
     Array<Cell>&           tab_cell;  ///< an aggregate element: an Int and a float
+    BenchMaskArray&        tab_mask;  ///< bench_mask_factor * sz bools: masks and flags (bench_phase_mask.cpp)
 
     Int sz       = 0; ///< element count of the double arrays (others are sz, 2*sz or sz/2)
     Int interval = 0; ///< the workload's stride, get_size_interval()
     /// false under --no_struct: tab_point and tab_cell are of size 1 and every
     /// phase, check, stat and checksum of theirs is skipped.
     bool with_struct = true;
+    /// false under --no_mask: tab_mask is of size 1 and its phases, check and
+    /// compression are skipped.
+    bool with_mask = true;
 };

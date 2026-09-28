@@ -69,6 +69,7 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         auto& tab_quant   = bench_arr.tab_quant;
         auto& tab_point   = bench_arr.tab_point;
         auto& tab_cell    = bench_arr.tab_cell;
+        auto& tab_mask    = bench_arr.tab_mask;
 
         // Compress the queued candidates first, from outside the region: each
         // compress() below runs in an `omp single`, where compress_int cannot
@@ -134,6 +135,12 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
 #pragma omp single nowait
                 std::cout << " tab_cell" << std::endl;
                 compress_one(tab_cell);
+            }
+            if (bench_arr.with_mask) // --no_mask
+            {
+#pragma omp single nowait
+                std::cout << " tab_mask" << std::endl;
+                compress_one(tab_mask);
             }
         }
 
