@@ -20,7 +20,7 @@ module unload cmake 2>/dev/null || true
 module unload ninja 2>/dev/null || true
 # The same CMake as compile_all_gnu.sh: the newest the modules offer (4.0.3),
 # else 3.31.4, else the default module (3.20).
-module load cmake/4.0.3 2>/dev/null || module load cmake/3.31.4 2>/dev/null || module load cmake
+chunk_module_load_first cmake/4.0.3 cmake/3.31.4 cmake
 module load ninja
 
 # Default value for dry-run mode
@@ -296,7 +296,7 @@ reset_compiler_modules() {
 
 
 run_cmd "module load ninja"
-run_cmd "module load cmake/4.0.3 2>/dev/null || module load cmake/3.31.4 2>/dev/null || module load cmake"
+run_cmd "chunk_module_load_first cmake/4.0.3 cmake/3.31.4 cmake"
 
 source "$CHUNK_SCRIPT_DIR/functions_for_compile.sh"
 
