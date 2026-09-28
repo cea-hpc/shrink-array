@@ -604,18 +604,18 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @param write_fn Function to execute.
      */
     template <typename WriteFn>
-    [[nodiscard]] bool write_with_optional_lock_info(WriteFn write_fn)
+    [[nodiscard]] bool write_with_optional_lock_info(this Derived& self, WriteFn write_fn)
     {
-        const auto lbd_info = [this]
+        const auto lbd_info = [&self]
         {
             if constexpr (chunk_config::use_fast_block_compression)
             {
                 // This code is only compiled and executed if the condition is true
-                derived().set_info_on_chunk();
+                self.set_info_on_chunk();
             }
         };
 
-        return write_with_optional_lock_impl([&] { write_fn(); }, lbd_info);
+        return self.write_with_optional_lock_impl([&] { write_fn(); }, lbd_info);
     }
 
     /**
@@ -816,7 +816,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief enqueue_deferred_write() for a compound arithmetic operation,
     ///        carrying @p v and @p operation into the context.
     template <typename U, typename Op, typename AsyncBody>
-    void enqueue_async_arithmetic(const U& v, Op operation, AsyncBody&& async_body);
+    void enqueue_async_arithmetic(this Derived& self, const U& v, Op operation, AsyncBody&& async_body);
 
     /**
      * @brief Apply @p operation to the element: load, compute in
@@ -829,20 +829,20 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
     template <typename U, typename Op>
         requires std::is_invocable_r_v<T, Op, T, U>
-    void apply_atomic_op(Op operation, const U& v, in_t<T> v_old);
+    void apply_atomic_op(this Derived& self, Op operation, const U& v, in_t<T> v_old);
 
     /// @brief Run @p lambda as a simple write, through the derived proxy.
     template <typename Lambda>
-    void execute_operation(Lambda&& lambda)
+    void execute_operation(this Derived& self, Lambda&& lambda)
     {
-        derived().execute_simple_operation(std::forward<Lambda>(lambda));
+        self.execute_simple_operation(std::forward<Lambda>(lambda));
     }
 
     /// @brief execute_operation() on the replay path, against @p ctx.
     template <typename Lambda>
-    void execute_operation_async(auto* ctx, Lambda&& lambda)
+    void execute_operation_async(this Derived& self, auto* ctx, Lambda&& lambda)
     {
-        derived().execute_simple_operation_async(ctx, std::forward<Lambda>(lambda));
+        self.execute_simple_operation_async(ctx, std::forward<Lambda>(lambda));
     }
 
     /**
@@ -864,7 +864,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
 
     template <typename U, typename Op>
-    void arithmetic_assign(in_t<U> v, Op operation) noexcept; // in_t: see assign_impl in the proxies
+    void
+    arithmetic_assign(this Derived& self, in_t<U> v, Op operation) noexcept; // in_t: see assign_impl in the proxies
     /**
      * @brief Compound addition assignment -- clean types (e.g. float += float,
      *        float += int).
@@ -942,7 +943,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
 
     template <typename U, typename Op>
-    void bitwise_assign(in_t<U> v, Op operation) noexcept
+    void bitwise_assign(this Derived& self, in_t<U> v, Op operation) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<U>;
 
     /**
@@ -1146,7 +1147,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
 
     template <typename SyncOp, typename AsyncOp>
-    void apply_inplace_operation(SyncOp sync_op, AsyncOp async_op) noexcept;
+    void apply_inplace_operation(this Derived& self, SyncOp sync_op, AsyncOp async_op) noexcept;
 
     /**
      * @brief Pre-increment operator
