@@ -410,20 +410,20 @@ struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurren
      * \param ptr_second_value      The chunk's second value; read only when the flag is set.
      * \param thr_rank              Rank whose allocator provides the buffer.
      */
-    void create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value, int thr_rank);
+    void create_value(this Derived& self, bool need_set_second_value, SecondValueRef<T> ptr_second_value, int thr_rank);
 
     /*!
      * \brief Bool specialization of create_value().
      * \param need_set_second_value Fill value -- true for the second constant, false for the first.
      * \param thr_rank              Rank whose allocator provides the buffer.
      */
-    void create_value_bool(bool need_set_second_value, int thr_rank);
+    void create_value_bool(this Derived& self, bool need_set_second_value, int thr_rank);
 
     /// @brief create_value() on the calling thread's rank.
-    void create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value);
+    void create_value(this Derived& self, bool need_set_second_value, SecondValueRef<T> ptr_second_value);
 
     /// @brief create_value_bool() on the calling thread's rank.
-    void create_value_bool(bool need_set_second_value);
+    void create_value_bool(this Derived& self, bool need_set_second_value);
 
     /*!
      * \brief Compress this chunk back to a constant, if it is materialised.
@@ -512,7 +512,8 @@ struct Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      *        compression can register a cst_val2 exactly like the OpenMP path.
      *        thr_rank is 0 with OpenMP off.
      */
-    void clear_int_st(int               num_compress_value,
+    void clear_int_st(this Derived&     self,
+                      int               num_compress_value,
                       char*             ptr_type_cst,
                       SecondValueRef<T> ptr_second_value,
                       int               thr_rank,
@@ -520,13 +521,18 @@ struct Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
 
 
     /// @brief Compress to the FIRST constant and forget the second value, if materialised.
-    void clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value);
+    void clear(this Derived& self, char* ptr_type_cst, SecondValueRef<T> ptr_second_value);
 
     /// @brief Unconditional twin of clear(char*, T*): no written() test.
-    void clear_st(char* ptr_type_cst, SecondValueRef<T> ptr_second_value);
+    void clear_st(this Derived& self, char* ptr_type_cst, SecondValueRef<T> ptr_second_value);
 
     /// @brief Release the buffer outright (no rank pool) and point at a constant. void
-    void block_clear(int num_compress_value, char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int, T* cst2_ptr);
+    void block_clear(this Derived&     self,
+                     int               num_compress_value,
+                     char*             ptr_type_cst,
+                     SecondValueRef<T> ptr_second_value,
+                     int,
+                     T* cst2_ptr);
 };
 
 template <typename T>

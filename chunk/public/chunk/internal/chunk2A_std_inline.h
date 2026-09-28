@@ -838,7 +838,8 @@ void wait_before_materialise(const ChunkT& chunk) noexcept
  *          flusher holds.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool              need_set_second_value,
+void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(this Derived&     self,
+                                                         bool              need_set_second_value,
                                                          SecondValueRef<T> ptr_second_value,
                                                          int               thr_rank)
 {
@@ -853,7 +854,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool              need_
         // chunk -- see wait_before_materialise() for the condition, and why
         // the broad "any driver or hard compression" predicate would deadlock
         // here.
-        wait_before_materialise<T>(derived());
+        wait_before_materialise<T>(self);
 
         // Lambda to select the right initialization function
         const auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
@@ -870,15 +871,15 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool              need_
             }
         };
 
-        T* values_loc = Base::allocate_chunk_internal(thr_rank, init_func);
+        T* values_loc = self.Base::allocate_chunk_internal(thr_rank, init_func);
 
         // Reuse the unified CAS/Recycle logic from Chunk2Base.
-        Base::apply_cas_or_recup(values_loc, thr_rank,
-                                 [this, need_set_second_value](T* cst_ptr)
-                                 {
-                                     // Single CAS operation targeting the specific constant pointer.
-                                     return this->compare_and_swap(cst_ptr, need_set_second_value);
-                                 });
+        self.Base::apply_cas_or_recup(values_loc, thr_rank,
+                                      [&self, need_set_second_value](T* cst_ptr)
+                                      {
+                                          // Single CAS operation targeting the specific constant pointer.
+                                          return self.compare_and_swap(cst_ptr, need_set_second_value);
+                                      });
     }
 
     else
@@ -898,7 +899,9 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool              need_
  * @note No compression-inflight wait here, unlike create_value().
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_second_value, int thr_rank)
+void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(this Derived& self,
+                                                              bool          need_set_second_value,
+                                                              int           thr_rank)
 {
     if constexpr (is_bool)
     {
@@ -906,7 +909,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_seco
         // for every T, so a bool chunk's `values` is CAS-stolen and free_block_to_pool()d exactly like any other.
         // Allocating and filling a block here while that is in flight races the free on the same recycled block -- see
         // wait_before_materialise() for the condition.
-        wait_before_materialise<T>(derived());
+        wait_before_materialise<T>(self);
 
         const auto init_func = [need_set_second_value](bool* ptr)
         {
@@ -915,14 +918,14 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_seco
             std::fill_n(ptr, shrink_array::alloc_chunk_count(), need_set_second_value);
         };
 
-        T* values_loc = Base::allocate_chunk_internal(thr_rank, init_func);
+        T* values_loc = self.Base::allocate_chunk_internal(thr_rank, init_func);
 
-        Base::apply_cas_or_recup(values_loc, thr_rank,
-                                 [this, need_set_second_value](bool* cst_ptr)
-                                 {
-                                     // Single CAS operation targeting the specific constant pointer.
-                                     return this->compare_and_swap(cst_ptr, need_set_second_value);
-                                 });
+        self.Base::apply_cas_or_recup(values_loc, thr_rank,
+                                      [&self, need_set_second_value](bool* cst_ptr)
+                                      {
+                                          // Single CAS operation targeting the specific constant pointer.
+                                          return self.compare_and_swap(cst_ptr, need_set_second_value);
+                                      });
     }
     else
     {
@@ -932,16 +935,18 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_seco
 
 /// @brief create_value() on the calling thread's rank.
 template <typename T, typename Derived, bool Enabled>
-void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value)
+void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(this Derived&     self,
+                                                         bool              need_set_second_value,
+                                                         SecondValueRef<T> ptr_second_value)
 {
-    create_value(need_set_second_value, ptr_second_value, get_thr_rank_fast());
+    self.create_value(need_set_second_value, ptr_second_value, get_thr_rank_fast());
 }
 
 /// @brief create_value_bool() on the calling thread's rank.
 template <typename T, typename Derived, bool Enabled>
-void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_second_value)
+void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(this Derived& self, bool need_set_second_value)
 {
-    create_value_bool(need_set_second_value, get_thr_rank_fast());
+    self.create_value_bool(need_set_second_value, get_thr_rank_fast());
 }
 
 // ---------------------------------------------------------------------------
@@ -1018,15 +1023,17 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::clear(char* ptr_type_cst, SecondValu
  * @param ptr_second_value The chunk's second-value slot, reset to `T{}`.
  */
 template <typename T, typename Derived>
-void Chunk2AOmpPolicy<T, Derived, false>::clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
+void Chunk2AOmpPolicy<T, Derived, false>::clear(this Derived&     self,
+                                                char*             ptr_type_cst,
+                                                SecondValueRef<T> ptr_second_value)
 {
-    if (this->written())
+    if (self.written())
     {
-        Base::free_values(values);
+        self.Base::free_values(self.values);
 
         ptr_second_value.reset();
         Derived::set_cst_val_to_cst_val1(ptr_type_cst);
-        derived().init_values_cst_val(ptr_type_cst, ptr_second_value);
+        self.init_values_cst_val(ptr_type_cst, ptr_second_value);
     }
 }
 
@@ -1040,17 +1047,19 @@ void Chunk2AOmpPolicy<T, Derived, false>::clear(char* ptr_type_cst, SecondValueR
  * @param ptr_second_value The chunk's second-value slot, reset to `T{}`.
  */
 template <typename T, typename Derived>
-void Chunk2AOmpPolicy<T, Derived, false>::clear_st(char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
+void Chunk2AOmpPolicy<T, Derived, false>::clear_st(this Derived&     self,
+                                                   char*             ptr_type_cst,
+                                                   SecondValueRef<T> ptr_second_value)
 {
     // Check condition only if debug mode is active at compile-time
-    Base::debug_check_written();
+    self.Base::debug_check_written();
 
     // Core logic: executed always in Release, and only if written() is true in Debug
-    Base::free_values(values);
+    self.Base::free_values(self.values);
 
     ptr_second_value.reset();
     Derived::set_cst_val_to_cst_val1(ptr_type_cst);
-    derived().init_values_cst_val(ptr_type_cst, ptr_second_value);
+    self.init_values_cst_val(ptr_type_cst, ptr_second_value);
 }
 
 /**
@@ -1118,7 +1127,8 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(int               num_c
 /// @copydoc Chunk2AOmpPolicy::block_clear
 /// Serial build: frees the buffer outright instead of parking it in a rank pool.
 template <typename T, typename Derived>
-void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int               num_compress_value,
+void Chunk2AOmpPolicy<T, Derived, false>::block_clear(this Derived&     self,
+                                                      int               num_compress_value,
                                                       char*             ptr_type_cst,
                                                       SecondValueRef<T> ptr_second_value,
                                                       int,
@@ -1130,17 +1140,17 @@ void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int               num_comp
     // second-value identifier is not backed by a page under
     // CHUNK_CST_VAL2_NO_ARRAYS). The type table is left as it is -- it
     // describes the constant in place.
-    if (values == Base::get_cst_val1() || Derived::tab_cst_val2_holder::is_cst_val2_ptr(values)) [[unlikely]]
+    if (self.values == Base::get_cst_val1() || Derived::tab_cst_val2_holder::is_cst_val2_ptr(self.values)) [[unlikely]]
         return;
     increm_chunk_compress<Derived>();
-    Base::free_values(values);
+    self.Base::free_values(self.values);
     Derived::set_cst_val_to_cst_val(num_compress_value, ptr_type_cst);
     // Serial: no CAS, the values pointer is set outright to the constant --
     // the caller's array for a type 2, from the tables otherwise.
     if (num_compress_value == 1 && cst2_ptr != nullptr)
-        values = cst2_ptr;
+        self.values = cst2_ptr;
     else
-        derived().init_values_cst_val(ptr_type_cst, ptr_second_value);
+        self.init_values_cst_val(ptr_type_cst, ptr_second_value);
 }
 
 /**
@@ -1150,16 +1160,17 @@ void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int               num_comp
  * @copydetails Chunk2AOmpPolicy::clear_int_st
  */
 template <typename T, typename Derived>
-void Chunk2AOmpPolicy<T, Derived, false>::clear_int_st(int               num_compress_value,
+void Chunk2AOmpPolicy<T, Derived, false>::clear_int_st(this Derived&     self,
+                                                       int               num_compress_value,
                                                        char*             ptr_type_cst,
                                                        SecondValueRef<T> ptr_second_value,
                                                        int               thr_rank,
                                                        T*                new_cst_val2_ptr)
 {
-    Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
+    self.Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
     if (num_compress_value == 1 && new_cst_val2_ptr == nullptr)
         new_cst_val2_ptr = Derived::tab_cst_val2_holder::find_cst_val2_ptr(ptr_second_value.get());
-    block_clear(num_compress_value, ptr_type_cst, ptr_second_value, thr_rank, new_cst_val2_ptr);
+    self.block_clear(num_compress_value, ptr_type_cst, ptr_second_value, thr_rank, new_cst_val2_ptr);
 }
 
 // clear_st(int num_compress_value, char* ptr_type_cst, SecondValueRef<T> ptr_second_value) --
