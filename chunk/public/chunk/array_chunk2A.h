@@ -35,7 +35,6 @@
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for use_openmp
 #include "chunk/internal/tab_cst_val2_holder.h"         // for GlobalVecHolder (cst2 GC)
-#include "chunk/internal/proxy2A_meta_bases.h"          // Proxy2AMetaBases (armed metadata rows)
 #include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
 #include "chunk/internal/in_t.h"                        // in_t<T>: the element snapshots
 #include "chunk/internal/array_chunk_core.h"            // the core the bases share
@@ -104,34 +103,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
 
     friend Base2;
 
-    /// @brief This array's rows in the per-tab metadata tables, armed into
-    ///        every write proxy by operator[] (see Proxy2AMetaBases).
-    [[nodiscard]] const Proxy2AMetaBases<T>& meta_bases() const noexcept
-    {
-        return meta_bases_;
-    }
-
-    /// @brief Re-read the rows from the tables. Call after ANY reallocation of
-    ///        this array's rows (resize_tab_is_int) or change of num_tab -- a
-    ///        missed site is caught by the any_check comparison in
-    ///        Proxy2A::meta_from_armed().
-    void sync_meta_bases() noexcept
-    {
-        Proxy2AMetaBases<T> bases;
-        if (num_tab >= 0 && nb_chunk > 0)
-        {
-            bases.type   = Proxy2A<T>::tab_type_cst_val[num_tab].data();
-            bases.inside = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab).data();
-            if constexpr (!std::is_same_v<T, bool>)
-                bases.sv = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab).data();
-        }
-        meta_bases_ = bases;
-    }
-
-  private:
-    Proxy2AMetaBases<T> meta_bases_{}; ///< see meta_bases()
-
-  public:
     // Mode-specific members, moved out of this class into the mixins above.
     // The using-declarations are not decoration: ArrayChunkBase re-exports
     // RechunkSupport's hook DEFAULTS under these very names, so without them a
@@ -469,16 +440,13 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
 
     /// @brief The identity step of swap(): num_tab and the registry entry (the
     ///        per-chunk metadata rows follow the chunks), the cst2 registry
-    ///        reference (it goes with the chunks that need it), and both
-    ///        arrays' cached metadata row bases.
+    ///        reference (it goes with the chunks that need it).
     void swap_identity(ArrayChunk2A& other)
     {
         using std::swap;
         swap(this->num_tab, other.num_tab);
         swap(holds_cst2_registry_, other.holds_cst2_registry_);
         Proxy2A<T>::share_info_array.swap_keys(this->registry_key(), other.registry_key());
-        sync_meta_bases();
-        other.sync_meta_bases();
     }
 };
 

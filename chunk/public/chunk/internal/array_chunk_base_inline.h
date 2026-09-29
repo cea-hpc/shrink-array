@@ -100,12 +100,6 @@ void ArrayChunkBase<Derived>::set_value(ind_type i, in_t<T> v)
     {
         proxy.arm_inf_array(derived().registry_mirror());
     }
-    // Chunk2A: arm the proxy with the array's metadata rows (base +
-    // num_chunk instead of three table lookups per write).
-    else if constexpr (std::is_same_v<proxy_type, Proxy2A<T>>)
-    {
-        proxy.arm_meta_bases(derived().meta_bases());
-    }
 
     // Assignment triggers Proxy::operator= which handles everything internally,
     // including calling derived().get_metadata(i) if needed

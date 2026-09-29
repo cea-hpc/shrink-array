@@ -30,7 +30,6 @@ Chacun vaut `1` pour activer le comportement indiqué, afin de comparer sur un m
 | variable | comportement activé |
 |---|---|
 | `CHUNK_PROXY2_ACQ_FENCE` | rétablit les barrières d'acquisition après la lecture du registre (Chunk2) |
-| `CHUNK_PROXY2A_META_ARMED` | Chunk2A : les proxys utilisent les adresses de lignes de métadonnées armées (désactivé par défaut) |
 
 ## 3. Traces et diagnostics
 

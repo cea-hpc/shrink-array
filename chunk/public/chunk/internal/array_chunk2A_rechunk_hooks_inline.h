@@ -82,9 +82,6 @@ bool RechunkHooks2A<Derived, true>::rechunk_swap_identity(Derived& tmp)
     using std::swap;
     swap(self().num_tab, tmp.num_tab);
     const bool ok = proxy_type::share_info_array.swap_keys(self().registry_key(), tmp.registry_key());
-    // num_tab changed hands: each array now owns the other's metadata rows.
-    self().sync_meta_bases();
-    tmp.sync_meta_bases();
     return ok;
 }
 

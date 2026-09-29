@@ -37,7 +37,6 @@
 #include "chunk/internal/crp_helper.h"
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED
-#include "chunk/internal/proxy2A_meta_bases.h"  // Proxy2AMetaBases
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 #include "chunk/internal/TChunk.h"
 #include "chunk/internal/proxy_base.h"
@@ -657,24 +656,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
 
     char* ptr_type_cst = nullptr; ///< pointer into tab_type_cst_val[num_tab]
 
-    /// The owning array's metadata rows (arm_meta_bases); type == nullptr: not
-    /// armed, the addresses are looked up through the per-tab tables. Mutable:
-    /// operator[] arms a const proxy, like arm_inf_array for Chunk2.
-    mutable Proxy2AMetaBases<T> meta_{};
-
-    /// Fill ptr_is_inside / ptr_type_cst (and, if @p with_sv, the second-value
-    /// slot) from the armed rows. Returns false when not armed. any_check
-    /// compares every armed address with the looked-up one.
-    bool meta_from_armed(bool with_sv) noexcept;
-
   public:
-    /// @brief Arm this proxy with the owning array's metadata rows
-    ///        (ArrayChunk2A::meta_bases()). Called by operator[] / set_value.
-    void arm_meta_bases(const Proxy2AMetaBases<T>& bases) const noexcept
-    {
-        meta_ = bases;
-    }
-
     /**
      * @brief Per-tab array of flags indicating the type of constant value used.
      */
