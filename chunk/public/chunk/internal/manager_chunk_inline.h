@@ -1224,23 +1224,6 @@ void ManagerChunk<CHUNK_T, T>::compute_size_max_number_of_chunk_to_check_compres
     int threshold = somme_chunk_create / (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS);
     threshold     = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);
 
-    // TEMPORARY (CHUNK_THRESHOLD_TRACE=1): the inputs, alongside the result that
-    // set_size_max_number_of_chunk_to_check_compress() prints. somme_chunk_create
-    // is CUMULATIVE, so the threshold it feeds grows as the run proceeds -- worth
-    // seeing, since compression becoming rarer over time would follow from it.
-    if (std::getenv("CHUNK_THRESHOLD_TRACE") != nullptr)
-    {
-        std::fprintf(stderr,
-                     "[THRESHOLD] %-22s somme_create=%lld / (div=%d * thr=%d) = %d,"
-                     " floor=%d -> %d\n",
-                     type_name<T>().data(), (long long)somme_chunk_create, VariantDef::factor_div_nb_chunk_for_compress,
-                     CHUNK_PMP_MAX_THREADS,
-                     static_cast<int>(somme_chunk_create /
-                                      (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS)),
-                     VariantDef::size_min_list_chunk_to_check_compress, threshold);
-        std::fflush(stderr);
-    }
-
     set_size_max_number_of_chunk_to_check_compress(threshold);
     if constexpr (build_config::debug_set_size)
     {

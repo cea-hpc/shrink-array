@@ -56,7 +56,6 @@ set(SHRINK_BENCH_HEADERS
         bench_array.h
         bench_phases.h
         bench_stl_checks.h
-        crash_backtrace.h
 )
 
 

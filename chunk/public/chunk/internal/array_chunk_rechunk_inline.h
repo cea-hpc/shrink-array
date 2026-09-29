@@ -29,7 +29,7 @@
 #include <ratio>       // std::milli (the same timers)
 #include <cstddef>     // std::size_t
 #include <cstdio>      // std::fprintf (CHUNK_RECHUNK_TRACE)
-#include <cstdlib>     // std::getenv (CHUNK_POOL_BREAKDOWN, CHUNK_RECHUNK_TRACE, CHUNK_RECHUNK_SLICES)
+#include <cstdlib>     // std::getenv (CHUNK_RECHUNK_TRACE, CHUNK_RECHUNK_INSTALL_LEGACY, CHUNK_RECHUNK_SCHEDULE)
 #include <type_traits> // std::is_same_v, the v1 bool guard
 #include <string_view> // CHUNK_RECHUNK_SCHEDULE parsing
 #include <utility>     // std::swap (the array swap)
@@ -59,6 +59,11 @@ inline const bool g_install_legacy = []
     const char* env = std::getenv("CHUNK_RECHUNK_INSTALL_LEGACY");
     return env != nullptr && env[0] != '\0' && env[0] != '0';
 }();
+
+/// CHUNK_RECHUNK_TRACE (read once, set = on): per-phase timings, memory and
+/// occupancy of every re-chunk. Read here once rather than by a getenv() at
+/// each of the sites below.
+inline const bool g_rechunk_trace = std::getenv("CHUNK_RECHUNK_TRACE") != nullptr;
 
 /// @brief Resident set size of this process in MiB, or -1 if unreadable.
 /// @details EXACT (smaps_rollup, see exact_rss.h): statm, used until Sept '26,
@@ -132,11 +137,6 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
 namespace shrink_array
 {
 
-/// @copydoc shrink_array::print_all_reuse_pool_breakdown
-/// Re-declared here rather than including all_type_chunk.h, which would close an
-/// include cycle through array_chunk2A.h. Canonical declaration lives there.
-void print_all_reuse_pool_breakdown(const char* label);
-
 template <typename Derived>
 void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 {
@@ -186,7 +186,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // the t_active switch.
     // CHUNK_RECHUNK_TRACE=1: per-phase wall time, to see where a slow
     // re-chunk spends it (tmp creation, refill, flush+swap, tmp teardown).
-    static const bool trace_phases = std::getenv("CHUNK_RECHUNK_TRACE") != nullptr;
+    const bool        trace_phases = internal::g_rechunk_trace;
     const auto        t_now        = [] { return std::chrono::steady_clock::now(); };
     const auto        t_ms         = [](auto start, auto stop)
     { return std::chrono::duration<double, std::milli>(stop - start).count(); };
@@ -389,23 +389,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // never grab a wrong-size block. NOTE: with an immortal-arena fast
     // allocator these pages cannot be returned — retention is inherent
     // there until the allocator gains per-size recycling.
-    // TEMPORARY (re-chunk retention hunt): what do the pools hold on either side
-    // of the drain? Forcing a re-chunk to 256 on chunk2a at 64 threads left
-    // 19677 MB parked out of a 31100 MB footprint, against 16730 MB with no
-    // re-chunk at all -- the move ADDS 14 GB. Printing the breakdown here says
-    // whether the drain never ran, ran against the wrong key, or ran on a store
-    // it cannot reach. Enable with CHUNK_POOL_BREAKDOWN=1.
-    const bool pool_dbg = std::getenv("CHUNK_POOL_BREAKDOWN") != nullptr;
-    if (pool_dbg)
-        print_all_reuse_pool_breakdown("before drain");
-
     self().rechunk_drain_reuse_list(old_size);
-
-    if (pool_dbg)
-    {
-        std::fprintf(stderr, "[POOLS] drained old_size=%d, new geometry is %d\n", old_size, new_size);
-        print_all_reuse_pool_breakdown("after  drain");
-    }
     // The array has left (old_key, old_size) for good: its slabs there hold
     // nothing any more once the drain above has run, but manage_full_empty()
     // only inspects a slab at the instant a block is freed, so the ones that
@@ -439,7 +423,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         }
         set_thread_chunk_size(saved_sz);
     }
-    if (std::getenv("CHUNK_RECHUNK_TRACE") || pool_dbg)
+    if (internal::g_rechunk_trace)
     {
         // Occupancy of the allocator set the array just left. Its slabs hold
         // nothing but this array's old-geometry blocks, so once the drain has
@@ -962,7 +946,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         {
             const auto& rs = internal::rebuild_schedule();
             chunk_pmp_set_schedule(rs.schedule);
-            if (std::getenv("CHUNK_RECHUNK_TRACE"))
+            if (internal::g_rechunk_trace)
                 std::fprintf(stderr, "[RECHUNK] rebuild schedule: %s\n", rs.text);
         }
         g_in_rechunk_rebuild = true;
@@ -1046,7 +1030,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         }
         g_in_rechunk_rebuild = false;
         chunk_pmp_set_schedule(caller_schedule); // the caller's, untouched
-        if (std::getenv("CHUNK_RECHUNK_TRACE"))
+        if (internal::g_rechunk_trace)
         {
             // What the new geometry actually HOLDS, counted on tmp before the
             // swap. "folded" says how many spans the rebuild could fold; this

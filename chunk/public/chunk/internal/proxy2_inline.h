@@ -17,7 +17,7 @@
 #pragma once
 
 #include <atomic>
-#include <cstdlib>     // std::getenv (CHUNK_PROXY2_NO_ACQ_FENCE)
+#include <cstdlib>     // std::getenv (CHUNK_PROXY2_ACQ_FENCE, CHUNK_PROXY2_ARM_LEGACY)
 #include <iostream>    // std::cerr (verbose)
 #include <type_traits> // std::remove_cvref_t
 

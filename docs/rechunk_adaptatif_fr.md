@@ -158,7 +158,7 @@ Par ailleurs, le **seuil de déclenchement des passes de compression** et le **b
 réserves**, calculés à partir du nombre total de chunks, sont maintenant recalculés aussi à la
 destruction d'un stockage, et plus seulement à sa création (`CHUNK_THRESHOLD_TEARDOWN_LEGACY=1`
 revient à l'ancien comportement). Sans effet mesurable sur le temps, mais les seuils
-correspondent de nouveau à la géométrie réelle (`CHUNK_THRESHOLD_TRACE=1`).
+correspondent de nouveau à la géométrie réelle.
 
 ## 7. Résultats
 

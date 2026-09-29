@@ -21,7 +21,6 @@
 #include <vector>
 #include <tuple>
 #include <cstdio>  // fprintf (pool breakdown)
-#include <cstdlib> // getenv (CHUNK_DRAIN_TRACE)
 #include <unordered_map>
 #include <cstdint>     // pool keys (drain_reuse_list_for_size, keyed lists)
 #include <type_traits> // remove_reference_t / remove_pointer_t (same)
@@ -824,44 +823,11 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      */
     static void drain_reuse_list_for_size([[maybe_unused]] unsigned int size) noexcept
     {
-        // TEMPORARY (drain diagnosis, CHUNK_DRAIN_TRACE=1). The pool breakdown
-        // printed around this call showed the size-64 list at 402364 blocks both
-        // BEFORE and AFTER -- the drain frees nothing. The trace separates the
-        // candidate reasons: size absent from the by-size map (early return
-        // below), entry present but holding no rank, or blocks found and freed
-        // with the retention lying elsewhere.
-        //
-        // Worth remembering while reading it: this is a static on
-        // ManagerChunk<CHUNK_T, T>, so it drains ONE element type -- the one
-        // belonging to the re-chunked array. The other eight keep their pools
-        // regardless, which on its own explains a breakdown that barely moves.
-        const bool drain_trace = std::getenv("CHUNK_DRAIN_TRACE") != nullptr;
-
+        // A static on ManagerChunk<CHUNK_T, T>: it drains ONE element type --
+        // the one belonging to the re-chunked array. The other types keep
+        // their pools regardless.
         if constexpr (chunk_config::chunk_dynamic)
         {
-            if (drain_trace)
-            {
-                const auto  probe  = list_block_free_thr_by_size_.find(size);
-                std::size_t blocks = 0;
-                std::size_t ranks  = 0;
-                if (probe != list_block_free_thr_by_size_.end())
-                {
-                    ranks = probe->second.size();
-                    for (const auto& ptf : probe->second)
-                        blocks += ptf.list.size();
-                }
-                std::fprintf(stderr,
-                             "[DRAIN] %-22s size %-6u : %-26s %3zu rank(s), %8zu block(s)"
-                             " | map:",
-                             type_name<T>().data(), size,
-                             (probe == list_block_free_thr_by_size_.end()) ? "NOT in map -> returns" : "found", ranks,
-                             blocks);
-                for (const auto& kv : list_block_free_thr_by_size_)
-                    std::fprintf(stderr, " %u", kv.first);
-                std::fprintf(stderr, "\n");
-                std::fflush(stderr);
-            }
-
             // Drain ONLY the per-size reuse list for `size`, looked up directly. If it
             // was never registered (e.g. the array's INITIAL geometry, set at
             // construction without going through set_chunk_size/register_runtime_chunk_size),
@@ -1028,32 +994,10 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     }
 
     /// @brief Set the candidate-list length that triggers a compression pass.
+    /// @details Decides when trigger_compression_if_needed() flags a rank's
+    ///          candidate list, hence how often compression runs at all.
     static void set_size_max_number_of_chunk_to_check_compress(int v)
     {
-        // TEMPORARY (CHUNK_THRESHOLD_TRACE=1): print the threshold as it moves.
-        //
-        // This value decides when trigger_compression_if_needed() flags a rank's
-        // candidate list, so it decides how often compression runs at all --
-        // and on v1 dyn at 64 threads compression runs 788282 times against
-        // 66.8 million fresh allocations, which is why nothing ever returns to
-        // the reuse pools. Three separate guesses at the cause (a mis-picked
-        // floor, an incomplete OMPT stand-in, a threshold drifting upward with
-        // somme_chunk_create) each failed to predict the measurements, so this
-        // prints the number instead of inferring it: how large it is, how it
-        // evolves, and what the inputs were.
-        //
-        // Only prints on a CHANGE -- the function is called on every recompute
-        // and the value is usually stable.
-        if (v != size_max_number_of_chunk_to_check_compress)
-        {
-            static const bool trace = std::getenv("CHUNK_THRESHOLD_TRACE") != nullptr;
-            if (trace)
-            {
-                std::fprintf(stderr, "[THRESHOLD] %-22s %8d -> %8d\n", type_name<T>().data(),
-                             size_max_number_of_chunk_to_check_compress, v);
-                std::fflush(stderr);
-            }
-        }
         size_max_number_of_chunk_to_check_compress = v;
     }
     /// @brief Candidate-list length that triggers a compression pass.

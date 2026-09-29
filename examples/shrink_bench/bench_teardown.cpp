@@ -123,26 +123,13 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
         bench_phase_compress_all(bench_arrays);
     }
 
-    // No #ifdef: all three names below are declared unguarded (all_type_chunk.h
+    // No #ifdef: both names below are declared unguarded (all_type_chunk.h
     // and chunk_std.h) and defined in EVERY variant library -- the symbols are
     // in libchunk_vector.a too -- so the discarded branch both type-checks and
     // links in the std::vector build.
     if constexpr (chunk_config::is_shrink_enabled)
     {
-        // What do the pools hold at teardown, and under which geometry?
-        //
-        // The existing breakdown is only called from rechunk_to, so a run that
-        // never re-chunks prints nothing -- and the configuration that needs
-        // explaining does exactly that: v1 dyn at 64 threads reaches 51 GB with
-        // no re-chunk at all, and dyn@256 outweighs static@256 by 3.4 GB while
-        // every CHUNK_STATS counter matches to within 0.05%. Enable with
-        // CHUNK_POOL_BREAKDOWN=1.
-        // (Used to sit under #ifdef _OPENMP; the breakdown is built in every
-        // model, so a serial run can ask for it too.)
-        if (std::getenv("CHUNK_POOL_BREAKDOWN") != nullptr)
-            print_all_reuse_pool_breakdown("at teardown");
-
-        // No #ifdef _OPENMP either: since ChunkPoolParallelInterface
+        // No #ifdef _OPENMP: since ChunkPoolParallelInterface
         // (chunk_std.h) both verbs exist in every build, each a no-op in the
         // model where it has nothing to do -- so this pair is EXACTLY what ran
         // before on either side. Deliberately not release_chunk_pools(): that

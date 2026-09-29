@@ -18,7 +18,7 @@
 
 #include <atomic>          // std::atomic<char> (the "queued" flags)
 #include <cstdio>          // std::fprintf (check-build trace)
-#include <cstdlib>         // std::getenv (CHUNK_PROXY2A_META_LEGACY)
+#include <cstdlib>         // std::getenv (CHUNK_PROXY2A_META_ARMED)
 #include <iostream>        // std::cerr (verbose)
 #include <memory>          // std::make_unique
 #include <source_location> // std::source_location

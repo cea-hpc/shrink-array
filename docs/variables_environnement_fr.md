@@ -49,11 +49,8 @@ Tous valent `1` pour rétablir l'ancien comportement, afin de comparer sur un m�
 | `CHUNK_RECHUNK_MEMTRACE` | à chaque passage de l'advisor : mémoire exacte, dont la part résidente de l'arène des tampons |
 | `CHUNK_ADVISOR_TABLE` | `1` ou `=nom` : la table complète de l'advisor à chaque passage (tous les tableaux ou un seul) |
 | `CHUNK_RECHUNK_CHURN` | `1` ou `=nom` : matérialisations par passage et estimation du coût passager qu'elles impliquent |
-| `CHUNK_THRESHOLD_TRACE` | chaque recalcul du seuil de déclenchement des passes de compression |
 | `CHUNK_AFFINITY_TRACE` | chaque jeu d'allocateurs par tableau créé (clé, taille, budget) |
-| `CHUNK_POOL_BREAKDOWN` | l'état des réserves de tampons autour du vidage d'un rechunk |
 | `CHUNK_ARENA_REPORT` | le bilan de l'arène des tampons (slabs distribués, rendus au système) |
-| `CHUNK_DRAIN_TRACE` | le détail des vidages de réserves |
 | `CHUNK_RECYCLE_TRACE` | une ligne par bloc recyclé du pool des écritures différées (au lieu d'un résumé) |
 | `CHUNK_LEDGER_REPORT` | le rapport du registre des blocs (builds avec registre) |
 | `CHUNK_OMPT_STATS` | statistiques des régions de synchronisation (builds OMPT) |
@@ -83,7 +80,6 @@ Tous valent `1` pour rétablir l'ancien comportement, afin de comparer sur un m�
 | `CHUNK_MALLOC_ARENAS` | nombre d'arènes `malloc` de la glibc (0 = inchangé) |
 | `BENCH_SCHED_BLOCK` | taille des blocs d'ordonnancement des phases du banc (64 ; 0 = tranches contiguës) |
 | `NO_IO`, `COMPRESS` | équivalents de `--no_io` et `--compress` |
-| `CRASH_BT_GCORE` | `1` : en cas de plantage, écrire un core complet avec `gcore` |
 | `--no_mask`, `--mask_scale <x>` | sans `tab_mask` ; ou sa taille, `x × sz` (défaut 1/32) |
 | `--no_struct` | sans les tableaux de structures (`Point3`, `Cell`) |
 

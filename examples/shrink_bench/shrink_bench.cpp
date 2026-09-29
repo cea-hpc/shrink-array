@@ -47,7 +47,6 @@
 #include "bench_args.h"
 
 
-#include "crash_backtrace.h"          // TEMPORARY (SEGV hunt): native backtrace on crash
 #include "chunk/ring_log_debug.h"     // SEGV hunt: ring_init/analyze_ring_sweep decls
 #include "chunk/rechunk_decider.h"    // phase-3A: re-chunk decisions (acts in dyn builds only)
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
@@ -218,10 +217,6 @@ int main(int argc, char* argv[])
 
     // TSan tip: unbuffer stderr with setvbuf(stderr, nullptr, _IONBF, 0) so its
     // reports interleave correctly with ours.
-
-    // TEMPORARY (SEGV hunt): print a native backtrace of the faulting thread on
-    // crash, since ulimit -c is locked and gdb masks the race. Remove once fixed.
-    install_crash_backtrace();
 
     // Command-line parsing: moved to bench_args.cpp.
     const BenchArgs bench_args      = parse_bench_args(argc, argv);
