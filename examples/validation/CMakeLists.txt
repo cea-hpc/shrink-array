@@ -63,6 +63,13 @@
 #                           keeps its own per-rank structures afterwards; two
 #                           ACTIVE levels stop with an invariant failure
 #                           (re-run with --nested-active).
+#   fill_range_mt_v1v2_validation  the range ops in a TWO-variant build
+#                           (chunk_v1v2): an ArrayChunk and an ArrayChunk2 side
+#                           by side, fill_range_mt of each compressible value.
+#                           The ops must dispatch on the array's type, not on
+#                           the build flags -- an ArrayChunk2 filled with its
+#                           second value used to stay materialised there.
+#                           The one harness that is not variant-agnostic.
 #
 # All sources are variant-agnostic (the array type follows the CHUNK / CHUNK2
 # / CHUNK2A macro) and depend on the library alone -- none of the shrink_bench
@@ -247,6 +254,22 @@ foreach(_geom IN LISTS _rt_geometries)
     set_property(TEST ${_tgt}_${_nthr}thr PROPERTY LABELS validation)
   endforeach()
 endforeach()
+
+# --- fill_range_mt_v1v2_validation: the two-variant library (CHUNK=1;CHUNK2=1,
+# default static size, no OMPT tool -- the harness defines the switch and makes
+# the phase calls, as multi-mat does), ArrayChunk and ArrayChunk2 in one
+# program. At 1 and 8 threads like the others.
+if (TARGET chunk_v1v2_${CHUNK_DEFAULT_SIZE})
+  set(_tgt fill_range_mt_v1v2_validation)
+  add_executable(${_tgt} fill_range_mt_v1v2_validation.cpp)
+  target_link_libraries(${_tgt} PRIVATE chunk_v1v2_${CHUNK_DEFAULT_SIZE}) # CHUNK, CHUNK2, CHUNK_SIZE: PUBLIC
+  validation_setup_target(${_tgt})
+  foreach(_nthr 1 8)
+    add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
+    set_property(TEST ${_tgt}_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
+    set_property(TEST ${_tgt}_${_nthr}thr PROPERTY LABELS validation)
+  endforeach()
+endif()
 
 # --- bit_words_validation: the bit-packed storage kernel of ArrayChunkBits
 # alone (header only, no variant, no library): get/set against
