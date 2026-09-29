@@ -201,7 +201,7 @@ endif()
 # type. Putting them in this Debug-only variable is what silently produced
 # uninstrumented RelWithDebInfo sanitizer binaries.
 set(CMAKE_CXX_FLAGS_DEBUG
-    "-O0 -g -D_NOT_INLINE -DDEBUG"
+    "-O0 -g -DDEBUG"
     CACHE STRING "Debug flags" FORCE)
 
 set(CMAKE_CXX_FLAGS_RELEASE
