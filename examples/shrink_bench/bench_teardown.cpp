@@ -38,18 +38,19 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     auto& tab4 = bench_arr.tab4;
     auto& tab5 = bench_arr.tab5;
 
-    auto& tab_int     = bench_arr.tab_int;
-    auto& tab_bool    = bench_arr.tab_bool;
-    auto& tab_complex = bench_arr.tab_complex;
-    auto& tab_float   = bench_arr.tab_float;
-    auto& tab_short   = bench_arr.tab_short;
-    auto& tab_char    = bench_arr.tab_char;
-    auto& tab_long    = bench_arr.tab_long;
-    auto& tab_ulong   = bench_arr.tab_ulong;
-    auto& tab_quant   = bench_arr.tab_quant;
-    auto& tab_point   = bench_arr.tab_point;
-    auto& tab_cell    = bench_arr.tab_cell;
-    auto& tab_mask    = bench_arr.tab_mask;
+    auto& tab_int       = bench_arr.tab_int;
+    auto& tab_bool      = bench_arr.tab_bool;
+    auto& tab_bool_bits = bench_arr.tab_bool_bits;
+    auto& tab_complex   = bench_arr.tab_complex;
+    auto& tab_float     = bench_arr.tab_float;
+    auto& tab_short     = bench_arr.tab_short;
+    auto& tab_char      = bench_arr.tab_char;
+    auto& tab_long      = bench_arr.tab_long;
+    auto& tab_ulong     = bench_arr.tab_ulong;
+    auto& tab_quant     = bench_arr.tab_quant;
+    auto& tab_point     = bench_arr.tab_point;
+    auto& tab_cell      = bench_arr.tab_cell;
+    auto& tab_mask      = bench_arr.tab_mask;
 
     [[maybe_unused]] auto& bench_arrays = bench_arr;
 
@@ -64,6 +65,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
 
     tab_int.clear();
     tab_bool.clear();
+    tab_bool_bits.clear();
 
     tab_complex.clear();
 

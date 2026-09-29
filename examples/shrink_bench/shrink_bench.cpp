@@ -492,6 +492,11 @@ int main(int argc, char* argv[])
     // (bench_array.h says why): one alias, where four declarations under
     // #if defined CHUNK / CHUNK2 / CHUNK2A stood.
     BenchBoolArray tab_bool(sz);
+    // tab_bool's twin, written with the same values at the same places:
+    // ArrayChunkBits (8 bools per byte) in a chunk2 build, tab_bool's own type
+    // elsewhere (BenchBoolBitsArray). Compare the two in the stats, the
+    // chunk filling rates and the pools of a single run.
+    BenchBoolBitsArray tab_bool_bits(sz);
 
     // Large and mostly NOT constant: random masks and scattered flags between
     // whole constant segments (bench_phase_mask.cpp). ArrayChunkBits in a
@@ -515,11 +520,12 @@ int main(int argc, char* argv[])
     if (!no_mask)
         std::cout << "tab_mask: " << mask_sz << " elements (--mask_scale " << mask_scale << ")\n";
 
-    // Handle on the fifteen arrays, passed to the extracted phases. References,
+    // Handle on the eighteen arrays, passed to the extracted phases. References,
     // so main() stays the owner -- it builds them and destroys them.
-    BenchArrays bench_arrays{tab1,        tab2,      tab3,      tab4,     tab5,     tab_int,    tab_bool,
-                             tab_complex, tab_float, tab_short, tab_char, tab_long, tab_ulong,  tab_quant,
-                             tab_point,   tab_cell,  tab_mask,  sz,       interval, !no_struct, !no_mask};
+    BenchArrays bench_arrays{tab1,     tab2,          tab3,        tab4,      tab5,      tab_int,
+                             tab_bool, tab_bool_bits, tab_complex, tab_float, tab_short, tab_char,
+                             tab_long, tab_ulong,     tab_quant,   tab_point, tab_cell,  tab_mask,
+                             sz,       interval,      !no_struct,  !no_mask};
 
     SingletonChk<GlobalStatsChunkList>::getRef().print();
 
@@ -699,8 +705,9 @@ int main(int argc, char* argv[])
             // only the five arrays above were, and the other ten stayed at the
             // starting S=64 for the whole run (~12.5 GB at the end).
             // SHRINK_BENCH_ADVISE_ALL=0 goes back to the five, for runs that
-            // must compare with earlier campaigns. tab_bool excepted: the
-            // re-chunk of a bit-packed bool array has no validation harness yet.
+            // must compare with earlier campaigns. tab_bool and tab_bool_bits
+            // excepted: both stay at their birth geometry, so the two bool
+            // containers are compared as they are, not after a re-chunk.
             static const bool advise_all = []
             {
                 const char* e = std::getenv("SHRINK_BENCH_ADVISE_ALL");
@@ -899,6 +906,7 @@ int main(int argc, char* argv[])
             fill_range(tab3, r0, r1, 2.5, assume_drained);
             fill_range(tab_int, r0, r1, second_value_i, assume_drained);
             fill_range(tab_bool, r0, r1, true, assume_drained);
+            fill_range(tab_bool_bits, r0, r1, true, assume_drained);
 
             // Copies from a plain vector: one dense, one mostly the second value
             // (so the copy lands on chunks that compress right after).

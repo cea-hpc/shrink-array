@@ -40,21 +40,22 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     auto& tab4 = bench_arr.tab4;
     auto& tab5 = bench_arr.tab5;
 
-    auto& tab_int     = bench_arr.tab_int;
-    auto& tab_bool    = bench_arr.tab_bool;
-    auto& tab_complex = bench_arr.tab_complex;
-    auto& tab_float   = bench_arr.tab_float;
-    auto& tab_short   = bench_arr.tab_short;
-    auto& tab_char    = bench_arr.tab_char;
-    auto& tab_point   = bench_arr.tab_point;
-    auto& tab_cell    = bench_arr.tab_cell;
+    auto& tab_int       = bench_arr.tab_int;
+    auto& tab_bool      = bench_arr.tab_bool;
+    auto& tab_bool_bits = bench_arr.tab_bool_bits;
+    auto& tab_complex   = bench_arr.tab_complex;
+    auto& tab_float     = bench_arr.tab_float;
+    auto& tab_short     = bench_arr.tab_short;
+    auto& tab_char      = bench_arr.tab_char;
+    auto& tab_point     = bench_arr.tab_point;
+    auto& tab_cell      = bench_arr.tab_cell;
 
     const Int sz = bench_arr.sz;
 
     auto lbd_fill_values = [&](const std::string& name, const auto& tab, auto sec_val)
     {
         using value_type           = std::remove_reference_t<std::remove_const_t<decltype(tab)>>::value_type;
-        constexpr bool is_not_bool = !std::is_same_v<value_type, bool>;
+        constexpr bool is_not_bool = !shrink_array::is_bool_like_v<value_type>; // bool, Bit
         constexpr bool is_complex  = std::is_same_v<value_type, complex_double>;
         constexpr bool is_char     = std::is_same_v<value_type, unsigned char>;
 
@@ -189,6 +190,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
 
             lbd_fill_values("tab_int", tab_int, second_value_i);
             lbd_fill_values("tab_bool", tab_bool, second_value_b);
+            lbd_fill_values("tab_bool_bits", tab_bool_bits, second_value_b);
             lbd_fill_values("tab_complex", tab_complex, second_value_c);
 
             lbd_fill_values("tab_short", tab_short, second_value_s0);
@@ -212,6 +214,7 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
 
                 lbd_fill_chunk("tab_int", tab_int);
                 lbd_fill_chunk("tab_bool", tab_bool);
+                lbd_fill_chunk("tab_bool_bits", tab_bool_bits);
 
                 lbd_fill_chunk("tab_complex", tab_complex);
 
@@ -253,29 +256,33 @@ void bench_print_checksums(BenchArrays& bench_arr, bool check_sum)
     auto& tab4 = bench_arr.tab4;
     auto& tab5 = bench_arr.tab5;
 
-    auto& tab_int     = bench_arr.tab_int;
-    auto& tab_bool    = bench_arr.tab_bool;
-    auto& tab_complex = bench_arr.tab_complex;
-    auto& tab_float   = bench_arr.tab_float;
-    auto& tab_short   = bench_arr.tab_short;
-    auto& tab_char    = bench_arr.tab_char;
-    auto& tab_long    = bench_arr.tab_long;
-    auto& tab_ulong   = bench_arr.tab_ulong;
-    auto& tab_quant   = bench_arr.tab_quant;
-    auto& tab_point   = bench_arr.tab_point;
-    auto& tab_cell    = bench_arr.tab_cell;
+    auto& tab_int       = bench_arr.tab_int;
+    auto& tab_bool      = bench_arr.tab_bool;
+    auto& tab_bool_bits = bench_arr.tab_bool_bits;
+    auto& tab_complex   = bench_arr.tab_complex;
+    auto& tab_float     = bench_arr.tab_float;
+    auto& tab_short     = bench_arr.tab_short;
+    auto& tab_char      = bench_arr.tab_char;
+    auto& tab_long      = bench_arr.tab_long;
+    auto& tab_ulong     = bench_arr.tab_ulong;
+    auto& tab_quant     = bench_arr.tab_quant;
+    auto& tab_point     = bench_arr.tab_point;
+    auto& tab_cell      = bench_arr.tab_cell;
 
     const auto lbd_check_sum = [&]
     {
         if CONSTEXPR (check_sum)
         {
-            static const char* const n[] = {
-                "tab1",      "tab2",      "tab3",     "tab4",     "tab5",      "tab_int",   "tab_bool",  "tab_complex",
-                "tab_float", "tab_short", "tab_char", "tab_long", "tab_ulong", "tab_quant", "tab_point", "tab_cell"};
-            print_checksums(n, tab1, tab2, tab3, tab4, tab5, tab_int, tab_bool, tab_complex, tab_float, tab_short,
-                            tab_char, tab_long, tab_ulong, tab_quant);
+            static const char* const n[] = {"tab1",      "tab2",     "tab3",          "tab4",        "tab5",
+                                            "tab_int",   "tab_bool", "tab_bool_bits", "tab_complex", "tab_float",
+                                            "tab_short", "tab_char", "tab_long",      "tab_ulong",   "tab_quant",
+                                            "tab_point", "tab_cell"};
+            // tab_bool_bits' checksum equals tab_bool's: a Bit is one byte
+            // holding 0 or 1, as a bool.
+            print_checksums(n, tab1, tab2, tab3, tab4, tab5, tab_int, tab_bool, tab_bool_bits, tab_complex, tab_float,
+                            tab_short, tab_char, tab_long, tab_ulong, tab_quant);
             if (bench_arr.with_struct) // --no_struct
-                print_checksums(n + 14, tab_point, tab_cell);
+                print_checksums(n + 15, tab_point, tab_cell);
         }
     };
 
