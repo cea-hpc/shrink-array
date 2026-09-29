@@ -3,7 +3,6 @@
 #include <cstddef>                      // std::ptrdiff_t, the element offsets
 #include <cstdlib>                      // std::abort on an arena failure
 #include <iostream>                     // std::cerr on an arena failure
-#include <cstring>                      // std::memset, zeroing a recycled value slab
 #include "fast_allocators/slab_arena.h" // FIX: disjoint op/value slab arenas
 
 #include "fast_allocators/internal/next_power_of_2.h"
@@ -114,8 +113,7 @@ inline void TCCAllocator::alloc_block()
     // VALUE arena (disjoint from the op arena, never returned to the OS). Value
     // slabs live in their own address space and can never land on an op slab's
     // address. Recycled within the value arena's own free-list in destroy().
-    bool fresh = false;
-    data       = static_cast<char*>(fast_alloc::value_arena().allocate(BlockAllocator, BlockAllocator, &fresh));
+    data = static_cast<char*>(fast_alloc::value_arena().allocate(BlockAllocator, BlockAllocator));
 
     if (data == nullptr) [[unlikely]]
     {
@@ -123,17 +121,13 @@ inline void TCCAllocator::alloc_block()
         std::abort();
     }
 
-    // Not a promise of the pool: elements recycled through the free list are
-    // NOT cleared (see TCCAllocator's @warning). But a slab the arena recycles
-    // starts clean: clear its BlockSize elements (not the tail up to the
-    // back-pointer, which is never handed out when BlockSize is capped by the
-    // side array: slab_bytes_for()). A fresh slab is mmap's zeros already, and
-    // clearing it anyway made the WHOLE slab resident at the first alloc of a
-    // rank: 2 MiB for a 16-chunk array of bools (init_indexes(true), one
-    // thread), one full slab per (rank, type, size) that ever allocated. Left
-    // alone, its pages become resident as the elements are handed out.
-    if (!fresh)
-        std::memset(data, 0, static_cast<std::size_t>(BlockSize) * static_cast<std::size_t>(ElementSize));
+    // NOTE: no memset here, fresh slab or recycled. The pool makes no promise
+    // about element contents (TCCAllocator's @warning): every consumer
+    // initialises what it gets. Clearing only ever made the WHOLE slab resident
+    // at once -- 2 MiB at the first alloc of a rank for a fresh slab (a
+    // 16-chunk array of bools, init_indexes(true), one thread), and for a
+    // recycled one right after the re-chunk or teardown that gave it back.
+    // Left alone, its pages become resident as the elements are handed out.
 
     *reinterpret_cast<TCCAllocator**>(data + BlockAllocator - sizeof(void*)) = this;
 

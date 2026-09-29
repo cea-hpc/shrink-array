@@ -334,8 +334,8 @@ class alignas(64) TCAllocator
  *
  * @warning NO content guarantee. An element comes back with whatever its
  *          previous owner left in it -- through the free list, a rewound bump
- *          pointer, or a slab revived from the reserve. Only a slab fresh from
- *          the arena (mmap) or taken back from it by alloc_block() is zero.
+ *          pointer, a slab revived from the reserve, or a slab the arena
+ *          recycles. Only a slab fresh from the arena (mmap) is zero.
  *          Callers initialise what they get: ChunkOmpPolicy::zero_fill_fresh()
  *          for v1, the fill functors of allocate_chunk_internal() for v2/v2A.
  *
@@ -406,9 +406,8 @@ struct alignas(64) TCCAllocator
      * @brief Obtain the block and lay it out.
      * @details Rounds the block size up to a power of two, clamps #BlockSize so
      *          it fits an `unsigned short` index, allocates #tab_firstFree, then
-     *          takes the block from fast_alloc::value_arena(). A block the arena
-     *          recycles is cleared (a fresh one is mmap's zeros already); that
-     *          is not a promise about the elements -- see the class @warning.
+     *          takes the block from fast_alloc::value_arena(). The block is not
+     *          cleared, fresh or recycled: see the class @warning.
      */
     inline void alloc_block();
 
