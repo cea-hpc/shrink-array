@@ -54,14 +54,18 @@
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
 #include "chunk/internal/conditional_counter.h" // counter_value_t
 #include "chunk/config.h"
+#include "chunk/internal/chunk_stats.h" // increm_chunk_* (used directly, not via compression_manager.h)
 #include "chunk/chunk_traits.h"                        // Chunk / Chunk2 / Chunk2A: the type traits below
 #include "chunk/vector_range_ops.h"                    // internal::ChunkedArray + the std::vector fallback
 #include "chunk/internal/write_compress_sync_policy.h" // fill_range_mt: the writer side of the Dekker handshake
-#include "chunk/internal/compression_manager.h"        // fill_range_mt: must_defer_write / wait_out_compressor
 #include "chunk/internal/relaxed_element.h"            // fill_range_mt: Chunk2A's shared elements
 
 namespace shrink_array
 {
+// Forward declaration: only named here, in contexts that depend on T. The
+// definition (chunk/internal/compression_manager.h) comes with the _inline tails.
+template <typename T, typename ChunkType>
+class CompressionManager;
 
 // assume_drained_t / assume_drained: in vector_range_ops.h, so the tag form
 // of the call compiles against std::vector too.

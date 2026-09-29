@@ -35,7 +35,6 @@
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/ring_log_debug.h"             // ScopedRingLog, ring_log_* (RING_LOG builds)
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems
-#include "chunk/internal/compression_manager.h"
 #include "chunk/internal/chunk2_base.h"
 #include "chunk/internal/chunk_stats.h"
 
@@ -48,6 +47,10 @@
 
 namespace shrink_array
 {
+// Forward declaration: only named here, in contexts that depend on T. The
+// definition (chunk/internal/compression_manager.h) comes with the _inline tails.
+template <typename T, typename ChunkType>
+class CompressionManager;
 
 template <typename T>
 class Proxy2A;

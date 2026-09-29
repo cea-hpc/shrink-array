@@ -45,7 +45,6 @@
 #include "chunk/internal/global_check.h"    // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 #include "chunk/internal/deferred_op_pool.h"
-#include "chunk/internal/compression_manager.h"
 #include "chunk/internal/pool_ledger.h" // CHUNK_LEDGER_* block-lifecycle checks (check builds)
 #include "chunk/internal/chunk_stats.h"
 #include "chunk/internal/crp_helper.h"
@@ -76,6 +75,10 @@ class TCTypeAllocator;
 #include "chunk/internal/deferred_ops_storage.h"
 namespace shrink_array
 {
+// Forward declaration: only named here, in contexts that depend on T. The
+// definition (chunk/internal/compression_manager.h) comes with the _inline tails.
+template <typename T, typename ChunkType>
+class CompressionManager;
 
 template <typename Derived>
 struct ProxyTypeTrait;

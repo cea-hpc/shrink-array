@@ -40,13 +40,16 @@
 #include "chunk/internal/proxy2A_meta_bases.h"  // Proxy2AMetaBases
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 #include "chunk/internal/TChunk.h"
-#include "chunk/internal/compression_manager.h"
 #include "chunk/internal/proxy_base.h"
 #include "chunk/internal/proxy2_base.h"
 #include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
 
 namespace shrink_array
 {
+// Forward declaration: only named here, in contexts that depend on T. The
+// definition (chunk/internal/compression_manager.h) comes with the _inline tails.
+template <typename T, typename ChunkType>
+class CompressionManager;
 
 template <template <typename> class CHUNK_T, typename T>
 class ManagerChunk;

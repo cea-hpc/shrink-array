@@ -313,7 +313,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *          nb_chunk over an empty list. Sequential context, as clear().
      * @note noexcept, as the move constructor: a failure here terminates.
      */
-    ArrayChunk2A& operator=(ArrayChunk2A<T, ind_type>&& other) noexcept
+    ArrayChunk2A& operator=(ArrayChunk2A&& other) noexcept
     {
         if (this != &other)
         {

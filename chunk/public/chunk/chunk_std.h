@@ -36,10 +36,13 @@ using complex_double = std::complex<double>;
 #include "chunk/internal/chunk_stats.h"       // increm_chunk_write (CHUNK_STATS)
 #include "chunk/internal/conditional_counter.h"
 #include "chunk/internal/proxy.h"
-#include "chunk/internal/compression_manager.h" // CompressionManager
 
 namespace shrink_array
 {
+// Forward declaration: only named here, in contexts that depend on T. The
+// definition (chunk/internal/compression_manager.h) comes with the _inline tails.
+template <typename T, typename ChunkType>
+class CompressionManager;
 
 template <template <typename> class CHUNK_T, typename T>
 class ManagerChunk;

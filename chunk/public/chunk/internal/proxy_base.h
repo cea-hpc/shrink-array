@@ -37,7 +37,6 @@
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 #include "chunk/internal/proxy_operators.h"
-#include "chunk/internal/compression_manager.h"
 #include "chunk/internal/tab_cst_val2_holder.h" // TabCstVal2Holder (CHUNK_CST_VAL2_NO_ARRAYS)
 #include "chunk/internal/relaxed_element.h"     // store_value: Chunk2A's relaxed element stores
 #include "chunk/internal/concept_is_clean_assignement.h"
@@ -46,6 +45,10 @@
 
 namespace shrink_array
 {
+// Forward declaration: only named here, in contexts that depend on T. The
+// definition (chunk/internal/compression_manager.h) comes with the _inline tails.
+template <typename T, typename ChunkType>
+class CompressionManager;
 
 template <typename T>
 struct ArithmeticProxyContext;

@@ -43,10 +43,13 @@
 #include "chunk/internal/chunk2_base.h"
 #include "chunk/internal/conditional_counter.h"
 #include "chunk/internal/TChunk.h"              // VectorTuple4ChunkInt2 (the candidate lists)
-#include "chunk/internal/compression_manager.h" // CompressionManager
 
 namespace shrink_array
 {
+// Forward declaration: only named here, in contexts that depend on T. The
+// definition (chunk/internal/compression_manager.h) comes with the _inline tails.
+template <typename T, typename ChunkType>
+class CompressionManager;
 
 template <template <typename> class CHUNK_T, typename T>
 class ManagerChunk;
