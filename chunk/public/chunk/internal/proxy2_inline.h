@@ -934,10 +934,11 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
                 // before it is written.
                 [this, &v](auto op_func, T* val_ptr)
                 {
-                    using LocalCalcType   = std::common_type_t<T, base_t<U>>;
-                    const T current = elem_get(val_ptr, static_cast<std::size_t>(num));
-                    elem_set(val_ptr, static_cast<std::size_t>(num),
-                             static_cast<T>(op_func(static_cast<LocalCalcType>(current), static_cast<LocalCalcType>(v))));
+                    using LocalCalcType = std::common_type_t<T, base_t<U>>;
+                    const T current     = elem_get(val_ptr, static_cast<std::size_t>(num));
+                    elem_set(
+                        val_ptr, static_cast<std::size_t>(num),
+                        static_cast<T>(op_func(static_cast<LocalCalcType>(current), static_cast<LocalCalcType>(v))));
                 });
 
             // Read after the operation, compared before each branch's action

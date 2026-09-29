@@ -872,6 +872,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     /// @brief Functor wrapping operator% for apply_compound_operation().
     struct modulo
     {
+        /// @brief Apply operator% to the two operands.
+        /// @return lhs % rhs.
         static constexpr T operator()(in_t<T> lhs, in_t<T> rhs) noexcept
         {
             return lhs % rhs;
@@ -911,6 +913,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     const Proxy& operator=(const Proxy& from) noexcept;
 
+    /// @brief Stream output of the element's value (defined below).
     template <typename U>
     friend std::ostream& operator<<(std::ostream& os, const Proxy<U>& proxy);
 
@@ -1001,6 +1004,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     static inline PointerMapChunk<T> share_info_array;
 };
 
+/// @brief Write the element's value, read through proxy.read_pure(), to @p os.
+/// @return @p os.
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const Proxy<T>& proxy)
 {

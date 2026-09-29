@@ -732,6 +732,8 @@ namespace internal
 template <typename T>
 struct PtrLess
 {
+    /// @brief Compare two pointers with std::less.
+    /// @return true when @p lhs orders before @p rhs.
     static bool operator()(const T* lhs, const T* rhs) noexcept
     {
         return std::less<const T*>{}(lhs, rhs);
@@ -1149,6 +1151,10 @@ void ManagerChunk<CHUNK_T, T>::compute_size_buffer_reuse()
     size_buffer_reuse = std::max(size_buffer_reuse, Chunk2ADef::size_min_buffer_reuse);
 }
 
+/// @brief Print @p count and the size count * elem_size, in the largest unit reached (Go, Mo, Ko or bytes).
+/// @param label Prefix of the printed line.
+/// @param count Number of elements.
+/// @param elem_size Size of one element, in bytes.
 inline void print_mem_estimate(const char* label, std::size_t count, std::size_t elem_size)
 {
     const long double bytes = static_cast<long double>(count) * static_cast<long double>(elem_size);

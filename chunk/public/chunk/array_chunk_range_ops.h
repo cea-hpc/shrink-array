@@ -47,8 +47,8 @@
 #include <cstddef>
 #include <type_traits>
 
-#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/internal/element_access.h" // internal::as_words: Bit chunks are words of bits
+#include "chunk/bit.h"                          // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/internal/element_access.h"      // internal::as_words: Bit chunks are words of bits
 #include "chunk/internal/in_t.h"                // in_t<T>: the element snapshots
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
@@ -121,7 +121,8 @@ inline constexpr bool is_v2a_v = std::is_same_v<typename Arr::chunk_type, Chunk2
 
 /** @brief Chunk2 on a non-bool T: the variant with a second value (and written(ind)). */
 template <typename Arr>
-inline constexpr bool has_second_value_v = is_v2_v<Arr> && !is_bool_like_v<typename Arr::value_type>; // bool, Bit: no index
+inline constexpr bool has_second_value_v =
+    is_v2_v<Arr> && !is_bool_like_v<typename Arr::value_type>; // bool, Bit: no index
 
 /** @brief Only v1 in counter mode carries a per-chunk zero count to restore. */
 template <typename Arr>
@@ -224,7 +225,7 @@ template <typename T>
     if (S == 0)
         return true;
     const T v0 = load_element_relaxed(dst);
-    return v0 == load_element_relaxed(dst + S / 2) && v0 == load_element_relaxed(dst + S - 1);
+    return v0 == load_element_relaxed(dst + (S / 2)) && v0 == load_element_relaxed(dst + S - 1);
 }
 
 /**
@@ -338,8 +339,15 @@ void queue_for_compression(Arr& arr, std::size_t i)
  *          three-element guess.
  */
 template <typename Arr, typename Chunk, typename ValueAt, typename StoreBits>
-void packed_chunk_store(Arr& arr, Chunk& ch, std::size_t c_begin, std::size_t lo, std::size_t hi, unsigned int S,
-                        int ind2, ValueAt&& value_at, StoreBits&& store_bits)
+void packed_chunk_store(Arr&         arr,
+                        Chunk&       ch,
+                        std::size_t  c_begin,
+                        std::size_t  lo,
+                        std::size_t  hi,
+                        unsigned int S,
+                        int          ind2,
+                        ValueAt&&    value_at,
+                        StoreBits&&  store_bits)
 {
     using ind_type = decltype(arr.size());
     std::size_t i  = lo;
@@ -608,11 +616,11 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
             const auto src_at = [&](std::size_t i)
             { return static_cast<T>(*(src_first + static_cast<std::ptrdiff_t>(i - first))); };
             internal::packed_chunk_store(arr, ch, c_begin, lo, hi, S, ind2, src_at,
-                                       [&](bits::word_t* w, std::size_t a, std::size_t b)
-                                       {
-                                           bits::store_bit_range(w, a, b, [&](std::size_t bi)
-                                                                 { return static_cast<bool>(src_at(c_begin + bi)); });
-                                       });
+                                         [&](bits::word_t* w, std::size_t a, std::size_t b)
+                                         {
+                                             bits::store_bit_range(w, a, b, [&](std::size_t bi)
+                                                                   { return static_cast<bool>(src_at(c_begin + bi)); });
+                                         });
         }
         else if constexpr (!internal::raw_fillable_v<T>)
         {

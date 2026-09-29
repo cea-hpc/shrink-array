@@ -116,8 +116,8 @@ bool Proxy2A<T>::meta_from_armed(bool with_sv) noexcept
     {
         const bool bad_inside = this->ptr_is_inside_chunk_list_to_compress !=
                                 &Base::FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab][num_chunk];
-        const bool bad_type   = ptr_type_cst != &tab_type_cst_val[num_tab][num_chunk];
-        bool       bad_sv     = false;
+        const bool bad_type = ptr_type_cst != &tab_type_cst_val[num_tab][num_chunk];
+        bool       bad_sv   = false;
         if constexpr (is_not_bool)
             bad_sv =
                 with_sv && BaseSpec::ptr_second_value.slot != BaseSpec::get_tab_second_value(num_tab, num_chunk).slot;

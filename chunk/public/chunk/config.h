@@ -163,9 +163,9 @@ inline constexpr unsigned force_defer_every = use_openmp ? CHUNK_FORCE_DEFER_EVE
 
 #ifdef FAST_ALLOC
 inline constexpr bool use_fast_alloc = true;
-inline constexpr bool use_std_alloc = false;
+inline constexpr bool use_std_alloc  = false;
 #else
-inline constexpr bool use_std_alloc = true;
+inline constexpr bool use_std_alloc  = true;
 inline constexpr bool use_fast_alloc = false;
 #endif
 

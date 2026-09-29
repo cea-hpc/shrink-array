@@ -111,6 +111,8 @@ inline thread_local bool t_birth_at_active_size = false;
  */
 void register_runtime_chunk_size(unsigned int size);
 
+/// @brief Set the process-wide active chunk size and register it with register_runtime_chunk_size().
+/// @param size Chunk size, in elements.
 inline void set_active_chunk_size(unsigned int size) noexcept
 {
     g_active_chunk_size = size;
@@ -134,7 +136,9 @@ inline void set_thread_chunk_size(unsigned int size) noexcept
 // in allocate_chunk_internal(). Same implicit-parameter pattern as the size;
 // they are two properties of the same array and travel together.
 inline thread_local unsigned int t_alloc_key = 0;
-inline void                      set_thread_alloc_key(unsigned int k) noexcept
+/// @brief Set the calling thread's allocation key.
+/// @param k Affinity key (0 = the rank's shared pool).
+inline void set_thread_alloc_key(unsigned int k) noexcept
 {
     t_alloc_key = k;
 }
@@ -173,11 +177,14 @@ struct DynChunkSizeGuard
 {
     [[maybe_unused]] unsigned int saved_ = t_active_chunk_size;
 
+    /// @brief Save the thread's active chunk size and, in dynamic builds, set it to @p size.
+    /// @param size Chunk size to pin for the scope.
     explicit DynChunkSizeGuard([[maybe_unused]] unsigned int size) noexcept
     {
         if constexpr (build_config::chunk_dynamic)
             t_active_chunk_size = size;
     }
+    /// @brief In dynamic builds, restore the saved thread chunk size.
     ~DynChunkSizeGuard() noexcept
     {
         if constexpr (build_config::chunk_dynamic)
@@ -198,6 +205,8 @@ struct DynChunkSizeGuard
 struct ChunkElems
 {
     ChunkElems() = delete;
+    /// @brief Wrap an element count.
+    /// @param count The element count.
     constexpr explicit ChunkElems(unsigned int count) noexcept : n_(count) {}
 
     /// @brief The element count.

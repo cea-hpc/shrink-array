@@ -20,6 +20,8 @@
 #include <cstdlib> // std::free
 #include <string>
 
+/// @brief Name of type T, demangled when possible.
+/// @return The demangled name, or typeid(T).name() when demangling fails.
 template <typename T>
 std::string type_name()
 {

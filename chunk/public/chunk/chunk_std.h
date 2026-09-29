@@ -121,6 +121,8 @@ struct ChunkPoolParallelInterface<false, AllT>
     static void release_chunk_pools();
 };
 
+/// @brief When fast allocation is enabled, call destroy_block_chunk() on the AllTypeChunk singleton; otherwise
+///        do nothing.
 extern void destroy_block_chunk();
 
 // Build-agnostic free functions over the policy above. Declared -- and defined,
@@ -129,9 +131,14 @@ extern void destroy_block_chunk();
 // unconditionally but defined in one model only, so calling either from the
 // other build was a link error waiting to happen.
 extern void delete_chunk_allocator();
+/// @brief ChunkPoolParallelInterface<>::clear_all_list_block_free_thr() of this build.
 extern void clear_all_list_block_free_thr();
+/// @brief ChunkPoolParallelInterface<>::load_balance_list_block_free() of this build.
 extern void load_balance_list_block_free();
+/// @brief ChunkPoolParallelInterface<>::delete_list_block_chunk_free_itself() of this build.
 extern void delete_list_block_chunk_free_itself();
+/// @brief ChunkPoolParallelInterface<>::need_load_balance_list_block_free() of this build.
+/// @return Its result.
 extern bool need_load_balance_list_block_free();
 
 /**
@@ -516,6 +523,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     Chunk()  = default;
     ~Chunk() = default;
 
+    /// @brief Copy the zero-counter base and the `values` pointer of @p other.
     Chunk(const Chunk& other)
         // Copy the ChunkCounterPolicy base: it holds nb_val_eq_zero, the count
         // of zero elements. A user-defined copy ctor otherwise DEFAULT-constructs
@@ -538,6 +546,8 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
         }
     }
 
+    /// @brief Copy the zero-counter base and the `values` pointer of @p other unless it is this chunk.
+    /// @return *this.
     Chunk& operator=(const Chunk<T>& other)
     {
         if (this == &other)

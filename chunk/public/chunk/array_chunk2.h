@@ -28,7 +28,7 @@
 
 #include <initializer_list>                   // the {a, b, c} constructor
 #include <iterator>                           // std::forward_iterator, std::distance -- the (first, last) constructor
-#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/bit.h"                        // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"              // in_t<T>: the element snapshots
 #include "chunk/internal/array_chunk2_base.h" // for ArrayChunk2Base
 #include "chunk/internal/array_chunk2_parallel.h"       // ParallelSupport2 — OpenMP-only mixin
@@ -178,12 +178,17 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
         this->swap_storage_and_identity(other);
     }
 
+    /// @brief Build an array of std::distance(@p first, @p last) elements and assign them from the range.
+    /// @param first Start of the source range.
+    /// @param last End of the source range.
     template <std::forward_iterator It>
     ArrayChunk2(It first, It last) : ArrayChunk2(static_cast<ind_type>(std::distance(first, last)))
     {
         this->assign(first, last);
     }
 
+    /// @brief Build an array holding the elements of @p il.
+    /// @param il Source values.
     ArrayChunk2(std::initializer_list<T> il) : ArrayChunk2(il.begin(), il.end()) {}
 
     /**

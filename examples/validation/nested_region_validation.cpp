@@ -84,7 +84,7 @@ constexpr const char* variant_name()
 /// chunks alternate constant and materialised).
 static int expected_before_inner(long i, int round)
 {
-    return ((i / 2048) + round) % 3 == 0 ? 0 : static_cast<int>((i * 5 + round) % 89) + 1;
+    return ((i / 2048) + round) % 3 == 0 ? 0 : static_cast<int>(((i * 5) + round) % 89) + 1;
 }
 
 /// Scenario A (and B's body): each thread of the outer team writes its share,

@@ -40,25 +40,26 @@
 // ============================================================================
 
 #include <algorithm> // std::ranges::min_element (best)
-#include <cmath>   // std::lround (the extrapolated materialised count)
-#include <cstddef> // std::size_t
+#include <cmath>     // std::lround (the extrapolated materialised count)
+#include <cstddef>   // std::size_t
 #include <cstdint>
 #include <print>       // std::println (print)
 #include <ranges>      // std::views::enumerate (print)
 #include <type_traits> // std::is_same_v (the bool second value)
 #include <vector>
 
-#include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
-#include "chunk/bit.h"                    // is_bool_like_v, is_packed_bit_v
+#include "chunk/internal/in_t.h"           // in_t<T>: the element snapshots
+#include "chunk/bit.h"                     // is_bool_like_v, is_packed_bit_v
 #include "chunk/internal/element_access.h" // internal::as_words: Bit sub-blocks scanned by word
-#include "chunk/config.h"        // chunk_config::use_chunk2 / use_chunk2a
-#include "chunk/PMP_CHUNK.h"     // CHUNK_PMP_NUM_THREADS (the parts per thread)
+#include "chunk/config.h"                  // chunk_config::use_chunk2 / use_chunk2a
+#include "chunk/PMP_CHUNK.h"               // CHUNK_PMP_NUM_THREADS (the parts per thread)
 #include "chunk/internal/rechunk_cost_model.h"
 #include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size
 
 namespace shrink_array
 {
 
+/// @brief Model figures for one candidate chunk size: chunk counts and estimated memory.
 struct ChunkSizeEstimate
 {
     uint32_t size      = 0;     // candidate chunk size (elements)
@@ -69,14 +70,15 @@ struct ChunkSizeEstimate
     bool     exact     = false; // true: exact fold; false: sampled estimate
 };
 
+/// @brief ChunkSizeAdvisor's result: one ChunkSizeEstimate per candidate size, with the best and current indices.
 struct ChunkSizeReport
 {
     uint32_t                       current_size = 0;
     double                         meta_bytes   = 0.;
     double                         elem_bytes   = 0.; // per element in a materialised chunk (1/8 for Bit)
-    std::vector<ChunkSizeEstimate> table;     // ascending sizes
-    int                            best = -1; // index into table
-    int                            cur  = -1; // index of current size
+    std::vector<ChunkSizeEstimate> table;             // ascending sizes
+    int                            best = -1;         // index into table
+    int                            cur  = -1;         // index of current size
 
     /// @brief Bytes the best size would save over the current one (0 when
     ///        either is unknown).
@@ -88,10 +90,13 @@ struct ChunkSizeReport
     }
 };
 
+/// @brief Estimates an array's model memory at other chunk sizes without re-chunking (see the header comment).
+/// @tparam T Element type.
 template <typename T>
 class ChunkSizeAdvisor
 {
   public:
+    /// @brief Which sizes analyze() evaluates, its scan cap and the per-chunk metadata cost it adds.
     struct Options
     {
         int     coarser_levels = 4;     // evaluate S*2 .. S*2^levels
@@ -299,7 +304,8 @@ class ChunkSizeAdvisor
 #pragma omp for schedule(dynamic, 1) nowait
                 for (int64_t p = 0; p < n_parts; ++p)
                 {
-                    int64_t j0 = 0, j1 = 0;
+                    int64_t j0 = 0;
+                    int64_t j1 = 0;
                     part_range(p, j0, j1);
                     int64_t m = 0;
                     for (int64_t j = j0; j < j1; ++j)
@@ -359,7 +365,8 @@ class ChunkSizeAdvisor
 #pragma omp for schedule(dynamic, 1)
                 for (int64_t p = 0; p < n_parts; ++p)
                 {
-                    int64_t j0 = 0, j1 = 0;
+                    int64_t j0 = 0;
+                    int64_t j1 = 0;
                     part_range(p, j0, j1);
                     int64_t seen = part_mat[static_cast<std::size_t>(p)];
                     auto&   mine = part_picks[static_cast<std::size_t>(p)];
@@ -467,7 +474,7 @@ class ChunkSizeAdvisor
             const int64_t sub_per_chunk = int64_t{1} << k;
             const int64_t scanned_subs  = scanned * sub_per_chunk;
             const double  frac_cst = scanned_subs > 0 ? static_cast<double>(fine_cst[static_cast<std::size_t>(k)]) /
-                                                            static_cast<double>(scanned_subs)
+                                                           static_cast<double>(scanned_subs)
                                                       : 0.;
             const int64_t nchunks  = nc * sub_per_chunk; // cst chunks split into cst children
             const auto    mat      = static_cast<int64_t>(
@@ -517,9 +524,10 @@ class ChunkSizeAdvisor
         // threads).
         if (rep.best >= 0 && rep.cur >= 0 && rep.best != rep.cur)
         {
-            const auto&  cur_e      = rep.table[static_cast<std::size_t>(rep.cur)];
-            const double cost_ms    = rechunk_cost_ms(cur_e.n_chunks, cur_e.size, cur_e.mat, rep.elem_bytes, CHUNK_PMP_MAX_THREADS);
-            const auto   gain_bytes = static_cast<std::size_t>(rep.best_gain_bytes() > 0 ? rep.best_gain_bytes() : 0.);
+            const auto&  cur_e = rep.table[static_cast<std::size_t>(rep.cur)];
+            const double cost_ms =
+                rechunk_cost_ms(cur_e.n_chunks, cur_e.size, cur_e.mat, rep.elem_bytes, CHUNK_PMP_MAX_THREADS);
+            const auto gain_bytes = static_cast<std::size_t>(rep.best_gain_bytes() > 0 ? rep.best_gain_bytes() : 0.);
             // Observation-phase thresholds (not a decision, just a hint label):
             // >= 1 Mo gained and <= 50 ms spent reads as clearly worth it.
             const bool worth = rechunk_is_worth_it(gain_bytes, cost_ms, 1uz << 20, 50.0);

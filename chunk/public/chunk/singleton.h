@@ -39,6 +39,8 @@
 namespace shrink_array
 {
 
+/// @brief Lazily created, never deleted, process-wide instance of T, built with `new T()` on first use.
+/// @tparam T Type of the instance.
 template <typename T>
 class SingletonChk
 {
@@ -68,6 +70,8 @@ class SingletonChk
     SingletonChk& operator=(SingletonChk&&)      = delete;
     ~SingletonChk()                              = default;
 
+    /// @brief The instance, created under the mutex on first call (double-checked locking).
+    /// @return Pointer to the instance.
     static T* getInstance()
     {
         // Fast path: one acquire load, no lock. Every call used to take the
@@ -77,8 +81,8 @@ class SingletonChk
         if (T* instance = unique_instance.load(std::memory_order_acquire)) [[likely]]
             return instance;
 
-        std::lock_guard lock(unique_instance_mutex);
-        T*              instance = unique_instance.load(std::memory_order_relaxed); // under the lock
+        const std::scoped_lock lock(unique_instance_mutex);
+        T*                     instance = unique_instance.load(std::memory_order_relaxed); // under the lock
         if (instance == nullptr)
         {
             instance = new T();       // immortal: never deleted
@@ -92,7 +96,7 @@ class SingletonChk
     ///        under the immortal design (getInstance() never deletes).
     static void deleteInstance()
     {
-        std::lock_guard lock(unique_instance_mutex);
+        const std::scoped_lock lock(unique_instance_mutex);
         delete unique_instance.exchange(nullptr, std::memory_order_acq_rel);
     }
 
@@ -103,6 +107,7 @@ class SingletonChk
     }
 };
 
+/// @brief Free-function form of SingletonChk<T>::deleteInstance().
 template <typename T>
 void deleteInstance()
 {

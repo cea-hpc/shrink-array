@@ -41,6 +41,7 @@ using VectorTuple4ChunkInt2 = std::vector<std::tuple<TCHUNK<T>*, int, int, Chunk
 template <template <typename> class TCHUNK, typename T>
 using VectorTuple4bChunkCharP = std::vector<std::tuple<TCHUNK<T>*, char*, char*, T*>>;
 
+/// @brief Names the map from a second value to the shared list of queued chunks (4-element tuples) holding it.
 template <template <typename> class TCHUNK, typename T>
 struct ValueToChunk2PMapHelper
 {

@@ -73,10 +73,12 @@ struct FlushReplayState
     ///        Nesting-safe: saves and restores the flag.
     struct FlushReplayGuard
     {
+        /// @brief Save the current flag (member initialiser) and set in_flush_replay.
         FlushReplayGuard() noexcept
         {
             in_flush_replay = true;
         }
+        /// @brief Restore the saved flag.
         ~FlushReplayGuard()
         {
             in_flush_replay = saved;
@@ -464,6 +466,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
             free_op(this);
         }
 
+        /// @brief Destroy the context object, if any, without freeing its memory, and null ctx.
         ~DeferredOperation() override
         {
             // Destroy context object (but do NOT free memory)

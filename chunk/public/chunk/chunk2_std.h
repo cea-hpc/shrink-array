@@ -33,7 +33,7 @@
 
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/element_access.h" // Bit buffers: words of bits
-#include <cstring>                           // std::memset (the Bit second constant)
+#include <cstring>                         // std::memset (the Bit second constant)
 #include "chunk/config.h"
 #include "chunk/internal/invariant_check.h"
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
@@ -52,6 +52,8 @@ namespace shrink_array
 template <typename T>
 class Proxy2;
 
+/// @brief Static table of the registered second-constant arrays of element type T (tab_m_ptr_cst_val2),
+///        with the lookups and checks on it.
 template <typename T>
 struct ChunkSpec2
 {

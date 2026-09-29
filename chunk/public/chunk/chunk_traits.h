@@ -60,6 +60,7 @@ class ManagerChunk;
 template <typename C>
 struct ChunkTraits;
 
+/// @brief Chunk<T> maps to Proxy<T> and ManagerChunk<Chunk, T>.
 template <typename T>
 struct ChunkTraits<Chunk<T>>
 {
@@ -67,6 +68,7 @@ struct ChunkTraits<Chunk<T>>
     using manager_type = ManagerChunk<Chunk, T>;
 };
 
+/// @brief Chunk2<T> maps to Proxy2<T> and ManagerChunk<Chunk2, T>.
 template <typename T>
 struct ChunkTraits<Chunk2<T>>
 {
@@ -74,6 +76,7 @@ struct ChunkTraits<Chunk2<T>>
     using manager_type = ManagerChunk<Chunk2, T>;
 };
 
+/// @brief Chunk2A<T> maps to Proxy2A<T> and ManagerChunk<Chunk2A, T>.
 template <typename T>
 struct ChunkTraits<Chunk2A<T>>
 {
@@ -88,6 +91,7 @@ struct ChunkTraits<Chunk2A<T>>
 template <typename Derived>
 struct ArrayChunkTraits;
 
+/// @brief ArrayChunk<T, ind_type> maps to Chunk<T>, Proxy<T>, ManagerChunk<Chunk, T>, value T and index ind_type.
 template <ArrayChunkElement T, typename ind_type>
 struct ArrayChunkTraits<ArrayChunk<T, ind_type>>
 {

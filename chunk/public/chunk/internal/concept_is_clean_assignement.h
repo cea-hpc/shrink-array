@@ -52,6 +52,7 @@ template <typename T>
 struct is_cplx : std::false_type
 {
 };
+/// @brief std::complex<T> is complex.
 template <typename T>
 struct is_cplx<std::complex<T>> : std::true_type
 {
@@ -109,7 +110,7 @@ concept ElementSubtractable = requires(T lhs, T rhs) {
 };
 template <typename T>
 concept ElementMultipliable = requires(T lhs, T rhs) {
-    { lhs * rhs } -> std::convertible_to<T>;
+    { lhs* rhs } -> std::convertible_to<T>;
 };
 template <typename T>
 concept ElementDivisible = requires(T lhs, T rhs) {

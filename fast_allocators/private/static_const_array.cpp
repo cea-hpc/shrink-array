@@ -30,7 +30,7 @@ InfoFreeElt StaticConstArray::tab_info_free_elt_align;
 /// @copydoc InfoFreeElt::InfoFreeElt
 /// @note Sized by PMP_MAX_THREADS at construction, so raising the team size
 ///       after the first allocation would index past these arrays.
-InfoFreeElt::InfoFreeElt() : tab_ptr(nullptr), tab_sz(nullptr), somme_sz(nullptr), compt(nullptr)
+InfoFreeElt::InfoFreeElt()
 {
     // Serially there is no batching (freeBlock never enters the batching
     // branch), so the 2 x 10000-entry arrays are not worth allocating.

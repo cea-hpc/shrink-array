@@ -731,8 +731,8 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
     vec_tuple_chunk2p_int2 ll_compt1;
     vec_tuple_chunk2p_int2 ll_compt2;
 
-    ll_compt1.reserve(sz / 50 + 1);
-    ll_compt2.reserve(sz / 50 + 1);
+    ll_compt1.reserve((sz / 50) + 1);
+    ll_compt2.reserve((sz / 50) + 1);
 
     // Call the fill function (different for bool vs non-bool)
     fill_func(ll_compt1, ll_compt2);
@@ -768,7 +768,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
     }
 
     vec_tuple_to_compress.clear();
-    vec_tuple_to_compress.reserve(sz / 10 + 1);
+    vec_tuple_to_compress.reserve((sz / 10) + 1);
 
     if (proxy2)
     {

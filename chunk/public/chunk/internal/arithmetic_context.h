@@ -94,6 +94,9 @@ struct BaseArithmeticContext
     // destructor so a use-after-recycle read no longer sees ctx_alive_magic.
     std::uint64_t magic = deferred_lifecycle::ctx_alive_magic;
 
+    /// @brief Capture the proxy's position, chunk, geometry and allocation key.
+    /// @param prox Proxy the context is built from.
+    /// @param array_ptr Owning array, stored in ptr_on_array and used to compute num_tab.
     BaseArithmeticContext(const ProxyType& prox, const void* array_ptr)
         : num(prox.get_num())
         , chunk(prox.get_chunk())
@@ -109,6 +112,7 @@ struct BaseArithmeticContext
         }
     }
 
+    /// @brief Poison the liveness sentinel (magic = ctx_dead_magic).
     ~BaseArithmeticContext()
     {
         magic = deferred_lifecycle::ctx_dead_magic;
@@ -125,6 +129,9 @@ struct ArithmeticProxyContext : BaseArithmeticContext<T, Proxy<T>>
 {
     using Base = BaseArithmeticContext<T, Proxy<T>>;
 
+    /// @brief Build the context from @p proxy.
+    /// @param proxy Proxy the context is built from.
+    /// @param array_ptr Owning array.
     ArithmeticProxyContext(const Proxy<T>& proxy, const void* array_ptr) : Base(proxy, array_ptr) {}
 };
 
@@ -140,6 +147,10 @@ struct ArithmeticAffectationProxyContext : BaseArithmeticContext<T, Proxy<T>>
 
     U operand; // Assigned value
 
+    /// @brief Build the context from @p proxy with the value to assign.
+    /// @param proxy Proxy the context is built from.
+    /// @param op_value Assigned value, stored in operand.
+    /// @param array_ptr Owning array.
     ArithmeticAffectationProxyContext(const Proxy<T>& proxy, U op_value, const void* array_ptr)
         : Base(proxy, array_ptr), operand(op_value)
     {
@@ -159,6 +170,11 @@ struct ArithmeticOperationProxyContext : BaseArithmeticContext<T, Proxy<T>>
     T  operand;   // Right-hand operand
     Op operation; // Functor implementing the operation
 
+    /// @brief Build the context from @p proxy with an operand and the operation to apply.
+    /// @param proxy Proxy the context is built from.
+    /// @param op_value Right-hand operand.
+    /// @param op Functor implementing the operation.
+    /// @param array_ptr Owning array.
     ArithmeticOperationProxyContext(const Proxy<T>& proxy, T op_value, Op op, const void* array_ptr)
         : Base(proxy, array_ptr), operand(op_value), operation(op)
     {
@@ -175,6 +191,9 @@ struct ArithmeticContext : BaseArithmeticContext<T, ProxyType, ChunkType>
 {
     using Base = BaseArithmeticContext<T, ProxyType, ChunkType>;
 
+    /// @brief Build the context from @p proxy.
+    /// @param proxy Proxy the context is built from.
+    /// @param array_ptr Owning array.
     ArithmeticContext(const ProxyType& proxy, const void* array_ptr) : Base(proxy, array_ptr) {}
 };
 
@@ -190,6 +209,11 @@ struct ArithmeticOperationContext : BaseArithmeticContext<T, ProxyType, ChunkTyp
     T  operand;
     Op operation;
 
+    /// @brief Build the context from @p proxy with an operand and the operation to apply.
+    /// @param proxy Proxy the context is built from.
+    /// @param op_value Right-hand operand.
+    /// @param op Functor implementing the operation.
+    /// @param array_ptr Owning array.
     ArithmeticOperationContext(const ProxyType& proxy, T op_value, Op op, const void* array_ptr)
         : Base(proxy, array_ptr), operand(op_value), operation(op)
     {
@@ -208,6 +232,10 @@ struct ArithmeticAffectationContext : BaseArithmeticContext<T, ProxyType, ChunkT
 
     U operand;
 
+    /// @brief Build the context from @p proxy with the value to assign.
+    /// @param proxy Proxy the context is built from.
+    /// @param op_value Assigned value, stored in operand.
+    /// @param array_ptr Owning array.
     ArithmeticAffectationContext(const ProxyType& proxy, U op_value, const void* array_ptr)
         : Base(proxy, array_ptr), operand(op_value)
     {

@@ -44,7 +44,7 @@ void compress_file(const std::string& source_file, const std::string& dest_file)
     std::vector        buffer((std::istreambuf_iterator(in_file)), std::istreambuf_iterator<char>());
     const unsigned int source_len = buffer.size();
 
-    auto              dest_len = static_cast<unsigned int>(source_len * 1.01 + 600); // Estimate of the compressed size
+    auto dest_len = static_cast<unsigned int>((source_len * 1.01) + 600); // Estimate of the compressed size
     std::vector<char> dest_buffer(dest_len);
 
     const Int result = BZ2_bzBuffToBuffCompress(dest_buffer.data(), &dest_len, buffer.data(), source_len, 9, 0, 30);

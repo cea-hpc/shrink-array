@@ -47,14 +47,14 @@ struct CRTPSupport
 {
     /// @brief `*this` as the derived class, const on a const object.
     template <typename Self>
-    auto& derived(this Self&& self) noexcept
+    [[nodiscard]] auto& derived(this Self&& self) noexcept
     {
         return static_cast<crtp_cast_t<Self, Derived>&>(self);
     }
 
     /// @brief derived()'s address. std::addressof: the proxies delete operator&.
     template <typename Self>
-    auto* self(this Self&& obj) noexcept
+    [[nodiscard]] auto* self(this Self&& obj) noexcept
     {
         return std::addressof(static_cast<crtp_cast_t<Self, Derived>&>(obj));
     }

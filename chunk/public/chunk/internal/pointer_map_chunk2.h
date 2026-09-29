@@ -55,7 +55,7 @@
 #include <utility>     // std::swap (swap_entries), std::pair
 #include <vector>
 
-#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
 #include "chunk/internal/value_less.h"
@@ -67,6 +67,7 @@
 namespace shrink_array
 {
 
+/// @brief Names the map from a second value to its inf_array tuple (T, int, int), ordered by ValueLess<T>.
 template <typename T>
 struct ValueToInfTupleMapHelper
 {
@@ -366,7 +367,7 @@ class PointerMapChunk2
         map_ind_cst_val2[key] = ind;
     }
 
-    std::vector<T> get_all_second_value() const
+    [[nodiscard]] std::vector<T> get_all_second_value() const
     {
         std::vector<T> keys;
 

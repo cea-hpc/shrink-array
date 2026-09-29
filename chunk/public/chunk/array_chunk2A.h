@@ -190,12 +190,17 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         this->swap_storage_and_identity(other);
     }
 
+    /// @brief Build an array of std::distance(@p first, @p last) elements and assign them from the range.
+    /// @param first Start of the source range.
+    /// @param last End of the source range.
     template <std::forward_iterator It>
     ArrayChunk2A(It first, It last) : ArrayChunk2A(static_cast<ind_type>(std::distance(first, last)))
     {
         this->assign(first, last);
     }
 
+    /// @brief Build an array holding the elements of @p il.
+    /// @param il Source values.
     ArrayChunk2A(std::initializer_list<T> il) : ArrayChunk2A(il.begin(), il.end()) {}
 
     /**

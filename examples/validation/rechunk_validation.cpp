@@ -268,7 +268,7 @@ int check_invariance(const char* label,
         for_each_index(N,
                        [&](long i)
                        {
-                           const T v = gen(i + (long)round * 7919);
+                           const T v = gen(i + ((long)round * 7919));
                            arr[i]    = v;
                            ref[i]    = v;
                        });
@@ -430,7 +430,8 @@ int check_range_ops(const char* label, long N)
     std::vector<T> src(static_cast<std::size_t>(N));
     for (long i = 0; i < N; ++i)
         src[static_cast<std::size_t>(i)] = static_cast<T>((i % 11) ? 0 : i);
-    const std::size_t ca = 3, cb = static_cast<std::size_t>(N) - 3;
+    const std::size_t ca = 3;
+    const std::size_t cb = static_cast<std::size_t>(N) - 3;
     shrink_array::copy_range(viaRange, ca, cb, src.begin() + 0);
     for (std::size_t i = ca; i < cb; ++i)
         viaElem[static_cast<long>(i)] = src[i - ca];

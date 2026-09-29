@@ -107,11 +107,11 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
                     d[i] = 0.0;
                     continue;
                 }
-                a[i] = static_cast<int>((i * 7 + round) % 97) + 1;
+                a[i] = static_cast<int>(((i * 7) + round) % 97) + 1;
                 a[i] += 3;
                 a[i] *= 2;
                 a[i] %= 101;
-                d[i] = static_cast<double>(i % 53) + 0.5 * round;
+                d[i] = static_cast<double>(i % 53) + (0.5 * round);
                 d[i] *= 1.5;
             }
         }
@@ -124,11 +124,11 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
                 rd[i] = 0.0;
                 continue;
             }
-            ra[i] = static_cast<int>((i * 7 + round) % 97) + 1;
+            ra[i] = static_cast<int>(((i * 7) + round) % 97) + 1;
             ra[i] += 3;
             ra[i] *= 2;
             ra[i] %= 101;
-            rd[i] = static_cast<double>(i % 53) + 0.5 * round;
+            rd[i] = static_cast<double>(i % 53) + (0.5 * round);
             rd[i] *= 1.5;
         }
 

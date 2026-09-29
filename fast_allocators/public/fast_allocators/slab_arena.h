@@ -70,6 +70,7 @@ inline std::atomic<std::size_t>& reclaim_bytes() noexcept
 ///        that madvise cannot take is the difference between "the drain works"
 ///        and "the memory comes back"; without these the two look alike from
 ///        the outside (madvise_calls stays 0 either way).
+///@{
 inline std::atomic<std::size_t>& reclaim_skip_live() noexcept
 {
     static std::atomic<std::size_t> v{0};
@@ -90,6 +91,7 @@ inline std::atomic<std::size_t>& reclaim_entered() noexcept
     static std::atomic<std::size_t> v{0};
     return v;
 }
+///@}
 
 /// @brief A global counter alone on its cache lines.
 /// @details A bare `static std::atomic` is 8 bytes the linker packs next to
@@ -110,6 +112,7 @@ static_assert(sizeof(IsolatedCounter) == 128, "IsolatedCounter must fill its ali
 ///        "emptied-slab calls" is 0 these say whether any free ever happened:
 ///        parked blocks are retained by design, freed ones are not. Bumped
 ///        through CHUNK_FREEPATH_INC (chunk/freepath_counters.h).
+///@{
 inline std::atomic<std::size_t>& freepath_freed() noexcept
 {
     static IsolatedCounter counter;
@@ -130,11 +133,13 @@ inline std::atomic<std::size_t>& freepath_kept_nomigrate() noexcept
     static IsolatedCounter counter;
     return counter.v;
 }
+///@}
 /// @brief Materialisations routed with NO affinity key (the rank's shared pool)
 ///        and with one. A slab can only empty if it holds a single array's
 ///        blocks, so a large keyless count while keys were granted means the
 ///        key does not reach the allocation: several arrays then share slabs
 ///        and none of them can ever empty, whatever the drain frees.
+///@{
 inline std::atomic<std::size_t>& freepath_alloc_key0() noexcept
 {
     static IsolatedCounter counter;
@@ -145,6 +150,7 @@ inline std::atomic<std::size_t>& freepath_alloc_keyed() noexcept
     static IsolatedCounter counter;
     return counter.v;
 }
+///@}
 
 
 /**
@@ -323,7 +329,7 @@ class SlabArena
      */
     void* allocate(std::size_t size, std::size_t align, bool* fresh = nullptr)
     {
-        std::lock_guard<std::mutex> lk(mtx_);
+        const std::scoped_lock lk(mtx_);
         if (fresh != nullptr)
             *fresh = false;
 
@@ -383,7 +389,7 @@ class SlabArena
     {
         if (block == nullptr)
             return;
-        std::lock_guard<std::mutex> lk(mtx_);
+        const std::scoped_lock lk(mtx_);
         // SEGV hunt: a slab freed while not live. Warn but do NOT abort — at
         // program teardown a ~TCTypeCAllocator may deallocate() a slab whose
         // bookkeeping is already gone, which is harmless. The DANGEROUS direction
@@ -404,8 +410,8 @@ class SlabArena
     /// @note Linear in the region count, and takes the lock. Diagnostics only.
     bool owns(const void* ptr) const noexcept
     {
-        const auto                  v = reinterpret_cast<std::uintptr_t>(ptr);
-        std::lock_guard<std::mutex> lk(mtx_);
+        const auto             v = reinterpret_cast<std::uintptr_t>(ptr);
+        const std::scoped_lock lk(mtx_);
         for (const auto& r : regions_)
             if (v >= r.begin && v < r.end)
                 return true;
@@ -421,8 +427,8 @@ class SlabArena
      */
     [[nodiscard]] std::size_t resident_bytes() const noexcept
     {
-        std::lock_guard<std::mutex> lk(mtx_);
-        const long                  page = ::sysconf(_SC_PAGESIZE);
+        const std::scoped_lock lk(mtx_);
+        const long             page = ::sysconf(_SC_PAGESIZE);
         if (page <= 0)
             return 0;
         const auto                 psz = static_cast<std::size_t>(page);
@@ -444,15 +450,15 @@ class SlabArena
     /// @brief Bytes currently handed out (slabs, madvise'd ones included).
     [[nodiscard]] std::size_t live_bytes() const noexcept
     {
-        std::lock_guard<std::mutex> lk(mtx_);
+        const std::scoped_lock lk(mtx_);
         return bytes_live_;
     }
 
     /// @brief Bytes of address space reserved by this arena (never shrinks).
     [[nodiscard]] std::size_t mapped_bytes() const noexcept
     {
-        std::lock_guard<std::mutex> lk(mtx_);
-        std::size_t                 mapped = 0;
+        const std::scoped_lock lk(mtx_);
+        std::size_t            mapped = 0;
         for (const auto& r : regions_)
             mapped += (r.end - r.begin);
         return mapped;
@@ -474,8 +480,8 @@ class SlabArena
      */
     void report(const char* when) const noexcept
     {
-        std::lock_guard<std::mutex> lk(mtx_);
-        std::size_t                 mapped = 0;
+        const std::scoped_lock lk(mtx_);
+        std::size_t            mapped = 0;
         for (const auto& r : regions_)
             mapped += (r.end - r.begin);
         std::size_t freelist = 0;

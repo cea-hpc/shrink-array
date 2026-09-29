@@ -192,7 +192,7 @@ inline BenchSched bench_sched_for(Int start, Int end) noexcept
 {
     const Int b = bench_sched_block_env();
     if (b > 0)
-        return {b, start - start % b};
+        return {b, start - (start % b)};
     const Int t = CHUNK_PMP_MAX_THREADS;
     return {std::max<Int>(1, (end - start + t - 1) / t), start}; // contiguous slices
 }

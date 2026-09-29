@@ -198,6 +198,7 @@ struct SecondValueRef
 template <typename T>
 struct Sentinel
 {
+    /// @brief Call GlobalVecHolder<T>::cleanup_all().
     ~Sentinel()
     {
         GlobalVecHolder<T>::cleanup_all();
@@ -338,8 +339,8 @@ struct GlobalVecHolder
         build_config::cst_val2_no_arrays
             ? 64uz
             : (build_config::use_mm_protect
-                   ? ((static_cast<std::size_t>(cst_buffer_size) * sizeof(T) + 4095u) & ~std::size_t{4095u})
-                   : ((static_cast<std::size_t>(cst_buffer_size) * sizeof(T) + 63u) & ~std::size_t{63u}));
+                   ? (((static_cast<std::size_t>(cst_buffer_size) * sizeof(T)) + 4095u) & ~std::size_t{4095u})
+                   : (((static_cast<std::size_t>(cst_buffer_size) * sizeof(T)) + 63u) & ~std::size_t{63u}));
 
     static constexpr std::size_t kMaxIds =
         (kRegionBytes / kIdStride) < CHUNK_CST_VAL2_MAX_IDS ? (kRegionBytes / kIdStride) : CHUNK_CST_VAL2_MAX_IDS;
@@ -541,7 +542,7 @@ struct GlobalVecHolder
         if constexpr (build_config::cst_val2_no_arrays)
         {
             const char* base = region_begin.load(std::memory_order_relaxed);
-            const auto  id   = (reinterpret_cast<const char*>(ptr) - base) / region_stride + 1u;
+            const auto  id   = ((reinterpret_cast<const char*>(ptr) - base) / region_stride) + 1u;
             return value_by_id[id];
         }
         else
@@ -710,7 +711,7 @@ struct GlobalVecHolder
      */
     static void init()
     {
-        static Sentinel<T> sentinel;
+        static const Sentinel<T> sentinel;
 
         // Increment ref count — one more ArrayChunk2A<T> is using the shared list.
         ref_count.fetch_add(1, std::memory_order_relaxed);
@@ -952,6 +953,10 @@ struct TabCstVal2Holder
         return buf;
     }
 
+    /// @brief Carve one region stride for a shared array; the storage part of alloc_chunk().
+    /// @param val Fill value: cst_buffer_size copies are written, except under cst_val2_no_arrays where nothing is
+    ///        written; under MM_PROTECT the stride is made read-only after the fill.
+    /// @return Start of the carved stride.
     static T* alloc_chunk_int(T val)
     {
         if constexpr (build_config::cst_val2_no_arrays)

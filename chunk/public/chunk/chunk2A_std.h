@@ -81,19 +81,19 @@ struct Chunk2AConcurrentOps
 
     /// @brief The chunk, const on a const object (deducing this: one member).
     template <typename Self>
-    auto* self(this Self&& obj) noexcept
+    [[nodiscard]] auto* self(this Self&& obj) noexcept
     {
         return &static_cast<crtp_cast_t<Self, Derived>&>(obj);
     }
     /// @brief The chunk's Chunk2Base / TabCstVal2Holder, const on a const
     ///        object (deducing this, as self()).
     template <typename Self>
-    auto* base(this Self&& obj) noexcept
+    [[nodiscard]] auto* base(this Self&& obj) noexcept
     {
         return static_cast<crtp_cast_t<Self, Base>*>(obj.self());
     }
     template <typename Self>
-    auto* holder(this Self&& obj) noexcept
+    [[nodiscard]] auto* holder(this Self&& obj) noexcept
     {
         return static_cast<crtp_cast_t<Self, Holder>*>(obj.self());
     }
@@ -227,19 +227,19 @@ struct Chunk2AStateQueries
     /// @brief The chunk, const on a const object (deducing this, as in
     ///        Chunk2AConcurrentOps; every query below is const).
     template <typename Self>
-    auto* self(this Self&& obj) noexcept
+    [[nodiscard]] auto* self(this Self&& obj) noexcept
     {
         return &static_cast<crtp_cast_t<Self, Derived>&>(obj);
     }
     /// @brief The chunk's Chunk2Base / TabCstVal2Holder, const on a const
     ///        object (deducing this, as self()).
     template <typename Self>
-    auto* base(this Self&& obj) noexcept
+    [[nodiscard]] auto* base(this Self&& obj) noexcept
     {
         return static_cast<crtp_cast_t<Self, Base>*>(obj.self());
     }
     template <typename Self>
-    auto* holder(this Self&& obj) noexcept
+    [[nodiscard]] auto* holder(this Self&& obj) noexcept
     {
         return static_cast<crtp_cast_t<Self, Holder>*>(obj.self());
     }
@@ -535,6 +535,9 @@ struct Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
                      T* cst2_ptr);
 };
 
+/// @brief Chunk of values compressible to the first constant or to a second constant shared through the
+///        TabCstVal2Holder registry (see the class description above Chunk2AConcurrentOps).
+/// @tparam T Element type.
 template <typename T>
 class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
                 public TabCstVal2Holder<T>,
@@ -573,11 +576,14 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     Chunk2A()  = default;
     ~Chunk2A() = default;
 
+    /// @brief Copy the per-chunk state of @p other (Base::values_store(other.values_load())).
     Chunk2A(const Chunk2A& other)
     {
         Base::values_store(other.values_load()); // the whole per-chunk state
     }
 
+    /// @brief Copy the per-chunk state of @p other unless it is this chunk.
+    /// @return *this.
     Chunk2A& operator=(const Chunk2A& other)
     {
         if (this != &other)

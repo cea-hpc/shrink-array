@@ -84,6 +84,8 @@ struct RebuildSchedule
     char               text[32]{"guided,16"};
 };
 
+/// @brief The rebuild loop's schedule, parsed once from CHUNK_RECHUNK_SCHEDULE ("kind[,chunk]").
+/// @return The parsed schedule, or the default guided,16 when the variable is unset or not understood.
 inline const RebuildSchedule& rebuild_schedule() noexcept
 {
     static const RebuildSchedule schedule = []
@@ -197,9 +199,13 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // wall times. The slice trace inside rechunk_refill brackets the refill;
     // this brackets everything around it, where the remaining part of the
     // peak was measured to sit.
-    const auto rss_now = [&] { return trace_phases ? internal::rss_mib_now() : -1L; };
-    const long r_entry = rss_now();
-    long       r_flush = -1, r_pre_tmp = -1, r_refill = -1, r_swap = -1, r_teardown = -1;
+    const auto rss_now    = [&] { return trace_phases ? internal::rss_mib_now() : -1L; };
+    const long r_entry    = rss_now();
+    long       r_flush    = -1;
+    long       r_pre_tmp  = -1;
+    long       r_refill   = -1;
+    long       r_swap     = -1;
+    long       r_teardown = -1;
 
     self().flush_pending_deferred_ops();
     r_flush = rss_now();
@@ -469,9 +475,13 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
                 set_thread_chunk_size(saved);
             }
         };
-        std::size_t slabs = 0, live_blocks = 0, empty_slabs = 0;
+        std::size_t slabs       = 0;
+        std::size_t live_blocks = 0;
+        std::size_t empty_slabs = 0;
         scan(old_key, slabs, live_blocks, empty_slabs);
-        std::size_t s0 = 0, l0 = 0, e0 = 0;
+        std::size_t s0 = 0;
+        std::size_t l0 = 0;
+        std::size_t e0 = 0;
         if (old_key != 0)
             scan(0u, s0, l0, e0);
         const std::size_t blk = static_cast<std::size_t>(old_size) * sizeof(T);
@@ -986,11 +996,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 // the while-loop exits, and the raw-fill does the rest. Safe here -- each
                 // thread rebuilds DISJOINT new chunks, so the bypassed Dekker/gate guard
                 // nothing. Per-thread (thread_local), so it lives inside the region.
-                typename CompressionManager<T, chunk_type>::FlushReplayGuard rechunk_replay_guard;
-                std::vector<T>                                               buf(static_cast<std::size_t>(new_size));
-                RebuildTally tally; // this thread's fold counts for this slice
-                                    // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
-                                    // (internal::rebuild_schedule).
+                const typename CompressionManager<T, chunk_type>::FlushReplayGuard rechunk_replay_guard;
+                std::vector<T> buf(static_cast<std::size_t>(new_size));
+                RebuildTally   tally; // this thread's fold counts for this slice
+                                      // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
+                                      // (internal::rebuild_schedule).
 #pragma omp for schedule(runtime)
                 for (int c = c0; c < c1; ++c)
                     rebuild_one(c, buf, tally);

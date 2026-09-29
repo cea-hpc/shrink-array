@@ -155,7 +155,7 @@ struct AllTypeChunkParallelInterface<Derived, true>
     void load_balance_list_block_free(this const Derived& self);
 
     /// @return True as soon as one type's free lists are unbalanced enough to be worth a pass.
-    bool need_load_balance_list_block_free(this const Derived& self);
+    [[nodiscard]] bool need_load_balance_list_block_free(this const Derived& self);
 
     /// Empties the per-thread free-block lists of every type (teardown).
     void clear_list_block_free_thr(this Derived& self);
@@ -220,6 +220,8 @@ struct AllTypeChunkDynInterface<Derived, false>
 {
 };
 
+/// @brief Registry of every per-type chunk manager of the process (see the description at the top of this file),
+///        combining the build-dependent policies AllTypeChunkParallelInterface and AllTypeChunkDynInterface.
 class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public AllTypeChunkDynInterface<AllTypeChunk>
 {
     friend class SingletonChk<AllTypeChunk>;
@@ -325,7 +327,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     ///        now be registered. Records the block size they are built with.
     void mark_ready(int block_size)
     {
-        const std::lock_guard<std::mutex> lock(registry_mutex_);
+        const std::scoped_lock lock(registry_mutex_);
         block_size_ = block_size;
         ready_      = true;
     }
@@ -369,7 +371,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     void compress_chunk_to_compress_potentially(bool apply) const;
 
     /// @return True as soon as one type has at least one pending compression candidate.
-    bool have_chunk_to_compress_potentially() const;
+    [[nodiscard]] bool have_chunk_to_compress_potentially() const;
     /// Frees the allocation blocks of every type (no-op in std-alloc builds).
     void destroy_block_chunk() const;
 

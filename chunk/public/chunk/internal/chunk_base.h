@@ -508,7 +508,8 @@ struct ChunkAllocPolicy<T, Derived, true>
             if constexpr (chunk_config::stats)
             {
                 increm_chunk_list<Derived>();
-                add_chunk_bytes_reused<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(Derived::storage_units(alloc_chunk_count())));
+                add_chunk_bytes_reused<Derived>(static_cast<long>(sizeof(T)) *
+                                                static_cast<long>(Derived::storage_units(alloc_chunk_count())));
             }
             values_loc = ll_block_free_thr.back();
             CHUNK_CHECK_VALUES_PTR(values_loc, "freelist.pop");
@@ -525,7 +526,8 @@ struct ChunkAllocPolicy<T, Derived, true>
             if constexpr (chunk_config::stats)
             {
                 increm_chunk_alloc<Derived>();
-                add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(Derived::storage_units(alloc_chunk_count())));
+                add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) *
+                                               static_cast<long>(Derived::storage_units(alloc_chunk_count())));
             }
             if constexpr (build_config::use_fast_alloc)
             {
@@ -600,7 +602,8 @@ struct ChunkAllocPolicy<T, Derived, false>
         {
             increm_chunk_create<Derived>();
             increm_chunk_alloc<Derived>();
-            add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(Derived::storage_units(alloc_chunk_count())));
+            add_chunk_bytes_alloc<Derived>(static_cast<long>(sizeof(T)) *
+                                           static_cast<long>(Derived::storage_units(alloc_chunk_count())));
         }
 
         if constexpr (build_config::use_fast_alloc)
@@ -1233,7 +1236,7 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     /// @brief Load the values pointer with appropriate memory ordering
     /// @return Pointer to the chunk data
-    T* values_load() const noexcept
+    [[nodiscard]] T* values_load() const noexcept
     {
         if constexpr (build_config::use_openmp)
         {

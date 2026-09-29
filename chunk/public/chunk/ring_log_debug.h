@@ -67,6 +67,7 @@ enum EventCode : uint8_t
 
 #ifdef RING_LOG_ANY
 
+/// @brief One ring-buffer record: timestamp, thread id, event, payload and (op events) address.
 struct RingEntry
 {
     uint64_t  ts;
@@ -76,43 +77,70 @@ struct RingEntry
     uint64_t  addr; // SEGV hunt: op address for EV_OP_* events (0 otherwise)
 };
 
+/// @brief Record a begin event, timestamped with the serialising start counter read.
+/// @param tid Thread id (see get_tid()).
+/// @param ev Event code.
+/// @param info Payload.
 extern void ring_log_start(uint32_t tid, EventCode ev, uint32_t info = 0);
 
+/// @brief Record an end event, timestamped with the serialising end counter read.
+/// @param tid Thread id (see get_tid()).
+/// @param ev Event code.
+/// @param info Payload.
 extern void ring_log_end(uint32_t tid, EventCode ev, uint32_t info = 0);
 
+/// @brief Record an event in the ring buffer.
+/// @param tid Thread id (see get_tid()).
+/// @param ev Event code.
+/// @param info Payload.
 extern void ring_log(uint32_t tid, EventCode ev, uint32_t info = 0);
 
 // SEGV hunt: log an op-lifecycle event with its full address (48-bit) so we can
 // correlate alloc/enqueue/free/flush of the SAME op block across threads.
 extern void ring_log_op(uint32_t tid, EventCode ev, uint32_t num, const void* addr);
 
+/// @brief Id recorded for the calling thread: its OpenMP team rank, or a 32-bit hash of std::thread::id
+///        without OpenMP.
 extern uint32_t get_tid();
 
+/// @brief Print every entry still held in the ring to std::cout.
 extern void dump_ring();
 
+/// @brief Print the entries whose address is @p target, then those in the same 64 KiB block.
+/// @param target Address to look for.
 extern void dump_ring_for_addr(const void* target);
 
+/// @brief Reset the ring head to 0.
 extern void ring_init();
 
+/// @brief Find overlaps between fast-path and compression intervals in the ring and report them on std::cout.
+/// @return true when a thread's fast-path interval overlaps a compression interval of the same thread.
 extern bool analyze_ring_sweep();
 
 #else
 
+/// @brief Ring log disabled: always 0.
 inline uint32_t get_tid()
 {
     return 0;
 }
 
+/// @brief Ring log disabled: no-op.
 inline void ring_log(uint32_t, EventCode, uint32_t = 0) {}
 
+/// @brief Ring log disabled: no-op.
 inline void ring_log_end(uint32_t, EventCode, uint32_t = 0) {}
 
+/// @brief Ring log disabled: no-op.
 inline void ring_log_start(uint32_t, EventCode, uint32_t = 0) {}
 
+/// @brief Ring log disabled: no-op.
 inline void ring_log_op(uint32_t, EventCode, uint32_t, const void*) {}
 
+/// @brief Ring log disabled: no-op.
 inline void dump_ring() {}
 
+/// @brief Ring log disabled: no-op.
 inline void dump_ring_for_addr(const void*) {}
 
 // These two used to have no no-op counterpart, which made them the only names of
@@ -121,6 +149,7 @@ inline void dump_ring_for_addr(const void*) {}
 // every build, and shrink_bench.cpp no longer needs the directive.
 inline void ring_init() {}
 
+/// @brief Ring log disabled: always false.
 inline bool analyze_ring_sweep()
 {
     return false;
@@ -154,6 +183,8 @@ struct ScopedRingLog
         }
     }
 
+    /// @brief Emit END_EVENT unless in Manual mode; in Manual mode, check builds print a message on stderr when
+    ///        end() was not called.
     ~ScopedRingLog() noexcept
     {
         if constexpr (chunk_config::ring_log_debug)

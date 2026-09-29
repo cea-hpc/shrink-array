@@ -183,8 +183,8 @@ int check_swap()
     // Different sizes: the per-array tables (indexed by num_tab) have one row
     // per chunk, so chunks exchanged without their identity would index rows
     // of the wrong length.
-    const long N  = 30 * S + 11;
-    const long NB = 47 * S + 5;
+    const long N  = (30 * S) + 11;
+    const long NB = (47 * S) + 5;
     a.resize(static_cast<int>(N));
     b.resize(static_cast<int>(NB));
     const Pattern pa{2.0, 10.0, S};
@@ -228,8 +228,8 @@ int check_move()
     Array<double> src;
     Array<double> dst;
     const long    S = static_cast<long>(src.chunk_size());
-    const long    N = 25 * S + 3;
-    const long    M = 12 * S + 5;
+    const long    N = (25 * S) + 3;
+    const long    M = (12 * S) + 5;
     src.resize(static_cast<int>(N));
     dst.resize(static_cast<int>(M));
     const Pattern ps{3.0, 30.0, S};
@@ -275,8 +275,8 @@ int check_move_construct()
     const char*   step = "move-construct";
     Array<double> src;
     const long    S = static_cast<long>(src.chunk_size());
-    const long    N = 20 * S + 9;
-    const long    M = 7 * S + 1;
+    const long    N = (20 * S) + 9;
+    const long    M = (7 * S) + 1;
     src.resize(static_cast<int>(N));
     const Pattern ps{4.0, 40.0, S};
     maybe_set_second_value(src, ps.sv);
@@ -320,8 +320,8 @@ int check_vector_realloc()
     v.reserve(1);
     v.emplace_back(0);
     const long    S = static_cast<long>(v[0].chunk_size());
-    const long    N = 18 * S + 7;
-    const long    M = 9 * S + 2;
+    const long    N = (18 * S) + 7;
+    const long    M = (9 * S) + 2;
     const Pattern p0{2.0, 20.0, S};
     const Pattern p1{8.0, 80.0, S};
     v[0].resize(static_cast<int>(N));

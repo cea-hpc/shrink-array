@@ -23,6 +23,7 @@
 template <typename T>
 concept ComplexType = requires { typename T::value_type; } && std::is_same_v<T, std::complex<typename T::value_type>>;
 
+/// @brief Compile-time settings of Chunk: CHUNK_SIZE bound, compression-list and buffer-reuse thresholds.
 struct ChunkDef
 {
     // Upper bound on CHUNK_SIZE. This is NOT the chunk geometry (use

@@ -94,7 +94,7 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
     Array<T>       a(n);
     std::vector<T> ref(static_cast<std::size_t>(n), T{});
     const Int      beg   = n / 4;
-    const Int      end   = beg + n / 8;
+    const Int      end   = beg + (n / 8);
     long           fails = 0;
 
     if constexpr (requires {
@@ -121,7 +121,8 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
 
         // Materialised exactly over the window: every chunk it touches, and
         // not the chunks around it.
-        long in = 0, out = 0;
+        long in  = 0;
+        long out = 0;
         for (Int c = 0; c * step < n; ++c)
         {
             const bool in_window = c >= beg / step && c <= (end - 1) / step;
@@ -436,7 +437,11 @@ int main(int argc, char* argv[])
             type_instances);
     };
 
-    Array<double>         tab1(sz), tab2(sz), tab3(sz), tab4(sz), tab5(sz);
+    Array<double>         tab1(sz);
+    Array<double>         tab2(sz);
+    Array<double>         tab3(sz);
+    Array<double>         tab4(sz);
+    Array<double>         tab5(sz);
     Array<int>            tab_int(sz);
     Array<complex_double> tab_complex(sz);
 
@@ -498,10 +503,9 @@ int main(int argc, char* argv[])
     long long mask_want = std::llround(mask_scale * static_cast<double>(sz));
     if (mask_want < 1)
         mask_want = 1;
-    const Int       mask_sz =
-        mask_want > static_cast<long long>(std::numeric_limits<Int>::max())
-                  ? static_cast<Int>(static_cast<long long>(std::numeric_limits<Int>::max()) & ~0x3FFLL)
-                  : static_cast<Int>(mask_want);
+    const Int mask_sz = mask_want > static_cast<long long>(std::numeric_limits<Int>::max())
+                            ? static_cast<Int>(static_cast<long long>(std::numeric_limits<Int>::max()) & ~0x3FFLL)
+                            : static_cast<Int>(mask_want);
     if (!no_mask && static_cast<long long>(mask_sz) != mask_want)
         std::cout << "Note: tab_mask capped at " << mask_sz << " elements (" << mask_want
                   << " requested; Int is 32-bit here, the int64 build takes the full size)\n";
@@ -511,10 +515,9 @@ int main(int argc, char* argv[])
 
     // Handle on the fifteen arrays, passed to the extracted phases. References,
     // so main() stays the owner -- it builds them and destroys them.
-    BenchArrays bench_arrays{tab1,        tab2,      tab3,      tab4,     tab5,      tab_int,   tab_bool,
-                             tab_complex, tab_float, tab_short, tab_char, tab_long,  tab_ulong, tab_quant,
-                             tab_point,   tab_cell,  tab_mask,  sz,       interval,  !no_struct,
-                             !no_mask};
+    BenchArrays bench_arrays{tab1,        tab2,      tab3,      tab4,     tab5,     tab_int,    tab_bool,
+                             tab_complex, tab_float, tab_short, tab_char, tab_long, tab_ulong,  tab_quant,
+                             tab_point,   tab_cell,  tab_mask,  sz,       interval, !no_struct, !no_mask};
 
     SingletonChk<GlobalStatsChunkList>::getRef().print();
 
@@ -577,7 +580,10 @@ int main(int argc, char* argv[])
     std::println("Iteration ...");
     std::fflush(stdout);
 
-    std::vector<Int> tab_size(iter_max), tab_start(iter_max), tab_nba1(iter_max), tab_nba2(iter_max);
+    std::vector<Int> tab_size(iter_max);
+    std::vector<Int> tab_start(iter_max);
+    std::vector<Int> tab_nba1(iter_max);
+    std::vector<Int> tab_nba2(iter_max);
 
     // no parallel in OpenMP
     for (Int k = 0; k < iter_max; ++k)
@@ -603,7 +609,8 @@ int main(int argc, char* argv[])
     long           long_val_sum = 0;
     double         point_sum    = 0; // the struct arrays' read sweep (bench_phase_struct.cpp)
     long           mask_count   = 0; // tab_mask's read sweep (bench_phase_mask.cpp)
-    double         v_real = 0, v_im = 0;
+    double         v_real       = 0;
+    double         v_im         = 0;
 
     // Checksums: moved to bench_stats.cpp.
 
@@ -816,7 +823,7 @@ int main(int argc, char* argv[])
         {
             const Int team  = std::max<Int>(max_thr, 2);
             const Int beg_s = std::max<Int>(start0 / 2, 0);
-            const Int end_s = std::min(beg_s + interval / 4, sz);
+            const Int end_s = std::min(beg_s + (interval / 4), sz);
 
             bench_phase_stress_teams(bench_arrays, team, beg_s, end_s);
         }
@@ -837,7 +844,7 @@ int main(int argc, char* argv[])
         if (k % 5 == 3)
         {
             const Int beg_s = std::max<Int>(start0 / 2, 0);
-            const Int end_s = std::min(beg_s + interval / 4, sz);
+            const Int end_s = std::min(beg_s + (interval / 4), sz);
             // NOT __chunk_size: in dynamic builds that is the compile-time
             // default (64), while arrays run at chunk_dyn_size (512) — grain
             // would be 16, i.e. 32 tasks per 512-chunk instead of the 4
@@ -909,7 +916,7 @@ int main(int argc, char* argv[])
         if (k % 5 == 1)
         {
             const Int beg_s = std::max<Int>(start0 / 3, 0) + 7;
-            const Int end_s = std::min(beg_s + interval / 2, sz);
+            const Int end_s = std::min(beg_s + (interval / 2), sz);
 
             bench_phase_range_mt(bench_arrays, k, beg_s, end_s);
         }
@@ -927,8 +934,9 @@ int main(int argc, char* argv[])
                 !std::isfinite(val_sum) || !std::isfinite(cv_val_sum.real()) || !std::isfinite(cv_val_sum.imag());
             if (k % ksum_period == 0 || k == 0 || k == iter_max - 1 || ksum_bad)
             {
-                std::println("k : {} val_sum = {} long_val_sum = {} cv_val_sum = ({},{}) point_sum = {} mask_count = {}",
-                             k, val_sum, long_val_sum, cv_val_sum.real(), cv_val_sum.imag(), point_sum, mask_count);
+                std::println(
+                    "k : {} val_sum = {} long_val_sum = {} cv_val_sum = ({},{}) point_sum = {} mask_count = {}", k,
+                    val_sum, long_val_sum, cv_val_sum.real(), cv_val_sum.imag(), point_sum, mask_count);
                 std::fflush(stdout);
             }
         }

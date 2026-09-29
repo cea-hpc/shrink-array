@@ -116,7 +116,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
         }
 
         Int begin_i = sz / 2;
-        Int end_i   = sz - sz / 3;
+        Int end_i   = sz - (sz / 3);
 
 #pragma omp single nowait
         {
@@ -150,7 +150,7 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
         }
 
         begin_i = end_i;
-        end_i   = sz - sz / 4;
+        end_i   = sz - (sz / 4);
 
         BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
         for (Int i = begin_i; i < end_i; ++i)

@@ -177,8 +177,10 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
     }
     end_phase();
 
-    long bad = 0, first = -1;
-    T    got_first{}, exp_first{};
+    long bad   = 0;
+    long first = -1;
+    T    got_first{};
+    T    exp_first{};
     for (long i = 0; i < N; ++i)
     {
         const long run      = (i / kRun) % 3;

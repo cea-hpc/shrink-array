@@ -531,6 +531,7 @@ inline ChunkStatsThr reduce_chunk_stats(int variant) noexcept
  *        CHUNK_STATS is undefined: same names and signatures, empty bodies,
  *        so every call site compiles to nothing at zero cost.
  */
+///@{
 template <typename C>
 void increm_chunk_alloc() noexcept
 {
@@ -680,6 +681,7 @@ void add_chunk_compress(long) noexcept
 {
 }
 inline void init_all_stats() noexcept {}
+///@}
 
 #endif
 

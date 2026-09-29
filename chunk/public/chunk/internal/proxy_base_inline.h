@@ -138,7 +138,8 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::set_ptr_is_inside_
     const int tab       = ctx->num_tab;
     const int num_chunk = ctx->num_chunk;
 
-    auto& arr = tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(tab)]; // not const: the flags are written through the pointer
+    auto& arr = tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(
+        tab)]; // not const: the flags are written through the pointer
 
     ptr_is_inside_chunk_list_to_compress = &arr[num_chunk];
 }
@@ -374,7 +375,7 @@ ProxyType ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::make_proxy_wi
 // parameter, so Derived::tab_... and the CRTPSupport base are unchanged; only
 // the derived() calls become self.
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
-void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression_list_async(this auto const& self,
+void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression_list_async(this const auto& self,
                                                                                             auto*            ctx)
 {
     auto&     chunk = ctx->chunk;

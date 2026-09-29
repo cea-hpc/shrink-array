@@ -217,7 +217,8 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
     for (long i = 0; i < N / 4; ++i)
         ref[i] = sc.refill;
 
-    long bad = 0, first = -1;
+    long bad   = 0;
+    long first = -1;
     for (long i = 0; i < N; ++i)
     {
         const T got = arr[i];
@@ -274,11 +275,11 @@ int main(int argc, char** argv)
     const Scenario<Padded> sd{{'s', 2.5},
                               {'r', -4.0},
                               [](long i)
-                              { return Padded{static_cast<char>('a' + i % 26), static_cast<double>(i) * 0.5}; }};
+                              { return Padded{static_cast<char>('a' + (i % 26)), static_cast<double>(i) * 0.5}; }};
     const Scenario<Color>  sc{Color::red, Color::cyan, [](long i) { return i % 3 == 0 ? Color::blue : Color::cyan; }};
     const Scenario<Quad>   sq{{1.f, 2.f, 3.f, 4.f},
                               {9.f, 8.f, 7.f, 6.f},
-                              [](long i) { return Quad{static_cast<float>(i), 0.5f, static_cast<float>(i % 5), 1.f}; }};
+                            [](long i) { return Quad{static_cast<float>(i), 0.5f, static_cast<float>(i % 5), 1.f}; }};
     const Scenario<Pair16> s16{
         {7, 7},
         {-3, 3},

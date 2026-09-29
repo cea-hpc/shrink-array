@@ -127,14 +127,18 @@ class Simu
 
     Simu() = default;
 
-    int                      getMeshSize() const;
+    /// @brief Number of cells (mesh_size).
+    int getMeshSize() const;
+    /// @brief Storage of every material (dis): true = chunk.
     const std::vector<bool>& getDis() const;
 
+    /// @brief The three fields of every material (tabs).
     std::array<MultiArray<double>, 3>& getTabs()
     {
         return tabs;
     }
 
+    /// @brief The three fields of every material (tabs), read-only.
     const std::array<MultiArray<double>, 3>& getTabs() const
     {
         return tabs;
@@ -161,10 +165,14 @@ class Simu
         return d >= interface_width ? 1. : static_cast<double>(d + 1) / static_cast<double>(interface_width + 1);
     }
 
+    /// @brief Storage of the materials (option_chunk): 1 all chunk, 2 all vector, 3 random 50/50,
+    ///        4 random at chunk_rate.
     int getOptionChunk() const;
 
+    /// @brief Whether per-iteration prints are on (verbose).
     bool isVerbose() const;
 
+    /// @brief Number of materials (nbmat).
     int getNbmat() const;
 
     /// @brief The parameters -- asked on stdin under

@@ -172,7 +172,8 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
 
         // --- swap() exchanges contents ----------------------------------------
         {
-            Array<double> a(NS), b(NS);
+            Array<double> a(NS);
+            Array<double> b(NS);
             for (Int i = 0; i < NS; ++i)
             {
                 a[i] = 1.0;

@@ -32,6 +32,7 @@ namespace shrink_array
 template <typename Tuple>
 struct for_each_type_impl;
 
+/// @brief Specialisation for std::tuple<Ts...>: iterates over Ts.
 template <typename... Ts>
 struct for_each_type_impl<std::tuple<Ts...>>
 {
@@ -43,6 +44,9 @@ struct for_each_type_impl<std::tuple<Ts...>>
     }
 };
 
+/// @brief Call `fn.template operator()<T>()` for each type T of @p TypeList (a std::tuple), in order.
+/// @tparam TypeList std::tuple of the types to iterate over.
+/// @param fn Callable with a templated call operator.
 template <typename TypeList, typename F>
 void for_each_type(F&& fn)
 {

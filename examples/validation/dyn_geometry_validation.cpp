@@ -126,7 +126,8 @@ static int round_trip_at(unsigned int csz, long N)
         ref[i]         = v;
     }
 
-    long bad = 0, first = -1;
+    long bad   = 0;
+    long first = -1;
     for (long i = 0; i < N; ++i)
         if (arr[i] != ref[i])
         {

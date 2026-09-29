@@ -198,6 +198,8 @@ struct ParamChunkDynInterface<false, AllT>
     static void register_chunk_size(unsigned int /*size*/) {}
 };
 
+/// @brief Library-wide setup and configuration entry point (all-static), inheriting the build-dependent verbs
+///        of ParamChunkParallelInterface and ParamChunkDynInterface.
 class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInterface<>
 {
     // The policies read #block_size, which is private and stays that way: it is

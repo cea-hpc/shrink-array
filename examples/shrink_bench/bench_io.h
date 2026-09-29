@@ -46,6 +46,9 @@
 // them unconditionally is harmless (unused declarations don't link).
 // -----------------------------------------------------------------------------
 void compress_file(const std::string& source_file, const std::string& dest_file);
+/// @brief Decompress the bzip2 file @p source_file into @p dest_file; aborts on an I/O or decompression error.
+/// @param source_file Compressed input, starting with the original length.
+/// @param dest_file Decompressed output.
 void decompress_file(const std::string& source_file, const std::string& dest_file);
 
 // -----------------------------------------------------------------------------
@@ -99,6 +102,13 @@ static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, UInt c
     sink("\n");
 }
 
+/// @brief Write @p data to @p filename as raw bytes and @p checksum to "<filename>_check_sum", then, unless
+///        @p no_compress is set, bzip2 it to "<filename>.bz2" (see the comment above log_values_compacted()).
+/// @param filename Output file.
+/// @param data std::vector to write; any other type aborts.
+/// @param checksum Value written to the checksum file.
+/// @param special_writing true, with bool or short elements: write each element as one bool.
+/// @param no_compress Non-null: skip the compression.
 template <typename VEC>
 void write_binary_file(const std::string& filename,
                        const VEC&         data,

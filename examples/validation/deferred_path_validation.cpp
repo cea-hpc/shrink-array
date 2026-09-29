@@ -197,9 +197,11 @@ struct Scenario
 template <typename T>
 static long compare(const char* label, const char* stage, const Array<T>& arr, const std::vector<T>& ref)
 {
-    const long N   = static_cast<long>(ref.size());
-    long       bad = 0, first = -1;
-    T          got_first{}, exp_first{};
+    const long N     = static_cast<long>(ref.size());
+    long       bad   = 0;
+    long       first = -1;
+    T          got_first{};
+    T          exp_first{};
     for (long i = 0; i < N; ++i)
     {
         const T got = arr[i];
@@ -233,10 +235,12 @@ static long compare(const char* label, const char* stage, const Array<T>& arr, c
 template <typename T>
 static int run(const char* label, long N, const Scenario<T>& sc)
 {
-    Array<T> arr(N), other(N);
+    Array<T> arr(N);
+    Array<T> other(N);
     maybe_set_second_value(arr, sc.second);
     maybe_set_second_value(other, sc.second);
-    std::vector<T> ref(N), ref_other(N);
+    std::vector<T> ref(N);
+    std::vector<T> ref_other(N);
 
     long fails = 0;
 
@@ -252,8 +256,8 @@ static int run(const char* label, long N, const Scenario<T>& sc)
         for (long i = 0; i < N; ++i)
         {
             const long run = (i / kRun) % 3;
-            const T    v   = run == 0 ? T(0) : run == 1 ? sc.second : static_cast<T>(i % 23 + 1);
-            arr[i]         = static_cast<T>(i % 23 + 1);
+            const T    v   = run == 0 ? T(0) : run == 1 ? sc.second : static_cast<T>((i % 23) + 1);
+            arr[i]         = static_cast<T>((i % 23) + 1);
             arr[i]         = v;
             other[i]       = static_cast<T>(i % 13);
         }
@@ -262,7 +266,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     for (long i = 0; i < N; ++i)
     {
         const long run = (i / kRun) % 3;
-        ref[i]         = run == 0 ? T(0) : run == 1 ? sc.second : static_cast<T>(i % 23 + 1);
+        ref[i]         = run == 0 ? T(0) : run == 1 ? sc.second : static_cast<T>((i % 23) + 1);
         ref_other[i]   = static_cast<T>(i % 13);
     }
     fails += compare(label, "fill", arr, ref);
@@ -331,7 +335,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
         // (the omp for's own barrier)
 #pragma omp for schedule(static, 37)
         for (long i = 0; i < N; ++i)
-            mix_other<T>(arr, other, (i + N / 2) % N, i);
+            mix_other<T>(arr, other, (i + (N / 2)) % N, i);
 #pragma omp for schedule(static, 37)
         for (long i = 0; i < N; ++i)
             if (i % 3 != 1)
@@ -341,7 +345,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     for (long i = 0; i < N; ++i)
         sc.chain_ref(ref_other, i);
     for (long i = 0; i < N; ++i)
-        mix_other<T>(ref, ref_other, (i + N / 2) % N, i);
+        mix_other<T>(ref, ref_other, (i + (N / 2)) % N, i);
     for (long i = 0; i < N; ++i)
         if (i % 3 != 1)
             sc.chain_ref(ref_other, i);

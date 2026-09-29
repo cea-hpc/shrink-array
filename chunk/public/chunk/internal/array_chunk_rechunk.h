@@ -42,7 +42,7 @@
 
 #include "chunk/config.h"
 #include "chunk/chunk_traits.h"
-#include "chunk/internal/crp_helper.h" // crtp_cast_t
+#include "chunk/internal/crp_helper.h"      // crtp_cast_t
 #include "chunk/internal/array_chunk_for.h" // ArrayChunkCore -- rechunk_all_to's registry keys
 
 namespace shrink_array
@@ -191,7 +191,7 @@ class RechunkSupport<Derived, true>
     /** @brief Release this array's parked buffers held at the old geometry (default: none parked). */
     void rechunk_drain_reuse_list(unsigned int /*new_size*/) {}
     /** @brief Capture the variant state to carry across a re-chunk (default: none). */
-    T rechunk_capture_state() const
+    [[nodiscard]] T rechunk_capture_state() const
     {
         return T{};
     }
@@ -248,7 +248,7 @@ class RechunkSupport<Derived, false>
     /** @brief Nothing pooled by geometry. */
     void rechunk_drain_reuse_list(unsigned int /*new_size*/) {}
     /** @brief No state to carry. */
-    T rechunk_capture_state() const
+    [[nodiscard]] T rechunk_capture_state() const
     {
         return T{};
     }

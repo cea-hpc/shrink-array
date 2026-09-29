@@ -207,7 +207,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
             batch.swap(*op_map);
             // Replay context: gate bypassed, writes applied directly — safe
             // here (begin_flush + hard drain above), see in_flush_replay.
-            FlushReplayGuard replay_guard;
+            const FlushReplayGuard replay_guard;
             for (auto& [num, op_ptr] : batch)
             {
                 if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
@@ -372,7 +372,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
             batch.swap(*op_map);
             // Replay context: gate bypassed, writes applied directly — safe
             // here (begin_flush + hard drain above), see in_flush_replay.
-            FlushReplayGuard replay_guard;
+            const FlushReplayGuard replay_guard;
             for (auto& [num, op_ptr] : batch)
             {
                 // Check-build guard: same probe as flush_deferred — see comment
@@ -507,7 +507,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
     // runs under FlushReplayGuard so it writes directly (no re-defer, no lock
     // machinery — this is one op body, not a flush walk).
     {
-        FlushReplayGuard replay_guard;
+        const FlushReplayGuard replay_guard;
         it_op->second->write_body();
     }
     it_op->second->destroy();

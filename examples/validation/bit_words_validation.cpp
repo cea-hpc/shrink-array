@@ -60,7 +60,7 @@ void check(bool ok, const char* what, std::size_t n)
 void geometry()
 {
     check(bits::words_for(0) == 0 && bits::bytes_for(0) == 8, "empty: no word, one word of storage", 0);
-    for (std::size_t n : {1, 32, 63, 64, 65, 256, 512, 4096})
+    for (const std::size_t n : {1, 32, 63, 64, 65, 256, 512, 4096})
     {
         check(bits::words_for(n) == (n + 63) / 64, "words_for", n);
         check(bits::bytes_for(n) == bits::words_for(n) * 8, "bytes_for", n);
@@ -79,8 +79,8 @@ void against_vector(std::size_t n, std::mt19937_64& rng)
     std::uniform_int_distribution<std::size_t> pick(0, n - 1);
     for (std::size_t k = 0; k < 4 * n; ++k)
     {
-        const std::size_t i = pick(rng);
-        const bool        v = (rng() & 1) != 0;
+        const std::size_t i   = pick(rng);
+        const bool        v   = (rng() & 1) != 0;
         const bool        old = (k % 2 == 0) ? bits::set_bit_atomic(w.data(), i, v) : bits::get_bit(w.data(), i);
         if (k % 2 != 0)
             bits::set_bit(w.data(), i, v);
@@ -124,7 +124,7 @@ void scans(std::size_t n)
 
     // One differing bit, first and last element (n >= 2: with one element,
     // flipping it gives the other constant, not a mixed chunk).
-    for (std::size_t i : {std::size_t{0}, n - 1})
+    for (const std::size_t i : {std::size_t{0}, n - 1})
     {
         if (n < 2)
             break;
@@ -157,13 +157,14 @@ void ranges(std::mt19937_64& rng)
         for (std::size_t first = 0; first < 192; first += 7)
             for (std::size_t n = 0; first + n <= 192; n += 5)
             {
-                bool any = false, all = true;
+                bool any = false;
+                bool all = true;
                 for (std::size_t i = first; i < first + n; ++i)
                 {
                     any = any || bits::get_bit(w.data(), i);
                     all = all && bits::get_bit(w.data(), i);
                 }
-                const bits::Uniform expect = !any ? bits::Uniform::all_false
+                const bits::Uniform expect = !any  ? bits::Uniform::all_false
                                              : all ? bits::Uniform::all_true
                                                    : bits::Uniform::mixed;
                 if (bits::scan_range(w.data(), first, n) != expect)
@@ -212,9 +213,9 @@ void concurrent_ranges(std::size_t n, int rounds)
     // Spans of 1..37 bits handed out round-robin to 8 threads: every span
     // edge is a word shared with another thread's span. Each thread sets its
     // spans, then clears the odd ones -- fill_bit_range_atomic must lose none.
-    constexpr int                                     n_thr = 8;
+    constexpr int                                    n_thr = 8;
     std::vector<std::pair<std::size_t, std::size_t>> spans;
-    for (std::size_t lo = 0, len = 1; lo < n; lo += len, len = len % 37 + 1)
+    for (std::size_t lo = 0, len = 1; lo < n; lo += len, len = (len % 37) + 1)
         spans.emplace_back(lo, std::min(n, lo + len));
     std::vector<bits::word_t> w(bits::words_for(n));
     bits::fill_bits(w.data(), n, false);
@@ -249,15 +250,15 @@ int main()
 {
     std::mt19937_64 rng(12345);
     geometry();
-    for (std::size_t n : {1, 32, 63, 64, 65, 256, 512, 1000, 4096})
+    for (const std::size_t n : {1, 32, 63, 64, 65, 256, 512, 1000, 4096})
     {
         against_vector(n, rng);
         scans(n);
     }
     ranges(rng);
-    for (std::size_t n : {64, 256, 4096})
+    for (const std::size_t n : {64, 256, 4096})
         concurrent(n, 2000);
-    for (std::size_t n : {256, 4096})
+    for (const std::size_t n : {256, 4096})
         concurrent_ranges(n, 500);
 
     if (g_fails == 0)

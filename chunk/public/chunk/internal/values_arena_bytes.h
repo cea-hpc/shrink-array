@@ -33,7 +33,7 @@
 #include <cstddef>
 #include <optional>
 
-#if !defined CHUNK_STD_ALLOC // std-alloc builds have no fast_allocators include path
+#if !defined CHUNK_STD_ALLOC                // std-alloc builds have no fast_allocators include path
     #include "fast_allocators/slab_arena.h" // fast_alloc::value_arena
 #endif
 

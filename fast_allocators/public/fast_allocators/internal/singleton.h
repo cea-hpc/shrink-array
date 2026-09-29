@@ -17,6 +17,12 @@
     #define SA_LSAN_IGNORE(p) ((void)0)
 #endif
 
+/**
+ * @brief Process-wide lazily-constructed instance of T, shared by every thread.
+ * @details Created on the first getInstance() and never destroyed unless
+ *          deleteInstance() is called: an intentional leak, marked for LSan.
+ * @tparam T The type to host; default-constructible.
+ */
 template <typename T>
 class Singleton
 {
@@ -29,6 +35,8 @@ class Singleton
     Singleton(const Singleton&)            = delete;
     Singleton& operator=(const Singleton&) = delete;
 
+    /// @brief The instance, created on first use (double-checked locking).
+    /// @return Never null.
     static T* getInstance()
     {
         // Fast path: one acquire load, no lock. Every call used to take the
@@ -38,8 +46,8 @@ class Singleton
         if (T* instance = unique_instance.load(std::memory_order_acquire)) [[likely]]
             return instance;
 
-        std::lock_guard lock(unique_instance_mutex);
-        T*              instance = unique_instance.load(std::memory_order_relaxed); // under the lock
+        const std::scoped_lock lock(unique_instance_mutex);
+        T*                     instance = unique_instance.load(std::memory_order_relaxed); // under the lock
         if (instance == nullptr)
         {
             instance = new T();       // immortal: never deleted
@@ -49,12 +57,15 @@ class Singleton
         return instance;
     }
 
+    /// @brief Destroy the instance, if any; the next getInstance() recreates it.
     static void deleteInstance()
     {
-        std::lock_guard lock(unique_instance_mutex);
+        const std::scoped_lock lock(unique_instance_mutex);
         delete unique_instance.exchange(nullptr, std::memory_order_acq_rel);
     }
 
+    /// @brief getInstance(), as a reference.
+    /// @return The instance.
     static T& getRef()
     {
         return *getInstance();
