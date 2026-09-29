@@ -17,7 +17,6 @@
 #pragma once
 
 #include <atomic>
-#include <cstdlib>     // std::getenv (CHUNK_PROXY2_ACQ_FENCE)
 #include <iostream>    // std::cerr (verbose)
 #include <type_traits> // std::remove_cvref_t
 
@@ -34,21 +33,11 @@
 namespace shrink_array
 {
 
-/// The acquire fences that ended set_info_second_value_ind() and the two
-/// set_info_on_chunk() are OFF by default: they followed plain (non-atomic)
-/// reads of the share_info_array registry and paired with no release. Their
-/// `dmb ishld` was the hottest instruction of assign_impl on aarch64; without
-/// them, 64 threads chunk2_256 --mode perf: 11.48 s -> 10.68 s (-7.0%).
-/// Validated: forced-deferral build at 8/16/32 threads, 10 x --mode check at
-/// 64 threads, every chunk2 validation harness at 1/8/16/64 threads.
-/// CHUNK_PROXY2_ACQ_FENCE=1 (read once, at load) restores them.
-/// TODO: once the wider validation campaign is done, remove this switch and
-///       the three guarded fences.
-inline const bool g_proxy2_acq_fence = []
-{
-    const char* env = std::getenv("CHUNK_PROXY2_ACQ_FENCE");
-    return env != nullptr && env[0] != '\0' && env[0] != '0';
-}();
+// No acquire fence ends set_info_second_value_ind() or the two
+// set_info_on_chunk(): they would follow plain (non-atomic) reads of the
+// share_info_array registry and pair with no release. Their `dmb ishld` was the
+// hottest instruction of assign_impl on aarch64; without them, 64 threads
+// chunk2_256 --mode perf: 11.48 s -> 10.68 s (-7.0%).
 
 template <typename T, typename Derived>
 ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
@@ -107,9 +96,6 @@ void ProxySpec2<T, Derived>::set_info_on_chunk()
     {
         derived().set_ptr_is_inside_chunk_list_to_compress();
     }
-
-    if (g_proxy2_acq_fence) [[unlikely]] // transition switch, see its declaration
-        std::atomic_thread_fence(std::memory_order_acquire);
 }
 
 template <typename T, typename Derived>
@@ -118,9 +104,6 @@ void ProxySpec2<T, Derived>::set_info_second_value_ind()
     inf_array    = load_inf_array();
     second_value = std::get<0>(inf_array);
     ind          = std::get<1>(inf_array);
-
-    if (g_proxy2_acq_fence) [[unlikely]] // transition switch, see its declaration
-        std::atomic_thread_fence(std::memory_order_acquire);
 }
 
 template <typename T, typename Derived>
@@ -150,9 +133,6 @@ void ProxySpec2<T, Derived>::set_info_on_chunk()
     {
         derived().set_ptr_is_inside_chunk_list_to_compress();
     }
-
-    if (g_proxy2_acq_fence) [[unlikely]] // transition switch, see its declaration
-        std::atomic_thread_fence(std::memory_order_acquire);
 }
 
 // ── Methods only present when fast block compression is active ────────────

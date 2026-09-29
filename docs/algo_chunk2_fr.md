@@ -534,7 +534,6 @@ Chunk2 :
 |---|---|
 | `CHUNK_RECHUNK_SCHEDULE=kind[,chunk]` | ordonnancement de la reconstruction du rechunk (`guided,16` par défaut) |
 | `CHUNK_RECHUNK_TRACE=1` | temps des phases du rechunk, repliements |
-| `CHUNK_PROXY2_ACQ_FENCE=1` | rétablit les barrières d'acquisition après la lecture du registre (désactivées par défaut) |
 | `CHUNK_OMPT_STATS=1` | statistiques des régions de synchronisation (build OMPT) |
 | `CHUNK_RECHUNK_DRY_RUN=1` | le décideur analyse et journalise, mais n'applique aucun rechunk (mesurer le coût des analyses) |
 | `CHUNK_RECHUNK_MAX_COARSEN=<n>` | facteur maximal d'un grossissement (4 par défaut) |

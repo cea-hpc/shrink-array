@@ -24,12 +24,9 @@ lue une seule fois, et `0` ou une valeur vide équivaut à son absence.*
 
 ## 2. Interrupteurs de comparaison
 
-Chacun vaut `1` pour activer le comportement indiqué, afin de comparer sur un même binaire
-(voir [`mesures_performance_fr.md`](mesures_performance_fr.md) §2).
-
-| variable | comportement activé |
-|---|---|
-| `CHUNK_PROXY2_ACQ_FENCE` | rétablit les barrières d'acquisition après la lecture du registre (Chunk2) |
+Il n'en reste plus : ceux qui permettaient de rétablir un ancien comportement ont été
+retirés une fois le nouveau validé. Les réglages utiles pour comparer deux exécutions sont
+dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.md) §2.
 
 ## 3. Traces et diagnostics
 
