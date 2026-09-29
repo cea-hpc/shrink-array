@@ -20,10 +20,12 @@ option(CHUNK_FORCE_LEDGER "Keep the pool ledger active under OpenMP (off by defa
 # geometry change or at teardown -- never in steady state.
 #
 # It is safe by construction rather than by care: the only call site is
-# TCTypeCAllocator::manage_full_empty, the VALUE family, whose free list lives
-# in the heap-allocated tab_firstFree and whose metadata live in the slab
-# header object -- both outside the pages being dropped -- and which promises
-# zeroed memory anyway, which is what MADV_DONTNEED returns. The op/ctx family
+# TCTypeCAllocator::reclaim_empty_slabs_now(), the VALUE family, on a set the
+# caller knows abandoned (a re-chunk's old geometry, a teardown). Its free list
+# lives in the heap-allocated tab_firstFree and its metadata in the slab header
+# object -- both outside the pages being dropped -- and it makes no promise
+# about element contents (callers initialise what they get), so the zero pages
+# MADV_DONTNEED brings back are as good as any. The op/ctx family
 # threads its free list THROUGH the freed elements and would be corrupted by
 # this; its on_kept is an empty lambda and it is never madvised.
 #

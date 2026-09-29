@@ -20,9 +20,10 @@
  *
  * @par Why two slab classes
  * ::TCAllocator threads its free list THROUGH the freed elements, writing the
- * next free index into the element's first bytes. ::TCCAllocator cannot: it
- * guarantees the memory it hands out is zeroed, so it keeps the links in a side
- * array (TCCAllocator::tab_firstFree) and leaves the payload untouched. That
+ * next free index into the element's first bytes. ::TCCAllocator does not: it
+ * keeps the links in a side array (TCCAllocator::tab_firstFree) and never writes
+ * into a free element, so an emptied slab's pages can be dropped with madvise()
+ * without losing anything the allocator needs. That
  * side array is indexed by `unsigned short`, which is what caps a TCCAllocator
  * slab at TCCAllocator::first_free_init - 1 elements.
  *
@@ -145,9 +146,10 @@ inline void* sctk_mmap(size_t size)
  *
  * @warning That makes the element size a lower bound: an element must be at
  *          least `sizeof(int)` wide, and its contents do NOT survive a free.
- *          Use ::TCCAllocator when the memory must come back zeroed.
+ *          Neither slab class zero-fills what it hands out: callers
+ *          initialise it.
  *
- * @see TCCAllocator for the zero-initialising counterpart.
+ * @see TCCAllocator for the counterpart that keeps its links out of the payload.
  */
 class alignas(64) TCAllocator
 {
@@ -323,14 +325,19 @@ class alignas(64) TCAllocator
 };
 
 /**
- * @brief One slab of ZEROED fixed-size elements, and a node of a slab list.
+ * @brief One slab of fixed-size elements, and a node of a slab list.
  *
- * @details Same shape as ::TCAllocator, one guarantee more: every element it
- *          hands out is all-zero, recycled ones included. That is why the free
- *          list lives in the side array #tab_firstFree instead of inside the
- *          elements -- writing a link into the payload is exactly what would
- *          break the guarantee. alloc_block() zeroes the elements once, and
- *          nothing ever writes into a free element afterwards.
+ * @details Same shape as ::TCAllocator, with the free list in the side array
+ *          #tab_firstFree instead of inside the elements: the allocator never
+ *          writes into a free element, so an emptied slab's pages can be
+ *          dropped (madvise_empty_slab_full()) without losing a link.
+ *
+ * @warning NO content guarantee. An element comes back with whatever its
+ *          previous owner left in it -- through the free list, a rewound bump
+ *          pointer, or a slab revived from the reserve. Only a slab fresh from
+ *          the arena (mmap) or taken back from it by alloc_block() is zero.
+ *          Callers initialise what they get: ChunkOmpPolicy::zero_fill_fresh()
+ *          for v1, the fill functors of allocate_chunk_internal() for v2/v2A.
  *
  * @note The side array is `unsigned short`, so a slab holds at most
  *       #first_free_init - 1 elements; alloc_block() caps BlockSize there and
@@ -396,12 +403,12 @@ struct alignas(64) TCCAllocator
     inline void destroy();
 
     /**
-     * @brief Obtain the block, zero it, and lay it out.
+     * @brief Obtain the block and lay it out.
      * @details Rounds the block size up to a power of two, clamps #BlockSize so
      *          it fits an `unsigned short` index, allocates #tab_firstFree, then
-     *          takes the block from fast_alloc::value_arena() and memsets its
-     *          #BlockSize elements -- a recycled block still holds the previous
-     *          occupant's bytes, and this pool promises zeros.
+     *          takes the block from fast_alloc::value_arena(). A block the arena
+     *          recycles is cleared (a fresh one is mmap's zeros already); that
+     *          is not a promise about the elements -- see the class @warning.
      */
     inline void alloc_block();
 
@@ -431,7 +438,7 @@ struct alignas(64) TCCAllocator
 
     /**
      * @brief Hand out one element.
-     * @return Memory that is all-zero, recycled or not.
+     * @return An element with unspecified contents (see the class @warning).
      * @pre The slab is not full -- the caller checks is_full().
      */
     inline void* alloc() noexcept;
@@ -449,7 +456,7 @@ struct alignas(64) TCCAllocator
     }
 
     /**
-     * @brief Take element @p i back, leaving its bytes zeroed.
+     * @brief Take element @p i back. Its bytes are left as they are.
      * @param i Index from num_block() / num_block_pow2().
      * @details Freeing the element the bump pointer just handed out rewinds the
      *          bump instead of pushing onto the free list.
@@ -480,15 +487,15 @@ struct alignas(64) TCCAllocator
         return nn_ref < BlockSize;
     }
 
-    char* data = nullptr; ///< The block itself, aligned on #BlockAllocator, zeroed.
+    char* data = nullptr; ///< The block itself, aligned on #BlockAllocator.
 
     /// @brief Free-list terminator, and the exclusive upper bound on #BlockSize.
     static constexpr short first_free_init = 32767;
 
     unsigned short firstFree{first_free_init}; ///< Head of the free list; #first_free_init if empty.
 
-    /// @brief Free-list links, one per element. Kept out of the payload so a
-    ///        recycled element is still all-zero.
+    /// @brief Free-list links, one per element. Kept out of the payload, so an
+    ///        emptied slab's pages can be dropped without losing them.
     std::vector<unsigned short> tab_firstFree;
 
     int       nn_ref{0};           ///< Elements currently out. 0 == releasable.
@@ -727,7 +734,7 @@ void remove_TCTypeAllocator_inst(VTCTypeAllocator*);
  *       memory report can total all of them without knowing the type.
  *
  * @note This is the serial family. ::TCTypeCAllocator is its OpenMP counterpart
- *       and hands out zeroed memory; ::TCTypeAllocatorEBC is the compile-time
+ *       (links outside the payload); ::TCTypeAllocatorEBC is the compile-time
  *       geometry variant.
  *
  * @see bypass_slabs for when none of this machinery runs at all.
@@ -1194,8 +1201,10 @@ struct TCTypeAllocator final : public VTCTypeAllocator
  *
  * @details The OpenMP counterpart of ::TCTypeAllocator, with the same three-way
  *          split of slabs between #block, #block_full and #block_empty. Two
- *          differences: what it hands out is ZEROED, and it does not enrol in
- *          the ::VTCTypeAllocator report registry.
+ *          differences: its slabs keep their free list outside the payload (so
+ *          they can be madvised), and it does not enrol in the
+ *          ::VTCTypeAllocator report registry. Like it, it gives no guarantee
+ *          on the contents of what it hands out.
  *
  * @tparam _ElementType Element type; an allocation is an ARRAY of these.
  *
@@ -1286,8 +1295,9 @@ struct TCTypeCAllocator
     }
 
     /**
-     * @brief Hand out room for #ElementSize elements, all bytes zero.
-     * @return Zeroed memory.
+     * @brief Hand out room for #ElementSize elements.
+     * @return Memory with unspecified contents; the caller initialises it (see
+     *         TCCAllocator's @warning).
      * @details Draws from the current slab; failing that, revives one from the
      *          reserve; failing that, creates a new slab.
      */

@@ -123,8 +123,9 @@ inline void TCCAllocator::alloc_block()
         std::abort();
     }
 
-    // The pool promises zero-initialised elements. A recycled slab holds stale
-    // bytes, so clear its BlockSize elements (not the tail up to the
+    // Not a promise of the pool: elements recycled through the free list are
+    // NOT cleared (see TCCAllocator's @warning). But a slab the arena recycles
+    // starts clean: clear its BlockSize elements (not the tail up to the
     // back-pointer, which is never handed out when BlockSize is capped by the
     // side array: slab_bytes_for()). A fresh slab is mmap's zeros already, and
     // clearing it anyway made the WHOLE slab resident at the first alloc of a
