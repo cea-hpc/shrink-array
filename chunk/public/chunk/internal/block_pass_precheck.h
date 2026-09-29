@@ -32,25 +32,12 @@
  * writer wait), so a flush beginning after this check is caught as before.
  */
 
-#include <cstdlib> // std::getenv
-
 #include "chunk/config.h"
 #include "chunk/internal/chunk_stats.h"                // increm_chunk_gate_start*
 #include "chunk/internal/write_compress_sync_policy.h" // any_thread_flushing
 
 namespace shrink_array
 {
-
-namespace internal
-{
-/// A/B switch: CHUNK_BLOCK_PRECHECK_LEGACY=1 (read once) disables the early-out
-/// -- the pass marks its candidates first, as before Sept '26.
-inline const bool g_precheck_legacy = []
-{
-    const char* env = std::getenv("CHUNK_BLOCK_PRECHECK_LEGACY");
-    return env != nullptr && env[0] != '\0' && env[0] != '0';
-}();
-} // namespace internal
 
 /**
  * @brief Would compression_mgr.start() decline right now because a flush is in
@@ -66,8 +53,6 @@ template <typename ProxyType, typename ChunkType>
         return false;
     else
     {
-        if (internal::g_precheck_legacy)
-            return false;
         if (!WriteCompressSyncPolicy<ProxyType>::any_thread_flushing(max_thr))
             return false;
         // What a declined start() counts: an attempt, yielded to a flush.

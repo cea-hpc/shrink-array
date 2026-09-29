@@ -17,7 +17,7 @@
 #pragma once
 
 #include <atomic>
-#include <cstdlib>     // std::getenv (CHUNK_PROXY2_ACQ_FENCE, CHUNK_PROXY2_ARM_LEGACY)
+#include <cstdlib>     // std::getenv (CHUNK_PROXY2_ACQ_FENCE)
 #include <iostream>    // std::cerr (verbose)
 #include <type_traits> // std::remove_cvref_t
 
@@ -50,18 +50,10 @@ inline const bool g_proxy2_acq_fence = []
     return env != nullptr && env[0] != '\0' && env[0] != '0';
 }();
 
-/// A/B switch: CHUNK_PROXY2_ARM_LEGACY=1 (read once, at load) makes every
-/// proxy resolve its tuple through share_info_array again, armed or not.
-inline const bool g_proxy2_arm_legacy = []
-{
-    const char* env = std::getenv("CHUNK_PROXY2_ARM_LEGACY");
-    return env != nullptr && env[0] != '\0' && env[0] != '0';
-}();
-
 template <typename T, typename Derived>
 ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
 {
-    if (inf_array_src_ != nullptr && !g_proxy2_arm_legacy) [[likely]]
+    if (inf_array_src_ != nullptr) [[likely]]
     {
         if constexpr (build_config::any_check)
         {
@@ -84,7 +76,7 @@ template <typename T, typename Derived>
     requires is_bool_like_v<T>
 typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
 {
-    if (inf_array_src_ != nullptr && !g_proxy2_arm_legacy) [[likely]]
+    if (inf_array_src_ != nullptr) [[likely]]
     {
         if constexpr (build_config::any_check)
         {

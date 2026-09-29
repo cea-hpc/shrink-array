@@ -22,22 +22,14 @@ lue une seule fois, et `0` ou une valeur vide équivaut à son absence.*
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | un balayage ne rend les slabs vides au système que s'il y en a au moins autant |
 | `CHUNK_THREAD_CAPACITY` | nombre de cœurs | nombre de rangs pour lequel les structures par thread sont dimensionnées (à augmenter en cas de sursouscription) |
 
-## 2. Interrupteurs de comparaison (retour à l'ancien comportement)
+## 2. Interrupteurs de comparaison
 
-Tous valent `1` pour rétablir l'ancien comportement, afin de comparer sur un même binaire
+Chacun vaut `1` pour activer le comportement indiqué, afin de comparer sur un même binaire
 (voir [`mesures_performance_fr.md`](mesures_performance_fr.md) §2).
 
-| variable | l'ancien comportement rétabli |
+| variable | comportement activé |
 |---|---|
-| `CHUNK_RECHUNK_INSTALL_LEGACY` | Chunk2A : les constantes identiques des sources sont recopiées puis repliées au lieu d'être installées directement |
-| `CHUNK_RECHUNK_DROP_LEGACY` | au rechunk, les candidats en attente sont retirés sans être compressés d'abord |
-| `CHUNK_THRESHOLD_TEARDOWN_LEGACY` | les seuils de compression et budgets des réserves ne sont pas recalculés à la destruction d'un stockage |
-| `CHUNK_BLOCK_PRECHECK_LEGACY` | une passe de compression par bloc marque ses candidats avant de vérifier qu'aucun vidage n'est en cours |
-| `CHUNK_BARRIER_FLUSH_LEGACY` | le vidage des écritures différées aux barrières traite tous les types sans condition |
-| `CHUNK_SERIAL_DRAIN_LEGACY` | le vidage en série ouvre ses régions même sans opération en attente |
-| `CHUNK_PROXY2_ARM_LEGACY` | chaque proxy de Chunk2 résout son tableau par le registre, armé ou non |
 | `CHUNK_PROXY2_ACQ_FENCE` | rétablit les barrières d'acquisition après la lecture du registre (Chunk2) |
-| `CHUNK_PROXY2A_MARK_LEGACY` | Chunk2A : pas de filtre « pourrait devenir uniforme » avant de marquer un chunk candidat |
 | `CHUNK_PROXY2A_META_ARMED` | Chunk2A : les proxys utilisent les adresses de lignes de métadonnées armées (désactivé par défaut) |
 
 ## 3. Traces et diagnostics

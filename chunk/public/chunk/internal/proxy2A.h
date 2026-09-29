@@ -604,15 +604,7 @@ struct Proxy2AFastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2A<
  * @tparam T stored element type
  */
 
-/// A/B switch: CHUNK_PROXY2A_MARK_LEGACY=1 (read once, at load) disables the
-/// "could become uniform" filter of Proxy2A::should_mark_for_compression().
-inline const bool g_proxy2a_mark_legacy = []
-{
-    const char* env = std::getenv("CHUNK_PROXY2A_MARK_LEGACY");
-    return env != nullptr && env[0] != '\0' && env[0] != '0';
-}();
-
-/// @brief Proxy to one element of a Chunk2A<T> chunk (see the class description above g_proxy2a_mark_legacy).
+/// @brief Proxy to one element of a Chunk2A<T> chunk (see the class description above).
 /// @tparam T Element type.
 template <typename T>
 class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_config::use_fast_block_compression>
@@ -903,8 +895,6 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         const bool leave    = (second_value != first_value && old_value == second_value && new_value != second_value);
         if (!discover && !leave)
             return false;
-        if (g_proxy2a_mark_legacy)
-            return true;
         if constexpr (chunk_config::use_fast_block_compression)
         {
             // Already queued: add_to_compression_list() is a no-op, exactly as

@@ -104,18 +104,6 @@ struct RechunkStorageScope
 };
 } // namespace alloc_affinity_detail
 
-namespace teardown_threshold_detail
-{
-/// A/B switch: CHUNK_THRESHOLD_TEARDOWN_LEGACY=1 (read once) skips the
-/// recomputation of the compression threshold and reuse budget at teardown
-/// (clear_core), as before Sept '26. Default: recompute.
-inline const bool g_legacy = []
-{
-    const char* e = std::getenv("CHUNK_THRESHOLD_TEARDOWN_LEGACY");
-    return e != nullptr && e[0] != '\0' && e[0] != '0';
-}();
-} // namespace teardown_threshold_detail
-
 /// @brief The index-type-independent part of a chunked array of ChunkType (see the description at the top of
 ///        this file).
 template <typename ChunkType>

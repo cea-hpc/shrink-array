@@ -29,7 +29,7 @@
 #include <ratio>       // std::milli (the same timers)
 #include <cstddef>     // std::size_t
 #include <cstdio>      // std::fprintf (CHUNK_RECHUNK_TRACE)
-#include <cstdlib>     // std::getenv (CHUNK_RECHUNK_TRACE, CHUNK_RECHUNK_INSTALL_LEGACY, CHUNK_RECHUNK_SCHEDULE)
+#include <cstdlib>     // std::getenv (CHUNK_RECHUNK_TRACE, CHUNK_RECHUNK_SCHEDULE)
 #include <type_traits> // std::is_same_v, the v1 bool guard
 #include <string_view> // CHUNK_RECHUNK_SCHEDULE parsing
 #include <utility>     // std::swap (the array swap)
@@ -51,15 +51,6 @@
 
 namespace shrink_array::internal
 {
-/// A/B switch: CHUNK_RECHUNK_INSTALL_LEGACY=1 (read once) makes the Chunk2A
-/// rebuild copy and fold spans whose sources are all the same second constant,
-/// as before, instead of installing that constant directly.
-inline const bool g_install_legacy = []
-{
-    const char* env = std::getenv("CHUNK_RECHUNK_INSTALL_LEGACY");
-    return env != nullptr && env[0] != '\0' && env[0] != '0';
-}();
-
 /// CHUNK_RECHUNK_TRACE (read once, set = on): per-phase timings, memory and
 /// occupancy of every re-chunk. Read here once rather than by a getenv() at
 /// each of the sites below.
@@ -675,7 +666,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // reachable by no other thread until the swap, so no CAS.
             if constexpr (chunk_config::use_chunk2a && !std::is_same_v<T, bool>)
             {
-                if (all_folded && same_cst2 && !any_cst1_src && cst2_src != nullptr && !internal::g_install_legacy)
+                if (all_folded && same_cst2 && !any_cst1_src && cst2_src != nullptr)
                 {
                     set_thread_chunk_size(old_size);
                     // auto: SecondValueRef is not declared in every TU that
