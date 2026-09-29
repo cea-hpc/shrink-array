@@ -40,7 +40,6 @@
 #include "chunk/internal/proxy2A_meta_bases.h"  // Proxy2AMetaBases
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 #include "chunk/internal/TChunk.h"
-#include "chunk/internal/manager_chunk.h"
 #include "chunk/internal/compression_manager.h"
 #include "chunk/internal/proxy_base.h"
 #include "chunk/internal/proxy2_base.h"
@@ -49,6 +48,8 @@
 namespace shrink_array
 {
 
+template <template <typename> class CHUNK_T, typename T>
+class ManagerChunk;
 
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/

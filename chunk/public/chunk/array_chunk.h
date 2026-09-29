@@ -169,7 +169,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
 
         this->num_tab = Base::nb_tab;
 
-        nb_tab++;
+        ++nb_tab;
     }
 
     /// @brief Claim this array's identity and build its storage for @p sz
@@ -291,6 +291,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     }
 
   private:
+
     friend ArrayChunkBase<ArrayChunk<T, ind_type>>; // swap_identity()
 
     /// @brief The identity step of swap(): num_tab and the registry entry, so

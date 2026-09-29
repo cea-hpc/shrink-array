@@ -36,12 +36,13 @@ using complex_double = std::complex<double>;
 #include "chunk/internal/chunk_stats.h"       // increm_chunk_write (CHUNK_STATS)
 #include "chunk/internal/conditional_counter.h"
 #include "chunk/internal/proxy.h"
-#include "chunk/internal/manager_chunk.h"       // ManagerChunk<Chunk, T>
 #include "chunk/internal/compression_manager.h" // CompressionManager
 
 namespace shrink_array
 {
 
+template <template <typename> class CHUNK_T, typename T>
+class ManagerChunk;
 
 /// @brief The per-type facade these verbs drive. Forward-declared, not included:
 ///        chunk_std.h sits inside the chunk_func.h -> chunk_std.h -> proxy.h ->
@@ -153,7 +154,6 @@ extern bool need_load_balance_list_block_free();
  */
 extern void release_chunk_pools();
 
-
 /**
  * @brief Per-chunk zero-counter, the serial path's compression trigger.
  *
@@ -211,7 +211,6 @@ struct ChunkCounterPolicy
         return nb_val_eq_zero == size;
     }
 };
-
 
 /**
  * @brief Chunk's OpenMP-only surface: per-thread allocation, CAS and clearing.

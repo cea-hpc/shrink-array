@@ -31,7 +31,6 @@
 #include "chunk/internal/chunk_size_config.h"
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
-
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/element_access.h" // Bit buffers: words of bits
 #include <cstring>                         // std::memset (the Bit second constant)
@@ -44,11 +43,13 @@
 #include "chunk/internal/chunk2_base.h"
 #include "chunk/internal/conditional_counter.h"
 #include "chunk/internal/TChunk.h"              // VectorTuple4ChunkInt2 (the candidate lists)
-#include "chunk/internal/manager_chunk.h"       // ManagerChunk<Chunk2, T>
 #include "chunk/internal/compression_manager.h" // CompressionManager
 
 namespace shrink_array
 {
+
+template <template <typename> class CHUNK_T, typename T>
+class ManagerChunk;
 
 template <typename T>
 class Proxy2;
