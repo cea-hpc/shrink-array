@@ -565,6 +565,18 @@ if(SHRINK_ARM_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64"
     endif()
 endif()
 
+# ── Documentation ─────────────────────────────────────────────────────────────
+# `cmake --build <build> --target doc` -> docs/html/index.html. The Doxyfile's
+# paths are relative to docs/, hence the working directory.
+find_package(Doxygen OPTIONAL_COMPONENTS dot)
+if (DOXYGEN_FOUND)
+    add_custom_target(doc
+            COMMAND ${DOXYGEN_EXECUTABLE} Doxyfile
+            WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/docs
+            COMMENT "Generating the API documentation in docs/html"
+            VERBATIM)
+endif()
+
 # ── Subdirectories ────────────────────────────────────────────────────────────
 add_subdirectory(chunk)
 
