@@ -345,9 +345,9 @@ int main(int argc, char* argv[])
     {
         if (const char* e = std::getenv("SHRINK_BENCH_AUDIT_FREQ"); e != nullptr && *e != '\0')
         {
-            if (Int v = 0; shrink_array::parse_number(e, v))
+            if (Int v = 0; parse_number(e, v))
                 return std::max<Int>(1, v);
-            shrink_array::warn_invalid_env("SHRINK_BENCH_AUDIT_FREQ", e);
+            warn_invalid_env("SHRINK_BENCH_AUDIT_FREQ", e);
         }
         return std::max<Int>(1, iter_max / 10);
     }();
@@ -666,9 +666,9 @@ int main(int argc, char* argv[])
     {
         if (const char* e = std::getenv("CHUNK_ADVISOR_PERIOD"); e != nullptr && *e != '\0')
         {
-            if (Int v = 0; shrink_array::parse_number(e, v))
+            if (Int v = 0; parse_number(e, v))
                 return v;
-            shrink_array::warn_invalid_env("CHUNK_ADVISOR_PERIOD", e);
+            warn_invalid_env("CHUNK_ADVISOR_PERIOD", e);
         }
         return std::max<Int>(10, iter_max / 20);
     }();
@@ -777,7 +777,7 @@ int main(int argc, char* argv[])
         // defined in every build of the library, so the guard need not be a
         // directive: the discarded branch still links.
         if constexpr (chunk_config::ring_log_debug)
-            shrink_array::ring_init();
+            ring_init();
 
         const Int size   = tab_size[k];
         const Int start0 = tab_start[k];
@@ -888,7 +888,7 @@ int main(int argc, char* argv[])
             const auto r0 = static_cast<std::size_t>(std::max<Int>(start0 / 4, 0)) + 3;
             const auto r1 = std::min(r0 + 1029, static_cast<std::size_t>(sz));
 
-            // DO NOT strip the shrink_array:: below: this file's `using
+            // DO NOT strip the  below: this file's `using
             // namespace shrink_array` is itself under #ifdef SHRINK_ARRAY, so it
             // is absent from the std::vector baseline build, where
             // assume_drained would then be invisible (ADL does not apply to a
