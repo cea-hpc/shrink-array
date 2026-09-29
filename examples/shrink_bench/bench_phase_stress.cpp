@@ -28,11 +28,12 @@ void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] Int team,
     auto& tab4 = bench_arr.tab4;
     auto& tab5 = bench_arr.tab5;
 
-    auto& tab_int     = bench_arr.tab_int;
-    auto& tab_bool    = bench_arr.tab_bool;
-    auto& tab_complex = bench_arr.tab_complex;
-    auto& tab_long    = bench_arr.tab_long;
-    auto& tab_ulong   = bench_arr.tab_ulong;
+    auto& tab_int       = bench_arr.tab_int;
+    auto& tab_bool      = bench_arr.tab_bool;
+    auto& tab_bool_bits = bench_arr.tab_bool_bits;
+    auto& tab_complex   = bench_arr.tab_complex;
+    auto& tab_long      = bench_arr.tab_long;
+    auto& tab_ulong     = bench_arr.tab_ulong;
 
 #pragma omp parallel num_threads(team - 1)
     {
@@ -46,9 +47,10 @@ void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] Int team,
             tab4[j] = second_value_d1;
             tab5[j] = second_value_d2;
 
-            tab_int[j]     = second_value_i;
-            tab_bool[j]    = second_value_b;
-            tab_complex[j] = second_value_c;
+            tab_int[j]       = second_value_i;
+            tab_bool[j]      = second_value_b;
+            tab_bool_bits[j] = second_value_b;
+            tab_complex[j]   = second_value_c;
 
             tab_long[j]  = second_value_l;
             tab_ulong[j] = second_value_ul;
@@ -67,14 +69,15 @@ void bench_phase_stress_dynamic(BenchArrays& bench_arr, [[maybe_unused]] Int gra
     auto& tab4 = bench_arr.tab4;
     auto& tab5 = bench_arr.tab5;
 
-    auto& tab_int     = bench_arr.tab_int;
-    auto& tab_bool    = bench_arr.tab_bool;
-    auto& tab_complex = bench_arr.tab_complex;
-    auto& tab_float   = bench_arr.tab_float;
-    auto& tab_short   = bench_arr.tab_short;
-    auto& tab_char    = bench_arr.tab_char;
-    auto& tab_long    = bench_arr.tab_long;
-    auto& tab_ulong   = bench_arr.tab_ulong;
+    auto& tab_int       = bench_arr.tab_int;
+    auto& tab_bool      = bench_arr.tab_bool;
+    auto& tab_bool_bits = bench_arr.tab_bool_bits;
+    auto& tab_complex   = bench_arr.tab_complex;
+    auto& tab_float     = bench_arr.tab_float;
+    auto& tab_short     = bench_arr.tab_short;
+    auto& tab_char      = bench_arr.tab_char;
+    auto& tab_long      = bench_arr.tab_long;
+    auto& tab_ulong     = bench_arr.tab_ulong;
 
 #pragma omp parallel
     {
@@ -92,8 +95,9 @@ void bench_phase_stress_dynamic(BenchArrays& bench_arr, [[maybe_unused]] Int gra
             tab_short[j] = 3 * second_value_s0;
             tab_char[j]  = 4 * second_value_c0;
 
-            tab_int[j]  = other_second_value_i;
-            tab_bool[j] = second_value_b;
+            tab_int[j]       = other_second_value_i;
+            tab_bool[j]      = second_value_b;
+            tab_bool_bits[j] = second_value_b;
 
             tab_complex[j] = other_second_value_c;
 

@@ -30,7 +30,6 @@
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED
 #include "chunk/internal/conditional_counter.h" // counter_value_t — resync_nb_val_eq_zero
-#include "chunk/internal/manager_chunk.h"
 #include "chunk/internal/map_helper.h"
 #include "chunk/internal/arithmetic_context.h"
 #include "chunk/internal/proxy_base.h"
@@ -41,6 +40,9 @@
 
 namespace shrink_array
 {
+
+template <template <typename> class CHUNK_T, typename T>
+class ManagerChunk;
 
 // ValueToInfMapHelper (with an "f" -- not to be confused with the real,
 // actively-used ValueToIntMapHelper in map_helper.h, referenced just below)

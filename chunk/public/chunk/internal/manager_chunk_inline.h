@@ -95,10 +95,6 @@ namespace shrink_array
 // Defined (once) in ManagerChunk.cpp. Declared here because flush_all_deferred's
 // body now lives in this header and is compiled in TUs that lack the definition.
 extern std::atomic<bool> __global_need_flush_deferred;
-// Defined in manager_chunk.cpp: CHUNK_BARRIER_FLUSH_LEGACY, read once at load.
-extern const bool g_barrier_flush_legacy;
-// Defined in manager_chunk.cpp: CHUNK_SERIAL_DRAIN_LEGACY, read once at load.
-extern const bool g_serial_drain_legacy;
 /**
  * @brief Compress every compressible chunk of this type, ignoring the candidate lists.
  *
@@ -431,7 +427,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
     // nested drain regions; only that flush may toggle it. When the in-region
     // flush toggled it too, 64 threads stored into one line at every barrier,
     // and a thread reading it mid-pass skipped its OWN flush.
-    const bool toggle_flag = !in_parallel || g_barrier_flush_legacy;
+    const bool toggle_flag = !in_parallel;
     if (toggle_flag)
         __global_need_flush_deferred.store(false, std::memory_order_relaxed);
     if (in_parallel)
@@ -444,7 +440,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
         // thread queued. A stale non-zero (a concurrent cross-rank drain) only
         // takes the locked path below. 6.3 M flush attempts at 64 threads,
         // none of which applied an op, is what this skips.
-        if (g_barrier_flush_legacy || CompressionManager<T, CHUNK_T<T>>::pending_ops_rank(thr_rank) != 0)
+        if (CompressionManager<T, CHUNK_T<T>>::pending_ops_rank(thr_rank) != 0)
             have_flushed |= CompressionManager<T, CHUNK_T<T>>::flush_deferred(thr_rank);
     }
     else
@@ -472,7 +468,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
             // keys and a "may hold ops" hint. Was: one fork/join of the whole
             // team per type and per pass regardless -- 92% of the run's
             // parallel regions at 64 threads.
-            if (!g_serial_drain_legacy && !CompressionManager<T, CHUNK_T<T>>::any_pending_ops())
+            if (!CompressionManager<T, CHUNK_T<T>>::any_pending_ops())
                 break;
 
             bool pass_flushed = false;
@@ -1214,23 +1210,6 @@ void ManagerChunk<CHUNK_T, T>::compute_size_max_number_of_chunk_to_check_compres
 
     int threshold = somme_chunk_create / (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS);
     threshold     = std::max(threshold, VariantDef::size_min_list_chunk_to_check_compress);
-
-    // TEMPORARY (CHUNK_THRESHOLD_TRACE=1): the inputs, alongside the result that
-    // set_size_max_number_of_chunk_to_check_compress() prints. somme_chunk_create
-    // is CUMULATIVE, so the threshold it feeds grows as the run proceeds -- worth
-    // seeing, since compression becoming rarer over time would follow from it.
-    if (std::getenv("CHUNK_THRESHOLD_TRACE") != nullptr)
-    {
-        std::fprintf(stderr,
-                     "[THRESHOLD] %-22s somme_create=%lld / (div=%d * thr=%d) = %d,"
-                     " floor=%d -> %d\n",
-                     type_name<T>().data(), (long long)somme_chunk_create, VariantDef::factor_div_nb_chunk_for_compress,
-                     CHUNK_PMP_MAX_THREADS,
-                     static_cast<int>(somme_chunk_create /
-                                      (VariantDef::factor_div_nb_chunk_for_compress * CHUNK_PMP_MAX_THREADS)),
-                     VariantDef::size_min_list_chunk_to_check_compress, threshold);
-        std::fflush(stderr);
-    }
 
     set_size_max_number_of_chunk_to_check_compress(threshold);
     if constexpr (build_config::debug_set_size)

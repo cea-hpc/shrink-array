@@ -59,7 +59,7 @@ class ManagerChunkInt;
  * forwards to the matching ManagerChunkInt virtual, so the semantics of each
  * one are those of the manager method it calls, applied to all types at once.
  *
- * Access is through `SingletonChk<AllTypeChunk>::getRef()`. The registry starts
+ * Access is through <tt>SingletonChk\<AllTypeChunk\>\::getRef()</tt>. The registry starts
  * empty and fills itself: the first array of each (chunk template, element
  * type) registers its manager from its create() (ensure_manager), once
  * ParamChunk::init_indexes() has published the block size. A program may also
@@ -67,9 +67,9 @@ class ManagerChunkInt;
  *
  * @note The available surface depends on the build, and the parts that vary
  *       live in the three policies above:
- *       ::AllTypeChunkParallelInterface picks the per-thread allocator and
+ *       AllTypeChunkParallelInterface picks the per-thread allocator and
  *       free-list methods over the single-allocator ones,
- *       ::AllTypeChunkDynInterface adds register_chunk_size().
+ *       AllTypeChunkDynInterface adds register_chunk_size().
  */
 // ===========================================================================
 // Build-dependent halves of the registry's surface.
@@ -144,6 +144,7 @@ struct AllTypeChunkParallelInterface<Derived, true>
      *        set from the registering thread, rank by rank (an allocator is a
      *        slot indexed by rank, not a thread-local; its slab comes at the
      *        rank's first allocation). Any thread, no parallel region.
+     * @param manager    The manager being registered.
      * @param block_size Number of chunks per allocation block.
      */
     void init_manager(ManagerChunkInt& manager, int block_size) const;
@@ -178,6 +179,7 @@ struct AllTypeChunkParallelInterface<Derived, false>
 
     /**
      * @brief The single allocator of ONE manager, at its registration.
+     * @param manager    The manager being registered.
      * @param block_size Number of chunks per allocation block.
      * @note No-op in std-alloc builds.
      */

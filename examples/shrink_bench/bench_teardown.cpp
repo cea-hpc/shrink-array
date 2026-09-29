@@ -38,18 +38,19 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     auto& tab4 = bench_arr.tab4;
     auto& tab5 = bench_arr.tab5;
 
-    auto& tab_int     = bench_arr.tab_int;
-    auto& tab_bool    = bench_arr.tab_bool;
-    auto& tab_complex = bench_arr.tab_complex;
-    auto& tab_float   = bench_arr.tab_float;
-    auto& tab_short   = bench_arr.tab_short;
-    auto& tab_char    = bench_arr.tab_char;
-    auto& tab_long    = bench_arr.tab_long;
-    auto& tab_ulong   = bench_arr.tab_ulong;
-    auto& tab_quant   = bench_arr.tab_quant;
-    auto& tab_point   = bench_arr.tab_point;
-    auto& tab_cell    = bench_arr.tab_cell;
-    auto& tab_mask    = bench_arr.tab_mask;
+    auto& tab_int       = bench_arr.tab_int;
+    auto& tab_bool      = bench_arr.tab_bool;
+    auto& tab_bool_bits = bench_arr.tab_bool_bits;
+    auto& tab_complex   = bench_arr.tab_complex;
+    auto& tab_float     = bench_arr.tab_float;
+    auto& tab_short     = bench_arr.tab_short;
+    auto& tab_char      = bench_arr.tab_char;
+    auto& tab_long      = bench_arr.tab_long;
+    auto& tab_ulong     = bench_arr.tab_ulong;
+    auto& tab_quant     = bench_arr.tab_quant;
+    auto& tab_point     = bench_arr.tab_point;
+    auto& tab_cell      = bench_arr.tab_cell;
+    auto& tab_mask      = bench_arr.tab_mask;
 
     [[maybe_unused]] auto& bench_arrays = bench_arr;
 
@@ -64,6 +65,7 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
 
     tab_int.clear();
     tab_bool.clear();
+    tab_bool_bits.clear();
 
     tab_complex.clear();
 
@@ -123,26 +125,13 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
         bench_phase_compress_all(bench_arrays);
     }
 
-    // No #ifdef: all three names below are declared unguarded (all_type_chunk.h
+    // No #ifdef: both names below are declared unguarded (all_type_chunk.h
     // and chunk_std.h) and defined in EVERY variant library -- the symbols are
     // in libchunk_vector.a too -- so the discarded branch both type-checks and
     // links in the std::vector build.
     if constexpr (chunk_config::is_shrink_enabled)
     {
-        // What do the pools hold at teardown, and under which geometry?
-        //
-        // The existing breakdown is only called from rechunk_to, so a run that
-        // never re-chunks prints nothing -- and the configuration that needs
-        // explaining does exactly that: v1 dyn at 64 threads reaches 51 GB with
-        // no re-chunk at all, and dyn@256 outweighs static@256 by 3.4 GB while
-        // every CHUNK_STATS counter matches to within 0.05%. Enable with
-        // CHUNK_POOL_BREAKDOWN=1.
-        // (Used to sit under #ifdef _OPENMP; the breakdown is built in every
-        // model, so a serial run can ask for it too.)
-        if (std::getenv("CHUNK_POOL_BREAKDOWN") != nullptr)
-            print_all_reuse_pool_breakdown("at teardown");
-
-        // No #ifdef _OPENMP either: since ChunkPoolParallelInterface
+        // No #ifdef _OPENMP: since ChunkPoolParallelInterface
         // (chunk_std.h) both verbs exist in every build, each a no-op in the
         // model where it has nothing to do -- so this pair is EXACTLY what ran
         // before on either side. Deliberately not release_chunk_pools(): that

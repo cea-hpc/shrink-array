@@ -29,7 +29,6 @@
 #include "chunk/internal/in_t.h"
 #include "chunk/config.h"
 #include "chunk/internal/crp_helper.h"
-#include "chunk/internal/manager_chunk.h"
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/internal/pointer_map_chunk2.h"
 #include "chunk/internal/concept_is_clean_assignement.h"
@@ -48,6 +47,9 @@
 
 namespace shrink_array
 {
+
+template <template <typename> class CHUNK_T, typename T>
+class ManagerChunk;
 
 template <typename T>
 class Chunk2;

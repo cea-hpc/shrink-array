@@ -47,7 +47,6 @@
 #include "bench_args.h"
 
 
-#include "crash_backtrace.h"          // TEMPORARY (SEGV hunt): native backtrace on crash
 #include "chunk/ring_log_debug.h"     // SEGV hunt: ring_init/analyze_ring_sweep decls
 #include "chunk/rechunk_decider.h"    // phase-3A: re-chunk decisions (acts in dyn builds only)
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
@@ -217,10 +216,6 @@ int main(int argc, char* argv[])
 
     // TSan tip: unbuffer stderr with setvbuf(stderr, nullptr, _IONBF, 0) so its
     // reports interleave correctly with ours.
-
-    // TEMPORARY (SEGV hunt): print a native backtrace of the faulting thread on
-    // crash, since ulimit -c is locked and gdb masks the race. Remove once fixed.
-    install_crash_backtrace();
 
     // Command-line parsing: moved to bench_args.cpp.
     const BenchArgs bench_args      = parse_bench_args(argc, argv);
@@ -490,6 +485,11 @@ int main(int argc, char* argv[])
     // (bench_array.h says why): one alias, where four declarations under
     // #if defined CHUNK / CHUNK2 / CHUNK2A stood.
     BenchBoolArray tab_bool(sz);
+    // tab_bool's twin, written with the same values at the same places:
+    // ArrayChunkBits (8 bools per byte) in a chunk2 build, tab_bool's own type
+    // elsewhere (BenchBoolBitsArray). Compare the two in the stats, the
+    // chunk filling rates and the pools of a single run.
+    BenchBoolBitsArray tab_bool_bits(sz);
 
     // Large and mostly NOT constant: random masks and scattered flags between
     // whole constant segments (bench_phase_mask.cpp). ArrayChunkBits in a
@@ -513,11 +513,12 @@ int main(int argc, char* argv[])
     if (!no_mask)
         std::cout << "tab_mask: " << mask_sz << " elements (--mask_scale " << mask_scale << ")\n";
 
-    // Handle on the fifteen arrays, passed to the extracted phases. References,
+    // Handle on the eighteen arrays, passed to the extracted phases. References,
     // so main() stays the owner -- it builds them and destroys them.
-    BenchArrays bench_arrays{tab1,        tab2,      tab3,      tab4,     tab5,     tab_int,    tab_bool,
-                             tab_complex, tab_float, tab_short, tab_char, tab_long, tab_ulong,  tab_quant,
-                             tab_point,   tab_cell,  tab_mask,  sz,       interval, !no_struct, !no_mask};
+    BenchArrays bench_arrays{tab1,     tab2,          tab3,        tab4,      tab5,      tab_int,
+                             tab_bool, tab_bool_bits, tab_complex, tab_float, tab_short, tab_char,
+                             tab_long, tab_ulong,     tab_quant,   tab_point, tab_cell,  tab_mask,
+                             sz,       interval,      !no_struct,  !no_mask};
 
     SingletonChk<GlobalStatsChunkList>::getRef().print();
 
@@ -688,8 +689,9 @@ int main(int argc, char* argv[])
             // only the five arrays above were, and the other ten stayed at the
             // starting S=64 for the whole run (~12.5 GB at the end).
             // SHRINK_BENCH_ADVISE_ALL=0 goes back to the five, for runs that
-            // must compare with earlier campaigns. tab_bool excepted: the
-            // re-chunk of a bit-packed bool array has no validation harness yet.
+            // must compare with earlier campaigns. tab_bool and tab_bool_bits
+            // excepted: both stay at their birth geometry, so the two bool
+            // containers are compared as they are, not after a re-chunk.
             static const bool advise_all = []
             {
                 const char* e = std::getenv("SHRINK_BENCH_ADVISE_ALL");
@@ -762,7 +764,7 @@ int main(int argc, char* argv[])
         // defined in every build of the library, so the guard need not be a
         // directive: the discarded branch still links.
         if constexpr (chunk_config::ring_log_debug)
-            shrink_array::ring_init();
+            ring_init();
 
         const Int size   = tab_size[k];
         const Int start0 = tab_start[k];
@@ -874,7 +876,7 @@ int main(int argc, char* argv[])
             const auto r0 = static_cast<std::size_t>(std::max<Int>(start0 / 4, 0)) + 3;
             const auto r1 = std::min(r0 + 1029, static_cast<std::size_t>(sz));
 
-            // DO NOT strip the shrink_array:: below: this file's `using
+            // DO NOT strip the  below: this file's `using
             // namespace shrink_array` is itself under #ifdef SHRINK_ARRAY, so it
             // is absent from the std::vector baseline build, where
             // assume_drained would then be invisible (ADL does not apply to a
@@ -890,6 +892,7 @@ int main(int argc, char* argv[])
             fill_range(tab3, r0, r1, 2.5, assume_drained);
             fill_range(tab_int, r0, r1, second_value_i, assume_drained);
             fill_range(tab_bool, r0, r1, true, assume_drained);
+            fill_range(tab_bool_bits, r0, r1, true, assume_drained);
 
             // Copies from a plain vector: one dense, one mostly the second value
             // (so the copy lands on chunks that compress right after).

@@ -36,12 +36,16 @@ using complex_double = std::complex<double>;
 #include "chunk/internal/chunk_stats.h"       // increm_chunk_write (CHUNK_STATS)
 #include "chunk/internal/conditional_counter.h"
 #include "chunk/internal/proxy.h"
-#include "chunk/internal/manager_chunk.h"       // ManagerChunk<Chunk, T>
-#include "chunk/internal/compression_manager.h" // CompressionManager
 
 namespace shrink_array
 {
+// Forward declaration: only named here, in contexts that depend on T. The
+// definition (chunk/internal/compression_manager.h) comes with the _inline tails.
+template <typename T, typename ChunkType>
+class CompressionManager;
 
+template <template <typename> class CHUNK_T, typename T>
+class ManagerChunk;
 
 /// @brief The per-type facade these verbs drive. Forward-declared, not included:
 ///        chunk_std.h sits inside the chunk_func.h -> chunk_std.h -> proxy.h ->
@@ -65,7 +69,7 @@ class AllTypeChunk;
  *                 true> declares clear_list_block_free_thr() and
  *                 delete_list_block_chunk_free_itself(), <Derived, false>
  *                 declares delete_chunk_allocator(), and neither declares the
- *                 other's. That asymmetry is what the #ifdef _OPENMP in
+ *                 other's. That asymmetry is what the \#ifdef _OPENMP in
  *                 chunk_std.cpp used to paper over.
  *
  * @note EVERY verb exists in BOTH specialisations, so a caller needs no build
@@ -94,7 +98,7 @@ struct ChunkPoolParallelInterface<true, AllT>
     static void delete_list_block_chunk_free_itself();
     /// @brief No-op here: an OpenMP build has no single allocator to delete, it
     ///        releases through the per-rank pair above. Present so callers need
-    ///        no `#ifdef _OPENMP`.
+    ///        no <tt>\#ifdef _OPENMP</tt>.
     static void delete_chunk_allocator() {}
     /// @copydoc shrink_array::release_chunk_pools
     static void release_chunk_pools();
@@ -153,7 +157,6 @@ extern bool need_load_balance_list_block_free();
  */
 extern void release_chunk_pools();
 
-
 /**
  * @brief Per-chunk zero-counter, the serial path's compression trigger.
  *
@@ -211,7 +214,6 @@ struct ChunkCounterPolicy
         return nb_val_eq_zero == size;
     }
 };
-
 
 /**
  * @brief Chunk's OpenMP-only surface: per-thread allocation, CAS and clearing.
@@ -319,6 +321,8 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
     /// @brief Release this chunk's buffer to @p thr_rank's reuse list WITHOUT
     ///        counting a compression -- the re-chunk rebuild releasing an old
     ///        chunk once copied (clear_st = count + release_st).
+    /// @param thr_rank      rank whose reuse list receives the buffer
+    /// @param n_elems       element count of this chunk (its array's geometry)
     /// @param count_release count it as a release (CHUNK_STATS `released`);
     ///        clear_st passes false, having counted a compression instead
     void release_st(int thr_rank, unsigned int n_elems, bool count_release = true);

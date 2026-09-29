@@ -37,7 +37,6 @@
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 #include "chunk/internal/proxy_operators.h"
-#include "chunk/internal/compression_manager.h"
 #include "chunk/internal/tab_cst_val2_holder.h" // TabCstVal2Holder (CHUNK_CST_VAL2_NO_ARRAYS)
 #include "chunk/internal/relaxed_element.h"     // store_value: Chunk2A's relaxed element stores
 #include "chunk/internal/concept_is_clean_assignement.h"
@@ -46,6 +45,10 @@
 
 namespace shrink_array
 {
+// Forward declaration: only named here, in contexts that depend on T. The
+// definition (chunk/internal/compression_manager.h) comes with the _inline tails.
+template <typename T, typename ChunkType>
+class CompressionManager;
 
 template <typename T>
 struct ArithmeticProxyContext;
@@ -56,7 +59,7 @@ struct ArithmeticOperationProxyContext;
 template <typename T>
 class Proxy;
 
-/// @brief Whether T is a Proxy<U> (Proxy2 and Proxy2A are not): false by default.
+/// @brief Whether T is a Proxy\<U\> (Proxy2 and Proxy2A are not): false by default.
 template <typename T>
 struct is_simple_proxy : std::false_type
 {
@@ -68,7 +71,7 @@ struct is_simple_proxy<Proxy<T>> : std::true_type
 {
 };
 /**
- * @brief The compression-bookkeeping half of ::ProxyBase.
+ * @brief The compression-bookkeeping half of ProxyBase.
  *
  * @tparam Derived The concrete proxy (CRTP).
  * @tparam T Element type.
@@ -186,7 +189,7 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
 };
 
 /**
- * @brief ::ProxyBaseFastCompPolicy with fast block compression compiled out.
+ * @brief ProxyBaseFastCompPolicy with fast block compression compiled out.
  *
  * @details Keeps the member NAMES so ProxyBase's `using` declarations still
  *          resolve, but the entry points abort. Reaching one means a caller
@@ -207,9 +210,9 @@ struct ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSuppor
     ///       unconditionally, because the call site is shared with variants
     ///       that do need it.
     static void resize_tab_is_int([[maybe_unused]] int nb_tab) noexcept {}
-    /// @copydoc resize_tab_is_int(int)
+    /// @brief No candidate flags in this configuration; nothing to size.
     static void resize_tab_is_int([[maybe_unused]] int num_tab, [[maybe_unused]] int nb_chunk) noexcept {}
-    /// @copydoc resize_tab_is_int(int)
+    /// @brief No candidate flags in this configuration; nothing to release.
     static void release_tab_is_int([[maybe_unused]] int num_tab) noexcept {}
 
     /// @brief Never callable in this configuration. Aborts.
@@ -699,6 +702,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief Pin the chunk geometry a deferred write must be replayed with.
     /// @param sz Element count per chunk at enqueue time; 0 means "not armed",
     ///        and chunk_size() then reads the live geometry instead.
+    /// @param key Allocator affinity key at enqueue time (0: shared pool).
     /// @details Without this, replay would read the geometry through
     ///          #ptr_on_array -- which a re-chunk may have freed by then.
     void set_chunk_size_frozen(unsigned int sz, unsigned int key = 0) const noexcept
@@ -726,7 +730,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        compressed, or reallocate under the proxy.
     T* operator&() = delete;
 
-    /// @copydoc operator&()
+    /// @brief Deleted, as the non-const overload: no stable address to take.
     const T* operator&() const = delete;
 
     /// @brief Copying a proxy is fine: it rebinds to the same element.

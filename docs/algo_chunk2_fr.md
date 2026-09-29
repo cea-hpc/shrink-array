@@ -111,7 +111,7 @@ valeur déclarée, repéré par un **indice** `ind`.
 ### 4.2 Le registre des secondes valeurs
 
 La seconde valeur **n'est pas stockée dans le tableau** : elle vit dans le registre partagé
-`Proxy2<T>::share_info_array`, indexé par l'**adresse** du tableau. Chaque entrée est un
+<tt>Proxy2\<T\>\::share_info_array</tt>, indexé par l'**adresse** du tableau. Chaque entrée est un
 triplet `inf_array_t` :
 
 ```
@@ -129,8 +129,6 @@ L'`operator[]` d'écriture **arme chaque proxy avec l'adresse de ce miroir**
 (`registry_mirror()`, `arm_inf_array()`) : le chemin d'écriture copie le triplet au lieu de
 chercher dans le registre. En build de vérification (`any_check`), chaque lecture du miroir
 est comparée au registre.
-
-`CHUNK_PROXY2_ARM_LEGACY=1` désactive cet armement (retour à la recherche dans le registre).
 
 ---
 
@@ -437,7 +435,7 @@ décision du **décideur** (`ChunkSizeAdvisor::analyze`, qui estime la mémoire 
    qui l'avait rendu uniforme restait alors matérialisé pendant la reconstruction, était
    recopié au lieu d'être replié, et n'était jamais remis en file. Mesuré sur
    `rechunk_validation` (1 thread) : Chunk2, 0 → 2 408 chunks repliés et 7 107 → 4 701 restés
-   matérialisés ; `CHUNK_RECHUNK_DROP_LEGACY=1` rétablit le simple retrait ;
+   matérialisés ;
 2. vider les listes de réutilisation et préparer les réserves à la nouvelle taille ;
 3. construire un **tableau temporaire** à la nouvelle taille (initialisation des chunks en
    parallèle) ;
@@ -536,16 +534,11 @@ Chunk2 :
 |---|---|
 | `CHUNK_RECHUNK_SCHEDULE=kind[,chunk]` | ordonnancement de la reconstruction du rechunk (`guided,16` par défaut) |
 | `CHUNK_RECHUNK_TRACE=1` | temps des phases du rechunk, repliements |
-| `CHUNK_PROXY2_ARM_LEGACY=1` | désactive l'armement du proxy par le miroir du registre |
 | `CHUNK_PROXY2_ACQ_FENCE=1` | rétablit les barrières d'acquisition après la lecture du registre (désactivées par défaut) |
-| `CHUNK_BARRIER_FLUSH_LEGACY=1` | ancien vidage des opérations différées aux barrières |
-| `CHUNK_SERIAL_DRAIN_LEGACY=1` | ancien vidage en série en fin de région |
 | `CHUNK_OMPT_STATS=1` | statistiques des régions de synchronisation (build OMPT) |
-| `CHUNK_RECHUNK_DROP_LEGACY=1` | au rechunk, retire les candidats du tableau sans les compresser d'abord (ancien comportement) |
 | `CHUNK_RECHUNK_DRY_RUN=1` | le décideur analyse et journalise, mais n'applique aucun rechunk (mesurer le coût des analyses) |
 | `CHUNK_RECHUNK_MAX_COARSEN=<n>` | facteur maximal d'un grossissement (4 par défaut) |
 | `CHUNK_ALLOC_AFFINITY_EAGER=1` | jeu d'allocateurs par tableau dès sa création (paresseux par défaut pour Chunk2) |
-| `CHUNK_THRESHOLD_TEARDOWN_LEGACY=1` | ne pas recalculer les seuils de compression à la destruction d'un stockage (ancien comportement) |
 
 Option de compilation utile pour la validation : `CHUNK_FORCE_DEFER_EVERY=N` force une
 écriture sur N à passer par le chemin différé (à utiliser à 32 threads au plus).

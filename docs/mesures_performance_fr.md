@@ -94,9 +94,6 @@ dans des répertoires neufs avec la même configuration, alterner, et se méfier
 | sans advisor / analyses seules / avec rechunks | `CHUNK_ADVISOR_PERIOD=0` / `CHUNK_RECHUNK_DRY_RUN=1` / rien |
 | affinité paresseuse / immédiate | `CHUNK_ALLOC_AFFINITY_EAGER=0` / `=1` |
 | taille maximale d'un pas de grossissement | `CHUNK_RECHUNK_MAX_COARSEN=<n>` |
-| recalcul des seuils à la destruction | `CHUNK_THRESHOLD_TEARDOWN_LEGACY=1` |
-| installation directe des constantes (Chunk2A) | `CHUNK_RECHUNK_INSTALL_LEGACY=1` |
-| compression des candidats avant un rechunk | `CHUNK_RECHUNK_DROP_LEGACY=1` |
 | ordonnancement de la reconstruction | `CHUNK_RECHUNK_SCHEDULE=…` |
 
 La liste complète est dans [`variables_environnement_fr.md`](variables_environnement_fr.md).

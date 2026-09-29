@@ -26,19 +26,19 @@
  * so a thousand chunks holding the same constant cost one array between them.
  *
  * Three pieces:
- *  - ::Segment is a block of 64 slots. The registry is a chain of them rather
+ *  - Segment is a block of 64 slots. The registry is a chain of them rather
  *    than a growable array, so registering a new value never invalidates a
  *    pointer another thread is holding.
- *  - ::GlobalVecHolder owns that chain, one instance per element type, plus the
+ *  - GlobalVecHolder owns that chain, one instance per element type, plus the
  *    hash index that makes a lookup O(1) and the lock that serialises appends.
- *  - ::TabCstVal2Holder is the per-array handle: it caches the pointer its
+ *  - TabCstVal2Holder is the per-array handle: it caches the pointer its
  *    chunks currently use and owns the allocation strategy.
  *
  * @par Two paths, and only one of them takes a lock
  * Registering a value that is ALREADY known -- every type-2 chunk after the
- * first one per value -- is a lock-free probe of ::GlobalVecHolder::index_.
+ * first one per value -- is a lock-free probe of GlobalVecHolder::index_.
  * Only a genuinely new value, or an index miss, takes
- * ::GlobalVecHolder::insert_mutex, under which the whole find-or-append is
+ * GlobalVecHolder::insert_mutex, under which the whole find-or-append is
  * plain sequential code.
  *
  * @warning One ordering is load-bearing and not checked at run time: an
@@ -210,7 +210,7 @@ struct Sentinel
  *
  * @tparam T Element type. One instance per type, all members static.
  *
- * @details Owns the ::Segment chain, the hash index over it, and the lock that
+ * @details Owns the Segment chain, the hash index over it, and the lock that
  *          serialises appends. Lives for the whole run: arrays registered here
  *          are shared by every Chunk2A that compressed to that value, so they
  *          cannot be freed while any of them is alive. #ref_count tracks that.
@@ -707,7 +707,7 @@ struct GlobalVecHolder
      * @brief Register one more user of this type's registry, creating it if new.
      * @details Idempotent: the first segment is installed once, by whichever
      *          caller wins the CAS. Also what arranges teardown, through the
-     *          function-local ::Sentinel.
+     *          function-local Sentinel.
      */
     static void init()
     {
@@ -819,7 +819,7 @@ struct GlobalVecHolder
 
     /**
      * @brief Free everything unconditionally, ignoring #ref_count.
-     * @warning Teardown only -- ::Sentinel calls it at static destruction. It
+     * @warning Teardown only -- the Sentinel calls it at static destruction. It
      *          does not reinstall an empty segment, so #head is left null and
      *          the registry is unusable afterwards.
      */
@@ -850,7 +850,7 @@ struct GlobalVecHolder
  * @tparam T Element type.
  *
  * @details Stateless: everything is static and delegates to
- *          ::GlobalVecHolder. This type is the surface the compression path
+ *          GlobalVecHolder. This type is the surface the compression path
  *          talks to, and the place the allocation strategy lives. It used to
  *          carry one pointer per chunk (the array the chunk read from, for
  *          `values == cached_ptr`); the arrays now live in one region per T
@@ -1174,7 +1174,7 @@ struct TabCstVal2Holder
 };
 
 /**
- * @brief ::TabCstVal2Holder for bool, where the whole registry collapses.
+ * @brief TabCstVal2Holder for bool, where the whole registry collapses.
  *
  * @details A bool has exactly one value that is not the first constant, so
  *          there is nothing to register, look up, share or free: a single

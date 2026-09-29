@@ -22,7 +22,6 @@
 // of the container declaration itself.
 #include "chunk/internal/array_chunk2_rechunk_hooks.h"
 #include "chunk/internal/manager_chunk.h" // manager_type — candidate store + reuse free-lists
-#include <cstdlib>                        // std::getenv (CHUNK_RECHUNK_DROP_LEGACY)
 #include <tuple>                          // std::get on candidate tuples
 #include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h"                  // get_thr_rank_fast
@@ -30,23 +29,6 @@
 
 namespace shrink_array
 {
-
-// Defined in each variant's hooks file, guarded: a TU that includes several
-// variants must see a single definition.
-#ifndef SHRINK_ARRAY_RECHUNK_DROP_LEGACY_DEFINED
-    #define SHRINK_ARRAY_RECHUNK_DROP_LEGACY_DEFINED
-namespace internal
-{
-/// A/B switch: CHUNK_RECHUNK_DROP_LEGACY=1 (read once) makes
-/// rechunk_drop_candidates() drop the array's candidates WITHOUT compressing
-/// them first -- the behaviour before Sept '26.
-inline const bool g_rechunk_drop_legacy = []
-{
-    const char* env = std::getenv("CHUNK_RECHUNK_DROP_LEGACY");
-    return env != nullptr && env[0] != '\0' && env[0] != '0';
-}();
-} // namespace internal
-#endif
 
 template <typename Derived>
 void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
@@ -64,21 +46,18 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
         const int num_tab = proxy_type::share_info_array.get_num_tab(self().registry_key());
         if constexpr (Derived::is_not_bool && build_config::use_openmp)
         {
-            if (!internal::g_rechunk_drop_legacy)
-            {
-                const auto inf = self().get_info_second_value();
-                const int  thr = get_thr_rank_fast();
-                shrink_array::set_thread_chunk_size(self().size_policy_.size());
-                for (const auto& per_rank : manager_type::map_chunk2_to_compress_potentially_thr)
-                    for (const auto& kv : per_rank)
-                    {
-                        if (!kv.second)
-                            continue;
-                        for (auto& tup : *kv.second)
-                            if (std::get<2>(tup) == num_tab)
-                                std::get<0>(tup)->compress(thr, inf, /*apply=*/true, std::get<3>(tup).count());
-                    }
-            }
+            const auto inf = self().get_info_second_value();
+            const int  thr = get_thr_rank_fast();
+            shrink_array::set_thread_chunk_size(self().size_policy_.size());
+            for (const auto& per_rank : manager_type::map_chunk2_to_compress_potentially_thr)
+                for (const auto& kv : per_rank)
+                {
+                    if (!kv.second)
+                        continue;
+                    for (auto& tup : *kv.second)
+                        if (std::get<2>(tup) == num_tab)
+                            std::get<0>(tup)->compress(thr, inf, /*apply=*/true, std::get<3>(tup).count());
+                }
         }
         manager_type::remove_from_compress_list_chunk2_by_num_tab(num_tab);
     }

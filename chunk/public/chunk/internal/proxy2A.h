@@ -40,14 +40,18 @@
 #include "chunk/internal/proxy2A_meta_bases.h"  // Proxy2AMetaBases
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 #include "chunk/internal/TChunk.h"
-#include "chunk/internal/manager_chunk.h"
-#include "chunk/internal/compression_manager.h"
 #include "chunk/internal/proxy_base.h"
 #include "chunk/internal/proxy2_base.h"
 
 namespace shrink_array
 {
+// Forward declaration: only named here, in contexts that depend on T. The
+// definition (chunk/internal/compression_manager.h) comes with the _inline tails.
+template <typename T, typename ChunkType>
+class CompressionManager;
 
+template <template <typename> class CHUNK_T, typename T>
+class ManagerChunk;
 
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
@@ -368,6 +372,7 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
     /*!
      * \brief Resizes the number of chunks in a specific tab and initializes values to zero.
      * \param nb_tab Index of the tab to resize.
+     * \param nb_chunk_old Number of chunks before the resize.
      * \param nb_chunk New number of chunks in the tab.
      */
 
@@ -602,15 +607,7 @@ struct Proxy2AFastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2A<
  * @tparam T stored element type
  */
 
-/// A/B switch: CHUNK_PROXY2A_MARK_LEGACY=1 (read once, at load) disables the
-/// "could become uniform" filter of Proxy2A::should_mark_for_compression().
-inline const bool g_proxy2a_mark_legacy = []
-{
-    const char* env = std::getenv("CHUNK_PROXY2A_MARK_LEGACY");
-    return env != nullptr && env[0] != '\0' && env[0] != '0';
-}();
-
-/// @brief Proxy to one element of a Chunk2A<T> chunk (see the class description above g_proxy2a_mark_legacy).
+/// @brief Proxy to one element of a Chunk2A<T> chunk (see the class description above).
 /// @tparam T Element type.
 template <typename T>
 class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_config::use_fast_block_compression>
@@ -899,8 +896,6 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         const bool leave    = (second_value != first_value && old_value == second_value && new_value != second_value);
         if (!discover && !leave)
             return false;
-        if (g_proxy2a_mark_legacy)
-            return true;
         if constexpr (chunk_config::use_fast_block_compression)
         {
             // Already queued: add_to_compression_list() is a no-op, exactly as

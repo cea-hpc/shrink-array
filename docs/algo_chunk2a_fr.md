@@ -95,8 +95,7 @@ Ces deux cas sont filtrés par une **condition nécessaire** (`may_become_unifor
 autres éléments du chunk (le premier et le dernier, ou leurs voisins si l'un d'eux est
 l'élément écrit) contiennent déjà la valeur écrite. Sans ce filtre, un chunk de données variées
 était mis en liste, relu, trouvé non uniforme, retiré, puis remis en liste par l'écriture
-suivante : ~3 µs par écriture sur `chunk2a_256` à 64 threads. `CHUNK_PROXY2A_MARK_LEGACY=1`
-désactive le filtre.
+suivante : ~3 µs par écriture sur `chunk2a_256` à 64 threads.
 
 ## 5. La passe de compression
 
@@ -137,8 +136,7 @@ trois particularités :
 - **l'installation directe des constantes** : un nouveau chunk dont toutes les sources sont à
   la **même** seconde valeur la reçoit directement (enregistrement dans le registre, type 1,
   emplacement de seconde valeur), sans tampon ni copie. La phase de remplissage passe de 35 à
-  5 ms, et on évite jusqu'à 640 Mo de pages touchées par tableau. `CHUNK_RECHUNK_INSTALL_LEGACY=1`
-  revient à la copie suivie d'un repliement ;
+  5 ms, et on évite jusqu'à 640 Mo de pages touchées par tableau ;
 - **l'affinité paresseuse** par défaut : un tableau n'a ses propres slabs qu'à son premier
   rechunk, ce qui fait démarrer un run dynamique exactement comme le statique à la même taille.
 

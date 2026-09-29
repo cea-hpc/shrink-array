@@ -39,14 +39,15 @@ void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int i)
     auto& tab4 = bench_arr.tab4;
     auto& tab5 = bench_arr.tab5;
 
-    auto& tab_int     = bench_arr.tab_int;
-    auto& tab_bool    = bench_arr.tab_bool;
-    auto& tab_complex = bench_arr.tab_complex;
-    auto& tab_float   = bench_arr.tab_float;
-    auto& tab_short   = bench_arr.tab_short;
-    auto& tab_char    = bench_arr.tab_char;
-    auto& tab_long    = bench_arr.tab_long;
-    auto& tab_ulong   = bench_arr.tab_ulong;
+    auto& tab_int       = bench_arr.tab_int;
+    auto& tab_bool      = bench_arr.tab_bool;
+    auto& tab_bool_bits = bench_arr.tab_bool_bits;
+    auto& tab_complex   = bench_arr.tab_complex;
+    auto& tab_float     = bench_arr.tab_float;
+    auto& tab_short     = bench_arr.tab_short;
+    auto& tab_char      = bench_arr.tab_char;
+    auto& tab_long      = bench_arr.tab_long;
+    auto& tab_ulong     = bench_arr.tab_ulong;
 
 #pragma omp parallel
     {
@@ -64,8 +65,9 @@ void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int i)
             tab_char[j]  = 0;
             tab_short[j] = 0;
 
-            tab_int[j]  = 0;
-            tab_bool[j] = false;
+            tab_int[j]       = 0;
+            tab_bool[j]      = false;
+            tab_bool_bits[j] = false;
 
             tab_complex[j] = zero_complex;
 
@@ -88,14 +90,15 @@ void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int i)
     auto& tab4 = bench_arr.tab4;
     auto& tab5 = bench_arr.tab5;
 
-    auto& tab_int     = bench_arr.tab_int;
-    auto& tab_bool    = bench_arr.tab_bool;
-    auto& tab_complex = bench_arr.tab_complex;
-    auto& tab_float   = bench_arr.tab_float;
-    auto& tab_short   = bench_arr.tab_short;
-    auto& tab_char    = bench_arr.tab_char;
-    auto& tab_long    = bench_arr.tab_long;
-    auto& tab_ulong   = bench_arr.tab_ulong;
+    auto& tab_int       = bench_arr.tab_int;
+    auto& tab_bool      = bench_arr.tab_bool;
+    auto& tab_bool_bits = bench_arr.tab_bool_bits;
+    auto& tab_complex   = bench_arr.tab_complex;
+    auto& tab_float     = bench_arr.tab_float;
+    auto& tab_short     = bench_arr.tab_short;
+    auto& tab_char      = bench_arr.tab_char;
+    auto& tab_long      = bench_arr.tab_long;
+    auto& tab_ulong     = bench_arr.tab_ulong;
 
 #pragma omp parallel
     {
@@ -115,8 +118,9 @@ void bench_phase_range_b(BenchArrays& bench_arr, Int beg, Int i)
             tab_short[j] = second_value_s1;
             tab_char[j]  = second_value_c1;
 
-            tab_int[j]  = second_value_i;
-            tab_bool[j] = second_value_b;
+            tab_int[j]       = second_value_i;
+            tab_bool[j]      = second_value_b;
+            tab_bool_bits[j] = second_value_b;
 
             tab_complex[j] = second_value_c;
 
@@ -139,14 +143,15 @@ void bench_phase_range_c(BenchArrays& bench_arr, Int beg, Int seg_end)
     auto& tab4 = bench_arr.tab4;
     auto& tab5 = bench_arr.tab5;
 
-    auto& tab_int     = bench_arr.tab_int;
-    auto& tab_bool    = bench_arr.tab_bool;
-    auto& tab_complex = bench_arr.tab_complex;
-    auto& tab_float   = bench_arr.tab_float;
-    auto& tab_short   = bench_arr.tab_short;
-    auto& tab_char    = bench_arr.tab_char;
-    auto& tab_long    = bench_arr.tab_long;
-    auto& tab_ulong   = bench_arr.tab_ulong;
+    auto& tab_int       = bench_arr.tab_int;
+    auto& tab_bool      = bench_arr.tab_bool;
+    auto& tab_bool_bits = bench_arr.tab_bool_bits;
+    auto& tab_complex   = bench_arr.tab_complex;
+    auto& tab_float     = bench_arr.tab_float;
+    auto& tab_short     = bench_arr.tab_short;
+    auto& tab_char      = bench_arr.tab_char;
+    auto& tab_long      = bench_arr.tab_long;
+    auto& tab_ulong     = bench_arr.tab_ulong;
 
 #pragma omp parallel
     {
@@ -165,8 +170,9 @@ void bench_phase_range_c(BenchArrays& bench_arr, Int beg, Int seg_end)
             tab_short[j] = 3 * second_value_s0;
             tab_char[j]  = 4 * second_value_c0;
 
-            tab_int[j]  = other_second_value_i;
-            tab_bool[j] = second_value_b;
+            tab_int[j]       = other_second_value_i;
+            tab_bool[j]      = second_value_b;
+            tab_bool_bits[j] = second_value_b;
 
             tab_complex[j] = other_second_value_c;
 
@@ -189,14 +195,15 @@ void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end)
     auto& tab4 = bench_arr.tab4;
     auto& tab5 = bench_arr.tab5;
 
-    auto& tab_int     = bench_arr.tab_int;
-    auto& tab_bool    = bench_arr.tab_bool;
-    auto& tab_complex = bench_arr.tab_complex;
-    auto& tab_float   = bench_arr.tab_float;
-    auto& tab_short   = bench_arr.tab_short;
-    auto& tab_char    = bench_arr.tab_char;
-    auto& tab_long    = bench_arr.tab_long;
-    auto& tab_ulong   = bench_arr.tab_ulong;
+    auto& tab_int       = bench_arr.tab_int;
+    auto& tab_bool      = bench_arr.tab_bool;
+    auto& tab_bool_bits = bench_arr.tab_bool_bits;
+    auto& tab_complex   = bench_arr.tab_complex;
+    auto& tab_float     = bench_arr.tab_float;
+    auto& tab_short     = bench_arr.tab_short;
+    auto& tab_char      = bench_arr.tab_char;
+    auto& tab_long      = bench_arr.tab_long;
+    auto& tab_ulong     = bench_arr.tab_ulong;
 
 #pragma omp parallel
     {
@@ -214,8 +221,9 @@ void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end)
             tab_short[j] = 3 * second_value_s0;
             tab_char[j]  = 4 * second_value_c0;
 
-            tab_int[j]  = second_value_i;
-            tab_bool[j] = second_value_b;
+            tab_int[j]       = second_value_i;
+            tab_bool[j]      = second_value_b;
+            tab_bool_bits[j] = second_value_b;
 
             tab_complex[j] = second_value_c;
 
@@ -309,14 +317,15 @@ void bench_phase_raz_sweep(BenchArrays& bench_arr, Int k, Int size, Int start0, 
 
 void bench_phase_range_mt(BenchArrays& bench_arr, Int k, Int beg_s, Int end_s)
 {
-    auto& tab1        = bench_arr.tab1;
-    auto& tab2        = bench_arr.tab2;
-    auto& tab3        = bench_arr.tab3;
-    auto& tab_int     = bench_arr.tab_int;
-    auto& tab_bool    = bench_arr.tab_bool;
-    auto& tab_complex = bench_arr.tab_complex;
-    auto& tab_float   = bench_arr.tab_float;
-    auto& tab_long    = bench_arr.tab_long;
+    auto& tab1          = bench_arr.tab1;
+    auto& tab2          = bench_arr.tab2;
+    auto& tab3          = bench_arr.tab3;
+    auto& tab_int       = bench_arr.tab_int;
+    auto& tab_bool      = bench_arr.tab_bool;
+    auto& tab_bool_bits = bench_arr.tab_bool_bits;
+    auto& tab_complex   = bench_arr.tab_complex;
+    auto& tab_float     = bench_arr.tab_float;
+    auto& tab_long      = bench_arr.tab_long;
 
     if (end_s <= beg_s)
         return;
@@ -348,9 +357,11 @@ void bench_phase_range_mt(BenchArrays& bench_arr, Int k, Int beg_s, Int end_s)
             shrink_array::fill_range_mt(tab_float, lo, hi, swap ? second_value_f1 : second_value_f0);
             shrink_array::fill_range_mt(tab_long, lo, hi, swap ? 0L : second_value_l);
             shrink_array::fill_range_mt(tab_complex, lo, hi, swap ? zero_complex : second_value_c);
-            // bool: the element path on every variant (bit-packed chunks); the
-            // baseline's tab_bool is a std::vector<short>.
+            // bool: the element path on every variant; tab_bool_bits is
+            // bit-packed in a chunk2 build. The baseline's two are
+            // std::vector<short>.
             shrink_array::fill_range_mt(tab_bool, lo, hi, !swap);
+            shrink_array::fill_range_mt(tab_bool_bits, lo, hi, !swap);
         }
 
         finalize_parallel_phase_only_flush_g();

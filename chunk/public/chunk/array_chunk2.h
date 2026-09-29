@@ -523,7 +523,6 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
         }
     }
 
-  public:
   private:
     /// Index of the second value in the shared value table;
     /// chunk_config::no_second_value_index until set_second_value().

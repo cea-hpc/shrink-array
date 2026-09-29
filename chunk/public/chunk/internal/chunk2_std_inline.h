@@ -909,7 +909,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr_r
  * @param need_set_second_value Which constant the block was filled with.
  *
  * @warning The CAS exists ONLY on the fast-block-compression policy: in a
- *          SERIAL build FastCompPolicy is the <false> specialisation, which has
+ *          SERIAL build FastCompPolicy is the \<false\> specialisation, which has
  *          no compare_and_swap at all. So the lambda naming it must stay INSIDE
  *          the `if constexpr (use_fast_block_compression)` branch below -- a
  *          discarded branch is not instantiated. Passing that lambda in from
@@ -1153,9 +1153,9 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::block_clear(int num_compress_value, i
     Base::block_clear_common(num_compress_value, ind, thr_rank);
 }
 
-/// @copydoc Chunk2OmpPolicy::block_clear
 /// Serial build: frees the buffer outright instead of parking it in a rank
-/// pool, and resets the per-chunk element counters.
+/// pool, and resets the per-chunk element counters. The rank argument is
+/// unused (documented with the declaration).
 template <typename T, typename Derived>
 void Chunk2OmpPolicy<T, Derived, false>::block_clear(this Derived& self, int num_compress_value, int ind, int)
 {

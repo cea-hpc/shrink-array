@@ -106,7 +106,7 @@ inline constexpr bool cst_val2_no_arrays = true;
 /// is not dependent on the enclosing template's parameters, so it is looked up
 /// when that template is DEFINED, discarded branch or not (gcc says so with
 /// -Wtemplate-body). This mirror is what lets such a site be a plain
-/// `if constexpr` with no #ifdef, exactly as alloc_affinity_min_bytes above.
+/// `if constexpr` with no \#ifdef, exactly as alloc_affinity_min_bytes above.
 #ifdef CHUNK_RECLAIM_EMPTY_SLABS
 inline constexpr bool reclaim_empty_slabs = true;
 #else

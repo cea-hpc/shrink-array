@@ -38,7 +38,7 @@
 // top of the std::vector fallback they include. Also what drags in the
 // ArrayChunk* definitions the alias below selects between.
 #include "chunk/array_chunk_range_ops.h"
-#include "chunk/array_chunk_bits.h" // BENCH_BOOL_BITS: tab_bool packed 8 per byte
+#include "chunk/array_chunk_bits.h" // tab_bool_bits, tab_mask: bools packed 8 per byte
 
 namespace shrink_array
 {
@@ -120,17 +120,31 @@ inline constexpr complex_double zero_complex = std::complex<double>(0., 0.);
 ///        Array<bool>; the std::vector baseline uses short, because
 ///        std::vector<bool>'s proxy is useless here. The asymmetry predates the
 ///        split -- this alias just names it so BenchArrays can hold a reference.
-///
-///        BENCH_BOOL_BITS (the shrink_bench_chunk2bits_* targets): tab_bool is
-///        an ArrayChunkBits -- bools packed 8 per byte -- instead, everything
-///        else unchanged, so the two builds compare the containers on the same
-///        workload and against the same data_tab_bool_*.bin references.
-#ifdef BENCH_BOOL_BITS
-static_assert(chunk_config::use_chunk2, "BENCH_BOOL_BITS: ArrayChunkBits is ArrayChunk2<Bit>, a chunk2 build");
-using BenchBoolArray = shrink_array::ArrayChunkBits<Int>;
-#else
 using BenchBoolArray = std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, std::vector<short>>;
-#endif
+
+/**
+ * @brief What main() declares tab_bool_bits as: tab_bool's twin, written with
+ *        the same values at the same places, in a bit-packed container.
+ *
+ * @details The two bool containers side by side in ONE run, on the same
+ *          workload -- memory (chunk filling rate, pools) and write cost:
+ *            - chunk2 builds: ArrayChunkBits (bit.h), 8 bools per byte in a
+ *              materialised chunk, one atomic 64-bit read-modify-write per
+ *              write; tab_bool stays ArrayChunk2<bool>, one byte per bool;
+ *            - chunk (v1) / chunk2a builds: the variant's Array<bool>, i.e.
+ *              tab_bool's own type -- ArrayChunkBits is chunk2's machinery;
+ *            - the std::vector baseline: std::vector<short>, as tab_bool
+ *              (std::vector<bool> would race: its element writes are not
+ *              atomic, and the phases split the loops anywhere).
+ *          Holding what tab_bool holds, it is checked against the same
+ *          data_tab_bool_*.bin references (bench_checks.cpp) and never writes
+ *          one of its own. Reads stay on tab_bool: the twin changes no value
+ *          the workload computes. In a dyn build an ArrayChunkBits is born
+ *          with chunks packed_bit_birth_factor times tab_bool's (bit.h); a
+ *          static build gives both the same chunk size.
+ */
+using BenchBoolBitsArray =
+    std::conditional_t<chunk_config::use_chunk2, shrink_array::ArrayChunkBits<Int>, BenchBoolArray>;
 
 /// @brief Distinct levels tab_quant may take, hence the distinct second values
 ///        it registers.
@@ -239,13 +253,14 @@ enum class BenchMaskKind
 }
 
 /**
- * @brief The fifteen arrays the workload drives, by reference, plus their
+ * @brief The eighteen arrays the workload drives, by reference, plus their
  *        geometry.
  *
  * @note References, not values: the arrays stay owned by main(), which builds
  *       and destroys them. This is a handle onto them, cheap to pass and
  *       impossible to copy by accident.
- * @warning tab_bool's type varies by build -- see BenchBoolArray above.
+ * @warning tab_bool's and tab_bool_bits' types vary by build -- see
+ *          BenchBoolArray and BenchBoolBitsArray above.
  */
 struct BenchArrays
 {
@@ -257,6 +272,7 @@ struct BenchArrays
 
     Array<int>&            tab_int;
     BenchBoolArray&        tab_bool;
+    BenchBoolBitsArray&    tab_bool_bits; ///< tab_bool's twin, bit-packed in a chunk2 build
     Array<complex_double>& tab_complex;
     Array<float>&          tab_float;
     Array<short>&          tab_short;

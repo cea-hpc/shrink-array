@@ -68,18 +68,19 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         auto& tab4 = bench_arr.tab4;
         auto& tab5 = bench_arr.tab5;
 
-        auto& tab_int     = bench_arr.tab_int;
-        auto& tab_bool    = bench_arr.tab_bool;
-        auto& tab_complex = bench_arr.tab_complex;
-        auto& tab_float   = bench_arr.tab_float;
-        auto& tab_short   = bench_arr.tab_short;
-        auto& tab_char    = bench_arr.tab_char;
-        auto& tab_long    = bench_arr.tab_long;
-        auto& tab_ulong   = bench_arr.tab_ulong;
-        auto& tab_quant   = bench_arr.tab_quant;
-        auto& tab_point   = bench_arr.tab_point;
-        auto& tab_cell    = bench_arr.tab_cell;
-        auto& tab_mask    = bench_arr.tab_mask;
+        auto& tab_int       = bench_arr.tab_int;
+        auto& tab_bool      = bench_arr.tab_bool;
+        auto& tab_bool_bits = bench_arr.tab_bool_bits;
+        auto& tab_complex   = bench_arr.tab_complex;
+        auto& tab_float     = bench_arr.tab_float;
+        auto& tab_short     = bench_arr.tab_short;
+        auto& tab_char      = bench_arr.tab_char;
+        auto& tab_long      = bench_arr.tab_long;
+        auto& tab_ulong     = bench_arr.tab_ulong;
+        auto& tab_quant     = bench_arr.tab_quant;
+        auto& tab_point     = bench_arr.tab_point;
+        auto& tab_cell      = bench_arr.tab_cell;
+        auto& tab_mask      = bench_arr.tab_mask;
 
         // Compress the queued candidates first, from outside the region: each
         // compress() below runs in an `omp single`, where compress_int cannot
@@ -116,6 +117,9 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
 #pragma omp single nowait
             announce("  tab_bool");
             compress_one(tab_bool);
+#pragma omp single nowait
+            announce("  tab_bool_bits");
+            compress_one(tab_bool_bits);
 #pragma omp single nowait
             announce(" tab_complex");
             compress_one(tab_complex);

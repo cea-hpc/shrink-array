@@ -75,14 +75,15 @@ void bench_phase_compute(BenchArrays&            bench_arr,
     auto& tab4 = bench_arr.tab4;
     auto& tab5 = bench_arr.tab5;
 
-    auto& tab_int     = bench_arr.tab_int;
-    auto& tab_bool    = bench_arr.tab_bool;
-    auto& tab_complex = bench_arr.tab_complex;
-    auto& tab_float   = bench_arr.tab_float;
-    auto& tab_short   = bench_arr.tab_short;
-    auto& tab_char    = bench_arr.tab_char;
-    auto& tab_long    = bench_arr.tab_long;
-    auto& tab_ulong   = bench_arr.tab_ulong;
+    auto& tab_int       = bench_arr.tab_int;
+    auto& tab_bool      = bench_arr.tab_bool;
+    auto& tab_bool_bits = bench_arr.tab_bool_bits;
+    auto& tab_complex   = bench_arr.tab_complex;
+    auto& tab_float     = bench_arr.tab_float;
+    auto& tab_short     = bench_arr.tab_short;
+    auto& tab_char      = bench_arr.tab_char;
+    auto& tab_long      = bench_arr.tab_long;
+    auto& tab_ulong     = bench_arr.tab_ulong;
 
     const Int sz = bench_arr.sz;
 
@@ -299,8 +300,9 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                 {
                     tab3[i] = std::sin(tab1[i] + tab2[i]);
                     SB_CHECKED_RMW(tab4, i, *= tab5[i] + 1);
-                    tab_bool[i] = true;
-                    tab_int[i]  = static_cast<int>(i + 1);
+                    tab_bool[i]      = true;
+                    tab_bool_bits[i] = true;
+                    tab_int[i]       = static_cast<int>(i + 1);
 
                     tab_int[i] = static_cast<int>(std::floor(log10(static_cast<double>(tab_int[i]))));
                     SB_CHECKED_RMW(tab_int, i,
@@ -357,8 +359,9 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             {
                 if (i < start0) // alignment head: same trip count in every loop
                     continue;
-                tab_int[i]  = second_value_i;
-                tab_bool[i] = second_value_b;
+                tab_int[i]       = second_value_i;
+                tab_bool[i]      = second_value_b;
+                tab_bool_bits[i] = second_value_b;
 
                 tab2[i] = .5;
                 tab3[i] = 2;
@@ -513,8 +516,9 @@ void bench_phase_compute(BenchArrays&            bench_arr,
                     {
                         neutral_sqrt_assign(tab2, i, tab2[i]);
                     }
-                    tab_bool[i] = true;
-                    tab_int[i]  = static_cast<int>(i);
+                    tab_bool[i]      = true;
+                    tab_bool_bits[i] = true;
+                    tab_int[i]       = static_cast<int>(i);
                 }
 
                 if (i > beg_loc && i < end_loc)
@@ -545,19 +549,23 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 
                         if (tab_int[i] == 0)
                         {
-                            tab_bool[i] = true;
+                            tab_bool[i]      = true;
+                            tab_bool_bits[i] = true;
                         }
                         if (tab_int[i] != 1)
                         {
-                            tab_bool[i] = true;
+                            tab_bool[i]      = true;
+                            tab_bool_bits[i] = true;
                         }
                         if (tab_int[i] < 10)
                         {
-                            tab_bool[i] = true;
+                            tab_bool[i]      = true;
+                            tab_bool_bits[i] = true;
                         }
                         if (tab_int[i] <= 100)
                         {
-                            tab_bool[i] = true;
+                            tab_bool[i]      = true;
+                            tab_bool_bits[i] = true;
                         }
 
                         const bool b = tab_bool[i];

@@ -242,7 +242,10 @@ class RechunkSupport<Derived, false>
     /** @brief No-op: never reached, since rechunk_to() does nothing. */
     void rechunk_refill(Derived& /*tmp*/, unsigned int /*old_size*/, unsigned int /*new_size*/) noexcept {}
 
-    /** @name Re-chunk hooks (base defaults) — same no-ops as the dynamic specialisation's. @{ */
+    /**
+     * @name Re-chunk hooks (base defaults) — same no-ops as the dynamic specialisation's.
+     * @{
+     */
     /** @brief Nothing to drop. */
     void rechunk_drop_candidates() {}
     /** @brief Nothing pooled by geometry. */

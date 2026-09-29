@@ -24,7 +24,7 @@
  *
  * Design (see the redesign notes):
  *   - PER VARIANT: counters are kept separately for chunk / chunk2 / chunk2a
- *     (indexed by \<ChunkType\>::stat_variant == 0 / 1 / 2), so the
+ *     (indexed by \<ChunkType\>\::stat_variant == 0 / 1 / 2), so the
  *     end-of-run report shows one block per variant.
  *   - PER THREAD: each thread bumps its OWN slot (indexed by the current
  *     thread rank), so the hot path needs NO atomics and suffers no false

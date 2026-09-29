@@ -18,7 +18,7 @@
 
 #include <atomic>          // std::atomic<char> (the "queued" flags)
 #include <cstdio>          // std::fprintf (check-build trace)
-#include <cstdlib>         // std::getenv (CHUNK_PROXY2A_META_LEGACY)
+#include <cstdlib>         // std::getenv (CHUNK_PROXY2A_META_ARMED)
 #include <iostream>        // std::cerr (verbose)
 #include <memory>          // std::make_unique
 #include <source_location> // std::source_location
@@ -218,11 +218,8 @@ void Proxy2A<T>::mark_for_compression_if_needed(in_t<T> new_value) const
     {
         // Called BEFORE the store (handle_no_bool_assignment): the memory check
         // must expect the old value -- see mark_for_compression_before_store.
-        if (g_proxy2a_mark_legacy) [[unlikely]]
-            Base2::mark_for_compression_if_needed(BaseSpec::ptr_second_value.get(), new_value, Chunk2A<T>::first_value);
-        else
-            Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value.get(), new_value,
-                                                     Chunk2A<T>::first_value);
+        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value.get(), new_value,
+                                                 Chunk2A<T>::first_value);
     }
     else
     {

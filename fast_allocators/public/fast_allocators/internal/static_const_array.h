@@ -327,6 +327,7 @@ struct BlkAllocator : public StaticConstArray
     }
 
     /// @brief Give back a block from alloc_block().
+    /// @param ptr  The block; null is a no-op.
     /// @param size Must be the size it was allocated with -- that is what decides
     ///        whether it goes to the ladder or to int_free().
     static void free_block(void* ptr, size_t size)

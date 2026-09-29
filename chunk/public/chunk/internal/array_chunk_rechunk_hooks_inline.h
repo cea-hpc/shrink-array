@@ -24,7 +24,6 @@
 
 #include "chunk/internal/array_chunk_rechunk_hooks.h"
 #include "chunk/internal/manager_chunk.h" // manager_type — candidate store + reuse free-lists
-#include <cstdlib>                        // std::getenv (CHUNK_RECHUNK_DROP_LEGACY)
 #include <tuple>                          // std::get on candidate tuples
 #include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h"                  // get_thr_rank_fast
@@ -32,23 +31,6 @@
 
 namespace shrink_array
 {
-
-// Defined in each variant's hooks file, guarded: a TU that includes several
-// variants must see a single definition.
-#ifndef SHRINK_ARRAY_RECHUNK_DROP_LEGACY_DEFINED
-    #define SHRINK_ARRAY_RECHUNK_DROP_LEGACY_DEFINED
-namespace internal
-{
-/// A/B switch: CHUNK_RECHUNK_DROP_LEGACY=1 (read once) makes
-/// rechunk_drop_candidates() drop the array's candidates WITHOUT compressing
-/// them first -- the behaviour before Sept '26.
-inline const bool g_rechunk_drop_legacy = []
-{
-    const char* env = std::getenv("CHUNK_RECHUNK_DROP_LEGACY");
-    return env != nullptr && env[0] != '\0' && env[0] != '0';
-}();
-} // namespace internal
-#endif
 
 template <typename Derived>
 void RechunkHooks<Derived, true>::rechunk_drop_candidates()
@@ -59,25 +41,22 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
     if constexpr (chunk_config::use_fast_block_compression)
     {
         const int num_tab = proxy_type::share_info_array.get_num_tab(self().registry_key());
-        if (!internal::g_rechunk_drop_legacy)
+        const int thr = get_thr_rank_fast();
+        shrink_array::set_thread_chunk_size(self().size_policy_.size());
+        const auto compress_list = [&](auto& list)
         {
-            const int thr = get_thr_rank_fast();
-            shrink_array::set_thread_chunk_size(self().size_policy_.size());
-            const auto compress_list = [&](auto& list)
-            {
-                for (auto& tup : list)
-                    if (std::get<2>(tup) == num_tab)
-                        std::get<0>(tup)->compress(thr, std::get<3>(tup).count());
-            };
-            if constexpr (build_config::use_openmp)
-            {
-                for (auto& list : manager_type::chunk_to_compress_potentially_thr)
-                    compress_list(list);
-            }
-            else
-            {
-                compress_list(manager_type::chunk_to_compress_potentially);
-            }
+            for (auto& tup : list)
+                if (std::get<2>(tup) == num_tab)
+                    std::get<0>(tup)->compress(thr, std::get<3>(tup).count());
+        };
+        if constexpr (build_config::use_openmp)
+        {
+            for (auto& list : manager_type::chunk_to_compress_potentially_thr)
+                compress_list(list);
+        }
+        else
+        {
+            compress_list(manager_type::chunk_to_compress_potentially);
         }
         manager_type::remove_from_compress_list_chunk_by_num_tab(num_tab);
     }

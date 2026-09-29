@@ -50,7 +50,7 @@ concept IsChunk2Or2A = IsChunk2<CHUNK_T, T> || IsChunk2A<CHUNK_T, T>;
 template <typename>
 struct chunk_template_of;
 
-/// @brief For CH<T>, type<U> names CH<U>.
+/// @brief For CH\<T\>, type\<U\> names CH\<U\>.
 template <template <typename> typename CH, typename T>
 struct chunk_template_of<CH<T>>
 {

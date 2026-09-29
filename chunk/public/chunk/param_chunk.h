@@ -42,7 +42,7 @@ namespace shrink_array
  *          sizes the allocation blocks, creates the value allocators and the
  *          per-thread reuse structures, and prints the instrumentation report at
  *          the end of the run. A typical program calls exactly two of these:
- *          @ref init_indexes at startup and @ref ChunkStats at exit.
+ *          ParamChunk::init_indexes() at startup and ParamChunk::ChunkStats() at exit.
  *
  *          The geometry accessors are historical. The chunk size used to be three
  *          runtime globals set once through set_chunk_size(); it is now a
@@ -51,7 +51,7 @@ namespace shrink_array
  *          shifts/masks on the hot path. The setters are therefore kept only as
  *          compatibility shims — they no longer change anything — while the
  *          getters return the constants. Dynamic builds (CHUNK_DYNAMIC) add a
- *          separate, per-array runtime geometry on top; see @ref register_chunk_size
+ *          separate, per-array runtime geometry on top; see ParamChunk::register_chunk_size()
  *          and shrink_array::active_chunk_size().
  *
  * @note Everything here is a sequential-context operation: call it before the
@@ -81,7 +81,7 @@ namespace shrink_array
  *       what keeps the two bodies TEMPLATES, so only the one this build selects
  *       is ever instantiated -- param_chunk.cpp instantiates exactly
  *       ParamChunkParallelInterface<build_config::use_openmp, AllTypeChunk> and
- *       the other body is never compiled. That is what replaced the #ifdef
+ *       the other body is never compiled. That is what replaced the \#ifdef
  *       _OPENMP these bodies used to sit under.
  *
  *       A plain `template <>` full specialisation would NOT do: its members are
@@ -109,7 +109,7 @@ struct ParamChunkParallelInterface<true, AllT>
      *
      * @details The per-rank structures and allocators of a type used to be
      *          sized and primed here, for every registered type, from inside
-     *          a `#pragma omp parallel` region. A type is now set up when its
+     *          a <tt>\#pragma omp parallel</tt> region. A type is now set up when its
      *          first array registers its manager (AllTypeChunk::init_manager,
      *          sequential, rank by rank), so nothing per type is left at this
      *          point; the allocator banner remains.
@@ -142,7 +142,7 @@ struct ParamChunkParallelInterface<false, AllT>
  *       call must stay DEPENDENT on AllT (SingletonChk<AllT>, never
  *       SingletonChk<AllTypeChunk>), or phase-1 lookup resolves it against the
  *       concrete type at definition time and we are back to needing the
- *       #ifdef CHUNK_DYNAMIC this replaced.
+ *       \#ifdef CHUNK_DYNAMIC this replaced.
  */
 template <bool Enabled = build_config::chunk_dynamic, typename AllT = AllTypeChunk>
 struct ParamChunkDynInterface; // primary left undefined: only the 2 specializations exist
@@ -182,7 +182,7 @@ struct ParamChunkDynInterface<false, AllT>
      * @details Deliberately a silent no-op rather than an absent member. It is
      *          what lets register_runtime_chunk_size() -- and any other
      *          build-agnostic caller -- call ParamChunk::register_chunk_size()
-     *          with no `#ifdef CHUNK_DYNAMIC` around it: the call compiles in
+     *          with no <tt>\#ifdef CHUNK_DYNAMIC</tt> around it: the call compiles in
      *          every build and costs nothing where there is no runtime geometry
      *          to declare.
      *

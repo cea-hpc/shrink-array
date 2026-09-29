@@ -252,7 +252,7 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(this Deriv
 
     // Only the serial flush owns the global flag (see
     // ManagerChunkParallelImpl::flush_all_deferred).
-    const bool toggle_flag = !in_parallel || g_barrier_flush_legacy;
+    const bool toggle_flag = !in_parallel;
 
     // Two threads must not run the SERIAL flush at once: each drains every
     // rank and reclaims buffers, so concurrent passes race on the same ops.

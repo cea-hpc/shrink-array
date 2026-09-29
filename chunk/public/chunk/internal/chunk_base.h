@@ -45,7 +45,6 @@
 #include "chunk/internal/global_check.h"    // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 #include "chunk/internal/deferred_op_pool.h"
-#include "chunk/internal/compression_manager.h"
 #include "chunk/internal/pool_ledger.h" // CHUNK_LEDGER_* block-lifecycle checks (check builds)
 #include "chunk/internal/chunk_stats.h"
 #include "chunk/internal/crp_helper.h"
@@ -76,6 +75,10 @@ class TCTypeAllocator;
 #include "chunk/internal/deferred_ops_storage.h"
 namespace shrink_array
 {
+// Forward declaration: only named here, in contexts that depend on T. The
+// definition (chunk/internal/compression_manager.h) comes with the _inline tails.
+template <typename T, typename ChunkType>
+class CompressionManager;
 
 template <typename Derived>
 struct ProxyTypeTrait;
@@ -922,6 +925,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
     /// @brief Route to the allocator for this thread's active chunk size. The
     ///        size must have been registered (set_chunk_size) beforehand.
     /// @param thr_rank Calling thread's rank.
+    /// @param key      Affinity key of the array (0: the rank's shared pool).
     /// @return Reference to the per-thread allocator for the active size, or
     ///         to the legacy single allocator (Derived::allocator_data) if
     ///         the active size was never registered.
@@ -968,6 +972,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, false>
     /// @brief Static builds have no per-size pool: always route to the
     ///        single legacy allocator.
     /// @param thr_rank Calling thread's rank.
+    /// @param key      Unused: static builds have a single pool per rank.
     /// @return Reference to Derived::allocator_data[thr_rank].
     static auto& route_omp_dynamic_alloc(int thr_rank, [[maybe_unused]] unsigned int key = 0) noexcept
     {
@@ -1781,7 +1786,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// means this chunk has nothing pending -> skip wait_for_availability.
     ///
     /// IMPORTANT: the member guard and its ONLY reader (ArrayChunkBase::
-    /// sync_chunk's precise gate) share this exact #if condition, so both appear
+    /// sync_chunk's precise gate) share this exact \#if condition, so both appear
     /// or vanish together textually. Guarding the member alone while the reader
     /// stays under `if constexpr` fails: gcc still phase-1-looks-up
     /// chunk_t.pending_ops_ in the discarded branch and errors on the missing
@@ -1806,7 +1811,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     ///
     /// Lives in the 4 bytes of padding after pending_ops_ (ChunkBase is
     /// 8-byte aligned on `values`), so it costs nothing: sizeof(Chunk2A<double>)
-    /// stays 24. Same #if as pending_ops_, for the same gcc phase-1 lookup
+    /// stays 24. Same \#if as pending_ops_, for the same gcc phase-1 lookup
     /// reason; SHRINK_SMALL_CHUNK builds keep the global gate
     /// (chunk_config::use_chunk_steal_mark).
     std::atomic<uint32_t> steal_mark_{0};

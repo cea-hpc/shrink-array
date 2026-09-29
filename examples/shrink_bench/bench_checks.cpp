@@ -35,18 +35,19 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
     auto& tab4 = bench_arr.tab4;
     auto& tab5 = bench_arr.tab5;
 
-    auto& tab_int     = bench_arr.tab_int;
-    auto& tab_bool    = bench_arr.tab_bool;
-    auto& tab_complex = bench_arr.tab_complex;
-    auto& tab_float   = bench_arr.tab_float;
-    auto& tab_short   = bench_arr.tab_short;
-    auto& tab_char    = bench_arr.tab_char;
-    auto& tab_long    = bench_arr.tab_long;
-    auto& tab_ulong   = bench_arr.tab_ulong;
-    auto& tab_quant   = bench_arr.tab_quant;
-    auto& tab_point   = bench_arr.tab_point;
-    auto& tab_cell    = bench_arr.tab_cell;
-    auto& tab_mask    = bench_arr.tab_mask;
+    auto& tab_int       = bench_arr.tab_int;
+    auto& tab_bool      = bench_arr.tab_bool;
+    auto& tab_bool_bits = bench_arr.tab_bool_bits;
+    auto& tab_complex   = bench_arr.tab_complex;
+    auto& tab_float     = bench_arr.tab_float;
+    auto& tab_short     = bench_arr.tab_short;
+    auto& tab_char      = bench_arr.tab_char;
+    auto& tab_long      = bench_arr.tab_long;
+    auto& tab_ulong     = bench_arr.tab_ulong;
+    auto& tab_quant     = bench_arr.tab_quant;
+    auto& tab_point     = bench_arr.tab_point;
+    auto& tab_cell      = bench_arr.tab_cell;
+    auto& tab_mask      = bench_arr.tab_mask;
 
     // The flags the two lambdas captured from main(), under their original
     // names so the bodies below are VERBATIM.
@@ -89,23 +90,24 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 
         if CONSTEXPR (io_res)
         {
-            std::uint64_t tab1_ch        = 0;
-            std::uint64_t tab2_ch        = 0;
-            std::uint64_t tab3_ch        = 0;
-            std::uint64_t tab4_ch        = 0;
-            std::uint64_t tab5_ch        = 0;
-            std::uint64_t tab_int_ch     = 0;
-            std::uint64_t tab_bool_ch    = 0;
-            std::uint64_t tab_complex_ch = 0;
-            std::uint64_t tab_float_ch   = 0;
-            std::uint64_t tab_char_ch    = 0;
-            std::uint64_t tab_short_ch   = 0;
-            std::uint64_t tab_long_ch    = 0;
-            std::uint64_t tab_ulong_ch   = 0;
-            std::uint64_t tab_quant_ch   = 0;
-            std::uint64_t tab_point_ch   = 0;
-            std::uint64_t tab_cell_ch    = 0;
-            std::uint64_t tab_mask_ch    = 0;
+            std::uint64_t tab1_ch          = 0;
+            std::uint64_t tab2_ch          = 0;
+            std::uint64_t tab3_ch          = 0;
+            std::uint64_t tab4_ch          = 0;
+            std::uint64_t tab5_ch          = 0;
+            std::uint64_t tab_int_ch       = 0;
+            std::uint64_t tab_bool_ch      = 0;
+            std::uint64_t tab_bool_bits_ch = 0;
+            std::uint64_t tab_complex_ch   = 0;
+            std::uint64_t tab_float_ch     = 0;
+            std::uint64_t tab_char_ch      = 0;
+            std::uint64_t tab_short_ch     = 0;
+            std::uint64_t tab_long_ch      = 0;
+            std::uint64_t tab_ulong_ch     = 0;
+            std::uint64_t tab_quant_ch     = 0;
+            std::uint64_t tab_point_ch     = 0;
+            std::uint64_t tab_cell_ch      = 0;
+            std::uint64_t tab_mask_ch      = 0;
 
             VectorChecksum vec1_ch(tab1);
             VectorChecksum vec2_ch(tab2);
@@ -115,6 +117,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 
             VectorChecksum vec_int_ch(tab_int);
             VectorChecksum vec_bool_ch(tab_bool);
+            VectorChecksum vec_bool_bits_ch(tab_bool_bits);
             VectorChecksum vec_complex_ch(tab_complex);
 
             VectorChecksum vec_float_ch(tab_float);
@@ -143,6 +146,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 
                 calculate_checksum_0(vec_int_ch.vec, vec_int_ch.checksum_thr);
                 calculate_checksum_0(vec_bool_ch.vec, vec_bool_ch.checksum_thr);
+                calculate_checksum_0(vec_bool_bits_ch.vec, vec_bool_bits_ch.checksum_thr);
                 calculate_checksum_0(vec_complex_ch.vec, vec_complex_ch.checksum_thr);
 
                 calculate_checksum_0(vec_short_ch.vec, vec_short_ch.checksum_thr);
@@ -166,6 +170,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 
                 tab_int_ch += vec_int_ch.checksum_thr[thr];
                 tab_bool_ch += vec_bool_ch.checksum_thr[thr];
+                tab_bool_bits_ch += vec_bool_bits_ch.checksum_thr[thr];
                 tab_complex_ch += vec_complex_ch.checksum_thr[thr];
 
                 tab_float_ch += vec_float_ch.checksum_thr[thr];
@@ -185,9 +190,10 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
             tab4_ch = ~tab4_ch;
             tab5_ch = ~tab5_ch;
 
-            tab_int_ch     = ~tab_int_ch;
-            tab_bool_ch    = ~tab_bool_ch;
-            tab_complex_ch = ~tab_complex_ch;
+            tab_int_ch       = ~tab_int_ch;
+            tab_bool_ch      = ~tab_bool_ch;
+            tab_bool_bits_ch = ~tab_bool_bits_ch;
+            tab_complex_ch   = ~tab_complex_ch;
 
             tab_short_ch = ~tab_short_ch;
             tab_float_ch = ~tab_float_ch;
@@ -233,6 +239,16 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 #pragma omp section
                     {
                         lbd_check(ind, "tab_bool", tab_bool, tab_bool_ch, true /* special writing for vector */);
+                        // tab_bool_bits holds what tab_bool holds: read back
+                        // against tab_bool's reference file, never written
+                        // (io_res == 1 would write the same file twice). In
+                        // this section, after tab_bool's check: a checksum
+                        // miss decompresses the file, which two sections must
+                        // not do at once.
+                        if (!no_io && io_res == 2)
+                            read_check_binary_file(ind, "tab_bool_bits",
+                                                   "data_tab_bool_" + std::to_string(ind) + ".bin", tab_bool_bits,
+                                                   tab_bool_bits_ch, no_compress, read_trace, write_trace);
                     }
 #pragma omp section
                     {

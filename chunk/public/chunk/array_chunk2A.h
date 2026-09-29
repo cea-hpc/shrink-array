@@ -25,9 +25,9 @@
 #include <utility>       // for move
 #include <vector>        // for vector, swap
 #include <unordered_set> // for the cst2 GC live set
+#include <initializer_list>  // the {a, b, c} constructor
+#include <iterator>  // std::forward_iterator, std::distance -- the (first, last) constructor
 
-#include <initializer_list>                   // the {a, b, c} constructor
-#include <iterator>                           // std::forward_iterator, std::distance -- the (first, last) constructor
 #include "chunk/internal/array_chunk2_base.h" // for ArrayChunk2Base
 #include "chunk/internal/array_chunk2A_parallel.h"      // ParallelSupport2A — OpenMP-only mixin
 #include "chunk/internal/array_chunk2A_rechunk_hooks.h" // RechunkHooks2A — CHUNK_DYNAMIC-only mixin
@@ -39,12 +39,14 @@
 #include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
 #include "chunk/internal/in_t.h"                        // in_t<T>: the element snapshots
 #include "chunk/internal/array_chunk_core.h"            // the core the bases share
-#include "chunk/internal/manager_chunk.h"               // ManagerChunk<Chunk2A, T>
 #include "chunk/internal/proxy2A.h"                     // Proxy2A<T> and its tables
 #include "chunk/chunk2A_std.h"                          // Chunk2A<T>
 
 namespace shrink_array
 {
+
+template <template <typename> class CHUNK_T, typename T>
+class ManagerChunk;
 
 /**
  * @brief Chunked array whose chunks may each compress to their OWN second value.
@@ -311,7 +313,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *          nb_chunk over an empty list. Sequential context, as clear().
      * @note noexcept, as the move constructor: a failure here terminates.
      */
-    ArrayChunk2A& operator=(ArrayChunk2A<T, ind_type>&& other) noexcept
+    ArrayChunk2A& operator=(ArrayChunk2A&& other) noexcept
     {
         if (this != &other)
         {

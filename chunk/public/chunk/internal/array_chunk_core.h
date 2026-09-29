@@ -23,7 +23,7 @@
  * @details ArrayChunk<T, ind_type>, ArrayChunk2<T, ind_type> and
  *          ArrayChunk2A<T, ind_type> are distinct types for every ind_type, but
  *          the machinery around them -- proxies, chunks, managers, the per-T
- *          registries (Proxy*<T>::share_info_array) -- is templated on T alone
+ *          registries (<tt>Proxy*\<T\>\::share_info_array</tt>) -- is templated on T alone
  *          and reaches the array through a type-erased pointer (the proxy's
  *          ptr_on_array, the registries' keys). Casting that pointer back to
  *          `ArrayChunk*<T, int>` was right as long as no other ind_type existed;
@@ -104,18 +104,6 @@ struct RechunkStorageScope
 };
 } // namespace alloc_affinity_detail
 
-namespace teardown_threshold_detail
-{
-/// A/B switch: CHUNK_THRESHOLD_TEARDOWN_LEGACY=1 (read once) skips the
-/// recomputation of the compression threshold and reuse budget at teardown
-/// (clear_core), as before Sept '26. Default: recompute.
-inline const bool g_legacy = []
-{
-    const char* e = std::getenv("CHUNK_THRESHOLD_TEARDOWN_LEGACY");
-    return e != nullptr && e[0] != '\0' && e[0] != '0';
-}();
-} // namespace teardown_threshold_detail
-
 /// @brief The index-type-independent part of a chunked array of ChunkType (see the description at the top of
 ///        this file).
 template <typename ChunkType>
@@ -128,7 +116,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
 
     /**
      * @brief The address under which this array is known outside its own type:
-     *        the proxies' ptr_on_array and every Proxy*<T>::share_info_array key.
+     *        the proxies' ptr_on_array and every <tt>Proxy*\<T\>\::share_info_array</tt> key.
      * @details Always this subobject, never the derived array: the readers cast
      *          it back to ArrayChunkCore, which is only defined from a pointer
      *          that was an ArrayChunkCore* in the first place.

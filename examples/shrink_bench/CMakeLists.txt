@@ -56,7 +56,6 @@ set(SHRINK_BENCH_HEADERS
         bench_array.h
         bench_phases.h
         bench_stl_checks.h
-        crash_backtrace.h
 )
 
 
@@ -186,24 +185,11 @@ foreach(_vi RANGE ${_sa2_nvar_last})
   endif()
 endforeach()
 
-# --- chunk2bits: chunk2 with tab_bool an ArrayChunkBits (bools packed 8 per
-# byte), everything else identical -- run next to shrink_bench_chunk2_* on the
-# same workload to compare the two bool containers (memory, time), against the
-# same data_tab_bool_*.bin references. See BenchBoolArray (bench_array.h).
-foreach(_sz IN LISTS CHUNK_STATIC_SIZES)
-  set(_tgt shrink_bench_chunk2bits_${_sz})
-  add_executable(${_tgt} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
-  target_link_libraries(${_tgt} PRIVATE chunk_v2_${_sz})
-  target_compile_definitions(${_tgt} PRIVATE BENCH_BOOL_BITS=1)
-  sa2_setup_target(${_tgt})
-endforeach()
-if (CHUNK_BUILD_DYN)
-  set(_tgt shrink_bench_chunk2bits_dyn)
-  add_executable(${_tgt} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
-  target_link_libraries(${_tgt} PRIVATE chunk_v2_dyn)
-  target_compile_definitions(${_tgt} PRIVATE BENCH_BOOL_BITS=1 DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
-  sa2_setup_target(${_tgt})
-endif()
+# No chunk2bits targets: every shrink_bench_chunk2_* run carries tab_bool
+# (ArrayChunk2<bool>, one byte per bool) AND its twin tab_bool_bits
+# (ArrayChunkBits, 8 per byte) on the same workload -- see BenchBoolBitsArray
+# (bench_array.h). The chunk / chunk2a builds give the twin their own
+# Array<bool>.
 
 # --- vector: size-agnostic, and the ONE place that keeps two targets ---
 #

@@ -71,8 +71,7 @@ Quand la liste d'un thread dépasse le seuil de déclenchement (§6), une passe
 1. si un vidage des écritures différées est en cours, la passe **renonce avant de toucher aux
    candidats** (`block_pass_yields_to_flush`, `block_pass_precheck.h`). À 128 threads sur
    Grace, marquer puis démarquer les candidats à chaque tentative refusée coûtait 10 millions
-   de tours et doublait le temps du run ; `CHUNK_BLOCK_PRECHECK_LEGACY=1` rétablit l'ancien
-   ordre ;
+   de tours et doublait le temps du run ;
 2. chaque candidat est **réservé** (`steal_mark`), avant l'ouverture de la fenêtre de
    compression (`CompressionManager::start()`), dont la barrière publie les réservations ;
 3. `fill_list_to_compress` relit chaque candidat et ne garde que ceux qui sont **entièrement
@@ -94,8 +93,7 @@ septembre 2026 le tiennent juste :
 
 - il est **décrémenté** à la destruction d'un tableau (sans quoi il ne faisait que croître :
   seuil de 390 au début d'un run, ~42 000 à la fin, et presque plus aucune compression) ;
-- le seuil est **recalculé** à la destruction comme à la création
-  (`CHUNK_THRESHOLD_TEARDOWN_LEGACY=1` pour l'ancien comportement).
+- le seuil est **recalculé** à la destruction comme à la création.
 
 À 64 threads, le calcul tombe presque toujours sur le plancher : c'est lui qui fixe la
 fréquence des passes.

@@ -28,7 +28,7 @@ choisit s'il faut changer et vers quelle taille, et `rechunk_to()` fait la recon
 
 ## 2. L'advisor : estimer la mémoire à chaque taille
 
-`ChunkSizeAdvisor<T>::analyze(arr)` (`chunk_size_advisor.h`) produit une table : pour chaque
+<tt>ChunkSizeAdvisor\<T\>\::analyze(arr)</tt> (`chunk_size_advisor.h`) produit une table : pour chaque
 taille candidate, le nombre de chunks, le nombre de chunks matérialisés, et la mémoire
 estimée (métadonnées + données matérialisées).
 
@@ -99,16 +99,14 @@ mesure à données constantes et la possibilité de revenir en arrière.
 `CHUNK_RECHUNK_TRACE=1` :
 
 1. **prologue** : à l'ancienne géométrie, vider les écritures différées du tableau, puis
-   compresser ses candidats en attente avant de les retirer des listes
-   (`CHUNK_RECHUNK_DROP_LEGACY=1` les retire sans compresser) ;
+   compresser ses candidats en attente avant de les retirer des listes ;
 2. **tmp create** : construire le nouveau stockage, à la nouvelle taille ;
 3. **refill** : le remplir en parallèle (`CHUNK_RECHUNK_SCHEDULE`, `guided,16` par défaut).
    Un nouveau chunk dont toutes les sources sont à la première valeur est sauté. Un nouveau
    chunk dont toutes les sources étaient compressées est **replié** tout de suite. Pour
    **Chunk2A**, si toutes ses sources sont à la **même** seconde constante, elle est
-   **installée directement**, sans tampon ni copie (`CHUNK_RECHUNK_INSTALL_LEGACY=1` revient
-   à la copie suivie d'un repliement, qui laissait jusqu'à 640 Mo de pages touchées par
-   tableau) ;
+   **installée directement**, sans tampon ni copie (la copie suivie d'un repliement laissait
+   jusqu'à 640 Mo de pages touchées par tableau) ;
 4. **flush+swap** : échanger les identités entre l'ancien et le nouveau stockage ;
 5. **tmp teardown** : détruire l'ancien stockage ;
 6. **old-pool drain** : vider les réserves de l'ancienne taille et rendre au système les
@@ -156,9 +154,8 @@ Un rechunk construit le nouveau stockage sous un **nouvel identifiant de tableau
 
 Par ailleurs, le **seuil de déclenchement des passes de compression** et le **budget des
 réserves**, calculés à partir du nombre total de chunks, sont maintenant recalculés aussi à la
-destruction d'un stockage, et plus seulement à sa création (`CHUNK_THRESHOLD_TEARDOWN_LEGACY=1`
-revient à l'ancien comportement). Sans effet mesurable sur le temps, mais les seuils
-correspondent de nouveau à la géométrie réelle (`CHUNK_THRESHOLD_TRACE=1`).
+destruction d'un stockage, et plus seulement à sa création. Sans effet mesurable sur le temps, mais les seuils
+correspondent de nouveau à la géométrie réelle.
 
 ## 7. Résultats
 

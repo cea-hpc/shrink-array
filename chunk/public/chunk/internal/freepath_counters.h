@@ -14,7 +14,7 @@
  *          The chunk layer compiles its release path in std-alloc builds too,
  *          where fast_allocators is neither linked nor on the include path --
  *          hence the macro: it is the counter in a fast-alloc build and nothing
- *          at all otherwise, so the call sites need no #ifdef of their own.
+ *          at all otherwise, so the call sites need no \#ifdef of their own.
  */
 #pragma once
 
