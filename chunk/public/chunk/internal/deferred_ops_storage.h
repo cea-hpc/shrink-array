@@ -45,8 +45,8 @@ class DeferredOpsStorage
      * unique_ptr had a DYNAMIC default-member-initializer (make_unique) on a
      * static-storage singleton (global_instance), a static-initialization-order
      * fiasco was possible: if allocate() ran before global_instance's dynamic
-     * init constructed `flag`, *flag dereferenced a null unique_ptr (observed as
-     * a SIGABRT "unique_ptr<once_flag>::operator* Assertion get()!=pointer()"
+     * init constructed `flag`, `*flag` dereferenced a null unique_ptr (observed as
+     * a SIGABRT <tt>unique_ptr\<once_flag\>\::operator\* Assertion get()!=pointer()</tt>
      * under nvc++). std::mutex has a constexpr constructor, so alloc_mutex is
      * CONSTANT-initialized — global_instance no longer needs any dynamic init,
      * removing the ordering hazard on every compiler.

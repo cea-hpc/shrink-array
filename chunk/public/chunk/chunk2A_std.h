@@ -171,6 +171,8 @@ struct Chunk2AConcurrentOps
         return failed;
     }
 
+    /// @brief Atomically mark this chunk constant and hand back its old buffer.
+    /// @param num_compress_value 0 for the first constant, 1 for the second.
     /// @param cst2_ptr The shared array to install when @p num_compress_value
     ///        is 1 (find_or_set_ind_cst_val2's result); ignored for 0.
     [[nodiscard]] T* try_mark_cst_and_get_old(int num_compress_value, T* cst2_ptr) noexcept
@@ -436,6 +438,7 @@ struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurren
      * \param ptr_type_cst       Slot of the per-chunk type table to update.
      * \param ptr_second_value   The chunk's second-value slot.
      * \param thr_rank           Rank whose pool receives the released buffer.
+     * \param cst2_ptr           Shared array of the second constant (type 2).
      */
     void block_clear(int               num_compress_value,
                      char*             ptr_type_cst,
@@ -521,7 +524,7 @@ struct Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
     /// @brief Unconditional twin of clear(char*, T*): no written() test.
     void clear_st(char* ptr_type_cst, SecondValueRef<T> ptr_second_value);
 
-    /// @brief Release the buffer outright (no rank pool) and point at a constant. void
+    /// @brief Release the buffer outright (no rank pool) and point at a constant.
     void block_clear(int num_compress_value, char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int, T* cst2_ptr);
 };
 

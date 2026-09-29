@@ -28,7 +28,7 @@ choisit s'il faut changer et vers quelle taille, et `rechunk_to()` fait la recon
 
 ## 2. L'advisor : estimer la mémoire à chaque taille
 
-`ChunkSizeAdvisor<T>::analyze(arr)` (`chunk_size_advisor.h`) produit une table : pour chaque
+<tt>ChunkSizeAdvisor\<T\>\::analyze(arr)</tt> (`chunk_size_advisor.h`) produit une table : pour chaque
 taille candidate, le nombre de chunks, le nombre de chunks matérialisés, et la mémoire
 estimée (métadonnées + données matérialisées).
 

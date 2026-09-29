@@ -21,7 +21,7 @@
  * @par What that costs
  * A slab returned with deallocate() stays resident: the arena keeps it, the OS
  * never gets it back. That is the RSS the free-list holds, and what
- * ::madvise_empty_slab addresses -- it drops an emptied slab's pages while
+ * madvise_empty_slab() addresses -- it drops an emptied slab's pages while
  * leaving the address valid and the slab reusable.
  *
  * @note Three arenas, not two: ctx slabs were later found to alias op slabs the
@@ -53,7 +53,7 @@ namespace fast_alloc
 // call sites in tc_allocator.h and report_all_arenas() below all see one
 // definition -- no cross-header ordering or two-phase-lookup question.
 
-/// @brief How many times ::madvise_empty_slab has advised a slab away.
+/// @brief How many times madvise_empty_slab() has advised a slab away.
 inline std::atomic<std::size_t>& reclaim_calls() noexcept
 {
     static std::atomic<std::size_t> counter{0};
@@ -313,6 +313,8 @@ class SlabArena
 
     /**
      * @brief Hand out @p size bytes aligned to @p align.
+     * @param size  Slab size in bytes; also the free-list key it is recycled under.
+     * @param align Required alignment of the slab.
      * @param fresh If not null, set to whether the slab is fresh from mmap
      *        (never handed out, so still all zeros) or recycled from the free
      *        list (holds its previous occupant's bytes).
@@ -378,6 +380,7 @@ class SlabArena
 
     /**
      * @brief Take a slab back into THIS arena's free list. Never to the OS.
+     * @param block The slab, as returned by allocate(); null is a no-op.
      * @param size Must be the size it was allocated with -- the free list is
      *        keyed by it, and a wrong key makes the slab unreachable.
      * @note An unknown or already-freed slab warns and is dropped rather than
@@ -638,7 +641,7 @@ inline bool arena_report_enabled() noexcept
  * @param when Free-text label for the moment of the call.
  * @details Called at each end-of-parallel-region drain point. What it is for:
  *          telling apart an RSS gap made of recycled-but-resident free-list
- *          bytes -- which ::madvise_empty_slab can reclaim -- from one made of
+ *          bytes -- which madvise_empty_slab() can reclaim -- from one made of
  *          genuinely live bytes, which nothing can.
  */
 inline void report_all_arenas(const char* when) noexcept

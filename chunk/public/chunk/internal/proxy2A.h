@@ -373,6 +373,7 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
     /*!
      * \brief Resizes the number of chunks in a specific tab and initializes values to zero.
      * \param nb_tab Index of the tab to resize.
+     * \param nb_chunk_old Number of chunks before the resize.
      * \param nb_chunk New number of chunks in the tab.
      */
 

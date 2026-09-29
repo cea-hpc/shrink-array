@@ -356,6 +356,7 @@ struct alignas(64) TCCAllocator
     ///          size, and slab_of() read a "slab" pointer out of the middle of a
     ///          block (slab_geometry_validation). The capacity is capped in
     ///          alloc_block() instead; the unused tail is never touched.
+    /// @param block_bytes   Bytes the slab must hold.
     /// @param element_bytes Unused; kept so that the call sites read alike.
     [[nodiscard]] static uintptr_t slab_bytes_for(uintptr_t block_bytes, [[maybe_unused]] int element_bytes) noexcept
     {
@@ -1652,7 +1653,7 @@ struct TCTypeCAllocator
 /**
  * @brief Smallest power of two >= @p i, at compile time.
  * @tparam i Non-negative.
- * @note `NextPOT<0>::value` and `NextPOT<1>::value` are both 1.
+ * @note <tt>NextPOT\<0\>\::value</tt> and <tt>NextPOT\<1\>\::value</tt> are both 1.
  */
 template <int i>
 struct NextPOT
@@ -1682,7 +1683,7 @@ struct NextPOT<1>
 /**
  * @brief Largest power of two <= @p i, at compile time.
  * @tparam i Non-negative.
- * @note `PrevPOT<0>::value` is 1, not 0.
+ * @note <tt>PrevPOT\<0\>\::value</tt> is 1, not 0.
  */
 template <int i>
 struct PrevPOT

@@ -136,6 +136,8 @@ void Chunk2A<T>::set_cst_val_to_cst_val(int num_compress_value, char* ptr_type_c
  * @param num_chunk  Index of this chunk in its array.
  * @param num_tab    Table number of the owning array.
  * @param size       Geometry of the owning array, carried through to the clear.
+ * @param claimed    Whether the caller claimed (steal-marked) the chunk first;
+ *                   check builds assert it.
  *
  * @note Chunks already compressed to first_value are skipped outright.
  * @note The `T{}` marker is only unambiguous because `first_value` is 0: a
@@ -748,6 +750,8 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
  * @param thr       Rank whose candidate list is scanned.
  * @param ll_compt1 Output: chunks compressible to first_value.
  * @param ll_compt2 Output: chunks compressible to one other value.
+ * @param claimed   Whether the caller claimed (steal-marked) the candidates
+ *                  first; forwarded to fill_list_to_compress().
  */
 template <typename T>
 void Chunk2A<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int      thr,
@@ -1126,8 +1130,13 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(int               num_c
     block_clear(num_compress_value, ptr_type_cst, ptr_second_value, thr_rank, new_cst_val2_ptr);
 }
 
-/// @copydoc Chunk2AOmpPolicy::block_clear
-/// Serial build: frees the buffer outright instead of parking it in a rank pool.
+/// @brief Serial block_clear(): frees the buffer outright instead of parking it
+///        in a rank pool, and points the chunk at a constant.
+/// @param num_compress_value 0 for the first constant, otherwise the second.
+/// @param ptr_type_cst       Slot of the per-chunk type table to update.
+/// @param ptr_second_value   The chunk's second-value slot.
+/// @param cst2_ptr           Shared array of the second constant (type 2).
+/// @note The rank argument is unused: there is no rank pool serially.
 template <typename T, typename Derived>
 void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int               num_compress_value,
                                                       char*             ptr_type_cst,

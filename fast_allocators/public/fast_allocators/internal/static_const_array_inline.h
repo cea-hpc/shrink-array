@@ -121,7 +121,6 @@ inline void* StaticConstArray::getBlockAllocInt(unsigned int sz)
     }
 }
 
-/// @copydoc StaticConstArray::getBlockAlloc
 inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
 {
     if constexpr (alloc_config::use_std_alloc)
@@ -242,7 +241,6 @@ inline void* StaticConstArray::getBlockAllocAlignInt(int sz)
     }
 }
 
-/// @copydoc StaticConstArray::getBlockAllocAlign
 inline void* StaticConstArray::getBlockAllocAlign(int sz)
 {
     if constexpr (alloc_config::use_std_alloc)
@@ -388,7 +386,6 @@ inline void StaticConstArray::freeBlockWithInt(int sz, void* ptr)
 }
 
 /**
- * @copydoc StaticConstArray::freeBlock
  * @details Outside a parallel region the block goes straight back to its
  *          bucket. Inside one it is batched instead, and the batch is flushed
  *          under a single critical section when it fills -- which is also the
@@ -535,7 +532,6 @@ inline void StaticConstArray::freeBlockWithAlignInt(int sz, void* ptr)
     }
 }
 
-/// @copydoc StaticConstArray::freeBlockAlign
 inline bool StaticConstArray::freeBlockAlign(int sz, void* ptr)
 {
     if constexpr (alloc_config::use_std_alloc)
@@ -586,7 +582,6 @@ inline bool StaticConstArray::freeBlockAlign(int sz, void* ptr)
     return false;
 }
 
-/// @copydoc StaticConstArray::computeBlockSize
 inline int StaticConstArray::computeBlockSize()
 {
     if constexpr (alloc_config::use_std_alloc)

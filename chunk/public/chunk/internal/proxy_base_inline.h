@@ -367,8 +367,9 @@ ProxyType ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::make_proxy_wi
  * Chunk2 keeps its candidates in a context-dependent list, hence the
  * `IsChunk2` branch on which per-thread list to push onto.
  *
- * @param self The proxy, deduced (C++23 deducing-this variant).
  * @param ctx  Deferred-operation context being replayed.
+ * @note In the C++23 deducing-this variant the proxy is also passed
+ *       explicitly, as `self`.
  */
 #if CRTP_USE_DEDUCING_THIS
 // C++23 deducing-this variant: `self` replaces derived(). The class still has
@@ -416,8 +417,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression
     }
 }
 #else
-/// @copydoc ProxyBaseFastCompPolicy::add_to_compression_list_async
-/// Pre-C++23 variant: `derived()` in place of the deduced `self`.
+// Pre-C++23 variant: `derived()` in place of the deduced `self`.
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression_list_async(auto* ctx) const
 {

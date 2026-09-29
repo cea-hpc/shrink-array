@@ -251,7 +251,8 @@ class WriteCompressSyncPolicy
 
     /**
      * @brief Raise this thread's writer flag.
-     * @param thr calling thread's rank
+     * @param thr   calling thread's rank
+     * @param chunk the chunk being written, published in the flag
      * @warning Do NOT call directly to announce a write: without the fence that
      *          follows it, the handshake is unsound on weakly-ordered targets.
      *          Use announce_write().

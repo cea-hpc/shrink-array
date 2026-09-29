@@ -105,7 +105,7 @@ extern void finalize_parallel_phase_after_flush();
 /**
  * @brief Phase transition on a plain barrier, called from **inside** the parallel region.
  *
- * Lighter than @ref finalize_parallel_phase: it only flushes the deferred write
+ * Lighter than finalize_parallel_phase(): it only flushes the deferred write
  * queues (per-thread, using the in-region rank) so that the values written
  * before the barrier are visible after it. No pool reset, no compression
  * drain — the region is not over.

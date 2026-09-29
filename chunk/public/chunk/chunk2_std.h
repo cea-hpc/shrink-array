@@ -674,12 +674,6 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
         return *it->second;
     }
 
-    /**
-     * @brief Bool-specific version of get_vec_tuple_to_compress_potentially_thr()
-     *        (bool has a single shared second_value, always true).
-     * @param thr Thread rank whose candidate list to fetch.
-     * @return Reference to thread thr's candidate list.
-     */
     // Removed: get_vec_tuple_to_compress_potentially_bool_thr(thr). It was
     // get_vec_tuple_to_compress_potentially_thr(thr, true) written out again, and
     // it had no caller anywhere in the tree.
@@ -814,20 +808,20 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
 
     /*!
      * \brief Per-thread half of compress_chunk_to_compress(): drain only
-     *        thread `thr`'s candidate queue for the given second value.
-     * \param thr Thread whose candidate queue to drain.
+     *        thread `thr_rank`'s candidate queue for the given second value.
+     * \param thr_rank Thread whose candidate queue to drain.
      * \param inf_array (second_value, ...) tuple identifying which
      *                  candidate list to drain.
      * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress_in_par(int thr, const inf_array_t& inf_array, bool apply);
+    static void compress_chunk_to_compress_in_par(int thr_rank, const inf_array_t& inf_array, bool apply);
 
     /*!
      * \brief Bool specialization of compress_chunk_to_compress_in_par().
-     * \param thr Thread whose candidate queue to drain.
+     * \param thr_rank Thread whose candidate queue to drain.
      * \param apply true: compress the constant candidates; false: walk only.
      */
-    static void compress_chunk_to_compress_bool_in_par(int thr, bool apply);
+    static void compress_chunk_to_compress_bool_in_par(int thr_rank, bool apply);
 
     /**
      * \brief Shared body of the two compress_chunk_to_compress_in_par entry
@@ -855,6 +849,7 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
      *                  constant and index to test against.
      * \param apply The scan always runs; the compression only happens when
      *              this is true.
+     * \param n_elems Element count of this chunk (the owning array's geometry).
      */
     void compress(int thr_rank, const inf_array_t& inf_array, bool apply, unsigned int n_elems);
 
@@ -886,28 +881,28 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
     static void fill_list_chunk_to_compress_in_par_impl(int thr_rank, in_t<T> key, ScanFn&& scan_one);
 
     /*!
-     * \brief Distribute thread `thr`'s already-queued compression candidates
+     * \brief Distribute thread `thr_rank`'s already-queued compression candidates
      *        into the two make_block_compression_impl() buckets, by asking
      *        each candidate chunk to (re-)assess itself
      *        (fill_list_to_compress()).
-     * \param thr Thread whose candidate list to distribute.
+     * \param thr_rank Thread whose candidate list to distribute.
      * \param ll_compt1 Output: candidates confirmed uniform on the first constant.
      * \param ll_compt2 Output: candidates confirmed uniform on the second constant.
      * \param inf_array (second_value, ...) tuple identifying which
      *                  candidate list to read.
      */
-    static void fill_list_chunk_to_compress_in_par(int                     thr,
+    static void fill_list_chunk_to_compress_in_par(int                     thr_rank,
                                                    vec_tuple_chunk2p_int2& ll_compt1,
                                                    vec_tuple_chunk2p_int2& ll_compt2,
                                                    const inf_array_t&      inf_array);
 
     /*!
      * \brief Bool specialization of fill_list_chunk_to_compress_in_par().
-     * \param thr Thread whose candidate list to distribute.
+     * \param thr_rank Thread whose candidate list to distribute.
      * \param ll_compt1 Output: candidates confirmed uniform on the first constant.
      * \param ll_compt2 Output: candidates confirmed uniform on the second constant.
      */
-    static void fill_list_chunk_to_compress_bool_in_par(int                     thr,
+    static void fill_list_chunk_to_compress_bool_in_par(int                     thr_rank,
                                                         vec_tuple_chunk2p_int2& ll_compt1,
                                                         vec_tuple_chunk2p_int2& ll_compt2);
 

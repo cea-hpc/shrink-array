@@ -111,7 +111,7 @@ valeur déclarée, repéré par un **indice** `ind`.
 ### 4.2 Le registre des secondes valeurs
 
 La seconde valeur **n'est pas stockée dans le tableau** : elle vit dans le registre partagé
-`Proxy2<T>::share_info_array`, indexé par l'**adresse** du tableau. Chaque entrée est un
+<tt>Proxy2\<T\>\::share_info_array</tt>, indexé par l'**adresse** du tableau. Chaque entrée est un
 triplet `inf_array_t` :
 
 ```

@@ -232,6 +232,7 @@ class Chunk2Base : public ChunkBase<T, Derived>
     /**
      * @brief Ensures the provided pointer does not target shared constant memory.
      * @param target_ptr The pointer about to be used for a write operation.
+     * @param loc        Call site, reported if the check fails.
      */
     void assert_writable_buffer(const T*                   target_ptr,
                                 const std::source_location loc = std::source_location::current()) noexcept

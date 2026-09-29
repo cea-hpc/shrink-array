@@ -21,7 +21,7 @@
  * @brief `constexpr` mirrors of the macros that configure the fast allocators.
  *
  * The macros are read HERE and nowhere else, so the allocator bodies can branch
- * with `if constexpr` instead of `#ifdef`. Both arms then have to compile in
+ * with `if constexpr` instead of <tt>\#ifdef</tt>. Both arms then have to compile in
  * every configuration, which is the point: a build that does not exercise a
  * branch still type-checks it.
  *

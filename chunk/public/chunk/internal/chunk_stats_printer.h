@@ -13,6 +13,9 @@ namespace shrink_array
 /// @brief Formatted per-array compression stats, shared by Chunk / Chunk2 /
 ///        Chunk2A.
 ///
+/// @param os            stream the report is written to.
+/// @param num_tab       table number of the array (its registry index).
+/// @param type_name     element type, as printed.
 /// @param n_compressed  chunks stored in a compressed (constant) form.
 /// @param nb_chunk      total chunks in the array.
 /// @param n_t1          type-2 chunks (a distinct second constant). 0 for

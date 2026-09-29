@@ -69,7 +69,7 @@ class AllTypeChunk;
  *                 true> declares clear_list_block_free_thr() and
  *                 delete_list_block_chunk_free_itself(), <Derived, false>
  *                 declares delete_chunk_allocator(), and neither declares the
- *                 other's. That asymmetry is what the #ifdef _OPENMP in
+ *                 other's. That asymmetry is what the \#ifdef _OPENMP in
  *                 chunk_std.cpp used to paper over.
  *
  * @note EVERY verb exists in BOTH specialisations, so a caller needs no build
@@ -98,7 +98,7 @@ struct ChunkPoolParallelInterface<true, AllT>
     static void delete_list_block_chunk_free_itself();
     /// @brief No-op here: an OpenMP build has no single allocator to delete, it
     ///        releases through the per-rank pair above. Present so callers need
-    ///        no `#ifdef _OPENMP`.
+    ///        no <tt>\#ifdef _OPENMP</tt>.
     static void delete_chunk_allocator() {}
     /// @copydoc shrink_array::release_chunk_pools
     static void release_chunk_pools();
@@ -321,6 +321,8 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
     /// @brief Release this chunk's buffer to @p thr_rank's reuse list WITHOUT
     ///        counting a compression -- the re-chunk rebuild releasing an old
     ///        chunk once copied (clear_st = count + release_st).
+    /// @param thr_rank      rank whose reuse list receives the buffer
+    /// @param n_elems       element count of this chunk (its array's geometry)
     /// @param count_release count it as a release (CHUNK_STATS `released`);
     ///        clear_st passes false, having counted a compression instead
     void release_st(int thr_rank, unsigned int n_elems, bool count_release = true);

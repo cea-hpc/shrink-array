@@ -409,6 +409,8 @@ void packed_chunk_store(Arr&         arr,
  * @param first first index, inclusive (clamped to size())
  * @param last  last index, exclusive (clamped to size())
  * @param v     value to store
+ * @param drain flush the array's deferred writes first (true); pass false, or
+ *              use the assume_drained tag, when the caller already did
  */
 template <internal::ChunkedArray Arr, typename U>
 void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool drain = true)
@@ -568,6 +570,8 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
  * @param first     first target index, inclusive (clamped to size())
  * @param last      last target index, exclusive (clamped to size())
  * @param src_first source iterator; must not alias @p arr
+ * @param drain     flush the array's deferred writes first (true); pass false,
+ *                  or use the assume_drained tag, when the caller already did
  */
 template <internal::ChunkedArray Arr, typename It>
 void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, bool drain = true)
@@ -656,16 +660,16 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
     }
 }
 
-/// @copydoc fill_range
-/// @note The assume_drained_t tag: caller guarantees the deferred queue is already drained
+/// @brief fill_range() on an array whose deferred queue the caller has already
+///        drained (the assume_drained tag): no flush first.
 template <internal::ChunkedArray Arr, typename U>
 void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, assume_drained_t)
 {
     fill_range(arr, first, last, v, /*drain=*/false);
 }
 
-/// @copydoc copy_range
-/// @note The assume_drained_t tag: caller guarantees the deferred queue is already drained
+/// @brief copy_range() on an array whose deferred queue the caller has already
+///        drained (the assume_drained tag): no flush first.
 template <internal::ChunkedArray Arr, typename It>
 void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, assume_drained_t)
 {
