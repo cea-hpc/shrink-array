@@ -681,6 +681,17 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         // is the same owner-recursive shard lock to_be_queued already uses for
         // the op-map insert, so bracketing the chunk-set insert with it closes
         // the last unsynchronised access to deferred_chunk_per_thread.
+        // A flush replay applies its writes directly (FlushReplayGuard): an
+        // enqueue from inside one means a write path that ignores
+        // in_flush_replay. flush_deferred() now survives it (it walks a
+        // snapshot and keeps the chunk), but the replay was meant to empty the
+        // queue, not refill it.
+        if constexpr (build_config::any_check)
+        {
+            if (FlushReplayState<T, ChunkType>::in_flush_replay) [[unlikely]]
+                INVARIANT_FAILED("record_enqueue_deferred: op enqueued during a flush replay (rank {}, chunk {})",
+                                 thr_rank, static_cast<const void*>(&chunk));
+        }
         enqueue_lock(thr_rank);
         // The insert allocates, and ankerl throws on a bucket overflow; the
         // writers calling this are noexcept: fail with the context instead of

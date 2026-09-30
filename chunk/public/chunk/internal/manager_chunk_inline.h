@@ -517,6 +517,19 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
             }
         }
 
+        // storage.destroy() frees every op still queued, unapplied. The drain
+        // above should have left none; if the counters say otherwise, those
+        // writes are about to be lost -- say so in every build (a counter sum,
+        // at a serial point), not only in check builds.
+        if (CompressionManager<T, CHUNK_T<T>>::any_pending_ops()) [[unlikely]]
+        {
+            std::fprintf(stderr,
+                         "[DRAIN] flush_all_deferred: deferred ops still queued after %d pass(es) -- "
+                         "storage.destroy() discards them: their writes are LOST\n",
+                         pass);
+            std::fflush(stderr);
+        }
+
         storage.destroy();
     }
 
