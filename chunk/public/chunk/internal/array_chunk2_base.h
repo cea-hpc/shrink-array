@@ -110,6 +110,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     // bodies were identical. Reach it through derived(): it is a sibling base of
     // this one, so `this->` cannot see it.
 
+  protected:
     /// @brief The part of resize() both chunk2 variants share: compress the
     ///        pending candidates, drain the deferred ops, then grow or shrink
     ///        chunk_list (with its dirty bitset and the manager's counters).
@@ -183,6 +184,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         }
     }
 
+  public:
     /// @brief Compress every compressible chunk now, by every thread of the
     ///        region compress_int() runs in (opened here when called outside one).
     void compress()

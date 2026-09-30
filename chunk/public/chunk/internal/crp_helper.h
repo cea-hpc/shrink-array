@@ -43,6 +43,7 @@ namespace shrink_array
 template <typename Derived>
 struct CRTPSupport
 {
+  protected:
     /// @brief `*this` as the derived class.
     Derived& derived() noexcept
     {

@@ -114,6 +114,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
     using proxy_type   = ChunkTraits<ChunkType>::proxy_type;
     using manager_type = ChunkTraits<ChunkType>::manager_type;
 
+  protected:
     /**
      * @brief The address under which this array is known outside its own type:
      *        the proxies' ptr_on_array and every <tt>Proxy*\<T\>\::share_info_array</tt> key.
@@ -131,6 +132,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
         return this;
     }
 
+  public:
     /// @brief The chunk geometry: elements per chunk.
     [[nodiscard]] unsigned int chunk_size() const noexcept
     {

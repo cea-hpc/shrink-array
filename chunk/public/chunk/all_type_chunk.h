@@ -139,6 +139,7 @@ struct AllTypeChunkParallelInterface<Derived, true>
      */
     bool flush_all_deferred(bool in_parallel);
 
+  protected:
     /**
      * @brief The per-rank structures of ONE manager, at its registration:
      *        free-block lists, chunk lists and counters sized to the team, the
@@ -181,6 +182,7 @@ struct AllTypeChunkParallelInterface<Derived, false>
         return false;
     }
 
+  protected:
     /**
      * @brief The single allocator of ONE manager, at its registration.
      * @param manager    The manager being registered.
@@ -189,6 +191,7 @@ struct AllTypeChunkParallelInterface<Derived, false>
      */
     void init_manager(ManagerChunkInt& manager, int block_size) const;
 
+  public:
     /// Destroys the single chunk allocator of every type (no-op in std-alloc builds).
     void delete_chunk_allocator() const;
 };

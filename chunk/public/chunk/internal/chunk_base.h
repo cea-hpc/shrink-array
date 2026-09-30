@@ -1008,7 +1008,7 @@ class ChunkBase : public CRTPSupport<Derived>,
                   "shrink_array element type: trivially copyable, ==, default constructible "
                   "(see concept_array_chunk_element.h)");
 
-  public:
+  protected:
     // Type traits
     // bool and Bit (bit.h) share chunk2's bool path: one second value, true.
     static constexpr bool is_bool     = is_bool_like_v<T>;
@@ -1020,9 +1020,10 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     static constexpr bool use_mm_protect = build_config::use_mm_protect;
 
-  public:
+  protected:
     constexpr static T zero{};
 
+  public:
     // Atomic pointer type conditional on OpenMP availability
     using atomic_ptr_t = std::conditional_t<build_config::use_openmp, std::atomic<T*>, T*>;
 
@@ -1136,7 +1137,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         }
     }
 
-  public:
+  protected:
     /// @brief Debug-only assertion: abort if offset j is not currently
     ///        written (a clear on an unwritten offset is a bug). Compiled
     ///        out entirely when build_config::any_check is off.
@@ -1316,6 +1317,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         return current_value == ChunkBase::get_cst_val1();
     }
 
+  protected:
     /// @brief Check if chunk does not point to the first constant value
     /// @return true if chunk is not compressed to first constant value
     [[nodiscard]] bool is_not_cst_val1() const noexcept
@@ -1323,6 +1325,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         return !is_cst_val1();
     }
 
+  public:
     // ========================================================================
     // Value reading operations
     // ========================================================================
@@ -1774,6 +1777,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     // Chunk deallocation
     // ========================================================================
 
+  protected:
     /// @brief Return a block to the free-pool, preferring the local thread's
     ///        free list over a real free -- and never pushing a foreign
     ///        block onto ANOTHER thread's free-list (see the out-of-line
@@ -1795,6 +1799,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// Pointer to chunk data (atomic if OpenMP enabled)
     alignas(std::atomic<T*>) atomic_ptr_t values;
 
+  public:
 #if !defined(SHRINK_SMALL_CHUNK) && defined(_OPENMP)
     /// Per-chunk count of deferred ops currently pending (enqueued but not yet
     /// drained). Present only when the deferred-op machinery exists, i.e. NOT

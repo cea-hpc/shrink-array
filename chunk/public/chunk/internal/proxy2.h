@@ -97,6 +97,7 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
         return derived().get_ptr_on_array_async(ctx);
     }
 
+  protected:
     /**
      * @brief Most common non-zero value in the chunk
      * @details Used for second-level compression. When a chunk contains mostly
@@ -112,6 +113,7 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
 
     int ind;
 
+  public:
     /**
      * @brief Initialize only the second_value field
      * @details Minimal metadata load for operations that only need second_value.
@@ -160,6 +162,7 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
         return second_value;
     }
 
+  protected:
     /**
      * @brief The second_value carried in inf_array, as populated by
      *        set_info_on_chunk() -- an alternative source to
@@ -172,6 +175,7 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
         return std::get<0>(inf_array);
     }
 
+  public:
     using inf_array_t = std::tuple<T, int, int>;
 
     /**
@@ -188,8 +192,10 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      *          Populated by load_inf_array().
      */
 
+  protected:
     inf_array_t inf_array; ///< Compression metadata associated with this proxy.
 
+  public:
     /// @brief Arm this proxy with the owning array's registry mirror
     ///        (ArrayChunk2::registry_mirror()).
     /// @details Called by ArrayChunkBase::operator[] / set_value. A proxy that
@@ -225,8 +231,10 @@ struct ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
     using Base = Proxy2Base<Derived, T, Chunk2<T>>;
     using Base::derived;
 
+  protected:
     static constexpr bool second_value = true;
 
+  public:
     using inf_array_t = std::tuple<T, int, int>;
 
     /**
@@ -235,8 +243,10 @@ struct ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
      *          Populated by load_inf_array().
      */
 
+  protected:
     inf_array_t inf_array; ///< Compression metadata associated with this proxy.
 
+  public:
     /// @brief Arm this proxy with the owning array's registry mirror
     ///        (ArrayChunk2::registry_mirror()).
     /// @details Called by ArrayChunkBase::operator[] / set_value. A proxy that
@@ -323,6 +333,7 @@ struct ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
         inf_array = derived().get_info_second_value(key);
     }
 
+  protected:
     /**
      * @brief Bool-only: the second constant is always `true`.
      * @return true.
@@ -442,6 +453,7 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     template <typename OP, typename LAMBDA, typename U>
     void execute_arithmetic_compound_operation_async(auto* ctx, OP op, const U& operand, LAMBDA operation) const;
 
+  protected:
     /**
      * @brief Shared implementation behind operator*=, operator/=, and
      *        operator%=: materialise the chunk if needed, then apply `op`
@@ -457,6 +469,7 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     template <typename OP, typename LAMBDA, typename U>
     void execute_arithmetic_compound_operation(OP op, const U& operand, LAMBDA operation);
 
+  public:
     // ------------------------------------------------------------------
     // Compression-tracking surface. Every member below needs the per-tab
     // tracking arrays, which only exist in
@@ -602,11 +615,13 @@ struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @note Thread safety: Uses compare_exchange for atomic list insertion
      */
 
+  protected:
     void mark_for_compression_if_needed(in_t<T> new_value) const
     {
         Base2::mark_for_compression_if_needed(second_value, new_value, Chunk2<T>::first_value);
     }
 
+  public:
     /**
      * @brief Mark for compression with explicit old value
      * @param old_value Previous value at this location
@@ -646,6 +661,7 @@ struct Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T,
     using ProxySpec2<T, Derived>::second_value;
     using ProxySpec2<T, Derived>::inf_array;
 
+  protected:
     /**
      * @brief Serial form of execute_arithmetic_compound_operation(): the
      *        counter path -- a chunk leaving its second constant gets its
@@ -656,6 +672,7 @@ struct Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T,
     template <typename OP, typename LAMBDA, typename U>
     void execute_arithmetic_compound_operation(OP op, const U& operand, LAMBDA operation);
 
+  public:
     // Non-OpenMP (no embedded fast block compression): Proxy2 has no compression
     // tracking tabs, so these are no-op stubs. They must still exist because
     // ArrayChunkBase::create_common() calls resize_tab_is_int(nb_tab)

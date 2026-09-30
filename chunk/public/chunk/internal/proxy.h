@@ -92,7 +92,7 @@ struct PointerMapInfArrayPolicy
         return values;
     }
 
-  public:
+  protected:
     /**
      * @brief Register the inf_array tuple pointer for a given value.
      * @param key Value to register.
@@ -135,7 +135,7 @@ struct PointerMapInfArrayPolicy<T, false>
         return {};
     }
 
-  public:
+  protected:
     /// @brief No registry in this mode: nothing to record.
     void insert(in_t<T> /*key*/, inf_array_t* /*ind*/) {}
 
@@ -266,6 +266,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
 
     using ProxyBase<Derived, T, Chunk<T>>::ProxyBase;
 
+  protected:
     /**
      * @brief Register this chunk's table number and compression-list flag
      *        pointer, so later compression bookkeeping can find its way
@@ -278,6 +279,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         derived().Base::set_ptr_is_inside_chunk_list_to_compress();
     }
 
+  public:
     /**
      * @brief Access to thread `thr`'s compression-candidate list.
      * @param thr Thread rank whose candidate list to fetch.
@@ -490,6 +492,7 @@ struct ProxyFastCompPolicy<Derived, T, false> : public ProxyBase<Derived, T, Chu
     using ProxyBase<Derived, T, Chunk<T>>::ProxyBase;
     using ProxyBase<Derived, T, Chunk<T>>::chunk;
 
+  protected:
     /// @brief Nothing to record on the chunk without fast block compression.
     static void set_info_on_chunk() {}
 

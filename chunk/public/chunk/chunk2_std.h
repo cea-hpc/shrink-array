@@ -142,7 +142,7 @@ struct ChunkSpec2
         return !is_cst_val2(ind);
     }
 
-  public:
+  protected:
     // ANY-index marker test: is `v` one of the cst_val2 constant pointers,
     // whichever index? Needed at teardown where the chunk's own index is not to
     // hand: is_cst_val2(v, ind) with a single/wrong index misclassifies a chunk
@@ -162,6 +162,7 @@ struct ChunkSpec2
         return false;
     }
 
+  public:
     // is_cst_val2_async / is_not_cst_val2_async removed: dead code, zero
     // callers anywhere in the tree (the bool one had a latent bug -- it called
     // is_cst_val2(ctx) instead of is_cst_val2_async(ctx), a type mismatch never
@@ -186,6 +187,7 @@ template <typename T>
     requires is_bool_like_v<T>
 struct ChunkSpec2<T>
 {
+  protected:
     // Bit: every BIT set -- the buffer is read as 64-bit words, hence the
     // bytes 0xFF (a Bit{true} object is the byte 0x01) and the alignment.
     alignas(bits::word_t) static inline std::array<T, cst_buffer_size> m_ptr_cst_val2 = []
@@ -198,6 +200,7 @@ struct ChunkSpec2<T>
         return arr;
     }();
 
+  public:
     /*!
      * \brief Gets the pointer to the (single, shared) second constant value.
      * \return Pointer to the constant value array.

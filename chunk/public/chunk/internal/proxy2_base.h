@@ -99,6 +99,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         return derived().is_cst_val2();
     }
 
+  protected:
     /**
      * @brief Negation of is_cst_val2().
      * @return true if the chunk is NOT compressed to the second constant.
@@ -117,6 +118,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         return is_cst_val1() || is_cst_val2();
     }
 
+  public:
     /**
      * @brief Negation of is_cst_val().
      * @return true if the chunk is materialised (compressed to neither constant).
@@ -168,7 +170,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         return derived().pre_check_mark_for_compression(new_value, first_value, second_val);
     }
 
-  public:
+  protected:
     /**
      * @brief Pre-check shared by every variant: the write is of a constant.
      * @details A write is worth the marking path (one read of the old value,
@@ -267,6 +269,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @note Uses false and true as constant values for comparison
      */
 
+  protected:
     void mark_for_compression_if_needed(bool new_value) const
     {
         const bool isv = is_cst_val_new_value_is_other_cst_val(new_value, false, true);
@@ -386,6 +389,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         return Base::write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
     }
 
+  public:
     /**
      * @brief Multiply this element by `v` in place.
      * @tparam U Type of the operand.
