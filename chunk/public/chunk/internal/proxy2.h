@@ -215,6 +215,10 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
     ///        there is one, from the registry otherwise. Under any_check the
     ///        two are compared (model: Proxy2A::set_num_tab).
     [[nodiscard]] inf_array_t load_inf_array() const;
+    /// @brief The armed mirror (checked under any_check), or nullptr. The
+    ///        per-write refreshes read the fields through it, not through
+    ///        load_inf_array()'s copy: see set_info_on_chunk().
+    [[nodiscard]] const inf_array_t* armed_inf_array() const;
 
   private:
     /// Owning array's registry mirror; nullptr until armed.
@@ -266,6 +270,10 @@ struct ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
     ///        there is one, from the registry otherwise. Under any_check the
     ///        two are compared (model: Proxy2A::set_num_tab).
     [[nodiscard]] inf_array_t load_inf_array() const;
+    /// @brief The armed mirror (checked under any_check), or nullptr. The
+    ///        per-write refreshes read the fields through it, not through
+    ///        load_inf_array()'s copy: see set_info_on_chunk().
+    [[nodiscard]] const inf_array_t* armed_inf_array() const;
 
   private:
     /// Owning array's registry mirror; nullptr until armed.
