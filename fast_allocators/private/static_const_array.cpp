@@ -28,8 +28,10 @@ InfoFreeElt StaticConstArray::tab_info_free_elt;
 InfoFreeElt StaticConstArray::tab_info_free_elt_align;
 
 /// @copydoc InfoFreeElt::InfoFreeElt
-/// @note Sized by PMP_MAX_THREADS at construction, so raising the team size
-///       after the first allocation would index past these arrays.
+/// @note Sized by PMP_MAX_THREADS at construction (before main). A rank past
+///       it -- a team raised later -- is not batched: freeBlock() and
+///       freeBlockAlign() free its blocks at once rather than index past
+///       these arrays.
 InfoFreeElt::InfoFreeElt()
 {
     // Serially there is no batching (freeBlock never enters the batching

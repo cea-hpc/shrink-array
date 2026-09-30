@@ -384,6 +384,16 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
         {
             const int thr_rank = PMP_THREAD_RANK;
 
+            // A rank the batches were not sized for (the team grew after
+            // they were built, before main): there is no batch to index, so
+            // free at once, under the critical section the full path takes.
+            if (thr_rank >= tab_info_free_elt.nb_thr) [[unlikely]]
+            {
+#pragma omp critical
+                freeBlockWithInt(sz, ptr);
+                return true;
+            }
+
             const bool is_full = tab_info_free_elt.push_back(ptr, sz, thr_rank);
 
             if (is_full)
@@ -512,6 +522,14 @@ inline bool StaticConstArray::freeBlockAlign(int sz, void* ptr)
         if (alloc_config::use_openmp && PMP_IN_PARALLEL_REGION)
         {
             const int thr_rank = PMP_THREAD_RANK;
+
+            // Same bound as freeBlock(): no batch for this rank, free at once.
+            if (thr_rank >= tab_info_free_elt_align.nb_thr) [[unlikely]]
+            {
+#pragma omp critical
+                freeBlockWithAlignInt(sz, ptr);
+                return true;
+            }
 
             const bool is_full = tab_info_free_elt_align.push_back(ptr, sz, thr_rank);
 
