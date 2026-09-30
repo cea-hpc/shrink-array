@@ -176,7 +176,17 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
         }
     }
 
-    for (ChunkType* chunk : deferred_chunk_loc)
+    // Walk a SNAPSHOT of this rank's chunk set, not the live set. Nothing
+    // should insert into it meanwhile: a replayed write runs under
+    // FlushReplayGuard (in_flush_replay) and is applied directly, never
+    // enqueued -- record_enqueue_deferred() checks it -- and other threads'
+    // inserts into rank thr's set take the shard lock held here. The walk no
+    // longer depends on it: an insert into the live set cannot invalidate
+    // this loop, and a chunk that still holds ops afterwards goes back into
+    // the live set (end of the loop), where the next flush finds it.
+    std::remove_reference_t<decltype(deferred_chunk_loc)> chunks;
+    chunks.swap(deferred_chunk_loc);
+    for (ChunkType* chunk : chunks)
     {
         const auto it_chunk = thread_map.find(chunk);
         if (it_chunk == thread_map.end())
@@ -195,13 +205,12 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
         FlushLog log(payload);
 
         int64_t flushed_here = 0;
-        // Reentrant op_map mutation: write_body() below can, via the compression
-        // lambda (create_value → enqueue_deferred_write), insert a NEW op into
-        // THIS SAME op_map. Iterating *op_map directly then mutates the container
-        // mid-iteration → rehash → iterator invalidation. Drain by ONE swap:
-        // move current entries into a local batch and iterate that. Reentrant
-        // enqueues land in the now-empty *op_map and are left for the NEXT flush
-        // (looping while !empty can livelock when each write_body re-enqueues).
+        // Drain by ONE swap: move the current entries into a local batch and
+        // iterate that, never *op_map itself. A replayed write_body() applies
+        // its write directly (in_flush_replay) and should enqueue nothing;
+        // should an op land in *op_map all the same, it is left there for the
+        // NEXT flush and the chunk stays in the set (below) -- not redrained
+        // here (looping while !empty could livelock).
         {
             std::remove_reference_t<decltype(*op_map)> batch;
             batch.swap(*op_map);
@@ -237,14 +246,33 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
         // The batch was swapped out; ops enqueued into *op_map after the swap
         // are un-replayed pending writes. clear()+erase used to drop them
         // (lost write + counter drift). Erase the entry only when empty;
-        // otherwise leave it for the next pass. deferred_chunk_loc is a local
-        // scratch list rebuilt each call, so it is still cleared unconditionally
-        // below — the surviving map entry is what the next flush re-discovers.
+        // otherwise keep it AND put the chunk back into the live set: the set
+        // is the only thing flush_deferred walks, so a chunk left out of it
+        // was never flushed again, and flush_all_deferred's storage.destroy()
+        // discarded its ops.
         if (op_map->empty())
+        {
             (void)thread_map.erase(it_chunk);
+        }
+        else
+        {
+            try // ankerl throws on a bucket overflow; this function is noexcept
+            {
+                deferred_chunk_loc.insert(chunk);
+            }
+            catch (const std::exception& e)
+            {
+                INVARIANT_FAILED("flush_deferred: re-insert failed: {} (rank {}, chunk {})", e.what(), thr,
+                                 static_cast<const void*>(chunk));
+            }
+        }
     }
 
-    deferred_chunk_loc.clear();
+    // Nothing put back (the usual case): hand the walked buffer back, so the
+    // live set keeps its capacity from one flush to the next.
+    chunks.clear();
+    if (deferred_chunk_loc.empty())
+        deferred_chunk_loc.swap(chunks);
 
     if (thread_map.empty())
     {
@@ -253,10 +281,14 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
 
     if constexpr (build_config::any_check)
     {
-        if (!deferred_chunk_loc.empty())
+        // What is left in the set must be exactly the chunks with ops still
+        // queued (put back above): anything else is a stale entry.
+        for (ChunkType* c : deferred_chunk_loc)
         {
-            INVARIANT_FAILED("flush_deferred(thr={}) returned with {} chunks not flushed!", thr,
-                             deferred_chunk_loc.size());
+            const auto it = thread_map.find(c);
+            if (it == thread_map.end() || !it->second || it->second->empty())
+                INVARIANT_FAILED("flush_deferred(thr={}): chunk {} left in the set with no op queued", thr,
+                                 static_cast<const void*>(c));
         }
     }
 
