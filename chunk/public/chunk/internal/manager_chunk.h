@@ -262,6 +262,7 @@ struct ManagerChunkParallelImpl; // primary left undefined: only the 2 specializ
 template <template <typename> class CHUNK_T, typename T>
 struct ManagerChunkParallelImpl<CHUNK_T, T, true> : public virtual ManagerChunkParallelInterface<true>
 {
+  private:
     void init_allocators(int block_size) const override;
     void alloc_chunk_allocator_thr() override;
 
@@ -284,6 +285,7 @@ struct ManagerChunkParallelImpl<CHUNK_T, T, true> : public virtual ManagerChunkP
 template <template <typename> class CHUNK_T, typename T>
 struct ManagerChunkParallelImpl<CHUNK_T, T, false> : public virtual ManagerChunkParallelInterface<false>
 {
+  private:
     void init_allocator(int block_size) const override;
     void delete_chunk_allocator() override;
 };
@@ -351,8 +353,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
     ManagerChunk(const ManagerChunk& ref) = delete;
 
-    void               destroy_block_chunk() override;
-    void               resize_chunk_to_compress_potentially() const override;
+  private:
+    void destroy_block_chunk() override;
+
+  public:
+    void resize_chunk_to_compress_potentially() const override;
+
+  private:
     void               force_chunk_to_compress() const override;
     [[nodiscard]] bool have_chunk_to_compress_potentially(int n_thr) const override;
     void               compress_chunk_to_compress_potentially(bool apply) override;
@@ -370,6 +377,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         print_reuse_pool_breakdown(label);
     }
 
+  public:
     // Where the build-dependent overrides went, so a reader looking for one here
     // is not left thinking it does not exist:
     //   register_chunk_size()                 -> ManagerChunkDynImpl
@@ -447,6 +455,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
         return size_buffer_reuse;
     }
+
+  private:
     /// @brief Per-key reuse budget (sequential: at array creation / rechunk).
     static void set_size_buffer_reuse(unsigned int key, int budget)
     {
@@ -477,6 +487,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 list_block_free_thr_by_size_[size].resize(max_thr);
         }
     }
+
+  public:
     /// @brief Everything an array with its own affinity key needs, in one call
     ///        (sequential, from the array's rebuild_storage once nb_chunk is
     ///        known): its allocator set at (key, size), its per-rank reuse
@@ -490,6 +502,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     ///         build without the dynamic registry) -- the caller must then stay
     ///         on key 0 rather than route to a set that does not exist.
     [[nodiscard]] static bool register_alloc_key(unsigned int key, unsigned int size, int nb_chunk);
+
+  private:
     /// @brief Slab byte budget seen at the last register_chunk_size(); what
     ///        register_alloc_key() hands to the keyed allocator sets.
     static inline int registered_block_size_ = 0;
@@ -506,6 +520,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         if (it == list_block_free_thr_keyed_.end())
             list_block_free_thr_keyed_[keyed_index(key, size)].resize(max_thr);
     }
+
+  public:
     /// @brief Reuse list of (thr_rank, key) at the ambient geometry. Key 0 is
     ///        get_list_block_free_thr(thr_rank); an unregistered key falls back
     ///        to the shared pool rather than indexing blindly.
@@ -623,6 +639,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         return list_block_free_thr[thr_rank].list;
     }
 
+  private:
     /**
      * @brief Print what the reuse pools hold, broken down by geometry.
      *
@@ -798,6 +815,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
     }
 
+  public:
     /**
      * @brief Empty the by-geometry reuse list for @p size, across all threads
      *        (dynamic builds; a no-op otherwise).
@@ -993,6 +1011,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
     }
 
+  private:
     /// @brief Set the candidate-list length that triggers a compression pass.
     /// @details Decides when trigger_compression_if_needed() flags a rank's
     ///          candidate list, hence how often compression runs at all.
@@ -1000,6 +1019,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         size_max_number_of_chunk_to_check_compress = v;
     }
+
+  public:
     /// @brief Candidate-list length that triggers a compression pass.
     [[nodiscard]] static int get_size_max_number_of_chunk_to_check_compress() noexcept
     {
@@ -1077,6 +1098,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
     }
 
+  private:
     /**
      * @brief Drop from @p v every queued candidate that belongs to @p num_tab.
      *
@@ -1097,6 +1119,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         std::erase_if(v, [num_tab](const auto& tup) { return std::get<2>(tup) == num_tab; });
     }
 
+  public:
     /**
      * @brief Drop every queued Chunk2A candidate of array @p num_tab, in every
      *        rank's list (ArrayChunk2A::clear_core and rechunk_to).
@@ -1191,6 +1214,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
     static inline TChunkCompThr<CHUNK_T, T> chunk_to_compress_potentially_thr;
 
+  private:
     // Serial counterparts of the *_thr stores above: no per-thread indirection.
     //
     // Declared in EVERY build -- empty and never touched in OpenMP ones -- for the
@@ -1202,8 +1226,12 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     // `if constexpr`. The static cost is three empty containers
     // per (variant, type). Only the serial getters below expose them.
     static inline TChunk2CompMap<CHUNK_T, T> chunk2_to_compress_potentially;
-    static inline TChunk2AComp<CHUNK_T, T>   chunk2A_to_compress_potentially;
-    static inline TChunkComp<CHUNK_T, T>     chunk_to_compress_potentially;
+
+  public:
+    static inline TChunk2AComp<CHUNK_T, T> chunk2A_to_compress_potentially;
+
+  private:
+    static inline TChunkComp<CHUNK_T, T> chunk_to_compress_potentially;
 
   private:
     static inline long somme_chunk_create{0};

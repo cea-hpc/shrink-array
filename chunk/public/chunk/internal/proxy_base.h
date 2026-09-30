@@ -601,6 +601,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // write_with_optional_lock_info() below. Its own deprecation note asked for
     // exactly this removal.
 
+  private:
     /**
      * @brief Executes a write operation without parameters.
      * @tparam WriteFn Callable to execute.
@@ -621,6 +622,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return write_with_optional_lock_impl([&] { write_fn(); }, lbd_info);
     }
 
+  public:
     /**
      * @brief Has a thread's candidate list grown past the point where it must be drained?
      *
@@ -638,6 +640,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return sz > szm;
     }
 
+  private:
     /**
      * @brief Deferred-path tail: a dangerous rank still drives its pass.
      *
@@ -660,6 +663,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         }
     }
 
+  public:
     // ========================================================================
     // Common metadata management
     // ========================================================================
@@ -695,6 +699,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         num_tab      = num_tab_;
     }
 
+  private:
     // fw14: arm the frozen chunk size on the replay-reconstructed proxy.
     /// @brief Pin the chunk geometry a deferred write must be replayed with.
     /// @param sz Element count per chunk at enqueue time; 0 means "not armed",
@@ -714,6 +719,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         num_chunk = num_chunk_;
     }
 
+  public:
     // ========================================================================
     // DELETED OPERATORS
     // ========================================================================
@@ -817,11 +823,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     template <typename CtxType, typename LambdaBody>
     void enqueue_deferred_write(CtxType* ctx, LambdaBody&& body) const;
 
+  private:
     /// @brief enqueue_deferred_write() for a compound arithmetic operation,
     ///        carrying @p v and @p operation into the context.
     template <typename U, typename Op, typename AsyncBody>
     void enqueue_async_arithmetic(const U& v, Op operation, AsyncBody&& async_body);
 
+  public:
     /**
      * @brief Apply @p operation to the element: load, compute in
      *        common_type_t<T, U>, store -- inside the write protocol
@@ -835,6 +843,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires std::is_invocable_r_v<T, Op, T, U>
     void apply_atomic_op(Op operation, const U& v, in_t<T> v_old);
 
+  private:
     /// @brief Run @p lambda as a simple write, through the derived proxy.
     template <typename Lambda>
     void execute_operation(Lambda&& lambda)
@@ -849,6 +858,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         derived().execute_simple_operation_async(ctx, std::forward<Lambda>(lambda));
     }
 
+  public:
     /**
      * @brief Generic helper for compound arithmetic operations
      *
@@ -945,10 +955,12 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @note Requires T and U to be integral types
      */
 
+  private:
     template <typename U, typename Op>
     void bitwise_assign(in_t<U> v, Op operation) noexcept
         requires std::is_integral_v<T> && std::is_integral_v<U>;
 
+  public:
     /**
      * @brief Compound bitwise AND operator
      *
@@ -1149,9 +1161,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *       would clobber that write.
      */
 
+  private:
     template <typename SyncOp, typename AsyncOp>
     void apply_inplace_operation(SyncOp sync_op, AsyncOp async_op) noexcept;
 
+  public:
     /**
      * @brief Pre-increment operator
      * @return This proxy. Converting it to T reads the resulting value,

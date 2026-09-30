@@ -25,6 +25,7 @@
 
 struct Chunk2Def
 {
+  private:
     // Upper bound on CHUNK_SIZE. This is NOT the chunk geometry (use
     // shrink_array::__chunk_size for that); it is only a sanity bound for the
     // example/config validation. The real hard limit is the per-chunk counter
@@ -34,6 +35,7 @@ struct Chunk2Def
     // rejected CHUNK_SIZE=512.)
     constexpr static int size_max = 65535;
 
+  public:
     // --- Compression List Settings ---
     // Level 1: Trigger compression every 2 modified chunks (Extreme stress)
     // Level 3: Chunk2A's floor (500, was 2000). At 64 threads the floor IS the
@@ -49,6 +51,7 @@ struct Chunk2Def
                                                             : (chunk_config::tuning_level == 3) ? 50 // Chunk2A's (was 20)
                                                                                                 : 100;
 
+  private:
     // --- Buffer Reuse Settings (Free lists) ---
     // Level 1: Keep only 4 blocks in cache to force real alloc/free cycles
     constexpr static int size_min_buffer_reuse = (chunk_config::tuning_level == 1)   ? 4

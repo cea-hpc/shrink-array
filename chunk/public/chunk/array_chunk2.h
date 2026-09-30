@@ -124,7 +124,10 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     using Hooks2::rechunk_seed_fresh;
     using Hooks2::rechunk_swap_identity;
 
-    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
+  private:
+    static constexpr bool is_bool = is_bool_like_v<T>; // bool and Bit (bit.h)
+
+  public:
     static constexpr bool is_not_bool = !is_bool;
 
     /**
@@ -227,6 +230,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
         }
     }
 
+  private:
     /**
      * @brief Register the array and allocate its storage.
      * @param sz element count
@@ -244,6 +248,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      */
     void rebuild_storage(ind_type sz);
 
+  public:
     /**
      * @brief Set the array-wide second constant.
      * @details Registers @p sec_value in the shared cst_val2 registry, reusing
@@ -276,6 +281,8 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
             return true;
         }
     }
+
+  private:
     /// @brief CRTP hook: the metadata the base needs for any element.
     /// @return this array's shared second-value tuple (element index unused,
     ///         since the value is array-wide -- unlike ArrayChunk2A)
@@ -284,6 +291,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
         return this->get_info_second_value();
     }
 
+  public:
     /**
      * @brief Move-assign: this array's own contents are released (clear()),
      *        then it takes @p other's -- chunks, geometry and identity, by the
@@ -375,6 +383,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      */
     void clear();
 
+  private:
     /**
      * @brief Storage teardown shared by clear() and rechunk_to().
      * @details Everything clear() does except the pre-drain compression stats,
@@ -403,6 +412,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      */
     void print_compression_stats(std::ostream& os = std::cout) const;
 
+  public:
     /**
      * @brief Audit pass: report the constant chunks the incremental compression missed.
      * @details Drains the pending candidate list first, so that a chunk which is
@@ -450,7 +460,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
         }
     }
 
-  public:
+  private:
     /// This array's (second value, index, num_tab) tuple: a MIRROR of its entry
     /// in Proxy2<T>::share_info_array, complete in every build mode.
     /// @details The registry stays the source of truth. The mirror is never

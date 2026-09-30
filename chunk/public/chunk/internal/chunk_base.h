@@ -286,6 +286,7 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
 {
     static constexpr bool precise = true;
 
+  private:
     // ── Pending word, dual mode ─────────────────────────────────────────────
     // OFF (sync_on_read=false): the counter is EXACTLY the historical signed
     // int32 with fetch_add(release)/fetch_sub(release)/load(acquire)>0 — byte-
@@ -316,6 +317,7 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
         return static_cast<int32_t>(word << (32 - kCountBits)) >> (32 - kCountBits);
     }
 
+  public:
     /// @brief Publish a newly-enqueued deferred op: increment the per-chunk
     ///        pending count (and, under sync_on_read, record this thread as
     ///        the owner). See the class comment above for the dual OFF/ON
@@ -677,6 +679,7 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
     // if you prefer centralizing them there. They must be visible to both ChunkBase and CompressionManager.
     using global_map_type = ankerl::unordered_dense::map<int, per_thread_map>;
 
+  private:
     // ── Compare and Swap ────────────────────────────────────────────────────
     /// @brief Type-tag helper: yields per_thread_map's type without needing
     ///        an instance. Always returns nullptr; only the pointer's static
@@ -687,6 +690,7 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
         return nullptr;
     }
 
+  public:
     /// @brief Atomic CAS of values from expected constant pointer to a new buffer.
     /// @param values_loc  New buffer to install on success.
     /// @param m_ptr_cst_val Expected current value of values. Taken by value on
@@ -747,6 +751,7 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
         ll_block_free_thr.push_back(values_loc);
     }
 
+  private:
     // ── Deferred-op enqueue / flush / read gate ────────────────────────────
     /// @brief Ensure that the global deferred array is initialized exactly once.
     /// @details This replaces std::call_once with a CAS-based mechanism that can be reset.
@@ -760,6 +765,7 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
         DeferredOpsStorage<per_thread_map>::instance().allocate();
     }
 
+  public:
     /// @brief Current per-thread deferred-ops array, or nullptr if it has not
     ///        been allocated yet (see ensure_deferred_array_initialized()).
     /// @return Pointer to the per-thread map array, or nullptr.
@@ -785,6 +791,7 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
     ///            agree on one signature.
     void wait_for_availability(int num) const;
 
+  private:
     /// @brief Cheap, conservative pre-check for wait_for_availability(): true
     ///        means SOME deferred op is pending somewhere (possibly not for
     ///        this chunk); false is a precise guarantee that nothing is
@@ -819,6 +826,7 @@ struct ChunkDynamicAllocPolicy; // primary left undefined: only the 2 specializa
 template <typename T, typename Derived>
 struct ChunkDynamicAllocPolicy<T, Derived, true>
 {
+  private:
     // ---------------------------------------------------------------------
     // Multi-size support (dynamic builds): a pool of per-thread allocator
     // arrays, keyed by chunk size. register_chunk_size() (called from the
@@ -840,6 +848,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
     }
     static inline std::map<std::uint64_t, std::vector<TCTypeCAllocator<T>>> allocator_pool_;
 
+  public:
     /// @brief Register (create + init) the per-thread allocator array for
     ///        `size`, once.
     /// @details Sequential context only.
@@ -868,6 +877,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
         allocator_pool_.emplace(pool_key(key, size), std::move(arr));
     }
 
+  private:
     // Serial (non-OMP) counterpart of allocator_pool_ above: one allocator per
     // chunk size, WITHOUT the per-thread dimension (serial builds have a single
     // rank). TCTypeAllocator is polymorphic and non-movable (raw slab pointers +
@@ -880,6 +890,7 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
     // is required rather than a re-init of the single allocator_data.
     static inline std::map<unsigned int, std::unique_ptr<TCTypeAllocator<T>>> allocator_pool_serial_;
 
+  public:
     /// @brief Register (create + init) the single allocator for `size`, once.
     /// @details Mirrors the serial init_allocator convention:
     ///          init(element_count, block_size, -1), where the first arg is
@@ -1002,11 +1013,15 @@ class ChunkBase : public CRTPSupport<Derived>,
     // bool and Bit (bit.h) share chunk2's bool path: one second value, true.
     static constexpr bool is_bool     = is_bool_like_v<T>;
     static constexpr bool is_not_bool = !is_bool;
+
+  private:
     /// The buffer is words of bits (Bit), not an array of T.
     static constexpr bool is_packed = is_packed_bit_v<T>;
 
     static constexpr bool use_mm_protect = build_config::use_mm_protect;
-    constexpr static T    zero{};
+
+  public:
+    constexpr static T zero{};
 
     // Atomic pointer type conditional on OpenMP availability
     using atomic_ptr_t = std::conditional_t<build_config::use_openmp, std::atomic<T*>, T*>;
@@ -1025,6 +1040,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     // in std builds, so those guards are plain shared code.
     struct NullValueAllocator
     {
+      private:
         /// @brief No pool to set up.
         void init(int /*element_size*/, int /*block_size*/, int /*munmap_flag*/) noexcept {}
         /// @brief No pool to tear down.
@@ -1099,6 +1115,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     ChunkBase()  = default;
     ~ChunkBase() = default;
 
+  private:
     /// @brief Whether this chunk is currently materialised (not compressed
     ///        to a constant), at the granularity Derived supports.
     /// @param j Element offset; used only when Derived distinguishes
@@ -1119,6 +1136,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         }
     }
 
+  public:
     /// @brief Debug-only assertion: abort if offset j is not currently
     ///        written (a clear on an unwritten offset is a bug). Compiled
     ///        out entirely when build_config::any_check is off.
@@ -1153,6 +1171,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     // Atomic / Non-atomic pointer management
     // ========================================================================
 
+  private:
     /**
      * @brief The element at @p i, whatever the chunk's state.
      *
@@ -1234,6 +1253,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             return vals[i];
     }
 
+  public:
     /// @brief Load the values pointer with appropriate memory ordering
     /// @return Pointer to the chunk data
     [[nodiscard]] T* values_load() const noexcept
@@ -1413,11 +1433,13 @@ class ChunkBase : public CRTPSupport<Derived>,
         return scan;
     }
 
+  private:
     /// @brief Elements per branch-free block of the constant scans.
     ///        A quarter of a 256-element chunk: four early-exit points, and a
     ///        block long enough for the vector loop to matter.
     static constexpr unsigned int kScanBlock = 64;
 
+  public:
     /// @brief Is the materialised buffer all @p v over its first @p count elements?
     /// @pre The chunk is materialised.
     [[nodiscard]] bool is_constant_to(in_t<T> v, unsigned int count) const noexcept
@@ -1487,6 +1509,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     // entry points under build_config::sync_on_read — is inherited from
     // DeferredReadGate<Derived> above (None/Coarse/Precise per build).
 
+  private:
     /// @brief Get the address of a value at given index
     /// @param i Index in the chunk
     /// @return Pointer to the value at index i
@@ -1509,6 +1532,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         return &values_load()[i];
     }
 
+  public:
     // ========================================================================
     // Read-only operator[]
     // ========================================================================
@@ -1686,6 +1710,8 @@ class ChunkBase : public CRTPSupport<Derived>,
             svfree(ptr);
         }
     }
+
+  private:
     /// @brief Return @p ptr to the allocator instance that carved it, found
     ///        through its slab (TCAllocator::owner / owner_rank), never
     ///        through the caller's rank.
@@ -1728,6 +1754,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         derived().get_manager().get_list_block_free_thr(thr_rank, slab->owner_key).push_back(ptr);
     }
 
+  public:
     /// @brief Free this chunk's current values buffer.
     /// @param thr_rank Calling thread's rank; forwarded to free_values(T*, int).
     void free_values([[maybe_unused]] int thr_rank = 0)
@@ -1789,6 +1816,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// gate, which has no cost in a serial build (no concurrent flush).
     std::atomic<int32_t> pending_ops_{0};
 
+  private:
     /// @brief "A compressor is about to scan and may steal this chunk's
     ///        buffer": the per-chunk half of the write/compress handshake.
     ///
@@ -1811,6 +1839,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// (chunk_config::use_chunk_steal_mark).
     std::atomic<uint32_t> steal_mark_{0};
 
+  public:
     /// @brief Is a compressor's pass in flight on this chunk?
     ///
     /// @details ACQUIRE, not relaxed. The old comment justified relaxed with

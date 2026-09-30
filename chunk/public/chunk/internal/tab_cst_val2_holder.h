@@ -227,10 +227,12 @@ struct GlobalVecHolder
     // nullptr by index_clear so the next append re-seeds it from head.
     static inline Segment<T>* tail{nullptr};
 
+  private:
     /// @brief Live ArrayChunk2A<T> instances. The registry is freed when it
     ///        reaches zero, not before. @see clear_if_last
     static inline std::atomic<int> ref_count{0};
 
+  public:
     /**
      * @brief How many distinct second values are registered.
      * @return The sum of Segment::used over the chain.
@@ -304,11 +306,18 @@ struct GlobalVecHolder
 #ifndef CHUNK_CST_VAL2_REGION_BYTES
     #define CHUNK_CST_VAL2_REGION_BYTES (std::size_t{2} << 30U)
 #endif
+
+  private:
     static constexpr std::size_t kRegionBytes = CHUNK_CST_VAL2_REGION_BYTES;
 
-    static inline std::atomic<char*>       region_begin{nullptr}; ///< Reservation start; null before init().
-    static inline char*                    region_end = nullptr;  ///< One past the reservation.
-    static inline std::atomic<std::size_t> region_used{0};        ///< Bump offset, in bytes.
+  public:
+    static inline std::atomic<char*> region_begin{nullptr}; ///< Reservation start; null before init().
+
+  private:
+    static inline char*                    region_end = nullptr; ///< One past the reservation.
+    static inline std::atomic<std::size_t> region_used{0};       ///< Bump offset, in bytes.
+
+  public:
     static inline std::size_t region_stride = 0; ///< Bytes per array: every array is carved at a multiple of it.
 
     /// @brief Largest identifier the region can hand out.
@@ -335,6 +344,8 @@ struct GlobalVecHolder
 #ifndef CHUNK_CST_VAL2_MAX_IDS
     #define CHUNK_CST_VAL2_MAX_IDS (std::size_t{4} << 20U)
 #endif
+
+  private:
     static constexpr std::size_t kIdStride =
         build_config::cst_val2_no_arrays
             ? std::size_t{64}
@@ -342,6 +353,7 @@ struct GlobalVecHolder
                    ? (((static_cast<std::size_t>(cst_buffer_size) * sizeof(T)) + 4095u) & ~std::size_t{4095u})
                    : (((static_cast<std::size_t>(cst_buffer_size) * sizeof(T)) + 63u) & ~std::size_t{63u}));
 
+  public:
     static constexpr std::size_t kMaxIds =
         (kRegionBytes / kIdStride) < CHUNK_CST_VAL2_MAX_IDS ? (kRegionBytes / kIdStride) : CHUNK_CST_VAL2_MAX_IDS;
 
@@ -355,6 +367,7 @@ struct GlobalVecHolder
     ///        never touched. Index 0 is "no second value" and stays T{}.
     static inline std::array<T, kMaxIds + 1> value_by_id{};
 
+  private:
     /// @brief Reserve the region. Idempotent; called by init().
     static void region_init()
     {
@@ -401,6 +414,7 @@ struct GlobalVecHolder
         }
     }
 
+  public:
     /// @brief Is @p ptr the start of a shared array of this type?
     /// @note THE constant-2 test of Chunk2A: `is_cst_val2()` is
     ///       `region_contains(values)`. Relaxed load of a pointer that is
@@ -446,6 +460,7 @@ struct GlobalVecHolder
         return region_begin.load(std::memory_order_relaxed) + off;
     }
 
+  private:
     /// @brief Give the carved pages back and start over. Last clear only.
     static void region_reset() noexcept
     {
@@ -462,6 +477,7 @@ struct GlobalVecHolder
             mprotect(base, used, PROT_NONE);
     }
 
+  public:
     // ── Value->pointer index (lock-free readers, single writer under lock) ──
     // Flat open-addressing table turning the O(N) dedup search in
     // find_or_set_ind_cst_val2 into an O(1) probe. Publications happen ONLY
@@ -474,14 +490,21 @@ struct GlobalVecHolder
     // arrays are freed (single-threaded clear paths) so a lookup never
     // dereferences a freed array.
 #ifndef CHUNK_CST_VAL2_INDEX_LOG2
+
+  private:
     static constexpr int chunk_cst_val2_index_loc = 18;
+
+  public:
     // 2^18 = 262144 slots, 2 Mio/type; <11% load at 30k values
 #else
     static constexpr int chunk_cst_val2_index_loc = CHUNK_CST_VAL2_INDEX_LOG2;
 #endif
 
+  private:
     static constexpr size_t INDEX_CAP       = size_t{1} << chunk_cst_val2_index_loc; ///< Initial capacity.
     static constexpr int    INDEX_MAX_PROBE = 64; ///< Bounded; giving up means fallback.
+
+  public:
     /**
      * @brief One generation of the open-addressed value -> shared array table.
      *
@@ -511,6 +534,8 @@ struct GlobalVecHolder
         // A value-initialised atomic pointer is null (C++20): no clearing loop.
         explicit IndexTable(std::size_t capacity) : cap(capacity), slots(capacity) {}
     };
+
+  private:
     /// @brief The live table. Null until the first publish; readers that see
     ///        null miss and take the cold path, which is always correct.
     static inline std::atomic<IndexTable*> index_tab{nullptr};
@@ -521,6 +546,7 @@ struct GlobalVecHolder
     ///        live table, so this is bounded by the same factor of two.
     static inline std::vector<std::unique_ptr<IndexTable>> index_generations;
 
+  public:
     /**
      * @brief The value the shared array @p ptr stands for.
      *
@@ -551,6 +577,7 @@ struct GlobalVecHolder
         }
     }
 
+  private:
     /// @brief Value hash (a 64-bit finaliser over the object's bytes).
     /// @note Hashes the REPRESENTATION, so two values that compare equal but
     ///       differ bitwise would land in different slots.
@@ -566,6 +593,7 @@ struct GlobalVecHolder
         return static_cast<size_t>(bits);
     }
 
+  public:
     /**
      * @brief Look @p v up in the index, lock-free. This is the hot path.
      * @return Its shared array, or null -- meaning "not found HERE", never
@@ -596,6 +624,7 @@ struct GlobalVecHolder
         return nullptr; // probe budget exhausted => treat as miss
     }
 
+  private:
     /**
      * @brief Publish a table twice the size of the live one (or the initial
      *        one), carrying every entry over.
@@ -634,6 +663,7 @@ struct GlobalVecHolder
         return raw;
     }
 
+  public:
     // Publish (v -> p). No-op if already present or probe budget exhausted.
     // Called ONLY under insert_mutex (single writer): a plain release store
     // suffices — it pairs with the acquire load in index_lookup so a lock-free
@@ -686,6 +716,7 @@ struct GlobalVecHolder
         index_degraded.store(true, std::memory_order_relaxed);
     }
 
+  private:
     /**
      * @brief Empty the index and drop the cached tail.
      * @warning Single-threaded clear paths only, and at the very point the
@@ -703,6 +734,7 @@ struct GlobalVecHolder
         index_generations.clear();
     }
 
+  public:
     /**
      * @brief Register one more user of this type's registry, creating it if new.
      * @details Idempotent: the first segment is installed once, by whichever
@@ -923,6 +955,7 @@ struct TabCstVal2Holder
     }
     // ── MM_PROTECT helpers ────────────────────────────────────────────────
 
+  private:
     /// @brief One array's size in bytes, rounded up to whole pages.
     /// @note Page rounding matters only to the MM_PROTECT path, where mprotect
     ///       works on page granularity.
@@ -933,6 +966,7 @@ struct TabCstVal2Holder
         return ((bytes + pagesize - 1) / pagesize) * pagesize;
     }
 
+  public:
     /**
      * @brief Allocate one shared array and fill it with @p val.
      * @return The array, filled and (under MM_PROTECT) already read-only.
@@ -953,6 +987,7 @@ struct TabCstVal2Holder
         return buf;
     }
 
+  private:
     /// @brief Carve one region stride for a shared array; the storage part of alloc_chunk().
     /// @param val Fill value: cst_buffer_size copies are written, except under cst_val2_no_arrays where nothing is
     ///        written; under MM_PROTECT the stride is made read-only after the fill.
@@ -998,6 +1033,7 @@ struct TabCstVal2Holder
         }
     }
 
+  public:
     /// @brief Release an alloc_chunk() array, by whichever route allocated it.
     static void free_chunk(T* /*p*/)
     {
@@ -1081,6 +1117,8 @@ struct TabCstVal2Holder
     {
         return global_vec_holder::value_by_id[id]; // [0] is T{}
     }
+
+  private:
     /// @brief The identifier for @p v, registering its array if it is new;
     ///        0 for T{} (the "no second value" the value table wrote as 0).
     [[nodiscard]] static std::uint32_t id_for_value(T v)
@@ -1158,6 +1196,7 @@ struct TabCstVal2Holder
     }
 
 
+  public:
     /**
      * @brief Drop this user of the registry; the last one frees it.
      * @param nb_val2 Incremented by the number of arrays freed.
@@ -1189,6 +1228,7 @@ struct TabCstVal2Holder
 template <>
 struct TabCstVal2Holder<bool>
 {
+  private:
     /// @brief All `true`, evaluated at compile time so #m_ptr is constant-initialised.
     [[nodiscard]] static constexpr std::array<bool, cst_buffer_size> all_true() noexcept
     {
@@ -1197,6 +1237,7 @@ struct TabCstVal2Holder<bool>
         return arr;
     }
 
+  public:
     /// @brief The one shared array, all `true`.
     static inline std::array<bool, cst_buffer_size> m_ptr = all_true();
 

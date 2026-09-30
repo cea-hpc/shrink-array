@@ -42,14 +42,17 @@ struct GlobalStatsChunkList
         size_t element_size;      // Size of a single entry in the op-list (tuple)
     };
 
+  private:
     std::map<std::string, TypeStats> all_stats;
 
+  public:
     /// @brief Record one element type's figures under @p name.
     void record(const std::string& name, long somme, int max_chunks, size_t elem_size)
     {
         all_stats[name] = {somme, max_chunks, elem_size};
     }
 
+  private:
     /// @brief @p bytes as a human-readable string (KiB / MiB / GiB).
     static std::string format_memory(long double bytes)
     {
@@ -72,6 +75,7 @@ struct GlobalStatsChunkList
         return oss.str();
     }
 
+  public:
     /**
      * @brief Prints a detailed report of global memory usage for management lists.
      */

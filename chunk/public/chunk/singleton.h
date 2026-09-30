@@ -70,6 +70,7 @@ class SingletonChk
     SingletonChk& operator=(SingletonChk&&)      = delete;
     ~SingletonChk()                              = default;
 
+  private:
     /// @brief The instance, created under the mutex on first call (double-checked locking).
     /// @return Pointer to the instance.
     static T* getInstance()
@@ -100,6 +101,7 @@ class SingletonChk
         delete unique_instance.exchange(nullptr, std::memory_order_acq_rel);
     }
 
+  public:
     /// @brief getInstance(), as a reference.
     static T& getRef()
     {

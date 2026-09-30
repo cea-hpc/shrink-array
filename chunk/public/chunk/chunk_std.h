@@ -179,6 +179,7 @@ extern void release_chunk_pools();
 template <bool EnableCounter>
 struct ChunkCounterPolicy
 {
+  private:
     // [[no_unique_address]]: a DISABLED counter is an empty type, but an
     // empty MEMBER still takes a byte unless told otherwise -- and that byte,
     // as a base of Chunk, pushed `values` to offset 8 and the chunk header
@@ -186,6 +187,7 @@ struct ChunkCounterPolicy
     // off). Enabled, the attribute changes nothing.
     [[no_unique_address]] ConditionalCounter<EnableCounter> nb_val_eq_zero;
 
+  public:
     /// @brief Record one more zero element.
     void inc_nb_val_eq_zero() noexcept
     {
@@ -258,6 +260,8 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
     void operator delete[](void* ptr);
+
+  private:
     /// @brief Point @p count freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
     ///          parallel region (inside one it stays on the calling thread: an
@@ -281,6 +285,7 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
      */
     static void zero_fill_fresh(T* vals) noexcept;
 
+  public:
     /**
      * @brief Materialise this chunk's storage from @p thr_rank's free-list.
      * @param thr_rank calling thread's rank, selecting its allocator pool
@@ -291,6 +296,7 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
     /// @details Delegates to the rank-aware overload using this thread's rank.
     void create_value() noexcept;
 
+  private:
     /**
      * @brief Atomically mark this chunk constant and hand back its old buffer.
      * @return the previous values pointer, or nullptr if the chunk was already
@@ -315,6 +321,7 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
         return old;
     }
 
+  public:
     /// @brief Compress: release this chunk's buffer to @p thr_rank's reuse
     ///        list and count it as a compression (CHUNK_STATS).
     void clear_st(int thr_rank, unsigned int n_elems);
@@ -397,6 +404,7 @@ struct ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
     using Base::derived;
     using Base::self;
 
+  private:
     constexpr static T zero{};
 
     /**
@@ -415,6 +423,7 @@ struct ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
      */
     void fill_list_to_compress(vec_tuple_chunkp_int2& ll_compt, int num_chunk, int num_tab, unsigned int n_elems);
 
+  public:
     /**
      * @brief Compress every chunk @p thr has queued, in one batch.
      * @param thr   rank whose candidates are compressed
@@ -446,6 +455,7 @@ struct ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived
     // may differ (heap-buffer-overflow: a 64-element buffer scanned at 256).
     using vec_tuple_chunkp_int2 = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
+  private:
     /// @brief No candidate list to fill in this mode.
     static void fill_list_chunk_to_compress_in_par(int /*thr*/, vec_tuple_chunkp_int2& /*ll_compt*/) {}
     /// @copydoc fill_list_chunk_to_compress_in_par
@@ -455,6 +465,8 @@ struct ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived
                                       unsigned int /*n_elems*/)
     {
     }
+
+  public:
     /// @brief No block compression in this mode.
     static void make_block_compression(int /*thr*/, const Proxy<T>* /*proxy*/) {}
 
@@ -490,10 +502,11 @@ template <typename T>
 class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_counter>,
               public ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>
 {
-  public:
+  private:
     // Statistics variant tag (CHUNK_STATS): 0 = chunk.
     static constexpr int stat_variant = 0;
 
+  public:
     using Base      = ChunkBase<T, Chunk>;
     using ChunkType = Chunk;
 
@@ -614,6 +627,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     }
 
 
+  private:
     /**
      * @brief Release this chunk's buffer and return to the compressed state.
      * @param thr_rank owning thread's rank; unused serially
@@ -622,6 +636,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
      */
     void block_clear(int thr_rank);
 
+  public:
     /// @brief Get reference to the chunk manager (static access)
     static auto& get_manager() noexcept
     {
