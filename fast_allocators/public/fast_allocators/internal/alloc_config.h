@@ -163,10 +163,11 @@ inline bool thp_advise() noexcept
         constexpr long slab_bytes = 2L << 20;
         if (pmd <= 0 || pmd > slab_bytes)
         {
-            std::fprintf(stderr,
-                         "[env] CHUNK_THP=%s ignored: the huge page is %ld bytes here (-1: unknown), "
-                         "not a 2 MiB slab's size\n",
-                         env, pmd);
+            if (pmd <= 0)
+                std::fprintf(stderr, "[env] CHUNK_THP=%s ignored: the huge page size is unknown here\n", env);
+            else
+                std::fprintf(stderr, "[env] CHUNK_THP=%s ignored: the huge page is %ld MiB here, not a 2 MiB slab's size\n",
+                             env, pmd >> 20);
             return false;
         }
         std::fprintf(stderr, "[env] CHUNK_THP: MADV_HUGEPAGE on the slab arenas and the cst2 region (%ld KiB)\n",
