@@ -111,7 +111,7 @@ struct Chunk2AConcurrentOps
         return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(self()) >> 4U);
     }
 
-  public:
+  protected:
     /// @brief Publish @p values_loc as this chunk's buffer, expecting the
     ///        chunk to still be compressed to the constant the caller saw
     ///        (@p expected_is_cst_val2: the second value, else the first).
@@ -174,6 +174,7 @@ struct Chunk2AConcurrentOps
         return failed;
     }
 
+  public:
     /// @brief Atomically mark this chunk constant and hand back its old buffer.
     /// @param num_compress_value 0 for the first constant, 1 for the second.
     /// @param cst2_ptr The shared array to install when @p num_compress_value
@@ -330,12 +331,14 @@ struct Chunk2AStateQueries
             base()->create_value(second_value_of_chunk());
     }
 
+  protected:
     /// @brief Compressed to either constant?
     [[nodiscard]] bool is_cst_val() const noexcept
     {
         return base()->is_cst_val1() || is_cst_val2();
     }
 
+  public:
     /// @brief Is @p ptr one of the constant arrays (first or a second one)?
     /// @note For a values pointer the caller already loaded -- the pre-store
     ///       guards of the proxy -- where is_cst_val() would load it again.

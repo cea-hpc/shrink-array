@@ -367,6 +367,7 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
      * \param nb_tab New number of tabs.
      */
 
+  protected:
     static void resize(int nb_tab)
     {
         tab_second_value.resize(nb_tab);
@@ -406,6 +407,7 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
             std::vector<second_value_slot_t>().swap(tab_second_value[static_cast<std::size_t>(num_tab)]);
     }
 
+  public:
     /*!
      * \brief Sets a specific second value in a tab and chunk.
      * \param num_tab Index of the tab.
@@ -418,6 +420,7 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
         get_tab_second_value(num_tab, i).set(v);
     }
 
+  protected:
     SecondValueRef<T> ptr_second_value; ///< this chunk's slot in tab_second_value[num_tab]
 };
 
@@ -480,6 +483,7 @@ struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<boo
      * \param nb_tab New number of tabs.
      */
 
+  protected:
     static void resize(int nb_tab)
     {
         tab_second_value.resize(nb_tab);
@@ -514,6 +518,7 @@ struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<boo
             tab_second_value[static_cast<std::size_t>(num_tab)].reset();
     }
 
+  public:
     /*!
      * \brief Sets a specific second value in a tab and chunk.
      * \param num_tab Index of the tab.

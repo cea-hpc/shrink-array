@@ -93,6 +93,7 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
 {
     using CRTPSupport<Derived>::derived;
 
+  protected:
     /// @brief The one compression manager for this (T, ChunkType) pair.
     static inline CompressionManager<T, ChunkType> compression_mgr;
 
@@ -108,6 +109,7 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
 
     static inline std::vector<std::vector<std::atomic<char>>> tab_is_inside_chunk_list_to_compress;
 
+  public:
     /**
      * @brief Grow the per-array table of candidate-flag arrays to @p nb_tab entries.
      * @param nb_tab Number of arrays to make room for.
@@ -158,6 +160,7 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
         elem_set(values_loc, static_cast<std::size_t>(ctx->num), static_cast<T>(v));
     }
 
+  protected:
     /**
      * @brief Rebuild a usable proxy from a deferred operation's context.
      * @tparam ProxyType The concrete proxy to produce.
@@ -170,6 +173,7 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     template <typename ProxyType, typename Ctx>
     static ProxyType make_proxy_with_info(Ctx* ctx);
 
+  public:
     /// @brief Read at the offset @p ctx recorded, on the replay path.
     /// @warning Same reload caveat as store_value_async().
     [[nodiscard]] static T read_values_async(auto* ctx) noexcept
@@ -203,12 +207,14 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
 template <typename Derived, typename T, typename ChunkType>
 struct ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSupport<Derived>
 {
+  protected:
     // Management members
     static inline CompressionManager<T, ChunkType>            compression_mgr;
     std::atomic<char>*                                        ptr_is_inside_chunk_list_to_compress;
     static inline std::vector<std::vector<std::atomic<char>>> tab_is_inside_chunk_list_to_compress;
 
 
+  public:
     /// @brief No candidate flags in this configuration; nothing to size.
     /// @note Still declared: ArrayChunkBase::create_common() calls it
     ///       unconditionally, because the call site is shared with variants
@@ -219,6 +225,7 @@ struct ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSuppor
     /// @brief No candidate flags in this configuration; nothing to release.
     static void release_tab_is_int([[maybe_unused]] int num_tab) noexcept {}
 
+  protected:
     /// @brief Never callable in this configuration. Aborts.
     template <typename ProxyType, typename Ctx>
     static ProxyType make_proxy_with_info(Ctx* /*ctx*/)
@@ -356,12 +363,14 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return num_tab;
     }
 
+  protected:
     /// @brief Record which array this proxy points into. @see get_num_tab
     void set_num_tab(int nt) noexcept
     {
         num_tab = nt;
     }
 
+  public:
     /// @brief The chunk that owns this element.
     [[nodiscard]] ChunkType& get_chunk() const noexcept
     {
@@ -372,6 +381,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // Common chunk state queries
     // ========================================================================
 
+  protected:
     /// @brief Is the chunk compressed to its single first value?
     [[nodiscard]] bool is_cst_val1() const noexcept
     {
@@ -415,6 +425,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     {
         return v == static_cast<T>(ChunkType::first_value) && is_cst_val1(values_loc) && !chunk.pending_any();
     }
+
+  public:
     /**
      * @brief Initialize per-chunk pointers except second value.
      */
@@ -424,12 +436,14 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tabl][num_chunkl] = v;
     }
 
+  protected:
     /// @brief Point this proxy at an already-known candidate flag.
     void set_ptr_is_inside_chunk_list_to_compress(std::atomic<char>* pt) noexcept
     {
         ptr_is_inside_chunk_list_to_compress = pt;
     }
 
+  public:
     /// @brief The whole candidate-flag row for array @p num_tab.
     static std::vector<std::atomic<char>>& get_tab_is_inside_list_to_compress(int num_tab) noexcept
     {
@@ -450,15 +464,18 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @post ptr_is_inside_chunk_list_to_compress points to correct atomic flag
      */
 
+  protected:
     void set_ptr_is_inside_chunk_list_to_compress() noexcept
     {
         ptr_is_inside_chunk_list_to_compress =
             &FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab][num_chunk];
     }
 
+  public:
     /// @brief Queue this chunk as a compression candidate in @p vec_tuple.
     void add_to_compression_list([[maybe_unused]] auto& vec_tuple) const;
 
+  protected:
     /// @brief add_to_compression_list() on the calling thread's own list.
     void add_to_compression_list() const;
 
@@ -556,6 +573,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
     }
 
+  public:
     // PURE-READ entry (operator T(), the *=1 / /=1 early-outs). Under
     // sync_on_read this pulls the offset to applied state then reads LIVE; the
     // ctor-time `values` snapshot may be stale after materialisation. This is the
@@ -569,6 +587,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return chunk.read_value(num); // read_value accounts the read in stats
     }
 
+  protected:
     /// @brief Read through the chunk WITHOUT synchronising first.
     /// @warning Returns a stale value if a deferred write on this offset has
     ///          not been applied. Use read_pure() unless you know otherwise.
@@ -622,7 +641,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return write_with_optional_lock_impl([&] { write_fn(); }, lbd_info);
     }
 
-  public:
+  protected:
     /**
      * @brief Has a thread's candidate list grown past the point where it must be drained?
      *
@@ -813,6 +832,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return static_cast<bool>(read_pure());
     }
 
+  protected:
     /**
      * @brief Record a write to be applied later, when the fast path refuses it.
      * @param ctx Captures everything the replay needs -- offset, chunk indices,
@@ -829,7 +849,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     template <typename U, typename Op, typename AsyncBody>
     void enqueue_async_arithmetic(const U& v, Op operation, AsyncBody&& async_body);
 
-  public:
+  protected:
     /**
      * @brief Apply @p operation to the element: load, compute in
      *        common_type_t<T, U>, store -- inside the write protocol
@@ -877,8 +897,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @note Increments CHUNK_STATS statistics if enabled
      */
 
+  protected:
     template <typename U, typename Op>
     void arithmetic_assign(in_t<U> v, Op operation) noexcept; // in_t: see assign_impl in the proxies
+
+  public:
     /**
      * @brief Compound addition assignment -- clean types (e.g. float += float,
      *        float += int).

@@ -105,6 +105,7 @@ class Chunk2Base : public ChunkBase<T, Derived>
     /// @param cst2_ptr The shared array to install for a type-2 compression
     ///        (Chunk2A only; the chunk keeps no copy of it)
 
+  protected:
     template <typename IndexType>
     void block_clear_common(int                  num_compress_value,
                             IndexType            index_opt,
@@ -136,6 +137,7 @@ class Chunk2Base : public ChunkBase<T, Derived>
      * @param cas_fn A lambda that returns TRUE if the swap failed (pointer already changed).
      */
 
+  protected:
     template <typename CasFunc>
     void apply_cas_or_recup(T* values_loc, int thr_rank, CasFunc&& cas_fn) noexcept
     {

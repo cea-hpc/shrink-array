@@ -300,7 +300,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         return chunk_list[chunk_index_of(i)].print_adr(offset_in_chunk(i));
     }
 
-  public:
+  protected:
     /**
      * @brief Creation steps common to every variant, run from the derived constructors.
      * @details Resets the chunk counter, re-arms the NaN checker, calls the

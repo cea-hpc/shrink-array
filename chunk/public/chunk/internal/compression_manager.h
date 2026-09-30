@@ -294,6 +294,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
      */
     struct CmpDeferredOpBase : DeferredOperationBase
     {
+      protected:
         int thread_rank = -1; ///< rank that enqueued this op (set by DeferredOperation)
 
       private:

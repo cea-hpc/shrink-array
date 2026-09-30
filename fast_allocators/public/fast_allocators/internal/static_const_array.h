@@ -268,7 +268,7 @@ class StaticConstArray
     /// @brief freeBlockWithInt() over the aligned ladder.
     static void freeBlockWithAlignInt(int sz, void* ptr);
 
-  public:
+  protected:
     /**
      * @brief Take a block of at least @p sz bytes from the ladder.
      * @param sz Requested size in bytes.
@@ -283,7 +283,7 @@ class StaticConstArray
     /// @brief getBlockAlloc() over the aligned ladder. Same null convention.
     static void* getBlockAllocAlign(int sz);
 
-  public:
+  protected:
     /**
      * @brief Give a block back to the ladder.
      * @param sz The size it was requested with.

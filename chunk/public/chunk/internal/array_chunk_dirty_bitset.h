@@ -96,7 +96,7 @@ class DirtyBitsetSupport<Derived, true>
     static constexpr int kBitInWordMask = kChunksPerWord - 1; ///< chunk_idx -> bit within its word.
     static_assert(kChunksPerWord == 1 << kWordShift, "kWordShift must be log2(kChunksPerWord)");
 
-  public:
+  protected:
     /**
      * @brief Allocate a fresh, all-clear bitset for @p nb_chunk chunks.
      * @param nb_chunk number of chunks the owning array now has
@@ -173,6 +173,7 @@ class DirtyBitsetSupport<Derived, true>
             words[i].word.store(0, std::memory_order_relaxed);
     }
 
+  public:
     /**
      * @brief Mark a chunk as having received a deferred operation.
      * @param chunk_idx The global index of the chunk (not of an element: one
@@ -207,6 +208,7 @@ class DirtyBitsetSupport<Derived, true>
         return (bitset_[word_idx].word.load(std::memory_order_acquire) & bit_mask) != 0;
     }
 
+  protected:
     /**
      * @brief Exchange bitsets with another array, as part of an O(1) container swap.
      * @param other the array to exchange the bitset with
@@ -218,6 +220,7 @@ class DirtyBitsetSupport<Derived, true>
         swap(nb_words_, other.nb_words_);
     }
 
+  public:
     /**
      * @brief Clear the dirty bitset of EVERY live array of this variant.
      * @details Walks the per-type registry of arrays and calls
@@ -274,19 +277,25 @@ class DirtyBitsetSupport<Derived, true>
 template <typename Derived>
 class DirtyBitsetSupport<Derived, false>
 {
-  public:
+  protected:
     /// @name No-op verbs (no bitset in this mode)
     /// @{
     void alloc_dirty_bitset(int /*nb_chunk*/) noexcept {}
     void reallocate_dirty_bitset(int /*old_nb_chunk*/, int /*new_nb_chunk*/) noexcept {}
     void clear_dirty_bitset() noexcept {}
+
+  public:
     void mark_chunk_dirty(int /*chunk_idx*/) noexcept {}
     /// @brief Never dirty: no deferred write can exist in this mode.
     [[nodiscard]] bool is_chunk_dirty(int /*chunk_idx*/) const noexcept
     {
         return false;
     }
-    void        swap_dirty_bitset(DirtyBitsetSupport& /*other*/) noexcept {}
+
+  protected:
+    void swap_dirty_bitset(DirtyBitsetSupport& /*other*/) noexcept {}
+
+  public:
     static void clear_all_dirty_bitsets() noexcept {}
     /// @}
 };

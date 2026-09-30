@@ -123,6 +123,7 @@ struct PointerMapChunk2InfArrayPolicy
         return values;
     }
 
+  protected:
     /**
      * @brief Register the inf_array tuple pointer for a second value.
      * @param key Second value to register.
@@ -133,6 +134,7 @@ struct PointerMapChunk2InfArrayPolicy
         map_inf_array[key] = ind;
     }
 
+  public:
     /**
      * @brief Look up the inf_array tuple pointer registered for a second value.
      * @param key Second value to look up.
@@ -192,7 +194,11 @@ struct PointerMapChunk2InfArrayPolicy<T, false>
     {
         return {};
     }
-    void                       insert(in_t<T>, inf_array_t*) {}
+
+  protected:
+    void insert(in_t<T>, inf_array_t*) {}
+
+  public:
     [[nodiscard]] inf_array_t* find_inf_array(in_t<T>) const
     {
         return nullptr;
