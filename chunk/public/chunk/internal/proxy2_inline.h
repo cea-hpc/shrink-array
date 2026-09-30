@@ -39,8 +39,11 @@ namespace shrink_array
 // hottest instruction of assign_impl on aarch64; without them, 64 threads
 // chunk2_256 --mode perf: 11.48 s -> 10.68 s (-7.0%).
 
+// The armed mirror, checked against the registry under any_check; nullptr when
+// the proxy is not armed. Callers read the fields THROUGH this pointer: see the
+// note on set_info_on_chunk() below for why not through a returned copy.
 template <typename T, typename Derived>
-ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
+const typename ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_array() const
 {
     if (inf_array_src_ != nullptr) [[likely]]
     {
@@ -56,41 +59,77 @@ ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() con
                     std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg), std::get<2>(reg),
                     static_cast<const void*>(get_ptr_on_array()));
         }
-        return *inf_array_src_;
     }
+    return inf_array_src_;
+}
+
+template <typename T, typename Derived>
+typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
+{
+    if (const inf_array_t* src = armed_inf_array()) [[likely]]
+        return *src;
     return Derived::get_info_second_value(get_ptr_on_array());
+}
+
+template <typename T, typename Derived>
+    requires is_bool_like_v<T>
+const typename ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_array() const
+{
+    if (inf_array_src_ != nullptr) [[likely]]
+    {
+        if constexpr (build_config::any_check)
+        {
+            // ind and num_tab only: ind maps one-to-one to the value, and a
+            // value compare would raise a false alarm on a NaN second value.
+            const inf_array_t reg = Derived::get_info_second_value(get_ptr_on_array());
+            if (std::get<1>(reg) != std::get<1>(*inf_array_src_) || std::get<2>(reg) != std::get<2>(*inf_array_src_))
+                INVARIANT_FAILED(
+                    "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
+                    "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
+                    std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg), std::get<2>(reg),
+                    static_cast<const void*>(get_ptr_on_array()));
+        }
+    }
+    return inf_array_src_;
 }
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
 typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
 {
-    if (inf_array_src_ != nullptr) [[likely]]
-    {
-        if constexpr (build_config::any_check)
-        {
-            // ind and num_tab only: ind maps one-to-one to the value, and a
-            // value compare would raise a false alarm on a NaN second value.
-            const inf_array_t reg = Derived::get_info_second_value(get_ptr_on_array());
-            if (std::get<1>(reg) != std::get<1>(*inf_array_src_) || std::get<2>(reg) != std::get<2>(*inf_array_src_))
-                INVARIANT_FAILED(
-                    "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
-                    "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
-                    std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg), std::get<2>(reg),
-                    static_cast<const void*>(get_ptr_on_array()));
-        }
-        return *inf_array_src_;
-    }
+    if (const inf_array_t* src = armed_inf_array()) [[likely]]
+        return *src;
     return Derived::get_info_second_value(get_ptr_on_array());
 }
 
+// Every write runs one of these. They take the fields from the armed mirror --
+// memory written long before -- never from a copy just stored. The former
+//     inf_array = load_inf_array(); second_value = std::get<0>(inf_array); ...
+// returned the 16-byte tuple through a stack temporary (a q-register store)
+// and read it straight back with 8- and 4-byte loads: a store the core cannot
+// forward to narrower loads, so each write waited for it to reach the cache.
+// On Grace (Neoverse V2), 64 threads, variant_compare --constants 1: 38.6 % of
+// Proxy2<double>::assign_impl's samples sat right behind those loads, and
+// Chunk2's constant-write pass ran 7-12 % behind Chunk2A's (whose write path
+// has no such tuple). Unarmed proxies (replay, *_from_key) keep the registry
+// path: rare, and a registry lookup costs more than the stall anyway.
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_info_on_chunk()
 {
-    inf_array    = load_inf_array();
-    second_value = std::get<0>(inf_array);
-    ind          = std::get<1>(inf_array);
-    derived().set_num_tab();
+    if (const inf_array_t* src = armed_inf_array()) [[likely]]
+    {
+        inf_array    = *src;
+        second_value = std::get<0>(*src);
+        ind          = std::get<1>(*src);
+        derived().set_num_tab(std::get<2>(*src)); // what set_num_tab() would read back from inf_array
+    }
+    else
+    {
+        inf_array    = Derived::get_info_second_value(get_ptr_on_array());
+        second_value = std::get<0>(inf_array);
+        ind          = std::get<1>(inf_array);
+        derived().set_num_tab();
+    }
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -101,7 +140,14 @@ void ProxySpec2<T, Derived>::set_info_on_chunk()
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_info_second_value_ind()
 {
-    inf_array    = load_inf_array();
+    if (const inf_array_t* src = armed_inf_array()) [[likely]]
+    {
+        inf_array    = *src;
+        second_value = std::get<0>(*src);
+        ind          = std::get<1>(*src);
+        return;
+    }
+    inf_array    = Derived::get_info_second_value(get_ptr_on_array());
     second_value = std::get<0>(inf_array);
     ind          = std::get<1>(inf_array);
 }
@@ -117,7 +163,13 @@ void ProxySpec2<T, Derived>::set_info_second_value_ind_from_key(const void* key)
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_second_value()
 {
-    inf_array    = load_inf_array();
+    if (const inf_array_t* src = armed_inf_array()) [[likely]]
+    {
+        inf_array    = *src;
+        second_value = std::get<0>(*src);
+        return;
+    }
+    inf_array    = Derived::get_info_second_value(get_ptr_on_array());
     second_value = std::get<0>(inf_array);
 }
 
@@ -125,9 +177,16 @@ template <typename T, typename Derived>
     requires is_bool_like_v<T>
 void ProxySpec2<T, Derived>::set_info_on_chunk()
 {
-    inf_array = load_inf_array();
-
-    derived().set_num_tab();
+    if (const inf_array_t* src = armed_inf_array()) [[likely]]
+    {
+        inf_array = *src;
+        derived().set_num_tab(std::get<2>(*src)); // not read back from inf_array (see above)
+    }
+    else
+    {
+        inf_array = Derived::get_info_second_value(get_ptr_on_array());
+        derived().set_num_tab();
+    }
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
