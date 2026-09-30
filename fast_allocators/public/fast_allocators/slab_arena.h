@@ -35,6 +35,7 @@
 
 #include <sys/mman.h>
 #include <unistd.h>
+#include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP)
 #include <algorithm> // std::max, the high-water mark
 #include <cstddef>
 #include <cstdint>
@@ -530,6 +531,10 @@ class SlabArena
             std::fprintf(stderr, "SlabArena(%s): mmap of %zu bytes failed\n", name_, want);
             std::abort();
         }
+        // CHUNK_THP (experimental, off by default): the slabs are 2 MiB and
+        // aligned on it, a huge page each. Advice only: a failure is ignored.
+        if (alloc_config::thp_advise())
+            (void)::madvise(base, want, MADV_HUGEPAGE);
         auto region_begin = reinterpret_cast<std::uintptr_t>(base);
         regions_.push_back(Region{.begin = region_begin, .end = region_begin + want});
         cursor_     = region_begin;
