@@ -1049,9 +1049,7 @@ template <typename T>
 class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_counter>,
                public Chunk2FastCompPolicy<T, Chunk2<T>, chunk_config::use_fast_block_compression>
 {
-  private:
-    // Statistics variant tag (CHUNK_STATS): 1 = chunk2.
-    static constexpr int stat_variant = 1;
+
 
   public:
     using Base     = Chunk2Base<T, Chunk2>;
@@ -1079,6 +1077,9 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     using OmpPolicy::clear_st;
     using OmpPolicy::create_value;
     using OmpPolicy::create_value_bool;
+
+    // Statistics variant tag (CHUNK_STATS): 1 = chunk2.
+    static constexpr int stat_variant = 1;
 
   private:
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)

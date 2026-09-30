@@ -558,11 +558,11 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     friend class Chunk2Base<T, Chunk2A>;
     friend class Proxy2A<T>;
 
-  private:
+  public:
+
     // Statistics variant tag (CHUNK_STATS): 2 = chunk2a.
     static constexpr int stat_variant = 2;
 
-  public:
     using manager_chunk2A = ManagerChunk<Chunk2A, T>;
     // Same tuple as TChunk.h's VectorTuple4ChunkInt2 (the manager storage).
     using vec_tuple_chunkA2p_int2  = std::vector<std::tuple<Chunk2A*, int, int, ChunkElems>>;

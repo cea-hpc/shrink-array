@@ -502,9 +502,6 @@ template <typename T>
 class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_counter>,
               public ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>
 {
-  private:
-    // Statistics variant tag (CHUNK_STATS): 0 = chunk.
-    static constexpr int stat_variant = 0;
 
   public:
     using Base      = ChunkBase<T, Chunk>;
@@ -532,6 +529,9 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
     using FastCompPolicy::derived;
     using FastCompPolicy::self;
+
+    // Statistics variant tag (CHUNK_STATS): 0 = chunk.
+    static constexpr int stat_variant = 0;
 
     Chunk()  = default;
     ~Chunk() = default;
