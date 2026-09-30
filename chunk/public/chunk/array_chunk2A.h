@@ -109,10 +109,18 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     // hook call through the CRTP self() would see two base subobjects and be
     // ambiguous. Naming them here makes them members of ArrayChunk2A, which
     // hides both bases' versions.
-
     using Hooks2A::rechunk_drain_reuse_list;
     using Hooks2A::rechunk_drop_candidates;
     using Hooks2A::rechunk_swap_identity;
+
+    using Base::assign; // the (first, last) overload, hidden by the one above otherwise
+
+  private:
+    static constexpr char is_val1 = 0; ///< Tag: chunk compressed to the first constant
+    static constexpr char is_val2 = 1; ///< Tag: chunk compressed to its own second value
+
+  public:
+    friend ArrayChunkBase<ArrayChunk2A<T, ind_type>>; // swap_identity()
 
     /**
      * @brief Build an array of @p sz elements at the current active geometry.
@@ -176,6 +184,139 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     /// @param il Source values.
     ArrayChunk2A(std::initializer_list<T> il) : ArrayChunk2A(il.begin(), il.end()) {}
 
+    /**
+     * @brief Release the storage, then the registry entry.
+     * @warning The erase() below is not optional. A later array reusing this
+     *          address -- very common for stack arrays, e.g. rechunk_to()'s
+     *          @c tmp -- would otherwise inherit the stale num_tab, because
+     *          get_num_tab() returns the FIRST matching entry; the new array
+     *          would then read another tab's metadata and corrupt it.
+     */
+    ~ArrayChunk2A()
+    {
+        clear();
+        Proxy2A<T>::share_info_array.erase(this->registry_key());
+    }
+
+    /**
+     * @brief Report how many cst2 buffers a sweep could reclaim.
+     * @details Runs gc_collect_live() and compares the live count with
+     *          GlobalVecHolder's total; the difference is the reclaimable set.
+     *          Diagnostic only -- prints to stderr and frees nothing.
+     */
+    static void gc_mark_report()
+    {
+        std::unordered_set<const void*> live;
+        gc_collect_live(live);
+        const std::size_t held = GlobalVecHolder<T>::count_entries();
+        std::fprintf(stderr, "[cst2-gc] live=%zu / holder=%zu  (reclaimable=%zu)\n", live.size(), held,
+                     held > live.size() ? held - live.size() : 0);
+        std::fflush(stderr);
+    }
+
+    /**
+     * @brief Move-assign: this array's own contents are released (clear()),
+     *        then it takes @p other's -- chunks, geometry and identity, by the
+     *        same exchange as swap(); @p other is left empty and valid.
+     * @details It used to steal @p other's chunk list and nothing else: this
+     *          array's old chunks were destroyed with their buffers still
+     *          queued as compression candidates, the moved chunks kept
+     *          @p other's metadata rows (num_tab), and @p other kept its
+     *          nb_chunk over an empty list. Sequential context, as clear().
+     * @note noexcept, as the move constructor: a failure here terminates.
+     */
+    ArrayChunk2A& operator=(ArrayChunk2A&& other) noexcept
+    {
+        if (this != &other)
+        {
+            clear();
+            this->swap_storage_and_identity(other);
+        }
+        return *this;
+    }
+
+    /**
+     * @brief Has the chunk holding element @p i been materialised?
+     * @param i element index
+     * @return false while that chunk is still compressed to a constant
+     */
+    [[nodiscard]] bool written(ind_type i) const noexcept
+    {
+        return chunk_list[this->chunk_index_of(i)].written();
+    }
+
+    /// @brief Compress every chunk currently queued as a candidate.
+    static void make_block_compression();
+
+    /**
+     * @brief Resize the array, preserving the elements that still fit.
+     * @param newsz new element count
+     */
+    void resize(ind_type newsz);
+
+    /**
+     * @brief Resize to @p count elements, all set to @p val.
+     * @param count new element count
+     * @param val   value every element takes
+     *
+     * @note FIX: deleguait a Base2::resize(count, val), qui a la semantique de
+     *       std::vector::resize -- il ne remplit que les elements NOUVEAUX,
+     *       [old_size, count). assign doit remplir [0, count). Un
+     *       `ArrayChunk2A<double> a(5); a.assign(1000, 2.5);` laissait donc
+     *       a[0..4] a zero. Jamais vu parce que le seul test de cette surface,
+     *       --test_stl, etait rejete par le filtre d'arguments du bench.
+     *       ArrayChunkBase::assign fait resize(count) puis remplit tout ; chunk
+     *       et chunk2 l'utilisent deja et passent le test.
+     */
+    void assign(ind_type count, in_t<T> val)
+    {
+        Base::assign(count, val);
+    }
+
+    /**
+     * @brief Element-wise equality.
+     * @param other array to compare against
+     * @return true if both arrays have the same size and the same values
+     * @note Compares decompressed values, so two arrays that are equal but
+     *       compressed differently still compare equal.
+     */
+    bool operator==(const ArrayChunk2A& other) const noexcept
+    {
+        if (m_size != other.m_size)
+            return false;
+        for (ind_type i = 0; i < m_size; ++i)
+            if (Base2::read_value(i) != other.read_value(i))
+                return false;
+        return true;
+    }
+
+    /**
+     * @brief Release all storage and report end-of-life statistics.
+     * @details clear_core() plus the end-of-life I/O (compression stats and the
+     *          size predictor).
+     * @see clear_core
+     */
+    void clear();
+
+    /// @brief Run a compression pass over this array's chunks.
+    void compress_int();
+
+    /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
+    ///        is a no-op; num_tab is not copied, identity stays with the address.
+    ArrayChunk2A& operator=(const ArrayChunk2A& from)
+    {
+        if (this != &from)
+            this->copy_from(from);
+        return *this;
+    }
+
+    /// @brief Read-only access to the underlying chunk list.
+    /// @return const reference to the chunks backing this array
+    [[nodiscard]] const std::vector<Chunk2A<T>>& getChunkList() const noexcept
+    {
+        return chunk_list;
+    }
+
   private:
     /**
      * @brief Claim this array's identity before its storage is built.
@@ -193,22 +334,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         ++nb_tab;
     }
 
-  public:
-    /**
-     * @brief Release the storage, then the registry entry.
-     * @warning The erase() below is not optional. A later array reusing this
-     *          address -- very common for stack arrays, e.g. rechunk_to()'s
-     *          @c tmp -- would otherwise inherit the stale num_tab, because
-     *          get_num_tab() returns the FIRST matching entry; the new array
-     *          would then read another tab's metadata and corrupt it.
-     */
-    ~ArrayChunk2A()
-    {
-        clear();
-        Proxy2A<T>::share_info_array.erase(this->registry_key());
-    }
-
-  private:
     /**
      * @brief Register the array and allocate its storage.
      * @param sz element count
@@ -247,24 +372,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
             });
     }
 
-  public:
-    /**
-     * @brief Report how many cst2 buffers a sweep could reclaim.
-     * @details Runs gc_collect_live() and compares the live count with
-     *          GlobalVecHolder's total; the difference is the reclaimable set.
-     *          Diagnostic only -- prints to stderr and frees nothing.
-     */
-    static void gc_mark_report()
-    {
-        std::unordered_set<const void*> live;
-        gc_collect_live(live);
-        const std::size_t held = GlobalVecHolder<T>::count_entries();
-        std::fprintf(stderr, "[cst2-gc] live=%zu / holder=%zu  (reclaimable=%zu)\n", live.size(), held,
-                     held > live.size() ? held - live.size() : 0);
-        std::fflush(stderr);
-    }
-
-  private:
     /**
      * @brief (Re)allocate storage at the current active geometry.
      *
@@ -278,29 +385,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      */
     void rebuild_storage(ind_type sz);
 
-  public:
-    /**
-     * @brief Move-assign: this array's own contents are released (clear()),
-     *        then it takes @p other's -- chunks, geometry and identity, by the
-     *        same exchange as swap(); @p other is left empty and valid.
-     * @details It used to steal @p other's chunk list and nothing else: this
-     *          array's old chunks were destroyed with their buffers still
-     *          queued as compression candidates, the moved chunks kept
-     *          @p other's metadata rows (num_tab), and @p other kept its
-     *          nb_chunk over an empty list. Sequential context, as clear().
-     * @note noexcept, as the move constructor: a failure here terminates.
-     */
-    ArrayChunk2A& operator=(ArrayChunk2A&& other) noexcept
-    {
-        if (this != &other)
-        {
-            clear();
-            this->swap_storage_and_identity(other);
-        }
-        return *this;
-    }
-
-  private:
     /**
      * @brief Second value registered for the chunk holding element @p i.
      * @param i element index
@@ -311,72 +395,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         return Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, this->chunk_index_of(i));
     }
 
-  public:
-    /**
-     * @brief Has the chunk holding element @p i been materialised?
-     * @param i element index
-     * @return false while that chunk is still compressed to a constant
-     */
-    [[nodiscard]] bool written(ind_type i) const noexcept
-    {
-        return chunk_list[this->chunk_index_of(i)].written();
-    }
-
-    /// @brief Compress every chunk currently queued as a candidate.
-    static void make_block_compression();
-
-    /**
-     * @brief Resize the array, preserving the elements that still fit.
-     * @param newsz new element count
-     */
-    void resize(ind_type newsz);
-
-    /**
-     * @brief Resize to @p count elements, all set to @p val.
-     * @param count new element count
-     * @param val   value every element takes
-     *
-     * @note FIX: deleguait a Base2::resize(count, val), qui a la semantique de
-     *       std::vector::resize -- il ne remplit que les elements NOUVEAUX,
-     *       [old_size, count). assign doit remplir [0, count). Un
-     *       `ArrayChunk2A<double> a(5); a.assign(1000, 2.5);` laissait donc
-     *       a[0..4] a zero. Jamais vu parce que le seul test de cette surface,
-     *       --test_stl, etait rejete par le filtre d'arguments du bench.
-     *       ArrayChunkBase::assign fait resize(count) puis remplit tout ; chunk
-     *       et chunk2 l'utilisent deja et passent le test.
-     */
-    void assign(ind_type count, in_t<T> val)
-    {
-        Base::assign(count, val);
-    }
-    using Base::assign; // the (first, last) overload, hidden by the one above otherwise
-
-    /**
-     * @brief Element-wise equality.
-     * @param other array to compare against
-     * @return true if both arrays have the same size and the same values
-     * @note Compares decompressed values, so two arrays that are equal but
-     *       compressed differently still compare equal.
-     */
-    bool operator==(const ArrayChunk2A& other) const noexcept
-    {
-        if (m_size != other.m_size)
-            return false;
-        for (ind_type i = 0; i < m_size; ++i)
-            if (Base2::read_value(i) != other.read_value(i))
-                return false;
-        return true;
-    }
-
-    /**
-     * @brief Release all storage and report end-of-life statistics.
-     * @details clear_core() plus the end-of-life I/O (compression stats and the
-     *          size predictor).
-     * @see clear_core
-     */
-    void clear();
-
-  private:
     /// @brief Storage teardown shared by clear() and rechunk_to().
     ///
     /// Everything clear() does EXCEPT the end-of-life I/O (compression stats and
@@ -393,36 +411,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @param os destination stream
      */
     void print_compression_stats(std::ostream& os = std::cout) const;
-
-  public:
-    /// @brief Run a compression pass over this array's chunks.
-    void compress_int();
-
-    /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
-    ///        is a no-op; num_tab is not copied, identity stays with the address.
-    ArrayChunk2A& operator=(const ArrayChunk2A& from)
-    {
-        if (this != &from)
-            this->copy_from(from);
-        return *this;
-    }
-
-  private:
-    static constexpr char is_val1 = 0; ///< Tag: chunk compressed to the first constant
-    static constexpr char is_val2 = 1; ///< Tag: chunk compressed to its own second value
-
-  public:
-    /// @brief Read-only access to the underlying chunk list.
-    /// @return const reference to the chunks backing this array
-    [[nodiscard]] const std::vector<Chunk2A<T>>& getChunkList() const noexcept
-    {
-        return chunk_list;
-    }
-
-  private:
-    /// @brief This array holds one reference on Chunk2A<T>'s cst2 registry
-    ///        (TabCstVal2Holder). See acquire_cst2_registry().
-    bool holds_cst2_registry_ = false;
 
     /**
      * @brief Take this array's reference on the cst2 registry, once, as soon
@@ -448,8 +436,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         }
     }
 
-    friend ArrayChunkBase<ArrayChunk2A<T, ind_type>>; // swap_identity()
-
     /// @brief The identity step of swap(): num_tab and the registry entry (the
     ///        per-chunk metadata rows follow the chunks), the cst2 registry
     ///        reference (it goes with the chunks that need it).
@@ -460,6 +446,10 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         swap(holds_cst2_registry_, other.holds_cst2_registry_);
         Proxy2A<T>::share_info_array.swap_keys(this->registry_key(), other.registry_key());
     }
+
+    /// @brief This array holds one reference on Chunk2A<T>'s cst2 registry
+    ///        (TabCstVal2Holder). See acquire_cst2_registry().
+    bool holds_cst2_registry_ = false;
 };
 
 } // namespace shrink_array

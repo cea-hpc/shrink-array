@@ -121,7 +121,6 @@ using DeferredOpPtr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
 ///        object type, found by AllocatorRegistry).
 struct FastAllocatorBase
 {
-    size_t block_size = 0; ///< bytes per block
     /// @brief Take a block (uninitialised).
     virtual void* allocate_raw() = 0;
     /// @brief Return a block to the pool.
@@ -129,6 +128,8 @@ struct FastAllocatorBase
     /// @brief The slab the blocks come from (the ledger's identity).
     [[nodiscard]] virtual const void* slab_addr() const noexcept = 0;
     virtual ~FastAllocatorBase()                                 = default;
+
+    size_t block_size = 0; ///< bytes per block
 };
 
 // ============================================================================
@@ -172,8 +173,6 @@ struct DeferredByteAllocSlot
 template <typename T>
 struct DeferredFreeListSlot
 {
-    std::vector<T*> fl;
-
     DeferredFreeListSlot() = default;
     // Owns the parked blocks in std-alloc builds (see the destructor): a copy
     // would delete them twice.
@@ -201,6 +200,8 @@ struct DeferredFreeListSlot
                 ::operator delete(static_cast<void*>(p));
         }
     }
+
+    std::vector<T*> fl;
 };
 
 /**
@@ -211,6 +212,16 @@ template <typename T, fast_alloc::ArenaKind Arena = fast_alloc::ArenaKind::Op>
 struct FastAllocatorConcrete : FastAllocatorBase
 {
     using ByteAlloc = TCTypeAllocator<std::byte>;
+
+    /// @brief Set block_size to sizeof(T) and, under fast-alloc, create this thread's allocator.
+    FastAllocatorConcrete()
+    {
+        block_size = sizeof(T);
+        if constexpr (build_config::use_fast_alloc)
+        {
+            (void)allocator();
+        }
+    }
 
   private:
     /**
@@ -270,18 +281,6 @@ struct FastAllocatorConcrete : FastAllocatorBase
         return slot.fl;
     }
 
-  public:
-    /// @brief Set block_size to sizeof(T) and, under fast-alloc, create this thread's allocator.
-    FastAllocatorConcrete()
-    {
-        block_size = sizeof(T);
-        if constexpr (build_config::use_fast_alloc)
-        {
-            (void)allocator();
-        }
-    }
-
-  private:
     // Aliasing check (POOL_LEDGER): identity of this (type,thread) pool. Under
     // fast-alloc it's the byte-slab address; otherwise the free-list address.
     // Two element types share this address iff -fipa-icf folded their
@@ -485,15 +484,6 @@ struct arena_of_tag<CtxTag>
 template <typename Tag>
 struct AllocatorRegistry
 {
-  private:
-    /// @brief This thread's allocators (one per object size seen so far).
-    static std::vector<std::unique_ptr<FastAllocatorBase>>& allocs()
-    {
-        thread_local std::vector<std::unique_ptr<FastAllocatorBase>> v;
-        return v;
-    }
-
-  public:
     /// @brief This thread's allocator for objects of sizeof(T) bytes, created on first request.
     /// @tparam T Object type; allocators are shared between types of the same size.
     /// @return The allocator whose block_size is sizeof(T).
@@ -517,6 +507,14 @@ struct AllocatorRegistry
     static void reset()
     {
         allocs().clear();
+    }
+
+  private:
+    /// @brief This thread's allocators (one per object size seen so far).
+    static std::vector<std::unique_ptr<FastAllocatorBase>>& allocs()
+    {
+        thread_local std::vector<std::unique_ptr<FastAllocatorBase>> v;
+        return v;
     }
 };
 

@@ -78,11 +78,6 @@ class Chunk2A;
 template <typename T, size_t SmallN = 16>
 class PointerMapChunk2A
 {
-  private:
-    std::vector<std::pair<const void*, int>>       small;
-    ankerl::unordered_dense::map<const void*, int> big;
-    bool                                           using_big = false;
-
   public:
     PointerMapChunk2A()                                        = default;
     PointerMapChunk2A(const PointerMapChunk2A&)                = default;
@@ -289,6 +284,11 @@ class PointerMapChunk2A
                 func(k);
         }
     }
+
+  private:
+    std::vector<std::pair<const void*, int>>       small;
+    ankerl::unordered_dense::map<const void*, int> big;
+    bool                                           using_big = false;
 };
 
 /*!
@@ -325,6 +325,7 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
 {
     using Base2 = Proxy2Base<Derived, T, Chunk2A<T>>;
     using Base2::Base2;
+
     /*!
      * \brief Static container holding second values for each tab and chunk.
      * Indexed as tab_second_value[num_tab][num_chunk].
@@ -335,17 +336,12 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
     ///        instead of 8 or 16.
     using second_value_slot_t = SecondValueTraits<T>::slot_t;
 
-  private:
-    static inline std::vector<std::vector<second_value_slot_t>> tab_second_value;
-
-  public:
     /*!
      * \brief Retrieves a pointer to a specific second value in the chunk.
      * \param num_tab Index of the tab.
      * \param num_chunk Index of the chunk within the tab.
      * \return Pointer to the second value.
      */
-
     [[nodiscard]] static SecondValueRef<T> get_tab_second_value(int num_tab, int num_chunk) noexcept
     {
         return SecondValueRef<T>{&tab_second_value[num_tab][num_chunk]};
@@ -356,18 +352,27 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
      * \param num_tab Index of the tab.
      * \return Reference to the vector of second values.
      */
-
     [[nodiscard]] static std::vector<second_value_slot_t>& get_tab_second_value(int num_tab) noexcept
     {
         return tab_second_value[static_cast<std::size_t>(num_tab)];
     }
 
     /*!
+     * \brief Sets a specific second value in a tab and chunk.
+     * \param num_tab Index of the tab.
+     * \param i Index of the chunk within the tab.
+     * \param v Value to assign.
+     */
+    static void set(int num_tab, int i, in_t<T> v)
+    {
+        get_tab_second_value(num_tab, i).set(v);
+    }
+
+  protected:
+    /*!
      * \brief Resizes the number of tabs in the second value container.
      * \param nb_tab New number of tabs.
      */
-
-  protected:
     static void resize(int nb_tab)
     {
         tab_second_value.resize(nb_tab);
@@ -379,7 +384,6 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
      * \param nb_chunk_old Number of chunks before the resize.
      * \param nb_chunk New number of chunks in the tab.
      */
-
     static void resize(int nb_tab, int nb_chunk_old, int nb_chunk)
     {
         auto& row = tab_second_value[static_cast<std::size_t>(nb_tab)];
@@ -396,7 +400,6 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
      * \brief Clears all second values in a specific tab.
      * \param num_tab Index of the tab to clear.
      */
-
     static void clear([[maybe_unused]] int num_tab)
     {
         // The array's per-chunk second-value slots, released, not just emptied
@@ -407,18 +410,8 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
             std::vector<second_value_slot_t>().swap(tab_second_value[static_cast<std::size_t>(num_tab)]);
     }
 
-  public:
-    /*!
-     * \brief Sets a specific second value in a tab and chunk.
-     * \param num_tab Index of the tab.
-     * \param i Index of the chunk within the tab.
-     * \param v Value to assign.
-     */
-
-    static void set(int num_tab, int i, in_t<T> v)
-    {
-        get_tab_second_value(num_tab, i).set(v);
-    }
+  private:
+    static inline std::vector<std::vector<second_value_slot_t>> tab_second_value;
 
   protected:
     SecondValueRef<T> ptr_second_value; ///< this chunk's slot in tab_second_value[num_tab]
@@ -446,22 +439,13 @@ struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<boo
     /// @param num_ Index of the element in the chunk.
     /// @param chunk_ Owning chunk.
     explicit ProxySpec2A(values_type_ref v, int num_, ChunkType& chunk_) noexcept : Base2(v, num_, chunk_) {}
-    /*!
-     * \brief Static container holding second values for each tab and chunk.
-     * Indexed as tab_second_value[num_tab][num_chunk].
-     */
 
-  private:
-    static inline std::vector<std::unique_ptr<bool[]>> tab_second_value;
-
-  public:
     /*!
      * \brief Retrieves a pointer to a specific second value in the chunk.
      * \param num_tab Index of the tab.
      * \param num_chunk Index of the chunk within the tab.
      * \return Pointer to the second value.
      */
-
     [[nodiscard]] static SecondValueRef<bool> get_tab_second_value(int num_tab, int num_chunk) noexcept
     {
         return SecondValueRef<bool>{&tab_second_value[num_tab][num_chunk]};
@@ -472,18 +456,27 @@ struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<boo
      * \param num_tab Index of the tab.
      * \return Reference to the vector of second values.
      */
-
     [[nodiscard]] static std::unique_ptr<bool[]>& get_tab_second_value(int num_tab) noexcept
     {
         return tab_second_value[num_tab];
     }
 
     /*!
+     * \brief Sets a specific second value in a tab and chunk.
+     * \param num_tab Index of the tab.
+     * \param i Index of the chunk within the tab.
+     * \param v Value to assign.
+     */
+    static void set(int num_tab, int i, bool v) noexcept
+    {
+        tab_second_value[num_tab][i] = v;
+    }
+
+  protected:
+    /*!
      * \brief Resizes the number of tabs in the second value container.
      * \param nb_tab New number of tabs.
      */
-
-  protected:
     static void resize(int nb_tab)
     {
         tab_second_value.resize(nb_tab);
@@ -495,7 +488,6 @@ struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<boo
      * \param nb_chunk_old Old number of chunks in the tab.
      * \param nb_chunk New number of chunks in the tab.
      */
-
     static void resize(int nb_tab, int nb_chunk_old, int nb_chunk)
     {
         realloc_unique(tab_second_value[nb_tab], nb_chunk_old, nb_chunk);
@@ -510,7 +502,6 @@ struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<boo
      * \brief Clears all second values in a specific tab.
      * \param num_tab Index of the tab to clear.
      */
-
     static void clear([[maybe_unused]] int num_tab)
     {
         // Released, not just emptied -- see the non-bool specialisation.
@@ -518,18 +509,12 @@ struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<boo
             tab_second_value[static_cast<std::size_t>(num_tab)].reset();
     }
 
-  public:
+  private:
     /*!
-     * \brief Sets a specific second value in a tab and chunk.
-     * \param num_tab Index of the tab.
-     * \param i Index of the chunk within the tab.
-     * \param v Value to assign.
+     * \brief Static container holding second values for each tab and chunk.
+     * Indexed as tab_second_value[num_tab][num_chunk].
      */
-
-    static void set(int num_tab, int i, bool v) noexcept
-    {
-        tab_second_value[num_tab][i] = v;
-    }
+    static inline std::vector<std::unique_ptr<bool[]>> tab_second_value;
 };
 
 /**
@@ -553,9 +538,11 @@ struct Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
   private:
     static constexpr bool is_bool     = std::is_same_v<T, bool>;
     static constexpr bool is_not_bool = !is_bool;
-    void                  ensure_writable_storage_async(const Derived& proxy) const;
 
   public:
+    // --- per-thread candidate list plumbing (OpenMP only) -----------------
+    using Base::chunk;
+
     template <typename LAMBDA>
     void execute_simple_operation_async(auto* ctx, LAMBDA operation);
 
@@ -567,9 +554,6 @@ struct Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
 
     template <typename OP, typename LBD, typename U>
     void execute_arithmetic_compound_operation_async(auto* ctx, OP op, const U& v, LBD lbd) const;
-
-    // --- per-thread candidate list plumbing (OpenMP only) -----------------
-    using Base::chunk;
 
     /// @brief Rank @p thr's Chunk2A candidate list.
     TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially_thr(int thr) const noexcept
@@ -584,6 +568,9 @@ struct Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
         derived().set_num_tab(); // Proxy2A's no-arg overload (looks the table up)
         Base::set_ptr_is_inside_chunk_list_to_compress();
     }
+
+  private:
+    void ensure_writable_storage_async(const Derived& proxy) const;
 };
 /**
  * @brief Specialization for Disabled Fast Compression (Zero Overhead).
@@ -665,21 +652,116 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
 
     static bool constexpr verbose = false;
 
-    // static inline NanoSleeper nano_sleeper;
-
-    char* ptr_type_cst = nullptr; ///< pointer into tab_type_cst_val[num_tab]
-
   public:
-    /**
-     * @brief Per-tab array of flags indicating the type of constant value used.
-     */
-
-    static inline std::vector<std::vector<char>> tab_type_cst_val; ///< type-of-constant flags
+    /// @brief Stream output of the element's value (defined below).
+    template <typename U>
+    friend std::ostream& operator<<(std::ostream& os, const Proxy2A<U>& proxy);
 
     /**
-     * @brief Mapping from pointer to tab information for chunk lookup.
+     * @brief Construct a Proxy2A for OpenMP build (atomic reference to values).
+     * @param values_ reference to array pointer (atomic)
+     * @param num_ index within array
+     * @param chunk_ owning chunk
      */
-    static inline PointerMapChunk2A<T> share_info_array; ///< pointer->tab mapping
+    explicit Proxy2A(BaseFastCompPolicy::values_type_ref values_, int num_, Chunk2A<T>& chunk_) noexcept
+        : Proxy2AFastCompPolicy<Proxy2A, T, Chunk2A<T>, chunk_config::use_fast_block_compression>(values_, num_, chunk_)
+    {
+    }
+
+    /**
+     * @brief Resize per-tab containers for nb_tab tabs.
+     * @param nb_tab number of tabs
+     */
+    static void resize_tab_is_int(int nb_tab);
+
+    /**
+     * @brief Resize per-tab per-chunk containers for a given tab.
+     * @param num_tab tab index
+     * @param nb_chunk_old previous chunk count for the tab
+     * @param nb_chunk new chunk count for the tab
+     * @warning The "already queued for compression" flags of this tab are
+     *          REALLOCATED, not grown: every chunk's flag is reset to 0, not
+     *          only the new ones. Safe only while no chunk of the tab sits in a
+     *          candidate list, which could otherwise be queued a second time.
+     */
+    static void resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk);
+
+    /**
+     * @brief Clear per-chunk arrays for a tab.
+     * @param num_tab tab index
+     */
+    static void clear_tab_is_int(int num_tab)
+    {
+        BaseSpec::clear(num_tab);
+        // released, not just emptied: clear() kept the capacity, so every
+        // re-chunk (new storage under a new num_tab, the old one destroyed)
+        // left one byte per old chunk behind.
+        std::vector<char>().swap(tab_type_cst_val[num_tab]);
+        // And the candidate flags (one byte per chunk), which leaked the same way.
+        Base::release_tab_is_int(num_tab);
+    }
+
+    /**
+     * @brief Compute and store num_tab using share_info_array and ptr_on_array.
+     */
+    void set_num_tab() noexcept
+    {
+        // Armed by the array's operator[] (set_this_and_num_chunk with its
+        // num_tab): nothing to look up. A proxy armed otherwise -- a replay
+        // reconstruction, a path that only set the array pointer -- still
+        // resolves it through the registry.
+        if (num_tab >= 0) [[likely]]
+        {
+            if constexpr (build_config::any_check)
+            {
+                if (num_tab != share_info_array.get_num_tab(ptr_on_array))
+                    INVARIANT_FAILED("Proxy2A::set_num_tab: armed num_tab {} differs from the registry's for array {}",
+                                     num_tab, ptr_on_array);
+            }
+            return;
+        }
+        num_tab = share_info_array.get_num_tab(ptr_on_array);
+    }
+
+    /**
+     * @brief Initialize per-chunk pointers for this proxy (must call set_num_tab first).
+     */
+    void set_info_on_chunk() noexcept;
+
+    void set_ptr_second_value() noexcept;
+
+    /// @brief This proxy's array index (ProxyBase::get_num_tab(), re-exported
+    ///        past the policy layers).
+    [[nodiscard]] int get_num_tab() const noexcept
+    {
+        return Base::get_num_tab();
+    }
+
+    /** @brief Clean path for safe assignments (small operand, by value). */
+    template <typename U>
+        requires IsCleanAssignment<T, U>
+    T operator=(const U& v) noexcept
+    {
+        return assign_impl<U>(v);
+    }
+
+    /** @brief Trap path for risky assignments (e.g., float = 1.01). */
+    template <typename U>
+        requires(!IsCleanAssignment<T, U>) && std::assignable_from<T&, U>
+    [[deprecated("HPC WARNING: Type mismatch in assignment. Use 'f' suffix for floats.")]]
+    T operator=(const U& v) noexcept
+    {
+        return assign_impl<T>(static_cast<T>(v));
+    }
+
+    const Proxy2A& operator=(const Proxy2A& from) = delete;
+    Proxy2A(const Proxy2A& other)                 = default;
+
+    /**
+     * @brief Address-of operator is disabled to prevent unsafe access.
+     */
+    T*       operator&()       = delete;
+    const T* operator&() const = delete;
 
   private:
     // Small helpers about chunk const-value modes
@@ -701,7 +783,6 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      *       mark_for_compression_if_needed_with_value() when the caller already
      *       holds it, so no concurrent writer can be read in between.
      */
-
     void mark_for_compression_if_needed(in_t<T> new_value) const;
 
     /**
@@ -709,7 +790,6 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      * @param old_value Previous value
      * @param new_value New value being written
      */
-
     void mark_for_compression_if_needed_with_value(in_t<T> old_value, in_t<T> new_value) const;
 
     /// @brief Materialise this proxy's chunk: allocate its buffer and fill it
@@ -759,100 +839,13 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         }
     }
 
-  public:
-    /**
-     * @brief Construct a Proxy2A for OpenMP build (atomic reference to values).
-     * @param values_ reference to array pointer (atomic)
-     * @param num_ index within array
-     * @param chunk_ owning chunk
-     */
-    explicit Proxy2A(BaseFastCompPolicy::values_type_ref values_, int num_, Chunk2A<T>& chunk_) noexcept
-        : Proxy2AFastCompPolicy<Proxy2A, T, Chunk2A<T>, chunk_config::use_fast_block_compression>(values_, num_, chunk_)
-    {
-    }
-
-    /**
-     * @brief Resize per-tab containers for nb_tab tabs.
-     * @param nb_tab number of tabs
-     */
-    static void resize_tab_is_int(int nb_tab);
-
-    /**
-     * @brief Resize per-tab per-chunk containers for a given tab.
-     * @param num_tab tab index
-     * @param nb_chunk_old previous chunk count for the tab
-     * @param nb_chunk new chunk count for the tab
-     * @warning The "already queued for compression" flags of this tab are
-     *          REALLOCATED, not grown: every chunk's flag is reset to 0, not
-     *          only the new ones. Safe only while no chunk of the tab sits in a
-     *          candidate list, which could otherwise be queued a second time.
-     */
-
-    static void resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk);
-
-    /**
-     * @brief Clear per-chunk arrays for a tab.
-     * @param num_tab tab index
-     */
-    static void clear_tab_is_int(int num_tab)
-    {
-        BaseSpec::clear(num_tab);
-        // released, not just emptied: clear() kept the capacity, so every
-        // re-chunk (new storage under a new num_tab, the old one destroyed)
-        // left one byte per old chunk behind.
-        std::vector<char>().swap(tab_type_cst_val[num_tab]);
-        // And the candidate flags (one byte per chunk), which leaked the same way.
-        Base::release_tab_is_int(num_tab);
-    }
-
-    /**
-     * @brief Compute and store num_tab using share_info_array and ptr_on_array.
-     */
-    void set_num_tab() noexcept
-    {
-        // Armed by the array's operator[] (set_this_and_num_chunk with its
-        // num_tab): nothing to look up. A proxy armed otherwise -- a replay
-        // reconstruction, a path that only set the array pointer -- still
-        // resolves it through the registry.
-        if (num_tab >= 0) [[likely]]
-        {
-            if constexpr (build_config::any_check)
-            {
-                if (num_tab != share_info_array.get_num_tab(ptr_on_array))
-                    INVARIANT_FAILED("Proxy2A::set_num_tab: armed num_tab {} differs from the registry's for array {}",
-                                     num_tab, ptr_on_array);
-            }
-            return;
-        }
-        num_tab = share_info_array.get_num_tab(ptr_on_array);
-    }
-
-    /**
-     * @brief Initialize per-chunk pointers for this proxy (must call set_num_tab first).
-     */
-    void set_info_on_chunk() noexcept;
-
-  private:
     /**
      * @brief Initialize per-chunk pointers except second value.
      */
     void set_other_info_on_chunk() noexcept;
 
-  public:
-    void set_ptr_second_value() noexcept;
-
-  private:
     void set_ptr_second_value_and_num_tab() noexcept;
 
-  public:
-    /// @brief This proxy's array index (ProxyBase::get_num_tab(), re-exported
-    ///        past the policy layers).
-    [[nodiscard]] int get_num_tab() const noexcept
-    {
-        return Base::get_num_tab();
-    }
-
-  private:
     inline void trigger_compression_if_needed(int thr_rank);
 
     inline void perform_compression() noexcept;
@@ -993,7 +986,6 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      * @pre metadata_.second_value must be initialized
      * @post Chunk has allocated storage for modifications
      */
-
     void ensure_writable_storage();
 
     template <typename ModifyFn>
@@ -1009,14 +1001,11 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
 
     inline void handle_no_bool_assignment(in_t<T> v);
 
-  public:
     /**
      * @brief Assigns a value to the proxy element.
      * @param v Value to assign.
      * @return Assigned value.
      */
-
-  private:
     template <typename U>
     // in_t<U>, not const U&: this is the write engine, the one frame the
     // operators do NOT inline into the caller, so its parameter is what
@@ -1024,49 +1013,14 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     // reference. Non-deducible, hence the explicit assign_impl<U>(v) below.
     T assign_impl(in_t<U> v) noexcept;
 
-  public:
-    /** @brief Clean path for safe assignments (small operand, by value). */
-    template <typename U>
-        requires IsCleanAssignment<T, U>
-    T operator=(const U& v) noexcept
-    {
-        return assign_impl<U>(v);
-    }
-
-    /** @brief Trap path for risky assignments (e.g., float = 1.01). */
-    template <typename U>
-        requires(!IsCleanAssignment<T, U>) && std::assignable_from<T&, U>
-    [[deprecated("HPC WARNING: Type mismatch in assignment. Use 'f' suffix for floats.")]]
-    T operator=(const U& v) noexcept
-    {
-        return assign_impl<T>(static_cast<T>(v));
-    }
-
     // ========================================================================
     // COMPOUND ARITHMETIC OPERATORS
     // ========================================================================
-
-  private:
     template <typename U, typename Op>
     void apply_compound_operation(Op      op,
                                   in_t<U> v,
                                   bool /*check_first_value_result*/ = false) noexcept; // in_t: see assign_impl
 
-  public:
-    const Proxy2A& operator=(const Proxy2A& from) = delete;
-    Proxy2A(const Proxy2A& other)                 = default;
-
-    /**
-     * @brief Address-of operator is disabled to prevent unsafe access.
-     */
-    T*       operator&()       = delete;
-    const T* operator&() const = delete;
-
-    /// @brief Stream output of the element's value (defined below).
-    template <typename U>
-    friend std::ostream& operator<<(std::ostream& os, const Proxy2A<U>& proxy);
-
-  private:
     /**
      * @brief UNSAFE: a raw `T&` into this element's chunk buffer, for callers
      *        that must bind a real reference (e.g. passing `a[i]` to a
@@ -1096,6 +1050,20 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         }
         return values[num];
     }
+
+    // static inline NanoSleeper nano_sleeper;
+    char* ptr_type_cst = nullptr; ///< pointer into tab_type_cst_val[num_tab]
+
+  public:
+    /**
+     * @brief Per-tab array of flags indicating the type of constant value used.
+     */
+    static inline std::vector<std::vector<char>> tab_type_cst_val; ///< type-of-constant flags
+
+    /**
+     * @brief Mapping from pointer to tab information for chunk lookup.
+     */
+    static inline PointerMapChunk2A<T> share_info_array; ///< pointer->tab mapping
 };
 
 /// @brief Write the element's value, read through proxy.read_values(), to @p os.

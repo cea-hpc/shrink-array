@@ -94,19 +94,6 @@ struct InfoFreeElt
     using IntMaxFreeElt  = std::array<int, max_free_elt>;
     using VoidMaxFreeElt = void* [max_free_elt];
 
-    VoidMaxFreeElt* tab_ptr{nullptr};
-    IntMaxFreeElt*  tab_sz{nullptr};
-
-  private:
-    int* somme_sz{nullptr};
-
-  public:
-    int* compt{nullptr};
-
-    /// @brief Ranks the four arrays were sized for (PMP_MAX_THREADS at
-    ///        construction); 0 in a serial build, which allocates nothing.
-    int nb_thr = 0;
-
     /**
      * @brief Record one freed block, if the batch still has room.
      * @param ptr The block.
@@ -160,6 +147,19 @@ struct InfoFreeElt
     InfoFreeElt& operator=(const InfoFreeElt&) = delete;
     InfoFreeElt(InfoFreeElt&&)                 = delete;
     InfoFreeElt& operator=(InfoFreeElt&&)      = delete;
+
+    VoidMaxFreeElt* tab_ptr{nullptr};
+    IntMaxFreeElt*  tab_sz{nullptr};
+
+  private:
+    int* somme_sz{nullptr};
+
+  public:
+    int* compt{nullptr};
+
+    /// @brief Ranks the four arrays were sized for (PMP_MAX_THREADS at
+    ///        construction); 0 in a serial build, which allocates nothing.
+    int nb_thr = 0;
 };
 
 /**

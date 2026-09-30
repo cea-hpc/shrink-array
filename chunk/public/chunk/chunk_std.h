@@ -179,15 +179,6 @@ extern void release_chunk_pools();
 template <bool EnableCounter>
 struct ChunkCounterPolicy
 {
-  private:
-    // [[no_unique_address]]: a DISABLED counter is an empty type, but an
-    // empty MEMBER still takes a byte unless told otherwise -- and that byte,
-    // as a base of Chunk, pushed `values` to offset 8 and the chunk header
-    // from 16 to 24 bytes in every OpenMP build (where the counter mode is
-    // off). Enabled, the attribute changes nothing.
-    [[no_unique_address]] ConditionalCounter<EnableCounter> nb_val_eq_zero;
-
-  public:
     /// @brief Record one more zero element.
     void inc_nb_val_eq_zero() noexcept
     {
@@ -215,6 +206,14 @@ struct ChunkCounterPolicy
         // Implicit conversion to unsigned char happens here
         return nb_val_eq_zero == size;
     }
+
+  private:
+    // [[no_unique_address]]: a DISABLED counter is an empty type, but an
+    // empty MEMBER still takes a byte unless told otherwise -- and that byte,
+    // as a base of Chunk, pushed `values` to offset 8 and the chunk header
+    // from 16 to 24 bytes in every OpenMP build (where the counter mode is
+    // off). Enabled, the attribute changes nothing.
+    [[no_unique_address]] ConditionalCounter<EnableCounter> nb_val_eq_zero;
 };
 
 /**
@@ -261,6 +260,40 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
     /// @brief Matching array-delete.
     void operator delete[](void* ptr);
 
+    /**
+     * @brief Materialise this chunk's storage from @p thr_rank's free-list.
+     * @param thr_rank calling thread's rank, selecting its allocator pool
+     */
+    void create_value(int thr_rank) noexcept;
+
+    /// @brief Materialise storage for the calling thread.
+    /// @details Delegates to the rank-aware overload using this thread's rank.
+    void create_value() noexcept;
+
+    /// @brief Compress: release this chunk's buffer to @p thr_rank's reuse
+    ///        list and count it as a compression (CHUNK_STATS).
+    void clear_st(int thr_rank, unsigned int n_elems);
+    /// @brief Release this chunk's buffer to @p thr_rank's reuse list WITHOUT
+    ///        counting a compression -- the re-chunk rebuild releasing an old
+    ///        chunk once copied (clear_st = count + release_st).
+    /// @param thr_rank      rank whose reuse list receives the buffer
+    /// @param n_elems       element count of this chunk (its array's geometry)
+    /// @param count_release count it as a release (CHUNK_STATS `released`);
+    ///        clear_st passes false, having counted a compression instead
+    void release_st(int thr_rank, unsigned int n_elems, bool count_release = true);
+    /// @brief Release the buffer outright, without parking it for reuse.
+    void clear_int_st(int thr_rank);
+
+    /**
+     * @brief Compress this chunk if all @p n_elems elements are zero.
+     * @param thr_rank calling thread's rank
+     * @param n_elems  THIS chunk's element count, carried by the candidate
+     *                 tuple; using the ambient size instead overflows a buffer
+     *                 allocated at another geometry
+     * @note The queue consumer's per-chunk step (Chunk::compress_chunk_to_compress).
+     */
+    void compress(int thr_rank, unsigned int n_elems);
+
   private:
     /// @brief Point @p count freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
@@ -285,18 +318,6 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
      */
     static void zero_fill_fresh(T* vals) noexcept;
 
-  public:
-    /**
-     * @brief Materialise this chunk's storage from @p thr_rank's free-list.
-     * @param thr_rank calling thread's rank, selecting its allocator pool
-     */
-    void create_value(int thr_rank) noexcept;
-
-    /// @brief Materialise storage for the calling thread.
-    /// @details Delegates to the rank-aware overload using this thread's rank.
-    void create_value() noexcept;
-
-  private:
     /**
      * @brief Atomically mark this chunk constant and hand back its old buffer.
      * @return the previous values pointer, or nullptr if the chunk was already
@@ -320,31 +341,6 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
         }
         return old;
     }
-
-  public:
-    /// @brief Compress: release this chunk's buffer to @p thr_rank's reuse
-    ///        list and count it as a compression (CHUNK_STATS).
-    void clear_st(int thr_rank, unsigned int n_elems);
-    /// @brief Release this chunk's buffer to @p thr_rank's reuse list WITHOUT
-    ///        counting a compression -- the re-chunk rebuild releasing an old
-    ///        chunk once copied (clear_st = count + release_st).
-    /// @param thr_rank      rank whose reuse list receives the buffer
-    /// @param n_elems       element count of this chunk (its array's geometry)
-    /// @param count_release count it as a release (CHUNK_STATS `released`);
-    ///        clear_st passes false, having counted a compression instead
-    void release_st(int thr_rank, unsigned int n_elems, bool count_release = true);
-    /// @brief Release the buffer outright, without parking it for reuse.
-    void clear_int_st(int thr_rank);
-
-    /**
-     * @brief Compress this chunk if all @p n_elems elements are zero.
-     * @param thr_rank calling thread's rank
-     * @param n_elems  THIS chunk's element count, carried by the candidate
-     *                 tuple; using the ambient size instead overflows a buffer
-     *                 allocated at another geometry
-     * @note The queue consumer's per-chunk step (Chunk::compress_chunk_to_compress).
-     */
-    void compress(int thr_rank, unsigned int n_elems);
 };
 
 /**
@@ -407,6 +403,22 @@ struct ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
   private:
     constexpr static T zero{};
 
+  public:
+    /**
+     * @brief Compress every chunk @p thr has queued, in one batch.
+     * @param thr   rank whose candidates are compressed
+     * @param proxy proxy driving the pass; may be null for a generic sweep
+     */
+    static void make_block_compression(int thr, const Proxy<T>* proxy);
+
+    /**
+     * @brief Is any thread holding chunks queued for compression?
+     * @param max_thr number of threads whose candidate lists are scanned
+     * @return true as soon as one non-empty list is found
+     */
+    static bool have_chunk_to_compress(int max_thr);
+
+  private:
     /**
      * @brief Scan @p thr's queued candidates and collect those now compressible.
      * @param thr      rank whose candidate list is scanned
@@ -422,21 +434,6 @@ struct ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
      *                  TChunk.h's note on the field it is carried in
      */
     void fill_list_to_compress(vec_tuple_chunkp_int2& ll_compt, int num_chunk, int num_tab, unsigned int n_elems);
-
-  public:
-    /**
-     * @brief Compress every chunk @p thr has queued, in one batch.
-     * @param thr   rank whose candidates are compressed
-     * @param proxy proxy driving the pass; may be null for a generic sweep
-     */
-    static void make_block_compression(int thr, const Proxy<T>* proxy);
-
-    /**
-     * @brief Is any thread holding chunks queued for compression?
-     * @param max_thr number of threads whose candidate lists are scanned
-     * @return true as soon as one non-empty list is found
-     */
-    static bool have_chunk_to_compress(int max_thr);
 };
 
 /**
@@ -455,6 +452,15 @@ struct ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived
     // may differ (heap-buffer-overflow: a 64-element buffer scanned at 256).
     using vec_tuple_chunkp_int2 = std::vector<std::tuple<Chunk<T>*, int, int, ChunkElems>>;
 
+    /// @brief No block compression in this mode.
+    static void make_block_compression(int /*thr*/, const Proxy<T>* /*proxy*/) {}
+
+    /// No candidate lists exist in this mode, so there is never anything queued.
+    static bool have_chunk_to_compress(int /*max_thr*/)
+    {
+        return false;
+    }
+
   private:
     /// @brief No candidate list to fill in this mode.
     static void fill_list_chunk_to_compress_in_par(int /*thr*/, vec_tuple_chunkp_int2& /*ll_compt*/) {}
@@ -464,16 +470,6 @@ struct ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived
                                       int /*num_tab*/,
                                       unsigned int /*n_elems*/)
     {
-    }
-
-  public:
-    /// @brief No block compression in this mode.
-    static void make_block_compression(int /*thr*/, const Proxy<T>* /*proxy*/) {}
-
-    /// No candidate lists exist in this mode, so there is never anything queued.
-    static bool have_chunk_to_compress(int /*max_thr*/)
-    {
-        return false;
     }
 };
 /**
@@ -502,7 +498,6 @@ template <typename T>
 class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_counter>,
               public ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>
 {
-
   public:
     using Base      = ChunkBase<T, Chunk>;
     using ChunkType = Chunk;
@@ -533,6 +528,17 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     // Statistics variant tag (CHUNK_STATS): 0 = chunk.
     static constexpr int stat_variant = 0;
 
+  private:
+    // compress(int thr_rank, unsigned n_elems) lives in ChunkOmpPolicy: it is
+    // the queue consumer's per-chunk step (compress_chunk_to_compress above)
+    // and needs a thread rank, so it belongs on the OpenMP surface with
+    // clear_st(int, unsigned) rather than behind a preprocessor guard here.
+    // An OMPT-flavoured overload compress(int, bool, unsigned) used to sit
+    // next to it; nothing called it and its fast-comp branch ended in
+    // std::abort(), so it is gone.
+    constexpr static T zero{};
+
+  public:
     Chunk()  = default;
     ~Chunk() = default;
 
@@ -626,17 +632,6 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
         }
     }
 
-
-  private:
-    /**
-     * @brief Release this chunk's buffer and return to the compressed state.
-     * @param thr_rank owning thread's rank; unused serially
-     * @note The release counter differs by mode (pool vs free) -- see the
-     *       definition's comment.
-     */
-    void block_clear(int thr_rank);
-
-  public:
     /// @brief Get reference to the chunk manager (static access)
     static auto& get_manager() noexcept
     {
@@ -650,10 +645,6 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
         return s_manager_;
     }
 
-  private:
-    inline static manager_chunk s_manager_{};
-
-  public:
     /**
      * @brief Drain and compress every thread's candidate list.
      * @param apply true: compress the candidates found constant; false: walk
@@ -661,16 +652,16 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
      */
     static void compress_chunk_to_compress(bool apply);
 
-    // compress(int thr_rank, unsigned n_elems) lives in ChunkOmpPolicy: it is
-    // the queue consumer's per-chunk step (compress_chunk_to_compress above)
-    // and needs a thread rank, so it belongs on the OpenMP surface with
-    // clear_st(int, unsigned) rather than behind a preprocessor guard here.
-    // An OMPT-flavoured overload compress(int, bool, unsigned) used to sit
-    // next to it; nothing called it and its fast-comp branch ended in
-    // std::abort(), so it is gone.
-
   private:
-    constexpr static T zero{};
+    /**
+     * @brief Release this chunk's buffer and return to the compressed state.
+     * @param thr_rank owning thread's rank; unused serially
+     * @note The release counter differs by mode (pool vs free) -- see the
+     *       definition's comment.
+     */
+    void block_clear(int thr_rank);
+
+    inline static manager_chunk s_manager_{};
 };
 
 } // namespace shrink_array

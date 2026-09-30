@@ -135,26 +135,6 @@ struct RechunkPolicy
 class RechunkDecider
 {
   public:
-    /// @brief Store the policy.
-    /// @param pol Decision thresholds.
-    explicit RechunkDecider(RechunkPolicy pol = {}) : pol_(pol) {}
-
-    /// @brief Table index to act on: rep.best, or a capped coarsening step
-    ///        (at most pol_.max_coarsen_factor x cur_size; rep.cur when
-    ///        @p banned). Fining is never capped.
-    [[nodiscard]] int capped_best_index(const ChunkSizeReport& rep, bool banned = false) const;
-
-    /// @brief Feed one advisor observation for array @p key at logical time
-    ///        @p tick. Logs the verdict; true iff it WOULD re-chunk this tick.
-
-    bool observe(const void* key, int tick, const ChunkSizeReport& rep, const char* name);
-
-    /// @brief One-call convenience: analyse @p arr, apply the memory +
-    ///        hysteresis policy, and re-chunk it when warranted (no-op in
-    ///        static builds). True iff a re-chunk was decided this tick.
-    template <typename T, typename Arr>
-    bool consider(Arr& arr, int tick, int iter, const char* name);
-
     // One committed re-chunk, for the end-of-run report.
     struct RechunkEvent
     {
@@ -168,13 +148,11 @@ class RechunkDecider
         double mem_after_old = -1.;
     };
 
-    /// @brief Print the per-event table: when, old->new, model memory
-    ///        before -> after (measured) and the advisor's prediction.
-    void print_rechunk_log(std::FILE* out = stdout) const;
-
   private:
     struct Hist
     {
+        static constexpr int kVisited = 8;
+
         unsigned last_best_size   = 0;
         int      stable_count     = 0;
         int      last_action_tick = -1000000000;
@@ -189,12 +167,12 @@ class RechunkDecider
         // own forecast (see coarsen_trust_ratio). The model has then been shown
         // wrong on this data, so further coarsening is refused; fining, whose
         // model is exact, stays available.
-        bool                 coarsen_banned         = false;
-        static constexpr int kVisited               = 8;
-        unsigned             visited_size[kVisited] = {0, 0, 0, 0, 0, 0, 0, 0};
-        int                  visited_tick[kVisited] = {-1000000000, -1000000000, -1000000000, -1000000000,
-                                                       -1000000000, -1000000000, -1000000000, -1000000000};
-        int                  visited_head           = 0; // next write slot (ring)
+        bool coarsen_banned = false;
+
+        unsigned visited_size[kVisited] = {0, 0, 0, 0, 0, 0, 0, 0};
+        int      visited_tick[kVisited] = {-1000000000, -1000000000, -1000000000, -1000000000,
+                                           -1000000000, -1000000000, -1000000000, -1000000000};
+        int      visited_head           = 0; // next write slot (ring)
         // CHUNK_RECHUNK_CHURN: the previous tick's counters (the baseline is
         // reset when the key changes, i.e. after a re-chunk of this array).
         unsigned churn_key     = 0;
@@ -203,6 +181,31 @@ class RechunkDecider
         long     churn_mat     = 0;
     };
 
+  public:
+    /// @brief Store the policy.
+    /// @param pol Decision thresholds.
+    explicit RechunkDecider(RechunkPolicy pol = {}) : pol_(pol) {}
+
+    /// @brief Table index to act on: rep.best, or a capped coarsening step
+    ///        (at most pol_.max_coarsen_factor x cur_size; rep.cur when
+    ///        @p banned). Fining is never capped.
+    [[nodiscard]] int capped_best_index(const ChunkSizeReport& rep, bool banned = false) const;
+
+    /// @brief Feed one advisor observation for array @p key at logical time
+    ///        @p tick. Logs the verdict; true iff it WOULD re-chunk this tick.
+    bool observe(const void* key, int tick, const ChunkSizeReport& rep, const char* name);
+
+    /// @brief One-call convenience: analyse @p arr, apply the memory +
+    ///        hysteresis policy, and re-chunk it when warranted (no-op in
+    ///        static builds). True iff a re-chunk was decided this tick.
+    template <typename T, typename Arr>
+    bool consider(Arr& arr, int tick, int iter, const char* name);
+
+    /// @brief Print the per-event table: when, old->new, model memory
+    ///        before -> after (measured) and the advisor's prediction.
+    void print_rechunk_log(std::FILE* out = stdout) const;
+
+  private:
     // `tick` is a monotone counter that increments once per advisor call (the
     // caller passes such a small integer, NOT the raw iteration index), so
     // cooldown_ticks compares directly against tick deltas.

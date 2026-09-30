@@ -111,11 +111,6 @@ struct AllTypeChunkParallelInterface; // primary left undefined: only the 2 spec
 template <typename Derived>
 struct AllTypeChunkParallelInterface<Derived, true>
 {
-  private:
-    /// Resizes every manager's per-thread free-block lists to the current thread count.
-    void resize_all_list_block_free_thr() const;
-
-  public:
     /**
      * @brief Releases the buffers freed by a preceding flush, for every type.
      *
@@ -139,6 +134,18 @@ struct AllTypeChunkParallelInterface<Derived, true>
      */
     bool flush_all_deferred(bool in_parallel);
 
+    /// Redistributes the free blocks of every type across threads.
+    void load_balance_list_block_free() const;
+
+    /// @return True as soon as one type's free lists are unbalanced enough to be worth a pass.
+    [[nodiscard]] bool need_load_balance_list_block_free() const;
+
+    /// Empties the per-thread free-block lists of every type (teardown).
+    void clear_list_block_free_thr();
+
+    /// Destroys the per-thread free-block list containers themselves (teardown).
+    void delete_list_block_chunk_free_itself() const;
+
   protected:
     /**
      * @brief The per-rank structures of ONE manager, at its registration:
@@ -153,21 +160,11 @@ struct AllTypeChunkParallelInterface<Derived, true>
     void init_manager(ManagerChunkInt& manager, int block_size) const;
 
   private:
+    /// Resizes every manager's per-thread free-block lists to the current thread count.
+    void resize_all_list_block_free_thr() const;
+
     /// Allocates the first block of each per-thread allocator (no-op in std-alloc builds).
     void alloc_chunk_allocator_thr() const;
-
-  public:
-    /// Redistributes the free blocks of every type across threads.
-    void load_balance_list_block_free() const;
-
-    /// @return True as soon as one type's free lists are unbalanced enough to be worth a pass.
-    [[nodiscard]] bool need_load_balance_list_block_free() const;
-
-    /// Empties the per-thread free-block lists of every type (teardown).
-    void clear_list_block_free_thr();
-
-    /// Destroys the per-thread free-block list containers themselves (teardown).
-    void delete_list_block_chunk_free_itself() const;
 };
 
 /// @brief Serial builds: one allocator per type, and nothing deferred.
@@ -182,6 +179,9 @@ struct AllTypeChunkParallelInterface<Derived, false>
         return false;
     }
 
+    /// Destroys the single chunk allocator of every type (no-op in std-alloc builds).
+    void delete_chunk_allocator() const;
+
   protected:
     /**
      * @brief The single allocator of ONE manager, at its registration.
@@ -190,10 +190,6 @@ struct AllTypeChunkParallelInterface<Derived, false>
      * @note No-op in std-alloc builds.
      */
     void init_manager(ManagerChunkInt& manager, int block_size) const;
-
-  public:
-    /// Destroys the single chunk allocator of every type (no-op in std-alloc builds).
-    void delete_chunk_allocator() const;
 };
 
 /**
@@ -233,6 +229,7 @@ struct AllTypeChunkDynInterface<Derived, false>
 ///        combining the build-dependent policies AllTypeChunkParallelInterface and AllTypeChunkDynInterface.
 class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public AllTypeChunkDynInterface<AllTypeChunk>
 {
+  public:
     friend class SingletonChk<AllTypeChunk>;
     /// The dynamic-geometry policy records the sizes it declares (registered_sizes_).
     template <typename D, bool E>
@@ -258,21 +255,11 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     // has had; exceeding it aborts with a message.
     static constexpr int kMaxManagers = 256;
 
-    std::array<std::unique_ptr<ManagerChunkInt>, kMaxManagers> managers_;
-    std::atomic<int>                                           nb_managers_{0};
-    std::mutex                                                 registry_mutex_;
-
-    /// Set by ParamChunk::init_indexes(): the registry accepts managers only
-    /// once the block size (and the stats) exist. An array constructed before
-    /// that aborts with a message naming the call.
-    bool ready_      = false;
-    int  block_size_ = 0;
-
-    /// Runtime geometries declared so far (CHUNK_DYNAMIC): replayed on every
-    /// manager registered after them.
-    std::vector<unsigned int> registered_sizes_;
-
   public:
+    /// The managers' interface, reached through Derived by the policies so
+    /// that their bodies stay dependent (each build declares a different half).
+    using manager_int_t = ManagerChunkInt;
+
     /**
      * @brief Builds an EMPTY registry; managers arrive with the first array of
      *        each type (ensure_manager), or up front through initialize<Types>().
@@ -282,25 +269,6 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      */
     AllTypeChunk() = default;
 
-  private:
-    /**
-     * @brief Build, initialise and publish the manager @p ManagerT
-     *        (ManagerChunk<CHUNK_T, T>). Takes the registry mutex; a no-op
-     *        when that manager is already registered.
-     */
-    template <typename ManagerT>
-    void register_manager();
-
-    /**
-     * @brief Registers one chunk template for every element type of a tuple.
-     *
-     * @tparam CHUNK_T Chunk template to register.
-     * @tparam Types   Type tuple owned by the consumer (e.g. MyChunkTypes).
-     */
-    template <template <typename> class CHUNK_T, typename Types>
-    void fillManagerChunk();
-
-  public:
     /**
      * @brief The manager of @p ManagerT exists after this call -- registered
      *        now if this is the first array of its type, a no-op otherwise.
@@ -318,22 +286,6 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     template <typename ManagerT>
     static void ensure_manager();
 
-  private:
-    /**
-     * @brief Registers every element type of a tuple up front, for the chunk
-     *        templates the build compiles arrays for.
-     *
-     * Consumer entry point, called by `ParamChunk::init_indexes<Types>()`.
-     * Optional since the arrays register their own types: what it buys is
-     * having every manager in place before the first parallel region, at the
-     * cost of managers for types the program may never use.
-     *
-     * @tparam Types Tuple of element types the program will store in chunks.
-     */
-    template <typename Types>
-    void initialize();
-
-  public:
     /// @brief ParamChunk::init_indexes() has set the block size: managers may
     ///        now be registered. Records the block size they are built with.
     void mark_ready(int block_size)
@@ -342,10 +294,6 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
         block_size_ = block_size;
         ready_      = true;
     }
-
-    /// The managers' interface, reached through Derived by the policies so
-    /// that their bodies stay dependent (each build declares a different half).
-    using manager_int_t = ManagerChunkInt;
 
     /// Non-copyable: the registry owns the managers and is a singleton.
     AllTypeChunk(const AllTypeChunk&)            = delete;
@@ -362,11 +310,6 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
         return {managers_.data(), count};
     }
 
-  private:
-    /// Resizes every manager's compression-candidate list to the current thread count.
-    void resize_chunk_to_compress_potentially() const;
-
-  public:
     /// Compresses every compressible chunk of every type, ignoring the candidate lists.
     void force_chunk_to_compress() const;
 
@@ -432,6 +375,54 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      */
     void print_reuse_pool_breakdown(const char* label) const;
 
+  private:
+    /**
+     * @brief Build, initialise and publish the manager @p ManagerT
+     *        (ManagerChunk<CHUNK_T, T>). Takes the registry mutex; a no-op
+     *        when that manager is already registered.
+     */
+    template <typename ManagerT>
+    void register_manager();
+
+    /**
+     * @brief Registers one chunk template for every element type of a tuple.
+     *
+     * @tparam CHUNK_T Chunk template to register.
+     * @tparam Types   Type tuple owned by the consumer (e.g. MyChunkTypes).
+     */
+    template <template <typename> class CHUNK_T, typename Types>
+    void fillManagerChunk();
+
+    /**
+     * @brief Registers every element type of a tuple up front, for the chunk
+     *        templates the build compiles arrays for.
+     *
+     * Consumer entry point, called by `ParamChunk::init_indexes<Types>()`.
+     * Optional since the arrays register their own types: what it buys is
+     * having every manager in place before the first parallel region, at the
+     * cost of managers for types the program may never use.
+     *
+     * @tparam Types Tuple of element types the program will store in chunks.
+     */
+    template <typename Types>
+    void initialize();
+
+    /// Resizes every manager's compression-candidate list to the current thread count.
+    void resize_chunk_to_compress_potentially() const;
+
+    std::array<std::unique_ptr<ManagerChunkInt>, kMaxManagers> managers_;
+    std::atomic<int>                                           nb_managers_{0};
+    std::mutex                                                 registry_mutex_;
+
+    /// Set by ParamChunk::init_indexes(): the registry accepts managers only
+    /// once the block size (and the stats) exist. An array constructed before
+    /// that aborts with a message naming the call.
+    bool ready_      = false;
+    int  block_size_ = 0;
+
+    /// Runtime geometries declared so far (CHUNK_DYNAMIC): replayed on every
+    /// manager registered after them.
+    std::vector<unsigned int> registered_sizes_;
 
     // load_balance_list_block_free(), need_load_balance_list_block_free(),
     // clear_list_block_free_thr() and delete_list_block_chunk_free_itself()

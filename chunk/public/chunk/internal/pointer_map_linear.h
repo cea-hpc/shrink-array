@@ -63,35 +63,6 @@ namespace shrink_array
 template <typename Payload, typename Storage>
 class PointerMapLinear
 {
-  protected:
-    /// The (key, payload) pairs, in insertion order. Derived registries read it
-    /// directly for the lookups that are specific to them.
-    Storage vec;
-
-    /**
-     * @brief Address of the payload registered for @p key, or nullptr.
-     *
-     * @details FIRST match only, like every lookup here: a stale entry left by a
-     *          destroyed array would otherwise shadow a live one that reused its
-     *          address, which is exactly what erase() exists to prevent.
-     */
-    [[nodiscard]] Payload* find_payload(const void* key) noexcept
-    {
-        for (auto& item : vec)
-            if (item.first == key)
-                return &item.second;
-        return nullptr;
-    }
-
-    /// @copydoc find_payload
-    [[nodiscard]] const Payload* find_payload(const void* key) const noexcept
-    {
-        for (const auto& item : vec)
-            if (item.first == key)
-                return &item.second;
-        return nullptr;
-    }
-
   public:
     /**
      * @brief Remove the entry for @p key, if present.
@@ -175,6 +146,35 @@ class PointerMapLinear
             func(item.first);
         }
     }
+
+  protected:
+    /**
+     * @brief Address of the payload registered for @p key, or nullptr.
+     *
+     * @details FIRST match only, like every lookup here: a stale entry left by a
+     *          destroyed array would otherwise shadow a live one that reused its
+     *          address, which is exactly what erase() exists to prevent.
+     */
+    [[nodiscard]] Payload* find_payload(const void* key) noexcept
+    {
+        for (auto& item : vec)
+            if (item.first == key)
+                return &item.second;
+        return nullptr;
+    }
+
+    /// @copydoc find_payload
+    [[nodiscard]] const Payload* find_payload(const void* key) const noexcept
+    {
+        for (const auto& item : vec)
+            if (item.first == key)
+                return &item.second;
+        return nullptr;
+    }
+
+    /// The (key, payload) pairs, in insertion order. Derived registries read it
+    /// directly for the lookups that are specific to them.
+    Storage vec;
 };
 
 } // namespace shrink_array

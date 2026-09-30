@@ -669,18 +669,6 @@ struct Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T,
     using ProxySpec2<T, Derived>::second_value;
     using ProxySpec2<T, Derived>::inf_array;
 
-  protected:
-    /**
-     * @brief Serial form of execute_arithmetic_compound_operation(): the
-     *        counter path -- a chunk leaving its second constant gets its
-     *        second-value counter set, and `operation` writes through the
-     *        values pointer it is handed.
-     * @tparam LAMBDA Callable `(op, T* values)`.
-     */
-    template <typename OP, typename LAMBDA, typename U>
-    void execute_arithmetic_compound_operation(OP op, const U& operand, LAMBDA operation);
-
-  public:
     // Non-OpenMP (no embedded fast block compression): Proxy2 has no compression
     // tracking tabs, so these are no-op stubs. They must still exist because
     // ArrayChunkBase::create_common() calls resize_tab_is_int(nb_tab)
@@ -708,7 +696,6 @@ struct Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T,
      *          Resets value counter to zero.
      * @post Chunk compressed; memory freed; values points to const storage
      */
-
     void manage_full_first_value() const
     {
         // Pin the ambient size before triggering the free/compress chain
@@ -742,7 +729,6 @@ struct Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T,
      *          Resets value counter to zero.
      * @post Chunk compressed; memory freed; values points to second_value storage
      */
-
     void manage_full_second_value() const
     {
         // Same fix as manage_full_first_value(): see that function's comment.
@@ -753,6 +739,17 @@ struct Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T,
         else
             chunk.clear_st(1, 0); // bool: ind ignored by bool-aware clear_int_st
     }
+
+  protected:
+    /**
+     * @brief Serial form of execute_arithmetic_compound_operation(): the
+     *        counter path -- a chunk leaving its second constant gets its
+     *        second-value counter set, and `operation` writes through the
+     *        values pointer it is handed.
+     * @tparam LAMBDA Callable `(op, T* values)`.
+     */
+    template <typename OP, typename LAMBDA, typename U>
+    void execute_arithmetic_compound_operation(OP op, const U& operand, LAMBDA operation);
 };
 
 /// @brief Proxy to one element of a Chunk2<T> chunk: reads, assignments and compound operators on it.
@@ -775,59 +772,6 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
 
     using BaseSpec = ProxySpec2<T, Proxy2>;
     using BaseSpec::second_value;
-
-  private:
-    /**
-     * @brief Chunk2's marking pre-check: a write of a constant, on an array that
-     *        has a candidate list for its second value.
-     * @details Shadows Proxy2Base::pre_check_mark_for_compression(), as
-     *          Proxy2A does. Candidate lists are keyed by second value and
-     *          created only by ArrayChunk2::set_second_value(); an array that
-     *          never declared one has none, and is not walked by the
-     *          compression pass either (it walks share_info_array's inf-array
-     *          list, filled by the same call). Such writes are rejected HERE,
-     *          before add_to_compression_list() CASes the chunk's "queued" flag
-     *          -- giving up after the CAS would leave the chunk flagged for
-     *          good. Before the widened pre-check (Sept '26) these arrays were
-     *          never queued either; the widening now applies to every array
-     *          that has a second value.
-     * @param new_value The new value to check.
-     * @param first_value The first constant value to compare against.
-     * @param second_val The second constant value to compare against.
-     * @return true if the write is worth examining further.
-     */
-    [[nodiscard]] bool
-    pre_check_mark_for_compression(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
-    {
-        return this->pre_check_mark_for_compression_strict(new_value, first_value, second_val) &&
-               has_candidate_list(second_val);
-    }
-
-  public:
-    /**
-     * @brief Does the calling rank have a candidate list for @p second_val?
-     * @details Reads the rank's own map only; set_second_value() fills the maps
-     *          outside the parallel phases. Always true in builds without the
-     *          per-value lists (no OpenMP / no fast block compression).
-     */
-    [[nodiscard]] static bool has_candidate_list(in_t<T> second_val) noexcept
-    {
-        if constexpr (build_config::use_openmp && chunk_config::use_fast_block_compression)
-        {
-            const auto& per_thr = manager_chunk2::map_chunk2_to_compress_potentially_thr;
-            const int   thr     = get_thr_rank_fast();
-            if (thr < 0 || static_cast<std::size_t>(thr) >= per_thr.size()) [[unlikely]]
-                return false;
-            const auto& candidates = per_thr[thr];
-            const auto  it         = candidates.find(second_val);
-            return it != candidates.end() && it->second != nullptr;
-        }
-        else
-        {
-            (void)second_val;
-            return true;
-        }
-    }
 
   private:
     /// Alias for the chunk manager associated with type T.
@@ -861,13 +805,41 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     using Base::ptr_is_inside_chunk_list_to_compress; ///< Per-chunk compression flag pointer
     using Base::tab_is_inside_chunk_list_to_compress; ///< Global compression tracking array
 
+    // execute_arithmetic_compound_operation(op, operand, operation) is declared
+    // on each Proxy2FastCompPolicy specialisation: the deferred-compression
+    // form and the counter form are different algorithms (and hand `operation`
+    // different arguments).
+    using FastCompPolicy::execute_arithmetic_compound_operation;
+
   public:
+    /// @brief Stream output of the element's value (defined below).
+    template <typename U>
+    friend std::ostream& operator<<(std::ostream& os, const Proxy2<U>& proxy);
+
     /**
-     * @brief Global map linking chunk values to their associated metadata.
-     *
-     * Used to retrieve compression-related information for a given value.
+     * @brief Does the calling rank have a candidate list for @p second_val?
+     * @details Reads the rank's own map only; set_second_value() fills the maps
+     *          outside the parallel phases. Always true in builds without the
+     *          per-value lists (no OpenMP / no fast block compression).
      */
-    static inline PointerMapChunk2<T> share_info_array;
+    [[nodiscard]] static bool has_candidate_list(in_t<T> second_val) noexcept
+    {
+        if constexpr (build_config::use_openmp && chunk_config::use_fast_block_compression)
+        {
+            const auto& per_thr = manager_chunk2::map_chunk2_to_compress_potentially_thr;
+            const int   thr     = get_thr_rank_fast();
+            if (thr < 0 || static_cast<std::size_t>(thr) >= per_thr.size()) [[unlikely]]
+                return false;
+            const auto& candidates = per_thr[thr];
+            const auto  it         = candidates.find(second_val);
+            return it != candidates.end() && it->second != nullptr;
+        }
+        else
+        {
+            (void)second_val;
+            return true;
+        }
+    }
 
     /**
      * @brief Pointer to the owning array (used as the compression-metadata
@@ -900,7 +872,6 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @note Non-bool only: aborts if called on a bool chunk (bool has no
      *       indexed second constant -- use the no-arg overload below).
      */
-
     [[nodiscard]] bool is_cst_val2(int ind) const noexcept
     {
         if constexpr (is_not_bool)
@@ -932,42 +903,6 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         }
     }
 
-    // ========================================================================
-    // Chunk allocation and initialization
-    // ========================================================================
-
-    /**
-     * @brief Allocate chunk storage if currently compressed
-     * @details Decompresses the chunk by allocating full array storage.
-     *          Chooses initialization based on current compression state:
-     *          - cst_val1: Fill with first_value (typically 0)
-     *          - cst_val2: Fill with second_value
-     * @post Chunk has allocated values array; no longer compressed
-     * @note Thread safety: Uses atomic compare-exchange in multi-threaded builds
-     */
-
-  private:
-    void create_value() const noexcept
-    {
-        if constexpr (build_config::chunk_dynamic)
-        {
-            // Route this (possibly worker-thread) allocation to the allocator
-            // for THIS array's chunk size: set the per-thread active size from
-            // the array right before materializing, so parallel-region writes
-            // on any worker allocate from the correct size pool.
-            shrink_array::set_thread_chunk_size(this->chunk_size());
-        }
-        if constexpr (is_not_bool)
-        {
-            chunk.create_value(is_cst_val2(), inf_array);
-        }
-        else
-        {
-            chunk.create_value_bool(is_cst_val2());
-        }
-    }
-
-  public:
     // ========================================================================
     // Metadata initialization
     // ========================================================================
@@ -1006,7 +941,6 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *       tab_is_inside_chunk_list_to_compress (left empty in that mode) is
      *       never indexed.
      */
-
     void set_num_tab_ptr_is_inside_chunk() noexcept
     {
         set_num_tab();
@@ -1025,7 +959,100 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         return share_info_array.get_info_second_value(ptr);
     }
 
+    // -------------------------------------------------------------------------
+    // PUBLIC OPERATORS (The Filter)
+    // -------------------------------------------------------------------------
+
+    /**
+     * @brief Standard assignment for identical types (e.g., float = float).
+     * No warning triggered.
+     */
+    template <typename U>
+        requires IsCleanAssignment<T, U>
+    T operator=(const U& v) noexcept
+    {
+        return assign_impl<U>(v);
+    }
+
+    /**
+     * @brief Trap assignment for different types (e.g., float = double).
+     * Triggers a compiler warning to prevent missing 'f' suffix for float constants.
+     */
+    template <typename U>
+        requires(!IsCleanAssignment<T, U>) && std::assignable_from<T&, U>
+    [[deprecated("HPC WARNING: Type mismatch in assignment. Possible precision loss. Use 'f' suffix for floats.")]]
+    T operator=(const U& v) noexcept
+    {
+        // The cast is explicit here to clear the final target value
+        return assign_impl<T>(static_cast<T>(v));
+    }
+
+    const Proxy2& operator=(const Proxy2& from) = delete;
+    Proxy2(const Proxy2& other)                 = default;
+
+    T*       operator&()       = delete;
+    const T* operator&() const = delete;
+
   private:
+    /**
+     * @brief Chunk2's marking pre-check: a write of a constant, on an array that
+     *        has a candidate list for its second value.
+     * @details Shadows Proxy2Base::pre_check_mark_for_compression(), as
+     *          Proxy2A does. Candidate lists are keyed by second value and
+     *          created only by ArrayChunk2::set_second_value(); an array that
+     *          never declared one has none, and is not walked by the
+     *          compression pass either (it walks share_info_array's inf-array
+     *          list, filled by the same call). Such writes are rejected HERE,
+     *          before add_to_compression_list() CASes the chunk's "queued" flag
+     *          -- giving up after the CAS would leave the chunk flagged for
+     *          good. Before the widened pre-check (Sept '26) these arrays were
+     *          never queued either; the widening now applies to every array
+     *          that has a second value.
+     * @param new_value The new value to check.
+     * @param first_value The first constant value to compare against.
+     * @param second_val The second constant value to compare against.
+     * @return true if the write is worth examining further.
+     */
+    [[nodiscard]] bool
+    pre_check_mark_for_compression(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
+    {
+        return this->pre_check_mark_for_compression_strict(new_value, first_value, second_val) &&
+               has_candidate_list(second_val);
+    }
+
+    // ========================================================================
+    // Chunk allocation and initialization
+    // ========================================================================
+
+    /**
+     * @brief Allocate chunk storage if currently compressed
+     * @details Decompresses the chunk by allocating full array storage.
+     *          Chooses initialization based on current compression state:
+     *          - cst_val1: Fill with first_value (typically 0)
+     *          - cst_val2: Fill with second_value
+     * @post Chunk has allocated values array; no longer compressed
+     * @note Thread safety: Uses atomic compare-exchange in multi-threaded builds
+     */
+    void create_value() const noexcept
+    {
+        if constexpr (build_config::chunk_dynamic)
+        {
+            // Route this (possibly worker-thread) allocation to the allocator
+            // for THIS array's chunk size: set the per-thread active size from
+            // the array right before materializing, so parallel-region writes
+            // on any worker allocate from the correct size pool.
+            shrink_array::set_thread_chunk_size(this->chunk_size());
+        }
+        if constexpr (is_not_bool)
+        {
+            chunk.create_value(is_cst_val2(), inf_array);
+        }
+        else
+        {
+            chunk.create_value_bool(is_cst_val2());
+        }
+    }
+
     /**
      * @brief Core assignment logic without compression tracking
      * @param v Value to assign
@@ -1035,7 +1062,6 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *          - Actual value write
      * @note Thread safety: Caller must ensure appropriate locking
      */
-
     void perform_core_assignment(in_t<T> v) const noexcept;
 
     /// @brief Materialise the chunk if it is stored in a compressed (cst_val1 /
@@ -1062,12 +1088,6 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     template <typename LAMBDA>
     void execute_simple_operation(LAMBDA operation);
 
-    // execute_arithmetic_compound_operation(op, operand, operation) is declared
-    // on each Proxy2FastCompPolicy specialisation: the deferred-compression
-    // form and the counter form are different algorithms (and hand `operation`
-    // different arguments).
-    using FastCompPolicy::execute_arithmetic_compound_operation;
-
     /**
      * @brief Run an arbitrary in-place operation on this element,
      *        materialising the chunk first if it is currently compressed.
@@ -1077,12 +1097,10 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     template <typename LAMBDA>
     void execute_inplace_operation(LAMBDA operation);
 
-  public:
     // ========================================================================
     // ASSIGNMENT OPERATOR
     // ========================================================================
 
-  private:
     /**
      * @brief Core implementation behind operator=(): writes `v` at this
      *        proxy's index.
@@ -1108,41 +1126,10 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     // reference. Non-deducible, hence the explicit assign_impl<U>(v) below.
     T assign_impl(in_t<U> v) noexcept;
 
-  public:
-    // -------------------------------------------------------------------------
-    // PUBLIC OPERATORS (The Filter)
-    // -------------------------------------------------------------------------
-
-    /**
-     * @brief Standard assignment for identical types (e.g., float = float).
-     * No warning triggered.
-     */
-
-    template <typename U>
-        requires IsCleanAssignment<T, U>
-    T operator=(const U& v) noexcept
-    {
-        return assign_impl<U>(v);
-    }
-
-    /**
-     * @brief Trap assignment for different types (e.g., float = double).
-     * Triggers a compiler warning to prevent missing 'f' suffix for float constants.
-     */
-
-    template <typename U>
-        requires(!IsCleanAssignment<T, U>) && std::assignable_from<T&, U>
-    [[deprecated("HPC WARNING: Type mismatch in assignment. Possible precision loss. Use 'f' suffix for floats.")]]
-    T operator=(const U& v) noexcept
-    {
-        // The cast is explicit here to clear the final target value
-        return assign_impl<T>(static_cast<T>(v));
-    }
     // ========================================================================
     // COMPOUND ARITHMETIC OPERATORS
     // ========================================================================
 
-  private:
     /**
      * @brief Read-modify-write behind the compound operators (`+=`, `-=`...):
      *        `values[num] = op(values[num], v)`, with the second-value
@@ -1164,15 +1151,6 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
                                   in_t<U> v,
                                   bool    check_first_value_result = false) noexcept; // in_t: see assign_impl
 
-  public:
-    const Proxy2& operator=(const Proxy2& from) = delete;
-    Proxy2(const Proxy2& other)                 = default;
-
-    /// @brief Stream output of the element's value (defined below).
-    template <typename U>
-    friend std::ostream& operator<<(std::ostream& os, const Proxy2<U>& proxy);
-
-  private:
     /**
      * @brief UNSAFE: a raw `T&` into this element's chunk buffer, for callers
      *        that must bind a real reference (e.g. passing `a[i]` to a
@@ -1203,8 +1181,12 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     }
 
   public:
-    T*       operator&()       = delete;
-    const T* operator&() const = delete;
+    /**
+     * @brief Global map linking chunk values to their associated metadata.
+     *
+     * Used to retrieve compression-related information for a given value.
+     */
+    static inline PointerMapChunk2<T> share_info_array;
 };
 
 /// @brief Write the element's value, read through proxy.read_pure(), to @p os.

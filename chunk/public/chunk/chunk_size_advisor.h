@@ -71,13 +71,6 @@ struct ChunkSizeEstimate
 /// @brief ChunkSizeAdvisor's result: one ChunkSizeEstimate per candidate size, with the best and current indices.
 struct ChunkSizeReport
 {
-    uint32_t                       current_size = 0;
-    double                         meta_bytes   = 0.;
-    double                         elem_bytes   = 0.; // per element in a materialised chunk (1/8 for Bit)
-    std::vector<ChunkSizeEstimate> table;             // ascending sizes
-    int                            best = -1;         // index into table
-    int                            cur  = -1;         // index of current size
-
     /// @brief Bytes the best size would save over the current one (0 when
     ///        either is unknown).
     [[nodiscard]] double best_gain_bytes() const noexcept
@@ -86,6 +79,13 @@ struct ChunkSizeReport
             return 0.;
         return table[cur].mem_bytes - table[best].mem_bytes;
     }
+
+    uint32_t                       current_size = 0;
+    double                         meta_bytes   = 0.;
+    double                         elem_bytes   = 0.; // per element in a materialised chunk (1/8 for Bit)
+    std::vector<ChunkSizeEstimate> table;             // ascending sizes
+    int                            best = -1;         // index into table
+    int                            cur  = -1;         // index of current size
 };
 
 /// @brief Estimates an array's model memory at other chunk sizes without re-chunking (see the header comment).
