@@ -70,6 +70,11 @@
 #                           the build flags -- an ArrayChunk2 filled with its
 #                           second value used to stay materialised there.
 #                           The one harness that is not variant-agnostic.
+#   cst2_registry_validation  Chunk2A's second-value registry is freed by the
+#                           last array of every generation, not only the
+#                           first (its reinstall took a phantom reference),
+#                           and overlapping arrays free nothing early.
+#                           Chunk2A only, default static size.
 #
 # All sources are variant-agnostic (the array type follows the CHUNK / CHUNK2
 # / CHUNK2A macro) and depend on the library alone -- none of the shrink_bench
@@ -263,6 +268,22 @@ if (TARGET chunk_v1v2_${CHUNK_DEFAULT_SIZE})
   set(_tgt fill_range_mt_v1v2_validation)
   add_executable(${_tgt} fill_range_mt_v1v2_validation.cpp)
   target_link_libraries(${_tgt} PRIVATE chunk_v1v2_${CHUNK_DEFAULT_SIZE}) # CHUNK, CHUNK2, CHUNK_SIZE: PUBLIC
+  validation_setup_target(${_tgt})
+  foreach(_nthr 1 8)
+    add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
+    set_property(TEST ${_tgt}_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
+    set_property(TEST ${_tgt}_${_nthr}thr PROPERTY LABELS validation)
+  endforeach()
+endif()
+
+# --- cst2_registry_validation: Chunk2A's second-value registry lifecycle
+# (users / entries across successive and overlapping arrays). Chunk2A only,
+# at the default static size, at 1 and 8 threads like the others.
+if (TARGET chunk_v2a_${CHUNK_DEFAULT_SIZE})
+  set(_tgt cst2_registry_validation_chunk2a_${CHUNK_DEFAULT_SIZE})
+  add_executable(${_tgt} cst2_registry_validation.cpp)
+  target_link_libraries(${_tgt} PRIVATE chunk_v2a_${CHUNK_DEFAULT_SIZE})
+  target_compile_definitions(${_tgt} PRIVATE CHUNK2A) # CHUNK_SIZE comes from the lib (PUBLIC)
   validation_setup_target(${_tgt})
   foreach(_nthr 1 8)
     add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})

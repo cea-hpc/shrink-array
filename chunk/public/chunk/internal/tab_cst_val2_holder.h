@@ -219,7 +219,8 @@ template <typename T>
 struct GlobalVecHolder
 {
     /// @brief First segment. NEVER null after init() -- clear_if_last()
-    ///        reinstalls an empty one so no caller has to test for it.
+    ///        reinstalls an empty one (install_head(), which registers no
+    ///        user) so no caller has to test for it.
     static inline std::atomic<Segment<T>*> head{nullptr};
     // Cached tail segment: makes the cold-path append O(1) instead of walking
     // head->...->tail (O(N/64)) on every registration. Mutated only under
@@ -233,6 +234,13 @@ struct GlobalVecHolder
     static inline std::atomic<int> ref_count{0};
 
   public:
+    /// @brief The registered users (#ref_count): the live ArrayChunk2A<T>
+    ///        holding a reference. For checks at a quiescent point.
+    [[nodiscard]] static int users() noexcept
+    {
+        return ref_count.load(std::memory_order_acquire);
+    }
+
     /**
      * @brief How many distinct second values are registered.
      * @return The sum of Segment::used over the chain.
@@ -737,20 +745,34 @@ struct GlobalVecHolder
   public:
     /**
      * @brief Register one more user of this type's registry, creating it if new.
-     * @details Idempotent: the first segment is installed once, by whichever
-     *          caller wins the CAS. Also what arranges teardown, through the
-     *          function-local Sentinel.
+     * @details The user is counted in #ref_count; the registry itself is made
+     *          valid by install_head().
      */
     static void init()
     {
+        // One more ArrayChunk2A<T> is using the shared list.
+        ref_count.fetch_add(1, std::memory_order_relaxed);
+        install_head();
+    }
+
+    /**
+     * @brief Make the registry usable -- the region reserved, a first segment
+     *        in #head -- WITHOUT registering a user.
+     * @details Idempotent: the first segment is installed once, by whichever
+     *          caller wins the CAS. Also what arranges teardown, through the
+     *          function-local Sentinel. Split from init() so that
+     *          clear_if_last() can reinstall an empty chain without the
+     *          phantom reference that init() used to leave behind: #ref_count
+     *          went 0 -> 1 with no array alive, the next last-one-out found 1
+     *          left, and the registry was never freed again before exit.
+     */
+    static void install_head()
+    {
         static const Sentinel<T> sentinel;
 
-        // Increment ref count — one more ArrayChunk2A<T> is using the shared list.
-        ref_count.fetch_add(1, std::memory_order_relaxed);
         region_init();
 
-        // Install initial segment only on first call.
-
+        // Install the initial segment, once.
         if (head.load(std::memory_order_relaxed) == nullptr)
         {
             auto        seg      = std::make_unique<Segment<T>>();
@@ -781,8 +803,10 @@ struct GlobalVecHolder
      *
      * @details Decrements #ref_count and returns immediately while other
      *          ArrayChunk2A<T> instances are alive. The last one out frees every
-     *          array and every segment, clears the index, then calls init() so
-     *          #head is valid again for any later pass.
+     *          array and every segment, clears the index, then calls
+     *          install_head() so #head is valid again for any later pass --
+     *          without registering a user: #ref_count stays at 0, and the
+     *          next generation of arrays is freed by its own last one out.
      *
      * @warning No thread may be SCANNING the chain while this runs --
      *          find_or_set_ind_cst_val2(), reached from make_block_compression
@@ -845,8 +869,11 @@ struct GlobalVecHolder
         index_clear();
         region_reset(); // the arrays' pages, all at once
 
-        // Reinstall empty segment for potential future use.
-        init();
+        // Reinstall an empty segment for any later pass. NOT init(): that
+        // takes a reference, and one taken here, with no array alive, kept
+        // #ref_count above 0 for the rest of the run -- after the first
+        // extinction nothing was ever freed again.
+        install_head();
     }
 
     /**
