@@ -17,11 +17,6 @@
 #include <cassert>
 #include "fast_allocators/internal/int_alloc.h"
 
-// Unconditional: the bodies below branch with `if constexpr`, and a non-template
-// function compiles BOTH arms whichever way the condition folds. NextPowerOf2 is
-// used in the __debug_mem arm, so it has to exist even in a STD_ALLOC build.
-#include "fast_allocators/internal/next_power_of_2.h"
-
 #include "fast_allocators/internal/alloc_config.h" // constexpr mirrors of STD_ALLOC / DEBUG
 #include "fast_allocators/internal/pmp_alloc.h"
 
@@ -126,17 +121,6 @@ inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
     if constexpr (alloc_config::use_std_alloc)
     {
         return int_alloc(sz);
-    }
-
-    // The same bypass as getBlockAllocAlign, and as freeBlock honours: with the
-    // flag set, freeBlock int_free()s whatever it is given, so the block must
-    // not come from the ladder's slabs (it used to: free() on a slab pointer).
-    if constexpr (alloc_config::debug_mem_observable)
-    {
-        if (__debug_mem)
-        {
-            return int_alloc(NextPowerOf2(sz));
-        }
     }
 
     // Tree: unbalanced: favor speed on small blocks
@@ -246,16 +230,6 @@ inline void* StaticConstArray::getBlockAllocAlign(int sz)
     if constexpr (alloc_config::use_std_alloc)
     {
         return int_alloc_align(sz);
-    }
-
-    // Rounded up to a power of two so the pointer a memory checker sees has the
-    // same footprint the ladder would have handed out.
-    if constexpr (alloc_config::debug_mem_observable)
-    {
-        if (__debug_mem)
-        {
-            return int_alloc_align(NextPowerOf2(sz));
-        }
     }
 
     // Tree: unbalanced: favor speed on small blocks
@@ -399,15 +373,6 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
         return true;
     }
 
-    if constexpr (alloc_config::debug_mem_observable)
-    {
-        if (__debug_mem)
-        {
-            int_free(ptr);
-            return true;
-        }
-    }
-
 
     if (sz <= MAX_CONST_BLOCK_SIZE)
     {
@@ -538,15 +503,6 @@ inline bool StaticConstArray::freeBlockAlign(int sz, void* ptr)
     {
         int_free_align(ptr);
         return true;
-    }
-
-    if constexpr (alloc_config::debug_mem_observable)
-    {
-        if (__debug_mem)
-        {
-            int_free_align(ptr);
-            return true;
-        }
     }
 
 
