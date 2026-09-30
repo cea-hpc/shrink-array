@@ -45,6 +45,7 @@ using crtp_cast_t = std::conditional_t<std::is_const_v<std::remove_reference_t<S
 template <typename Derived>
 struct CRTPSupport
 {
+  protected:
     /// @brief `*this` as the derived class, const on a const object.
     template <typename Self>
     [[nodiscard]] auto& derived(this Self&& self) noexcept

@@ -175,13 +175,12 @@ inline void heavy_barrier() noexcept
 template <typename PROX, bool Enabled = build_config::use_openmp>
 class WriteCompressSyncPolicy
 {
-  private:
+  public:
     // The v1 "slow-path latch" (active_slow_path / is_slow_path_active /
     // activate_slow_path) was removed: it was raised on the Proxy<T>
     // instantiation and tested on the Chunk<T> one -- two statics, the read one
     // never written -- so its null-sentinel branch was unreachable.
 
-  public:
     /// @brief One writer flag, padded to its own cache line: the chunk the
     ///        rank is writing, or nullptr.
     /// @details Per-thread rather than a shared counter: an
@@ -202,25 +201,6 @@ class WriteCompressSyncPolicy
     {
         std::atomic<const void*> v{nullptr};
     };
-
-    //  alignas(128) static inline std::atomic<int> active_writer_count{0}; --> very bad perf
-
-    /// One writer flag per thread rank, sized by ensure_initialized().
-    static inline std::vector<WritingFlag> per_thread_writing;
-
-    /// Number of threads currently inside a flush critical section
-    /// (begin_flush()/end_flush()).
-    /// @details A counter, not a per-thread flag array, because the only query
-    ///          is the aggregate "is ANY thread flushing?" -- never a per-rank
-    ///          one. The asymmetry with per_thread_writing is deliberate: this
-    ///          is written only on the RARE flush path, so making it shared
-    ///          costs nothing, while it turns the HOT reader
-    ///          any_thread_flushing() -- called on every deferred enqueue and in
-    ///          start() -- into a single O(1) load instead of an O(max_thr) scan
-    ///          of 128 flags. That scan was around 10% of the AArch64 profile in
-    ///          to_be_queued_for_deferred_processing() at 128 threads.
-    alignas(128) static inline std::atomic<int> num_thread_flushing{0};
-
 
     WriteCompressSyncPolicy() noexcept = default;
 
@@ -247,24 +227,6 @@ class WriteCompressSyncPolicy
                            // the first parallel write of this variant.
                            dekker::register_membarrier();
                        });
-    }
-
-    /**
-     * @brief Raise this thread's writer flag.
-     * @param thr   calling thread's rank
-     * @param chunk the chunk being written, published in the flag
-     * @warning Do NOT call directly to announce a write: without the fence that
-     *          follows it, the handshake is unsound on weakly-ordered targets.
-     *          Use announce_write().
-     */
-    static void begin_write(int thr, const void* chunk) noexcept
-    {
-        if constexpr (chunk_config::ring_log_debug)
-        {
-            ring_log(get_tid(), EV_POLICY_BEGIN_WRITE, static_cast<uint32_t>(thr));
-        }
-
-        per_thread_writing[thr].v.store(chunk, std::memory_order_seq_cst);
     }
 
     /**
@@ -349,23 +311,6 @@ class WriteCompressSyncPolicy
     }
 
     /**
-     * @brief Is ANY rank currently inside a write critical section?
-     * @param max_thr number of ranks to scan
-     * @return true as soon as one raised flag is found
-     * @note O(max_thr). Acceptable because only the rare flush/compress side
-     *       calls it; the hot write path never does.
-     */
-    static bool any_thread_writing(int max_thr) noexcept
-    {
-        for (int i = 0; i < max_thr; ++i)
-        {
-            if (per_thread_writing[i].v.load(std::memory_order_acquire) != nullptr)
-                return true;
-        }
-        return false;
-    }
-
-    /**
      * @brief Is any rank inside a write critical section ON A MARKED CHUNK?
      * @tparam ChunkT the chunk type the flags point to (the policy's proxy
      *                writes one chunk type)
@@ -414,24 +359,6 @@ class WriteCompressSyncPolicy
     {
         return per_thread_writing[thr].v.load(std::memory_order_seq_cst) != nullptr;
     }
-    /**
-     * @brief Enter a flush critical section.
-     * @details While any flush is in progress, compressors calling start() back
-     *          off and return false, giving the flush exclusive write access.
-     *          The seq_cst increment carries the same total-order weight the
-     *          previous per-thread seq_cst flag store did, which the Dekker
-     *          pattern in start() depends on.
-     * @post Must be paired with end_flush().
-     * @warning Like begin_write(), this is not an announce: use announce_flush()
-     *          when the caller then inspects the writer flags.
-     */
-    static void begin_flush() noexcept
-    {
-        // seq_cst: Dekker handshake with the deferred-enqueue path
-        // (to_be_queued_for_deferred_processing) and start(). Was a per-thread
-        // seq_cst flag store; the counter carries the same total-order weight.
-        num_thread_flushing.fetch_add(1, std::memory_order_seq_cst);
-    }
 
     /**
      * @brief Flusher-side Dekker announce: enter the section, then the heavy
@@ -479,6 +406,79 @@ class WriteCompressSyncPolicy
     }
 
     ~WriteCompressSyncPolicy() = default;
+
+  private:
+    /**
+     * @brief Raise this thread's writer flag.
+     * @param thr   calling thread's rank
+     * @param chunk the chunk being written, published in the flag
+     * @warning Do NOT call directly to announce a write: without the fence that
+     *          follows it, the handshake is unsound on weakly-ordered targets.
+     *          Use announce_write().
+     */
+    static void begin_write(int thr, const void* chunk) noexcept
+    {
+        if constexpr (chunk_config::ring_log_debug)
+        {
+            ring_log(get_tid(), EV_POLICY_BEGIN_WRITE, static_cast<uint32_t>(thr));
+        }
+
+        per_thread_writing[thr].v.store(chunk, std::memory_order_seq_cst);
+    }
+
+    /**
+     * @brief Is ANY rank currently inside a write critical section?
+     * @param max_thr number of ranks to scan
+     * @return true as soon as one raised flag is found
+     * @note O(max_thr). Acceptable because only the rare flush/compress side
+     *       calls it; the hot write path never does.
+     */
+    static bool any_thread_writing(int max_thr) noexcept
+    {
+        for (int i = 0; i < max_thr; ++i)
+        {
+            if (per_thread_writing[i].v.load(std::memory_order_acquire) != nullptr)
+                return true;
+        }
+        return false;
+    }
+
+    /**
+     * @brief Enter a flush critical section.
+     * @details While any flush is in progress, compressors calling start() back
+     *          off and return false, giving the flush exclusive write access.
+     *          The seq_cst increment carries the same total-order weight the
+     *          previous per-thread seq_cst flag store did, which the Dekker
+     *          pattern in start() depends on.
+     * @post Must be paired with end_flush().
+     * @warning Like begin_write(), this is not an announce: use announce_flush()
+     *          when the caller then inspects the writer flags.
+     */
+    static void begin_flush() noexcept
+    {
+        // seq_cst: Dekker handshake with the deferred-enqueue path
+        // (to_be_queued_for_deferred_processing) and start(). Was a per-thread
+        // seq_cst flag store; the counter carries the same total-order weight.
+        num_thread_flushing.fetch_add(1, std::memory_order_seq_cst);
+    }
+
+    //  alignas(128) static inline std::atomic<int> active_writer_count{0}; --> very bad perf
+
+    /// One writer flag per thread rank, sized by ensure_initialized().
+    static inline std::vector<WritingFlag> per_thread_writing;
+
+    /// Number of threads currently inside a flush critical section
+    /// (begin_flush()/end_flush()).
+    /// @details A counter, not a per-thread flag array, because the only query
+    ///          is the aggregate "is ANY thread flushing?" -- never a per-rank
+    ///          one. The asymmetry with per_thread_writing is deliberate: this
+    ///          is written only on the RARE flush path, so making it shared
+    ///          costs nothing, while it turns the HOT reader
+    ///          any_thread_flushing() -- called on every deferred enqueue and in
+    ///          start() -- into a single O(1) load instead of an O(max_thr) scan
+    ///          of 128 flags. That scan was around 10% of the AArch64 profile in
+    ///          to_be_queued_for_deferred_processing() at 128 threads.
+    alignas(128) static inline std::atomic<int> num_thread_flushing{0};
 };
 
 /**

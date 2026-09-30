@@ -40,6 +40,11 @@ class VectCom
   public:
     using value_type = T;
 
+    /// @brief Virtual: MultiArray deletes its arrays through VectCom<T>*,
+    ///        and the derived classes hold a chunk array or a vector whose
+    ///        destructor must run.
+    virtual ~VectCom() = default;
+
     /// @brief The material this array belongs to.
     void setInd(int i)
     {
@@ -113,14 +118,44 @@ class MultiArray : public std::vector<VectCom<T>*>
     using vec_dir   = Vect<T>;
     using vec_chunk = VecChunk;
 
+    MultiArray() = default;
+
+    /// @brief Frees the arrays create() made (through VectCom's virtual
+    ///        destructor, so the chunk arrays' teardown runs).
+    ~MultiArray()
+    {
+        release();
+    }
+
+    // Owns raw pointers: a copy would delete them twice, and the default
+    // move assignment would leak the target's. Neither is needed.
+    MultiArray(const MultiArray&)            = delete;
+    MultiArray& operator=(const MultiArray&) = delete;
+    MultiArray(MultiArray&&)                 = delete;
+    MultiArray& operator=(MultiArray&&)      = delete;
+
     /// @brief One array of @p mesh_size elements per material, of the kind
-    ///        the dispatch gives the material.
+    ///        the dispatch gives the material. Frees those of a previous
+    ///        call first.
     void create(int nbmat, int mesh_size);
+
+  private:
+    /// @brief Delete every array and empty the vector.
+    void release() noexcept
+    {
+        for (VectCom<T>*& p : *this)
+        {
+            delete p;
+            p = nullptr;
+        }
+        BaseClass::clear();
+    }
 };
 
 template <typename T, typename VecChunk>
 void MultiArray<T, VecChunk>::create(int nbmat, int mesh_size)
 {
+    release(); // a second create() does not leak the first one's arrays
     BaseClass::resize(nbmat, nullptr);
 
     for (int k = 0; k < nbmat; ++k)

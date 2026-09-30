@@ -129,25 +129,53 @@ inline std::size_t reclaim_min_empty_slabs() noexcept
 }
 
 /**
- * @brief Is the `__debug_mem` global consulted at run time?
+ * @brief CHUNK_THP: advise transparent huge pages on the slab arenas and the
+ *        cst2 region? EXPERIMENTAL, off by default.
  *
- * @details `__debug_mem` routes every allocation through plain `new[]`/`free`
- *          so a memory checker sees individual objects rather than one slab.
- *          Reading it costs a branch on the hot path, so release serial builds
- *          do not read it at all and behave as if it were false.
+ * @details Read once. `1` (any value but empty or `0`) asks for
+ *          madvise(MADV_HUGEPAGE) on each arena reservation
+ *          (SlabArena::grow) and on the cst2 region. Honoured only when the
+ *          kernel's PMD huge page is no larger than a slab (2 MiB, a 4 KiB-page
+ *          kernel): with 64 KiB base pages it is 512 MiB, which no arena
+ *          reservation can hold and which would make the cst2 region resident
+ *          by 512 MiB at a time -- the switch is then ignored, with a message.
+ *          The kernel's THP mode must be `madvise` or `always` for the advice
+ *          to matter.
  *
- * @warning Nothing in this repository ever assigns `__debug_mem`; it is
- *          declared `extern` and initialised to false, so it is reachable only
- *          by a translation unit outside the library. StaticConstArray honours
- *          it symmetrically on both ladders (getBlockAlloc / freeBlock and the
- *          aligned pair; getBlockAlloc ignored it until Sept. '26, so a free
- *          could int_free() a slab block), but
- *          TCTypeCAllocator does NOT: its free_elt() honours it while its
- *          alloc() ignores it, so setting the flag on an already-populated
- *          allocator would `delete[]` a pointer that was carved out of a slab.
- *          Treat the flag as unusable in its current state.
+ * @warning The cost: a slab becomes resident whole at its first touch, not
+ *          page by page as its elements are handed out. Measure the exact RSS
+ *          (smaps_rollup) along with the time.
  */
-inline constexpr bool debug_mem_observable = is_debug || use_openmp;
+inline bool thp_advise() noexcept
+{
+    static const bool on = []() -> bool
+    {
+        const char* env = std::getenv("CHUNK_THP");
+        if (env == nullptr || env[0] == '\0' || env[0] == '0')
+            return false;
+        long pmd = -1;
+        if (std::FILE* f = std::fopen("/sys/kernel/mm/transparent_hugepage/hpage_pmd_size", "r"))
+        {
+            if (std::fscanf(f, "%ld", &pmd) != 1)
+                pmd = -1;
+            std::fclose(f);
+        }
+        constexpr long slab_bytes = 2L << 20;
+        if (pmd <= 0 || pmd > slab_bytes)
+        {
+            if (pmd <= 0)
+                std::fprintf(stderr, "[env] CHUNK_THP=%s ignored: the huge page size is unknown here\n", env);
+            else
+                std::fprintf(stderr, "[env] CHUNK_THP=%s ignored: the huge page is %ld MiB here, not a 2 MiB slab's size\n",
+                             env, pmd >> 20);
+            return false;
+        }
+        std::fprintf(stderr, "[env] CHUNK_THP: MADV_HUGEPAGE on the slab arenas and the cst2 region (%ld KiB)\n",
+                     pmd >> 10);
+        return true;
+    }();
+    return on;
+}
 
 /// @brief int_alloc / int_free go through the aligned allocation (ALLOC_ALIGN).
 inline constexpr bool alloc_align =

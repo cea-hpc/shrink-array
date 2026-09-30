@@ -41,34 +41,15 @@ struct GlobalStatsChunkList
         size_t element_size;      // Size of a single entry in the op-list (tuple)
     };
 
-    std::map<std::string, TypeStats> all_stats;
-
     /// @brief Record one element type's figures under @p name.
     void record(const std::string& name, long somme, int max_chunks, size_t elem_size)
     {
         all_stats[name] = {somme, max_chunks, elem_size};
     }
 
-    /// @brief @p bytes as a human-readable string (KiB / MiB / GiB).
-    static std::string format_memory(long double bytes)
-    {
-        const long double kib = bytes / 1024.0L;
-        const long double mib = kib / 1024.0L;
-        const long double gib = mib / 1024.0L;
-
-        if (gib >= 1.0L)
-            return std::format("{:.2f} Go", gib);
-        if (mib >= 1.0L)
-            return std::format("{:.2f} Mo", mib);
-        if (kib >= 1.0L)
-            return std::format("{:.2f} Ko", kib);
-        return std::format("{} bytes", static_cast<long long>(bytes));
-    }
-
     /**
      * @brief Prints a detailed report of global memory usage for management lists.
      */
-
     void print() const
     {
         if (all_stats.empty())
@@ -117,6 +98,25 @@ struct GlobalStatsChunkList
                      format_memory(total_metadata_mem), tc.RESET);
         std::println("{}{}{}\n", tc.CYAN, rule_eq, tc.RESET);
     }
+
+  private:
+    /// @brief @p bytes as a human-readable string (KiB / MiB / GiB).
+    static std::string format_memory(long double bytes)
+    {
+        const long double kib = bytes / 1024.0L;
+        const long double mib = kib / 1024.0L;
+        const long double gib = mib / 1024.0L;
+
+        if (gib >= 1.0L)
+            return std::format("{:.2f} Go", gib);
+        if (mib >= 1.0L)
+            return std::format("{:.2f} Mo", mib);
+        if (kib >= 1.0L)
+            return std::format("{:.2f} Ko", kib);
+        return std::format("{} bytes", static_cast<long long>(bytes));
+    }
+
+    std::map<std::string, TypeStats> all_stats;
 };
 
 } // namespace shrink_array

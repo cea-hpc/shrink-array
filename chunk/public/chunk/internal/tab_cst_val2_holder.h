@@ -72,9 +72,29 @@
 
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/config.h"
+#ifdef FAST_ALLOC
+    #include "fast_allocators/internal/alloc_config.h" // alloc_config::thp_advise (CHUNK_THP)
+#endif
 
 namespace shrink_array
 {
+
+/// @brief CHUNK_THP for the cst2 region: alloc_config::thp_advise() in a
+///        fast-alloc build, always false in a std-alloc build.
+///
+/// alloc_config.h belongs to fast_allocators, which a std-alloc build neither
+/// builds nor puts on the include path. The name cannot be written unguarded
+/// in region_init() either: it is not dependent, so it is looked up when the
+/// template is defined, `if constexpr` or not (see build_config's
+/// reclaim_empty_slabs mirror in config.h).
+inline bool cst2_thp_advise() noexcept
+{
+#ifdef FAST_ALLOC
+    return alloc_config::thp_advise();
+#else
+    return false;
+#endif
+}
 
 /**
  * @brief One block of the registry chain: 64 slots and a link to the next.
@@ -146,8 +166,6 @@ struct SecondValueRef
 {
     using slot_t = SecondValueTraits<T>::slot_t;
 
-    slot_t* slot = nullptr;
-
     /// @brief The chunk's second value; T{} (== first_value, 0) when none.
     [[nodiscard]] T get() const noexcept
     {
@@ -186,6 +204,8 @@ struct SecondValueRef
     {
         return slot != nullptr;
     }
+
+    slot_t* slot = nullptr;
 };
 
 /**
@@ -219,7 +239,8 @@ template <typename T>
 struct GlobalVecHolder
 {
     /// @brief First segment. NEVER null after init() -- clear_if_last()
-    ///        reinstalls an empty one so no caller has to test for it.
+    ///        reinstalls an empty one (install_head(), which registers no
+    ///        user) so no caller has to test for it.
     static inline std::atomic<Segment<T>*> head{nullptr};
     // Cached tail segment: makes the cold-path append O(1) instead of walking
     // head->...->tail (O(N/64)) on every registration. Mutated only under
@@ -227,9 +248,18 @@ struct GlobalVecHolder
     // nullptr by index_clear so the next append re-seeds it from head.
     static inline Segment<T>* tail{nullptr};
 
+  private:
     /// @brief Live ArrayChunk2A<T> instances. The registry is freed when it
     ///        reaches zero, not before. @see clear_if_last
     static inline std::atomic<int> ref_count{0};
+
+  public:
+    /// @brief The registered users (#ref_count): the live ArrayChunk2A<T>
+    ///        holding a reference. For checks at a quiescent point.
+    [[nodiscard]] static int users() noexcept
+    {
+        return ref_count.load(std::memory_order_acquire);
+    }
 
     /**
      * @brief How many distinct second values are registered.
@@ -304,11 +334,18 @@ struct GlobalVecHolder
 #ifndef CHUNK_CST_VAL2_REGION_BYTES
     #define CHUNK_CST_VAL2_REGION_BYTES (2uz << 30U)
 #endif
+
+  private:
     static constexpr std::size_t kRegionBytes = CHUNK_CST_VAL2_REGION_BYTES;
 
-    static inline std::atomic<char*>       region_begin{nullptr}; ///< Reservation start; null before init().
-    static inline char*                    region_end = nullptr;  ///< One past the reservation.
-    static inline std::atomic<std::size_t> region_used{0};        ///< Bump offset, in bytes.
+  public:
+    static inline std::atomic<char*> region_begin{nullptr}; ///< Reservation start; null before init().
+
+  private:
+    static inline char*                    region_end = nullptr; ///< One past the reservation.
+    static inline std::atomic<std::size_t> region_used{0};       ///< Bump offset, in bytes.
+
+  public:
     static inline std::size_t region_stride = 0; ///< Bytes per array: every array is carved at a multiple of it.
 
     /// @brief Largest identifier the region can hand out.
@@ -335,6 +372,8 @@ struct GlobalVecHolder
 #ifndef CHUNK_CST_VAL2_MAX_IDS
     #define CHUNK_CST_VAL2_MAX_IDS (4uz << 20U)
 #endif
+
+  private:
     static constexpr std::size_t kIdStride =
         build_config::cst_val2_no_arrays
             ? 64uz
@@ -342,6 +381,7 @@ struct GlobalVecHolder
                    ? (((static_cast<std::size_t>(cst_buffer_size) * sizeof(T)) + 4095u) & ~std::size_t{4095u})
                    : (((static_cast<std::size_t>(cst_buffer_size) * sizeof(T)) + 63u) & ~std::size_t{63u}));
 
+  public:
     static constexpr std::size_t kMaxIds =
         (kRegionBytes / kIdStride) < CHUNK_CST_VAL2_MAX_IDS ? (kRegionBytes / kIdStride) : CHUNK_CST_VAL2_MAX_IDS;
 
@@ -355,6 +395,7 @@ struct GlobalVecHolder
     ///        never touched. Index 0 is "no second value" and stays T{}.
     static inline std::array<T, kMaxIds + 1> value_by_id{};
 
+  private:
     /// @brief Reserve the region. Idempotent; called by init().
     static void region_init()
     {
@@ -368,6 +409,14 @@ struct GlobalVecHolder
         {
             std::cerr << "[cst_val2] cannot reserve the second-value region (" << (kRegionBytes >> 20U) << " MiB)\n";
             std::abort();
+        }
+        // CHUNK_THP (experimental, off by default): read by every thread that
+        // writes a second value. Not under MM_PROTECT, whose per-array
+        // mprotect splits huge pages anyway. Advice only.
+        if constexpr (!build_config::use_mm_protect)
+        {
+            if (cst2_thp_advise())
+                (void)madvise(raw, kRegionBytes, MADV_HUGEPAGE);
         }
         // Every array is carved at a multiple of the stride: page-rounded under
         // MM_PROTECT (each is mprotect'd on its own), cache-line-rounded
@@ -389,8 +438,9 @@ struct GlobalVecHolder
         {
             stride = (bytes + 63u) & ~static_cast<std::size_t>(63u);
         }
-        char* expected = nullptr;
-        if (region_begin.compare_exchange_strong(expected, static_cast<char*>(raw), std::memory_order_acq_rel))
+
+        if (char* expected = nullptr;
+            region_begin.compare_exchange_strong(expected, static_cast<char*>(raw), std::memory_order_acq_rel))
         {
             region_stride = stride;
             region_end    = static_cast<char*>(raw) + kRegionBytes;
@@ -401,6 +451,7 @@ struct GlobalVecHolder
         }
     }
 
+  public:
     /// @brief Is @p ptr the start of a shared array of this type?
     /// @note THE constant-2 test of Chunk2A: `is_cst_val2()` is
     ///       `region_contains(values)`. Relaxed load of a pointer that is
@@ -426,8 +477,8 @@ struct GlobalVecHolder
         // raise CHUNK_CST_VAL2_REGION_BYTES.
         if (bytes != 0 && off + bytes > kRegionBytes / 2) [[unlikely]]
         {
-            static std::atomic<bool> warned{false};
-            bool                     expected = false;
+            static std::atomic warned{false};
+            bool               expected = false;
             if (warned.compare_exchange_strong(expected, true, std::memory_order_relaxed))
             {
                 std::cerr << "[cst_val2] second-value region past half full: " << (off / bytes) << " of "
@@ -446,6 +497,7 @@ struct GlobalVecHolder
         return region_begin.load(std::memory_order_relaxed) + off;
     }
 
+  private:
     /// @brief Give the carved pages back and start over. Last clear only.
     static void region_reset() noexcept
     {
@@ -462,6 +514,7 @@ struct GlobalVecHolder
             mprotect(base, used, PROT_NONE);
     }
 
+  public:
     // ── Value->pointer index (lock-free readers, single writer under lock) ──
     // Flat open-addressing table turning the O(N) dedup search in
     // find_or_set_ind_cst_val2 into an O(1) probe. Publications happen ONLY
@@ -474,14 +527,21 @@ struct GlobalVecHolder
     // arrays are freed (single-threaded clear paths) so a lookup never
     // dereferences a freed array.
 #ifndef CHUNK_CST_VAL2_INDEX_LOG2
+
+  private:
     static constexpr int chunk_cst_val2_index_loc = 18;
+
+  public:
     // 2^18 = 262144 slots, 2 Mio/type; <11% load at 30k values
 #else
     static constexpr int chunk_cst_val2_index_loc = CHUNK_CST_VAL2_INDEX_LOG2;
 #endif
 
+  private:
     static constexpr size_t INDEX_CAP       = size_t{1} << chunk_cst_val2_index_loc; ///< Initial capacity.
     static constexpr int    INDEX_MAX_PROBE = 64; ///< Bounded; giving up means fallback.
+
+  public:
     /**
      * @brief One generation of the open-addressed value -> shared array table.
      *
@@ -505,12 +565,15 @@ struct GlobalVecHolder
      */
     struct IndexTable
     {
+        // A value-initialised atomic pointer is null (C++20): no clearing loop.
+        explicit IndexTable(std::size_t capacity) : cap(capacity), slots(capacity) {}
+
         std::size_t                  cap  = 0; ///< Slot count, a power of two.
         std::size_t                  used = 0; ///< Published entries (single writer).
         std::vector<std::atomic<T*>> slots;    ///< `cap` slots, null = empty.
-        // A value-initialised atomic pointer is null (C++20): no clearing loop.
-        explicit IndexTable(std::size_t capacity) : cap(capacity), slots(capacity) {}
     };
+
+  private:
     /// @brief The live table. Null until the first publish; readers that see
     ///        null miss and take the cold path, which is always correct.
     static inline std::atomic<IndexTable*> index_tab{nullptr};
@@ -521,6 +584,7 @@ struct GlobalVecHolder
     ///        live table, so this is bounded by the same factor of two.
     static inline std::vector<std::unique_ptr<IndexTable>> index_generations;
 
+  public:
     /**
      * @brief The value the shared array @p ptr stands for.
      *
@@ -551,6 +615,7 @@ struct GlobalVecHolder
         }
     }
 
+  private:
     /// @brief Value hash (a 64-bit finaliser over the object's bytes).
     /// @note Hashes the REPRESENTATION, so two values that compare equal but
     ///       differ bitwise would land in different slots.
@@ -566,6 +631,7 @@ struct GlobalVecHolder
         return static_cast<size_t>(bits);
     }
 
+  public:
     /**
      * @brief Look @p v up in the index, lock-free. This is the hot path.
      * @return Its shared array, or null -- meaning "not found HERE", never
@@ -596,6 +662,7 @@ struct GlobalVecHolder
         return nullptr; // probe budget exhausted => treat as miss
     }
 
+  private:
     /**
      * @brief Publish a table twice the size of the live one (or the initial
      *        one), carrying every entry over.
@@ -634,6 +701,7 @@ struct GlobalVecHolder
         return raw;
     }
 
+  public:
     // Publish (v -> p). No-op if already present or probe budget exhausted.
     // Called ONLY under insert_mutex (single writer): a plain release store
     // suffices — it pairs with the acquire load in index_lookup so a lock-free
@@ -686,6 +754,7 @@ struct GlobalVecHolder
         index_degraded.store(true, std::memory_order_relaxed);
     }
 
+  private:
     /**
      * @brief Empty the index and drop the cached tail.
      * @warning Single-threaded clear paths only, and at the very point the
@@ -703,22 +772,37 @@ struct GlobalVecHolder
         index_generations.clear();
     }
 
+  public:
     /**
      * @brief Register one more user of this type's registry, creating it if new.
-     * @details Idempotent: the first segment is installed once, by whichever
-     *          caller wins the CAS. Also what arranges teardown, through the
-     *          function-local Sentinel.
+     * @details The user is counted in #ref_count; the registry itself is made
+     *          valid by install_head().
      */
     static void init()
     {
+        // One more ArrayChunk2A<T> is using the shared list.
+        ref_count.fetch_add(1, std::memory_order_relaxed);
+        install_head();
+    }
+
+    /**
+     * @brief Make the registry usable -- the region reserved, a first segment
+     *        in #head -- WITHOUT registering a user.
+     * @details Idempotent: the first segment is installed once, by whichever
+     *          caller wins the CAS. Also what arranges teardown, through the
+     *          function-local Sentinel. Split from init() so that
+     *          clear_if_last() can reinstall an empty chain without the
+     *          phantom reference that init() used to leave behind: #ref_count
+     *          went 0 -> 1 with no array alive, the next last-one-out found 1
+     *          left, and the registry was never freed again before exit.
+     */
+    static void install_head()
+    {
         static const Sentinel<T> sentinel;
 
-        // Increment ref count — one more ArrayChunk2A<T> is using the shared list.
-        ref_count.fetch_add(1, std::memory_order_relaxed);
         region_init();
 
-        // Install initial segment only on first call.
-
+        // Install the initial segment, once.
         if (head.load(std::memory_order_relaxed) == nullptr)
         {
             auto        seg      = std::make_unique<Segment<T>>();
@@ -749,8 +833,10 @@ struct GlobalVecHolder
      *
      * @details Decrements #ref_count and returns immediately while other
      *          ArrayChunk2A<T> instances are alive. The last one out frees every
-     *          array and every segment, clears the index, then calls init() so
-     *          #head is valid again for any later pass.
+     *          array and every segment, clears the index, then calls
+     *          install_head() so #head is valid again for any later pass --
+     *          without registering a user: #ref_count stays at 0, and the
+     *          next generation of arrays is freed by its own last one out.
      *
      * @warning No thread may be SCANNING the chain while this runs --
      *          find_or_set_ind_cst_val2(), reached from make_block_compression
@@ -813,8 +899,11 @@ struct GlobalVecHolder
         index_clear();
         region_reset(); // the arrays' pages, all at once
 
-        // Reinstall empty segment for potential future use.
-        init();
+        // Reinstall an empty segment for any later pass. NOT init(): that
+        // takes a reference, and one taken here, with no array alive, kept
+        // #ref_count above 0 for the rest of the run -- after the first
+        // extinction nothing was ever freed again.
+        install_head();
     }
 
     /**
@@ -869,6 +958,9 @@ struct GlobalVecHolder
 template <typename T>
 struct TabCstVal2Holder
 {
+    using global_vec_holder = GlobalVecHolder<T>;
+    using segment_t         = Segment<T>;
+
     // No instance part: the holder is stateless. Whether a chunk reads from
     // a shared array is a range test on its values pointer
     // (is_cst_val2_ptr), and the array for a given second value is found in
@@ -909,9 +1001,6 @@ struct TabCstVal2Holder
         return nullptr;
     }
 
-    using global_vec_holder = GlobalVecHolder<T>;
-    using segment_t         = Segment<T>;
-
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
     /// @brief Register a user of this type's registry. Idempotent.
@@ -920,17 +1009,6 @@ struct TabCstVal2Holder
     static void create()
     {
         global_vec_holder::init();
-    }
-    // ── MM_PROTECT helpers ────────────────────────────────────────────────
-
-    /// @brief One array's size in bytes, rounded up to whole pages.
-    /// @note Page rounding matters only to the MM_PROTECT path, where mprotect
-    ///       works on page granularity.
-    [[nodiscard]] static size_t alloc_size() noexcept
-    {
-        const size_t bytes    = cst_buffer_size * sizeof(T);
-        const size_t pagesize = sysconf(_SC_PAGESIZE);
-        return ((bytes + pagesize - 1) / pagesize) * pagesize;
     }
 
     /**
@@ -953,58 +1031,12 @@ struct TabCstVal2Holder
         return buf;
     }
 
-    /// @brief Carve one region stride for a shared array; the storage part of alloc_chunk().
-    /// @param val Fill value: cst_buffer_size copies are written, except under cst_val2_no_arrays where nothing is
-    ///        written; under MM_PROTECT the stride is made read-only after the fill.
-    /// @return Start of the carved stride.
-    static T* alloc_chunk_int(T val)
-    {
-        if constexpr (build_config::cst_val2_no_arrays)
-        {
-            // Carve an identifier, write nothing. The pointer is never
-            // dereferenced under this flag: is_cst_val2() is a range test and
-            // id_of_ptr() is arithmetic, and the value itself is read from
-            // value_by_id[], which alloc_chunk() fills right after this
-            // returns. The region stays entirely unbacked.
-            (void)val;
-            return reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
-        }
-        else if constexpr (build_config::use_mm_protect)
-        {
-            // Carve one stride of the region (page-rounded), open it, fill it,
-            // close it to PROT_READ.
-            const size_t size = global_vec_holder::region_stride;
-            void*        raw  = global_vec_holder::region_alloc(size);
-            if (mprotect(raw, size, PROT_READ | PROT_WRITE) != 0) [[unlikely]]
-            {
-                std::cerr << "mprotect failed\n";
-                std::abort();
-            }
-            T* buf = static_cast<T*>(raw);
-            std::fill_n(buf, cst_buffer_size, val);
-            if (mprotect(raw, size, PROT_READ) != 0) [[unlikely]]
-            {
-                std::cerr << "mprotect failed\n";
-                std::abort();
-            }
-            return buf;
-        }
-        else
-        {
-            // One stride of the region (cache-line-rounded), filled.
-            T* buf = reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
-            std::fill_n(buf, cst_buffer_size, val);
-            return buf;
-        }
-    }
-
     /// @brief Release an alloc_chunk() array, by whichever route allocated it.
     static void free_chunk(T* /*p*/)
     {
         // Region memory: nothing to free per array. The last clear gives the
         // whole carved range back (GlobalVecHolder::region_reset).
     }
-
 
     /**
      * @brief The shared array for @p second_v, registering it if new.
@@ -1081,6 +1113,79 @@ struct TabCstVal2Holder
     {
         return global_vec_holder::value_by_id[id]; // [0] is T{}
     }
+
+    /**
+     * @brief Drop this user of the registry; the last one frees it.
+     * @param nb_val2 Incremented by the number of arrays freed.
+     * @warning Single thread only, and with no concurrent scan in flight.
+     *          @see GlobalVecHolder::clear_if_last for the full contract and
+     *          the bug that established it.
+     */
+    static void clear(int& nb_val2)
+    { // Delegate to GlobalVecHolder which tracks how many instances
+        // are still alive and frees the shared segment list only when
+        // the last one calls clear().
+        global_vec_holder::clear_if_last(nb_val2);
+    }
+
+  private:
+    // ── MM_PROTECT helpers ────────────────────────────────────────────────
+
+    /// @brief One array's size in bytes, rounded up to whole pages.
+    /// @note Page rounding matters only to the MM_PROTECT path, where mprotect
+    ///       works on page granularity.
+    [[nodiscard]] static size_t alloc_size() noexcept
+    {
+        const size_t bytes    = cst_buffer_size * sizeof(T);
+        const size_t pagesize = sysconf(_SC_PAGESIZE);
+        return ((bytes + pagesize - 1) / pagesize) * pagesize;
+    }
+
+    /// @brief Carve one region stride for a shared array; the storage part of alloc_chunk().
+    /// @param val Fill value: cst_buffer_size copies are written, except under cst_val2_no_arrays where nothing is
+    ///        written; under MM_PROTECT the stride is made read-only after the fill.
+    /// @return Start of the carved stride.
+    static T* alloc_chunk_int(T val)
+    {
+        if constexpr (build_config::cst_val2_no_arrays)
+        {
+            // Carve an identifier, write nothing. The pointer is never
+            // dereferenced under this flag: is_cst_val2() is a range test and
+            // id_of_ptr() is arithmetic, and the value itself is read from
+            // value_by_id[], which alloc_chunk() fills right after this
+            // returns. The region stays entirely unbacked.
+            (void)val;
+            return reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
+        }
+        else if constexpr (build_config::use_mm_protect)
+        {
+            // Carve one stride of the region (page-rounded), open it, fill it,
+            // close it to PROT_READ.
+            const size_t size = global_vec_holder::region_stride;
+            void*        raw  = global_vec_holder::region_alloc(size);
+            if (mprotect(raw, size, PROT_READ | PROT_WRITE) != 0) [[unlikely]]
+            {
+                std::cerr << "mprotect failed\n";
+                std::abort();
+            }
+            T* buf = static_cast<T*>(raw);
+            std::fill_n(buf, cst_buffer_size, val);
+            if (mprotect(raw, size, PROT_READ) != 0) [[unlikely]]
+            {
+                std::cerr << "mprotect failed\n";
+                std::abort();
+            }
+            return buf;
+        }
+        else
+        {
+            // One stride of the region (cache-line-rounded), filled.
+            T* buf = reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
+            std::fill_n(buf, cst_buffer_size, val);
+            return buf;
+        }
+    }
+
     /// @brief The identifier for @p v, registering its array if it is new;
     ///        0 for T{} (the "no second value" the value table wrote as 0).
     [[nodiscard]] static std::uint32_t id_for_value(T v)
@@ -1156,21 +1261,6 @@ struct TabCstVal2Holder
         global_vec_holder::index_publish(second_v, buf); // release: readers see the fill
         return buf;
     }
-
-
-    /**
-     * @brief Drop this user of the registry; the last one frees it.
-     * @param nb_val2 Incremented by the number of arrays freed.
-     * @warning Single thread only, and with no concurrent scan in flight.
-     *          @see GlobalVecHolder::clear_if_last for the full contract and
-     *          the bug that established it.
-     */
-    static void clear(int& nb_val2)
-    { // Delegate to GlobalVecHolder which tracks how many instances
-        // are still alive and frees the shared segment list only when
-        // the last one calls clear().
-        global_vec_holder::clear_if_last(nb_val2);
-    }
 };
 
 /**
@@ -1189,17 +1279,6 @@ struct TabCstVal2Holder
 template <>
 struct TabCstVal2Holder<bool>
 {
-    /// @brief All `true`, evaluated at compile time so #m_ptr is constant-initialised.
-    [[nodiscard]] static constexpr std::array<bool, cst_buffer_size> all_true() noexcept
-    {
-        std::array<bool, cst_buffer_size> arr{};
-        arr.fill(true);
-        return arr;
-    }
-
-    /// @brief The one shared array, all `true`.
-    static inline std::array<bool, cst_buffer_size> m_ptr = all_true();
-
     /// @brief Nothing to create. @see TabCstVal2Holder::create
     static void create() {}
     /// @brief Nothing to free, and no user count to keep.
@@ -1221,6 +1300,19 @@ struct TabCstVal2Holder<bool>
     {
         return m_ptr.data();
     }
+
+  private:
+    /// @brief All `true`, evaluated at compile time so #m_ptr is constant-initialised.
+    [[nodiscard]] static constexpr std::array<bool, cst_buffer_size> all_true() noexcept
+    {
+        std::array<bool, cst_buffer_size> arr{};
+        arr.fill(true);
+        return arr;
+    }
+
+  public:
+    /// @brief The one shared array, all `true`.
+    static inline std::array<bool, cst_buffer_size> m_ptr = all_true();
 };
 
 } // namespace shrink_array

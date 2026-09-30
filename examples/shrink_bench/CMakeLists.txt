@@ -250,17 +250,35 @@ endif ()
 
 if (CHUNK_BUILD_DYN)
   # --- Tests: register the check declinations of each variant ---
+  #
+  # The check runs compare against the reference files (data_tab*) that
+  # shrink_bench_vector_check writes -- relative paths, in the working directory
+  # every test here shares (this build dir). So:
+  #  - vector_check is the SETUP of fixture shrink_bench_oracle and every check
+  #    REQUIRES it: ctest runs it first, also under -R / -j, and marks the
+  #    checks "Not Run" if it fails (they used to fail on a fresh build, the
+  #    reference not written yet, and pass later only by ctest's cost order);
+  #  - all of them hold RESOURCE_LOCK shrink_bench_oracle_files: they share the
+  #    files, and a check may rewrite one (it decompresses a reference whose
+  #    checksum misses), so they never overlap, even under -j.
+  # bench_and_test.py does not run these (no `validation` label): it keeps its
+  # own oracles per configuration.
+  add_test(NAME shrink_bench_vector_check COMMAND shrink_bench_vector_check)
+  set_tests_properties(shrink_bench_vector_check PROPERTIES
+                       ENVIRONMENT OMP_NUM_THREADS=8
+                       FIXTURES_SETUP shrink_bench_oracle
+                       RESOURCE_LOCK shrink_bench_oracle_files)
+
   foreach(_vname chunk chunk2 chunk2a)
     foreach(_sz IN LISTS CHUNK_STATIC_SIZES)
       # One binary per variant and size since the check/perf merge; the mode
       # is a run-time flag (the _check_ binaries these named no longer exist).
       add_test(NAME shrink_bench_${_vname}_check_${_sz}
                COMMAND shrink_bench_${_vname}_${_sz} --mode check)
-      set_property(TEST shrink_bench_${_vname}_check_${_sz}
-                   PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
+      set_tests_properties(shrink_bench_${_vname}_check_${_sz} PROPERTIES
+                           ENVIRONMENT OMP_NUM_THREADS=8
+                           FIXTURES_REQUIRED shrink_bench_oracle
+                           RESOURCE_LOCK shrink_bench_oracle_files)
     endforeach()
   endforeach()
-
-  add_test(NAME shrink_bench_vector_check COMMAND shrink_bench_vector_check)
-  set_property(TEST shrink_bench_vector_check PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
 endif()

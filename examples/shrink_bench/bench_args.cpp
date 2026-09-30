@@ -92,6 +92,19 @@ BenchArgs parse_bench_args(int argc, char* argv[])
     {
         const std::string arg = argv[i];
 
+        // The value after a value-taking flag, or exit(1) naming the flag. A
+        // flag given last used to be skipped silently and the run went on with
+        // the default ("--mode" alone ran the default mode and exited 0).
+        const auto next_value = [&]() -> const char*
+        {
+            if (i + 1 >= argc)
+            {
+                std::println(stderr, "error: {} expects a value", arg);
+                std::exit(1);
+            }
+            return argv[++i];
+        };
+
         if (std::ranges::find(valid_args, arg) != valid_args.end())
         {
             if (arg == "--no_io")
@@ -110,66 +123,59 @@ BenchArgs parse_bench_args(int argc, char* argv[])
                 no_mask = true;
             else if (arg == "--mask_scale")
             {
-                if (i + 1 < argc)
-                    mask_scale = parse_positive_real_arg("--mask_scale", argv[++i]);
+                mask_scale = parse_positive_real_arg("--mask_scale", next_value());
             }
             else if (arg == "--mode")
             {
                 // check / perf: what used to be two separate binaries, built
                 // with -DCHECK or -DPERF, is one binary and this flag.
-                if (i + 1 < argc)
+                const std::string m = next_value();
+                if (m == "perf")
+                    set_bench_mode(BenchMode::perf);
+                else if (m == "check")
+                    set_bench_mode(BenchMode::check);
+                else
                 {
-                    const std::string m = argv[++i];
-                    if (m == "perf")
-                        set_bench_mode(BenchMode::perf);
-                    else if (m == "check")
-                        set_bench_mode(BenchMode::check);
-                    else
-                    {
-                        std::println("Unknown --mode '{}' (expected check or perf)", m);
-                        // exit, not return: this function returns a BenchArgs,
-                        // and the other error paths of this loop already leave
-                        // this way. Exit code 1 is preserved.
-                        std::exit(1);
-                    }
+                    std::println(stderr, "error: unknown --mode '{}' (expected check or perf)", m);
+                    // exit, not return: this function returns a BenchArgs,
+                    // and the other error paths of this loop already leave
+                    // this way.
+                    std::exit(1);
                 }
             }
             else if (arg == "--read_trace")
                 read_trace = true;
             else if (arg == "--multiply")
             {
-                if (i + 1 < argc)
-                    multiply_factor = parse_positive_real_arg("--multiply", argv[++i]);
+                multiply_factor = parse_positive_real_arg("--multiply", next_value());
             }
             else if (arg == "--divisor")
             {
-                if (i + 1 < argc)
-                    divisor_factor = parse_int_arg("--divisor", argv[++i]);
+                divisor_factor = parse_int_arg("--divisor", next_value());
             }
             else if (arg == "--iter_max")
             {
-                if (i + 1 < argc)
+                iter_max_arg = parse_int_arg("--iter_max", next_value());
+                if (iter_max_arg <= 0)
                 {
-                    iter_max_arg = parse_int_arg("--iter_max", argv[++i]);
-                    if (iter_max_arg <= 0)
-                    {
-                        std::println(stderr, "--iter_max must be a positive integer (got {})", iter_max_arg);
-                        exit(1);
-                    }
+                    std::println(stderr, "error: --iter_max must be a positive integer (got {})", iter_max_arg);
+                    std::exit(1);
                 }
             }
             else if (arg == "--help")
             {
                 print_help();
-                exit(0);
+                std::exit(0);
             }
             std::println("Recognized argument: {}", arg);
         }
         else
         {
+            // exit(1), not 0: a typo in a CI command line must fail the job,
+            // not skip the run and report success.
             const std::string suggestion = suggest_closest(arg);
-            std::println("Unknown argument: {}\nDid you mean '{}'?", arg, suggestion);
-            exit(0);
+            std::println(stderr, "error: unknown argument: {}\nDid you mean '{}'? (--help lists them)", arg, suggestion);
+            std::exit(1);
         }
     }
 

@@ -114,23 +114,6 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
     using proxy_type   = ChunkTraits<ChunkType>::proxy_type;
     using manager_type = ChunkTraits<ChunkType>::manager_type;
 
-    /**
-     * @brief The address under which this array is known outside its own type:
-     *        the proxies' ptr_on_array and every <tt>Proxy*\<T\>\::share_info_array</tt> key.
-     * @details Always this subobject, never the derived array: the readers cast
-     *          it back to ArrayChunkCore, which is only defined from a pointer
-     *          that was an ArrayChunkCore* in the first place.
-     */
-    [[nodiscard]] void* registry_key() noexcept
-    {
-        return this;
-    }
-    /// @copydoc registry_key()
-    [[nodiscard]] const void* registry_key() const noexcept
-    {
-        return this;
-    }
-
     /// @brief The chunk geometry: elements per chunk.
     [[nodiscard]] unsigned int chunk_size() const noexcept
     {
@@ -178,6 +161,53 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
 
   protected:
     /**
+     * @brief The address under which this array is known outside its own type:
+     *        the proxies' ptr_on_array and every <tt>Proxy*\<T\>\::share_info_array</tt> key.
+     * @details Always this subobject, never the derived array: the readers cast
+     *          it back to ArrayChunkCore, which is only defined from a pointer
+     *          that was an ArrayChunkCore* in the first place.
+     */
+    [[nodiscard]] void* registry_key() noexcept
+    {
+        return this;
+    }
+    /// @copydoc registry_key()
+    [[nodiscard]] const void* registry_key() const noexcept
+    {
+        return this;
+    }
+
+    /// @brief Give this array its own allocator set if it is worth a slab per
+    ///        rank; registers allocators, reuse lists and their budget with the
+    ///        manager. Call from rebuild_storage() once nb_chunk is known
+    ///        (sequential). Idempotent for an array that already has a key.
+    void assign_alloc_key()
+    {
+        if constexpr (build_config::alloc_affinity_min_bytes == 0 || !build_config::chunk_dynamic ||
+                      !build_config::use_fast_alloc || !build_config::use_openmp)
+            return;
+        if (nb_chunk <= 0)
+            return;
+        // Lazy affinity: only the storage a re-chunk builds takes its own set
+        // (an array already keyed keeps its key). A set costs one partly-filled
+        // 1 MiB slab per (rank, size): ~780 MiB over the 64-thread chunk2a bench's
+        // 16 arrays, for a benefit -- whole slabs emptied by the NEXT re-chunk --
+        // that only an array that gets re-chunked ever collects.
+        if (alloc_key_ == 0 && !alloc_affinity_detail::g_eager && !alloc_affinity_detail::g_building_rechunk_storage)
+            return;
+        const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk) * sizeof(chunk_type);
+        if (meta_bytes < build_config::alloc_affinity_min_bytes)
+            return;
+        const unsigned int key =
+            (alloc_key_ != 0) ? alloc_key_ : next_alloc_key_.fetch_add(1, std::memory_order_relaxed);
+        // Keep the key ONLY if the manager really built its allocator set and
+        // lists. Otherwise stay on the shared pool: a key with no registered
+        // set makes route_omp_dynamic_alloc fall through to the legacy single
+        // allocator, which is neither this size's nor this array's.
+        alloc_key_ = manager_type::register_alloc_key(key, size_policy_.size(), nb_chunk) ? key : 0u;
+    }
+
+    /**
      * @brief Chunk-size policy — the single home for chunk geometry.
      *
      * @details Shared by all containers that derive from ArrayChunkBase
@@ -209,36 +239,6 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
 
     /// @brief The derived array's rechunk_to(), installed by ArrayChunkBase.
     void (*rechunk_fn_)(ArrayChunkCore&, unsigned int) = nullptr;
-
-    /// @brief Give this array its own allocator set if it is worth a slab per
-    ///        rank; registers allocators, reuse lists and their budget with the
-    ///        manager. Call from rebuild_storage() once nb_chunk is known
-    ///        (sequential). Idempotent for an array that already has a key.
-    void assign_alloc_key()
-    {
-        if constexpr (build_config::alloc_affinity_min_bytes == 0 || !build_config::chunk_dynamic ||
-                      !build_config::use_fast_alloc || !build_config::use_openmp)
-            return;
-        if (nb_chunk <= 0)
-            return;
-        // Lazy affinity: only the storage a re-chunk builds takes its own set
-        // (an array already keyed keeps its key). A set costs one partly-filled
-        // 1 MiB slab per (rank, size): ~780 MiB over the 64-thread chunk2a bench's
-        // 16 arrays, for a benefit -- whole slabs emptied by the NEXT re-chunk --
-        // that only an array that gets re-chunked ever collects.
-        if (alloc_key_ == 0 && !alloc_affinity_detail::g_eager && !alloc_affinity_detail::g_building_rechunk_storage)
-            return;
-        const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk) * sizeof(chunk_type);
-        if (meta_bytes < build_config::alloc_affinity_min_bytes)
-            return;
-        const unsigned int key =
-            (alloc_key_ != 0) ? alloc_key_ : next_alloc_key_.fetch_add(1, std::memory_order_relaxed);
-        // Keep the key ONLY if the manager really built its allocator set and
-        // lists. Otherwise stay on the shared pool: a key with no registered
-        // set makes route_omp_dynamic_alloc fall through to the legacy single
-        // allocator, which is neither this size's nor this array's.
-        alloc_key_ = manager_type::register_alloc_key(key, size_policy_.size(), nb_chunk) ? key : 0u;
-    }
 };
 
 /**
@@ -252,7 +252,8 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
  */
 struct RegistryKeyCanary
 {
-    std::uint64_t registry_key_canary_{0};
+  private:
+   [[maybe_unused]] std::uint64_t registry_key_canary_{0};
 };
 /// @brief Empty stand-in for RegistryKeyCanary when any_check is off.
 struct NoRegistryKeyCanary

@@ -47,11 +47,6 @@ namespace shrink_array
 template <typename Derived, typename T>
 class ProxyOperators
 {
-  protected:
-    // Protected constructor ensures this is only used as a base class
-    constexpr ProxyOperators() noexcept  = default;
-    constexpr ~ProxyOperators() noexcept = default;
-
   public:
     // ========================================================================
     // Multiplication operators
@@ -300,6 +295,11 @@ class ProxyOperators
     {
         return static_cast<T>(lhs) - rhs;
     }
+
+  protected:
+    // Protected constructor ensures this is only used as a base class
+    constexpr ProxyOperators() noexcept  = default;
+    constexpr ~ProxyOperators() noexcept = default;
 };
 
 } // namespace shrink_array

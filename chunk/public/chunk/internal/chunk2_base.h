@@ -83,12 +83,15 @@ class Chunk2Base : public ChunkBase<T, Derived>
     using Base::values_load;
     using Base::values_store;
 
+  private:
     static constexpr bool is_chunk2A_derived = std::is_same_v<Derived, Chunk2A<T>>;
     static constexpr bool is_chunk2_derived  = std::is_same_v<Derived, Chunk2<T>>;
 
+  public:
     Chunk2Base()  = default;
     ~Chunk2Base() = default;
 
+  protected:
     // ========================================================================
     // Chunk2 specific deallocation with block_clear
     // ========================================================================
@@ -102,7 +105,6 @@ class Chunk2Base : public ChunkBase<T, Derived>
     /// @param ptr_second_value Pointer to second value (Chunk2A only)
     /// @param cst2_ptr The shared array to install for a type-2 compression
     ///        (Chunk2A only; the chunk keeps no copy of it)
-
     template <typename IndexType>
     void block_clear_common(int                  num_compress_value,
                             IndexType            index_opt,
@@ -111,18 +113,6 @@ class Chunk2Base : public ChunkBase<T, Derived>
                             SecondValueRef<T>    ptr_second_value = {},
                             T*                   cst2_ptr         = nullptr);
 
-    /// @brief Clear chunk and reset to constant value
-    /// @tparam IndexType Type of index parameter
-    /// @param index_opt Optional index (Chunk2) or std::nullopt (Chunk2A)
-    /// @param thr_rank Thread rank
-    /// @param ptr_type_cst Constant type pointer (Chunk2A only)
-    /// @param ptr_second_value Second value pointer (Chunk2A only)
-
-    template <typename IndexType>
-    void clear_impl(IndexType         index_opt,
-                    int               thr_rank,
-                    char*             ptr_type_cst     = nullptr,
-                    SecondValueRef<T> ptr_second_value = {});
     /**
      * @brief Atomically attempts to install a new buffer or recycles it on failure.
      * @tparam CasFunc Type of the CAS lambda/functor.
@@ -130,7 +120,6 @@ class Chunk2Base : public ChunkBase<T, Derived>
      * @param thr_rank Rank of the thread performing the operation.
      * @param cas_fn A lambda that returns TRUE if the swap failed (pointer already changed).
      */
-
     template <typename CasFunc>
     void apply_cas_or_recup(T* values_loc, int thr_rank, CasFunc&& cas_fn) noexcept
     {
@@ -228,6 +217,19 @@ class Chunk2Base : public ChunkBase<T, Derived>
                              num_compress_value, type_name<T>(), chunk_ptr, values_ptr, cst2_ptr, thr);
         }
     }
+
+  private:
+    /// @brief Clear chunk and reset to constant value
+    /// @tparam IndexType Type of index parameter
+    /// @param index_opt Optional index (Chunk2) or std::nullopt (Chunk2A)
+    /// @param thr_rank Thread rank
+    /// @param ptr_type_cst Constant type pointer (Chunk2A only)
+    /// @param ptr_second_value Second value pointer (Chunk2A only)
+    template <typename IndexType>
+    void clear_impl(IndexType         index_opt,
+                    int               thr_rank,
+                    char*             ptr_type_cst     = nullptr,
+                    SecondValueRef<T> ptr_second_value = {});
 
     /**
      * @brief Ensures the provided pointer does not target shared constant memory.

@@ -72,6 +72,7 @@ class RechunkSupport<Derived, true>
     using chunk_type = Traits::chunk_type;
     using proxy_type = Traits::proxy_type;
 
+  protected:
     /**
      * @brief Re-chunk EVERY live array of this variant to @p new_size (quiescent point only).
      *
@@ -204,9 +205,9 @@ class RechunkSupport<Derived, true>
     {
         return true;
     }
+
     /** @} */
 
-  protected:
     /** @brief CRTP down-cast: the concrete array this mixin is a base of,
      *         const on a const object (one member for both: deducing this). */
     template <typename Self>
@@ -235,6 +236,7 @@ class RechunkSupport<Derived, false>
     using T          = Traits::value_type;
     using chunk_type = Traits::chunk_type;
 
+  protected:
     /** @brief No-op: the geometry is fixed at compile time. */
     static void rechunk_all_to(unsigned int /*new_size*/) noexcept {}
     /** @brief No-op: the geometry is fixed at compile time. */
@@ -264,9 +266,9 @@ class RechunkSupport<Derived, false>
     {
         return true;
     }
+
     /** @} */
 
-  protected:
     /** @brief CRTP down-cast: the concrete array this mixin is a base of,
      *         const on a const object (one member for both: deducing this). */
     template <typename Self>

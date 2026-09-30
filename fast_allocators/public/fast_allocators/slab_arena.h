@@ -35,6 +35,7 @@
 
 #include <sys/mman.h>
 #include <unistd.h>
+#include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP)
 #include <algorithm> // std::max, the high-water mark
 #include <cstddef>
 #include <cstdint>
@@ -299,6 +300,13 @@ bool madvise_empty_slab_full(Slab* slab) noexcept
  */
 class SlabArena
 {
+    /// @brief One mmap reservation, as a half-open address range.
+    struct Region
+    {
+        std::uintptr_t begin; ///< First address of the mapping.
+        std::uintptr_t end;   ///< One past its last address.
+    };
+
   public:
     /**
      * @brief Create an empty arena; the first allocate() maps its first region.
@@ -409,18 +417,6 @@ class SlabArena
         free_lists_[size].push_back(block);
     }
 
-    /// @brief Does @p ptr fall inside one of this arena's reservations?
-    /// @note Linear in the region count, and takes the lock. Diagnostics only.
-    bool owns(const void* ptr) const noexcept
-    {
-        const auto             v = reinterpret_cast<std::uintptr_t>(ptr);
-        const std::scoped_lock lk(mtx_);
-        for (const auto& r : regions_)
-            if (v >= r.begin && v < r.end)
-                return true;
-        return false;
-    }
-
     /**
      * @brief Bytes of this arena's mappings resident RIGHT NOW (mincore()).
      * @details `live` counts slabs handed out, madvise'd ones included, and the
@@ -499,12 +495,17 @@ class SlabArena
     }
 
   private:
-    /// @brief One mmap reservation, as a half-open address range.
-    struct Region
+    /// @brief Does @p ptr fall inside one of this arena's reservations?
+    /// @note Linear in the region count, and takes the lock. Diagnostics only.
+    bool owns(const void* ptr) const noexcept
     {
-        std::uintptr_t begin; ///< First address of the mapping.
-        std::uintptr_t end;   ///< One past its last address.
-    };
+        const auto             v = reinterpret_cast<std::uintptr_t>(ptr);
+        const std::scoped_lock lk(mtx_);
+        for (const auto& r : regions_)
+            if (v >= r.begin && v < r.end)
+                return true;
+        return false;
+    }
 
     /// @brief Round @p v up to a multiple of @p alignment. @p alignment must be a power of two.
     static std::uintptr_t align_up(std::uintptr_t v, std::size_t alignment) noexcept
@@ -528,6 +529,10 @@ class SlabArena
             std::fprintf(stderr, "SlabArena(%s): mmap of %zu bytes failed\n", name_, want);
             std::abort();
         }
+        // CHUNK_THP (experimental, off by default): the slabs are 2 MiB and
+        // aligned on it, a huge page each. Advice only: a failure is ignored.
+        if (alloc_config::thp_advise())
+            (void)::madvise(base, want, MADV_HUGEPAGE);
         auto region_begin = reinterpret_cast<std::uintptr_t>(base);
         regions_.push_back(Region{.begin = region_begin, .end = region_begin + want});
         cursor_     = region_begin;

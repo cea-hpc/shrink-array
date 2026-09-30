@@ -94,9 +94,63 @@ class DirtyBitsetSupport<Derived, true>
     static constexpr int kChunksPerWord = 64;                 ///< Bits in a uint64_t word.
     static constexpr int kWordShift     = 6;                  ///< log2(kChunksPerWord).
     static constexpr int kBitInWordMask = kChunksPerWord - 1; ///< chunk_idx -> bit within its word.
-    static_assert(kChunksPerWord == 1 << kWordShift, "kWordShift must be log2(kChunksPerWord)");
 
   public:
+    /**
+     * @brief Mark a chunk as having received a deferred operation.
+     * @param chunk_idx The global index of the chunk (not of an element: one
+     *        bit per chunk, whatever the chunk size).
+     * @note Concurrent: an acq_rel fetch_or, called from the deferred-enqueue
+     *       path on any thread.
+     */
+    void mark_chunk_dirty(int chunk_idx) noexcept
+    {
+        const int      word_idx = chunk_idx >> kWordShift;
+        const uint64_t bit_mask = 1ULL << (chunk_idx & kBitInWordMask);
+        bitset_[word_idx].word.fetch_or(bit_mask, std::memory_order_acq_rel);
+        // Raise the "some bit was set" flag (read first: raised once per phase,
+        // then every later mark is a plain load).
+        auto& any = any_marked_word();
+        if (any.load(std::memory_order_relaxed) == 0)
+            any.store(1, std::memory_order_release);
+    }
+
+    /**
+     * @brief Checks if a chunk is marked as dirty.
+     * @param chunk_idx The global index of the chunk (not of an element).
+     * @return true if a deferred operation was queued for this chunk during the
+     *         current phase (the bit is sticky until clear_dirty_bitset()).
+     */
+    [[nodiscard]] bool is_chunk_dirty(int chunk_idx) const noexcept
+    {
+        const int      word_idx = chunk_idx >> kWordShift;
+        const uint64_t bit_mask = 1ULL << (chunk_idx & kBitInWordMask);
+
+        // Use acquire to synchronize with previous mark_chunk_safe/dirty calls
+        return (bitset_[word_idx].word.load(std::memory_order_acquire) & bit_mask) != 0;
+    }
+
+    /**
+     * @brief Clear the dirty bitset of EVERY live array of this variant.
+     * @details Walks the per-type registry of arrays and calls
+     *          clear_dirty_bitset() on each. Quiescent point only (the reset is
+     *          not synchronised against concurrent marks).
+     */
+    static void clear_all_dirty_bitsets()
+    {
+        using proxy_type = Derived::proxy_type;
+        proxy_type::share_info_array.for_each_key(
+            [](const void* key)
+            {
+                if (key)
+                {
+                    auto* arr = static_cast<Derived*>(const_cast<void*>(key));
+                    arr->clear_dirty_bitset();
+                }
+            });
+    }
+
+  protected:
     /**
      * @brief Allocate a fresh, all-clear bitset for @p nb_chunk chunks.
      * @param nb_chunk number of chunks the owning array now has
@@ -174,40 +228,6 @@ class DirtyBitsetSupport<Derived, true>
     }
 
     /**
-     * @brief Mark a chunk as having received a deferred operation.
-     * @param chunk_idx The global index of the chunk (not of an element: one
-     *        bit per chunk, whatever the chunk size).
-     * @note Concurrent: an acq_rel fetch_or, called from the deferred-enqueue
-     *       path on any thread.
-     */
-    void mark_chunk_dirty(int chunk_idx) noexcept
-    {
-        const int      word_idx = chunk_idx >> kWordShift;
-        const uint64_t bit_mask = 1ULL << (chunk_idx & kBitInWordMask);
-        bitset_[word_idx].word.fetch_or(bit_mask, std::memory_order_acq_rel);
-        // Raise the "some bit was set" flag (read first: raised once per phase,
-        // then every later mark is a plain load).
-        auto& any = any_marked_word();
-        if (any.load(std::memory_order_relaxed) == 0)
-            any.store(1, std::memory_order_release);
-    }
-
-    /**
-     * @brief Checks if a chunk is marked as dirty.
-     * @param chunk_idx The global index of the chunk (not of an element).
-     * @return true if a deferred operation was queued for this chunk during the
-     *         current phase (the bit is sticky until clear_dirty_bitset()).
-     */
-    [[nodiscard]] bool is_chunk_dirty(int chunk_idx) const noexcept
-    {
-        const int      word_idx = chunk_idx >> kWordShift;
-        const uint64_t bit_mask = 1ULL << (chunk_idx & kBitInWordMask);
-
-        // Use acquire to synchronize with previous mark_chunk_safe/dirty calls
-        return (bitset_[word_idx].word.load(std::memory_order_acquire) & bit_mask) != 0;
-    }
-
-    /**
      * @brief Exchange bitsets with another array, as part of an O(1) container swap.
      * @param other the array to exchange the bitset with
      */
@@ -216,26 +236,6 @@ class DirtyBitsetSupport<Derived, true>
         using std::swap;
         swap(bitset_, other.bitset_);
         swap(nb_words_, other.nb_words_);
-    }
-
-    /**
-     * @brief Clear the dirty bitset of EVERY live array of this variant.
-     * @details Walks the per-type registry of arrays and calls
-     *          clear_dirty_bitset() on each. Quiescent point only (the reset is
-     *          not synchronised against concurrent marks).
-     */
-    static void clear_all_dirty_bitsets()
-    {
-        using proxy_type = Derived::proxy_type;
-        proxy_type::share_info_array.for_each_key(
-            [](const void* key)
-            {
-                if (key)
-                {
-                    auto* arr = static_cast<Derived*>(const_cast<void*>(key));
-                    arr->clear_dirty_bitset();
-                }
-            });
     }
 
   private:
@@ -258,6 +258,8 @@ class DirtyBitsetSupport<Derived, true>
     /// (any_marked_word) as they were through the unique_ptr it replaces.
     mutable std::vector<PaddedDirtyWord> bitset_;
     int nb_words_{0}; ///< Words of bits in @ref bitset_ (its size - 1), so clearing needs no chunk count.
+
+    static_assert(kChunksPerWord == 1 << kWordShift, "kWordShift must be log2(kChunksPerWord)");
 };
 
 // ── Serial build: nothing at all ─────────────────────────────────────────────
@@ -275,19 +277,24 @@ template <typename Derived>
 class DirtyBitsetSupport<Derived, false>
 {
   public:
-    /// @name No-op verbs (no bitset in this mode)
-    /// @{
-    void alloc_dirty_bitset(int /*nb_chunk*/) noexcept {}
-    void reallocate_dirty_bitset(int /*old_nb_chunk*/, int /*new_nb_chunk*/) noexcept {}
-    void clear_dirty_bitset() noexcept {}
     void mark_chunk_dirty(int /*chunk_idx*/) noexcept {}
     /// @brief Never dirty: no deferred write can exist in this mode.
     [[nodiscard]] bool is_chunk_dirty(int /*chunk_idx*/) const noexcept
     {
         return false;
     }
-    void        swap_dirty_bitset(DirtyBitsetSupport& /*other*/) noexcept {}
+
     static void clear_all_dirty_bitsets() noexcept {}
+
+  protected:
+    /// @name No-op verbs (no bitset in this mode)
+    /// @{
+    void alloc_dirty_bitset(int /*nb_chunk*/) noexcept {}
+    void reallocate_dirty_bitset(int /*old_nb_chunk*/, int /*new_nb_chunk*/) noexcept {}
+    void clear_dirty_bitset() noexcept {}
+
+    void swap_dirty_bitset(DirtyBitsetSupport& /*other*/) noexcept {}
+
     /// @}
 };
 

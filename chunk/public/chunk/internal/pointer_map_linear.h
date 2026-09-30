@@ -63,27 +63,6 @@ namespace shrink_array
 template <typename Payload, typename Storage>
 class PointerMapLinear
 {
-  protected:
-    /// The (key, payload) pairs, in insertion order. Derived registries read it
-    /// directly for the lookups that are specific to them.
-    Storage vec;
-
-    /**
-     * @brief Address of the payload registered for @p key, or nullptr.
-     *
-     * @details FIRST match only, like every lookup here: a stale entry left by a
-     *          destroyed array would otherwise shadow a live one that reused its
-     *          address, which is exactly what erase() exists to prevent.
-     */
-    /// @note Const on a const map: one member for both (deducing this).
-    [[nodiscard]] auto find_payload(this auto& self, const void* key) noexcept -> decltype(&self.vec.begin()->second)
-    {
-        for (auto& item : self.vec)
-            if (item.first == key)
-                return &item.second;
-        return nullptr;
-    }
-
   public:
     /**
      * @brief Remove the entry for @p key, if present.
@@ -167,6 +146,27 @@ class PointerMapLinear
             func(item.first);
         }
     }
+
+  protected:
+    /**
+     * @brief Address of the payload registered for @p key, or nullptr.
+     *
+     * @details FIRST match only, like every lookup here: a stale entry left by a
+     *          destroyed array would otherwise shadow a live one that reused its
+     *          address, which is exactly what erase() exists to prevent.
+     */
+    /// @note Const on a const map: one member for both (deducing this).
+    [[nodiscard]] auto find_payload(this auto& self, const void* key) noexcept -> decltype(&self.vec.begin()->second)
+    {
+        for (auto& item : self.vec)
+            if (item.first == key)
+                return &item.second;
+        return nullptr;
+    }
+
+    /// The (key, payload) pairs, in insertion order. Derived registries read it
+    /// directly for the lookups that are specific to them.
+    Storage vec;
 };
 
 } // namespace shrink_array

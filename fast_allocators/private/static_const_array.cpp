@@ -28,8 +28,10 @@ InfoFreeElt StaticConstArray::tab_info_free_elt;
 InfoFreeElt StaticConstArray::tab_info_free_elt_align;
 
 /// @copydoc InfoFreeElt::InfoFreeElt
-/// @note Sized by PMP_MAX_THREADS at construction, so raising the team size
-///       after the first allocation would index past these arrays.
+/// @note Sized by PMP_MAX_THREADS at construction (before main). A rank past
+///       it -- a team raised later -- is not batched: freeBlock() and
+///       freeBlockAlign() free its blocks at once rather than index past
+///       these arrays.
 InfoFreeElt::InfoFreeElt()
 {
     // Serially there is no batching (freeBlock never enters the batching
@@ -117,7 +119,13 @@ TCTypeAllocatorEBC<24, SIZE_BLOCK> Allocator24; ///< @copydoc ::Allocator24
  */
 class ManageTCTypeAllocator
 {
+  public:
     friend class Singleton<ManageTCTypeAllocator>;
+
+  protected:
+    // Filled in a serial build only (no concurrent insert); left empty under
+    // OpenMP, where the allocators are not enrolled.
+    using set_allocator_t = std::set<VTCTypeAllocator*>;
 
   public:
     ManageTCTypeAllocator()  = default;
@@ -129,14 +137,6 @@ class ManageTCTypeAllocator
     ManageTCTypeAllocator(ManageTCTypeAllocator&&)                 = delete;
     ManageTCTypeAllocator& operator=(ManageTCTypeAllocator&&)      = delete;
 
-  protected:
-    // Filled in a serial build only (no concurrent insert); left empty under
-    // OpenMP, where the allocators are not enrolled.
-    using set_allocator_t = std::set<VTCTypeAllocator*>;
-
-    set_allocator_t set_allocator;
-
-  public:
     /// @brief Enrol an allocator. No-op in an OpenMP build.
     void addTCTypeAllocatorInst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
     {
@@ -160,6 +160,9 @@ class ManageTCTypeAllocator
             inst->addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
         }
     }
+
+  protected:
+    set_allocator_t set_allocator;
 };
 
 

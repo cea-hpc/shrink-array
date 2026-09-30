@@ -36,6 +36,7 @@ struct for_each_type_impl;
 template <typename... Ts>
 struct for_each_type_impl<std::tuple<Ts...>>
 {
+  private:
     /// @brief Call `f.template operator()<T>()` for each T of the tuple, in order.
     template <typename F>
     static void apply(F&& fn)

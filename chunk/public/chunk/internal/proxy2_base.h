@@ -64,24 +64,16 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     using typename Base::atomic_ptr_ref_t;
     using values_type_ref = atomic_ptr_ref_t;
 
+  private:
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
+  public:
     // Both members exist on ProxyBase in every mode (the serial specialisation
     // declares them too); only their USE is mode-specific.
     using Base::ptr_is_inside_chunk_list_to_compress;
     using Base::tab_is_inside_chunk_list_to_compress;
 
-  protected:
-    /**
-     * @brief Construct a proxy for element `num_` of `chunk_`.
-     * @param values_ Reference to the chunk's values pointer.
-     * @param num_ Element offset within the chunk.
-     * @param chunk_ Owning chunk.
-     */
-    explicit Proxy2Base(values_type_ref values_, int num_, ChunkType& chunk_) noexcept : Base(values_, num_, chunk_) {}
-
-  public:
     // ========================================================================
     // Constant-state queries. is_cst_val2() itself is the derived proxy's:
     // only it knows the index/ind for non-bool types. These reach it through
@@ -90,297 +82,12 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     // ========================================================================
 
     /**
-     * @brief Negation of is_cst_val2().
-     * @return true if the chunk is NOT compressed to the second constant.
-     */
-    [[nodiscard]] bool is_not_cst_val2(this const Derived& self) noexcept
-    {
-        return !self.is_cst_val2();
-    }
-
-    /**
-     * @brief Whether the chunk is compressed to EITHER constant (first or second).
-     * @return true if the chunk is compressed.
-     */
-    [[nodiscard]] bool is_cst_val(this const Derived& self) noexcept
-    {
-        return self.is_cst_val1() || self.is_cst_val2();
-    }
-
-    /**
      * @brief Negation of is_cst_val().
      * @return true if the chunk is materialised (compressed to neither constant).
      */
     [[nodiscard]] bool is_not_cst_val(this const Derived& self) noexcept
     {
         return !self.is_cst_val();
-    }
-
-    /**
-     * @brief Whether the chunk is currently at ONE of the two constants and
-     *        new_value is precisely the OTHER one -- i.e. a direct
-     *        constant-to-constant transition (cst1 -> second_val, or
-     *        cst2 -> first_value).
-     * @note BUG FIX: this used to be
-     *       `((new_value == first_value && is_cst_val2()) || is_not_cst_val2()) ||
-     *        ((new_value == second_val && is_cst_val1()) || is_not_cst_val1())`.
-     *       Since is_not_cst_val2() == !is_cst_val2() and is_not_cst_val1() ==
-     *       !is_cst_val1(), each `(A && B) || !B` term reduces to `A || !B`,
-     *       and a chunk can only ever be non-cst_val1 XOR non-cst_val2 XOR
-     *       materialised -- so at least one of the two `!B` terms was always
-     *       true, making the whole expression a tautology (always true, in
-     *       all three reachable chunk states, verified exhaustively). The
-     *       caller (mark_for_compression_if_needed) passes this as `isv`, a
-     *       fast pre-check meant to guard the more expensive
-     *       should_mark_for_compression() / load_value() check "for
-     *       performance" (see mark_for_compression_core) -- with the old
-     *       expression, that guard never filtered anything.
-     * @param new_value The new value to check.
-     * @param first_value The first constant value to compare against.
-     * @param second_val The second constant value to compare against.
-     * @return true if the chunk is at cst_val1 and new_value == second_val,
-     *         or at cst_val2 and new_value == first_value.
-     */
-    bool is_cst_val_new_value_is_other_cst_val(this const Derived& self,
-                                               in_t<T>             new_value,
-                                               in_t<T>             first_value,
-                                               in_t<T>             second_val) noexcept
-    {
-        // CRTP dispatch: each variant owns its fast pre-check. Chunk2 keeps the
-        // "a constant is written" test below; Chunk2A widens it (see
-        // Proxy2A::pre_check_mark_for_compression) because its
-        // should_mark_for_compression() accepts a case this test would reject.
-        //
-        // INVARIANT: pre_check_mark_for_compression() must never return false
-        // for a write that should_mark_for_compression() would accept. `isv` is
-        // only a performance filter; if it rejects a qualifying write the chunk
-        // is silently never queued for compression and its buffer is never
-        // returned to the reuse list.
-        return self.pre_check_mark_for_compression(new_value, first_value, second_val);
-    }
-
-    /**
-     * @brief Pre-check shared by every variant: the write is of a constant.
-     * @details A write is worth the marking path (one read of the old value,
-     *          then add_to_compression_list) when the value written is one of
-     *          the chunk's two constants -- whatever the chunk's state.
-     *          should_mark_for_compression() then keeps the writes that change
-     *          the element (old != new), so a chunk is queued at most once per
-     *          pass, on its first write of a constant over something else.
-     *
-     *          Until Sept '26 this accepted only a chunk ALREADY at one
-     *          constant being written the other, on the reasoning that
-     *          should_mark only fired on that transition. It does not: a chunk
-     *          materialised by a plain value (2.5 over cst_val1) and then
-     *          written back to a constant element by element was never
-     *          queued, and stayed materialised for the run in a perf build --
-     *          the check builds' compress_int self-heal was compressing 100
-     *          out of 100 such chunks. The cost of the widening is paid only
-     *          by writes of a constant: an old-value read and a compare, and,
-     *          on the first such write per pass, the flag's CAS. The
-     *          candidate list then also holds chunks that will not be constant
-     *          at the pass, scanned at chunk_size each.
-     * @param new_value The new value to check.
-     * @param first_value The first constant value to compare against.
-     * @param second_val The second constant value to compare against.
-     * @return true if new_value is first_value or second_val.
-     */
-    [[nodiscard]] bool
-    pre_check_mark_for_compression_strict(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
-    {
-        return new_value == first_value || new_value == second_val;
-    }
-
-    /**
-     * @brief Default pre-check hook (Chunk2 behaviour).
-     * @details Variants that widen should_mark_for_compression() MUST shadow
-     *          this method and widen the pre-check to match -- otherwise the
-     *          extra predicate clauses are unreachable.
-     * @param new_value The new value to check.
-     * @param first_value The first constant value to compare against.
-     * @param second_val The second constant value to compare against.
-     * @return true if the write is worth examining further.
-     */
-    [[nodiscard]] bool
-    pre_check_mark_for_compression(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
-    {
-        return pre_check_mark_for_compression_strict(new_value, first_value, second_val);
-    }
-
-    /**
-     * @brief Core unified logic for 2-value compression marking.
-     * @details When `isv` is true, checks whether this write's transition
-     *          qualifies for compression (derived().should_mark_for_compression())
-     *          or whether the in-memory value no longer matches
-     *          `expected_in_memory` (a race with a concurrent writer); either
-     *          way, adds this element to the compression candidate list.
-     *          `isv` itself is a fast pre-check meant to let obviously
-     *          irrelevant writes skip that work entirely (see
-     *          is_cst_val_new_value_is_other_cst_val()).
-     * @tparam Args Extra args forwarded to should_mark_for_compression()
-     *              (the second/first constant values).
-     * @param old_value Value before the write.
-     * @param new_value Value after the write.
-     * @param expected_in_memory The value this write expects to still be in
-     *                           memory.
-     * @param isv Fast pre-check result; when false, this call is a no-op.
-     * @param compression_args Extra args forwarded to should_mark_for_compression().
-     */
-    template <typename... Args>
-    void mark_for_compression_core(this const Derived& self,
-                                   in_t<T>             old_value,
-                                   in_t<T>             new_value,
-                                   in_t<T>             expected_in_memory,
-                                   bool                isv,
-                                   Args&&... compression_args);
-
-    /**
-     * @brief Post-write wrapper around mark_for_compression_core(), passing
-     *        new_value as the expected-in-memory value.
-     * @tparam Args Extra args forwarded to mark_for_compression_core().
-     * @param old_value Value before the write.
-     * @param new_value Value after the write.
-     * @param isv Fast pre-check result (see mark_for_compression_core()).
-     * @param args Extra args forwarded to mark_for_compression_core().
-     */
-    template <typename... Args>
-    void
-    mark_for_compression_impl(this const Derived& self, in_t<T> old_value, in_t<T> new_value, bool isv, Args&&... args)
-    {
-        self.mark_for_compression_core(old_value, new_value, new_value, isv, std::forward<Args>(args)...);
-    }
-
-    // --- Boolean overloads ---
-    /**
-     * @brief Marks block for compression based on a boolean new value
-     * @param new_value The new boolean value
-     * @note Uses false and true as constant values for comparison
-     */
-
-    void mark_for_compression_if_needed(this const Derived& self, bool new_value)
-    {
-        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, false, true);
-        // Base::read_values(), not values[num]: inherited from a dependent
-        // base, so it must be qualified. This is the write path's read
-        // entry and the only one that resolves a compressed chunk's
-        // constant under CHUNK_CST_VAL2_NO_ARRAYS. Indexing here read a
-        // zero page and the decision below was taken against 0.
-        self.mark_for_compression_impl(self.Base::read_values(), new_value, isv, false, true);
-    }
-
-    /**
-     * @brief Marks block for compression with custom constant values
-     * @param second_val The second constant value
-     * @param new_value The new value to be set
-     * @param first_value The first constant value
-     */
-    void
-    mark_for_compression_if_needed(this const Derived& self, in_t<T> second_val, in_t<T> new_value, in_t<T> first_value)
-    {
-        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
-        self.mark_for_compression_impl(self.Base::read_values(), new_value, isv, second_val, first_value);
-    }
-
-    /**
-     * @brief Marking for a caller that stores AFTER marking (Proxy2A's
-     *        assignment: mark, then perform_core_assignment).
-     * @details Same test as mark_for_compression_if_needed() above, except the
-     *          memory check of mark_for_compression_core() expects the OLD
-     *          value. The helper above expects the new one -- right for a
-     *          caller that has already stored (memory then differs only if a
-     *          race changed it), but before the store memory still holds the
-     *          old value, so its check fired on every write that changes the
-     *          value and queued the chunk whatever should_mark said.
-     */
-    void mark_for_compression_before_store(this const Derived& self,
-                                           in_t<T>             second_val,
-                                           in_t<T>             new_value,
-                                           in_t<T>             first_value)
-    {
-        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
-        const T    old = self.Base::read_values();
-        self.mark_for_compression_core(old, new_value, old, isv, second_val, first_value);
-    }
-
-    /**
-     * @brief Marks block for compression with an explicit old boolean value
-     *        (provided to avoid a race), rather than reading it back from
-     *        values[num].
-     * @param old_value The previous boolean value.
-     * @param new_value The new boolean value.
-     */
-    void mark_for_compression_if_needed(this const Derived& self, bool old_value, bool new_value)
-    {
-        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, false, true);
-        self.mark_for_compression_impl(old_value, new_value, isv, true, false);
-    }
-
-    /**
-     * @brief Marks block for compression with explicit old and new values
-     * @param second_val The second constant value
-     * @param old_value The previous value (provided explicitly to avoid race)
-     * @param new_value The new value to be set
-     * @param first_value The first constant value
-     */
-
-    void mark_for_compression_if_needed(this const Derived& self,
-                                        in_t<T>             second_val,
-                                        in_t<T>             old_value,
-                                        in_t<T>             new_value,
-                                        in_t<T>             first_value)
-    {
-        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
-        self.mark_for_compression_impl(old_value, new_value, isv, second_val, first_value);
-    }
-
-    /**
-     * @brief Static entry point for async callers that only have a proxy
-     *        reference in hand (not `this`). Delegates to the instance
-     *        method of the same name.
-     * @param proxy Proxy whose compression marking to trigger.
-     * @param old_value Value before the write.
-     * @param new_value Value after the write.
-     */
-    static void
-    mark_for_compression_if_needed_with_value_async(const Derived& proxy, in_t<T> old_value, in_t<T> new_value)
-    {
-        proxy.mark_for_compression_if_needed_with_value(old_value, new_value);
-    }
-
-    /**
-     * @brief Write operation with metadata initialization.
-     * @tparam WriteFn Callable type for write operation.
-     * @param write_fn Function to execute after metadata setup.
-     * @details Combines fast/slow path locking with automatic metadata
-     *          initialization (set_num_tab_ptr_is_inside_chunk(), needed by
-     *          the fast-block-compression path). Useful for operations that
-     *          need tab/chunk information before writing.
-     */
-    template <typename WriteFn>
-    bool write_with_optional_lock_with_set_ptr(this Derived& self, WriteFn write_fn) noexcept
-    {
-        const auto lbd_info = [&self]
-        {
-            if constexpr (chunk_config::use_fast_block_compression)
-            {
-                self.set_num_tab_ptr_is_inside_chunk(); // common initialization required for the fast-path
-            }
-            else
-            {
-                // The capture exists for the branch above and for nothing
-                // else. use_fast_block_compression IS use_openmp, so a SERIAL
-                // build never instantiates that branch and clang reports the
-                // capture as unused (-Wunused-lambda-capture; 13 reports for
-                // this one lambda on a chunk2 bench TU, and the same on
-                // chunk2a). Keeping `self` explicit and discarding it here
-                // says why it is there -- switching to [&] would silence the
-                // warning by hiding the intent.
-                static_cast<void>(self);
-            }
-        };
-
-        // wrap the call in a lambda that calls write_fn(v)
-        return self.write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
     }
 
     /**
@@ -479,6 +186,299 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
             std::cerr << "operator not implemented (requires integral non-bool type)\n";
             return self;
         }
+    }
+
+  protected:
+    /**
+     * @brief Construct a proxy for element `num_` of `chunk_`.
+     * @param values_ Reference to the chunk's values pointer.
+     * @param num_ Element offset within the chunk.
+     * @param chunk_ Owning chunk.
+     */
+    explicit Proxy2Base(values_type_ref values_, int num_, ChunkType& chunk_) noexcept : Base(values_, num_, chunk_) {}
+
+    /**
+     * @brief Negation of is_cst_val2().
+     * @return true if the chunk is NOT compressed to the second constant.
+     */
+    [[nodiscard]] bool is_not_cst_val2(this const Derived& self) noexcept
+    {
+        return !self.is_cst_val2();
+    }
+
+    /**
+     * @brief Whether the chunk is compressed to EITHER constant (first or second).
+     * @return true if the chunk is compressed.
+     */
+    [[nodiscard]] bool is_cst_val(this const Derived& self) noexcept
+    {
+        return self.is_cst_val1() || self.is_cst_val2();
+    }
+
+    /**
+     * @brief Pre-check shared by every variant: the write is of a constant.
+     * @details A write is worth the marking path (one read of the old value,
+     *          then add_to_compression_list) when the value written is one of
+     *          the chunk's two constants -- whatever the chunk's state.
+     *          should_mark_for_compression() then keeps the writes that change
+     *          the element (old != new), so a chunk is queued at most once per
+     *          pass, on its first write of a constant over something else.
+     *
+     *          Until Sept '26 this accepted only a chunk ALREADY at one
+     *          constant being written the other, on the reasoning that
+     *          should_mark only fired on that transition. It does not: a chunk
+     *          materialised by a plain value (2.5 over cst_val1) and then
+     *          written back to a constant element by element was never
+     *          queued, and stayed materialised for the run in a perf build --
+     *          the check builds' compress_int self-heal was compressing 100
+     *          out of 100 such chunks. The cost of the widening is paid only
+     *          by writes of a constant: an old-value read and a compare, and,
+     *          on the first such write per pass, the flag's CAS. The
+     *          candidate list then also holds chunks that will not be constant
+     *          at the pass, scanned at chunk_size each.
+     * @param new_value The new value to check.
+     * @param first_value The first constant value to compare against.
+     * @param second_val The second constant value to compare against.
+     * @return true if new_value is first_value or second_val.
+     */
+    [[nodiscard]] bool
+    pre_check_mark_for_compression_strict(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
+    {
+        return new_value == first_value || new_value == second_val;
+    }
+
+    // --- Boolean overloads ---
+    /**
+     * @brief Marks block for compression based on a boolean new value
+     * @param new_value The new boolean value
+     * @note Uses false and true as constant values for comparison
+     */
+    void mark_for_compression_if_needed(this const Derived& self, bool new_value)
+    {
+        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, false, true);
+        // Base::read_values(), not values[num]: inherited from a dependent
+        // base, so it must be qualified. This is the write path's read
+        // entry and the only one that resolves a compressed chunk's
+        // constant under CHUNK_CST_VAL2_NO_ARRAYS. Indexing here read a
+        // zero page and the decision below was taken against 0.
+        self.mark_for_compression_impl(self.Base::read_values(), new_value, isv, false, true);
+    }
+
+    /**
+     * @brief Marks block for compression with custom constant values
+     * @param second_val The second constant value
+     * @param new_value The new value to be set
+     * @param first_value The first constant value
+     */
+    void
+    mark_for_compression_if_needed(this const Derived& self, in_t<T> second_val, in_t<T> new_value, in_t<T> first_value)
+    {
+        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
+        self.mark_for_compression_impl(self.Base::read_values(), new_value, isv, second_val, first_value);
+    }
+
+    /**
+     * @brief Marking for a caller that stores AFTER marking (Proxy2A's
+     *        assignment: mark, then perform_core_assignment).
+     * @details Same test as mark_for_compression_if_needed() above, except the
+     *          memory check of mark_for_compression_core() expects the OLD
+     *          value. The helper above expects the new one -- right for a
+     *          caller that has already stored (memory then differs only if a
+     *          race changed it), but before the store memory still holds the
+     *          old value, so its check fired on every write that changes the
+     *          value and queued the chunk whatever should_mark said.
+     */
+    void mark_for_compression_before_store(this const Derived& self,
+                                           in_t<T>             second_val,
+                                           in_t<T>             new_value,
+                                           in_t<T>             first_value)
+    {
+        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
+        const T    old = self.Base::read_values();
+        self.mark_for_compression_core(old, new_value, old, isv, second_val, first_value);
+    }
+
+    /**
+     * @brief Marks block for compression with an explicit old boolean value
+     *        (provided to avoid a race), rather than reading it back from
+     *        values[num].
+     * @param old_value The previous boolean value.
+     * @param new_value The new boolean value.
+     */
+    void mark_for_compression_if_needed(this const Derived& self, bool old_value, bool new_value)
+    {
+        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, false, true);
+        self.mark_for_compression_impl(old_value, new_value, isv, true, false);
+    }
+
+    /**
+     * @brief Marks block for compression with explicit old and new values
+     * @param second_val The second constant value
+     * @param old_value The previous value (provided explicitly to avoid race)
+     * @param new_value The new value to be set
+     * @param first_value The first constant value
+     */
+    void mark_for_compression_if_needed(this const Derived& self,
+                                        in_t<T>             second_val,
+                                        in_t<T>             old_value,
+                                        in_t<T>             new_value,
+                                        in_t<T>             first_value)
+    {
+        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
+        self.mark_for_compression_impl(old_value, new_value, isv, second_val, first_value);
+    }
+
+    /**
+     * @brief Static entry point for async callers that only have a proxy
+     *        reference in hand (not `this`). Delegates to the instance
+     *        method of the same name.
+     * @param proxy Proxy whose compression marking to trigger.
+     * @param old_value Value before the write.
+     * @param new_value Value after the write.
+     */
+    static void
+    mark_for_compression_if_needed_with_value_async(const Derived& proxy, in_t<T> old_value, in_t<T> new_value)
+    {
+        proxy.mark_for_compression_if_needed_with_value(old_value, new_value);
+    }
+
+    /**
+     * @brief Write operation with metadata initialization.
+     * @tparam WriteFn Callable type for write operation.
+     * @param write_fn Function to execute after metadata setup.
+     * @details Combines fast/slow path locking with automatic metadata
+     *          initialization (set_num_tab_ptr_is_inside_chunk(), needed by
+     *          the fast-block-compression path). Useful for operations that
+     *          need tab/chunk information before writing.
+     */
+    template <typename WriteFn>
+    bool write_with_optional_lock_with_set_ptr(this Derived& self, WriteFn write_fn) noexcept
+    {
+        const auto lbd_info = [&self]
+        {
+            if constexpr (chunk_config::use_fast_block_compression)
+            {
+                self.set_num_tab_ptr_is_inside_chunk(); // common initialization required for the fast-path
+            }
+            else
+            {
+                // The capture exists for the branch above and for nothing
+                // else. use_fast_block_compression IS use_openmp, so a SERIAL
+                // build never instantiates that branch and clang reports the
+                // capture as unused (-Wunused-lambda-capture; 13 reports for
+                // this one lambda on a chunk2 bench TU, and the same on
+                // chunk2a). Keeping `self` explicit and discarding it here
+                // says why it is there -- switching to [&] would silence the
+                // warning by hiding the intent.
+                static_cast<void>(self);
+            }
+        };
+
+        // wrap the call in a lambda that calls write_fn(v)
+        return self.write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
+    }
+
+  private:
+    /**
+     * @brief Whether the chunk is currently at ONE of the two constants and
+     *        new_value is precisely the OTHER one -- i.e. a direct
+     *        constant-to-constant transition (cst1 -> second_val, or
+     *        cst2 -> first_value).
+     * @note BUG FIX: this used to be
+     *       `((new_value == first_value && is_cst_val2()) || is_not_cst_val2()) ||
+     *        ((new_value == second_val && is_cst_val1()) || is_not_cst_val1())`.
+     *       Since is_not_cst_val2() == !is_cst_val2() and is_not_cst_val1() ==
+     *       !is_cst_val1(), each `(A && B) || !B` term reduces to `A || !B`,
+     *       and a chunk can only ever be non-cst_val1 XOR non-cst_val2 XOR
+     *       materialised -- so at least one of the two `!B` terms was always
+     *       true, making the whole expression a tautology (always true, in
+     *       all three reachable chunk states, verified exhaustively). The
+     *       caller (mark_for_compression_if_needed) passes this as `isv`, a
+     *       fast pre-check meant to guard the more expensive
+     *       should_mark_for_compression() / load_value() check "for
+     *       performance" (see mark_for_compression_core) -- with the old
+     *       expression, that guard never filtered anything.
+     * @param new_value The new value to check.
+     * @param first_value The first constant value to compare against.
+     * @param second_val The second constant value to compare against.
+     * @return true if the chunk is at cst_val1 and new_value == second_val,
+     *         or at cst_val2 and new_value == first_value.
+     */
+    bool is_cst_val_new_value_is_other_cst_val(this const Derived& self,
+                                               in_t<T>             new_value,
+                                               in_t<T>             first_value,
+                                               in_t<T>             second_val) noexcept
+    {
+        // CRTP dispatch: each variant owns its fast pre-check. Chunk2 keeps the
+        // "a constant is written" test below; Chunk2A widens it (see
+        // Proxy2A::pre_check_mark_for_compression) because its
+        // should_mark_for_compression() accepts a case this test would reject.
+        //
+        // INVARIANT: pre_check_mark_for_compression() must never return false
+        // for a write that should_mark_for_compression() would accept. `isv` is
+        // only a performance filter; if it rejects a qualifying write the chunk
+        // is silently never queued for compression and its buffer is never
+        // returned to the reuse list.
+        return self.pre_check_mark_for_compression(new_value, first_value, second_val);
+    }
+
+    /**
+     * @brief Default pre-check hook (Chunk2 behaviour).
+     * @details Variants that widen should_mark_for_compression() MUST shadow
+     *          this method and widen the pre-check to match -- otherwise the
+     *          extra predicate clauses are unreachable.
+     * @param new_value The new value to check.
+     * @param first_value The first constant value to compare against.
+     * @param second_val The second constant value to compare against.
+     * @return true if the write is worth examining further.
+     */
+    [[nodiscard]] bool
+    pre_check_mark_for_compression(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
+    {
+        return pre_check_mark_for_compression_strict(new_value, first_value, second_val);
+    }
+
+    /**
+     * @brief Core unified logic for 2-value compression marking.
+     * @details When `isv` is true, checks whether this write's transition
+     *          qualifies for compression (derived().should_mark_for_compression())
+     *          or whether the in-memory value no longer matches
+     *          `expected_in_memory` (a race with a concurrent writer); either
+     *          way, adds this element to the compression candidate list.
+     *          `isv` itself is a fast pre-check meant to let obviously
+     *          irrelevant writes skip that work entirely (see
+     *          is_cst_val_new_value_is_other_cst_val()).
+     * @tparam Args Extra args forwarded to should_mark_for_compression()
+     *              (the second/first constant values).
+     * @param old_value Value before the write.
+     * @param new_value Value after the write.
+     * @param expected_in_memory The value this write expects to still be in
+     *                           memory.
+     * @param isv Fast pre-check result; when false, this call is a no-op.
+     * @param compression_args Extra args forwarded to should_mark_for_compression().
+     */
+    template <typename... Args>
+    void mark_for_compression_core(this const Derived& self,
+                                   in_t<T>             old_value,
+                                   in_t<T>             new_value,
+                                   in_t<T>             expected_in_memory,
+                                   bool                isv,
+                                   Args&&... compression_args);
+
+    /**
+     * @brief Post-write wrapper around mark_for_compression_core(), passing
+     *        new_value as the expected-in-memory value.
+     * @tparam Args Extra args forwarded to mark_for_compression_core().
+     * @param old_value Value before the write.
+     * @param new_value Value after the write.
+     * @param isv Fast pre-check result (see mark_for_compression_core()).
+     * @param args Extra args forwarded to mark_for_compression_core().
+     */
+    template <typename... Args>
+    void
+    mark_for_compression_impl(this const Derived& self, in_t<T> old_value, in_t<T> new_value, bool isv, Args&&... args)
+    {
+        self.mark_for_compression_core(old_value, new_value, new_value, isv, std::forward<Args>(args)...);
     }
 };
 

@@ -72,10 +72,18 @@ struct PointerMapInfArrayPolicy
 
   protected:
     using MapType = ValueToIntMapHelper<T>::type;
-    /// Map from a value to its registered inf_array tuple pointer.
-    MapType map_inf_array;
 
-  public:
+    /**
+     * @brief Register the inf_array tuple pointer for a given value.
+     * @param key Value to register.
+     * @param ind inf_array tuple pointer to associate with `key`.
+     */
+    void insert(in_t<T> key, inf_array_t* ind)
+    {
+        map_inf_array[key] = ind;
+    }
+
+  private:
     /**
      * @brief All registered inf_array pointers, in map order.
      * @return Vector of every value's currently-registered inf_array pointer.
@@ -93,16 +101,6 @@ struct PointerMapInfArrayPolicy
     }
 
     /**
-     * @brief Register the inf_array tuple pointer for a given value.
-     * @param key Value to register.
-     * @param ind inf_array tuple pointer to associate with `key`.
-     */
-    void insert(in_t<T> key, inf_array_t* ind)
-    {
-        map_inf_array[key] = ind;
-    }
-
-    /**
      * @brief Look up the inf_array tuple pointer registered for a value.
      * @param key Value to look up.
      * @return The registered pointer, or nullptr if `key` is not registered.
@@ -116,6 +114,10 @@ struct PointerMapInfArrayPolicy
         }
         return nullptr;
     }
+
+  protected:
+    /// Map from a value to its registered inf_array tuple pointer.
+    MapType map_inf_array;
 };
 
 /**
@@ -126,13 +128,17 @@ struct PointerMapInfArrayPolicy<T, false>
 {
     using inf_array_t = int;
 
+  protected:
+    /// @brief No registry in this mode: nothing to record.
+    void insert(in_t<T> /*key*/, inf_array_t* /*ind*/) {}
+
+  private:
     /// @brief No registry in this mode: an empty list.
     [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const
     {
         return {};
     }
-    /// @brief No registry in this mode: nothing to record.
-    void insert(in_t<T> /*key*/, inf_array_t* /*ind*/) {}
+
     /// @brief No registry in this mode: never found.
     [[nodiscard]] inf_array_t* find_inf_array(in_t<T> /*key*/) const
     {
@@ -151,7 +157,6 @@ template <typename T>
 class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fast_block_compression>,
                         public PointerMapLinear<int, std::vector<std::pair<const void*, int>>>
 {
-  private:
     using Policy = PointerMapInfArrayPolicy<T, chunk_config::use_fast_block_compression>;
 
     /// Internal alias for tuple representing a value with index and table number.
@@ -175,31 +180,9 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
      * @param key Pointer used as a key in the vector.
      * @param num_tab Table number associated with the key.
      */
-
     void insert(void* key, int num_tab)
     {
         vec.emplace_back(key, num_tab);
-    }
-
-    /**
-     * @brief Update the table number registered for an existing key.
-     * @param key Key to update.
-     * @param val New table number.
-     * @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
-     */
-    void replace(void* key, in_t<T> val) noexcept
-    {
-        for (auto& item : vec)
-        {
-            if (item.first == key)
-            {
-                item.second = val;
-                return;
-            }
-        }
-
-        INVARIANT_FAILED("[PointerMapChunk replace] key NOT FOUND: this={} size={} key={}",
-                         static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
     }
 
     /**
@@ -235,6 +218,28 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
         return this->swap_entries(key_a, key_b);
     }
 
+  private:
+    /**
+     * @brief Update the table number registered for an existing key.
+     * @param key Key to update.
+     * @param val New table number.
+     * @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
+     */
+    void replace(void* key, in_t<T> val) noexcept
+    {
+        for (auto& item : vec)
+        {
+            if (item.first == key)
+            {
+                item.second = val;
+                return;
+            }
+        }
+
+        INVARIANT_FAILED("[PointerMapChunk replace] key NOT FOUND: this={} size={} key={}",
+                         static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
+    }
+
     // erase(), swap_entries(), exists(), size() and for_each_key() come from
     // PointerMapLinear: they were the same traversals as in PointerMapChunk2.
 };
@@ -257,6 +262,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
 
     using ProxyBase<Derived, T, Chunk<T>>::ProxyBase;
 
+  protected:
     /**
      * @brief Register this chunk's table number and compression-list flag
      *        pointer, so later compression bookkeeping can find its way
@@ -270,6 +276,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         self.Base::set_ptr_is_inside_chunk_list_to_compress();
     }
 
+  public:
     /**
      * @brief Access to thread `thr`'s compression-candidate list.
      * @param thr Thread rank whose candidate list to fetch.
@@ -291,6 +298,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         return Derived::share_info_array.get_num_tab(ptr);
     }
 
+  private:
     /**
      * @brief Static entry point for async callers that only have a proxy
      *        reference in hand (not `this`). The marking logic itself needs
@@ -305,6 +313,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         proxy.mark_for_compression_if_needed_with_value(old_value, new_value);
     }
 
+  public:
     /**
      * @brief Check whether this thread's compression-candidate list has
      *        grown past the "dangerous" size threshold, and if so, flag it
@@ -366,8 +375,10 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     using Base::read_values_async;
     using Base::tab_is_inside_chunk_list_to_compress;
 
+  private:
     constexpr static T zero{};
 
+  public:
     /**
      * @brief Resolve and cache this proxy's table number from ptr_on_array.
      */
@@ -398,6 +409,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         tab_is_inside_chunk_list_to_compress[num_tab][num_chunk] = 0;
     }
 
+  private:
     /**
      * @brief Whether a write transition is a compression candidate (a
      *        zero-transition: was non-zero, now zero).
@@ -454,6 +466,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         self.mark_for_compression_core(old_value, new_value, new_value);
     }
 
+  public:
     /**
      * @brief Post-write entry point for callers that already have both the
      *        old and new value in hand.
@@ -479,6 +492,7 @@ struct ProxyFastCompPolicy<Derived, T, false> : public ProxyBase<Derived, T, Chu
     using ProxyBase<Derived, T, Chunk<T>>::ProxyBase;
     using ProxyBase<Derived, T, Chunk<T>>::chunk;
 
+  protected:
     /// @brief Nothing to record on the chunk without fast block compression.
     static void set_info_on_chunk() {}
 
@@ -562,22 +576,23 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     static constexpr bool is_bool     = std::is_same_v<T, bool>;
     static constexpr bool is_not_bool = !is_bool;
 
+  public:
     friend FastCompPolicy;
 
-  public:
-    // reset_tab_inside_list_to_compress(), set_num_tab() and the
-    // mark_for_compression_* family live on ProxyFastCompPolicy<..., true>;
-    // manage_full_zero() on the <..., false> (counter) specialisation.
-
-    /**
-     * @brief Whether the owning chunk is currently compressed to its
-     *        constant.
-     * @return true if the chunk is compressed.
-     */
-    [[nodiscard]] bool is_cst_val() const noexcept
+    /// @brief Functor wrapping operator% for apply_compound_operation().
+    struct modulo
     {
-        return chunk.is_cst_val1();
-    }
+        /// @brief Apply operator% to the two operands.
+        /// @return lhs % rhs.
+        static constexpr T operator()(in_t<T> lhs, in_t<T> rhs) noexcept
+        {
+            return lhs % rhs;
+        }
+    };
+
+    /// @brief Stream output of the element's value (defined below).
+    template <typename U>
+    friend std::ostream& operator<<(std::ostream& os, const Proxy<U>& proxy);
 
     /**
      * @brief Negation of is_cst_val().
@@ -618,7 +633,206 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         chunk.set_nb_val_eq_zero(n_zeros);
     }
 
+    /**
+     * @brief Construct a proxy for element `num_` of `chunk_`.
+     * @param values_ Reference to the chunk's values pointer.
+     * @param num_ Element offset within the chunk.
+     * @param chunk_ Owning chunk.
+     */
+    explicit Proxy(values_type_ref values_, int num_, Chunk<T>& chunk_) noexcept : FastCompPolicy(values_, num_, chunk_)
+    {
+    }
+
+    /**
+     * @brief Resolve which array (table) a given pointer belongs to.
+     * @param ptr Pointer to look up.
+     * @return The table number @p ptr belongs to.
+     */
+    [[nodiscard]] static int get_num_tab(const void* ptr) noexcept
+    {
+        return share_info_array.get_num_tab(ptr);
+    }
+
+    /** @brief Clean path: exact match or safe conversion (small operand, by value). */
+    template <typename U>
+        requires IsCleanAssignment<T, U>
+    T operator=(const U& v) noexcept
+    {
+        return assign_impl<U>(v);
+    }
+
+    /** @brief Trap path: risky conversion (e.g. float = double). */
+    template <typename U>
+        requires(!IsCleanAssignment<T, U>) && std::assignable_from<T&, U>
+    [[deprecated("HPC WARNING: Type mismatch in assignment. Use 'f' suffix for floats.")]]
+    T operator=(const U& v) noexcept
+    {
+        return assign_impl<T>(static_cast<T>(v));
+    }
+
+    /**
+     * @brief Add `v` to this element in place.
+     * @tparam U Type of the operand.
+     * @param v Operand to add.
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
+    template <typename U>
+        requires ElementAddable<T>
+    Proxy operator+=(const U& v) noexcept
+    {
+        this->template arithmetic_assign<U>(v, std::plus<>{});
+        return *this;
+    }
+
+    /**
+     * @brief Subtract `v` from this element in place.
+     * @tparam U Type of the operand.
+     * @param v Operand to subtract.
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
+    template <typename U>
+        requires ElementSubtractable<T>
+    Proxy operator-=(const U& v) noexcept
+    {
+        this->template arithmetic_assign<U>(v, std::minus<>{});
+        return *this;
+    }
+
+    /**
+     * @brief Divide this element by `v` in place.
+     * @tparam U Type of the operand.
+     * @param v Divisor.
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
+    template <typename U>
+        requires ElementDivisible<T>
+    Proxy operator/=(const U& v) noexcept
+    {
+        apply_compound_operation<U>(v, std::divides<>());
+        return *this;
+    }
+
+    /**
+     * @brief Multiply this element by `v` in place.
+     * @tparam U Type of the operand.
+     * @param v Multiplier.
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
+    template <typename U>
+        requires ElementMultipliable<T>
+    Proxy operator*=(const U& v) noexcept
+    {
+        apply_compound_operation<U>(v, std::multiplies<>());
+        return *this;
+    }
+
+    /**
+     * @brief Compute this element modulo `v` in place. Integral T only; a
+     *        no-op passthrough (returns v unchanged) for non-integral T.
+     * @tparam U Type of the operand.
+     * @param v Modulus.
+     * @return This proxy. Converting it to T reads the resulting value,
+     *         synchronised (operator T() -> read_pure()); discarding it,
+     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
+    template <typename U>
+        requires ElementModulable<T> || std::is_same_v<T, bool>
+    Proxy operator%=(const U& v) noexcept
+    {
+        if constexpr (std::is_integral_v<T>)
+        {
+            apply_compound_operation<U>(v, typename Base::modulo{});
+            return *this;
+        }
+        else
+            return *this;
+    }
+
+    Proxy(const Proxy& other)     = default;
+    Proxy(Proxy&& other) noexcept = default;
+
+    /**
+     * @brief Proxy-to-proxy assignment: read `from`'s current value through
+     *        operator T() (gated read) and write it into this proxy's slot
+     *        through assign_impl() (the full write engine).
+     * @param from Proxy to read the value from.
+     * @return *this.
+     */
+    const Proxy& operator=(const Proxy& from) noexcept;
+
+    /**
+     * @brief Implicit read conversion: returns the element's current value.
+     *
+     * @details This is one of the read entries the non-const
+     *          ArrayChunkBase::operator[] delegates visibility to: under
+     *          sync_on_read the write entry no longer flushes, so a read must
+     *          pull any deferred write queued for this offset before looking at
+     *          the buffer. It used to return values[num] straight, with no gate
+     *          at all, and so could hand back the value a SUPERSEDED round left
+     *          there while the current round's write was still queued -- silent
+     *          stale reads on every `arr[i]` taken on a non-const array, which
+     *          is what rechunk_validation reads through. Proxy2 / Proxy2A never
+     *          had the hole: they inherit ProxyBase::operator T(), which is
+     *          read_pure().
+     *
+     *          The gate is behind the SAME pre-filter as
+     *          ArrayChunkBase::sync_chunk(): the per-chunk dirty bit is set by
+     *          the deferred-enqueue path, so a clear bit means no deferred op
+     *          was ever queued for this chunk and the fast read stands. Only
+     *          chunks that actually took a deferred write pay read_pure()'s
+     *          reader_sync. The bitset folds to a constant false when it is
+     *          compiled out (serial builds), taking the whole branch with it.
+     */
+    operator T() const noexcept
+    {
+        if constexpr (chunk_config::stats)
+        {
+            increm_chunk_read<ChunkType>();
+        }
+
+        if constexpr (build_config::use_openmp)
+        {
+            // chunk_size_frozen_ != 0 marks a proxy rebuilt from a replay
+            // context, whose ptr_on_array may already be dangling (see the
+            // fw14 note on chunk_size()): never dereference the array there.
+            // Such a proxy is only ever used from inside a flush, where the
+            // ops are being applied rather than waited on, so go straight to
+            // the gated read.
+            if (chunk_size_frozen_ == 0U && ptr_on_array != nullptr) [[likely]]
+            {
+                using ArrayType = ArrayChunkFor_t<ChunkType>;
+                if (!static_cast<const ArrayType*>(ptr_on_array)->is_chunk_dirty(num_chunk)) [[likely]]
+                {
+                    return values[num];
+                }
+            }
+            return Base::read_pure();
+        }
+
+        return values[num];
+    }
+
+    T*       operator&()       = delete;
+    const T* operator&() const = delete;
+
   private:
+    // reset_tab_inside_list_to_compress(), set_num_tab() and the
+    // mark_for_compression_* family live on ProxyFastCompPolicy<..., true>;
+    // manage_full_zero() on the <..., false> (counter) specialisation.
+
+    /**
+     * @brief Whether the owning chunk is currently compressed to its
+     *        constant.
+     * @return true if the chunk is compressed.
+     */
+    [[nodiscard]] bool is_cst_val() const noexcept
+    {
+        return chunk.is_cst_val1();
+    }
+
     /**
      * @brief Materialise the owning chunk (allocate + init), pinning the
      *        active chunk size for this array first in dynamic builds.
@@ -703,27 +917,6 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     template <typename LAMBDA>
     void execute_inplace_operation(LAMBDA operation);
 
-  public:
-    /**
-     * @brief Construct a proxy for element `num_` of `chunk_`.
-     * @param values_ Reference to the chunk's values pointer.
-     * @param num_ Element offset within the chunk.
-     * @param chunk_ Owning chunk.
-     */
-    explicit Proxy(values_type_ref values_, int num_, Chunk<T>& chunk_) noexcept : FastCompPolicy(values_, num_, chunk_)
-    {
-    }
-
-    /**
-     * @brief Resolve which array (table) a given pointer belongs to.
-     * @param ptr Pointer to look up.
-     * @return The table number @p ptr belongs to.
-     */
-    [[nodiscard]] static int get_num_tab(const void* ptr) noexcept
-    {
-        return share_info_array.get_num_tab(ptr);
-    }
-
     /**
      * @brief Early-out check for operator=(): is the chunk already
      *        compressed AND is the value being assigned the compressible
@@ -758,53 +951,6 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     // crosses a call -- a char by value stays in a register, a struct goes by
     // reference. Non-deducible, hence the explicit assign_impl<U>(v) below.
     T assign_impl(in_t<U> v) noexcept;
-
-    /** @brief Clean path: exact match or safe conversion (small operand, by value). */
-    template <typename U>
-        requires IsCleanAssignment<T, U>
-    T operator=(const U& v) noexcept
-    {
-        return assign_impl<U>(v);
-    }
-
-    /** @brief Trap path: risky conversion (e.g. float = double). */
-    template <typename U>
-        requires(!IsCleanAssignment<T, U>) && std::assignable_from<T&, U>
-    [[deprecated("HPC WARNING: Type mismatch in assignment. Use 'f' suffix for floats.")]]
-    T operator=(const U& v) noexcept
-    {
-        return assign_impl<T>(static_cast<T>(v));
-    }
-
-    /**
-     * @brief Add `v` to this element in place.
-     * @tparam U Type of the operand.
-     * @param v Operand to add.
-     * @return This proxy. Converting it to T reads the resulting value,
-     *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
-    template <typename U>
-        requires ElementAddable<T>
-    Proxy operator+=(const U& v) noexcept
-    {
-        this->template arithmetic_assign<U>(v, std::plus<>{});
-        return *this;
-    }
-
-    /**
-     * @brief Subtract `v` from this element in place.
-     * @tparam U Type of the operand.
-     * @param v Operand to subtract.
-     * @return This proxy. Converting it to T reads the resulting value,
-     *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
-    template <typename U>
-        requires ElementSubtractable<T>
-    Proxy operator-=(const U& v) noexcept
-    {
-        this->template arithmetic_assign<U>(v, std::minus<>{});
-        return *this;
-    }
 
     /**
      * @brief Run an arbitrary write operation on this element, materialising
@@ -842,136 +988,6 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     void apply_compound_operation(in_t<U> v, BinaryOp op); // in_t: see assign_impl
 
     /**
-     * @brief Divide this element by `v` in place.
-     * @tparam U Type of the operand.
-     * @param v Divisor.
-     * @return This proxy. Converting it to T reads the resulting value,
-     *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
-    template <typename U>
-        requires ElementDivisible<T>
-    Proxy operator/=(const U& v) noexcept
-    {
-        apply_compound_operation<U>(v, std::divides<>());
-        return *this;
-    }
-
-    /**
-     * @brief Multiply this element by `v` in place.
-     * @tparam U Type of the operand.
-     * @param v Multiplier.
-     * @return This proxy. Converting it to T reads the resulting value,
-     *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
-    template <typename U>
-        requires ElementMultipliable<T>
-    Proxy operator*=(const U& v) noexcept
-    {
-        apply_compound_operation<U>(v, std::multiplies<>());
-        return *this;
-    }
-
-    /// @brief Functor wrapping operator% for apply_compound_operation().
-    struct modulo
-    {
-        /// @brief Apply operator% to the two operands.
-        /// @return lhs % rhs.
-        static constexpr T operator()(in_t<T> lhs, in_t<T> rhs) noexcept
-        {
-            return lhs % rhs;
-        }
-    };
-
-    /**
-     * @brief Compute this element modulo `v` in place. Integral T only; a
-     *        no-op passthrough (returns v unchanged) for non-integral T.
-     * @tparam U Type of the operand.
-     * @param v Modulus.
-     * @return This proxy. Converting it to T reads the resulting value,
-     *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
-    template <typename U>
-        requires ElementModulable<T> || std::is_same_v<T, bool>
-    Proxy operator%=(const U& v) noexcept
-    {
-        if constexpr (std::is_integral_v<T>)
-        {
-            apply_compound_operation<U>(v, typename Base::modulo{});
-            return *this;
-        }
-        else
-            return *this;
-    }
-
-    Proxy(const Proxy& other)     = default;
-    Proxy(Proxy&& other) noexcept = default;
-
-    /**
-     * @brief Proxy-to-proxy assignment: read `from`'s current value through
-     *        operator T() (gated read) and write it into this proxy's slot
-     *        through assign_impl() (the full write engine).
-     * @param from Proxy to read the value from.
-     * @return *this.
-     */
-    const Proxy& operator=(const Proxy& from) noexcept;
-
-    /// @brief Stream output of the element's value (defined below).
-    template <typename U>
-    friend std::ostream& operator<<(std::ostream& os, const Proxy<U>& proxy);
-
-    /**
-     * @brief Implicit read conversion: returns the element's current value.
-     *
-     * @details This is one of the read entries the non-const
-     *          ArrayChunkBase::operator[] delegates visibility to: under
-     *          sync_on_read the write entry no longer flushes, so a read must
-     *          pull any deferred write queued for this offset before looking at
-     *          the buffer. It used to return values[num] straight, with no gate
-     *          at all, and so could hand back the value a SUPERSEDED round left
-     *          there while the current round's write was still queued -- silent
-     *          stale reads on every `arr[i]` taken on a non-const array, which
-     *          is what rechunk_validation reads through. Proxy2 / Proxy2A never
-     *          had the hole: they inherit ProxyBase::operator T(), which is
-     *          read_pure().
-     *
-     *          The gate is behind the SAME pre-filter as
-     *          ArrayChunkBase::sync_chunk(): the per-chunk dirty bit is set by
-     *          the deferred-enqueue path, so a clear bit means no deferred op
-     *          was ever queued for this chunk and the fast read stands. Only
-     *          chunks that actually took a deferred write pay read_pure()'s
-     *          reader_sync. The bitset folds to a constant false when it is
-     *          compiled out (serial builds), taking the whole branch with it.
-     */
-    operator T() const noexcept
-    {
-        if constexpr (chunk_config::stats)
-        {
-            increm_chunk_read<ChunkType>();
-        }
-
-        if constexpr (build_config::use_openmp)
-        {
-            // chunk_size_frozen_ != 0 marks a proxy rebuilt from a replay
-            // context, whose ptr_on_array may already be dangling (see the
-            // fw14 note on chunk_size()): never dereference the array there.
-            // Such a proxy is only ever used from inside a flush, where the
-            // ops are being applied rather than waited on, so go straight to
-            // the gated read.
-            if (chunk_size_frozen_ == 0U && ptr_on_array != nullptr) [[likely]]
-            {
-                using ArrayType = ArrayChunkFor_t<ChunkType>;
-                if (!static_cast<const ArrayType*>(ptr_on_array)->is_chunk_dirty(num_chunk)) [[likely]]
-                {
-                    return values[num];
-                }
-            }
-            return Base::read_pure();
-        }
-
-        return values[num];
-    }
-
-    /**
      * @brief UNSAFE: a raw `T&` into this element's chunk buffer, for callers
      *        that must bind a real reference (e.g. passing `a[i]` to a
      *        function taking `T&`). Materialises the chunk first if it is
@@ -994,15 +1010,12 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         return values[num];
     }
 
-    T*       operator&()       = delete;
-    const T* operator&() const = delete;
-
+  public:
     // Problem with this operator: if defined it is called
     // tab[nc] = val: which is problematic because in this case: we create
     // unnecessary blocks
     // if we don’t define it we have compiled errors in the
     // following situation: foo(a[i]) with foo(T &val)
-
     static inline PointerMapChunk<T> share_info_array;
 };
 

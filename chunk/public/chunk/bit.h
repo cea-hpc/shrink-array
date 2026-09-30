@@ -49,8 +49,6 @@ namespace shrink_array
 /// @brief A bool stored as one bit (the element type of ArrayChunkBits).
 struct Bit
 {
-    bool v = false;
-
     constexpr Bit() noexcept = default;
     /// @brief Implicit conversion from bool.
     constexpr Bit(bool b) noexcept : v(b) {} // NOLINT(google-explicit-constructor): a Bit IS a bool
@@ -59,6 +57,9 @@ struct Bit
     {
         return v;
     }
+
+  private:
+    bool v = false;
 };
 
 static_assert(sizeof(Bit) == 1 && std::is_trivially_copyable_v<Bit>);

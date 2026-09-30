@@ -62,27 +62,15 @@ inline void note_phase_end() noexcept
 template <typename T>
 struct Materialisations
 {
+  private:
     static constexpr unsigned kKeys = 128; ///< key slots per rank (key % kKeys)
 
+  public:
     /// @brief One rank's counters, one per key slot.
     struct alignas(128) RankSlot
     {
         std::array<long, kKeys> n;
     };
-
-    static inline std::vector<RankSlot> slots_; ///< one per rank, sized once (ensure)
-    static inline std::once_flag        once_;
-
-    /// @brief Size slots_ once to CHUNK_PMP_MAX_THREADS entries (at least 1), zero-initialised.
-    static void ensure() noexcept
-    {
-        std::call_once(once_,
-                       []
-                       {
-                           const int n = CHUNK_PMP_MAX_THREADS;
-                           slots_.resize(static_cast<std::size_t>(n > 0 ? n : 1)); // value-initialised: 0
-                       });
-    }
 
     /// @brief One materialisation of array @p key on rank @p thr (rank-local).
     static void note(int thr, unsigned key) noexcept
@@ -103,6 +91,21 @@ struct Materialisations
             s += slot.n[key % kKeys];
         return s;
     }
+
+  private:
+    /// @brief Size slots_ once to CHUNK_PMP_MAX_THREADS entries (at least 1), zero-initialised.
+    static void ensure() noexcept
+    {
+        std::call_once(once_,
+                       []
+                       {
+                           const int n = CHUNK_PMP_MAX_THREADS;
+                           slots_.resize(static_cast<std::size_t>(n > 0 ? n : 1)); // value-initialised: 0
+                       });
+    }
+
+    static inline std::vector<RankSlot> slots_; ///< one per rank, sized once (ensure)
+    static inline std::once_flag        once_;
 };
 
 /// @brief Count one materialisation of the array whose allocation key is

@@ -175,8 +175,6 @@ inline void set_thread_alloc_key(unsigned int k) noexcept
 // builds (the geometry is compile-time there).
 struct DynChunkSizeGuard
 {
-    [[maybe_unused]] unsigned int saved_ = t_active_chunk_size;
-
     /// @brief Save the thread's active chunk size and, in dynamic builds, set it to @p size.
     /// @param size Chunk size to pin for the scope.
     explicit DynChunkSizeGuard([[maybe_unused]] unsigned int size) noexcept
@@ -192,6 +190,9 @@ struct DynChunkSizeGuard
     }
     DynChunkSizeGuard(const DynChunkSizeGuard&)            = delete;
     DynChunkSizeGuard& operator=(const DynChunkSizeGuard&) = delete;
+
+  private:
+    [[maybe_unused]] unsigned int saved_ = t_active_chunk_size;
 };
 
 
@@ -240,6 +241,7 @@ struct StaticChunkSize
         return __modulo_chunk;
     }
 
+  private:
     /// @brief No-op in static mode: geometry is fixed at compile time. Present
     ///        so generic code (e.g. ArrayChunkBase::set_chunk_size) compiles
     ///        under both policies.
@@ -252,16 +254,6 @@ struct StaticChunkSize
 struct DynamicChunkSize
 {
     static constexpr bool is_dynamic = true;
-
-    // A freshly constructed array adopts the process-wide active size
-    // (g_active_chunk_size), which the program seeds via set_active_chunk_size
-    // before priming the allocators. This way arrays built after that seed have
-    // the correct geometry immediately, without a separate set_chunk_size call.
-    // g_active_chunk_size defaults to __chunk_size, so a dynamic build that never
-    // seeds it behaves exactly like the static geometry.
-    unsigned int size_     = g_active_chunk_size;
-    unsigned int decalage_ = static_cast<unsigned int>(log2int(static_cast<std::size_t>(g_active_chunk_size)));
-    unsigned int modulo_   = g_active_chunk_size - 1u;
 
     /// @brief Elements per chunk.
     [[nodiscard]] unsigned int size() const noexcept
@@ -288,6 +280,17 @@ struct DynamicChunkSize
         modulo_             = size - 1u;
         g_active_chunk_size = size; // keep the allocator-facing runtime size in sync
     }
+
+  private:
+    // A freshly constructed array adopts the process-wide active size
+    // (g_active_chunk_size), which the program seeds via set_active_chunk_size
+    // before priming the allocators. This way arrays built after that seed have
+    // the correct geometry immediately, without a separate set_chunk_size call.
+    // g_active_chunk_size defaults to __chunk_size, so a dynamic build that never
+    // seeds it behaves exactly like the static geometry.
+    unsigned int size_     = g_active_chunk_size;
+    unsigned int decalage_ = static_cast<unsigned int>(log2int(static_cast<std::size_t>(g_active_chunk_size)));
+    unsigned int modulo_   = g_active_chunk_size - 1u;
 };
 
 

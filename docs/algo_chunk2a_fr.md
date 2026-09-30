@@ -120,9 +120,9 @@ de métadonnées, et non celle du tableau. Écrire dans un chunk compressé une 
 de sa constante le matérialise, pré-rempli avec **cette constante**.
 
 Le proxy trouve les lignes de métadonnées du chunk par le numéro du tableau. Une variante
-**armée**, où l'`operator[]` d'écriture donne directement au proxy les adresses des lignes,
-existe (`CHUNK_PROXY2A_META_ARMED=1`) mais reste désactivée : son gain mesuré (~0,4 % sur
-`chunk2a_256` à 64 threads) ne justifie pas encore l'invariant qu'elle impose.
+« armée », où l'`operator[]` d'écriture donnait directement au proxy les adresses des lignes,
+a été retirée : son gain (~0,4 % sur `chunk2a_256` à 64 threads) ne justifiait pas
+l'invariant de resynchronisation qu'elle imposait à chaque réallocation des lignes.
 
 ## 7. Ce que Chunk2A fait autrement pendant un rechunk
 

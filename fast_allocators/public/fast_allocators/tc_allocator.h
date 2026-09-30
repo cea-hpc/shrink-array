@@ -60,32 +60,22 @@
 #include "fast_allocators/slab_arena.h"               // FIX: ArenaKind for op/ctx/value slab routing
 #include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2, for slab_of()'s effective slab geometry
 
-extern bool __debug_mem;
-
 /**
  * @brief Must this call hand out plain `new[]` memory instead of slab memory?
  *
- * @details True for the whole run under STD_ALLOC; otherwise it is whatever
- *          `__debug_mem` says, and only where that flag is read at all
- *          (alloc_config::debug_mem_observable). A release serial build folds
- *          this to a compile-time false, so the slab path keeps its
- *          branch-free shape.
+ * @details Under STD_ALLOC, for the whole run; never otherwise. A constant: an
+ *          allocator's mode cannot change after init(). (A run-time global
+ *          was read here until Sept. '26; flipped after init() it made
+ *          ElementSize wrong for the other mode -- see below -- and
+ *          STD_ALLOC already gives a memory checker individual objects.)
  *
  * @warning The two arms disagree on what ElementSize means: bypass mode counts
  *          ELEMENTS (it feeds `new ElementType[ElementSize]`), slab mode counts
- *          BYTES. init() sets it accordingly; do not mix them.
- *
- * @see alloc_config::debug_mem_observable for why `__debug_mem` is currently
- *      unusable.
+ *          BYTES. init() sets it accordingly.
  */
-[[nodiscard]] inline bool bypass_slabs() noexcept
+[[nodiscard]] constexpr bool bypass_slabs() noexcept
 {
-    if constexpr (alloc_config::use_std_alloc)
-        return true;
-    else if constexpr (alloc_config::debug_mem_observable)
-        return __debug_mem;
-    else
-        return false;
+    return alloc_config::use_std_alloc;
 }
 
 /**
@@ -198,6 +188,7 @@ class alignas(64) TCAllocator
     void  operator delete(void* ptr); ///< Counterpart of the above.
 #endif
 
+  private:
     /// @brief Return the block to the arena named by #arena_kind.
     inline void destroy();
 
@@ -222,6 +213,7 @@ class alignas(64) TCAllocator
         return slab_from(ptr, BlockAllocator);
     }
 
+  public:
     /// @brief The size this slab was cut at -- slab_bytes_for() of the request.
     [[nodiscard]] uintptr_t slab_bytes() const noexcept
     {
@@ -399,6 +391,7 @@ struct alignas(64) TCCAllocator
     void  operator delete(void* ptr); ///< Counterpart of the above.
 #endif
 
+  private:
     /// @brief Free #tab_firstFree and hand the block back to the value arena.
     inline void destroy();
 
@@ -426,6 +419,7 @@ struct alignas(64) TCCAllocator
         return *reinterpret_cast<TCCAllocator**>(const_cast<char*>(debutBlock) + BlockAllocator - sizeof(void*));
     }
 
+  public:
     /**
      * @brief Set the geometry and obtain the block.
      * @param ElementSize_ Element size in BYTES.
@@ -480,12 +474,14 @@ struct alignas(64) TCCAllocator
         return nn_ref == BlockSize;
     }
 
+  private:
     /// @brief Complement of is_full().
     [[nodiscard]] bool is_not_full() const noexcept
     {
         return nn_ref < BlockSize;
     }
 
+  public:
     char* data = nullptr; ///< The block itself, aligned on #BlockAllocator.
 
     /// @brief Free-list terminator, and the exclusive upper bound on #BlockSize.
@@ -493,17 +489,22 @@ struct alignas(64) TCCAllocator
 
     unsigned short firstFree{first_free_init}; ///< Head of the free list; #first_free_init if empty.
 
+  private:
     /// @brief Free-list links, one per element. Kept out of the payload, so an
     ///        emptied slab's pages can be dropped without losing them.
     std::vector<unsigned short> tab_firstFree;
 
-    int       nn_ref{0};           ///< Elements currently out. 0 == releasable.
-    int       UsedSize{0};         ///< Bump index: how far the linear carve reached.
-    uintptr_t BlockAllocator = 0;  ///< Block size in bytes; a power of two.
-    int       ElementSize{0};      ///< Element size in BYTES.
-    int       Log2ElementSize = 0; ///< log2(#ElementSize), for num_block_pow2().
-    int       BlockSize{0};        ///< Capacity in elements; < #first_free_init.
+  public:
+    int       nn_ref{0};          ///< Elements currently out. 0 == releasable.
+    int       UsedSize{0};        ///< Bump index: how far the linear carve reached.
+    uintptr_t BlockAllocator = 0; ///< Block size in bytes; a power of two.
+    int       ElementSize{0};     ///< Element size in BYTES.
 
+  private:
+    int Log2ElementSize = 0; ///< log2(#ElementSize), for num_block_pow2().
+    int BlockSize{0};        ///< Capacity in elements; < #first_free_init.
+
+  public:
     // for the linked list
 
     TCCAllocator* prev = nullptr; ///< Previous slab in the owner's block/block_full list.
@@ -741,14 +742,11 @@ void remove_TCTypeAllocator_inst(VTCTypeAllocator*);
 template <typename _ElementType>
 struct TCTypeAllocator final : public VTCTypeAllocator
 {
+  public:
     using ElementType = _ElementType;
 
     using TCAllocatorT = TCTypeAllocator<_ElementType>;
 
-    // FIX (op/ctx/value slab aliasing): which arena the slabs created by this
-    // allocator draw from. Propagated to every TCAllocator it news up. Default Op;
-    // the ctx pool sets Ctx via set_arena() so op and ctx never share an address.
-    fast_alloc::ArenaKind arena_kind = fast_alloc::ArenaKind::Op;
     /**
      * @brief Choose which arena this allocator's slabs are drawn from.
      * @param k Op, Ctx or Value.
@@ -763,28 +761,6 @@ struct TCTypeAllocator final : public VTCTypeAllocator
         arena_kind = k;
     }
 
-    /// @brief Rank (thread) this instance serves; stamped into every slab it
-    ///        creates (TCAllocator::owner_rank). -1 = unranked (serial pools).
-    [[nodiscard]] int rank() const noexcept
-    {
-        return rank_;
-    }
-    /// @brief Set rank(); before the first slab is created.
-    void set_rank(int rank) noexcept
-    {
-        rank_ = rank;
-    }
-    /// @brief Affinity key this instance serves (0 = shared pool of the rank);
-    ///        stamped into its slabs as owner_key.
-    [[nodiscard]] unsigned key() const noexcept
-    {
-        return key_;
-    }
-    /// @brief Set key(); before the first slab is created.
-    void set_key(unsigned k) noexcept
-    {
-        key_ = k;
-    }
     /// @brief The slab holding @p ptr, resolved from this instance's slab
     ///        geometry alone -- works even when this instance owns no slab yet
     ///        (unlike addr_to_block(), which needs a node to call).
@@ -821,46 +797,6 @@ struct TCTypeAllocator final : public VTCTypeAllocator
     TCTypeAllocator& operator=(const TCTypeAllocator&) = delete;
     TCTypeAllocator(TCTypeAllocator&&)                 = delete;
     TCTypeAllocator& operator=(TCTypeAllocator&&)      = delete;
-
-    /**
-     * @brief Delete every slab, leaving the list heads dangling.
-     * @warning Internal: it does not reset #block / #block_full. Call destroy()
-     *          unless you are about to overwrite them yourself.
-     */
-    void destroy_int()
-    {
-        // Nothing to walk when the slabs were never built: under STD_ALLOC there
-        // are no slabs at all, and under __debug_mem each element was an
-        // independent new[] that free_elt() has already deleted.
-        if constexpr (alloc_config::use_slabs)
-        {
-            if (bypass_slabs())
-                return;
-
-            TCAllocator* node = block;
-
-            while (node != nullptr)
-            {
-                TCAllocator* next = node->next;
-                delete node;
-                node = next;
-            }
-
-            node = block_full;
-
-            while (node != nullptr)
-            {
-                TCAllocator* next = node->next;
-                delete node;
-                node = next;
-            }
-
-            for (int i = 0; i < nb_block_empty; ++i)
-            {
-                delete block_empty[i];
-            }
-        }
-    }
 
     /**
      * @brief Release every slab and the reserve array, and reset to fresh state.
@@ -908,34 +844,6 @@ struct TCTypeAllocator final : public VTCTypeAllocator
         return ptr;
     }
 
-    /// @brief alloc() with no slab at hand: revive one from the reserve or
-    ///        create one. Out of line and cold -- see FAST_ALLOC_COLD.
-    FAST_ALLOC_COLD ElementType* alloc_slow()
-    {
-        if (nb_block_empty)
-        {
-            auto* slab = block_empty[--nb_block_empty];
-
-            insert(block, slab);
-
-            slab->UsedSize  = 0;
-            slab->firstFree = -1;
-
-            return static_cast<ElementType*>(slab->alloc());
-        }
-
-        auto* slab       = new TCAllocator;
-        slab->arena_kind = arena_kind; // FIX: route slab to op/ctx arena
-        slab->owner      = this;
-        slab->owner_rank = rank_;
-        slab->owner_key  = key_;
-        slab->init(ElementSize, BlockAllocator);
-
-        insert(block, slab);
-
-        return static_cast<ElementType*>(slab->alloc());
-    }
-
     /**
      * @brief Can THIS allocator free @p ptr?
      * @param ptr Pointer previously returned by some allocator's alloc().
@@ -954,65 +862,6 @@ struct TCTypeAllocator final : public VTCTypeAllocator
         if (block == nullptr && block_full == nullptr)
             return false;
         return holds_live(get_allocator(ptr));
-    }
-
-    /// @brief is_free_able_elt() for a caller that has already resolved the
-    ///        slab (slab_of()): no second resolution.
-    [[nodiscard]] bool holds_live(const TCAllocator* slab) const noexcept
-    {
-        return slab != nullptr && slab->owner == this && slab->nn_ref > 0;
-    }
-
-    /// @brief Re-file @p slab after a free. @see sl_manage_full_empty
-    void manage_full_empty(TCAllocator* slab) noexcept
-    {
-        sl_manage_full_empty(
-            block, block_full, block_empty.data(), nb_block_empty, nb_max_block_empty, slab,
-            [](TCAllocator*) noexcept {}, // op/ctx: nothing to reclaim on keep
-            [this](TCAllocator* evicted) noexcept { evict_slab(evicted); });
-    }
-
-    /// @brief Release an emptied slab the reserve has no room for. Out of
-    ///        line and cold: an fprintf and a `delete` on every free path.
-    FAST_ALLOC_COLD void evict_slab(TCAllocator* slab) noexcept
-    {
-        std::fprintf(stderr, "[MUNMAP] TCTypeAllocator delete slab p=%p nb_max_block_empty=%d\n",
-                     static_cast<void*>(slab), nb_max_block_empty);
-        std::fflush(stderr);
-        delete slab;
-    }
-
-    /**
-     * @brief The slab owning @p ptr.
-     * @pre init() has run -- #slab_bytes_ is the instance's slab geometry, so
-     *      no slab of ours is needed to resolve @p ptr.
-     */
-    [[nodiscard]] TCAllocator* get_allocator(const ElementType* ptr) const noexcept
-    {
-        return TCAllocator::slab_from(ptr, slab_bytes_);
-    }
-
-    /**
-     * @brief Take back a block obtained from alloc().
-     * @param ptr Must come from THIS allocator -- check is_free_able_elt() when
-     *        that is not certain. Freeing through a non-owning allocator
-     *        corrupts the owner's free list.
-     */
-    void free_elt(const ElementType* ptr) noexcept
-    {
-        if (bypass_slabs())
-        {
-            delete[] ptr;
-            return;
-        }
-
-        auto* slab = get_allocator(ptr);
-
-        const int i = slab->num_block(ptr);
-
-        slab->free_block(i);
-
-        manage_full_empty(slab);
     }
 
     /**
@@ -1109,9 +958,7 @@ struct TCTypeAllocator final : public VTCTypeAllocator
             insert(block, slab);
         }
 
-        // Compile-time, not bypass_slabs(): a fast build with __debug_mem set
-        // still allocates the reserve, because the flag can only be observed
-        // once the allocator is already live. STD_ALLOC never has one.
+        // STD_ALLOC has no slabs, so no reserve either.
         if constexpr (alloc_config::use_slabs)
         {
             // FIX (op/value slab aliasing): nb_max_block_empty < 0 means "never
@@ -1124,6 +971,157 @@ struct TCTypeAllocator final : public VTCTypeAllocator
         }
 
         nb_block_empty = 0;
+    }
+
+  private:
+    /// @brief Rank (thread) this instance serves; stamped into every slab it
+    ///        creates (TCAllocator::owner_rank). -1 = unranked (serial pools).
+    [[nodiscard]] int rank() const noexcept
+    {
+        return rank_;
+    }
+    /// @brief Set rank(); before the first slab is created.
+    void set_rank(int rank) noexcept
+    {
+        rank_ = rank;
+    }
+    /// @brief Affinity key this instance serves (0 = shared pool of the rank);
+    ///        stamped into its slabs as owner_key.
+    [[nodiscard]] unsigned key() const noexcept
+    {
+        return key_;
+    }
+    /// @brief Set key(); before the first slab is created.
+    void set_key(unsigned k) noexcept
+    {
+        key_ = k;
+    }
+
+    /**
+     * @brief Delete every slab, leaving the list heads dangling.
+     * @warning Internal: it does not reset #block / #block_full. Call destroy()
+     *          unless you are about to overwrite them yourself.
+     */
+    void destroy_int()
+    {
+        // Nothing to walk when the slabs were never built: under STD_ALLOC there
+        // are no slabs at all, each element was an independent new[] that
+        // free_elt() has already deleted.
+        if constexpr (alloc_config::use_slabs)
+        {
+            if (bypass_slabs())
+                return;
+
+            TCAllocator* node = block;
+
+            while (node != nullptr)
+            {
+                TCAllocator* next = node->next;
+                delete node;
+                node = next;
+            }
+
+            node = block_full;
+
+            while (node != nullptr)
+            {
+                TCAllocator* next = node->next;
+                delete node;
+                node = next;
+            }
+
+            for (int i = 0; i < nb_block_empty; ++i)
+            {
+                delete block_empty[i];
+            }
+        }
+    }
+
+    /// @brief alloc() with no slab at hand: revive one from the reserve or
+    ///        create one. Out of line and cold -- see FAST_ALLOC_COLD.
+    FAST_ALLOC_COLD ElementType* alloc_slow()
+    {
+        if (nb_block_empty)
+        {
+            auto* slab = block_empty[--nb_block_empty];
+
+            insert(block, slab);
+
+            slab->UsedSize  = 0;
+            slab->firstFree = -1;
+
+            return static_cast<ElementType*>(slab->alloc());
+        }
+
+        auto* slab       = new TCAllocator;
+        slab->arena_kind = arena_kind; // FIX: route slab to op/ctx arena
+        slab->owner      = this;
+        slab->owner_rank = rank_;
+        slab->owner_key  = key_;
+        slab->init(ElementSize, BlockAllocator);
+
+        insert(block, slab);
+
+        return static_cast<ElementType*>(slab->alloc());
+    }
+
+    /// @brief is_free_able_elt() for a caller that has already resolved the
+    ///        slab (slab_of()): no second resolution.
+    [[nodiscard]] bool holds_live(const TCAllocator* slab) const noexcept
+    {
+        return slab != nullptr && slab->owner == this && slab->nn_ref > 0;
+    }
+
+    /// @brief Re-file @p slab after a free. @see sl_manage_full_empty
+    void manage_full_empty(TCAllocator* slab) noexcept
+    {
+        sl_manage_full_empty(
+            block, block_full, block_empty.data(), nb_block_empty, nb_max_block_empty, slab,
+            [](TCAllocator*) noexcept {}, // op/ctx: nothing to reclaim on keep
+            [this](TCAllocator* evicted) noexcept { evict_slab(evicted); });
+    }
+
+    /// @brief Release an emptied slab the reserve has no room for. Out of
+    ///        line and cold: an fprintf and a `delete` on every free path.
+    FAST_ALLOC_COLD void evict_slab(TCAllocator* slab) noexcept
+    {
+        std::fprintf(stderr, "[MUNMAP] TCTypeAllocator delete slab p=%p nb_max_block_empty=%d\n",
+                     static_cast<void*>(slab), nb_max_block_empty);
+        std::fflush(stderr);
+        delete slab;
+    }
+
+    /**
+     * @brief The slab owning @p ptr.
+     * @pre init() has run -- #slab_bytes_ is the instance's slab geometry, so
+     *      no slab of ours is needed to resolve @p ptr.
+     */
+    [[nodiscard]] TCAllocator* get_allocator(const ElementType* ptr) const noexcept
+    {
+        return TCAllocator::slab_from(ptr, slab_bytes_);
+    }
+
+    /**
+     * @brief Take back a block obtained from alloc().
+     * @param ptr Must come from THIS allocator -- check is_free_able_elt() when
+     *        that is not certain. Freeing through a non-owning allocator
+     *        corrupts the owner's free list.
+     */
+    void free_elt(const ElementType* ptr) noexcept
+    {
+        if (bypass_slabs())
+        {
+            delete[] ptr;
+            return;
+        }
+
+        auto* slab = get_allocator(ptr);
+
+        const int i = slab->num_block(ptr);
+
+        slab->free_block(i);
+
+        manage_full_empty(slab);
     }
 
     /// @copydoc sl_remove
@@ -1175,6 +1173,11 @@ struct TCTypeAllocator final : public VTCTypeAllocator
         alloc_sz += s_blocks;
     }
 
+    // FIX (op/ctx/value slab aliasing): which arena the slabs created by this
+    // allocator draw from. Propagated to every TCAllocator it news up. Default Op;
+    // the ctx pool sets Ctx via set_arena() so op and ctx never share an address.
+    fast_alloc::ArenaKind arena_kind = fast_alloc::ArenaKind::Op;
+
     size_t    ElementSize;         ///< Bytes per allocation; a COUNT when bypassing.
     uintptr_t BlockAllocator = 0;  ///< Slab size in bytes, passed on to each slab.
     uintptr_t slab_bytes_    = 0;  ///< The ROUNDED slab size every slab of ours is cut at; 0 until init().
@@ -1215,10 +1218,6 @@ struct TCTypeAllocator final : public VTCTypeAllocator
  *          then belongs to another instance. Route it with is_free_able_elt()
  *          before free_elt_pow2(); freeing through a non-owning instance
  *          corrupts the owner's free list.
- *
- * @warning It also does NOT honour `__debug_mem` consistently: free_elt() reads
- *          it, alloc() and free_elt_pow2() do not.
- *          @see alloc_config::debug_mem_observable
  */
 template <typename _ElementType>
 struct TCTypeCAllocator
@@ -1244,56 +1243,6 @@ struct TCTypeCAllocator
     TCTypeCAllocator& operator=(TCTypeCAllocator&&)      = delete;
 
     /**
-     * @brief Delete every slab, leaving the list heads dangling.
-     * @warning Internal: it does not reset #block / #block_full. Call destroy()
-     *          unless you are about to overwrite them yourself.
-     */
-    void destroy_int()
-    {
-        // STD_ALLOC builds never carve a slab, so there is no list to walk.
-        if constexpr (alloc_config::use_slabs)
-        {
-            auto* node = block;
-
-            while (node != nullptr)
-            {
-                auto* next = node->next;
-                delete node;
-                node = next;
-            }
-
-            node = block_full;
-
-            while (node != nullptr)
-            {
-                auto* next = node->next;
-                delete node;
-                node = next;
-            }
-
-            for (int i = 0; i < nb_block_empty; ++i)
-            {
-                delete block_empty[i];
-            }
-        }
-    }
-
-    /**
-     * @brief Release every slab and the reserve array, and reset to fresh state.
-     * @note Unlike the destructor, leaves the object usable: init() may follow.
-     */
-    void destroy()
-    {
-        destroy_int();
-
-        decltype(block_empty)().swap(block_empty); // releases the reserve's storage
-
-        ElementSize = 0;
-        block_full = block = nullptr;
-        nb_block_empty     = 0;
-    }
-
-    /**
      * @brief Hand out room for #ElementSize elements.
      * @return Memory with unspecified contents; the caller initialises it (see
      *         TCCAllocator's @warning).
@@ -1302,9 +1251,6 @@ struct TCTypeCAllocator
      */
     [[nodiscard]] ElementType* alloc()
     {
-        // if constexpr, NOT bypass_slabs(): unlike free_elt() below, this path
-        // has never honoured __debug_mem. Keeping the asymmetry is deliberate --
-        // see alloc_config::debug_mem_observable.
         if constexpr (alloc_config::use_std_alloc)
         {
             auto* elements = new ElementType[ElementSize];
@@ -1328,52 +1274,6 @@ struct TCTypeCAllocator
         return ptr;
     }
 
-    /// @brief alloc() with no slab at hand: revive one from the reserve or
-    ///        create one. Out of line and cold -- see FAST_ALLOC_COLD.
-    FAST_ALLOC_COLD ElementType* alloc_slow()
-    {
-        if (nb_block_empty)
-        {
-            auto* slab = block_empty[--nb_block_empty];
-
-            insert(block, slab);
-
-            slab->UsedSize  = 0;
-            slab->firstFree = TCCAllocator::first_free_init;
-
-            return static_cast<ElementType*>(slab->alloc());
-        }
-
-        auto* slab       = new TCCAllocator;
-        slab->owner      = this;
-        slab->owner_rank = rank_;
-        slab->owner_key  = key_;
-        slab->init(ElementSize, BlockAllocator);
-        DBG_ASSERT(slab->BlockAllocator == slab_bytes_);
-
-        insert(block, slab);
-
-        return static_cast<ElementType*>(slab->alloc());
-    }
-
-    /**
-     * @brief Can THIS instance free @p ptr?
-     * @param ptr Pointer previously returned by some instance's alloc().
-     * @return True if @p ptr's slab is one of ours.
-     * @details The routing primitive for cross-thread frees: resolve @p ptr to
-     *          its slab through the back-pointer, then ask the slab whether we
-     *          own it and it holds a live block.
-     * @note O(1): the slab records its owner (see TCCAllocator::owner).
-     */
-    bool is_free_able_elt(const ElementType* ptr) const noexcept
-    {
-        // O(1) via the slab's owner field -- see TCAllocator::owner. A slab in
-        // block_empty has nn_ref == 0 and cannot hold a live element.
-        if (block == nullptr && block_full == nullptr)
-            return false;
-        return holds_live(get_allocator(ptr));
-    }
-
     /// @brief is_free_able_elt() for a caller that has already resolved the
     ///        slab (slab_of()): no second resolution.
     [[nodiscard]] bool holds_live(const TCCAllocator* slab) const noexcept
@@ -1381,58 +1281,6 @@ struct TCTypeCAllocator
         return slab != nullptr && slab->owner == this && slab->nn_ref > 0;
     }
 
-    /// @brief Re-file @p slab after a free. @see sl_manage_full_empty
-    void manage_full_empty(TCCAllocator* slab) noexcept
-    {
-        sl_manage_full_empty(
-            block, block_full, block_empty.data(), nb_block_empty, nb_max_block_empty, slab,
-            [](TCCAllocator* kept) noexcept
-            {
-                // NO madvise here, whatever CHUNK_RECLAIM_EMPTY_SLABS says.
-                //
-                // This lambda runs on the hot path, on every free that brings a
-                // slab to nn_ref == 0, and nn_ref is its ONLY evidence that the
-                // slab holds nothing live. That evidence is exactly what a
-                // mis-accounted block (the same buffer parked or released twice,
-                // or two threads touching one slab's counter) falsifies -- and
-                // MADV_DONTNEED turns the falsehood into destroyed data: the
-                // live block's page is dropped and reads back as zeros.
-                // Observed: shrink_bench chunk2a dyn, 32 threads, tab_ulong
-                // chunk 35342 materialised, non-constant, its whole buffer read
-                // as 0 against the reference file. Before this flag the same
-                // accounting error left the slab mapped and intact.
-                //
-                // Pages are given back only by reclaim_empty_slabs_now(), which
-                // is called on a set the caller KNOWS abandoned by construction
-                // (the (key, size) set a re-chunked array just left, an array's
-                // teardown) -- a slab with nn_ref == 0 there is empty because no
-                // block of that set can be live any more, not because a counter
-                // says so. The emptied-slab case is unchanged otherwise: the slab
-                // stays in `block`, still allocatable.
-                (void)kept;
-            },
-            [this](TCCAllocator* evicted) noexcept { evict_slab(evicted); });
-    }
-
-    /// @brief Release an emptied slab the reserve has no room for. Out of
-    ///        line and cold: an fprintf and a `delete` on every free path.
-    FAST_ALLOC_COLD void evict_slab(TCCAllocator* slab) noexcept
-    {
-        std::fprintf(stderr, "[MUNMAP] TCCAllocator delete slab p=%p nb_max_block_empty=%d\n", static_cast<void*>(slab),
-                     nb_max_block_empty);
-        std::fflush(stderr);
-        delete slab;
-    }
-
-    /**
-     * @brief The slab owning @p ptr.
-     * @pre init() has run -- #slab_bytes_ is the instance's slab geometry, so
-     *      no slab of ours is needed to resolve @p ptr.
-     */
-    TCCAllocator* get_allocator(const ElementType* ptr) const noexcept
-    {
-        return TCCAllocator::slab_from(ptr, slab_bytes_);
-    }
     /// @brief Give back the pages of every slab of this instance that currently
     ///        holds no block, and report how many were advised.
     /// @details manage_full_empty() only looks at a slab at the instant one of
@@ -1478,22 +1326,13 @@ struct TCTypeCAllocator
             return reclaimed;
         }
     }
-    /// @brief Rank this instance serves; stamped into its slabs
-    ///        (TCCAllocator::owner_rank). -1 = unranked.
-    [[nodiscard]] int rank() const noexcept
-    {
-        return rank_;
-    }
+
     /// @brief Set rank(); before the first slab is created.
     void set_rank(int rank) noexcept
     {
         rank_ = rank;
     }
-    /// @brief Affinity key this instance serves; stamped as owner_key.
-    [[nodiscard]] unsigned key() const noexcept
-    {
-        return key_;
-    }
+
     /// @brief Set key(); before the first slab is created.
     void set_key(unsigned k) noexcept
     {
@@ -1512,29 +1351,6 @@ struct TCTypeCAllocator
     }
 
     /**
-     * @brief Take back a block obtained from alloc().
-     * @param ptr Must come from THIS allocator -- check is_free_able_elt() when
-     *        that is not certain. Freeing through a non-owning allocator
-     *        corrupts the owner's free list.
-     */
-    void free_elt(const ElementType* ptr) noexcept
-    {
-        if (bypass_slabs())
-        {
-            delete[] ptr;
-            return;
-        }
-
-        auto* slab = get_allocator(ptr);
-
-        const int i = slab->num_block(ptr);
-
-        slab->free_block(i);
-
-        manage_full_empty(slab);
-    }
-
-    /**
      * @brief free_elt() for a power-of-two element size, using a shift.
      * @param ptr Must belong to THIS instance. This is the hot free path, and
      *        it does not check -- see is_free_able_elt().
@@ -1542,9 +1358,6 @@ struct TCTypeCAllocator
      */
     void free_elt_pow2(const ElementType* ptr) noexcept
     {
-        // if constexpr, NOT bypass_slabs(): the pow2 free has never read
-        // __debug_mem, and its caller drain_reuse_list_for_size() relies on it
-        // pairing with alloc(), which does not read it either.
         if constexpr (alloc_config::use_std_alloc)
         {
             delete[] ptr;
@@ -1628,6 +1441,192 @@ struct TCTypeCAllocator
         nb_block_empty = 0;
     }
 
+  private:
+    /**
+     * @brief Delete every slab, leaving the list heads dangling.
+     * @warning Internal: it does not reset #block / #block_full. Call destroy()
+     *          unless you are about to overwrite them yourself.
+     */
+    void destroy_int()
+    {
+        // STD_ALLOC builds never carve a slab, so there is no list to walk.
+        if constexpr (alloc_config::use_slabs)
+        {
+            auto* node = block;
+
+            while (node != nullptr)
+            {
+                auto* next = node->next;
+                delete node;
+                node = next;
+            }
+
+            node = block_full;
+
+            while (node != nullptr)
+            {
+                auto* next = node->next;
+                delete node;
+                node = next;
+            }
+
+            for (int i = 0; i < nb_block_empty; ++i)
+            {
+                delete block_empty[i];
+            }
+        }
+    }
+
+    /**
+     * @brief Release every slab and the reserve array, and reset to fresh state.
+     * @note Unlike the destructor, leaves the object usable: init() may follow.
+     */
+    void destroy()
+    {
+        destroy_int();
+
+        decltype(block_empty)().swap(block_empty); // releases the reserve's storage
+
+        ElementSize = 0;
+        block_full = block = nullptr;
+        nb_block_empty     = 0;
+    }
+
+    /// @brief alloc() with no slab at hand: revive one from the reserve or
+    ///        create one. Out of line and cold -- see FAST_ALLOC_COLD.
+    FAST_ALLOC_COLD ElementType* alloc_slow()
+    {
+        if (nb_block_empty)
+        {
+            auto* slab = block_empty[--nb_block_empty];
+
+            insert(block, slab);
+
+            slab->UsedSize  = 0;
+            slab->firstFree = TCCAllocator::first_free_init;
+
+            return static_cast<ElementType*>(slab->alloc());
+        }
+
+        auto* slab       = new TCCAllocator;
+        slab->owner      = this;
+        slab->owner_rank = rank_;
+        slab->owner_key  = key_;
+        slab->init(ElementSize, BlockAllocator);
+        DBG_ASSERT(slab->BlockAllocator == slab_bytes_);
+
+        insert(block, slab);
+
+        return static_cast<ElementType*>(slab->alloc());
+    }
+
+    /**
+     * @brief Can THIS instance free @p ptr?
+     * @param ptr Pointer previously returned by some instance's alloc().
+     * @return True if @p ptr's slab is one of ours.
+     * @details The routing primitive for cross-thread frees: resolve @p ptr to
+     *          its slab through the back-pointer, then ask the slab whether we
+     *          own it and it holds a live block.
+     * @note O(1): the slab records its owner (see TCCAllocator::owner).
+     */
+    bool is_free_able_elt(const ElementType* ptr) const noexcept
+    {
+        // O(1) via the slab's owner field -- see TCAllocator::owner. A slab in
+        // block_empty has nn_ref == 0 and cannot hold a live element.
+        if (block == nullptr && block_full == nullptr)
+            return false;
+        return holds_live(get_allocator(ptr));
+    }
+
+    /// @brief Re-file @p slab after a free. @see sl_manage_full_empty
+    void manage_full_empty(TCCAllocator* slab) noexcept
+    {
+        sl_manage_full_empty(
+            block, block_full, block_empty.data(), nb_block_empty, nb_max_block_empty, slab,
+            [](TCCAllocator* kept) noexcept
+            {
+                // NO madvise here, whatever CHUNK_RECLAIM_EMPTY_SLABS says.
+                //
+                // This lambda runs on the hot path, on every free that brings a
+                // slab to nn_ref == 0, and nn_ref is its ONLY evidence that the
+                // slab holds nothing live. That evidence is exactly what a
+                // mis-accounted block (the same buffer parked or released twice,
+                // or two threads touching one slab's counter) falsifies -- and
+                // MADV_DONTNEED turns the falsehood into destroyed data: the
+                // live block's page is dropped and reads back as zeros.
+                // Observed: shrink_bench chunk2a dyn, 32 threads, tab_ulong
+                // chunk 35342 materialised, non-constant, its whole buffer read
+                // as 0 against the reference file. Before this flag the same
+                // accounting error left the slab mapped and intact.
+                //
+                // Pages are given back only by reclaim_empty_slabs_now(), which
+                // is called on a set the caller KNOWS abandoned by construction
+                // (the (key, size) set a re-chunked array just left, an array's
+                // teardown) -- a slab with nn_ref == 0 there is empty because no
+                // block of that set can be live any more, not because a counter
+                // says so. The emptied-slab case is unchanged otherwise: the slab
+                // stays in `block`, still allocatable.
+                (void)kept;
+            },
+            [this](TCCAllocator* evicted) noexcept { evict_slab(evicted); });
+    }
+
+    /// @brief Release an emptied slab the reserve has no room for. Out of
+    ///        line and cold: an fprintf and a `delete` on every free path.
+    FAST_ALLOC_COLD void evict_slab(TCCAllocator* slab) noexcept
+    {
+        std::fprintf(stderr, "[MUNMAP] TCCAllocator delete slab p=%p nb_max_block_empty=%d\n", static_cast<void*>(slab),
+                     nb_max_block_empty);
+        std::fflush(stderr);
+        delete slab;
+    }
+
+    /**
+     * @brief The slab owning @p ptr.
+     * @pre init() has run -- #slab_bytes_ is the instance's slab geometry, so
+     *      no slab of ours is needed to resolve @p ptr.
+     */
+    TCCAllocator* get_allocator(const ElementType* ptr) const noexcept
+    {
+        return TCCAllocator::slab_from(ptr, slab_bytes_);
+    }
+
+    /// @brief Rank this instance serves; stamped into its slabs
+    ///        (TCCAllocator::owner_rank). -1 = unranked.
+    [[nodiscard]] int rank() const noexcept
+    {
+        return rank_;
+    }
+
+    /// @brief Affinity key this instance serves; stamped as owner_key.
+    [[nodiscard]] unsigned key() const noexcept
+    {
+        return key_;
+    }
+
+    /**
+     * @brief Take back a block obtained from alloc().
+     * @param ptr Must come from THIS allocator -- check is_free_able_elt() when
+     *        that is not certain. Freeing through a non-owning allocator
+     *        corrupts the owner's free list.
+     */
+    void free_elt(const ElementType* ptr) noexcept
+    {
+        if (bypass_slabs())
+        {
+            delete[] ptr;
+            return;
+        }
+
+        auto* slab = get_allocator(ptr);
+
+        const int i = slab->num_block(ptr);
+
+        slab->free_block(i);
+
+        manage_full_empty(slab);
+    }
+
     /// @copydoc sl_remove
     void remove(TCCAllocator*& list, TCCAllocator* node) noexcept
     {
@@ -1646,9 +1645,11 @@ struct TCTypeCAllocator
     int       rank_          = -1; ///< Rank served; stamped into slabs as owner_rank.
     unsigned  key_           = 0;  ///< Affinity key served; stamped into slabs as owner_key.
 
+  public:
     TCCAllocator* block_full{nullptr}; ///< Slabs with no room left.
     TCCAllocator* block{nullptr};      ///< Slabs with room. Null until the first alloc().
 
+  private:
     /// @brief Reserve capacity; negative = never release a slab. @see init
     int nb_max_block_empty = 0; // FIX: was unsigned; int so -1 (never-munmap) works
 
@@ -1806,12 +1807,6 @@ struct TCAllocatorEB
 
     using T = TypeFromSize<ElementSizePrev2>::Tindex;
 
-    // A free element holds the index of the next free one, in T -- a type
-    // sized from the element. The block must be addressable by it: a
-    // compile-time check (it was a runtime DBG_ASSERT, DEBUG builds only).
-    static_assert(static_cast<uintptr_t>(_BlockSize) < (uintptr_t{1} << ((sizeof(T) * 8) - 1)),
-                  "TCAllocatorEB: block too large for the element's free-list index type");
-
     /// @brief Takes its block straight away -- there is no separate init().
     TCAllocatorEB()
     {
@@ -1842,69 +1837,6 @@ struct TCAllocatorEB
     TCAllocatorEB& operator=(const TCAllocatorEB&) = delete;
     TCAllocatorEB(TCAllocatorEB&&)                 = delete;
     TCAllocatorEB& operator=(TCAllocatorEB&&)      = delete;
-
-    /**
-     * @brief Obtain the block and lay it out.
-     * @return 0, or 1 when no block could be obtained (posix_memalign failed);
-     *         the constructor aborts then.
-     * @details The block must be aligned on its own power-of-two size, because
-     *          addr_to_block() masks with #BlockAddrMask. The mmap path maps
-     *          twice the size and unmaps the unaligned head and the tail; the
-     *          posix_memalign path asks for the alignment explicitly.
-     *          A failed trimming munmap (ENOMEM once vm.max_map_count is
-     *          reached) is not a failure: the aligned block is mapped and
-     *          usable, only the surplus stays mapped. It is reported and the
-     *          block is laid out as usual.
-     */
-    int alloc_block()
-    {
-        if (!__mem_page_size)
-        {
-            __mem_page_size = getpagesize();
-        }
-
-        if (((2 * BlockSize) % __mem_page_size == 0) && __mem_page_size)
-        {
-            use_mmap = true;
-
-            const uintptr_t block_bytes = BlockSize;
-
-            char* mapping = static_cast<char*>(sctk_mmap(2 * BlockSize));
-
-            data = reinterpret_cast<char*>((reinterpret_cast<uintptr_t>(mapping) + (block_bytes - 1)) & -block_bytes);
-
-            const uintptr_t lng = reinterpret_cast<uintptr_t>(data) - reinterpret_cast<uintptr_t>(mapping);
-            if (lng != 0 && munmap(mapping, lng) == -1)
-            {
-                std::cerr << "munmap (head trim) failed: " << std::strerror(errno) << " -- surplus left mapped\n";
-            }
-            if (munmap(data + BlockSize, (2 * BlockSize) - (lng + BlockSize)) == -1)
-            {
-                std::cerr << "munmap (tail trim) failed: " << std::strerror(errno) << " -- surplus left mapped\n";
-            }
-        }
-        else
-        {
-            use_mmap    = false;
-            void* datal = nullptr;
-
-            const int result = posix_memalign(&datal, BlockSizePOT, BlockSize);
-
-            if (result != 0)
-            {
-                std::cerr << "posix_memalign failed with error code: " << result << '\n';
-                std::cerr << "Error message: " << std::strerror(result) << '\n';
-                return 1;
-            }
-            data = static_cast<char*>(datal);
-        }
-
-        *reinterpret_cast<TCAllocatorEB**>(data + UsedBlockSize) = this;
-
-        firstFree = -1;
-
-        return 0;
-    }
 
     /**
      * @brief Recover the owning slab from a pointer to any element inside it.
@@ -1996,6 +1928,71 @@ struct TCAllocatorEB
         return nn_ref == MaxElements;
     }
 
+  private:
+    /**
+     * @brief Obtain the block and lay it out.
+     * @return 0, or 1 when no block could be obtained (posix_memalign failed);
+     *         the constructor aborts then.
+     * @details The block must be aligned on its own power-of-two size, because
+     *          addr_to_block() masks with #BlockAddrMask. The mmap path maps
+     *          twice the size and unmaps the unaligned head and the tail; the
+     *          posix_memalign path asks for the alignment explicitly.
+     *          A failed trimming munmap (ENOMEM once vm.max_map_count is
+     *          reached) is not a failure: the aligned block is mapped and
+     *          usable, only the surplus stays mapped. It is reported and the
+     *          block is laid out as usual.
+     */
+    int alloc_block()
+    {
+        if (!__mem_page_size)
+        {
+            __mem_page_size = getpagesize();
+        }
+
+        if (((2 * BlockSize) % __mem_page_size == 0) && __mem_page_size)
+        {
+            use_mmap = true;
+
+            const uintptr_t block_bytes = BlockSize;
+
+            char* mapping = static_cast<char*>(sctk_mmap(2 * BlockSize));
+
+            data = reinterpret_cast<char*>((reinterpret_cast<uintptr_t>(mapping) + (block_bytes - 1)) & -block_bytes);
+
+            const uintptr_t lng = reinterpret_cast<uintptr_t>(data) - reinterpret_cast<uintptr_t>(mapping);
+            if (lng != 0 && munmap(mapping, lng) == -1)
+            {
+                std::cerr << "munmap (head trim) failed: " << std::strerror(errno) << " -- surplus left mapped\n";
+            }
+            if (munmap(data + BlockSize, (2 * BlockSize) - (lng + BlockSize)) == -1)
+            {
+                std::cerr << "munmap (tail trim) failed: " << std::strerror(errno) << " -- surplus left mapped\n";
+            }
+        }
+        else
+        {
+            use_mmap    = false;
+            void* datal = nullptr;
+
+            const int result = posix_memalign(&datal, BlockSizePOT, BlockSize);
+
+            if (result != 0)
+            {
+                std::cerr << "posix_memalign failed with error code: " << result << '\n';
+                std::cerr << "Error message: " << std::strerror(result) << '\n';
+                return 1;
+            }
+            data = static_cast<char*>(datal);
+        }
+
+        *reinterpret_cast<TCAllocatorEB**>(data + UsedBlockSize) = this;
+
+        firstFree = -1;
+
+        return 0;
+    }
+
+  public:
     char* data = nullptr; ///< The block itself, aligned on #BlockSizePOT.
     int   firstFree{-1};  ///< Head of the free list, an element index; -1 if empty.
 
@@ -2003,11 +2000,18 @@ struct TCAllocatorEB
     int UsedSize{0}; ///< Bump index: how far the linear carve has reached.
 
     // for the linked list
-
     TCAllocatorEB* prev = nullptr; ///< Previous slab in the owner's block/block_full list.
     TCAllocatorEB* next = nullptr; ///< Next slab in the owner's block/block_full list.
 
+  private:
     bool use_mmap = false; ///< Which of munmap / free the destructor must use.
+
+  public:
+    // A free element holds the index of the next free one, in T -- a type
+    // sized from the element. The block must be addressable by it: a
+    // compile-time check (it was a runtime DBG_ASSERT, DEBUG builds only).
+    static_assert(static_cast<uintptr_t>(_BlockSize) < (uintptr_t{1} << ((sizeof(T) * 8) - 1)),
+                  "TCAllocatorEB: block too large for the element's free-list index type");
 };
 
 /// @brief Common base for the compile-time-geometry allocators. Carries nothing;
@@ -2041,6 +2045,11 @@ struct TCTypeAllocatorEBC : public VTCAllocatorEB
     /// @brief The slab type this instance owns.
     using TCAllocatorEBT = TCAllocatorEB<ElementSize, BlockSize>;
 
+  private:
+    /// @brief Reserve capacity. Fixed, unlike the other families' runtime value.
+    static constexpr int nb_max_block_empty = 5;
+
+  public:
     /// @brief Creates the first slab immediately; there is no init() to call.
     TCTypeAllocatorEBC() : block_full(nullptr), block(nullptr)
     {
@@ -2124,43 +2133,6 @@ struct TCTypeAllocatorEBC : public VTCAllocatorEB
     }
 
     /**
-     * @brief Re-file @p slab after a free, EBC's own way.
-     *
-     * @details Deliberately NOT ::sl_manage_full_empty. Three differences, kept
-     *          so the concurrent cst_val2 path behaves exactly as it did:
-     *          a slab that comes back from full returns immediately instead of
-     *          also being tested for emptiness; there is no never-release branch
-     *          and no MADV_DONTNEED, the reserve being a fixed static array; and
-     *          a slab past the reserve is always deleted outright.
-     */
-    void manage_full_empty(TCAllocatorEBT* slab) noexcept
-    {
-        if (slab->was_full())
-        {
-            if (block_full)
-            {
-                remove(block_full, slab);
-                insert(block, slab);
-            }
-            return;
-        }
-
-        if (slab->is_empty())
-        {
-            if (nb_block_empty < nb_max_block_empty)
-            {
-                block_empty[nb_block_empty++] = slab;
-                remove(block, slab);
-            }
-            else
-            {
-                remove(block, slab);
-                delete slab;
-            }
-        }
-    }
-
-    /**
      * @brief Take back a pointer from alloc().
      * @param ptr Resolved to its slab through the back-pointer, so it need not
      *        have come from this instance.
@@ -2189,18 +2161,6 @@ struct TCTypeAllocatorEBC : public VTCAllocatorEB
         slab->free_block(i);
 
         manage_full_empty(slab);
-    }
-
-    /// @copydoc sl_remove
-    void remove(TCAllocatorEBT*& list, TCAllocatorEBT* node) const noexcept
-    {
-        sl_remove(list, node);
-    }
-
-    /// @copydoc sl_insert
-    void insert(TCAllocatorEBT*& list, TCAllocatorEBT* node) const noexcept
-    {
-        sl_insert(list, node);
     }
 
     /**
@@ -2245,8 +2205,55 @@ struct TCTypeAllocatorEBC : public VTCAllocatorEB
         alloc_sz += nb_blocks * size_t(BlockSize);
     }
 
-    /// @brief Reserve capacity. Fixed, unlike the other families' runtime value.
-    static constexpr int nb_max_block_empty = 5;
+  private:
+    /**
+     * @brief Re-file @p slab after a free, EBC's own way.
+     *
+     * @details Deliberately NOT ::sl_manage_full_empty. Three differences, kept
+     *          so the concurrent cst_val2 path behaves exactly as it did:
+     *          a slab that comes back from full returns immediately instead of
+     *          also being tested for emptiness; there is no never-release branch
+     *          and no MADV_DONTNEED, the reserve being a fixed static array; and
+     *          a slab past the reserve is always deleted outright.
+     */
+    void manage_full_empty(TCAllocatorEBT* slab) noexcept
+    {
+        if (slab->was_full())
+        {
+            if (block_full)
+            {
+                remove(block_full, slab);
+                insert(block, slab);
+            }
+            return;
+        }
+
+        if (slab->is_empty())
+        {
+            if (nb_block_empty < nb_max_block_empty)
+            {
+                block_empty[nb_block_empty++] = slab;
+                remove(block, slab);
+            }
+            else
+            {
+                remove(block, slab);
+                delete slab;
+            }
+        }
+    }
+
+    /// @copydoc sl_remove
+    void remove(TCAllocatorEBT*& list, TCAllocatorEBT* node) const noexcept
+    {
+        sl_remove(list, node);
+    }
+
+    /// @copydoc sl_insert
+    void insert(TCAllocatorEBT*& list, TCAllocatorEBT* node) const noexcept
+    {
+        sl_insert(list, node);
+    }
 
     TCAllocatorEBT* block_full; ///< Slabs with no room left.
     TCAllocatorEBT* block;      ///< Slabs with room. Never null: the ctor seeds one.
@@ -2272,6 +2279,7 @@ inline constexpr unsigned int SIZE_BLOCK = 1u << 20u; // 1048576
 template <typename _ElementType, unsigned int _BlockSize = SIZE_BLOCK>
 struct TCTypeAllocatorEB : public TCTypeAllocatorEBC<sizeof(_ElementType), _BlockSize>
 {
+  public:
     using ElementType = _ElementType;
 
     enum
@@ -2280,6 +2288,7 @@ struct TCTypeAllocatorEB : public TCTypeAllocatorEBC<sizeof(_ElementType), _Bloc
         BlockSize   = _BlockSize
     };
 
+  private:
     /// @brief One element's worth of raw memory, typed.
     static ElementType* alloc()
     {

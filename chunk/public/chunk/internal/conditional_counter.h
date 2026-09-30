@@ -54,8 +54,6 @@ static_assert(__chunk_size <= USHRT_MAX,
 template <bool Enabled, int Tag = 0>
 struct ConditionalCounter
 {
-    [[no_unique_address]] std::conditional_t<Enabled, counter_value_t, std::monostate> value{};
-
     /// @name The operators do nothing when disabled; the conversion reads 0.
     /// @{
     void operator++() noexcept
@@ -81,6 +79,10 @@ struct ConditionalCounter
         else
             return 0;
     }
+
+  private:
+    [[no_unique_address]] std::conditional_t<Enabled, counter_value_t, std::monostate> value{};
+
     /// @}
 };
 

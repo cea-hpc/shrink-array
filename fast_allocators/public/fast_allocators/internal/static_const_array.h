@@ -77,24 +77,22 @@
  *
  * @warning A batch that is still filling holds blocks that are free but not
  *          reusable: they belong to no bucket's free list until the flush.
+ *
+ * @warning The per-rank arrays are sized ONCE, by PMP_MAX_THREADS when the
+ *          static instances are built (before main): #nb_thr ranks. Every
+ *          method indexes by rank unchecked, so callers must bound it:
+ *          freeBlock() / freeBlockAlign() do not batch a rank >= #nb_thr
+ *          (a team grown later) and free its blocks at once instead.
  */
 struct InfoFreeElt
 {
+  private:
     /// @brief Batch capacity, in blocks. The other bound is 4 MiB of payload.
     static constexpr int max_free_elt = 10000;
 
+  public:
     using IntMaxFreeElt  = std::array<int, max_free_elt>;
     using VoidMaxFreeElt = void* [max_free_elt];
-
-    VoidMaxFreeElt* tab_ptr{nullptr};
-    IntMaxFreeElt*  tab_sz{nullptr};
-
-    int* somme_sz{nullptr};
-    int* compt{nullptr};
-
-    /// @brief Ranks the four arrays were sized for (PMP_MAX_THREADS at
-    ///        construction); 0 in a serial build, which allocates nothing.
-    int nb_thr = 0;
 
     /**
      * @brief Record one freed block, if the batch still has room.
@@ -149,6 +147,19 @@ struct InfoFreeElt
     InfoFreeElt& operator=(const InfoFreeElt&) = delete;
     InfoFreeElt(InfoFreeElt&&)                 = delete;
     InfoFreeElt& operator=(InfoFreeElt&&)      = delete;
+
+    VoidMaxFreeElt* tab_ptr{nullptr};
+    IntMaxFreeElt*  tab_sz{nullptr};
+
+  private:
+    int* somme_sz{nullptr};
+
+  public:
+    int* compt{nullptr};
+
+    /// @brief Ranks the four arrays were sized for (PMP_MAX_THREADS at
+    ///        construction); 0 in a serial build, which allocates nothing.
+    int nb_thr = 0;
 };
 
 /**
@@ -224,9 +235,11 @@ class StaticConstArray
     ///          InfoFreeElt::reset() or the same blocks are freed twice.
     static void clearInfoFreeElt(int thr_rank);
 
+  private:
     /// @brief clearInfoFreeElt() for the aligned ladder. Same warning.
     static void clearInfoFreeEltAlign(int thr_rank);
 
+  public:
     /// @brief Flush every thread's batch, both ladders, and reset them.
     /// @warning Quiescent point only: no rank may be freeing meanwhile, since
     ///          this runs without the overflow path's `omp critical`. Called
@@ -235,6 +248,7 @@ class StaticConstArray
     ///          it.
     static void clearInfoFreeElt();
 
+  private:
     static InfoFreeElt tab_info_free_elt;       ///< Batches for the plain ladder.
     static InfoFreeElt tab_info_free_elt_align; ///< Batches for the aligned one.
 
@@ -254,7 +268,7 @@ class StaticConstArray
     /// @brief freeBlockWithInt() over the aligned ladder.
     static void freeBlockWithAlignInt(int sz, void* ptr);
 
-  public:
+  protected:
     /**
      * @brief Take a block of at least @p sz bytes from the ladder.
      * @param sz Requested size in bytes.
@@ -265,9 +279,11 @@ class StaticConstArray
      */
     static void* getBlockAlloc(unsigned int sz);
 
+  private:
     /// @brief getBlockAlloc() over the aligned ladder. Same null convention.
     static void* getBlockAllocAlign(int sz);
 
+  protected:
     /**
      * @brief Give a block back to the ladder.
      * @param sz The size it was requested with.
@@ -279,6 +295,7 @@ class StaticConstArray
      */
     static bool freeBlock(int sz, void* ptr);
 
+  private:
     /// @brief freeBlock() over the aligned ladder. Same bool convention.
     static bool freeBlockAlign(int sz, void* ptr);
 
@@ -304,6 +321,7 @@ extern TCTypeAllocatorEBC<24, SIZE_BLOCK> Allocator24;
  */
 struct BlkAllocator : public StaticConstArray
 {
+  private:
     /// @brief A block of @p size bytes, from the ladder or from malloc.
     static void* alloc_block(size_t size)
     {

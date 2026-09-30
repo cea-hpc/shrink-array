@@ -35,10 +35,14 @@ struct ChunkDef
     // rejected CHUNK_SIZE=512.)
     constexpr static int size_max = 65535;
 
+  private:
     constexpr static int nb_max_compress_value = 2;
 
+  public:
     constexpr static int size_min_list_chunk_to_check_compress = 100;
     constexpr static int factor_div_nb_chunk_for_compress      = 100;
     constexpr static int size_min_buffer_reuse                 = 100;
-    constexpr static int factor_div_nb_chunk_for_buffer_reuse  = 100;
+
+  private:
+    constexpr static int factor_div_nb_chunk_for_buffer_reuse = 100;
 };

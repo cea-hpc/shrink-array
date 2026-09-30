@@ -103,8 +103,6 @@ struct PointerMapChunk2InfArrayPolicy
 
   protected:
     using MapType0 = ValueToInfTupleMapHelper<T>::type;
-    /// Map from a second value to its registered inf_array tuple pointer.
-    MapType0 map_inf_array;
 
   public:
     /**
@@ -121,16 +119,6 @@ struct PointerMapChunk2InfArrayPolicy
         }
 
         return values;
-    }
-
-    /**
-     * @brief Register the inf_array tuple pointer for a second value.
-     * @param key Second value to register.
-     * @param ind inf_array tuple pointer to associate with @p key.
-     */
-    void insert(in_t<T> key, inf_array_t* ind)
-    {
-        map_inf_array[key] = ind;
     }
 
     /**
@@ -173,6 +161,20 @@ struct PointerMapChunk2InfArrayPolicy
                 ++it;
         }
     }
+
+  protected:
+    /**
+     * @brief Register the inf_array tuple pointer for a second value.
+     * @param key Second value to register.
+     * @param ind inf_array tuple pointer to associate with @p key.
+     */
+    void insert(in_t<T> key, inf_array_t* ind)
+    {
+        map_inf_array[key] = ind;
+    }
+
+    /// Map from a second value to its registered inf_array tuple pointer.
+    MapType0 map_inf_array;
 };
 
 /**
@@ -192,12 +194,16 @@ struct PointerMapChunk2InfArrayPolicy<T, false>
     {
         return {};
     }
-    void                       insert(in_t<T>, inf_array_t*) {}
+
     [[nodiscard]] inf_array_t* find_inf_array(in_t<T>) const
     {
         return nullptr;
     }
     void erase_inf_array_by_ptr(const inf_array_t*) {}
+
+  protected:
+    void insert(in_t<T>, inf_array_t*) {}
+
     /// @}
 };
 
@@ -212,7 +218,6 @@ class PointerMapChunk2
     : public PointerMapLinear<std::tuple<T, int, int>, std::deque<std::pair<const void*, std::tuple<T, int, int>>>>,
       public PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>
 {
-  private:
     /// Internal alias for tuple representing a value with index and table number.
     using inf_array_t = std::tuple<T, int, int>;
 
@@ -241,49 +246,11 @@ class PointerMapChunk2
     // concurrent reader keeps seeing valid data. (Only ITERATORS can be
     // invalidated, not references to elements -- and the traversals below
     // capture size() first, then index stable slots.)
-
-
     using MapType  = ValueToIntMapHelper<T>::type;
     using MapType0 = ValueToInfTupleMapHelper<T>::type;
 
-    /// Map from values to constant index values.
-    MapType map_ind_cst_val2;
-
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
-
-    // Check-build diagnostic (from the ARM lookup crash) — dump full context at a failed key lookup.
-    // The key is an array's `this`, inserted once at setup (before any parallel
-    // region), so a miss means either (a) a GARBAGE key was passed — the same
-    // corruption that SEGVs in release, now a clean INVARIANT_FAILED — or (b) a
-    // VALID key genuinely vanished — the container itself was raced/corrupted.
-    // Printing the searched key alongside every stored (key, num_tab) lets us
-    // tell (a) from (b) at a glance: is the bad key a near-miss / freed-block
-    // pattern, or a plausible-but-absent array pointer?
-    /// @brief Check-only: dump the searched @p key and every stored
-    ///        (key, num_tab) on stderr before a lookup from @p site fails.
-    void report_key_not_found(const void* key, const char* site) const noexcept
-    {
-        if constexpr (build_config::any_check)
-        {
-            // -1 means "outside any parallel region"; CHUNK_PMP_* already
-            // folds to that in a serial build.
-            const int    rank  = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
-            const size_t count = vec.size();
-
-            std::fprintf(stderr,
-                         "[share_info %s] KEY NOT FOUND: this=%p rank=%d searched_key=%p "
-                         "vec.size=%zu\n  valid keys:",
-                         site, static_cast<const void*>(this), rank, key, count);
-            // Bound the dump so a corrupt size can't run away.
-            const size_t lim = (count > 64u) ? 64u : count;
-            for (size_t i = 0; i < lim; ++i)
-                std::fprintf(stderr, " [%p num_tab=%d]", static_cast<const void*>(vec[i].first),
-                             std::get<2>(vec[i].second));
-            std::fprintf(stderr, "%s\n", (count > lim) ? " …(truncated)" : "");
-            std::fflush(stderr);
-        }
-    }
 
   public:
     /// @brief Keep the policy's insert() overload visible: this class declares
@@ -348,18 +315,6 @@ class PointerMapChunk2
                          static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
     }
 
-    /**
-     * @brief Inserts a tuple (value, index, table number) for a given key.
-     *
-     * @param key Pointer key used as identifier.
-     * @param val Value to store.
-     * @param ind Index associated with the value.
-     * @param num_tab Table number where the value belongs.
-     */
-    void insert(void* key, T val, int ind, int num_tab)
-    {
-        vec.emplace_back(key, std::make_tuple(val, ind, num_tab));
-    }
     /// @brief Record that second value @p key sits at index @p ind of the
     ///        shared value table.
     void insert_map_ind_cst_val2(in_t<T> key, int ind)
@@ -518,6 +473,55 @@ class PointerMapChunk2
         }
     }
 
+  private:
+    // Check-build diagnostic (from the ARM lookup crash) — dump full context at a failed key lookup.
+    // The key is an array's `this`, inserted once at setup (before any parallel
+    // region), so a miss means either (a) a GARBAGE key was passed — the same
+    // corruption that SEGVs in release, now a clean INVARIANT_FAILED — or (b) a
+    // VALID key genuinely vanished — the container itself was raced/corrupted.
+    // Printing the searched key alongside every stored (key, num_tab) lets us
+    // tell (a) from (b) at a glance: is the bad key a near-miss / freed-block
+    // pattern, or a plausible-but-absent array pointer?
+    /// @brief Check-only: dump the searched @p key and every stored
+    ///        (key, num_tab) on stderr before a lookup from @p site fails.
+    void report_key_not_found(const void* key, const char* site) const noexcept
+    {
+        if constexpr (build_config::any_check)
+        {
+            // -1 means "outside any parallel region"; CHUNK_PMP_* already
+            // folds to that in a serial build.
+            const int    rank  = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
+            const size_t count = vec.size();
+
+            std::fprintf(stderr,
+                         "[share_info %s] KEY NOT FOUND: this=%p rank=%d searched_key=%p "
+                         "vec.size=%zu\n  valid keys:",
+                         site, static_cast<const void*>(this), rank, key, count);
+            // Bound the dump so a corrupt size can't run away.
+            const size_t lim = (count > 64u) ? 64u : count;
+            for (size_t i = 0; i < lim; ++i)
+                std::fprintf(stderr, " [%p num_tab=%d]", static_cast<const void*>(vec[i].first),
+                             std::get<2>(vec[i].second));
+            std::fprintf(stderr, "%s\n", (count > lim) ? " …(truncated)" : "");
+            std::fflush(stderr);
+        }
+    }
+
+    /**
+     * @brief Inserts a tuple (value, index, table number) for a given key.
+     *
+     * @param key Pointer key used as identifier.
+     * @param val Value to store.
+     * @param ind Index associated with the value.
+     * @param num_tab Table number where the value belongs.
+     */
+    void insert(void* key, T val, int ind, int num_tab)
+    {
+        vec.emplace_back(key, std::make_tuple(val, ind, num_tab));
+    }
+
+    /// Map from values to constant index values.
+    MapType map_ind_cst_val2;
 
     // erase(), swap_entries(), exists(), size() and for_each_key() come from
     // PointerMapLinear: they were the same traversals as in PointerMapChunk.
