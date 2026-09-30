@@ -60,32 +60,22 @@
 #include "fast_allocators/slab_arena.h"               // FIX: ArenaKind for op/ctx/value slab routing
 #include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2, for slab_of()'s effective slab geometry
 
-extern bool __debug_mem;
-
 /**
  * @brief Must this call hand out plain `new[]` memory instead of slab memory?
  *
- * @details True for the whole run under STD_ALLOC; otherwise it is whatever
- *          `__debug_mem` says, and only where that flag is read at all
- *          (alloc_config::debug_mem_observable). A release serial build folds
- *          this to a compile-time false, so the slab path keeps its
- *          branch-free shape.
+ * @details Under STD_ALLOC, for the whole run; never otherwise. A constant: an
+ *          allocator's mode cannot change after init(). (A run-time global
+ *          was read here until Sept. '26; flipped after init() it made
+ *          ElementSize wrong for the other mode -- see below -- and
+ *          STD_ALLOC already gives a memory checker individual objects.)
  *
  * @warning The two arms disagree on what ElementSize means: bypass mode counts
  *          ELEMENTS (it feeds `new ElementType[ElementSize]`), slab mode counts
- *          BYTES. init() sets it accordingly; do not mix them.
- *
- * @see alloc_config::debug_mem_observable for why `__debug_mem` is currently
- *      unusable.
+ *          BYTES. init() sets it accordingly.
  */
-[[nodiscard]] inline bool bypass_slabs() noexcept
+[[nodiscard]] constexpr bool bypass_slabs() noexcept
 {
-    if constexpr (alloc_config::use_std_alloc)
-        return true;
-    else if constexpr (alloc_config::debug_mem_observable)
-        return __debug_mem;
-    else
-        return false;
+    return alloc_config::use_std_alloc;
 }
 
 /**
@@ -848,8 +838,8 @@ struct TCTypeAllocator final : public VTCTypeAllocator
     void destroy_int()
     {
         // Nothing to walk when the slabs were never built: under STD_ALLOC there
-        // are no slabs at all, and under __debug_mem each element was an
-        // independent new[] that free_elt() has already deleted.
+        // are no slabs at all, each element was an independent new[] that
+        // free_elt() has already deleted.
         if constexpr (alloc_config::use_slabs)
         {
             if (bypass_slabs())
@@ -1132,9 +1122,7 @@ struct TCTypeAllocator final : public VTCTypeAllocator
             insert(block, slab);
         }
 
-        // Compile-time, not bypass_slabs(): a fast build with __debug_mem set
-        // still allocates the reserve, because the flag can only be observed
-        // once the allocator is already live. STD_ALLOC never has one.
+        // STD_ALLOC has no slabs, so no reserve either.
         if constexpr (alloc_config::use_slabs)
         {
             // FIX (op/value slab aliasing): nb_max_block_empty < 0 means "never
@@ -1239,10 +1227,6 @@ struct TCTypeAllocator final : public VTCTypeAllocator
  *          then belongs to another instance. Route it with is_free_able_elt()
  *          before free_elt_pow2(); freeing through a non-owning instance
  *          corrupts the owner's free list.
- *
- * @warning It also does NOT honour `__debug_mem` consistently: free_elt() reads
- *          it, alloc() and free_elt_pow2() do not.
- *          @see alloc_config::debug_mem_observable
  */
 template <typename _ElementType>
 struct TCTypeCAllocator
@@ -1328,9 +1312,6 @@ struct TCTypeCAllocator
      */
     [[nodiscard]] ElementType* alloc()
     {
-        // if constexpr, NOT bypass_slabs(): unlike free_elt() below, this path
-        // has never honoured __debug_mem. Keeping the asymmetry is deliberate --
-        // see alloc_config::debug_mem_observable.
         if constexpr (alloc_config::use_std_alloc)
         {
             auto* elements = new ElementType[ElementSize];
@@ -1583,9 +1564,6 @@ struct TCTypeCAllocator
      */
     void free_elt_pow2(const ElementType* ptr) noexcept
     {
-        // if constexpr, NOT bypass_slabs(): the pow2 free has never read
-        // __debug_mem, and its caller drain_reuse_list_for_size() relies on it
-        // pairing with alloc(), which does not read it either.
         if constexpr (alloc_config::use_std_alloc)
         {
             delete[] ptr;

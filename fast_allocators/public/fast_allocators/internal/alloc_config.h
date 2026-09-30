@@ -128,27 +128,6 @@ inline std::size_t reclaim_min_empty_slabs() noexcept
     return min_slabs;
 }
 
-/**
- * @brief Is the `__debug_mem` global consulted at run time?
- *
- * @details `__debug_mem` routes every allocation through plain `new[]`/`free`
- *          so a memory checker sees individual objects rather than one slab.
- *          Reading it costs a branch on the hot path, so release serial builds
- *          do not read it at all and behave as if it were false.
- *
- * @warning Nothing in this repository ever assigns `__debug_mem`; it is
- *          declared `extern` and initialised to false, so it is reachable only
- *          by a translation unit outside the library. StaticConstArray honours
- *          it symmetrically on both ladders (getBlockAlloc / freeBlock and the
- *          aligned pair; getBlockAlloc ignored it until Sept. '26, so a free
- *          could int_free() a slab block), but
- *          TCTypeCAllocator does NOT: its free_elt() honours it while its
- *          alloc() ignores it, so setting the flag on an already-populated
- *          allocator would `delete[]` a pointer that was carved out of a slab.
- *          Treat the flag as unusable in its current state.
- */
-inline constexpr bool debug_mem_observable = is_debug || use_openmp;
-
 /// @brief int_alloc / int_free go through the aligned allocation (ALLOC_ALIGN).
 inline constexpr bool alloc_align =
 #ifdef ALLOC_ALIGN
