@@ -779,7 +779,13 @@ void ArrayChunk2<T, ind_type>::clear_core()
     // The candidate flags (one byte per chunk): released HERE, after the
     // purge (clear_is_int() above runs before it and must stay a no-op) and
     // after the chunks -- a re-chunk's old storage dies under its own num_tab.
-    Proxy2<T>::release_tab_is_int(this->num_tab);
+    // From the REGISTRY, like clear_is_int() above: ArrayChunk2 never sets
+    // the base member num_tab (it stays 0), so releasing this->num_tab freed
+    // row 0 -- another live array's, when the first array of this type was
+    // not the one torn down (shrink_bench chunk2_dyn: tab_mask's re-chunk
+    // emptied tab_bool_bits' row, and its next write faulted).
+    if constexpr (chunk_config::use_fast_block_compression)
+        Proxy2<T>::release_tab_is_int(Proxy2<T>::share_info_array.get_num_tab(this->registry_key()));
 }
 
 template <ArrayChunkElement T, typename ind_type>

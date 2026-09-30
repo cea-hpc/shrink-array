@@ -316,8 +316,11 @@ int check_coexistence(const char* label, long N, unsigned moved_size, int rounds
     const std::string lab_s = pass_label(label);
     label                   = lab_s.c_str();
 
-    Arr moved(static_cast<int>(N)); // will be re-chunked
+    // `fixed` first: it takes the lower registry index (num_tab), so a re-chunk
+    // of `moved` whose teardown released the wrong row of the per-type flag
+    // table would pull it from under `fixed` -- the writes below then fault.
     Arr fixed(static_cast<int>(N)); // stays at the ambient geometry
+    Arr moved(static_cast<int>(N)); // will be re-chunked
 
     for_each_index(N,
                    [&](long i)
