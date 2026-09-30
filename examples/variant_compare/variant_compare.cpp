@@ -60,7 +60,9 @@
  *          end (twice the memory: small N only).
  *
  *          Printed: time per pass (summed over the iterations) and in total,
- *          the chunks compressed at the end, VmRSS and VmHWM, the checksum.
+ *          the chunks compressed at the end, the exact resident size
+ *          (smaps_rollup: VmRSS trails reality at 64 threads) at the end
+ *          and its peak over the iteration ends, the checksum.
  *          Compare two runs at the same N, iterations, K and thread count;
  *          at --constants 1 the compressed fraction must agree (to 0.1 point)
  *          for the times to mean anything.
@@ -72,8 +74,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
-#include <fstream>
 #include <string>
 #include <type_traits>
 #include <utility> // std::as_const
@@ -89,6 +89,7 @@
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"
 #include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
+#include "chunk/internal/exact_rss.h" // exact_rss_kib (smaps_rollup)
 
 int __mem_page_size = 0;
 
@@ -164,17 +165,6 @@ static double plain(long i, int iter)
     return static_cast<double>((i * 7 + iter) % 13) * 0.5;
 }
 
-static long rss_kib(const char* field)
-{
-    std::ifstream f("/proc/self/status");
-    std::string   line;
-    const auto    len = std::strlen(field);
-    while (std::getline(f, line))
-        if (line.compare(0, len, field) == 0)
-            return std::atol(line.c_str() + len);
-    return -1;
-}
-
 int main(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
@@ -228,6 +218,9 @@ int main(int argc, char** argv)
     double checksum = 0.;
     const int n = static_cast<int>(N);
 
+    // Exact RSS at each iteration end, outside the timed passes (a read
+    // walks the page tables). A peak inside a pass is not seen.
+    long rss_peak_kib = 0;
     for (int it = 0; it < iters; ++it)
     {
         // const: the constant chunks
@@ -287,6 +280,9 @@ int main(int argc, char** argv)
         end_phase(a);
         t_rmw += secs(t0);
 
+        const long rss_it = shrink_array::exact_rss_kib();
+        rss_peak_kib      = rss_it > rss_peak_kib ? rss_it : rss_peak_kib;
+
         if (verify)
             for (long i = 0; i < N; ++i)
             {
@@ -307,7 +303,8 @@ int main(int argc, char** argv)
                 t_read, t_rmw, total);
     std::printf("compressed  %ld / %ld chunks (%.2f %%)\n", compressed, nchunks,
                 100. * static_cast<double>(compressed) / static_cast<double>(nchunks));
-    std::printf("memory      VmRSS %ld MiB | VmHWM %ld MiB\n", rss_kib("VmRSS:") >> 10, rss_kib("VmHWM:") >> 10);
+    std::printf("memory      RSS %ld MiB at the end | peak %ld MiB over the iteration ends (exact)\n",
+                shrink_array::exact_rss_kib() >> 10, rss_peak_kib >> 10);
     std::printf("checksum    %.1f\n", checksum);
 
     int bad = 0;
