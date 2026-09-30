@@ -198,7 +198,8 @@ int main(int argc, char** argv)
         return 2;
     }
 
-    const long S = static_cast<long>(Array<double>(1).chunk_size());
+    // Read off an EMPTY array: no chunk, no end-of-run stats line of its own.
+    const long S = static_cast<long>(Array<double>(0).chunk_size());
     N            = (N + S - 1) / S * S;
     const long nchunks = N / S;
 
