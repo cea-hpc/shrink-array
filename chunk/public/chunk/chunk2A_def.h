@@ -19,6 +19,7 @@
 /// @brief Compile-time settings of Chunk2A: CHUNK_SIZE bound, compression-list and buffer-reuse thresholds.
 struct Chunk2ADef
 {
+  private:
     // Upper bound on CHUNK_SIZE. This is NOT the chunk geometry (use
     // shrink_array::__chunk_size for that); it is only a sanity bound for the
     // example/config validation. The real hard limit is the per-chunk counter
@@ -27,6 +28,8 @@ struct Chunk2ADef
     // stale value that predates the constexpr-geometry refactor and wrongly
     // rejected CHUNK_SIZE=512.)
     constexpr static int size_max = 65535;
+
+  public:
     // --- Compression List Settings ---
     // The compression pass (make_block_compression -> start()) runs only once
     // the per-thread "to compress" list grows past szm/2, where szm derives
@@ -49,8 +52,11 @@ struct Chunk2ADef
 #ifndef CHUNK2A_COMPRESS_LEVEL
     #define CHUNK2A_COMPRESS_LEVEL 0
 #endif
+
+  private:
     constexpr static int compress_level = CHUNK2A_COMPRESS_LEVEL;
 
+  public:
     constexpr static int size_min_list_chunk_to_check_compress = (compress_level == 1)   ? 2
                                                                  : (compress_level == 2) ? 1000
                                                                  : (compress_level == 3) ? 2000
@@ -61,10 +67,15 @@ struct Chunk2ADef
                                                             : (compress_level == 3) ? 20
                                                                                     : 50;
 
+  private:
     constexpr static int nb_max_compress_value = 256;
 
-    constexpr static int size_min_buffer_reuse                = 500;
+  public:
+    constexpr static int size_min_buffer_reuse = 500;
+
+  private:
     constexpr static int factor_div_nb_chunk_for_buffer_reuse = 100;
 
+  public:
     constexpr static int factor_div_somme_chunk_buffer_resuse = 50;
 };

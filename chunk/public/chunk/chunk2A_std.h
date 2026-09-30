@@ -77,8 +77,10 @@ class ManagerChunk;
 template <typename T, typename Derived>
 struct Chunk2AConcurrentOps
 {
-    using Base                        = Chunk2Base<T, Derived>;
-    using Holder                      = TabCstVal2Holder<T>;
+    using Base   = Chunk2Base<T, Derived>;
+    using Holder = TabCstVal2Holder<T>;
+
+  private:
     static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
 
     /// @brief `this` as a pointer to the derived class.
@@ -109,6 +111,7 @@ struct Chunk2AConcurrentOps
         return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(self()) >> 4U);
     }
 
+  public:
     /// @brief Publish @p values_loc as this chunk's buffer, expecting the
     ///        chunk to still be compressed to the constant the caller saw
     ///        (@p expected_is_cst_val2: the second value, else the first).
@@ -225,8 +228,10 @@ struct Chunk2AConcurrentOps
 template <typename T, typename Derived>
 struct Chunk2AStateQueries
 {
-    using Base                        = Chunk2Base<T, Derived>;
-    using Holder                      = TabCstVal2Holder<T>;
+    using Base   = Chunk2Base<T, Derived>;
+    using Holder = TabCstVal2Holder<T>;
+
+  private:
     static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
 
     [[nodiscard]] const Derived* self() const noexcept
@@ -242,6 +247,7 @@ struct Chunk2AStateQueries
         return static_cast<const Holder*>(self());
     }
 
+  public:
     /// @brief Is the chunk compressed to a second value (its values pointer
     ///        lies in the second-value region; for bool, IS the flag block)?
     [[nodiscard]] bool is_cst_val2() const noexcept
@@ -253,12 +259,14 @@ struct Chunk2AStateQueries
             return current_value == Holder::m_ptr.data();
     }
 
+  private:
     /// @brief Complement of is_cst_val2().
     [[nodiscard]] bool is_not_cst_val2() const noexcept
     {
         return !is_cst_val2();
     }
 
+  public:
     /// @brief is_cst_val2() asked of a pointer the caller already loaded.
     /// @details element_at() must test and read the SAME load: asking the chunk
     ///          loads `values` a second time, and a compressor claiming it in
@@ -294,6 +302,7 @@ struct Chunk2AStateQueries
             return true;
     }
 
+  private:
     /// @brief second_value_from_ptr() on this chunk's own values pointer.
     /// @pre is_cst_val2().
     [[nodiscard]] T second_value_of_chunk() const noexcept
@@ -304,6 +313,7 @@ struct Chunk2AStateQueries
             return true; // bool: the second value is the only other one
     }
 
+  public:
     /**
      * @brief Give this chunk a real buffer, because a caller needs an address.
      *
@@ -393,6 +403,8 @@ struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurren
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
     void operator delete[](void* ptr);
+
+  private:
     /// @brief Point @p count freshly allocated chunks at the first constant.
     /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
     ///          parallel region (inside one it stays on the calling thread: an
@@ -401,6 +413,7 @@ struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurren
     ///          variants -- chunk_array_new::init_chunks.
     static void init_chunks_cst_val(Chunk2A<T>* v, std::size_t count) noexcept;
 
+  public:
     /*!
      * \brief Materialise this chunk's buffer (allocate + fill + CAS-publish),
      *        for a specific thread. Non-bool only.
@@ -546,6 +559,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     friend class Proxy2A<T>;
 
   public:
+
     // Statistics variant tag (CHUNK_STATS): 2 = chunk2a.
     static constexpr int stat_variant = 2;
 
@@ -560,12 +574,14 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
 
     using tab_cst_val2_holder = TabCstVal2Holder<T>;
 
+  private:
     static constexpr char is_val1 = 0;
     static constexpr char is_val2 = 1;
 
     static constexpr bool is_bool     = std::is_same_v<T, bool>;
     static constexpr bool is_not_bool = !is_bool;
 
+  public:
     Chunk2A()  = default;
     ~Chunk2A() = default;
 
@@ -661,7 +677,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
   private:
     inline static manager_chunk2A s_manager_{};
 
-  public:
+  private:
     /// @brief Is every rank's candidate list empty (the calling thread's, in a
     ///        serial build)?
     [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept
@@ -676,6 +692,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
         }
     }
 
+  public:
     /// @brief Rank @p thr's candidate list.
     static TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially_thr(int thr) noexcept
     {
@@ -692,8 +709,10 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     using OmpPolicy::create_value;
     using OmpPolicy::create_value_bool;
 
+  private:
     static void compress_chunk_to_compress_in_par(int thr, bool apply);
 
+  public:
     /// @brief Materialise this chunk if it is currently compressed to either
     ///        constant; a no-op otherwise (already materialised).
     /// @param ptr_second_value The second value to fill from, when that is
@@ -740,6 +759,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
         }
     }
 
+  private:
     // Chunk geometry is PER ENTRY in dynamic builds: every tuple queued into
     // chunk2A_to_compress_potentially carries the owning array's chunk size
     // (push_to_compress_list stores this->chunk_size() as field <3>). The scan
@@ -762,6 +782,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
                                ChunkElems                size,
                                bool                      claimed = false);
 
+  public:
     void compress(int thr_rank, int num_chunk, int num_tab, bool apply, ChunkElems size);
 
     static void compress_chunk_to_compress(bool apply);

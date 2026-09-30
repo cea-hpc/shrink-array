@@ -213,7 +213,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     template <bool, typename>
     friend struct ParamChunkDynInterface;
 
-  public:
+  private:
     /**
      * @brief No-op compatibility shim for the former runtime chunk-size setter.
      *
@@ -274,6 +274,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
         return __decalage_chunk;
     }
 
+  public:
     /**
      * @brief Check that a candidate chunk size is a power of two.
      *
@@ -290,6 +291,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
         return is_power_of_tow(chunk_size);
     }
 
+  private:
     /**
      * @brief No-op compatibility shim: the mask is derived from CHUNK_SIZE.
      *
@@ -312,6 +314,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
         return __modulo_chunk;
     }
 
+  public:
     /**
      * @brief Print the chunk geometry (size, shift, mask) on stdout.
      *
@@ -421,6 +424,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     template <typename T>
     static void set_second_value(T second_value) = delete;
 
+  private:
     /**
      * @brief Set the allocation block size, in bytes.
      * @param bz block size; normally computed by init_indexes()
@@ -436,6 +440,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
         return block_size;
     }
 
+  public:
     /**
      * @brief Print the instrumentation report accumulated during the run.
      *

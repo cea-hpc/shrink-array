@@ -201,6 +201,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     // byte-identical duplicate of mark_chunk_dirty plus a caller-less
     // mark_chunk_safe; both removed, one owner per protocol).
 
+  private:
     /// @brief Is the chunk holding element @p i compressed to the first value?
     [[nodiscard]] bool is_cst_val1(ind_type i) const noexcept
     {

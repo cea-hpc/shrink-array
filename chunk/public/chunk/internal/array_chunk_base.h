@@ -288,6 +288,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         return m_size == 0;
     }
 
+  private:
     /**
      * @brief Debug helper: physical address backing element @p i, if any.
      * @param i global element index (unchecked)
@@ -299,6 +300,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         return chunk_list[chunk_index_of(i)].print_adr(offset_in_chunk(i));
     }
 
+  public:
     /**
      * @brief Creation steps common to every variant, run from the derived constructors.
      * @details Resets the chunk counter, re-arms the NaN checker, calls the
@@ -306,6 +308,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          for this array's identity.
      */
     void create_common();
+
+  private:
     /**
      * @brief Is chunk @p j materialised?
      * @details Routes to Derived::chunk_written(j) when it exists (ArrayChunk2,
@@ -316,6 +320,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @see has_chunk_written_v
      */
     [[nodiscard]] bool is_written_at(int j) const noexcept;
+
+  public:
     /**
      * @brief Count the number of chunks that have been modified (written).
      * Uses multi-threading if not already in a parallel region.
@@ -324,11 +330,14 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     [[nodiscard]] int get_nb_chunk_written() const;
 
+  private:
     /**
      * @brief Sequential counterpart of get_nb_chunk_written().
      * @return Total number of non-constant chunks, counted on one thread.
      */
     [[nodiscard]] int get_nb_chunk_written_seq() const;
+
+  public:
     /**
      * @brief Calculate the filling rate of written chunks.
      * @return Percentage of modified chunks.
@@ -641,6 +650,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @{
      */
 
+  private:
     /**
      * @brief Largest index the container can address.
      * @return max of the (signed) index type — the addressable range is bounded
@@ -648,6 +658,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      */
     [[nodiscard]] size_type max_size() const noexcept;
 
+  public:
     /**
      * @brief Checked read access.
      * @param i global element index
@@ -790,7 +801,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         derived().swap_identity(other);
     }
 
-  public:
+  private:
     /**
      * @brief Centralized synchronization logic.
      * @param chunk_t Reference to the actual chunk for OMP checks.
@@ -853,6 +864,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     {
         return (*this)(i);
     }
+
+  public:
     /**
      * @brief CONST operator() for fast READ access.
      * Marks the function as const so it can be called by read_value()

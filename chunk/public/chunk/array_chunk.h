@@ -157,6 +157,8 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
         // array. Must run AFTER clear() (which still needs get_num_tab(registry_key())).
         Proxy<T>::share_info_array.erase(this->registry_key());
     }
+
+  private:
     /// @brief Claim this array's identity before its storage is built:
     ///        register its address and take the next free num_tab, which
     ///        every per-tab metadata table is then indexed by. Called by
@@ -183,6 +185,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     /// @param sz element count to allocate for
     void rebuild_storage(ind_type sz);
 
+  public:
     /**
      * @brief Move-assign: this array's own contents are released (clear()),
      *        then it takes @p other's -- chunks, geometry and identity, by the
@@ -239,6 +242,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     /// @brief Release the storage and report this array's end-of-life stats.
     void clear();
 
+  private:
     /// @brief Storage teardown shared by clear() and rechunk_to(): everything
     ///        clear() does except the pre-drain stats. Parks buffers by THIS
     ///        array's geometry and removes this array's compression candidates
@@ -253,6 +257,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     /// start of clear(), before the drain mutates chunk state.
     void print_compression_stats(std::ostream& os = std::cout) const;
 
+  public:
     /// @brief The compression pass proper, run by every thread of the region
     ///        compress() opens (or on the calling thread outside one).
     void compress_int(bool verbose);

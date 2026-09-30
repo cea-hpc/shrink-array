@@ -548,6 +548,8 @@ struct OMPTcc
 {
     /// @brief No switch to move.
     static void update([[maybe_unused]] bool state) noexcept {}
+
+  private:
     /// @brief Always off.
     static bool is_enabled() noexcept
     {
@@ -582,6 +584,8 @@ struct OMPTcc<true>
         {
         }
     }
+
+  private:
     /// @brief Read the switch.
     static bool is_enabled() noexcept
     {
@@ -603,6 +607,8 @@ struct CheckNaN
     static void update([[maybe_unused]] bool state) noexcept {}
     /// @brief No check.
     static void maybe([[maybe_unused]] auto val, [[maybe_unused]] long i) noexcept {}
+
+  private:
     /// @brief Always off.
     static constexpr bool is_enabled() noexcept
     {
@@ -614,8 +620,10 @@ struct CheckNaN
 template <>
 struct CheckNaN<true>
 {
+  private:
     static inline bool check_nan{true}; ///< the switch, on by default
 
+  public:
     /// @brief Set the switch.
     static void update(bool state) noexcept
     {
@@ -627,6 +635,8 @@ struct CheckNaN<true>
         if (check_nan)
             global_check_nan(val, i);
     }
+
+  private:
     /// @brief Compiled in (the switch may still be off at run time).
     static constexpr bool is_enabled() noexcept
     {

@@ -74,6 +74,7 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
 
     using Base::Base;
 
+  private:
     /**
      * @brief Pointer to the owning array (used as the compression-metadata
      *        map key).
@@ -83,6 +84,7 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
         return derived().get_ptr_on_array();
     }
 
+  public:
     // Template (auto* ctx): never instantiated unless actually called, so it
     // needs no build-mode guard. The real implementation lives in
     // Proxy2FastCompPolicy<..., true>.
@@ -202,6 +204,7 @@ struct ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
         inf_array_src_ = src;
     }
 
+  private:
     /// @brief The (second_value, ind, num_tab) tuple: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
     ///        two are compared (model: Proxy2A::set_num_tab).
@@ -248,6 +251,7 @@ struct ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
         inf_array_src_ = src;
     }
 
+  private:
     /// @brief The (second_value, ind, num_tab) tuple: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
     ///        two are compared (model: Proxy2A::set_num_tab).
@@ -264,6 +268,7 @@ struct ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
 
     using Base::Base;
 
+  private:
     /**
      * @brief Pointer to the owning array (used as the compression-metadata
      *        map key).
@@ -273,6 +278,7 @@ struct ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
         return derived().get_ptr_on_array();
     }
 
+  public:
     /// @brief Bool specialization of set_info_on_chunk(). See
     ///        set_info_second_value_ind() below for why this is NOT a no-op.
     void set_info_on_chunk();
@@ -334,9 +340,11 @@ struct ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 struct Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
 {
+  private:
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
+  public:
     using Base2 = Proxy2Base<Derived, T, Chunk2<T>>;
     using Base  = ProxyBase<Derived, T, Chunk2<T>>;
 
@@ -623,6 +631,7 @@ struct Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T,
 
     using ProxySpec2<T, Derived>::ProxySpec2;
 
+  private:
     // Aliases needed by the counter-based handlers below (the Enabled=true
     // specialisation declares its own equivalents). `chunk` comes from the
     // dependent base ProxyBase, so it must be imported explicitly for
@@ -630,6 +639,7 @@ struct Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T,
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
+  public:
     using Base = ProxyBase<Derived, T, Chunk2<T>>;
     using Base::chunk;
     using CRTPSupport<Derived>::derived;
@@ -741,6 +751,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     using BaseSpec = ProxySpec2<T, Proxy2>;
     using BaseSpec::second_value;
 
+  private:
     /**
      * @brief Chunk2's marking pre-check: a write of a constant, on an array that
      *        has a candidate list for its second value.
@@ -767,6 +778,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
                has_candidate_list(second_val);
     }
 
+  public:
     /**
      * @brief Does the calling rank have a candidate list for @p second_val?
      * @details Reads the rank's own map only; set_second_value() fills the maps
@@ -909,6 +921,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @note Thread safety: Uses atomic compare-exchange in multi-threaded builds
      */
 
+  private:
     void create_value() const noexcept
     {
         if constexpr (build_config::chunk_dynamic)
@@ -929,6 +942,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         }
     }
 
+  public:
     // ========================================================================
     // Metadata initialization
     // ========================================================================
@@ -1043,6 +1057,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     // ASSIGNMENT OPERATOR
     // ========================================================================
 
+  private:
     /**
      * @brief Core implementation behind operator=(): writes `v` at this
      *        proxy's index.
@@ -1068,6 +1083,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     // reference. Non-deducible, hence the explicit assign_impl<U>(v) below.
     T assign_impl(in_t<U> v) noexcept;
 
+  public:
     // -------------------------------------------------------------------------
     // PUBLIC OPERATORS (The Filter)
     // -------------------------------------------------------------------------
@@ -1101,6 +1117,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     // COMPOUND ARITHMETIC OPERATORS
     // ========================================================================
 
+  private:
     /**
      * @brief Read-modify-write behind the compound operators (`+=`, `-=`...):
      *        `values[num] = op(values[num], v)`, with the second-value
@@ -1122,6 +1139,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
                                   in_t<U> v,
                                   bool    check_first_value_result = false) noexcept; // in_t: see assign_impl
 
+  public:
     const Proxy2& operator=(const Proxy2& from) = delete;
     Proxy2(const Proxy2& other)                 = default;
 
@@ -1129,6 +1147,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     template <typename U>
     friend std::ostream& operator<<(std::ostream& os, const Proxy2<U>& proxy);
 
+  private:
     /**
      * @brief UNSAFE: a raw `T&` into this element's chunk buffer, for callers
      *        that must bind a real reference (e.g. passing `a[i]` to a
@@ -1158,6 +1177,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         return values[num];
     }
 
+  public:
     T*       operator&()       = delete;
     const T* operator&() const = delete;
 };

@@ -212,6 +212,7 @@ struct FastAllocatorConcrete : FastAllocatorBase
 {
     using ByteAlloc = TCTypeAllocator<std::byte>;
 
+  private:
     /**
      * @brief Returns the per-thread byte allocator for type T.
      * The number of blocks per pool is calculated dynamically to match
@@ -269,6 +270,7 @@ struct FastAllocatorConcrete : FastAllocatorBase
         return slot.fl;
     }
 
+  public:
     /// @brief Set block_size to sizeof(T) and, under fast-alloc, create this thread's allocator.
     FastAllocatorConcrete()
     {
@@ -279,6 +281,7 @@ struct FastAllocatorConcrete : FastAllocatorBase
         }
     }
 
+  private:
     // Aliasing check (POOL_LEDGER): identity of this (type,thread) pool. Under
     // fast-alloc it's the byte-slab address; otherwise the free-list address.
     // Two element types share this address iff -fipa-icf folded their
@@ -482,6 +485,7 @@ struct arena_of_tag<CtxTag>
 template <typename Tag>
 struct AllocatorRegistry
 {
+  private:
     /// @brief This thread's allocators (one per object size seen so far).
     static std::vector<std::unique_ptr<FastAllocatorBase>>& allocs()
     {
@@ -489,6 +493,7 @@ struct AllocatorRegistry
         return v;
     }
 
+  public:
     /// @brief This thread's allocator for objects of sizeof(T) bytes, created on first request.
     /// @tparam T Object type; allocators are shared between types of the same size.
     /// @return The allocator whose block_size is sizeof(T).

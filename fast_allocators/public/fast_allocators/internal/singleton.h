@@ -35,6 +35,7 @@ class Singleton
     Singleton(const Singleton&)            = delete;
     Singleton& operator=(const Singleton&) = delete;
 
+  private:
     /// @brief The instance, created on first use (double-checked locking).
     /// @return Never null.
     static T* getInstance()
@@ -64,6 +65,7 @@ class Singleton
         delete unique_instance.exchange(nullptr, std::memory_order_acq_rel);
     }
 
+  public:
     /// @brief getInstance(), as a reference.
     /// @return The instance.
     static T& getRef()

@@ -64,9 +64,11 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     using typename Base::atomic_ptr_ref_t;
     using values_type_ref = atomic_ptr_ref_t;
 
+  private:
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
+  public:
     // Both members exist on ProxyBase in every mode (the serial specialisation
     // declares them too); only their USE is mode-specific.
     using Base::ptr_is_inside_chunk_list_to_compress;
@@ -124,6 +126,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         return !is_cst_val();
     }
 
+  private:
     /**
      * @brief Whether the chunk is currently at ONE of the two constants and
      *        new_value is precisely the OTHER one -- i.e. a direct
@@ -165,6 +168,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         return derived().pre_check_mark_for_compression(new_value, first_value, second_val);
     }
 
+  public:
     /**
      * @brief Pre-check shared by every variant: the write is of a constant.
      * @details A write is worth the marking path (one read of the old value,
@@ -197,6 +201,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         return new_value == first_value || new_value == second_val;
     }
 
+  private:
     /**
      * @brief Default pre-check hook (Chunk2 behaviour).
      * @details Variants that widen should_mark_for_compression() MUST shadow
@@ -254,6 +259,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         mark_for_compression_core(old_value, new_value, new_value, isv, std::forward<Args>(args)...);
     }
 
+  public:
     // --- Boolean overloads ---
     /**
      * @brief Marks block for compression based on a boolean new value

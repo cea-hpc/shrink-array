@@ -83,9 +83,11 @@ class Chunk2Base : public ChunkBase<T, Derived>
     using Base::values_load;
     using Base::values_store;
 
+  private:
     static constexpr bool is_chunk2A_derived = std::is_same_v<Derived, Chunk2A<T>>;
     static constexpr bool is_chunk2_derived  = std::is_same_v<Derived, Chunk2<T>>;
 
+  public:
     Chunk2Base()  = default;
     ~Chunk2Base() = default;
 
@@ -118,11 +120,14 @@ class Chunk2Base : public ChunkBase<T, Derived>
     /// @param ptr_type_cst Constant type pointer (Chunk2A only)
     /// @param ptr_second_value Second value pointer (Chunk2A only)
 
+  private:
     template <typename IndexType>
     void clear_impl(IndexType         index_opt,
                     int               thr_rank,
                     char*             ptr_type_cst     = nullptr,
                     SecondValueRef<T> ptr_second_value = {});
+
+  public:
     /**
      * @brief Atomically attempts to install a new buffer or recycles it on failure.
      * @tparam CasFunc Type of the CAS lambda/functor.
@@ -229,6 +234,7 @@ class Chunk2Base : public ChunkBase<T, Derived>
         }
     }
 
+  private:
     /**
      * @brief Ensures the provided pointer does not target shared constant memory.
      * @param target_ptr The pointer about to be used for a write operation.

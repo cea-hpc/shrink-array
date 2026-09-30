@@ -83,9 +83,12 @@ struct BaseArithmeticContext
     unsigned int alloc_key_frozen = 0;
 
     // Only for proxies that expose get_inf_array()
-    using inf_array_t                = std::tuple<T, int, int>;
+    using inf_array_t = std::tuple<T, int, int>;
+
+  private:
     const inf_array_t* inf_array_ptr = nullptr;
 
+  public:
     // DEFERRED_LIFECYCLE: liveness sentinel, verified at the top of
     // the deferred write_body() before this ctx is dereferenced. Kept
     // UNCONDITIONAL (not under a macro) so the struct layout is identical across

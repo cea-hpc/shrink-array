@@ -75,7 +75,7 @@ struct PointerMapInfArrayPolicy
     /// Map from a value to its registered inf_array tuple pointer.
     MapType map_inf_array;
 
-  public:
+  private:
     /**
      * @brief All registered inf_array pointers, in map order.
      * @return Vector of every value's currently-registered inf_array pointer.
@@ -92,6 +92,7 @@ struct PointerMapInfArrayPolicy
         return values;
     }
 
+  public:
     /**
      * @brief Register the inf_array tuple pointer for a given value.
      * @param key Value to register.
@@ -102,6 +103,7 @@ struct PointerMapInfArrayPolicy
         map_inf_array[key] = ind;
     }
 
+  private:
     /**
      * @brief Look up the inf_array tuple pointer registered for a value.
      * @param key Value to look up.
@@ -126,13 +128,18 @@ struct PointerMapInfArrayPolicy<T, false>
 {
     using inf_array_t = int;
 
+  private:
     /// @brief No registry in this mode: an empty list.
     [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const
     {
         return {};
     }
+
+  public:
     /// @brief No registry in this mode: nothing to record.
     void insert(in_t<T> /*key*/, inf_array_t* /*ind*/) {}
+
+  private:
     /// @brief No registry in this mode: never found.
     [[nodiscard]] inf_array_t* find_inf_array(in_t<T> /*key*/) const
     {
@@ -181,6 +188,7 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
         vec.emplace_back(key, num_tab);
     }
 
+  private:
     /**
      * @brief Update the table number registered for an existing key.
      * @param key Key to update.
@@ -202,6 +210,7 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
                          static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
     }
 
+  public:
     /**
      * @brief Look up the table number registered for a key.
      * @param key Key to look up.
@@ -290,6 +299,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         return Derived::share_info_array.get_num_tab(ptr);
     }
 
+  private:
     /**
      * @brief Static entry point for async callers that only have a proxy
      *        reference in hand (not `this`). The marking logic itself needs
@@ -304,6 +314,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         proxy.mark_for_compression_if_needed_with_value(old_value, new_value);
     }
 
+  public:
     /**
      * @brief Check whether this thread's compression-candidate list has
      *        grown past the "dangerous" size threshold, and if so, flag it
@@ -365,8 +376,10 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     using Base::read_values_async;
     using Base::tab_is_inside_chunk_list_to_compress;
 
+  private:
     constexpr static T zero{};
 
+  public:
     /**
      * @brief Resolve and cache this proxy's table number from ptr_on_array.
      */
@@ -397,6 +410,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         tab_is_inside_chunk_list_to_compress[num_tab][num_chunk] = 0;
     }
 
+  private:
     /**
      * @brief Whether a write transition is a compression candidate (a
      *        zero-transition: was non-zero, now zero).
@@ -450,6 +464,7 @@ struct ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         mark_for_compression_core(old_value, new_value, new_value);
     }
 
+  public:
     /**
      * @brief Post-write entry point for callers that already have both the
      *        old and new value in hand.
@@ -565,6 +580,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     // mark_for_compression_* family live on ProxyFastCompPolicy<..., true>;
     // manage_full_zero() on the <..., false> (counter) specialisation.
 
+  private:
     /**
      * @brief Whether the owning chunk is currently compressed to its
      *        constant.
@@ -575,6 +591,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         return chunk.is_cst_val1();
     }
 
+  public:
     /**
      * @brief Negation of is_cst_val().
      * @return true if the chunk is materialised (not compressed).
@@ -720,6 +737,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         return share_info_array.get_num_tab(ptr);
     }
 
+  private:
     /**
      * @brief Early-out check for operator=(): is the chunk already
      *        compressed AND is the value being assigned the compressible
@@ -755,6 +773,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     // reference. Non-deducible, hence the explicit assign_impl<U>(v) below.
     T assign_impl(in_t<U> v) noexcept;
 
+  public:
     /** @brief Clean path: exact match or safe conversion (small operand, by value). */
     template <typename U>
         requires IsCleanAssignment<T, U>
@@ -802,6 +821,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         return *this;
     }
 
+  private:
     /**
      * @brief Run an arbitrary write operation on this element, materialising
      *        the chunk first if it is currently compressed, and maintaining
@@ -837,6 +857,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     template <typename U, typename BinaryOp>
     void apply_compound_operation(in_t<U> v, BinaryOp op); // in_t: see assign_impl
 
+  public:
     /**
      * @brief Divide this element by `v` in place.
      * @tparam U Type of the operand.
@@ -967,6 +988,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         return values[num];
     }
 
+  private:
     /**
      * @brief UNSAFE: a raw `T&` into this element's chunk buffer, for callers
      *        that must bind a real reference (e.g. passing `a[i]` to a
@@ -990,6 +1012,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         return values[num];
     }
 
+  public:
     T*       operator&()       = delete;
     const T* operator&() const = delete;
 

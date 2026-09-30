@@ -62,14 +62,17 @@ inline void note_phase_end() noexcept
 template <typename T>
 struct Materialisations
 {
+  private:
     static constexpr unsigned kKeys = 128; ///< key slots per rank (key % kKeys)
 
+  public:
     /// @brief One rank's counters, one per key slot.
     struct alignas(128) RankSlot
     {
         std::array<long, kKeys> n;
     };
 
+  private:
     static inline std::vector<RankSlot> slots_; ///< one per rank, sized once (ensure)
     static inline std::once_flag        once_;
 
@@ -84,6 +87,7 @@ struct Materialisations
                        });
     }
 
+  public:
     /// @brief One materialisation of array @p key on rank @p thr (rank-local).
     static void note(int thr, unsigned key) noexcept
     {

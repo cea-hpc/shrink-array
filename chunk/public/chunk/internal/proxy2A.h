@@ -334,8 +334,11 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
     ///        of its shared array (SecondValueTraits) -- 4 bytes per chunk
     ///        instead of 8 or 16.
     using second_value_slot_t = SecondValueTraits<T>::slot_t;
+
+  private:
     static inline std::vector<std::vector<second_value_slot_t>> tab_second_value;
 
+  public:
     /*!
      * \brief Retrieves a pointer to a specific second value in the chunk.
      * \param num_tab Index of the tab.
@@ -445,8 +448,10 @@ struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<boo
      * Indexed as tab_second_value[num_tab][num_chunk].
      */
 
+  private:
     static inline std::vector<std::unique_ptr<bool[]>> tab_second_value;
 
+  public:
     /*!
      * \brief Retrieves a pointer to a specific second value in the chunk.
      * \param num_tab Index of the tab.
@@ -537,12 +542,15 @@ struct Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
 
     using values_type_ref = BaseSpec::values_type_ref;
 
-    using Base                        = ProxyBase<Derived, T, ChunkType>;
-    using Base2                       = Proxy2Base<Derived, T, ChunkType>;
+    using Base  = ProxyBase<Derived, T, ChunkType>;
+    using Base2 = Proxy2Base<Derived, T, ChunkType>;
+
+  private:
     static constexpr bool is_bool     = std::is_same_v<T, bool>;
     static constexpr bool is_not_bool = !is_bool;
     void                  ensure_writable_storage_async(const Derived& proxy) const;
 
+  public:
     template <typename LAMBDA>
     void execute_simple_operation_async(auto* ctx, LAMBDA operation);
 
@@ -819,15 +827,19 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      */
     void set_info_on_chunk() noexcept;
 
+  private:
     /**
      * @brief Initialize per-chunk pointers except second value.
      */
     void set_other_info_on_chunk() noexcept;
 
+  public:
     void set_ptr_second_value() noexcept;
 
+  private:
     void set_ptr_second_value_and_num_tab() noexcept;
 
+  public:
     /// @brief This proxy's array index (ProxyBase::get_num_tab(), re-exported
     ///        past the policy layers).
     [[nodiscard]] int get_num_tab() const noexcept
@@ -999,6 +1011,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      * @return Assigned value.
      */
 
+  private:
     template <typename U>
     // in_t<U>, not const U&: this is the write engine, the one frame the
     // operators do NOT inline into the caller, so its parameter is what
@@ -1006,6 +1019,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     // reference. Non-deducible, hence the explicit assign_impl<U>(v) below.
     T assign_impl(in_t<U> v) noexcept;
 
+  public:
     /** @brief Clean path for safe assignments (small operand, by value). */
     template <typename U>
         requires IsCleanAssignment<T, U>
@@ -1027,11 +1041,13 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     // COMPOUND ARITHMETIC OPERATORS
     // ========================================================================
 
+  private:
     template <typename U, typename Op>
     void apply_compound_operation(Op      op,
                                   in_t<U> v,
                                   bool /*check_first_value_result*/ = false) noexcept; // in_t: see assign_impl
 
+  public:
     const Proxy2A& operator=(const Proxy2A& from) = delete;
     Proxy2A(const Proxy2A& other)                 = default;
 
@@ -1045,6 +1061,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     template <typename U>
     friend std::ostream& operator<<(std::ostream& os, const Proxy2A<U>& proxy);
 
+  private:
     /**
      * @brief UNSAFE: a raw `T&` into this element's chunk buffer, for callers
      *        that must bind a real reference (e.g. passing `a[i]` to a

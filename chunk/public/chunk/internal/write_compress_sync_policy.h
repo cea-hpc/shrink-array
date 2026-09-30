@@ -205,6 +205,7 @@ class WriteCompressSyncPolicy
 
     //  alignas(128) static inline std::atomic<int> active_writer_count{0}; --> very bad perf
 
+  private:
     /// One writer flag per thread rank, sized by ensure_initialized().
     static inline std::vector<WritingFlag> per_thread_writing;
 
@@ -222,6 +223,7 @@ class WriteCompressSyncPolicy
     alignas(128) static inline std::atomic<int> num_thread_flushing{0};
 
 
+  public:
     WriteCompressSyncPolicy() noexcept = default;
 
     // Non-copyable
@@ -249,6 +251,7 @@ class WriteCompressSyncPolicy
                        });
     }
 
+  private:
     /**
      * @brief Raise this thread's writer flag.
      * @param thr   calling thread's rank
@@ -267,6 +270,7 @@ class WriteCompressSyncPolicy
         per_thread_writing[thr].v.store(chunk, std::memory_order_seq_cst);
     }
 
+  public:
     /**
      * @brief Writer-side Dekker announce: raise the flag, then order it before
      *        the caller's look at the other side.
@@ -348,6 +352,7 @@ class WriteCompressSyncPolicy
         per_thread_writing[thr].v.store(nullptr, std::memory_order_release);
     }
 
+  private:
     /**
      * @brief Is ANY rank currently inside a write critical section?
      * @param max_thr number of ranks to scan
@@ -365,6 +370,7 @@ class WriteCompressSyncPolicy
         return false;
     }
 
+  public:
     /**
      * @brief Is any rank inside a write critical section ON A MARKED CHUNK?
      * @tparam ChunkT the chunk type the flags point to (the policy's proxy
@@ -414,6 +420,8 @@ class WriteCompressSyncPolicy
     {
         return per_thread_writing[thr].v.load(std::memory_order_seq_cst) != nullptr;
     }
+
+  private:
     /**
      * @brief Enter a flush critical section.
      * @details While any flush is in progress, compressors calling start() back
@@ -433,6 +441,7 @@ class WriteCompressSyncPolicy
         num_thread_flushing.fetch_add(1, std::memory_order_seq_cst);
     }
 
+  public:
     /**
      * @brief Flusher-side Dekker announce: enter the section, then the heavy
      *        barrier.

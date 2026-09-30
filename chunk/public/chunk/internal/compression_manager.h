@@ -283,9 +283,10 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         std::atomic<bool> v{false};
     };
 
-  public:
+  private:
     static constexpr bool verbose = false;
 
+  public:
     /**
      * @brief Base of every deferred write this manager can replay.
      * @details Adds the enqueuing rank to DeferredOperationBase, so a drain can
@@ -295,8 +296,11 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     {
         int thread_rank = -1; ///< rank that enqueued this op (set by DeferredOperation)
 
+      private:
         /// @brief Replay the deferred write. Implemented by DeferredOperation.
-        void write_body() override    = 0;
+        void write_body() override = 0;
+
+      public:
         ~CmpDeferredOpBase() override = default;
     };
 
@@ -308,6 +312,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     template <typename CTX, typename WriteFn>
     struct DeferredOperation : CmpDeferredOpBase
     {
+      private:
         CTX*    ctx; ///< frozen target metadata, owned until destroy()
         WriteFn fn;  ///< the write to replay
 
@@ -336,6 +341,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         ///          "Key not found" and, before the arena, vtable corruption.
         std::atomic<bool> destroyed{false};
 
+      public:
         /**
          * @brief Capture a write for later replay.
          * @param context context holding the frozen target metadata
@@ -353,6 +359,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         DeferredOperation(DeferredOperation&&)                 = delete;
         DeferredOperation& operator=(DeferredOperation&&)      = delete;
 
+      private:
         /**
          * @brief Replay the captured write.
          * @details Under any_check, first verifies the op is still alive and has
@@ -466,6 +473,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
             free_op(this);
         }
 
+      public:
         /// @brief Destroy the context object, if any, without freeing its memory, and null ctx.
         ~DeferredOperation() override
         {
@@ -479,8 +487,11 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     };
 
     using unordered_set_deferred_chunks = ankerl::unordered_dense::set<ChunkType*>;
+
+  private:
     static inline std::vector<unordered_set_deferred_chunks> deferred_chunk_per_thread;
 
+  public:
     /// @brief Allocate the per-rank tracking structures this policy owns.
     CompressionManagerOmpPolicy()
     {
@@ -497,6 +508,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     CompressionManagerOmpPolicy(CompressionManagerOmpPolicy&&)            = delete;
     CompressionManagerOmpPolicy& operator=(CompressionManagerOmpPolicy&&) = delete;
 
+  private:
     // Returns the number of hard compressors still in flight after this one
     // left (finish() reports on the last one out, remaining == 0).
     /// @brief Decrement hard_inflight_ and return the new value.
@@ -548,6 +560,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         return get_thread_ops_flag_tls().v.load(std::memory_order_acquire);
     }
 
+  public:
     /// @brief The same hint, read by its owner for its own decision.
     /// @return false only when the calling thread certainly holds no op
     /// @note Relaxed: the flag is thread-local and every store to it is the
@@ -561,6 +574,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         return get_thread_ops_flag_tls().v.load(std::memory_order_relaxed);
     }
 
+  private:
     /**
      * @brief Allocate the per-rank deferred-op structures.
      * @post The chunk sets, pending-op shards and flush locks are all sized to
@@ -577,6 +591,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         xflush_lock_rank = std::vector<PaddedFlushLock>(max_thr);
     }
 
+  public:
     /**
      * @brief One rank's pending-deferred-op count, padded to its own line.
      * @details Sharded per rank rather than a single counter, to avoid one hot
@@ -587,6 +602,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         std::atomic<int64_t> v{0};
     };
 
+  private:
     /// Per-rank pending-op counts, the mechanism that makes cross-thread ops
     /// visible to a reader running on a different rank than the writer.
     /// @details Incremented at enqueue BEFORE the map insert is published, and
@@ -595,6 +611,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     ///          sync can early-out without scanning.
     static inline std::vector<PaddedPendingCounter> pending_ops_shard;
 
+  public:
     /// @brief Count one more pending op on @p thr_rank.
     /// @param thr_rank enqueuing rank
     /// @note Release ordering publishes the preceding map insert to any reader
@@ -606,6 +623,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         pending_ops_shard[thr_rank].v.fetch_add(1, std::memory_order_release);
     }
 
+  private:
     /// @brief Count @p count drained ops off @p thr_rank.
     /// @param thr_rank rank whose ops were drained
     /// @param count    number of ops drained
@@ -614,6 +632,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         pending_ops_shard[thr_rank].v.fetch_sub(count, std::memory_order_release);
     }
 
+  public:
     /// @brief Pending-op count for a single rank.
     /// @param thr_rank rank to query
     /// @return that rank's count, or 0 before init_deferred_queues()
@@ -791,6 +810,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         }
     }
 
+  private:
     /// @brief Enter the hard compression window (start()'s counterpart).
     /// @see hard_inflight_
     static void add_compression_active() noexcept
@@ -798,6 +818,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         hard_inflight_.fetch_add(1, std::memory_order_seq_cst);
     }
 
+  public:
     template <typename F>
     /**
      * @brief Run @p fn as the slow-path compression driver.
@@ -852,6 +873,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         return stealing_inflight_.load(std::memory_order_seq_cst) > 0;
     }
 
+  private:
     /**
      * @brief Allocate the per-rank dangerous-list counters.
      * @details One zero-initialised counter per rank of the thread capacity
@@ -864,6 +886,7 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
             std::vector<PaddedDangerousFlag>(static_cast<std::size_t>(CHUNK_PMP_THREAD_CAPACITY));
     }
 
+  public:
     /**
      * @brief Flag @p thr_rank's candidate list as needing a compression pass:
      *        its next write, once applied, drives perform_compression().

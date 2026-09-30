@@ -258,6 +258,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
  */
 struct RegistryKeyCanary
 {
+  private:
     std::uint64_t registry_key_canary_{0};
 };
 /// @brief Empty stand-in for RegistryKeyCanary when any_check is off.

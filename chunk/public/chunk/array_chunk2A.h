@@ -176,6 +176,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     /// @param il Source values.
     ArrayChunk2A(std::initializer_list<T> il) : ArrayChunk2A(il.begin(), il.end()) {}
 
+  private:
     /**
      * @brief Claim this array's identity before its storage is built.
      * @details Called by create() through ArrayChunkBase. Registers the array's
@@ -192,6 +193,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         ++nb_tab;
     }
 
+  public:
     /**
      * @brief Release the storage, then the registry entry.
      * @warning The erase() below is not optional. A later array reusing this
@@ -206,6 +208,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         Proxy2A<T>::share_info_array.erase(this->registry_key());
     }
 
+  private:
     /**
      * @brief Register the array and allocate its storage.
      * @param sz element count
@@ -244,6 +247,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
             });
     }
 
+  public:
     /**
      * @brief Report how many cst2 buffers a sweep could reclaim.
      * @details Runs gc_collect_live() and compares the live count with
@@ -260,6 +264,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         std::fflush(stderr);
     }
 
+  private:
     /**
      * @brief (Re)allocate storage at the current active geometry.
      *
@@ -273,6 +278,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      */
     void rebuild_storage(ind_type sz);
 
+  public:
     /**
      * @brief Move-assign: this array's own contents are released (clear()),
      *        then it takes @p other's -- chunks, geometry and identity, by the
@@ -294,6 +300,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         return *this;
     }
 
+  private:
     /**
      * @brief Second value registered for the chunk holding element @p i.
      * @param i element index
@@ -304,6 +311,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         return Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, this->chunk_index_of(i));
     }
 
+  public:
     /**
      * @brief Has the chunk holding element @p i been materialised?
      * @param i element index
@@ -368,6 +376,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      */
     void clear();
 
+  private:
     /// @brief Storage teardown shared by clear() and rechunk_to().
     ///
     /// Everything clear() does EXCEPT the end-of-life I/O (compression stats and
@@ -385,6 +394,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      */
     void print_compression_stats(std::ostream& os = std::cout) const;
 
+  public:
     /// @brief Run a compression pass over this array's chunks.
     void compress_int();
 
@@ -397,9 +407,11 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         return *this;
     }
 
+  private:
     static constexpr char is_val1 = 0; ///< Tag: chunk compressed to the first constant
     static constexpr char is_val2 = 1; ///< Tag: chunk compressed to its own second value
 
+  public:
     /// @brief Read-only access to the underlying chunk list.
     /// @return const reference to the chunks backing this array
     [[nodiscard]] const std::vector<Chunk2A<T>>& getChunkList() const noexcept

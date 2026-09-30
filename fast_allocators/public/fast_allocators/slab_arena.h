@@ -409,6 +409,7 @@ class SlabArena
         free_lists_[size].push_back(block);
     }
 
+  private:
     /// @brief Does @p ptr fall inside one of this arena's reservations?
     /// @note Linear in the region count, and takes the lock. Diagnostics only.
     bool owns(const void* ptr) const noexcept
@@ -421,6 +422,7 @@ class SlabArena
         return false;
     }
 
+  public:
     /**
      * @brief Bytes of this arena's mappings resident RIGHT NOW (mincore()).
      * @details `live` counts slabs handed out, madvise'd ones included, and the

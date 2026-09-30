@@ -111,9 +111,11 @@ struct AllTypeChunkParallelInterface; // primary left undefined: only the 2 spec
 template <typename Derived>
 struct AllTypeChunkParallelInterface<Derived, true>
 {
+  private:
     /// Resizes every manager's per-thread free-block lists to the current thread count.
     void resize_all_list_block_free_thr() const;
 
+  public:
     /**
      * @brief Releases the buffers freed by a preceding flush, for every type.
      *
@@ -149,9 +151,11 @@ struct AllTypeChunkParallelInterface<Derived, true>
      */
     void init_manager(ManagerChunkInt& manager, int block_size) const;
 
+  private:
     /// Allocates the first block of each per-thread allocator (no-op in std-alloc builds).
     void alloc_chunk_allocator_thr() const;
 
+  public:
     /// Redistributes the free blocks of every type across threads.
     void load_balance_list_block_free() const;
 
@@ -311,6 +315,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     template <typename ManagerT>
     static void ensure_manager();
 
+  private:
     /**
      * @brief Registers every element type of a tuple up front, for the chunk
      *        templates the build compiles arrays for.
@@ -325,6 +330,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     template <typename Types>
     void initialize();
 
+  public:
     /// @brief ParamChunk::init_indexes() has set the block size: managers may
     ///        now be registered. Records the block size they are built with.
     void mark_ready(int block_size)
@@ -353,9 +359,11 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
         return {managers_.data(), count};
     }
 
+  private:
     /// Resizes every manager's compression-candidate list to the current thread count.
     void resize_chunk_to_compress_potentially() const;
 
+  public:
     /// Compresses every compressible chunk of every type, ignoring the candidate lists.
     void force_chunk_to_compress() const;
 

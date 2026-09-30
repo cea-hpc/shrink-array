@@ -348,6 +348,7 @@ class PointerMapChunk2
                          static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
     }
 
+  private:
     /**
      * @brief Inserts a tuple (value, index, table number) for a given key.
      *
@@ -360,6 +361,8 @@ class PointerMapChunk2
     {
         vec.emplace_back(key, std::make_tuple(val, ind, num_tab));
     }
+
+  public:
     /// @brief Record that second value @p key sits at index @p ind of the
     ///        shared value table.
     void insert_map_ind_cst_val2(in_t<T> key, int ind)
