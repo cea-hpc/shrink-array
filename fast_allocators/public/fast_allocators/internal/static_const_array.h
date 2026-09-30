@@ -77,6 +77,12 @@
  *
  * @warning A batch that is still filling holds blocks that are free but not
  *          reusable: they belong to no bucket's free list until the flush.
+ *
+ * @warning The per-rank arrays are sized ONCE, by PMP_MAX_THREADS when the
+ *          static instances are built (before main): #nb_thr ranks. Every
+ *          method indexes by rank unchecked, so callers must bound it:
+ *          freeBlock() / freeBlockAlign() do not batch a rank >= #nb_thr
+ *          (a team grown later) and free its blocks at once instead.
  */
 struct InfoFreeElt
 {
