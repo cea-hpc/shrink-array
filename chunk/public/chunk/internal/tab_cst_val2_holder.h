@@ -166,8 +166,6 @@ struct SecondValueRef
 {
     using slot_t = SecondValueTraits<T>::slot_t;
 
-    slot_t* slot = nullptr;
-
     /// @brief The chunk's second value; T{} (== first_value, 0) when none.
     [[nodiscard]] T get() const noexcept
     {
@@ -206,6 +204,8 @@ struct SecondValueRef
     {
         return slot != nullptr;
     }
+
+    slot_t* slot = nullptr;
 };
 
 /**
@@ -565,11 +565,12 @@ struct GlobalVecHolder
      */
     struct IndexTable
     {
+        // A value-initialised atomic pointer is null (C++20): no clearing loop.
+        explicit IndexTable(std::size_t capacity) : cap(capacity), slots(capacity) {}
+
         std::size_t                  cap  = 0; ///< Slot count, a power of two.
         std::size_t                  used = 0; ///< Published entries (single writer).
         std::vector<std::atomic<T*>> slots;    ///< `cap` slots, null = empty.
-        // A value-initialised atomic pointer is null (C++20): no clearing loop.
-        explicit IndexTable(std::size_t capacity) : cap(capacity), slots(capacity) {}
     };
 
   private:
@@ -957,6 +958,9 @@ struct GlobalVecHolder
 template <typename T>
 struct TabCstVal2Holder
 {
+    using global_vec_holder = GlobalVecHolder<T>;
+    using segment_t         = Segment<T>;
+
     // No instance part: the holder is stateless. Whether a chunk reads from
     // a shared array is a range test on its values pointer
     // (is_cst_val2_ptr), and the array for a given second value is found in
@@ -997,9 +1001,6 @@ struct TabCstVal2Holder
         return nullptr;
     }
 
-    using global_vec_holder = GlobalVecHolder<T>;
-    using segment_t         = Segment<T>;
-
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
     /// @brief Register a user of this type's registry. Idempotent.
@@ -1009,20 +1010,7 @@ struct TabCstVal2Holder
     {
         global_vec_holder::init();
     }
-    // ── MM_PROTECT helpers ────────────────────────────────────────────────
 
-  private:
-    /// @brief One array's size in bytes, rounded up to whole pages.
-    /// @note Page rounding matters only to the MM_PROTECT path, where mprotect
-    ///       works on page granularity.
-    [[nodiscard]] static size_t alloc_size() noexcept
-    {
-        const size_t bytes    = cst_buffer_size * sizeof(T);
-        const size_t pagesize = sysconf(_SC_PAGESIZE);
-        return ((bytes + pagesize - 1) / pagesize) * pagesize;
-    }
-
-  public:
     /**
      * @brief Allocate one shared array and fill it with @p val.
      * @return The array, filled and (under MM_PROTECT) already read-only.
@@ -1043,60 +1031,12 @@ struct TabCstVal2Holder
         return buf;
     }
 
-  private:
-    /// @brief Carve one region stride for a shared array; the storage part of alloc_chunk().
-    /// @param val Fill value: cst_buffer_size copies are written, except under cst_val2_no_arrays where nothing is
-    ///        written; under MM_PROTECT the stride is made read-only after the fill.
-    /// @return Start of the carved stride.
-    static T* alloc_chunk_int(T val)
-    {
-        if constexpr (build_config::cst_val2_no_arrays)
-        {
-            // Carve an identifier, write nothing. The pointer is never
-            // dereferenced under this flag: is_cst_val2() is a range test and
-            // id_of_ptr() is arithmetic, and the value itself is read from
-            // value_by_id[], which alloc_chunk() fills right after this
-            // returns. The region stays entirely unbacked.
-            (void)val;
-            return reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
-        }
-        else if constexpr (build_config::use_mm_protect)
-        {
-            // Carve one stride of the region (page-rounded), open it, fill it,
-            // close it to PROT_READ.
-            const size_t size = global_vec_holder::region_stride;
-            void*        raw  = global_vec_holder::region_alloc(size);
-            if (mprotect(raw, size, PROT_READ | PROT_WRITE) != 0) [[unlikely]]
-            {
-                std::cerr << "mprotect failed\n";
-                std::abort();
-            }
-            T* buf = static_cast<T*>(raw);
-            std::fill_n(buf, cst_buffer_size, val);
-            if (mprotect(raw, size, PROT_READ) != 0) [[unlikely]]
-            {
-                std::cerr << "mprotect failed\n";
-                std::abort();
-            }
-            return buf;
-        }
-        else
-        {
-            // One stride of the region (cache-line-rounded), filled.
-            T* buf = reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
-            std::fill_n(buf, cst_buffer_size, val);
-            return buf;
-        }
-    }
-
-  public:
     /// @brief Release an alloc_chunk() array, by whichever route allocated it.
     static void free_chunk(T* /*p*/)
     {
         // Region memory: nothing to free per array. The last clear gives the
         // whole carved range back (GlobalVecHolder::region_reset).
     }
-
 
     /**
      * @brief The shared array for @p second_v, registering it if new.
@@ -1174,7 +1114,78 @@ struct TabCstVal2Holder
         return global_vec_holder::value_by_id[id]; // [0] is T{}
     }
 
+    /**
+     * @brief Drop this user of the registry; the last one frees it.
+     * @param nb_val2 Incremented by the number of arrays freed.
+     * @warning Single thread only, and with no concurrent scan in flight.
+     *          @see GlobalVecHolder::clear_if_last for the full contract and
+     *          the bug that established it.
+     */
+    static void clear(int& nb_val2)
+    { // Delegate to GlobalVecHolder which tracks how many instances
+        // are still alive and frees the shared segment list only when
+        // the last one calls clear().
+        global_vec_holder::clear_if_last(nb_val2);
+    }
+
   private:
+    // ── MM_PROTECT helpers ────────────────────────────────────────────────
+
+    /// @brief One array's size in bytes, rounded up to whole pages.
+    /// @note Page rounding matters only to the MM_PROTECT path, where mprotect
+    ///       works on page granularity.
+    [[nodiscard]] static size_t alloc_size() noexcept
+    {
+        const size_t bytes    = cst_buffer_size * sizeof(T);
+        const size_t pagesize = sysconf(_SC_PAGESIZE);
+        return ((bytes + pagesize - 1) / pagesize) * pagesize;
+    }
+
+    /// @brief Carve one region stride for a shared array; the storage part of alloc_chunk().
+    /// @param val Fill value: cst_buffer_size copies are written, except under cst_val2_no_arrays where nothing is
+    ///        written; under MM_PROTECT the stride is made read-only after the fill.
+    /// @return Start of the carved stride.
+    static T* alloc_chunk_int(T val)
+    {
+        if constexpr (build_config::cst_val2_no_arrays)
+        {
+            // Carve an identifier, write nothing. The pointer is never
+            // dereferenced under this flag: is_cst_val2() is a range test and
+            // id_of_ptr() is arithmetic, and the value itself is read from
+            // value_by_id[], which alloc_chunk() fills right after this
+            // returns. The region stays entirely unbacked.
+            (void)val;
+            return reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
+        }
+        else if constexpr (build_config::use_mm_protect)
+        {
+            // Carve one stride of the region (page-rounded), open it, fill it,
+            // close it to PROT_READ.
+            const size_t size = global_vec_holder::region_stride;
+            void*        raw  = global_vec_holder::region_alloc(size);
+            if (mprotect(raw, size, PROT_READ | PROT_WRITE) != 0) [[unlikely]]
+            {
+                std::cerr << "mprotect failed\n";
+                std::abort();
+            }
+            T* buf = static_cast<T*>(raw);
+            std::fill_n(buf, cst_buffer_size, val);
+            if (mprotect(raw, size, PROT_READ) != 0) [[unlikely]]
+            {
+                std::cerr << "mprotect failed\n";
+                std::abort();
+            }
+            return buf;
+        }
+        else
+        {
+            // One stride of the region (cache-line-rounded), filled.
+            T* buf = reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
+            std::fill_n(buf, cst_buffer_size, val);
+            return buf;
+        }
+    }
+
     /// @brief The identifier for @p v, registering its array if it is new;
     ///        0 for T{} (the "no second value" the value table wrote as 0).
     [[nodiscard]] static std::uint32_t id_for_value(T v)
@@ -1250,22 +1261,6 @@ struct TabCstVal2Holder
         global_vec_holder::index_publish(second_v, buf); // release: readers see the fill
         return buf;
     }
-
-
-  public:
-    /**
-     * @brief Drop this user of the registry; the last one frees it.
-     * @param nb_val2 Incremented by the number of arrays freed.
-     * @warning Single thread only, and with no concurrent scan in flight.
-     *          @see GlobalVecHolder::clear_if_last for the full contract and
-     *          the bug that established it.
-     */
-    static void clear(int& nb_val2)
-    { // Delegate to GlobalVecHolder which tracks how many instances
-        // are still alive and frees the shared segment list only when
-        // the last one calls clear().
-        global_vec_holder::clear_if_last(nb_val2);
-    }
 };
 
 /**
@@ -1284,19 +1279,6 @@ struct TabCstVal2Holder
 template <>
 struct TabCstVal2Holder<bool>
 {
-  private:
-    /// @brief All `true`, evaluated at compile time so #m_ptr is constant-initialised.
-    [[nodiscard]] static constexpr std::array<bool, cst_buffer_size> all_true() noexcept
-    {
-        std::array<bool, cst_buffer_size> arr{};
-        arr.fill(true);
-        return arr;
-    }
-
-  public:
-    /// @brief The one shared array, all `true`.
-    static inline std::array<bool, cst_buffer_size> m_ptr = all_true();
-
     /// @brief Nothing to create. @see TabCstVal2Holder::create
     static void create() {}
     /// @brief Nothing to free, and no user count to keep.
@@ -1318,6 +1300,19 @@ struct TabCstVal2Holder<bool>
     {
         return m_ptr.data();
     }
+
+  private:
+    /// @brief All `true`, evaluated at compile time so #m_ptr is constant-initialised.
+    [[nodiscard]] static constexpr std::array<bool, cst_buffer_size> all_true() noexcept
+    {
+        std::array<bool, cst_buffer_size> arr{};
+        arr.fill(true);
+        return arr;
+    }
+
+  public:
+    /// @brief The one shared array, all `true`.
+    static inline std::array<bool, cst_buffer_size> m_ptr = all_true();
 };
 
 } // namespace shrink_array

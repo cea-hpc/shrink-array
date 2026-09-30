@@ -167,12 +167,6 @@ inline bool analyze_ring_sweep()
 template <EventCode BEGIN_EVENT, EventCode END_EVENT, bool Manual = false>
 struct ScopedRingLog
 {
-  private:
-    [[maybe_unused]] uint32_t tid;
-    [[maybe_unused]] uint32_t payload;
-    [[maybe_unused]] bool     ended;
-
-  public:
     /// @param payload_value Optional payload. 0 means no payload.
     explicit ScopedRingLog(uint32_t payload_value = 0) noexcept
     {
@@ -230,6 +224,11 @@ struct ScopedRingLog
     ScopedRingLog& operator=(const ScopedRingLog&) = delete;
     ScopedRingLog(ScopedRingLog&&)                 = delete;
     ScopedRingLog& operator=(ScopedRingLog&&)      = delete;
+
+  private:
+    [[maybe_unused]] uint32_t tid;
+    [[maybe_unused]] uint32_t payload;
+    [[maybe_unused]] bool     ended;
 };
 
 // Convenience aliases

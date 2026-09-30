@@ -26,14 +26,16 @@
 template <typename T>
 class Singleton
 {
-  protected:
-    // Atomic: getInstance() reads it without the mutex (double-checked locking).
-    static inline std::atomic<T*> unique_instance{nullptr};
-    static inline std::mutex      unique_instance_mutex;
-
   public:
     Singleton(const Singleton&)            = delete;
     Singleton& operator=(const Singleton&) = delete;
+
+    /// @brief getInstance(), as a reference.
+    /// @return The instance.
+    static T& getRef()
+    {
+        return *getInstance();
+    }
 
   private:
     /// @brief The instance, created on first use (double-checked locking).
@@ -65,11 +67,8 @@ class Singleton
         delete unique_instance.exchange(nullptr, std::memory_order_acq_rel);
     }
 
-  public:
-    /// @brief getInstance(), as a reference.
-    /// @return The instance.
-    static T& getRef()
-    {
-        return *getInstance();
-    }
+  protected:
+    // Atomic: getInstance() reads it without the mutex (double-checked locking).
+    static inline std::atomic<T*> unique_instance{nullptr};
+    static inline std::mutex      unique_instance_mutex;
 };

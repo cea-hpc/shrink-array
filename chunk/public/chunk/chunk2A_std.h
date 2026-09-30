@@ -83,32 +83,49 @@ struct Chunk2AConcurrentOps
   private:
     static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
 
-    /// @brief `this` as a pointer to the derived class.
-    Derived* self() noexcept
+  public:
+    /// @brief Atomically mark this chunk constant and hand back its old buffer.
+    /// @param num_compress_value 0 for the first constant, 1 for the second.
+    /// @param cst2_ptr The shared array to install when @p num_compress_value
+    ///        is 1 (find_or_set_ind_cst_val2's result); ignored for 0.
+    [[nodiscard]] T* try_mark_cst_and_get_old(int num_compress_value, T* cst2_ptr) noexcept
     {
-        return static_cast<Derived*>(this);
-    }
-    [[nodiscard]] const Derived* self() const noexcept
-    {
-        return static_cast<const Derived*>(this);
-    }
-    /// @brief `this` as a pointer to the Chunk2Base base.
-    Base* base() noexcept
-    {
-        return static_cast<Base*>(self());
-    }
-    /// @brief `this` as a pointer to the TabCstVal2Holder base.
-    Holder* holder() noexcept
-    {
-        return static_cast<Holder*>(self());
-    }
+        T* old = base()->values_load();
+        if (old == Base::get_cst_val1() || Holder::is_cst_val2_ptr(old))
+            return nullptr;
 
-    /// @brief Compact identity of this chunk for the ring log: its address past
-    ///        the alignment bits. Callers mask it to 24 bits and pack a tag into
-    ///        the top byte. Was written out identically at three sites.
-    [[nodiscard]] uint32_t ring_chunk_id() const noexcept
-    {
-        return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(self()) >> 4U);
+        T* new_ptr  = (num_compress_value == 0) ? Base::get_cst_val1() : cst2_ptr;
+        T* expected = old;
+
+        if constexpr (chunk_config::ring_log_debug)
+        {
+            const uint32_t chunk_id = ring_chunk_id();
+            const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
+            ring_log(get_tid(), EV_COMPRESS_ATTEMPT, info);
+        }
+
+        if (!self()->values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel,
+                                                    std::memory_order_acquire))
+            return nullptr;
+
+        if constexpr (build_config::any_check)
+        {
+            T* observed = base()->values_load();
+            if (observed != new_ptr && observed != Base::get_cst_val1() && !Holder::is_cst_val2_ptr(observed))
+                invariant_failed(std::source_location::current(),
+                                 "try_mark_cst_and_get_old: post-CAS values={} not in expected set "
+                                 "(new_ptr={}, cst1={}, a cst2 array)",
+                                 static_cast<const void*>(observed), static_cast<const void*>(new_ptr),
+                                 static_cast<const void*>(Base::get_cst_val1()));
+        }
+
+        if constexpr (chunk_config::ring_log_debug)
+        {
+            const uint32_t chunk_id = ring_chunk_id();
+            const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
+            ring_log(get_tid(), EV_CAS_VALUES_TO_CST, info);
+        }
+        return old;
     }
 
   protected:
@@ -174,49 +191,33 @@ struct Chunk2AConcurrentOps
         return failed;
     }
 
-  public:
-    /// @brief Atomically mark this chunk constant and hand back its old buffer.
-    /// @param num_compress_value 0 for the first constant, 1 for the second.
-    /// @param cst2_ptr The shared array to install when @p num_compress_value
-    ///        is 1 (find_or_set_ind_cst_val2's result); ignored for 0.
-    [[nodiscard]] T* try_mark_cst_and_get_old(int num_compress_value, T* cst2_ptr) noexcept
+  private:
+    /// @brief `this` as a pointer to the derived class.
+    Derived* self() noexcept
     {
-        T* old = base()->values_load();
-        if (old == Base::get_cst_val1() || Holder::is_cst_val2_ptr(old))
-            return nullptr;
+        return static_cast<Derived*>(this);
+    }
+    [[nodiscard]] const Derived* self() const noexcept
+    {
+        return static_cast<const Derived*>(this);
+    }
+    /// @brief `this` as a pointer to the Chunk2Base base.
+    Base* base() noexcept
+    {
+        return static_cast<Base*>(self());
+    }
+    /// @brief `this` as a pointer to the TabCstVal2Holder base.
+    Holder* holder() noexcept
+    {
+        return static_cast<Holder*>(self());
+    }
 
-        T* new_ptr  = (num_compress_value == 0) ? Base::get_cst_val1() : cst2_ptr;
-        T* expected = old;
-
-        if constexpr (chunk_config::ring_log_debug)
-        {
-            const uint32_t chunk_id = ring_chunk_id();
-            const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
-            ring_log(get_tid(), EV_COMPRESS_ATTEMPT, info);
-        }
-
-        if (!self()->values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel,
-                                                    std::memory_order_acquire))
-            return nullptr;
-
-        if constexpr (build_config::any_check)
-        {
-            T* observed = base()->values_load();
-            if (observed != new_ptr && observed != Base::get_cst_val1() && !Holder::is_cst_val2_ptr(observed))
-                invariant_failed(std::source_location::current(),
-                                 "try_mark_cst_and_get_old: post-CAS values={} not in expected set "
-                                 "(new_ptr={}, cst1={}, a cst2 array)",
-                                 static_cast<const void*>(observed), static_cast<const void*>(new_ptr),
-                                 static_cast<const void*>(Base::get_cst_val1()));
-        }
-
-        if constexpr (chunk_config::ring_log_debug)
-        {
-            const uint32_t chunk_id = ring_chunk_id();
-            const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
-            ring_log(get_tid(), EV_CAS_VALUES_TO_CST, info);
-        }
-        return old;
+    /// @brief Compact identity of this chunk for the ring log: its address past
+    ///        the alignment bits. Callers mask it to 24 bits and pack a tag into
+    ///        the top byte. Was written out identically at three sites.
+    [[nodiscard]] uint32_t ring_chunk_id() const noexcept
+    {
+        return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(self()) >> 4U);
     }
 };
 
@@ -235,19 +236,6 @@ struct Chunk2AStateQueries
   private:
     static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
 
-    [[nodiscard]] const Derived* self() const noexcept
-    {
-        return static_cast<const Derived*>(this);
-    }
-    [[nodiscard]] const Base* base() const noexcept
-    {
-        return static_cast<const Base*>(self());
-    }
-    [[nodiscard]] const Holder* holder() const noexcept
-    {
-        return static_cast<const Holder*>(self());
-    }
-
   public:
     /// @brief Is the chunk compressed to a second value (its values pointer
     ///        lies in the second-value region; for bool, IS the flag block)?
@@ -260,14 +248,6 @@ struct Chunk2AStateQueries
             return current_value == Holder::m_ptr.data();
     }
 
-  private:
-    /// @brief Complement of is_cst_val2().
-    [[nodiscard]] bool is_not_cst_val2() const noexcept
-    {
-        return !is_cst_val2();
-    }
-
-  public:
     /// @brief is_cst_val2() asked of a pointer the caller already loaded.
     /// @details element_at() must test and read the SAME load: asking the chunk
     ///          loads `values` a second time, and a compressor claiming it in
@@ -303,18 +283,6 @@ struct Chunk2AStateQueries
             return true;
     }
 
-  private:
-    /// @brief second_value_from_ptr() on this chunk's own values pointer.
-    /// @pre is_cst_val2().
-    [[nodiscard]] T second_value_of_chunk() const noexcept
-    {
-        if constexpr (is_not_bool)
-            return Holder::value_of_id(Holder::id_of_ptr(base()->values_load()));
-        else
-            return true; // bool: the second value is the only other one
-    }
-
-  public:
     /**
      * @brief Give this chunk a real buffer, because a caller needs an address.
      *
@@ -331,14 +299,6 @@ struct Chunk2AStateQueries
             base()->create_value(second_value_of_chunk());
     }
 
-  protected:
-    /// @brief Compressed to either constant?
-    [[nodiscard]] bool is_cst_val() const noexcept
-    {
-        return base()->is_cst_val1() || is_cst_val2();
-    }
-
-  public:
     /// @brief Is @p ptr one of the constant arrays (first or a second one)?
     /// @note For a values pointer the caller already loaded -- the pre-store
     ///       guards of the proxy -- where is_cst_val() would load it again.
@@ -364,6 +324,43 @@ struct Chunk2AStateQueries
     [[nodiscard]] bool written_test() const noexcept
     {
         return self()->values != Base::get_cst_val1() && is_not_cst_val2();
+    }
+
+  protected:
+    /// @brief Compressed to either constant?
+    [[nodiscard]] bool is_cst_val() const noexcept
+    {
+        return base()->is_cst_val1() || is_cst_val2();
+    }
+
+  private:
+    [[nodiscard]] const Derived* self() const noexcept
+    {
+        return static_cast<const Derived*>(this);
+    }
+    [[nodiscard]] const Base* base() const noexcept
+    {
+        return static_cast<const Base*>(self());
+    }
+    [[nodiscard]] const Holder* holder() const noexcept
+    {
+        return static_cast<const Holder*>(self());
+    }
+
+    /// @brief Complement of is_cst_val2().
+    [[nodiscard]] bool is_not_cst_val2() const noexcept
+    {
+        return !is_cst_val2();
+    }
+
+    /// @brief second_value_from_ptr() on this chunk's own values pointer.
+    /// @pre is_cst_val2().
+    [[nodiscard]] T second_value_of_chunk() const noexcept
+    {
+        if constexpr (is_not_bool)
+            return Holder::value_of_id(Holder::id_of_ptr(base()->values_load()));
+        else
+            return true; // bool: the second value is the only other one
     }
 };
 
@@ -407,16 +404,6 @@ struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurren
     /// @brief Matching array-delete.
     void operator delete[](void* ptr);
 
-  private:
-    /// @brief Point @p count freshly allocated chunks at the first constant.
-    /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
-    ///          parallel region (inside one it stays on the calling thread: an
-    ///          allocation is made by one thread, and an orphaned `omp for`
-    ///          would hang waiting for the others). Shared by the three
-    ///          variants -- chunk_array_new::init_chunks.
-    static void init_chunks_cst_val(Chunk2A<T>* v, std::size_t count) noexcept;
-
-  public:
     /*!
      * \brief Materialise this chunk's buffer (allocate + fill + CAS-publish),
      *        for a specific thread. Non-bool only.
@@ -487,6 +474,15 @@ struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurren
     {
         clear_int_st(num_compress_value, ptr_type_cst, ptr_second_value, CHUNK_PMP_THREAD_RANK);
     }
+
+  private:
+    /// @brief Point @p count freshly allocated chunks at the first constant.
+    /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
+    ///          parallel region (inside one it stays on the calling thread: an
+    ///          allocation is made by one thread, and an orphaned `omp for`
+    ///          would hang waiting for the others). Shared by the three
+    ///          variants -- chunk_array_new::init_chunks.
+    static void init_chunks_cst_val(Chunk2A<T>* v, std::size_t count) noexcept;
 };
 
 /**
@@ -558,10 +554,9 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     using ChunkType              = Chunk2A;
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
+  public:
     friend class Chunk2Base<T, Chunk2A>;
     friend class Proxy2A<T>;
-
-  public:
 
     // Statistics variant tag (CHUNK_STATS): 2 = chunk2a.
     static constexpr int stat_variant = 2;
@@ -585,6 +580,16 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     static constexpr bool is_not_bool = !is_bool;
 
   public:
+    // block_clear / clear_st / clear / clear_int_st / create_value* live on
+    // Chunk2AOmpPolicy, one specialisation per mode (see above). Both declare
+    // these names; the in-class bodies below call them unqualified.
+    using OmpPolicy::block_clear;
+    using OmpPolicy::clear;
+    using OmpPolicy::clear_int_st;
+    using OmpPolicy::clear_st;
+    using OmpPolicy::create_value;
+    using OmpPolicy::create_value_bool;
+
     Chunk2A()  = default;
     ~Chunk2A() = default;
 
@@ -602,10 +607,10 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
             Base::values_store(other.values_load());
         return *this;
     }
+
     /**
      * @brief Initialize values after construction
      */
-
     void init_after_constructor() noexcept
     {
         Base::values = Base::get_cst_val1();
@@ -677,45 +682,12 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
         return s_manager_;
     }
 
-  private:
-    inline static manager_chunk2A s_manager_{};
-
-  private:
-    /// @brief Is every rank's candidate list empty (the calling thread's, in a
-    ///        serial build)?
-    [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept
-    {
-        if constexpr (build_config::use_openmp)
-        {
-            return manager_chunk2A::is_chunk2A_to_compress_potentially_empty();
-        }
-        else
-        {
-            return manager_chunk2A::get_chunk2A_to_compress_potentially().empty();
-        }
-    }
-
-  public:
     /// @brief Rank @p thr's candidate list.
     static TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially_thr(int thr) noexcept
     {
         return manager_chunk2A::get_chunk2A_to_compress_potentially(thr);
     }
 
-    // block_clear / clear_st / clear / clear_int_st / create_value* live on
-    // Chunk2AOmpPolicy, one specialisation per mode (see above). Both declare
-    // these names; the in-class bodies below call them unqualified.
-    using OmpPolicy::block_clear;
-    using OmpPolicy::clear;
-    using OmpPolicy::clear_int_st;
-    using OmpPolicy::clear_st;
-    using OmpPolicy::create_value;
-    using OmpPolicy::create_value_bool;
-
-  private:
-    static void compress_chunk_to_compress_in_par(int thr, bool apply);
-
-  public:
     /// @brief Materialise this chunk if it is currently compressed to either
     ///        constant; a no-op otherwise (already materialised).
     /// @param ptr_second_value The second value to fill from, when that is
@@ -762,7 +734,30 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
         }
     }
 
+    void compress(int thr_rank, int num_chunk, int num_tab, bool apply, ChunkElems size);
+
+    static void compress_chunk_to_compress(bool apply);
+    static bool have_chunk_to_compress(int max_thr);
+
+    static void make_block_compression(int thr, Proxy2A<T>* proxy2A);
+
   private:
+    /// @brief Is every rank's candidate list empty (the calling thread's, in a
+    ///        serial build)?
+    [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept
+    {
+        if constexpr (build_config::use_openmp)
+        {
+            return manager_chunk2A::is_chunk2A_to_compress_potentially_empty();
+        }
+        else
+        {
+            return manager_chunk2A::get_chunk2A_to_compress_potentially().empty();
+        }
+    }
+
+    static void compress_chunk_to_compress_in_par(int thr, bool apply);
+
     // Chunk geometry is PER ENTRY in dynamic builds: every tuple queued into
     // chunk2A_to_compress_potentially carries the owning array's chunk size
     // (push_to_compress_list stores this->chunk_size() as field <3>). The scan
@@ -785,13 +780,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
                                ChunkElems                size,
                                bool                      claimed = false);
 
-  public:
-    void compress(int thr_rank, int num_chunk, int num_tab, bool apply, ChunkElems size);
-
-    static void compress_chunk_to_compress(bool apply);
-    static bool have_chunk_to_compress(int max_thr);
-
-    static void make_block_compression(int thr, Proxy2A<T>* proxy2A);
+    inline static manager_chunk2A s_manager_{};
 };
 
 } // namespace shrink_array

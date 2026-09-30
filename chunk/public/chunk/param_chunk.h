@@ -202,6 +202,7 @@ struct ParamChunkDynInterface<false, AllT>
 ///        of ParamChunkParallelInterface and ParamChunkDynInterface.
 class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInterface<>
 {
+  public:
     // The policies read #block_size, which is private and stays that way: it is
     // an implementation detail of the façade, not part of its surface.
     // Both policies are befriended as TEMPLATES rather than as their
@@ -213,68 +214,22 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     template <bool, typename>
     friend struct ParamChunkDynInterface;
 
-  private:
+    /// @brief Lower sanity bound for a configured CHUNK_SIZE.
+    static constexpr int size_min = 32;
     /**
-     * @brief No-op compatibility shim for the former runtime chunk-size setter.
+     * @brief Upper sanity bound for a configured CHUNK_SIZE.
      *
-     * @details __chunk_size is a compile-time constant now, so the size cannot be
-     *          changed at run time. Rather than silently ignoring the call, this
-     *          warns when a caller asks for a size the binary was not built with —
-     *          otherwise the program would keep running on a geometry it did not
-     *          request.
+     * @details This is NOT the chunk geometry — use shrink_array::__chunk_size for
+     *          that; it only validates a size coming from an example or a config.
+     *          The real hard limit is the per-chunk counter capacity (unsigned
+     *          short), enforced by a static_assert in conditional_counter.h, hence
+     *          65535.
      *
-     * @param v the chunk size the caller wanted; only compared, never applied
-     * @warning To actually change the geometry, rebuild with `-DCHUNK_SIZE=v`
-     *          (must be a power of two).
+     * @warning Was 256 (then 128), a stale value predating the constexpr-geometry
+     *          refactor, which wrongly rejected CHUNK_SIZE=512.
      */
-    static void set_chunk_size(int v)
-    {
-        if (std::cmp_not_equal(v, __chunk_size))
-            std::cerr << "Warning: set_chunk_size(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
-                      << " (rebuild with -DCHUNK_SIZE=" << v << ")\n";
-    }
+    static constexpr int size_max = 65535;
 
-    /**
-     * @brief Number of elements per chunk, as fixed at build time.
-     * @return shrink_array::__chunk_size (CHUNK_SIZE, default 64)
-     * @note In a CHUNK_DYNAMIC build an individual array may have been re-chunked
-     *       to another size; this still returns the compile-time value. Use
-     *       shrink_array::active_chunk_size() for the geometry currently in effect.
-     */
-    static constexpr unsigned int get_chunk_size() noexcept
-    {
-        return __chunk_size;
-    }
-
-    /**
-     * @brief No-op compatibility shim: the shift is derived from CHUNK_SIZE.
-     *
-     * @details Kept so existing call sites keep compiling; the value is
-     *          log2(__chunk_size), computed at compile time.
-     *
-     * @param v the shift the caller wanted; only compared, never applied
-     * @warning Warns when asked for a shift the binary was not built with,
-     *          rather than accepting it in silence -- the same contract as
-     *          set_chunk_size(). A caller that got no answer here would have
-     *          gone on believing it had changed the geometry.
-     */
-    static void set_decalage_chunk(unsigned int v)
-    {
-        if (v != __decalage_chunk)
-            std::cerr << "Warning: set_decalage_chunk(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
-                      << " (shift " << __decalage_chunk << ")\n";
-    }
-
-    /**
-     * @brief Right-shift turning a global element index into a chunk index.
-     * @return log2(__chunk_size); `chunk = i >> get_decalage_chunk()`
-     */
-    static constexpr unsigned int get_decalage_chunk() noexcept
-    {
-        return __decalage_chunk;
-    }
-
-  public:
     /**
      * @brief Check that a candidate chunk size is a power of two.
      *
@@ -291,30 +246,6 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
         return is_power_of_tow(chunk_size);
     }
 
-  private:
-    /**
-     * @brief No-op compatibility shim: the mask is derived from CHUNK_SIZE.
-     *
-     * @param v the mask the caller wanted; only compared, never applied
-     * @warning Warns rather than ignoring silently. @see set_decalage_chunk
-     */
-    static void set_modulo_chunk(int v)
-    {
-        if (std::cmp_not_equal(v, __modulo_chunk))
-            std::cerr << "Warning: set_modulo_chunk(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
-                      << " (mask " << __modulo_chunk << ")\n";
-    }
-
-    /**
-     * @brief Mask extracting the offset of an element inside its chunk.
-     * @return __chunk_size - 1; `offset = i & get_modulo_chunk()`
-     */
-    static constexpr unsigned int get_modulo_chunk() noexcept
-    {
-        return __modulo_chunk;
-    }
-
-  public:
     /**
      * @brief Print the chunk geometry (size, shift, mask) on stdout.
      *
@@ -340,7 +271,6 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
             std::cout << "modulo chunk   : " << __modulo_chunk << "\n";
         }
     }
-
 
     /**
      * @brief Initialise the library: block size, allocators and per-thread stores.
@@ -410,7 +340,6 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      */
     static void force_compression();
 
-
     /**
      * @brief Declare a second compressible value, besides zero.
      *
@@ -424,23 +353,6 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     template <typename T>
     static void set_second_value(T second_value) = delete;
 
-  private:
-    /**
-     * @brief Set the allocation block size, in bytes.
-     * @param bz block size; normally computed by init_indexes()
-     */
-    static void set_block_size(int bz) noexcept
-    {
-        block_size = bz;
-    }
-
-    /// @brief Allocation block size in bytes, as set by init_indexes().
-    static int get_block_size() noexcept
-    {
-        return block_size;
-    }
-
-  public:
     /**
      * @brief Print the instrumentation report accumulated during the run.
      *
@@ -457,23 +369,104 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      */
     static void ChunkStats();
 
-    /// @brief Lower sanity bound for a configured CHUNK_SIZE.
-    static constexpr int size_min = 32;
-    /**
-     * @brief Upper sanity bound for a configured CHUNK_SIZE.
-     *
-     * @details This is NOT the chunk geometry — use shrink_array::__chunk_size for
-     *          that; it only validates a size coming from an example or a config.
-     *          The real hard limit is the per-chunk counter capacity (unsigned
-     *          short), enforced by a static_assert in conditional_counter.h, hence
-     *          65535.
-     *
-     * @warning Was 256 (then 128), a stale value predating the constexpr-geometry
-     *          refactor, which wrongly rejected CHUNK_SIZE=512.
-     */
-    static constexpr int size_max = 65535;
-
   private:
+    /**
+     * @brief No-op compatibility shim for the former runtime chunk-size setter.
+     *
+     * @details __chunk_size is a compile-time constant now, so the size cannot be
+     *          changed at run time. Rather than silently ignoring the call, this
+     *          warns when a caller asks for a size the binary was not built with —
+     *          otherwise the program would keep running on a geometry it did not
+     *          request.
+     *
+     * @param v the chunk size the caller wanted; only compared, never applied
+     * @warning To actually change the geometry, rebuild with `-DCHUNK_SIZE=v`
+     *          (must be a power of two).
+     */
+    static void set_chunk_size(int v)
+    {
+        if (std::cmp_not_equal(v, __chunk_size))
+            std::cerr << "Warning: set_chunk_size(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
+                      << " (rebuild with -DCHUNK_SIZE=" << v << ")\n";
+    }
+
+    /**
+     * @brief Number of elements per chunk, as fixed at build time.
+     * @return shrink_array::__chunk_size (CHUNK_SIZE, default 64)
+     * @note In a CHUNK_DYNAMIC build an individual array may have been re-chunked
+     *       to another size; this still returns the compile-time value. Use
+     *       shrink_array::active_chunk_size() for the geometry currently in effect.
+     */
+    static constexpr unsigned int get_chunk_size() noexcept
+    {
+        return __chunk_size;
+    }
+
+    /**
+     * @brief No-op compatibility shim: the shift is derived from CHUNK_SIZE.
+     *
+     * @details Kept so existing call sites keep compiling; the value is
+     *          log2(__chunk_size), computed at compile time.
+     *
+     * @param v the shift the caller wanted; only compared, never applied
+     * @warning Warns when asked for a shift the binary was not built with,
+     *          rather than accepting it in silence -- the same contract as
+     *          set_chunk_size(). A caller that got no answer here would have
+     *          gone on believing it had changed the geometry.
+     */
+    static void set_decalage_chunk(unsigned int v)
+    {
+        if (v != __decalage_chunk)
+            std::cerr << "Warning: set_decalage_chunk(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
+                      << " (shift " << __decalage_chunk << ")\n";
+    }
+
+    /**
+     * @brief Right-shift turning a global element index into a chunk index.
+     * @return log2(__chunk_size); `chunk = i >> get_decalage_chunk()`
+     */
+    static constexpr unsigned int get_decalage_chunk() noexcept
+    {
+        return __decalage_chunk;
+    }
+
+    /**
+     * @brief No-op compatibility shim: the mask is derived from CHUNK_SIZE.
+     *
+     * @param v the mask the caller wanted; only compared, never applied
+     * @warning Warns rather than ignoring silently. @see set_decalage_chunk
+     */
+    static void set_modulo_chunk(int v)
+    {
+        if (std::cmp_not_equal(v, __modulo_chunk))
+            std::cerr << "Warning: set_modulo_chunk(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
+                      << " (mask " << __modulo_chunk << ")\n";
+    }
+
+    /**
+     * @brief Mask extracting the offset of an element inside its chunk.
+     * @return __chunk_size - 1; `offset = i & get_modulo_chunk()`
+     */
+    static constexpr unsigned int get_modulo_chunk() noexcept
+    {
+        return __modulo_chunk;
+    }
+
+    /**
+     * @brief Set the allocation block size, in bytes.
+     * @param bz block size; normally computed by init_indexes()
+     */
+    static void set_block_size(int bz) noexcept
+    {
+        block_size = bz;
+    }
+
+    /// @brief Allocation block size in bytes, as set by init_indexes().
+    static int get_block_size() noexcept
+    {
+        return block_size;
+    }
+
     /// @brief Allocation block size in bytes, shared by all types and threads.
     static int block_size;
 };

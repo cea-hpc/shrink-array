@@ -308,15 +308,6 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
     static constexpr uint32_t kCountMask  = (uint32_t{1} << kCountBits) - 1;
     static constexpr uint32_t kOwnerMulti = 0xFFFu;
 
-    /// @brief Sign-extend the low 20 bits of the pending word (the count is
-    ///        stored as two's-complement inside those 20 bits).
-    /// @param word Raw pending word.
-    /// @return The count, sign-extended to a full int32_t.
-    [[nodiscard]] static constexpr int32_t sign_extend_count(uint32_t word) noexcept
-    {
-        return static_cast<int32_t>(word << (32 - kCountBits)) >> (32 - kCountBits);
-    }
-
   public:
     /// @brief Publish a newly-enqueued deferred op: increment the per-chunk
     ///        pending count (and, under sync_on_read, record this thread as
@@ -431,6 +422,16 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
     {
         if (pending_any()) [[unlikely]]
             static_cast<const Derived&>(*this).wait_for_availability(i);
+    }
+
+  private:
+    /// @brief Sign-extend the low 20 bits of the pending word (the count is
+    ///        stored as two's-complement inside those 20 bits).
+    /// @param word Raw pending word.
+    /// @return The count, sign-extended to a full int32_t.
+    [[nodiscard]] static constexpr int32_t sign_extend_count(uint32_t word) noexcept
+    {
+        return static_cast<int32_t>(word << (32 - kCountBits)) >> (32 - kCountBits);
     }
 };
 
@@ -679,18 +680,6 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
     // if you prefer centralizing them there. They must be visible to both ChunkBase and CompressionManager.
     using global_map_type = ankerl::unordered_dense::map<int, per_thread_map>;
 
-  private:
-    // ── Compare and Swap ────────────────────────────────────────────────────
-    /// @brief Type-tag helper: yields per_thread_map's type without needing
-    ///        an instance. Always returns nullptr; only the pointer's static
-    ///        type is ever used by callers.
-    /// @return nullptr, typed as per_thread_map*.
-    static per_thread_map* per_thread_map_type_id()
-    {
-        return nullptr;
-    }
-
-  public:
     /// @brief Atomic CAS of values from expected constant pointer to a new buffer.
     /// @param values_loc  New buffer to install on success.
     /// @param m_ptr_cst_val Expected current value of values. Taken by value on
@@ -751,21 +740,6 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
         ll_block_free_thr.push_back(values_loc);
     }
 
-  private:
-    // ── Deferred-op enqueue / flush / read gate ────────────────────────────
-    /// @brief Ensure that the global deferred array is initialized exactly once.
-    /// @details This replaces std::call_once with a CAS-based mechanism that can be reset.
-    ///          - The first thread that flips deferred_initializing from false→true performs init.
-    ///          - Other threads spin until deferred_initialized becomes true.
-    ///          - This mechanism is fully resettable by clearing deferred_initialized.
-    void ensure_deferred_array_initialized() const
-    {
-        if (get_deferred_ops() != nullptr) [[likely]]
-            return;
-        DeferredOpsStorage<per_thread_map>::instance().allocate();
-    }
-
-  public:
     /// @brief Current per-thread deferred-ops array, or nullptr if it has not
     ///        been allocated yet (see ensure_deferred_array_initialized()).
     /// @return Pointer to the per-thread map array, or nullptr.
@@ -792,6 +766,29 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
     void wait_for_availability(int num) const;
 
   private:
+    // ── Compare and Swap ────────────────────────────────────────────────────
+    /// @brief Type-tag helper: yields per_thread_map's type without needing
+    ///        an instance. Always returns nullptr; only the pointer's static
+    ///        type is ever used by callers.
+    /// @return nullptr, typed as per_thread_map*.
+    static per_thread_map* per_thread_map_type_id()
+    {
+        return nullptr;
+    }
+
+    // ── Deferred-op enqueue / flush / read gate ────────────────────────────
+    /// @brief Ensure that the global deferred array is initialized exactly once.
+    /// @details This replaces std::call_once with a CAS-based mechanism that can be reset.
+    ///          - The first thread that flips deferred_initializing from false→true performs init.
+    ///          - Other threads spin until deferred_initialized becomes true.
+    ///          - This mechanism is fully resettable by clearing deferred_initialized.
+    void ensure_deferred_array_initialized() const
+    {
+        if (get_deferred_ops() != nullptr) [[likely]]
+            return;
+        DeferredOpsStorage<per_thread_map>::instance().allocate();
+    }
+
     /// @brief Cheap, conservative pre-check for wait_for_availability(): true
     ///        means SOME deferred op is pending somewhere (possibly not for
     ///        this chunk); false is a precise guarantee that nothing is
@@ -826,29 +823,6 @@ struct ChunkDynamicAllocPolicy; // primary left undefined: only the 2 specializa
 template <typename T, typename Derived>
 struct ChunkDynamicAllocPolicy<T, Derived, true>
 {
-  private:
-    // ---------------------------------------------------------------------
-    // Multi-size support (dynamic builds): a pool of per-thread allocator
-    // arrays, keyed by chunk size. register_chunk_size() (called from the
-    // sequential ArrayChunkBase::set_chunk_size, before any parallel alloc)
-    // is the ONLY writer; get_chunk_allocator() only ever reads, so parallel
-    // regions do lookups on a map that is not being mutated. std::map gives
-    // reference/pointer stability across inserts, which matters because a new
-    // size may be registered between two arrays' lifetimes while old entries
-    // are still in use.
-    // ---------------------------------------------------------------------
-    /// @brief Registry key: (affinity key, chunk size). Key 0 is the rank's
-    ///        shared pool -- what every array used before per-array affinity;
-    ///        a non-zero key is one array's own allocator set, so that its
-    ///        blocks sit in slabs holding nothing else and a re-chunk or a
-    ///        destruction of that array empties whole slabs.
-    static constexpr std::uint64_t pool_key(unsigned int key, unsigned int size) noexcept
-    {
-        return (static_cast<std::uint64_t>(key) << 32U) | size;
-    }
-    static inline std::map<std::uint64_t, std::vector<TCTypeCAllocator<T>>> allocator_pool_;
-
-  public:
     /// @brief Register (create + init) the per-thread allocator array for
     ///        `size`, once.
     /// @details Sequential context only.
@@ -877,20 +851,6 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
         allocator_pool_.emplace(pool_key(key, size), std::move(arr));
     }
 
-  private:
-    // Serial (non-OMP) counterpart of allocator_pool_ above: one allocator per
-    // chunk size, WITHOUT the per-thread dimension (serial builds have a single
-    // rank). TCTypeAllocator is polymorphic and non-movable (raw slab pointers +
-    // a user destructor), so it is held by unique_ptr, not by value. Populated by
-    // register_chunk_size_serial() from the sequential set_chunk_size path;
-    // get_chunk_allocator() will route serial fast-alloc lookups here by the
-    // active size (wired in a later step). This is what enables runtime re-chunk
-    // in non-OMP fast-alloc builds: old and new sizes coexist during
-    // rechunk_refill (read *this at old, write tmp at new), so a per-size pool
-    // is required rather than a re-init of the single allocator_data.
-    static inline std::map<unsigned int, std::unique_ptr<TCTypeAllocator<T>>> allocator_pool_serial_;
-
-  public:
     /// @brief Register (create + init) the single allocator for `size`, once.
     /// @details Mirrors the serial init_allocator convention:
     ///          init(element_count, block_size, -1), where the first arg is
@@ -967,6 +927,41 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
         // single-size use and the free path keep working.
         return Derived::allocator_data;
     }
+
+  private:
+    // ---------------------------------------------------------------------
+    // Multi-size support (dynamic builds): a pool of per-thread allocator
+    // arrays, keyed by chunk size. register_chunk_size() (called from the
+    // sequential ArrayChunkBase::set_chunk_size, before any parallel alloc)
+    // is the ONLY writer; get_chunk_allocator() only ever reads, so parallel
+    // regions do lookups on a map that is not being mutated. std::map gives
+    // reference/pointer stability across inserts, which matters because a new
+    // size may be registered between two arrays' lifetimes while old entries
+    // are still in use.
+    // ---------------------------------------------------------------------
+    /// @brief Registry key: (affinity key, chunk size). Key 0 is the rank's
+    ///        shared pool -- what every array used before per-array affinity;
+    ///        a non-zero key is one array's own allocator set, so that its
+    ///        blocks sit in slabs holding nothing else and a re-chunk or a
+    ///        destruction of that array empties whole slabs.
+    static constexpr std::uint64_t pool_key(unsigned int key, unsigned int size) noexcept
+    {
+        return (static_cast<std::uint64_t>(key) << 32U) | size;
+    }
+
+    static inline std::map<std::uint64_t, std::vector<TCTypeCAllocator<T>>> allocator_pool_;
+
+    // Serial (non-OMP) counterpart of allocator_pool_ above: one allocator per
+    // chunk size, WITHOUT the per-thread dimension (serial builds have a single
+    // rank). TCTypeAllocator is polymorphic and non-movable (raw slab pointers +
+    // a user destructor), so it is held by unique_ptr, not by value. Populated by
+    // register_chunk_size_serial() from the sequential set_chunk_size path;
+    // get_chunk_allocator() will route serial fast-alloc lookups here by the
+    // active size (wired in a later step). This is what enables runtime re-chunk
+    // in non-OMP fast-alloc builds: old and new sizes coexist during
+    // rechunk_refill (read *this at old, write tmp at new), so a per-size pool
+    // is required rather than a re-init of the single allocator_data.
+    static inline std::map<unsigned int, std::unique_ptr<TCTypeAllocator<T>>> allocator_pool_serial_;
 };
 
 // Static (non-dynamic) builds: a single fixed geometry, so there is no

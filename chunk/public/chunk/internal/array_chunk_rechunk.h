@@ -204,9 +204,9 @@ class RechunkSupport<Derived, true>
     {
         return true;
     }
+
     /** @} */
 
-  protected:
     /** @brief CRTP down-cast: the concrete array this mixin is a base of. */
     [[nodiscard]] Derived& self() noexcept
     {
@@ -268,9 +268,9 @@ class RechunkSupport<Derived, false>
     {
         return true;
     }
+
     /** @} */
 
-  protected:
     /** @brief CRTP down-cast: the concrete array this mixin is a base of. */
     [[nodiscard]] Derived& self() noexcept
     {

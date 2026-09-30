@@ -42,44 +42,15 @@ struct GlobalStatsChunkList
         size_t element_size;      // Size of a single entry in the op-list (tuple)
     };
 
-  private:
-    std::map<std::string, TypeStats> all_stats;
-
-  public:
     /// @brief Record one element type's figures under @p name.
     void record(const std::string& name, long somme, int max_chunks, size_t elem_size)
     {
         all_stats[name] = {somme, max_chunks, elem_size};
     }
 
-  private:
-    /// @brief @p bytes as a human-readable string (KiB / MiB / GiB).
-    static std::string format_memory(long double bytes)
-    {
-        const long double kib = bytes / 1024.0L;
-        const long double mib = kib / 1024.0L;
-        const long double gib = mib / 1024.0L;
-
-        std::ostringstream oss;
-        oss << std::fixed << std::setprecision(2);
-
-        if (gib >= 1.0L)
-            oss << gib << " Go";
-        else if (mib >= 1.0L)
-            oss << mib << " Mo";
-        else if (kib >= 1.0L)
-            oss << kib << " Ko";
-        else
-            oss << (long long)bytes << " bytes";
-
-        return oss.str();
-    }
-
-  public:
     /**
      * @brief Prints a detailed report of global memory usage for management lists.
      */
-
     void print() const
     {
         if (all_stats.empty())
@@ -123,10 +94,35 @@ struct GlobalStatsChunkList
 
         std::cout << std::string(total_width, '-') << "\n";
         std::cout << tc.BOLD << "AGGREGATED METADATA OVERHEAD:" << tc.RESET << "\n";
-        std::cout << std::left << std::setw(40) << " Total footprint for tracking lists"
-                  << ": " << tc.BOLD << tc.GREEN << format_memory(total_metadata_mem) << tc.RESET << "\n";
+        std::cout << std::left << std::setw(40) << " Total footprint for tracking lists" << ": " << tc.BOLD << tc.GREEN
+                  << format_memory(total_metadata_mem) << tc.RESET << "\n";
         std::cout << tc.CYAN << std::string(total_width, '=') << tc.RESET << "\n\n";
     }
+
+  private:
+    /// @brief @p bytes as a human-readable string (KiB / MiB / GiB).
+    static std::string format_memory(long double bytes)
+    {
+        const long double kib = bytes / 1024.0L;
+        const long double mib = kib / 1024.0L;
+        const long double gib = mib / 1024.0L;
+
+        std::ostringstream oss;
+        oss << std::fixed << std::setprecision(2);
+
+        if (gib >= 1.0L)
+            oss << gib << " Go";
+        else if (mib >= 1.0L)
+            oss << mib << " Mo";
+        else if (kib >= 1.0L)
+            oss << kib << " Ko";
+        else
+            oss << (long long)bytes << " bytes";
+
+        return oss.str();
+    }
+
+    std::map<std::string, TypeStats> all_stats;
 };
 
 } // namespace shrink_array
