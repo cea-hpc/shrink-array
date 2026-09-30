@@ -104,6 +104,9 @@ add_subdirectory(shrink_bench)
 # Validation harnesses (ctest): re-chunk content invariance, dyn geometry
 add_subdirectory(validation)
 
+# Chunk2 against Chunk2A on one workload (per-operation cost, compression)
+add_subdirectory(variant_compare)
+
 # Multi-dimensional array example
 add_subdirectory(multi-mat)
 
