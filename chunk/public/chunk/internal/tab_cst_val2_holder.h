@@ -390,6 +390,14 @@ struct GlobalVecHolder
             std::cerr << "[cst_val2] cannot reserve the second-value region (" << (kRegionBytes >> 20U) << " MiB)\n";
             std::abort();
         }
+        // CHUNK_THP (experimental, off by default): read by every thread that
+        // writes a second value. Not under MM_PROTECT, whose per-array
+        // mprotect splits huge pages anyway. Advice only.
+        if constexpr (!build_config::use_mm_protect)
+        {
+            if (alloc_config::thp_advise())
+                (void)madvise(raw, kRegionBytes, MADV_HUGEPAGE);
+        }
         // Every array is carved at a multiple of the stride: page-rounded under
         // MM_PROTECT (each is mprotect'd on its own), cache-line-rounded
         // otherwise. The stride is what turns an array pointer into a small
