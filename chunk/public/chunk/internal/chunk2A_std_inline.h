@@ -883,15 +883,18 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(this Derived&     self,
             }
         };
 
-        T* values_loc = self.Base::allocate_chunk_internal(thr_rank, init_func);
+        // Chunk2Base spelled out, not Base: `self.Base::` looks Base up in Derived first,
+        // where Chunk2A's alias is private (clang rejects it; gcc lets it through).
+        T* values_loc = self.Chunk2Base<T, Derived>::allocate_chunk_internal(thr_rank, init_func);
 
         // Reuse the unified CAS/Recycle logic from Chunk2Base.
-        self.Base::apply_cas_or_recup(values_loc, thr_rank,
-                                      [&self, need_set_second_value](T* cst_ptr)
-                                      {
-                                          // Single CAS operation targeting the specific constant pointer.
-                                          return self.compare_and_swap(cst_ptr, need_set_second_value);
-                                      });
+        self.Chunk2Base<T, Derived>::apply_cas_or_recup(values_loc, thr_rank,
+                                                        [&self, need_set_second_value](T* cst_ptr)
+                                                        {
+                                                            // One CAS on the specific constant pointer.
+                                                            return self.compare_and_swap(cst_ptr,
+                                                                                         need_set_second_value);
+                                                        });
     }
 
     else
@@ -930,14 +933,15 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(this Derived& self
             std::fill_n(ptr, shrink_array::alloc_chunk_count(), need_set_second_value);
         };
 
-        T* values_loc = self.Base::allocate_chunk_internal(thr_rank, init_func);
+        T* values_loc = self.Chunk2Base<T, Derived>::allocate_chunk_internal(thr_rank, init_func);
 
-        self.Base::apply_cas_or_recup(values_loc, thr_rank,
-                                      [&self, need_set_second_value](bool* cst_ptr)
-                                      {
-                                          // Single CAS operation targeting the specific constant pointer.
-                                          return self.compare_and_swap(cst_ptr, need_set_second_value);
-                                      });
+        self.Chunk2Base<T, Derived>::apply_cas_or_recup(values_loc, thr_rank,
+                                                        [&self, need_set_second_value](bool* cst_ptr)
+                                                        {
+                                                            // One CAS on the specific constant pointer.
+                                                            return self.compare_and_swap(cst_ptr,
+                                                                                         need_set_second_value);
+                                                        });
     }
     else
     {
