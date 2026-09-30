@@ -438,8 +438,9 @@ struct GlobalVecHolder
         {
             stride = (bytes + 63u) & ~static_cast<std::size_t>(63u);
         }
-        char* expected = nullptr;
-        if (region_begin.compare_exchange_strong(expected, static_cast<char*>(raw), std::memory_order_acq_rel))
+
+        if (char* expected = nullptr;
+            region_begin.compare_exchange_strong(expected, static_cast<char*>(raw), std::memory_order_acq_rel))
         {
             region_stride = stride;
             region_end    = static_cast<char*>(raw) + kRegionBytes;
@@ -476,8 +477,8 @@ struct GlobalVecHolder
         // raise CHUNK_CST_VAL2_REGION_BYTES.
         if (bytes != 0 && off + bytes > kRegionBytes / 2) [[unlikely]]
         {
-            static std::atomic<bool> warned{false};
-            bool                     expected = false;
+            static std::atomic warned{false};
+            bool               expected = false;
             if (warned.compare_exchange_strong(expected, true, std::memory_order_relaxed))
             {
                 std::cerr << "[cst_val2] second-value region past half full: " << (off / bytes) << " of "
