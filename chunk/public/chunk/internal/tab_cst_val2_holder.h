@@ -72,9 +72,29 @@
 
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/config.h"
+#ifdef FAST_ALLOC
+    #include "fast_allocators/internal/alloc_config.h" // alloc_config::thp_advise (CHUNK_THP)
+#endif
 
 namespace shrink_array
 {
+
+/// @brief CHUNK_THP for the cst2 region: alloc_config::thp_advise() in a
+///        fast-alloc build, always false in a std-alloc build.
+///
+/// alloc_config.h belongs to fast_allocators, which a std-alloc build neither
+/// builds nor puts on the include path. The name cannot be written unguarded
+/// in region_init() either: it is not dependent, so it is looked up when the
+/// template is defined, `if constexpr` or not (see build_config's
+/// reclaim_empty_slabs mirror in config.h).
+inline bool cst2_thp_advise() noexcept
+{
+#ifdef FAST_ALLOC
+    return alloc_config::thp_advise();
+#else
+    return false;
+#endif
+}
 
 /**
  * @brief One block of the registry chain: 64 slots and a link to the next.
@@ -395,7 +415,7 @@ struct GlobalVecHolder
         // mprotect splits huge pages anyway. Advice only.
         if constexpr (!build_config::use_mm_protect)
         {
-            if (alloc_config::thp_advise())
+            if (cst2_thp_advise())
                 (void)madvise(raw, kRegionBytes, MADV_HUGEPAGE);
         }
         // Every array is carved at a multiple of the stride: page-rounded under
