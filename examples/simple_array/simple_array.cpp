@@ -178,7 +178,9 @@ template <typename F, typename... A>
 void if_chunk(F&& f, A&... arrays)
 {
     if constexpr (use_chunk_array)
+    {
         f(arrays...);
+    }
 }
 
 int main()
@@ -302,7 +304,9 @@ int main()
         int end0 = start0 + size;
 
         if (end0 > sz)
+        {
             end0 = sz;
+        }
 
         if (k != 0 && k % freq_raz == 0)
         {
@@ -337,9 +341,13 @@ int main()
                 {
                     tab1[i] = std::sqrt(static_cast<double>(i));
                     if (i > tab_nba1[k])
+                    {
                         tab2[i] = std::cos(double(2 * i));
+                    }
                     if (i > tab_nba2[k])
+                    {
                         tab3[i] = std::sin(tab1[i] + tab2[i]);
+                    }
                 }
 
                 for (int p = 0; p < 5; ++p)
@@ -365,6 +373,7 @@ int main()
         }
 
         if (k % freq_compress == 0)
+        {
             if_chunk(
                 [](auto&... tabs)
                 {
@@ -372,6 +381,7 @@ int main()
                     (tabs.compress(), ...);
                 },
                 tab1, tab2, tab3);
+        }
     }
 
     std::println("\nv = {:g}", v);
@@ -386,10 +396,14 @@ int main()
         [](const auto&... tabs)
         {
             for (const double sz0 : {tabs.stats()...})
+            {
                 std::println("Chunk filling rate : {:.2f}%", sz0);
+            }
 
             if constexpr (chunk_config::stats)
+            {
                 ParamChunk::ChunkStats();
+            }
         },
         tab1, tab2, tab3);
 
@@ -411,6 +425,8 @@ int main()
     tab3.clear();
 
     if constexpr (use_chunk_array)
+    {
         destroy_block_chunk();
+    }
     return 0;
 }

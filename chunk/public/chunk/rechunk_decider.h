@@ -39,43 +39,42 @@ namespace shrink_array
 {
 
 /// @brief Thresholds of RechunkDecider: stability ticks, gain deadbands, cooldown, caps and dry-run switch.
-class RechunkPolicy
+struct RechunkPolicy
 {
-  public:
-    int         stability_ticks = 3;        // best must hold this many ticks
-    std::size_t min_gain_bytes  = 8u << 20; // deadband: ignore gains below 8 MB
-    double      min_gain_frac   = 0.15;     // ALSO require gain >= this fraction of
-                                            // CURRENT memory (relative deadband).
-                                            // Kills marginal moves on a large array
-                                            // (48 MB on 3 GB = 1.5% -> refused),
-                                            // which was the main thrashing driver.
-                                            // 0 disables (absolute deadband only).
-    int cooldown_ticks      = 5;            // min ticks between actions (0 = off)
-    int anti_reversal_ticks = 30;           // do NOT re-chunk back to the size we
-                                            // just left within this many ticks
-                                            // (kills 512<->1024 oscillation). 0=off.
-    unsigned max_coarsen_factor = 4;        // cap a coarsening step to this factor x
-                                            // cur_size per rechunk; 1 disables (fining
-                                            // is never capped). CHUNK_RECHUNK_MAX_COARSEN
-                                            // overrides it at run time.
-                                            // 4 since Sept '26 (was 2). Grace, 64
-                                            // threads, chunk2a_dyn with all 15 arrays
-                                            // advised: factor 2 -> 44 re-chunks, end
-                                            // 6.73 GB, 99% of the forecast gain met;
-                                            // factor 4 -> 33 re-chunks, end 6.54 GB,
-                                            // 98.8% met; factor 8 -> 20 re-chunks,
-                                            // fastest, but ends at 6.72 GB. The two
-                                            // bad jumps that had set 2 (64->1024:
-                                            // -91 MB forecast, +40 MB measured;
-                                            // 512->4096 on a 35.8 MB forecast, no
-                                            // gain) predate the fixes to the RSS
-                                            // measurement, Chunk2A's leaked rows and
-                                            // the folds through a buffer. Kept at 4,
-                                            // not higher: a re-chunk's old size stays
-                                            // within the advisor's two finer levels,
-                                            // so the next tick still measures the move
-                                            // at unchanged data, and a bad step can be
-                                            // seen and reverted.
+    int         stability_ticks             = 3;        // best must hold this many ticks
+    std::size_t min_gain_bytes              = 8u << 20; // deadband: ignore gains below 8 MB
+    double      min_gain_frac               = 0.15;     // ALSO require gain >= this fraction of
+                                                        // CURRENT memory (relative deadband).
+                                                        // Kills marginal moves on a large array
+                                                        // (48 MB on 3 GB = 1.5% -> refused),
+                                                        // which was the main thrashing driver.
+                                                        // 0 disables (absolute deadband only).
+    int         cooldown_ticks              = 5;        // min ticks between actions (0 = off)
+    int         anti_reversal_ticks         = 30;       // do NOT re-chunk back to the size we
+                                                        // just left within this many ticks
+                                                        // (kills 512<->1024 oscillation). 0=off.
+    unsigned    max_coarsen_factor          = 4;        // cap a coarsening step to this factor x
+                                                        // cur_size per rechunk; 1 disables (fining
+                                                        // is never capped). CHUNK_RECHUNK_MAX_COARSEN
+                                                        // overrides it at run time.
+                                                        // 4 since Sept '26 (was 2). Grace, 64
+                                                        // threads, chunk2a_dyn with all 15 arrays
+                                                        // advised: factor 2 -> 44 re-chunks, end
+                                                        // 6.73 GB, 99% of the forecast gain met;
+                                                        // factor 4 -> 33 re-chunks, end 6.54 GB,
+                                                        // 98.8% met; factor 8 -> 20 re-chunks,
+                                                        // fastest, but ends at 6.72 GB. The two
+                                                        // bad jumps that had set 2 (64->1024:
+                                                        // -91 MB forecast, +40 MB measured;
+                                                        // 512->4096 on a 35.8 MB forecast, no
+                                                        // gain) predate the fixes to the RSS
+                                                        // measurement, Chunk2A's leaked rows and
+                                                        // the folds through a buffer. Kept at 4,
+                                                        // not higher: a re-chunk's old size stays
+                                                        // within the advisor's two finer levels,
+                                                        // so the next tick still measures the move
+                                                        // at unchanged data, and a bad step can be
+                                                        // seen and reverted.
     std::size_t coarsen_min_meta_gain_bytes = 1u << 20;
     // A coarsening must gain at least this
     // much METADATA to be counted at all:
@@ -129,7 +128,7 @@ class RechunkPolicy
                                         // barred for it from then on. Fining
                                         // stays available. 0 disables the
                                         // feedback.
-    bool dry_run = true;                // phase-3A: never mutate, only log
+    bool   dry_run             = true;  // phase-3A: never mutate, only log
 };
 
 /// @brief Decides, per array, whether a re-chunk is worthwhile from ChunkSizeReport ticks and a RechunkPolicy.
@@ -137,9 +136,8 @@ class RechunkDecider
 {
   public:
     // One committed re-chunk, for the end-of-run report.
-    class RechunkEvent
+    struct RechunkEvent
     {
-      public:
         int         iter; // iteration at which it happened
         std::string name; // array name
         unsigned    old_size, new_size;
@@ -174,9 +172,8 @@ class RechunkDecider
     void print_rechunk_log(std::FILE* out = stdout) const;
 
   private:
-    class Hist
+    struct Hist
     {
-      public:
         static constexpr int kVisited = 8;
 
         unsigned last_best_size   = 0;

@@ -42,14 +42,14 @@
 #include "chunk/internal/proxy2.h"
 #include "chunk/internal/chunk2_base.h"
 #include "chunk/internal/conditional_counter.h"
-#include "chunk/internal/TChunk.h"              // VectorTuple4ChunkInt2 (the candidate lists)
+#include "chunk/internal/TChunk.h" // VectorTuple4ChunkInt2 (the candidate lists)
 
 namespace shrink_array
 {
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
 template <typename T, typename ChunkType>
-class CompressionManager;
+struct CompressionManager;
 
 template <template <typename> class CHUNK_T, typename T>
 class ManagerChunk;
@@ -76,7 +76,9 @@ class ChunkSpec2
         // An array with no second value (chunk_config::no_second_value_index)
         // has no block: nullptr, which no chunk's `values` ever equals.
         if (ind < 0)
+        {
             return nullptr;
+        }
         if constexpr (build_config::any_check)
         {
             if (static_cast<size_t>(ind) >= tab_m_ptr_cst_val2.size()) [[unlikely]]
@@ -156,8 +158,12 @@ class ChunkSpec2
     {
         const int nb_cst_val2 = static_cast<int>(tab_m_ptr_cst_val2.size());
         for (int i = 0; i < nb_cst_val2; ++i)
+        {
             if (v == get_cst_val2(i))
+            {
                 return true;
+            }
+        }
         return false;
     }
 
@@ -211,9 +217,13 @@ class ChunkSpec2<T>
     static void init_block_2nd_value(T* values_loc)
     {
         if constexpr (is_packed_bit_v<T>)
+        {
             bits::fill_bits(internal::as_words(values_loc), alloc_chunk_count(), true);
+        }
         else
+        {
             std::fill_n(values_loc, alloc_chunk_count(), true);
+        }
     }
 
   protected:
@@ -223,9 +233,13 @@ class ChunkSpec2<T>
     {
         std::array<T, cst_buffer_size> arr{};
         if constexpr (is_packed_bit_v<T>)
+        {
             std::memset(static_cast<void*>(arr.data()), 0xFF, sizeof(arr)); // raw words, not Bit objects
+        }
         else
+        {
             arr.fill(true); // Initialize everything to 'true'
+        }
         return arr;
     }();
 
@@ -649,14 +663,18 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
     static bool have_chunk_to_compress(T second_value, int max_thr)
     {
         if (is_vec_tuple_to_compress_potentially_empty_thr())
+        {
             return false;
+        }
 
         for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
         {
             auto& map_thr = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
             auto  it      = map_thr.find(second_value);
             if (it != map_thr.end() && !it->second->empty())
+            {
                 return true;
+            }
         }
         return false;
     }
@@ -831,7 +849,9 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
         auto&      lists_by_value = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
         const auto it             = lists_by_value.find(second_value);
         if (it == lists_by_value.end() || it->second == nullptr) [[unlikely]]
+        {
             chunk2_missing_candidate_list(thr);
+        }
         return *it->second;
     }
 
@@ -1164,7 +1184,9 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     Chunk2<T>& operator=(const Chunk2<T>& other)
     {
         if (this == &other)
+        {
             return *this;
+        }
 
         // Same reason as the copy ctor: propagate the counter state.
         Chunk2CounterPolicy<chunk_config::use_compression_with_counter>::operator=(other);
@@ -1284,11 +1306,17 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         const T* v = Base::values_load();
         if (v == Base::get_cst_val1())
+        {
             return false;
+        }
         if constexpr (is_bool)
+        {
             return !BaseSpec::is_cst_val2(v);
+        }
         else
+        {
             return !BaseSpec::is_cst_val2_any(v);
+        }
     }
 
     /*!
@@ -1394,9 +1422,13 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
             // bool has its own materialiser: the bool branch used to call the
             // non-bool create_value -- a no-op in release (see its static_assert).
             if constexpr (is_not_bool)
+            {
                 create_value(false, inf_array);
+            }
             else
+            {
                 create_value_bool(false);
+            }
         }
     }
 
@@ -1419,16 +1451,24 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
             if constexpr (build_config::use_openmp)
             {
                 if constexpr (is_not_bool)
+                {
                     create_value(false, inf_array, thr_rank);
+                }
                 else
+                {
                     create_value_bool(false, thr_rank);
+                }
             }
             else
             {
                 if constexpr (is_not_bool)
+                {
                     create_value(false, inf_array);
+                }
                 else
+                {
                     create_value_bool(false);
+                }
             }
         }
     }
@@ -1488,12 +1528,16 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         {
             // If already compressed, nothing to do
             if (old == Base::get_cst_val1() || BaseSpec::is_cst_val2(old)) [[unlikely]]
+            {
                 return nullptr;
+            }
         }
         else
         {
             if (old == Base::get_cst_val1() || BaseSpec::is_cst_val2(old, ind)) [[unlikely]]
+            {
                 return nullptr;
+            }
             // No second value declared: there is no block to compress to. The
             // scans never file such a chunk under the second constant
             // (scan_constants reports a run of first_value as `first` only),
@@ -1501,7 +1545,9 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
             if (num_compress_value != 0 && ind < 0) [[unlikely]]
             {
                 if constexpr (build_config::any_check)
+                {
                     INVARIANT_FAILED("[chunk] compress to cst_val2 on an array with no second value");
+                }
                 return nullptr;
             }
         }

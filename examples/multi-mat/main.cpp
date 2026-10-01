@@ -231,7 +231,9 @@ int main()
                              }
 
                              if (only_first_chunk)
+                             {
                                  mat = nbmat;
+                             }
                          }
 
                          if (!only_first_chunk)
@@ -259,7 +261,9 @@ int main()
     multi_mat::end_parallel_phase_after_region(); // manual executable only
 
     if (simu.isVerbose())
+    {
         std::println("\nEnd iteration\n");
+    }
 
     lbd_stats_chunk(false);
 

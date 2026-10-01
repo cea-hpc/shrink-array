@@ -57,7 +57,9 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
                 std::println("  [FAIL] {}", what);
             }
             else
+            {
                 std::println("  [ ok ] {}", what);
+            }
         };
 
         // Fresh, deterministic array so the checks don't depend on the compute
@@ -65,12 +67,16 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         constexpr Int NS = 1000;
         Array<double> v(NS);
         for (Int i = 0; i < NS; ++i)
+        {
             v[i] = static_cast<double>(i);
+        }
 
         // Independent oracle.
         double oracle_sum = 0.0;
         for (Int i = 0; i < NS; ++i)
+        {
             oracle_sum += static_cast<double>(i);
+        }
 
         // --- member typedefs are present and sane -----------------------------
         static_assert(std::is_same_v<Array<double>::value_type, double>);
@@ -108,7 +114,9 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             for (auto r = v.rbegin(); r != v.rend(); ++r)
             {
                 if (*r > prev)
+                {
                     monotone_down = false;
+                }
                 prev = *r;
                 rev_sum += *r;
                 ++n;
@@ -166,7 +174,9 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             const std::size_t asz = a.size();
             bool              all = (asz == static_cast<std::size_t>(NS));
             for (std::size_t i = 0; all && i < asz; ++i)
+            {
                 all = (a[i] == 2.5);
+            }
             expect(all, "assign(count,val) sizes and fills");
         }
 
@@ -182,7 +192,9 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             a.swap(b);
             bool ok = true;
             for (Int i = 0; ok && i < NS; ++i)
+            {
                 ok = (a[i] == 9.0 && b[i] == 1.0);
+            }
             expect(ok, "swap() exchanges element contents");
         }
 
@@ -197,7 +209,9 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             expect(cap >= static_cast<std::size_t>(NS), "reserve(n): capacity() >= n");
             expect(g.size() == 1, "reserve() leaves size() alone");
             for (Int i = 1; i < NS; ++i)
+            {
                 g.push_back(static_cast<double>(i));
+            }
             expect(g.size() == static_cast<std::size_t>(NS), "push_back grows size() by one each");
             expect(g.capacity() == cap, "push_back within the capacity does not change it");
             g.emplace_back(2.5);
@@ -206,12 +220,16 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             expect(g.size() == static_cast<std::size_t>(NS) && g.back() == double(NS - 1), "pop_back");
             bool ok = true;
             for (Int i = 1; i < NS; ++i)
+            {
                 ok = ok && (std::as_const(g)[i] == static_cast<double>(i));
+            }
             expect(ok, "push_back'd elements read back");
             // Past the capacity: the push_back that needs a new chunk.
             const std::size_t before = g.size();
             for (std::size_t i = g.size(); i < cap + 3; ++i)
+            {
                 g.push_back(-1.0);
+            }
             expect(static_cast<std::size_t>(g.size()) == cap + 3 && g.capacity() > cap && g.back() == -1.0 &&
                        std::as_const(g)[static_cast<Int>(before) - 1] == double(NS - 1),
                    "push_back past the capacity grows the storage and keeps the contents");
@@ -222,11 +240,15 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         {
             std::vector<double> src(NS);
             for (Int i = 0; i < NS; ++i)
+            {
                 src[static_cast<std::size_t>(i)] = 0.5 * static_cast<double>(i);
+            }
             Array<double> r(src.begin(), src.end());
             bool          ok = static_cast<std::size_t>(r.size()) == src.size();
             for (Int i = 0; ok && i < NS; ++i)
+            {
                 ok = std::as_const(r)[i] == src[static_cast<std::size_t>(i)];
+            }
             expect(ok, "(first, last) constructor copies the range");
 
             Array<double> il{1.0, 2.0, 3.0, 4.0};
@@ -248,7 +270,9 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             Array<double> c(v);
             bool          same = c.size() == v.size();
             for (Int i = 0; same && i < NS; ++i)
+            {
                 same = std::as_const(c)[i] == std::as_const(v)[i];
+            }
             expect(same, "copy constructor: every element equal");
             c[5] = -99.0;
             expect(std::as_const(v)[5] == 5.0 && std::as_const(c)[5] == -99.0,
@@ -256,11 +280,15 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
 
             Array<double> d(3 * NS);
             for (Int i = 0; i < 3 * NS; ++i)
+            {
                 d[i] = 7.0;
+            }
             d    = v;
             same = d.size() == v.size();
             for (Int i = 0; same && i < NS; ++i)
+            {
                 same = std::as_const(d)[i] == std::as_const(v)[i];
+            }
             expect(same, "copy-assignment over a larger array: sized and equal");
             const auto& d_alias = d;       // through an alias: clang flags a literal `d = d`
             d                   = d_alias; // self-assignment: a no-op
@@ -278,11 +306,15 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
                     A s2(NS);
                     maybe_set_second_value(s2, second_value_d1);
                     for (Int i = 0; i < NS; ++i)
+                    {
                         s2[i] = (i % 3 == 0) ? second_value_d1 : 0.0;
+                    }
                     A    t2(s2);
                     bool ok = t2.get_second_value() == second_value_d1;
                     for (Int i = 0; ok && i < NS; ++i)
+                    {
                         ok = std::as_const(t2)[i] == std::as_const(s2)[i];
+                    }
                     expect(ok, "copy constructor carries chunk2's second value and its runs");
                     s2.clear();
                     t2.clear();
@@ -295,19 +327,27 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         {
             Array<double> z(NS);
             for (Int i = 0; i < NS; ++i)
+            {
                 z[i] = (i < NS / 2) ? 0.0 : static_cast<double>(i);
+            }
             z.shrink_to_fit();
             bool ok = z.size() == static_cast<std::size_t>(NS);
             for (Int i = 0; ok && i < NS; ++i)
+            {
                 ok = std::as_const(z)[i] == ((i < NS / 2) ? 0.0 : static_cast<double>(i));
+            }
             expect(ok, "shrink_to_fit keeps size and contents");
             z.clear();
         }
 
         if (failures == 0)
+        {
             std::print("{}{}STL self-checks: ALL PASSED\n{}", tc.BOLD, tc.GREEN, tc.RESET);
+        }
         else
+        {
             std::print("{}STL self-checks: {} FAILURE(S)\n{}", tc.BOLD, failures, tc.RESET);
+        }
     }
 
     // === read-idempotence self-checks (--test_stl) ==========================
@@ -340,7 +380,9 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
         Array<double> r(NR);
         maybe_set_second_value(r, second_value_d1); // second_value = 2.0
         for (long i = 0; i < NR; ++i)
+        {
             r[i] = (i % 7 == 0) ? second_value_d1 : static_cast<double>(i);
+        }
 
         long idem_bad = 0; // two consecutive reads disagree (read has a side effect)
         long ne_bad   = 0; // operator!= disagrees with operator T() (stale compare op)
@@ -352,7 +394,9 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             if (a != b)
             {
                 if (first_i < 0)
+                {
                     first_i = i;
+                }
                 ++idem_bad;
             }
 
@@ -362,17 +406,23 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
             if (ne_op != ne_T)
             {
                 if (first_i < 0)
+                {
                     first_i = i;
+                }
                 ++ne_bad;
             }
         }
 
         if (idem_bad == 0 && ne_bad == 0)
+        {
             std::print("{}{}read-idempotence: ALL PASSED\n{}", tc.BOLD, tc.GREEN, tc.RESET);
+        }
         else
+        {
             std::print("{}read-idempotence: FAILURE(S) — {} non-idempotent reads, {} operator!=/operatorT "
                        "disagreements (first at i={})\n{}",
                        tc.BOLD, idem_bad, ne_bad, first_i, tc.RESET);
+        }
 
         r.clear();
     }

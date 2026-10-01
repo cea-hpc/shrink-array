@@ -119,7 +119,9 @@ inline void TCCAllocator::alloc_block()
     BlockSize = static_cast<int>((BlockAllocator - sizeof(void*)) / ElementSize);
 
     if (BlockSize > first_free_init - 1)
+    {
         BlockSize = first_free_init - 1;
+    }
 
     tab_firstFree.resize(static_cast<std::size_t>(BlockSize));
 

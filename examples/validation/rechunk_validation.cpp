@@ -88,7 +88,9 @@ namespace
 void drain_compression_backlog()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 // ── Serial or parallel passes ────────────────────────────────────────────────
@@ -102,16 +104,22 @@ void for_each_index(long N, F&& f)
     if (!g_parallel)
     {
         for (long i = 0; i < N; ++i)
+        {
             f(i);
+        }
         return;
     }
 #pragma omp parallel
     {
         if constexpr (build_config::has_not_ompt)
+        {
             shrink_array::begin_parallel_phase();
+        }
 #pragma omp for schedule(static)
         for (long i = 0; i < N; ++i)
+        {
             f(i);
+        }
     }
     drain_compression_backlog();
 }
@@ -125,16 +133,22 @@ long count_if_index(long N, F&& bad)
     if (!g_parallel)
     {
         for (long i = 0; i < N; ++i)
+        {
             n += bad(i) ? 1 : 0;
+        }
         return n;
     }
 #pragma omp parallel reduction(+ : n)
     {
         if constexpr (build_config::has_not_ompt)
+        {
             shrink_array::begin_parallel_phase();
+        }
 #pragma omp for schedule(static)
         for (long i = 0; i < N; ++i)
+        {
             n += bad(i) ? 1 : 0;
+        }
     }
     drain_compression_backlog();
     return n;
@@ -161,11 +175,17 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 // set_second_value only exists on chunk2 / chunk2a: no-op elsewhere. REQUIRED
@@ -176,7 +196,9 @@ template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {
     if constexpr (requires(Arr x) { x.set_second_value(v); })
+    {
         a.set_second_value(v);
+    }
 }
 
 // sv_value: the value declared as second_value. Choosing a value present in
@@ -214,8 +236,12 @@ int check_invariance(const char* label,
     const long pre_bad   = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
     long       pre_first = -1;
     for (long i = 0; pre_bad && pre_first < 0 && i < N; ++i)
+    {
         if (arr[i] != ref[i])
+        {
             pre_first = i;
+        }
+    }
     if (pre_bad)
     {
         std::println("[{}/{}] PRE-FAIL: {} mismatches BEFORE rechunk (setup/read bug, not rechunk); "
@@ -246,7 +272,9 @@ int check_invariance(const char* label,
         if (arr[i] != ref[i])
         {
             if (first < 0)
+            {
                 first = i;
+            }
             std::println("[{}/{}] MISMATCH i={} got={:.17g} exp={:.17g} (new-chunk #{}, offset {})", variant_name(),
                          label, i, (double)arr[i], (double)ref[i], i / (long)new_size, i % (long)new_size);
             ++shown;
@@ -278,14 +306,22 @@ int check_invariance(const char* label,
         // compress_int signature differs across variants: v1 (CHUNK) takes a
         // verbose bool; CHUNK2 / CHUNK2A take none.
         if constexpr (requires { arr.compress_int(false); })
+        {
             arr.compress_int(false);
+        }
         else
+        {
             arr.compress_int();
+        }
         const long bad    = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
         long       firstb = -1;
         for (long i = 0; bad && firstb < 0 && i < N; ++i)
+        {
             if (arr[i] != ref[i])
+            {
                 firstb = i;
+            }
+        }
         if (bad)
         {
             std::println(
@@ -335,12 +371,14 @@ int check_coexistence(const char* label, long N, unsigned moved_size, int rounds
 
     // Alternate writes between the two geometries, the way the bench's loop does.
     for (int r = 0; r < rounds; ++r)
+    {
         for_each_index(N,
                        [&](long i)
                        {
                            moved[i] = static_cast<T>((i + r) % 11 ? 0 : (i + r));
                            fixed[i] = static_cast<T>((i + r) % 13 ? 0 : (i + r));
                        });
+    }
 
     // Verify both arrays still read back what was last written.
     const int  r = rounds - 1;
@@ -364,8 +402,10 @@ int check_coexistence(const char* label, long N, unsigned moved_size, int rounds
         }
     }
     if (!bad)
+    {
         std::println("[{}/{}] OK: {} elements, geometries {} and ambient coexisting", variant_name(), label, N,
                      moved_size);
+    }
     return bad ? 1 : 0;
 }
 
@@ -393,9 +433,13 @@ int check_range_ops(const char* label, long N)
         // non-constant values, which is what makes the two paths diverge if the
         // bookkeeping is wrong.
         if ((i / 100) % 3 == 0)
+        {
             return static_cast<T>(0);
+        }
         if ((i % 37) == 0)
+        {
             return static_cast<T>(i % 1000);
+        }
         return static_cast<T>(0);
     };
 
@@ -403,7 +447,9 @@ int check_range_ops(const char* label, long N)
     //    allocate NOTHING (every chunk set constant outright).
     shrink_array::fill_range(viaRange, 0, static_cast<std::size_t>(N), static_cast<T>(0));
     for (long i = 0; i < N; ++i)
+    {
         viaElem[i] = static_cast<T>(0);
+    }
 
     // 2) scattered writes, both paths identical
     for (long i = 0; i < N; ++i)
@@ -423,21 +469,29 @@ int check_range_ops(const char* label, long N)
         const auto a0 = static_cast<std::size_t>(off);
         const auto b0 = static_cast<std::size_t>(off) + (5 * static_cast<std::size_t>(S)) + 7;
         if (b0 >= static_cast<std::size_t>(N))
+        {
             continue;
+        }
         shrink_array::fill_range(viaRange, a0, b0, static_cast<T>(7));
         for (std::size_t i = a0; i < b0; ++i)
+        {
             viaElem[static_cast<long>(i)] = static_cast<T>(7);
+        }
     }
 
     // 4) copy_range from a plain vector -- the generic/overloaded pair in use
     std::vector<T> src(static_cast<std::size_t>(N));
     for (long i = 0; i < N; ++i)
+    {
         src[static_cast<std::size_t>(i)] = static_cast<T>((i % 11) ? 0 : i);
+    }
     const std::size_t ca = 3;
     const std::size_t cb = static_cast<std::size_t>(N) - 3;
     shrink_array::copy_range(viaRange, ca, cb, src.begin() + 0);
     for (std::size_t i = ca; i < cb; ++i)
+    {
         viaElem[static_cast<long>(i)] = src[i - ca];
+    }
 
     const long nbad =
         count_if_index(N, [&](long i) { return !(static_cast<T>(viaRange[i]) == static_cast<T>(viaElem[i])); });
@@ -454,7 +508,9 @@ int check_range_ops(const char* label, long N)
         }
     }
     if (!bad)
+    {
         std::println("[{}/{}] OK: {} elements, range ops match the element path", variant_name(), label, N);
+    }
     return bad ? 1 : 0;
 }
 
@@ -521,8 +577,8 @@ int check_non_pow2_refused(const char* label)
     const long after = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
     if (arr.chunk_size() != old_size * 2u || after)
     {
-        printf("[%s/%s] FAIL: legal rechunk_to(%u) afterwards: geometry %u, %ld mismatch(es)\n", variant_name(),
-               label, old_size * 2u, arr.chunk_size(), after);
+        printf("[%s/%s] FAIL: legal rechunk_to(%u) afterwards: geometry %u, %ld mismatch(es)\n", variant_name(), label,
+               old_size * 2u, arr.chunk_size(), after);
         ++bad;
     }
     // Back to the case's start geometry for the next pass.
@@ -530,18 +586,19 @@ int check_non_pow2_refused(const char* label)
     set_thread_chunk_size(ambient);
 
     if (!bad)
+    {
         printf("[%s/%s] OK: 48/96/3/%u refused (filled and empty arrays), content and geometry kept, "
                "%u -> %u still works\n",
                variant_name(), label, old_size + 1u, old_size, old_size * 2u);
+    }
     return bad ? 1 : 0;
 }
 
 namespace
 {
 /// @brief One case: its name (--case), the geometry it starts from, its body.
-class Case
+struct Case
 {
-  public:
     const char*          name;
     unsigned             start_size;
     std::function<int()> run;
@@ -575,13 +632,21 @@ int main(int argc, char** argv)
     for (int a = 1; a < argc; ++a)
     {
         if (!std::strcmp(argv[a], "--case") && a + 1 < argc)
+        {
             only = argv[++a];
+        }
         else if (!std::strcmp(argv[a], "--mode") && a + 1 < argc)
+        {
             mode = argv[++a];
+        }
         else if (!std::strcmp(argv[a], "--list"))
+        {
             list = true;
+        }
         else
+        {
             pos.push_back(argv[a]);
+        }
     }
     const long     N_scale = !pos.empty() ? shrink_array::arg_number<long>(pos[0], 1000000L, "N") : 1000000L;
     const unsigned tgt     = pos.size() > 1 ? shrink_array::arg_number<unsigned>(pos[1], 1024u, "target size") : 1024u;
@@ -675,14 +740,18 @@ int main(int argc, char** argv)
     if (list)
     {
         for (const Case& c : cases)
+        {
             std::println("{}", c.name);
+        }
         return 0;
     }
     if (only)
     {
         bool known = false;
         for (const Case& c : cases)
+        {
             known = known || !std::strcmp(c.name, only);
+        }
         if (!known)
         {
             std::println("unknown --case '{}' (--list gives the names)", only);
@@ -700,7 +769,9 @@ int main(int argc, char** argv)
     for (const Case& c : cases)
     {
         if (only && std::strcmp(c.name, only) != 0)
+        {
             continue;
+        }
         if (c.start_size != geometry)
         {
             set_start_geometry(c.start_size);

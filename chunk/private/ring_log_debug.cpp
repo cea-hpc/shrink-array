@@ -253,7 +253,9 @@ void dump_ring_for_addr(const void* target)
     {
         const RingEntry& entry = ring_buf[i & (RING_SIZE - 1)];
         if (entry.addr != target_addr)
+        {
             continue;
+        }
         std::cout << "[" << i << "] tid=" << entry.tid << " ev=" << event_name(entry.ev) << " num=" << entry.info
                   << " addr=0x" << std::hex << entry.addr << std::dec << " ts=" << entry.ts << "\n";
     }
@@ -263,11 +265,17 @@ void dump_ring_for_addr(const void* target)
     {
         const RingEntry& entry = ring_buf[i & (RING_SIZE - 1)];
         if (entry.addr == 0)
+        {
             continue;
+        }
         if ((entry.addr & bmask) != (target_addr & bmask))
+        {
             continue;
+        }
         if (entry.addr == target_addr)
+        {
             continue; // already shown exact
+        }
         std::cout << "[" << i << "] tid=" << entry.tid << " ev=" << event_name(entry.ev) << " num=" << entry.info
                   << " addr=0x" << std::hex << entry.addr << std::dec << " ts=" << entry.ts << "\n";
     }
@@ -279,7 +287,9 @@ void dump_ring_for_addr(const void* target)
 uint32_t get_tid()
 {
     if constexpr (build_config::use_openmp)
+    {
         return static_cast<uint32_t>(chunk_pmp_team_rank());
+    }
     else
     {
         // Create a hash function object over std::thread::id
@@ -289,9 +299,8 @@ uint32_t get_tid()
     }
 }
 
-class Interval
+struct Interval
 {
-  public:
     uint64_t start;
     uint64_t end;
     bool     is_fallback = false;
@@ -306,9 +315,8 @@ enum EventType
     COMP_END   = 3
 };
 
-class Endpoint
+struct Endpoint
 {
-  public:
     uint64_t  time;
     EventType type;
     uint32_t  tid; // tid owning this interval
@@ -322,7 +330,9 @@ static bool is_stdout_tty()
     static std::atomic<int> cached{-1};
     const int               v = cached.load(std::memory_order_acquire);
     if (v != -1)
+    {
         return v != 0;
+    }
 
     const int result = isatty(fileno(stdout)) ? 1 : 0;
     cached.store(result, std::memory_order_release);
@@ -400,9 +410,8 @@ bool analyze_ring_sweep()
     std::unordered_map<uint32_t, std::vector<Interval>> fast_intervals;
     std::unordered_map<uint32_t, std::vector<Interval>> compress_intervals;
 
-    class ThreadState
+    struct ThreadState
     {
-      public:
         bool     in_fast        = false;
         uint64_t fast_start     = 0;
         bool     in_compress    = false;
@@ -475,12 +484,16 @@ bool analyze_ring_sweep()
         [&](std::unordered_map<uint32_t, std::vector<Interval>>& map, uint32_t tid, uint64_t start_ts, uint64_t end_ts)
     {
         if (end_ts <= start_ts)
+        {
             return;
+        }
         // invalid
         const uint64_t     dur             = end_ts - start_ts;
         constexpr uint64_t MIN_INTERVAL_NS = 1000;
         if (dur < MIN_INTERVAL_NS)
+        {
             return; // ignore too-short fallback
+        }
         auto& vec = map[tid];
         if (!vec.empty())
         {
@@ -580,7 +593,9 @@ bool analyze_ring_sweep()
             {
                 const Interval& iv = vec[i];
                 if (iv.is_fallback)
+                {
                     continue; // ⛔ Ignore fallback intervals
+                }
                 if (isCompress)
                 {
                     endpoints.push_back({iv.start, COMP_START, tid, i});
@@ -611,16 +626,17 @@ bool analyze_ring_sweep()
               [](const Endpoint& lhs, const Endpoint& rhs)
               {
                   if (lhs.time != rhs.time)
+                  {
                       return lhs.time < rhs.time;
+                  }
                   return lhs.type < rhs.type;
               });
     std::cout << "✅ Sorting complete.\n";
 
     // Stage 4: sweep
     std::cout << "⚙️  Sweeping endpoints and detecting overlaps...\n";
-    class ActiveCompress
+    struct ActiveCompress
     {
-      public:
         uint32_t tid;
         size_t   idx;
         uint64_t start;
@@ -632,9 +648,8 @@ bool analyze_ring_sweep()
 
     const auto make_key = [](uint32_t tid, size_t idx) -> uint64_t { return ((uint64_t)tid << 32U) | (uint64_t)idx; };
 
-    class Overlap
+    struct Overlap
     {
-      public:
         uint32_t fast_tid;
         size_t   fast_idx;
         uint32_t comp_tid;
@@ -701,7 +716,9 @@ bool analyze_ring_sweep()
                 for (const ActiveCompress& ac : active_list)
                 {
                     if (ac.tid == ep.tid)
+                    {
                         continue;
+                    }
                     const uint64_t ov_start = std::max(fiv.start, ac.start);
                     const uint64_t ov_end   = std::min(fiv.end, ac.end);
                     if (ov_start < ov_end)
@@ -777,7 +794,9 @@ bool analyze_ring_sweep()
     for (const auto& o : overlaps)
     {
         if (o.fast_tid == o.comp_tid)
+        {
             ++n_same_thread;
+        }
     }
 
     const bool serious = (n_same_thread > 0);

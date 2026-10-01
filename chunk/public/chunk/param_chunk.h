@@ -99,12 +99,11 @@ namespace shrink_array
  *       parameter of AllTypeChunkParallelInterface.
  */
 template <bool Enabled = build_config::use_openmp, typename AllT = AllTypeChunk>
-class ParamChunkParallelInterface; // primary left undefined: only the 2 specializations exist
+struct ParamChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
 template <typename AllT>
-class ParamChunkParallelInterface<true, AllT>
+struct ParamChunkParallelInterface<true, AllT>
 {
-  public:
     /**
      * @brief What init_indexes() prints about the thread model (OpenMP build).
      *
@@ -119,9 +118,8 @@ class ParamChunkParallelInterface<true, AllT>
 };
 
 template <typename AllT>
-class ParamChunkParallelInterface<false, AllT>
+struct ParamChunkParallelInterface<false, AllT>
 {
-  public:
     /**
      * @brief Serial build: nothing to print, nothing to size.
      * @see ParamChunkParallelInterface<true>::init_thread_structures
@@ -147,12 +145,11 @@ class ParamChunkParallelInterface<false, AllT>
  *       \#ifdef CHUNK_DYNAMIC this replaced.
  */
 template <bool Enabled = build_config::chunk_dynamic, typename AllT = AllTypeChunk>
-class ParamChunkDynInterface; // primary left undefined: only the 2 specializations exist
+struct ParamChunkDynInterface; // primary left undefined: only the 2 specializations exist
 
 template <typename AllT>
-class ParamChunkDynInterface<true, AllT>
+struct ParamChunkDynInterface<true, AllT>
 {
-  public:
     /**
      * @brief Declare a runtime chunk size so arrays of that geometry can allocate.
      *
@@ -177,9 +174,8 @@ class ParamChunkDynInterface<true, AllT>
 
 /// @brief Fixed-geometry builds: no runtime size to declare.
 template <typename AllT>
-class ParamChunkDynInterface<false, AllT>
+struct ParamChunkDynInterface<false, AllT>
 {
-  public:
     /**
      * @brief Accepts the call and does nothing (fixed-geometry build).
      *
@@ -214,9 +210,9 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     // expression, which is access-checked against the template being defined --
     // naming only <true, AllTypeChunk> would not cover it.
     template <bool, typename>
-    friend class ParamChunkParallelInterface;
+    friend struct ParamChunkParallelInterface;
     template <bool, typename>
-    friend class ParamChunkDynInterface;
+    friend struct ParamChunkDynInterface;
 
     /// @brief Lower sanity bound for a configured CHUNK_SIZE.
     static constexpr int size_min = 32;
@@ -390,8 +386,10 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     static void set_chunk_size(int v)
     {
         if (std::cmp_not_equal(v, __chunk_size))
+        {
             std::cerr << "Warning: set_chunk_size(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
                       << " (rebuild with -DCHUNK_SIZE=" << v << ")\n";
+        }
     }
 
     /**
@@ -421,8 +419,10 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     static void set_decalage_chunk(unsigned int v)
     {
         if (v != __decalage_chunk)
+        {
             std::cerr << "Warning: set_decalage_chunk(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
                       << " (shift " << __decalage_chunk << ")\n";
+        }
     }
 
     /**
@@ -443,8 +443,10 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     static void set_modulo_chunk(int v)
     {
         if (std::cmp_not_equal(v, __modulo_chunk))
+        {
             std::cerr << "Warning: set_modulo_chunk(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
                       << " (mask " << __modulo_chunk << ")\n";
+        }
     }
 
     /**

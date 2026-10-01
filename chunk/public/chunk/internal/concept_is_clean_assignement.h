@@ -33,16 +33,14 @@ concept IsLibraryProxy = requires { typename std::remove_cvref_t<T>::is_shrink_p
 
 // --- 2. Extract the underlying type (Unwrapper) ---
 template <typename T>
-class get_base
+struct get_base
 {
-  public:
     using type = std::remove_cvref_t<T>;
 };
 
 template <IsLibraryProxy T>
-class get_base<T>
+struct get_base<T>
 {
-  public:
     using type = std::remove_cvref_t<T>::value_type;
 };
 
@@ -51,12 +49,12 @@ using base_t = get_base<T>::type;
 
 // --- 3. Simple Complex Detection ---
 template <typename T>
-class is_cplx : public std::false_type
+struct is_cplx : public std::false_type
 {
 };
 /// @brief std::complex<T> is complex.
 template <typename T>
-class is_cplx<std::complex<T>> : public std::true_type
+struct is_cplx<std::complex<T>> : public std::true_type
 {
 };
 
@@ -112,7 +110,7 @@ concept ElementSubtractable = requires(T lhs, T rhs) {
 };
 template <typename T>
 concept ElementMultipliable = requires(T lhs, T rhs) {
-    { lhs* rhs } -> std::convertible_to<T>;
+    { lhs * rhs } -> std::convertible_to<T>;
 };
 template <typename T>
 concept ElementDivisible = requires(T lhs, T rhs) {

@@ -78,30 +78,42 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 
 void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {
     if constexpr (requires(Arr x) { x.set_second_value(v); })
+    {
         a.set_second_value(v);
+    }
 }
 
 template <typename Arr>
@@ -145,7 +157,9 @@ int run_case(Case c)
 {
     const bool second_applies = chunk_config::use_chunk2 || chunk_config::use_chunk2a;
     if (c == Case::second && !second_applies)
+    {
         return 0;
+    }
 
     Array<double> a;
     const long    S = static_cast<long>(a.chunk_size());
@@ -179,13 +193,17 @@ int run_case(Case c)
         if (got != want)
         {
             if (bad < 5)
+            {
                 std::println("[{}/{}] FAIL [{}] = {:g}, expected {:g}", variant_name(), case_name(c), i, got, want);
+            }
             ++bad;
         }
     }
     if (!bad)
+    {
         std::println("[{}/{}] OK: raw span of {} plain values + one {} value, compressed, read back", variant_name(),
                      case_name(c), S, c == Case::second ? "second" : "first");
+    }
     return bad ? 1 : 0;
 }
 

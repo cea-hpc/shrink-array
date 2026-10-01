@@ -65,9 +65,8 @@ namespace shrink_array
  * @tparam ChunkType Chunk variant the manager coordinates
  */
 template <typename T, typename ChunkType>
-class FlushReplayState
+struct FlushReplayState
 {
-  public:
     /// @brief RAII bracket marking this thread as replaying flushed ops.
     ///        Nesting-safe: saves and restores the flag.
     class FlushReplayGuard
@@ -195,29 +194,37 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
                 // (1) This op must still be alive. A poisoned magic means the op
                 //     was already destroy()'d — i.e. we are flushing it twice.
                 if (magic != deferred_lifecycle::op_alive_magic)
+                {
                     INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op magic corrupt/poisoned "
                                      "(op={}, magic={:#x}, executed={}, enqueue_rank={}, flusher_rank={})",
                                      static_cast<const void*>(this), magic, executed, this->thread_rank, flusher_rank);
+                }
 
                 // (2) This op must not have run before (double-flush guard).
                 if (executed)
+                {
                     INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op executed twice "
                                      "(op={}, enqueue_rank={}, flusher_rank={})",
                                      static_cast<const void*>(this), this->thread_rank, flusher_rank);
+                }
 
                 // (3) The captured ctx must still be alive. A poisoned or absent
                 //     ctx_alive_magic means the ctx was destroyed/recycled while
                 //     this op still referenced it (the root use-after-recycle).
                 if (ctx == nullptr)
+                {
                     INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op has null ctx at write_body "
                                      "(op={}, enqueue_rank={}, flusher_rank={})",
                                      static_cast<const void*>(this), this->thread_rank, flusher_rank);
+                }
 
                 if (ctx->magic != deferred_lifecycle::ctx_alive_magic)
+                {
                     INVARIANT_FAILED("[DEFERRED_LIFECYCLE] ctx not alive at write_body "
                                      "(op={}, ctx={}, ctx_magic={:#x}, enqueue_rank={}, flusher_rank={})",
                                      static_cast<const void*>(this), static_cast<const void*>(ctx), ctx->magic,
                                      this->thread_rank, flusher_rank);
+                }
 
                 executed = true;
             }
@@ -246,7 +253,9 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
                 const unsigned int saved     = t_active_chunk_size;
                 const unsigned int saved_key = t_alloc_key;
                 if (ctx->chunk_size_frozen != 0U)
+                {
                     set_thread_chunk_size(ctx->chunk_size_frozen);
+                }
                 set_thread_alloc_key(ctx->alloc_key_frozen); // the array's slabs, not the caller's
 
                 fn();
@@ -270,7 +279,9 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
             // flush paths call destroy() on the same op concurrently. The first
             // caller wins; the rest return without touching ctx/this again.
             if (destroyed.exchange(true, std::memory_order_acq_rel))
+            {
                 return;
+            }
 
             // Destroy the context object if present
             if (ctx)
@@ -330,9 +341,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @details Sharded per rank rather than a single counter, to avoid one hot
      *          cache line under 64-thread enqueue storms.
      */
-    class alignas(128) PaddedPendingCounter
+    struct alignas(128) PaddedPendingCounter
     {
-      public:
         std::atomic<int64_t> v{0};
     };
 
@@ -445,7 +455,9 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     [[nodiscard]] static int64_t pending_ops_rank(int thr_rank) noexcept
     {
         if (pending_ops_shard.empty())
+        {
             return 0;
+        }
         return pending_ops_shard[thr_rank].v.load(std::memory_order_acquire);
     }
 
@@ -457,11 +469,15 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         // acquire sum across shards. A non-zero result means at least one
         // rank has an unflushed op; we then take the (rare) scan path.
         if (pending_ops_shard.empty())
+        {
             return false;
+        }
         const int max_thr = CHUNK_PMP_RANK_BOUND;
         int64_t   total   = 0;
         for (int i = 0; i < max_thr; ++i)
+        {
             total += pending_ops_shard[i].v.load(std::memory_order_acquire);
+        }
         return total > 0;
     }
 
@@ -493,8 +509,10 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         if constexpr (build_config::any_check)
         {
             if (FlushReplayState<T, ChunkType>::in_flush_replay) [[unlikely]]
+            {
                 INVARIANT_FAILED("record_enqueue_deferred: op enqueued during a flush replay (rank {}, chunk {})",
                                  thr_rank, static_cast<const void*>(&chunk));
+            }
         }
         enqueue_lock(thr_rank);
         // The insert allocates, and ankerl throws on a bucket overflow; the
@@ -705,7 +723,9 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     {
         auto& v = dangerous_lists_per_thread[thr_rank].value;
         if (v.load(std::memory_order_relaxed) == 0)
+        {
             v.store(1, std::memory_order_release);
+        }
     }
 
     /// @brief The list has been looked at: clear the flag. Idempotent; the
@@ -784,18 +804,16 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *       flushes for this type; since flush_chunk_all_ranks() is hot on the
      *       read path, that was the 128-thread scalability collapse.
      */
-    class alignas(128) PaddedFlushLock
+    struct alignas(128) PaddedFlushLock
     {
-      public:
         std::atomic<int> owner{-1}; ///< rank currently holding the lock, -1 if free
         int              depth{0};  ///< nested acquire count, owner-only
     };
 
     /// @brief One dangerous-list flag, padded to its own cache line.
     /// @note 128 bytes rather than 64, to stay safe on ARM.
-    class alignas(128) PaddedDangerousFlag
+    struct alignas(128) PaddedDangerousFlag
     {
-      public:
         std::atomic<int> value{0}; ///< 0 or 1 -- see mark_list_dangerous_for_thread
     };
 
@@ -804,9 +822,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     ///       thread_may_have_ops_own), so no other thread shares its line. The
     ///       alignas(128) it had dates from a rank-indexed array; on a
     ///       thread_local it only spread the TLS block, one line per type.
-    class ThreadOpsFlag
+    struct ThreadOpsFlag
     {
-      public:
         std::atomic<bool> v{false};
     };
 
@@ -897,9 +914,11 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         if constexpr (build_config::any_check)
         {
             if (before - count < 0) [[unlikely]]
+            {
                 INVARIANT_FAILED("dec_pending_ops: rank {} count {} -> {} (retired {}): more ops retired than "
                                  "published -- a double count",
                                  thr_rank, before, before - count, count);
+            }
         }
     }
 
@@ -1022,9 +1041,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
  * @tparam ChunkType Chunk variant the manager coordinates
  */
 template <typename T, typename ChunkType>
-class CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState<T, ChunkType>
+struct CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState<T, ChunkType>
 {
-  public:
     /**
      * @brief Serial builds queue nothing, so no rank can hold deferred ops.
      *
@@ -1063,9 +1081,8 @@ class CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState
  * @note Thread safety: All methods are thread-safe
  */
 template <typename T, typename ChunkType>
-class CompressionManager : public CompressionManagerOmpPolicy<T, ChunkType, build_config::use_openmp>
+struct CompressionManager : public CompressionManagerOmpPolicy<T, ChunkType, build_config::use_openmp>
 {
-  public:
     CompressionManager()  = default;
     ~CompressionManager() = default;
 

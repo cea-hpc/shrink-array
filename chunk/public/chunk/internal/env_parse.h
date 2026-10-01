@@ -84,18 +84,26 @@ template <typename T>
 {
     static_assert(std::is_arithmetic_v<T> && !std::is_same_v<T, bool>, "parse_number: a number type");
     if (text == nullptr || *text == '\0')
+    {
         return std::unexpected(ParseError::empty);
+    }
     if constexpr (std::is_integral_v<T>)
     {
         const char* const end = text + std::strlen(text);
         T                 v{};
         const auto [ptr, ec] = std::from_chars(text, end, v);
         if (ec == std::errc::result_out_of_range)
+        {
             return std::unexpected(ParseError::out_of_range);
+        }
         if (ec != std::errc{})
+        {
             return std::unexpected(ParseError::not_a_number);
+        }
         if (ptr != end)
+        {
             return std::unexpected(ParseError::trailing_chars);
+        }
         return v;
     }
     else
@@ -104,11 +112,17 @@ template <typename T>
         errno          = 0;
         const double v = std::strtod(text, &end);
         if (end == text)
+        {
             return std::unexpected(ParseError::not_a_number);
+        }
         if (*end != '\0')
+        {
             return std::unexpected(ParseError::trailing_chars);
+        }
         if (errno == ERANGE)
+        {
             return std::unexpected(ParseError::out_of_range);
+        }
         return static_cast<T>(v);
     }
 }
@@ -131,7 +145,9 @@ template <typename T>
 {
     const char* env = std::getenv(name);
     if (env == nullptr || *env == '\0')
+    {
         return std::nullopt;
+    }
     const auto v = parse_number<T>(env);
     if (!v)
     {
@@ -161,7 +177,9 @@ template <typename T>
 {
     const auto v = parse_number<T>(text);
     if (v)
+    {
         return *v;
+    }
     std::fprintf(stderr, "[arg] %s \"%s\" is not a valid value (%s): ignored, the default is kept\n", what,
                  text != nullptr ? text : "", to_string(v.error()));
     return fallback;

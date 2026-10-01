@@ -41,18 +41,24 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
     if constexpr (chunk_config::use_fast_block_compression)
     {
         const int num_tab = proxy_type::share_info_array.get_num_tab(self().registry_key());
-        const int thr = get_thr_rank_fast();
+        const int thr     = get_thr_rank_fast();
         shrink_array::set_thread_chunk_size(self().size_policy_.size());
         const auto compress_list = [&](auto& list)
         {
             for (auto& tup : list)
+            {
                 if (std::get<2>(tup) == num_tab)
+                {
                     std::get<0>(tup)->compress(thr, std::get<3>(tup).count());
+                }
+            }
         };
         if constexpr (build_config::use_openmp)
         {
             for (auto& list : manager_type::chunk_to_compress_potentially_thr)
+            {
                 compress_list(list);
+            }
         }
         else
         {

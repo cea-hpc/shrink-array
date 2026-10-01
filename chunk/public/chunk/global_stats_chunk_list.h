@@ -35,9 +35,8 @@ class GlobalStatsChunkList
 {
   public:
     /// @brief Figures recorded for one element type.
-    class TypeStats
+    struct TypeStats
     {
-      public:
         long   allocated_chunks;  // Total number of data chunks managed
         int    threshold_per_thr; // Compression list threshold per thread
         size_t element_size;      // Size of a single entry in the op-list (tuple)
@@ -55,7 +54,9 @@ class GlobalStatsChunkList
     void print() const
     {
         if (all_stats.empty())
+        {
             return;
+        }
 
         constexpr int col_type    = 50;
         constexpr int col_data    = 18;
@@ -110,11 +111,17 @@ class GlobalStatsChunkList
         const long double gib = mib / 1024.0L;
 
         if (gib >= 1.0L)
+        {
             return std::format("{:.2f} Go", gib);
+        }
         if (mib >= 1.0L)
+        {
             return std::format("{:.2f} Mo", mib);
+        }
         if (kib >= 1.0L)
+        {
             return std::format("{:.2f} Ko", kib);
+        }
         return std::format("{} bytes", static_cast<long long>(bytes));
     }
 

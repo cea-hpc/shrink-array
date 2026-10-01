@@ -34,7 +34,9 @@ namespace
 void compress_one(auto& tab)
 {
     if constexpr (chunk_config::is_shrink_enabled)
+    {
         tab.compress();
+    }
 }
 
 /// @brief One line naming the array about to be compressed, flushed (it was
@@ -91,7 +93,9 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         {
             auto& ens = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
             if (ens.have_chunk_to_compress_potentially())
+            {
                 ens.compress_chunk_to_compress_potentially(true);
+            }
         }
 
 #pragma omp parallel

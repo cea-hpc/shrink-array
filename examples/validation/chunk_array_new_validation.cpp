@@ -71,11 +71,17 @@ using Ch = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 /// @brief How many of the @p n chunks hold a buffer (none should).
@@ -90,9 +96,13 @@ int materialised(const C* v, std::size_t n)
     for (std::size_t k = 0; k < n; ++k)
     {
         if constexpr (requires { v[k].written(0); })
+        {
             bad += v[k].written(0);
+        }
         else
+        {
             bad += v[k].written();
+        }
     }
     return bad;
 }
@@ -120,7 +130,9 @@ int one_case(std::size_t n, bool in_region)
     std::println("[{}/array-new] {:<6} n={:5} : {}", variant_name(), in_region ? "region" : "serial", n,
                  bad ? "FAIL" : "ok, every chunk at the first constant");
     if (bad)
+    {
         std::println("  {} of {} chunk(s) not initialised", bad, n);
+    }
     Ch::operator delete[](p);
     return bad ? 1 : 0;
 }
@@ -151,8 +163,7 @@ int main()
 
     int fails = 0;
     // 1 and 5000 are the plain cases; 499 / 500 / 501 bracket the threshold.
-    for (const std::size_t n :
-         {1uz, 499uz, 500uz, 501uz, 5000uz})
+    for (const std::size_t n : {1uz, 499uz, 500uz, 501uz, 5000uz})
     {
         fails += one_case(n, /*in_region=*/false);
         fails += one_case(n, /*in_region=*/true);

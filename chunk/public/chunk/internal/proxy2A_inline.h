@@ -158,8 +158,7 @@ void Proxy2A<T>::mark_for_compression_if_needed(in_t<T> new_value) const
     {
         // Called BEFORE the store (handle_no_bool_assignment): the memory check
         // must expect the old value -- see mark_for_compression_before_store.
-        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value.get(), new_value,
-                                                 Chunk2A<T>::first_value);
+        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value.get(), new_value, Chunk2A<T>::first_value);
     }
     else
     {
@@ -241,7 +240,9 @@ void Proxy2A<T>::trigger_compression_if_needed(int thr_rank)
             CompressionManagerType::mark_list_dangerous_for_thread(thr_rank);
 
             if constexpr (chunk_config::verbose)
+            {
                 std::cerr << "⚠️ List became dangerous: size=" << sz << "\n";
+            }
         }
     }
 }
@@ -327,7 +328,9 @@ void Proxy2A<T>::ensure_writable_storage()
                                    : 0;
             const unsigned int used = this->chunk_size();
             if (used != live || frozen != 0U)
+            {
                 std::fprintf(stderr, "[EWS] used=%u live=%u frozen=%u\n", used, live, frozen);
+            }
         }
         shrink_array::set_thread_chunk_size(this->chunk_size());
         shrink_array::set_thread_alloc_key(this->alloc_key());
@@ -651,9 +654,13 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                     if (is_cst1 || is_cst2)
                     {
                         if constexpr (is_not_bool)
+                        {
                             chunk.create_value(is_cst2, proxy.ptr_second_value);
+                        }
                         else
+                        {
                             chunk.create_value_bool(is_cst2);
+                        }
                     }
 
                     T* values_before = chunk.values_load();
@@ -689,9 +696,11 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                         // proxy.chunk_size() == __chunk_size.
                         const unsigned int csz_guard = proxy.chunk_size();
                         if (std::cmp_greater_equal(num, csz_guard))
+                        {
                             INVARIANT_FAILED("[deferred2A write] num OUT OF RANGE "
                                              "(num={}, chunk_size={}, chunk={})",
                                              num, csz_guard, static_cast<const void*>(&chunk));
+                        }
 
                         // Check-build guard: garbage-pointer check on the write target.
                         CHUNK_CHECK_VALUES_PTR_C(values_before, "deferred2A.pre_store", &chunk);
@@ -1026,9 +1035,11 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                     if constexpr (build_config::any_check)
                     {
                         if (++retry_count > 1000)
+                        {
                             INVARIANT_FAILED("execute_arithmetic_compound_operation_async (decompress path): "
                                              "retry > 1000 on chunk={} num={}",
                                              static_cast<const void*>(&ctx->chunk), ctx->num);
+                        }
                     }
                     continue;
                 }
@@ -1042,10 +1053,12 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                     if constexpr (build_config::any_check)
                     {
                         if (++retry_count > 1000)
+                        {
                             INVARIANT_FAILED(
                                 "execute_arithmetic_compound_operation_async (decompress path post-store): "
                                 "retry > 1000 on chunk={} num={}",
                                 static_cast<const void*>(&ctx->chunk), ctx->num);
+                        }
                     }
                     continue;
                 }
@@ -1062,9 +1075,11 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                     if constexpr (build_config::any_check)
                     {
                         if (++retry_count > 1000)
+                        {
                             INVARIANT_FAILED("execute_arithmetic_compound_operation_async (heap path): "
                                              "retry > 1000 on chunk={} num={}",
                                              static_cast<const void*>(&ctx->chunk), ctx->num);
+                        }
                     }
                     continue;
                 }
@@ -1078,9 +1093,11 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                     if constexpr (build_config::any_check)
                     {
                         if (++retry_count > 1000)
+                        {
                             INVARIANT_FAILED("execute_arithmetic_compound_operation_async (heap path post-store): "
                                              "retry > 1000 on chunk={} num={}",
                                              static_cast<const void*>(&ctx->chunk), ctx->num);
+                        }
                     }
                     continue;
                 }
@@ -1101,9 +1118,11 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                 if constexpr (build_config::any_check)
                 {
                     if (++retry_count > 1000)
+                    {
                         INVARIANT_FAILED("execute_arithmetic_compound_operation_async (no-op path): "
                                          "retry > 1000 on chunk={} num={}",
                                          static_cast<const void*>(&ctx->chunk), ctx->num);
+                    }
                 }
             }
         }
@@ -1127,7 +1146,9 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
             }
             {
                 if (proxy.is_cst_val2() && v_new_truncated)
+                {
                     break;
+                }
             }
         }
     }
@@ -1284,7 +1305,9 @@ void Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v, bool /*check_first_v
         // Serial build: apply_atomic_op() runs the body straight away, without
         // the engine and its lbd_info, and the body reads ptr_second_value.
         if constexpr (!chunk_config::use_fast_block_compression)
+        {
             set_info_on_chunk();
+        }
         Base::apply_atomic_op(op, v, v_old);
     }
 }

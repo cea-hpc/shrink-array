@@ -153,7 +153,9 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     };
 
     if constexpr (chunk_config::is_shrink_enabled)
+    {
         std::println("");
+    }
 
     // One lambda instead of two. The body of a generic lambda is a TEMPLATE, so
     // here `if constexpr` really discards: tab.stats(), which std::vector has
@@ -274,7 +276,9 @@ void bench_print_checksums(BenchArrays& bench_arr, bool check_sum)
             print_checksums(n, tab1, tab2, tab3, tab4, tab5, tab_int, tab_bool, tab_bool_bits, tab_complex, tab_float,
                             tab_short, tab_char, tab_long, tab_ulong, tab_quant);
             if (bench_arr.with_struct) // --no_struct
+            {
                 print_checksums(n + 15, tab_point, tab_cell);
+            }
         }
     };
 

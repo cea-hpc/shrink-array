@@ -60,9 +60,8 @@ namespace shrink_array
 {
 
 /// @brief Model figures for one candidate chunk size: chunk counts and estimated memory.
-class ChunkSizeEstimate
+struct ChunkSizeEstimate
 {
-  public:
     uint32_t size      = 0;     // candidate chunk size (elements)
     int64_t  n_chunks  = 0;     // total chunks at that size
     int64_t  mat       = 0;     // materialized chunks (estimated or exact)
@@ -72,15 +71,16 @@ class ChunkSizeEstimate
 };
 
 /// @brief ChunkSizeAdvisor's result: one ChunkSizeEstimate per candidate size, with the best and current indices.
-class ChunkSizeReport
+struct ChunkSizeReport
 {
-  public:
     /// @brief Bytes the best size would save over the current one (0 when
     ///        either is unknown).
     [[nodiscard]] double best_gain_bytes() const noexcept
     {
         if (best < 0 || cur < 0)
+        {
             return 0.;
+        }
         return table[cur].mem_bytes - table[best].mem_bytes;
     }
 
@@ -95,13 +95,11 @@ class ChunkSizeReport
 /// @brief Estimates an array's model memory at other chunk sizes without re-chunking (see the header comment).
 /// @tparam T Element type.
 template <typename T>
-class ChunkSizeAdvisor
+struct ChunkSizeAdvisor
 {
-  public:
     /// @brief Which sizes analyze() evaluates, its scan cap and the per-chunk metadata cost it adds.
-    class Options
+    struct Options
     {
-      public:
         int     coarser_levels = 4;     // evaluate S*2 .. S*2^levels
         int     finer_levels   = 2;     // evaluate S/2 .. S/2^levels (data sampled)
         int64_t max_mat_scans  = 65536; // cap on materialized chunks whose DATA is read
@@ -135,7 +133,9 @@ class ChunkSizeAdvisor
         rep.elem_bytes    = S != 0 ? static_cast<double>(Arr::chunk_type::storage_units(S)) * sizeof(T) / S : 0.;
 
         if (nc <= 0)
+        {
             return rep;
+        }
 
         // Chunk2 keys cst2 by the array-level second-value index; fetch it once.
         // v1 has no cst2; 2A keys cst2 per chunk by the values_load() pointer.
@@ -145,11 +145,17 @@ class ChunkSizeAdvisor
             // get_ind_second_value() aborts for them; classify() below asks
             // the unindexed is_cst_val2().
             if constexpr (chunk_config::use_chunk2 && !is_bool_like_v<T>)
+            {
                 return tab.get_ind_second_value();
+            }
             else if constexpr (chunk_config::use_chunk2)
+            {
                 return 0;
+            }
             else
+            {
                 return -1;
+            }
         }();
 
         // Classify one chunk: kind 0 = cst1, 1 = cst2, 2 = mat; `key`
@@ -186,11 +192,15 @@ class ChunkSizeAdvisor
             // refining back (tab1 stuck at "best=1024" while its data grew
             // 406 -> 565 MB over six ticks at S=512).
             if constexpr (chunk_config::use_chunk2a)
+            {
                 return true;
+            }
             else
             {
                 if (elem == cst1_value)
+                {
                     return true;
+                }
                 return has_cst2 && (elem == cst2_value);
             }
         };
@@ -199,7 +209,9 @@ class ChunkSizeAdvisor
         {
             key = nullptr;
             if (chunk.is_cst_val1())
+            {
                 return 0;
+            }
             if constexpr (chunk_config::use_chunk2a)
             {
                 if (chunk.is_cst_val2())
@@ -212,9 +224,13 @@ class ChunkSizeAdvisor
             {
                 bool is_cst2 = false;
                 if constexpr (is_bool_like_v<T>)
+                {
                     is_cst2 = chunk.is_cst_val2();
+                }
                 else
+                {
                     is_cst2 = chunk2_ind >= 0 && chunk.is_cst_val2(chunk2_ind);
+                }
                 if (is_cst2)
                 {
                     static constexpr int cst2_sentinel = 0; // one address: array-level, all cst2 equal
@@ -258,9 +274,8 @@ class ChunkSizeAdvisor
         int64_t mat0 = 0;
 
         const int coarser = opt.coarser_levels;
-        class Agg
+        struct Agg
         {
-          public:
             int         kind;
             const void* key;
         }; // kind: 0 cst1, 1 cst2, 2 mat
@@ -295,7 +310,9 @@ class ChunkSizeAdvisor
             {
                 n_parts = static_cast<int64_t>(CHUNK_PMP_NUM_THREADS) * 4;
                 if (n_parts > n_super)
+                {
                     n_parts = n_super > 0 ? n_super : 1;
+                }
                 part_mat.assign(static_cast<std::size_t>(n_parts), 0);
                 part_picks.assign(static_cast<std::size_t>(n_parts), {});
             }
@@ -317,28 +334,40 @@ class ChunkSizeAdvisor
                         const void* key  = nullptr;
                         const int   kind = classify(tab.chunk_list[j], key);
                         if (kind == 2)
+                        {
                             ++m;
+                        }
 
                         for (int l = 1; l <= coarser; ++l)
                         {
                             Agg& agg = run[static_cast<std::size_t>(l)];
                             if ((j & ((int64_t{1} << l) - 1)) == 0)
+                            {
                                 agg = {kind, key}; // block opens with this child
+                            }
                             else if (agg.kind != 2 && (agg.kind != kind || agg.key != key))
+                            {
                                 agg.kind = 2; // mixed constants -> materialized
+                            }
                             if (((j + 1) & ((int64_t{1} << l) - 1)) == 0 || j + 1 == nc)
+                            {
                                 if (agg.kind == 2)
+                                {
                                     ++mat_loc[static_cast<std::size_t>(l)]; // commit block at boundary
+                                }
+                            }
                         }
                     }
                     part_mat[static_cast<std::size_t>(p)] = m;
                 }
                 for (int l = 1; l <= coarser; ++l)
+                {
                     if (mat_loc[static_cast<std::size_t>(l)] != 0)
                     {
 #pragma omp atomic
                         mat_at[static_cast<std::size_t>(l)] += mat_loc[static_cast<std::size_t>(l)];
                     }
+                }
             }
 #pragma omp barrier
 
@@ -356,7 +385,9 @@ class ChunkSizeAdvisor
                 mat0     = run_count;
                 sampling = finer > 0 && mat0 > 0 && S >= opt.min_size * 2;
                 if (sampling)
+                {
                     stride = mat0 > opt.max_mat_scans ? (mat0 + opt.max_mat_scans - 1) / opt.max_mat_scans : 1;
+                }
             }
             // (implicit barrier: mat0, stride and the offsets are set)
 
@@ -378,9 +409,13 @@ class ChunkSizeAdvisor
                     {
                         const void* key = nullptr;
                         if (classify(tab.chunk_list[j], key) != 2) // skip cst1 / cst2 (only mat has data)
+                        {
                             continue;
+                        }
                         if ((seen++ % stride) != 0)
+                        {
                             continue;
+                        }
                         mine.push_back(j);
                     }
                 }
@@ -388,7 +423,9 @@ class ChunkSizeAdvisor
 #pragma omp single
             {
                 for (const auto& mine : part_picks)
+                {
                     picks.insert(picks.end(), mine.begin(), mine.end());
+                }
                 scanned = static_cast<int64_t>(picks.size());
             }
             // (implicit barrier: picks is complete)
@@ -405,7 +442,9 @@ class ChunkSizeAdvisor
                     {
                         const uint32_t sub = S >> k;
                         if (sub < opt.min_size)
+                        {
                             break;
+                        }
                         for (uint32_t b = 0; b < S; b += sub)
                         {
                             bool cst = true;
@@ -421,13 +460,17 @@ class ChunkSizeAdvisor
                             else
                             {
                                 for (uint32_t i = 1; i < sub; ++i)
+                                {
                                     if (!(v[b + i] == v[b]))
                                     {
                                         cst = false;
                                         break;
                                     }
+                                }
                                 if (cst)
+                                {
                                     run = v[b];
+                                }
                             }
                             // A sub-block that is merely uniform is NOT compressible:
                             // the runtime only ever stores a chunk as a constant when
@@ -440,17 +483,21 @@ class ChunkSizeAdvisor
                             // measured one was 251 MB, and the decider acted on it.
                             // Gate on the value, not just on the uniformity.
                             if (cst)
+                            {
                                 cst = compressible_value(run);
+                            }
                             fine_loc[static_cast<std::size_t>(k)] += cst ? 1 : 0;
                         }
                     }
                 }
                 for (int k = 1; k <= finer; ++k)
+                {
                     if (fine_loc[static_cast<std::size_t>(k)] != 0)
                     {
 #pragma omp atomic
                         fine_cst[static_cast<std::size_t>(k)] += fine_loc[static_cast<std::size_t>(k)];
                     }
+                }
             }
         }
 
@@ -473,12 +520,14 @@ class ChunkSizeAdvisor
         {
             const uint32_t sub = S >> k;
             if (sub < opt.min_size)
+            {
                 continue;
+            }
             // constant fraction among SCANNED mat sub-blocks, extrapolated to all
             const int64_t sub_per_chunk = int64_t{1} << k;
             const int64_t scanned_subs  = scanned * sub_per_chunk;
             const double  frac_cst = scanned_subs > 0 ? static_cast<double>(fine_cst[static_cast<std::size_t>(k)]) /
-                                                           static_cast<double>(scanned_subs)
+                                                            static_cast<double>(scanned_subs)
                                                       : 0.;
             const int64_t nchunks  = nc * sub_per_chunk; // cst chunks split into cst children
             const auto    mat      = static_cast<int64_t>(
@@ -494,7 +543,9 @@ class ChunkSizeAdvisor
             // Never propose a size the shared cst buffers can't cover: rechunk_to
             // would refuse it (cst_buffer_size ceiling). Stop the coarser walk here.
             if ((S << l) > shrink_array::cst_buffer_size)
+            {
                 break;
+            }
             const int64_t nchunks = (nc + (int64_t{1} << l) - 1) >> l;
             push(S << l, nchunks, mat_at[static_cast<std::size_t>(l)], /*exact=*/true);
         }

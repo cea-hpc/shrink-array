@@ -243,9 +243,8 @@ inline constexpr bool second_value_indexed = false;
 /// alignas on the TYPE also makes sizeof 128, so nothing follows it on the
 /// line. Derived from std::atomic<int>, constructors included: every use is
 /// unchanged.
-class alignas(128) OmptSuspendCounter : public std::atomic<int>
+struct alignas(128) OmptSuspendCounter : public std::atomic<int>
 {
-  public:
     using std::atomic<int>::atomic;
 };
 extern OmptSuspendCounter g_ompt_suspended;
@@ -605,7 +604,9 @@ class CheckNaN<true>
     static void maybe(auto val, long i) noexcept
     {
         if (check_nan)
+        {
             global_check_nan(val, i);
+        }
     }
 
   private:

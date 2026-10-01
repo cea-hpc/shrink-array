@@ -69,9 +69,8 @@ namespace shrink_array
 
 /// @brief Names the map from a second value to its inf_array tuple (T, int, int), ordered by ValueLess<T>.
 template <typename T>
-class ValueToInfTupleMapHelper
+struct ValueToInfTupleMapHelper
 {
-  public:
     using inf_array_t = std::tuple<T, int, int>;
 
     // Keyed by the second value, ordered by ValueLess (value_less.h).
@@ -154,9 +153,13 @@ class PointerMapChunk2InfArrayPolicy
         for (auto it = map_inf_array.begin(); it != map_inf_array.end();)
         {
             if (it->second == self_ptr)
+            {
                 it = map_inf_array.erase(it);
+            }
             else
+            {
                 ++it;
+            }
         }
     }
 
@@ -280,8 +283,10 @@ class PointerMapChunk2
             // Bound the dump so a corrupt size can't run away.
             const size_t lim = (count > 64u) ? 64u : count;
             for (size_t i = 0; i < lim; ++i)
+            {
                 std::fprintf(stderr, " [%p num_tab=%d]", static_cast<const void*>(vec[i].first),
                              std::get<2>(vec[i].second));
+            }
             std::fprintf(stderr, "%s\n", (count > lim) ? " …(truncated)" : "");
             std::fflush(stderr);
         }
@@ -478,13 +483,17 @@ class PointerMapChunk2
                 const size_t count = vec.size();
 
                 if (count > (1U << 30U))
+                {
                     INVARIANT_FAILED("[share_info get] corrupt vec: this={} size={} key={}",
                                      static_cast<const void*>(this), count, key);
+                }
 
                 for (size_t i = 0; i < count; ++i)
                 {
                     if (vec[i].first == key)
+                    {
                         return vec[i].second;
+                    }
                 }
                 INVARIANT_FAILED("[share_info get] key NOT FOUND: this={} size={} key={} "
                                  "(dangling ctx->ptr_on_array, or array destroyed while a deferred op "
@@ -498,7 +507,9 @@ class PointerMapChunk2
                 for (size_t i = 0; i < count; ++i)
                 {
                     if (vec[i].first == key)
+                    {
                         return vec[i].second;
+                    }
                 }
                 report_key_not_found(key, "get_info_second_value");
                 INVARIANT_FAILED("[share_info get_info_second_value] key NOT FOUND: this={} size={} key={}",
@@ -518,7 +529,9 @@ class PointerMapChunk2
             for (size_t i = 0; i < count; ++i)
             {
                 if (vec[i].first == key)
+                {
                     return vec[i].second;
+                }
             }
             return vec[0].second; // fallback: not registered (should not happen)
         }

@@ -77,12 +77,16 @@ using namespace shrink_array;
 static void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 static void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 template <typename T>
@@ -93,11 +97,17 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 // set_second_value only exists on chunk2 / chunk2a; no-op elsewhere.
@@ -105,7 +115,9 @@ template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {
     if constexpr (requires(Arr x) { x.set_second_value(v); })
+    {
         a.set_second_value(v);
+    }
 }
 
 // Runs of kRun elements: 0 -> first constant, 1 -> second constant, 2 -> varied.
@@ -114,9 +126,8 @@ void maybe_set_second_value(Arr& a, const Val& v)
 constexpr long kRun = 4096;
 
 template <typename T>
-class Scenario
+struct Scenario
 {
-  public:
     T second; // the second constant written in run 1
     T refill; // the value the first quarter is rewritten with after the pass
     T (*varied)(long i);
@@ -131,7 +142,9 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
 {
     Array<T> arr(N);
     if (declare_second)
+    {
         maybe_set_second_value(arr, sc.second);
+    }
 
     // Materialise everything first, so the pattern below overwrites live blocks
     // rather than filling fresh ones.
@@ -140,7 +153,9 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
         begin_phase();
 #pragma omp for
         for (long i = 0; i < N; ++i)
+        {
             arr[i] = sc.varied(i);
+        }
     }
     end_phase();
 
@@ -152,9 +167,13 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
         {
             const long run = (i / kRun) % 3;
             if (run == 0)
+            {
                 arr[i] = T(0);
+            }
             else if (run == 1)
+            {
                 arr[i] = sc.second;
+            }
         }
     }
     end_phase();
@@ -174,7 +193,9 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
         begin_phase();
 #pragma omp for
         for (long i = 0; i < N / 4; ++i)
+        {
             arr[i] = sc.refill;
+        }
     }
     end_phase();
 
@@ -187,11 +208,17 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
         const long run      = (i / kRun) % 3;
         T          expected = sc.varied(i);
         if (run == 0)
+        {
             expected = T(0);
+        }
         else if (run == 1)
+        {
             expected = sc.second;
+        }
         if (i < N / 4)
+        {
             expected = sc.refill;
+        }
 
         const T got = arr[i];
         if (got != expected)

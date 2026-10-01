@@ -30,11 +30,17 @@ static double value_at(int i)
 {
     const double f = static_cast<double>(i) / N;
     if (f < 0.5)
+    {
         return (i % 4096 == 2048) ? 42.0 : 0.0;
+    }
     if (f < 0.75)
+    {
         return 3.5;
+    }
     if (f < 0.875)
+    {
         return ((i / 256) % 2) ? 7.25 : -1.5;
+    }
     return 0.001 * ((i * 2654435761u) % 1000);
 }
 
@@ -42,13 +48,14 @@ template <typename TAB>
 static void fill_and_compress(TAB& tab)
 {
     for (int i = 0; i < N; ++i)
+    {
         tab[i] = value_at(i);
+    }
     TAB::make_block_compression();
 }
 
-class Truth
+struct Truth
 {
-  public:
     long long chunks, mat;
     double    mem;
 };
@@ -60,7 +67,9 @@ static Truth ground_truth(const ArrayChunk2A<double>& tab, double meta)
     {
         const auto& c = tab.chunk_list[j];
         if (!c.is_cst_val1() && !c.is_cst_val2())
+        {
             ++t.mat;
+        }
     }
     t.mem = (static_cast<double>(t.chunks) * meta) + (double(t.mat) * tab.chunk_size() * sizeof(double));
     return t;
@@ -124,7 +133,9 @@ int main()
             for (size_t k = 0; k < std::size(sizes); ++k)
             {
                 if (sizes[k] != e.size)
+                {
                     continue;
+                }
                 const auto&  t  = truths[k];
                 const double dm = t.mat ? 100. * double(e.mat - t.mat) / double(t.mat) : (e.mat ? 100. : 0.);
                 const bool   ok = e.exact ? (e.mat == t.mat && e.n_chunks == t.chunks) : (dm > -10. && dm < 10.);

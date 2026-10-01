@@ -48,8 +48,12 @@ void AllTypeChunk::register_manager()
     // Idempotent under the lock: initialize<Types>() may name a type whose
     // first array already registered it, or the other way round.
     for (const auto& m : getListTypeChunk())
+    {
         if (dynamic_cast<const ManagerT*>(m.get()) != nullptr)
+        {
             return;
+        }
+    }
 
     if (!ready_)
     {
@@ -76,7 +80,9 @@ void AllTypeChunk::register_manager()
     if constexpr (build_config::chunk_dynamic)
     {
         for (const unsigned int size : registered_sizes_)
+        {
             manager->register_chunk_size(size, block_size_);
+        }
     }
 
     managers_[static_cast<std::size_t>(count)] = std::move(manager);
@@ -124,11 +130,17 @@ void AllTypeChunk::initialize()
     // run time. Written as three independent `if constexpr` rather than an
     // else-chain: nothing forbids a build from selecting more than one.
     if constexpr (chunk_config::use_chunk)
+    {
         fillManagerChunk<Chunk, Types>();
+    }
     if constexpr (chunk_config::use_chunk2)
+    {
         fillManagerChunk<Chunk2, Types>();
+    }
     if constexpr (chunk_config::use_chunk2a)
+    {
         fillManagerChunk<Chunk2A, Types>();
+    }
 }
 
 } // namespace shrink_array

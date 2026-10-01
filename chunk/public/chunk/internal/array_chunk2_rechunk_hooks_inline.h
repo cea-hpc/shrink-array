@@ -50,14 +50,22 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
             const int  thr = get_thr_rank_fast();
             shrink_array::set_thread_chunk_size(self().size_policy_.size());
             for (const auto& per_rank : manager_type::map_chunk2_to_compress_potentially_thr)
+            {
                 for (const auto& kv : per_rank)
                 {
                     if (!kv.second)
+                    {
                         continue;
+                    }
                     for (auto& tup : *kv.second)
+                    {
                         if (std::get<2>(tup) == num_tab)
+                        {
                             std::get<0>(tup)->compress(thr, inf, /*apply=*/true, std::get<3>(tup).count());
+                        }
+                    }
                 }
+            }
         }
         manager_type::remove_from_compress_list_chunk2_by_num_tab(num_tab);
     }
@@ -76,9 +84,13 @@ RechunkHooks2<Derived, true>::value_type RechunkHooks2<Derived, true>::rechunk_c
     // scalar; it is per-chunk there). Bool's second_value is re-established by the
     // fresh array's create(), so capture nothing (value_type{}) for it.
     if constexpr (Derived::is_not_bool)
+    {
         return self().get_second_value();
+    }
     else
+    {
         return value_type{};
+    }
 }
 
 template <typename Derived>
@@ -91,7 +103,9 @@ void RechunkHooks2<Derived, true>::rechunk_seed_fresh(in_t<value_type> state)
     if constexpr (Derived::is_not_bool)
     {
         if (state != value_type{})
+        {
             self().set_second_value(state, false);
+        }
     }
     else
     {

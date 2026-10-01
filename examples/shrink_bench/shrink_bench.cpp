@@ -110,9 +110,13 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
             for (Int c = beg / step; c <= (end - 1) / step; ++c)
             {
                 if constexpr (build_config::use_openmp)
+                {
                     a.alloc_chunk(c * step, get_thr_rank_fast());
+                }
                 else
+                {
                     a.alloc_chunk(c * step);
+                }
             }
             finalize_parallel_phase_only_flush_g();
         }
@@ -129,7 +133,9 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
             in += in_window && written;
             out += !in_window && written;
             if (written != in_window && fails < 3)
+            {
                 std::println("[prealloc] {}: chunk {}{} materialised", name, c, in_window ? " not" : "");
+            }
             fails += written != in_window;
         }
         std::println("[prealloc] {}: {} chunks preallocated in [{}, {}), {} outside", name, in, beg, end, out);
@@ -141,12 +147,16 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
         begin_parallel_phase_g();
 #pragma omp for schedule(static)
         for (Int i = beg; i < end; ++i)
+        {
             a[i] = value_at(i);
+        }
         finalize_parallel_phase_only_flush_g();
     }
     finalize_parallel_phase_after_flush_g();
     for (Int i = beg; i < end; ++i)
+    {
         ref[static_cast<std::size_t>(i)] = value_at(i);
+    }
 
     // Read back through the read operator, window and surroundings.
     for (Int i = 0; i < n; ++i)
@@ -155,7 +165,9 @@ static long prealloc_check(const char* name, Int n, T (*value_at)(Int))
         if (!(v == ref[static_cast<std::size_t>(i)]))
         {
             if (fails < 5)
+            {
                 std::println("[prealloc] {}: MISMATCH at {}", name, i);
+            }
             ++fails;
         }
     }
@@ -211,7 +223,9 @@ int main(int argc, char* argv[])
     {
         const int arenas = shrink_array::env_number<int>("CHUNK_MALLOC_ARENAS", 0); // 0 = leave glibc alone
         if (arenas > 0)
+        {
             set_max_malloc_arenas(arenas);
+        }
     }
 
     // TSan tip: unbuffer stderr with setvbuf(stderr, nullptr, _IONBF, 0) so its
@@ -239,13 +253,21 @@ int main(int argc, char* argv[])
 
     // Example behavior based on flags
     if (no_io_v)
+    {
         std::println("I/O operations will be skipped.");
+    }
     if (compress_v)
+    {
         std::println("Compression is enabled.");
+    }
     if (write_trace)
+    {
         std::println("Trace information will be written.");
+    }
     if (read_trace)
+    {
         std::println("Trace information will be read.");
+    }
 
     // The second_value_* constants and zero_complex live in bench_array.h: the
     // extracted phases need them as much as main() does.
@@ -269,9 +291,13 @@ int main(int argc, char* argv[])
         std::string data;
 
         if constexpr (chunk_config::is_shrink_enabled)
+        {
             std::print("no io (default 0) / read data and check (2) : ");
+        }
         else
+        {
             std::print("no io (default 0) / write data (1) / read data and check (2) : ");
+        }
 
         std::getline(std::cin, data);
 
@@ -323,7 +349,9 @@ int main(int argc, char* argv[])
     const Int freq_ksum = []() -> Int
     {
         if (const Int n = shrink_array::env_number<Int>("CHUNK_BENCH_KSUM_PERIOD", 0); n > 0)
+        {
             return n;
+        }
         return 0; // 0 = follow freq_conso_mem, resolved just below
     }();
 
@@ -475,11 +503,17 @@ int main(int argc, char* argv[])
     maybe_set_second_value(tab_cell, second_value_cell);
 
     if constexpr (chunk_config::use_chunk2a)
+    {
         print_chunk_size.operator()<Chunk2A>("CHUNK2A");
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         print_chunk_size.operator()<Chunk2>("CHUNK2");
+    }
     else if constexpr (chunk_config::use_chunk)
+    {
         print_chunk_size.operator()<Chunk>("CHUNK");
+    }
 
     // Array<bool> in a shrink build, std::vector<short> in the baseline
     // (bench_array.h says why): one alias, where four declarations under
@@ -502,16 +536,22 @@ int main(int argc, char* argv[])
     // std::length_error. The int64 builds take the full size.
     long long mask_want = std::llround(mask_scale * static_cast<double>(sz));
     if (mask_want < 1)
+    {
         mask_want = 1;
+    }
     const Int mask_sz = mask_want > static_cast<long long>(std::numeric_limits<Int>::max())
                             ? static_cast<Int>(static_cast<long long>(std::numeric_limits<Int>::max()) & ~0x3FFLL)
                             : static_cast<Int>(mask_want);
     if (!no_mask && static_cast<long long>(mask_sz) != mask_want)
+    {
         std::cout << "Note: tab_mask capped at " << mask_sz << " elements (" << mask_want
                   << " requested; Int is 32-bit here, the int64 build takes the full size)\n";
+    }
     BenchMaskArray tab_mask(no_mask ? 1 : mask_sz);
     if (!no_mask)
+    {
         std::cout << "tab_mask: " << mask_sz << " elements (--mask_scale " << mask_scale << ")\n";
+    }
 
     // Handle on the eighteen arrays, passed to the extracted phases. References,
     // so main() stays the owner -- it builds them and destroys them.
@@ -530,7 +570,9 @@ int main(int argc, char* argv[])
     // useless in chunk mode arrays are set to zero by default
 
     if (bench_args.test_prealloc)
+    {
         run_prealloc_checks(sz);
+    }
 
     // Initial fill: a 200-line omp parallel region, moved to
     // bench_phase_fill.cpp (see bench_phases.h).
@@ -672,7 +714,9 @@ int main(int argc, char* argv[])
         if constexpr (has_advisor)
         {
             if (advisor_period <= 0 || (k_iter % advisor_period) != 0)
+            {
                 return;
+            }
             // consider() counts ticks and iterations in int; Int is `long` in
             // the int64 build, and both counts stay far below INT_MAX.
             const int tick = static_cast<int>(advisor_call++);
@@ -682,7 +726,9 @@ int main(int argc, char* argv[])
             rechunk_decider.consider<short>(tab_short, tick, iter, "tab_short");
             rechunk_decider.consider<complex_double>(tab_complex, tick, iter, "tab_complex");
             if (!no_struct)
+            {
                 rechunk_decider.consider<Point3>(tab_point, tick, iter, "tab_point");
+            }
             // Every other array too, advised by default: a dynamic run then
             // starts like the static S=64 build and ends below the static S=256
             // one (chunk2a, 64 threads: 6.57 GB against 7.26 GB). Until Sept '26
@@ -709,7 +755,9 @@ int main(int argc, char* argv[])
                 rechunk_decider.consider<unsigned long>(tab_ulong, tick, iter, "tab_ulong");
                 rechunk_decider.consider<double>(tab_quant, tick, iter, "tab_quant");
                 if (!no_struct)
+                {
                     rechunk_decider.consider<Cell>(tab_cell, tick, iter, "tab_cell");
+                }
             }
             // tab_mask: an ArrayChunkBits in a chunk2 build, whose advisor
             // knows the packed layout (the other variants' Array<bool> is not
@@ -717,7 +765,9 @@ int main(int argc, char* argv[])
             if constexpr (chunk_config::use_chunk2)
             {
                 if (!no_mask)
+                {
                     rechunk_decider.consider<typename BenchMaskArray::value_type>(tab_mask, tick, iter, "tab_mask");
+                }
             }
             if constexpr (chunk_config::use_chunk2a)
             {
@@ -751,7 +801,9 @@ int main(int argc, char* argv[])
     for (Int k = 0; k < iter_max; ++k)
     {
         if (k > 0)
+        {
             advisor_tick(k);
+        }
         if (k % 100 == 0)
         {
             const auto now = std::chrono::steady_clock::now();
@@ -764,7 +816,9 @@ int main(int argc, char* argv[])
         // defined in every build of the library, so the guard need not be a
         // directive: the discarded branch still links.
         if constexpr (chunk_config::ring_log_debug)
+        {
             ring_init();
+        }
 
         const Int size   = tab_size[k];
         const Int start0 = tab_start[k];
@@ -772,7 +826,9 @@ int main(int argc, char* argv[])
         Int end0 = start0 + size;
 
         if (end0 > sz)
+        {
             end0 = sz;
+        }
 
         if constexpr (test_captur_bug)
         {
@@ -898,11 +954,15 @@ int main(int argc, char* argv[])
             // (so the copy lands on chunks that compress right after).
             std::vector<double> src(r1 - r0);
             for (std::size_t i = 0; i < src.size(); ++i)
+            {
                 src[i] = std::sin(static_cast<double>(r0 + i) + static_cast<double>(k));
+            }
 
             copy_range(tab4, r0, r1, src.begin(), assume_drained);
             for (std::size_t i = 0; i < src.size(); ++i)
+            {
                 src[i] = (i % 97 == 0) ? static_cast<double>(i) : second_value_d2;
+            }
 
             copy_range(tab5, r0, r1, src.begin(), assume_drained);
         }
@@ -947,7 +1007,9 @@ int main(int argc, char* argv[])
         if constexpr (chunk_config::ring_log_debug)
         {
             if (shrink_array::analyze_ring_sweep())
+            {
                 std::abort();
+            }
         }
         if constexpr (print_mem) // see the note on the first site
         {

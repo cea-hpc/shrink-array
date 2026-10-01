@@ -55,9 +55,13 @@ consteval bool relaxed_element_access()
 {
     // Guarded: atomic_ref<T> is ill-formed for a T that is not trivially copyable.
     if constexpr (!std::is_trivially_copyable_v<T>)
+    {
         return false;
+    }
     else
+    {
         return std::atomic_ref<T>::is_always_lock_free && std::atomic_ref<T>::required_alignment == alignof(T);
+    }
 }
 
 /// @brief T can be read and written through a lock-free relaxed atomic_ref.

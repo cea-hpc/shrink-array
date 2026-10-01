@@ -79,16 +79,24 @@ inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool ba
     const unsigned        max_factor = env_factor != 0 ? env_factor : pol_.max_coarsen_factor;
 
     if (rep.best < 0 || rep.cur < 0 || max_factor <= 1)
+    {
         return rep.best;
+    }
     const unsigned cur_size = rep.table[static_cast<std::size_t>(rep.cur)].size;
     const unsigned best_sz  = rep.table[static_cast<std::size_t>(rep.best)].size;
     if (best_sz <= cur_size) // fining or same size: reliable, no cap
+    {
         return rep.best;
+    }
     if (banned) // this array already paid for one bad coarsening
+    {
         return rep.cur;
+    }
     const unsigned cap_sz = cur_size * max_factor;
     if (best_sz <= cap_sz)
+    {
         return rep.best; // within the cap
+    }
     // Jump exceeds the cap: pick the min-model-memory size in (cur_size,
     // cap_sz]; if none beats cur, fall back to cur (no move this tick).
     int    pick     = rep.cur;
@@ -111,7 +119,9 @@ inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool ba
 inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeReport& rep, const char* name)
 {
     if (rep.best < 0 || rep.cur < 0)
+    {
         return false;
+    }
 
     const int      eff_best   = capped_best_index(rep, hist_[key].coarsen_banned);
     const auto&    cur_e      = rep.table[static_cast<std::size_t>(rep.cur)];
@@ -124,7 +134,9 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
 
     // Damping bookkeeping: is `best` the same as last tick?
     if (best_sz == hist.last_best_size)
+    {
         ++hist.stable_count;
+    }
     else
     {
         hist.last_best_size = best_sz;
@@ -184,7 +196,9 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     const auto  rel_gate  = static_cast<std::size_t>(pol_.min_gain_frac * static_cast<double>(cur_e.mem_bytes));
     std::size_t data_gate = std::max(min_gain, rel_gate);
     if (coarsening && pol_.coarsen_gain_multiple > 1)
+    {
         data_gate *= pol_.coarsen_gain_multiple;
+    }
 
     // The move clears the deadband when EITHER term earns it on its own:
     //   - the exact metadata term alone exceeds the absolute deadband, with
@@ -219,10 +233,12 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         // A zero-cost estimate (empty array) passes.
         const bool rate_ok = min_rate <= 0. || est_cost_ms <= 0. || meta_rate >= min_rate;
         clears_gate        = (gain_meta >= static_cast<double>(meta_floor) && rate_ok && gain_bytes >= meta_floor) ||
-                      gain_bytes >= data_gate;
+                             gain_bytes >= data_gate;
     }
     else
+    {
         clears_gate = gain_bytes >= data_gate;
+    }
     // Kept for the log line: what the old single gate would have demanded.
     const std::size_t gain_gate = data_gate;
 
@@ -231,23 +247,37 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     // (single last_from_size misses 512->..->16->256).
     bool reverting = false;
     if (pol_.anti_reversal_ticks > 0)
+    {
         for (int _i = 0; _i < Hist::kVisited; ++_i)
+        {
             if (hist.visited_size[_i] == best_sz && tick - hist.visited_tick[_i] < pol_.anti_reversal_ticks)
             {
                 reverting = true;
                 break;
             }
+        }
+    }
 
     if (best_sz == cur_size)
+    {
         reason = "already optimal";
+    }
     else if (pol_.cooldown_ticks > 0 && tick - hist.last_action_tick < pol_.cooldown_ticks)
+    {
         reason = "cooldown";
+    }
     else if (reverting)
+    {
         reason = "anti-reversal"; // would return to a recently-occupied size -> oscillation
+    }
     else if (!clears_gate)
+    {
         reason = "gain below deadband";
+    }
     else if (hist.stable_count < pol_.stability_ticks)
+    {
         reason = "best not yet stable";
+    }
     else
     {
         act    = true;
@@ -473,8 +503,12 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                 // moves), which alone turned correct forecasts into "freed
                 // -6.5 MB" and banned coarsening on it.
                 for (const auto& row : rep.table)
+                {
                     if (row.size == ev.old_size)
+                    {
                         ev.mem_after_old = row.mem_bytes;
+                    }
+                }
 
                 // Outcome feedback. Everything needed was already recorded
                 // and never looked at: compare what the move actually
@@ -536,17 +570,21 @@ inline void RechunkDecider::print_rechunk_log(std::FILE* out) const
     {
         const double d_meas = e.mem_before - e.mem_after;
         if (e.mem_after_old >= 0.)
+        {
             std::fprintf(out,
                          "  iter %-6d %-12s S %5u -> %-5u   mem %7.1f -> %7.1f MB "
                          "(freed %6.1f MB, %6.1f at unchanged data; advisor predicted %6.1f)\n",
                          e.iter, e.name.c_str(), e.old_size, e.new_size, e.mem_before / 1e6, e.mem_after / 1e6,
                          d_meas / 1e6, (e.mem_after_old - e.mem_after) / 1e6, (e.mem_before - e.mem_pred) / 1e6);
+        }
         else
+        {
             std::fprintf(out,
                          "  iter %-6d %-12s S %5u -> %-5u   mem %7.1f -> %7.1f MB "
                          "(freed %6.1f MB; advisor predicted %6.1f)\n",
                          e.iter, e.name.c_str(), e.old_size, e.new_size, e.mem_before / 1e6, e.mem_after / 1e6,
                          d_meas / 1e6, (e.mem_before - e.mem_pred) / 1e6);
+        }
     }
 }
 

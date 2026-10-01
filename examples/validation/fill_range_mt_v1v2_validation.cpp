@@ -92,7 +92,9 @@ static long materialised(const Arr& arr, long nchunks)
     const long S = static_cast<long>(arr.chunk_size());
     long       n = 0;
     for (long j = 0; j < nchunks; ++j)
+    {
         n += arr.written(static_cast<typename Arr::ind_type>(j * S)) ? 1 : 0;
+    }
     return n;
 }
 
@@ -106,7 +108,9 @@ static void phase(long n, Fn&& body)
         shrink_array::begin_parallel_phase();
 #pragma omp for schedule(static, 1)
         for (long k = 0; k < n; ++k)
+        {
             body(k);
+        }
         shrink_array::finalize_parallel_phase_only_flush();
     }
     shrink_array::finalize_parallel_phase_after_flush();
@@ -128,11 +132,13 @@ static int run_case(const char* name, Arr& arr, long nchunks, double v, long exp
     // Two spans per chunk, adjacent iterations: with schedule(static, 1) they
     // go to different threads, so each call covers half a chunk that another
     // thread is filling at the same time.
-    phase(2 * nchunks, [&](long k) {
-        const long lo = (k / 2) * S + (k % 2) * half;
-        const long hi = (k % 2) ? (k / 2 + 1) * S : lo + half;
-        fill_range_mt(arr, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), v);
-    });
+    phase(2 * nchunks,
+          [&](long k)
+          {
+              const long lo = (k / 2) * S + (k % 2) * half;
+              const long hi = (k % 2) ? (k / 2 + 1) * S : lo + half;
+              fill_range_mt(arr, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), v);
+          });
 
     long bad = 0;
     for (long i = 0; i < N; ++i)
@@ -141,7 +147,9 @@ static int run_case(const char* name, Arr& arr, long nchunks, double v, long exp
         if (got != v)
         {
             if (bad < 3)
+            {
                 std::printf("  [%s] arr[%ld] = %g, expected %g\n", name, i, got, v);
+            }
             ++bad;
         }
     }
@@ -149,22 +157,23 @@ static int run_case(const char* name, Arr& arr, long nchunks, double v, long exp
 
     const bool counts_ok = expect_materialised < 0 || after == expect_materialised;
     std::printf("%-44s materialised %4ld -> %4ld / %ld%s%s\n", name, before, after, nchunks,
-                expect_materialised < 0 ? "  (not asserted)" : "",
-                counts_ok ? "" : "  <-- WRONG");
+                expect_materialised < 0 ? "  (not asserted)" : "", counts_ok ? "" : "  <-- WRONG");
     if (before != nchunks)
+    {
         std::printf("  [%s] setup: %ld chunk(s) not materialised by the plain content\n", name, nchunks - before);
+    }
     return (bad != 0 || !counts_ok || before != nchunks) ? 1 : 0;
 }
 
 int main(int argc, char** argv)
 {
-    __mem_page_size = getpagesize();
+    __mem_page_size    = getpagesize();
     const long nchunks = argc > 1 ? shrink_array::arg_number<long>(argv[1], 64, "chunks") : 64;
     ParamChunk::init_indexes(true);
 
     constexpr bool omp = build_config::use_openmp;
-    std::printf("=== fill_range_mt_v1v2_validation  chunks=%ld  threads=%d  (%s) ===\n", nchunks,
-                CHUNK_PMP_MAX_THREADS, omp ? "OpenMP: counts asserted" : "serial: values only");
+    std::printf("=== fill_range_mt_v1v2_validation  chunks=%ld  threads=%d  (%s) ===\n", nchunks, CHUNK_PMP_MAX_THREADS,
+                omp ? "OpenMP: counts asserted" : "serial: values only");
 
     // One array per case: every case starts from fresh chunks.
     int fails = 0;

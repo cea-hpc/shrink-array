@@ -77,30 +77,42 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 
 void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {
     if constexpr (requires(Arr x) { x.set_second_value(v); })
+    {
         a.set_second_value(v);
+    }
 }
 
 template <typename Arr>
@@ -116,9 +128,8 @@ void compress_in_region(Arr& a)
 }
 
 /// A pattern by whole chunks: first constant, second value @p sv, data.
-class Pattern
+struct Pattern
 {
-  public:
     [[nodiscard]] double at(long i) const
     {
         switch ((i / S) % 3)
@@ -145,7 +156,9 @@ void fill(Arr& a, const Pattern& p, long n)
         begin_phase();
 #pragma omp for schedule(static)
         for (long i = 0; i < n; ++i)
+        {
             a[static_cast<int>(i)] = p.at(i);
+        }
     }
     end_phase();
 }
@@ -167,8 +180,10 @@ int verify(const char* step, const char* name, const Arr& a, const Pattern& p, l
         if (got != want)
         {
             if (bad < 5)
+            {
                 std::println("[{}/{}] FAIL {}[{}] = {:g}, expected {:g} (chunk {})", variant_name(), step, name, i, got,
                              want, i / p.S);
+            }
             ++bad;
         }
     }
@@ -218,8 +233,10 @@ int check_swap()
            verify(step, "b (rewritten)", std::as_const(b), pa2, N);
 
     if (!bad)
+    {
         std::println("[{}/{}] OK: N={}, second values {:g}/{:g} exchanged with the chunks, compressed and rewritten",
                      variant_name(), step, N, pa.sv, pb.sv);
+    }
     return bad ? 1 : 0;
 }
 
@@ -267,7 +284,9 @@ int check_move()
     bad += verify(step, "dst (untouched)", std::as_const(dst), ps, N);
 
     if (!bad)
+    {
         std::println("[{}/{}] OK: N={} moved over M={}, the source reused", variant_name(), step, N, M);
+    }
     return bad ? 1 : 0;
 }
 
@@ -307,7 +326,9 @@ int check_move_construct()
     bad += verify(step, "dst (untouched)", std::as_const(dst), ps, N);
 
     if (!bad)
+    {
         std::println("[{}/{}] OK: N={} moved into a new array, the source reused", variant_name(), step, N);
+    }
     return bad ? 1 : 0;
 }
 
@@ -347,7 +368,9 @@ int check_vector_realloc()
     bad += verify(step, "v[1]", std::as_const(v[1]), p1, M);
 
     if (!bad)
+    {
         std::println("[{}/{}] OK: N={} moved by the reallocation, chunk list kept", variant_name(), step, N);
+    }
     return bad ? 1 : 0;
 }
 

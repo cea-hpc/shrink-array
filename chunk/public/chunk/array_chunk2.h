@@ -456,7 +456,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
         {
             const in_t<T> sv = from.get_second_value();
             if (sv != T{} && get_second_value() != sv)
+            {
                 set_second_value(sv, false);
+            }
         }
     }
 
@@ -499,7 +501,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
                 {
                     auto& slot = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr][T{}];
                     if (!slot)
+                    {
                         slot = std::make_shared<typename std::remove_reference_t<decltype(slot)>::element_type>();
+                    }
                 }
             }
         }
@@ -528,7 +532,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
             {
                 const T value = std::get<0>(arr->inf_array);
                 if (value != T{})
+                {
                     sh_inf.insert(value, &arr->inf_array);
+                }
             }
         }
     }

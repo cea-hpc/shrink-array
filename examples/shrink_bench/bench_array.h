@@ -226,11 +226,17 @@ enum class BenchMaskKind
 {
     const auto h = bench_mask_hash(static_cast<std::uint64_t>(seg) * 0x51ED27ull) % 100;
     if (h < 30)
+    {
         return BenchMaskKind::all_false;
+    }
     if (h < 60)
+    {
         return BenchMaskKind::all_true;
+    }
     if (h < 85)
+    {
         return BenchMaskKind::random;
+    }
     return BenchMaskKind::scattered;
 }
 
@@ -262,9 +268,8 @@ enum class BenchMaskKind
  * @warning tab_bool's and tab_bool_bits' types vary by build -- see
  *          BenchBoolArray and BenchBoolBitsArray above.
  */
-class BenchArrays
+struct BenchArrays
 {
-  public:
     Array<double>& tab1;
     Array<double>& tab2;
     Array<double>& tab3;

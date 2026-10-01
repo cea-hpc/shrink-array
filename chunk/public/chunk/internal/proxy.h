@@ -323,7 +323,9 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         // Armed by the array's operator[] (see Proxy2A::set_num_tab): the
         // registry lookup only for a proxy armed otherwise.
         if (num_tab >= 0) [[likely]]
+        {
             return;
+        }
         num_tab = Derived::get_num_tab(ptr_on_array);
     }
 
@@ -551,9 +553,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     using Base::tab_is_inside_chunk_list_to_compress; ///< Global compression tracking array
 
     /// @brief Functor wrapping operator% for apply_compound_operation().
-    class modulo
+    struct modulo
     {
-      public:
         /// @brief Apply operator% to the two operands.
         /// @return lhs % rhs.
         static constexpr T operator()(in_t<T> lhs, in_t<T> rhs) noexcept
@@ -938,7 +939,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
             return *this;
         }
         else
+        {
             return *this;
+        }
     }
 
     /**

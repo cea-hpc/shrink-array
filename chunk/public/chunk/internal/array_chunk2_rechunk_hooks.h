@@ -42,7 +42,7 @@
 #include "chunk/config.h"
 #include "chunk/chunk_traits.h"
 #include "chunk/internal/crp_helper.h" // crtp_cast_t
-#include "chunk/internal/in_t.h" // in_t<T>: the captured state
+#include "chunk/internal/in_t.h"       // in_t<T>: the captured state
 
 namespace shrink_array
 {
@@ -126,9 +126,8 @@ class RechunkHooks2<Derived, true>
  *          using-declarations in both modes.
  */
 template <typename Derived>
-class RechunkHooks2<Derived, false>
+struct RechunkHooks2<Derived, false>
 {
-  public:
     using Traits     = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
     using value_type = Traits::value_type;        ///< Stored element type.
 

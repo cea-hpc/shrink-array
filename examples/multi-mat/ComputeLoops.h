@@ -106,7 +106,9 @@ void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo,
                 const int p = k - start;
                 // We avoid overflow: it can happen
                 if (k >= mesh_size)
+                {
                     break;
+                }
                 ll_ind[p] = k;
             }
         }

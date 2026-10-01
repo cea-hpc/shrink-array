@@ -549,14 +549,20 @@ template <typename Node>
 [[nodiscard]] bool sl_check(const Node* node) noexcept
 {
     if (node == nullptr)
+    {
         return true;
+    }
     if (node->prev != nullptr)
+    {
         return false;
+    }
     node = node->next;
     while (node != nullptr)
     {
         if (node->prev == nullptr)
+        {
             return false;
+        }
         node = node->next;
     }
     return true;
@@ -580,13 +586,17 @@ void sl_remove(Node*& list, Node* node) noexcept
     {
         list = node->next;
         if (list != nullptr)
+        {
             list->prev = nullptr;
+        }
     }
     else
     {
         DBG_ASSERT(node->prev != nullptr);
         if (node->next != nullptr)
+        {
             node->next->prev = node->prev;
+        }
         node->prev->next = node->next;
     }
     node->prev = nullptr;
@@ -610,7 +620,9 @@ void sl_insert(Node*& list, Node* node) noexcept
     node->prev = nullptr;
     node->next = list;
     if (list != nullptr)
+    {
         list->prev = node;
+    }
     list = node;
 
     DBG_ASSERT(sl_check(list));
@@ -693,9 +705,8 @@ void sl_manage_full_empty(Node*&  block,
  * @details Every instance registers itself so a total can be taken across all
  *          element types without the reporting code knowing any of them.
  */
-class VTCTypeAllocator
+struct VTCTypeAllocator
 {
-  public:
     /// @brief Virtual, so the registry may hold any element type.
     virtual ~VTCTypeAllocator() = default;
 
@@ -791,7 +802,9 @@ class TCTypeAllocator final : public VTCTypeAllocator
         // beside the slab on any non-pow2 budget (e.g. the 240 KB floor at 64
         // threads).
         if (slab_bytes_ == 0)
+        {
             return nullptr;
+        }
         return TCAllocator::slab_from(ptr, slab_bytes_);
     }
 
@@ -826,7 +839,9 @@ class TCTypeAllocator final : public VTCTypeAllocator
         }
 
         if (block == nullptr) [[unlikely]]
+        {
             return alloc_slow();
+        }
 
         auto* current_block = block;
 
@@ -857,7 +872,9 @@ class TCTypeAllocator final : public VTCTypeAllocator
         // element out (nn_ref == 0), so a pointer into one is not a live element
         // of this instance -- same answer the list walk gave.
         if (block == nullptr && block_full == nullptr)
+        {
             return false;
+        }
         return holds_live(get_allocator(ptr));
     }
 
@@ -1007,7 +1024,9 @@ class TCTypeAllocator final : public VTCTypeAllocator
         if constexpr (alloc_config::use_slabs)
         {
             if (bypass_slabs())
+            {
                 return;
+            }
 
             TCAllocator* node = block;
 
@@ -1257,7 +1276,9 @@ class TCTypeCAllocator
         }
 
         if (block == nullptr) [[unlikely]]
+        {
             return alloc_slow();
+        }
 
         auto* current_block = block;
 
@@ -1292,7 +1313,9 @@ class TCTypeCAllocator
     std::size_t reclaim_empty_slabs_now() noexcept
     {
         if constexpr (alloc_config::use_std_alloc || !alloc_config::reclaim_empty_slabs)
+        {
             return 0;
+        }
         else
         {
             // CHUNK_RECLAIM_MIN_SLABS: a sweep costs one madvise per slab and
@@ -1306,21 +1329,35 @@ class TCTypeCAllocator
             {
                 std::size_t empty = 0;
                 for (const auto* node : {block, block_full})
+                {
                     for (const auto* p = node; p != nullptr; p = p->next)
+                    {
                         if (p->nn_ref == 0)
+                        {
                             ++empty;
+                        }
+                    }
+                }
                 if (empty < floor_slabs)
+                {
                     return 0;
+                }
             }
             std::size_t reclaimed = 0;
             for (auto* node : {block, block_full})
+            {
                 for (auto* p = node; p != nullptr; p = p->next)
+                {
                     // Whole slab, trailing page included: this sweep is the one
                     // context that can afford it (see madvise_empty_slab_full).
                     // The last page is 6% of a 1 MiB slab and was the entire
                     // unexplained residue of a re-chunk.
                     if (p->nn_ref == 0 && fast_alloc::madvise_empty_slab_full(p))
+                    {
                         ++reclaimed;
+                    }
+                }
+            }
             return reclaimed;
         }
     }
@@ -1344,7 +1381,9 @@ class TCTypeCAllocator
         // of two, whatever the element size -- see slab_bytes_for()); #slab_bytes_
         // is that size, fixed by init() through the same rule.
         if (slab_bytes_ == 0)
+        {
             return nullptr;
+        }
         return TCCAllocator::slab_from(ptr, slab_bytes_);
     }
 
@@ -1535,7 +1574,9 @@ class TCTypeCAllocator
         // O(1) via the slab's owner field -- see TCAllocator::owner. A slab in
         // block_empty has nn_ref == 0 and cannot hold a live element.
         if (block == nullptr && block_full == nullptr)
+        {
             return false;
+        }
         return holds_live(get_allocator(ptr));
     }
 
@@ -1662,27 +1703,24 @@ class TCTypeCAllocator
  * @note <tt>NextPOT\<0\>\::value</tt> and <tt>NextPOT\<1\>\::value</tt> are both 1.
  */
 template <int i>
-class NextPOT
+struct NextPOT
 {
-  public:
     enum
     {
         value = 2 * NextPOT<(i + 1) / 2>::value
     };
 };
 template <>
-class NextPOT<0>
+struct NextPOT<0>
 {
-  public:
     enum
     {
         value = 1
     };
 };
 template <>
-class NextPOT<1>
+struct NextPOT<1>
 {
-  public:
     enum
     {
         value = 1
@@ -1695,27 +1733,24 @@ class NextPOT<1>
  * @note <tt>PrevPOT\<0\>\::value</tt> is 1, not 0.
  */
 template <int i>
-class PrevPOT
+struct PrevPOT
 {
-  public:
     enum
     {
         value = 2 * PrevPOT<i / 2>::value
     };
 };
 template <>
-class PrevPOT<0>
+struct PrevPOT<0>
 {
-  public:
     enum
     {
         value = 1
     };
 };
 template <>
-class PrevPOT<1>
+struct PrevPOT<1>
 {
-  public:
     enum
     {
         value = 1
@@ -1729,9 +1764,8 @@ class PrevPOT<1>
  * @note The "+1" is why callers subtract one to get a shift count.
  */
 template <int i>
-class CstLog2
+struct CstLog2
 {
-  public:
     enum
     {
         value = 1 + CstLog2<i / 2>::value
@@ -1739,9 +1773,8 @@ class CstLog2
 };
 
 template <>
-class CstLog2<1>
+struct CstLog2<1>
 {
-  public:
     enum
     {
         value = 1
@@ -1755,30 +1788,27 @@ class CstLog2<1>
  *          than spend an `int` per element on a small block.
  */
 template <int sz>
-class TypeFromSize
+struct TypeFromSize
 {
-  public:
     using Tindex = int;
 };
 
 template <>
-class TypeFromSize<2>
+struct TypeFromSize<2>
 {
-  public:
     using Tindex = short;
 };
 
 template <>
-class TypeFromSize<1>
+struct TypeFromSize<1>
 {
-  public:
     using Tindex = signed char;
 };
 
 
 /// @brief Maps an element type to the allocator that serves it. Specialised elsewhere.
 template <typename V>
-class TypeAllocator;
+struct TypeAllocator;
 
 /// @brief Page size, cached from the environment at startup.
 extern int __mem_page_size;
@@ -2029,7 +2059,7 @@ class TCAllocatorEB
 
 /// @brief Common base for the compile-time-geometry allocators. Carries nothing;
 ///        it exists so they can be held behind one pointer type.
-class VTCAllocatorEB
+struct VTCAllocatorEB
 {
 };
 

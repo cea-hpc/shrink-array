@@ -33,7 +33,7 @@ namespace shrink_array
 {
 
 template <typename Derived>
-class ProxyTypeTrait;
+struct ProxyTypeTrait;
 
 template <typename T>
 class Chunk2;
@@ -49,17 +49,15 @@ class Proxy2A;
 
 // Specialisation for Chunk2
 template <typename T>
-class ProxyTypeTrait<Chunk2<T>>
+struct ProxyTypeTrait<Chunk2<T>>
 {
-  public:
     using Type = Proxy2<T>;
 };
 
 // Specialisation for Chunk2A
 template <typename T>
-class ProxyTypeTrait<Chunk2A<T>>
+struct ProxyTypeTrait<Chunk2A<T>>
 {
-  public:
     using Type = Proxy2A<T>;
 };
 
@@ -148,7 +146,9 @@ class Chunk2Base : public ChunkBase<T, Derived>
     void check_not_constant_before_clear(int num_compress_value, std::optional<int> ind_opt) const noexcept
     {
         if constexpr (!build_config::any_check)
+        {
             return;
+        }
 
         const void* chunk_ptr  = static_cast<const void*>(this);
         const void* values_ptr = static_cast<const void*>(derived().values_load());
@@ -197,7 +197,9 @@ class Chunk2Base : public ChunkBase<T, Derived>
                     // A chunk compressed to a second constant reads from it
                     // through its values pointer; there is no other handle.
                     if (is_violating)
+                    {
                         cst2_ptr = static_cast<const void*>(derived().values_load());
+                    }
                 }
                 else
                 {
@@ -242,7 +244,9 @@ class Chunk2Base : public ChunkBase<T, Derived>
     {
         // Skip entirely if safety checks are disabled
         if constexpr (!build_config::any_check)
+        {
             return;
+        }
 
         const auto* c1 = static_cast<const void*>(Chunk2Base::get_cst_val1());
 
@@ -255,7 +259,9 @@ class Chunk2Base : public ChunkBase<T, Derived>
         {
             target_in_cst2_region = self.tab_cst_val2_holder::is_cst_val2_ptr(target_ptr);
             if (target_in_cst2_region)
+            {
                 c2 = static_cast<const void*>(target_ptr);
+            }
         }
         else if constexpr (requires { self.get_cst_val2(); })
         {

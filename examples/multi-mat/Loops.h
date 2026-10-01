@@ -34,9 +34,8 @@
 #include "PMP.h"
 
 /// @brief Loop policy of the chunk materials: work-shared, never vectorised.
-class Loops
+struct Loops
 {
-  public:
     /// @brief `lbd(k)` for k in [kdeb, kfin), shared by the team, no barrier.
     template <typename LBD>
     static void omp_for_nowait_simd(int kdeb, int kfin, const LBD& lbd)
@@ -118,9 +117,8 @@ class Loops
 
 /// @brief Loop policy of the std::vector materials: work-shared and
 ///        vectorised (`omp simd`).
-class LoopsSimd
+struct LoopsSimd
 {
-  public:
     /// @copydoc Loops::omp_simd_foreach_int
     template <typename LBD, typename LL>
     static void omp_simd_foreach_int(const LL& ll, const LBD& lbd, int nn)
@@ -132,12 +130,12 @@ class LoopsSimd
             PRAGMA_FORCEINLINE
             lbd(num);
         }
-           }
+    }
 
-           /// @copydoc Loops::omp_simd_foreach_nowait_int
-           template <typename LBD, typename LL>
-           static void omp_simd_foreach_nowait_int(const LL& ll, const LBD& lbd, int nn)
-           {
+    /// @copydoc Loops::omp_simd_foreach_nowait_int
+    template <typename LBD, typename LL>
+    static void omp_simd_foreach_nowait_int(const LL& ll, const LBD& lbd, int nn)
+    {
 #pragma omp for simd nowait schedule(static)
         for (int k = 0; k < nn; ++k)
         {
@@ -188,7 +186,7 @@ class LoopsSimd
         std::tie(kdeb, kfin) = get_parallel_loop_boundaries(multi_mat::thread_rank(), multi_mat::max_threads(), nn);
 
         T redl = red;
-#pragma omp simd reduction(+ : redl)
+#pragma omp simd            reduction(+ : redl)
         for (int k = kdeb; k < kfin; ++k)
         {
             const int nnn = ll[k];

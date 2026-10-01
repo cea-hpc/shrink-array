@@ -23,8 +23,8 @@
 #include "chunk/internal/array_chunk_parallel_common.h"
 #include "chunk/internal/compression_manager.h" // CompressionManager<> in flush_pending_deferred_ops
 #include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_RANK_BOUND, CHUNK_PMP_IN_PARALLEL_REGION
-#include "chunk/internal/invariant_check.h"   // INVARIANT_FAILED (check builds)
+#include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_RANK_BOUND, CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED (check builds)
 
 namespace shrink_array
 {
@@ -60,7 +60,9 @@ void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
         {
             const int max_thr = CHUNK_PMP_RANK_BOUND;
             for (int r = 0; r < max_thr; ++r)
+            {
                 static_cast<void>(CM::flush_deferred(r));
+            }
 
             // Check builds: after a forced drain at a quiescent point (no
             // region, so no writer enqueues meanwhile), every rank's counter
@@ -70,10 +72,14 @@ void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
                 if (force && !CHUNK_PMP_IN_PARALLEL_REGION)
                 {
                     for (int r = 0; r < max_thr; ++r)
+                    {
                         if (const auto left = CM::pending_ops_rank(r); left != 0) [[unlikely]]
+                        {
                             INVARIANT_FAILED("flush_pending_deferred_ops(force): rank {} still counts {} pending "
                                              "op(s) after its drain, outside any region (counter drift)",
                                              r, left);
+                        }
+                    }
                 }
             }
         }

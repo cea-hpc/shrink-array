@@ -41,9 +41,8 @@ namespace shrink_array::internal
 {
 
 /// @brief The values arena's byte counts (see fast_alloc::SlabArena).
-class ArenaBytes
+struct ArenaBytes
 {
-  public:
     std::size_t resident = 0; ///< pages actually backed
     std::size_t mapped   = 0; ///< address space reserved
     std::size_t live     = 0; ///< slabs handed out to the allocators

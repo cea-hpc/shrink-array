@@ -447,10 +447,12 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             if constexpr (build_config::any_check && chunk_type::precise)
             {
                 if (chunk_->read_gate_should_wait(num_)) [[unlikely]]
+                {
                     INVARIANT_FAILED("ArrayChunkBase::const_iterator: a write was deferred onto chunk {} of array {} "
                                      "during the iteration (offset {}); the iterator would not see it -- no other "
                                      "thread may write an array that is being iterated",
                                      num_chunk_, static_cast<const void*>(owner_), num_);
+                }
             }
         }
 
@@ -500,19 +502,21 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             if constexpr (build_config::any_check)
             {
                 if (lhs.owner_ != rhs.owner_) [[unlikely]]
+                {
                     INVARIANT_FAILED("ArrayChunkBase::const_iterator: iterators of two different arrays compared "
                                      "or subtracted ({} vs {})",
                                      static_cast<const void*>(lhs.owner_), static_cast<const void*>(rhs.owner_));
+                }
             }
         }
 
-        const Derived*        owner_     = nullptr; ///< Array being traversed.
-        const chunk_type*     chunk_     = nullptr; ///< Current chunk, already sync'd; null at end/rend.
-        ind_type              lin_       = 0;       // absolute linear index (identity/compare)
-        int                   num_chunk_ = 0;       ///< Index of @ref chunk_ in the chunk list.
-        int                   num_       = 0;       // intra-chunk offset
-        int                   modulo_    = 0;       ///< Cached geometry mask.
-        unsigned int          decalage_  = 0;       ///< Cached geometry shift.
+        const Derived*    owner_     = nullptr; ///< Array being traversed.
+        const chunk_type* chunk_     = nullptr; ///< Current chunk, already sync'd; null at end/rend.
+        ind_type          lin_       = 0;       // absolute linear index (identity/compare)
+        int               num_chunk_ = 0;       ///< Index of @ref chunk_ in the chunk list.
+        int               num_       = 0;       // intra-chunk offset
+        int               modulo_    = 0;       ///< Cached geometry mask.
+        unsigned int      decalage_  = 0;       ///< Cached geometry shift.
     };
 
     using iterator               = const_iterator;                        ///< No mutable iterator exists (proxy store).
@@ -617,9 +621,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     void push_back(this Derived& self, in_t<T> val)
     {
         if (static_cast<size_type>(self.m_size) < self.capacity()) [[likely]]
+        {
             ++self.m_size;
+        }
         else
+        {
             self.resize(self.m_size + 1);
+        }
         self[self.m_size - 1] = val;
     }
 
@@ -687,7 +695,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     void pop_back() noexcept
     {
         if (!empty())
+        {
             --m_size;
+        }
     }
 
     /**
@@ -792,8 +802,10 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         if constexpr (build_config::any_check)
         {
             if (self.size_policy_.size() != other.size_policy_.size())
+            {
                 INVARIANT_FAILED("ArrayChunk::swap: mismatched chunk geometry ({} vs {})", self.size_policy_.size(),
                                  other.size_policy_.size());
+            }
         }
         self.swap_storage_and_identity(other);
     }
@@ -999,7 +1011,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     void swap_storage_and_identity(this Derived& self, Derived& other)
     {
         if (&self == &other)
+        {
             return;
+        }
         self.flush_pending_deferred_ops(/*force=*/true);
         other.flush_pending_deferred_ops(/*force=*/true);
 
@@ -1071,7 +1085,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param offset Offset within the chunk.
      * @note Compiles to nothing in a serial build (`if constexpr (use_openmp)`).
      */
-    FORCE_INLINE void sync_chunk(this const Derived& self, const chunk_type& chunk_t, int num_chunk, int offset) noexcept
+    FORCE_INLINE void
+    sync_chunk(this const Derived& self, const chunk_type& chunk_t, int num_chunk, int offset) noexcept
     {
         if constexpr (build_config::use_openmp)
         {

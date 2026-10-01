@@ -44,9 +44,8 @@ class MultiMatAlgo;
  *          iteration, drawn up front), computeLoops() (the iterations, in
  *          one parallel region).
  */
-class Simu
+struct Simu
 {
-  public:
     static inline int iter_max_default = 100; ///< Iterations, unless asked
     static inline int nbmat_default    = 50;  ///< Materials, unless asked
 

@@ -86,9 +86,13 @@ void push_to_compress_list(Vec& vec, ChunkPtr chunk, int num_chunk, int num_tab,
 {
     using Tup = Vec::value_type; // C++20: typename not needed in an alias declaration
     if constexpr (std::tuple_size_v<Tup> == 4)
+    {
         vec.emplace_back(chunk, num_chunk, num_tab, size);
+    }
     else
+    {
         vec.emplace_back(chunk, num_chunk, num_tab);
+    }
 }
 
 
@@ -119,9 +123,13 @@ template <typename ProxyType>
 constexpr int get_num_tab_async_helper(auto* ctx, const ProxyType& proxy, const void* ptr) noexcept
 {
     if constexpr (requires { proxy.get_num_tab(ptr); })
+    {
         return proxy.get_num_tab_async(ctx, ptr);
+    }
     else
+    {
         return proxy.get_num_tab_async(ctx);
+    }
 }
 
 /**
@@ -196,13 +204,17 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list([[maybe_unused]] 
                 const auto& flags = FastCompPolicy::tab_is_inside_chunk_list_to_compress;
                 if (num_chunk < 0 || num_tab < 0 || static_cast<std::size_t>(num_tab) >= flags.size() ||
                     static_cast<std::size_t>(num_chunk) >= flags[static_cast<std::size_t>(num_tab)].size()) [[unlikely]]
+                {
                     INVARIANT_FAILED("add_to_compression_list: num_chunk={} num_tab={} outside the flag table "
                                      "({} tables)",
                                      num_chunk, num_tab, flags.size());
+                }
             }
             // CHUNK_STATS: this write newly flagged the chunk as a candidate.
             if constexpr (chunk_config::stats)
+            {
                 increm_chunk_mark_ok<ChunkType>();
+            }
             push_to_compress_list(vec_tuple, &chunk, num_chunk, num_tab, ChunkElems{this->chunk_size()});
         }
         else if constexpr (chunk_config::stats)
@@ -255,7 +267,9 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list(this const Derive
         if (self.ptr_is_inside_chunk_list_to_compress->load(std::memory_order_relaxed) != 0)
         {
             if constexpr (chunk_config::stats)
+            {
                 increm_chunk_mark_refused<ChunkType>();
+            }
         }
         else
         {
@@ -264,7 +278,9 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list(this const Derive
                     expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
             {
                 if constexpr (chunk_config::stats)
+                {
                     increm_chunk_mark_ok<ChunkType>();
+                }
                 const int thr = get_thr_rank_fast();
                 auto&     vec = self.get_vec_tuple_to_compress_potentially_thr(thr);
 
@@ -279,9 +295,11 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list(this const Derive
                         static_cast<std::size_t>(self.num_tab) >= flags.size() ||
                         static_cast<std::size_t>(self.num_chunk) >=
                             flags[static_cast<std::size_t>(self.num_tab)].size()) [[unlikely]]
+                    {
                         INVARIANT_FAILED("add_to_compression_list: num_chunk={} num_tab={} outside the flag table "
                                          "({} tables)",
                                          self.num_chunk, self.num_tab, flags.size());
+                    }
                 }
 
                 push_to_compress_list(vec, &self.chunk, self.num_chunk, self.num_tab, ChunkElems{self.chunk_size()});
@@ -398,7 +416,9 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression
     // If the chunk is already marked (common case during active compression),
     // we avoid the acq_rel CAS entirely — ~1 cycle vs ~15-20 cycles.
     if (flag.load(std::memory_order_relaxed) != 0)
+    {
         return;
+    }
 
     char expected = 0;
     if (flag.compare_exchange_strong(expected, 1, std::memory_order_acq_rel, std::memory_order_acquire))
@@ -408,9 +428,13 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression
         auto& vec = [&]() -> auto&
         {
             if constexpr (IsChunk2<chunk_template_of<ChunkType>::template type, T>)
+            {
                 return self.get_vec_tuple_to_compress_potentially_async_thr(ctx, thr);
+            }
             else
+            {
                 return self.get_vec_tuple_to_compress_potentially_thr(thr);
+            }
         }();
 
         push_to_compress_list(vec, &ctx->chunk, ctx->num_chunk, num_tab, self.chunk_size());
@@ -509,7 +533,9 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
             {
                 const int thr_entry = get_thr_rank_fast();
                 if (self.chunk.foreign_pending(thr_entry, self.num))
+                {
                     self.chunk.reader_sync(self.num);
+                }
                 if (self.chunk.pending_any()) // own ops remain queued: exclude their replay
                 {
                     CompressionManagerType::enqueue_lock(thr_entry);
@@ -517,13 +543,14 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
                 }
             }
         }
-        class OwnReplayExclGuard
+        struct OwnReplayExclGuard
         {
-          public:
             ~OwnReplayExclGuard()
             {
                 if (rank >= 0)
+                {
                     CompressionManagerType::enqueue_unlock(rank);
+                }
             }
 
             int rank;
@@ -642,7 +669,9 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
                 if constexpr (build_config::use_openmp)
                 {
                     if (self.chunk.pending_any()) [[unlikely]]
+                    {
                         CompressionManagerType::erase_own_rank_op(thr, &self.chunk, self.num);
+                    }
                 }
 
                 std::forward<WriteCallable>(write_body)();
@@ -762,7 +791,9 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
             // (TCAllocator sl_contains assert) / use-after-free. The OMP write path
             // already early-returns on in_flush_replay (see above); mirror that here.
             if (!compression_mgr.in_flush_replay)
+            {
                 self.perform_compression();
+            }
         }
         return false;
     }
@@ -788,7 +819,9 @@ unsigned int ProxyBase<Derived, T, ChunkType>::chunk_size() const noexcept
     // alive and the value was never frozen (0), so we read it live as before.
     // Geometry is immutable post-construction, so both paths agree.
     if (chunk_size_frozen_ != 0U) [[unlikely]]
+    {
         return chunk_size_frozen_;
+    }
 
     using ArrayType = ArrayChunkFor_t<ChunkType>;
     return static_cast<const ArrayType*>(ptr_on_array)->chunk_size();
@@ -798,7 +831,9 @@ template <typename Derived, typename T, typename ChunkType>
 unsigned int ProxyBase<Derived, T, ChunkType>::alloc_key() const noexcept
 {
     if (chunk_size_frozen_ != 0u) [[unlikely]]
+    {
         return alloc_key_frozen_;
+    }
     using ArrayType = ArrayChunkFor_t<ChunkType>;
     return static_cast<const ArrayType*>(ptr_on_array)->alloc_key();
 }
@@ -830,12 +865,14 @@ void ProxyBase<Derived, T, ChunkType>::enqueue_deferred_write(CtxType* ctx, Lamb
     if constexpr (phase_guard::active)
     {
         if (CHUNK_PMP_IN_PARALLEL_REGION && !phase_guard::armed()) [[unlikely]]
+        {
             INVARIANT_FAILED("[PHASE PROTOCOL] deferred write from a parallel region that did not call "
                              "begin_parallel_phase() (or whose previous phase was never finalized): without "
                              "OMPT every region must be bracketed by begin_parallel_phase() on each thread "
                              "and finalize_parallel_phase() after the region, or this write replays after "
                              "a later region's writes. chunk={} num={} rank={}",
                              static_cast<const void*>(&chunk), ctx->num, get_thr_rank_fast());
+        }
     }
 
     const int thr_rank = get_thr_rank_fast();
@@ -937,7 +974,9 @@ template <typename U, typename Op>
 void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(this Derived& self, Op operation, const U& v, in_t<T> v_old)
 {
     if constexpr (chunk_config::stats)
+    {
         increm_chunk_write<ChunkType>(v);
+    }
 
     // Promotion rule identical to STL
     using CalcType = std::common_type_t<T, base_t<U>>;
@@ -1207,9 +1246,13 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(this Derived& self, in_
                             }
 
                             if constexpr (internal::relaxed_element_stores_v<ChunkType, T>)
+                            {
                                 internal::store_element_relaxed(values + ctx->num, static_cast<T>(final_val));
+                            }
                             else
+                            {
                                 elem_set(values, static_cast<std::size_t>(ctx->num), static_cast<T>(final_val));
+                            }
                         });
                 });
         }

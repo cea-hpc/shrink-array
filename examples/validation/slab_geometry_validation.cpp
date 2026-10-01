@@ -85,8 +85,10 @@ int check_pair(int small_bytes, int large_bytes, std::uintptr_t budget)
         a->free_elt_pow2(p);
     }
     if (!bad)
+    {
         std::println("OK: {}- and {}-byte elements in a {}-byte budget share one slab geometry", small_bytes,
                      large_bytes, static_cast<std::size_t>(budget));
+    }
     return bad;
 }
 

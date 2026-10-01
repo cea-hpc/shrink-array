@@ -42,7 +42,9 @@
 inline void begin_parallel_phase_g()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 
 /// @brief Without OMPT: `omp barrier`, then shrink_array::finalize_barrier_phase(); no-op otherwise.
@@ -59,14 +61,18 @@ inline void finalize_barrier_phase_g()
 inline void finalize_parallel_phase_only_flush_g()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase_only_flush();
+    }
 }
 
 /// @brief Without OMPT: shrink_array::finalize_parallel_phase_after_flush(); no-op otherwise.
 inline void finalize_parallel_phase_after_flush_g()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase_after_flush();
+    }
 }
 
 /**
@@ -108,12 +114,18 @@ void neutral_sqrt_assign(Arr& tab, Int i, T v)
     if constexpr (chunk_config::use_chunk)
     {
         if (tab.written(i))
+        {
             tab(i) = std::sqrt(v); // discarded quand Arr=std::vector : never typed
+        }
         else
+        {
             tab[i] = std::sqrt(v);
+        }
     }
     else
+    {
         tab[i] = std::sqrt(v);
+    }
 }
 
 /**
@@ -245,9 +257,8 @@ void bench_phase_compress_all(BenchArrays& bench_arr);
  *       flag or the environment; non-null means "on". Kept as-is rather than
  *       normalised to bool, so the moved code stays verbatim.
  */
-class BenchIoFlags
+struct BenchIoFlags
 {
-  public:
     const char* no_io;       ///< non-null: skip file I/O entirely
     const char* no_compress; ///< non-null: write/read uncompressed
     Int         io_res;      ///< get_io_mode(): 0 none, 1 write, 2 read-and-check

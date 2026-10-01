@@ -68,9 +68,8 @@ enum EventCode : uint8_t
 #ifdef RING_LOG_ANY
 
 /// @brief One ring-buffer record: timestamp, thread id, event, payload and (op events) address.
-class RingEntry
+struct RingEntry
 {
-  public:
     uint64_t  ts;
     uint32_t  tid;
     EventCode ev;

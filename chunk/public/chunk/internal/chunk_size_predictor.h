@@ -39,9 +39,8 @@ namespace shrink_array
 {
 
 /// @brief Predicted figures at chunk size S_prime: memory, constant blocks and total blocks.
-class PredictorPoint
+struct PredictorPoint
 {
-  public:
     unsigned    S_prime;
     std::size_t mem_bytes;
     int         n_const_blocks;
@@ -68,7 +67,9 @@ predict_at_multiple(const std::vector<std::pair<bool, T>>& summary, unsigned S, 
         const auto& [head_const, head_val] = block.front();
         if (head_const &&
             std::ranges::all_of(block.subspan(1), [&](const auto& c) { return c.first && c.second == head_val; }))
+        {
             ++n_const;
+        }
     }
 
     const std::size_t mem = (static_cast<std::size_t>(n_blocks - n_const) * Sp * sizeof(T)) +
@@ -88,7 +89,9 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
 {
     const int nb_chunk = static_cast<int>(summary.size());
     if (nb_chunk <= 0)
+    {
         return;
+    }
 
     PredictorPoint best{S, ~0uz, 0, 0};
     PredictorPoint current{};
@@ -97,7 +100,9 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
     for (unsigned k = 1; k <= max_multiple; k *= 2)
     {
         if (static_cast<int>(k) > nb_chunk && k != 1)
+        {
             break;
+        }
         const PredictorPoint point = predict_at_multiple<T>(summary, S, k, meta_per_block);
         if (k == 1)
         {
@@ -105,11 +110,15 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
             have_current = true;
         }
         if (point.mem_bytes < best.mem_bytes)
+        {
             best = point;
+        }
     }
 
     if (!have_current)
+    {
         return;
+    }
 
     if (best.S_prime != current.S_prime && best.mem_bytes < current.mem_bytes)
     {

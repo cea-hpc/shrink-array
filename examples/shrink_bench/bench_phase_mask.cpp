@@ -53,7 +53,9 @@ constexpr bool mask_flips(Int i, Int k) noexcept
 void bench_phase_mask_fill(BenchArrays& bench_arr)
 {
     if (!bench_arr.with_mask) // --no_mask
+    {
         return;
+    }
 
     auto&     tab_mask = bench_arr.tab_mask;
     const Int n        = static_cast<Int>(tab_mask.size());
@@ -73,7 +75,9 @@ void bench_phase_mask_fill(BenchArrays& bench_arr)
                 // A fresh array is all false: only the true elements are written,
                 // so a false segment stays a constant chunk nothing materialised.
                 if (bench_mask_initial(i))
+                {
                     tab_mask[i] = true;
+                }
             }
         }
 
@@ -114,7 +118,9 @@ bool mask_block_written(Int b, Int k) noexcept
 void bench_phase_mask_compute(BenchArrays& bench_arr, Int k, long& mask_count)
 {
     if (!bench_arr.with_mask) // --no_mask
+    {
         return;
+    }
 
     auto&     tab_mask = bench_arr.tab_mask;
     const Int n        = static_cast<Int>(tab_mask.size());
@@ -130,7 +136,9 @@ void bench_phase_mask_compute(BenchArrays& bench_arr, Int k, long& mask_count)
         for (Int b = 0; b < n_blocks; ++b)
         {
             if (!mask_block_written(b, k))
+            {
                 continue;
+            }
             const Int  lo       = b * bench_mask_block;
             const Int  hi       = lo + bench_mask_block < n ? lo + bench_mask_block : n;
             const auto kind     = bench_mask_kind(lo / bench_mask_segment);
@@ -139,16 +147,20 @@ void bench_phase_mask_compute(BenchArrays& bench_arr, Int k, long& mask_count)
             {
                 const bool now = tab_mask[lo]; // the whole segment's value
                 for (Int i = lo; i < hi; ++i)
+                {
                     tab_mask[i] = !now;
+                }
             }
             else
             {
                 for (Int i = lo; i < hi; ++i)
+                {
                     if (mask_flips(i, k))
                     {
                         const bool now = tab_mask[i];
                         tab_mask[i]    = !now;
                     }
+                }
             }
         }
 
@@ -157,11 +169,15 @@ void bench_phase_mask_compute(BenchArrays& bench_arr, Int k, long& mask_count)
         for (Int b = 0; b < n_blocks; ++b)
         {
             if (!mask_block_written(b, k))
+            {
                 continue;
+            }
             const Int lo = b * bench_mask_block;
             const Int hi = lo + bench_mask_block < n ? lo + bench_mask_block : n;
             for (Int i = lo; i < hi; ++i)
+            {
                 count += tab_mask[i] ? 1 : 0;
+            }
         }
 
         finalize_parallel_phase_only_flush_g();

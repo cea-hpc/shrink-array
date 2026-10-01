@@ -64,9 +64,8 @@ namespace
 
 /// @brief One token's counters. `key` is token + 1, so that 0 means "empty
 ///        slot" while token 0 (the untyped C allocations) stays representable.
-class Slot
+struct Slot
 {
-  public:
     std::atomic<std::uint64_t> key{0};
     std::atomic<std::uint64_t> allocs{0};
     std::atomic<std::uint64_t> bytes{0};
@@ -94,7 +93,9 @@ inline void note(std::uint64_t token, std::size_t bytes) noexcept
         Slot&         slot = g_table[i];
         std::uint64_t k    = slot.key.load(std::memory_order_relaxed);
         if (k == 0 && slot.key.compare_exchange_strong(k, key, std::memory_order_relaxed))
+        {
             k = key; // we claimed the slot; a lost race leaves the winner's key in k
+        }
         if (k == key)
         {
             slot.allocs.fetch_add(1, std::memory_order_relaxed);
@@ -111,9 +112,8 @@ inline void note(std::uint64_t token, std::size_t bytes) noexcept
 ///        that contain pointers. (SIZE_MAX / 2, as in LLVM's AllocToken pass.)
 constexpr std::uint64_t kPointerHalf = UINT64_MAX / 2;
 
-class Entry
+struct Entry
 {
-  public:
     std::uint64_t token;
     std::uint64_t allocs;
     std::uint64_t bytes;
@@ -130,11 +130,17 @@ __attribute__((destructor)) void report()
     if (const char* env = std::getenv("ALLOC_TOKEN_REPORT"); env != nullptr && *env != '\0')
     {
         if (std::strcmp(env, "all") == 0)
+        {
             top = kSlots;
+        }
         else
+        {
             top = shrink_array::env_number<std::size_t>("ALLOC_TOKEN_REPORT", top);
+        }
         if (top == 0)
+        {
             return;
+        }
     }
 
     std::size_t   count      = 0;
@@ -144,7 +150,9 @@ __attribute__((destructor)) void report()
     {
         const std::uint64_t k = s.key.load(std::memory_order_relaxed);
         if (k == 0)
+        {
             continue;
+        }
         g_entries[count++] =
             Entry{k - 1, s.allocs.load(std::memory_order_relaxed), s.bytes.load(std::memory_order_relaxed)};
         tot_allocs += g_entries[count - 1].allocs;
@@ -157,9 +165,11 @@ __attribute__((destructor)) void report()
     std::fprintf(stderr, "  %zu distinct tokens, %llu allocations, %llu MiB requested", count,
                  static_cast<unsigned long long>(tot_allocs), static_cast<unsigned long long>(tot_bytes >> 20));
     if (const auto dropped = g_dropped.load(std::memory_order_relaxed); dropped != 0)
+    {
         std::fprintf(stderr, "  (table full: %llu allocations / %llu MiB NOT counted)",
                      static_cast<unsigned long long>(dropped),
                      static_cast<unsigned long long>(g_dropped_bytes.load(std::memory_order_relaxed) >> 20));
+    }
     std::fprintf(stderr, "\n  %-18s  %-3s  %14s  %18s\n", "token", "ptr", "allocs", "bytes");
     for (std::size_t i = 0; i < count && i < top; ++i)
     {
@@ -170,7 +180,9 @@ __attribute__((destructor)) void report()
                      entry.token == 0 ? "  untyped (C malloc/calloc/realloc)" : "");
     }
     if (count > top)
+    {
         std::fprintf(stderr, "  ... %zu more (ALLOC_TOKEN_REPORT=all)\n", count - top);
+    }
     std::fprintf(stderr, "  names: python3 python/alloc_token_names.py <binary> <this output>\n");
     std::fflush(stderr);
 }

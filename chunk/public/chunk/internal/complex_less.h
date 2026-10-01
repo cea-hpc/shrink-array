@@ -23,17 +23,20 @@
 
 /// @brief Lexicographic ordering of std::complex<T>: real part first, then imaginary part.
 template <typename T>
-class ComplexLess
+struct ComplexLess
 {
-  public:
     /// @brief Compare two complex numbers.
     /// @return true when @p lhs orders before @p rhs.
     static bool operator()(const std::complex<T>& lhs, const std::complex<T>& rhs) noexcept
     {
         if (lhs.real() < rhs.real())
+        {
             return true;
+        }
         if (lhs.real() > rhs.real())
+        {
             return false;
+        }
         return lhs.imag() < rhs.imag();
     }
 };

@@ -22,7 +22,7 @@
 #include <ranges> // fold_left, views::transform / values (parked_blocks)
 #include <vector>
 #include <tuple>
-#include <cstdio>  // fprintf (pool breakdown)
+#include <cstdio> // fprintf (pool breakdown)
 #include <unordered_map>
 #include <cstdint>     // pool keys (drain_reuse_list_for_size, keyed lists)
 #include <type_traits> // remove_reference_t / remove_pointer_t (same)
@@ -46,9 +46,8 @@ namespace internal
 /// @brief One repeat seen by the teardown dedup phase: skip @p ptr when freeing bucket @p bucket.
 /// @see ManagerChunkParallelImpl::clear_list_block_free_dedup
 template <typename T>
-class TeardownRepeat
+struct TeardownRepeat
 {
-  public:
     std::size_t bucket;
     T*          ptr;
 };
@@ -66,12 +65,11 @@ class TeardownRepeat
  * @tparam IsDynamic Whether runtime geometry is compiled in.
  */
 template <bool IsDynamic = build_config::chunk_dynamic>
-class ManagerChunkDynInterface; // primary left undefined: only the 2 specializations exist
+struct ManagerChunkDynInterface; // primary left undefined: only the 2 specializations exist
 
 template <>
-class ManagerChunkDynInterface<true>
+struct ManagerChunkDynInterface<true>
 {
-  public:
     virtual ~ManagerChunkDynInterface() = default;
 
     /// @brief Declare a runtime chunk geometry to this type's allocators.
@@ -80,9 +78,8 @@ class ManagerChunkDynInterface<true>
 
 /// @brief Static-geometry builds: nothing to declare.
 template <>
-class ManagerChunkDynInterface<false>
+struct ManagerChunkDynInterface<false>
 {
-  public:
     virtual ~ManagerChunkDynInterface() = default;
 };
 
@@ -98,12 +95,11 @@ class ManagerChunkDynInterface<false>
  * @tparam UseOpenMP Whether the parallel surface is the one compiled in.
  */
 template <bool UseOpenMP = build_config::use_openmp>
-class ManagerChunkParallelInterface; // primary left undefined: only the 2 specializations exist
+struct ManagerChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
 template <>
-class ManagerChunkParallelInterface<true>
+struct ManagerChunkParallelInterface<true>
 {
-  public:
     virtual ~ManagerChunkParallelInterface() = default;
 
     // --- per-thread allocator and free-list surface ---
@@ -163,9 +159,8 @@ class ManagerChunkParallelInterface<true>
 
 /// @brief Serial builds: one allocator, no per-thread free lists, nothing to flush.
 template <>
-class ManagerChunkParallelInterface<false>
+struct ManagerChunkParallelInterface<false>
 {
-  public:
     virtual ~ManagerChunkParallelInterface() = default;
 
     /// @brief Set the single allocator's geometry.
@@ -189,9 +184,8 @@ class ManagerChunkParallelInterface<false>
  *          vs single), and the dynamic-geometry build adds register_chunk_size().
  *          Every implementation lives in ManagerChunk below.
  */
-class ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtual ManagerChunkParallelInterface<>
+struct ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtual ManagerChunkParallelInterface<>
 {
-  public:
     ~ManagerChunkInt() override = default;
 
     // --- present in every build ---
@@ -251,19 +245,18 @@ class ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtua
  *          down-cast: max_thr is a per-instance const, not a static.
  */
 template <template <typename> typename CHUNK_T, typename T, bool IsDynamic = build_config::chunk_dynamic>
-class ManagerChunkDynImpl; // primary left undefined: only the 2 specializations exist
+struct ManagerChunkDynImpl; // primary left undefined: only the 2 specializations exist
 
 /// @brief Dynamic-geometry builds: implements register_chunk_size().
 template <template <typename> typename CHUNK_T, typename T>
-class ManagerChunkDynImpl<CHUNK_T, T, true> : public virtual ManagerChunkDynInterface<true>
+struct ManagerChunkDynImpl<CHUNK_T, T, true> : public virtual ManagerChunkDynInterface<true>
 {
-  public:
     void register_chunk_size(unsigned int size, int block_size) override;
 };
 
 /// @brief Static-geometry builds: nothing to implement.
 template <template <typename> typename CHUNK_T, typename T>
-class ManagerChunkDynImpl<CHUNK_T, T, false> : public virtual ManagerChunkDynInterface<false>
+struct ManagerChunkDynImpl<CHUNK_T, T, false> : public virtual ManagerChunkDynInterface<false>
 {
 };
 
@@ -345,7 +338,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     // they are BASES, so protected access does not reach it -- hence friendship
     // rather than a public accessor, which would widen the surface for everyone.
     template <template <typename> class, typename, bool>
-    friend class ManagerChunkDynImpl;
+    friend struct ManagerChunkDynImpl;
     template <template <typename> class, typename, bool>
     friend class ManagerChunkParallelImpl;
 
@@ -353,9 +346,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     using p_vector_char = std::vector<char>*;
     using inf_array_t   = std::tuple<T, int, p_vector_char>;
 
-    class alignas(128) PerThreadFreeList
+    struct alignas(128) PerThreadFreeList
     {
-      public:
         std::vector<T*> list;
     };
 
@@ -387,7 +379,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     static void set_size_buffer_reuse(unsigned int key, int budget)
     {
         if (key != 0)
+        {
             size_buffer_reuse_by_key_[key] = std::max(budget, ChunkDef::size_min_buffer_reuse);
+        }
     }
 
     /// @brief Size the legacy (unsized) reuse list to @p max_thr threads.
@@ -410,7 +404,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         {
             const auto it = list_block_free_thr_by_size_.find(size);
             if (it == list_block_free_thr_by_size_.end())
+            {
                 list_block_free_thr_by_size_[size].resize(max_thr);
+            }
         }
     }
 
@@ -422,10 +418,14 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     static void register_free_list_key(unsigned int key, unsigned int size, int max_thr)
     {
         if (key == 0)
+        {
             return; // the shared pool is register_free_list_size()'s
+        }
         const auto it = list_block_free_thr_keyed_.find(keyed_index(key, size));
         if (it == list_block_free_thr_keyed_.end())
+        {
             list_block_free_thr_keyed_[keyed_index(key, size)].resize(max_thr);
+        }
     }
 
     /**
@@ -474,7 +474,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 const auto        non_empty_ranks = static_cast<std::size_t>(
                     std::ranges::count_if(kv.second, [](const auto& ptf) { return !ptf.list.empty(); }));
                 if (blocks == 0)
+                {
                     continue;
+                }
                 std::fprintf(stderr,
                              "[POOLS] %s %-22s size %-6u        : %9zu block(s), %8.1f MB"
                              " across %zu/%zu rank(s)\n",
@@ -510,7 +512,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         if constexpr (chunk_config::chunk_dynamic)
         {
             for (const auto& [size, ranks] : list_block_free_thr_by_size_)
+            {
                 total += parked_blocks(ranks) * sizeof(T) * CHUNK_T<T>::storage_units(size);
+            }
         }
         return total;
     }
@@ -559,7 +563,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             const auto trim_one = [&freed, keep_per_thread](auto& lst, std::size_t elem_count) noexcept
             {
                 if (lst.size() <= keep_per_thread)
+                {
                     return;
+                }
                 while (lst.size() > keep_per_thread)
                 {
                     T* block = lst.back();
@@ -574,13 +580,19 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             };
 
             for (auto& ptf : list_block_free_thr)
+            {
                 trim_one(ptf.list, thread_chunk_size());
+            }
 
             if constexpr (chunk_config::chunk_dynamic)
             {
                 for (auto& kv : list_block_free_thr_by_size_)
+                {
                     for (auto& ptf : kv.second)
+                    {
                         trim_one(ptf.list, kv.first);
+                    }
+                }
             }
 
             return freed;
@@ -754,7 +766,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         if constexpr (chunk_config::chunk_dynamic)
         {
             for (const auto& ranks : list_block_free_thr_by_size_ | std::views::values)
+            {
                 blocks += parked_blocks(ranks);
+            }
         }
         return blocks;
     }
@@ -768,7 +782,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         {
             const auto it = list_block_free_thr_by_size_.find(size);
             if (it != list_block_free_thr_by_size_.end())
+            {
                 blocks = parked_blocks(it->second);
+            }
         }
         return blocks;
     }
@@ -788,7 +804,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         {
             const auto it = size_buffer_reuse_by_key_.find(key);
             if (it != size_buffer_reuse_by_key_.end())
+            {
                 return it->second;
+            }
         }
         return size_buffer_reuse;
     }
@@ -816,7 +834,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         {
             const auto it = list_block_free_thr_keyed_.find(keyed_index(key, thread_chunk_size()));
             if (it != list_block_free_thr_keyed_.end() && static_cast<size_t>(thr_rank) < it->second.size())
+            {
                 return it->second[thr_rank].list;
+            }
         }
         return get_list_block_free_thr(thr_rank);
     }
@@ -828,7 +848,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         {
             const auto it = list_block_free_thr_keyed_.find(keyed_index(key, thread_chunk_size()));
             if (it != list_block_free_thr_keyed_.end() && static_cast<size_t>(thr_rank) < it->second.size())
+            {
                 return it->second[thr_rank].list.size();
+            }
         }
         return get_list_block_free_thr_size(thr_rank);
     }
@@ -918,7 +940,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         {
             const auto it = list_block_free_thr_by_size_.find(sz);
             if (it != list_block_free_thr_by_size_.end())
+            {
                 return it->second[thr_rank].list;
+            }
         }
 
         return list_block_free_thr[thr_rank].list;
@@ -1038,10 +1062,14 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                         const auto sort_own_list = [&](int rank) noexcept
                         {
                             if (rank < 0 || rank >= n_thr)
+                            {
                                 return;
+                            }
                             auto& lst = per_thr[rank].list;
                             if (lst.empty())
+                            {
                                 return;
+                            }
                             auto&       row  = bucket[static_cast<std::size_t>(rank)];
                             std::size_t kept = 0;
                             for (std::size_t i = 0; i < lst.size(); ++i)
@@ -1049,16 +1077,22 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                                 T*          block = lst[i];
                                 const auto* slab  = geometry->slab_of(block);
                                 if (slab && slab->owner && slab->owner_rank >= 0 && slab->owner_rank < n_thr)
+                                {
                                     row[static_cast<std::size_t>(slab->owner_rank)].push_back(block);
+                                }
                                 else
+                                {
                                     lst[kept++] = block; // no owner claims it: stays parked
+                                }
                             }
                             lst.resize(kept);
                         };
                         const auto free_own_buckets = [&](int rank) noexcept
                         {
                             if (rank < 0 || rank >= n_thr)
+                            {
                                 return;
+                            }
                             // Route to the `size` allocator: get_chunk_allocator keys on
                             // the per-thread active size. Freeing a size-`size` block
                             // through the wrong-size allocator corrupts that slab's
@@ -1112,10 +1146,16 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 }
             }; // drain_one
             if (const auto it = list_block_free_thr_by_size_.find(size); it != list_block_free_thr_by_size_.end())
+            {
                 drain_one(it->second);
+            }
             for (auto& kv : list_block_free_thr_keyed_)
+            {
                 if (static_cast<unsigned int>(kv.first & 0xffffffffu) == size)
+                {
                     drain_one(kv.second);
+                }
+            }
         }
     }
 
@@ -1141,18 +1181,26 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     static auto& get_chunk2A_to_compress_potentially([[maybe_unused]] int thr) noexcept
     {
         if constexpr (build_config::use_openmp)
+        {
             return chunk2A_to_compress_potentially_thr[thr];
+        }
         else
+        {
             return chunk2A_to_compress_potentially;
+        }
     }
 
     /// @brief Is no Chunk2A chunk queued for compression, on any thread?
     [[nodiscard]] static bool is_chunk2A_to_compress_potentially_empty() noexcept
     {
         if constexpr (build_config::use_openmp)
+        {
             return chunk2A_to_compress_potentially_thr.empty();
+        }
         else
+        {
             return chunk2A_to_compress_potentially.empty();
+        }
     }
 
     /**
@@ -1211,7 +1259,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         {
             const auto nthr = static_cast<int>(chunk2A_to_compress_potentially_thr.size());
             for (int thr = 0; thr < nthr; ++thr)
+            {
                 erase_candidates_of_tab(chunk2A_to_compress_potentially_thr[thr], num_tab);
+            }
         }
         else
         {
@@ -1250,7 +1300,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 {
                     const auto& sp = kv.second;
                     if (!sp)
+                    {
                         continue;
+                    }
                     erase_candidates_of_tab(*sp, num_tab);
                 }
             }
@@ -1275,7 +1327,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         {
             const auto nthr = static_cast<int>(chunk_to_compress_potentially_thr.size());
             for (int thr = 0; thr < nthr; ++thr)
+            {
                 erase_candidates_of_tab(chunk_to_compress_potentially_thr[thr], num_tab);
+            }
         }
         else
         {

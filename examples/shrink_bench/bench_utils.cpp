@@ -156,7 +156,9 @@ void memory_consumption(const std::string& msg)
         const bool        checkpoint      = (msg == "end" || msg == "after init");
         static const bool trim_every_line = shrink_array::env_flag("SHRINK_BENCH_MALLOC_TRIM");
         if (checkpoint || trim_every_line)
+        {
             malloc_trim(0);
+        }
 
         // /proc/self/statm: "size resident shared text lib data dt", in pages.
         // Read through a stream so a short or malformed line fails the
@@ -167,7 +169,9 @@ void memory_consumption(const std::string& msg)
             long total_pages = 0;
             long res_pages   = 0;
             if (statm >> total_pages >> res_pages)
+            {
                 cur_kb = res_pages * (sysconf(_SC_PAGESIZE) / 1024);
+            }
         }
         // Exact current size (smaps_rollup) at the checkpoints that matter --
         // "after init" and "end" -- or on every line with
@@ -180,7 +184,9 @@ void memory_consumption(const std::string& msg)
         if (exact_every_line || checkpoint)
         {
             if (const long exact = shrink_array::exact_rss_kib(); exact > 0)
+            {
                 cur_kb = exact;
+            }
         }
         bench_rss_sampler().note(cur_kb);
         const long rss = std::max({rss_hwm, cur_kb, bench_rss_sampler().peak_kib()});
@@ -191,14 +197,20 @@ void memory_consumption(const std::string& msg)
         if (msg == "end")
         {
             if (std::ofstream fichier("memory_mo.txt"); fichier.is_open())
+            {
                 fichier << convert_memory(static_cast<double>(rss) * 1024.0);
+            }
             else
+            {
                 std::println(stderr, "Error : can't open memory_mo.txt.");
+            }
         }
 
         std::print("Memory consumption {} : {:.3f} Mo (peak)", msg, convert_memory(static_cast<double>(rss) * 1024.0));
         if (cur_kb > 0)
+        {
             std::print(", {:.3f} Mo (current)", convert_memory(static_cast<double>(cur_kb) * 1024.0));
+        }
         // Where the resident memory is, at this moment, as far as the library
         // knows: the buffers parked in the per-rank reuse pools (blocks a
         // compression released and nothing took back yet), and the buffers
@@ -277,18 +289,24 @@ Int levenshtein(const std::string& a, const std::string& b)
     std::vector  dp(len_a + 1, std::vector<Int>(len_b + 1));
 
     for (size_t i = 0; i <= len_a; ++i)
+    {
         for (size_t j = 0; j <= len_b; ++j)
         {
             if (i == 0)
+            {
                 dp[i][j] = static_cast<Int>(j);
+            }
             else if (j == 0)
+            {
                 dp[i][j] = static_cast<Int>(i);
+            }
             else
             {
                 const Int subst = (a[i - 1] != b[j - 1]) ? 1 : 0;
                 dp[i][j]        = std::min({dp[i - 1][j - 1] + subst, dp[i - 1][j] + 1, dp[i][j - 1] + 1});
             }
         }
+    }
     return dp[len_a][len_b];
 }
 

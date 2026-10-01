@@ -103,7 +103,9 @@ template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
 {
     if (nb_chunk == 0)
+    {
         return;
+    }
 
     const auto& sh_inf  = Proxy<T>::share_info_array;
     const int   num_tab = sh_inf.get_num_tab(this->registry_key());
@@ -148,11 +150,17 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
         // Materialised: is it constant to a single value?
         const auto v0 = ck.constant_value(csz);
         if (!v0)
+        {
             continue;
+        }
         if (*v0 == Chunk<T>::first_value)
+        {
             ++n_compressed; // compressible now; the drain just had not caught it yet
+        }
         else
+        {
             ++n_would_be_t2; // a second constant: Chunk2/Chunk2A material
+        }
     }
 
     // Plain Chunk has no type-2 (n_t1 = 0). The cross probe reports how many
@@ -188,7 +196,9 @@ void ArrayChunk<T, ind_type>::clear_core()
     // TCTypeAllocator after a re-chunk, fast-alloc only). ArrayChunk2 and
     // ArrayChunk2A had this pin; v1 did not. See ArrayChunk2::clear_core().
     if constexpr (build_config::chunk_dynamic)
+    {
         set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
+    }
 
     // Drain deferred writes on this array's chunks before chunk_list is freed.
     this->flush_pending_deferred_ops();
@@ -342,7 +352,9 @@ void ArrayChunk<T, ind_type>::clear_core()
     // region. Key 0 (shared pool) keeps the old behaviour: nothing to give
     // back per array. Same hook as ArrayChunk2 / ArrayChunk2A.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
+    {
         ManagerChunk<Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
+    }
 
     // The candidate flags (one byte per chunk): released now that the purge
     // at the top has run and the chunks are gone -- a re-chunk's old storage
@@ -358,7 +370,9 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
     // whichever array the thread last served, a re-chunked array's buffers
     // went to another size's allocator (sl_remove assertion, fast-alloc only).
     if constexpr (build_config::chunk_dynamic)
+    {
         shrink_array::set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
+    }
 
 
     const int nb_chunk0 = get_size_max_tab_omp(nb_chunk, true);
@@ -378,7 +392,9 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
             // compress(), so without this the successes were counted but not the
             // tries -- attempts showed 1175% success.
             if constexpr (chunk_config::stats)
+            {
                 increm_chunk_compress_attempt<Chunk<T>>();
+            }
 
             if (chunk.is_constant_to(T{}, static_cast<unsigned int>(this->size_policy_.size())))
             {

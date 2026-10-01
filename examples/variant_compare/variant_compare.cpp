@@ -95,7 +95,8 @@ int __mem_page_size = 0;
 
 using namespace shrink_array;
 
-static_assert(chunk_config::use_chunk2or2a, "variant_compare compares chunk2 and chunk2a: link chunk_v2_* or chunk_v2a_*");
+static_assert(chunk_config::use_chunk2or2a,
+              "variant_compare compares chunk2 and chunk2a: link chunk_v2_* or chunk_v2a_*");
 
 template <typename T>
 using Array = std::conditional_t<chunk_config::use_chunk2a, ArrayChunk2A<T>, ArrayChunk2<T>>;
@@ -106,24 +107,32 @@ constexpr const char* variant_name()
 }
 
 /// The first value is 0; the second values, the first of them declared.
-constexpr double kSecond[] = {9., 11., 13., 17., 19., 23., 29., 31.};
+constexpr double kSecond[]     = {9., 11., 13., 17., 19., 23., 29., 31.};
 constexpr int    kMaxConstants = static_cast<int>(sizeof(kSecond) / sizeof(kSecond[0]));
 
 // ── Phase brackets: no-ops under OMPT (the callbacks do it) ─────────────────
 static void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 static void end_phase(Array<double>& arr)
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
     // Serial chunk2a has no between-region pass: run it (mark_path_validation).
     if constexpr (chunk_config::use_chunk2a && !build_config::use_openmp)
+    {
         arr.make_block_compression();
+    }
     else
+    {
         (void)arr;
+    }
 }
 
 /// Chunk2 declares its one second value; Chunk2A finds one per chunk (no
@@ -132,13 +141,14 @@ template <typename Arr>
 static void maybe_declare_second_value(Arr& a, double v)
 {
     if constexpr (requires { a.set_second_value(v, false); })
+    {
         a.set_second_value(v, false);
+    }
 }
 
 // ── The workload ─────────────────────────────────────────────────────────────
-class Role
+struct Role
 {
-  public:
     int    kind;  ///< 0: constant, 1: non-uniform, 2: untouched
     double value; ///< the constant, for kind 0
 };
@@ -152,11 +162,17 @@ static Role role(long chunk, int iter, int nconst)
     h ^= h >> 29;
     const int r = static_cast<int>(h % 10);
     if (r <= 1)
+    {
         return {0, 0.};
+    }
     if (r <= 4)
+    {
         return {0, kSecond[(h >> 8) % static_cast<std::uint64_t>(nconst)]};
+    }
     if (r == 5)
+    {
         return {1, 0.};
+    }
     return {2, 0.};
 }
 
@@ -179,13 +195,21 @@ int main(int argc, char** argv)
     {
         const std::string o = argv[a];
         if (o == "--n" && a + 1 < argc)
+        {
             N = shrink_array::arg_number<long>(argv[++a], N, "--n");
+        }
         else if (o == "--iters" && a + 1 < argc)
+        {
             iters = shrink_array::arg_number<int>(argv[++a], iters, "--iters");
+        }
         else if (o == "--constants" && a + 1 < argc)
+        {
             nconst = shrink_array::arg_number<int>(argv[++a], nconst, "--constants");
+        }
         else if (o == "--verify")
+        {
             verify = true;
+        }
         else
         {
             std::fprintf(stderr, "usage: %s [--n N] [--iters I] [--constants K (1..%d)] [--verify]\n", argv[0],
@@ -200,25 +224,28 @@ int main(int argc, char** argv)
     }
 
     // Read off an EMPTY array: no chunk, no end-of-run stats line of its own.
-    const long S = static_cast<long>(Array<double>(0).chunk_size());
-    N            = (N + S - 1) / S * S;
+    const long S       = static_cast<long>(Array<double>(0).chunk_size());
+    N                  = (N + S - 1) / S * S;
     const long nchunks = N / S;
 
-    std::printf("=== variant_compare [%s]  n=%ld  chunk_size=%ld  chunks=%ld  iters=%d  constants=%d  threads=%d%s ===\n",
-                variant_name(), N, S, nchunks, iters, nconst, CHUNK_PMP_MAX_THREADS, verify ? "  (verify)" : "");
+    std::printf(
+        "=== variant_compare [%s]  n=%ld  chunk_size=%ld  chunks=%ld  iters=%d  constants=%d  threads=%d%s ===\n",
+        variant_name(), N, S, nchunks, iters, nconst, CHUNK_PMP_MAX_THREADS, verify ? "  (verify)" : "");
 
     Array<double> a(static_cast<int>(N));
     maybe_declare_second_value(a, kSecond[0]);
     std::vector<double> ref;
     if (verify)
+    {
         ref.assign(static_cast<std::size_t>(N), 0.);
+    }
 
-    using clk = std::chrono::steady_clock;
+    using clk       = std::chrono::steady_clock;
     const auto secs = [](clk::time_point t0) { return std::chrono::duration<double>(clk::now() - t0).count(); };
 
-    double t_const = 0., t_plain = 0., t_read = 0., t_rmw = 0.;
-    double checksum = 0.;
-    const int n = static_cast<int>(N);
+    double    t_const = 0., t_plain = 0., t_read = 0., t_rmw = 0.;
+    double    checksum = 0.;
+    const int n        = static_cast<int>(N);
 
     // Exact RSS at each iteration end, outside the timed passes (a read
     // walks the page tables). A peak inside a pass is not seen.
@@ -235,7 +262,9 @@ int main(int argc, char** argv)
             {
                 const Role r = role(i / S, it, nconst);
                 if (r.kind == 0)
+                {
                     a[i] = r.value;
+                }
             }
         }
         end_phase(a);
@@ -248,22 +277,28 @@ int main(int argc, char** argv)
             begin_phase();
 #pragma omp for schedule(static)
             for (int i = 0; i < n; ++i)
+            {
                 if (role(i / S, it, nconst).kind == 1)
+                {
                     a[i] = plain(i, it);
+                }
+            }
         }
         end_phase(a);
         t_plain += secs(t0);
 
         // read: everything
-        t0 = clk::now();
-        double    sum = 0.;
-        const auto& ca = std::as_const(a);
+        t0              = clk::now();
+        double      sum = 0.;
+        const auto& ca  = std::as_const(a);
 #pragma omp parallel
         {
             begin_phase();
 #pragma omp for schedule(static) reduction(+ : sum)
             for (int i = 0; i < n; ++i)
+            {
                 sum += ca[i];
+            }
         }
         end_phase(a);
         t_read += secs(t0);
@@ -276,8 +311,12 @@ int main(int argc, char** argv)
             begin_phase();
 #pragma omp for schedule(static)
             for (int i = 0; i < n; ++i)
+            {
                 if (role(i / S, it, nconst).kind == 1)
+                {
                     a[i] += 1.;
+                }
+            }
         }
         end_phase(a);
         t_rmw += secs(t0);
@@ -286,19 +325,27 @@ int main(int argc, char** argv)
         rss_peak_kib      = rss_it > rss_peak_kib ? rss_it : rss_peak_kib;
 
         if (verify)
+        {
             for (long i = 0; i < N; ++i)
             {
                 const Role r = role(i / S, it, nconst);
                 if (r.kind == 0)
+                {
                     ref[static_cast<std::size_t>(i)] = r.value;
+                }
                 else if (r.kind == 1)
+                {
                     ref[static_cast<std::size_t>(i)] = plain(i, it) + 1.;
+                }
             }
+        }
     }
 
     long compressed = 0;
     for (long j = 0; j < nchunks; ++j)
+    {
         compressed += a.written(static_cast<int>(j * S)) ? 0 : 1;
+    }
 
     const double total = t_const + t_plain + t_read + t_rmw;
     std::printf("time (s)    const %8.3f | plain %8.3f | read %8.3f | rmw %8.3f | total %8.3f\n", t_const, t_plain,
@@ -314,14 +361,18 @@ int main(int argc, char** argv)
     {
         long nbad = 0;
         for (long i = 0; i < N; ++i)
+        {
             if (std::as_const(a)[static_cast<int>(i)] != ref[static_cast<std::size_t>(i)])
             {
                 if (nbad < 3)
+                {
                     std::printf("  MISMATCH a[%ld] = %g, expected %g\n", i,
                                 static_cast<double>(std::as_const(a)[static_cast<int>(i)]),
                                 ref[static_cast<std::size_t>(i)]);
+                }
                 ++nbad;
             }
+        }
         std::printf("verify      %s (%ld mismatch(es))\n", nbad ? "FAILED" : "OK", nbad);
         bad = nbad ? 1 : 0;
     }

@@ -323,9 +323,8 @@ extern TCTypeAllocatorEBC<24, SIZE_BLOCK> Allocator24;
  *          private -- it could not be called at all, and nothing noticed.
  *          blk_allocator_validation is what runs it now.
  */
-class BlkAllocator : public StaticConstArray
+struct BlkAllocator : public StaticConstArray
 {
-  public:
     /// @brief A block of @p size bytes, from the ladder or from malloc.
     static void* alloc_block(size_t size)
     {
@@ -355,7 +354,9 @@ class BlkAllocator : public StaticConstArray
     static void free_block(void* ptr, size_t size)
     {
         if (ptr == nullptr)
+        {
             return;
+        }
 
         if constexpr (alloc_config::use_std_alloc)
         {
@@ -402,7 +403,9 @@ class BlkAllocator : public StaticConstArray
     static void free_tab(void* user_ptr)
     {
         if (user_ptr == nullptr)
+        {
             return;
+        }
 
         int* m_ptr = (int*)((char*)user_ptr - __ALIGNEMENT__);
 
@@ -497,7 +500,9 @@ class FixedSizeAllocator : private StaticConstArray
     static void free_block(void* ptr)
     {
         if (ptr == nullptr)
+        {
             return;
+        }
 
         if constexpr (alloc_config::use_std_alloc)
         {
@@ -572,9 +577,8 @@ class FixedSizeAllocator : private StaticConstArray
  *          without tc_allocator.h knowing the ladder exists.
  */
 template <typename T>
-class TypeAllocator
+struct TypeAllocator
 {
-  public:
     /// @brief A block of @p size bytes for a T.
     /// @pre `size == sizeof(T)`: free() routes by sizeof(T), so any other size
     ///      (an operator new reached by a larger derived class) would go back

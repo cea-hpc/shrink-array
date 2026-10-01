@@ -19,16 +19,16 @@
 
 #pragma once
 
-#include <cstddef>       // std::size_t
-#include <cstdio>        // std::printf
-#include <iostream>      // for cout, ostream
-#include <utility>       // for move
-#include <vector>        // for vector, swap
-#include <unordered_set> // for the cst2 GC live set
-#include <initializer_list>  // the {a, b, c} constructor
-#include <iterator>  // std::forward_iterator, std::distance -- the (first, last) constructor
+#include <cstddef>          // std::size_t
+#include <cstdio>           // std::printf
+#include <iostream>         // for cout, ostream
+#include <utility>          // for move
+#include <vector>           // for vector, swap
+#include <unordered_set>    // for the cst2 GC live set
+#include <initializer_list> // the {a, b, c} constructor
+#include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 
-#include "chunk/internal/array_chunk2_base.h" // for ArrayChunk2Base
+#include "chunk/internal/array_chunk2_base.h"           // for ArrayChunk2Base
 #include "chunk/internal/array_chunk2A_parallel.h"      // ParallelSupport2A — OpenMP-only mixin
 #include "chunk/internal/array_chunk2A_rechunk_hooks.h" // RechunkHooks2A — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
@@ -218,7 +218,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     ArrayChunk2A& operator=(const ArrayChunk2A& from)
     {
         if (this != &from)
+        {
             this->copy_from(from);
+        }
         return *this;
     }
 
@@ -267,10 +269,16 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     bool operator==(const ArrayChunk2A& other) const noexcept
     {
         if (m_size != other.m_size)
+        {
             return false;
+        }
         for (ind_type i = 0; i < m_size; ++i)
+        {
             if (Base2::read_value(i) != other.read_value(i))
+            {
                 return false;
+            }
+        }
         return true;
     }
 
@@ -439,7 +447,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
                 {
                     const auto& ch = arr->chunk_ref(static_cast<std::size_t>(j));
                     if (ch.is_cst_val2())
+                    {
                         live.insert(static_cast<const void*>(ch.values_load()));
+                    }
                 }
             });
     }

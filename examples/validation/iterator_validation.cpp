@@ -107,30 +107,42 @@ static_assert(!std::sortable<It>, "no in-place sort, by construction: an element
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 
 void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 template <typename A, typename Val>
 void maybe_set_second_value(A& a, const Val& v)
 {
     if constexpr (requires(A x) { x.set_second_value(v); })
+    {
         a.set_second_value(v);
+    }
 }
 
 void compress_in_region(Arr& a)
@@ -156,11 +168,17 @@ double sorted_at(long i, long S)
 {
     const long c = i / S;
     if (c < kC0)
+    {
         return 0.0;
+    }
     if (c < kC1)
+    {
         return 10.0 + static_cast<double>((i - (kC0 * S)) / 3);
+    }
     if (c < kC2)
+    {
         return kSecond;
+    }
     return (2.0 * kSecond) + static_cast<double>(i - (kC2 * S));
 }
 
@@ -179,17 +197,20 @@ void fill(Arr& a, long N, Fn&& value)
         begin_phase();
 #pragma omp for schedule(static)
         for (long i = 0; i < N; ++i)
+        {
             a[static_cast<Ind>(i)] = value(i);
+        }
     }
     end_phase();
     if constexpr (chunk_config::use_chunk2a && !build_config::use_openmp)
+    {
         a.make_block_compression();
+    }
 }
 
 /// @brief Mismatch reporter: counts every failure, prints the first few.
-class Report
+struct Report
 {
-  public:
     // C varargs on purpose: the format attribute keeps -Wformat checking
     // every call (a forwarded, non-literal format would not be checked).
     [[gnu::format(printf, 2, 3)]] void fail(const char* fmt, ...) // NOLINT(cert-dcl50-cpp)
@@ -208,9 +229,13 @@ class Report
     int done(const char* ok_msg) const
     {
         if (!bad)
+        {
             std::printf("[%s/%s] OK: %s\n", variant_name(), step, ok_msg);
+        }
         else
+        {
             std::printf("[%s/%s] %ld failure(s)\n", variant_name(), step, bad);
+        }
         return bad ? 1 : 0;
     }
 
@@ -226,12 +251,16 @@ int check_premise(const Arr& a, long N)
     const long S      = static_cast<long>(a.chunk_size());
     long       folded = 0;
     for (long j = 0; j * S < N; ++j)
+    {
         folded += a.written(static_cast<Ind>(j * S)) ? 0 : 1;
+    }
     const long want = (chunk_config::use_chunk2 || chunk_config::use_chunk2a) ? kC0 + (kC2 - kC1) : kC0;
     if (folded < want)
+    {
         r.fail("%ld chunk(s) folded after the pass, expected at least %ld: the jumps would not land in "
                "compressed chunks",
                folded, want);
+    }
     char msg[128];
     std::snprintf(msg, sizeof msg, "%ld of %ld chunks folded (chunk_size=%ld)", folded, (N + S - 1) / S, S);
     return r.done(msg);
@@ -243,14 +272,22 @@ int check_content(const Arr& a, const std::vector<double>& ref)
     Report     r{"content"};
     const long N = static_cast<long>(ref.size());
     if (!std::equal(a.begin(), a.end(), ref.begin(), ref.end()))
+    {
         r.fail("the sequential read differs from the reference");
+    }
     const It b = a.begin();
     for (long i = 0; i < N; ++i)
+    {
         if (b[i] != ref[static_cast<std::size_t>(i)])
+        {
             r.fail("begin()[%ld] = %g, expected %g", i, b[i], ref[static_cast<std::size_t>(i)]);
+        }
+    }
     if (a.end() - a.begin() != N || std::distance(a.begin(), a.end()) != N)
+    {
         r.fail("end() - begin() = %ld, std::distance = %ld, expected %ld", static_cast<long>(a.end() - a.begin()),
                static_cast<long>(std::distance(a.begin(), a.end())), N);
+    }
     return r.done("sequential read, it[i] everywhere, end() - begin()");
 }
 
@@ -258,14 +295,15 @@ int check_content(const Arr& a, const std::vector<double>& ref)
 int check_jumps(const Arr& a, const std::vector<double>& ref)
 {
     Report     r{"jumps"};
-    const long S = static_cast<long>(a.chunk_size());
-    const long N = static_cast<long>(ref.size());
+    const long S  = static_cast<long>(a.chunk_size());
+    const long N  = static_cast<long>(ref.size());
     auto       at = [&](long i) { return ref[static_cast<std::size_t>(i)]; };
 
-    const long pos[] = {0,           1,       S - 1,       S,       S + 1,  (kC0 * S) - 1, kC0 * S,
-                        (kC1 * S) - 1, kC1 * S, (kC2 * S) - 1, kC2 * S, N - kTail, N - 1,         N};
-    const long dl[]  = {0,      1,          -1,          2, -2, S - 1, -(S - 1), S, -S, S + 1, -(S + 1),
-                        (3 * S) + 7, -((3 * S) + 7), 11 * S, -(11 * S)};
+    const long pos[] = {
+        0,       1,         S - 1, S, S + 1, (kC0 * S) - 1, kC0 * S, (kC1 * S) - 1, kC1 * S, (kC2 * S) - 1,
+        kC2 * S, N - kTail, N - 1, N};
+    const long dl[] = {
+        0, 1, -1, 2, -2, S - 1, -(S - 1), S, -S, S + 1, -(S + 1), (3 * S) + 7, -((3 * S) + 7), 11 * S, -(11 * S)};
 
     const It b = a.begin();
     long     n = 0;
@@ -273,14 +311,20 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
     {
         const It it = b + k;
         if (it - b != k)
+        {
             r.fail("(begin() + %ld) - begin() = %ld", k, static_cast<long>(it - b));
+        }
         if (k < N && *it != at(k))
+        {
             r.fail("*(begin() + %ld) = %g, expected %g", k, *it, at(k));
+        }
         for (const long d : dl)
         {
             const long t = k + d;
             if (t < 0 || t > N)
+            {
                 continue;
+            }
             ++n;
             const It j1 = it + d;
             const It j2 = d + it;
@@ -290,28 +334,40 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
             j4 -= -d;
             const It j5 = it - (-d);
             if (j1 - b != t || j2 != j1 || j3 != j1 || j4 != j1 || j5 != j1)
+            {
                 r.fail("from %ld by %ld: the five forms of the jump disagree (landed at %ld)", k, d,
                        static_cast<long>(j1 - b));
+            }
             if (j1 - it != d)
+            {
                 r.fail("from %ld by %ld: (it + d) - it = %ld", k, d, static_cast<long>(j1 - it));
+            }
             if ((j1 < it) != (d < 0) || (j1 > it) != (d > 0) || (j1 <= it) != (d <= 0) || (j1 >= it) != (d >= 0))
+            {
                 r.fail("from %ld by %ld: the ordering disagrees with the indices", k, d);
+            }
             if (t < N && (*j1 != at(t) || it[d] != at(t)))
+            {
                 r.fail("from %ld by %ld: *(it + d) = %g, it[d] = %g, expected %g", k, d, *j1, it[d], at(t));
+            }
             // The cursor after a seek: a step forward and back from it.
             if (t + 1 < N)
             {
                 It s = j1;
                 ++s;
                 if (*s != at(t + 1) || s - b != t + 1)
+                {
                     r.fail("from %ld by %ld then ++: %g, expected %g", k, d, *s, at(t + 1));
+                }
             }
             if (t >= 1)
             {
                 It s = j1;
                 --s;
                 if (*s != at(t - 1) || s - b != t - 1)
+                {
                     r.fail("from %ld by %ld then --: %g, expected %g", k, d, *s, at(t - 1));
+                }
             }
         }
     }
@@ -327,26 +383,40 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
         for (const long k : pos)
         {
             if (k < 1 || k > N)
+            {
                 continue;
+            }
             const It m4 = (b + k) - (k + 1);
             if (m4 != m1 || m4 - b != -1)
+            {
                 r.fail("(begin() + %ld) - %ld does not land one before begin", k, k + 1);
+            }
         }
         if (m1 - b != -1 || m2 != m1 || m3 != m1 || !(m1 < b) || b - m1 != 1)
+        {
             r.fail("one before begin: --begin(), begin() - 1 and begin() += -1 disagree");
+        }
         It p = m1;
         ++p;
         if (p != b || *p != at(0))
+        {
             r.fail("++ from one before begin reads %g, expected %g", *p, at(0));
+        }
         if (*(m1 + 1) != at(0) || m1[1] != at(0))
+        {
             r.fail("one before begin: *(it + 1) / it[1] read %g / %g, expected %g", *(m1 + 1), m1[1], at(0));
+        }
     }
     if (*(a.end() - 1) != ref.back())
+    {
         r.fail("*(end() - 1) = %g, expected %g", *(a.end() - 1), ref.back());
+    }
     It adv = a.begin();
     std::advance(adv, N - 1);
     if (*adv != ref.back())
+    {
         r.fail("std::advance(begin(), N - 1) reads %g, expected %g", *adv, ref.back());
+    }
 
     char msg[96];
     std::snprintf(msg, sizeof msg, "%ld jumps read and stepped from, end() - 1, std::advance", n);
@@ -389,25 +459,28 @@ int search_mismatch(const Arr& a, const std::vector<double>& ref, double q, long
                       static_cast<long>(rer_a.end() - ab),
                       std::ranges::binary_search(a, q) ? 1L : 0L,
                       static_cast<long>(std::lower_bound(a.rbegin(), a.rend(), q, std::greater<>{}) - a.rbegin())};
-    const long w[] = {static_cast<long>(std::lower_bound(rb, re, q) - rb),
-                      static_cast<long>(std::upper_bound(rb, re, q) - rb),
-                      static_cast<long>(er_r.first - rb),
-                      static_cast<long>(er_r.second - rb),
-                      std::binary_search(rb, re, q) ? 1L : 0L,
-                      static_cast<long>(std::lower_bound(rb, re, q) - rb),
-                      static_cast<long>(std::upper_bound(rb, re, q) - rb),
-                      static_cast<long>(er_r.first - rb),
-                      static_cast<long>(er_r.second - rb),
-                      std::binary_search(rb, re, q) ? 1L : 0L,
-                      static_cast<long>(std::lower_bound(ref.rbegin(), ref.rend(), q, std::greater<>{}) - ref.rbegin())};
+    const long w[] = {
+        static_cast<long>(std::lower_bound(rb, re, q) - rb),
+        static_cast<long>(std::upper_bound(rb, re, q) - rb),
+        static_cast<long>(er_r.first - rb),
+        static_cast<long>(er_r.second - rb),
+        std::binary_search(rb, re, q) ? 1L : 0L,
+        static_cast<long>(std::lower_bound(rb, re, q) - rb),
+        static_cast<long>(std::upper_bound(rb, re, q) - rb),
+        static_cast<long>(er_r.first - rb),
+        static_cast<long>(er_r.second - rb),
+        std::binary_search(rb, re, q) ? 1L : 0L,
+        static_cast<long>(std::lower_bound(ref.rbegin(), ref.rend(), q, std::greater<>{}) - ref.rbegin())};
     static_assert(std::size(g) == std::size(w));
     for (std::size_t k = 0; k < std::size(g); ++k)
+    {
         if (g[k] != w[k])
         {
             *got  = g[k];
             *want = w[k];
             return static_cast<int>(k) + 1;
         }
+    }
     return 0;
 }
 
@@ -433,7 +506,9 @@ int check_searches(const Arr& a, const std::vector<double>& ref)
         long got  = 0;
         long want = 0;
         if (const int k = search_mismatch(a, ref, v, &got, &want))
+        {
             r.fail("%s(%g) = %ld, the std::vector gives %ld", kSearchName[k], v, got, want);
+        }
     }
     char msg[96];
     std::snprintf(msg, sizeof msg, "%zu values x 11 searches agree with the std::vector", q.size());
@@ -456,12 +531,16 @@ int check_parallel_searches(const Arr& a, const std::vector<double>& ref)
             long got  = 0;
             long want = 0;
             if (search_mismatch(a, ref, q[static_cast<std::size_t>(k)], &got, &want))
+            {
                 ++bad;
+            }
         }
     }
     end_phase();
     if (bad)
+    {
         r.fail("%ld of %ld values searched concurrently disagree with the std::vector", bad, nq);
+    }
     return r.done("every search agrees, run from every thread at once");
 }
 
@@ -471,12 +550,20 @@ int check_reverse(const Arr& a, const std::vector<double>& ref)
     const long S = static_cast<long>(a.chunk_size());
     const long N = static_cast<long>(ref.size());
     if (!std::equal(a.rbegin(), a.rend(), ref.rbegin(), ref.rend()))
+    {
         r.fail("the reverse read differs from the reference");
+    }
     if (a.rend() - a.rbegin() != N)
+    {
         r.fail("rend() - rbegin() = %ld, expected %ld", static_cast<long>(a.rend() - a.rbegin()), N);
+    }
     for (const long k : {0L, 1L, kTail - 1, kTail, kTail + 1, kTail + S, N - 1})
+    {
         if (k >= 0 && k < N && a.rbegin()[k] != ref.rbegin()[k])
+        {
             r.fail("rbegin()[%ld] = %g, expected %g", k, a.rbegin()[k], ref.rbegin()[k]);
+        }
+    }
     return r.done("rbegin()/rend(), rbegin()[k]");
 }
 
@@ -497,7 +584,9 @@ int check_sort_recipe(const std::vector<double>& ref)
     compress_in_region(b);
 
     if (static_cast<long>(b.size()) != N || !std::equal(b.begin(), b.end(), ref.begin(), ref.end()))
+    {
         r.fail("copy, std::sort, assign() does not give the sorted content back");
+    }
     return r.done("std::vector<T> v(a.begin(), a.end()); std::sort; a.assign(v.begin(), v.end())");
 }
 
@@ -525,7 +614,9 @@ int main()
 
         std::vector<double> ref(static_cast<std::size_t>(N));
         for (long i = 0; i < N; ++i)
+        {
             ref[static_cast<std::size_t>(i)] = sorted_at(i, S);
+        }
 
         const Arr& ca = a;
         fails += check_premise(ca, N);

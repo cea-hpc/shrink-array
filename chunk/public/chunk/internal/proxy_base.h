@@ -49,26 +49,26 @@ namespace shrink_array
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
 template <typename T, typename ChunkType>
-class CompressionManager;
+struct CompressionManager;
 
 template <typename T>
-class ArithmeticProxyContext;
+struct ArithmeticProxyContext;
 
 template <typename T, typename Op>
-class ArithmeticOperationProxyContext;
+struct ArithmeticOperationProxyContext;
 
 template <typename T>
 class Proxy;
 
 /// @brief Whether T is a Proxy\<U\> (Proxy2 and Proxy2A are not): false by default.
 template <typename T>
-class is_simple_proxy : public std::false_type
+struct is_simple_proxy : public std::false_type
 {
 };
 
 /// @brief Proxy<T> is a simple proxy.
 template <typename T>
-class is_simple_proxy<Proxy<T>> : public std::true_type
+struct is_simple_proxy<Proxy<T>> : public std::true_type
 {
 };
 /**
@@ -142,7 +142,9 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     {
         using row_t = typename decltype(tab_is_inside_chunk_list_to_compress)::value_type;
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
+        {
             row_t{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
+        }
     }
 
     /// @brief Write @p v at the offset @p ctx recorded, on the replay path.
@@ -428,7 +430,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         if constexpr (build_config::any_check && chunk_config::use_chunk_steal_mark)
         {
             if (chunk.steal_committed()) [[unlikely]]
+            {
                 INVARIANT_FAILED("store_value on a chunk committed to a compressor (num={})", num);
+            }
         }
         // Chunk2A: the marking filter of another writer may be reading this
         // element -- relaxed atomic store, see relaxed_element.h.
@@ -478,7 +482,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         {
             const T* const vals = values;
             if (TabCstVal2Holder<T>::is_cst_val2_ptr(vals)) [[unlikely]]
+            {
                 return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
+            }
             // elem_get, not vals[num]: for Bit that indexed BYTES, up to
             // chunk_size of them in a chunk_size / 8 byte buffer.
             return elem_get(vals, static_cast<std::size_t>(num));
@@ -621,9 +627,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @details Wrapper for % operator to fit execute_arithmetic_compound_operation interface
      */
 
-    class modulo
+    struct modulo
     {
-      public:
         /**
          * @brief Apply modulo operation
          * @param lhs Dividend
@@ -962,7 +967,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires is_packed_bit_v<T> && bit_operand_v<U>
     {
         if (static_cast<bool>(v))
+        {
             self = true;
+        }
         return self;
     }
 
@@ -972,7 +979,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires is_packed_bit_v<T> && bit_operand_v<U>
     {
         if (!static_cast<bool>(v))
+        {
             self = false;
+        }
         return self;
     }
 

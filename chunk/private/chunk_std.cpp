@@ -100,7 +100,7 @@ void ChunkPoolParallelInterface<false, AllT>::release_chunk_pools()
 
 // The one instantiation of the pair: the other thread model's bodies are left
 // uninstantiated rather than #ifdef'd out. Same device as param_chunk.cpp.
-template class ChunkPoolParallelInterface<build_config::use_openmp, AllTypeChunk>;
+template struct ChunkPoolParallelInterface<build_config::use_openmp, AllTypeChunk>;
 
 // --- Build-agnostic free functions over the policy -----------------------
 // Thin forwarders, defined in EVERY build. Previously delete_chunk_allocator()
@@ -147,7 +147,9 @@ std::size_t compress_now_and_trim_pools()
 {
     auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
     if constexpr (chunk_config::use_fast_block_compression)
+    {
         ens_type_chunk.force_chunk_to_compress();
+    }
     return ens_type_chunk.trim_reuse_pools(0);
 }
 

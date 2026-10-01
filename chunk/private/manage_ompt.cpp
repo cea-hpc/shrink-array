@@ -95,9 +95,8 @@ bool g_ompt_stats = false;
 /// Per [kind][endpoint: 0 begin, 1 end].
 using OmptCounters = std::array<std::array<std::atomic<std::uint64_t>, 2>, kOmptKinds>;
 
-class alignas(128) OmptSyncSlot
+struct alignas(128) OmptSyncSlot
 {
-  public:
     OmptCounters calls;
     OmptCounters flush_calls;
     OmptCounters skipped_flag;
@@ -115,7 +114,9 @@ OmptSyncSlot* ompt_my_slot() noexcept
     {
         const int slot_idx = g_ompt_next_slot.fetch_add(1, std::memory_order_relaxed); // once per thread
         if (slot_idx >= kOmptMaxSlots)
+        {
             return nullptr;
+        }
         t_ompt_slot = &g_ompt_slots[slot_idx];
     }
     return t_ompt_slot;
@@ -159,13 +160,16 @@ const char* ompt_kind_name(int k) noexcept
 void ompt_finalize(ompt_data_t*)
 {
     if (!g_ompt_stats)
+    {
         return;
+    }
     const int nslots = std::min(g_ompt_next_slot.load(std::memory_order_acquire), kOmptMaxSlots);
     std::fprintf(stderr, "\n[OMPT-SYNC] %d threads seen. Per sync-region kind and endpoint, summed over threads:\n",
                  nslots);
     std::fprintf(stderr, "[OMPT-SYNC] %-27s %-5s %12s %12s %12s %12s %10s %10s\n", "kind", "end", "calls",
                  "flush_tried", "skip_flag", "flushed", "flush_ms", "max_thr_ms");
     for (int k = 0; k < kOmptKinds; ++k)
+    {
         for (int e = 0; e < 2; ++e)
         {
             std::uint64_t calls = 0, tried = 0, skip = 0, fl = 0, ns = 0, ns_max = 0;
@@ -181,12 +185,15 @@ void ompt_finalize(ompt_data_t*)
                 ns_max = flush_ns > ns_max ? flush_ns : ns_max;
             }
             if (calls == 0)
+            {
                 continue;
+            }
             std::fprintf(stderr, "[OMPT-SYNC] %-27s %-5s %12llu %12llu %12llu %12llu %10.1f %10.1f\n",
                          ompt_kind_name(k), e == 0 ? "begin" : "end", (unsigned long long)calls,
                          (unsigned long long)tried, (unsigned long long)skip, (unsigned long long)fl,
                          static_cast<double>(ns) * 1e-6, static_cast<double>(ns_max) * 1e-6);
         }
+    }
     std::fflush(stderr);
 }
 } // namespace
@@ -216,7 +223,9 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
     // then re-entered that initialisation: recursive_init_error at start-up in
     // every clang/libomp OpenMP binary. gcc (no OMPT) never took this path.
     if ((flags & ompt_task_initial) != 0)
+    {
         return;
+    }
     if (endpoint != ompt_scope_begin || g_ompt_suspended.load(std::memory_order_relaxed) != 0)
     {
         shrink_array::__fast_omp_rank = -1; // recomputed on the next get_thr_rank_fast()
@@ -247,7 +256,9 @@ static void parallel_end_chunk_work()
     shrink_array::churn::note_phase_end(); // one compression phase (churn_counters.h)
     // Vector-mode build: chunk lib is inactive, nothing to finalize.
     if constexpr (!chunk_config::is_shrink_enabled)
+    {
         return;
+    }
 
     // During the chunk-level rechunk rebuild, skip the DEFERRED FLUSH only: the
     // rebuild drives the deferred write path inside its own parallel region, and
@@ -273,12 +284,16 @@ static void parallel_end_chunk_work()
     // that this used to do during the rebuild is handled by rechunk_drain_reuse_
     // list on the swapped-out storage — a separate, quiescent path.)
     if (in_rebuild)
+    {
         return;
+    }
 
     auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
 
     if (!ens_type_chunk.have_chunk_to_compress_potentially())
+    {
         return;
+    }
 
     #pragma omp barrier
 
@@ -302,7 +317,9 @@ static void flush_allocator_free_batches()
 {
     #ifndef CHUNK_STD_ALLOC
     if (!omp_in_parallel())
+    {
         StaticConstArray::clearInfoFreeElt();
+    }
     #endif
 }
 
@@ -317,7 +334,9 @@ static void flush_allocator_free_batches()
 void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, const void*)
 {
     if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
+    {
         return;
+    }
 
     parallel_end_chunk_work();
 
@@ -345,7 +364,9 @@ void on_barrier_end(ompt_sync_region_t    kind,
                     const void*)
 {
     if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
+    {
         return;
+    }
 
     OmptSyncSlot* slot = nullptr;
     int           k    = 0;
@@ -356,7 +377,9 @@ void on_barrier_end(ompt_sync_region_t    kind,
         k    = (static_cast<int>(kind) > 0 && static_cast<int>(kind) < kOmptKinds) ? static_cast<int>(kind) : 0;
         ep   = endpoint == ompt_scope_begin ? 0 : 1;
         if (slot)
+        {
             ompt_bump(slot->calls[k][ep]);
+        }
     }
 
     // The end of the implicit barrier that closes a parallel region: a worker
@@ -368,7 +391,9 @@ void on_barrier_end(ompt_sync_region_t    kind,
     // on_parallel_end() runs finalize_parallel_phase() right after, which
     // drains the deferred ops of EVERY rank.
     if (endpoint == ompt_scope_end && (kind == ompt_sync_region_barrier_implicit_parallel || parallel_data == nullptr))
+    {
         return;
+    }
 
     // Same suppression as on_parallel_end: the rechunk rebuild's own parallel
     // region ends with an implicit barrier; flushing the half-applied deferred
@@ -385,7 +410,9 @@ void on_barrier_end(ompt_sync_region_t    kind,
             const auto dt      = std::chrono::steady_clock::now() - t0;
             ompt_bump(slot->flush_calls[k][ep]);
             if (flushed)
+            {
                 ompt_bump(slot->flushed[k][ep]);
+            }
             ompt_bump(slot->flush_ns[k][ep],
                       static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(dt).count()));
         }

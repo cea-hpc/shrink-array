@@ -81,7 +81,9 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::rank_flush_release(int 
 {
     auto& lk = xflush_lock_rank[rank];
     if (--lk.depth > 0)
+    {
         return; // still nested inside the outer drain
+    }
     lk.owner.store(-1, std::memory_order_release);
 }
 
@@ -89,7 +91,9 @@ template <typename T, typename ChunkType, bool Enabled>
 bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr, bool /*wait_for_compression*/) noexcept
 {
     if (deferred_chunk_per_thread.empty())
+    {
         return false;
+    }
 
     auto& deferred_chunk_loc = deferred_chunk_per_thread[thr];
     // Emptiness is checked under rank_flush_acquire(thr) below, NOT here:
@@ -99,7 +103,9 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
 
     auto* arr = ChunkType::get_deferred_ops();
     if (!arr)
+    {
         return false;
+    }
 
     auto& thread_map = arr[thr];
 
@@ -112,9 +118,8 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
     // only when) it processes rank thr — giving mutual exclusion on arr[thr]
     // while letting flushes on other ranks proceed in parallel.
     rank_flush_acquire(thr);
-    class RankFlushGuard
+    struct RankFlushGuard
     {
-      public:
         ~RankFlushGuard()
         {
             rank_flush_release(rank);
@@ -125,7 +130,9 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
 
     // Now under the rank shard: safe to read emptiness against concurrent erases.
     if (deferred_chunk_loc.empty())
+    {
         return false; // RankFlushGuard releases the shard
+    }
 
     // ─── Flush has priority over compression ──────────────────────────
     // ONE announce for the whole call, not one per chunk. begin_flush()
@@ -149,9 +156,8 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
     // No livelock: bounded inflight drain x no new admissions.
     Policy::announce_flush(); // counter + heavy barrier, one Dekker verb
     increm_chunk_gate_flush<ChunkType>();
-    class FlushFlagGuard
+    struct FlushFlagGuard
     {
-      public:
         ~FlushFlagGuard()
         {
             Policy::end_flush();
@@ -193,11 +199,15 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
     {
         const auto it_chunk = thread_map.find(chunk);
         if (it_chunk == thread_map.end())
+        {
             continue;
+        }
 
         const auto& ops_map_ptr = it_chunk->second;
         if (!ops_map_ptr)
+        {
             continue;
+        }
 
         auto* op_map = ops_map_ptr.get();
 
@@ -223,8 +233,10 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
             for (auto& [num, op_ptr] : batch)
             {
                 if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
+                {
                     ring_log_op(get_tid(), EV_OP_FLUSH_ONE, static_cast<uint32_t>(num),
                                 static_cast<const void*>(op_ptr.get()));
+                }
 
                 op_ptr->write_body();
                 op_ptr->destroy();
@@ -241,7 +253,9 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
         // reader that acquire-observes 0 also sees the write_body results.
         // (pending_retire is a no-op in counterless builds.)
         if (flushed_here > 0)
+        {
             chunk->pending_retire(static_cast<int32_t>(flushed_here));
+        }
 
         log.end();
 
@@ -275,7 +289,9 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
     // live set keeps its capacity from one flush to the next.
     chunks.clear();
     if (deferred_chunk_loc.empty())
+    {
         deferred_chunk_loc.swap(chunks);
+    }
 
     if (thread_map.empty())
     {
@@ -290,8 +306,10 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
         {
             const auto it = thread_map.find(c);
             if (it == thread_map.end() || !it->second || it->second->empty())
+            {
                 INVARIANT_FAILED("flush_deferred(thr={}): chunk {} left in the set with no op queued", thr,
                                  static_cast<const void*>(c));
+            }
         }
     }
 
@@ -305,7 +323,9 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
 {
     auto* arr = ChunkType::get_deferred_ops();
     if (!arr)
+    {
         return false;
+    }
 
     using Policy = WriteCompressSyncPolicy<typename ChunkType::ProxyType>;
 
@@ -373,9 +393,8 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
         // that prevents two flushers from double-draining arr[r][chunk]; other
         // ranks' shards stay free so their flushes run concurrently.
         rank_flush_acquire(r);
-        class RankScopeGuard
+        struct RankScopeGuard
         {
-          public:
             ~RankScopeGuard()
             {
                 rank_flush_release(rank);
@@ -393,11 +412,15 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
 
         const auto it_chunk = thread_map.find(chunk);
         if (it_chunk == thread_map.end())
+        {
             continue;
+        }
 
         const auto& ops_map_ptr = it_chunk->second;
         if (!ops_map_ptr)
+        {
             continue;
+        }
 
         auto*   op_map       = ops_map_ptr.get();
         int64_t flushed_here = 0;
@@ -419,20 +442,26 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
                     DeferredOperationBase* raw  = op_ptr.get();
                     const auto             addr = reinterpret_cast<std::uintptr_t>(raw);
                     if (raw == nullptr || addr < 0x1000 || (addr & 0x7U) != 0)
+                    {
                         INVARIANT_FAILED("[FLUSH_PROBE xrank] bad op_ptr in op_map: num={} op={} rank={}", num,
                                          static_cast<const void*>(raw), r);
+                    }
                     const std::uintptr_t vptr = *reinterpret_cast<const std::uintptr_t*>(raw);
                     if (vptr < 0x1000)
+                    {
                         INVARIANT_FAILED("[FLUSH_PROBE xrank] op has null/garbage vptr (recycled under map?): "
                                          "num={} op={} vptr={:#x} rank={}",
                                          num, static_cast<const void*>(raw), vptr, r);
+                    }
                 }
 
                 // Ring-log trace of the cross-rank flush, same as flush_deferred;
                 // compiled only under ring_log_debug / ring_log_op_only.
                 if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
+                {
                     ring_log_op(get_tid(), EV_OP_FLUSH_ONE, static_cast<uint32_t>(num),
                                 static_cast<const void*>(op_ptr.get()));
+                }
 
                 op_ptr->write_body();
                 op_ptr->destroy();
@@ -491,7 +520,9 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
     // so no underflow even without a container lock held here. Release pairs
     // with the reader's acquire load.
     if (total_flushed_chunk > 0)
+    {
         chunk->pending_retire(static_cast<int32_t>(total_flushed_chunk));
+    }
 
     return flushed_any;
 }
@@ -502,15 +533,16 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
 {
     auto* arr = ChunkType::get_deferred_ops();
     if (!arr)
+    {
         return;
+    }
 
     // Serialise against a concurrent flush of OUR rank for this chunk (the same
     // shard lock flush_deferred / flush_chunk_all_ranks take). Owner-recursive;
     // uncontended in the common case. Held only for the single-entry erase.
     rank_flush_acquire(thr);
-    class RankFlushGuard
+    struct RankFlushGuard
     {
-      public:
         ~RankFlushGuard()
         {
             rank_flush_release(rank);
@@ -522,16 +554,22 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
     auto&      thread_map = arr[thr];
     const auto it_chunk   = thread_map.find(chunk);
     if (it_chunk == thread_map.end())
+    {
         return;
+    }
 
     const auto& ops_map_ptr = it_chunk->second;
     if (!ops_map_ptr)
+    {
         return;
+    }
     auto* op_map = ops_map_ptr.get();
 
     const auto it_op = op_map->find(num);
     if (it_op == op_map->end())
+    {
         return; // no older op at this offset — the direct write is unshadowed
+    }
 
     // APPLY-then-erase (not discard): the direct write that follows supersedes
     // the queued value, so discarding LOOKED equivalent — but the write body
@@ -581,7 +619,9 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
                              static_cast<const void*>(chunk));
         }
         if (thread_map.empty())
+        {
             clear_thread_has_ops(thr);
+        }
     }
 }
 
@@ -672,9 +712,13 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
     const auto window_shut = [max_thr]
     {
         if constexpr (chunk_config::use_chunk_steal_mark)
+        {
             return WriteCompressSyncPolicy<ProxyType>::template any_thread_writing_on_marked<ChunkType>(max_thr);
+        }
         else
+        {
             return WriteCompressSyncPolicy<ProxyType>::any_thread_writing(max_thr);
+        }
     };
     while (window_shut())
     {
@@ -775,7 +819,9 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::wait_out_compressor(con
             std::this_thread::yield();
             spin = 0;
             if (++yields > kMaxYields)
+            {
                 break; // budget spent: the caller defers, as it always did
+            }
         }
         else
         {
@@ -803,7 +849,9 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::finish([[maybe_unused]]
     if (remaining < 0)
     {
         if constexpr (verbose)
+        {
             std::cerr << "🐞 Compression counter went negative!\n";
+        }
         return;
     }
 
@@ -812,7 +860,9 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::finish([[maybe_unused]]
     if (remaining > 0)
     {
         if constexpr (verbose)
+        {
             std::cerr << "⚠️ Compression still active in another thread\n";
+        }
         return;
     }
 

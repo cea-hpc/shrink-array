@@ -56,9 +56,8 @@ enum class ArenaKind
 ///        behind the same call surface (init/set_arena no-ops, every
 ///        element "free-able").
 template <typename T>
-class TCTypeAllocator
+struct TCTypeAllocator
 {
-  public:
     /// @brief No-op.
     void init(size_t, size_t, size_t) {}
     /// @brief No-op.
@@ -86,9 +85,8 @@ namespace shrink_array
 
 /// @brief A queued write, type-erased: replayed by write_body(), returned to
 ///        its pool by destroy().
-class DeferredOperationBase
+struct DeferredOperationBase
 {
-  public:
     virtual ~DeferredOperationBase() noexcept = default;
 
     /// @brief Replay the write.
@@ -98,9 +96,8 @@ class DeferredOperationBase
 };
 
 /// @brief Deleter of DeferredOpPtr: does nothing with the pointer.
-class DeferredOpDeleter
+struct DeferredOpDeleter
 {
-  public:
     /// @brief No-op: the operation is not destroyed or freed here.
     static void operator()(DeferredOperationBase* op) noexcept
     {
@@ -121,9 +118,8 @@ using DeferredOpPtr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
 
 /// @brief Type-erased pool of one block size (a FastAllocatorConcrete per
 ///        object type, found by AllocatorRegistry).
-class FastAllocatorBase
+struct FastAllocatorBase
 {
-  public:
     virtual ~FastAllocatorBase() = default;
 
     /// @brief Take a block (uninitialised).
@@ -159,9 +155,8 @@ class FastAllocatorBase
  * them. This is portable — it does not rely on -fno-ipa-icf at the build level.
  */
 template <typename T>
-class DeferredByteAllocSlot
+struct DeferredByteAllocSlot
 {
-  public:
     TCTypeAllocator<std::byte> alloc;
     bool                       initialized = false;
 };
@@ -176,9 +171,8 @@ class DeferredByteAllocSlot
  * type's free list disjoint and the free_list() bodies non-identical.
  */
 template <typename T>
-class DeferredFreeListSlot
+struct DeferredFreeListSlot
 {
-  public:
     DeferredFreeListSlot() = default;
     // Owns the parked blocks in std-alloc builds (see the destructor): a copy
     // would delete them twice.
@@ -203,7 +197,9 @@ class DeferredFreeListSlot
         if constexpr (!build_config::use_fast_alloc)
         {
             for (T* p : fl)
+            {
                 ::operator delete(static_cast<void*>(p));
+            }
         }
     }
 
@@ -238,9 +234,13 @@ class FastAllocatorConcrete : public FastAllocatorBase
     [[nodiscard]] const void* slab_addr() const noexcept override
     {
         if constexpr (build_config::use_fast_alloc)
+        {
             return static_cast<const void*>(&allocator());
+        }
         else
+        {
             return static_cast<const void*>(&free_list());
+        }
     }
 
     /**
@@ -269,7 +269,9 @@ class FastAllocatorConcrete : public FastAllocatorBase
             // catches it at the source and blames the free-list path (a corrupt
             // recycled pointer, e.g. a bad recycle() push) rather than the slab.
             if constexpr (build_config::any_check)
+            {
                 probe_returned_block(static_cast<void*>(block), "freelist");
+            }
             return block;
         }
 
@@ -281,7 +283,9 @@ class FastAllocatorConcrete : public FastAllocatorBase
             // a wild address (corrupt block/bump state); if only the free-list
             // probe fires, recycling is the culprit.
             if constexpr (build_config::any_check)
+            {
                 probe_returned_block(static_cast<void*>(raw), "slab");
+            }
             return static_cast<void*>(raw);
         }
         else
@@ -437,11 +441,15 @@ class FastAllocatorConcrete : public FastAllocatorBase
             const auto addr = reinterpret_cast<std::uintptr_t>(ptr);
 
             if (ptr == nullptr)
+            {
                 INVARIANT_FAILED("[ALLOC_PROBE {}] allocate_raw returned NULL for T size={}", path, sizeof(T));
+            }
 
             if ((addr & (alignof(std::max_align_t) - 1)) != 0 && (addr & 0x7U) != 0)
+            {
                 INVARIANT_FAILED("[ALLOC_PROBE {}] misaligned block p={} (T size={})", path,
                                  static_cast<const void*>(ptr), sizeof(T));
+            }
 
             // Page-containing-p mapped? msync(MS_ASYNC) touches nothing but the
             // kernel's VMA table: 0 = mapped, -1/ENOMEM = not mapped. The whole
@@ -456,9 +464,11 @@ class FastAllocatorConcrete : public FastAllocatorBase
             const void* pg1  = base + (sizeof(T) - 1) - ((addr + sizeof(T) - 1) & mask);
 
             if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)
+            {
                 INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path,
                                  static_cast<const void*>(ptr), sizeof(T),
                                  build_config::use_fast_alloc ? static_cast<const void*>(&allocator()) : nullptr);
+            }
         }
     }
 };
@@ -467,28 +477,26 @@ class FastAllocatorConcrete : public FastAllocatorBase
 // Allocator Registry and Tags
 // ============================================================================
 
-class OpTag
+struct OpTag
 {
 };
 /// @brief Registry tag of the context allocators (CtxRegistry).
-class CtxTag
+struct CtxTag
 {
 };
 
 // FIX (op/ctx/value slab aliasing): map each registry tag to its arena so op and
 // ctx pools allocate slabs from disjoint address spaces.
 template <typename Tag>
-class arena_of_tag;
+struct arena_of_tag;
 template <>
-class arena_of_tag<OpTag>
+struct arena_of_tag<OpTag>
 {
-  public:
     static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Op;
 };
 template <>
-class arena_of_tag<CtxTag>
+struct arena_of_tag<CtxTag>
 {
-  public:
     static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Ctx;
 };
 
@@ -509,8 +517,12 @@ class AllocatorRegistry
         const size_t sz = sizeof(T);
 
         for (auto& a : v)
+        {
             if (a->block_size == sz)
+            {
                 return a.get();
+            }
+        }
 
         auto               ptr = std::make_unique<FastAllocatorConcrete<T, arena_of_tag<Tag>::value>>();
         FastAllocatorBase* raw = ptr.get();
@@ -577,7 +589,9 @@ template <typename T, typename... Args>
     // written). If the crash op's last event is this OP_ALLOC yet its vptr reads
     // as data, the corruption happens AFTER construction, not a half-built read.
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
+    {
         ring_log_op(get_tid(), EV_OP_ALLOC, 0, mem);
+    }
     return constructed;
 }
 
@@ -606,7 +620,9 @@ void free_op(T* op)
     // so dump_ring_for_addr can show if a free happened while the op was still
     // referenced by op_map (the use-after-free we're chasing).
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
+    {
         ring_log_op(get_tid(), EV_OP_FREE, 0, static_cast<const void*>(op));
+    }
     pool_ledger::on_op_free(static_cast<void*>(op));
     FastAllocatorBase* alloc = OpRegistry::get_or_create<T>();
     alloc->recycle(static_cast<void*>(op));

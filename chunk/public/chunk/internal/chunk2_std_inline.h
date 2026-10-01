@@ -292,7 +292,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress(this Derived&        se
     // in release builds (rechunk_validation on clang/OMPT: values wrong
     // before any re-chunk). fill_list_to_compress_impl always tested both.
     if (!self.written(std::get<1>(inf_array)))
+    {
         return;
+    }
 
     self.compress_impl(
         apply, n_elems, [&inf_array] { return std::get<0>(inf_array); },
@@ -319,7 +321,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_bool(this Derived&     
     if constexpr (is_bool)
     {
         if (!self.written()) // see compress(): a stale entry for a chunk already at a constant
+        {
             return;
+        }
         self.compress_impl(
             apply, n_elems, [] { return true; },
             [&self, thr_rank](int num_compress_value) { self.clear_int_st_bool(num_compress_value, thr_rank); });
@@ -366,14 +370,18 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress(const
         {
             const int thr = CHUNK_PMP_THREAD_RANK;
             if (thr == 0) // one writer; `master` is deprecated since OpenMP 5.1
+            {
                 team = CHUNK_PMP_NUM_THREADS;
+            }
             compress_chunk_to_compress_in_par(thr, inf_array, apply);
         }
         // Lists are sized by the thread capacity; a team smaller than the
         // ranks seen leaves the upper ranks unswept. Serial mop-up up to
         // CHUNK_PMP_RANK_BOUND, empty lists are cheap.
         for (int thr_rank = team; thr_rank < CHUNK_PMP_RANK_BOUND; ++thr_rank)
+        {
             compress_chunk_to_compress_in_par(thr_rank, inf_array, apply);
+        }
     }
 
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
@@ -402,11 +410,15 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool(
             {
                 const int thr = CHUNK_PMP_THREAD_RANK;
                 if (thr == 0)
+                {
                     team = CHUNK_PMP_NUM_THREADS;
+                }
                 compress_chunk_to_compress_bool_in_par(thr, apply);
             }
             for (int thr_rank = team; thr_rank < CHUNK_PMP_RANK_BOUND; ++thr_rank)
+            {
                 compress_chunk_to_compress_bool_in_par(thr_rank, apply);
+            }
         }
         chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
     }
@@ -462,7 +474,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
     // every rank in one loop (ArrayChunk2::add_second_value), so an empty map at
     // rank 0 means no key exists at any rank.
     if (is_vec_tuple_to_compress_potentially_empty_thr())
+    {
         return;
+    }
 
     auto& vec_tuple = *manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][key];
 
@@ -487,7 +501,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
             const int num_tab   = std::get<2>(tup);
 
             if constexpr (build_config::chunk_dynamic)
+            {
                 shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
+            }
 
             compress_one(chunk_t, std::get<3>(tup).count());
 
@@ -497,7 +513,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
     }
 
     if constexpr (build_config::chunk_dynamic)
+    {
         set_thread_chunk_size(saved_sz);
+    }
 
     // clear() keeps the capacity: the list is already reserved for the next
     // pass, at the size this one reached.
@@ -595,7 +613,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_p
             chunk_t->fill_list_to_compress(ll_compt1, ll_compt2, inf_array, num_chunk, num_tab, n_elems);
             // Not selected by the scan: the writers may have it back now.
             if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
+            {
                 chunk_t->steal_unmark();
+            }
         });
 }
 
@@ -619,7 +639,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_bool
             const auto n2 = ll_compt2.size();
             chunk_t->fill_list_to_compress_bool(ll_compt1, ll_compt2, num_chunk, num_tab, n_elems);
             if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
+            {
                 chunk_t->steal_unmark();
+            }
         });
 }
 
@@ -667,14 +689,18 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
     const auto it      = map_thr.find(second_value);
 
     if (it == map_thr.end() || !it->second)
+    {
         return;
+    }
 
     auto& vec_tuple_to_compress = *it->second;
 
     const int sz = vec_tuple_to_compress.size();
 
     if (sz == 0)
+    {
         return;
+    }
 
     // Geometry: every free below is pinned to the freed chunk's OWN size (see
     // the header comment); the ambient is saved here and restored on every exit
@@ -686,14 +712,18 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
     if (proxy2)
     {
         if constexpr (build_config::chunk_dynamic)
+        {
             shrink_array::set_thread_chunk_size(proxy2->chunk_size());
+        }
 
         // A flush in progress makes start() decline: ask first, before
         // marking -- see block_pass_precheck.h.
         if (block_pass_yields_to_flush<Proxy2<T>, Chunk2<T>>(CHUNK_PMP_MAX_THREADS))
         {
             if constexpr (build_config::chunk_dynamic)
+            {
                 set_thread_chunk_size(saved_sz);
+            }
             return;
         }
         // Per-chunk exclusion (ChunkBase::steal_mark_): claim every candidate
@@ -702,7 +732,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
         for (int k = 0; k < sz; ++k)
         {
             if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+            {
                 chunk_t->steal_mark();
+            }
         }
         const bool ret = proxy2->compression_mgr.template start<Proxy2<T>>();
         if (!ret)
@@ -710,10 +742,14 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
             for (int k = 0; k < sz; ++k)
             {
                 if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+                {
                     chunk_t->steal_unmark();
+                }
             }
             if constexpr (build_config::chunk_dynamic)
+            {
                 set_thread_chunk_size(saved_sz);
+            }
             return;
         }
         // Check builds: the window is shut, commit the claims -- what the
@@ -723,7 +759,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
             for (int k = 0; k < sz; ++k)
             {
                 if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+                {
                     chunk_t->steal_commit();
+                }
             }
         }
     }
@@ -741,7 +779,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
     for (const auto& tup : ll_compt1)
     {
         if constexpr (build_config::chunk_dynamic)
+        {
             shrink_array::set_thread_chunk_size(std::get<3>(tup));
+        }
         clear_func(std::get<0>(tup), 0);
         std::get<0>(tup)->steal_unmark();
     }
@@ -749,7 +789,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
     for (const auto& tup : ll_compt2)
     {
         if constexpr (build_config::chunk_dynamic)
+        {
             shrink_array::set_thread_chunk_size(std::get<3>(tup));
+        }
         clear_func(std::get<0>(tup), 1);
         std::get<0>(tup)->steal_unmark();
     }
@@ -764,7 +806,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
         Proxy2<T>::reset_tab_is_inside_list_to_compress(num_tab, num_chunk);
         // The pass is over for every candidate: no mark may outlive it.
         if (auto* const chunk_t = std::get<0>(tup))
+        {
             chunk_t->steal_unmark();
+        }
     }
 
     vec_tuple_to_compress.clear();
@@ -781,7 +825,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
     }
 
     if constexpr (build_config::chunk_dynamic)
+    {
         set_thread_chunk_size(saved_sz);
+    }
 }
 
 // make_block_compression (declared in chunk2_std.h). Binds the non-bool scan and
@@ -851,7 +897,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr_r
             const in_t<T> second_val = elm.first; // the map key, by reference when T is large
             const auto    it = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank].find(second_val);
             if (it == manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank].end())
+            {
                 continue;
+            }
             const auto* vec_tuple_p = it->second.get();
 
             if (vec_tuple_p)
@@ -865,7 +913,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr_r
                 // a chunk2 array with a second value.
                 const auto* inf = Proxy2<T>::share_info_array.find_inf_array(second_val);
                 if (inf == nullptr)
+                {
                     continue;
+                }
                 make_block_compression(thr_rank, *inf, nullptr);
             }
         }
@@ -873,11 +923,15 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr_r
     else
     {
         if (is_vec_tuple_to_compress_potentially_empty_thr())
+        {
             return;
+        }
 
         const auto it = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank].find(true);
         if (it == manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank].end())
+        {
             return;
+        }
 
         const auto* vec_tuple_p = it->second.get();
 
@@ -941,9 +995,11 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::create_value_impl(this Derived&      
                                               return self.compare_and_swap_bool(cst_ptr, need_set_second_value);
                                           }
                                           else
+                                          {
                                               // Propagate the observed state to the CAS so it refuses a
                                               // wrong-side transition after a cst_val1 <-> cst_val2 race.
                                               return self.compare_and_swap(cst_ptr, ind, need_set_second_value);
+                                          }
                                       });
     }
     else
@@ -984,9 +1040,13 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::create_value(this Derived&      self,
             [need_set_second_value, &inf_array](T* ptr)
             {
                 if (!need_set_second_value)
+                {
                     Base::init_block(ptr);
+                }
                 else
+                {
                     BaseSpec::init_block_2nd_value(ptr, inf_array);
+                }
             },
             std::get<1>(inf_array), need_set_second_value);
     }
@@ -1014,9 +1074,13 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::create_value_bool(this Derived& self,
         [need_set_second_value](T* ptr)
         {
             if (!need_set_second_value)
+            {
                 Base::init_block(ptr);
+            }
             else
+            {
                 BaseSpec::init_block_2nd_value(ptr);
+            }
         },
         /*ind=*/0, need_set_second_value);
 }
@@ -1226,9 +1290,13 @@ void Chunk2OmpPolicy<T, Derived, false>::clear_int_st(this Derived& self, int nu
     // written check and the bool-specific reinit. Non-bool uses the indexed
     // path. (Matches the counter-policy split in the reference implementation.)
     if constexpr (is_bool)
+    {
         self.Base::debug_check_written();
+    }
     else
+    {
         self.Base::debug_check_written(ind);
+    }
 
     // CHUNK_STATS: this is the non-OMP twin of block_clear -- reached from
     // compress_int's sweep via clear_st(num_compress_value, ind), which
@@ -1256,9 +1324,13 @@ void Chunk2OmpPolicy<T, Derived, false>::clear_int_st(this Derived& self, int nu
     }
 
     if constexpr (is_bool)
+    {
         self.init_values_cst_val_bool(num_compress_value);
+    }
     else
+    {
         self.init_values_cst_val(num_compress_value, ind);
+    }
 }
 
 // clear_st(int num_compress_value, int ind) -- the entry point that supplies
