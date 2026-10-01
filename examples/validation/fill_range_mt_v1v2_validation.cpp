@@ -69,7 +69,7 @@ int __mem_page_size = 0;
 
 /// The suspension counter read by chunk_config::OMPTcc: non-zero, no OMPT
 /// callback exists in this binary (chunk_v1v2 is built without the tool).
-std::atomic<int> g_ompt_suspended{1};
+OmptSuspendCounter g_ompt_suspended{1};
 
 using namespace shrink_array;
 

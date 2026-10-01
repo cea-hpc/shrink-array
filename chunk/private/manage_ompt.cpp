@@ -75,7 +75,7 @@
  * region that must not trigger a flush) without unregistering the tool. A
  * counter, not a flag: see its declaration in chunk/config.h.
  */
-std::atomic<int> g_ompt_suspended{0}; // 0 = callbacks active
+OmptSuspendCounter g_ompt_suspended{0}; // 0 = callbacks active
 
 // ── CHUNK_OMPT_STATS: what the sync-region callback does, counted ───────────
 //
@@ -462,6 +462,6 @@ extern "C" ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
  * The symbol is still defined so that code testing it links in every variant;
  * here no callback exists and the application drives the phase transitions.
  */
-std::atomic<int> g_ompt_suspended{1}; // no callback exists in this build
+OmptSuspendCounter g_ompt_suspended{1}; // no callback exists in this build
 
 #endif

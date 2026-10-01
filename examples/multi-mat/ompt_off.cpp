@@ -25,8 +25,8 @@
  * manual one, where the program makes the phase calls itself (config.h).
  */
 
-#include <atomic>
+#include "chunk/config.h" // OmptSuspendCounter
 
 /// @brief The suspension counter read by chunk_config::OMPTcc (chunk/config.h),
 ///        non-zero: no callback exists in this binary.
-std::atomic<int> g_ompt_suspended{1};
+OmptSuspendCounter g_ompt_suspended{1};

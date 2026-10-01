@@ -236,7 +236,18 @@ inline constexpr bool second_value_indexed = false;
 /// once (compress_chunk_to_compress runs on every thread of a region), and a
 /// flag would let the FIRST to finish resume them while the others are still
 /// compressing. Atomic: it is written and read concurrently. See OMPTcc<true>.
-extern std::atomic<int> g_ompt_suspended;
+///
+/// On a cache line of its own (OmptSuspendCounter): every OMPT callback of
+/// every thread loads it, so a neighbour written often would turn those
+/// loads into misses. alignas on the VARIABLE would only align its start;
+/// alignas on the TYPE also makes sizeof 128, so nothing follows it on the
+/// line. Derived from std::atomic<int>, constructors included: every use is
+/// unchanged.
+struct alignas(128) OmptSuspendCounter : std::atomic<int>
+{
+    using std::atomic<int>::atomic;
+};
+extern OmptSuspendCounter g_ompt_suspended;
 
 
 /**
