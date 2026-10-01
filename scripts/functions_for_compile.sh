@@ -372,36 +372,120 @@ __cgroup_quota() {
 # status line then sits at "starting..." for ten minutes because ninja has not
 # completed a single edge).
 #
-# Budget CHUNK_MEM_PER_JOB_MB per compiler, default 2 GB. Raise it if a build
-# still gets OOM-killed, lower it if you know your TUs are lighter.
-CHUNK_MEM_PER_JOB_MB="${CHUNK_MEM_PER_JOB_MB:-2048}"
+# Budget CHUNK_MEM_PER_JOB_MB per compiler, default 3 GB: one gcc -O3 -g
+# cc1plus on bench_phase_compute.cpp peaks at ~2.8 GB (measured, gcc 13), so the
+# old 2 GB default under-budgeted every build. Sanitizer builds get their own
+# budget, CHUNK_MEM_PER_JOB_MB_SANITIZER (default twice the above): ASan+UBSan
+# peaks higher (~3.6 GB on the same TU) and gcc 15 / shrink_bench.cpp higher
+# still -- those were the builds OOM-killed at --jobs=1. Raise either if a build
+# still gets killed ("Killed signal terminated program cc1plus").
+CHUNK_MEM_PER_JOB_MB="${CHUNK_MEM_PER_JOB_MB:-3072}"
+CHUNK_MEM_PER_JOB_MB_SANITIZER="${CHUNK_MEM_PER_JOB_MB_SANITIZER:-$(( 2 * CHUNK_MEM_PER_JOB_MB ))}"
 
-__mem_cap_jobs() {
-    local avail_kb n
-    [ -r /proc/meminfo ] || { echo ""; return; }
-    avail_kb=$(awk '/^MemAvailable:/ {print $2; exit}' /proc/meminfo 2>/dev/null)
-    [ -n "$avail_kb" ] || { echo ""; return; }
-    n=$(( avail_kb / 1024 / CHUNK_MEM_PER_JOB_MB ))
+# Memory left under the tightest cgroup limit of this process, in MB; empty when
+# no limit applies (or none can be read). /proc/meminfo describes the whole
+# NODE: inside a batch allocation (Slurm puts the job in a memory-limited
+# cgroup) MemAvailable can be several times what the job may actually use, and
+# the derived job count then OOM-kills its own compilers. The limit may sit on
+# any ancestor (job, step, task), so the whole chain up to the root is walked
+# and the smallest headroom wins. Reclaimable page cache (inactive_file) is
+# counted as free, as MemAvailable does.
+__cgroup_mem_avail_mb() {
+    local base path dir lim cur inact avail best=""
+    if [ -r /sys/fs/cgroup/cgroup.controllers ]; then
+        # cgroup v2 (unified): "0::<path>"
+        base=/sys/fs/cgroup
+        path=$(awk -F: '$1 == "0" {print $3; exit}' /proc/self/cgroup 2>/dev/null)
+        dir="$base${path%/}"
+        while [ -n "$dir" ]; do
+            if [ -r "$dir/memory.max" ]; then
+                lim=$(cat "$dir/memory.max" 2>/dev/null)
+                if [ -n "$lim" ] && [ "$lim" != max ]; then
+                    cur=$(cat "$dir/memory.current" 2>/dev/null)
+                    inact=$(awk '$1 == "inactive_file" {print $2; exit}' "$dir/memory.stat" 2>/dev/null)
+                    avail=$(( (lim - ${cur:-0} + ${inact:-0}) / 1048576 ))
+                    [ "$avail" -lt 0 ] && avail=0
+                    if [ -z "$best" ] || [ "$avail" -lt "$best" ]; then best=$avail; fi
+                fi
+            fi
+            [ "$dir" = "$base" ] && break
+            dir=${dir%/*}
+        done
+    else
+        # cgroup v1: the "memory" controller line, "<id>:...memory...:<path>"
+        base=/sys/fs/cgroup/memory
+        [ -d "$base" ] || { echo ""; return; }
+        path=$(awk -F: '$2 ~ /(^|,)memory(,|$)/ {print $3; exit}' /proc/self/cgroup 2>/dev/null)
+        dir="$base${path%/}"
+        while [ -n "$dir" ]; do
+            if [ -r "$dir/memory.limit_in_bytes" ]; then
+                lim=$(cat "$dir/memory.limit_in_bytes" 2>/dev/null)
+                # "Unlimited" reads as ~2^63 rounded down to a page.
+                if [ -n "$lim" ] && [ "$lim" -lt 1152921504606846976 ] 2>/dev/null; then
+                    cur=$(cat "$dir/memory.usage_in_bytes" 2>/dev/null)
+                    inact=$(awk '$1 == "total_inactive_file" {print $2; exit}' "$dir/memory.stat" 2>/dev/null)
+                    avail=$(( (lim - ${cur:-0} + ${inact:-0}) / 1048576 ))
+                    [ "$avail" -lt 0 ] && avail=0
+                    if [ -z "$best" ] || [ "$avail" -lt "$best" ]; then best=$avail; fi
+                fi
+            fi
+            [ "$dir" = "$base" ] && break
+            dir=${dir%/*}
+        done
+    fi
+    echo "$best"
+}
+
+# Memory the builds may use, in MB: the smaller of the node's MemAvailable and
+# the cgroup headroom. Sets __mem_mb (empty when neither can be read) and
+# __mem_source (which one won, for the [JOBS] line). Globals rather than an
+# echo: a $(...) subshell would lose __mem_source.
+__mem_avail_mb() {
+    local node="" cg
+    if [ -r /proc/meminfo ]; then
+        node=$(awk '/^MemAvailable:/ {print int($2 / 1024); exit}' /proc/meminfo 2>/dev/null)
+    fi
+    cg="$(__cgroup_mem_avail_mb)"
+    if [ -n "$cg" ] && { [ -z "$node" ] || [ "$cg" -lt "$node" ]; }; then
+        __mem_mb=$cg;   __mem_source="cgroup limit"
+    else
+        __mem_mb=$node; __mem_source="MemAvailable"
+    fi
+}
+
+# Compile jobs per build for a per-compiler budget of $1 MB, from the memory
+# budget, the core budget and CHUNK_MAX_JOBS; at least 1.
+__jobs_for_budget() {  # <mb-per-job>
+    local cores=$__ncores n
+    if [ -n "$__mem_mb" ]; then
+        n=$(( __mem_mb / $1 ))
+        [ "$n" -lt "$cores" ] && cores=$n
+    fi
+    n=$(( cores / CHUNK_MAX_JOBS ))
     [ "$n" -lt 1 ] && n=1
     echo "$n"
 }
 
-if [ -z "${CMAKE_BUILD_PARALLEL_LEVEL:-}" ]; then
+# CHUNK_PAR_DERIVED marks a level WE derived and exported: compile_all.sh
+# exports CMAKE_BUILD_PARALLEL_LEVEL before delegating to compile_all_gnu.sh,
+# which must re-derive (and size its sanitizer builds) rather than take that
+# value for a user's explicit setting.
+if [ -z "${CMAKE_BUILD_PARALLEL_LEVEL:-}" ] || [ "${CHUNK_PAR_DERIVED:-}" = 1 ]; then
     __ncores="$(__usable_cores)"
-    # Take the tighter of the two budgets.
-    __memcap="$(__mem_cap_jobs)"
-    if [ -n "$__memcap" ] && [ "$__memcap" -lt "$__ncores" ]; then
-        __limited_by="memory (~${CHUNK_MEM_PER_JOB_MB} MB/job)"
-        __ncores="$__memcap"
+    __mem_avail_mb
+    CMAKE_BUILD_PARALLEL_LEVEL="$(__jobs_for_budget "$CHUNK_MEM_PER_JOB_MB")"
+    CHUNK_SAN_PARALLEL_LEVEL="$(__jobs_for_budget "$CHUNK_MEM_PER_JOB_MB_SANITIZER")"
+    if [ -n "$__mem_mb" ] && [ $(( __mem_mb / CHUNK_MEM_PER_JOB_MB )) -lt "$__ncores" ]; then
+        __derived="derived, limited by memory: ${__mem_mb} MB ($__mem_source) / ${CHUNK_MEM_PER_JOB_MB} MB per job"
     else
-        __limited_by="cores"
+        __derived="derived, limited by cores"
     fi
-    CMAKE_BUILD_PARALLEL_LEVEL=$(( __ncores / CHUNK_MAX_JOBS ))
-    [ "$CMAKE_BUILD_PARALLEL_LEVEL" -lt 1 ] && CMAKE_BUILD_PARALLEL_LEVEL=1
-    export CMAKE_BUILD_PARALLEL_LEVEL
-    __derived="derived, limited by $__limited_by"
+    CHUNK_PAR_DERIVED=1
+    export CMAKE_BUILD_PARALLEL_LEVEL CHUNK_PAR_DERIVED
 else
     __ncores="$(__usable_cores)"
+    # An explicit level is respected as-is, sanitizer builds included.
+    CHUNK_SAN_PARALLEL_LEVEL=$CMAKE_BUILD_PARALLEL_LEVEL
     __derived="from the environment"
 fi
 
@@ -410,6 +494,10 @@ fi
 printf '[JOBS] %s usable core(s), %s build(s) at a time, %s compile job(s) each (%s) -> ~%s compiler process(es)\n' \
        "$__ncores" "$CHUNK_MAX_JOBS" "$CMAKE_BUILD_PARALLEL_LEVEL" "$__derived" \
        "$(( CHUNK_MAX_JOBS * CMAKE_BUILD_PARALLEL_LEVEL ))"
+if [ "$CHUNK_SAN_PARALLEL_LEVEL" != "$CMAKE_BUILD_PARALLEL_LEVEL" ]; then
+    printf '[JOBS] sanitizer builds: %s compile job(s) each (%s MB per job, CHUNK_MEM_PER_JOB_MB_SANITIZER)\n' \
+           "$CHUNK_SAN_PARALLEL_LEVEL" "$CHUNK_MEM_PER_JOB_MB_SANITIZER"
+fi
 __quota="$(__cgroup_quota)"
 if [ -n "$__quota" ]; then
     printf '[JOBS] note: cgroup CPU quota is ~%s core-equivalent(s) of CPU TIME on this node.\n' "$__quota"
@@ -420,7 +508,7 @@ if [ "$CMAKE_BUILD_PARALLEL_LEVEL" -le 2 ] && [ "$CHUNK_MAX_JOBS" -gt 1 ]; then
            "$CMAKE_BUILD_PARALLEL_LEVEL"
     printf '[JOBS] fewer, wider builds are usually faster here: try --jobs=1 or --jobs=2.\n'
 fi
-unset __ncores __derived __quota __memcap __limited_by
+unset __ncores __derived __quota __mem_mb __mem_source
 
 launch_build() {  # <build-dir> [cmake --build extra args…]
     local dir=$1; shift
@@ -521,10 +609,18 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
     # tree (cmake + ninja + compilers) via kill -- -pid. Since the child is not
     # a group leader, setsid execs without forking: $! remains our direct child
     # (wait/kill -0 unchanged).
+    #
+    # Sanitizer builds run fewer compile jobs: each cc1plus needs more memory
+    # (CHUNK_MEM_PER_JOB_MB_SANITIZER). Passed through the environment of this
+    # one cmake --build, so the other builds keep CMAKE_BUILD_PARALLEL_LEVEL.
+    local _par=$CMAKE_BUILD_PARALLEL_LEVEL
+    case "$name" in
+        *sanitizer*) _par=${CHUNK_SAN_PARALLEL_LEVEL:-$CMAKE_BUILD_PARALLEL_LEVEL} ;;
+    esac
     if command -v setsid >/dev/null 2>&1; then
-        setsid cmake --build "$dir" "${_exec_target[@]}" "$@" >"$log" 2>&1 &
+        CMAKE_BUILD_PARALLEL_LEVEL=$_par setsid cmake --build "$dir" "${_exec_target[@]}" "$@" >"$log" 2>&1 &
     else
-        cmake --build "$dir" "${_exec_target[@]}" "$@" >"$log" 2>&1 &
+        CMAKE_BUILD_PARALLEL_LEVEL=$_par cmake --build "$dir" "${_exec_target[@]}" "$@" >"$log" 2>&1 &
     fi
     local pid=$!
     JOB_NAME[$pid]=$name
@@ -532,7 +628,7 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
     JOB_T0[$pid]=$SECONDS
     JOB_SLOT[$pid]="$JOB_SLOT_PENDING"   # released by __report_job
     JOB_SLOT_PENDING=""
-    printf '[LAUNCH] %s (pid %d)\n' "$name" "$pid"
+    printf '[LAUNCH] %s (pid %d, %s compile jobs)\n' "$name" "$pid" "$_par"
 }
 
 # ^C: async jobs start with SIGINT ignored (POSIX behavior of non-interactive
