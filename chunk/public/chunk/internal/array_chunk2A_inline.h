@@ -446,6 +446,19 @@ void ArrayChunk2A<T, ind_type>::clear_core()
                                        Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, j));
             }
         }
+
+        // The registry reference this array took (acquire_cst2_registry), as
+        // the OpenMP branch gives it back after its barrier. It was missing
+        // here: in a serial build the user count only grew, and the last
+        // array out never freed the registry (cst2_registry_validation).
+        if (holds_cst2_registry_)
+        {
+            int nb_val2 = 0;
+            Chunk2A<T>::tab_cst_val2_holder::clear(nb_val2); // single thread here
+            holds_cst2_registry_ = false;
+            if (nb_val2)
+                print_type_name<T>(nb_val2);
+        }
     }
     else
     {
