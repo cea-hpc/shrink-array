@@ -566,11 +566,17 @@ void Chunk2A<T>::compress_chunk_to_compress(bool apply)
 {
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
 
+    // Inside a region: this rank's own list, and nothing else. The branches
+    // below open a region of their own; reached from inside one (as this used
+    // to, with no `else`), every thread of the team ran its own serialised
+    // copy of the between-region pass, and the rank mop-up swept every rank's
+    // list from every thread at once. Same shape as
+    // Chunk2FastCompPolicy::compress_chunk_to_compress.
     if (CHUNK_PMP_IN_PARALLEL_REGION)
     {
         compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, apply);
     }
-    if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
+    else if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
     {
         // An OpenMP build without OMPT had no between-region compressor for
         // chunk2a until Sept '26: compress() returns at once there, so a
