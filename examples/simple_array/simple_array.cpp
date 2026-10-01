@@ -44,18 +44,36 @@
 
 int __mem_page_size = 0;
 
+/// @brief splitmix64's finaliser: a bijection on 64 bits that spreads every
+///        input bit over the whole output.
+constexpr uint64_t checksum_mix(uint64_t x) noexcept
+{
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30U)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27U)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31U);
+}
+
+/// @brief Checksum of the non-zero elements of @p vec, the same for ANY
+///        number of threads.
+/// @details A wrapping sum of mix(bits ^ mix(index)): a sum does not depend on
+///          the order the reduction combines it in, and the index makes an
+///          element at the wrong position change the result. The previous
+///          step (rotate, then add) depended on the order, and ran without
+///          `omp for`: every thread did the whole loop, and the printed value
+///          was Nthreads x the serial one.
 template <typename V>
 uint64_t calculate_checksum(const V& vec)
 {
     uint64_t checksum = 0;
 
-    using T      = V::value_type;
-    const int nn = static_cast<int>(vec.size());
+    using T       = V::value_type;
+    const auto nn = static_cast<std::int64_t>(vec.size());
 
     constexpr T zero = 0;
 
-#pragma omp parallel reduction(+ : checksum)
-    for (int k = 0; k < nn; ++k)
+#pragma omp parallel for reduction(+ : checksum)
+    for (std::int64_t k = 0; k < nn; ++k)
     {
         const T element = vec[k];
 
@@ -63,8 +81,7 @@ uint64_t calculate_checksum(const V& vec)
         {
             // The bits of the value: bit_cast, not a uint64_t* on a double
             // (undefined behaviour under strict aliasing).
-            checksum = (checksum >> 1U) + ((checksum & 1U) << 63U);
-            checksum += std::bit_cast<uint64_t>(element);
+            checksum += checksum_mix(std::bit_cast<uint64_t>(element) ^ checksum_mix(static_cast<uint64_t>(k)));
         }
     }
     return checksum;
