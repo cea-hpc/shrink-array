@@ -91,10 +91,9 @@ void Proxy<T>::perform_core_assignment(in_t<T> v) const noexcept
     if (need_alloc)
     {
         // Zero-overhead state helper: members exist only if Enabled is true
-        struct
+        class
         {
-            [[maybe_unused]] bool was_cst = false;
-
+          public:
             // Captured before allocation to determine correct counter initialization
             void capture(const Proxy* proxy) noexcept
             {
@@ -113,6 +112,8 @@ void Proxy<T>::perform_core_assignment(in_t<T> v) const noexcept
                         proxy->chunk.inc_nb_val_eq_zero();
                 }
             }
+
+            [[maybe_unused]] bool was_cst = false;
         } state;
 
         state.capture(this); // Becomes a No-Op if counters are disabled

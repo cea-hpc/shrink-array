@@ -60,15 +60,16 @@ inline void note_phase_end() noexcept
 
 /// @brief Materialisations per (array allocation key, rank), for element type T.
 template <typename T>
-struct Materialisations
+class Materialisations
 {
   private:
     static constexpr unsigned kKeys = 128; ///< key slots per rank (key % kKeys)
 
   public:
     /// @brief One rank's counters, one per key slot.
-    struct alignas(128) RankSlot
+    class alignas(128) RankSlot
     {
+      public:
         std::array<long, kKeys> n;
     };
 

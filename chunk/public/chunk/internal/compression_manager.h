@@ -65,12 +65,14 @@ namespace shrink_array
  * @tparam ChunkType Chunk variant the manager coordinates
  */
 template <typename T, typename ChunkType>
-struct FlushReplayState
+class FlushReplayState
 {
+  public:
     /// @brief RAII bracket marking this thread as replaying flushed ops.
     ///        Nesting-safe: saves and restores the flag.
-    struct FlushReplayGuard
+    class FlushReplayGuard
     {
+      public:
         /// @brief Save the current flag (member initialiser) and set in_flush_replay.
         FlushReplayGuard() noexcept
         {
@@ -116,84 +118,29 @@ struct FlushReplayState
  * @tparam Enabled   build_config::use_openmp; false leaves the policy empty
  */
 template <typename T, typename ChunkType, bool Enabled = build_config::use_openmp>
-struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
+class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
 {
+  public:
     // Dependent base: the drains in compression_manager_inline.h name the guard
     // unqualified, so bring it into scope here.
     using FlushReplayGuard = FlushReplayState<T, ChunkType>::FlushReplayGuard; // C++20: no typename in an alias
 
-  private:
-    /**
-     * @brief Owner-recursive mutual exclusion for one rank's deferred-op map.
-     *
-     * @details Cross-thread flush needs exclusion that begin_flush() does not
-     *          provide: it blocks compressors and same-rank writers, but two
-     *          readers on DIFFERENT ranks flushing the same chunk do not exclude
-     *          each other, and would both drain and destroy the same deferred op
-     *          -- a double-free.
-     *
-     *          The lock's only real job is protecting the per-rank op-map
-     *          arr[r], an ankerl map whose erase/insert rehashes the whole
-     *          backing vector, against concurrent structural mutation. Its
-     *          natural granularity is therefore the RANK: flushes touching
-     *          different ranks' maps run in parallel, while two flushers
-     *          draining the same arr[r][chunk] still serialize.
-     *
-     *          Owner-recursive because a drain executes write_body(), which may
-     *          RE-ENQUEUE onto the same rank and take this lock again. @c owner
-     *          holds the holding rank (-1 when free); @c depth counts nested
-     *          acquires and is only ever touched by the owner, so a plain int
-     *          suffices.
-     *
-     * @warning Sharding per CHUNK instead of per rank would require never
-     *          erasing from arr[r] -- erase rehashes and would race across
-     *          shards -- letting arr[r] grow to O(distinct chunks) and blowing
-     *          up memory. Per-rank keeps the erase and bounds memory.
-     * @note Replaces a single global flag that serialized ALL cross-thread
-     *       flushes for this type; since flush_chunk_all_ranks() is hot on the
-     *       read path, that was the 128-thread scalability collapse.
-     */
-    struct alignas(128) PaddedFlushLock
-    {
-        std::atomic<int> owner{-1}; ///< rank currently holding the lock, -1 if free
-        int              depth{0};  ///< nested acquire count, owner-only
-    };
-
-    /// @brief One dangerous-list flag, padded to its own cache line.
-    /// @note 128 bytes rather than 64, to stay safe on ARM.
-    struct alignas(128) PaddedDangerousFlag
-    {
-        std::atomic<int> value{0}; ///< 0 or 1 -- see mark_list_dangerous_for_thread
-    };
-
-    /// @brief "This thread may hold deferred ops" hint.
-    /// @note Not padded: it is a thread_local touched by its owner only (see
-    ///       thread_may_have_ops_own), so no other thread shares its line. The
-    ///       alignas(128) it had dates from a rank-indexed array; on a
-    ///       thread_local it only spread the TLS block, one line per type.
-    struct ThreadOpsFlag
-    {
-        std::atomic<bool> v{false};
-    };
-
-    static constexpr bool verbose = false;
-
-  public:
     /**
      * @brief Base of every deferred write this manager can replay.
      * @details Adds the enqueuing rank to DeferredOperationBase, so a drain can
      *          tell own-rank from cross-rank replay.
      */
-    struct CmpDeferredOpBase : DeferredOperationBase
+    class CmpDeferredOpBase : public DeferredOperationBase
     {
+      public:
         ~CmpDeferredOpBase() override = default;
+
+      protected:
+        int thread_rank = -1; ///< rank that enqueued this op (set by DeferredOperation)
 
       private:
         /// @brief Replay the deferred write. Implemented by DeferredOperation.
         void write_body() override = 0;
-
-      protected:
-        int thread_rank = -1; ///< rank that enqueued this op (set by DeferredOperation)
     };
 
     /**
@@ -202,8 +149,9 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
      * @tparam WriteFn callable performing the write when replayed
      */
     template <typename CTX, typename WriteFn>
-    struct DeferredOperation : CmpDeferredOpBase
+    class DeferredOperation : public CmpDeferredOpBase
     {
+      public:
         /**
          * @brief Capture a write for later replay.
          * @param context context holding the frozen target metadata
@@ -382,10 +330,67 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
      * @details Sharded per rank rather than a single counter, to avoid one hot
      *          cache line under 64-thread enqueue storms.
      */
-    struct alignas(128) PaddedPendingCounter
+    class alignas(128) PaddedPendingCounter
     {
+      public:
         std::atomic<int64_t> v{0};
     };
+
+    /// @brief Allocate the per-rank tracking structures this policy owns.
+    CompressionManagerOmpPolicy()
+    {
+        init_dangerous_lists_tracking();
+
+        init_deferred_queues();
+    };
+
+    ~CompressionManagerOmpPolicy() = default;
+
+    CompressionManagerOmpPolicy(const CompressionManagerOmpPolicy&)            = delete;
+    CompressionManagerOmpPolicy& operator=(const CompressionManagerOmpPolicy&) = delete;
+
+    CompressionManagerOmpPolicy(CompressionManagerOmpPolicy&&)            = delete;
+    CompressionManagerOmpPolicy& operator=(CompressionManagerOmpPolicy&&) = delete;
+
+    /**
+     * @brief Starts a compression session
+     *
+     * @details
+     * Performs the following operations:
+     * 1. Acquires the global compression lock
+     * 2. Switches the epoch to invalidate old counters
+     * 3. Waits for all threads to exit the fast-path
+     * 4. Activates slow-path for new operations
+     *
+     * Every 100th attempt forces a full wait to guarantee progress.
+     *
+     * @tparam ProxyType proxy whose WriteCompressSyncPolicy is consulted for the
+     *                   Dekker handshake against writers and flushers
+     * @return true if compression can start immediately
+     * @return false if threads are still active in fast-path
+     *
+     * @pre OpenMP must be enabled
+     * @post Slow-path is activated if returns true
+     *
+     * @note Thread-safe, but only one thread should call this
+     */
+    template <typename ProxyType>
+    bool start();
+
+    /**
+     * @brief Finishes a compression session
+     *
+     * @details
+     * Decrements the in-flight counter and deactivates slow-path
+     * if no other compressions are active.
+     *
+     * @tparam ProxyType same proxy type the matching start() was called with
+     * @param log Enable logging of the event
+     * @note Handles a negative remaining count explicitly: see hard_inflight_'s
+     *       signed-counter contract for why that state is tolerated.
+     */
+    template <typename ProxyType>
+    void finish([[maybe_unused]] bool log = true);
 
     /**
      * @brief Enqueue-side bracket around the deferred-map insert.
@@ -407,22 +412,6 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     {
         rank_flush_release(thr_rank);
     }
-
-    /// @brief Allocate the per-rank tracking structures this policy owns.
-    CompressionManagerOmpPolicy()
-    {
-        init_dangerous_lists_tracking();
-
-        init_deferred_queues();
-    };
-
-    ~CompressionManagerOmpPolicy() = default;
-
-    CompressionManagerOmpPolicy(const CompressionManagerOmpPolicy&)            = delete;
-    CompressionManagerOmpPolicy& operator=(const CompressionManagerOmpPolicy&) = delete;
-
-    CompressionManagerOmpPolicy(CompressionManagerOmpPolicy&&)            = delete;
-    CompressionManagerOmpPolicy& operator=(CompressionManagerOmpPolicy&&) = delete;
 
     /// @brief The same hint, read by its owner for its own decision.
     /// @return false only when the calling thread certainly holds no op
@@ -735,31 +724,6 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     }
 
     /**
-     * @brief Starts a compression session
-     *
-     * @details
-     * Performs the following operations:
-     * 1. Acquires the global compression lock
-     * 2. Switches the epoch to invalidate old counters
-     * 3. Waits for all threads to exit the fast-path
-     * 4. Activates slow-path for new operations
-     *
-     * Every 100th attempt forces a full wait to guarantee progress.
-     *
-     * @tparam ProxyType proxy whose WriteCompressSyncPolicy is consulted for the
-     *                   Dekker handshake against writers and flushers
-     * @return true if compression can start immediately
-     * @return false if threads are still active in fast-path
-     *
-     * @pre OpenMP must be enabled
-     * @post Slow-path is activated if returns true
-     *
-     * @note Thread-safe, but only one thread should call this
-     */
-    template <typename ProxyType>
-    bool start();
-
-    /**
      * @brief Writer-side bounded wait for the gate to open on @p chunk.
      *
      * Called by the write engine when must_defer_write(chunk) is true, BEFORE
@@ -789,22 +753,65 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
      */
     static void wait_out_compressor(const ChunkType& chunk) noexcept;
 
-    /**
-     * @brief Finishes a compression session
-     *
-     * @details
-     * Decrements the in-flight counter and deactivates slow-path
-     * if no other compressions are active.
-     *
-     * @tparam ProxyType same proxy type the matching start() was called with
-     * @param log Enable logging of the event
-     * @note Handles a negative remaining count explicitly: see hard_inflight_'s
-     *       signed-counter contract for why that state is tolerated.
-     */
-    template <typename ProxyType>
-    void finish([[maybe_unused]] bool log = true);
-
   private:
+    /**
+     * @brief Owner-recursive mutual exclusion for one rank's deferred-op map.
+     *
+     * @details Cross-thread flush needs exclusion that begin_flush() does not
+     *          provide: it blocks compressors and same-rank writers, but two
+     *          readers on DIFFERENT ranks flushing the same chunk do not exclude
+     *          each other, and would both drain and destroy the same deferred op
+     *          -- a double-free.
+     *
+     *          The lock's only real job is protecting the per-rank op-map
+     *          arr[r], an ankerl map whose erase/insert rehashes the whole
+     *          backing vector, against concurrent structural mutation. Its
+     *          natural granularity is therefore the RANK: flushes touching
+     *          different ranks' maps run in parallel, while two flushers
+     *          draining the same arr[r][chunk] still serialize.
+     *
+     *          Owner-recursive because a drain executes write_body(), which may
+     *          RE-ENQUEUE onto the same rank and take this lock again. @c owner
+     *          holds the holding rank (-1 when free); @c depth counts nested
+     *          acquires and is only ever touched by the owner, so a plain int
+     *          suffices.
+     *
+     * @warning Sharding per CHUNK instead of per rank would require never
+     *          erasing from arr[r] -- erase rehashes and would race across
+     *          shards -- letting arr[r] grow to O(distinct chunks) and blowing
+     *          up memory. Per-rank keeps the erase and bounds memory.
+     * @note Replaces a single global flag that serialized ALL cross-thread
+     *       flushes for this type; since flush_chunk_all_ranks() is hot on the
+     *       read path, that was the 128-thread scalability collapse.
+     */
+    class alignas(128) PaddedFlushLock
+    {
+      public:
+        std::atomic<int> owner{-1}; ///< rank currently holding the lock, -1 if free
+        int              depth{0};  ///< nested acquire count, owner-only
+    };
+
+    /// @brief One dangerous-list flag, padded to its own cache line.
+    /// @note 128 bytes rather than 64, to stay safe on ARM.
+    class alignas(128) PaddedDangerousFlag
+    {
+      public:
+        std::atomic<int> value{0}; ///< 0 or 1 -- see mark_list_dangerous_for_thread
+    };
+
+    /// @brief "This thread may hold deferred ops" hint.
+    /// @note Not padded: it is a thread_local touched by its owner only (see
+    ///       thread_may_have_ops_own), so no other thread shares its line. The
+    ///       alignas(128) it had dates from a rank-indexed array; on a
+    ///       thread_local it only spread the TLS block, one line per type.
+    class ThreadOpsFlag
+    {
+      public:
+        std::atomic<bool> v{false};
+    };
+
+    static constexpr bool verbose = false;
+
     /// @brief Spin-acquire rank @p rank's flush lock (recursive for the owner).
     static void rank_flush_acquire(int rank) noexcept;
     /// @brief Release rank @p rank's flush lock, or drop one nesting level.
@@ -1015,8 +1022,9 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
  * @tparam ChunkType Chunk variant the manager coordinates
  */
 template <typename T, typename ChunkType>
-struct CompressionManagerOmpPolicy<T, ChunkType, false> : FlushReplayState<T, ChunkType>
+class CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState<T, ChunkType>
 {
+  public:
     /**
      * @brief Serial builds queue nothing, so no rank can hold deferred ops.
      *

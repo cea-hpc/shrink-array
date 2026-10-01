@@ -39,8 +39,9 @@ namespace shrink_array
 {
 
 /// @brief Thresholds of RechunkDecider: stability ticks, gain deadbands, cooldown, caps and dry-run switch.
-struct RechunkPolicy
+class RechunkPolicy
 {
+  public:
     int         stability_ticks = 3;        // best must hold this many ticks
     std::size_t min_gain_bytes  = 8u << 20; // deadband: ignore gains below 8 MB
     double      min_gain_frac   = 0.15;     // ALSO require gain >= this fraction of
@@ -136,8 +137,9 @@ class RechunkDecider
 {
   public:
     // One committed re-chunk, for the end-of-run report.
-    struct RechunkEvent
+    class RechunkEvent
     {
+      public:
         int         iter; // iteration at which it happened
         std::string name; // array name
         unsigned    old_size, new_size;
@@ -148,9 +150,33 @@ class RechunkDecider
         double mem_after_old = -1.;
     };
 
+    /// @brief Store the policy.
+    /// @param pol Decision thresholds.
+    explicit RechunkDecider(RechunkPolicy pol = {}) : pol_(pol) {}
+
+    /// @brief Table index to act on: rep.best, or a capped coarsening step
+    ///        (at most pol_.max_coarsen_factor x cur_size; rep.cur when
+    ///        @p banned). Fining is never capped.
+    [[nodiscard]] int capped_best_index(const ChunkSizeReport& rep, bool banned = false) const;
+
+    /// @brief Feed one advisor observation for array @p key at logical time
+    ///        @p tick. Logs the verdict; true iff it WOULD re-chunk this tick.
+    bool observe(const void* key, int tick, const ChunkSizeReport& rep, const char* name);
+
+    /// @brief One-call convenience: analyse @p arr, apply the memory +
+    ///        hysteresis policy, and re-chunk it when warranted (no-op in
+    ///        static builds). True iff a re-chunk was decided this tick.
+    template <typename T, typename Arr>
+    bool consider(Arr& arr, int tick, int iter, const char* name);
+
+    /// @brief Print the per-event table: when, old->new, model memory
+    ///        before -> after (measured) and the advisor's prediction.
+    void print_rechunk_log(std::FILE* out = stdout) const;
+
   private:
-    struct Hist
+    class Hist
     {
+      public:
         static constexpr int kVisited = 8;
 
         unsigned last_best_size   = 0;
@@ -181,31 +207,6 @@ class RechunkDecider
         long     churn_mat     = 0;
     };
 
-  public:
-    /// @brief Store the policy.
-    /// @param pol Decision thresholds.
-    explicit RechunkDecider(RechunkPolicy pol = {}) : pol_(pol) {}
-
-    /// @brief Table index to act on: rep.best, or a capped coarsening step
-    ///        (at most pol_.max_coarsen_factor x cur_size; rep.cur when
-    ///        @p banned). Fining is never capped.
-    [[nodiscard]] int capped_best_index(const ChunkSizeReport& rep, bool banned = false) const;
-
-    /// @brief Feed one advisor observation for array @p key at logical time
-    ///        @p tick. Logs the verdict; true iff it WOULD re-chunk this tick.
-    bool observe(const void* key, int tick, const ChunkSizeReport& rep, const char* name);
-
-    /// @brief One-call convenience: analyse @p arr, apply the memory +
-    ///        hysteresis policy, and re-chunk it when warranted (no-op in
-    ///        static builds). True iff a re-chunk was decided this tick.
-    template <typename T, typename Arr>
-    bool consider(Arr& arr, int tick, int iter, const char* name);
-
-    /// @brief Print the per-event table: when, old->new, model memory
-    ///        before -> after (measured) and the advisor's prediction.
-    void print_rechunk_log(std::FILE* out = stdout) const;
-
-  private:
     // `tick` is a monotone counter that increments once per advisor call (the
     // caller passes such a small integer, NOT the raw iteration index), so
     // cooldown_ticks compares directly against tick deltas.

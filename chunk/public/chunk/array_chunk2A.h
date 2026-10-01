@@ -82,6 +82,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     using Parallel2A = ParallelSupport2A<ArrayChunk2A>;
     using Hooks2A    = RechunkHooks2A<ArrayChunk2A>;
 
+    friend Base2;
+    friend ArrayChunkBase<ArrayChunk2A<T, ind_type>>; // swap_identity()
+
     // Re-declared here (not only inherited): the mixins above declare them too,
     // so without a member of the same name in ArrayChunk2A an outside
     // `Arr::chunk_type` would be ambiguous between base subobjects. Name lookup
@@ -101,8 +104,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     using Base::num_tab;
     using Base::size_policy_;
 
-    friend Base2;
-
     // Mode-specific members, moved out of this class into the mixins above.
     // The using-declarations are not decoration: ArrayChunkBase re-exports
     // RechunkSupport's hook DEFAULTS under these very names, so without them a
@@ -114,13 +115,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     using Hooks2A::rechunk_swap_identity;
 
     using Base::assign; // the (first, last) overload, hidden by the one above otherwise
-
-  private:
-    static constexpr char is_val1 = 0; ///< Tag: chunk compressed to the first constant
-    static constexpr char is_val2 = 1; ///< Tag: chunk compressed to its own second value
-
-  public:
-    friend ArrayChunkBase<ArrayChunk2A<T, ind_type>>; // swap_identity()
 
     /**
      * @brief Build an array of @p sz elements at the current active geometry.
@@ -199,22 +193,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     }
 
     /**
-     * @brief Report how many cst2 buffers a sweep could reclaim.
-     * @details Runs gc_collect_live() and compares the live count with
-     *          GlobalVecHolder's total; the difference is the reclaimable set.
-     *          Diagnostic only -- prints to stderr and frees nothing.
-     */
-    static void gc_mark_report()
-    {
-        std::unordered_set<const void*> live;
-        gc_collect_live(live);
-        const std::size_t held = GlobalVecHolder<T>::count_entries();
-        std::fprintf(stderr, "[cst2-gc] live=%zu / holder=%zu  (reclaimable=%zu)\n", live.size(), held,
-                     held > live.size() ? held - live.size() : 0);
-        std::fflush(stderr);
-    }
-
-    /**
      * @brief Move-assign: this array's own contents are released (clear()),
      *        then it takes @p other's -- chunks, geometry and identity, by the
      *        same exchange as swap(); @p other is left empty and valid.
@@ -235,6 +213,15 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         return *this;
     }
 
+    /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
+    ///        is a no-op; num_tab is not copied, identity stays with the address.
+    ArrayChunk2A& operator=(const ArrayChunk2A& from)
+    {
+        if (this != &from)
+            this->copy_from(from);
+        return *this;
+    }
+
     /**
      * @brief Has the chunk holding element @p i been materialised?
      * @param i element index
@@ -244,9 +231,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     {
         return chunk_list[this->chunk_index_of(i)].written();
     }
-
-    /// @brief Compress every chunk currently queued as a candidate.
-    static void make_block_compression();
 
     /**
      * @brief Resize the array, preserving the elements that still fit.
@@ -301,15 +285,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     /// @brief Run a compression pass over this array's chunks.
     void compress_int();
 
-    /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
-    ///        is a no-op; num_tab is not copied, identity stays with the address.
-    ArrayChunk2A& operator=(const ArrayChunk2A& from)
-    {
-        if (this != &from)
-            this->copy_from(from);
-        return *this;
-    }
-
     /// @brief Read-only access to the underlying chunk list.
     /// @return const reference to the chunks backing this array
     [[nodiscard]] const std::vector<Chunk2A<T>>& getChunkList() const noexcept
@@ -317,7 +292,29 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         return chunk_list;
     }
 
+    /**
+     * @brief Report how many cst2 buffers a sweep could reclaim.
+     * @details Runs gc_collect_live() and compares the live count with
+     *          GlobalVecHolder's total; the difference is the reclaimable set.
+     *          Diagnostic only -- prints to stderr and frees nothing.
+     */
+    static void gc_mark_report()
+    {
+        std::unordered_set<const void*> live;
+        gc_collect_live(live);
+        const std::size_t held = GlobalVecHolder<T>::count_entries();
+        std::fprintf(stderr, "[cst2-gc] live=%zu / holder=%zu  (reclaimable=%zu)\n", live.size(), held,
+                     held > live.size() ? held - live.size() : 0);
+        std::fflush(stderr);
+    }
+
+    /// @brief Compress every chunk currently queued as a candidate.
+    static void make_block_compression();
+
   private:
+    static constexpr char is_val1 = 0; ///< Tag: chunk compressed to the first constant
+    static constexpr char is_val2 = 1; ///< Tag: chunk compressed to its own second value
+
     /**
      * @brief Claim this array's identity before its storage is built.
      * @details Called by create() through ArrayChunkBase. Registers the array's
@@ -339,38 +336,6 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @param sz element count
      */
     void create(ind_type sz);
-
-    // ── cst2 mark-sweep GC — STEP B: read-only mark + report ─────────────────
-
-    /**
-     * @brief Mark phase of the cst2 garbage collection: collect live buffers.
-     *
-     * @details Scans every live ArrayChunk2A<T> through the shared registry and
-     *          inserts the cst2 buffer pointer of each chunk that is currently
-     *          compressed to its second value. Read-only: it touches no chunk
-     *          state, so it is safe at any quiescent point (the advisor tick,
-     *          for instance). num_tab and geometry are per-array, so walking
-     *          chunk_list without the global size is correct here.
-     *
-     * @param[out] live set the referenced cst2 buffer pointers are inserted into
-     * @see gc_mark_report for the reporting counterpart
-     */
-    static void gc_collect_live(std::unordered_set<const void*>& live)
-    {
-        Proxy2A<T>::share_info_array.for_each_key(
-            [&](const void* key)
-            {
-                // The key is the array's core, whatever its index type.
-                auto*     arr = static_cast<const ArrayChunkCore<Chunk2A<T>>*>(key);
-                const int nc  = arr->chunk_count();
-                for (int j = 0; j < nc; ++j)
-                {
-                    const auto& ch = arr->chunk_ref(static_cast<std::size_t>(j));
-                    if (ch.is_cst_val2())
-                        live.insert(static_cast<const void*>(ch.values_load()));
-                }
-            });
-    }
 
     /**
      * @brief (Re)allocate storage at the current active geometry.
@@ -445,6 +410,38 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         swap(this->num_tab, other.num_tab);
         swap(holds_cst2_registry_, other.holds_cst2_registry_);
         Proxy2A<T>::share_info_array.swap_keys(this->registry_key(), other.registry_key());
+    }
+
+    // ── cst2 mark-sweep GC — STEP B: read-only mark + report ─────────────────
+
+    /**
+     * @brief Mark phase of the cst2 garbage collection: collect live buffers.
+     *
+     * @details Scans every live ArrayChunk2A<T> through the shared registry and
+     *          inserts the cst2 buffer pointer of each chunk that is currently
+     *          compressed to its second value. Read-only: it touches no chunk
+     *          state, so it is safe at any quiescent point (the advisor tick,
+     *          for instance). num_tab and geometry are per-array, so walking
+     *          chunk_list without the global size is correct here.
+     *
+     * @param[out] live set the referenced cst2 buffer pointers are inserted into
+     * @see gc_mark_report for the reporting counterpart
+     */
+    static void gc_collect_live(std::unordered_set<const void*>& live)
+    {
+        Proxy2A<T>::share_info_array.for_each_key(
+            [&](const void* key)
+            {
+                // The key is the array's core, whatever its index type.
+                auto*     arr = static_cast<const ArrayChunkCore<Chunk2A<T>>*>(key);
+                const int nc  = arr->chunk_count();
+                for (int j = 0; j < nc; ++j)
+                {
+                    const auto& ch = arr->chunk_ref(static_cast<std::size_t>(j));
+                    if (ch.is_cst_val2())
+                        live.insert(static_cast<const void*>(ch.values_load()));
+                }
+            });
     }
 
     /// @brief This array holds one reference on Chunk2A<T>'s cst2 registry

@@ -104,13 +104,14 @@ class ManagerChunkInt;
  * @tparam Enabled build_config::use_openmp.
  */
 template <typename Derived, bool Enabled = build_config::use_openmp>
-struct AllTypeChunkParallelInterface; // primary left undefined: only the 2 specializations exist
+class AllTypeChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: per-thread allocators, per-thread free lists, and a
 ///        deferred-write queue to drain.
 template <typename Derived>
-struct AllTypeChunkParallelInterface<Derived, true>
+class AllTypeChunkParallelInterface<Derived, true>
 {
+  public:
     /**
      * @brief Releases the buffers freed by a preceding flush, for every type.
      *
@@ -169,8 +170,12 @@ struct AllTypeChunkParallelInterface<Derived, true>
 
 /// @brief Serial builds: one allocator per type, and nothing deferred.
 template <typename Derived>
-struct AllTypeChunkParallelInterface<Derived, false>
+class AllTypeChunkParallelInterface<Derived, false>
 {
+  public:
+    /// Destroys the single chunk allocator of every type (no-op in std-alloc builds).
+    void delete_chunk_allocator() const;
+
     /// Serial build: nothing is deferred, so there is nothing to reclaim.
     static void destroy_after_flush(bool) {}
     /// Serial build: writes are applied inline, so there is no queue to drain.
@@ -178,9 +183,6 @@ struct AllTypeChunkParallelInterface<Derived, false>
     {
         return false;
     }
-
-    /// Destroys the single chunk allocator of every type (no-op in std-alloc builds).
-    void delete_chunk_allocator() const;
 
   protected:
     /**
@@ -197,11 +199,12 @@ struct AllTypeChunkParallelInterface<Derived, false>
  * @tparam Enabled build_config::chunk_dynamic.
  */
 template <typename Derived, bool Enabled = build_config::chunk_dynamic>
-struct AllTypeChunkDynInterface; // primary left undefined: only the 2 specializations exist
+class AllTypeChunkDynInterface; // primary left undefined: only the 2 specializations exist
 
 template <typename Derived>
-struct AllTypeChunkDynInterface<Derived, true>
+class AllTypeChunkDynInterface<Derived, true>
 {
+  public:
     /**
      * @brief Declares a chunk geometry to every type's manager.
      *
@@ -221,7 +224,7 @@ struct AllTypeChunkDynInterface<Derived, true>
 
 /// @brief Fixed-geometry builds: no geometry to declare.
 template <typename Derived>
-struct AllTypeChunkDynInterface<Derived, false>
+class AllTypeChunkDynInterface<Derived, false>
 {
 };
 
@@ -233,29 +236,8 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     friend class SingletonChk<AllTypeChunk>;
     /// The dynamic-geometry policy records the sizes it declares (registered_sizes_).
     template <typename D, bool E>
-    friend struct AllTypeChunkDynInterface;
+    friend class AllTypeChunkDynInterface;
 
-  private:
-    // ── The registry: append-only, published without a lock ────────────────
-    //
-    // A manager is registered the first time an array of its (chunk template,
-    // element type) is constructed (ensure_manager, from the array's create),
-    // not from a list of types declared at startup: the element types of a
-    // program are whatever it instantiates. Registration takes the mutex,
-    // builds the manager and its per-rank structures in full, stores it in
-    // the next slot and publishes the count with a release store. The
-    // fan-outs below iterate the published prefix -- an acquire load of the
-    // count, then the slots -- with no lock: they run from parallel regions
-    // (flush, compression passes, load balancing) and may overlap a
-    // registration, and never see a manager before it is whole. Nothing is
-    // ever removed before the teardown, so the slots are stable.
-    //
-    // A fixed capacity, so that a slot's address never moves under a reader:
-    // 256 is three chunk templates times more element types than any program
-    // has had; exceeding it aborts with a message.
-    static constexpr int kMaxManagers = 256;
-
-  public:
     /// The managers' interface, reached through Derived by the policies so
     /// that their bodies stay dependent (each build declares a different half).
     using manager_int_t = ManagerChunkInt;
@@ -269,22 +251,12 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      */
     AllTypeChunk() = default;
 
-    /**
-     * @brief The manager of @p ManagerT exists after this call -- registered
-     *        now if this is the first array of its type, a no-op otherwise.
-     *
-     * Called by the arrays' create() with their ArrayChunkTraits::manager_type.
-     * One function-local static per instantiation: the first call of a type
-     * registers under the mutex, every later one costs a guard load; two
-     * threads constructing the first arrays of the same type at once are
-     * serialised by that static's initialisation. Any context: the per-type
-     * work touches nothing another thread can be using yet, and the fan-outs
-     * read the registry without a lock (see the members above).
-     *
-     * @pre ParamChunk::init_indexes() has run.
-     */
-    template <typename ManagerT>
-    static void ensure_manager();
+    /// Non-copyable: the registry owns the managers and is a singleton.
+    AllTypeChunk(const AllTypeChunk&)            = delete;
+    AllTypeChunk& operator=(const AllTypeChunk&) = delete;
+    AllTypeChunk(AllTypeChunk&&)                 = delete;
+    AllTypeChunk& operator=(AllTypeChunk&&)      = delete;
+    virtual ~AllTypeChunk()                      = default;
 
     /// @brief ParamChunk::init_indexes() has set the block size: managers may
     ///        now be registered. Records the block size they are built with.
@@ -295,15 +267,8 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
         ready_      = true;
     }
 
-    /// Non-copyable: the registry owns the managers and is a singleton.
-    AllTypeChunk(const AllTypeChunk&)            = delete;
-    AllTypeChunk& operator=(const AllTypeChunk&) = delete;
-    AllTypeChunk(AllTypeChunk&&)                 = delete;
-    AllTypeChunk& operator=(AllTypeChunk&&)      = delete;
-    virtual ~AllTypeChunk()                      = default;
-
     /// @return The registered managers, in registration order: the prefix
-    ///         published so far, read without a lock (see the members above).
+    ///         published so far, read without a lock (see the members below).
     [[nodiscard]] std::span<const std::unique_ptr<ManagerChunkInt>> getListTypeChunk() const noexcept
     {
         const auto count = static_cast<std::size_t>(nb_managers_.load(std::memory_order_acquire));
@@ -375,7 +340,43 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      */
     void print_reuse_pool_breakdown(const char* label) const;
 
+    /**
+     * @brief The manager of @p ManagerT exists after this call -- registered
+     *        now if this is the first array of its type, a no-op otherwise.
+     *
+     * Called by the arrays' create() with their ArrayChunkTraits::manager_type.
+     * One function-local static per instantiation: the first call of a type
+     * registers under the mutex, every later one costs a guard load; two
+     * threads constructing the first arrays of the same type at once are
+     * serialised by that static's initialisation. Any context: the per-type
+     * work touches nothing another thread can be using yet, and the fan-outs
+     * read the registry without a lock (see the members below).
+     *
+     * @pre ParamChunk::init_indexes() has run.
+     */
+    template <typename ManagerT>
+    static void ensure_manager();
+
   private:
+    // ── The registry: append-only, published without a lock ────────────────
+    //
+    // A manager is registered the first time an array of its (chunk template,
+    // element type) is constructed (ensure_manager, from the array's create),
+    // not from a list of types declared at startup: the element types of a
+    // program are whatever it instantiates. Registration takes the mutex,
+    // builds the manager and its per-rank structures in full, stores it in
+    // the next slot and publishes the count with a release store. The
+    // fan-outs above iterate the published prefix -- an acquire load of the
+    // count, then the slots -- with no lock: they run from parallel regions
+    // (flush, compression passes, load balancing) and may overlap a
+    // registration, and never see a manager before it is whole. Nothing is
+    // ever removed before the teardown, so the slots are stable.
+    //
+    // A fixed capacity, so that a slot's address never moves under a reader:
+    // 256 is three chunk templates times more element types than any program
+    // has had; exceeding it aborts with a message.
+    static constexpr int kMaxManagers = 256;
+
     /**
      * @brief Build, initialise and publish the manager @p ManagerT
      *        (ManagerChunk<CHUNK_T, T>). Takes the registry mutex; a no-op

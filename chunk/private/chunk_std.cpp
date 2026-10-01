@@ -100,7 +100,7 @@ void ChunkPoolParallelInterface<false, AllT>::release_chunk_pools()
 
 // The one instantiation of the pair: the other thread model's bodies are left
 // uninstantiated rather than #ifdef'd out. Same device as param_chunk.cpp.
-template struct ChunkPoolParallelInterface<build_config::use_openmp, AllTypeChunk>;
+template class ChunkPoolParallelInterface<build_config::use_openmp, AllTypeChunk>;
 
 // --- Build-agnostic free functions over the policy -----------------------
 // Thin forwarders, defined in EVERY build. Previously delete_chunk_allocator()

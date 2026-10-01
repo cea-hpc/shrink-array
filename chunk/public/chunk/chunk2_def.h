@@ -18,23 +18,13 @@
 
 #include "chunk/config.h"
 /**
- * @struct Chunk2Def
+ * @class Chunk2Def
  * @brief Configuration constants for buffer sizing and compression thresholds.
  * Thresholds are adjusted based on the chunk_config::tuning_level.
  */
 
-struct Chunk2Def
+class Chunk2Def
 {
-  private:
-    // Upper bound on CHUNK_SIZE. This is NOT the chunk geometry (use
-    // shrink_array::__chunk_size for that); it is only a sanity bound for the
-    // example/config validation. The real hard limit is the per-chunk counter
-    // capacity (unsigned short) enforced by static_assert in
-    // conditional_counter.h, so 65535 is the true maximum. (Was 256/128, a
-    // stale value that predates the constexpr-geometry refactor and wrongly
-    // rejected CHUNK_SIZE=512.)
-    constexpr static int size_max = 65535;
-
   public:
     // --- Compression List Settings ---
     // Level 1: Trigger compression every 2 modified chunks (Extreme stress)
@@ -52,6 +42,15 @@ struct Chunk2Def
                                                                                                 : 100;
 
   private:
+    // Upper bound on CHUNK_SIZE. This is NOT the chunk geometry (use
+    // shrink_array::__chunk_size for that); it is only a sanity bound for the
+    // example/config validation. The real hard limit is the per-chunk counter
+    // capacity (unsigned short) enforced by static_assert in
+    // conditional_counter.h, so 65535 is the true maximum. (Was 256/128, a
+    // stale value that predates the constexpr-geometry refactor and wrongly
+    // rejected CHUNK_SIZE=512.)
+    constexpr static int size_max = 65535;
+
     // --- Buffer Reuse Settings (Free lists) ---
     // Level 1: Keep only 4 blocks in cache to force real alloc/free cycles
     constexpr static int size_min_buffer_reuse = (chunk_config::tuning_level == 1)   ? 4

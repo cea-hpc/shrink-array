@@ -102,8 +102,9 @@ inline std::atomic<std::size_t>& reclaim_entered() noexcept
 ///          line on all the other cores (false sharing; 36% of a 64-thread
 ///          run attributed to get_info_second_value, a read-only function).
 ///          128 rather than 64: adjacent-line prefetch, and 128-byte lines.
-struct alignas(128) IsolatedCounter
+class alignas(128) IsolatedCounter
 {
+  public:
     std::atomic<std::size_t> v{0};
 };
 static_assert(sizeof(IsolatedCounter) == 128, "IsolatedCounter must fill its alignment");
@@ -254,13 +255,6 @@ bool madvise_empty_slab_full(Slab* slab) noexcept
  */
 class SlabArena
 {
-    /// @brief One mmap reservation, as a half-open address range.
-    struct Region
-    {
-        std::uintptr_t begin; ///< First address of the mapping.
-        std::uintptr_t end;   ///< One past its last address.
-    };
-
   public:
     /**
      * @brief Create an empty arena; the first allocate() maps its first region.
@@ -448,7 +442,16 @@ class SlabArena
         std::fflush(stderr);
     }
 
+
   private:
+    /// @brief One mmap reservation, as a half-open address range.
+    class Region
+    {
+      public:
+        std::uintptr_t begin; ///< First address of the mapping.
+        std::uintptr_t end;   ///< One past its last address.
+    };
+
     /// @brief Does @p ptr fall inside one of this arena's reservations?
     /// @note Linear in the region count, and takes the lock. Diagnostics only.
     bool owns(const void* ptr) const noexcept
@@ -459,12 +462,6 @@ class SlabArena
             if (v >= r.begin && v < r.end)
                 return true;
         return false;
-    }
-
-    /// @brief Round @p v up to a multiple of @p alignment. @p alignment must be a power of two.
-    static std::uintptr_t align_up(std::uintptr_t v, std::size_t alignment) noexcept
-    {
-        return (v + (alignment - 1)) & ~(static_cast<std::uintptr_t>(alignment) - 1);
     }
 
     /// @brief Map a fresh reservation and restart the bump cursor in it.
@@ -491,6 +488,12 @@ class SlabArena
         regions_.push_back(Region{.begin = region_begin, .end = region_begin + want});
         cursor_     = region_begin;
         region_end_ = region_begin + want;
+    }
+
+    /// @brief Round @p v up to a multiple of @p alignment. @p alignment must be a power of two.
+    static std::uintptr_t align_up(std::uintptr_t v, std::size_t alignment) noexcept
+    {
+        return (v + (alignment - 1)) & ~(static_cast<std::uintptr_t>(alignment) - 1);
     }
 
     const char*         name_;              ///< Diagnostic label only.

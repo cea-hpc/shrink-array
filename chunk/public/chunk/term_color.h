@@ -28,8 +28,9 @@
 /// can throw std::bad_alloc where nothing can catch it -- std::terminate, before
 /// main (bugprone-throwing-static-initialization). Literals cannot throw and cost
 /// no allocation.
-struct TermColor
+class TermColor
 {
+  public:
     const char* RESET;
     const char* BOLD;
     const char* RED;

@@ -81,7 +81,7 @@ template <typename T, typename ChunkType>
 class CompressionManager;
 
 template <typename Derived>
-struct ProxyTypeTrait;
+class ProxyTypeTrait;
 
 template <typename T>
 class Chunk;
@@ -91,8 +91,9 @@ class Proxy;
 
 // Specialisation for Chunk
 template <typename T>
-struct ProxyTypeTrait<Chunk<T>>
+class ProxyTypeTrait<Chunk<T>>
 {
+  public:
     using Type = Proxy<T>;
 };
 
@@ -112,7 +113,7 @@ struct ProxyTypeTrait<Chunk<T>>
 // type", so this is one of the cases the preprocessor is actually for.
 #ifndef _OPENMP
 template <typename T>
-struct TCTypeCAllocator;
+class TCTypeCAllocator;
 #endif
 
 
@@ -144,7 +145,7 @@ inline constexpr DeferReadGate defer_read_gate_mode = !build_config::use_openmp 
                                                           : DeferReadGate::Precise;
 
 template <typename Derived, DeferReadGate Mode = defer_read_gate_mode>
-struct DeferredReadGate; // primary left undefined: only the 3 specializations exist
+class DeferredReadGate; // primary left undefined: only the 3 specializations exist
 
 // ── Pending-visibility protocol: THE invariants, in one place ────────────────
 // This policy is the single owner of every access to the per-chunk pending
@@ -179,8 +180,9 @@ struct DeferredReadGate; // primary left undefined: only the 3 specializations e
 // Serial build: the deferred-op machinery does not exist, nothing is ever
 // pending, so the gate is a pure no-op (and names no OpenMP-only member).
 template <typename Derived>
-struct DeferredReadGate<Derived, DeferReadGate::None>
+class DeferredReadGate<Derived, DeferReadGate::None>
 {
+  public:
     static constexpr bool precise = false;
 
     /// @brief Read-side gate check: always false (serial build has no
@@ -224,8 +226,9 @@ struct DeferredReadGate<Derived, DeferReadGate::None>
 // OpenMP + SHRINK_SMALL_CHUNK: no per-chunk counter; the authoritative gate is
 // the (coarser) map-scan is_not_available().
 template <typename Derived>
-struct DeferredReadGate<Derived, DeferReadGate::Coarse>
+class DeferredReadGate<Derived, DeferReadGate::Coarse>
 {
+  public:
     static constexpr bool precise = false;
 
     // No counter in this build: publish/retire are no-ops and pending_any() is
@@ -282,33 +285,11 @@ struct DeferredReadGate<Derived, DeferReadGate::Coarse>
 // OpenMP + per-chunk counter: precise gate. A flat acquire load pairs with the
 // release fetch_add at enqueue; >0 means this chunk has a pending op.
 template <typename Derived>
-struct DeferredReadGate<Derived, DeferReadGate::Precise>
+class DeferredReadGate<Derived, DeferReadGate::Precise>
 {
+  public:
     static constexpr bool precise = true;
 
-  private:
-    // ── Pending word, dual mode ─────────────────────────────────────────────
-    // OFF (sync_on_read=false): the counter is EXACTLY the historical signed
-    // int32 with fetch_add(release)/fetch_sub(release)/load(acquire)>0 — byte-
-    // identical to the pre-owner-tagging behaviour. Rationale (hard-won): the
-    // owner-encoded unsigned word changed the OVER-RETIRE failure mode. The
-    // old signed counter absorbed a transient over-retire by going negative
-    // (pending_any()==false, self-healing at the next publish); the unsigned
-    // [owner:12|count:20] word wraps into a HUGE count with a clobbered owner
-    // — gates poisoned permanently, drain paths hyperactive, and the gnu OFF
-    // battery corrupted at ~1/355 (bisection: b601 clean at 7774 runs,
-    // 4505ad27 failing at 107/674). OFF never reads `owner`, so it gets the
-    // proven semantics back verbatim.
-    // ON (sync_on_read=true): the encoded word [owner:12|count:20] is required
-    // by foreign_pending(); the CAS verbs now MASK and SATURATE so an
-    // over-retire clamps count to 0 (self-healing, like the signed counter)
-    // instead of wrapping, and publish saturates instead of overflowing into
-    // the owner field.
-    static constexpr uint32_t kCountBits  = 20;
-    static constexpr uint32_t kCountMask  = (uint32_t{1} << kCountBits) - 1;
-    static constexpr uint32_t kOwnerMulti = 0xFFFu;
-
-  public:
     /// @brief Publish a newly-enqueued deferred op: increment the per-chunk
     ///        pending count (and, under sync_on_read, record this thread as
     ///        the owner). See the class comment above for the dual OFF/ON
@@ -441,6 +422,27 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
     }
 
   private:
+    // ── Pending word, dual mode ─────────────────────────────────────────────
+    // OFF (sync_on_read=false): the counter is EXACTLY the historical signed
+    // int32 with fetch_add(release)/fetch_sub(release)/load(acquire)>0 — byte-
+    // identical to the pre-owner-tagging behaviour. Rationale (hard-won): the
+    // owner-encoded unsigned word changed the OVER-RETIRE failure mode. The
+    // old signed counter absorbed a transient over-retire by going negative
+    // (pending_any()==false, self-healing at the next publish); the unsigned
+    // [owner:12|count:20] word wraps into a HUGE count with a clobbered owner
+    // — gates poisoned permanently, drain paths hyperactive, and the gnu OFF
+    // battery corrupted at ~1/355 (bisection: b601 clean at 7774 runs,
+    // 4505ad27 failing at 107/674). OFF never reads `owner`, so it gets the
+    // proven semantics back verbatim.
+    // ON (sync_on_read=true): the encoded word [owner:12|count:20] is required
+    // by foreign_pending(); the CAS verbs now MASK and SATURATE so an
+    // over-retire clamps count to 0 (self-healing, like the signed counter)
+    // instead of wrapping, and publish saturates instead of overflowing into
+    // the owner field.
+    static constexpr uint32_t kCountBits  = 20;
+    static constexpr uint32_t kCountMask  = (uint32_t{1} << kCountBits) - 1;
+    static constexpr uint32_t kOwnerMulti = 0xFFFu;
+
     /// @brief Sign-extend the low 20 bits of the pending word (the count is
     ///        stored as two's-complement inside those 20 bits).
     /// @param word Raw pending word.
@@ -462,12 +464,13 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
 // own derived()/self() ambiguous (two paths to the same stateless mixin).
 // ----------------------------------------------------------------------------
 template <typename T, typename Derived, bool UseOpenMP = build_config::use_openmp>
-struct ChunkAllocPolicy; // primary left undefined: only the 2 specializations exist
+class ChunkAllocPolicy; // primary left undefined: only the 2 specializations exist
 
 // OpenMP: thread-local free-list reuse first, fresh allocation otherwise.
 template <typename T, typename Derived>
-struct ChunkAllocPolicy<T, Derived, true>
+class ChunkAllocPolicy<T, Derived, true>
 {
+  public:
     /// @brief Allocate a chunk with thread-local caching (OpenMP version).
     /// @tparam InitReused Initialiser applied to a buffer popped from the reuse list
     /// @tparam InitFresh  Initialiser applied to a freshly allocated buffer
@@ -599,8 +602,9 @@ struct ChunkAllocPolicy<T, Derived, true>
 // Serial: always allocate fresh -- no per-thread free list to contend over,
 // so there is nothing to reuse from.
 template <typename T, typename Derived>
-struct ChunkAllocPolicy<T, Derived, false>
+class ChunkAllocPolicy<T, Derived, false>
 {
+  public:
     /// @brief Allocate a chunk (non-OpenMP version).
     /// @tparam InitReused Unused here: serially there is no reuse list to pop from
     /// @tparam InitFresh  Initialiser applied to the freshly allocated buffer
@@ -680,11 +684,12 @@ struct ChunkAllocPolicy<T, Derived, false>
 // derived()/self() ambiguous.
 // ----------------------------------------------------------------------------
 template <typename T, typename Derived, bool UseOpenMP = build_config::use_openmp>
-struct ChunkDeferredOpsPolicy; // primary left undefined: only the 2 specializations exist
+class ChunkDeferredOpsPolicy; // primary left undefined: only the 2 specializations exist
 
 template <typename T, typename Derived>
-struct ChunkDeferredOpsPolicy<T, Derived, true>
+class ChunkDeferredOpsPolicy<T, Derived, true>
 {
+  public:
     using defer_op_ptr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
 
     using unordered_map_deferred_operations =
@@ -756,14 +761,6 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
         ll_block_free_thr.push_back(values_loc);
     }
 
-    /// @brief Current per-thread deferred-ops array, or nullptr if it has not
-    ///        been allocated yet (see ensure_deferred_array_initialized()).
-    /// @return Pointer to the per-thread map array, or nullptr.
-    static per_thread_map* get_deferred_ops() noexcept
-    {
-        return DeferredOpsStorage<per_thread_map>::instance().get();
-    }
-
     /// @brief Enqueue a deferred write operation for later application to a chunk.
     /// @param thr_rank Calling thread's rank; selects which per-thread map to
     ///                 enqueue on.
@@ -788,17 +785,15 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
     /// @return false only if it is certain nothing is pending anywhere.
     [[nodiscard]] bool is_not_available() const;
 
-  private:
-    // ── Compare and Swap ────────────────────────────────────────────────────
-    /// @brief Type-tag helper: yields per_thread_map's type without needing
-    ///        an instance. Always returns nullptr; only the pointer's static
-    ///        type is ever used by callers.
-    /// @return nullptr, typed as per_thread_map*.
-    static per_thread_map* per_thread_map_type_id()
+    /// @brief Current per-thread deferred-ops array, or nullptr if it has not
+    ///        been allocated yet (see ensure_deferred_array_initialized()).
+    /// @return Pointer to the per-thread map array, or nullptr.
+    static per_thread_map* get_deferred_ops() noexcept
     {
-        return nullptr;
+        return DeferredOpsStorage<per_thread_map>::instance().get();
     }
 
+  private:
     // ── Deferred-op enqueue / flush / read gate ────────────────────────────
     /// @brief Ensure that the global deferred array is initialized exactly once.
     /// @details This replaces std::call_once with a CAS-based mechanism that can be reset.
@@ -811,13 +806,23 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
             return;
         DeferredOpsStorage<per_thread_map>::instance().allocate();
     }
+
+    // ── Compare and Swap ────────────────────────────────────────────────────
+    /// @brief Type-tag helper: yields per_thread_map's type without needing
+    ///        an instance. Always returns nullptr; only the pointer's static
+    ///        type is ever used by callers.
+    /// @return nullptr, typed as per_thread_map*.
+    static per_thread_map* per_thread_map_type_id()
+    {
+        return nullptr;
+    }
 };
 
 // Serial: none of the above exists -- no deferred writes, no CAS
 // (nothing concurrent to protect against), no thread-local free list
 // (nothing to contend over).
 template <typename T, typename Derived>
-struct ChunkDeferredOpsPolicy<T, Derived, false>
+class ChunkDeferredOpsPolicy<T, Derived, false>
 {
 };
 
@@ -834,11 +839,12 @@ struct ChunkDeferredOpsPolicy<T, Derived, false>
 // routing itself is a separate, later step.
 // ----------------------------------------------------------------------------
 template <typename T, typename Derived, bool IsDynamic = build_config::chunk_dynamic>
-struct ChunkDynamicAllocPolicy; // primary left undefined: only the 2 specializations exist
+class ChunkDynamicAllocPolicy; // primary left undefined: only the 2 specializations exist
 
 template <typename T, typename Derived>
-struct ChunkDynamicAllocPolicy<T, Derived, true>
+class ChunkDynamicAllocPolicy<T, Derived, true>
 {
+  public:
     /// @brief Register (create + init) the per-thread allocator array for
     ///        `size`, once.
     /// @details Sequential context only.
@@ -984,8 +990,9 @@ struct ChunkDynamicAllocPolicy<T, Derived, true>
 // per-size pool to keep -- allocator_data (on ChunkBase) is the only
 // allocator that ever exists. Both routing methods just return it directly.
 template <typename T, typename Derived>
-struct ChunkDynamicAllocPolicy<T, Derived, false>
+class ChunkDynamicAllocPolicy<T, Derived, false>
 {
+  public:
     /// @brief Static builds have no per-size pool: always route to the
     ///        single legacy allocator.
     /// @param thr_rank Calling thread's rank.
@@ -1019,21 +1026,6 @@ class ChunkBase : public CRTPSupport<Derived>,
                   "shrink_array element type: trivially copyable, ==, default constructible "
                   "(see concept_array_chunk_element.h)");
 
-  protected:
-    // Type traits
-    // bool and Bit (bit.h) share chunk2's bool path: one second value, true.
-    static constexpr bool is_bool     = is_bool_like_v<T>;
-    static constexpr bool is_not_bool = !is_bool;
-
-  private:
-    /// The buffer is words of bits (Bit), not an array of T.
-    static constexpr bool is_packed = is_packed_bit_v<T>;
-
-    static constexpr bool use_mm_protect = build_config::use_mm_protect;
-
-  protected:
-    constexpr static T zero{};
-
   public:
     // Atomic pointer type conditional on OpenMP availability
     using atomic_ptr_t = std::conditional_t<build_config::use_openmp, std::atomic<T*>, T*>;
@@ -1050,8 +1042,9 @@ class ChunkBase : public CRTPSupport<Derived>,
     // svalloc, and every site that would call these stubs is guarded by
     // `if constexpr (build_config::use_fast_alloc)` — discarded at compile time
     // in std builds, so those guards are plain shared code.
-    struct NullValueAllocator
+    class NullValueAllocator
     {
+      public:
         /// @brief No pool to set up.
         void init(int /*element_size*/, int /*block_size*/, int /*munmap_flag*/) noexcept {}
         /// @brief No pool to tear down.
@@ -1074,188 +1067,23 @@ class ChunkBase : public CRTPSupport<Derived>,
         std::conditional_t<build_config::use_openmp, std::vector<TCTypeCAllocator<T>>, TCTypeAllocator<T>>,
         NullValueAllocator>;
 
-    static inline AllocatorType allocator_data;
-
-    // allocator_pool_/allocator_pool_serial_/register_chunk_size/
-    // register_chunk_size_serial moved to ChunkDynamicAllocPolicy<T, Derived,
-    // true> above (empty in the false specialization -- static builds have no
-    // per-size pool).
-
-    // ChunkDeferredOpsPolicy<T, Derived, true> above; ChunkBase now inherits
-    // them (empty in the false specialization -- nothing exists in serial).
-
-    /// @brief Get the allocator to use for the current thread and active
-    ///        chunk size.
-    /// @details Only meaningful when build_config::use_fast_alloc is set;
-    ///          otherwise aborts (this build never uses a fast allocator, so
-    ///          this path should never be reached). Dynamic-vs-static
-    ///          routing (per-size pool vs the single legacy allocator) is
-    ///          delegated to Derived::route_omp_dynamic_alloc()/
-    ///          route_serial_dynamic_alloc(), selected on
-    ///          build_config::use_openmp.
-    /// @param thr_rank Calling thread's rank; only meaningful in OpenMP
-    ///                 builds (ignored in serial builds).
-    /// @return Reference to the allocator to use for this thread/build mode.
-    /// @param key Affinity key of the array being served (0 = shared rank
-    ///            pool). Only the dynamic OpenMP registry honours it so far.
-    static auto& get_chunk_allocator([[maybe_unused]] int          thr_rank,
-                                     [[maybe_unused]] unsigned int key = thread_alloc_key()) noexcept
+    /// @brief Outcome of scan_constants(): which hypothesis survived the walk.
+    class ConstantScan
     {
-        if constexpr (build_config::use_fast_alloc)
-        {
-            // Dynamic-vs-static routing lives on ChunkDynamicAllocPolicy (both
-            // specializations declare route_omp_dynamic_alloc/
-            // route_serial_dynamic_alloc -- the true specialization consults
-            // allocator_pool_/allocator_pool_serial_, the false one always falls
-            // through to allocator_data).
-            if constexpr (build_config::use_openmp)
-            {
-                return Derived::route_omp_dynamic_alloc(thr_rank, key);
-            }
-            else
-            {
-                return Derived::route_serial_dynamic_alloc();
-            }
-        }
-        else
-        {
-            std::abort();
-        }
-    }
+      public:
+        bool first  = false; ///< every element equals the first constant
+        bool second = false; ///< every element equals the second constant -- never together with `first`
+    };
+
+    using cst_val1_type = std::conditional_t<build_config::use_mm_protect, T*, std::array<T, cst_buffer_size>>;
 
     ChunkBase()  = default;
     ~ChunkBase() = default;
 
-  private:
-    /// @brief Whether this chunk is currently materialised (not compressed
-    ///        to a constant), at the granularity Derived supports.
-    /// @param j Element offset; used only when Derived distinguishes
-    ///          writtenness per-offset (e.g. Chunk2/Chunk2A's second-value
-    ///          slot); ignored otherwise (falls back to derived().written()).
-    /// @return true if the chunk (or offset j) holds real, materialised data.
-    [[nodiscard]] bool is_written_at(int j) const noexcept
-    {
-        if constexpr (requires { derived().written(j); })
-        {
-            // Use specialized logic from Derived (e.g., ArrayChunk2)
-            return derived().written(j);
-        }
-        else
-        {
-            // Default fallback for ArrayChunk and ArrayChunk2A
-            return derived().written();
-        }
-    }
-
-  protected:
-    /// @brief Debug-only assertion: abort if offset j is not currently
-    ///        written (a clear on an unwritten offset is a bug). Compiled
-    ///        out entirely when build_config::any_check is off.
-    /// @param j Element offset expected to be written.
-    void debug_check_written(int j) const noexcept
-    {
-        if constexpr (build_config::any_check)
-        {
-            if (!is_written_at(j))
-            {
-                std::cerr << "Error: trying to clear a chunk that is not written\n";
-                std::abort();
-            }
-        }
-    }
-
-    /// @brief Debug-only assertion: abort if this chunk is not currently
-    ///        written. Compiled out entirely when build_config::any_check is
-    ///        off.
-    void debug_check_written() const noexcept
-    {
-        if constexpr (build_config::any_check)
-        {
-            if (!derived().written())
-            {
-                std::cerr << "Error: trying to clear a chunk that is not written\n";
-                std::abort();
-            }
-        }
-    }
     // ========================================================================
     // Atomic / Non-atomic pointer management
     // ========================================================================
 
-  private:
-    /**
-     * @brief The element at @p i, whatever the chunk's state.
-     *
-     * @details The single point every element READ goes through. A Chunk2A
-     *          chunk compressed to a second constant points at an identifier
-     *          slot that holds nothing (tab_cst_val2_holder.h), so its value
-     *          comes from the registry: one pointer range test on the read
-     *          path, in this one place rather than seven.
-     *
-     * @note NOT used by print_adr() or operator()(int): those hand out an
-     *       address and a mutable reference into the buffer, which a registry
-     *       lookup cannot stand in for.
-     */
-    /// @tparam Relaxed read the element through a relaxed atomic_ref: for an
-    ///         element another thread may be writing (relaxed_element.h).
-    template <bool Relaxed = false>
-    [[nodiscard]] T element_at(int i) const noexcept
-    {
-        // The one branch identifiers cost: a compressed-to-second-constant
-        // chunk points into a region that was never written, so the
-        // constant comes from the value table instead. The test is a
-        // pointer range test and it is very well predicted -- 83% of reads
-        // on the reference run go to materialised chunks.
-        //
-        // ONE load. Asking derived().is_cst_val2() and then dereferencing
-        // values_load() loads the pointer twice, and a compressor claiming
-        // the chunk in between swaps it for a region identifier: the second
-        // load then indexes that identifier as a buffer, in a page that was
-        // never mapped. SIGSEGV at 24 threads, in element_at, on a valid
-        // index. Same defect, same fix as read_values().
-        // Through the CRTP hooks, so chunk_base keeps knowing nothing of
-        // the registry -- but taking the pointer, so the test and the read
-        // are about the same load.
-        //
-        // Gated on the variant, NOT on a `requires` probe for the hooks. A
-        // probe fails OPEN: where it evaluates false the code falls through
-        // to values_load()[i], which on a compressed chunk reads the
-        // unwritten region and returns 0 -- a wrong number, not a build
-        // error. That happened twice: once with the hooks genuinely
-        // missing, and once under nvhpc, whose concept evaluation on the
-        // still-incomplete CRTP Derived did not see them while gcc and
-        // clang did. std::is_same_v against the forward-declared Chunk2A
-        // (chunk_traits.h) is a plain type comparison: no concepts, no
-        // member lookup, nothing a compiler can decide differently. It also
-        // works for the variants that have no such member at all.
-        if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
-        {
-            static_assert(
-                requires(const Derived& obj, const T* ptr) {
-                    obj.is_cst_val2_ptr_of(ptr);
-                    obj.second_value_from_ptr(ptr);
-                }, "Chunk2A must provide is_cst_val2_ptr_of() and second_value_from_ptr(): "
-                   "its second values are identifiers, not filled arrays");
-            const T* const vals = values_load();
-            if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
-                return derived().second_value_from_ptr(vals);
-            return load_at<Relaxed>(vals, i);
-        }
-        return load_at<Relaxed>(values_load(), i);
-    }
-
-    template <bool Relaxed>
-    [[nodiscard]] static T load_at(const T* vals, int i) noexcept
-    {
-        if constexpr (is_packed)
-            return elem_get(vals, static_cast<std::size_t>(i)); // relaxed word load under OpenMP
-        else if constexpr (Relaxed)
-            return internal::load_element_relaxed(vals + i);
-        else
-            return vals[i];
-    }
-
-  public:
     /// @brief Load the values pointer with appropriate memory ordering
     /// @return Pointer to the chunk data
     [[nodiscard]] T* values_load() const noexcept
@@ -1288,21 +1116,6 @@ class ChunkBase : public CRTPSupport<Derived>,
     // ========================================================================
     // Constant value testing (first value)
     // ========================================================================
-    /// @brief The (read-only) buffer every compressed-to-first-value chunk
-    ///        points at.
-    /// @return Pointer to the shared first-constant buffer.
-    static T* get_cst_val1() noexcept
-    {
-        if constexpr (use_mm_protect)
-        {
-            return m_ptr_cst_val1;
-        }
-        else
-        {
-            return m_ptr_cst_val1.data();
-        }
-    }
-
     /// @brief Check if chunk points to the first constant value
     /// @return true if chunk is compressed to first constant value
     [[nodiscard]] bool is_cst_val1() const noexcept
@@ -1318,15 +1131,6 @@ class ChunkBase : public CRTPSupport<Derived>,
         return current_value == ChunkBase::get_cst_val1();
     }
 
-  protected:
-    /// @brief Check if chunk does not point to the first constant value
-    /// @return true if chunk is not compressed to first constant value
-    [[nodiscard]] bool is_not_cst_val1() const noexcept
-    {
-        return !is_cst_val1();
-    }
-
-  public:
     // ========================================================================
     // Value reading operations
     // ========================================================================
@@ -1358,13 +1162,6 @@ class ChunkBase : public CRTPSupport<Derived>,
         }
         return element_at<true>(i);
     }
-
-    /// @brief Outcome of scan_constants(): which hypothesis survived the walk.
-    struct ConstantScan
-    {
-        bool first  = false; ///< every element equals the first constant
-        bool second = false; ///< every element equals the second constant -- never together with `first`
-    };
 
     /**
      * @brief One walk over the materialised buffer against two constants.
@@ -1437,13 +1234,6 @@ class ChunkBase : public CRTPSupport<Derived>,
         return scan;
     }
 
-  private:
-    /// @brief Elements per branch-free block of the constant scans.
-    ///        A quarter of a 256-element chunk: four early-exit points, and a
-    ///        block long enough for the vector loop to matter.
-    static constexpr unsigned int kScanBlock = 64;
-
-  public:
     /// @brief Is the materialised buffer all @p v over its first @p count elements?
     /// @pre The chunk is materialised.
     [[nodiscard]] bool is_constant_to(in_t<T> v, unsigned int count) const noexcept
@@ -1513,30 +1303,6 @@ class ChunkBase : public CRTPSupport<Derived>,
     // entry points under build_config::sync_on_read — is inherited from
     // DeferredReadGate<Derived> above (None/Coarse/Precise per build).
 
-  private:
-    /// @brief Get the address of a value at given index
-    /// @param i Index in the chunk
-    /// @return Pointer to the value at index i
-    [[nodiscard]] T* print_adr(int i) const noexcept
-    {
-        // An ADDRESS into the buffer, which the registry cannot stand in for:
-        // a second-value chunk has no buffer. Materialise first,
-        // so the address is real and the semantics are exactly what they were.
-        // Its only caller is ArrayChunkBase's re-export, itself never called
-        // internally -- this is a diagnostic path.
-        if constexpr (requires {
-                          derived().is_cst_val2();
-                          derived().materialise_for_address();
-                      })
-        {
-            if (derived().is_cst_val2()) [[unlikely]]
-                derived().materialise_for_address();
-        }
-        static_assert(!is_packed, "print_adr: a Bit has no address (bit.h)");
-        return &values_load()[i];
-    }
-
-  public:
     // ========================================================================
     // Read-only operator[]
     // ========================================================================
@@ -1607,57 +1373,6 @@ class ChunkBase : public CRTPSupport<Derived>,
     // Block initialization
     // ========================================================================
 
-    /// @brief Set @p n_elems elements of @p values_loc to the first value,
-    ///        T{}: memset for arithmetic types, std::fill_n otherwise.
-    /// @param values_loc block to initialise
-    /// @param n_elems    the block's OWN element count -- callers that know the
-    ///                   buffer's geometry MUST use this overload; the no-count
-    ///                   form falls back to the ambient size, which overflows a
-    ///                   buffer allocated at a different geometry.
-    static void init_block(T* values_loc, unsigned int n_elems) noexcept
-    {
-        const std::size_t units = Derived::storage_units(n_elems);
-        if constexpr ((std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>) || is_packed)
-        {
-            std::memset(static_cast<void*>(values_loc), 0, units * sizeof(T)); // Bit: all words 0, every bit false
-        }
-        else
-        {
-            std::fill_n(values_loc, units, T{});
-        }
-    }
-
-    /**
-     * @brief Units of T to allocate for a chunk of @p n_elems elements.
-     * @details One per element: element i is values[i]. A packed chunk
-     *          (ChunkBits: 8 bools per byte) hides this with fewer, and every
-     *          allocation, allocator geometry and byte count goes through
-     *          Derived::storage_units(), never through the element count alone.
-     */
-    [[nodiscard]] static constexpr std::size_t storage_units(std::size_t n_elems) noexcept
-    {
-        if constexpr (is_packed)
-            return bits::bytes_for(n_elems) / sizeof(T); // whole 64-bit words
-        else
-            return n_elems;
-    }
-
-    /// @brief init_block() over the active geometry's storage.
-    static void init_block(T* values_loc) noexcept
-    {
-        const std::size_t units = Derived::storage_units(alloc_chunk_count());
-        if constexpr ((std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>) || is_packed)
-        {
-            // For trivially constructible scalar types: use memset (fastest option)
-            std::memset(static_cast<void*>(values_loc), 0, units * sizeof(T)); // Bit: raw words, not Bit objects
-        }
-        else
-        {
-            // For all other cases (composite_arithmetic, non-trivial types, etc.)
-            std::fill_n(values_loc, units, T{});
-        }
-    }
-
     /// @brief Initialize the current chunk's memory block
     void init_block() noexcept
     {
@@ -1714,50 +1429,6 @@ class ChunkBase : public CRTPSupport<Derived>,
         }
     }
 
-  private:
-    /// @brief Return @p ptr to the allocator instance that carved it, found
-    ///        through its slab (TCAllocator::owner / owner_rank), never
-    ///        through the caller's rank.
-    /// @details A slab chain may only be mutated by the rank that owns it while
-    ///          a region is open. So the block is freed directly when it is
-    ///          ours, unranked (serial pools), or when no region is open; a
-    ///          foreign block inside a region is parked on OUR list under ITS
-    ///          affinity key, where this rank may reuse it for that array and
-    ///          the next drain routes it home. Before the owner fields existed
-    ///          this freed into get_chunk_allocator(thr_rank) -- the caller's
-    ///          instance -- which for a foreign block mutated another rank's
-    ///          chains from the wrong thread.
-    /// @pre fast-alloc build.
-    void release_to_owner(int thr_rank, T* ptr)
-    {
-        // Callers such as block_clear()/clear_st() pass the default rank 0 from
-        // inside a region: the rank that matters here is the one running this
-        // code, both for "is it mine" and for which list a foreign block is
-        // parked on (a rank only ever touches its own list inside a region).
-        if (CHUNK_PMP_IN_PARALLEL_REGION)
-            thr_rank = CHUNK_PMP_THREAD_RANK;
-        auto& mine = get_chunk_allocator(thr_rank); // same slab geometry for every key
-        auto* slab = mine.slab_of(ptr);
-        if (slab == nullptr || slab->owner == nullptr)
-        {
-            // No slab behind this pointer (bypass_slabs, or an instance never
-            // initialised): the legacy route is the only one there is.
-            mine.free_elt_pow2(ptr);
-            return;
-        }
-        auto* owner = static_cast<std::remove_reference_t<decltype(mine)>*>(const_cast<void*>(slab->owner));
-        if (slab->owner_rank < 0 || slab->owner_rank == thr_rank || !CHUNK_PMP_IN_PARALLEL_REGION)
-        {
-            CHUNK_FREEPATH_INC(freed);
-            owner->free_elt_pow2(ptr, slab);
-            return;
-        }
-        CHUNK_FREEPATH_INC(park_foreign);
-        CHUNK_LEDGER_PARK(ptr, "release_to_owner.park_foreign");
-        derived().get_manager().get_list_block_free_thr(thr_rank, slab->owner_key).push_back(ptr);
-    }
-
-  public:
     /// @brief Free this chunk's current values buffer.
     /// @param thr_rank Calling thread's rank; forwarded to free_values(T*, int).
     void free_values([[maybe_unused]] int thr_rank = 0)
@@ -1773,11 +1444,212 @@ class ChunkBase : public CRTPSupport<Derived>,
     // class inheriting it), which resolves through inheritance identically
     // to a member declared directly here.
 
+    // allocator_pool_/allocator_pool_serial_/register_chunk_size/
+    // register_chunk_size_serial moved to ChunkDynamicAllocPolicy<T, Derived,
+    // true> above (empty in the false specialization -- static builds have no
+    // per-size pool).
+
+    // ChunkDeferredOpsPolicy<T, Derived, true> above; ChunkBase now inherits
+    // them (empty in the false specialization -- nothing exists in serial).
+
+    /// @brief Get the allocator to use for the current thread and active
+    ///        chunk size.
+    /// @details Only meaningful when build_config::use_fast_alloc is set;
+    ///          otherwise aborts (this build never uses a fast allocator, so
+    ///          this path should never be reached). Dynamic-vs-static
+    ///          routing (per-size pool vs the single legacy allocator) is
+    ///          delegated to Derived::route_omp_dynamic_alloc()/
+    ///          route_serial_dynamic_alloc(), selected on
+    ///          build_config::use_openmp.
+    /// @param thr_rank Calling thread's rank; only meaningful in OpenMP
+    ///                 builds (ignored in serial builds).
+    /// @return Reference to the allocator to use for this thread/build mode.
+    /// @param key Affinity key of the array being served (0 = shared rank
+    ///            pool). Only the dynamic OpenMP registry honours it so far.
+    static auto& get_chunk_allocator([[maybe_unused]] int          thr_rank,
+                                     [[maybe_unused]] unsigned int key = thread_alloc_key()) noexcept
+    {
+        if constexpr (build_config::use_fast_alloc)
+        {
+            // Dynamic-vs-static routing lives on ChunkDynamicAllocPolicy (both
+            // specializations declare route_omp_dynamic_alloc/
+            // route_serial_dynamic_alloc -- the true specialization consults
+            // allocator_pool_/allocator_pool_serial_, the false one always falls
+            // through to allocator_data).
+            if constexpr (build_config::use_openmp)
+            {
+                return Derived::route_omp_dynamic_alloc(thr_rank, key);
+            }
+            else
+            {
+                return Derived::route_serial_dynamic_alloc();
+            }
+        }
+        else
+        {
+            std::abort();
+        }
+    }
+
+    /// @brief The (read-only) buffer every compressed-to-first-value chunk
+    ///        points at.
+    /// @return Pointer to the shared first-constant buffer.
+    static T* get_cst_val1() noexcept
+    {
+        if constexpr (use_mm_protect)
+        {
+            return m_ptr_cst_val1;
+        }
+        else
+        {
+            return m_ptr_cst_val1.data();
+        }
+    }
+
+    /// @brief Set @p n_elems elements of @p values_loc to the first value,
+    ///        T{}: memset for arithmetic types, std::fill_n otherwise.
+    /// @param values_loc block to initialise
+    /// @param n_elems    the block's OWN element count -- callers that know the
+    ///                   buffer's geometry MUST use this overload; the no-count
+    ///                   form falls back to the ambient size, which overflows a
+    ///                   buffer allocated at a different geometry.
+    static void init_block(T* values_loc, unsigned int n_elems) noexcept
+    {
+        const std::size_t units = Derived::storage_units(n_elems);
+        if constexpr ((std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>) || is_packed)
+        {
+            std::memset(static_cast<void*>(values_loc), 0, units * sizeof(T)); // Bit: all words 0, every bit false
+        }
+        else
+        {
+            std::fill_n(values_loc, units, T{});
+        }
+    }
+
+    /**
+     * @brief Units of T to allocate for a chunk of @p n_elems elements.
+     * @details One per element: element i is values[i]. A packed chunk
+     *          (ChunkBits: 8 bools per byte) hides this with fewer, and every
+     *          allocation, allocator geometry and byte count goes through
+     *          Derived::storage_units(), never through the element count alone.
+     */
+    [[nodiscard]] static constexpr std::size_t storage_units(std::size_t n_elems) noexcept
+    {
+        if constexpr (is_packed)
+            return bits::bytes_for(n_elems) / sizeof(T); // whole 64-bit words
+        else
+            return n_elems;
+    }
+
+    /// @brief init_block() over the active geometry's storage.
+    static void init_block(T* values_loc) noexcept
+    {
+        const std::size_t units = Derived::storage_units(alloc_chunk_count());
+        if constexpr ((std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>) || is_packed)
+        {
+            // For trivially constructible scalar types: use memset (fastest option)
+            std::memset(static_cast<void*>(values_loc), 0, units * sizeof(T)); // Bit: raw words, not Bit objects
+        }
+        else
+        {
+            // For all other cases (composite_arithmetic, non-trivial types, etc.)
+            std::fill_n(values_loc, units, T{});
+        }
+    }
+
+    static inline AllocatorType allocator_data;
+
+    /// First constant value for compression: the value-initialised T. Spelled
+    /// T{} and not 0 everywhere in the library, so that an aggregate (a struct
+    /// of doubles, a std::array) is a first-class element type -- `T{0}` would
+    /// initialise its first member only, `T(0)` not compile.
+    static inline T first_value{};
+
+    // alignas: a Bit chunk compressed to the first constant points here, and
+    // its reads load 64-bit words (element_access.h).
+    alignas(bits::word_t) static inline cst_val1_type m_ptr_cst_val1 = []
+    {
+        if constexpr (build_config::use_mm_protect)
+        {
+            // --- branch mmap ---
+            const size_t bytes     = cst_buffer_size * sizeof(T);
+            const size_t pagesize  = sysconf(_SC_PAGESIZE);
+            const size_t allocsize = ((bytes + pagesize - 1) / pagesize) * pagesize;
+
+            void* ptr = mmap(nullptr, allocsize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+            if (ptr == MAP_FAILED)
+            {
+                perror("mmap failed");
+                std::abort();
+            }
+
+            T* arr = static_cast<T*>(ptr);
+            for (size_t i = 0; i < cst_buffer_size; ++i)
+                arr[i] = first_value;
+
+            mprotect(ptr, allocsize, PROT_READ);
+            return arr;
+        }
+        else
+        {
+            // --- branch std::array ---
+            std::array<T, cst_buffer_size> arr{};
+            arr.fill(first_value);
+            return arr;
+        }
+    }();
+
+  protected:
+    // Type traits
+    // bool and Bit (bit.h) share chunk2's bool path: one second value, true.
+    static constexpr bool is_bool     = is_bool_like_v<T>;
+    static constexpr bool is_not_bool = !is_bool;
+
+    constexpr static T zero{};
+
+    /// @brief Debug-only assertion: abort if offset j is not currently
+    ///        written (a clear on an unwritten offset is a bug). Compiled
+    ///        out entirely when build_config::any_check is off.
+    /// @param j Element offset expected to be written.
+    void debug_check_written(int j) const noexcept
+    {
+        if constexpr (build_config::any_check)
+        {
+            if (!is_written_at(j))
+            {
+                std::cerr << "Error: trying to clear a chunk that is not written\n";
+                std::abort();
+            }
+        }
+    }
+
+    /// @brief Debug-only assertion: abort if this chunk is not currently
+    ///        written. Compiled out entirely when build_config::any_check is
+    ///        off.
+    void debug_check_written() const noexcept
+    {
+        if constexpr (build_config::any_check)
+        {
+            if (!derived().written())
+            {
+                std::cerr << "Error: trying to clear a chunk that is not written\n";
+                std::abort();
+            }
+        }
+    }
+
+    /// @brief Check if chunk does not point to the first constant value
+    /// @return true if chunk is not compressed to first constant value
+    [[nodiscard]] bool is_not_cst_val1() const noexcept
+    {
+        return !is_cst_val1();
+    }
+
     // ========================================================================
     // Chunk deallocation
     // ========================================================================
 
-  protected:
     /// @brief Return a block to the free-pool, preferring the local thread's
     ///        free list over a real free -- and never pushing a foreign
     ///        block onto ANOTHER thread's free-list (see the out-of-line
@@ -1790,7 +1662,6 @@ class ChunkBase : public CRTPSupport<Derived>,
     // to_be_queued_for_deferred_processing/wait_for_availability/
     // is_not_available moved to ChunkDeferredOpsPolicy<T, Derived, true>
     // above (bodies of the last 3 still out-of-line, in chunk_base_inline.h).
-
 
     // ========================================================================
     // Member variables
@@ -1915,48 +1786,172 @@ class ChunkBase : public CRTPSupport<Derived>,
     static void steal_unmark() noexcept {}
 #endif
 
-    /// First constant value for compression: the value-initialised T. Spelled
-    /// T{} and not 0 everywhere in the library, so that an aggregate (a struct
-    /// of doubles, a std::array) is a first-class element type -- `T{0}` would
-    /// initialise its first member only, `T(0)` not compile.
-    static inline T first_value{};
+  private:
+    /// The buffer is words of bits (Bit), not an array of T.
+    static constexpr bool is_packed = is_packed_bit_v<T>;
 
-    using cst_val1_type = std::conditional_t<build_config::use_mm_protect, T*, std::array<T, cst_buffer_size>>;
+    static constexpr bool use_mm_protect = build_config::use_mm_protect;
 
-    // alignas: a Bit chunk compressed to the first constant points here, and
-    // its reads load 64-bit words (element_access.h).
-    alignas(bits::word_t) static inline cst_val1_type m_ptr_cst_val1 = []
+    /// @brief Elements per branch-free block of the constant scans.
+    ///        A quarter of a 256-element chunk: four early-exit points, and a
+    ///        block long enough for the vector loop to matter.
+    static constexpr unsigned int kScanBlock = 64;
+
+    /// @brief Whether this chunk is currently materialised (not compressed
+    ///        to a constant), at the granularity Derived supports.
+    /// @param j Element offset; used only when Derived distinguishes
+    ///          writtenness per-offset (e.g. Chunk2/Chunk2A's second-value
+    ///          slot); ignored otherwise (falls back to derived().written()).
+    /// @return true if the chunk (or offset j) holds real, materialised data.
+    [[nodiscard]] bool is_written_at(int j) const noexcept
     {
-        if constexpr (build_config::use_mm_protect)
+        if constexpr (requires { derived().written(j); })
         {
-            // --- branch mmap ---
-            const size_t bytes     = cst_buffer_size * sizeof(T);
-            const size_t pagesize  = sysconf(_SC_PAGESIZE);
-            const size_t allocsize = ((bytes + pagesize - 1) / pagesize) * pagesize;
-
-            void* ptr = mmap(nullptr, allocsize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-
-            if (ptr == MAP_FAILED)
-            {
-                perror("mmap failed");
-                std::abort();
-            }
-
-            T* arr = static_cast<T*>(ptr);
-            for (size_t i = 0; i < cst_buffer_size; ++i)
-                arr[i] = first_value;
-
-            mprotect(ptr, allocsize, PROT_READ);
-            return arr;
+            // Use specialized logic from Derived (e.g., ArrayChunk2)
+            return derived().written(j);
         }
         else
         {
-            // --- branch std::array ---
-            std::array<T, cst_buffer_size> arr{};
-            arr.fill(first_value);
-            return arr;
+            // Default fallback for ArrayChunk and ArrayChunk2A
+            return derived().written();
         }
-    }();
+    }
+
+    /**
+     * @brief The element at @p i, whatever the chunk's state.
+     *
+     * @details The single point every element READ goes through. A Chunk2A
+     *          chunk compressed to a second constant points at an identifier
+     *          slot that holds nothing (tab_cst_val2_holder.h), so its value
+     *          comes from the registry: one pointer range test on the read
+     *          path, in this one place rather than seven.
+     *
+     * @note NOT used by print_adr() or operator()(int): those hand out an
+     *       address and a mutable reference into the buffer, which a registry
+     *       lookup cannot stand in for.
+     */
+    /// @tparam Relaxed read the element through a relaxed atomic_ref: for an
+    ///         element another thread may be writing (relaxed_element.h).
+    template <bool Relaxed = false>
+    [[nodiscard]] T element_at(int i) const noexcept
+    {
+        // The one branch identifiers cost: a compressed-to-second-constant
+        // chunk points into a region that was never written, so the
+        // constant comes from the value table instead. The test is a
+        // pointer range test and it is very well predicted -- 83% of reads
+        // on the reference run go to materialised chunks.
+        //
+        // ONE load. Asking derived().is_cst_val2() and then dereferencing
+        // values_load() loads the pointer twice, and a compressor claiming
+        // the chunk in between swaps it for a region identifier: the second
+        // load then indexes that identifier as a buffer, in a page that was
+        // never mapped. SIGSEGV at 24 threads, in element_at, on a valid
+        // index. Same defect, same fix as read_values().
+        // Through the CRTP hooks, so chunk_base keeps knowing nothing of
+        // the registry -- but taking the pointer, so the test and the read
+        // are about the same load.
+        //
+        // Gated on the variant, NOT on a `requires` probe for the hooks. A
+        // probe fails OPEN: where it evaluates false the code falls through
+        // to values_load()[i], which on a compressed chunk reads the
+        // unwritten region and returns 0 -- a wrong number, not a build
+        // error. That happened twice: once with the hooks genuinely
+        // missing, and once under nvhpc, whose concept evaluation on the
+        // still-incomplete CRTP Derived did not see them while gcc and
+        // clang did. std::is_same_v against the forward-declared Chunk2A
+        // (chunk_traits.h) is a plain type comparison: no concepts, no
+        // member lookup, nothing a compiler can decide differently. It also
+        // works for the variants that have no such member at all.
+        if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
+        {
+            static_assert(
+                requires(const Derived& obj, const T* ptr) {
+                    obj.is_cst_val2_ptr_of(ptr);
+                    obj.second_value_from_ptr(ptr);
+                }, "Chunk2A must provide is_cst_val2_ptr_of() and second_value_from_ptr(): "
+                   "its second values are identifiers, not filled arrays");
+            const T* const vals = values_load();
+            if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
+                return derived().second_value_from_ptr(vals);
+            return load_at<Relaxed>(vals, i);
+        }
+        return load_at<Relaxed>(values_load(), i);
+    }
+
+    /// @brief Get the address of a value at given index
+    /// @param i Index in the chunk
+    /// @return Pointer to the value at index i
+    [[nodiscard]] T* print_adr(int i) const noexcept
+    {
+        // An ADDRESS into the buffer, which the registry cannot stand in for:
+        // a second-value chunk has no buffer. Materialise first,
+        // so the address is real and the semantics are exactly what they were.
+        // Its only caller is ArrayChunkBase's re-export, itself never called
+        // internally -- this is a diagnostic path.
+        if constexpr (requires {
+                          derived().is_cst_val2();
+                          derived().materialise_for_address();
+                      })
+        {
+            if (derived().is_cst_val2()) [[unlikely]]
+                derived().materialise_for_address();
+        }
+        static_assert(!is_packed, "print_adr: a Bit has no address (bit.h)");
+        return &values_load()[i];
+    }
+
+    /// @brief Return @p ptr to the allocator instance that carved it, found
+    ///        through its slab (TCAllocator::owner / owner_rank), never
+    ///        through the caller's rank.
+    /// @details A slab chain may only be mutated by the rank that owns it while
+    ///          a region is open. So the block is freed directly when it is
+    ///          ours, unranked (serial pools), or when no region is open; a
+    ///          foreign block inside a region is parked on OUR list under ITS
+    ///          affinity key, where this rank may reuse it for that array and
+    ///          the next drain routes it home. Before the owner fields existed
+    ///          this freed into get_chunk_allocator(thr_rank) -- the caller's
+    ///          instance -- which for a foreign block mutated another rank's
+    ///          chains from the wrong thread.
+    /// @pre fast-alloc build.
+    void release_to_owner(int thr_rank, T* ptr)
+    {
+        // Callers such as block_clear()/clear_st() pass the default rank 0 from
+        // inside a region: the rank that matters here is the one running this
+        // code, both for "is it mine" and for which list a foreign block is
+        // parked on (a rank only ever touches its own list inside a region).
+        if (CHUNK_PMP_IN_PARALLEL_REGION)
+            thr_rank = CHUNK_PMP_THREAD_RANK;
+        auto& mine = get_chunk_allocator(thr_rank); // same slab geometry for every key
+        auto* slab = mine.slab_of(ptr);
+        if (slab == nullptr || slab->owner == nullptr)
+        {
+            // No slab behind this pointer (bypass_slabs, or an instance never
+            // initialised): the legacy route is the only one there is.
+            mine.free_elt_pow2(ptr);
+            return;
+        }
+        auto* owner = static_cast<std::remove_reference_t<decltype(mine)>*>(const_cast<void*>(slab->owner));
+        if (slab->owner_rank < 0 || slab->owner_rank == thr_rank || !CHUNK_PMP_IN_PARALLEL_REGION)
+        {
+            CHUNK_FREEPATH_INC(freed);
+            owner->free_elt_pow2(ptr, slab);
+            return;
+        }
+        CHUNK_FREEPATH_INC(park_foreign);
+        CHUNK_LEDGER_PARK(ptr, "release_to_owner.park_foreign");
+        derived().get_manager().get_list_block_free_thr(thr_rank, slab->owner_key).push_back(ptr);
+    }
+
+    template <bool Relaxed>
+    [[nodiscard]] static T load_at(const T* vals, int i) noexcept
+    {
+        if constexpr (is_packed)
+            return elem_get(vals, static_cast<std::size_t>(i)); // relaxed word load under OpenMP
+        else if constexpr (Relaxed)
+            return internal::load_element_relaxed(vals + i);
+        else
+            return vals[i];
+    }
 };
 
 } // namespace shrink_array

@@ -145,30 +145,8 @@ inline void* sctk_mmap(size_t size)
 class alignas(64) TCAllocator
 {
   public:
-    /// @brief Effective slab size for a requested @p block_bytes: alloc_block()
-    ///        rounds it up to a power of two. One rule, so the instance can
-    ///        resolve a pointer to its slab without a slab to ask.
-    [[nodiscard]] static uintptr_t slab_bytes_for(uintptr_t block_bytes) noexcept
-    {
-        return NextPowerOf2(block_bytes);
-    }
-
-    /// @brief The slab of @p slab_bytes (a power of two) holding @p ptr:
-    ///        mask down to the slab base, read the back-pointer in its last word.
-    [[nodiscard]] static TCAllocator* slab_from(const void* ptr, uintptr_t slab_bytes) noexcept
-    {
-        const char* base = reinterpret_cast<const char*>(reinterpret_cast<uintptr_t>(ptr) & (~(slab_bytes - 1)));
-        return *reinterpret_cast<TCAllocator* const*>(base + slab_bytes - sizeof(void*));
-    }
-
     /// @brief Leaves the slab unusable; init() is what makes it a slab.
     TCAllocator() {}
-
-    // FIX (op/ctx/value slab aliasing): which disjoint arena this slab draws
-    // from. Op and ctx pools share the TCAllocator class but MUST NOT share an
-    // address space (a freed ctx slab reobtained by the op pool overwrote a live
-    // op's vtable with ctx layout). Set by TCTypeAllocator before alloc_block().
-    fast_alloc::ArenaKind arena_kind = fast_alloc::ArenaKind::Op;
 
     /// @brief Returns the block to its arena.
     ~TCAllocator()
@@ -182,39 +160,6 @@ class alignas(64) TCAllocator
     TCAllocator(TCAllocator&&)                 = delete;
     TCAllocator& operator=(TCAllocator&&)      = delete;
 
-// Declaration-level switch, so it stays a directive: serial builds route slab
-// headers through their own pool, OpenMP builds use the global operators.
-#ifndef _OPENMP
-    void* operator new(size_t size);  ///< Slab headers come from their own pool.
-    void  operator delete(void* ptr); ///< Counterpart of the above.
-#endif
-
-  private:
-    /// @brief Return the block to the arena named by #arena_kind.
-    inline void destroy();
-
-    /**
-     * @brief Obtain the block and lay it out.
-     * @details Rounds the requested size up to a power of two (addr_to_block()
-     *          masks with it), derives #BlockSize from it, and writes `this`
-     *          into the block's last word.
-     */
-    inline void alloc_block();
-
-    /**
-     * @brief Recover the owning slab from a pointer to any element inside it.
-     * @param ptr Interior pointer, previously returned by alloc().
-     * @return The slab that owns @p ptr -- whichever allocator it belongs to.
-     * @details Masks @p ptr down to the block base, then reads the back-pointer
-     *          stored in the block's last word. This is what lets a block be
-     *          freed without knowing which allocator handed it out.
-     */
-    [[nodiscard]] TCAllocator* addr_to_block(const void* ptr) const noexcept
-    {
-        return slab_from(ptr, BlockAllocator);
-    }
-
-  public:
     /// @brief The size this slab was cut at -- slab_bytes_for() of the request.
     [[nodiscard]] uintptr_t slab_bytes() const noexcept
     {
@@ -277,7 +222,60 @@ class alignas(64) TCAllocator
         return nn_ref == BlockSize;
     }
 
+    /// @brief Effective slab size for a requested @p block_bytes: alloc_block()
+    ///        rounds it up to a power of two. One rule, so the instance can
+    ///        resolve a pointer to its slab without a slab to ask.
+    [[nodiscard]] static uintptr_t slab_bytes_for(uintptr_t block_bytes) noexcept
+    {
+        return NextPowerOf2(block_bytes);
+    }
+
+    /// @brief The slab of @p slab_bytes (a power of two) holding @p ptr:
+    ///        mask down to the slab base, read the back-pointer in its last word.
+    [[nodiscard]] static TCAllocator* slab_from(const void* ptr, uintptr_t slab_bytes) noexcept
+    {
+        const char* base = reinterpret_cast<const char*>(reinterpret_cast<uintptr_t>(ptr) & (~(slab_bytes - 1)));
+        return *reinterpret_cast<TCAllocator* const*>(base + slab_bytes - sizeof(void*));
+    }
+
+// Declaration-level switch, so it stays a directive: serial builds route slab
+// headers through their own pool, OpenMP builds use the global operators.
+#ifndef _OPENMP
+    void* operator new(size_t size);  ///< Slab headers come from their own pool.
+    void  operator delete(void* ptr); ///< Counterpart of the above.
+#endif
+
+    // FIX (op/ctx/value slab aliasing): which disjoint arena this slab draws
+    // from. Op and ctx pools share the TCAllocator class but MUST NOT share an
+    // address space (a freed ctx slab reobtained by the op pool overwrote a live
+    // op's vtable with ctx layout). Set by TCTypeAllocator before alloc_block().
+    fast_alloc::ArenaKind arena_kind = fast_alloc::ArenaKind::Op;
+
   private:
+    /// @brief Return the block to the arena named by #arena_kind.
+    inline void destroy();
+
+    /**
+     * @brief Obtain the block and lay it out.
+     * @details Rounds the requested size up to a power of two (addr_to_block()
+     *          masks with it), derives #BlockSize from it, and writes `this`
+     *          into the block's last word.
+     */
+    inline void alloc_block();
+
+    /**
+     * @brief Recover the owning slab from a pointer to any element inside it.
+     * @param ptr Interior pointer, previously returned by alloc().
+     * @return The slab that owns @p ptr -- whichever allocator it belongs to.
+     * @details Masks @p ptr down to the block base, then reads the back-pointer
+     *          stored in the block's last word. This is what lets a block be
+     *          freed without knowing which allocator handed it out.
+     */
+    [[nodiscard]] TCAllocator* addr_to_block(const void* ptr) const noexcept
+    {
+        return slab_from(ptr, BlockAllocator);
+    }
+
     char* data = nullptr; ///< The block itself, aligned on #BlockAllocator.
 
     uintptr_t BlockAllocator = 0; ///< Block size in bytes; a power of two.
@@ -339,37 +337,11 @@ class alignas(64) TCAllocator
  * @note Slabs come from fast_alloc::value_arena(), which is disjoint from the
  *       op and ctx arenas on purpose -- see the note in alloc_block().
  */
-struct alignas(64) TCCAllocator
+class alignas(64) TCCAllocator
 {
-    /// @brief Effective slab size for a requested @p block_bytes: rounded up to
-    ///        a power of two. ONE rule, shared by alloc_block(), the instance's
-    ///        init() and slab_of().
-    /// @details Independent of the element size, on purpose. A buffer is freed
-    ///          through slab_of() of the allocator the thread's AMBIENT chunk
-    ///          size selects (ChunkBase::release_to_owner), which after a
-    ///          re-chunk need not be the size that allocated it; that only
-    ///          finds the right slab if every allocator of one element type
-    ///          cuts its slabs at the same size. This used to shrink a slab
-    ///          whose capacity exceeded what the `unsigned short` side array
-    ///          indexes -- for small elements (8 and 16 bytes in a 2 MiB budget:
-    ///          256 and 512 KiB slabs) the geometry then depended on the element
-    ///          size, and slab_of() read a "slab" pointer out of the middle of a
-    ///          block (slab_geometry_validation). The capacity is capped in
-    ///          alloc_block() instead; the unused tail is never touched.
-    /// @param block_bytes   Bytes the slab must hold.
-    /// @param element_bytes Unused; kept so that the call sites read alike.
-    [[nodiscard]] static uintptr_t slab_bytes_for(uintptr_t block_bytes, [[maybe_unused]] int element_bytes) noexcept
-    {
-        return NextPowerOf2(block_bytes);
-    }
-
-    /// @brief The slab of @p slab_bytes (a power of two) holding @p ptr:
-    ///        mask down to the slab base, read the back-pointer in its last word.
-    [[nodiscard]] static TCCAllocator* slab_from(const void* ptr, uintptr_t slab_bytes) noexcept
-    {
-        const char* base = reinterpret_cast<const char*>(reinterpret_cast<uintptr_t>(ptr) & (~(slab_bytes - 1)));
-        return *reinterpret_cast<TCCAllocator* const*>(base + slab_bytes - sizeof(void*));
-    }
+  public:
+    /// @brief Free-list terminator, and the exclusive upper bound on #BlockSize.
+    static constexpr short first_free_init = 32767;
 
     /// @brief Leaves the slab unusable; init() is what makes it a slab.
     TCCAllocator() {}
@@ -386,41 +358,6 @@ struct alignas(64) TCCAllocator
     TCCAllocator(TCCAllocator&&)                 = delete;
     TCCAllocator& operator=(TCCAllocator&&)      = delete;
 
-// Declaration-level switch, so it stays a directive. See ::TCAllocator.
-#ifndef _OPENMP
-    void* operator new(size_t size);  ///< Slab headers come from their own pool.
-    void  operator delete(void* ptr); ///< Counterpart of the above.
-#endif
-
-  private:
-    /// @brief Free #tab_firstFree and hand the block back to the value arena.
-    inline void destroy();
-
-    /**
-     * @brief Obtain the block and lay it out.
-     * @details Rounds the block size up to a power of two, clamps #BlockSize so
-     *          it fits an `unsigned short` index, allocates #tab_firstFree, then
-     *          takes the block from fast_alloc::value_arena(). The block is not
-     *          cleared, fresh or recycled: see the class @warning.
-     */
-    inline void alloc_block();
-
-    /**
-     * @brief Recover the owning slab from a pointer to any element inside it.
-     * @param ptr Interior pointer, previously returned by alloc().
-     * @return The slab that owns @p ptr, whichever allocator handed it out.
-     * @see TCAllocator::addr_to_block for the mechanism.
-     */
-    TCCAllocator* addr_to_block(const void* ptr) const noexcept
-    {
-        // the block is aligned on BlockAllocator: allows direct access to the block start from any pointer into it
-
-        const char* debutBlock = reinterpret_cast<char*>(reinterpret_cast<uintptr_t>(ptr) & (~(BlockAllocator - 1)));
-        // this pointer stored at the end of the block
-        return *reinterpret_cast<TCCAllocator**>(const_cast<char*>(debutBlock) + BlockAllocator - sizeof(void*));
-    }
-
-  public:
     /**
      * @brief Set the geometry and obtain the block.
      * @param ElementSize_ Element size in BYTES.
@@ -475,22 +412,80 @@ struct alignas(64) TCCAllocator
         return nn_ref == BlockSize;
     }
 
+    /// @brief Effective slab size for a requested @p block_bytes: rounded up to
+    ///        a power of two. ONE rule, shared by alloc_block(), the instance's
+    ///        init() and slab_of().
+    /// @details Independent of the element size, on purpose. A buffer is freed
+    ///          through slab_of() of the allocator the thread's AMBIENT chunk
+    ///          size selects (ChunkBase::release_to_owner), which after a
+    ///          re-chunk need not be the size that allocated it; that only
+    ///          finds the right slab if every allocator of one element type
+    ///          cuts its slabs at the same size. This used to shrink a slab
+    ///          whose capacity exceeded what the `unsigned short` side array
+    ///          indexes -- for small elements (8 and 16 bytes in a 2 MiB budget:
+    ///          256 and 512 KiB slabs) the geometry then depended on the element
+    ///          size, and slab_of() read a "slab" pointer out of the middle of a
+    ///          block (slab_geometry_validation). The capacity is capped in
+    ///          alloc_block() instead; the unused tail is never touched.
+    /// @param block_bytes   Bytes the slab must hold.
+    /// @param element_bytes Unused; kept so that the call sites read alike.
+    [[nodiscard]] static uintptr_t slab_bytes_for(uintptr_t block_bytes, [[maybe_unused]] int element_bytes) noexcept
+    {
+        return NextPowerOf2(block_bytes);
+    }
+
+    /// @brief The slab of @p slab_bytes (a power of two) holding @p ptr:
+    ///        mask down to the slab base, read the back-pointer in its last word.
+    [[nodiscard]] static TCCAllocator* slab_from(const void* ptr, uintptr_t slab_bytes) noexcept
+    {
+        const char* base = reinterpret_cast<const char*>(reinterpret_cast<uintptr_t>(ptr) & (~(slab_bytes - 1)));
+        return *reinterpret_cast<TCCAllocator* const*>(base + slab_bytes - sizeof(void*));
+    }
+
+// Declaration-level switch, so it stays a directive. See ::TCAllocator.
+#ifndef _OPENMP
+    void* operator new(size_t size);  ///< Slab headers come from their own pool.
+    void  operator delete(void* ptr); ///< Counterpart of the above.
+#endif
+
+    char* data = nullptr; ///< The block itself, aligned on #BlockAllocator.
+
+    unsigned short firstFree{first_free_init}; ///< Head of the free list; #first_free_init if empty.
+
   private:
+    /// @brief Free #tab_firstFree and hand the block back to the value arena.
+    inline void destroy();
+
+    /**
+     * @brief Obtain the block and lay it out.
+     * @details Rounds the block size up to a power of two, clamps #BlockSize so
+     *          it fits an `unsigned short` index, allocates #tab_firstFree, then
+     *          takes the block from fast_alloc::value_arena(). The block is not
+     *          cleared, fresh or recycled: see the class @warning.
+     */
+    inline void alloc_block();
+
+    /**
+     * @brief Recover the owning slab from a pointer to any element inside it.
+     * @param ptr Interior pointer, previously returned by alloc().
+     * @return The slab that owns @p ptr, whichever allocator handed it out.
+     * @see TCAllocator::addr_to_block for the mechanism.
+     */
+    TCCAllocator* addr_to_block(const void* ptr) const noexcept
+    {
+        // the block is aligned on BlockAllocator: allows direct access to the block start from any pointer into it
+
+        const char* debutBlock = reinterpret_cast<char*>(reinterpret_cast<uintptr_t>(ptr) & (~(BlockAllocator - 1)));
+        // this pointer stored at the end of the block
+        return *reinterpret_cast<TCCAllocator**>(const_cast<char*>(debutBlock) + BlockAllocator - sizeof(void*));
+    }
+
     /// @brief Complement of is_full().
     [[nodiscard]] bool is_not_full() const noexcept
     {
         return nn_ref < BlockSize;
     }
 
-  public:
-    char* data = nullptr; ///< The block itself, aligned on #BlockAllocator.
-
-    /// @brief Free-list terminator, and the exclusive upper bound on #BlockSize.
-    static constexpr short first_free_init = 32767;
-
-    unsigned short firstFree{first_free_init}; ///< Head of the free list; #first_free_init if empty.
-
-  private:
     /// @brief Free-list links, one per element. Kept out of the payload, so an
     ///        emptied slab's pages can be dropped without losing them.
     std::vector<unsigned short> tab_firstFree;
@@ -698,8 +693,9 @@ void sl_manage_full_empty(Node*&  block,
  * @details Every instance registers itself so a total can be taken across all
  *          element types without the reporting code knowing any of them.
  */
-struct VTCTypeAllocator
+class VTCTypeAllocator
 {
+  public:
     /// @brief Virtual, so the registry may hold any element type.
     virtual ~VTCTypeAllocator() = default;
 
@@ -741,12 +737,34 @@ void remove_TCTypeAllocator_inst(VTCTypeAllocator*);
  * @see bypass_slabs for when none of this machinery runs at all.
  */
 template <typename _ElementType>
-struct TCTypeAllocator final : public VTCTypeAllocator
+class TCTypeAllocator final : public VTCTypeAllocator
 {
   public:
     using ElementType = _ElementType;
 
     using TCAllocatorT = TCTypeAllocator<_ElementType>;
+
+    /// @brief Empty and unusable until init(); enrols in the report registry.
+    TCTypeAllocator()
+    {
+        ElementSize = 0;
+
+        add_TCTypeAllocator_inst(this);
+    }
+
+    /// @brief Unregisters from the instance list, then frees every slab.
+    ~TCTypeAllocator() override
+    {
+        remove_TCTypeAllocator_inst(this);
+
+        destroy_int();
+    }
+
+    // Owns its slabs and is enrolled by address in the report registry.
+    TCTypeAllocator(const TCTypeAllocator&)            = delete;
+    TCTypeAllocator& operator=(const TCTypeAllocator&) = delete;
+    TCTypeAllocator(TCTypeAllocator&&)                 = delete;
+    TCTypeAllocator& operator=(TCTypeAllocator&&)      = delete;
 
     /**
      * @brief Choose which arena this allocator's slabs are drawn from.
@@ -776,28 +794,6 @@ struct TCTypeAllocator final : public VTCTypeAllocator
             return nullptr;
         return TCAllocator::slab_from(ptr, slab_bytes_);
     }
-
-    /// @brief Empty and unusable until init(); enrols in the report registry.
-    TCTypeAllocator()
-    {
-        ElementSize = 0;
-
-        add_TCTypeAllocator_inst(this);
-    }
-
-    /// @brief Unregisters from the instance list, then frees every slab.
-    ~TCTypeAllocator() override
-    {
-        remove_TCTypeAllocator_inst(this);
-
-        destroy_int();
-    }
-
-    // Owns its slabs and is enrolled by address in the report registry.
-    TCTypeAllocator(const TCTypeAllocator&)            = delete;
-    TCTypeAllocator& operator=(const TCTypeAllocator&) = delete;
-    TCTypeAllocator(TCTypeAllocator&&)                 = delete;
-    TCTypeAllocator& operator=(TCTypeAllocator&&)      = delete;
 
     /**
      * @brief Release every slab and the reserve array, and reset to fresh state.
@@ -1221,8 +1217,9 @@ struct TCTypeAllocator final : public VTCTypeAllocator
  *          corrupts the owner's free list.
  */
 template <typename _ElementType>
-struct TCTypeCAllocator
+class TCTypeCAllocator
 {
+  public:
     using ElementType = _ElementType;
 
     /// @brief Empty and unusable until init().
@@ -1442,6 +1439,9 @@ struct TCTypeCAllocator
         nb_block_empty = 0;
     }
 
+    TCCAllocator* block_full{nullptr}; ///< Slabs with no room left.
+    TCCAllocator* block{nullptr};      ///< Slabs with room. Null until the first alloc().
+
   private:
     /**
      * @brief Delete every slab, leaving the list heads dangling.
@@ -1646,11 +1646,6 @@ struct TCTypeCAllocator
     int       rank_          = -1; ///< Rank served; stamped into slabs as owner_rank.
     unsigned  key_           = 0;  ///< Affinity key served; stamped into slabs as owner_key.
 
-  public:
-    TCCAllocator* block_full{nullptr}; ///< Slabs with no room left.
-    TCCAllocator* block{nullptr};      ///< Slabs with room. Null until the first alloc().
-
-  private:
     /// @brief Reserve capacity; negative = never release a slab. @see init
     int nb_max_block_empty = 0; // FIX: was unsigned; int so -1 (never-munmap) works
 
@@ -1667,24 +1662,27 @@ struct TCTypeCAllocator
  * @note <tt>NextPOT\<0\>\::value</tt> and <tt>NextPOT\<1\>\::value</tt> are both 1.
  */
 template <int i>
-struct NextPOT
+class NextPOT
 {
+  public:
     enum
     {
         value = 2 * NextPOT<(i + 1) / 2>::value
     };
 };
 template <>
-struct NextPOT<0>
+class NextPOT<0>
 {
+  public:
     enum
     {
         value = 1
     };
 };
 template <>
-struct NextPOT<1>
+class NextPOT<1>
 {
+  public:
     enum
     {
         value = 1
@@ -1697,24 +1695,27 @@ struct NextPOT<1>
  * @note <tt>PrevPOT\<0\>\::value</tt> is 1, not 0.
  */
 template <int i>
-struct PrevPOT
+class PrevPOT
 {
+  public:
     enum
     {
         value = 2 * PrevPOT<i / 2>::value
     };
 };
 template <>
-struct PrevPOT<0>
+class PrevPOT<0>
 {
+  public:
     enum
     {
         value = 1
     };
 };
 template <>
-struct PrevPOT<1>
+class PrevPOT<1>
 {
+  public:
     enum
     {
         value = 1
@@ -1728,8 +1729,9 @@ struct PrevPOT<1>
  * @note The "+1" is why callers subtract one to get a shift count.
  */
 template <int i>
-struct CstLog2
+class CstLog2
 {
+  public:
     enum
     {
         value = 1 + CstLog2<i / 2>::value
@@ -1737,8 +1739,9 @@ struct CstLog2
 };
 
 template <>
-struct CstLog2<1>
+class CstLog2<1>
 {
+  public:
     enum
     {
         value = 1
@@ -1752,27 +1755,30 @@ struct CstLog2<1>
  *          than spend an `int` per element on a small block.
  */
 template <int sz>
-struct TypeFromSize
+class TypeFromSize
 {
+  public:
     using Tindex = int;
 };
 
 template <>
-struct TypeFromSize<2>
+class TypeFromSize<2>
 {
+  public:
     using Tindex = short;
 };
 
 template <>
-struct TypeFromSize<1>
+class TypeFromSize<1>
 {
+  public:
     using Tindex = signed char;
 };
 
 
 /// @brief Maps an element type to the allocator that serves it. Specialised elsewhere.
 template <typename V>
-struct TypeAllocator;
+class TypeAllocator;
 
 /// @brief Page size, cached from the environment at startup.
 extern int __mem_page_size;
@@ -1791,8 +1797,9 @@ extern int __mem_page_size;
  * @note Used only through ::TCTypeAllocatorEBC, which owns the slab lists.
  */
 template <unsigned int _ElementSize, unsigned int _BlockSize>
-struct TCAllocatorEB
+class TCAllocatorEB
 {
+  public:
     enum
     {
         ElementSize      = _ElementSize,
@@ -1846,19 +1853,6 @@ struct TCAllocatorEB
     TCAllocatorEB& operator=(const TCAllocatorEB&) = delete;
     TCAllocatorEB(TCAllocatorEB&&)                 = delete;
     TCAllocatorEB& operator=(TCAllocatorEB&&)      = delete;
-
-    /**
-     * @brief Recover the owning slab from a pointer to any element inside it.
-     * @param ptr Interior pointer, previously returned by alloc().
-     * @note Static, unlike the other families' version: the mask and the offset
-     *       are both compile-time constants here, so no instance is needed.
-     */
-    static TCAllocatorEB* addr_to_block(const void* ptr) noexcept
-    {
-        // this pointer stored at the end of the block
-        return *reinterpret_cast<TCAllocatorEB**>(
-            reinterpret_cast<char*>(reinterpret_cast<uintptr_t>(ptr) & size_t(BlockAddrMask)) + UsedBlockSize);
-    }
 
     /**
      * @brief Hand out one element.
@@ -1937,6 +1931,35 @@ struct TCAllocatorEB
         return nn_ref == MaxElements;
     }
 
+    /**
+     * @brief Recover the owning slab from a pointer to any element inside it.
+     * @param ptr Interior pointer, previously returned by alloc().
+     * @note Static, unlike the other families' version: the mask and the offset
+     *       are both compile-time constants here, so no instance is needed.
+     */
+    static TCAllocatorEB* addr_to_block(const void* ptr) noexcept
+    {
+        // this pointer stored at the end of the block
+        return *reinterpret_cast<TCAllocatorEB**>(
+            reinterpret_cast<char*>(reinterpret_cast<uintptr_t>(ptr) & size_t(BlockAddrMask)) + UsedBlockSize);
+    }
+
+    char* data = nullptr; ///< The block itself, aligned on #BlockSizePOT.
+    int   firstFree{-1};  ///< Head of the free list, an element index; -1 if empty.
+
+    int nn_ref{0};   ///< Elements currently out. 0 == deletable.
+    int UsedSize{0}; ///< Bump index: how far the linear carve has reached.
+
+    // for the linked list
+    TCAllocatorEB* prev = nullptr; ///< Previous slab in the owner's block/block_full list.
+    TCAllocatorEB* next = nullptr; ///< Next slab in the owner's block/block_full list.
+
+    // A free element holds the index of the next free one, in T -- a type
+    // sized from the element. The block must be addressable by it: a
+    // compile-time check (it was a runtime DBG_ASSERT, DEBUG builds only).
+    static_assert(static_cast<uintptr_t>(_BlockSize) < (uintptr_t{1} << ((sizeof(T) * 8) - 1)),
+                  "TCAllocatorEB: block too large for the element's free-list index type");
+
   private:
     /**
      * @brief Obtain the block and lay it out.
@@ -2001,31 +2024,12 @@ struct TCAllocatorEB
         return 0;
     }
 
-  public:
-    char* data = nullptr; ///< The block itself, aligned on #BlockSizePOT.
-    int   firstFree{-1};  ///< Head of the free list, an element index; -1 if empty.
-
-    int nn_ref{0};   ///< Elements currently out. 0 == deletable.
-    int UsedSize{0}; ///< Bump index: how far the linear carve has reached.
-
-    // for the linked list
-    TCAllocatorEB* prev = nullptr; ///< Previous slab in the owner's block/block_full list.
-    TCAllocatorEB* next = nullptr; ///< Next slab in the owner's block/block_full list.
-
-  private:
     bool use_mmap = false; ///< Which of munmap / free the destructor must use.
-
-  public:
-    // A free element holds the index of the next free one, in T -- a type
-    // sized from the element. The block must be addressable by it: a
-    // compile-time check (it was a runtime DBG_ASSERT, DEBUG builds only).
-    static_assert(static_cast<uintptr_t>(_BlockSize) < (uintptr_t{1} << ((sizeof(T) * 8) - 1)),
-                  "TCAllocatorEB: block too large for the element's free-list index type");
 };
 
 /// @brief Common base for the compile-time-geometry allocators. Carries nothing;
 ///        it exists so they can be held behind one pointer type.
-struct VTCAllocatorEB
+class VTCAllocatorEB
 {
 };
 
@@ -2049,16 +2053,12 @@ struct VTCAllocatorEB
  *          away rather than waiting for the first alloc().
  */
 template <unsigned int ElementSize, unsigned int BlockSize, typename T = int>
-struct TCTypeAllocatorEBC : public VTCAllocatorEB
+class TCTypeAllocatorEBC : public VTCAllocatorEB
 {
+  public:
     /// @brief The slab type this instance owns.
     using TCAllocatorEBT = TCAllocatorEB<ElementSize, BlockSize>;
 
-  private:
-    /// @brief Reserve capacity. Fixed, unlike the other families' runtime value.
-    static constexpr int nb_max_block_empty = 5;
-
-  public:
     /// @brief Creates the first slab immediately; there is no init() to call.
     TCTypeAllocatorEBC() : block_full(nullptr), block(nullptr)
     {
@@ -2215,6 +2215,9 @@ struct TCTypeAllocatorEBC : public VTCAllocatorEB
     }
 
   private:
+    /// @brief Reserve capacity. Fixed, unlike the other families' runtime value.
+    static constexpr int nb_max_block_empty = 5;
+
     /**
      * @brief Re-file @p slab after a free, EBC's own way.
      *
@@ -2286,7 +2289,7 @@ inline constexpr unsigned int SIZE_BLOCK = 1u << 20u; // 1048576
  *       directly, by size, from StaticConstArray. Kept as the typed front end.
  */
 template <typename _ElementType, unsigned int _BlockSize = SIZE_BLOCK>
-struct TCTypeAllocatorEB : public TCTypeAllocatorEBC<sizeof(_ElementType), _BlockSize>
+class TCTypeAllocatorEB : public TCTypeAllocatorEBC<sizeof(_ElementType), _BlockSize>
 {
   public:
     using ElementType = _ElementType;

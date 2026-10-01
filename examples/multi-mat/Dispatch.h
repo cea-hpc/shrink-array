@@ -26,9 +26,6 @@
 /// @brief The storage kind of every material, decided once by Simu::inputData().
 class Dispatch
 {
-  private:
-    std::vector<bool> tab_chunk; ///< true: chunk arrays; false: std::vector
-
   public:
     /// @brief Room for @p sz materials, all std::vector until set().
     void create(int sz)
@@ -53,4 +50,7 @@ class Dispatch
     {
         return !tab_chunk[i];
     }
+
+  private:
+    std::vector<bool> tab_chunk; ///< true: chunk arrays; false: std::vector
 };

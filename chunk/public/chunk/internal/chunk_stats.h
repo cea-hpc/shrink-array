@@ -67,8 +67,9 @@ inline constexpr const char* chunk_variant_name[CHUNK_STATS_N_VARIANT] = {"chunk
  * @brief Per-(variant, thread) event counters. One cache line per slot, so
  *        concurrent writers from different threads never share a line.
  */
-struct alignas(64) ChunkStatsThr
+class alignas(64) ChunkStatsThr
 {
+  public:
     long alloc           = 0;
     long write           = 0;
     long read            = 0; ///< reads served from a materialised buffer

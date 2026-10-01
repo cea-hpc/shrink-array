@@ -115,12 +115,9 @@ void compress_in_region(Arr& a)
 }
 
 /// A pattern by whole chunks: first constant, second value @p sv, data.
-struct Pattern
+class Pattern
 {
-    double sv;   ///< this array's second value
-    double base; ///< offset of its data chunks
-    long   S;    ///< chunk size
-
+  public:
     [[nodiscard]] double at(long i) const
     {
         switch ((i / S) % 3)
@@ -133,6 +130,10 @@ struct Pattern
                 return base + static_cast<double>(i % 101);
         }
     }
+
+    double sv;   ///< this array's second value
+    double base; ///< offset of its data chunks
+    long   S;    ///< chunk size
 };
 
 template <typename Arr>

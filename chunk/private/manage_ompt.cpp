@@ -95,8 +95,9 @@ bool g_ompt_stats = false;
 /// Per [kind][endpoint: 0 begin, 1 end].
 using OmptCounters = std::array<std::array<std::atomic<std::uint64_t>, 2>, kOmptKinds>;
 
-struct alignas(128) OmptSyncSlot
+class alignas(128) OmptSyncSlot
 {
+  public:
     OmptCounters calls;
     OmptCounters flush_calls;
     OmptCounters skipped_flag;

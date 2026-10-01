@@ -84,15 +84,31 @@
  *          freeBlock() / freeBlockAlign() do not batch a rank >= #nb_thr
  *          (a team grown later) and free its blocks at once instead.
  */
-struct InfoFreeElt
+class InfoFreeElt
 {
   private:
     /// @brief Batch capacity, in blocks. The other bound is 4 MiB of payload.
     static constexpr int max_free_elt = 10000;
 
+    int* somme_sz{nullptr};
+
   public:
     using IntMaxFreeElt  = std::array<int, max_free_elt>;
     using VoidMaxFreeElt = void* [max_free_elt];
+
+    /// @brief Allocates the four per-thread arrays, sized by PMP_MAX_THREADS.
+    ///        A serial build has no batching to do and allocates nothing (the
+    ///        pointers stay null; the batching path is never reached there).
+    InfoFreeElt();
+
+    /// @brief Frees them. Does NOT release blocks still held in a batch.
+    ~InfoFreeElt();
+
+    // Owns the four arrays: a copy would free them twice.
+    InfoFreeElt(const InfoFreeElt&)            = delete;
+    InfoFreeElt& operator=(const InfoFreeElt&) = delete;
+    InfoFreeElt(InfoFreeElt&&)                 = delete;
+    InfoFreeElt& operator=(InfoFreeElt&&)      = delete;
 
     /**
      * @brief Record one freed block, if the batch still has room.
@@ -134,28 +150,9 @@ struct InfoFreeElt
         somme_sz[thr_rank] = compt[thr_rank] = 0;
     }
 
-    /// @brief Allocates the four per-thread arrays, sized by PMP_MAX_THREADS.
-    ///        A serial build has no batching to do and allocates nothing (the
-    ///        pointers stay null; the batching path is never reached there).
-    InfoFreeElt();
-
-    /// @brief Frees them. Does NOT release blocks still held in a batch.
-    ~InfoFreeElt();
-
-    // Owns the four arrays: a copy would free them twice.
-    InfoFreeElt(const InfoFreeElt&)            = delete;
-    InfoFreeElt& operator=(const InfoFreeElt&) = delete;
-    InfoFreeElt(InfoFreeElt&&)                 = delete;
-    InfoFreeElt& operator=(InfoFreeElt&&)      = delete;
-
     VoidMaxFreeElt* tab_ptr{nullptr};
     IntMaxFreeElt*  tab_sz{nullptr};
-
-  private:
-    int* somme_sz{nullptr};
-
-  public:
-    int* compt{nullptr};
+    int*            compt{nullptr};
 
     /// @brief Ranks the four arrays were sized for (PMP_MAX_THREADS at
     ///        construction); 0 in a serial build, which allocates nothing.
@@ -177,6 +174,23 @@ struct InfoFreeElt
 class StaticConstArray
 {
   public:
+    // Per-thread batching of freed blocks. Only the OpenMP free path uses it
+    // (freeBlock / freeBlockAlign, under alloc_config::use_openmp); the
+    // declarations exist in every build so those bodies type-check serially.
+
+    /// @brief Return thread @p thr_rank's batched blocks to the plain ladder.
+    /// @warning Does NOT reset the batch; the caller must call
+    ///          InfoFreeElt::reset() or the same blocks are freed twice.
+    static void clearInfoFreeElt(int thr_rank);
+
+    /// @brief Flush every thread's batch, both ladders, and reset them.
+    /// @warning Quiescent point only: no rank may be freeing meanwhile, since
+    ///          this runs without the overflow path's `omp critical`. Called
+    ///          by the chunk library's OMPT parallel_end callback, outside any
+    ///          active region, so that a region's parked blocks do not outlive
+    ///          it.
+    static void clearInfoFreeElt();
+
     /**
      * @brief The ladder: one bucket per size class, 4 bytes up to 65536.
      *
@@ -227,33 +241,32 @@ class StaticConstArray
     static inline TCTypeAllocatorEBC<65536, 32 * SIZE_BLOCK>& _Allocator65536 =
         *(new TCTypeAllocatorEBC<65536, 32 * SIZE_BLOCK>());
 
-    // Per-thread batching of freed blocks. Only the OpenMP free path uses it
-    // (freeBlock / freeBlockAlign, under alloc_config::use_openmp); the
-    // declarations exist in every build so those bodies type-check serially.
+  protected:
+    /**
+     * @brief Take a block of at least @p sz bytes from the ladder.
+     * @param sz Requested size in bytes.
+     * @return The block, or NULL when @p sz exceeds MAX_CONST_BLOCK_SIZE --
+     *         which is not a failure, it means "too big for the ladder" and the
+     *         caller should fall back to malloc.
+     * @note Takes the critical section when called inside a parallel region.
+     */
+    static void* getBlockAlloc(unsigned int sz);
 
-    /// @brief Return thread @p thr_rank's batched blocks to the plain ladder.
-    /// @warning Does NOT reset the batch; the caller must call
-    ///          InfoFreeElt::reset() or the same blocks are freed twice.
-    static void clearInfoFreeElt(int thr_rank);
+    /**
+     * @brief Give a block back to the ladder.
+     * @param sz The size it was requested with.
+     * @param ptr The block.
+     * @return TRUE if the ladder took it; FALSE if @p sz is past the top bucket,
+     *         meaning the block came from malloc and the caller must free it.
+     * @note Inside a parallel region the block is batched rather than returned
+     *       immediately. @see InfoFreeElt
+     */
+    static bool freeBlock(int sz, void* ptr);
 
   private:
     /// @brief clearInfoFreeElt() for the aligned ladder. Same warning.
     static void clearInfoFreeEltAlign(int thr_rank);
 
-  public:
-    /// @brief Flush every thread's batch, both ladders, and reset them.
-    /// @warning Quiescent point only: no rank may be freeing meanwhile, since
-    ///          this runs without the overflow path's `omp critical`. Called
-    ///          by the chunk library's OMPT parallel_end callback, outside any
-    ///          active region, so that a region's parked blocks do not outlive
-    ///          it.
-    static void clearInfoFreeElt();
-
-  private:
-    static InfoFreeElt tab_info_free_elt;       ///< Batches for the plain ladder.
-    static InfoFreeElt tab_info_free_elt_align; ///< Batches for the aligned one.
-
-  private:
     /// @brief Bare ladder lookup: smallest bucket that fits @p sz.
     /// @return Null if @p sz is past the top bucket. Not locked, not bounded.
     static void* getBlockAllocInt(unsigned int sz);
@@ -269,40 +282,18 @@ class StaticConstArray
     /// @brief freeBlockWithInt() over the aligned ladder.
     static void freeBlockWithAlignInt(int sz, void* ptr);
 
-  protected:
-    /**
-     * @brief Take a block of at least @p sz bytes from the ladder.
-     * @param sz Requested size in bytes.
-     * @return The block, or NULL when @p sz exceeds MAX_CONST_BLOCK_SIZE --
-     *         which is not a failure, it means "too big for the ladder" and the
-     *         caller should fall back to malloc.
-     * @note Takes the critical section when called inside a parallel region.
-     */
-    static void* getBlockAlloc(unsigned int sz);
-
-  private:
     /// @brief getBlockAlloc() over the aligned ladder. Same null convention.
     static void* getBlockAllocAlign(int sz);
 
-  protected:
-    /**
-     * @brief Give a block back to the ladder.
-     * @param sz The size it was requested with.
-     * @param ptr The block.
-     * @return TRUE if the ladder took it; FALSE if @p sz is past the top bucket,
-     *         meaning the block came from malloc and the caller must free it.
-     * @note Inside a parallel region the block is batched rather than returned
-     *       immediately. @see InfoFreeElt
-     */
-    static bool freeBlock(int sz, void* ptr);
-
-  private:
     /// @brief freeBlock() over the aligned ladder. Same bool convention.
     static bool freeBlockAlign(int sz, void* ptr);
 
     /// @brief The largest size the ladder serves.
     /// @warning Asserts in a STD_ALLOC build, where there is no ladder to size.
     static int computeBlockSize();
+
+    static InfoFreeElt tab_info_free_elt;       ///< Batches for the plain ladder.
+    static InfoFreeElt tab_info_free_elt_align; ///< Batches for the aligned one.
 };
 
 /// @brief Standalone bucket for 8-byte blocks, the most common size.
@@ -332,7 +323,7 @@ extern TCTypeAllocatorEBC<24, SIZE_BLOCK> Allocator24;
  *          private -- it could not be called at all, and nothing noticed.
  *          blk_allocator_validation is what runs it now.
  */
-struct BlkAllocator : public StaticConstArray
+class BlkAllocator : public StaticConstArray
 {
   public:
     /// @brief A block of @p size bytes, from the ladder or from malloc.
@@ -435,43 +426,8 @@ struct BlkAllocator : public StaticConstArray
  *          ::Allocator8 / ::Allocator24 instead of walking the ladder.
  */
 template <typename _ElementType>
-struct FixedSizeAllocator : private StaticConstArray
+class FixedSizeAllocator : private StaticConstArray
 {
-  private:
-    /// @brief Allocator8 / Allocator24 are plain buckets, no more thread-safe
-    ///        than the ladder's: same guard as getBlockAlloc(). Serially
-    ///        PMP_IN_PARALLEL_REGION is the constant false and the branch folds
-    ///        away.
-    template <typename Bucket>
-    static void* shortcut_alloc(Bucket& bucket)
-    {
-        if (PMP_IN_PARALLEL_REGION)
-        {
-            void* ptr = nullptr;
-#pragma omp critical
-            {
-                ptr = bucket.alloc();
-            }
-            return ptr;
-        }
-        return bucket.alloc();
-    }
-
-    /// @brief Counterpart of shortcut_alloc(), same guard.
-    template <typename Bucket>
-    static void shortcut_free(Bucket& bucket, void* ptr)
-    {
-        if (PMP_IN_PARALLEL_REGION)
-        {
-#pragma omp critical
-            {
-                bucket.free_elt(ptr);
-            }
-            return;
-        }
-        bucket.free_elt(ptr);
-    }
-
   public:
     /// @brief One block of `sizeof(_ElementType)` bytes.
     static void* alloc_block()
@@ -568,6 +524,41 @@ struct FixedSizeAllocator : private StaticConstArray
             }
         }
     }
+
+  private:
+    /// @brief Allocator8 / Allocator24 are plain buckets, no more thread-safe
+    ///        than the ladder's: same guard as getBlockAlloc(). Serially
+    ///        PMP_IN_PARALLEL_REGION is the constant false and the branch folds
+    ///        away.
+    template <typename Bucket>
+    static void* shortcut_alloc(Bucket& bucket)
+    {
+        if (PMP_IN_PARALLEL_REGION)
+        {
+            void* ptr = nullptr;
+#pragma omp critical
+            {
+                ptr = bucket.alloc();
+            }
+            return ptr;
+        }
+        return bucket.alloc();
+    }
+
+    /// @brief Counterpart of shortcut_alloc(), same guard.
+    template <typename Bucket>
+    static void shortcut_free(Bucket& bucket, void* ptr)
+    {
+        if (PMP_IN_PARALLEL_REGION)
+        {
+#pragma omp critical
+            {
+                bucket.free_elt(ptr);
+            }
+            return;
+        }
+        bucket.free_elt(ptr);
+    }
 };
 
 /**
@@ -581,8 +572,9 @@ struct FixedSizeAllocator : private StaticConstArray
  *          without tc_allocator.h knowing the ladder exists.
  */
 template <typename T>
-struct TypeAllocator
+class TypeAllocator
 {
+  public:
     /// @brief A block of @p size bytes for a T.
     /// @pre `size == sizeof(T)`: free() routes by sizeof(T), so any other size
     ///      (an operator new reached by a larger derived class) would go back

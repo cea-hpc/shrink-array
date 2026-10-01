@@ -58,28 +58,31 @@ class ManagerChunk;
 // (array_chunk_core.h), which is what ArrayChunkFor names.
 
 template <typename C>
-struct ChunkTraits;
+class ChunkTraits;
 
 /// @brief Chunk<T> maps to Proxy<T> and ManagerChunk<Chunk, T>.
 template <typename T>
-struct ChunkTraits<Chunk<T>>
+class ChunkTraits<Chunk<T>>
 {
+  public:
     using proxy_type   = Proxy<T>;
     using manager_type = ManagerChunk<Chunk, T>;
 };
 
 /// @brief Chunk2<T> maps to Proxy2<T> and ManagerChunk<Chunk2, T>.
 template <typename T>
-struct ChunkTraits<Chunk2<T>>
+class ChunkTraits<Chunk2<T>>
 {
+  public:
     using proxy_type   = Proxy2<T>;
     using manager_type = ManagerChunk<Chunk2, T>;
 };
 
 /// @brief Chunk2A<T> maps to Proxy2A<T> and ManagerChunk<Chunk2A, T>.
 template <typename T>
-struct ChunkTraits<Chunk2A<T>>
+class ChunkTraits<Chunk2A<T>>
 {
+  public:
     using proxy_type   = Proxy2A<T>;
     using manager_type = ManagerChunk<Chunk2A, T>;
 };
@@ -89,12 +92,13 @@ struct ChunkTraits<Chunk2A<T>>
 // ============================================================================
 
 template <typename Derived>
-struct ArrayChunkTraits;
+class ArrayChunkTraits;
 
 /// @brief ArrayChunk<T, ind_type> maps to Chunk<T>, Proxy<T>, ManagerChunk<Chunk, T>, value T and index ind_type.
 template <ArrayChunkElement T, typename ind_type>
-struct ArrayChunkTraits<ArrayChunk<T, ind_type>>
+class ArrayChunkTraits<ArrayChunk<T, ind_type>>
 {
+  public:
     using chunk_type   = Chunk<T>;
     using proxy_type   = Proxy<T>;
     using manager_type = ManagerChunk<Chunk, T>;
@@ -104,8 +108,9 @@ struct ArrayChunkTraits<ArrayChunk<T, ind_type>>
 
 // Specialization for ArrayChunk2A
 template <ArrayChunkElement T, typename ind_type>
-struct ArrayChunkTraits<ArrayChunk2A<T, ind_type>>
+class ArrayChunkTraits<ArrayChunk2A<T, ind_type>>
 {
+  public:
     using chunk_type   = Chunk2A<T>;
     using proxy_type   = Proxy2A<T>;
     using manager_type = ManagerChunk<Chunk2A, T>;
@@ -115,8 +120,9 @@ struct ArrayChunkTraits<ArrayChunk2A<T, ind_type>>
 
 // Specialization for ArrayChunk2
 template <ArrayChunkElement T, typename ind_type>
-struct ArrayChunkTraits<ArrayChunk2<T, ind_type>>
+class ArrayChunkTraits<ArrayChunk2<T, ind_type>>
 {
+  public:
     using chunk_type   = Chunk2<T>;
     using proxy_type   = Proxy2<T>;
     using manager_type = ManagerChunk<Chunk2, T>;

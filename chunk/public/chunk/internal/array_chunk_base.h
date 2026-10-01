@@ -188,20 +188,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     using RechunkSupport<Derived>::rechunk_reown_after_swap;
     using RechunkSupport<Derived>::rechunk_swap_identity;
 
-  protected:
-    // The core's members, named here so this class and the derived arrays
-    // keep using them unqualified-through-this as before (the core is a
-    // dependent base).
-    using Core::alloc_key_;
-    using Core::assign_alloc_key;
-    using Core::chunk_list;
-    using Core::nb_chunk;
-    using Core::nb_tab;
-    using Core::next_alloc_key_;
-    using Core::num_tab;
-    using Core::size_policy_;
-
-  public:
     // ── STL const_iterator (read-only, random access, intra-chunk cursor) ─────
     /**
      * @brief Read-only random-access iterator over the elements.
@@ -441,20 +427,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             enter_chunk();
         }
 
-        /// @brief Check builds: @p lhs and @p rhs walk the same array (or are
-        ///        both singular, which C++14 allows to compare).
-        static void check_same_owner([[maybe_unused]] const const_iterator& lhs,
-                                     [[maybe_unused]] const const_iterator& rhs) noexcept
-        {
-            if constexpr (build_config::any_check)
-            {
-                if (lhs.owner_ != rhs.owner_) [[unlikely]]
-                    INVARIANT_FAILED("ArrayChunkBase::const_iterator: iterators of two different arrays compared "
-                                     "or subtracted ({} vs {})",
-                                     static_cast<const void*>(lhs.owner_), static_cast<const void*>(rhs.owner_));
-            }
-        }
-
         /// @brief Check builds, precise read gate: nothing was deferred onto the
         ///        current chunk since enter_chunk() drained it -- i.e. no other
         ///        thread writes the array during the iteration (class contract).
@@ -506,6 +478,20 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             num_chunk_ = static_cast<int>(lin >> decalage_);
             num_       = static_cast<int>(lin & static_cast<ind_type>(modulo_));
             enter_chunk();
+        }
+
+        /// @brief Check builds: @p lhs and @p rhs walk the same array (or are
+        ///        both singular, which C++14 allows to compare).
+        static void check_same_owner([[maybe_unused]] const const_iterator& lhs,
+                                     [[maybe_unused]] const const_iterator& rhs) noexcept
+        {
+            if constexpr (build_config::any_check)
+            {
+                if (lhs.owner_ != rhs.owner_) [[unlikely]]
+                    INVARIANT_FAILED("ArrayChunkBase::const_iterator: iterators of two different arrays compared "
+                                     "or subtracted ({} vs {})",
+                                     static_cast<const void*>(lhs.owner_), static_cast<const void*>(rhs.owner_));
+            }
         }
 
         const ArrayChunkBase* owner_     = nullptr; ///< Array being traversed.
@@ -912,6 +898,27 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     }
 
   protected:
+    // The core's members, named here so this class and the derived arrays
+    // keep using them unqualified-through-this as before (the core is a
+    // dependent base).
+    using Core::alloc_key_;
+    using Core::assign_alloc_key;
+    using Core::chunk_list;
+    using Core::nb_chunk;
+    using Core::nb_tab;
+    using Core::next_alloc_key_;
+    using Core::num_tab;
+    using Core::size_policy_;
+
+    /// @brief Installs the core's way back to rechunk_to() (rechunk_erased).
+    /// @note Protected, not private with `friend Derived`: Chunk2 and Chunk2A
+    ///       reach this base through ArrayChunk2Base<Derived>, which has to
+    ///       construct it too.
+    ArrayChunkBase() noexcept
+    {
+        this->rechunk_fn_ = &rechunk_thunk;
+    }
+
     /**
      * @name Index splitting
      * A global element index is an ind_type (int or long); the chunk it falls
@@ -939,15 +946,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     }
 
     /** @} */
-
-    /// @brief Installs the core's way back to rechunk_to() (rechunk_erased).
-    /// @note Protected, not private with `friend Derived`: Chunk2 and Chunk2A
-    ///       reach this base through ArrayChunk2Base<Derived>, which has to
-    ///       construct it too.
-    ArrayChunkBase() noexcept
-    {
-        this->rechunk_fn_ = &rechunk_thunk;
-    }
 
     /**
      * @brief Creation steps common to every variant, run from the derived constructors.
@@ -1003,14 +1001,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         derived().swap_identity(other);
     }
 
-  private:
-    static void rechunk_thunk(Core& core, unsigned int new_size)
-    {
-        // The core IS the base of a Derived: its fn pointer was set by this
-        // very class, in the constructor of that Derived.
-        static_cast<Derived&>(core).rechunk_to(new_size);
-    }
+    ind_type m_size; ///< Number of elements exposed by size().
 
+  private:
     /**
      * @brief Debug helper: physical address backing element @p i, if any.
      * @param i global element index (unchecked)
@@ -1122,8 +1115,12 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         return (*this)(i);
     }
 
-  protected:
-    ind_type m_size; ///< Number of elements exposed by size().
+    static void rechunk_thunk(Core& core, unsigned int new_size)
+    {
+        // The core IS the base of a Derived: its fn pointer was set by this
+        // very class, in the constructor of that Derived.
+        static_cast<Derived&>(core).rechunk_to(new_size);
+    }
 };
 
 } // namespace shrink_array

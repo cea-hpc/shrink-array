@@ -34,9 +34,6 @@ extern Dispatch dispatch;
 template <typename T>
 class VectCom
 {
-  private:
-    int ind;
-
   public:
     using value_type = T;
 
@@ -50,6 +47,9 @@ class VectCom
     {
         ind = i;
     }
+
+  private:
+    int ind;
 };
 
 /// @brief A field of a "chunk" material: compressed where it is zero.

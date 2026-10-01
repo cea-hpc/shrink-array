@@ -43,8 +43,9 @@ using VectorTuple4bChunkCharP = std::vector<std::tuple<TCHUNK<T>*, char*, char*,
 
 /// @brief Names the map from a second value to the shared list of queued chunks (4-element tuples) holding it.
 template <template <typename> class TCHUNK, typename T>
-struct ValueToChunk2PMapHelper
+class ValueToChunk2PMapHelper
 {
+  public:
     // 4-element tuple (was 3): the 4th is the chunk's OWN geometry, captured at
     // enqueue by push_to_compress_list -- same fix as Chunk v1 and Chunk2A (see
     // TChunkComp / TChunk2AComp below). Chunk2's compress() and
@@ -98,8 +99,9 @@ using TChunkComp = VectorTuple4ChunkInt2<TCHUNK, T>;
  *          `store[thr]` use is unchanged.
  */
 template <typename Container>
-struct alignas(128) PerThreadSlot : Container
+class alignas(128) PerThreadSlot : public Container
 {
+  public:
     using Container::Container;
 };
 

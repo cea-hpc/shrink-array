@@ -245,8 +245,9 @@ void bench_phase_compress_all(BenchArrays& bench_arr);
  *       flag or the environment; non-null means "on". Kept as-is rather than
  *       normalised to bool, so the moved code stays verbatim.
  */
-struct BenchIoFlags
+class BenchIoFlags
 {
+  public:
     const char* no_io;       ///< non-null: skip file I/O entirely
     const char* no_compress; ///< non-null: write/read uncompressed
     Int         io_res;      ///< get_io_mode(): 0 none, 1 write, 2 read-and-check

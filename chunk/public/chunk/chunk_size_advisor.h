@@ -58,8 +58,9 @@ namespace shrink_array
 {
 
 /// @brief Model figures for one candidate chunk size: chunk counts and estimated memory.
-struct ChunkSizeEstimate
+class ChunkSizeEstimate
 {
+  public:
     uint32_t size      = 0;     // candidate chunk size (elements)
     int64_t  n_chunks  = 0;     // total chunks at that size
     int64_t  mat       = 0;     // materialized chunks (estimated or exact)
@@ -69,8 +70,9 @@ struct ChunkSizeEstimate
 };
 
 /// @brief ChunkSizeAdvisor's result: one ChunkSizeEstimate per candidate size, with the best and current indices.
-struct ChunkSizeReport
+class ChunkSizeReport
 {
+  public:
     /// @brief Bytes the best size would save over the current one (0 when
     ///        either is unknown).
     [[nodiscard]] double best_gain_bytes() const noexcept
@@ -95,8 +97,9 @@ class ChunkSizeAdvisor
 {
   public:
     /// @brief Which sizes analyze() evaluates, its scan cap and the per-chunk metadata cost it adds.
-    struct Options
+    class Options
     {
+      public:
         int     coarser_levels = 4;     // evaluate S*2 .. S*2^levels
         int     finer_levels   = 2;     // evaluate S/2 .. S/2^levels (data sampled)
         int64_t max_mat_scans  = 65536; // cap on materialized chunks whose DATA is read
@@ -253,8 +256,9 @@ class ChunkSizeAdvisor
         int64_t mat0 = 0;
 
         const int coarser = opt.coarser_levels;
-        struct Agg
+        class Agg
         {
+          public:
             int         kind;
             const void* key;
         }; // kind: 0 cst1, 1 cst2, 2 mat
