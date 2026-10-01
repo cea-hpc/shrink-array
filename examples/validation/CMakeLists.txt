@@ -333,6 +333,25 @@ chunk_require_cxx20(bit_words_validation PRIVATE)
 add_test(NAME bit_words_validation COMMAND bit_words_validation)
 set_property(TEST bit_words_validation PROPERTY LABELS validation)
 
+# --- blk_allocator_validation: fast_allocators' public size-dispatching front
+# end (BlkAllocator) alone. Nothing in the library calls it, so this is what
+# runs it: sizes on, between and past the buckets, many live blocks at once,
+# every thread at once. Any build that has fast_allocators.
+if (NOT CHUNK_STD_ALLOC)
+  add_executable(blk_allocator_validation blk_allocator_validation.cpp)
+  target_link_libraries(blk_allocator_validation PRIVATE fast_allocators)
+  if (OMP)
+    target_link_libraries(blk_allocator_validation PRIVATE OpenMP::OpenMP_CXX)
+  endif ()
+  chunk_add_alloc_token_rt(blk_allocator_validation)
+  chunk_require_cxx20(blk_allocator_validation PRIVATE)
+  foreach(_nthr 1 8)
+    add_test(NAME blk_allocator_validation_${_nthr}thr COMMAND blk_allocator_validation)
+    set_property(TEST blk_allocator_validation_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
+    set_property(TEST blk_allocator_validation_${_nthr}thr PROPERTY LABELS validation)
+  endforeach()
+endif()
+
 # --- slab_geometry_validation: the zeroed value allocator alone (no variant).
 # Every allocator of one element type must cut its slabs at one size whatever
 # the element size, or slab_of() through the ambient-size allocator misses the

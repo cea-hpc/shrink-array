@@ -80,13 +80,10 @@ class SingletonChk
         return instance;
     }
 
-    /// @brief Delete the instance. Retained for API completeness; unused
-    ///        under the immortal design (getInstance() never deletes).
-    static void deleteInstance()
-    {
-        const std::scoped_lock lock(unique_instance_mutex);
-        delete unique_instance.exchange(nullptr, std::memory_order_acq_rel);
-    }
+    // No deleteInstance(): these singletons are the library's own state
+    // (AllTypeChunk, ...), and destroying one under live arrays or at exit
+    // (thread_local destructors still reach it) is exactly what the immortal
+    // design rules out. Removed in Oct '26 -- it had no caller.
 
   protected:
     // IMMORTAL raw pointer (was std::unique_ptr<T>): created once with `new`
@@ -107,12 +104,5 @@ class SingletonChk
     // bookkeeping, every thread), so its steady state must not lock.
     static inline std::mutex unique_instance_mutex;
 };
-
-/// @brief Free-function form of SingletonChk<T>::deleteInstance().
-template <typename T>
-void deleteInstance()
-{
-    SingletonChk<T>::deleteInstance();
-}
 
 } // namespace shrink_array

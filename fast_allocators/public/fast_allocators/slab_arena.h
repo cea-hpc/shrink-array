@@ -21,7 +21,7 @@
  * @par What that costs
  * A slab returned with deallocate() stays resident: the arena keeps it, the OS
  * never gets it back. That is the RSS the free-list holds, and what
- * madvise_empty_slab() addresses -- it drops an emptied slab's pages while
+ * madvise_empty_slab_full() addresses -- it drops an emptied slab's pages while
  * leaving the address valid and the slab reusable.
  *
  * @note Three arenas, not two: ctx slabs were later found to alias op slabs the
@@ -54,7 +54,7 @@ namespace fast_alloc
 // call sites in tc_allocator.h and report_all_arenas() below all see one
 // definition -- no cross-header ordering or two-phase-lookup question.
 
-/// @brief How many times madvise_empty_slab() has advised a slab away.
+/// @brief How many times madvise_empty_slab_full() has advised a slab away.
 inline std::atomic<std::size_t>& reclaim_calls() noexcept
 {
     static std::atomic<std::size_t> counter{0};
@@ -155,72 +155,26 @@ inline std::atomic<std::size_t>& freepath_alloc_keyed() noexcept
 
 
 /**
- * @brief Drop an emptied slab's resident pages, keeping it mapped and reusable.
+ * @brief Give back an emptied slab's resident pages, the last one included.
  *
- * @tparam Slab Duck-typed on `nn_ref`, `data` and `BlockAllocator`. A template
- *         purely so those members need only be complete at instantiation.
- * @param slab The slab. Null and non-empty slabs are ignored.
+ * @tparam Slab Duck-typed on `nn_ref`, `data`, `BlockAllocator` and
+ *         `backptr_dropped`. A template so those members need only be complete
+ *         at instantiation.
  *
  * @details MADV_DONTNEED returns the pages to the OS but leaves the mapping in
  *          place: the address stays valid, the slab stays on its owner's list,
  *          and the next allocation from it faults fresh zero pages back in.
+ *          Safe only for a pool whose free list lives OUTSIDE the slab: the
+ *          value family keeps links in a side array, the op/ctx family threads
+ *          them through the freed elements and would be destroyed by this.
  *
- * @warning Only ever call this on a slab with `nn_ref == 0`. It re-checks, but
- *          the caller is what makes it true. And it is safe only for a pool
- *          whose free list lives OUTSIDE the slab: the value family keeps links
- *          in a side array, the op/ctx family threads them through the freed
- *          elements and would be destroyed by this.
- *
- * @note The last page is deliberately kept: it holds the trailing back-pointer
- *       that resolves an interior pointer to its slab.
- *
- * @see alloc_config::reclaim_empty_slabs, the build switch on the call site.
- */
-template <typename Slab>
-void madvise_empty_slab(Slab* slab) noexcept
-{
-    reclaim_entered().fetch_add(1, std::memory_order_relaxed);
-    if (slab != nullptr && slab->nn_ref != 0)
-        reclaim_skip_live().fetch_add(1, std::memory_order_relaxed);
-    if (slab == nullptr || slab->nn_ref != 0)
-        return;
-    void*      base = slab->data;
-    const auto len  = static_cast<std::size_t>(slab->BlockAllocator);
-    if (base == nullptr || len == 0)
-        return;
-    const long ps = ::sysconf(_SC_PAGESIZE);
-    if (ps <= 0)
-        return;
-    const auto up = static_cast<std::size_t>(ps);
-    if ((reinterpret_cast<std::uintptr_t>(base) % up) != 0)
-    {
-        reclaim_skip_unaligned().fetch_add(1, std::memory_order_relaxed);
-        return; // expect page-aligned slab
-    }
-    std::size_t adv = (len / up) * up;
-    // The LAST page holds the trailing self back-pointer that addr_to_block()
-    // reads on every free: it must stay resident. A slab of a single page
-    // therefore has nothing to give back -- advising it would zero the
-    // back-pointer and the next free through that slab would dereference
-    // null. (short/char/bool at 64 threads on 64 KiB pages: 60 KiB budget ->
-    // one 64 KiB slab -> exactly this case; the old code advised it whole.)
-    if (adv < up + up)
-    {
-        reclaim_skip_small().fetch_add(1, std::memory_order_relaxed);
-        return;
-    }
-    adv -= up;
-    ::madvise(base, adv, MADV_DONTNEED);
-    reclaim_calls().fetch_add(1, std::memory_order_relaxed);
-    reclaim_bytes().fetch_add(adv, std::memory_order_relaxed);
-}
-
-/**
- * @brief Give back an emptied slab's pages INCLUDING the last one.
- *
- * @details madvise_empty_slab() keeps the trailing page because it holds the
- *          self back-pointer addr_to_block() reads on every free. That page is
- *          6% of a 1 MiB slab, and at scale it is the whole residue: 17 205
+ *          The last page holds the self back-pointer addr_to_block() reads on
+ *          every free. A former variant, madvise_empty_slab() (removed in Oct
+ *          '26, it had no caller left), kept that page resident -- and had to
+ *          refuse single-page slabs outright: advising one zeroed the
+ *          back-pointer and the next free through it dereferenced null (short /
+ *          char / bool at 64 threads on 64 KiB pages). The page is 6% of a
+ *          1 MiB slab, and at scale it is the whole residue: 17 205
  *          slabs emptied by the four re-chunks of iteration 1000 (64 threads,
  *          10^9 elements, v1) kept 1 075 MB, against 1 032 MB of memory the
  *          re-chunk failed to give back -- the rest of the accounting balances
@@ -646,7 +600,7 @@ inline bool arena_report_enabled() noexcept
  * @param when Free-text label for the moment of the call.
  * @details Called at each end-of-parallel-region drain point. What it is for:
  *          telling apart an RSS gap made of recycled-but-resident free-list
- *          bytes -- which madvise_empty_slab() can reclaim -- from one made of
+ *          bytes -- which madvise_empty_slab_full() can reclaim -- from one made of
  *          genuinely live bytes, which nothing can.
  */
 inline void report_all_arenas(const char* when) noexcept
