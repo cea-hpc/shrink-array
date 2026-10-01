@@ -71,6 +71,7 @@
 #include <iostream>
 
 #include "chunk/internal/chunk_size_policy.h"
+#include "chunk/internal/in_t.h" // in_t<T>: the value parameters
 #include "chunk/config.h"
 #ifdef FAST_ALLOC
     #include "fast_allocators/internal/alloc_config.h" // alloc_config::thp_advise (CHUNK_THP)
@@ -122,7 +123,7 @@ template <typename T>
 struct GlobalVecHolder;
 
 template <typename T>
-struct TabCstVal2Holder;
+class TabCstVal2Holder;
 
 /**
  * @brief How a chunk's second value is stored in the per-chunk table.
@@ -947,10 +948,10 @@ struct GlobalVecHolder
  * @see TabCstVal2Holder<bool>, which has none of this machinery.
  */
 template <typename T>
-struct TabCstVal2Holder
+class TabCstVal2Holder
 {
+  public:
     using global_vec_holder = GlobalVecHolder<T>;
-    using segment_t         = Segment<T>;
 
     // No instance part: the holder is stateless. Whether a chunk reads from
     // a shared array is a range test on its values pointer
@@ -973,7 +974,7 @@ struct TabCstVal2Holder
     ///          constant from the per-chunk tables alone
     ///          (init_values_cst_val): re-sync after a lost CAS, re-chunk,
     ///          teardown -- never on the element write path.
-    [[nodiscard]] static T* find_cst_val2_ptr(T second_v)
+    [[nodiscard]] static T* find_cst_val2_ptr(in_t<T> second_v)
     {
         using gvh = GlobalVecHolder<T>;
         if (T* hit = gvh::index_lookup(second_v)) [[likely]]
@@ -1000,24 +1001,6 @@ struct TabCstVal2Holder
     static void create()
     {
         global_vec_holder::init();
-    }
-
-    /**
-     * @brief Carve one identifier slot for @p val and record the value.
-     * @return The slot pointer: never dereferenced, only range-tested and
-     *         converted to an identifier.
-     * @warning value_by_id[] is written BEFORE the caller publishes the
-     *          pointer. That ordering is what index_publish()'s release store
-     *          makes visible.
-     */
-    static T* alloc_chunk(T val)
-    {
-        T* buf = reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
-        // The dictionary entry, before the array can be published: a reader
-        // that obtains the identifier obtains it from a slot written after
-        // this returns.
-        global_vec_holder::value_by_id[id_of_ptr(buf)] = val;
-        return buf;
     }
 
     /// @brief Release an alloc_chunk() array, by whichever route allocated it.
@@ -1049,7 +1032,7 @@ struct TabCstVal2Holder
      *       GlobalVecHolder::index_degraded, i.e. the case where the index can
      *       no longer answer authoritatively.
      */
-    [[nodiscard]] T* find_or_set_ind_cst_val2(T second_v, SecondValueRef<T> ptr_second_value)
+    [[nodiscard]] T* find_or_set_ind_cst_val2(in_t<T> second_v, SecondValueRef<T> ptr_second_value)
     {
         T* buf = find_or_register(second_v);
         ptr_second_value.set_from_array(buf);
@@ -1112,7 +1095,7 @@ struct TabCstVal2Holder
 
     /// @brief The identifier for @p v, registering its array if it is new;
     ///        0 for T{} (the "no second value" the value table wrote as 0).
-    [[nodiscard]] static std::uint32_t id_for_value(T v)
+    [[nodiscard]] static std::uint32_t id_for_value(in_t<T> v)
     {
         if (v == T{})
             return 0;
@@ -1120,11 +1103,31 @@ struct TabCstVal2Holder
     }
 
   private:
+    using segment_t = Segment<T>;
+
+    /**
+     * @brief Carve one identifier slot for @p val and record the value.
+     * @return The slot pointer: never dereferenced, only range-tested and
+     *         converted to an identifier.
+     * @warning value_by_id[] is written BEFORE the caller publishes the
+     *          pointer. That ordering is what index_publish()'s release store
+     *          makes visible.
+     */
+    static T* alloc_chunk(in_t<T> val)
+    {
+        T* buf = reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
+        // The dictionary entry, before the array can be published: a reader
+        // that obtains the identifier obtains it from a slot written after
+        // this returns.
+        global_vec_holder::value_by_id[id_of_ptr(buf)] = val;
+        return buf;
+    }
+
     /**
      * @brief The slot for @p second_v, registering it if new.
      * @return The value's slot (an identifier, never dereferenced). Never null.
      */
-    [[nodiscard]] static T* find_or_register(T second_v)
+    [[nodiscard]] static T* find_or_register(in_t<T> second_v)
     {
         // ── Hot path, lock-free ───────────────────────────────────────────
         if (T* hit = global_vec_holder::index_lookup(second_v)) [[likely]]
@@ -1202,8 +1205,9 @@ struct TabCstVal2Holder
  *          not just forward.
  */
 template <>
-struct TabCstVal2Holder<bool>
+class TabCstVal2Holder<bool>
 {
+  public:
     /// @brief Nothing to create. @see TabCstVal2Holder::create
     static void create() {}
     /// @brief Nothing to free, and no user count to keep.
