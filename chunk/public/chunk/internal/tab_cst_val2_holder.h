@@ -71,6 +71,7 @@
 #include <iostream>
 
 #include "chunk/internal/chunk_size_policy.h"
+#include "chunk/internal/env_parse.h" // env_number (CHUNK_CST_VAL2_ID_LIMIT)
 #include "chunk/internal/in_t.h" // in_t<T>: the value parameters
 #include "chunk/config.h"
 #ifdef FAST_ALLOC
@@ -348,11 +349,14 @@ struct GlobalVecHolder
     // a test, returns something plausible. Re-run rechunk_validation_*, a
     // TSan pass and a --mode check run whenever it is touched.
     //
-    // Capacity: CHUNK_CST_VAL2_REGION_BYTES of address space per element type,
-    // divided by kIdStride -- one cache line per identifier, so 33 M
-    // identifiers in 2 GiB. Capped by CHUNK_CST_VAL2_MAX_IDS, which sizes
-    // value_by_id. Exhausting it aborts with the count, it is not a silent
-    // fallback -- a fallback array would break the range test.
+    // Capacity: ONE bound, kRegionUsable = min(CHUNK_CST_VAL2_REGION_BYTES,
+    // kMaxIds x kIdStride) -- one cache line per identifier, kMaxIds capped
+    // by CHUNK_CST_VAL2_MAX_IDS, which sizes value_by_id. The reservation,
+    // the range test (region_end) and region_alloc()'s abort all use it.
+    // Until Oct '26 the abort used the region's 33 M while value_by_id held
+    // 4 M: every identifier in between was written past the table. Running
+    // out aborts with the count, it is not a silent fallback -- a fallback
+    // array would break the range test.
 #ifndef CHUNK_CST_VAL2_REGION_BYTES
     #define CHUNK_CST_VAL2_REGION_BYTES (std::size_t{2} << 30U)
 #endif
@@ -396,6 +400,19 @@ struct GlobalVecHolder
   public:
     static constexpr std::size_t kMaxIds =
         (kRegionBytes / kIdStride) < CHUNK_CST_VAL2_MAX_IDS ? (kRegionBytes / kIdStride) : CHUNK_CST_VAL2_MAX_IDS;
+    static_assert(kMaxIds < std::size_t{0xFFFFFFFFu}, "an identifier must fit id_of_ptr()'s uint32_t");
+
+  private:
+    /// @brief What is reserved and carved: exactly the identifiers
+    ///        value_by_id can hold. 256 MiB per type with the defaults.
+    static constexpr std::size_t kRegionUsable =
+        (kMaxIds * kIdStride) < kRegionBytes ? (kMaxIds * kIdStride) : kRegionBytes;
+    /// @brief The identifiers region_alloc() hands out: kMaxIds, or fewer
+    ///        under CHUNK_CST_VAL2_ID_LIMIT (read once in region_init(); it
+    ///        can only lower the bound -- the way a test reaches it).
+    static inline std::size_t id_limit = kMaxIds;
+
+  public:
 
     /// @brief The value registered under each identifier, contiguous: what
     ///        a chunk's second value is read through on every write of a
@@ -417,10 +434,10 @@ struct GlobalVecHolder
         // region, so any dereference of a second-value pointer faults instead
         // of reading a plausible zero. Otherwise RW (never touched either).
         const int prot = build_config::use_mm_protect ? PROT_NONE : (PROT_READ | PROT_WRITE);
-        void*     raw  = mmap(nullptr, kRegionBytes, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        void*     raw  = mmap(nullptr, kRegionUsable, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
         if (raw == MAP_FAILED) [[unlikely]]
         {
-            std::cerr << "[cst_val2] cannot reserve the second-value region (" << (kRegionBytes >> 20U) << " MiB)\n";
+            std::cerr << "[cst_val2] cannot reserve the second-value region (" << (kRegionUsable >> 20U) << " MiB)\n";
             std::abort();
         }
         // CHUNK_THP (experimental, off by default): read by every thread that
@@ -429,7 +446,7 @@ struct GlobalVecHolder
         if constexpr (!build_config::use_mm_protect)
         {
             if (cst2_thp_advise())
-                (void)madvise(raw, kRegionBytes, MADV_HUGEPAGE);
+                (void)madvise(raw, kRegionUsable, MADV_HUGEPAGE);
         }
         // Every slot is carved at a multiple of the stride, which is what turns
         // a slot pointer into a small identifier and back
@@ -442,11 +459,13 @@ struct GlobalVecHolder
             region_begin.compare_exchange_strong(expected, static_cast<char*>(raw), std::memory_order_acq_rel))
         {
             region_stride = stride;
-            region_end    = static_cast<char*>(raw) + kRegionBytes;
+            region_end    = static_cast<char*>(raw) + kRegionUsable;
+            const std::size_t lim = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", kMaxIds);
+            id_limit              = (lim >= 1 && lim < kMaxIds) ? lim : kMaxIds; // lowers only
         }
         else
         {
-            munmap(raw, kRegionBytes); // lost the race: the winner's region stands
+            munmap(raw, kRegionUsable); // lost the race: the winner's region stands
         }
     }
 
@@ -474,23 +493,34 @@ struct GlobalVecHolder
         // quantised field can reach that without anyone intending it. A run
         // that is going to die deserves to say so while there is still room to
         // raise CHUNK_CST_VAL2_REGION_BYTES.
-        if (bytes != 0 && off + bytes > kRegionBytes / 2) [[unlikely]]
+        // ONE capacity: the identifiers value_by_id can hold (kRegionUsable,
+        // lowered by CHUNK_CST_VAL2_ID_LIMIT). alloc_chunk() writes
+        // value_by_id[id] for every slot carved here, so a slot past it would
+        // be a write past the table -- the bound used to be the region's
+        // 33 M identifiers against value_by_id's 4 M.
+        const std::size_t cap_bytes =
+            (bytes != 0 && id_limit * bytes < kRegionUsable) ? id_limit * bytes : kRegionUsable;
+        const char* limiting = (kMaxIds * kIdStride) < kRegionBytes ? "CHUNK_CST_VAL2_MAX_IDS" : "CHUNK_CST_VAL2_REGION_BYTES";
+        if (id_limit < kMaxIds)
+            limiting = "CHUNK_CST_VAL2_ID_LIMIT";
+        if (bytes != 0 && off + bytes > cap_bytes / 2) [[unlikely]]
         {
             static std::atomic warned{false};
             bool               expected = false;
             if (warned.compare_exchange_strong(expected, true, std::memory_order_relaxed))
             {
-                std::cerr << "[cst_val2] second-value region past half full: " << (off / bytes) << " of "
-                          << (kRegionBytes / bytes) << " arrays of " << bytes << " bytes (" << (kRegionBytes >> 20U)
-                          << " MiB). Raise CHUNK_CST_VAL2_REGION_BYTES if the count keeps "
-                          << "growing; exhausting the region aborts.\n";
+                std::cerr << "[cst_val2] second-value identifiers past half used: " << (off / bytes) << " of "
+                          << (cap_bytes / bytes) << " (bound by " << limiting
+                          << "). Raise it if the count keeps growing; running out aborts.\n";
             }
         }
-        if (off + bytes > kRegionBytes) [[unlikely]]
+        if (off + bytes > cap_bytes) [[unlikely]]
         {
-            std::cerr << "[cst_val2] second-value region exhausted after " << (off / bytes) << " arrays of " << bytes
-                      << " bytes (" << (kRegionBytes >> 20U) << " MiB). Raise CHUNK_CST_VAL2_REGION_BYTES, or reduce "
-                      << "the number of DISTINCT second values the workload registers.\n";
+            std::cerr << "[cst_val2] second-value identifiers exhausted: " << (off / bytes) << " of "
+                      << (cap_bytes / (bytes != 0 ? bytes : 1)) << ", bound by " << limiting
+                      << " (CHUNK_CST_VAL2_MAX_IDS=" << kMaxIds << ", CHUNK_CST_VAL2_REGION_BYTES="
+                      << (kRegionBytes >> 20U) << " MiB). Raise it, or reduce the number of DISTINCT second "
+                      << "values the workload registers.\n";
             std::abort();
         }
         return region_begin.load(std::memory_order_relaxed) + off;
