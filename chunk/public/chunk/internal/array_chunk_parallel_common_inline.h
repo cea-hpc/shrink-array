@@ -34,8 +34,6 @@ void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
 {
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        Derived& arr = self();
-
         // Name CompressionManager<value_type, chunk_type> directly rather than via
         // chunk_type::CompressionManagerType: that alias is public on Chunk2 but
         // private on Chunk2A. Both name the same type; this form avoids the
