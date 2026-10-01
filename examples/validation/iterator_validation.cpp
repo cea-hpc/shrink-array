@@ -306,6 +306,32 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
             }
         }
     }
+    // One before begin: the position --begin() and every backward jump past 0
+    // reach (seek(-1): chunk -1, null cursor). Never dereferenced; a ++ from it
+    // must land back on begin() and read at(0).
+    {
+        It m1 = b;
+        --m1;
+        const It m2 = b - 1;
+        It       m3 = b;
+        m3 += -1;
+        for (const long k : pos)
+        {
+            if (k < 1 || k > N)
+                continue;
+            const It m4 = (b + k) - (k + 1);
+            if (m4 != m1 || m4 - b != -1)
+                r.fail("(begin() + %ld) - %ld does not land one before begin", k, k + 1);
+        }
+        if (m1 - b != -1 || m2 != m1 || m3 != m1 || !(m1 < b) || b - m1 != 1)
+            r.fail("one before begin: --begin(), begin() - 1 and begin() += -1 disagree");
+        It p = m1;
+        ++p;
+        if (p != b || *p != at(0))
+            r.fail("++ from one before begin reads %g, expected %g", *p, at(0));
+        if (*(m1 + 1) != at(0) || m1[1] != at(0))
+            r.fail("one before begin: *(it + 1) / it[1] read %g / %g, expected %g", *(m1 + 1), m1[1], at(0));
+    }
     if (*(a.end() - 1) != ref.back())
         r.fail("*(end() - 1) = %g, expected %g", *(a.end() - 1), ref.back());
     It adv = a.begin();
