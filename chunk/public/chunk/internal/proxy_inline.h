@@ -171,7 +171,9 @@ void Proxy<T>::execute_arithmetic_compound_operation(OP op, [[maybe_unused]] con
     }
     else
     {
-        const in_t<T> v_old = values[num];
+        // const T, not in_t<T>: a snapshot read before the store below and
+        // used after it (in_t.h, corollary for local variables).
+        const T v_old = values[num];
 
         // 1. Perform math in high precision using CalcType
         const CalcType v_new_precise = op(static_cast<CalcType>(v_old), static_cast<CalcType>(v));
@@ -189,6 +191,56 @@ void Proxy<T>::execute_arithmetic_compound_operation(OP op, [[maybe_unused]] con
     }
 }
 
+// ─── The v1 replay bodies (`*_async`) and the hypothesis they rest on ──────
+//
+// The `_async` bodies below (execute_arithmetic_compound_operation_async,
+// the deferred body of assign_impl, execute_simple_operation_async,
+// execute_inplace_operation_async) are called ONLY from a flush drain:
+// CompressionManager::flush_deferred() / flush_chunk_all_ranks(), which
+// wait_for_availability() reaches too. Both drains announce the flush
+// (Policy::announce_flush()) and then wait out the in-flight hard
+// compressors; every compressor that steals a chunk's buffer goes through
+// CompressionManager::start(), which refuses while a flush is announced.
+// Hence: NO COMPRESSOR CAN CHANGE `values` DURING A REPLAY, and these bodies
+// load the values pointer once and store through it, with no retry.
+//
+// Proxy2A's twins (proxy2A_inline.h) carry a pre-/post-store retry loop
+// instead; v1 does not need one as long as the hypothesis holds. It breaks if
+// a v1 chunk is ever compressed outside start() (a direct compress(), as the
+// re-chunk folds do for Chunk2 / Chunk2A) or an `_async` body is called
+// outside a drain. A store would then land in a released buffer and the write
+// would be lost in silence -- which is what check_replay_store() below turns
+// into an INVARIANT_FAILED in check builds (build_config::any_check; nothing
+// in release).
+
+namespace internal
+{
+/// @brief Check builds: the chunk's values pointer is still the one the replay
+///        stored through. A difference means the hypothesis above no longer
+///        holds and the store is lost.
+/// @param chunk     Chunk the replay wrote to.
+/// @param stored_to Values pointer the store went through.
+/// @param where     Replay body, for the message.
+/// @param num       Element offset, for the message.
+template <typename ChunkT, typename T>
+inline void check_replay_store([[maybe_unused]] ChunkT&     chunk,
+                               [[maybe_unused]] const T*    stored_to,
+                               [[maybe_unused]] const char* where,
+                               [[maybe_unused]] int         num) noexcept
+{
+    if constexpr (build_config::any_check)
+    {
+        if (chunk.values_load() != stored_to) [[unlikely]]
+            INVARIANT_FAILED("{}: values changed during a deferred replay (chunk={} num={}): a compressor ran "
+                             "outside CompressionManager::start() or the replay ran outside a flush drain; "
+                             "the store is lost",
+                             where, static_cast<const void*>(&chunk), num);
+    }
+}
+} // namespace internal
+
+/// @brief Replay of a compound arithmetic operation (v1).
+/// @pre Called from a flush drain only -- see "The v1 replay bodies" above.
 template <typename Derived, typename T, bool Enabled>
 template <typename OP, typename LAMBDA, typename U>
 void ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_operation_async(auto* ctx,
@@ -205,9 +257,12 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_opera
     {
         // Decompress: the chunk was currently in a constant state
         ctx->chunk.create_value();
+        [[maybe_unused]] const T* const materialised = ctx->chunk.values_load();
 
         // Execute the write logic using the newly allocated memory pointer
         lbd(op);
+
+        internal::check_replay_store(ctx->chunk, materialised, "execute_arithmetic_compound_operation_async", ctx->num);
     }
     else
     {
@@ -230,6 +285,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_opera
 
         // 3. Store the value in physical memory
         values_ptr[num] = final_val;
+        internal::check_replay_store(chunk_loc, values_ptr, "execute_arithmetic_compound_operation_async", num);
 
         // 4. Trigger the compression check logic (e.g. if the result is zero)
         mark_for_compression_if_needed_with_value_async(proxy, old_value, final_val);
@@ -344,9 +400,11 @@ T Proxy<T>::assign_impl(in_t<U> v) noexcept
                     chunk.create_value();
                 }
 
+                // Replay body: see "The v1 replay bodies" above.
                 T* values = chunk.values_load();
 
                 values[num] = static_cast<T>(ctx->operand);
+                internal::check_replay_store(chunk, values, "assign_impl (deferred)", num);
 
                 proxy.mark_for_compression_if_needed_with_value(v_old, values[num]);
             };
@@ -432,6 +490,8 @@ void Proxy<T>::execute_simple_operation(LAMBDA operation)
     }
 }
 
+/// @brief Replay of a plain store (v1).
+/// @pre Called from a flush drain only -- see "The v1 replay bodies" above.
 template <typename Derived, typename T, bool Enabled>
 template <typename LAMBDA>
 void ProxyFastCompPolicy<Derived, T, Enabled>::execute_simple_operation_async(auto* ctx, LAMBDA operation)
@@ -446,6 +506,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_simple_operation_async(au
     // Reload the real values pointer from the chunk and pass it to the lambda
     T* values = ctx->chunk.values_load();
     operation(values);
+    internal::check_replay_store(ctx->chunk, values, "execute_simple_operation_async", ctx->num);
 }
 
 template <typename T>
@@ -503,6 +564,8 @@ void Proxy<T>::execute_inplace_operation(LAMBDA operation)
     }
 }
 
+/// @brief Replay of an in-place operation (++, --; v1).
+/// @pre Called from a flush drain only -- see "The v1 replay bodies" above.
 template <typename Derived, typename T, bool Enabled>
 template <typename LAMBDA>
 void ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_async(auto* ctx, LAMBDA operation)
@@ -528,6 +591,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_async(a
 
     // Apply the user-provided operation on the real values
     operation(values[num]);
+    internal::check_replay_store(chunk_loc, values, "execute_inplace_operation_async", num);
 
     // Re-read the updated value: nothing writes it afterwards, in_t (a
     // reference for a struct) rather than a copy.
@@ -578,7 +642,9 @@ void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
         }
         else
         {
-            const in_t<T> v_old = values[num];
+            // const T, not in_t<T>: apply_atomic_op() stores to values[num]
+            // and still reads v_old (in_t.h, corollary for local variables).
+            const T v_old = values[num];
             // we can't test values[num] if deferred mode is activate : because values[num] could be affect after
             if (v_old != zero || CompressionManagerType::have_deferred_queue())
             {

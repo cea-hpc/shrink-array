@@ -704,7 +704,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param count new element count
      * @param val value written to every position
      */
-    void assign(ind_type count, in_t<T> val);
+    void assign(ind_type count, T val); // T, not in_t<T>: val may be a(i) -- resize() can free it
 
     /**
      * @brief assign(): the elements of [first, last), in order.

@@ -203,7 +203,7 @@ double ArrayChunkBase<Derived>::stats_seq() const
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::assign(ind_type count, in_t<T> val)
+void ArrayChunkBase<Derived>::assign(ind_type count, T val)
 {
     derived().resize(count);
     for (ind_type i = 0; i < count; ++i)

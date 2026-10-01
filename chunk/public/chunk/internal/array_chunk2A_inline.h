@@ -590,14 +590,15 @@ void ArrayChunk2A<T, ind_type>::compress_int()
     tab_nb1.reserve(nb_res);
     tab_nb2.reserve(nb_res);
 
-    const auto& tab_2nd_value_loc = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab);
-
 #pragma omp for schedule(static) nowait
     for (int j = 0; j < nb_chunk; ++j)
     {
         const auto& chunk = chunk_list[j];
 
-        const in_t<T> second_value = tab_2nd_value_loc[j];
+        // Through SecondValueRef::get(), not the raw slot: under
+        // CHUNK_SECOND_VALUE_INDEXED a slot holds the value's IDENTIFIER, and
+        // `const T v = slot` converted that integer into a T in silence.
+        const T second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, j).get();
 
         if (chunk.written())
         {
