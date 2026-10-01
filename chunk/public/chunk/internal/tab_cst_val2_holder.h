@@ -322,7 +322,7 @@ struct GlobalVecHolder
     // 50 M-chunk reference run, and a store-ordering subtlety (the cache had
     // to be published after values, and a reader in between saw a constant
     // chunk as materialised). The registry is append-only between clears, so
-    // a bump pointer is the whole allocator; free_chunk() is a no-op and
+    // a bump pointer is the whole allocator: nothing is freed per slot, and
     // region_reset() gives the pages back at the last clear.
     //
     // Nothing is ever STORED in the region: a slot is an identifier, not an
@@ -861,9 +861,10 @@ struct GlobalVecHolder
         if (remaining > 0)
             return; // Other ArrayChunk2A<T> instances still alive — do not free
 
-        // Last instance: free all slot arrays and segments. Count segments in
-        // the same pass so we can emit ONE summary line (replaces the per-append
-        // spam that used to print inside find_or_set_ind_cst_val2).
+        // Last instance: free the segments and count what they held, so we can
+        // emit ONE summary line (replaces the per-append spam that used to print
+        // inside find_or_set_ind_cst_val2). The slots themselves are region
+        // memory: region_reset() below gives them back all at once.
         int         nb_segs = 0;
         Segment<T>* seg     = head.exchange(nullptr, std::memory_order_acq_rel);
         while (seg != nullptr)
@@ -872,11 +873,8 @@ struct GlobalVecHolder
             const int used = seg->used;
             for (int i = 0; i < used; ++i)
             {
-                if (T* entry = seg->slots[i]; entry != nullptr)
-                {
-                    TabCstVal2Holder<T>::free_chunk(entry);
+                if (seg->slots[i] != nullptr)
                     ++nb_val2;
-                }
             }
             auto owned = std::unique_ptr<Segment<T>>(seg);
             seg        = owned->next;
@@ -909,18 +907,12 @@ struct GlobalVecHolder
         Segment<T>* seg = head.exchange(nullptr, std::memory_order_relaxed);
         while (seg != nullptr)
         {
-            // Free the T* arrays held in the slots
-            const int used = seg->used;
-            for (int i = 0; i < used; ++i)
-            {
-                if (T* entry = seg->slots[i]; entry != nullptr)
-                    TabCstVal2Holder<T>::free_chunk(entry);
-            }
+            // The slots are region memory, freed by region_reset() below.
             Segment<T>* next = seg->next;
             delete seg;
             seg = next;
         }
-        index_clear(); // arrays freed: drop stale advisory index entries
+        index_clear(); // registry gone: drop stale advisory index entries
         region_reset();
     }
 };
@@ -1001,13 +993,6 @@ class TabCstVal2Holder
     static void create()
     {
         global_vec_holder::init();
-    }
-
-    /// @brief Release an alloc_chunk() array, by whichever route allocated it.
-    static void free_chunk(T* /*p*/)
-    {
-        // Region memory: nothing to free per array. The last clear gives the
-        // whole carved range back (GlobalVecHolder::region_reset).
     }
 
     /**
