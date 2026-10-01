@@ -362,7 +362,23 @@ struct DeferredReadGate<Derived, DeferReadGate::Precise>
                 auto           expected = static_cast<int32_t>(cur);
                 if (pending.compare_exchange_weak(expected, static_cast<int32_t>(nw), std::memory_order_acq_rel,
                                                   std::memory_order_acquire))
+                {
+                    // Check builds stop on an over-retire. Negative, pending_any()
+                    // is false, and a publish from -1 leaves 0 with an op queued
+                    // -- the "counter at 0 while ops were queued" the force
+                    // flushes work around. publish runs BEFORE the insert, so
+                    // this is a double count, not a race. Release builds keep
+                    // the self-healing semantics above.
+                    if constexpr (build_config::any_check)
+                    {
+                        if (ncnt < 0) [[unlikely]]
+                            INVARIANT_FAILED("pending_retire: chunk {} pending count {} -> {} (retired {}): "
+                                             "more ops retired than published -- a double count",
+                                             static_cast<const void*>(&static_cast<Derived&>(*this)), cnt, ncnt,
+                                             count);
+                    }
                     return;
+                }
                 cur = static_cast<uint32_t>(expected);
             }
         }

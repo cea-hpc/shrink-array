@@ -878,7 +878,18 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     /// @param count    number of ops drained
     static void dec_pending_ops(int thr_rank, int64_t count = 1) noexcept
     {
-        pending_ops_shard[thr_rank].v.fetch_sub(count, std::memory_order_release);
+        const int64_t before = pending_ops_shard[thr_rank].v.fetch_sub(count, std::memory_order_release);
+        // Never below zero: any_pending_ops() SUMS the ranks, so a rank at -2
+        // hides two real ops on another one and the array-level flush is
+        // skipped. inc_pending_ops() runs under the same shard lock as the
+        // op insert, so a negative count is a double count, not a race.
+        if constexpr (build_config::any_check)
+        {
+            if (before - count < 0) [[unlikely]]
+                INVARIANT_FAILED("dec_pending_ops: rank {} count {} -> {} (retired {}): more ops retired than "
+                                 "published -- a double count",
+                                 thr_rank, before, before - count, count);
+        }
     }
 
     /// @brief Enter the hard compression window (start()'s counterpart).

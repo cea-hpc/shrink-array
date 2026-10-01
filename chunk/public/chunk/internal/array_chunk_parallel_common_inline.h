@@ -23,6 +23,8 @@
 #include "chunk/internal/array_chunk_parallel_common.h"
 #include "chunk/internal/compression_manager.h" // CompressionManager<> in flush_pending_deferred_ops
 #include "chunk/config.h"
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_RANK_BOUND, CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/internal/invariant_check.h"   // INVARIANT_FAILED (check builds)
 
 namespace shrink_array
 {
@@ -45,17 +47,36 @@ void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
         // replayed against a recycled address of the wrong size. The counter has
         // been seen to read 0 while ops were still queued, so it cannot gate
         // this path.
-        if (force)
+        //
+        // ONE drain per rank, not one per chunk. flush_chunk_all_ranks() pays
+        // its fixed cost -- announce_flush() (counter + seq_cst fence), the
+        // hard-compressor wait, then every rank's shard lock and a find() --
+        // BEFORE knowing whether the chunk holds anything: per chunk of the
+        // array, that was a million announces and ~64 M lock round trips on a
+        // million-chunk array at 64 threads, for chunks almost all empty (and
+        // the dirty bits are sticky). flush_deferred(r) announces once and
+        // walks rank r's chunk set, which holds exactly the chunks with ops
+        // queued. It also drains the other arrays of this (T, chunk type):
+        // their ops are applied earlier, still in order.
+        if (force || CM::any_pending_ops())
         {
-            for (int j = 0; j < arr.nb_chunk; ++j)
-                static_cast<void>(CM::flush_chunk_all_ranks(&arr.chunk_list[j]));
-        }
-        else if (CM::any_pending_ops())
-        {
-            for (int j = 0; j < arr.nb_chunk; ++j)
+            const int max_thr = CHUNK_PMP_RANK_BOUND;
+            for (int r = 0; r < max_thr; ++r)
+                static_cast<void>(CM::flush_deferred(r));
+
+            // Check builds: after a forced drain at a quiescent point (no
+            // region, so no writer enqueues meanwhile), every rank's counter
+            // must read 0 -- anything else is counter drift.
+            if constexpr (build_config::any_check)
             {
-                if (arr.is_chunk_dirty(j))
-                    static_cast<void>(CM::flush_chunk_all_ranks(&arr.chunk_list[j]));
+                if (force && !CHUNK_PMP_IN_PARALLEL_REGION)
+                {
+                    for (int r = 0; r < max_thr; ++r)
+                        if (const auto left = CM::pending_ops_rank(r); left != 0) [[unlikely]]
+                            INVARIANT_FAILED("flush_pending_deferred_ops(force): rank {} still counts {} pending "
+                                             "op(s) after its drain, outside any region (counter drift)",
+                                             r, left);
+                }
             }
         }
     }
