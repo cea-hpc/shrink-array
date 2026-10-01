@@ -262,6 +262,64 @@ void ManagerChunk<CHUNK_T, T>::compress_chunk_to_compress_potentially([[maybe_un
     }
 }
 
+/// @brief Chunk2: snapshot the second-value lists the sweep drains.
+template <template <typename> typename CHUNK_T, typename T>
+void ManagerChunk<CHUNK_T, T>::sweep_prepare()
+{
+    if constexpr (chunk_config::use_fast_block_compression && IsChunk2<CHUNK_T, T>)
+    {
+        if constexpr (is_not_bool)
+        {
+            const auto v = Proxy2<T>::share_info_array.get_all_inf_array();
+            sweep_inf_arrays_.assign(v.begin(), v.end());
+        }
+    }
+}
+
+/// @brief Rank @p thr's share of compress_chunk_to_compress_potentially().
+template <template <typename> typename CHUNK_T, typename T>
+void ManagerChunk<CHUNK_T, T>::sweep_rank([[maybe_unused]] int thr, [[maybe_unused]] bool apply)
+{
+    if constexpr (chunk_config::use_fast_block_compression)
+    {
+        if constexpr (IsChunk2<CHUNK_T, T>)
+        {
+            if constexpr (is_not_bool)
+            {
+                for (auto* inf_array : sweep_inf_arrays_)
+                    CHUNK_T<T>::compress_sweep_rank(thr, *inf_array, apply);
+            }
+            else
+            {
+                CHUNK_T<T>::compress_sweep_rank_bool(thr, apply);
+            }
+        }
+        else if constexpr (IsChunk2A<CHUNK_T, T>)
+        {
+            CHUNK_T<T>::compress_sweep_rank(thr, apply);
+        }
+        else
+        {
+            CHUNK_T<T>::compress_sweep_rank(thr); // Chunk: always compresses
+        }
+    }
+}
+
+/// @brief Chunk2 always swept the ranks past the team; Chunk2A in one pass;
+///        Chunk never.
+template <template <typename> typename CHUNK_T, typename T>
+bool ManagerChunk<CHUNK_T, T>::sweep_mops_up([[maybe_unused]] bool apply) const
+{
+    if constexpr (chunk_config::use_fast_block_compression)
+    {
+        if constexpr (IsChunk2<CHUNK_T, T>)
+            return true;
+        else if constexpr (IsChunk2A<CHUNK_T, T>)
+            return CHUNK_T<T>::compress_sweep_mops_up(apply);
+    }
+    return false;
+}
+
 // The definitions below are members of the mode-specific policies, so the
 // specialization itself selects the mode: <..., true> is only ever
 // instantiated under OpenMP, <..., false> only without it.
