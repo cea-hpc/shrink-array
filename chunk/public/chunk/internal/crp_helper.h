@@ -43,7 +43,7 @@ using crtp_cast_t = std::conditional_t<std::is_const_v<std::remove_reference_t<S
  * @brief Simple mixin to provide derived() and self() cast helpers for CRTP.
  */
 template <typename Derived>
-struct CRTPSupport
+class CRTPSupport
 {
   protected:
     /// @brief `*this` as the derived class, const on a const object.

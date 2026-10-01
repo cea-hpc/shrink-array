@@ -289,8 +289,9 @@ uint32_t get_tid()
     }
 }
 
-struct Interval
+class Interval
 {
+  public:
     uint64_t start;
     uint64_t end;
     bool     is_fallback = false;
@@ -305,8 +306,9 @@ enum EventType
     COMP_END   = 3
 };
 
-struct Endpoint
+class Endpoint
 {
+  public:
     uint64_t  time;
     EventType type;
     uint32_t  tid; // tid owning this interval
@@ -398,8 +400,9 @@ bool analyze_ring_sweep()
     std::unordered_map<uint32_t, std::vector<Interval>> fast_intervals;
     std::unordered_map<uint32_t, std::vector<Interval>> compress_intervals;
 
-    struct ThreadState
+    class ThreadState
     {
+      public:
         bool     in_fast        = false;
         uint64_t fast_start     = 0;
         bool     in_compress    = false;
@@ -615,8 +618,9 @@ bool analyze_ring_sweep()
 
     // Stage 4: sweep
     std::cout << "⚙️  Sweeping endpoints and detecting overlaps...\n";
-    struct ActiveCompress
+    class ActiveCompress
     {
+      public:
         uint32_t tid;
         size_t   idx;
         uint64_t start;
@@ -628,8 +632,9 @@ bool analyze_ring_sweep()
 
     const auto make_key = [](uint32_t tid, size_t idx) -> uint64_t { return ((uint64_t)tid << 32U) | (uint64_t)idx; };
 
-    struct Overlap
+    class Overlap
     {
+      public:
         uint32_t fast_tid;
         size_t   fast_idx;
         uint32_t comp_tid;

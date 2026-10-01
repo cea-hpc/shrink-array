@@ -81,12 +81,13 @@ class AllTypeChunk;
  *      simply "let go of the reuse pools", whichever build this is.
  */
 template <bool Enabled = build_config::use_openmp, typename AllT = AllTypeChunk>
-struct ChunkPoolParallelInterface; // primary left undefined: only the 2 specializations exist
+class ChunkPoolParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: the pools are per-rank.
 template <typename AllT>
-struct ChunkPoolParallelInterface<true, AllT>
+class ChunkPoolParallelInterface<true, AllT>
 {
+  public:
     /// @return True as soon as the per-rank free lists are unbalanced enough to
     ///         be worth a pass.
     [[nodiscard]] static bool need_load_balance_list_block_free();
@@ -106,8 +107,9 @@ struct ChunkPoolParallelInterface<true, AllT>
 
 /// @brief Serial builds: one allocator, no per-rank lists to balance or clear.
 template <typename AllT>
-struct ChunkPoolParallelInterface<false, AllT>
+class ChunkPoolParallelInterface<false, AllT>
 {
+  public:
     /// @return Always false: there is a single free list, so nothing to balance.
     [[nodiscard]] static bool need_load_balance_list_block_free()
     {
@@ -177,8 +179,9 @@ extern void release_chunk_pools();
  */
 
 template <bool EnableCounter>
-struct ChunkCounterPolicy
+class ChunkCounterPolicy
 {
+  public:
     /// @brief Record one more zero element.
     void inc_nb_val_eq_zero() noexcept
     {
@@ -236,8 +239,9 @@ struct ChunkCounterPolicy
  * @tparam Enabled build_config::use_openmp
  */
 template <typename T, typename Derived, bool Enabled = build_config::use_openmp>
-struct ChunkOmpPolicy : public ChunkBase<T, Derived>
+class ChunkOmpPolicy : public ChunkBase<T, Derived>
 {
+  public:
     using Base          = ChunkBase<T, Derived>;
     using ChunkType     = Derived;
     using manager_chunk = ManagerChunk<Chunk, T>;
@@ -295,14 +299,6 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
     void compress(this Derived& self, int thr_rank, unsigned int n_elems);
 
   private:
-    /// @brief Point @p count freshly allocated chunks at the first constant.
-    /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
-    ///          parallel region (inside one it stays on the calling thread: an
-    ///          allocation is made by one thread, and an orphaned `omp for`
-    ///          would hang waiting for the others). Public: an application
-    ///          that placement-news an array of chunks initialises it here.
-    static void init_chunks_cst_val(Chunk<T>* v, std::size_t count) noexcept;
-
     /// @brief CAS this chunk's values pointer into place.
     /// @param values_loc buffer to publish
     /// @return true if this thread won the exchange
@@ -310,13 +306,6 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
     {
         return Base::compare_and_swap1(values_loc);
     }
-
-    /**
-     * @brief Zero-fill a buffer that allocate_chunk_internal has just created.
-     * @param vals freshly allocated buffer of shrink_array::alloc_chunk_count() elements
-     * @note Only the fresh-allocation branch needs it -- see create_value().
-     */
-    static void zero_fill_fresh(T* vals) noexcept;
 
     /**
      * @brief Atomically mark this chunk constant and hand back its old buffer.
@@ -341,6 +330,21 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
         }
         return old;
     }
+
+    /// @brief Point @p count freshly allocated chunks at the first constant.
+    /// @details Parallel past 500 chunks, and only when called from OUTSIDE a
+    ///          parallel region (inside one it stays on the calling thread: an
+    ///          allocation is made by one thread, and an orphaned `omp for`
+    ///          would hang waiting for the others). Public: an application
+    ///          that placement-news an array of chunks initialises it here.
+    static void init_chunks_cst_val(Chunk<T>* v, std::size_t count) noexcept;
+
+    /**
+     * @brief Zero-fill a buffer that allocate_chunk_internal has just created.
+     * @param vals freshly allocated buffer of shrink_array::alloc_chunk_count() elements
+     * @note Only the fresh-allocation branch needs it -- see create_value().
+     */
+    static void zero_fill_fresh(T* vals) noexcept;
 };
 
 /**
@@ -349,8 +353,9 @@ struct ChunkOmpPolicy : public ChunkBase<T, Derived>
  * @tparam Derived CRTP derived chunk type (Chunk<T>)
  */
 template <typename T, typename Derived>
-struct ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
+class ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
 {
+  public:
     using Base = ChunkBase<T, Derived>;
     using Base::derived;
     using Base::values;
@@ -386,8 +391,9 @@ struct ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
  *                 no-ops
  */
 template <typename T, typename Derived, bool Enabled>
-struct ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
+class ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
 {
+  public:
     // 4th element: the chunk's OWN geometry, captured at enqueue by
     // push_to_compress_list. compress() must scan exactly that many elements --
     // NOT alloc_chunk_count(), which is the CONSUMING thread's ambient size and
@@ -400,10 +406,6 @@ struct ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
     using Base::derived;
     using Base::self;
 
-  private:
-    constexpr static T zero{};
-
-  public:
     /**
      * @brief Compress every chunk @p thr has queued, in one batch.
      * @param thr   rank whose candidates are compressed
@@ -419,12 +421,8 @@ struct ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
     static bool have_chunk_to_compress(int max_thr);
 
   private:
-    /**
-     * @brief Scan @p thr's queued candidates and collect those now compressible.
-     * @param thr      rank whose candidate list is scanned
-     * @param ll_compt out: the chunks found compressible, with their geometry
-     */
-    static void fill_list_chunk_to_compress_in_par(int thr, vec_tuple_chunkp_int2& ll_compt);
+    constexpr static T zero{};
+
     /**
      * @brief Append this chunk to @p ll_compt if all @p n_elems elements are zero.
      * @param ll_compt  out: list of compressible chunks
@@ -438,6 +436,13 @@ struct ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
                                int                    num_chunk,
                                int                    num_tab,
                                unsigned int           n_elems);
+
+    /**
+     * @brief Scan @p thr's queued candidates and collect those now compressible.
+     * @param thr      rank whose candidate list is scanned
+     * @param ll_compt out: the chunks found compressible, with their geometry
+     */
+    static void fill_list_chunk_to_compress_in_par(int thr, vec_tuple_chunkp_int2& ll_compt);
 };
 
 /**
@@ -448,8 +453,9 @@ struct ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
  * @tparam Derived CRTP derived chunk type (Chunk<T>)
  */
 template <typename T, typename Derived>
-struct ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived>
+class ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived>
 {
+  public:
     // 4th element: the chunk's OWN geometry, captured at enqueue by
     // push_to_compress_list. compress() must scan exactly that many elements --
     // NOT alloc_chunk_count(), which is the CONSUMING thread's ambient size and
@@ -503,10 +509,16 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
               public ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>
 {
   public:
+    friend class Proxy<T>;
+
     using Base      = ChunkBase<T, Chunk>;
     using ChunkType = Chunk;
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
+
+    using manager_chunk = ManagerChunk<Chunk, T>;
+
+    using FastCompPolicy = ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>;
 
     using Base::allocate_chunk_internal;
     using Base::first_value;
@@ -520,29 +532,12 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
     using Base::free_values;
 
-    friend class Proxy<T>;
-
-    using manager_chunk = ManagerChunk<Chunk, T>;
-
-    using FastCompPolicy = ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>;
-
     using FastCompPolicy::derived;
     using FastCompPolicy::self;
 
     // Statistics variant tag (CHUNK_STATS): 0 = chunk.
     static constexpr int stat_variant = 0;
 
-  private:
-    // compress(int thr_rank, unsigned n_elems) lives in ChunkOmpPolicy: it is
-    // the queue consumer's per-chunk step (compress_chunk_to_compress above)
-    // and needs a thread rank, so it belongs on the OpenMP surface with
-    // clear_st(int, unsigned) rather than behind a preprocessor guard here.
-    // An OMPT-flavoured overload compress(int, bool, unsigned) used to sit
-    // next to it; nothing called it and its fast-comp branch ended in
-    // std::abort(), so it is gone.
-    constexpr static T zero{};
-
-  public:
     Chunk()  = default;
     ~Chunk() = default;
 
@@ -663,6 +658,15 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     static void compress_sweep_rank(int thr);
 
   private:
+    // compress(int thr_rank, unsigned n_elems) lives in ChunkOmpPolicy: it is
+    // the queue consumer's per-chunk step (compress_chunk_to_compress above)
+    // and needs a thread rank, so it belongs on the OpenMP surface with
+    // clear_st(int, unsigned) rather than behind a preprocessor guard here.
+    // An OMPT-flavoured overload compress(int, bool, unsigned) used to sit
+    // next to it; nothing called it and its fast-comp branch ended in
+    // std::abort(), so it is gone.
+    constexpr static T zero{};
+
     /**
      * @brief Release this chunk's buffer and return to the compressed state.
      * @param thr_rank owning thread's rank; unused serially

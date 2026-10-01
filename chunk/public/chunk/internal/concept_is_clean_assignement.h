@@ -33,14 +33,16 @@ concept IsLibraryProxy = requires { typename std::remove_cvref_t<T>::is_shrink_p
 
 // --- 2. Extract the underlying type (Unwrapper) ---
 template <typename T>
-struct get_base
+class get_base
 {
+  public:
     using type = std::remove_cvref_t<T>;
 };
 
 template <IsLibraryProxy T>
-struct get_base<T>
+class get_base<T>
 {
+  public:
     using type = std::remove_cvref_t<T>::value_type;
 };
 
@@ -49,12 +51,12 @@ using base_t = get_base<T>::type;
 
 // --- 3. Simple Complex Detection ---
 template <typename T>
-struct is_cplx : std::false_type
+class is_cplx : public std::false_type
 {
 };
 /// @brief std::complex<T> is complex.
 template <typename T>
-struct is_cplx<std::complex<T>> : std::true_type
+class is_cplx<std::complex<T>> : public std::true_type
 {
 };
 

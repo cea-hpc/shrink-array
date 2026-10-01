@@ -64,11 +64,6 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     using typename Base::atomic_ptr_ref_t;
     using values_type_ref = atomic_ptr_ref_t;
 
-  private:
-    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
-    static constexpr bool is_not_bool = !is_bool;
-
-  public:
     // Both members exist on ProxyBase in every mode (the serial specialisation
     // declares them too); only their USE is mode-specific.
     using Base::ptr_is_inside_chunk_list_to_compress;
@@ -329,20 +324,6 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     }
 
     /**
-     * @brief Static entry point for async callers that only have a proxy
-     *        reference in hand (not `this`). Delegates to the instance
-     *        method of the same name.
-     * @param proxy Proxy whose compression marking to trigger.
-     * @param old_value Value before the write.
-     * @param new_value Value after the write.
-     */
-    static void
-    mark_for_compression_if_needed_with_value_async(const Derived& proxy, in_t<T> old_value, in_t<T> new_value)
-    {
-        proxy.mark_for_compression_if_needed_with_value(old_value, new_value);
-    }
-
-    /**
      * @brief Write operation with metadata initialization.
      * @tparam WriteFn Callable type for write operation.
      * @param write_fn Function to execute after metadata setup.
@@ -378,7 +359,24 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         return self.write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
     }
 
+    /**
+     * @brief Static entry point for async callers that only have a proxy
+     *        reference in hand (not `this`). Delegates to the instance
+     *        method of the same name.
+     * @param proxy Proxy whose compression marking to trigger.
+     * @param old_value Value before the write.
+     * @param new_value Value after the write.
+     */
+    static void
+    mark_for_compression_if_needed_with_value_async(const Derived& proxy, in_t<T> old_value, in_t<T> new_value)
+    {
+        proxy.mark_for_compression_if_needed_with_value(old_value, new_value);
+    }
+
   private:
+    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
+    static constexpr bool is_not_bool = !is_bool;
+
     /**
      * @brief Whether the chunk is currently at ONE of the two constants and
      *        new_value is precisely the OTHER one -- i.e. a direct

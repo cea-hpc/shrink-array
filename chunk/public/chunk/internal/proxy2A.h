@@ -325,20 +325,17 @@ void realloc_unique(std::unique_ptr<T[]>& ptr, std::size_t old_size, std::size_t
 
 /// @brief Per-table, per-chunk second-value storage used by Proxy2A (see the description above realloc_unique).
 template <typename T, typename Derived>
-struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
+class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
 {
+  public:
     using Base2 = Proxy2Base<Derived, T, Chunk2A<T>>;
-    using Base2::Base2;
-
-    /*!
-     * \brief Static container holding second values for each tab and chunk.
-     * Indexed as tab_second_value[num_tab][num_chunk].
-     */
 
     /// @brief What a slot holds: the value, or for a wide T the identifier
     ///        of its shared array (SecondValueTraits) -- 4 bytes per chunk
     ///        instead of 8 or 16.
     using second_value_slot_t = SecondValueTraits<T>::slot_t;
+
+    using Base2::Base2;
 
     /*!
      * \brief Retrieves a pointer to a specific second value in the chunk.
@@ -414,11 +411,14 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
             std::vector<second_value_slot_t>().swap(tab_second_value[static_cast<std::size_t>(num_tab)]);
     }
 
-  private:
-    static inline std::vector<std::vector<second_value_slot_t>> tab_second_value;
-
-  protected:
     SecondValueRef<T> ptr_second_value; ///< this chunk's slot in tab_second_value[num_tab]
+
+  private:
+    /*!
+     * \brief Static container holding second values for each tab and chunk.
+     * Indexed as tab_second_value[num_tab][num_chunk].
+     */
+    static inline std::vector<std::vector<second_value_slot_t>> tab_second_value;
 };
 
 /*!
@@ -430,8 +430,9 @@ struct ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
  */
 
 template <typename Derived>
-struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<bool>>
+class ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<bool>>
 {
+  public:
     using ChunkType = Chunk2A<bool>;
 
     using Base2 = Proxy2Base<Derived, bool, ChunkType>;
@@ -526,10 +527,10 @@ struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<boo
  */
 
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
-struct Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
+class Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
 {
+  public:
     using BaseSpec = ProxySpec2A<T, Derived>;
-    using BaseSpec::BaseSpec;
 
     using CRTPSupport<Derived>::derived;
 
@@ -537,15 +538,11 @@ struct Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
 
     using Base  = ProxyBase<Derived, T, ChunkType>;
     using Base2 = Proxy2Base<Derived, T, ChunkType>;
-
-  private:
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
-    static constexpr bool is_not_bool = !is_bool;
-
-  public:
-    // --- per-thread candidate list plumbing (OpenMP only) -----------------
     using Base::chunk;
 
+    using BaseSpec::BaseSpec;
+
+    // --- per-thread candidate list plumbing (OpenMP only) -----------------
     template <typename LAMBDA>
     void execute_simple_operation_async(this Derived& self, auto* ctx, LAMBDA operation);
 
@@ -573,21 +570,26 @@ struct Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
     }
 
   private:
+    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_not_bool = !is_bool;
+
     void ensure_writable_storage_async(const Derived& proxy) const;
 };
 /**
  * @brief Specialization for Disabled Fast Compression (Zero Overhead).
  */
 template <typename Derived, typename T, typename ChunkType>
-struct Proxy2AFastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2A<T, Derived>
+class Proxy2AFastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2A<T, Derived>
 {
+  public:
     using BaseSpec = ProxySpec2A<T, Derived>;
-    using BaseSpec::BaseSpec;
 
     using values_type_ref = BaseSpec::values_type_ref;
 
     using Base = ProxyBase<Derived, T, ChunkType>;
     using Base::chunk;
+
+    using BaseSpec::BaseSpec;
 
     /// @brief The single candidate list of a serial build (Chunk2AOmpPolicy<false>).
     TChunk2AComp<Chunk2A, T>& get_vec_tuple_to_compress_potentially() const noexcept
@@ -616,6 +618,10 @@ template <typename T>
 class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_config::use_fast_block_compression>
 {
   public:
+    /// @brief Stream output of the element's value (defined below).
+    template <typename U>
+    friend std::ostream& operator<<(std::ostream& os, const Proxy2A<U>& proxy);
+
     using ChunkType          = Chunk2A<T>;
     using Base2              = Proxy2Base<Proxy2A, T, ChunkType>;
     using Base               = ProxyBase<Proxy2A, T, ChunkType>;
@@ -627,38 +633,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     friend BaseFastCompPolicy;
 
     template <typename, typename, typename, bool>
-    friend struct ProxyBaseFastCompPolicy;
-
-  private:
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
-    static constexpr bool is_not_bool = !is_bool;
-
-    using manager_chunk2A = ManagerChunk<Chunk2A, T>;
-
-    using Base::read_values;
-    using Base::values;
-
-    using Base::num;
-    /// Reference to the associated chunk.
-    ///
-    using Base::chunk; ///< owning chunk
-
-    using Base::ptr_on_array; ///< pointer to array (for tab lookup)
-
-    using Base::num_tab; ///< tab index for this array
-
-    using Base::num_chunk; ///< chunk index
-
-    using CompressionManagerType = CompressionManager<T, ChunkType>;
-
-    using Base::set_num_tab;
-
-    static bool constexpr verbose = false;
-
-  public:
-    /// @brief Stream output of the element's value (defined below).
-    template <typename U>
-    friend std::ostream& operator<<(std::ostream& os, const Proxy2A<U>& proxy);
+    friend class ProxyBaseFastCompPolicy;
 
     /**
      * @brief Construct a Proxy2A for OpenMP build (atomic reference to values).
@@ -671,38 +646,31 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     {
     }
 
-    /**
-     * @brief Resize per-tab containers for nb_tab tabs.
-     * @param nb_tab number of tabs
-     */
-    static void resize_tab_is_int(int nb_tab);
-
-    /**
-     * @brief Resize per-tab per-chunk containers for a given tab.
-     * @param num_tab tab index
-     * @param nb_chunk_old previous chunk count for the tab
-     * @param nb_chunk new chunk count for the tab
-     * @warning The "already queued for compression" flags of this tab are
-     *          REALLOCATED, not grown: every chunk's flag is reset to 0, not
-     *          only the new ones. Safe only while no chunk of the tab sits in a
-     *          candidate list, which could otherwise be queued a second time.
-     */
-    static void resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk);
-
-    /**
-     * @brief Clear per-chunk arrays for a tab.
-     * @param num_tab tab index
-     */
-    static void clear_tab_is_int(int num_tab)
+    /** @brief Clean path for safe assignments (small operand, by value). */
+    template <typename U>
+        requires IsCleanAssignment<T, U>
+    T operator=(const U& v) noexcept
     {
-        BaseSpec::clear(num_tab);
-        // released, not just emptied: clear() kept the capacity, so every
-        // re-chunk (new storage under a new num_tab, the old one destroyed)
-        // left one byte per old chunk behind.
-        std::vector<char>().swap(tab_type_cst_val[num_tab]);
-        // And the candidate flags (one byte per chunk), which leaked the same way.
-        Base::release_tab_is_int(num_tab);
+        return assign_impl<U>(v);
     }
+
+    /** @brief Trap path for risky assignments (e.g., float = 1.01). */
+    template <typename U>
+        requires(!IsCleanAssignment<T, U>) && std::assignable_from<T&, U>
+    [[deprecated("HPC WARNING: Type mismatch in assignment. Use 'f' suffix for floats.")]]
+    T operator=(const U& v) noexcept
+    {
+        return assign_impl<T>(static_cast<T>(v));
+    }
+
+    const Proxy2A& operator=(const Proxy2A& from) = delete;
+    Proxy2A(const Proxy2A& other)                 = default;
+
+    /**
+     * @brief Address-of operator is disabled to prevent unsafe access.
+     */
+    T*       operator&()       = delete;
+    const T* operator&() const = delete;
 
     /**
      * @brief Compute and store num_tab using share_info_array and ptr_on_array.
@@ -740,33 +708,74 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         return Base::get_num_tab();
     }
 
-    /** @brief Clean path for safe assignments (small operand, by value). */
-    template <typename U>
-        requires IsCleanAssignment<T, U>
-    T operator=(const U& v) noexcept
-    {
-        return assign_impl<U>(v);
-    }
-
-    /** @brief Trap path for risky assignments (e.g., float = 1.01). */
-    template <typename U>
-        requires(!IsCleanAssignment<T, U>) && std::assignable_from<T&, U>
-    [[deprecated("HPC WARNING: Type mismatch in assignment. Use 'f' suffix for floats.")]]
-    T operator=(const U& v) noexcept
-    {
-        return assign_impl<T>(static_cast<T>(v));
-    }
-
-    const Proxy2A& operator=(const Proxy2A& from) = delete;
-    Proxy2A(const Proxy2A& other)                 = default;
+    /**
+     * @brief Resize per-tab containers for nb_tab tabs.
+     * @param nb_tab number of tabs
+     */
+    static void resize_tab_is_int(int nb_tab);
 
     /**
-     * @brief Address-of operator is disabled to prevent unsafe access.
+     * @brief Resize per-tab per-chunk containers for a given tab.
+     * @param num_tab tab index
+     * @param nb_chunk_old previous chunk count for the tab
+     * @param nb_chunk new chunk count for the tab
+     * @warning The "already queued for compression" flags of this tab are
+     *          REALLOCATED, not grown: every chunk's flag is reset to 0, not
+     *          only the new ones. Safe only while no chunk of the tab sits in a
+     *          candidate list, which could otherwise be queued a second time.
      */
-    T*       operator&()       = delete;
-    const T* operator&() const = delete;
+    static void resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk);
+
+    /**
+     * @brief Clear per-chunk arrays for a tab.
+     * @param num_tab tab index
+     */
+    static void clear_tab_is_int(int num_tab)
+    {
+        BaseSpec::clear(num_tab);
+        // released, not just emptied: clear() kept the capacity, so every
+        // re-chunk (new storage under a new num_tab, the old one destroyed)
+        // left one byte per old chunk behind.
+        std::vector<char>().swap(tab_type_cst_val[num_tab]);
+        // And the candidate flags (one byte per chunk), which leaked the same way.
+        Base::release_tab_is_int(num_tab);
+    }
+
+    /**
+     * @brief Per-tab array of flags indicating the type of constant value used.
+     */
+    static inline std::vector<std::vector<char>> tab_type_cst_val; ///< type-of-constant flags
+
+    /**
+     * @brief Mapping from pointer to tab information for chunk lookup.
+     */
+    static inline PointerMapChunk2A<T> share_info_array; ///< pointer->tab mapping
 
   private:
+    using manager_chunk2A = ManagerChunk<Chunk2A, T>;
+
+    using Base::read_values;
+    using Base::values;
+
+    using Base::num;
+    /// Reference to the associated chunk.
+    ///
+    using Base::chunk; ///< owning chunk
+
+    using Base::ptr_on_array; ///< pointer to array (for tab lookup)
+
+    using Base::num_tab; ///< tab index for this array
+
+    using Base::num_chunk; ///< chunk index
+
+    using CompressionManagerType = CompressionManager<T, ChunkType>;
+
+    using Base::set_num_tab;
+
+    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_not_bool = !is_bool;
+    static bool constexpr verbose = false;
+
     // Small helpers about chunk const-value modes
 
     /// @brief Is this proxy's chunk compressed to its second value?
@@ -1054,17 +1063,6 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
 
     // static inline NanoSleeper nano_sleeper;
     char* ptr_type_cst = nullptr; ///< pointer into tab_type_cst_val[num_tab]
-
-  public:
-    /**
-     * @brief Per-tab array of flags indicating the type of constant value used.
-     */
-    static inline std::vector<std::vector<char>> tab_type_cst_val; ///< type-of-constant flags
-
-    /**
-     * @brief Mapping from pointer to tab information for chunk lookup.
-     */
-    static inline PointerMapChunk2A<T> share_info_array; ///< pointer->tab mapping
 };
 
 /// @brief Write the element's value, read through proxy.read_values(), to @p os.

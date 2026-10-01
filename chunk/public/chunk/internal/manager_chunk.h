@@ -46,8 +46,9 @@ namespace internal
 /// @brief One repeat seen by the teardown dedup phase: skip @p ptr when freeing bucket @p bucket.
 /// @see ManagerChunkParallelImpl::clear_list_block_free_dedup
 template <typename T>
-struct TeardownRepeat
+class TeardownRepeat
 {
+  public:
     std::size_t bucket;
     T*          ptr;
 };
@@ -65,11 +66,12 @@ struct TeardownRepeat
  * @tparam IsDynamic Whether runtime geometry is compiled in.
  */
 template <bool IsDynamic = build_config::chunk_dynamic>
-struct ManagerChunkDynInterface; // primary left undefined: only the 2 specializations exist
+class ManagerChunkDynInterface; // primary left undefined: only the 2 specializations exist
 
 template <>
-struct ManagerChunkDynInterface<true>
+class ManagerChunkDynInterface<true>
 {
+  public:
     virtual ~ManagerChunkDynInterface() = default;
 
     /// @brief Declare a runtime chunk geometry to this type's allocators.
@@ -78,8 +80,9 @@ struct ManagerChunkDynInterface<true>
 
 /// @brief Static-geometry builds: nothing to declare.
 template <>
-struct ManagerChunkDynInterface<false>
+class ManagerChunkDynInterface<false>
 {
+  public:
     virtual ~ManagerChunkDynInterface() = default;
 };
 
@@ -95,11 +98,12 @@ struct ManagerChunkDynInterface<false>
  * @tparam UseOpenMP Whether the parallel surface is the one compiled in.
  */
 template <bool UseOpenMP = build_config::use_openmp>
-struct ManagerChunkParallelInterface; // primary left undefined: only the 2 specializations exist
+class ManagerChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
 template <>
-struct ManagerChunkParallelInterface<true>
+class ManagerChunkParallelInterface<true>
 {
+  public:
     virtual ~ManagerChunkParallelInterface() = default;
 
     // --- per-thread allocator and free-list surface ---
@@ -159,8 +163,9 @@ struct ManagerChunkParallelInterface<true>
 
 /// @brief Serial builds: one allocator, no per-thread free lists, nothing to flush.
 template <>
-struct ManagerChunkParallelInterface<false>
+class ManagerChunkParallelInterface<false>
 {
+  public:
     virtual ~ManagerChunkParallelInterface() = default;
 
     /// @brief Set the single allocator's geometry.
@@ -246,18 +251,19 @@ class ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtua
  *          down-cast: max_thr is a per-instance const, not a static.
  */
 template <template <typename> typename CHUNK_T, typename T, bool IsDynamic = build_config::chunk_dynamic>
-struct ManagerChunkDynImpl; // primary left undefined: only the 2 specializations exist
+class ManagerChunkDynImpl; // primary left undefined: only the 2 specializations exist
 
 /// @brief Dynamic-geometry builds: implements register_chunk_size().
 template <template <typename> typename CHUNK_T, typename T>
-struct ManagerChunkDynImpl<CHUNK_T, T, true> : public virtual ManagerChunkDynInterface<true>
+class ManagerChunkDynImpl<CHUNK_T, T, true> : public virtual ManagerChunkDynInterface<true>
 {
+  public:
     void register_chunk_size(unsigned int size, int block_size) override;
 };
 
 /// @brief Static-geometry builds: nothing to implement.
 template <template <typename> typename CHUNK_T, typename T>
-struct ManagerChunkDynImpl<CHUNK_T, T, false> : public virtual ManagerChunkDynInterface<false>
+class ManagerChunkDynImpl<CHUNK_T, T, false> : public virtual ManagerChunkDynInterface<false>
 {
 };
 
@@ -273,11 +279,11 @@ struct ManagerChunkDynImpl<CHUNK_T, T, false> : public virtual ManagerChunkDynIn
  *          max_thr) -- ManagerChunk befriends the policies for that.
  */
 template <template <typename> class CHUNK_T, typename T, bool UseOpenMP = build_config::use_openmp>
-struct ManagerChunkParallelImpl; // primary left undefined: only the 2 specializations exist
+class ManagerChunkParallelImpl; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: the per-rank allocator and free-list overrides.
 template <template <typename> class CHUNK_T, typename T>
-struct ManagerChunkParallelImpl<CHUNK_T, T, true> : public virtual ManagerChunkParallelInterface<true>
+class ManagerChunkParallelImpl<CHUNK_T, T, true> : public virtual ManagerChunkParallelInterface<true>
 {
   private:
     void init_allocators(int block_size) const override;
@@ -300,7 +306,7 @@ struct ManagerChunkParallelImpl<CHUNK_T, T, true> : public virtual ManagerChunkP
 
 /// @brief Serial builds: a single allocator, and nothing per-thread to manage.
 template <template <typename> class CHUNK_T, typename T>
-struct ManagerChunkParallelImpl<CHUNK_T, T, false> : public virtual ManagerChunkParallelInterface<false>
+class ManagerChunkParallelImpl<CHUNK_T, T, false> : public virtual ManagerChunkParallelInterface<false>
 {
   private:
     void init_allocator(int block_size) const override;
@@ -339,54 +345,30 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     // they are BASES, so protected access does not reach it -- hence friendship
     // rather than a public accessor, which would widen the surface for everyone.
     template <template <typename> class, typename, bool>
-    friend struct ManagerChunkDynImpl;
+    friend class ManagerChunkDynImpl;
     template <template <typename> class, typename, bool>
-    friend struct ManagerChunkParallelImpl;
+    friend class ManagerChunkParallelImpl;
 
   private:
-    const int max_thr   = CHUNK_PMP_THREAD_CAPACITY;
     using p_vector_char = std::vector<char>*;
     using inf_array_t   = std::tuple<T, int, p_vector_char>;
+
+    class alignas(128) PerThreadFreeList
+    {
+      public:
+        std::vector<T*> list;
+    };
 
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
-    struct alignas(128) PerThreadFreeList
-    {
-        std::vector<T*> list;
-    };
-
-  public:
-    /**
-     * @brief Captures the thread capacity once, at construction.
-     *
-     * @note max_thr is the thread capacity (CHUNK_PMP_THREAD_CAPACITY), fixed
-     *       for the process: every per-thread container this manager sizes
-     *       holds a slot for every rank that may run, including a team raised
-     *       after the manager was created, up to that capacity.
-     */
-    ManagerChunk()           = default;
-    ~ManagerChunk() override = default;
-
-    ManagerChunk(const ManagerChunk& ref) = delete;
-
-  private:
-    void destroy_block_chunk() override;
-
-  public:
-    void resize_chunk_to_compress_potentially() const override;
-
-  private:
+    void               destroy_block_chunk() override;
     void               force_chunk_to_compress() const override;
     [[nodiscard]] bool have_chunk_to_compress_potentially(int n_thr) const override;
     void               compress_chunk_to_compress_potentially(bool apply) override;
     void               sweep_prepare() override;
     void               sweep_rank(int thr, bool apply) override;
     [[nodiscard]] bool sweep_mops_up(bool apply) const override;
-
-    /// @brief Chunk2: the second-value lists sweep_rank() drains, snapshotted
-    ///        serially by sweep_prepare() as the per-type pass always did.
-    std::vector<std::tuple<T, int, int>*> sweep_inf_arrays_;
 
     [[nodiscard]] std::size_t reuse_pool_bytes_int() const override
     {
@@ -401,89 +383,6 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         print_reuse_pool_breakdown(label);
     }
 
-  public:
-    // Where the build-dependent overrides went, so a reader looking for one here
-    // is not left thinking it does not exist:
-    //   register_chunk_size()                 -> ManagerChunkDynImpl
-    //   the allocator / free-list surface     -> ManagerChunkParallelImpl
-
-    /// @brief Recompute how many buffers each thread may keep parked for reuse.
-    static void compute_size_buffer_reuse();
-
-    /// @brief Recompute the candidate-list length that triggers a compression pass.
-    static void compute_size_max_number_of_chunk_to_check_compress();
-
-    /// @brief Add @p count to the running total of chunks created (statistics).
-    static void increm_somme_chunk_create(int count) noexcept
-    {
-        somme_chunk_create += count;
-    }
-    /// @brief Subtract @p count from the running total of chunks created (statistics).
-    static void decrem_somme_chunk_create(int count) noexcept
-    {
-        somme_chunk_create -= count;
-    }
-    /// @brief Chunks created minus chunks destroyed -- what the compression
-    ///        threshold is computed from, so it must track the chunks alive.
-    [[nodiscard]] static long get_somme_chunk_create() noexcept
-    {
-        return somme_chunk_create;
-    }
-
-    /// @brief Buffers parked in @p ranks, one reuse list per rank.
-    [[nodiscard]] static std::size_t parked_blocks(const std::vector<PerThreadFreeList>& ranks) noexcept
-    {
-        return std::ranges::fold_left(ranks | std::views::transform([](const auto& ptf) { return ptf.list.size(); }),
-                                      0uz, std::plus{});
-    }
-
-    /// @brief Buffers parked for reuse, every rank, every geometry.
-    [[nodiscard]] static std::size_t reuse_pool_blocks() noexcept
-    {
-        std::size_t blocks = parked_blocks(list_block_free_thr);
-        if constexpr (chunk_config::chunk_dynamic)
-        {
-            for (const auto& ranks : list_block_free_thr_by_size_ | std::views::values)
-                blocks += parked_blocks(ranks);
-        }
-        return blocks;
-    }
-
-    /// @brief Buffers parked for reuse at geometry @p size, every rank (per-size
-    ///        lists only: the legacy list is not keyed by geometry).
-    [[nodiscard]] static std::size_t reuse_pool_blocks_at([[maybe_unused]] unsigned int size) noexcept
-    {
-        std::size_t blocks = 0;
-        if constexpr (chunk_config::chunk_dynamic)
-        {
-            const auto it = list_block_free_thr_by_size_.find(size);
-            if (it != list_block_free_thr_by_size_.end())
-                blocks = parked_blocks(it->second);
-        }
-        return blocks;
-    }
-    /// @brief Maximum number of buffers a thread keeps parked for reuse.
-    [[nodiscard]] static int get_size_buffer_reuse() noexcept
-    {
-        return size_buffer_reuse;
-    }
-    /// @brief Reuse budget of the list (thr, key): for an array with its own
-    ///        affinity key, its own chunk count over (factor_div x threads) --
-    ///        the share of THAT array a rank can expect to recycle -- set at
-    ///        the array's creation by set_size_buffer_reuse(key, ...). Key 0
-    ///        and unknown keys fall back to the global budget.
-    [[nodiscard]] static int get_size_buffer_reuse(unsigned int key) noexcept
-    {
-        if (key != 0)
-        {
-            const auto it = size_buffer_reuse_by_key_.find(key);
-            if (it != size_buffer_reuse_by_key_.end())
-                return it->second;
-        }
-        return size_buffer_reuse;
-    }
-
-  private:
     /// @brief Per-key reuse budget (sequential: at array creation / rechunk).
     static void set_size_buffer_reuse(unsigned int key, int budget)
     {
@@ -515,25 +414,6 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
     }
 
-  public:
-    /// @brief Everything an array with its own affinity key needs, in one call
-    ///        (sequential, from the array's rebuild_storage once nb_chunk is
-    ///        known): its allocator set at (key, size), its per-rank reuse
-    ///        lists, and their budget -- nb_chunk / (factor_div x threads),
-    ///        the array's own share per rank rather than the process-wide
-    ///        somme_chunk_create the global budget derives from.
-    /// @note Dynamic OpenMP fast-alloc builds only; a no-op elsewhere (the
-    ///       static registry has no key dimension yet).
-    /// @return true when the keyed allocator set, lists and budget now exist;
-    ///         false when they could not be created (no slab budget yet, or a
-    ///         build without the dynamic registry) -- the caller must then stay
-    ///         on key 0 rather than route to a set that does not exist.
-    [[nodiscard]] static bool register_alloc_key(unsigned int key, unsigned int size, int nb_chunk);
-
-  private:
-    /// @brief Slab byte budget seen at the last register_chunk_size(); what
-    ///        register_alloc_key() hands to the keyed allocator sets.
-    static inline int registered_block_size_ = 0;
     /// @brief Create the per-rank reuse lists of (@p key, @p size) if they do
     ///        not exist yet; key 0 is the shared pool's (register_free_list_size()).
     /// @note Every build (static geometry has one size, but many keys).
@@ -548,125 +428,6 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             list_block_free_thr_keyed_[keyed_index(key, size)].resize(max_thr);
     }
 
-  public:
-    /// @brief Reuse list of (thr_rank, key) at the ambient geometry. Key 0 is
-    ///        get_list_block_free_thr(thr_rank); an unregistered key falls back
-    ///        to the shared pool rather than indexing blindly.
-    static std::vector<T*>& get_list_block_free_thr(int thr_rank, unsigned int key) noexcept
-    {
-        if (key != 0)
-        {
-            const auto it = list_block_free_thr_keyed_.find(keyed_index(key, thread_chunk_size()));
-            if (it != list_block_free_thr_keyed_.end() && static_cast<size_t>(thr_rank) < it->second.size())
-                return it->second[thr_rank].list;
-        }
-        return get_list_block_free_thr(thr_rank);
-    }
-    /// @brief Number of blocks parked in rank @p thr_rank's reuse list for
-    ///        @p key at the ambient geometry.
-    [[nodiscard]] static size_t get_list_block_free_thr_size(int thr_rank, unsigned int key) noexcept
-    {
-        if (key != 0)
-        {
-            const auto it = list_block_free_thr_keyed_.find(keyed_index(key, thread_chunk_size()));
-            if (it != list_block_free_thr_keyed_.end() && static_cast<size_t>(thr_rank) < it->second.size())
-                return it->second[thr_rank].list.size();
-        }
-        return get_list_block_free_thr_size(thr_rank);
-    }
-    /// @brief Number of buffers currently parked for @p thr_rank at the ambient geometry.
-    [[nodiscard]] static size_t get_list_block_free_thr_size(int thr_rank) noexcept
-    {
-        // Bounds-checked on purpose: every reuse container is only indexable
-        // once resize_all_list_block_free_thr() has sized it to max_thr, and that is
-        // NOT guaranteed at every call site. In fast-alloc builds nothing ever
-        // parks in the legacy store, so it can still be empty when the first
-        // chunk is allocated; in dynamic builds a geometry born from a re-chunk
-        // has no per-size list, so get_list_block_free_thr() falls back to that
-        // same (possibly empty) legacy store.
-        //
-        // Reading the size through operator[] on an empty vector is silent UB
-        // in a normal build and aborts under _GLIBCXX_ASSERTIONS with
-        // "Assertion '__n < this->size()' failed" -- which is exactly how this
-        // surfaced from ChunkAllocPolicy::allocate_chunk_internal. Answering 0
-        // for a slot that does not exist is both correct (no buffer is
-        // reusable) and what every caller already handles.
-        if (static_cast<size_t>(thr_rank) >= list_block_free_thr.size())
-        {
-            if constexpr (chunk_config::chunk_dynamic)
-            {
-                const auto it = list_block_free_thr_by_size_.find(thread_chunk_size());
-                if (it != list_block_free_thr_by_size_.end() && static_cast<size_t>(thr_rank) < it->second.size())
-                {
-                    return it->second[thr_rank].list.size();
-                }
-            }
-            return 0;
-        }
-        return get_list_block_free_thr(thr_rank).size();
-    }
-    /// @brief The whole legacy (unsized) per-thread reuse list container.
-    static std::vector<PerThreadFreeList>& get_list_block_free_thr() noexcept
-    {
-        return list_block_free_thr;
-    }
-
-    /**
-     * @brief Reuse list for @p thr_rank at the AMBIENT geometry.
-     * @param thr_rank owning thread's rank
-     * @return the per-thread reuse list for thread_chunk_size()
-     * @warning Correct only when the ambient size is the buffer's own geometry.
-     *          At teardown or recycle, use get_list_block_free_thr_for_size().
-     */
-    static std::vector<T*>& get_list_block_free_thr(int thr_rank) noexcept
-    {
-        if constexpr (chunk_config::chunk_dynamic)
-        {
-            const unsigned int sz = thread_chunk_size();
-            const auto         it = list_block_free_thr_by_size_.find(sz);
-            // The per-size vector is sized at register_runtime_chunk_size()
-            // time; a thread rank beyond it would be the same out-of-bounds
-            // operator[] as on the legacy store, so fall back rather than
-            // index blindly.
-            if (it != list_block_free_thr_by_size_.end() && static_cast<size_t>(thr_rank) < it->second.size())
-            {
-                return it->second[thr_rank].list;
-            }
-            // fallback: legacy single store (single-size / unregistered)
-        }
-        return list_block_free_thr[thr_rank].list;
-    }
-
-    /**
-     * @brief Reuse list for an EXPLICIT geometry, ignoring the ambient size.
-     *
-     * @details A buffer must be parked in, and popped from, the list for ITS OWN
-     *          geometry. Parking a size-A buffer while the ambient
-     *          thread_chunk_size() is B lands it in list[B]; a later size-B pop
-     *          then reuses a physically-A buffer, and init_block()'s memset at B
-     *          runs past its end -- an ASan heap-buffer-overflow.
-     *
-     * @param thr_rank owning thread's rank
-     * @param sz       the buffer's real geometry
-     * @return the per-thread reuse list for @p sz (the legacy single list in
-     *         single-size builds, or when @p sz was never registered)
-     * @note Callers that know the buffer's real geometry -- teardown, recycle --
-     *       must use this rather than get_list_block_free_thr().
-     */
-    static std::vector<T*>& get_list_block_free_thr_for_size([[maybe_unused]] int          thr_rank,
-                                                             [[maybe_unused]] unsigned int sz)
-    {
-        if constexpr (chunk_config::chunk_dynamic)
-        {
-            const auto it = list_block_free_thr_by_size_.find(sz);
-            if (it != list_block_free_thr_by_size_.end())
-                return it->second[thr_rank].list;
-        }
-
-        return list_block_free_thr[thr_rank].list;
-    }
-
-  private:
     /**
      * @brief Print what the reuse pools hold, broken down by geometry.
      *
@@ -826,7 +587,343 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
     }
 
+    /// @brief Set the candidate-list length that triggers a compression pass.
+    /// @details Decides when trigger_compression_if_needed() flags a rank's
+    ///          candidate list, hence how often compression runs at all.
+    static void set_size_max_number_of_chunk_to_check_compress(int v)
+    {
+        size_max_number_of_chunk_to_check_compress = v;
+    }
+
+    /**
+     * @brief Drop from @p v every queued candidate that belongs to @p num_tab.
+     *
+     * @details The one place that knows a candidate tuple names its owning array
+     *          in field <2>. The three remove_from_compress_list_*_by_num_tab
+     *          below spelled this erase-remove out individually; only their
+     *          TRAVERSAL genuinely differs (a flat per-rank vector for Chunk and
+     *          Chunk2A, a per-rank map of second-value buckets for Chunk2), so
+     *          that is all they keep.
+     *
+     * @tparam Vec any sequence of candidate tuples.
+     * @param v       the sequence to filter, modified in place.
+     * @param num_tab tab index whose candidates are removed.
+     */
+    template <typename Vec>
+    static void erase_candidates_of_tab(Vec& v, int num_tab) noexcept
+    {
+        std::erase_if(v, [num_tab](const auto& tup) { return std::get<2>(tup) == num_tab; });
+    }
+
+    /// @brief Map key of list_block_free_thr_keyed_: (@p key << 32) | @p size.
+    static constexpr std::uint64_t keyed_index(unsigned int key, unsigned int size) noexcept
+    {
+        return (static_cast<std::uint64_t>(key) << 32U) | size;
+    }
+
+    const int max_thr = CHUNK_PMP_THREAD_CAPACITY;
+
+    /// @brief Chunk2: the second-value lists sweep_rank() drains, snapshotted
+    ///        serially by sweep_prepare() as the per-type pass always did.
+    std::vector<std::tuple<T, int, int>*> sweep_inf_arrays_;
+
+    /// @brief Slab byte budget seen at the last register_chunk_size(); what
+    ///        register_alloc_key() hands to the keyed allocator sets.
+    static inline int registered_block_size_ = 0;
+
+    // Serial counterparts of the *_thr stores below: no per-thread indirection.
+    //
+    // Declared in EVERY build -- empty and never touched in OpenMP ones -- for the
+    // same reason as list_block_free_thr_by_size_ below: they are members of the
+    // current instantiation, so the DISCARDED branch of an
+    // `if constexpr (build_config::use_openmp)` still name-looks them up and they
+    // have to exist to be named. Declaring them unconditionally is what lets the
+    // accessors and the remove_from_compress_list_* helpers select with
+    // `if constexpr`. The static cost is three empty containers
+    // per (variant, type). Only the serial getters below expose them.
+    static inline TChunk2CompMap<CHUNK_T, T> chunk2_to_compress_potentially;
+
+    static inline TChunkComp<CHUNK_T, T> chunk_to_compress_potentially;
+
+    static inline long somme_chunk_create{0};
+
+    static inline int                                   size_buffer_reuse;
+    static inline std::unordered_map<unsigned int, int> size_buffer_reuse_by_key_; ///< see get_size_buffer_reuse(key)
+
+    static inline int size_max_number_of_chunk_to_check_compress;
+
+    static inline std::vector<PerThreadFreeList> list_block_free_thr;
+    // Multi-size: a separate reuse free-list per (size, thread). A reused block
+    // must match the active chunk size, so blocks are never shared across sizes.
+    // Written only at register_chunk_size (sequential); read per-alloc/free.
+    //
+    // Declared in EVERY build -- an empty map in static ones -- so the accessors
+    // can select with `if constexpr (build_config::chunk_dynamic)`. A
+    // discarded if-constexpr branch is still name-looked-up, and this
+    // is a member of the current instantiation, so it has to exist to be named.
+    // The static cost is one empty std::map per (variant, type), never touched.
+    static inline std::map<unsigned int, std::vector<PerThreadFreeList>> list_block_free_thr_by_size_;
+    /// @brief Reuse lists of the arrays with their own slab affinity: one
+    ///        vector of per-rank lists per (affinity key, size), key != 0.
+    ///        Key 0 -- the rank's shared pool -- stays on
+    ///        list_block_free_thr_by_size_ / list_block_free_thr, untouched.
+    ///        A list (thr, K, size) only ever holds blocks from K's slabs: an
+    ///        own-rank free parks its block here and the same rank reuses it
+    ///        for K; a foreign-rank block parks under ITS key (slab->owner_key)
+    ///        and is either reused by this rank for that same array or routed
+    ///        to its owner by the drain. Nothing has to be filtered at pop.
+    static inline std::map<std::uint64_t, std::vector<PerThreadFreeList>> list_block_free_thr_keyed_;
+
+    /**
+     * @brief Teardown hand-off buffer: pointers cleared for release, by rank.
+     *
+     * @details STATIC on purpose. The teardown phases (clear_list_block_free_*)
+     *          are called by every thread of one parallel region opened in
+     *          AllTypeChunk, each on its own buckets or slice; a local would
+     *          be private to each thread, so a bucket screened by one thread
+     *          would be invisible to the one that frees it.
+     *
+     *          Only live during teardown; cleared as it is consumed.
+     */
+    static inline std::vector<std::vector<T*>> teardown_to_free_;
+
+    /**
+     * @brief Cross-bucket repeats found by clear_list_block_free_dedup(), one
+     *        list per address slice.
+     * @details Written by the dedup phase (each slice its own list, no
+     *          sharing), read by the free phase after the barrier. Empty on any
+     *          sane run.
+     */
+    static inline std::vector<std::vector<internal::TeardownRepeat<T>>> teardown_repeats_;
+
   public:
+    /**
+     * @brief Captures the thread capacity once, at construction.
+     *
+     * @note max_thr is the thread capacity (CHUNK_PMP_THREAD_CAPACITY), fixed
+     *       for the process: every per-thread container this manager sizes
+     *       holds a slot for every rank that may run, including a team raised
+     *       after the manager was created, up to that capacity.
+     */
+    ManagerChunk()           = default;
+    ~ManagerChunk() override = default;
+
+    ManagerChunk(const ManagerChunk& ref) = delete;
+
+    void resize_chunk_to_compress_potentially() const override;
+
+    // Where the build-dependent overrides went, so a reader looking for one here
+    // is not left thinking it does not exist:
+    //   register_chunk_size()                 -> ManagerChunkDynImpl
+    //   the allocator / free-list surface     -> ManagerChunkParallelImpl
+
+    /// @brief Recompute how many buffers each thread may keep parked for reuse.
+    static void compute_size_buffer_reuse();
+
+    /// @brief Recompute the candidate-list length that triggers a compression pass.
+    static void compute_size_max_number_of_chunk_to_check_compress();
+
+    /// @brief Add @p count to the running total of chunks created (statistics).
+    static void increm_somme_chunk_create(int count) noexcept
+    {
+        somme_chunk_create += count;
+    }
+    /// @brief Subtract @p count from the running total of chunks created (statistics).
+    static void decrem_somme_chunk_create(int count) noexcept
+    {
+        somme_chunk_create -= count;
+    }
+    /// @brief Chunks created minus chunks destroyed -- what the compression
+    ///        threshold is computed from, so it must track the chunks alive.
+    [[nodiscard]] static long get_somme_chunk_create() noexcept
+    {
+        return somme_chunk_create;
+    }
+
+    /// @brief Buffers parked in @p ranks, one reuse list per rank.
+    [[nodiscard]] static std::size_t parked_blocks(const std::vector<PerThreadFreeList>& ranks) noexcept
+    {
+        return std::ranges::fold_left(ranks | std::views::transform([](const auto& ptf) { return ptf.list.size(); }),
+                                      0uz, std::plus{});
+    }
+
+    /// @brief Buffers parked for reuse, every rank, every geometry.
+    [[nodiscard]] static std::size_t reuse_pool_blocks() noexcept
+    {
+        std::size_t blocks = parked_blocks(list_block_free_thr);
+        if constexpr (chunk_config::chunk_dynamic)
+        {
+            for (const auto& ranks : list_block_free_thr_by_size_ | std::views::values)
+                blocks += parked_blocks(ranks);
+        }
+        return blocks;
+    }
+
+    /// @brief Buffers parked for reuse at geometry @p size, every rank (per-size
+    ///        lists only: the legacy list is not keyed by geometry).
+    [[nodiscard]] static std::size_t reuse_pool_blocks_at([[maybe_unused]] unsigned int size) noexcept
+    {
+        std::size_t blocks = 0;
+        if constexpr (chunk_config::chunk_dynamic)
+        {
+            const auto it = list_block_free_thr_by_size_.find(size);
+            if (it != list_block_free_thr_by_size_.end())
+                blocks = parked_blocks(it->second);
+        }
+        return blocks;
+    }
+    /// @brief Maximum number of buffers a thread keeps parked for reuse.
+    [[nodiscard]] static int get_size_buffer_reuse() noexcept
+    {
+        return size_buffer_reuse;
+    }
+    /// @brief Reuse budget of the list (thr, key): for an array with its own
+    ///        affinity key, its own chunk count over (factor_div x threads) --
+    ///        the share of THAT array a rank can expect to recycle -- set at
+    ///        the array's creation by set_size_buffer_reuse(key, ...). Key 0
+    ///        and unknown keys fall back to the global budget.
+    [[nodiscard]] static int get_size_buffer_reuse(unsigned int key) noexcept
+    {
+        if (key != 0)
+        {
+            const auto it = size_buffer_reuse_by_key_.find(key);
+            if (it != size_buffer_reuse_by_key_.end())
+                return it->second;
+        }
+        return size_buffer_reuse;
+    }
+
+    /// @brief Everything an array with its own affinity key needs, in one call
+    ///        (sequential, from the array's rebuild_storage once nb_chunk is
+    ///        known): its allocator set at (key, size), its per-rank reuse
+    ///        lists, and their budget -- nb_chunk / (factor_div x threads),
+    ///        the array's own share per rank rather than the process-wide
+    ///        somme_chunk_create the global budget derives from.
+    /// @note Dynamic OpenMP fast-alloc builds only; a no-op elsewhere (the
+    ///       static registry has no key dimension yet).
+    /// @return true when the keyed allocator set, lists and budget now exist;
+    ///         false when they could not be created (no slab budget yet, or a
+    ///         build without the dynamic registry) -- the caller must then stay
+    ///         on key 0 rather than route to a set that does not exist.
+    [[nodiscard]] static bool register_alloc_key(unsigned int key, unsigned int size, int nb_chunk);
+
+    /// @brief Reuse list of (thr_rank, key) at the ambient geometry. Key 0 is
+    ///        get_list_block_free_thr(thr_rank); an unregistered key falls back
+    ///        to the shared pool rather than indexing blindly.
+    static std::vector<T*>& get_list_block_free_thr(int thr_rank, unsigned int key) noexcept
+    {
+        if (key != 0)
+        {
+            const auto it = list_block_free_thr_keyed_.find(keyed_index(key, thread_chunk_size()));
+            if (it != list_block_free_thr_keyed_.end() && static_cast<size_t>(thr_rank) < it->second.size())
+                return it->second[thr_rank].list;
+        }
+        return get_list_block_free_thr(thr_rank);
+    }
+    /// @brief Number of blocks parked in rank @p thr_rank's reuse list for
+    ///        @p key at the ambient geometry.
+    [[nodiscard]] static size_t get_list_block_free_thr_size(int thr_rank, unsigned int key) noexcept
+    {
+        if (key != 0)
+        {
+            const auto it = list_block_free_thr_keyed_.find(keyed_index(key, thread_chunk_size()));
+            if (it != list_block_free_thr_keyed_.end() && static_cast<size_t>(thr_rank) < it->second.size())
+                return it->second[thr_rank].list.size();
+        }
+        return get_list_block_free_thr_size(thr_rank);
+    }
+    /// @brief Number of buffers currently parked for @p thr_rank at the ambient geometry.
+    [[nodiscard]] static size_t get_list_block_free_thr_size(int thr_rank) noexcept
+    {
+        // Bounds-checked on purpose: every reuse container is only indexable
+        // once resize_all_list_block_free_thr() has sized it to max_thr, and that is
+        // NOT guaranteed at every call site. In fast-alloc builds nothing ever
+        // parks in the legacy store, so it can still be empty when the first
+        // chunk is allocated; in dynamic builds a geometry born from a re-chunk
+        // has no per-size list, so get_list_block_free_thr() falls back to that
+        // same (possibly empty) legacy store.
+        //
+        // Reading the size through operator[] on an empty vector is silent UB
+        // in a normal build and aborts under _GLIBCXX_ASSERTIONS with
+        // "Assertion '__n < this->size()' failed" -- which is exactly how this
+        // surfaced from ChunkAllocPolicy::allocate_chunk_internal. Answering 0
+        // for a slot that does not exist is both correct (no buffer is
+        // reusable) and what every caller already handles.
+        if (static_cast<size_t>(thr_rank) >= list_block_free_thr.size())
+        {
+            if constexpr (chunk_config::chunk_dynamic)
+            {
+                const auto it = list_block_free_thr_by_size_.find(thread_chunk_size());
+                if (it != list_block_free_thr_by_size_.end() && static_cast<size_t>(thr_rank) < it->second.size())
+                {
+                    return it->second[thr_rank].list.size();
+                }
+            }
+            return 0;
+        }
+        return get_list_block_free_thr(thr_rank).size();
+    }
+    /// @brief The whole legacy (unsized) per-thread reuse list container.
+    static std::vector<PerThreadFreeList>& get_list_block_free_thr() noexcept
+    {
+        return list_block_free_thr;
+    }
+
+    /**
+     * @brief Reuse list for @p thr_rank at the AMBIENT geometry.
+     * @param thr_rank owning thread's rank
+     * @return the per-thread reuse list for thread_chunk_size()
+     * @warning Correct only when the ambient size is the buffer's own geometry.
+     *          At teardown or recycle, use get_list_block_free_thr_for_size().
+     */
+    static std::vector<T*>& get_list_block_free_thr(int thr_rank) noexcept
+    {
+        if constexpr (chunk_config::chunk_dynamic)
+        {
+            const unsigned int sz = thread_chunk_size();
+            const auto         it = list_block_free_thr_by_size_.find(sz);
+            // The per-size vector is sized at register_runtime_chunk_size()
+            // time; a thread rank beyond it would be the same out-of-bounds
+            // operator[] as on the legacy store, so fall back rather than
+            // index blindly.
+            if (it != list_block_free_thr_by_size_.end() && static_cast<size_t>(thr_rank) < it->second.size())
+            {
+                return it->second[thr_rank].list;
+            }
+            // fallback: legacy single store (single-size / unregistered)
+        }
+        return list_block_free_thr[thr_rank].list;
+    }
+
+    /**
+     * @brief Reuse list for an EXPLICIT geometry, ignoring the ambient size.
+     *
+     * @details A buffer must be parked in, and popped from, the list for ITS OWN
+     *          geometry. Parking a size-A buffer while the ambient
+     *          thread_chunk_size() is B lands it in list[B]; a later size-B pop
+     *          then reuses a physically-A buffer, and init_block()'s memset at B
+     *          runs past its end -- an ASan heap-buffer-overflow.
+     *
+     * @param thr_rank owning thread's rank
+     * @param sz       the buffer's real geometry
+     * @return the per-thread reuse list for @p sz (the legacy single list in
+     *         single-size builds, or when @p sz was never registered)
+     * @note Callers that know the buffer's real geometry -- teardown, recycle --
+     *       must use this rather than get_list_block_free_thr().
+     */
+    static std::vector<T*>& get_list_block_free_thr_for_size([[maybe_unused]] int          thr_rank,
+                                                             [[maybe_unused]] unsigned int sz)
+    {
+        if constexpr (chunk_config::chunk_dynamic)
+        {
+            const auto it = list_block_free_thr_by_size_.find(sz);
+            if (it != list_block_free_thr_by_size_.end())
+                return it->second[thr_rank].list;
+        }
+
+        return list_block_free_thr[thr_rank].list;
+    }
+
     /**
      * @brief Empty the by-geometry reuse list for @p size, across all threads
      *        (dynamic builds; a no-op otherwise).
@@ -1022,16 +1119,6 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
     }
 
-  private:
-    /// @brief Set the candidate-list length that triggers a compression pass.
-    /// @details Decides when trigger_compression_if_needed() flags a rank's
-    ///          candidate list, hence how often compression runs at all.
-    static void set_size_max_number_of_chunk_to_check_compress(int v)
-    {
-        size_max_number_of_chunk_to_check_compress = v;
-    }
-
-  public:
     /// @brief Candidate-list length that triggers a compression pass.
     [[nodiscard]] static int get_size_max_number_of_chunk_to_check_compress() noexcept
     {
@@ -1109,28 +1196,6 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
     }
 
-  private:
-    /**
-     * @brief Drop from @p v every queued candidate that belongs to @p num_tab.
-     *
-     * @details The one place that knows a candidate tuple names its owning array
-     *          in field <2>. The three remove_from_compress_list_*_by_num_tab
-     *          below spelled this erase-remove out individually; only their
-     *          TRAVERSAL genuinely differs (a flat per-rank vector for Chunk and
-     *          Chunk2A, a per-rank map of second-value buckets for Chunk2), so
-     *          that is all they keep.
-     *
-     * @tparam Vec any sequence of candidate tuples.
-     * @param v       the sequence to filter, modified in place.
-     * @param num_tab tab index whose candidates are removed.
-     */
-    template <typename Vec>
-    static void erase_candidates_of_tab(Vec& v, int num_tab) noexcept
-    {
-        std::erase_if(v, [num_tab](const auto& tup) { return std::get<2>(tup) == num_tab; });
-    }
-
-  public:
     /**
      * @brief Drop every queued Chunk2A candidate of array @p num_tab, in every
      *        rank's list (ArrayChunk2A::clear_core and rechunk_to).
@@ -1218,88 +1283,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
     }
 
-
     static inline TChunk2CompMap<CHUNK_T, T>  map_chunk2_to_compress_potentially_thr;
     static inline TChunk2CompThr<CHUNK_T, T>  chunk2_to_compress_potentially_thr;
     static inline TChunk2ACompThr<CHUNK_T, T> chunk2A_to_compress_potentially_thr;
 
     static inline TChunkCompThr<CHUNK_T, T> chunk_to_compress_potentially_thr;
 
-  private:
-    // Serial counterparts of the *_thr stores above: no per-thread indirection.
-    //
-    // Declared in EVERY build -- empty and never touched in OpenMP ones -- for the
-    // same reason as list_block_free_thr_by_size_ below: they are members of the
-    // current instantiation, so the DISCARDED branch of an
-    // `if constexpr (build_config::use_openmp)` still name-looks them up and they
-    // have to exist to be named. Declaring them unconditionally is what lets the
-    // accessors and the remove_from_compress_list_* helpers select with
-    // `if constexpr`. The static cost is three empty containers
-    // per (variant, type). Only the serial getters below expose them.
-    static inline TChunk2CompMap<CHUNK_T, T> chunk2_to_compress_potentially;
-
-  public:
     static inline TChunk2AComp<CHUNK_T, T> chunk2A_to_compress_potentially;
-
-  private:
-    static inline TChunkComp<CHUNK_T, T> chunk_to_compress_potentially;
-
-  private:
-    static inline long somme_chunk_create{0};
-
-    static inline int                                   size_buffer_reuse;
-    static inline std::unordered_map<unsigned int, int> size_buffer_reuse_by_key_; ///< see get_size_buffer_reuse(key)
-
-    static inline int size_max_number_of_chunk_to_check_compress;
-
-    static inline std::vector<PerThreadFreeList> list_block_free_thr;
-    // Multi-size: a separate reuse free-list per (size, thread). A reused block
-    // must match the active chunk size, so blocks are never shared across sizes.
-    // Written only at register_chunk_size (sequential); read per-alloc/free.
-    //
-    // Declared in EVERY build -- an empty map in static ones -- so the accessors
-    // can select with `if constexpr (build_config::chunk_dynamic)`. A
-    // discarded if-constexpr branch is still name-looked-up, and this
-    // is a member of the current instantiation, so it has to exist to be named.
-    // The static cost is one empty std::map per (variant, type), never touched.
-    static inline std::map<unsigned int, std::vector<PerThreadFreeList>> list_block_free_thr_by_size_;
-    /// @brief Reuse lists of the arrays with their own slab affinity: one
-    ///        vector of per-rank lists per (affinity key, size), key != 0.
-    ///        Key 0 -- the rank's shared pool -- stays on
-    ///        list_block_free_thr_by_size_ / list_block_free_thr, untouched.
-    ///        A list (thr, K, size) only ever holds blocks from K's slabs: an
-    ///        own-rank free parks its block here and the same rank reuses it
-    ///        for K; a foreign-rank block parks under ITS key (slab->owner_key)
-    ///        and is either reused by this rank for that same array or routed
-    ///        to its owner by the drain. Nothing has to be filtered at pop.
-    static inline std::map<std::uint64_t, std::vector<PerThreadFreeList>> list_block_free_thr_keyed_;
-    /// @brief Map key of list_block_free_thr_keyed_: (@p key << 32) | @p size.
-    static constexpr std::uint64_t keyed_index(unsigned int key, unsigned int size) noexcept
-    {
-        return (static_cast<std::uint64_t>(key) << 32U) | size;
-    }
-
-    /**
-     * @brief Teardown hand-off buffer: pointers cleared for release, by rank.
-     *
-     * @details STATIC on purpose. The teardown phases (clear_list_block_free_*)
-     *          are called by every thread of one parallel region opened in
-     *          AllTypeChunk, each on its own buckets or slice; a local would
-     *          be private to each thread, so a bucket screened by one thread
-     *          would be invisible to the one that frees it.
-     *
-     *          Only live during teardown; cleared as it is consumed.
-     */
-    static inline std::vector<std::vector<T*>> teardown_to_free_;
-
-    /**
-     * @brief Cross-bucket repeats found by clear_list_block_free_dedup(), one
-     *        list per address slice.
-     * @details Written by the dedup phase (each slice its own list, no
-     *          sharing), read by the free phase after the barrier. Empty on any
-     *          sane run.
-     */
-    static inline std::vector<std::vector<internal::TeardownRepeat<T>>> teardown_repeats_;
 };
 
 } // namespace shrink_array

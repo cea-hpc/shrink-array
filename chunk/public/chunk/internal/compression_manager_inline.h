@@ -112,13 +112,15 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
     // only when) it processes rank thr — giving mutual exclusion on arr[thr]
     // while letting flushes on other ranks proceed in parallel.
     rank_flush_acquire(thr);
-    struct RankFlushGuard
+    class RankFlushGuard
     {
-        int rank;
+      public:
         ~RankFlushGuard()
         {
             rank_flush_release(rank);
         }
+
+        int rank;
     } xflush_guard{thr};
 
     // Now under the rank shard: safe to read emptiness against concurrent erases.
@@ -147,8 +149,9 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
     // No livelock: bounded inflight drain x no new admissions.
     Policy::announce_flush(); // counter + heavy barrier, one Dekker verb
     increm_chunk_gate_flush<ChunkType>();
-    struct FlushFlagGuard
+    class FlushFlagGuard
     {
+      public:
         ~FlushFlagGuard()
         {
             Policy::end_flush();
@@ -370,13 +373,15 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
         // that prevents two flushers from double-draining arr[r][chunk]; other
         // ranks' shards stay free so their flushes run concurrently.
         rank_flush_acquire(r);
-        struct RankScopeGuard
+        class RankScopeGuard
         {
-            int rank;
+          public:
             ~RankScopeGuard()
             {
                 rank_flush_release(rank);
             }
+
+            int rank;
         } rank_scope_guard{r};
 
         // No writer wait needed here anymore: the enqueue path now takes
@@ -503,13 +508,15 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
     // shard lock flush_deferred / flush_chunk_all_ranks take). Owner-recursive;
     // uncontended in the common case. Held only for the single-entry erase.
     rank_flush_acquire(thr);
-    struct RankFlushGuard
+    class RankFlushGuard
     {
-        int rank;
+      public:
         ~RankFlushGuard()
         {
             rank_flush_release(rank);
         }
+
+        int rank;
     } xflush_guard{thr};
 
     auto&      thread_map = arr[thr];

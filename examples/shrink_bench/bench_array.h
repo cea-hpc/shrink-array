@@ -262,8 +262,9 @@ enum class BenchMaskKind
  * @warning tab_bool's and tab_bool_bits' types vary by build -- see
  *          BenchBoolArray and BenchBoolBitsArray above.
  */
-struct BenchArrays
+class BenchArrays
 {
+  public:
     Array<double>& tab1;
     Array<double>& tab2;
     Array<double>& tab3;

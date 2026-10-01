@@ -90,8 +90,8 @@ void ParamChunkParallelInterface<true, AllT>::init_thread_structures()
 // The one instantiation of the pair, and the whole point of the AllT parameter:
 // the body of the OTHER thread model is left uninstantiated rather than
 // #ifdef'd out. Mirrors all_type_chunk.cpp's
-// `template struct AllTypeChunkParallelInterface<AllTypeChunk, build_config::use_openmp>;`.
-template struct ParamChunkParallelInterface<build_config::use_openmp, AllTypeChunk>;
+// `template class AllTypeChunkParallelInterface<AllTypeChunk, build_config::use_openmp>;`.
+template class ParamChunkParallelInterface<build_config::use_openmp, AllTypeChunk>;
 
 /**
  * @copydoc ParamChunk::init_indexes
@@ -538,7 +538,7 @@ void ParamChunkDynInterface<true, AllT>::register_chunk_size([[maybe_unused]] un
 
 // The one instantiation of the pair: in a static build this is the EMPTY
 // <false, AllTypeChunk>, and the body above is never compiled.
-template struct ParamChunkDynInterface<build_config::chunk_dynamic, AllTypeChunk>;
+template class ParamChunkDynInterface<build_config::chunk_dynamic, AllTypeChunk>;
 
 // Registration hook, defined in EVERY build so `if constexpr
 // (build_config::chunk_dynamic)` call sites link in both modes.

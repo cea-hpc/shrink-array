@@ -89,16 +89,18 @@ namespace shrink_array
 class DeferredOperationBase
 {
   public:
+    virtual ~DeferredOperationBase() noexcept = default;
+
     /// @brief Replay the write.
     virtual void write_body() = 0;
     /// @brief Run the destructor and hand the block back to its pool.
-    virtual void destroy() noexcept           = 0;
-    virtual ~DeferredOperationBase() noexcept = default;
+    virtual void destroy() noexcept = 0;
 };
 
 /// @brief Deleter of DeferredOpPtr: does nothing with the pointer.
-struct DeferredOpDeleter
+class DeferredOpDeleter
 {
+  public:
     /// @brief No-op: the operation is not destroyed or freed here.
     static void operator()(DeferredOperationBase* op) noexcept
     {
@@ -119,15 +121,17 @@ using DeferredOpPtr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
 
 /// @brief Type-erased pool of one block size (a FastAllocatorConcrete per
 ///        object type, found by AllocatorRegistry).
-struct FastAllocatorBase
+class FastAllocatorBase
 {
+  public:
+    virtual ~FastAllocatorBase() = default;
+
     /// @brief Take a block (uninitialised).
     virtual void* allocate_raw() = 0;
     /// @brief Return a block to the pool.
     virtual void recycle(void* block) = 0;
     /// @brief The slab the blocks come from (the ledger's identity).
     [[nodiscard]] virtual const void* slab_addr() const noexcept = 0;
-    virtual ~FastAllocatorBase()                                 = default;
 
     size_t block_size = 0; ///< bytes per block
 };
@@ -155,8 +159,9 @@ struct FastAllocatorBase
  * them. This is portable — it does not rely on -fno-ipa-icf at the build level.
  */
 template <typename T>
-struct DeferredByteAllocSlot
+class DeferredByteAllocSlot
 {
+  public:
     TCTypeAllocator<std::byte> alloc;
     bool                       initialized = false;
 };
@@ -171,8 +176,9 @@ struct DeferredByteAllocSlot
  * type's free list disjoint and the free_list() bodies non-identical.
  */
 template <typename T>
-struct DeferredFreeListSlot
+class DeferredFreeListSlot
 {
+  public:
     DeferredFreeListSlot() = default;
     // Owns the parked blocks in std-alloc builds (see the destructor): a copy
     // would delete them twice.
@@ -209,8 +215,9 @@ struct DeferredFreeListSlot
  * Uses a calculated number of blocks based on the global granularity config.
  */
 template <typename T, fast_alloc::ArenaKind Arena = fast_alloc::ArenaKind::Op>
-struct FastAllocatorConcrete : FastAllocatorBase
+class FastAllocatorConcrete : public FastAllocatorBase
 {
+  public:
     using ByteAlloc = TCTypeAllocator<std::byte>;
 
     /// @brief Set block_size to sizeof(T) and, under fast-alloc, create this thread's allocator.
@@ -224,68 +231,6 @@ struct FastAllocatorConcrete : FastAllocatorBase
     }
 
   private:
-    /**
-     * @brief Returns the per-thread byte allocator for type T.
-     * The number of blocks per pool is calculated dynamically to match
-     * the target memory granularity.
-     */
-    static ByteAlloc& allocator()
-    {
-        // T-tagged storage: distinct type per element type so -fipa-icf cannot
-        // fold this body across same-sized element types and make ctx/op pools
-        // share one slab. See DeferredByteAllocSlot above.
-        thread_local DeferredByteAllocSlot<T> slot;
-
-        if (!slot.initialized)
-        {
-            // FIX (op/ctx/value slab aliasing): route this pool's slabs to its own
-            // arena. Op and ctx pools use the same TCTypeAllocator<byte> but MUST
-            // draw from disjoint arenas — a freed ctx slab reobtained by the op
-            // pool overwrote a live op's vtable with ctx layout (observed dump:
-            // vptr=0x38 with ctx-shaped fields). Arena is a template param so op
-            // and ctx get genuinely separate never-unmapped arenas.
-            slot.alloc.set_arena(Arena);
-
-            constexpr size_t element_size = sizeof(T);
-            // TCAllocator threads its free list through the freed elements (an
-            // int in each): the same condition TCAllocator::init() checks at run
-            // time, caught here at compile time where the size is known.
-            static_assert(element_size >= sizeof(int) && element_size % alignof(int) == 0,
-                          "deferred-op pool: an object must hold TCAllocator's free-list index");
-
-            // Smart calculation: divide the target granularity (e.g. 2MB) by object size.
-            // We guarantee a minimum of 64 blocks to prevent excessive system calls.
-            constexpr uintptr_t blocks_per_pool = (element_size >= build_config::deferred_pool_granularity)
-                                                      ? 64
-                                                      : (build_config::deferred_pool_granularity / element_size);
-
-            // FIX (op/value slab aliasing): last arg = nb_max_block_empty = -1
-            // → the op allocator NEVER munmaps an empty slab. Previously it was 1
-            // (retain one empty slab, munmap the rest), so a freed op slab's
-            // address could be reobtained by sctk_mmap(nullptr) from the chunk
-            // VALUE pool on another thread and overwrite a still-live op (proven
-            // via ring log: OP_ALLOC then VALUE_ALLOC at the same address on a
-            // different tid). Keeping op slabs mapped for the program's lifetime
-            // removes the address reuse. Op slabs are small and bounded, so the
-            // retained memory is modest.
-            slot.alloc.init(element_size, std::max<uintptr_t>(64, blocks_per_pool), -1);
-            slot.initialized = true;
-        }
-        return slot.alloc;
-    }
-
-    /**
-     * @brief Per-thread free list of recycled memory blocks.
-     */
-    static std::vector<T*>& free_list()
-    {
-        // T-tagged storage (same anti-ICF rationale as allocator()): keeps each
-        // element type's recycled-block list disjoint even when vector<T*> code
-        // is identical across types.
-        thread_local DeferredFreeListSlot<T> slot;
-        return slot.fl;
-    }
-
     // Aliasing check (POOL_LEDGER): identity of this (type,thread) pool. Under
     // fast-alloc it's the byte-slab address; otherwise the free-list address.
     // Two element types share this address iff -fipa-icf folded their
@@ -296,51 +241,6 @@ struct FastAllocatorConcrete : FastAllocatorBase
             return static_cast<const void*>(&allocator());
         else
             return static_cast<const void*>(&free_list());
-    }
-
-    // Check-build guard — validate a pointer just before allocate_raw hands
-    // it to construct_at. The observed crash is a wild address (e.g.
-    // 0xffff63ff0000, mapped in NO region) written by the ctx constructor.
-    //
-    // IMPORTANT: we must NOT discriminate on the address range. sctk_mmap() uses
-    // mmap(nullptr, …) so the kernel is free to place a perfectly valid slab high
-    // in the 0xffff… band (same band as thread stacks). An earlier version keyed
-    // on bits[47:32]==0xffff and false-positived on such legitimate high slabs.
-    // Instead we ask the kernel directly whether the page is mapped, via msync():
-    // it returns ENOMEM for an unmapped address and never faults. Only genuinely
-    // unmapped / misaligned / null pointers trip the probe.
-    /// @brief Check-only: fail the invariant if @p ptr, returned by @p path,
-    ///        is null, misaligned or not a mapped page.
-    static void probe_returned_block(const void* ptr, const char* path) noexcept
-    {
-        if constexpr (build_config::any_check)
-        {
-            const auto addr = reinterpret_cast<std::uintptr_t>(ptr);
-
-            if (ptr == nullptr)
-                INVARIANT_FAILED("[ALLOC_PROBE {}] allocate_raw returned NULL for T size={}", path, sizeof(T));
-
-            if ((addr & (alignof(std::max_align_t) - 1)) != 0 && (addr & 0x7U) != 0)
-                INVARIANT_FAILED("[ALLOC_PROBE {}] misaligned block p={} (T size={})", path,
-                                 static_cast<const void*>(ptr), sizeof(T));
-
-            // Page-containing-p mapped? msync(MS_ASYNC) touches nothing but the
-            // kernel's VMA table: 0 = mapped, -1/ENOMEM = not mapped. The whole
-            // object [p, p+sizeof(T)) may straddle two pages, so check both ends.
-            // Page bases as pointer arithmetic from p, not integer -> pointer
-            // casts (performance-no-int-to-ptr): p minus its offset in its page,
-            // and the same for the last byte of the object.
-            const long  pg   = ::sysconf(_SC_PAGESIZE);
-            const auto  mask = static_cast<std::uintptr_t>(pg - 1);
-            const auto* base = static_cast<const char*>(ptr);
-            const void* pg0  = base - (addr & mask);
-            const void* pg1  = base + (sizeof(T) - 1) - ((addr + sizeof(T) - 1) & mask);
-
-            if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)
-                INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path,
-                                 static_cast<const void*>(ptr), sizeof(T),
-                                 build_config::use_fast_alloc ? static_cast<const void*>(&allocator()) : nullptr);
-        }
     }
 
     /**
@@ -454,32 +354,141 @@ struct FastAllocatorConcrete : FastAllocatorBase
         }
         free_list().push_back(static_cast<T*>(block));
     }
+
+    /**
+     * @brief Returns the per-thread byte allocator for type T.
+     * The number of blocks per pool is calculated dynamically to match
+     * the target memory granularity.
+     */
+    static ByteAlloc& allocator()
+    {
+        // T-tagged storage: distinct type per element type so -fipa-icf cannot
+        // fold this body across same-sized element types and make ctx/op pools
+        // share one slab. See DeferredByteAllocSlot above.
+        thread_local DeferredByteAllocSlot<T> slot;
+
+        if (!slot.initialized)
+        {
+            // FIX (op/ctx/value slab aliasing): route this pool's slabs to its own
+            // arena. Op and ctx pools use the same TCTypeAllocator<byte> but MUST
+            // draw from disjoint arenas — a freed ctx slab reobtained by the op
+            // pool overwrote a live op's vtable with ctx layout (observed dump:
+            // vptr=0x38 with ctx-shaped fields). Arena is a template param so op
+            // and ctx get genuinely separate never-unmapped arenas.
+            slot.alloc.set_arena(Arena);
+
+            constexpr size_t element_size = sizeof(T);
+            // TCAllocator threads its free list through the freed elements (an
+            // int in each): the same condition TCAllocator::init() checks at run
+            // time, caught here at compile time where the size is known.
+            static_assert(element_size >= sizeof(int) && element_size % alignof(int) == 0,
+                          "deferred-op pool: an object must hold TCAllocator's free-list index");
+
+            // Smart calculation: divide the target granularity (e.g. 2MB) by object size.
+            // We guarantee a minimum of 64 blocks to prevent excessive system calls.
+            constexpr uintptr_t blocks_per_pool = (element_size >= build_config::deferred_pool_granularity)
+                                                      ? 64
+                                                      : (build_config::deferred_pool_granularity / element_size);
+
+            // FIX (op/value slab aliasing): last arg = nb_max_block_empty = -1
+            // → the op allocator NEVER munmaps an empty slab. Previously it was 1
+            // (retain one empty slab, munmap the rest), so a freed op slab's
+            // address could be reobtained by sctk_mmap(nullptr) from the chunk
+            // VALUE pool on another thread and overwrite a still-live op (proven
+            // via ring log: OP_ALLOC then VALUE_ALLOC at the same address on a
+            // different tid). Keeping op slabs mapped for the program's lifetime
+            // removes the address reuse. Op slabs are small and bounded, so the
+            // retained memory is modest.
+            slot.alloc.init(element_size, std::max<uintptr_t>(64, blocks_per_pool), -1);
+            slot.initialized = true;
+        }
+        return slot.alloc;
+    }
+
+    /**
+     * @brief Per-thread free list of recycled memory blocks.
+     */
+    static std::vector<T*>& free_list()
+    {
+        // T-tagged storage (same anti-ICF rationale as allocator()): keeps each
+        // element type's recycled-block list disjoint even when vector<T*> code
+        // is identical across types.
+        thread_local DeferredFreeListSlot<T> slot;
+        return slot.fl;
+    }
+
+    // Check-build guard — validate a pointer just before allocate_raw hands
+    // it to construct_at. The observed crash is a wild address (e.g.
+    // 0xffff63ff0000, mapped in NO region) written by the ctx constructor.
+    //
+    // IMPORTANT: we must NOT discriminate on the address range. sctk_mmap() uses
+    // mmap(nullptr, …) so the kernel is free to place a perfectly valid slab high
+    // in the 0xffff… band (same band as thread stacks). An earlier version keyed
+    // on bits[47:32]==0xffff and false-positived on such legitimate high slabs.
+    // Instead we ask the kernel directly whether the page is mapped, via msync():
+    // it returns ENOMEM for an unmapped address and never faults. Only genuinely
+    // unmapped / misaligned / null pointers trip the probe.
+    /// @brief Check-only: fail the invariant if @p ptr, returned by @p path,
+    ///        is null, misaligned or not a mapped page.
+    static void probe_returned_block(const void* ptr, const char* path) noexcept
+    {
+        if constexpr (build_config::any_check)
+        {
+            const auto addr = reinterpret_cast<std::uintptr_t>(ptr);
+
+            if (ptr == nullptr)
+                INVARIANT_FAILED("[ALLOC_PROBE {}] allocate_raw returned NULL for T size={}", path, sizeof(T));
+
+            if ((addr & (alignof(std::max_align_t) - 1)) != 0 && (addr & 0x7U) != 0)
+                INVARIANT_FAILED("[ALLOC_PROBE {}] misaligned block p={} (T size={})", path,
+                                 static_cast<const void*>(ptr), sizeof(T));
+
+            // Page-containing-p mapped? msync(MS_ASYNC) touches nothing but the
+            // kernel's VMA table: 0 = mapped, -1/ENOMEM = not mapped. The whole
+            // object [p, p+sizeof(T)) may straddle two pages, so check both ends.
+            // Page bases as pointer arithmetic from p, not integer -> pointer
+            // casts (performance-no-int-to-ptr): p minus its offset in its page,
+            // and the same for the last byte of the object.
+            const long  pg   = ::sysconf(_SC_PAGESIZE);
+            const auto  mask = static_cast<std::uintptr_t>(pg - 1);
+            const auto* base = static_cast<const char*>(ptr);
+            const void* pg0  = base - (addr & mask);
+            const void* pg1  = base + (sizeof(T) - 1) - ((addr + sizeof(T) - 1) & mask);
+
+            if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)
+                INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path,
+                                 static_cast<const void*>(ptr), sizeof(T),
+                                 build_config::use_fast_alloc ? static_cast<const void*>(&allocator()) : nullptr);
+        }
+    }
 };
 
 // ============================================================================
 // Allocator Registry and Tags
 // ============================================================================
 
-struct OpTag
+class OpTag
 {
 };
 /// @brief Registry tag of the context allocators (CtxRegistry).
-struct CtxTag
+class CtxTag
 {
 };
 
 // FIX (op/ctx/value slab aliasing): map each registry tag to its arena so op and
 // ctx pools allocate slabs from disjoint address spaces.
 template <typename Tag>
-struct arena_of_tag;
+class arena_of_tag;
 template <>
-struct arena_of_tag<OpTag>
+class arena_of_tag<OpTag>
 {
+  public:
     static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Op;
 };
 template <>
-struct arena_of_tag<CtxTag>
+class arena_of_tag<CtxTag>
 {
+  public:
     static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Ctx;
 };
 
@@ -487,8 +496,9 @@ struct arena_of_tag<CtxTag>
  * @brief Registry that manages a collection of FastAllocators, one per object size.
  */
 template <typename Tag>
-struct AllocatorRegistry
+class AllocatorRegistry
 {
+  public:
     /// @brief This thread's allocator for objects of sizeof(T) bytes, created on first request.
     /// @tparam T Object type; allocators are shared between types of the same size.
     /// @return The allocator whose block_size is sizeof(T).

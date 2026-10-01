@@ -35,8 +35,9 @@ enum class chunk_pmp_sched : int
 };
 
 /// @brief A runtime schedule: its kind and chunk (0: the runtime's default).
-struct chunk_pmp_schedule
+class chunk_pmp_schedule
 {
+  public:
     chunk_pmp_sched kind  = chunk_pmp_sched::sched_static;
     int             chunk = 0;
 };

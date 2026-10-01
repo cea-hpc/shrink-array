@@ -46,8 +46,9 @@ static void fill_and_compress(TAB& tab)
     TAB::make_block_compression();
 }
 
-struct Truth
+class Truth
 {
+  public:
     long long chunks, mat;
     double    mem;
 };

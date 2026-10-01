@@ -517,14 +517,16 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
                 }
             }
         }
-        struct OwnReplayExclGuard
+        class OwnReplayExclGuard
         {
-            int rank;
+          public:
             ~OwnReplayExclGuard()
             {
                 if (rank >= 0)
                     CompressionManagerType::enqueue_unlock(rank);
             }
+
+            int rank;
         } own_replay_excl_guard{own_replay_excl_rank};
 
         // ─── Check #1: pure optimisation, not correctness ───────────────────

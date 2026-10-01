@@ -59,8 +59,9 @@ constexpr int get_num_tab_helper(const ProxyType& proxy, const void* array_ptr) 
 // This guarantees that async operations never use stale state.
 // ============================================================================
 template <typename T, typename ProxyType, typename ChunkType = Chunk<T>>
-struct BaseArithmeticContext
+class BaseArithmeticContext
 {
+  public:
     // Only for proxies that expose get_inf_array()
     using inf_array_t = std::tuple<T, int, int>;
 
@@ -129,8 +130,9 @@ struct BaseArithmeticContext
 // ============================================================================
 
 template <typename T>
-struct ArithmeticProxyContext : BaseArithmeticContext<T, Proxy<T>>
+class ArithmeticProxyContext : public BaseArithmeticContext<T, Proxy<T>>
 {
+  public:
     using Base = BaseArithmeticContext<T, Proxy<T>>;
 
     /// @brief Build the context from @p proxy.
@@ -145,8 +147,9 @@ struct ArithmeticProxyContext : BaseArithmeticContext<T, Proxy<T>>
 // ============================================================================
 
 template <typename T, typename U>
-struct ArithmeticAffectationProxyContext : BaseArithmeticContext<T, Proxy<T>>
+class ArithmeticAffectationProxyContext : public BaseArithmeticContext<T, Proxy<T>>
 {
+  public:
     using Base = BaseArithmeticContext<T, Proxy<T>>;
 
     /// @brief Build the context from @p proxy with the value to assign.
@@ -167,8 +170,9 @@ struct ArithmeticAffectationProxyContext : BaseArithmeticContext<T, Proxy<T>>
 // ============================================================================
 
 template <typename T, typename Op>
-struct ArithmeticOperationProxyContext : BaseArithmeticContext<T, Proxy<T>>
+class ArithmeticOperationProxyContext : public BaseArithmeticContext<T, Proxy<T>>
 {
+  public:
     using Base = BaseArithmeticContext<T, Proxy<T>>;
 
     /// @brief Build the context from @p proxy with an operand and the operation to apply.
@@ -191,7 +195,7 @@ struct ArithmeticOperationProxyContext : BaseArithmeticContext<T, Proxy<T>>
 // ============================================================================
 
 template <typename T, typename ChunkType, typename ProxyType>
-struct ArithmeticContext : BaseArithmeticContext<T, ProxyType, ChunkType>
+class ArithmeticContext : public BaseArithmeticContext<T, ProxyType, ChunkType>
 {
   public:
     using Base = BaseArithmeticContext<T, ProxyType, ChunkType>;
@@ -207,8 +211,9 @@ struct ArithmeticContext : BaseArithmeticContext<T, ProxyType, ChunkType>
 // Generic context for Proxy2 / Proxy2A with operand + operation.
 // ============================================================================
 template <typename T, typename Op, typename ChunkType, typename ProxyType>
-struct ArithmeticOperationContext : BaseArithmeticContext<T, ProxyType, ChunkType>
+class ArithmeticOperationContext : public BaseArithmeticContext<T, ProxyType, ChunkType>
 {
+  public:
     using Base = BaseArithmeticContext<T, ProxyType, ChunkType>;
 
     /// @brief Build the context from @p proxy with an operand and the operation to apply.
@@ -231,8 +236,9 @@ struct ArithmeticOperationContext : BaseArithmeticContext<T, ProxyType, ChunkTyp
 // ============================================================================
 
 template <typename T, typename U, typename ChunkType, typename ProxyType>
-struct ArithmeticAffectationContext : BaseArithmeticContext<T, ProxyType, ChunkType>
+class ArithmeticAffectationContext : public BaseArithmeticContext<T, ProxyType, ChunkType>
 {
+  public:
     using Base = BaseArithmeticContext<T, ProxyType, ChunkType>;
 
     /// @brief Build the context from @p proxy with the value to assign.

@@ -52,8 +52,9 @@ namespace
 std::atomic_flag g_serial_flush_owner{};
 
 /// Releases g_serial_flush_owner on every exit path of the serial flush.
-struct SerialFlushOwnership
+class SerialFlushOwnership
 {
+  public:
     SerialFlushOwnership()                                       = default;
     SerialFlushOwnership(const SerialFlushOwnership&)            = delete;
     SerialFlushOwnership& operator=(const SerialFlushOwnership&) = delete;
@@ -559,7 +560,7 @@ bool set_max_malloc_arenas(int max_arenas)
 // Instantiate exactly the specialisation this build selected. The other one is
 // never named, so its bodies are never instantiated -- which is what lets the
 // OpenMP versions call manager virtuals that a serial build does not declare.
-template struct AllTypeChunkParallelInterface<AllTypeChunk, build_config::use_openmp>;
-template struct AllTypeChunkDynInterface<AllTypeChunk, build_config::chunk_dynamic>;
+template class AllTypeChunkParallelInterface<AllTypeChunk, build_config::use_openmp>;
+template class AllTypeChunkDynInterface<AllTypeChunk, build_config::chunk_dynamic>;
 
 } // namespace shrink_array

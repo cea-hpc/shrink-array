@@ -114,8 +114,9 @@ void maybe_set_second_value(Arr& a, const Val& v)
 constexpr long kRun = 4096;
 
 template <typename T>
-struct Scenario
+class Scenario
 {
+  public:
     T second; // the second constant written in run 1
     T refill; // the value the first quarter is rewritten with after the pass
     T (*varied)(long i);

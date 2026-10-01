@@ -74,39 +74,6 @@ class RechunkSupport<Derived, true>
     using proxy_type = Traits::proxy_type;
 
   protected:
-    /**
-     * @brief Re-chunk EVERY live array of this variant to @p new_size (quiescent point only).
-     *
-     * @details Mirrors DirtyBitsetSupport::clear_all_dirty_bitsets: iterate the
-     *          per-type registry and act on each typed array. Intended for a
-     *          GLOBAL adaptive re-chunk where all arrays must share one geometry
-     *          (e.g. a bench that writes several arrays interleaved under a
-     *          single active_chunk_size): the allocation path reads the
-     *          process-wide t_active, so mixed per-array geometries would misfit
-     *          a materialising write.
-     *
-     * @param new_size the geometry every array should end up with
-     * @warning Each rechunk_to() restores the OLD active geometry on exit, so the
-     *          CALLER must set the active/thread size to @p new_size AFTER this
-     *          returns (once, for all types) before the next write phase.
-     * @see rechunk_to
-     */
-    static void rechunk_all_to(unsigned int new_size)
-    {
-        proxy_type::share_info_array.for_each_key(
-            [new_size](const void* key)
-            {
-                if (key)
-                {
-                    // The key is an array's core, and the arrays of this
-                    // element type may differ in index type: reach each one's
-                    // own rechunk_to() through the core.
-                    auto* arr = static_cast<ArrayChunkCore<chunk_type>*>(const_cast<void*>(key));
-                    arr->rechunk_erased(new_size);
-                }
-            });
-    }
-
     // ---- Re-chunk to a new geometry S' (SEQUENTIAL / quiescent point) --------
     /**
      * @brief Re-chunk this array to a new geometry S' (sequential, quiescent point).
@@ -216,6 +183,39 @@ class RechunkSupport<Derived, true>
     {
         return static_cast<crtp_cast_t<Self, Derived>&>(obj);
     }
+
+    /**
+     * @brief Re-chunk EVERY live array of this variant to @p new_size (quiescent point only).
+     *
+     * @details Mirrors DirtyBitsetSupport::clear_all_dirty_bitsets: iterate the
+     *          per-type registry and act on each typed array. Intended for a
+     *          GLOBAL adaptive re-chunk where all arrays must share one geometry
+     *          (e.g. a bench that writes several arrays interleaved under a
+     *          single active_chunk_size): the allocation path reads the
+     *          process-wide t_active, so mixed per-array geometries would misfit
+     *          a materialising write.
+     *
+     * @param new_size the geometry every array should end up with
+     * @warning Each rechunk_to() restores the OLD active geometry on exit, so the
+     *          CALLER must set the active/thread size to @p new_size AFTER this
+     *          returns (once, for all types) before the next write phase.
+     * @see rechunk_to
+     */
+    static void rechunk_all_to(unsigned int new_size)
+    {
+        proxy_type::share_info_array.for_each_key(
+            [new_size](const void* key)
+            {
+                if (key)
+                {
+                    // The key is an array's core, and the arrays of this
+                    // element type may differ in index type: reach each one's
+                    // own rechunk_to() through the core.
+                    auto* arr = static_cast<ArrayChunkCore<chunk_type>*>(const_cast<void*>(key));
+                    arr->rechunk_erased(new_size);
+                }
+            });
+    }
 };
 
 // ── Static-geometry build: nothing to re-chunk ───────────────────────────────
@@ -238,8 +238,6 @@ class RechunkSupport<Derived, false>
     using chunk_type = Traits::chunk_type;
 
   protected:
-    /** @brief No-op: the geometry is fixed at compile time. */
-    static void rechunk_all_to(unsigned int /*new_size*/) noexcept {}
     /** @brief No-op: the geometry is fixed at compile time. */
     void rechunk_to(unsigned int /*new_size*/) noexcept {}
     /** @brief No-op: never reached, since rechunk_to() does nothing. */
@@ -277,6 +275,9 @@ class RechunkSupport<Derived, false>
     {
         return static_cast<crtp_cast_t<Self, Derived>&>(obj);
     }
+
+    /** @brief No-op: the geometry is fixed at compile time. */
+    static void rechunk_all_to(unsigned int /*new_size*/) noexcept {}
 };
 
 } // namespace shrink_array

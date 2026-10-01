@@ -40,29 +40,22 @@
 template <typename LOOPS = LoopsSimd, typename LOOPSCHUNK = Loops>
 class MultiMatAlgo
 {
-    // The concrete array behind material `mat` of a MultiArray: the one the
-    // container names (vec_dir / vec_chunk), so a MultiArray of presence
-    // fractions hands out its VectChunk2 the same way a field hands out its
-    // VectChunk.
-
-    /// @brief The std::vector of material @p mat in @p gdr.
-    template <typename MA>
-    static auto& getMatVecDir(const MA& gdr, int mat)
+  public:
+    /**
+     * @brief The body on every material of [matdeb, matfin).
+     * @note The body may set `mat` to end the loop early (the stats print
+     *       does, after the first chunk material).
+     */
+    template <typename LAM>
+    void loop(int matdeb, int matfin, const LAM& lbd_loop_body) const
     {
-        using Vec = MA::vec_dir;
-
-        return *(static_cast<Vec*>(gdr[mat]));
+        for (int mat = matdeb; mat < matfin; ++mat)
+        {
+            single_int(mat, lbd_loop_body);
+        }
     }
 
-    /// @brief The chunk array of material @p mat in @p gdr.
-    template <typename MA>
-    static auto& getMatVecChunk(const MA& gdr, int mat)
-    {
-        using Vec = MA::vec_chunk;
-
-        return *(static_cast<Vec*>(gdr[mat]));
-    }
-
+  private:
     /// @brief The body on a std::vector material.
     template <typename LAM>
     void single_direct_int(int& mat, const LAM& lbd_loop_body) const
@@ -101,18 +94,26 @@ class MultiMatAlgo
         }
     }
 
-  public:
-    /**
-     * @brief The body on every material of [matdeb, matfin).
-     * @note The body may set `mat` to end the loop early (the stats print
-     *       does, after the first chunk material).
-     */
-    template <typename LAM>
-    void loop(int matdeb, int matfin, const LAM& lbd_loop_body) const
+    // The concrete array behind material `mat` of a MultiArray: the one the
+    // container names (vec_dir / vec_chunk), so a MultiArray of presence
+    // fractions hands out its VectChunk2 the same way a field hands out its
+    // VectChunk.
+
+    /// @brief The std::vector of material @p mat in @p gdr.
+    template <typename MA>
+    static auto& getMatVecDir(const MA& gdr, int mat)
     {
-        for (int mat = matdeb; mat < matfin; ++mat)
-        {
-            single_int(mat, lbd_loop_body);
-        }
+        using Vec = MA::vec_dir;
+
+        return *(static_cast<Vec*>(gdr[mat]));
+    }
+
+    /// @brief The chunk array of material @p mat in @p gdr.
+    template <typename MA>
+    static auto& getMatVecChunk(const MA& gdr, int mat)
+    {
+        using Vec = MA::vec_chunk;
+
+        return *(static_cast<Vec*>(gdr[mat]));
     }
 };

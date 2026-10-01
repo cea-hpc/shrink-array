@@ -50,80 +50,7 @@ class Simu
     static inline int iter_max_default = 100; ///< Iterations, unless asked
     static inline int nbmat_default    = 50;  ///< Materials, unless asked
 
-    int nbmat = nbmat_default; ///< Materials
-
-    int mesh_size = 10000000; ///< Cells
-
-    bool verbose = true; ///< Per-iteration prints
-
-    int iter_max = iter_max_default; ///< Iterations
-
-    int chunk_rate = 90; ///< Option 4: percentage of chunk materials
-
-    double pc_chunk  = .5; ///< Average interval of a chunk material, % of the mesh
-    double pc_vector = 3;  ///< Average interval of a vector material, % of the mesh
-
-    int option_chunk =
-        3; ///< Storage of the materials: 1 all chunk, 2 all vector, 3 random 50/50, 4 random at chunk_rate
-    int freq_rtz_default = std::max(iter_max_default / 10, 5);
-    int freq_rtz         = freq_rtz_default; ///< Every this many iterations the fields are zeroed instead of written
-
-    int freq_compress = 0; ///< Manual mode: every this many iterations the fields are compressed (inputData())
-
-    bool all_chunk  = false; ///< Every material is a chunk one
-    bool all_vector = false; ///< Every material is a vector one
-
-    // Largest intervals, set by computeInterval() for the kinds in use. The
-    // other one stays 1: computeDistribution() builds the distributions of
-    // both kinds, and [1, 1] is a valid range where an unset value was not.
-    int interval_chunk  = 1; ///< Largest interval of a chunk material, cells
-    int interval_vector = 1; ///< Largest interval of a vector material, cells
-
-    // 3 arrays multi - mat
-    std::array<MultiArray<double>, 3> tabs; ///< The three fields of every material
-
-    /// @brief The presence fraction of each material, in [0, 1]: 1 inside
-    ///        the material's interval, a ramp of `interface_width` cells at
-    ///        each end, 0 elsewhere. A Chunk2 array for the chunk materials,
-    ///        second value 1.
-    MultiArray<double, VectChunk2<double>> frac;
-
-    /// @brief Cells of the ramp at each end of an interval: well under a
-    ///        chunk, so the interior of an interval is chunks of pure 1 and
-    ///        compresses.
-    int interface_width = 16;
-
-    std::vector<bool> dis; ///< Storage of every material: true = chunk
-
     using VecInt2D = std::vector<std::vector<int>>;
-
-    /// @brief An [iteration][material] table: one contiguous buffer, read and
-    ///        written as t[it, mat] through a 2D mdspan over it.
-    class IterMatTable
-    {
-      public:
-        void resize(int n_iter, int n_mat)
-        {
-            extents_ = Extents(static_cast<std::size_t>(n_iter), static_cast<std::size_t>(n_mat));
-            data_.assign(extents_.extent(0) * extents_.extent(1), 0);
-        }
-
-        /// int& on a mutable table, const int& on a const one.
-        auto& operator[](this auto& self, int it, int mat)
-        {
-            return std::mdspan(self.data_.data(), self.extents_)[it, mat];
-        }
-
-      private:
-        using Extents = std::dextents<std::size_t, 2>;
-        std::vector<int> data_;
-        Extents          extents_{0, 0};
-    };
-
-    IterMatTable tab_size;  ///< [iteration, material] size of the interval
-    IterMatTable tab_start; ///< [iteration, material] first cell of the interval
-
-    VecInt2D ll; ///< [material] the cells of its current interval (indirection)
 
     Simu() = default;
 
@@ -200,4 +127,77 @@ class Simu
     template <typename LOOPS, typename LOOPSCHUNK>
     void
     computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo, const std::function<void(bool)>& lbd_stats, double& value);
+
+    int nbmat = nbmat_default; ///< Materials
+
+    int mesh_size = 10000000; ///< Cells
+
+    bool verbose = true; ///< Per-iteration prints
+
+    int iter_max = iter_max_default; ///< Iterations
+
+    int chunk_rate = 90; ///< Option 4: percentage of chunk materials
+
+    double pc_chunk  = .5; ///< Average interval of a chunk material, % of the mesh
+    double pc_vector = 3;  ///< Average interval of a vector material, % of the mesh
+
+    int option_chunk =
+        3; ///< Storage of the materials: 1 all chunk, 2 all vector, 3 random 50/50, 4 random at chunk_rate
+    int freq_rtz_default = std::max(iter_max_default / 10, 5);
+    int freq_rtz         = freq_rtz_default; ///< Every this many iterations the fields are zeroed instead of written
+
+    int freq_compress = 0; ///< Manual mode: every this many iterations the fields are compressed (inputData())
+
+    bool all_chunk  = false; ///< Every material is a chunk one
+    bool all_vector = false; ///< Every material is a vector one
+
+    // Largest intervals, set by computeInterval() for the kinds in use. The
+    // other one stays 1: computeDistribution() builds the distributions of
+    // both kinds, and [1, 1] is a valid range where an unset value was not.
+    int interval_chunk  = 1; ///< Largest interval of a chunk material, cells
+    int interval_vector = 1; ///< Largest interval of a vector material, cells
+
+    // 3 arrays multi - mat
+    std::array<MultiArray<double>, 3> tabs; ///< The three fields of every material
+
+    /// @brief The presence fraction of each material, in [0, 1]: 1 inside
+    ///        the material's interval, a ramp of `interface_width` cells at
+    ///        each end, 0 elsewhere. A Chunk2 array for the chunk materials,
+    ///        second value 1.
+    MultiArray<double, VectChunk2<double>> frac;
+
+    /// @brief Cells of the ramp at each end of an interval: well under a
+    ///        chunk, so the interior of an interval is chunks of pure 1 and
+    ///        compresses.
+    int interface_width = 16;
+
+    std::vector<bool> dis; ///< Storage of every material: true = chunk
+
+    /// @brief An [iteration][material] table: one contiguous buffer, read and
+    ///        written as t[it, mat] through a 2D mdspan over it.
+    class IterMatTable
+    {
+      public:
+        void resize(int n_iter, int n_mat)
+        {
+            extents_ = Extents(static_cast<std::size_t>(n_iter), static_cast<std::size_t>(n_mat));
+            data_.assign(extents_.extent(0) * extents_.extent(1), 0);
+        }
+
+        /// int& on a mutable table, const int& on a const one.
+        auto& operator[](this auto& self, int it, int mat)
+        {
+            return std::mdspan(self.data_.data(), self.extents_)[it, mat];
+        }
+
+      private:
+        using Extents = std::dextents<std::size_t, 2>;
+        std::vector<int> data_;
+        Extents          extents_{0, 0};
+    };
+
+    IterMatTable tab_size;  ///< [iteration, material] size of the interval
+    IterMatTable tab_start; ///< [iteration, material] first cell of the interval
+
+    VecInt2D ll; ///< [material] the cells of its current interval (indirection)
 };

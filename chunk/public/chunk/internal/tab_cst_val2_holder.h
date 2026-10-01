@@ -111,8 +111,9 @@ inline bool cst2_thp_advise() noexcept
  *       loops here rely on that rather than null-checking every slot.
  */
 template <typename T>
-struct Segment
+class Segment
 {
+  public:
     static constexpr int SIZE = 64; ///< Slots per segment.
 
     std::array<T*, SIZE> slots{};        ///< The shared arrays, one per registered value.
@@ -121,7 +122,7 @@ struct Segment
 };
 
 template <typename T>
-struct GlobalVecHolder;
+class GlobalVecHolder;
 
 template <typename T>
 class TabCstVal2Holder;
@@ -148,8 +149,9 @@ class TabCstVal2Holder;
 // keeps the value in the slot; the switch is for a use that is bound by
 // memory rather than by write throughput.
 template <typename T>
-struct SecondValueTraits
+class SecondValueTraits
 {
+  public:
     static constexpr bool indexed = build_config::second_value_indexed && sizeof(T) > 4;
     using slot_t                  = std::conditional_t<indexed, std::uint32_t, T>;
 };
@@ -164,8 +166,9 @@ struct SecondValueTraits
  *          the null pointer was.
  */
 template <typename T>
-struct SecondValueRef
+class SecondValueRef
 {
+  public:
     using slot_t = SecondValueTraits<T>::slot_t;
 
     /// @brief The chunk's second value; T{} (== first_value, 0) when none.
@@ -218,8 +221,9 @@ struct SecondValueRef
  *          there is no owner whose destructor could do the job.
  */
 template <typename T>
-struct Sentinel
+class Sentinel
 {
+  public:
     /// @brief Call GlobalVecHolder<T>::cleanup_all().
     ~Sentinel()
     {
@@ -238,79 +242,9 @@ struct Sentinel
  *          cannot be freed while any of them is alive. #ref_count tracks that.
  */
 template <typename T>
-struct GlobalVecHolder
+class GlobalVecHolder
 {
-    /// @brief First segment. NEVER null after init() -- clear_if_last()
-    ///        reinstalls an empty one (install_head(), which registers no
-    ///        user) so no caller has to test for it.
-    static inline std::atomic<Segment<T>*> head{nullptr};
-    // Cached tail segment: makes the cold-path append O(1) instead of walking
-    // head->...->tail (O(N/64)) on every registration. Mutated only under
-    // insert_mutex (appends) or single-threaded (init/clear); invalidated to
-    // nullptr by index_clear so the next append re-seeds it from head.
-    static inline Segment<T>* tail{nullptr};
-
   private:
-    /// @brief Live ArrayChunk2A<T> instances. The registry is freed when it
-    ///        reaches zero, not before. @see clear_if_last
-    static inline std::atomic<int> ref_count{0};
-
-  public:
-    /// @brief The registered users (#ref_count): the live ArrayChunk2A<T>
-    ///        holding a reference. For checks at a quiescent point.
-    [[nodiscard]] static int users() noexcept
-    {
-        return ref_count.load(std::memory_order_acquire);
-    }
-
-    /**
-     * @brief How many distinct second values are registered.
-     * @return The sum of Segment::used over the chain.
-     * @warning Walks the chain without the lock: call it at a quiescent point,
-     *          not while a compression pass may be appending.
-     */
-    [[nodiscard]] static std::size_t count_entries() noexcept
-    {
-        std::size_t count = 0;
-        for (Segment<T>* s = head.load(std::memory_order_acquire); s != nullptr; s = s->next)
-            count += static_cast<std::size_t>(s->used);
-        return count;
-    }
-
-    // ── Insert lock ──────────────────────────────────────────────────────
-    // Serializes the COLD path only: inserting a genuinely new second value
-    // (or servicing an index probe-budget miss). Every mutation of the segment
-    // list and every index publication happens under this mutex. The HOT path
-    // — find_or_set on a value already indexed, i.e. every type-2 chunk after
-    // the first one per value — stays lock-free through index_lookup below.
-    // A std::mutex (not a spinlock): the critical section may mmap/mprotect
-    // in alloc_chunk under MM_PROTECT builds.
-    /**
-     * @brief Serialises the COLD path only: registering a genuinely new value.
-     * @details Every mutation of the chain and every index publication happens
-     *          under it, which is what makes the index a single-writer
-     *          structure. The hot path never takes it.
-     * @note A std::mutex rather than a spinlock on purpose: the critical
-     *       section may mmap/mprotect under MM_PROTECT builds.
-     */
-    static inline std::mutex insert_mutex;
-
-    // Set true the first (and only) time index_publish exhausts its probe budget,
-    // i.e. a registered value could become unfindable by index_lookup. While it
-    // stays false (the expected regime: N in the thousands, index at <1% load),
-    // the cold path can trust index_lookup as authoritative and skip the O(N)
-    // segment re-scan entirely. Only flipped under insert_mutex; read relaxed.
-    /**
-     * @brief Set once if index_publish() ever exhausts its probe budget.
-     * @details While it is false -- the expected regime, a few thousand values
-     *          in a table at under 1% load -- the cold path trusts the index as
-     *          authoritative and skips the O(N) chain scan entirely. Once true,
-     *          a registered value may be unfindable by index_lookup(), so that
-     *          scan comes back. Sticky until index_clear(); written only under
-     *          #insert_mutex, read relaxed.
-     */
-    static inline std::atomic<bool> index_degraded{false};
-
     // ── The region every shared array of this type is carved from ─────────
     //
     // One contiguous reservation per T (virtual address space, MAP_NORESERVE:
@@ -361,18 +295,53 @@ struct GlobalVecHolder
     #define CHUNK_CST_VAL2_REGION_BYTES (2uz << 30U)
 #endif
 
-  private:
     static constexpr std::size_t kRegionBytes = CHUNK_CST_VAL2_REGION_BYTES;
+    static constexpr std::size_t kIdStride = 64; ///< One cache line per identifier (see region_init()).
 
   public:
-    static inline std::atomic<char*> region_begin{nullptr}; ///< Reservation start; null before init().
+    // ── Value->pointer index (lock-free readers, single writer under lock) ──
+    // Flat open-addressing table turning the O(N) dedup search in
+    // find_or_set_ind_cst_val2 into an O(1) probe. Publications happen ONLY
+    // under insert_mutex (single writer): the former "advisory, racy
+    // last-wins" semantics are gone. A lookup hit is still revalidated
+    // (p[0] == v) — required regardless of concurrency, because open
+    // addressing probes across hash collisions. A miss (capacity / probe
+    // budget) falls back to the authoritative under-lock scan. Entries hold
+    // the same pointers as the list slots; must be cleared wherever those
+    // arrays are freed (single-threaded clear paths) so a lookup never
+    // dereferences a freed array.
 
-  private:
-    static inline char*                    region_end = nullptr; ///< One past the reservation.
-    static inline std::atomic<std::size_t> region_used{0};       ///< Bump offset, in bytes.
+    /**
+     * @brief One generation of the open-addressed value -> shared array table.
+     *
+     * @details Turns what used to be an O(N) scan of the chain on EVERY
+     *          registration -- which serialised the whole compression phase as
+     *          the append-only registry grew -- into an O(1) probe. Entries
+     *          hold the same pointers as the segment slots, so they MUST be
+     *          cleared wherever those arrays are freed, or a lookup returns a
+     *          dangling pointer. @see index_clear
+     *
+     *          The table used to be a fixed 2^18 array sized for ~30k values.
+     *          shrink_bench's unsigned long array reached 214 300 distinct
+     *          values (82% load): linear probing at that load exhausts the
+     *          64-probe budget constantly, index_degraded flipped, and every
+     *          new value fell back to the O(N) segment scan under the mutex --
+     *          29 s at 2000 iterations, 113 s at 4000. The table now doubles
+     *          under insert_mutex past 50% load (@see index_grow).
+     *
+     * @note `used` is maintained by the single writer only; readers never
+     *       touch it.
+     */
+    class IndexTable
+    {
+      public:
+        // A value-initialised atomic pointer is null (C++20): no clearing loop.
+        explicit IndexTable(std::size_t capacity) : cap(capacity), slots(capacity) {}
 
-  public:
-    static inline std::size_t region_stride = 0; ///< Bytes per array: every array is carved at a multiple of it.
+        std::size_t                  cap  = 0; ///< Slot count, a power of two.
+        std::size_t                  used = 0; ///< Published entries (single writer).
+        std::vector<std::atomic<T*>> slots;    ///< `cap` slots, null = empty.
+    };
 
     /// @brief Largest identifier the region can hand out.
     ///
@@ -393,83 +362,31 @@ struct GlobalVecHolder
 #ifndef CHUNK_CST_VAL2_MAX_IDS
     #define CHUNK_CST_VAL2_MAX_IDS (4uz << 20U)
 #endif
-
-  private:
-    static constexpr std::size_t kIdStride = 64; ///< One cache line per identifier (see region_init()).
-
-  public:
     static constexpr std::size_t kMaxIds =
         (kRegionBytes / kIdStride) < CHUNK_CST_VAL2_MAX_IDS ? (kRegionBytes / kIdStride) : CHUNK_CST_VAL2_MAX_IDS;
     static_assert(kMaxIds < std::size_t{0xFFFFFFFFu}, "an identifier must fit id_of_ptr()'s uint32_t");
 
-  private:
-    /// @brief What is reserved and carved: exactly the identifiers
-    ///        value_by_id can hold. 256 MiB per type with the defaults.
-    static constexpr std::size_t kRegionUsable =
-        (kMaxIds * kIdStride) < kRegionBytes ? (kMaxIds * kIdStride) : kRegionBytes;
-    /// @brief The identifiers region_alloc() hands out: kMaxIds, or fewer
-    ///        under CHUNK_CST_VAL2_ID_LIMIT (read once in region_init(); it
-    ///        can only lower the bound -- the way a test reaches it).
-    static inline std::size_t id_limit = kMaxIds;
-
-  public:
-
-    /// @brief The value registered under each identifier, contiguous: what
-    ///        a chunk's second value is read through on every write of a
-    ///        wide type (SecondValueRef::get). Reading the arrays' first
-    ///        elements instead cost a scattered cache line per distinct
-    ///        value (+3.6% CPU on the perf bench); this is 8 bytes per value,
-    ///        L1-resident for the values a run actually uses. Zero-initialised
-    ///        static storage: the pages of identifiers never handed out are
-    ///        never touched. Index 0 is "no second value" and stays T{}.
-    static inline std::array<T, kMaxIds + 1> value_by_id{};
-
-  private:
-    /// @brief Reserve the region. Idempotent; called by init().
-    static void region_init()
+    /// @brief The registered users (#ref_count): the live ArrayChunk2A<T>
+    ///        holding a reference. For checks at a quiescent point.
+    [[nodiscard]] static int users() noexcept
     {
-        if (region_begin.load(std::memory_order_acquire) != nullptr)
-            return;
-        // MM_PROTECT: PROT_NONE for good -- nothing is ever stored in the
-        // region, so any dereference of a second-value pointer faults instead
-        // of reading a plausible zero. Otherwise RW (never touched either).
-        const int prot = build_config::use_mm_protect ? PROT_NONE : (PROT_READ | PROT_WRITE);
-        void*     raw  = mmap(nullptr, kRegionUsable, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-        if (raw == MAP_FAILED) [[unlikely]]
-        {
-            std::cerr << "[cst_val2] cannot reserve the second-value region (" << (kRegionUsable >> 20U) << " MiB)\n";
-            std::abort();
-        }
-        // CHUNK_THP (experimental, off by default): read by every thread that
-        // writes a second value. Not under MM_PROTECT, whose per-array
-        // mprotect splits huge pages anyway. Advice only.
-        if constexpr (!build_config::use_mm_protect)
-        {
-            if (cst2_thp_advise())
-                (void)madvise(raw, kRegionUsable, MADV_HUGEPAGE);
-        }
-        // Every slot is carved at a multiple of the stride, which is what turns
-        // a slot pointer into a small identifier and back
-        // (TabCstVal2Holder::id_of_ptr / value_of_id). Nothing is ever stored
-        // in the region, so a slot only has to give each identifier a distinct
-        // address: one cache line does, and no page is ever backed.
-        const std::size_t stride = kIdStride;
-
-        if (char* expected = nullptr;
-            region_begin.compare_exchange_strong(expected, static_cast<char*>(raw), std::memory_order_acq_rel))
-        {
-            region_stride = stride;
-            region_end    = static_cast<char*>(raw) + kRegionUsable;
-            const std::size_t lim = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", kMaxIds);
-            id_limit              = (lim >= 1 && lim < kMaxIds) ? lim : kMaxIds; // lowers only
-        }
-        else
-        {
-            munmap(raw, kRegionUsable); // lost the race: the winner's region stands
-        }
+        return ref_count.load(std::memory_order_acquire);
     }
 
-  public:
+    /**
+     * @brief How many distinct second values are registered.
+     * @return The sum of Segment::used over the chain.
+     * @warning Walks the chain without the lock: call it at a quiescent point,
+     *          not while a compression pass may be appending.
+     */
+    [[nodiscard]] static std::size_t count_entries() noexcept
+    {
+        std::size_t count = 0;
+        for (Segment<T>* s = head.load(std::memory_order_acquire); s != nullptr; s = s->next)
+            count += static_cast<std::size_t>(s->used);
+        return count;
+    }
+
     /// @brief Is @p ptr the start of a shared array of this type?
     /// @note THE constant-2 test of Chunk2A: `is_cst_val2()` is
     ///       `region_contains(values)`. Relaxed load of a pointer that is
@@ -526,94 +443,6 @@ struct GlobalVecHolder
         return region_begin.load(std::memory_order_relaxed) + off;
     }
 
-  private:
-    /// @brief Give the carved pages back and start over. Last clear only.
-    static void region_reset() noexcept
-    {
-        char* base = region_begin.load(std::memory_order_relaxed);
-        if (base == nullptr)
-            return;
-        const std::size_t used = region_used.exchange(0, std::memory_order_relaxed);
-        if (used == 0)
-            return;
-        if constexpr (build_config::use_mm_protect)
-            mprotect(base, used, PROT_READ | PROT_WRITE); // madvise needs a writable mapping to drop
-        madvise(base, used, MADV_DONTNEED);
-        if constexpr (build_config::use_mm_protect)
-            mprotect(base, used, PROT_NONE);
-    }
-
-  public:
-    // ── Value->pointer index (lock-free readers, single writer under lock) ──
-    // Flat open-addressing table turning the O(N) dedup search in
-    // find_or_set_ind_cst_val2 into an O(1) probe. Publications happen ONLY
-    // under insert_mutex (single writer): the former "advisory, racy
-    // last-wins" semantics are gone. A lookup hit is still revalidated
-    // (p[0] == v) — required regardless of concurrency, because open
-    // addressing probes across hash collisions. A miss (capacity / probe
-    // budget) falls back to the authoritative under-lock scan. Entries hold
-    // the same pointers as the list slots; must be cleared wherever those
-    // arrays are freed (single-threaded clear paths) so a lookup never
-    // dereferences a freed array.
-#ifndef CHUNK_CST_VAL2_INDEX_LOG2
-
-  private:
-    static constexpr int chunk_cst_val2_index_loc = 18;
-
-  public:
-    // 2^18 = 262144 slots, 2 Mio/type; <11% load at 30k values
-#else
-    static constexpr int chunk_cst_val2_index_loc = CHUNK_CST_VAL2_INDEX_LOG2;
-#endif
-
-  private:
-    static constexpr size_t INDEX_CAP       = size_t{1} << chunk_cst_val2_index_loc; ///< Initial capacity.
-    static constexpr int    INDEX_MAX_PROBE = 64; ///< Bounded; giving up means fallback.
-
-  public:
-    /**
-     * @brief One generation of the open-addressed value -> shared array table.
-     *
-     * @details Turns what used to be an O(N) scan of the chain on EVERY
-     *          registration -- which serialised the whole compression phase as
-     *          the append-only registry grew -- into an O(1) probe. Entries
-     *          hold the same pointers as the segment slots, so they MUST be
-     *          cleared wherever those arrays are freed, or a lookup returns a
-     *          dangling pointer. @see index_clear
-     *
-     *          The table used to be a fixed 2^18 array sized for ~30k values.
-     *          shrink_bench's unsigned long array reached 214 300 distinct
-     *          values (82% load): linear probing at that load exhausts the
-     *          64-probe budget constantly, index_degraded flipped, and every
-     *          new value fell back to the O(N) segment scan under the mutex --
-     *          29 s at 2000 iterations, 113 s at 4000. The table now doubles
-     *          under insert_mutex past 50% load (@see index_grow).
-     *
-     * @note `used` is maintained by the single writer only; readers never
-     *       touch it.
-     */
-    struct IndexTable
-    {
-        // A value-initialised atomic pointer is null (C++20): no clearing loop.
-        explicit IndexTable(std::size_t capacity) : cap(capacity), slots(capacity) {}
-
-        std::size_t                  cap  = 0; ///< Slot count, a power of two.
-        std::size_t                  used = 0; ///< Published entries (single writer).
-        std::vector<std::atomic<T*>> slots;    ///< `cap` slots, null = empty.
-    };
-
-  private:
-    /// @brief The live table. Null until the first publish; readers that see
-    ///        null miss and take the cold path, which is always correct.
-    static inline std::atomic<IndexTable*> index_tab{nullptr};
-    /// @brief Every table ever published, the live one last. Old generations
-    ///        are kept until index_clear(): a lock-free reader may still hold
-    ///        their pointer, and index_clear() is the one point where no
-    ///        reader is in flight (its contract). They sum to less than the
-    ///        live table, so this is bounded by the same factor of two.
-    static inline std::vector<std::unique_ptr<IndexTable>> index_generations;
-
-  public:
     /**
      * @brief The value the shared array @p ptr stands for.
      *
@@ -637,23 +466,6 @@ struct GlobalVecHolder
         return value_by_id[id];
     }
 
-  private:
-    /// @brief Value hash (a 64-bit finaliser over the object's bytes).
-    /// @note Hashes the REPRESENTATION, so two values that compare equal but
-    ///       differ bitwise would land in different slots.
-    static size_t index_hash(in_t<T> v) noexcept
-    {
-        uint64_t bits = 0;
-        std::memcpy(&bits, &v, sizeof(T) < sizeof(uint64_t) ? sizeof(T) : sizeof(uint64_t));
-        bits ^= bits >> 33U;
-        bits *= 0xff51afd7ed558ccdULL;
-        bits ^= bits >> 33U;
-        bits *= 0xc4ceb9fe1a85ec53ULL;
-        bits ^= bits >> 33U;
-        return static_cast<size_t>(bits);
-    }
-
-  public:
     /**
      * @brief Look @p v up in the index, lock-free. This is the hot path.
      * @return Its shared array, or null -- meaning "not found HERE", never
@@ -684,46 +496,6 @@ struct GlobalVecHolder
         return nullptr; // probe budget exhausted => treat as miss
     }
 
-  private:
-    /**
-     * @brief Publish a table twice the size of the live one (or the initial
-     *        one), carrying every entry over.
-     * @pre Called under #insert_mutex -- the single writer, so the live table
-     *      is not being mutated while it is copied.
-     * @details Built completely, then published with one release store, so a
-     *          reader sees either the old generation (complete as of its
-     *          publication) or the new one (a superset). Rehashing reads each
-     *          array's first element, which is its value; the arrays outlive
-     *          the index by the same contract that lets the index hold them.
-     * @return The new live table.
-     */
-    static IndexTable* index_grow() noexcept
-    {
-        const IndexTable* old = index_tab.load(std::memory_order_relaxed);
-        const std::size_t cap = old == nullptr ? INDEX_CAP : old->cap * 2;
-        auto              nt  = std::make_unique<IndexTable>(cap);
-        if (old != nullptr)
-        {
-            const std::size_t mask = cap - 1;
-            for (std::size_t i = 0; i < old->cap; ++i)
-            {
-                T* entry = old->slots[i].load(std::memory_order_relaxed);
-                if (entry == nullptr)
-                    continue;
-                std::size_t idx = index_hash(value_of_ptr(entry)) & mask;
-                while (nt->slots[idx].load(std::memory_order_relaxed) != nullptr)
-                    idx = (idx + 1) & mask;
-                nt->slots[idx].store(entry, std::memory_order_relaxed);
-            }
-            nt->used = old->used;
-        }
-        IndexTable* raw = nt.get();
-        index_generations.push_back(std::move(nt));
-        index_tab.store(raw, std::memory_order_release);
-        return raw;
-    }
-
-  public:
     // Publish (v -> p). No-op if already present or probe budget exhausted.
     // Called ONLY under insert_mutex (single writer): a plain release store
     // suffices — it pairs with the acquire load in index_lookup so a lock-free
@@ -776,25 +548,6 @@ struct GlobalVecHolder
         index_degraded.store(true, std::memory_order_relaxed);
     }
 
-  private:
-    /**
-     * @brief Empty the index and drop the cached tail.
-     * @warning Single-threaded clear paths only, and at the very point the
-     *          backing arrays are freed -- an entry outliving its array is a
-     *          dangling pointer a lock-free reader will follow.
-     */
-    static void index_clear() noexcept
-    {
-        index_degraded.store(false, std::memory_order_relaxed);
-        tail = nullptr; // drop cached tail; next cold-path append re-seeds from head
-        // Single-threaded by contract, so this is the one point where the
-        // superseded generations can go: no reader holds any of them. The
-        // live table goes too; the next publish starts again at INDEX_CAP.
-        index_tab.store(nullptr, std::memory_order_release);
-        index_generations.clear();
-    }
-
-  public:
     /**
      * @brief Register one more user of this type's registry, creating it if new.
      * @details The user is counted in #ref_count; the registry itself is made
@@ -945,6 +698,231 @@ struct GlobalVecHolder
         index_clear(); // registry gone: drop stale advisory index entries
         region_reset();
     }
+
+    /// @brief First segment. NEVER null after init() -- clear_if_last()
+    ///        reinstalls an empty one (install_head(), which registers no
+    ///        user) so no caller has to test for it.
+    static inline std::atomic<Segment<T>*> head{nullptr};
+    // Cached tail segment: makes the cold-path append O(1) instead of walking
+    // head->...->tail (O(N/64)) on every registration. Mutated only under
+    // insert_mutex (appends) or single-threaded (init/clear); invalidated to
+    // nullptr by index_clear so the next append re-seeds it from head.
+    static inline Segment<T>* tail{nullptr};
+
+    // ── Insert lock ──────────────────────────────────────────────────────
+    // Serializes the COLD path only: inserting a genuinely new second value
+    // (or servicing an index probe-budget miss). Every mutation of the segment
+    // list and every index publication happens under this mutex. The HOT path
+    // — find_or_set on a value already indexed, i.e. every type-2 chunk after
+    // the first one per value — stays lock-free through index_lookup below.
+    // A std::mutex (not a spinlock): the critical section may mmap/mprotect
+    // in alloc_chunk under MM_PROTECT builds.
+    /**
+     * @brief Serialises the COLD path only: registering a genuinely new value.
+     * @details Every mutation of the chain and every index publication happens
+     *          under it, which is what makes the index a single-writer
+     *          structure. The hot path never takes it.
+     * @note A std::mutex rather than a spinlock on purpose: the critical
+     *       section may mmap/mprotect under MM_PROTECT builds.
+     */
+    static inline std::mutex insert_mutex;
+
+    // Set true the first (and only) time index_publish exhausts its probe budget,
+    // i.e. a registered value could become unfindable by index_lookup. While it
+    // stays false (the expected regime: N in the thousands, index at <1% load),
+    // the cold path can trust index_lookup as authoritative and skip the O(N)
+    // segment re-scan entirely. Only flipped under insert_mutex; read relaxed.
+    /**
+     * @brief Set once if index_publish() ever exhausts its probe budget.
+     * @details While it is false -- the expected regime, a few thousand values
+     *          in a table at under 1% load -- the cold path trusts the index as
+     *          authoritative and skips the O(N) chain scan entirely. Once true,
+     *          a registered value may be unfindable by index_lookup(), so that
+     *          scan comes back. Sticky until index_clear(); written only under
+     *          #insert_mutex, read relaxed.
+     */
+    static inline std::atomic<bool> index_degraded{false};
+
+    static inline std::atomic<char*> region_begin{nullptr}; ///< Reservation start; null before init().
+    static inline std::size_t region_stride = 0; ///< Bytes per array: every array is carved at a multiple of it.
+
+    /// @brief The value registered under each identifier, contiguous: what
+    ///        a chunk's second value is read through on every write of a
+    ///        wide type (SecondValueRef::get). Reading the arrays' first
+    ///        elements instead cost a scattered cache line per distinct
+    ///        value (+3.6% CPU on the perf bench); this is 8 bytes per value,
+    ///        L1-resident for the values a run actually uses. Zero-initialised
+    ///        static storage: the pages of identifiers never handed out are
+    ///        never touched. Index 0 is "no second value" and stays T{}.
+    static inline std::array<T, kMaxIds + 1> value_by_id{};
+
+  private:
+    /// @brief What is reserved and carved: exactly the identifiers
+    ///        value_by_id can hold. 256 MiB per type with the defaults.
+    static constexpr std::size_t kRegionUsable =
+        (kMaxIds * kIdStride) < kRegionBytes ? (kMaxIds * kIdStride) : kRegionBytes;
+
+#ifndef CHUNK_CST_VAL2_INDEX_LOG2
+    static constexpr int chunk_cst_val2_index_loc = 18;
+    // 2^18 = 262144 slots, 2 Mio/type; <11% load at 30k values
+#else
+    static constexpr int chunk_cst_val2_index_loc = CHUNK_CST_VAL2_INDEX_LOG2;
+#endif
+
+    static constexpr size_t INDEX_CAP       = size_t{1} << chunk_cst_val2_index_loc; ///< Initial capacity.
+    static constexpr int    INDEX_MAX_PROBE = 64; ///< Bounded; giving up means fallback.
+
+    /// @brief Reserve the region. Idempotent; called by init().
+    static void region_init()
+    {
+        if (region_begin.load(std::memory_order_acquire) != nullptr)
+            return;
+        // MM_PROTECT: PROT_NONE for good -- nothing is ever stored in the
+        // region, so any dereference of a second-value pointer faults instead
+        // of reading a plausible zero. Otherwise RW (never touched either).
+        const int prot = build_config::use_mm_protect ? PROT_NONE : (PROT_READ | PROT_WRITE);
+        void*     raw  = mmap(nullptr, kRegionUsable, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+        if (raw == MAP_FAILED) [[unlikely]]
+        {
+            std::cerr << "[cst_val2] cannot reserve the second-value region (" << (kRegionUsable >> 20U) << " MiB)\n";
+            std::abort();
+        }
+        // CHUNK_THP (experimental, off by default): read by every thread that
+        // writes a second value. Not under MM_PROTECT, whose per-array
+        // mprotect splits huge pages anyway. Advice only.
+        if constexpr (!build_config::use_mm_protect)
+        {
+            if (cst2_thp_advise())
+                (void)madvise(raw, kRegionUsable, MADV_HUGEPAGE);
+        }
+        // Every slot is carved at a multiple of the stride, which is what turns
+        // a slot pointer into a small identifier and back
+        // (TabCstVal2Holder::id_of_ptr / value_of_id). Nothing is ever stored
+        // in the region, so a slot only has to give each identifier a distinct
+        // address: one cache line does, and no page is ever backed.
+        const std::size_t stride = kIdStride;
+
+        if (char* expected = nullptr;
+            region_begin.compare_exchange_strong(expected, static_cast<char*>(raw), std::memory_order_acq_rel))
+        {
+            region_stride = stride;
+            region_end    = static_cast<char*>(raw) + kRegionUsable;
+            const std::size_t lim = env_number<std::size_t>("CHUNK_CST_VAL2_ID_LIMIT", kMaxIds);
+            id_limit              = (lim >= 1 && lim < kMaxIds) ? lim : kMaxIds; // lowers only
+        }
+        else
+        {
+            munmap(raw, kRegionUsable); // lost the race: the winner's region stands
+        }
+    }
+
+    /// @brief Give the carved pages back and start over. Last clear only.
+    static void region_reset() noexcept
+    {
+        char* base = region_begin.load(std::memory_order_relaxed);
+        if (base == nullptr)
+            return;
+        const std::size_t used = region_used.exchange(0, std::memory_order_relaxed);
+        if (used == 0)
+            return;
+        if constexpr (build_config::use_mm_protect)
+            mprotect(base, used, PROT_READ | PROT_WRITE); // madvise needs a writable mapping to drop
+        madvise(base, used, MADV_DONTNEED);
+        if constexpr (build_config::use_mm_protect)
+            mprotect(base, used, PROT_NONE);
+    }
+
+    /// @brief Value hash (a 64-bit finaliser over the object's bytes).
+    /// @note Hashes the REPRESENTATION, so two values that compare equal but
+    ///       differ bitwise would land in different slots.
+    static size_t index_hash(in_t<T> v) noexcept
+    {
+        uint64_t bits = 0;
+        std::memcpy(&bits, &v, sizeof(T) < sizeof(uint64_t) ? sizeof(T) : sizeof(uint64_t));
+        bits ^= bits >> 33U;
+        bits *= 0xff51afd7ed558ccdULL;
+        bits ^= bits >> 33U;
+        bits *= 0xc4ceb9fe1a85ec53ULL;
+        bits ^= bits >> 33U;
+        return static_cast<size_t>(bits);
+    }
+
+    /**
+     * @brief Publish a table twice the size of the live one (or the initial
+     *        one), carrying every entry over.
+     * @pre Called under #insert_mutex -- the single writer, so the live table
+     *      is not being mutated while it is copied.
+     * @details Built completely, then published with one release store, so a
+     *          reader sees either the old generation (complete as of its
+     *          publication) or the new one (a superset). Rehashing reads each
+     *          array's first element, which is its value; the arrays outlive
+     *          the index by the same contract that lets the index hold them.
+     * @return The new live table.
+     */
+    static IndexTable* index_grow() noexcept
+    {
+        const IndexTable* old = index_tab.load(std::memory_order_relaxed);
+        const std::size_t cap = old == nullptr ? INDEX_CAP : old->cap * 2;
+        auto              nt  = std::make_unique<IndexTable>(cap);
+        if (old != nullptr)
+        {
+            const std::size_t mask = cap - 1;
+            for (std::size_t i = 0; i < old->cap; ++i)
+            {
+                T* entry = old->slots[i].load(std::memory_order_relaxed);
+                if (entry == nullptr)
+                    continue;
+                std::size_t idx = index_hash(value_of_ptr(entry)) & mask;
+                while (nt->slots[idx].load(std::memory_order_relaxed) != nullptr)
+                    idx = (idx + 1) & mask;
+                nt->slots[idx].store(entry, std::memory_order_relaxed);
+            }
+            nt->used = old->used;
+        }
+        IndexTable* raw = nt.get();
+        index_generations.push_back(std::move(nt));
+        index_tab.store(raw, std::memory_order_release);
+        return raw;
+    }
+
+    /**
+     * @brief Empty the index and drop the cached tail.
+     * @warning Single-threaded clear paths only, and at the very point the
+     *          backing arrays are freed -- an entry outliving its array is a
+     *          dangling pointer a lock-free reader will follow.
+     */
+    static void index_clear() noexcept
+    {
+        index_degraded.store(false, std::memory_order_relaxed);
+        tail = nullptr; // drop cached tail; next cold-path append re-seeds from head
+        // Single-threaded by contract, so this is the one point where the
+        // superseded generations can go: no reader holds any of them. The
+        // live table goes too; the next publish starts again at INDEX_CAP.
+        index_tab.store(nullptr, std::memory_order_release);
+        index_generations.clear();
+    }
+
+    /// @brief Live ArrayChunk2A<T> instances. The registry is freed when it
+    ///        reaches zero, not before. @see clear_if_last
+    static inline std::atomic<int> ref_count{0};
+
+    static inline char*                    region_end = nullptr; ///< One past the reservation.
+    static inline std::atomic<std::size_t> region_used{0};       ///< Bump offset, in bytes.
+
+    /// @brief The identifiers region_alloc() hands out: kMaxIds, or fewer
+    ///        under CHUNK_CST_VAL2_ID_LIMIT (read once in region_init(); it
+    ///        can only lower the bound -- the way a test reaches it).
+    static inline std::size_t id_limit = kMaxIds;
+
+    /// @brief The live table. Null until the first publish; readers that see
+    ///        null miss and take the cold path, which is always correct.
+    static inline std::atomic<IndexTable*> index_tab{nullptr};
+    /// @brief Every table ever published, the live one last. Old generations
+    ///        are kept until index_clear(): a lock-free reader may still hold
+    ///        their pointer, and index_clear() is the one point where no
+    ///        reader is in flight (its contract). They sum to less than the
+    ///        live table, so this is bounded by the same factor of two.
+    static inline std::vector<std::unique_ptr<IndexTable>> index_generations;
 };
 
 /**
@@ -979,6 +957,35 @@ class TabCstVal2Holder
     // a shared array is a range test on its values pointer
     // (is_cst_val2_ptr), and the array for a given second value is found in
     // the registry (find_cst_val2_ptr) -- see GlobalVecHolder::region_*.
+
+    /**
+     * @brief The shared array for @p second_v, registering it if new.
+     *
+     * @param second_v The constant to compress to.
+     * @param ptr_second_value Out-parameter: the caller's own copy of the value,
+     *        written before anything else.
+     * @return The value's slot (an identifier, never dereferenced). Never null.
+     *
+     * @note The chunk adopts the array by storing it as its values pointer
+     *       (the compressor's CAS); nothing else is recorded per chunk.
+     *
+     * @details Hot path -- @p second_v already registered, which is every type-2
+     *          chunk after the first one per value -- is a lock-free index
+     *          probe and nothing else. Cold path takes
+     *          GlobalVecHolder::insert_mutex and is then plain sequential code:
+     *          no speculative allocate-then-discard, no slot CAS, no
+     *          segment-append CAS, no recursive retry with a resume index.
+     *
+     * @note The O(N) chain scan survives only behind
+     *       GlobalVecHolder::index_degraded, i.e. the case where the index can
+     *       no longer answer authoritatively.
+     */
+    [[nodiscard]] T* find_or_set_ind_cst_val2(T second_v, SecondValueRef<T> ptr_second_value)
+    {
+        T* buf = find_or_register(second_v);
+        ptr_second_value.set_from_array(buf);
+        return buf;
+    }
 
     /// @brief Is @p ptr one of this type's shared second-value arrays?
     /// @note `is_cst_val2()` of Chunk2A: one relaxed load of the region base
@@ -1023,35 +1030,6 @@ class TabCstVal2Holder
     static void create()
     {
         global_vec_holder::init();
-    }
-
-    /**
-     * @brief The shared array for @p second_v, registering it if new.
-     *
-     * @param second_v The constant to compress to.
-     * @param ptr_second_value Out-parameter: the caller's own copy of the value,
-     *        written before anything else.
-     * @return The value's slot (an identifier, never dereferenced). Never null.
-     *
-     * @note The chunk adopts the array by storing it as its values pointer
-     *       (the compressor's CAS); nothing else is recorded per chunk.
-     *
-     * @details Hot path -- @p second_v already registered, which is every type-2
-     *          chunk after the first one per value -- is a lock-free index
-     *          probe and nothing else. Cold path takes
-     *          GlobalVecHolder::insert_mutex and is then plain sequential code:
-     *          no speculative allocate-then-discard, no slot CAS, no
-     *          segment-append CAS, no recursive retry with a resume index.
-     *
-     * @note The O(N) chain scan survives only behind
-     *       GlobalVecHolder::index_degraded, i.e. the case where the index can
-     *       no longer answer authoritatively.
-     */
-    [[nodiscard]] T* find_or_set_ind_cst_val2(T second_v, SecondValueRef<T> ptr_second_value)
-    {
-        T* buf = find_or_register(second_v);
-        ptr_second_value.set_from_array(buf);
-        return buf;
     }
 
     // ── Identifiers: an array's index in the region, 1-based; 0 = none ────
@@ -1222,6 +1200,15 @@ class TabCstVal2Holder
 template <>
 class TabCstVal2Holder<bool>
 {
+  private:
+    /// @brief All `true`, evaluated at compile time so #m_ptr is constant-initialised.
+    [[nodiscard]] static constexpr std::array<bool, cst_buffer_size> all_true() noexcept
+    {
+        std::array<bool, cst_buffer_size> arr{};
+        arr.fill(true);
+        return arr;
+    }
+
   public:
     /// @brief Nothing to create. @see TabCstVal2Holder::create
     static void create() {}
@@ -1245,16 +1232,6 @@ class TabCstVal2Holder<bool>
         return m_ptr.data();
     }
 
-  private:
-    /// @brief All `true`, evaluated at compile time so #m_ptr is constant-initialised.
-    [[nodiscard]] static constexpr std::array<bool, cst_buffer_size> all_true() noexcept
-    {
-        std::array<bool, cst_buffer_size> arr{};
-        arr.fill(true);
-        return arr;
-    }
-
-  public:
     /// @brief The one shared array, all `true`.
     static inline std::array<bool, cst_buffer_size> m_ptr = all_true();
 };

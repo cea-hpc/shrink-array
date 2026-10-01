@@ -61,8 +61,9 @@ namespace shrink_array
  *          into false sharing; alignas(128) gives each word a line of its own
  *          (128 bytes covers the 128-byte sectored lines of recent server CPUs).
  */
-struct alignas(128) PaddedDirtyWord
+class alignas(128) PaddedDirtyWord
 {
+  public:
     std::atomic<uint64_t> word{0};
 };
 
@@ -87,14 +88,6 @@ class DirtyBitsetSupport;
 template <typename Derived>
 class DirtyBitsetSupport<Derived, true>
 {
-    // One bit per CHUNK, whatever the chunk size: the 64 below is the width of
-    // a word (64 chunks per word), not a chunk geometry. chunk_idx >> 6 and
-    // chunk_idx & 63 read like the decalage / modulo of a 64-element chunk,
-    // which they are not.
-    static constexpr int kChunksPerWord = 64;                 ///< Bits in a uint64_t word.
-    static constexpr int kWordShift     = 6;                  ///< log2(kChunksPerWord).
-    static constexpr int kBitInWordMask = kChunksPerWord - 1; ///< chunk_idx -> bit within its word.
-
   public:
     /**
      * @brief Mark a chunk as having received a deferred operation.
@@ -239,6 +232,14 @@ class DirtyBitsetSupport<Derived, true>
     }
 
   private:
+    // One bit per CHUNK, whatever the chunk size: the 64 below is the width of
+    // a word (64 chunks per word), not a chunk geometry. chunk_idx >> 6 and
+    // chunk_idx & 63 read like the decalage / modulo of a 64-element chunk,
+    // which they are not.
+    static constexpr int kChunksPerWord = 64;                 ///< Bits in a uint64_t word.
+    static constexpr int kWordShift     = 6;                  ///< log2(kChunksPerWord).
+    static constexpr int kBitInWordMask = kChunksPerWord - 1; ///< chunk_idx -> bit within its word.
+
     /// @brief The "some bit was set since the last clear" flag: the padded word
     ///        right after the bits (so it moves and swaps with them).
     /// @pre bitset_ is allocated.

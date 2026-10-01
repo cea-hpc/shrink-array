@@ -797,8 +797,9 @@ namespace internal
 {
 /// @brief Pointer order: std::less is the one comparison guaranteed total on pointers.
 template <typename T>
-struct PtrLess
+class PtrLess
 {
+  public:
     /// @brief Compare two pointers with std::less.
     /// @return true when @p lhs orders before @p rhs.
     static bool operator()(const T* lhs, const T* rhs) noexcept
@@ -1024,8 +1025,9 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
     // Heads of the k-way merge: (pointer, bucket, position), min-heap on
     // (pointer, bucket) so that a pointer present in two buckets comes out
     // lower bucket first -- the repeat is then always the higher one.
-    struct Head
+    class Head
     {
+      public:
         T*          p;
         std::size_t bucket;
         std::size_t pos;

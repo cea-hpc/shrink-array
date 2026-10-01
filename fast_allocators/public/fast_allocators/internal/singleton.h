@@ -39,6 +39,11 @@ class Singleton
         return *getInstance();
     }
 
+  protected:
+    // Atomic: getInstance() reads it without the mutex (double-checked locking).
+    static inline std::atomic<T*> unique_instance{nullptr};
+    static inline std::mutex      unique_instance_mutex;
+
   private:
     /// @brief The instance, created on first use (double-checked locking).
     /// @return Never null.
@@ -77,9 +82,4 @@ class Singleton
         const std::scoped_lock lock(unique_instance_mutex);
         delete unique_instance.exchange(nullptr, std::memory_order_acq_rel);
     }
-
-  protected:
-    // Atomic: getInstance() reads it without the mutex (double-checked locking).
-    static inline std::atomic<T*> unique_instance{nullptr};
-    static inline std::mutex      unique_instance_mutex;
 };

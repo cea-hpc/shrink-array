@@ -39,8 +39,9 @@ class ArrayChunkCore;
  *          (ArrayChunkCore::registry_key()) for all of them.
  */
 template <typename ChunkType>
-struct ArrayChunkFor
+class ArrayChunkFor
 {
+  public:
     using type = ArrayChunkCore<ChunkType>;
 };
 

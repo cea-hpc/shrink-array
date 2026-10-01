@@ -48,18 +48,22 @@
 
 /// Three doubles. The defaulted <=> gives the == every element type needs and
 /// the < chunk2 asks of a floating-point aggregate (value_less.h).
-struct Point3
+class Point3
 {
+  public:
+    auto operator<=>(const Point3&) const = default;
+
     double x, y, z;
-    auto   operator<=>(const Point3&) const = default;
 };
 
 /// A material index and a volume fraction: the state of a multi-material cell.
-struct Cell
+class Cell
 {
+  public:
+    auto operator<=>(const Cell&) const = default;
+
     std::int32_t material;
     float        fraction;
-    auto         operator<=>(const Cell&) const = default;
 };
 
 /// @brief Print @p p as "(x, y, z)".

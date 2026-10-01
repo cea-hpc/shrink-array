@@ -187,8 +187,9 @@ static void mix_other(C& c, const O& o, long j, long i)
 }
 
 template <typename T>
-struct Scenario
+class Scenario
 {
+  public:
     T second;
     void (*chain)(Array<T>&, long);
     void (*chain_ref)(std::vector<T>&, long);
