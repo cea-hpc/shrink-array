@@ -455,6 +455,84 @@ int check_range_ops(const char* label, long N)
     return bad ? 1 : 0;
 }
 
+/// @brief A size that is not a power of two is refused -- by rechunk_to() on a
+///        filled array and on an empty one, and by set_chunk_size() -- and
+///        geometry, content and the ambient size stay as they were. The
+///        index split is a shift and a mask: 48 gave a shift of 5 with a mask
+///        of 47, and the refill freed a buffer still in use. A legal
+///        re-chunk must still work afterwards.
+int check_non_pow2_refused(const char* label)
+{
+    const std::string lab_s = pass_label(label);
+    label                   = lab_s.c_str();
+
+    const long          N = 100000;
+    Array<double>       arr(N);
+    std::vector<double> ref(N);
+    maybe_set_second_value(arr, 1.0);
+    for_each_index(N,
+                   [&](long i)
+                   {
+                       const double v = double((i / 700) % 3);
+                       arr[i]         = v;
+                       ref[i]         = v;
+                   });
+    const unsigned old_size = arr.chunk_size();
+    const unsigned ambient  = active_chunk_size();
+
+    int bad = 0;
+    for (const unsigned s : {48u, 96u, 3u, old_size + 1u})
+    {
+        arr.rechunk_to(s);
+        if (arr.chunk_size() != old_size)
+        {
+            printf("[%s/%s] FAIL: rechunk_to(%u) applied: geometry %u -> %u\n", variant_name(), label, s, old_size,
+                   arr.chunk_size());
+            ++bad;
+        }
+    }
+    const long mism = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
+    if (mism)
+    {
+        printf("[%s/%s] FAIL: %ld element(s) changed by the refused re-chunks\n", variant_name(), label, mism);
+        ++bad;
+    }
+
+    Array<double>  empty(0);
+    const unsigned e0 = empty.chunk_size();
+    empty.rechunk_to(48u);
+    empty.set_chunk_size(96u);
+    if (empty.chunk_size() != e0)
+    {
+        printf("[%s/%s] FAIL: empty array: geometry %u -> %u\n", variant_name(), label, e0, empty.chunk_size());
+        ++bad;
+    }
+    if (active_chunk_size() != ambient)
+    {
+        printf("[%s/%s] FAIL: ambient size %u -> %u\n", variant_name(), label, ambient, active_chunk_size());
+        ++bad;
+    }
+
+    // The refusals left the array usable: a legal re-chunk, content intact.
+    arr.rechunk_to(old_size * 2u);
+    const long after = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
+    if (arr.chunk_size() != old_size * 2u || after)
+    {
+        printf("[%s/%s] FAIL: legal rechunk_to(%u) afterwards: geometry %u, %ld mismatch(es)\n", variant_name(),
+               label, old_size * 2u, arr.chunk_size(), after);
+        ++bad;
+    }
+    // Back to the case's start geometry for the next pass.
+    set_active_chunk_size(ambient);
+    set_thread_chunk_size(ambient);
+
+    if (!bad)
+        printf("[%s/%s] OK: 48/96/3/%u refused (filled and empty arrays), content and geometry kept, "
+               "%u -> %u still works\n",
+               variant_name(), label, old_size + 1u, old_size, old_size * 2u);
+    return bad ? 1 : 0;
+}
+
 namespace
 {
 /// @brief One case: its name (--case), the geometry it starts from, its body.
@@ -578,6 +656,8 @@ int main(int argc, char** argv)
              return check_invariance<double>(
                  "val2-grow", N, 2048, [](long i) -> double { return double((i / 5000) % 3); }, /*sv_value=*/2.0);
          }},
+        // A size that is not a power of two: refused, nothing changed.
+        {"non-pow2-refused", 512, [] { return check_non_pow2_refused("non-pow2-refused"); }},
         // Shrink with val2 (queue never read past S', must pass).
         {"val2-shrink", 512,
          [&]

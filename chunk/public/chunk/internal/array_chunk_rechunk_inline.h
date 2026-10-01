@@ -139,6 +139,20 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     if (new_size == old_size || new_size == 0)
         return;
 
+    // The index split is a shift and a mask: a size that is not a power of
+    // two (48: shift 5, mask 47) sends two elements to one slot, and the
+    // refill below -- which assumes one geometry tiles the other exactly --
+    // frees a buffer still in use. Refused, with a message in EVERY build:
+    // a caller bug, on a cold path (the cst_buffer_size refusal below is
+    // silent outside check builds, and a test once failed on it with no
+    // explanation).
+    if (!is_valid_chunk_size(new_size))
+    {
+        std::fprintf(stderr, "[RECHUNK] rechunk_to(%u) refused: a chunk size must be a power of two\n", new_size);
+        std::fflush(stderr);
+        return;
+    }
+
     // SAFETY: the shared constant buffers (cst_val1 / cst_val2) are sized
     // cst_buffer_size (the dynamic-mode ceiling). A chunk wider than that
     // would read those buffers out of bounds, so refuse the re-chunk.

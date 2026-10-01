@@ -143,7 +143,8 @@ if (CHUNK_BUILD_DYN)
         # must match the case table of rechunk_validation.cpp -- an unknown
         # --case fails the test, so a drift shows up at once.
         foreach(_case coexistence range-ops scale-64-to-tgt mostly-constant sin-quantized
-                      shrink-to-smaller all-same all-different val2-grow val2-shrink)
+                      shrink-to-smaller all-same all-different val2-grow val2-shrink
+                      non-pow2-refused)
           add_test(NAME ${_tgt}_${_case} COMMAND ${_tgt} --case ${_case})
           set_property(TEST ${_tgt}_${_case} PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
           set_property(TEST ${_tgt}_${_case} PROPERTY LABELS validation)

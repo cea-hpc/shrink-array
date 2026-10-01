@@ -64,6 +64,7 @@
 #include "chunk/config.h"
 #include "chunk/internal/func_p2.h"           // log2int (constexpr, also usable at run time)
 #include "chunk/internal/chunk_size_config.h" // __chunk_size / __decalage_chunk / __modulo_chunk
+#include "chunk/internal/invariant_check.h"   // INVARIANT_FAILED (non-power-of-two geometry)
 
 namespace shrink_array
 {
@@ -111,10 +112,31 @@ inline thread_local bool t_birth_at_active_size = false;
  */
 void register_runtime_chunk_size(unsigned int size);
 
+/**
+ * @brief Whether @p size can be a chunk geometry: a power of two, not 0.
+ * @details The index split is a shift and a mask (ChunkSizePolicy::set_size):
+ *          for 48, log2int gives a shift of 5 and the mask is 47 -- two
+ *          elements on one slot, and a re-chunk refill that frees a buffer
+ *          still in use. The public entry points (rechunk_to, set_chunk_size)
+ *          refuse such a size; set_size() and set_active_chunk_size() stop
+ *          on it in check builds.
+ */
+[[nodiscard]] constexpr bool is_valid_chunk_size(unsigned int size) noexcept
+{
+    return size != 0u && (size & (size - 1u)) == 0u;
+}
+
 /// @brief Set the process-wide active chunk size and register it with register_runtime_chunk_size().
-/// @param size Chunk size, in elements.
+/// @param size Chunk size, in elements: a power of two (stops a check build otherwise).
 inline void set_active_chunk_size(unsigned int size) noexcept
 {
+    if constexpr (build_config::any_check)
+    {
+        if (!is_valid_chunk_size(size)) [[unlikely]]
+            INVARIANT_FAILED("set_active_chunk_size({}): a chunk size must be a power of two "
+                             "(the index split is a shift and a mask)",
+                             size);
+    }
     g_active_chunk_size = size;
     register_runtime_chunk_size(size);
 }
@@ -275,6 +297,15 @@ struct DynamicChunkSize
     ///        active size. @p size must be a power of two.
     void set_size(unsigned int size) noexcept
     {
+        // Last net: rechunk_to() and set_chunk_size() refuse such a size
+        // before reaching here (is_valid_chunk_size).
+        if constexpr (build_config::any_check)
+        {
+            if (!is_valid_chunk_size(size)) [[unlikely]]
+                INVARIANT_FAILED("ChunkSizePolicy::set_size({}): not a power of two -- shift {} with mask {} "
+                                 "would send two elements to one slot",
+                                 size, log2int(static_cast<std::size_t>(size)), size - 1u);
+        }
         size_               = size;
         decalage_           = static_cast<unsigned int>(log2int(static_cast<std::size_t>(size)));
         modulo_             = size - 1u;
