@@ -867,7 +867,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @return Whatever Base::write_with_optional_lock_impl() returns.
      */
     template <typename WriteFn>
-    bool write_with_optional_lock(WriteFn write_fn) noexcept
+    FORCE_INLINE bool write_with_optional_lock(WriteFn write_fn) noexcept
     {
         const auto lbd_info = [this]
         {

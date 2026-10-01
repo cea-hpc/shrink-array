@@ -34,6 +34,7 @@
 #include "chunk/internal/element_access.h" // elem_get / elem_set, is_packed_bit_v: Bit buffers are words of bits
 #include "chunk/config.h"
 #include "chunk/internal/chunk_stats.h" // increm_chunk_* in the bodies (dependent calls the include tools cannot attribute)
+#include "chunk/internal/def_force_inline.h" // FORCE_INLINE: the write engine and its wrappers
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 #include "chunk/internal/proxy_operators.h"
@@ -231,6 +232,45 @@ struct ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSuppor
     static inline std::vector<std::vector<std::atomic<char>>> tab_is_inside_chunk_list_to_compress;
 };
 
+namespace internal
+{
+/**
+ * @brief A proxy's handle on its chunk's values pointer (OpenMP builds):
+ *        every read is load(ACQUIRE).
+ *
+ * @details The pointer publishes a buffer -- filled, then values_store(release)
+ *          -- so a reader needs acquire, as ChunkBase::values_load() does. It
+ *          used to be a plain std::atomic<T*>&, and every use (values[num],
+ *          casts, `T* v = values`) went through its implicit conversion:
+ *          seq_cst, which no ordering here needs -- the Dekker handshake has
+ *          its own fences on the writer flags. On AArch64 with RCpc (Grace)
+ *          acquire is LDAPR instead of LDAR: it does not wait for the earlier
+ *          STLR stores. NOT relaxed: nothing else orders a writer with another
+ *          thread's materialisation of the buffer.
+ *
+ *          Implicitly built from the chunk's atomic, implicitly converted to
+ *          T*: every existing spelling (subscript, +, ==, casts, T* arguments)
+ *          compiles unchanged. A reference, like the member it replaces: the
+ *          chunk may reallocate, so each use reloads.
+ */
+template <typename T>
+class AcquireValuesRef
+{
+  public:
+    // NOLINTNEXTLINE(google-explicit-constructor): built from chunk.values at every proxy construction
+    AcquireValuesRef(std::atomic<T*>& ptr) noexcept : ptr_(ptr) {}
+
+    // NOLINTNEXTLINE(google-explicit-constructor): stands for the T* it holds
+    operator T*() const noexcept
+    {
+        return ptr_.load(std::memory_order_acquire);
+    }
+
+  private:
+    std::atomic<T*>& ptr_;
+};
+} // namespace internal
+
 // ============================================================================
 // ProxyBase: Base CRTP class containing all shared functionality
 // ============================================================================
@@ -283,12 +323,15 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // ========================================================================
     // Common type aliases
     // ========================================================================
-    using atomic_ptr_ref_t = std::conditional_t<build_config::use_openmp, std::atomic<T*>&, T*&>;
+    // OpenMP: every read of the chunk's pointer is load(acquire), see
+    // internal::AcquireValuesRef (it was std::atomic<T*>&, read seq_cst).
+    using atomic_ptr_ref_t = std::conditional_t<build_config::use_openmp, internal::AcquireValuesRef<T>, T*&>;
 
     // ========================================================================
     // Common member variables
     // ========================================================================
-    /// @brief Reference to the chunk's value pointer, atomic under OpenMP.
+    /// @brief Reference to the chunk's value pointer; under OpenMP an
+    ///        AcquireValuesRef, read with acquire on every use.
     /// @warning A REFERENCE, captured at construction. The chunk may reallocate
     ///          under it, so a write path must reload through it, never cache it.
     atomic_ptr_ref_t values;
@@ -582,10 +625,17 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *         will be replayed later.
      * @note @p lbd_info runs BEFORE the body, and only when the metadata is
      *       actually needed -- it is a no-op without fast block compression.
+     * @note Force-inlined, like the const operator[] (array_chunk_base.h):
+     *       GNU otherwise emitted one out-of-line copy per (proxy, type,
+     *       write lambda) and every write paid a call into it. Only this
+     *       body is forced -- the slow-path callees (wait_out_compressor,
+     *       run_slow_path, flush_deferred, ...) stay ordinary calls; do NOT
+     *       turn this into SA_FLATTEN, which would copy them into every
+     *       write site.
      */
     template <typename WriteCallable, typename LBD_INFO>
-    [[nodiscard]] bool write_with_optional_lock_impl(WriteCallable&&           write_body,
-                                                     [[maybe_unused]] LBD_INFO lbd_info) noexcept;
+    [[nodiscard]] FORCE_INLINE bool write_with_optional_lock_impl(WriteCallable&&           write_body,
+                                                                  [[maybe_unused]] LBD_INFO lbd_info) noexcept;
 
     /**
      * @brief Has a thread's candidate list grown past the point where it must be drained?
@@ -659,7 +709,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @param write_fn Function to execute.
      */
     template <typename WriteFn>
-    [[nodiscard]] bool write_with_optional_lock_info(WriteFn write_fn)
+    [[nodiscard]] FORCE_INLINE bool write_with_optional_lock_info(WriteFn write_fn)
     {
         const auto lbd_info = [this]
         {
