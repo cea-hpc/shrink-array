@@ -54,9 +54,8 @@ class VectCom
 
 /// @brief A field of a "chunk" material: compressed where it is zero.
 template <typename T>
-class VectChunk : public VectCom<T>, public shrink_array::ArrayChunk<T>
+struct VectChunk : public VectCom<T>, public shrink_array::ArrayChunk<T>
 {
-  public:
     /// @brief @p mesh_size elements, all zero -- compressed.
     void create(int mesh_size)
     {
@@ -73,9 +72,8 @@ class VectChunk : public VectCom<T>, public shrink_array::ArrayChunk<T>
  *          the interface chunks are ever materialised.
  */
 template <typename T>
-class VectChunk2 : public VectCom<T>, public shrink_array::ArrayChunk2<T>
+struct VectChunk2 : public VectCom<T>, public shrink_array::ArrayChunk2<T>
 {
-  public:
     /// @brief The fraction of a pure cell, the second constant of the array.
     static constexpr T full = 1;
 
@@ -90,9 +88,8 @@ class VectChunk2 : public VectCom<T>, public shrink_array::ArrayChunk2<T>
 
 /// @brief An array of a "vector" material: a plain std::vector.
 template <typename T>
-class Vect : public VectCom<T>, public std::vector<T>
+struct Vect : public VectCom<T>, public std::vector<T>
 {
-  public:
     /// @brief @p mesh_size elements, all zero.
     void create(int mesh_size)
     {

@@ -61,9 +61,8 @@ namespace shrink_array
  *          into false sharing; alignas(128) gives each word a line of its own
  *          (128 bytes covers the 128-byte sectored lines of recent server CPUs).
  */
-class alignas(128) PaddedDirtyWord
+struct alignas(128) PaddedDirtyWord
 {
-  public:
     std::atomic<uint64_t> word{0};
 };
 

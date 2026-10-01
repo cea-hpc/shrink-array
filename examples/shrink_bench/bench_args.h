@@ -29,9 +29,8 @@
 #include "bench_int.h" // Int: the sizes this struct carries
 
 /// @brief Everything the command line can set.
-class BenchArgs
+struct BenchArgs
 {
-  public:
     bool no_io_v = false; ///< --no_io
     /// --compress: bzip2 the reference files written by the vector baseline and
     /// read the .bz2 oracle back. Off by default: the check runs work on the

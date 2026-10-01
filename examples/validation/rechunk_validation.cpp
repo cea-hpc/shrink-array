@@ -539,9 +539,8 @@ int check_non_pow2_refused(const char* label)
 namespace
 {
 /// @brief One case: its name (--case), the geometry it starts from, its body.
-class Case
+struct Case
 {
-  public:
     const char*          name;
     unsigned             start_size;
     std::function<int()> run;

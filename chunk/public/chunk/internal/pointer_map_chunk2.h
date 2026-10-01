@@ -69,9 +69,8 @@ namespace shrink_array
 
 /// @brief Names the map from a second value to its inf_array tuple (T, int, int), ordered by ValueLess<T>.
 template <typename T>
-class ValueToInfTupleMapHelper
+struct ValueToInfTupleMapHelper
 {
-  public:
     using inf_array_t = std::tuple<T, int, int>;
 
     // Keyed by the second value, ordered by ValueLess (value_less.h).

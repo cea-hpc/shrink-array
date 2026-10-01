@@ -102,9 +102,8 @@ inline std::atomic<std::size_t>& reclaim_entered() noexcept
 ///          line on all the other cores (false sharing; 36% of a 64-thread
 ///          run attributed to get_info_second_value, a read-only function).
 ///          128 rather than 64: adjacent-line prefetch, and 128-byte lines.
-class alignas(128) IsolatedCounter
+struct alignas(128) IsolatedCounter
 {
-  public:
     std::atomic<std::size_t> v{0};
 };
 static_assert(sizeof(IsolatedCounter) == 128, "IsolatedCounter must fill its alignment");
@@ -445,9 +444,8 @@ class SlabArena
 
   private:
     /// @brief One mmap reservation, as a half-open address range.
-    class Region
+    struct Region
     {
-      public:
         std::uintptr_t begin; ///< First address of the mapping.
         std::uintptr_t end;   ///< One past its last address.
     };

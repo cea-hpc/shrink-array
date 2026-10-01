@@ -117,7 +117,12 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     void compress()
     {
         if (CHUNK_PMP_IN_PARALLEL_REGION)
+        {
+            // Inside the caller's region: other threads may be reading, so
+            // the buffers released wait for a grace period (read_reclaim.h).
+            const read_reclaim::PassScope pass_scope;
             derived().compress_int();
+        }
         else
         {
 #pragma omp parallel
@@ -204,11 +209,6 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         }
     }
 
-            // Inside the caller's region: other threads may be reading, so
-            // the buffers released wait for a grace period (read_reclaim.h).
-            const read_reclaim::PassScope pass_scope;
-        {
-        }
   private:
     /// @brief Is the chunk holding element @p i compressed to the first value?
     [[nodiscard]] bool is_cst_val1(ind_type i) const noexcept

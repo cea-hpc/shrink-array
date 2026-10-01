@@ -44,9 +44,8 @@ namespace internal
 /// @brief One repeat seen by the teardown dedup phase: skip @p ptr when freeing bucket @p bucket.
 /// @see ManagerChunkParallelImpl::clear_list_block_free_dedup
 template <typename T>
-class TeardownRepeat
+struct TeardownRepeat
 {
-  public:
     std::size_t bucket;
     T*          ptr;
 };
@@ -64,12 +63,11 @@ class TeardownRepeat
  * @tparam IsDynamic Whether runtime geometry is compiled in.
  */
 template <bool IsDynamic = build_config::chunk_dynamic>
-class ManagerChunkDynInterface; // primary left undefined: only the 2 specializations exist
+struct ManagerChunkDynInterface; // primary left undefined: only the 2 specializations exist
 
 template <>
-class ManagerChunkDynInterface<true>
+struct ManagerChunkDynInterface<true>
 {
-  public:
     virtual ~ManagerChunkDynInterface() = default;
 
     /// @brief Declare a runtime chunk geometry to this type's allocators.
@@ -78,9 +76,8 @@ class ManagerChunkDynInterface<true>
 
 /// @brief Static-geometry builds: nothing to declare.
 template <>
-class ManagerChunkDynInterface<false>
+struct ManagerChunkDynInterface<false>
 {
-  public:
     virtual ~ManagerChunkDynInterface() = default;
 };
 
@@ -96,12 +93,11 @@ class ManagerChunkDynInterface<false>
  * @tparam UseOpenMP Whether the parallel surface is the one compiled in.
  */
 template <bool UseOpenMP = build_config::use_openmp>
-class ManagerChunkParallelInterface; // primary left undefined: only the 2 specializations exist
+struct ManagerChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
 template <>
-class ManagerChunkParallelInterface<true>
+struct ManagerChunkParallelInterface<true>
 {
-  public:
     virtual ~ManagerChunkParallelInterface() = default;
 
     // --- per-thread allocator and free-list surface ---
@@ -161,9 +157,8 @@ class ManagerChunkParallelInterface<true>
 
 /// @brief Serial builds: one allocator, no per-thread free lists, nothing to flush.
 template <>
-class ManagerChunkParallelInterface<false>
+struct ManagerChunkParallelInterface<false>
 {
-  public:
     virtual ~ManagerChunkParallelInterface() = default;
 
     /// @brief Set the single allocator's geometry.
@@ -187,9 +182,8 @@ class ManagerChunkParallelInterface<false>
  *          vs single), and the dynamic-geometry build adds register_chunk_size().
  *          Every implementation lives in ManagerChunk below.
  */
-class ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtual ManagerChunkParallelInterface<>
+struct ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtual ManagerChunkParallelInterface<>
 {
-  public:
     ~ManagerChunkInt() override = default;
 
     // --- present in every build ---
@@ -249,19 +243,18 @@ class ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtua
  *          down-cast: max_thr is a per-instance const, not a static.
  */
 template <template <typename> typename CHUNK_T, typename T, bool IsDynamic = build_config::chunk_dynamic>
-class ManagerChunkDynImpl; // primary left undefined: only the 2 specializations exist
+struct ManagerChunkDynImpl; // primary left undefined: only the 2 specializations exist
 
 /// @brief Dynamic-geometry builds: implements register_chunk_size().
 template <template <typename> typename CHUNK_T, typename T>
-class ManagerChunkDynImpl<CHUNK_T, T, true> : public virtual ManagerChunkDynInterface<true>
+struct ManagerChunkDynImpl<CHUNK_T, T, true> : public virtual ManagerChunkDynInterface<true>
 {
-  public:
     void register_chunk_size(unsigned int size, int block_size) override;
 };
 
 /// @brief Static-geometry builds: nothing to implement.
 template <template <typename> typename CHUNK_T, typename T>
-class ManagerChunkDynImpl<CHUNK_T, T, false> : public virtual ManagerChunkDynInterface<false>
+struct ManagerChunkDynImpl<CHUNK_T, T, false> : public virtual ManagerChunkDynInterface<false>
 {
 };
 
@@ -343,7 +336,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     // they are BASES, so protected access does not reach it -- hence friendship
     // rather than a public accessor, which would widen the surface for everyone.
     template <template <typename> class, typename, bool>
-    friend class ManagerChunkDynImpl;
+    friend struct ManagerChunkDynImpl;
     template <template <typename> class, typename, bool>
     friend class ManagerChunkParallelImpl;
 
@@ -351,9 +344,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     using p_vector_char = std::vector<char>*;
     using inf_array_t   = std::tuple<T, int, p_vector_char>;
 
-    class alignas(128) PerThreadFreeList
+    struct alignas(128) PerThreadFreeList
     {
-      public:
         std::vector<T*> list;
     };
 

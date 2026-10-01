@@ -51,26 +51,26 @@ namespace shrink_array
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
 template <typename T, typename ChunkType>
-class CompressionManager;
+struct CompressionManager;
 
 template <typename T>
-class ArithmeticProxyContext;
+struct ArithmeticProxyContext;
 
 template <typename T, typename Op>
-class ArithmeticOperationProxyContext;
+struct ArithmeticOperationProxyContext;
 
 template <typename T>
 class Proxy;
 
 /// @brief Whether T is a Proxy\<U\> (Proxy2 and Proxy2A are not): false by default.
 template <typename T>
-class is_simple_proxy : public std::false_type
+struct is_simple_proxy : public std::false_type
 {
 };
 
 /// @brief Proxy<T> is a simple proxy.
 template <typename T>
-class is_simple_proxy<Proxy<T>> : public std::true_type
+struct is_simple_proxy<Proxy<T>> : public std::true_type
 {
 };
 namespace internal
@@ -645,7 +645,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return sz > szm;
     }
 
-        check_not_stale();
     // ========================================================================
     // Common member variables
     // ========================================================================
@@ -688,9 +687,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @details Wrapper for % operator to fit execute_arithmetic_compound_operation interface
      */
 
-    class modulo
+    struct modulo
     {
-      public:
         /**
          * @brief Apply modulo operation
          * @param lhs Dividend
@@ -793,6 +791,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          the entry point behind `operator T()`.
     [[nodiscard]] T read_pure() const noexcept
     {
+        check_not_stale();
         chunk.reader_sync(num);
         return chunk.read_value(num); // read_value accounts the read in stats
     }

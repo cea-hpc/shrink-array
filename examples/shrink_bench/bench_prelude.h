@@ -180,9 +180,8 @@ inline Int bench_sched_block_env() noexcept
 }
 
 /// @brief Block size and aligned start of a [start, end) worksharing loop.
-class BenchSched
+struct BenchSched
 {
-  public:
     Int blk;  ///< iterations per block (the schedule's chunk size)
     Int base; ///< first iteration: start rounded down to a multiple of blk
 };

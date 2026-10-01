@@ -75,9 +75,8 @@ using namespace shrink_array;
 /// Three doubles, no padding: the mesh-point case. The defaulted <=> is what
 /// chunk2 asks of a floating-point struct (it orders second values, see
 /// value_less.h); chunk and chunk2a need == alone.
-class Point3
+struct Point3
 {
-  public:
     auto operator<=>(const Point3&) const = default;
 
     double x, y, z;
@@ -85,9 +84,8 @@ class Point3
 
 /// A tag byte then a double: seven bytes of padding inside the value, which
 /// a defaulted operator== ignores and a memcmp would not.
-class Padded
+struct Padded
 {
-  public:
     auto operator<=>(const Padded&) const = default;
 
     char   tag;
@@ -108,9 +106,8 @@ using Quad = std::array<float, 4>;
 
 /// Two shorts: a 4-byte element, smaller than a double. No operator<: every
 /// bit is value (no padding, no floating point), chunk2 orders it by bytes.
-class Pair16
+struct Pair16
 {
-  public:
     bool operator==(const Pair16&) const = default;
 
     std::int16_t a, b;
@@ -154,9 +151,8 @@ void maybe_set_second_value(Arr& a, const Val& v)
 constexpr long kRun = 4096;
 
 template <typename T>
-class Scenario
+struct Scenario
 {
-  public:
     T second;
     T refill;
     T (*varied)(long i);

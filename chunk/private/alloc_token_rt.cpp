@@ -64,9 +64,8 @@ namespace
 
 /// @brief One token's counters. `key` is token + 1, so that 0 means "empty
 ///        slot" while token 0 (the untyped C allocations) stays representable.
-class Slot
+struct Slot
 {
-  public:
     std::atomic<std::uint64_t> key{0};
     std::atomic<std::uint64_t> allocs{0};
     std::atomic<std::uint64_t> bytes{0};
@@ -111,9 +110,8 @@ inline void note(std::uint64_t token, std::size_t bytes) noexcept
 ///        that contain pointers. (SIZE_MAX / 2, as in LLVM's AllocToken pass.)
 constexpr std::uint64_t kPointerHalf = UINT64_MAX / 2;
 
-class Entry
+struct Entry
 {
-  public:
     std::uint64_t token;
     std::uint64_t allocs;
     std::uint64_t bytes;

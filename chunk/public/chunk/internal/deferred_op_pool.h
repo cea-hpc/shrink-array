@@ -56,9 +56,8 @@ enum class ArenaKind
 ///        behind the same call surface (init/set_arena no-ops, every
 ///        element "free-able").
 template <typename T>
-class TCTypeAllocator
+struct TCTypeAllocator
 {
-  public:
     /// @brief No-op.
     void init(size_t, size_t, size_t) {}
     /// @brief No-op.
@@ -86,9 +85,8 @@ namespace shrink_array
 
 /// @brief A queued write, type-erased: replayed by write_body(), returned to
 ///        its pool by destroy().
-class DeferredOperationBase
+struct DeferredOperationBase
 {
-  public:
     virtual ~DeferredOperationBase() noexcept = default;
 
     /// @brief Replay the write.
@@ -98,9 +96,8 @@ class DeferredOperationBase
 };
 
 /// @brief Deleter of DeferredOpPtr: does nothing with the pointer.
-class DeferredOpDeleter
+struct DeferredOpDeleter
 {
-  public:
     /// @brief No-op: the operation is not destroyed or freed here.
     void operator()(DeferredOperationBase* op) const noexcept
     {
@@ -121,9 +118,8 @@ using DeferredOpPtr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
 
 /// @brief Type-erased pool of one block size (a FastAllocatorConcrete per
 ///        object type, found by AllocatorRegistry).
-class FastAllocatorBase
+struct FastAllocatorBase
 {
-  public:
     virtual ~FastAllocatorBase() = default;
 
     /// @brief Take a block (uninitialised).
@@ -159,9 +155,8 @@ class FastAllocatorBase
  * them. This is portable — it does not rely on -fno-ipa-icf at the build level.
  */
 template <typename T>
-class DeferredByteAllocSlot
+struct DeferredByteAllocSlot
 {
-  public:
     TCTypeAllocator<std::byte> alloc;
     bool                       initialized = false;
 };
@@ -176,9 +171,8 @@ class DeferredByteAllocSlot
  * type's free list disjoint and the free_list() bodies non-identical.
  */
 template <typename T>
-class DeferredFreeListSlot
+struct DeferredFreeListSlot
 {
-  public:
     DeferredFreeListSlot() = default;
     // Owns the parked blocks in std-alloc builds (see the destructor): a copy
     // would delete them twice.
@@ -467,28 +461,26 @@ class FastAllocatorConcrete : public FastAllocatorBase
 // Allocator Registry and Tags
 // ============================================================================
 
-class OpTag
+struct OpTag
 {
 };
 /// @brief Registry tag of the context allocators (CtxRegistry).
-class CtxTag
+struct CtxTag
 {
 };
 
 // FIX (op/ctx/value slab aliasing): map each registry tag to its arena so op and
 // ctx pools allocate slabs from disjoint address spaces.
 template <typename Tag>
-class arena_of_tag;
+struct arena_of_tag;
 template <>
-class arena_of_tag<OpTag>
+struct arena_of_tag<OpTag>
 {
-  public:
     static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Op;
 };
 template <>
-class arena_of_tag<CtxTag>
+struct arena_of_tag<CtxTag>
 {
-  public:
     static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Ctx;
 };
 

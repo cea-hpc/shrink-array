@@ -112,9 +112,8 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
     // only when) it processes rank thr — giving mutual exclusion on arr[thr]
     // while letting flushes on other ranks proceed in parallel.
     rank_flush_acquire(thr);
-    class RankFlushGuard
+    struct RankFlushGuard
     {
-      public:
         ~RankFlushGuard()
         {
             rank_flush_release(rank);
@@ -149,9 +148,8 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
     // No livelock: bounded inflight drain x no new admissions.
     Policy::announce_flush(); // counter + heavy barrier, one Dekker verb
     increm_chunk_gate_flush<ChunkType>();
-    class FlushFlagGuard
+    struct FlushFlagGuard
     {
-      public:
         ~FlushFlagGuard()
         {
             Policy::end_flush();
@@ -373,9 +371,8 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
         // that prevents two flushers from double-draining arr[r][chunk]; other
         // ranks' shards stay free so their flushes run concurrently.
         rank_flush_acquire(r);
-        class RankScopeGuard
+        struct RankScopeGuard
         {
-          public:
             ~RankScopeGuard()
             {
                 rank_flush_release(rank);
@@ -508,9 +505,8 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
     // shard lock flush_deferred / flush_chunk_all_ranks take). Owner-recursive;
     // uncontended in the common case. Held only for the single-entry erase.
     rank_flush_acquire(thr);
-    class RankFlushGuard
+    struct RankFlushGuard
     {
-      public:
         ~RankFlushGuard()
         {
             rank_flush_release(rank);

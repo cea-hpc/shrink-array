@@ -111,9 +111,8 @@ inline bool cst2_thp_advise() noexcept
  *       loops here rely on that rather than null-checking every slot.
  */
 template <typename T>
-class Segment
+struct Segment
 {
-  public:
     static constexpr int SIZE = 64; ///< Slots per segment.
 
     std::array<T*, SIZE> slots{};        ///< The shared arrays, one per registered value.
@@ -149,9 +148,8 @@ class TabCstVal2Holder;
 // keeps the value in the slot; the switch is for a use that is bound by
 // memory rather than by write throughput.
 template <typename T>
-class SecondValueTraits
+struct SecondValueTraits
 {
-  public:
     static constexpr bool indexed = build_config::second_value_indexed && sizeof(T) > 4;
     using slot_t                  = std::conditional_t<indexed, std::uint32_t, T>;
 };
@@ -166,9 +164,8 @@ class SecondValueTraits
  *          the null pointer was.
  */
 template <typename T>
-class SecondValueRef
+struct SecondValueRef
 {
-  public:
     using slot_t = SecondValueTraits<T>::slot_t;
 
     /// @brief The chunk's second value; T{} (== first_value, 0) when none.
@@ -221,9 +218,8 @@ class SecondValueRef
  *          there is no owner whose destructor could do the job.
  */
 template <typename T>
-class Sentinel
+struct Sentinel
 {
-  public:
     /// @brief Call GlobalVecHolder<T>::cleanup_all().
     ~Sentinel()
     {
@@ -332,9 +328,8 @@ class GlobalVecHolder
      * @note `used` is maintained by the single writer only; readers never
      *       touch it.
      */
-    class IndexTable
+    struct IndexTable
     {
-      public:
         // A value-initialised atomic pointer is null (C++20): no clearing loop.
         explicit IndexTable(std::size_t capacity) : cap(capacity), slots(capacity) {}
 

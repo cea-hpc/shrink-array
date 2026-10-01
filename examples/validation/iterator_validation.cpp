@@ -190,9 +190,8 @@ void fill(Arr& a, long N, Fn&& value)
 }
 
 /// @brief Mismatch reporter: counts every failure, prints the first few.
-class Report
+struct Report
 {
-  public:
     // C varargs on purpose: the format attribute keeps -Wformat checking
     // every call (a forwarded, non-literal format would not be checked).
     [[gnu::format(printf, 2, 3)]] void fail(const char* fmt, ...) // NOLINT(cert-dcl50-cpp)

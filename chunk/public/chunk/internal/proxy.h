@@ -547,9 +547,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     using Base::tab_is_inside_chunk_list_to_compress; ///< Global compression tracking array
 
     /// @brief Functor wrapping operator% for apply_compound_operation().
-    class modulo
+    struct modulo
     {
-      public:
         /// @brief Apply operator% to the two operands.
         /// @return lhs % rhs.
         constexpr T operator()(in_t<T> lhs, in_t<T> rhs) const noexcept
@@ -589,13 +588,6 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     // manage_full_zero() on the <..., false> (counter) specialisation.
 
     /**
-        this->check_not_stale();
-                    // A pure read, like element_at: inside a ReadSection, or a
-                    // pass in the region may release the buffer between the
-                    // pointer load and the element load (read_reclaim.h).
-                    const read_reclaim::ReadSection section;
-                    // raw-read: inside a read_reclaim::ReadSection
-        // raw-read: serial build (no OpenMP, no concurrent pass)
      * @brief Whether the owning chunk is currently compressed to its
      *        constant.
      * @return true if the chunk is compressed.
@@ -970,6 +962,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     operator T() const noexcept
     {
+        this->check_not_stale();
         if constexpr (chunk_config::stats)
         {
             increm_chunk_read<ChunkType>();
@@ -988,12 +981,18 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
                 using ArrayType = ArrayChunkFor_t<ChunkType>;
                 if (!static_cast<const ArrayType*>(ptr_on_array)->is_chunk_dirty(num_chunk)) [[likely]]
                 {
+                    // A pure read, like element_at: inside a ReadSection, or a
+                    // pass in the region may release the buffer between the
+                    // pointer load and the element load (read_reclaim.h).
+                    const read_reclaim::ReadSection section;
+                    // raw-read: inside a read_reclaim::ReadSection
                     return values[num];
                 }
             }
             return Base::read_pure();
         }
 
+        // raw-read: serial build (no OpenMP, no concurrent pass)
         return values[num];
     }
 

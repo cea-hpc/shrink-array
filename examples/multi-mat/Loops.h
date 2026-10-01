@@ -34,9 +34,8 @@
 #include "PMP.h"
 
 /// @brief Loop policy of the chunk materials: work-shared, never vectorised.
-class Loops
+struct Loops
 {
-  public:
     /// @brief `lbd(k)` for k in [kdeb, kfin), shared by the team, no barrier.
     template <typename LBD>
     static void omp_for_nowait_simd(int kdeb, int kfin, const LBD& lbd)
@@ -118,9 +117,8 @@ class Loops
 
 /// @brief Loop policy of the std::vector materials: work-shared and
 ///        vectorised (`omp simd`).
-class LoopsSimd
+struct LoopsSimd
 {
-  public:
     /// @copydoc Loops::omp_simd_foreach_int
     template <typename LBD, typename LL>
     static void omp_simd_foreach_int(const LL& ll, const LBD& lbd, int nn)

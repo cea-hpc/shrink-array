@@ -87,9 +87,8 @@ inline const bool g_eager = []
 inline bool g_building_rechunk_storage = false;
 
 /// @brief RAII scope for g_building_rechunk_storage.
-class RechunkStorageScope
+struct RechunkStorageScope
 {
-  public:
     /// @brief Set g_building_rechunk_storage.
     RechunkStorageScope() noexcept
     {
@@ -263,7 +262,7 @@ class RegistryKeyCanary
    [[maybe_unused]] std::uint64_t registry_key_canary_{0};
 };
 /// @brief Empty stand-in for RegistryKeyCanary when any_check is off.
-class NoRegistryKeyCanary
+struct NoRegistryKeyCanary
 {
 };
 using RegistryKeyCanaryBase = std::conditional_t<build_config::any_check, RegistryKeyCanary, NoRegistryKeyCanary>;

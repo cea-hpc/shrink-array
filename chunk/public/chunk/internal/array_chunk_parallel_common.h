@@ -99,9 +99,8 @@ class ParallelSupportCommon
  * @tparam Derived the concrete array type.
  */
 template <typename Derived>
-class ParallelSupportCommonSerial
+struct ParallelSupportCommonSerial
 {
-  public:
     /** @brief No-op: nothing is deferred without OpenMP. */
     void flush_pending_deferred_ops(bool = false) noexcept {}
 };

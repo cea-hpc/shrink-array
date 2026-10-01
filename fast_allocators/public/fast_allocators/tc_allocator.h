@@ -693,9 +693,8 @@ void sl_manage_full_empty(Node*&  block,
  * @details Every instance registers itself so a total can be taken across all
  *          element types without the reporting code knowing any of them.
  */
-class VTCTypeAllocator
+struct VTCTypeAllocator
 {
-  public:
     /// @brief Virtual, so the registry may hold any element type.
     virtual ~VTCTypeAllocator() = default;
 
@@ -1662,27 +1661,24 @@ class TCTypeCAllocator
  * @note <tt>NextPOT\<0\>\::value</tt> and <tt>NextPOT\<1\>\::value</tt> are both 1.
  */
 template <int i>
-class NextPOT
+struct NextPOT
 {
-  public:
     enum
     {
         value = 2 * NextPOT<(i + 1) / 2>::value
     };
 };
 template <>
-class NextPOT<0>
+struct NextPOT<0>
 {
-  public:
     enum
     {
         value = 1
     };
 };
 template <>
-class NextPOT<1>
+struct NextPOT<1>
 {
-  public:
     enum
     {
         value = 1
@@ -1695,27 +1691,24 @@ class NextPOT<1>
  * @note <tt>PrevPOT\<0\>\::value</tt> is 1, not 0.
  */
 template <int i>
-class PrevPOT
+struct PrevPOT
 {
-  public:
     enum
     {
         value = 2 * PrevPOT<i / 2>::value
     };
 };
 template <>
-class PrevPOT<0>
+struct PrevPOT<0>
 {
-  public:
     enum
     {
         value = 1
     };
 };
 template <>
-class PrevPOT<1>
+struct PrevPOT<1>
 {
-  public:
     enum
     {
         value = 1
@@ -1729,9 +1722,8 @@ class PrevPOT<1>
  * @note The "+1" is why callers subtract one to get a shift count.
  */
 template <int i>
-class CstLog2
+struct CstLog2
 {
-  public:
     enum
     {
         value = 1 + CstLog2<i / 2>::value
@@ -1739,9 +1731,8 @@ class CstLog2
 };
 
 template <>
-class CstLog2<1>
+struct CstLog2<1>
 {
-  public:
     enum
     {
         value = 1
@@ -1755,30 +1746,27 @@ class CstLog2<1>
  *          than spend an `int` per element on a small block.
  */
 template <int sz>
-class TypeFromSize
+struct TypeFromSize
 {
-  public:
     using Tindex = int;
 };
 
 template <>
-class TypeFromSize<2>
+struct TypeFromSize<2>
 {
-  public:
     using Tindex = short;
 };
 
 template <>
-class TypeFromSize<1>
+struct TypeFromSize<1>
 {
-  public:
     using Tindex = signed char;
 };
 
 
 /// @brief Maps an element type to the allocator that serves it. Specialised elsewhere.
 template <typename V>
-class TypeAllocator;
+struct TypeAllocator;
 
 /// @brief Page size, cached from the environment at startup.
 extern int __mem_page_size;
@@ -2029,7 +2017,7 @@ class TCAllocatorEB
 
 /// @brief Common base for the compile-time-geometry allocators. Carries nothing;
 ///        it exists so they can be held behind one pointer type.
-class VTCAllocatorEB
+struct VTCAllocatorEB
 {
 };
 

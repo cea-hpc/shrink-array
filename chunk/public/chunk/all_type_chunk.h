@@ -43,7 +43,7 @@ namespace shrink_array
 template <typename T>
 class SingletonChk;
 
-class ManagerChunkInt;
+struct ManagerChunkInt;
 
 /**
  * @brief Process-wide registry of the per-type chunk managers, reached as a singleton.
@@ -199,13 +199,12 @@ class AllTypeChunkParallelInterface<Derived, false>
  * @tparam Enabled build_config::chunk_dynamic.
  */
 template <typename Derived, bool Enabled = build_config::chunk_dynamic>
-class AllTypeChunkDynInterface; // primary left undefined: only the 2 specializations exist
+struct AllTypeChunkDynInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief Dynamic-geometry builds: chunk sizes are declared at run time via register_chunk_size().
 template <typename Derived>
-class AllTypeChunkDynInterface<Derived, true>
+struct AllTypeChunkDynInterface<Derived, true>
 {
-  public:
     /**
      * @brief Declares a chunk geometry to every type's manager.
      *
@@ -225,7 +224,7 @@ class AllTypeChunkDynInterface<Derived, true>
 
 /// @brief Fixed-geometry builds: no geometry to declare.
 template <typename Derived>
-class AllTypeChunkDynInterface<Derived, false>
+struct AllTypeChunkDynInterface<Derived, false>
 {
 };
 
@@ -237,7 +236,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     friend class SingletonChk<AllTypeChunk>;
     /// The dynamic-geometry policy records the sizes it declares (registered_sizes_).
     template <typename D, bool E>
-    friend class AllTypeChunkDynInterface;
+    friend struct AllTypeChunkDynInterface;
 
     /// The managers' interface, reached through Derived by the policies so
     /// that their bodies stay dependent (each build declares a different half).
