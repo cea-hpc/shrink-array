@@ -167,7 +167,8 @@ BenchArgs parse_bench_args(int argc, char* argv[])
                 print_help();
                 std::exit(0);
             }
-            std::cout << "Recognized argument: " << arg << "\n";
+            // No "Recognized argument" echo: one stdout line per flag was noise
+            // in the output the scripts parse, and the command line says it.
         }
         else
         {
