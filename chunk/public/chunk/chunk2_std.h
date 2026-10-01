@@ -168,7 +168,6 @@ struct ChunkSpec2
   public:
     static inline vec_array_chunk_size_max tab_m_ptr_cst_val2;
 
-  private:
     // mm_protect mode only: element count currently allocated at
     // tab_m_ptr_cst_val2[ind] (a raw mmap'd T*, unlike the plain-array mode
     // where each slot is a fixed cst_buffer_size std::array and always big
@@ -775,6 +774,19 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
      * \param apply true: compress the constant candidates; false: walk only.
      */
     static void compress_chunk_to_compress_bool(bool apply);
+
+    /// @brief One rank's share of compress_chunk_to_compress() for one second
+    ///        value: the body its region runs on each thread. Public for
+    ///        AllTypeChunk's single sweep region (ManagerChunk::sweep_rank).
+    static void compress_sweep_rank(int thr_rank, const inf_array_t& inf_array, bool apply)
+    {
+        compress_chunk_to_compress_in_par(thr_rank, inf_array, apply);
+    }
+    /// @brief Bool twin of compress_sweep_rank().
+    static void compress_sweep_rank_bool(int thr_rank, bool apply)
+    {
+        compress_chunk_to_compress_bool_in_par(thr_rank, apply);
+    }
 
     /*!
      * \brief Per-candidate verify-and-apply step, called once per chunk by

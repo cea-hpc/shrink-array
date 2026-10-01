@@ -43,6 +43,7 @@
 #include "chunk/config.h"
 #include "chunk/chunk_traits.h"
 #include "chunk/internal/crp_helper.h"      // crtp_cast_t
+#include "chunk/internal/in_t.h"            // in_t<T>: the captured state
 #include "chunk/internal/array_chunk_for.h" // ArrayChunkCore -- rechunk_all_to's registry keys
 
 namespace shrink_array
@@ -197,9 +198,9 @@ class RechunkSupport<Derived, true>
         return T{};
     }
     /** @brief Apply the captured state to the fresh array (default: no-op). */
-    void rechunk_seed_fresh(const T& /*state*/) {}
+    void rechunk_seed_fresh(in_t<T> /*state*/) {}
     /** @brief Post-swap fixup so the dying temporary does not take state with it (default: no-op). */
-    void rechunk_reown_after_swap(Derived& /*tmp*/, const T& /*state*/) {}
+    void rechunk_reown_after_swap(Derived& /*tmp*/, in_t<T> /*state*/) {}
     /** @brief Swap registry identity with the temporary (default: nothing to swap, succeeds). */
     bool rechunk_swap_identity(Derived& /*tmp*/)
     {
@@ -258,9 +259,9 @@ class RechunkSupport<Derived, false>
         return T{};
     }
     /** @brief No state to apply. */
-    void rechunk_seed_fresh(const T& /*state*/) {}
+    void rechunk_seed_fresh(in_t<T> /*state*/) {}
     /** @brief Nothing to re-own. */
-    void rechunk_reown_after_swap(Derived& /*tmp*/, const T& /*state*/) {}
+    void rechunk_reown_after_swap(Derived& /*tmp*/, in_t<T> /*state*/) {}
     /** @brief Nothing to swap; succeeds. */
     bool rechunk_swap_identity(Derived& /*tmp*/)
     {

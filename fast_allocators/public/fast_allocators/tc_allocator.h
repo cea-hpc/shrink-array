@@ -49,6 +49,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <cstdint>
+#include <limits> // std::numeric_limits: TCAllocatorEB's index range
 #include <cassert>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -1806,6 +1807,14 @@ struct TCAllocatorEB
     };
 
     using T = TypeFromSize<ElementSizePrev2>::Tindex;
+
+    // The free list stores an element INDEX of type T inside each freed
+    // element: T must fit in an element, and must count every element of the
+    // block (a signed char stops at 127, a short at 32767).
+    static_assert(sizeof(T) <= static_cast<std::size_t>(ElementSize),
+                  "TCAllocatorEB: the free-list index does not fit in an element");
+    static_assert(static_cast<long long>(MaxElements) <= static_cast<long long>(std::numeric_limits<T>::max()),
+                  "TCAllocatorEB: more elements per block than the free-list index type can count");
 
     /// @brief Takes its block straight away -- there is no separate init().
     TCAllocatorEB()

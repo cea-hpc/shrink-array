@@ -135,51 +135,56 @@ void ChunkOmpPolicy<T, Derived, Enabled>::compress(this Derived& self, int thr_r
 }
 
 template <typename T>
+void Chunk<T>::compress_sweep_rank(int thr)
+{
+    auto&     chunk_t = manager_chunk::chunk_to_compress_potentially_thr[thr];
+    // Dynamic geometry: pin the ambient chunk size to EACH candidate's own
+    // (the tuple's ChunkElems, captured when it was queued), restored after
+    // the loop. clear_st() -> free_block_to_pool() parks the buffer in the
+    // reuse list of the AMBIENT size, and a thread's ambient size after a
+    // re-chunk is that array's new one (the rebuild region sets it and
+    // never restores the workers'): compressing a 64-chunk of another
+    // array from a rank left at 128 parked its 64-buffer in the 128 list,
+    // which handed it out as a 128-buffer later -- a re-chunk right before
+    // a zeroing phase gave non-reproducible results two iterations on, at
+    // 2-3 threads (shrink_bench chunk_dyn, forced advisor, Sept '26).
+    // Chunk2 and Chunk2A pin the same way (compress_chunk_to_compress_in_par_impl,
+    // make_block_compression_impl).
+    [[maybe_unused]] const unsigned int saved_sz = thread_chunk_size();
+    for (auto& tup : chunk_t)
+    {
+        auto* chunk_p = std::get<0>(tup);
+        if constexpr (build_config::chunk_dynamic)
+            shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
+        chunk_p->compress(thr, std::get<3>(tup).count());
+
+        // Release the dedup gate for this chunk. add_to_compression_list only
+        // queues a chunk when its is_inside flag CASes 0->1, so a flag left at 1
+        // means the chunk can NEVER be queued again: it was compressed once and
+        // then ignored for the rest of the run (measured: 98.7% of marks refused,
+        // compress stuck at 0 for chunk v1 under OpenMP). Reset it TOGETHER with
+        // the list clear below -- resetting one without the other lets a later
+        // write re-append the same chunk and make_block_compression then
+        // double-clears it (see the same note in
+        // Chunk2A<T>::compress_chunk_to_compress_in_par).
+        Proxy<T>::reset_tab_inside_list_to_compress(std::get<2>(tup), std::get<1>(tup));
+    }
+
+    if constexpr (build_config::chunk_dynamic)
+        shrink_array::set_thread_chunk_size(saved_sz);
+    // clear() keeps the capacity: the list is already reserved for the
+    // next pass, at the size this one reached.
+    chunk_t.clear();
+}
+
+template <typename T>
 void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
 {
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
 
 #pragma omp parallel
     {
-        const int thr     = CHUNK_PMP_THREAD_RANK;
-        auto&     chunk_t = manager_chunk::chunk_to_compress_potentially_thr[thr];
-        // Dynamic geometry: pin the ambient chunk size to EACH candidate's own
-        // (the tuple's ChunkElems, captured when it was queued), restored after
-        // the loop. clear_st() -> free_block_to_pool() parks the buffer in the
-        // reuse list of the AMBIENT size, and a thread's ambient size after a
-        // re-chunk is that array's new one (the rebuild region sets it and
-        // never restores the workers'): compressing a 64-chunk of another
-        // array from a rank left at 128 parked its 64-buffer in the 128 list,
-        // which handed it out as a 128-buffer later -- a re-chunk right before
-        // a zeroing phase gave non-reproducible results two iterations on, at
-        // 2-3 threads (shrink_bench chunk_dyn, forced advisor, Sept '26).
-        // Chunk2 and Chunk2A pin the same way (compress_chunk_to_compress_in_par_impl,
-        // make_block_compression_impl).
-        [[maybe_unused]] const unsigned int saved_sz = thread_chunk_size();
-        for (auto& tup : chunk_t)
-        {
-            auto* chunk_p = std::get<0>(tup);
-            if constexpr (build_config::chunk_dynamic)
-                shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
-            chunk_p->compress(thr, std::get<3>(tup).count());
-
-            // Release the dedup gate for this chunk. add_to_compression_list only
-            // queues a chunk when its is_inside flag CASes 0->1, so a flag left at 1
-            // means the chunk can NEVER be queued again: it was compressed once and
-            // then ignored for the rest of the run (measured: 98.7% of marks refused,
-            // compress stuck at 0 for chunk v1 under OpenMP). Reset it TOGETHER with
-            // the list clear below -- resetting one without the other lets a later
-            // write re-append the same chunk and make_block_compression then
-            // double-clears it (see the same note in
-            // Chunk2A<T>::compress_chunk_to_compress_in_par).
-            Proxy<T>::reset_tab_inside_list_to_compress(std::get<2>(tup), std::get<1>(tup));
-        }
-
-        if constexpr (build_config::chunk_dynamic)
-            shrink_array::set_thread_chunk_size(saved_sz);
-        // clear() keeps the capacity: the list is already reserved for the
-        // next pass, at the size this one reached.
-        chunk_t.clear();
+        compress_sweep_rank(CHUNK_PMP_THREAD_RANK);
     }
 
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);

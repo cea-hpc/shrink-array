@@ -75,6 +75,18 @@
 #                           first (its reinstall took a phantom reference),
 #                           and overlapping arrays free nothing early.
 #                           Chunk2A only, default static size.
+#   iterator_validation     the read-only const_iterator is random access:
+#                           jumps (it + n, it[n], it2 - it1, orderings) on
+#                           and around chunk boundaries, a ++/-- right after
+#                           each, std::lower_bound / upper_bound /
+#                           equal_range / binary_search and their ranges
+#                           forms against a std::vector -- through folded
+#                           chunks as well as materialised ones, and from
+#                           every thread at once. At compile time: the
+#                           concepts hold, the classic category is
+#                           random_access (what std::lower_bound dispatches
+#                           on), and std::sortable is false (no in-place
+#                           sort, by construction).
 #
 # All sources are variant-agnostic (the array type follows the CHUNK / CHUNK2
 # / CHUNK2A macro) and depend on the library alone -- none of the shrink_bench
@@ -131,7 +143,8 @@ if (CHUNK_BUILD_DYN)
         # must match the case table of rechunk_validation.cpp -- an unknown
         # --case fails the test, so a drift shows up at once.
         foreach(_case coexistence range-ops scale-64-to-tgt mostly-constant sin-quantized
-                      shrink-to-smaller all-same all-different val2-grow val2-shrink)
+                      shrink-to-smaller all-same all-different val2-grow val2-shrink
+                      non-pow2-refused)
           add_test(NAME ${_tgt}_${_case} COMMAND ${_tgt} --case ${_case})
           set_property(TEST ${_tgt}_${_case} PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
           set_property(TEST ${_tgt}_${_case} PROPERTY LABELS validation)
@@ -153,7 +166,7 @@ endif()
 set(_rt_harnesses       compress_roundtrip pool_accounting deferred_path_validation open_types_validation
                         mark_path_validation fill_range_mt_validation index64_validation
                         swap_move_validation range_counters_validation thread_growth_validation
-                        nested_region_validation)
+                        nested_region_validation iterator_validation)
 set(_rt_variant_names   chunk       chunk2      chunk2a)
 set(_rt_variant_libbase chunk_v1    chunk_v2    chunk_v2a)
 set(_rt_variant_macro   CHUNK       CHUNK2      CHUNK2A)
@@ -319,6 +332,25 @@ target_link_libraries(bit_words_validation PRIVATE Threads::Threads)
 chunk_require_cxx_std(bit_words_validation PRIVATE)
 add_test(NAME bit_words_validation COMMAND bit_words_validation)
 set_property(TEST bit_words_validation PROPERTY LABELS validation)
+
+# --- blk_allocator_validation: fast_allocators' public size-dispatching front
+# end (BlkAllocator) alone. Nothing in the library calls it, so this is what
+# runs it: sizes on, between and past the buckets, many live blocks at once,
+# every thread at once. Any build that has fast_allocators.
+if (NOT CHUNK_STD_ALLOC)
+  add_executable(blk_allocator_validation blk_allocator_validation.cpp)
+  target_link_libraries(blk_allocator_validation PRIVATE fast_allocators)
+  if (OMP)
+    target_link_libraries(blk_allocator_validation PRIVATE OpenMP::OpenMP_CXX)
+  endif ()
+  chunk_add_alloc_token_rt(blk_allocator_validation)
+  chunk_require_cxx_std(blk_allocator_validation PRIVATE)
+  foreach(_nthr 1 8)
+    add_test(NAME blk_allocator_validation_${_nthr}thr COMMAND blk_allocator_validation)
+    set_property(TEST blk_allocator_validation_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
+    set_property(TEST blk_allocator_validation_${_nthr}thr PROPERTY LABELS validation)
+  endforeach()
+endif()
 
 # --- slab_geometry_validation: the zeroed value allocator alone (no variant).
 # Every allocator of one element type must cut its slabs at one size whatever

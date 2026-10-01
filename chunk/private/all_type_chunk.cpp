@@ -216,10 +216,53 @@ void AllTypeChunk::force_chunk_to_compress() const
 
 void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
 {
+    // Only the types with a candidate. The callers' gate,
+    // have_chunk_to_compress_potentially(), is true as soon as ONE type has
+    // one, and each type's pass costs a fork/join even on empty lists.
+    const int                     max_thr = CHUNK_PMP_RANK_BOUND;
+    std::vector<ManagerChunkInt*> work;
     for (const auto& elm : getListTypeChunk())
     {
-        elm->compress_chunk_to_compress_potentially(apply);
+        if (elm->have_chunk_to_compress_potentially(max_thr))
+            work.push_back(elm.get());
     }
+    if (work.empty())
+        return;
+
+    // Inside a region (or without fast block compression, where the pass is
+    // a no-op): each type's own path, which knows what to do there.
+    if (!chunk_config::use_fast_block_compression || CHUNK_PMP_IN_PARALLEL_REGION)
+    {
+        for (auto* elm : work)
+            elm->compress_chunk_to_compress_potentially(apply);
+        return;
+    }
+
+    // ONE region for every type (precedent: clear_list_block_free_thr), not
+    // one per type -- and per second value for Chunk2. Each thread runs every
+    // type's per-rank body for its own rank; those touch rank-local lists
+    // only, so the types need no barrier between them. Then the serial mop-up
+    // of the ranks past the team, for the variants whose pass had one.
+    for (auto* elm : work)
+        elm->sweep_prepare();
+
+    chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
+    int team = 0;
+#pragma omp parallel
+    {
+        const int thr = CHUNK_PMP_THREAD_RANK;
+        if (thr == 0)
+            team = CHUNK_PMP_NUM_THREADS;
+        for (auto* elm : work)
+            elm->sweep_rank(thr, apply);
+    }
+    for (auto* elm : work)
+    {
+        if (elm->sweep_mops_up(apply))
+            for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
+                elm->sweep_rank(thr, apply);
+    }
+    chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
 }
 bool AllTypeChunk::have_chunk_to_compress_potentially() const
 {

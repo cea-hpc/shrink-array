@@ -55,46 +55,6 @@ inline constexpr bool chunk_dynamic = false;
 inline constexpr std::size_t alloc_affinity_min_bytes =
     CHUNK_ALLOC_AFFINITY_MIN_BYTES; // -D to override (0 = off; tiny = every array, for tests)
 
-/**
- * @brief Second values carry an identifier, not a filled array. ON by default.
- *
- * @details A chunk compressed to a second constant points into a region that is
- *          never written: the pointer names an identifier, and the value comes
- *          from the value table. is_cst_val2() stays a range test on the
- *          pointer and id_of_ptr() is arithmetic -- neither dereferences it --
- *          so the read path pays one well-predicted range test and the value
- *          costs 8 bytes.
- *
- *          The representation it replaced gave each distinct value a shared
- *          array FILLED with it, so `values[i]` returned the constant with no
- *          test at all. That property is what kept the chunk header at 16
- *          bytes, and it was bought twice over: 32 KiB per value in dyn, so the
- *          2 GiB region held 65 536 of them and a quantised field exhausted it
- *          and aborted; and a fill of cst_buffer_size elements per
- *          registration, with the page faults behind it.
- *
- *          Measured (chunk2a static 256, 2000 iterations, 64 threads, one
- *          seed): 17 503 G instructions against 18 990 G, -7.8%, IPC 5.75
- *          against 5.61, system time 199 s against 233 s. The branch costs less
- *          than the fill it removes, which is the opposite of what was expected
- *          when it was written.
- *
- *          -DCHUNK_CST_VAL2_FILLED_ARRAYS restores the arrays: for a workload
- *          whose read path dominates its registrations, or to bisect a
- *          suspected regression against the representation every release before
- *          this one used.
- *
- * @warning The failure mode of this code is a WRONG VALUE, not a crash: a site
- *          that reads a value out of the buffer, or loads `values` twice around
- *          a test, returns something plausible. Re-run rechunk_validation_*, a
- *          TSan pass and a --mode check run whenever it is touched.
- */
-#ifdef CHUNK_CST_VAL2_FILLED_ARRAYS
-inline constexpr bool cst_val2_no_arrays = false;
-#else
-inline constexpr bool cst_val2_no_arrays = true;
-#endif
-
 /// @brief Mirror of alloc_config::reclaim_empty_slabs, from the same CMake
 ///        option (CHUNK_RECLAIM_EMPTY_SLABS, a global add_definitions, so every
 ///        TU sees the same value).
@@ -276,7 +236,18 @@ inline constexpr bool second_value_indexed = false;
 /// once (compress_chunk_to_compress runs on every thread of a region), and a
 /// flag would let the FIRST to finish resume them while the others are still
 /// compressing. Atomic: it is written and read concurrently. See OMPTcc<true>.
-extern std::atomic<int> g_ompt_suspended;
+///
+/// On a cache line of its own (OmptSuspendCounter): every OMPT callback of
+/// every thread loads it, so a neighbour written often would turn those
+/// loads into misses. alignas on the VARIABLE would only align its start;
+/// alignas on the TYPE also makes sizeof 128, so nothing follows it on the
+/// line. Derived from std::atomic<int>, constructors included: every use is
+/// unchanged.
+struct alignas(128) OmptSuspendCounter : std::atomic<int>
+{
+    using std::atomic<int>::atomic;
+};
+extern OmptSuspendCounter g_ompt_suspended;
 
 
 /**
@@ -652,10 +623,17 @@ struct CheckNaN<true>
 // consistently written — corrupting grow regions that span several old chunks.
 // rechunk_to flushes properly afterwards at a quiescent point, so the rebuild
 // sets this true around its parallel region to skip the premature finalize.
-// Master-only (set/read on the encountering thread around the region).
+// WRITTEN by the master only, outside any region (store, release). READ by
+// the OMPT callbacks (load, acquire): on_parallel_end on the master, but
+// on_sync_region on EVERY thread of the team. The fork and the closing
+// barrier order the reads made inside the region; the one that could cross
+// the master's `false` -- a worker leaving the closing implicit barrier -- is
+// filtered by on_sync_region's early return, a guard that exists for another
+// reason. Atomic so that this does not rest on it (it was a plain bool,
+// documented as master-only).
 namespace shrink_array
 {
-inline bool g_in_rechunk_rebuild = false;
+inline std::atomic<bool> g_in_rechunk_rebuild{false};
 
 // Monotonic count of committed rechunk_to() calls (ones that actually change the
 // geometry — early-returns for no-op/empty/refused rechunks do NOT count). Bumped

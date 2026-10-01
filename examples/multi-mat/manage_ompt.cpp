@@ -57,7 +57,7 @@
 /// @brief The suspension counter the library reads and updates
 ///        (chunk_config::OMPTcc, declared in chunk/config.h): the callbacks
 ///        below run only while it is zero, which it is at start.
-std::atomic<int> g_ompt_suspended{0}; // 0 = callbacks active
+OmptSuspendCounter g_ompt_suspended{0}; // 0 = callbacks active
 
 namespace
 {

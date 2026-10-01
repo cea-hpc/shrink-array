@@ -19,6 +19,7 @@
 // Out-of-line template method bodies for ArrayChunkBase<Derived>. Included at the
 // end of array_chunk_base.h (after the class), so every TU that uses the class
 // sees the definitions. Kept separate to keep array_chunk_base.h to declarations.
+#include <cstdio>    // std::fprintf (set_chunk_size refusal)
 #include <iterator>  // std::forward_iterator, std::distance (assign)
 #include <limits>    // std::numeric_limits (max_size)
 #include <stdexcept> // std::out_of_range (at())
@@ -136,6 +137,19 @@ ArrayChunkBase<Derived>::T& ArrayChunkBase<Derived>::operator()(this Derived& se
 template <typename Derived>
 void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept
 {
+    // Same rule as rechunk_to() (this is also its path on an empty array):
+    // the index split is a shift and a mask, a non-power-of-two size
+    // corrupts it. Refused, geometry kept.
+    if constexpr (build_config::chunk_dynamic)
+    {
+        if (!is_valid_chunk_size(new_chunk_size))
+        {
+            std::fprintf(stderr, "[chunk] set_chunk_size(%u) refused: a chunk size must be a power of two\n",
+                         new_chunk_size);
+            std::fflush(stderr);
+            return;
+        }
+    }
     size_policy_.set_size(new_chunk_size); // no-op under StaticChunkSize
     if constexpr (build_config::chunk_dynamic)
     {
@@ -190,7 +204,7 @@ double ArrayChunkBase<Derived>::stats_seq(this const Derived& self)
 }
 
 template <typename Derived>
-void ArrayChunkBase<Derived>::assign(this Derived& self, ind_type count, in_t<T> val)
+void ArrayChunkBase<Derived>::assign(this Derived& self, ind_type count, T val)
 {
     self.resize(count);
     for (ind_type i = 0; i < count; ++i)

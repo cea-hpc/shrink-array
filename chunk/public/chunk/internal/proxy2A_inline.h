@@ -1262,7 +1262,11 @@ template <typename T>
 template <typename U, typename Op>
 void Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v, bool /*check_first_value_result*/) noexcept
 {
-    set_info_on_chunk();
+    // No set_info_on_chunk() here: nothing before apply_atomic_op() reads the
+    // cached pointers (reader_sync is the chunk's, read_values resolves the
+    // values pointer itself), and under fast block compression the engine
+    // arms them anyway (write_with_optional_lock_info's lbd_info). Arming
+    // here too recomputed every pointer twice per *=, /=, %=.
 
     // Cross-rank RMW materialisation (CHUNK_SYNC_ON_READ): see arithmetic_assign.
     // Pull any foreign deferred write to this offset to applied state before we
@@ -1277,6 +1281,10 @@ void Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v, bool /*check_first_v
     // the operation would have left it unchanged anyway.
     if (v_old != Chunk2A<T>::first_value)
     {
+        // Serial build: apply_atomic_op() runs the body straight away, without
+        // the engine and its lbd_info, and the body reads ptr_second_value.
+        if constexpr (!chunk_config::use_fast_block_compression)
+            set_info_on_chunk();
         Base::apply_atomic_op(op, v, v_old);
     }
 }

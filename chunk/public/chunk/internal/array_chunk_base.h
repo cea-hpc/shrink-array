@@ -214,33 +214,70 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     using Core::size_policy_;
 
   public:
-    // ── STL const_iterator (read-only, bidirectional, intra-chunk cursor) ─────
+    // ── STL const_iterator (read-only, random access, intra-chunk cursor) ─────
     /**
-     * @brief Read-only bidirectional iterator over the elements.
+     * @brief Read-only random-access iterator over the elements.
      *
      * @details Read-only by design: dereference yields a VALUE (T), like the
      *          const operator[], never a T&/proxy — the compressed store has no
      *          stable element address, and a writing iterator would need a proxy
-     *          reference that breaks permuting algorithms anyway (std::sort et
-     *          al.). This iterator makes the read half of the STL work: range-for,
-     *          std::copy/accumulate/find/equal/for_each, and reverse traversal
-     *          (rbegin/rend).
+     *          reference that breaks permuting algorithms anyway. This iterator
+     *          makes the read half of the STL work: range-for,
+     *          std::copy/accumulate/find/equal/for_each, reverse traversal
+     *          (rbegin/rend) and, being random access, it[n], it2 - it1,
+     *          std::distance in O(1), and std::lower_bound / upper_bound /
+     *          equal_range / binary_search in O(log n) moves, not only O(log n)
+     *          comparisons.
+     *
+     *          std::sort and the other permuting algorithms stay out BY
+     *          CONSTRUCTION: they swap through T&, and an element that may live
+     *          in a chunk folded to a constant has no address. Sort a copy:
+     *          std::vector<T> v(a.begin(), a.end()); std::sort(v.begin(), v.end());
+     *          a.assign(v.begin(), v.end()).
+     *
+     *          Both tags are random_access. Formally a C++17
+     *          LegacyRandomAccessIterator wants a real reference type, but the
+     *          classic algorithms (std::lower_bound, std::distance, std::advance)
+     *          pick their O(1) paths from iterator_category alone -- with
+     *          iterator_concept only, just the std::ranges algorithms would --
+     *          and std::vector<bool>::const_iterator does the same with
+     *          reference = bool. The C++20 std::random_access_iterator concept
+     *          accepts a prvalue reference as is (iterator_validation asserts it,
+     *          and that std::sortable is false).
      *
      *          Cursor, not index: a naive iterator would recompute
      *          (i>>decalage, i&modulo) and run sync_chunk on EVERY dereference.
      *          Instead we keep the current chunk pointer + intra-chunk offset and
      *          only cross to the next chunk when the offset overflows — so ++ is
      *          a trivial ++offset in the common case, and sync_chunk is amortised
-     *          once per chunk (called on chunk entry), mirroring exactly what the
-     *          const operator[] does per element but 1/chunk_size as often.
+     *          once per chunk (called on chunk entry). On entry the read gate
+     *          applies EVERY op pending on the chunk (the counter is per chunk,
+     *          not per offset), so with no concurrent writer the whole chunk then
+     *          reads exactly as the const operator[] would, 1/chunk_size as
+     *          often.
+     *
+     *          Jumps (+=, -=, +, -, []) go through seek(): a shift, a mask and a
+     *          sync of the target chunk -- one const operator[] read's worth.
+     *          O(1), not free: walk with ++, not with it[i] in a loop, which
+     *          pays a sync per element where ++ pays one per chunk.
      *
      * @warning Invalidation contract = std::vector's: any resize/push_back/
      *          pop_back (reallocation) invalidates all iterators.
+     * @warning Concurrency contract = std::vector's too: no other thread may
+     *          write the array while an iteration over it is under way. A write
+     *          deferred onto the current chunk after its entry is NOT seen by the
+     *          rest of the chunk (the const operator[] has the same window, on one
+     *          element). Check builds (build_config::any_check, precise read gate)
+     *          detect it at the next dereference.
+     * @warning Iterators of two different arrays must not be compared or
+     *          subtracted (undefined, as for std containers); check builds stop
+     *          on it.
      */
     class const_iterator
     {
       public:
-        using iterator_category = std::bidirectional_iterator_tag;
+        using iterator_category = std::random_access_iterator_tag; // what std::lower_bound/distance dispatch on
+        using iterator_concept  = std::random_access_iterator_tag; // C++20 concepts (std::ranges)
         using value_type        = T;
         using difference_type   = std::ptrdiff_t;
         using reference         = T;    // value, not T& (see class comment)
@@ -249,12 +286,83 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         /** @brief Two iterators are equal when they sit on the same absolute index. */
         [[nodiscard]] friend bool operator==(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
+            check_same_owner(lhs, rhs);
             return lhs.lin_ == rhs.lin_;
         }
         /** @brief Negation of operator==. */
         [[nodiscard]] friend bool operator!=(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
+            check_same_owner(lhs, rhs);
             return lhs.lin_ != rhs.lin_;
+        }
+
+        // ── Random access: every jump is a seek() on lin_ ───────────────────
+
+        /** @brief Jump @p n elements (negative: backwards). O(1), one chunk sync. */
+        const_iterator& operator+=(difference_type n) noexcept
+        {
+            seek(lin_ + static_cast<ind_type>(n));
+            return *this;
+        }
+        /** @brief Jump back @p n elements. */
+        const_iterator& operator-=(difference_type n) noexcept
+        {
+            seek(lin_ - static_cast<ind_type>(n));
+            return *this;
+        }
+        /** @brief The iterator @p n elements after @p it. */
+        [[nodiscard]] friend const_iterator operator+(const_iterator it, difference_type n) noexcept
+        {
+            it += n;
+            return it;
+        }
+        /** @brief The iterator @p n elements after @p it (n + it form). */
+        [[nodiscard]] friend const_iterator operator+(difference_type n, const_iterator it) noexcept
+        {
+            it += n;
+            return it;
+        }
+        /** @brief The iterator @p n elements before @p it. */
+        [[nodiscard]] friend const_iterator operator-(const_iterator it, difference_type n) noexcept
+        {
+            it -= n;
+            return it;
+        }
+        /** @brief Signed distance from @p rhs to @p lhs, in elements. */
+        [[nodiscard]] friend difference_type operator-(const const_iterator& lhs, const const_iterator& rhs) noexcept
+        {
+            check_same_owner(lhs, rhs);
+            return static_cast<difference_type>(lhs.lin_) - static_cast<difference_type>(rhs.lin_);
+        }
+        /**
+         * @brief The element @p n positions away, by VALUE (see the class comment).
+         * @details A seek per call: a sync per element in a loop, where ++ syncs
+         *          once per chunk.
+         */
+        [[nodiscard]] reference operator[](difference_type n) const noexcept
+        {
+            return *(*this + n);
+        }
+        /** @brief Orderings: by absolute index, like operator==. */
+        [[nodiscard]] friend bool operator<(const const_iterator& lhs, const const_iterator& rhs) noexcept
+        {
+            check_same_owner(lhs, rhs);
+            return lhs.lin_ < rhs.lin_;
+        }
+        [[nodiscard]] friend bool operator>(const const_iterator& lhs, const const_iterator& rhs) noexcept
+        {
+            check_same_owner(lhs, rhs);
+            return lhs.lin_ > rhs.lin_;
+        }
+        [[nodiscard]] friend bool operator<=(const const_iterator& lhs, const const_iterator& rhs) noexcept
+        {
+            check_same_owner(lhs, rhs);
+            return lhs.lin_ <= rhs.lin_;
+        }
+        [[nodiscard]] friend bool operator>=(const const_iterator& lhs, const const_iterator& rhs) noexcept
+        {
+            check_same_owner(lhs, rhs);
+            return lhs.lin_ >= rhs.lin_;
         }
 
         friend class ArrayChunkBase;
@@ -270,6 +378,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         {
             // chunk_ already sync'd on entry (see seek_to / advance across chunks);
             // this is the raw per-element read, identical to chunk_t[num].
+            check_no_write_since_entry();
             return (*chunk_)[num_];
         }
 
@@ -344,6 +453,35 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             enter_chunk();
         }
 
+        /// @brief Check builds: @p lhs and @p rhs walk the same array (or are
+        ///        both singular, which C++14 allows to compare).
+        static void check_same_owner([[maybe_unused]] const const_iterator& lhs,
+                                     [[maybe_unused]] const const_iterator& rhs) noexcept
+        {
+            if constexpr (build_config::any_check)
+            {
+                if (lhs.owner_ != rhs.owner_) [[unlikely]]
+                    INVARIANT_FAILED("ArrayChunkBase::const_iterator: iterators of two different arrays compared "
+                                     "or subtracted ({} vs {})",
+                                     static_cast<const void*>(lhs.owner_), static_cast<const void*>(rhs.owner_));
+            }
+        }
+
+        /// @brief Check builds, precise read gate: nothing was deferred onto the
+        ///        current chunk since enter_chunk() drained it -- i.e. no other
+        ///        thread writes the array during the iteration (class contract).
+        void check_no_write_since_entry() const noexcept
+        {
+            if constexpr (build_config::any_check && chunk_type::precise)
+            {
+                if (chunk_->read_gate_should_wait(num_)) [[unlikely]]
+                    INVARIANT_FAILED("ArrayChunkBase::const_iterator: a write was deferred onto chunk {} of array {} "
+                                     "during the iteration (offset {}); the iterator would not see it -- no other "
+                                     "thread may write an array that is being iterated",
+                                     num_chunk_, static_cast<const void*>(owner_), num_);
+            }
+        }
+
         /**
          * @brief Point chunk_ at chunk_list[num_chunk_] and sync it once.
          * @details Guarded so the end() position (one past the last element) never
@@ -361,6 +499,25 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             {
                 chunk_ = nullptr; // end / rend sentinel: never dereferenced
             }
+        }
+
+        /**
+         * @brief Move the cursor to absolute index @p lin: every jump comes here.
+         * @details Chunk and offset recomputed from @p lin (shift, mask), then
+         *          enter_chunk() -- ALWAYS, even when the jump stays in the same
+         *          chunk: the read gate of sync_chunk takes the offset, so a jump
+         *          reads exactly as the const operator[] does, never weaker.
+         *          @p lin may be m_size (end) or -1 (one before begin, which --
+         *          reaches too): the arithmetic shift gives chunk -1 there, and
+         *          enter_chunk() leaves chunk_ null outside the list.
+         * @param lin absolute linear index
+         */
+        void seek(ind_type lin) noexcept
+        {
+            lin_       = lin;
+            num_chunk_ = static_cast<int>(lin >> decalage_);
+            num_       = static_cast<int>(lin & static_cast<ind_type>(modulo_));
+            enter_chunk();
         }
 
         const Derived*        owner_     = nullptr; ///< Array being traversed.
@@ -608,7 +765,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param count new element count
      * @param val value written to every position
      */
-    void assign(this Derived& self, ind_type count, in_t<T> val);
+    void assign(this Derived& self, ind_type count, T val); // T, not in_t<T>: val may be a(i) -- resize() can free it
 
     /**
      * @brief assign(): the elements of [first, last), in order.

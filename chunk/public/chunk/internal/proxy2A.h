@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <algorithm> // std::min (the resize copy)
+#include <algorithm> // std::min, std::copy_n, std::fill (the resize copy)
 #include <atomic>
 #include <cstdlib>   // std::abort (debug stubs)
 #include <exception> // std::exception (PointerMapChunk2A::erase)
@@ -304,16 +304,21 @@ class PointerMapChunk2A
  * \tparam T Type of the second value stored in the chunk.
  */
 
+/// @brief Reallocate @p ptr from @p old_size to @p new_size elements,
+///        keeping the first min(old_size, new_size).
+/// @warning Elements [old_size, new_size) are left INDETERMINATE: the caller
+///          fills them (ProxySpec2A<bool>::resize does). The block is
+///          default-initialised (`new T[n]`), not value-initialised as
+///          make_unique<T[]> did: its zero-fill was overwritten by the copy
+///          and by the caller's fill anyway -- three write passes for one.
 template <typename T>
 void realloc_unique(std::unique_ptr<T[]>& ptr, std::size_t old_size, std::size_t new_size)
 {
-    // Allocate a new block
-    auto new_ptr = std::make_unique<T[]>(new_size);
+    std::unique_ptr<T[]> new_ptr(new T[new_size]);
 
-    for (std::size_t i = 0; i < std::min(old_size, new_size); ++i)
-    {
-        new_ptr[i] = ptr[i];
-    }
+    const std::size_t kept = std::min(old_size, new_size);
+    if (kept != 0)
+        std::copy_n(ptr.get(), kept, new_ptr.get()); // a memmove for a trivial T
 
     ptr = std::move(new_ptr);
 }
@@ -491,10 +496,9 @@ struct ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<boo
     {
         realloc_unique(tab_second_value[nb_tab], nb_chunk_old, nb_chunk);
 
-        for (int k = nb_chunk_old; k < nb_chunk; ++k)
-        {
-            tab_second_value[nb_tab][k] = false;
-        }
+        // realloc_unique leaves the new tail indeterminate: fill it here.
+        if (nb_chunk > nb_chunk_old)
+            std::fill(tab_second_value[nb_tab].get() + nb_chunk_old, tab_second_value[nb_tab].get() + nb_chunk, false);
     }
 
     /*!
@@ -1069,7 +1073,7 @@ template <typename T>
 std::ostream& operator<<(std::ostream& os, const Proxy2A<T>& proxy)
 {
     // Through the proxy's read entry: indexing values[] directly prints a zero
-    // for a compressed chunk under CHUNK_CST_VAL2_NO_ARRAYS.
+    // for a chunk compressed to a second constant (an unbacked slot).
     os << proxy.read_values();
     return os;
 }

@@ -139,6 +139,20 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     if (new_size == old_size || new_size == 0)
         return;
 
+    // The index split is a shift and a mask: a size that is not a power of
+    // two (48: shift 5, mask 47) sends two elements to one slot, and the
+    // refill below -- which assumes one geometry tiles the other exactly --
+    // frees a buffer still in use. Refused, with a message in EVERY build:
+    // a caller bug, on a cold path (the cst_buffer_size refusal below is
+    // silent outside check builds, and a test once failed on it with no
+    // explanation).
+    if (!is_valid_chunk_size(new_size))
+    {
+        std::fprintf(stderr, "[RECHUNK] rechunk_to(%u) refused: a chunk size must be a power of two\n", new_size);
+        std::fflush(stderr);
+        return;
+    }
+
     // SAFETY: the shared constant buffers (cst_val1 / cst_val2) are sized
     // cst_buffer_size (the dynamic-mode ceiling). A chunk wider than that
     // would read those buffers out of bounds, so refuse the re-chunk.
@@ -940,7 +954,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             if (internal::g_rechunk_trace)
                 std::fprintf(stderr, "[RECHUNK] rebuild schedule: %s\n", rs.text);
         }
-        g_in_rechunk_rebuild = true;
+        g_in_rechunk_rebuild.store(true, std::memory_order_release);
         // Its own knob: one statm read per slice is nothing, but 18 to 34 lines
         // per array bury the summary that CHUNK_RECHUNK_TRACE is asked for.
         // This is the only view of the peak's SHAPE -- saw-tooth means the
@@ -1019,7 +1033,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             std::fprintf(stderr, "[RECHUNK-SLICE] %d/%d end         rss=%ld MB  (%+ld since start)\n", n_slices,
                          n_slices, rss_mib, rss_mib - rss_start);
         }
-        g_in_rechunk_rebuild = false;
+        g_in_rechunk_rebuild.store(false, std::memory_order_release);
         chunk_pmp_set_schedule(caller_schedule); // the caller's, untouched
         if (internal::g_rechunk_trace)
         {

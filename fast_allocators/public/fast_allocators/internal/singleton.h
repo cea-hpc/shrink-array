@@ -21,6 +21,8 @@
  * @brief Process-wide lazily-constructed instance of T, shared by every thread.
  * @details Created on the first getInstance() and never destroyed unless
  *          deleteInstance() is called: an intentional leak, marked for LSan.
+ *          Nothing in shrink-array calls deleteInstance(); it is there for code
+ *          outside it that wants an explicit teardown (see its contract).
  * @tparam T The type to host; default-constructible.
  */
 template <typename T>
@@ -60,7 +62,16 @@ class Singleton
         return instance;
     }
 
-    /// @brief Destroy the instance, if any; the next getInstance() recreates it.
+    /**
+     * @brief Destroy the instance, if any; the next getInstance() recreates it.
+     * @warning Only once NO thread can touch the instance any more -- that
+     *          includes thread_local destructors, which run at thread or
+     *          process exit and may still reach it. Never from an atexit
+     *          handler or a static destructor: the instance is immortal by
+     *          design precisely because exit-time destruction raced those TLS
+     *          destructors. A pointer returned by an earlier getInstance() is
+     *          dangling afterwards.
+     */
     static void deleteInstance()
     {
         const std::scoped_lock lock(unique_instance_mutex);

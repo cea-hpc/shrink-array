@@ -50,6 +50,10 @@
  */
 
 #include <cstdio>
+#include <cstdlib>    // std::system
+#include <fstream>    // the --id-limit child's log
+#include <string>
+#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 #include <unistd.h>
 
 #include "chunk/chunk_traits.h"
@@ -134,8 +138,59 @@ static void expect_values(const char* where, const Arr& a, long n, double v)
     }
 }
 
+/// @brief --id-limit (child, run under CHUNK_CST_VAL2_ID_LIMIT=16): 40 chunks,
+///        each at its own constant -- 40 distinct second values. Must stop
+///        at the 17th registration; returning means it ran on.
+static int run_id_limit_child()
+{
+    const long S  = static_cast<long>(Arr(0).chunk_size());
+    const int  ni = static_cast<int>(40 * S);
+    Arr        a(ni);
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for schedule(static)
+        for (int i = 0; i < ni; ++i)
+            a[i] = 100. + static_cast<double>(i / S);
+    }
+    end_phase();
+    std::printf("[id-limit] 40 distinct second values registered under a limit of 16: RAN ON\n");
+    return 0;
+}
+
+/// @brief Re-run this executable with --id-limit under a lowered identifier
+///        limit: it must stop, and say why. Past the limit, alloc_chunk()
+///        used to write value_by_id[] out of bounds instead.
+static void check_id_limit(const char* self)
+{
+    const std::string log = "/tmp/cst2_id_limit_" + std::to_string(getpid()) + ".log";
+    const std::string cmd =
+        std::string("CHUNK_CST_VAL2_ID_LIMIT=16 \"") + self + "\" --id-limit > \"" + log + "\" 2>&1";
+    const int status  = std::system(cmd.c_str());
+    const bool stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
+    bool              said = false;
+    {
+        std::ifstream in(log);
+        std::string   line;
+        while (std::getline(in, line))
+            said = said || line.find("identifiers exhausted") != std::string::npos;
+    }
+    std::remove(log.c_str());
+    std::printf("D  identifier limit (16, 40 distinct values)       %s, %s%s\n", stopped ? "stopped" : "RAN ON",
+                said ? "with the message" : "no message", (stopped && said) ? "" : "  <-- WRONG");
+    if (!stopped || !said)
+        ++fails;
+}
+
 int main(int argc, char** argv)
 {
+    if (argc > 1 && std::string(argv[1]) == "--id-limit")
+    {
+        __mem_page_size = getpagesize();
+        ParamChunk::init_indexes(true);
+        return run_id_limit_child();
+    }
+
     __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
 
@@ -193,6 +248,9 @@ int main(int argc, char** argv)
         expect("fresh array alive", 1, 1);
     }
     expect("fresh array destroyed", 0, -1);
+
+    // D: the identifier limit stops the run (a child process).
+    check_id_limit(argv[0]);
 
     std::printf("=== %s ===\n", fails ? "CST2_REGISTRY FAILED" : "CST2_REGISTRY OK");
     return fails ? 1 : 0;

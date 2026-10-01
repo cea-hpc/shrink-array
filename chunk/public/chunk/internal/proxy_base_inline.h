@@ -47,6 +47,7 @@
 #include <source_location>
 #include <tuple>
 #include <type_traits>
+
 #include "chunk/internal/in_t.h"       // in_t<T>: the element snapshots
 #include "chunk/internal/proxy_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems — used HERE, not via includers
@@ -454,7 +455,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression
  */
 template <typename Derived, typename T, typename ChunkType>
 template <typename WriteCallable, typename LBD_INFO>
-[[nodiscard]] bool
+[[nodiscard]] FORCE_INLINE bool
 ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]] this Derived& self,
                                                                 WriteCallable&&                write_body,
                                                                 [[maybe_unused]] LBD_INFO      lbd_info) noexcept
@@ -776,7 +777,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
  * @return The number of elements per chunk.
  */
 template <typename Derived, typename T, typename ChunkType>
-inline unsigned int ProxyBase<Derived, T, ChunkType>::chunk_size() const noexcept
+unsigned int ProxyBase<Derived, T, ChunkType>::chunk_size() const noexcept
 {
     // fw14: on the deferred-replay path chunk_size_frozen_ is armed (non-zero)
     // from the enqueue-time geometry, so we must NOT dereference ptr_on_array —
@@ -792,7 +793,7 @@ inline unsigned int ProxyBase<Derived, T, ChunkType>::chunk_size() const noexcep
 }
 
 template <typename Derived, typename T, typename ChunkType>
-inline unsigned int ProxyBase<Derived, T, ChunkType>::alloc_key() const noexcept
+unsigned int ProxyBase<Derived, T, ChunkType>::alloc_key() const noexcept
 {
     if (chunk_size_frozen_ != 0u) [[unlikely]]
         return alloc_key_frozen_;
@@ -1241,7 +1242,9 @@ void ProxyBase<Derived, T, ChunkType>::bitwise_assign(this Derived& self, in_t<U
     // the only RMW paths without it (shrink_bench chunk2a dyn, 32-56 threads:
     // tab_long with += *= -- passes, tab_ulong with |= &= on the same indices
     // in the same loop loses whole per-thread slices).
+
     self.chunk.reader_sync(self.num);
+
     using CalcType = std::common_type_t<T, U>;
 
     const auto op_lambda = [&self, &v, operation] // v: the call's parameter, alive for the call

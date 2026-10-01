@@ -193,12 +193,12 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
         // over it while it was still queued: its flag is set, its entry is
         // still in vec_tuple_to_compress, and it comes back through here at
         // the next pass. The branch that used to scan it read through
-        // `values` -- under CHUNK_CST_VAL2_NO_ARRAYS a region that was never
+        // `values` -- a second-value slot, a region that was never
         // written, so every element read as 0 == first_value, the chunk
         // went on ll_compt1 and block_clear() freed the region pointer as a
         // buffer (SIGSEGV in free_elt_pow2 on aarch64, the invariant check
         // "Attempted to free 'cst_val2'" in a debug build). With the arrays
-        // filled it was merely useless: the re-scan sent the chunk to
+        // filled (before Oct '26) it was merely useless: the re-scan sent the chunk to
         // ll_compt2, and the OpenMP CAS refused the clear.
         if (this->is_cst_val2())
             return;
@@ -561,14 +561,8 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
  * @param apply          Forwarded to compress().
  */
 template <typename T>
-void Chunk2A<T>::compress_chunk_to_compress(bool apply)
+void Chunk2A<T>::compress_sweep_rank(int thr, bool apply)
 {
-    chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
-
-    if (CHUNK_PMP_IN_PARALLEL_REGION)
-    {
-        compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, apply);
-    }
     if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
     {
         // An OpenMP build without OMPT had no between-region compressor for
@@ -581,37 +575,45 @@ void Chunk2A<T>::compress_chunk_to_compress(bool apply)
         // writers' pass runs without its handshake (nullptr proxy), each
         // rank on its own list -- the lists are per rank, the second-value
         // registry takes its mutex, the in-loop passes already run
-        // concurrently -- and the ranks beyond the team's size serially,
-        // as Chunk2FastCompPolicy::compress_chunk_to_compress does.
+        // concurrently -- and the ranks beyond the team's size serially
+        // (compress_sweep_mops_up), as Chunk2's pass does.
         if (apply)
         {
-            int team = 0;
-#pragma omp parallel
-            {
-                const int thr = CHUNK_PMP_THREAD_RANK;
-                if (thr == 0)
-                    team = CHUNK_PMP_NUM_THREADS;
-                make_block_compression(thr, nullptr);
-            }
-            for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
-                make_block_compression(thr, nullptr);
+            make_block_compression(thr, nullptr);
+            return;
         }
-        else
-        {
-#pragma omp parallel
-            {
-                compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, apply);
-            }
-        }
+    }
+    compress_chunk_to_compress_in_par(thr, apply);
+}
+
+template <typename T>
+void Chunk2A<T>::compress_chunk_to_compress(bool apply)
+{
+    chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
+
+    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    {
+        // Inside a region: this rank's own list, and nothing else. Opening
+        // the region below from inside one (as this did, with no `else`) ran
+        // a serialised copy of the pass on every thread of the team, and the
+        // mop-up swept every rank's list from every thread at once.
+        compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, apply);
     }
     else
     {
+        int team = 0;
 #pragma omp parallel
         {
             const int thr = CHUNK_PMP_THREAD_RANK;
-            compress_chunk_to_compress_in_par(thr, apply);
+            if (thr == 0)
+                team = CHUNK_PMP_NUM_THREADS;
+            compress_sweep_rank(thr, apply);
         }
+        if (compress_sweep_mops_up(apply))
+            for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
+                compress_sweep_rank(thr, apply);
     }
+
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
 }
 
@@ -1158,8 +1160,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::block_clear(this Derived&     self,
     // Same refusal as try_mark_cst_and_get_old() on the OpenMP side: a chunk
     // whose values already point at a constant has no buffer to release, and
     // handing that pointer to the allocator corrupts it (or faults: a
-    // second-value identifier is not backed by a page under
-    // CHUNK_CST_VAL2_NO_ARRAYS). The type table is left as it is -- it
+    // second-value identifier is not backed by a page). The type table is left as it is -- it
     // describes the constant in place.
     if (self.values == Base::get_cst_val1() || Derived::tab_cst_val2_holder::is_cst_val2_ptr(self.values)) [[unlikely]]
         return;

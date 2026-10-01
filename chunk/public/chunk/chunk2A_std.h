@@ -266,11 +266,9 @@ struct Chunk2AStateQueries
      *        read from the registry: second_value_of_chunk() for a pointer
      *        the caller already loaded.
      *
-     * @pre @p ptr satisfies is_cst_val2_ptr_of(). @see build_config::cst_val2_no_arrays
-     * @details Used by ChunkBase::element_at() under
-     *          CHUNK_CST_VAL2_NO_ARRAYS, where the shared arrays are not
-     *          allocated and the values pointer names an identifier rather
-     *          than a buffer. Deliberately does NOT dereference that pointer:
+     * @pre @p ptr satisfies is_cst_val2_ptr_of().
+     * @details Used by ChunkBase::element_at(): a second constant has no
+     *          buffer, its values pointer names an identifier. Deliberately does NOT dereference that pointer:
      *          id_of_ptr() is arithmetic on the region base and stride, and
      *          value_of_id() is one load of the value table -- the same table
      *          a write of a wide type already reads.
@@ -287,8 +285,8 @@ struct Chunk2AStateQueries
      * @brief Give this chunk a real buffer, because a caller needs an address.
      *
      * @details ChunkBase::print_adr() hands out `&values[i]`, which no registry
-     *          lookup can stand in for: under CHUNK_CST_VAL2_NO_ARRAYS there is
-     *          no buffer behind a constant chunk. Its one caller is
+     *          lookup can stand in for: there is no buffer behind a chunk
+     *          compressed to a second constant. Its one caller is
      *          ArrayChunkBase's re-export, itself never called inside the
      *          library, so this is a diagnostic path and the chunk losing its
      *          compressed state costs nothing that matters.
@@ -750,6 +748,19 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     void compress(int thr_rank, int num_chunk, int num_tab, bool apply, ChunkElems size);
 
     static void compress_chunk_to_compress(bool apply);
+
+    /// @brief One rank's share of compress_chunk_to_compress() outside a
+    ///        region: the body its region runs on each thread. Public for
+    ///        AllTypeChunk's single sweep region (ManagerChunk::sweep_rank).
+    static void compress_sweep_rank(int thr, bool apply);
+
+    /// @brief Does that pass also sweep, serially, the ranks past the team?
+    ///        Only the OpenMP non-OMPT apply pass, which drains with
+    ///        make_block_compression().
+    [[nodiscard]] static constexpr bool compress_sweep_mops_up(bool apply) noexcept
+    {
+        return build_config::use_openmp && chunk_config::not_use_compression_with_ompt && apply;
+    }
     static bool have_chunk_to_compress(int max_thr);
 
     static void make_block_compression(int thr, Proxy2A<T>* proxy2A);

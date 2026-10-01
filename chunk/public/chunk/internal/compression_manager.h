@@ -166,8 +166,12 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         std::atomic<int> value{0}; ///< 0 or 1 -- see mark_list_dangerous_for_thread
     };
 
-    /// @brief "This rank may hold deferred ops" hint, padded to its own line.
-    struct alignas(128) ThreadOpsFlag
+    /// @brief "This thread may hold deferred ops" hint.
+    /// @note Not padded: it is a thread_local touched by its owner only (see
+    ///       thread_may_have_ops_own), so no other thread shares its line. The
+    ///       alignas(128) it had dates from a rank-indexed array; on a
+    ///       thread_local it only spread the TLS block, one line per type.
+    struct ThreadOpsFlag
     {
         std::atomic<bool> v{false};
     };
@@ -878,7 +882,18 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
     /// @param count    number of ops drained
     static void dec_pending_ops(int thr_rank, int64_t count = 1) noexcept
     {
-        pending_ops_shard[thr_rank].v.fetch_sub(count, std::memory_order_release);
+        const int64_t before = pending_ops_shard[thr_rank].v.fetch_sub(count, std::memory_order_release);
+        // Never below zero: any_pending_ops() SUMS the ranks, so a rank at -2
+        // hides two real ops on another one and the array-level flush is
+        // skipped. inc_pending_ops() runs under the same shard lock as the
+        // op insert, so a negative count is a double count, not a race.
+        if constexpr (build_config::any_check)
+        {
+            if (before - count < 0) [[unlikely]]
+                INVARIANT_FAILED("dec_pending_ops: rank {} count {} -> {} (retired {}): more ops retired than "
+                                 "published -- a double count",
+                                 thr_rank, before, before - count, count);
+        }
     }
 
     /// @brief Enter the hard compression window (start()'s counterpart).

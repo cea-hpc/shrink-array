@@ -505,7 +505,12 @@ chunk_add_variant(chunk "" "" FALSE)
 
 # --- Install (vector variant only, as the canonical installed copy) -----
 include(GNUInstallDirs)
-set(INCLUDE_INSTALL_DIR ${CMAKE_INSTALL_INCLUDEDIR}/chunk)
+
+# The fast_allocators version chunk-config.cmake asks for (find_dependency).
+# fast_allocators/CMakeLists.txt, configured after this file, checks it against
+# its own ALLOCATORS_VERSION through this global property.
+set(CHUNK_FAST_ALLOCATORS_VERSION 2.1.8)
+set_property(GLOBAL PROPERTY CHUNK_FAST_ALLOCATORS_VERSION ${CHUNK_FAST_ALLOCATORS_VERSION})
 
 install(TARGETS chunk
         EXPORT chunk-targets
@@ -536,8 +541,7 @@ install(DIRECTORY ${PROJECT_SOURCE_DIR}/third_party/
 include(CMakePackageConfigHelpers)
 
 configure_package_config_file(chunk-config.cmake.in chunk-config.cmake
-        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/chunk/cmake
-        PATH_VARS CHUNK_VERSION INCLUDE_INSTALL_DIR)
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/chunk/cmake)
 
 write_basic_package_version_file(
         chunk-config-version.cmake

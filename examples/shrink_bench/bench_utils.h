@@ -217,6 +217,9 @@ unsigned load_seed_to_file(const std::string& filename);
 /// @param seed_file_name Seed file.
 void initializeRNG(std::mt19937& rng, const std::string& seed_file_name);
 
+/// @brief Bytes to MiB (the bench's "Mo"). A pure conversion: no I/O.
+/// @param memoryValue Size in bytes.
+/// @return The same size in MiB.
 double convert_memory(double memoryValue);
 /// @brief Print the memory line labelled @p msg: peak and current resident size, plus the parked (and, with
 ///        CHUNK_STATS, materialised) bytes in shrink builds.

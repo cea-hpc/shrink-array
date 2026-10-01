@@ -78,10 +78,12 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 |---|---|
 | `CHUNK=1`, `CHUNK2=1`, `CHUNK2A=1` | la variante |
 | `CHUNK_DYNAMIC`, `DYN_CHUNK_SIZE=<n>` | géométrie dynamique, et taille de départ |
+| `CHUNK_DYN_MAX_SIZE=<n>` | géométrie dynamique : plus grande taille de chunk qu'un rechunk peut atteindre, puissance de deux (4096) ; dimensionne les tampons partagés des valeurs constantes, `cst_buffer_size × sizeof(T)` par seconde valeur distincte |
 | `CHUNK_ALLOC_AFFINITY_MIN_BYTES=<octets>` | seuil de métadonnées au-delà duquel un tableau peut avoir ses propres allocateurs (16 Mio ; 0 = jamais) |
 | `CHUNK_RECLAIM_EMPTY_SLABS` | rendre au système les slabs vidés (balayages explicites) |
 | `CHUNK_STATS` | compteurs d'instrumentation (build stats) |
 | `CHECK_OPTIM` | vérifications d'invariants en build optimisé |
+| `MM_PROTECT` | Chunk, Chunk2 : tampons partagés des valeurs constantes en lecture seule (`mprotect`) ; une écriture parasite dans un chunk compressé fait une erreur de segmentation au lieu de corrompre la valeur (option CMake `CHUNK_MM_PROTECT`) |
 | `CHUNK_FORCE_DEFER_EVERY=<N>` | une écriture sur N passe par le chemin différé (validation ; 32 threads au plus) |
 
 ## 7. Options CMake
@@ -95,6 +97,7 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 | `SHRINK_INTEL_LIBM` | `ON` | x86-64 : lier la libm d'Intel si elle est trouvée |
 | `SHRINK_ARM_LIBM` | `OFF` | aarch64 : lier `libamath` d'ArmPL (aucun gain mesuré sur Grace) |
 | `CHUNK_ICPX_O0_WORKAROUND` | `OFF` | contournement d'une erreur interne d'icpx sur trois fichiers |
+| `CHUNK_MM_PROTECT` | `OFF` | définit `MM_PROTECT` (build de mise au point ; `compile_all.sh` le construit pour que ses branches continuent de compiler) |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | Chunk2A : l'emplacement de seconde valeur contient un identifiant de 4 octets au lieu de la valeur (moins de mémoire, +3 % de temps d'écriture) |
 
 Et une macro propre à Chunk2A : `CHUNK2A_COMPRESS_LEVEL=<0|1|2|3>` (0 par défaut) choisit le

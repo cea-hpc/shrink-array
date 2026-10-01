@@ -556,6 +556,19 @@ else
    launch_build "$build_rep/cmake-build-omp-llvm-check/$arch"
 fi
 
+# MM_PROTECT: its branches are `if constexpr` in class templates, never
+# instantiated by any other build here, so a change can break them unseen (it
+# did: d0eb79ba..e0ce84e9). Built, not run: running it is a debugging session.
+set_build_header 'Compiling llvm openmp with MM_PROTECT (CHUNK_MM_PROTECT):'
+if skip_release; then
+   echo "[debug-only] skipping llvm openmp with MM_PROTECT"
+else
+   if [ "$BUILD_ONLY" = false ]; then
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-mm-protect/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DCHUNK_MM_PROTECT=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+   fi
+   launch_build "$build_rep/cmake-build-omp-llvm-mm-protect/$arch"
+fi
+
 set_build_header 'Compiling llvm debug openmp:'
 if [ "$BUILD_ONLY" = false ]; then
    run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"

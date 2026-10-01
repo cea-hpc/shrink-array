@@ -167,7 +167,8 @@ struct InfoFreeElt
  *
  * @details Everything is static -- there is one ladder per process, not one per
  *          instance. The class exists to scope the buckets and to be a private
- *          base for the front ends (::BlkAllocator, ::FixedSizeAllocator).
+ *          base for the front ends (::BlkAllocator, public API by size, and
+ *          ::FixedSizeAllocator, by type).
  *
  * @note The `*Int` methods are the bare lookup: pick a bucket by size and call
  *       it. The methods without the suffix wrap that in the size bound and, in
@@ -313,15 +314,27 @@ extern TCTypeAllocatorEBC<8, SIZE_BLOCK> Allocator8;
 extern TCTypeAllocatorEBC<24, SIZE_BLOCK> Allocator24;
 
 /**
- * @brief Ladder front end that falls back to malloc, by size.
+ * @brief Ladder front end that falls back to malloc, by size. PUBLIC API.
  * @details The two-step the ladder's null/false conventions are designed for:
  *          try a bucket, and if the size is past the top of the ladder, use
  *          int_alloc()/int_free() instead. The caller never has to know which
  *          happened -- free_block() works it out from the size again.
+ *
+ *          Two pairs, never mixed: alloc_block()/free_block(size) when the
+ *          caller knows the size at free time, alloc_tab()/free_tab() when it
+ *          does not (a header of `__ALIGNEMENT__` bytes keeps it, size <
+ *          INT_MAX). Thread-safe: inside an OpenMP region the ladder takes its
+ *          critical section and frees are batched per thread until
+ *          StaticConstArray::clearInfoFreeElt() runs at a quiescent point.
+ *
+ *          Nothing in shrink-array calls it: it is fast_allocators' entry point
+ *          for code outside the library. Until Oct '26 every member was
+ *          private -- it could not be called at all, and nothing noticed.
+ *          blk_allocator_validation is what runs it now.
  */
 struct BlkAllocator : public StaticConstArray
 {
-  private:
+  public:
     /// @brief A block of @p size bytes, from the ladder or from malloc.
     static void* alloc_block(size_t size)
     {
@@ -416,7 +429,8 @@ struct BlkAllocator : public StaticConstArray
  *
  * @tparam _ElementType The type whose `sizeof` is the block size.
  *
- * @details Same fallback as ::BlkAllocator, with a shortcut: 8 and 24 bytes are
+ * @details Same fallback as ::BlkAllocator (a bucket, malloc past the top of
+ *          the ladder), with a shortcut: 8 and 24 bytes are
  *          by far the most common sizes here, so they go straight to
  *          ::Allocator8 / ::Allocator24 instead of walking the ladder.
  */

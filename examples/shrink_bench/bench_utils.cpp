@@ -102,20 +102,12 @@ double convert_memory(double memoryValue)
     constexpr double BYTE_TO_KB = 1.0 / 1024;
     constexpr double KB_TO_MB   = 1.0 / 1024;
 
+    // A conversion, nothing else. It used to rewrite memory_mo.txt on every
+    // call -- 2-4 file creations per memory line, inside --mode perf's timed
+    // loop, and the file kept the LAST value converted (materialised or
+    // parked), not the peak. memory_consumption("end") writes it now.
     const double kilobytes = memoryValue * BYTE_TO_KB;
-    const double megabytes = kilobytes * KB_TO_MB;
-
-    if (std::ofstream fichier("memory_mo.txt"); fichier.is_open())
-    {
-        fichier << megabytes;
-        fichier.close();
-    }
-    else
-    {
-        std::println(stderr, "Error : can't open the file.");
-    }
-
-    return megabytes;
+    return kilobytes * KB_TO_MB;
 }
 
 /// @brief The exact-peak sampler of the bench: started with the program
@@ -155,7 +147,16 @@ void memory_consumption(const std::string& msg)
         // this the figure conflates "the library retains buffers" with "the
         // allocator has not given the pages back", and the two need different
         // fixes.
-        malloc_trim(0);
+        //
+        // At the checkpoints only ("after init", "end"), like exact_rss_kib()
+        // below, or on every line with SHRINK_BENCH_MALLOC_TRIM=1. The periodic
+        // lines run inside --mode perf's timed loop: a trim there walks every
+        // arena, costs again in page faults when malloc reuses the pages, and
+        // bends the "current" curve away from what an application would see.
+        const bool        checkpoint      = (msg == "end" || msg == "after init");
+        static const bool trim_every_line = shrink_array::env_flag("SHRINK_BENCH_MALLOC_TRIM");
+        if (checkpoint || trim_every_line)
+            malloc_trim(0);
 
         // /proc/self/statm: "size resident shared text lib data dt", in pages.
         // Read through a stream so a short or malformed line fails the
@@ -176,13 +177,24 @@ void memory_consumption(const std::string& msg)
         // (~200 reads cost ~3 s on the 64-thread chunk2a_dyn bench). statm
         // above lags at many threads (exact_rss.h) but costs nothing.
         static const bool exact_every_line = shrink_array::env_flag("SHRINK_BENCH_EXACT_RSS");
-        if (exact_every_line || msg == "end" || msg == "after init")
+        if (exact_every_line || checkpoint)
         {
             if (const long exact = shrink_array::exact_rss_kib(); exact > 0)
                 cur_kb = exact;
         }
         bench_rss_sampler().note(cur_kb);
         const long rss = std::max({rss_hwm, cur_kb, bench_rss_sampler().peak_kib()});
+
+        // memory_mo.txt: the run's peak, once, at the end (scripts that read a
+        // single figure from the working directory; bench_and_test.py parses
+        // stdout instead).
+        if (msg == "end")
+        {
+            if (std::ofstream fichier("memory_mo.txt"); fichier.is_open())
+                fichier << convert_memory(static_cast<double>(rss) * 1024.0);
+            else
+                std::println(stderr, "Error : can't open memory_mo.txt.");
+        }
 
         std::print("Memory consumption {} : {:.3f} Mo (peak)", msg, convert_memory(static_cast<double>(rss) * 1024.0));
         if (cur_kb > 0)

@@ -82,8 +82,8 @@ namespace internal
  *          parameter, so a plain forward declaration does not match, and a trait
  *          keeps the overload open to any future variant exposing the same two
  *          entry points. Anything else -- std::vector first -- takes the generic
- *          version below, whose contiguous iterator arithmetic the chunked
- *          arrays cannot satisfy (their iterator is bidirectional).
+ *          version below, which writes through the container's iterator --
+ *          the chunked arrays' iterator is read-only (a value, never a T&).
  */
 template <typename A>
 concept ChunkedArray = requires(A& arr, const A& ca, std::size_t i) {

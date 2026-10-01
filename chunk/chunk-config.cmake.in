@@ -1,6 +1,6 @@
 if(NOT @CHUNK_STD_ALLOC@)
   include(CMakeFindDependencyMacro)
-  find_dependency(fast_allocators 2.1.8)
+  find_dependency(fast_allocators @CHUNK_FAST_ALLOCATORS_VERSION@)
 endif()
 
 @PACKAGE_INIT@

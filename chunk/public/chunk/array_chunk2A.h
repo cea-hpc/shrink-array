@@ -268,7 +268,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *       ArrayChunkBase::assign fait resize(count) puis remplit tout ; chunk
      *       et chunk2 l'utilisent deja et passent le test.
      */
-    void assign(ind_type count, in_t<T> val)
+    void assign(ind_type count, T val) // T, not in_t<T>: see ArrayChunkBase::assign
     {
         Base::assign(count, val);
     }
