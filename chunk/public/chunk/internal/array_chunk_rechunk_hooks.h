@@ -120,9 +120,8 @@ class RechunkHooks<Derived, true>
  *          using-declarations in both modes.
  */
 template <typename Derived>
-class RechunkHooks<Derived, false>
+struct RechunkHooks<Derived, false>
 {
-  public:
     /** @brief No-op: the geometry is fixed at compile time. */
     void rechunk_drop_candidates() noexcept {}
     /** @brief No-op: the geometry is fixed at compile time. */

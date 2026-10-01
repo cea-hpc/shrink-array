@@ -197,9 +197,8 @@ class WriteCompressSyncPolicy
     ///          waits of ~40 yields per reference run. "Non-null" keeps the
     ///          flag's other meaning, an enqueue in progress on this rank, for
     ///          the flushers (is_thread_writing).
-    class alignas(128) WritingFlag
+    struct alignas(128) WritingFlag
     {
-      public:
         std::atomic<const void*> v{nullptr};
     };
 
@@ -487,7 +486,7 @@ class WriteCompressSyncPolicy
  * @tparam PROX proxy type the policy would be instantiated for
  */
 template <typename PROX>
-class WriteCompressSyncPolicy<PROX, false>
+struct WriteCompressSyncPolicy<PROX, false>
 {
 };
 

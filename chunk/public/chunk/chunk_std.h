@@ -42,7 +42,7 @@ namespace shrink_array
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
 template <typename T, typename ChunkType>
-class CompressionManager;
+struct CompressionManager;
 
 template <template <typename> class CHUNK_T, typename T>
 class ManagerChunk;
@@ -81,13 +81,12 @@ class AllTypeChunk;
  *      simply "let go of the reuse pools", whichever build this is.
  */
 template <bool Enabled = build_config::use_openmp, typename AllT = AllTypeChunk>
-class ChunkPoolParallelInterface; // primary left undefined: only the 2 specializations exist
+struct ChunkPoolParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: the pools are per-rank.
 template <typename AllT>
-class ChunkPoolParallelInterface<true, AllT>
+struct ChunkPoolParallelInterface<true, AllT>
 {
-  public:
     /// @return True as soon as the per-rank free lists are unbalanced enough to
     ///         be worth a pass.
     [[nodiscard]] static bool need_load_balance_list_block_free();
@@ -107,9 +106,8 @@ class ChunkPoolParallelInterface<true, AllT>
 
 /// @brief Serial builds: one allocator, no per-rank lists to balance or clear.
 template <typename AllT>
-class ChunkPoolParallelInterface<false, AllT>
+struct ChunkPoolParallelInterface<false, AllT>
 {
-  public:
     /// @return Always false: there is a single free list, so nothing to balance.
     [[nodiscard]] static bool need_load_balance_list_block_free()
     {
@@ -353,9 +351,8 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
  * @tparam Derived CRTP derived chunk type (Chunk<T>)
  */
 template <typename T, typename Derived>
-class ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
+struct ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
 {
-  public:
     using Base = ChunkBase<T, Derived>;
     using Base::derived;
     using Base::values;

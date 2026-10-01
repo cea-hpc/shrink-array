@@ -47,7 +47,7 @@ namespace shrink_array
  *         explicitly outside of tests.
  */
 template <typename Derived, bool Enabled = build_config::use_openmp>
-class ParallelSupport2A;
+struct ParallelSupport2A;
 
 // ── OpenMP build: the real parallel surface ──────────────────────────────────
 /**
@@ -55,7 +55,7 @@ class ParallelSupport2A;
  * @copydetails ParallelSupport2A
  */
 template <typename Derived>
-class ParallelSupport2A<Derived, true> : public ParallelSupportCommon<Derived>
+struct ParallelSupport2A<Derived, true> : public ParallelSupportCommon<Derived>
 {
     // flush_pending_deferred_ops() and self() come from ParallelSupportCommon.
 };
@@ -65,7 +65,7 @@ class ParallelSupport2A<Derived, true> : public ParallelSupportCommon<Derived>
  * @brief Serial specialisation: the same verb, inert.
  */
 template <typename Derived>
-class ParallelSupport2A<Derived, false> : public ParallelSupportCommonSerial<Derived>
+struct ParallelSupport2A<Derived, false> : public ParallelSupportCommonSerial<Derived>
 {
 };
 

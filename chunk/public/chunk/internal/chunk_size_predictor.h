@@ -38,9 +38,8 @@ namespace shrink_array
 {
 
 /// @brief Predicted figures at chunk size S_prime: memory, constant blocks and total blocks.
-class PredictorPoint
+struct PredictorPoint
 {
-  public:
     unsigned    S_prime;
     std::size_t mem_bytes;
     int         n_const_blocks;

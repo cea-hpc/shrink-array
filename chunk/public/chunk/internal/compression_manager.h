@@ -65,9 +65,8 @@ namespace shrink_array
  * @tparam ChunkType Chunk variant the manager coordinates
  */
 template <typename T, typename ChunkType>
-class FlushReplayState
+struct FlushReplayState
 {
-  public:
     /// @brief RAII bracket marking this thread as replaying flushed ops.
     ///        Nesting-safe: saves and restores the flag.
     class FlushReplayGuard
@@ -330,9 +329,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @details Sharded per rank rather than a single counter, to avoid one hot
      *          cache line under 64-thread enqueue storms.
      */
-    class alignas(128) PaddedPendingCounter
+    struct alignas(128) PaddedPendingCounter
     {
-      public:
         std::atomic<int64_t> v{0};
     };
 
@@ -784,18 +782,16 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *       flushes for this type; since flush_chunk_all_ranks() is hot on the
      *       read path, that was the 128-thread scalability collapse.
      */
-    class alignas(128) PaddedFlushLock
+    struct alignas(128) PaddedFlushLock
     {
-      public:
         std::atomic<int> owner{-1}; ///< rank currently holding the lock, -1 if free
         int              depth{0};  ///< nested acquire count, owner-only
     };
 
     /// @brief One dangerous-list flag, padded to its own cache line.
     /// @note 128 bytes rather than 64, to stay safe on ARM.
-    class alignas(128) PaddedDangerousFlag
+    struct alignas(128) PaddedDangerousFlag
     {
-      public:
         std::atomic<int> value{0}; ///< 0 or 1 -- see mark_list_dangerous_for_thread
     };
 
@@ -804,9 +800,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     ///       thread_may_have_ops_own), so no other thread shares its line. The
     ///       alignas(128) it had dates from a rank-indexed array; on a
     ///       thread_local it only spread the TLS block, one line per type.
-    class ThreadOpsFlag
+    struct ThreadOpsFlag
     {
-      public:
         std::atomic<bool> v{false};
     };
 
@@ -1022,9 +1017,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
  * @tparam ChunkType Chunk variant the manager coordinates
  */
 template <typename T, typename ChunkType>
-class CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState<T, ChunkType>
+struct CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState<T, ChunkType>
 {
-  public:
     /**
      * @brief Serial builds queue nothing, so no rank can hold deferred ops.
      *
@@ -1063,9 +1057,8 @@ class CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState
  * @note Thread safety: All methods are thread-safe
  */
 template <typename T, typename ChunkType>
-class CompressionManager : public CompressionManagerOmpPolicy<T, ChunkType, build_config::use_openmp>
+struct CompressionManager : public CompressionManagerOmpPolicy<T, ChunkType, build_config::use_openmp>
 {
-  public:
     CompressionManager()  = default;
     ~CompressionManager() = default;
 

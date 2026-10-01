@@ -51,9 +51,8 @@ namespace shrink_array
  * second value by scanning); the element contract there is == and T{} only.
  */
 template <typename T>
-class ValueLess
+struct ValueLess
 {
-  public:
     /// @brief Compare two values with the ordering selected for T (see above).
     /// @return true when @p lhs orders before @p rhs.
     bool operator()(in_t<T> lhs, in_t<T> rhs) const noexcept

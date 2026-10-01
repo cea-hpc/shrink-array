@@ -25,9 +25,8 @@
 // Cache-line-padded uint64 used as a per-thread accumulator to avoid false
 // sharing when threads write their local checksum contribution.
 // -----------------------------------------------------------------------------
-class uint64_t_padding
+struct uint64_t_padding
 {
-  public:
     /// @brief Zero-initialise the value.
     uint64_t_padding() : value(0) {}
     /// @brief Initialise the value to @p val.
@@ -63,13 +62,13 @@ class uint64_t_padding
 // Trait: is T a std::vector<...> ?
 // -----------------------------------------------------------------------------
 template <typename T>
-class is_vector : public std::false_type
+struct is_vector : public std::false_type
 {
 };
 
 /// @brief std::vector<T, Alloc> is a vector.
 template <typename T, typename Alloc>
-class is_vector<std::vector<T, Alloc>> : public std::true_type
+struct is_vector<std::vector<T, Alloc>> : public std::true_type
 {
 };
 
@@ -77,13 +76,13 @@ class is_vector<std::vector<T, Alloc>> : public std::true_type
 // Trait: is T a std::atomic<pointer> ?
 // -----------------------------------------------------------------------------
 template <typename T>
-class is_atomic_pointer : public std::false_type
+struct is_atomic_pointer : public std::false_type
 {
 };
 
 /// @brief std::atomic<U*> is an atomic pointer.
 template <typename U>
-class is_atomic_pointer<std::atomic<U*>> : public std::true_type
+struct is_atomic_pointer<std::atomic<U*>> : public std::true_type
 {
 };
 
@@ -171,9 +170,8 @@ void calculate_checksum_0(const V& vec, std::vector<uint64_t_padding>& checksum_
 
 /// @brief A container reference with one padded checksum accumulator per thread.
 template <typename V>
-class VectorChecksum
+struct VectorChecksum
 {
-  public:
     /// @brief Keep a reference to @p vec_ and size checksum_thr to CHUNK_PMP_MAX_THREADS zeroed slots.
     /// @param vec_ Container to checksum.
     VectorChecksum(const V& vec_) : vec(vec_)

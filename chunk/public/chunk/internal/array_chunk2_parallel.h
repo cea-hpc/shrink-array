@@ -55,7 +55,7 @@ namespace shrink_array
  *         explicitly outside of tests.
  */
 template <typename Derived, bool Enabled = build_config::use_openmp>
-class ParallelSupport2;
+struct ParallelSupport2;
 
 // ── OpenMP build: the real parallel surface ──────────────────────────────────
 /**
@@ -63,7 +63,7 @@ class ParallelSupport2;
  * @copydetails ParallelSupport2
  */
 template <typename Derived>
-class ParallelSupport2<Derived, true> : public ParallelSupportCommon<Derived>
+struct ParallelSupport2<Derived, true> : public ParallelSupportCommon<Derived>
 {
     // flush_pending_deferred_ops() and self() come from ParallelSupportCommon.
 };
@@ -73,7 +73,7 @@ class ParallelSupport2<Derived, true> : public ParallelSupportCommon<Derived>
  * @brief Serial specialisation: the same verb, inert.
  */
 template <typename Derived>
-class ParallelSupport2<Derived, false> : public ParallelSupportCommonSerial<Derived>
+struct ParallelSupport2<Derived, false> : public ParallelSupportCommonSerial<Derived>
 {
 };
 
@@ -135,9 +135,8 @@ class FastBlockSupport2<Derived, true>
  *          declared member in every mode.
  */
 template <typename Derived>
-class FastBlockSupport2<Derived, false>
+struct FastBlockSupport2<Derived, false>
 {
-  public:
     /** @brief No-op: this mode has no deferred candidate list. */
     void make_block_compression() noexcept {}
 };

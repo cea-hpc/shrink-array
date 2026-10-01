@@ -39,9 +39,8 @@ namespace shrink_array
 {
 
 /// @brief Thresholds of RechunkDecider: stability ticks, gain deadbands, cooldown, caps and dry-run switch.
-class RechunkPolicy
+struct RechunkPolicy
 {
-  public:
     int         stability_ticks = 3;        // best must hold this many ticks
     std::size_t min_gain_bytes  = 8u << 20; // deadband: ignore gains below 8 MB
     double      min_gain_frac   = 0.15;     // ALSO require gain >= this fraction of
@@ -137,9 +136,8 @@ class RechunkDecider
 {
   public:
     // One committed re-chunk, for the end-of-run report.
-    class RechunkEvent
+    struct RechunkEvent
     {
-      public:
         int         iter; // iteration at which it happened
         std::string name; // array name
         unsigned    old_size, new_size;
@@ -174,9 +172,8 @@ class RechunkDecider
     void print_rechunk_log(std::FILE* out = stdout) const;
 
   private:
-    class Hist
+    struct Hist
     {
-      public:
         static constexpr int kVisited = 8;
 
         unsigned last_best_size   = 0;

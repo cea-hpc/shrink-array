@@ -547,9 +547,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     using Base::tab_is_inside_chunk_list_to_compress; ///< Global compression tracking array
 
     /// @brief Functor wrapping operator% for apply_compound_operation().
-    class modulo
+    struct modulo
     {
-      public:
         /// @brief Apply operator% to the two operands.
         /// @return lhs % rhs.
         constexpr T operator()(in_t<T> lhs, in_t<T> rhs) const noexcept

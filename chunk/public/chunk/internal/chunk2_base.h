@@ -33,7 +33,7 @@ namespace shrink_array
 {
 
 template <typename Derived>
-class ProxyTypeTrait;
+struct ProxyTypeTrait;
 
 template <typename T>
 class Chunk2;
@@ -49,17 +49,15 @@ class Proxy2A;
 
 // Specialisation for Chunk2
 template <typename T>
-class ProxyTypeTrait<Chunk2<T>>
+struct ProxyTypeTrait<Chunk2<T>>
 {
-  public:
     using Type = Proxy2<T>;
 };
 
 // Specialisation for Chunk2A
 template <typename T>
-class ProxyTypeTrait<Chunk2A<T>>
+struct ProxyTypeTrait<Chunk2A<T>>
 {
-  public:
     using Type = Proxy2A<T>;
 };
 

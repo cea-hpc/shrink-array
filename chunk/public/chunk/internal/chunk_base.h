@@ -78,10 +78,10 @@ namespace shrink_array
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
 template <typename T, typename ChunkType>
-class CompressionManager;
+struct CompressionManager;
 
 template <typename Derived>
-class ProxyTypeTrait;
+struct ProxyTypeTrait;
 
 template <typename T>
 class Chunk;
@@ -91,9 +91,8 @@ class Proxy;
 
 // Specialisation for Chunk
 template <typename T>
-class ProxyTypeTrait<Chunk<T>>
+struct ProxyTypeTrait<Chunk<T>>
 {
-  public:
     using Type = Proxy<T>;
 };
 
@@ -180,9 +179,8 @@ class DeferredReadGate; // primary left undefined: only the 3 specializations ex
 // Serial build: the deferred-op machinery does not exist, nothing is ever
 // pending, so the gate is a pure no-op (and names no OpenMP-only member).
 template <typename Derived>
-class DeferredReadGate<Derived, DeferReadGate::None>
+struct DeferredReadGate<Derived, DeferReadGate::None>
 {
-  public:
     static constexpr bool precise = false;
 
     /// @brief Read-side gate check: always false (serial build has no
@@ -226,9 +224,8 @@ class DeferredReadGate<Derived, DeferReadGate::None>
 // OpenMP + SHRINK_SMALL_CHUNK: no per-chunk counter; the authoritative gate is
 // the (coarser) map-scan is_not_available().
 template <typename Derived>
-class DeferredReadGate<Derived, DeferReadGate::Coarse>
+struct DeferredReadGate<Derived, DeferReadGate::Coarse>
 {
-  public:
     static constexpr bool precise = false;
 
     // No counter in this build: publish/retire are no-ops and pending_any() is
@@ -464,13 +461,12 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
 // own derived()/self() ambiguous (two paths to the same stateless mixin).
 // ----------------------------------------------------------------------------
 template <typename T, typename Derived, bool UseOpenMP = build_config::use_openmp>
-class ChunkAllocPolicy; // primary left undefined: only the 2 specializations exist
+struct ChunkAllocPolicy; // primary left undefined: only the 2 specializations exist
 
 // OpenMP: thread-local free-list reuse first, fresh allocation otherwise.
 template <typename T, typename Derived>
-class ChunkAllocPolicy<T, Derived, true>
+struct ChunkAllocPolicy<T, Derived, true>
 {
-  public:
     /// @brief Allocate a chunk with thread-local caching (OpenMP version).
     /// @tparam InitReused Initialiser applied to a buffer popped from the reuse list
     /// @tparam InitFresh  Initialiser applied to a freshly allocated buffer
@@ -602,9 +598,8 @@ class ChunkAllocPolicy<T, Derived, true>
 // Serial: always allocate fresh -- no per-thread free list to contend over,
 // so there is nothing to reuse from.
 template <typename T, typename Derived>
-class ChunkAllocPolicy<T, Derived, false>
+struct ChunkAllocPolicy<T, Derived, false>
 {
-  public:
     /// @brief Allocate a chunk (non-OpenMP version).
     /// @tparam InitReused Unused here: serially there is no reuse list to pop from
     /// @tparam InitFresh  Initialiser applied to the freshly allocated buffer
@@ -822,7 +817,7 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
 // (nothing concurrent to protect against), no thread-local free list
 // (nothing to contend over).
 template <typename T, typename Derived>
-class ChunkDeferredOpsPolicy<T, Derived, false>
+struct ChunkDeferredOpsPolicy<T, Derived, false>
 {
 };
 
@@ -990,9 +985,8 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
 // per-size pool to keep -- allocator_data (on ChunkBase) is the only
 // allocator that ever exists. Both routing methods just return it directly.
 template <typename T, typename Derived>
-class ChunkDynamicAllocPolicy<T, Derived, false>
+struct ChunkDynamicAllocPolicy<T, Derived, false>
 {
-  public:
     /// @brief Static builds have no per-size pool: always route to the
     ///        single legacy allocator.
     /// @param thr_rank Calling thread's rank.
@@ -1042,9 +1036,8 @@ class ChunkBase : public CRTPSupport<Derived>,
     // svalloc, and every site that would call these stubs is guarded by
     // `if constexpr (build_config::use_fast_alloc)` — discarded at compile time
     // in std builds, so those guards are plain shared code.
-    class NullValueAllocator
+    struct NullValueAllocator
     {
-      public:
         /// @brief No pool to set up.
         void init(int /*element_size*/, int /*block_size*/, int /*munmap_flag*/) noexcept {}
         /// @brief No pool to tear down.
@@ -1068,9 +1061,8 @@ class ChunkBase : public CRTPSupport<Derived>,
         NullValueAllocator>;
 
     /// @brief Outcome of scan_constants(): which hypothesis survived the walk.
-    class ConstantScan
+    struct ConstantScan
     {
-      public:
         bool first  = false; ///< every element equals the first constant
         bool second = false; ///< every element equals the second constant -- never together with `first`
     };

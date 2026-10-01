@@ -560,9 +560,8 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
                 }
             }
         }
-        class OwnReplayExclGuard
+        struct OwnReplayExclGuard
         {
-          public:
             ~OwnReplayExclGuard()
             {
                 if (rank >= 0)

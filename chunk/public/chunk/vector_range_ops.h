@@ -65,9 +65,8 @@ namespace shrink_array
  *          drain exists for, and it is silent: the write lands, then a replayed
  *          op overwrites it, and only some chunks are affected.
  */
-class assume_drained_t
+struct assume_drained_t
 {
-  public:
     explicit assume_drained_t() = default;
 };
 inline constexpr assume_drained_t assume_drained{};

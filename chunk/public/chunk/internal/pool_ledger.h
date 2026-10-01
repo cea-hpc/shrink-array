@@ -59,9 +59,8 @@ namespace shrink_array::pool_ledger
 
 // One record per live block: its size and the rank that allocated it, for
 // richer diagnostics when an invariant trips.
-class Rec
+struct Rec
 {
-  public:
     std::size_t size;
     int         alloc_rank;
     const void* slab = nullptr; // identity of the pool that served this block (aliasing check)
@@ -261,9 +260,8 @@ inline const char* bstate_name(BState state) noexcept
 }
 
 /// @brief Block ledger record: current state and the rank and site of the last transition.
-class BRec
+struct BRec
 {
-  public:
     BState      state     = BState::FREE;
     int         last_rank = -1;
     const char* last_site = "";
@@ -293,9 +291,8 @@ inline void report_live_blocks() noexcept
         std::size_t            n_parked = 0;
         // (state, site) -> count ; a plain array of pairs keeps this free of
         // any extra container dependency.
-        class Row
+        struct Row
         {
-          public:
             int         state;
             const char* site;
             std::size_t count;

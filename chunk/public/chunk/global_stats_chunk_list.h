@@ -36,9 +36,8 @@ class GlobalStatsChunkList
 {
   public:
     /// @brief Figures recorded for one element type.
-    class TypeStats
+    struct TypeStats
     {
-      public:
         long   allocated_chunks;  // Total number of data chunks managed
         int    threshold_per_thr; // Compression list threshold per thread
         size_t element_size;      // Size of a single entry in the op-list (tuple)

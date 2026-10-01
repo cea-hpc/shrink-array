@@ -67,9 +67,8 @@ class Materialisations
 
   public:
     /// @brief One rank's counters, one per key slot.
-    class alignas(128) RankSlot
+    struct alignas(128) RankSlot
     {
-      public:
         std::array<long, kKeys> n;
     };
 

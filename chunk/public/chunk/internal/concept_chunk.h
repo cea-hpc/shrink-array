@@ -48,13 +48,12 @@ template <template <typename> typename CHUNK_T, typename T>
 concept IsChunk2Or2A = IsChunk2<CHUNK_T, T> || IsChunk2A<CHUNK_T, T>;
 
 template <typename>
-class chunk_template_of;
+struct chunk_template_of;
 
 /// @brief For CH\<T\>, type\<U\> names CH\<U\>.
 template <template <typename> typename CH, typename T>
-class chunk_template_of<CH<T>>
+struct chunk_template_of<CH<T>>
 {
-  public:
     template <typename U>
     using type = CH<U>;
 };

@@ -65,7 +65,7 @@ namespace shrink_array
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
 template <typename T, typename ChunkType>
-class CompressionManager;
+struct CompressionManager;
 
 // assume_drained_t / assume_drained: in vector_range_ops.h, so the tag form
 // of the call compiles against std::vector too.

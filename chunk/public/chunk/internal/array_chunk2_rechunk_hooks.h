@@ -128,9 +128,8 @@ class RechunkHooks2<Derived, true>
  *          using-declarations in both modes.
  */
 template <typename Derived>
-class RechunkHooks2<Derived, false>
+struct RechunkHooks2<Derived, false>
 {
-  public:
     using Traits     = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
     using value_type = Traits::value_type;        ///< Stored element type.
 

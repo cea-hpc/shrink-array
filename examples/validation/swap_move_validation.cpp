@@ -115,9 +115,8 @@ void compress_in_region(Arr& a)
 }
 
 /// A pattern by whole chunks: first constant, second value @p sv, data.
-class Pattern
+struct Pattern
 {
-  public:
     [[nodiscard]] double at(long i) const
     {
         switch ((i / S) % 3)
