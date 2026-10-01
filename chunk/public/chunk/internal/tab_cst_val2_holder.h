@@ -611,7 +611,7 @@ struct GlobalVecHolder
     /// @brief Value hash (a 64-bit finaliser over the object's bytes).
     /// @note Hashes the REPRESENTATION, so two values that compare equal but
     ///       differ bitwise would land in different slots.
-    static size_t index_hash(T v) noexcept
+    static size_t index_hash(in_t<T> v) noexcept
     {
         uint64_t bits = 0;
         std::memcpy(&bits, &v, sizeof(T) < sizeof(uint64_t) ? sizeof(T) : sizeof(uint64_t));
@@ -632,7 +632,7 @@ struct GlobalVecHolder
      *          open addressing probes across collisions, so the slot reached
      *          may belong to another value.
      */
-    static T* index_lookup(T v) noexcept
+    static T* index_lookup(in_t<T> v) noexcept
     {
         // One acquire load of the table pointer; the table it names is never
         // freed while a reader can hold it (see index_generations). A reader
@@ -708,7 +708,7 @@ struct GlobalVecHolder
      * @note Giving up after #INDEX_MAX_PROBE sets #index_degraded rather than
      *       failing: the value IS registered in the chain, just not indexed.
      */
-    static void index_publish(T v, T* ptr) noexcept
+    static void index_publish(in_t<T> v, T* ptr) noexcept
     {
         IndexTable* table = index_tab.load(std::memory_order_relaxed);
         // Grow before the table passes half full: linear probing degrades
@@ -1017,7 +1017,7 @@ class TabCstVal2Holder
      *       GlobalVecHolder::index_degraded, i.e. the case where the index can
      *       no longer answer authoritatively.
      */
-    [[nodiscard]] T* find_or_set_ind_cst_val2(in_t<T> second_v, SecondValueRef<T> ptr_second_value)
+    [[nodiscard]] T* find_or_set_ind_cst_val2(T second_v, SecondValueRef<T> ptr_second_value)
     {
         T* buf = find_or_register(second_v);
         ptr_second_value.set_from_array(buf);
@@ -1098,7 +1098,7 @@ class TabCstVal2Holder
      *          pointer. That ordering is what index_publish()'s release store
      *          makes visible.
      */
-    static T* alloc_chunk(in_t<T> val)
+    static T* alloc_chunk(T val)
     {
         T* buf = reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
         // The dictionary entry, before the array can be published: a reader

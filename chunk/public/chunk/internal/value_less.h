@@ -26,6 +26,7 @@
 
 #include "chunk/chunk_def.h" // ComplexType
 #include "chunk/internal/complex_less.h"
+#include "chunk/internal/in_t.h" // in_t<T>: the compared values
 
 namespace shrink_array
 {
@@ -54,7 +55,7 @@ struct ValueLess
 {
     /// @brief Compare two values with the ordering selected for T (see above).
     /// @return true when @p lhs orders before @p rhs.
-    bool operator()(const T& lhs, const T& rhs) const noexcept
+    bool operator()(in_t<T> lhs, in_t<T> rhs) const noexcept
     {
         if constexpr (ComplexType<T>)
             return ComplexLess<typename T::value_type>{}(lhs, rhs);

@@ -82,7 +82,7 @@ RechunkHooks2<Derived, true>::value_type RechunkHooks2<Derived, true>::rechunk_c
 }
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_seed_fresh(const value_type& state)
+void RechunkHooks2<Derived, true>::rechunk_seed_fresh(in_t<value_type> state)
 {
     // Called on the FRESH array before refill, so its compression decisions use
     // the same second_value. Only propagate a NON-TRIVIAL value: the default
@@ -112,7 +112,7 @@ bool RechunkHooks2<Derived, true>::rechunk_swap_identity(Derived& tmp)
 }
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(Derived& tmp, const value_type& state)
+void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(Derived& tmp, in_t<value_type> state)
 {
     // Re-own the fast-block registration the fresh array created for `state`.
     // set_second_value() pointed map_inf_array[state] at &tmp.inf_array; when tmp

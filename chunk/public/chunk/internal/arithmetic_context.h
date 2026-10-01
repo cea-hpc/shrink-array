@@ -18,6 +18,7 @@
 #include <cstdint> // std::uint64_t (the generation counter)
 #include <tuple>
 
+#include "chunk/internal/in_t.h"                     // in_t<T>: the operands
 #include "chunk/internal/deferred_lifecycle_check.h" // DEFERRED_LIFECYCLE sentinels
 
 namespace shrink_array
@@ -152,7 +153,7 @@ struct ArithmeticAffectationProxyContext : BaseArithmeticContext<T, Proxy<T>>
     /// @param proxy Proxy the context is built from.
     /// @param op_value Assigned value, stored in operand.
     /// @param array_ptr Owning array.
-    ArithmeticAffectationProxyContext(const Proxy<T>& proxy, U op_value, const void* array_ptr)
+    ArithmeticAffectationProxyContext(const Proxy<T>& proxy, in_t<U> op_value, const void* array_ptr)
         : Base(proxy, array_ptr), operand(op_value)
     {
     }
@@ -175,7 +176,7 @@ struct ArithmeticOperationProxyContext : BaseArithmeticContext<T, Proxy<T>>
     /// @param op_value Right-hand operand.
     /// @param op Functor implementing the operation.
     /// @param array_ptr Owning array.
-    ArithmeticOperationProxyContext(const Proxy<T>& proxy, T op_value, Op op, const void* array_ptr)
+    ArithmeticOperationProxyContext(const Proxy<T>& proxy, in_t<T> op_value, Op op, const void* array_ptr)
         : Base(proxy, array_ptr), operand(op_value), operation(op)
     {
     }
@@ -215,7 +216,7 @@ struct ArithmeticOperationContext : BaseArithmeticContext<T, ProxyType, ChunkTyp
     /// @param op_value Right-hand operand.
     /// @param op Functor implementing the operation.
     /// @param array_ptr Owning array.
-    ArithmeticOperationContext(const ProxyType& proxy, T op_value, Op op, const void* array_ptr)
+    ArithmeticOperationContext(const ProxyType& proxy, in_t<T> op_value, Op op, const void* array_ptr)
         : Base(proxy, array_ptr), operand(op_value), operation(op)
     {
     }
@@ -238,7 +239,7 @@ struct ArithmeticAffectationContext : BaseArithmeticContext<T, ProxyType, ChunkT
     /// @param proxy Proxy the context is built from.
     /// @param op_value Assigned value, stored in operand.
     /// @param array_ptr Owning array.
-    ArithmeticAffectationContext(const ProxyType& proxy, U op_value, const void* array_ptr)
+    ArithmeticAffectationContext(const ProxyType& proxy, in_t<U> op_value, const void* array_ptr)
         : Base(proxy, array_ptr), operand(op_value)
     {
     }

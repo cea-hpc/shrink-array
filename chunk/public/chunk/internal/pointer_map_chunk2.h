@@ -298,7 +298,7 @@ class PointerMapChunk2
      * @param ind New index to assign.
      * @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
      */
-    void replace_all_other_elm(void* key, T val, int ind) noexcept
+    void replace_all_other_elm(void* key, in_t<T> val, int ind) noexcept
     {
         for (auto& item : vec)
         {
@@ -356,7 +356,7 @@ class PointerMapChunk2
     /// @brief Change the second value and its table index recorded for
     ///        array @p key.
     /// @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
-    void replace(void* key, T val, int ind) noexcept
+    void replace(void* key, in_t<T> val, int ind) noexcept
     {
         for (auto& item : vec)
         {
@@ -515,7 +515,7 @@ class PointerMapChunk2
      * @param ind Index associated with the value.
      * @param num_tab Table number where the value belongs.
      */
-    void insert(void* key, T val, int ind, int num_tab)
+    void insert(void* key, in_t<T> val, int ind, int num_tab)
     {
         vec.emplace_back(key, std::make_tuple(val, ind, num_tab));
     }
