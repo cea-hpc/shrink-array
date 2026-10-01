@@ -652,6 +652,12 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
      */
     static void compress_chunk_to_compress(bool apply);
 
+    /// @brief One rank's share of compress_chunk_to_compress(): the body its
+    ///        region runs on each thread. Public for AllTypeChunk's single
+    ///        sweep region (ManagerChunk::sweep_rank).
+    /// @param thr rank whose candidate list to drain
+    static void compress_sweep_rank(int thr);
+
   private:
     /**
      * @brief Release this chunk's buffer and return to the compressed state.

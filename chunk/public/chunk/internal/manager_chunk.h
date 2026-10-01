@@ -202,6 +202,21 @@ class ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtua
     ///        the lists without compressing (see AllTypeChunk's).
     virtual void compress_chunk_to_compress_potentially(bool apply) = 0;
 
+    /// @name The single sweep region (AllTypeChunk::compress_chunk_to_compress_potentially)
+    /// The pass compress_chunk_to_compress_potentially() makes, split so that
+    /// every type runs in ONE region: prepare serially, then each thread runs
+    /// sweep_rank() for its rank, then the mop-up of the ranks past the team
+    /// if sweep_mops_up(). Outside a region only; no-ops without fast block
+    /// compression, like the pass itself.
+    ///@{
+    /// @brief Serial, before the region: snapshot what sweep_rank() walks.
+    virtual void sweep_prepare() = 0;
+    /// @brief Rank @p thr's share of the pass.
+    virtual void sweep_rank(int thr, bool apply) = 0;
+    /// @brief Are the ranks past the team swept too, serially, after the region?
+    [[nodiscard]] virtual bool sweep_mops_up(bool apply) const = 0;
+    ///@}
+
     /// Bytes parked in this manager's reuse pools (printed with CHUNK_STATS).
     /// Common to every build: the reuse pools are not an OpenMP-only surface,
     /// and AllTypeChunk reaches this through a ManagerChunkInt*.
@@ -363,6 +378,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     void               force_chunk_to_compress() const override;
     [[nodiscard]] bool have_chunk_to_compress_potentially(int n_thr) const override;
     void               compress_chunk_to_compress_potentially(bool apply) override;
+    void               sweep_prepare() override;
+    void               sweep_rank(int thr, bool apply) override;
+    [[nodiscard]] bool sweep_mops_up(bool apply) const override;
+
+    /// @brief Chunk2: the second-value lists sweep_rank() drains, snapshotted
+    ///        serially by sweep_prepare() as the per-type pass always did.
+    std::vector<std::tuple<T, int, int>*> sweep_inf_arrays_;
 
     [[nodiscard]] std::size_t reuse_pool_bytes_int() const override
     {

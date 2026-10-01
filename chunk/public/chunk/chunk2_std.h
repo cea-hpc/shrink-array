@@ -770,6 +770,19 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
      */
     static void compress_chunk_to_compress_bool(bool apply);
 
+    /// @brief One rank's share of compress_chunk_to_compress() for one second
+    ///        value: the body its region runs on each thread. Public for
+    ///        AllTypeChunk's single sweep region (ManagerChunk::sweep_rank).
+    static void compress_sweep_rank(int thr_rank, const inf_array_t& inf_array, bool apply)
+    {
+        compress_chunk_to_compress_in_par(thr_rank, inf_array, apply);
+    }
+    /// @brief Bool twin of compress_sweep_rank().
+    static void compress_sweep_rank_bool(int thr_rank, bool apply)
+    {
+        compress_chunk_to_compress_bool_in_par(thr_rank, apply);
+    }
+
     /*!
      * \brief Per-candidate verify-and-apply step, called once per chunk by
      *        compress_chunk_to_compress_in_par() while draining the

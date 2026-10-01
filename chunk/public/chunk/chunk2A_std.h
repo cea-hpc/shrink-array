@@ -735,6 +735,19 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     void compress(int thr_rank, int num_chunk, int num_tab, bool apply, ChunkElems size);
 
     static void compress_chunk_to_compress(bool apply);
+
+    /// @brief One rank's share of compress_chunk_to_compress() outside a
+    ///        region: the body its region runs on each thread. Public for
+    ///        AllTypeChunk's single sweep region (ManagerChunk::sweep_rank).
+    static void compress_sweep_rank(int thr, bool apply);
+
+    /// @brief Does that pass also sweep, serially, the ranks past the team?
+    ///        Only the OpenMP non-OMPT apply pass, which drains with
+    ///        make_block_compression().
+    [[nodiscard]] static constexpr bool compress_sweep_mops_up(bool apply) noexcept
+    {
+        return build_config::use_openmp && chunk_config::not_use_compression_with_ompt && apply;
+    }
     static bool have_chunk_to_compress(int max_thr);
 
     static void make_block_compression(int thr, Proxy2A<T>* proxy2A);

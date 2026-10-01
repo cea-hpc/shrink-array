@@ -562,21 +562,9 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
  * @param apply          Forwarded to compress().
  */
 template <typename T>
-void Chunk2A<T>::compress_chunk_to_compress(bool apply)
+void Chunk2A<T>::compress_sweep_rank(int thr, bool apply)
 {
-    chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
-
-    // Inside a region: this rank's own list, and nothing else. The branches
-    // below open a region of their own; reached from inside one (as this used
-    // to, with no `else`), every thread of the team ran its own serialised
-    // copy of the between-region pass, and the rank mop-up swept every rank's
-    // list from every thread at once. Same shape as
-    // Chunk2FastCompPolicy::compress_chunk_to_compress.
-    if (CHUNK_PMP_IN_PARALLEL_REGION)
-    {
-        compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, apply);
-    }
-    else if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
+    if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
     {
         // An OpenMP build without OMPT had no between-region compressor for
         // chunk2a until Sept '26: compress() returns at once there, so a
@@ -588,37 +576,45 @@ void Chunk2A<T>::compress_chunk_to_compress(bool apply)
         // writers' pass runs without its handshake (nullptr proxy), each
         // rank on its own list -- the lists are per rank, the second-value
         // registry takes its mutex, the in-loop passes already run
-        // concurrently -- and the ranks beyond the team's size serially,
-        // as Chunk2FastCompPolicy::compress_chunk_to_compress does.
+        // concurrently -- and the ranks beyond the team's size serially
+        // (compress_sweep_mops_up), as Chunk2's pass does.
         if (apply)
         {
-            int team = 0;
-#pragma omp parallel
-            {
-                const int thr = CHUNK_PMP_THREAD_RANK;
-                if (thr == 0)
-                    team = CHUNK_PMP_NUM_THREADS;
-                make_block_compression(thr, nullptr);
-            }
-            for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
-                make_block_compression(thr, nullptr);
+            make_block_compression(thr, nullptr);
+            return;
         }
-        else
-        {
-#pragma omp parallel
-            {
-                compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, apply);
-            }
-        }
+    }
+    compress_chunk_to_compress_in_par(thr, apply);
+}
+
+template <typename T>
+void Chunk2A<T>::compress_chunk_to_compress(bool apply)
+{
+    chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
+
+    if (CHUNK_PMP_IN_PARALLEL_REGION)
+    {
+        // Inside a region: this rank's own list, and nothing else. Opening
+        // the region below from inside one (as this did, with no `else`) ran
+        // a serialised copy of the pass on every thread of the team, and the
+        // mop-up swept every rank's list from every thread at once.
+        compress_chunk_to_compress_in_par(CHUNK_PMP_THREAD_RANK, apply);
     }
     else
     {
+        int team = 0;
 #pragma omp parallel
         {
             const int thr = CHUNK_PMP_THREAD_RANK;
-            compress_chunk_to_compress_in_par(thr, apply);
+            if (thr == 0)
+                team = CHUNK_PMP_NUM_THREADS;
+            compress_sweep_rank(thr, apply);
         }
+        if (compress_sweep_mops_up(apply))
+            for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
+                compress_sweep_rank(thr, apply);
     }
+
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
 }
 
