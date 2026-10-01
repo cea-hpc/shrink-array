@@ -98,7 +98,9 @@ void Proxy<T>::perform_core_assignment(in_t<T> v) const noexcept
             void capture(const Proxy* proxy) noexcept
             {
                 if constexpr (chunk_config::use_compression_with_counter)
+                {
                     was_cst = proxy->is_cst_val();
+                }
             }
 
             // Applied after allocation to sync counters with the new heap block
@@ -107,9 +109,13 @@ void Proxy<T>::perform_core_assignment(in_t<T> v) const noexcept
                 if constexpr (chunk_config::use_compression_with_counter)
                 {
                     if (was_cst)
+                    {
                         proxy->chunk.set_nb_val_eq_zero(proxy->chunk_size() - 1);
+                    }
                     else if (val == Chunk<T>::first_value)
+                    {
                         proxy->chunk.inc_nb_val_eq_zero();
+                    }
                 }
             }
 
@@ -232,10 +238,12 @@ inline void check_replay_store([[maybe_unused]] ChunkT&     chunk,
     if constexpr (build_config::any_check)
     {
         if (chunk.values_load() != stored_to) [[unlikely]]
+        {
             INVARIANT_FAILED("{}: values changed during a deferred replay (chunk={} num={}): a compressor ran "
                              "outside CompressionManager::start() or the replay ran outside a flush drain; "
                              "the store is lost",
                              where, static_cast<const void*>(&chunk), num);
+        }
     }
 }
 } // namespace internal
@@ -683,7 +691,9 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::trigger_compression_if_needed(int
         CompressionManagerType::mark_list_dangerous_for_thread(thr_rank);
 
         if constexpr (chunk_config::verbose)
+        {
             std::cerr << "⚠️ List became dangerous: size=" << sz << "\n";
+        }
     }
 }
 template <typename Derived, typename T, bool Enabled>

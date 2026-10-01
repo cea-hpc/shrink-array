@@ -104,7 +104,9 @@ class DirtyBitsetSupport<Derived, true>
         // then every later mark is a plain load).
         auto& any = any_marked_word();
         if (any.load(std::memory_order_relaxed) == 0)
+        {
             any.store(1, std::memory_order_release);
+        }
     }
 
     /**
@@ -166,7 +168,9 @@ class DirtyBitsetSupport<Derived, true>
     void reallocate_dirty_bitset(int old_nb_chunk, int new_nb_chunk)
     {
         if (new_nb_chunk == old_nb_chunk)
+        {
             return;
+        }
 
         const int old_nb_words = words_for(old_nb_chunk);
         const int new_nb_words = words_for(new_nb_chunk);
@@ -205,7 +209,9 @@ class DirtyBitsetSupport<Derived, true>
     void clear_dirty_bitset() noexcept
     {
         if (bitset_.empty())
+        {
             return;
+        }
         // Nothing marked since the last clear: the words are already zero.
         // This is the common case -- only the deferred-enqueue path marks --
         // and it matters: clear_all_dirty_bitsets() runs at every phase end of
@@ -213,10 +219,14 @@ class DirtyBitsetSupport<Derived, true>
         // rewriting one 128-byte line per 64 chunks of every array took ~21 s
         // of a ~30 s shrink_bench_chunk2a_256 run on AMD Milan (GNU, 64 threads).
         if (any_marked_word().exchange(0, std::memory_order_acq_rel) == 0)
+        {
             return;
+        }
         PaddedDirtyWord* const words = bitset_.data();
         for (int i = 0; i < nb_words_; ++i)
+        {
             words[i].word.store(0, std::memory_order_relaxed);
+        }
     }
 
     /**

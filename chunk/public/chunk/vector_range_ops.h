@@ -114,7 +114,9 @@ void fill_range(C& container, std::size_t first, std::size_t last, const U& v)
     const auto size = static_cast<std::size_t>(container.size());
     last            = std::min(last, size);
     if (first >= last)
+    {
         return;
+    }
     std::fill(std::next(container.begin(), static_cast<std::ptrdiff_t>(first)),
               std::next(container.begin(), static_cast<std::ptrdiff_t>(last)), static_cast<C::value_type>(v));
 }
@@ -133,7 +135,9 @@ void copy_range(C& container, std::size_t first, std::size_t last, It src_first)
     const auto size = static_cast<std::size_t>(container.size());
     last            = std::min(last, size);
     if (first >= last)
+    {
         return;
+    }
     std::copy(src_first, std::next(src_first, static_cast<std::ptrdiff_t>(last - first)),
               std::next(container.begin(), static_cast<std::ptrdiff_t>(first)));
 }

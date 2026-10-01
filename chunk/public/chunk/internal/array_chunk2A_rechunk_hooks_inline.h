@@ -52,13 +52,19 @@ void RechunkHooks2A<Derived, true>::rechunk_drop_candidates()
         const auto compress_list = [&](auto& list)
         {
             for (auto& tup : list)
+            {
                 if (std::get<2>(tup) == num_tab)
+                {
                     std::get<0>(tup)->compress(thr, std::get<1>(tup), num_tab, /*apply=*/true, std::get<3>(tup));
+                }
+            }
         };
         if constexpr (build_config::use_openmp)
         {
             for (auto& list : manager_type::chunk2A_to_compress_potentially_thr)
+            {
                 compress_list(list);
+            }
         }
         else
         {

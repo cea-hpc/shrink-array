@@ -183,7 +183,9 @@ void write_binary_file(const std::string& filename,
     }
 
     if (no_compress)
+    {
         return;
+    }
 
     if constexpr (build_config::has_bzip2)
     {
@@ -250,8 +252,10 @@ void read_check_binary_file(Int                ind,
     else
     {
         if (!read_trace)
+        {
             std::cerr << tab_name << "\nError checksum ! checksum read : " << lchs_read
                       << " checksum calculate : " << lchs;
+        }
 
         if (!no_compress)
         {
@@ -418,7 +422,9 @@ void read_check_binary_file(Int                ind,
                 }
 
                 if constexpr (chunk_config::ring_log_debug)
+                {
                     shrink_array::analyze_ring_sweep();
+                }
             };
 
             // Detect value category
@@ -739,13 +745,19 @@ void read_check_binary_file(Int                ind,
                     }
 
                     if constexpr (chunk_config::ring_log_debug)
+                    {
                         shrink_array::analyze_ring_sweep();
+                    }
                 };
 
                 if constexpr (std::is_same_v<T, double>)
+                {
                     log_message(std::string("")); // Reset stream flags handled below if needed
+                }
                 if constexpr (std::is_same_v<T, float>)
+                {
                     log_message(std::string("")); // Same as above
+                }
 
                 // FIX: unsigned char goes through operator<< as a CHARACTER, so a
                 // mismatch on tab_char printed a control byte instead of the number
@@ -757,9 +769,13 @@ void read_check_binary_file(Int                ind,
                     using V = std::remove_cvref_t<decltype(v)>;
                     if constexpr (std::is_same_v<V, unsigned char> || std::is_same_v<V, signed char> ||
                                   std::is_same_v<V, char>)
+                    {
                         return static_cast<int>(v);
+                    }
                     else
+                    {
                         return v;
+                    }
                 };
 
                 std::ostringstream oss;
@@ -846,9 +862,13 @@ void read_check_binary_file(Int                ind,
                         {
                             // bool / Bit: one second value, no index.
                             if constexpr (chunk_config::use_chunk2 && !shrink_array::is_bool_like_v<T>)
+                            {
                                 return chunk_t.is_cst_val2(data_check.get_ind_second_value());
+                            }
                             else
+                            {
                                 return chunk_t.is_cst_val2();
+                            }
                         }())
                     {
                         log_message("\n[Debug] is_cst_val2 should be not !\n");

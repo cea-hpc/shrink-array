@@ -37,9 +37,10 @@ class Chunk2Def
                                                                                                      : 100;
 
     // Level 1: Divisor 2000 -> Threshold will be very low even for huge arrays
-    constexpr static int factor_div_nb_chunk_for_compress = (chunk_config::tuning_level == 1)   ? 2000
-                                                            : (chunk_config::tuning_level == 3) ? 50 // Chunk2A's (was 20)
-                                                                                                : 100;
+    constexpr static int factor_div_nb_chunk_for_compress = (chunk_config::tuning_level == 1) ? 2000
+                                                            : (chunk_config::tuning_level == 3)
+                                                                ? 50 // Chunk2A's (was 20)
+                                                                : 100;
 
   private:
     // Upper bound on CHUNK_SIZE. This is NOT the chunk geometry (use

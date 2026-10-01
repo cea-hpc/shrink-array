@@ -96,11 +96,13 @@ inline std::atomic<int> g_rank_high_water{0};
 inline int chunk_pmp_checked_rank(int rank) noexcept
 {
     if (rank >= chunk_thread_capacity()) [[unlikely]]
+    {
         INVARIANT_FAILED("thread rank {} but the per-thread structures hold {}: the OpenMP team grew past the thread "
                          "capacity fixed when the arrays were set up. Set OMP_NUM_THREADS (or call "
                          "omp_set_num_threads) to the largest team before creating the arrays, or raise "
                          "CHUNK_THREAD_CAPACITY.",
                          rank, chunk_thread_capacity());
+    }
     int seen = internal::g_rank_high_water.load(std::memory_order_relaxed);
     while (rank >= seen &&
            !internal::g_rank_high_water.compare_exchange_weak(seen, rank + 1, std::memory_order_seq_cst))
@@ -126,15 +128,23 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
 {
     const int level = omp_get_level();
     if (level <= 1) [[likely]]
+    {
         return omp_get_thread_num();
+    }
     if (omp_get_active_level() > 1) [[unlikely]]
+    {
         INVARIANT_FAILED("nested ACTIVE parallel regions (active level {}) are not supported by the chunk arrays: "
                          "per-thread ranks of different inner teams would collide. Keep the inner regions "
                          "serialised (OMP_MAX_ACTIVE_LEVELS=1, the default) or do not touch the arrays in them.",
                          omp_get_active_level());
+    }
     for (int l = level; l >= 1; --l)
+    {
         if (omp_get_team_size(l) > 1)
+        {
             return omp_get_ancestor_thread_num(l);
+        }
+    }
     return 0; // every level serialised: a single thread
 }
 
@@ -211,8 +221,10 @@ inline int get_thr_rank_fast() noexcept
         // what the per-rank queues cannot survive: fail in release check
         // builds too, where an assert is compiled out.
         if (rank != ::shrink_array::chunk_pmp_library_rank()) [[unlikely]]
+        {
             INVARIANT_FAILED("stale thread-rank cache: {} but this thread is rank {} of the active team", rank,
                              ::shrink_array::chunk_pmp_library_rank());
+        }
     }
     return rank;
 }

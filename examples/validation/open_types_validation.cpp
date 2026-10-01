@@ -113,12 +113,16 @@ struct Pair16
 static void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 static void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 template <typename T>
@@ -129,18 +133,26 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {
     if constexpr (requires(Arr x) { x.set_second_value(v); })
+    {
         a.set_second_value(v);
+    }
 }
 
 // A multiple of every geometry the harness is built at: a run is a whole
@@ -172,11 +184,15 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
         begin_phase();
 #pragma omp for
         for (long i = 0; i < N; ++i)
+        {
             arr[i] = sc.varied(i);
+        }
     }
     end_phase();
     for (long i = 0; i < N; ++i)
+    {
         ref[i] = sc.varied(i);
+    }
 
 #pragma omp parallel
     {
@@ -186,9 +202,13 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
         {
             const long run = (i / kRun) % 3;
             if (run == 0)
+            {
                 arr[i] = T{};
+            }
             else if (run == 1)
+            {
                 arr[i] = sc.second;
+            }
         }
     }
     end_phase();
@@ -196,9 +216,13 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
     {
         const long run = (i / kRun) % 3;
         if (run == 0)
+        {
             ref[i] = T{};
+        }
         else if (run == 1)
+        {
             ref[i] = sc.second;
+        }
     }
 
 #pragma omp parallel
@@ -213,11 +237,15 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
         begin_phase();
 #pragma omp for
         for (long i = 0; i < N / 4; ++i)
+        {
             arr[i] = sc.refill;
+        }
     }
     end_phase();
     for (long i = 0; i < N / 4; ++i)
+    {
         ref[i] = sc.refill;
+    }
 
     long bad   = 0;
     long first = -1;
@@ -227,18 +255,24 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
         if (!(got == ref[i]))
         {
             if (first < 0)
+            {
                 first = i;
+            }
             ++bad;
         }
     }
 
     const long csz = static_cast<long>(arr.chunk_size());
     if (bad)
+    {
         printf("[%s/%s] FAIL: %ld/%ld mismatches, first at i=%ld (chunk #%ld, offset %ld, run %ld)\n", variant_name(),
                label, bad, N, first, first / csz, first % csz, (first / kRun) % 3);
+    }
     else
+    {
         printf("[%s/%s] OK: %ld elements of %zu bytes round-trip at chunk_size=%ld\n", variant_name(), label, N,
                sizeof(T), csz);
+    }
 
     arr.clear();
     return bad ? 1 : 0;
@@ -281,7 +315,7 @@ int main(int argc, char** argv)
     const Scenario<Color>  sc{Color::red, Color::cyan, [](long i) { return i % 3 == 0 ? Color::blue : Color::cyan; }};
     const Scenario<Quad>   sq{{1.f, 2.f, 3.f, 4.f},
                               {9.f, 8.f, 7.f, 6.f},
-                            [](long i) { return Quad{static_cast<float>(i), 0.5f, static_cast<float>(i % 5), 1.f}; }};
+                              [](long i) { return Quad{static_cast<float>(i), 0.5f, static_cast<float>(i % 5), 1.f}; }};
     const Scenario<Pair16> s16{
         {7, 7},
         {-3, 3},
@@ -320,10 +354,14 @@ int main(int argc, char** argv)
         pts.reserve(10000);
         check(pts.empty() && pts.capacity() >= 10000, "reserve(10000) on a fresh (empty) array");
         for (int i = 0; i < 10000; ++i)
+        {
             pts.emplace_back(static_cast<double>(i), 0.5, static_cast<double>(i % 3));
+        }
         bool ok = pts.size() == 10000;
         for (int i = 0; ok && i < 10000; ++i)
+        {
             ok = std::as_const(pts)[i] == Point3{static_cast<double>(i), 0.5, static_cast<double>(i % 3)};
+        }
         check(ok, "emplace_back from the members, read back");
         Array<Point3> cp(pts);
         cp[3] = Point3{-1., -1., -1.};
@@ -336,8 +374,10 @@ int main(int argc, char** argv)
         Array<Pair16>       rng(src.begin(), src.end());
         check(rng.size() == 500 && std::as_const(rng)[499] == Pair16{7, 1}, "(first, last) constructor");
         if (!bad)
+        {
             printf("[%s/vector-like on structs] OK: reserve, emplace_back, copy, {...}, (first, last)\n",
                    variant_name());
+        }
         fails += bad ? 1 : 0;
         pts.clear();
         cp.clear();

@@ -55,7 +55,9 @@ class GlobalStatsChunkList
     void print() const
     {
         if (all_stats.empty())
+        {
             return;
+        }
 
         constexpr int col_type    = 50;
         constexpr int col_data    = 18;
@@ -112,13 +114,21 @@ class GlobalStatsChunkList
         oss << std::fixed << std::setprecision(2);
 
         if (gib >= 1.0L)
+        {
             oss << gib << " Go";
+        }
         else if (mib >= 1.0L)
+        {
             oss << mib << " Mo";
+        }
         else if (kib >= 1.0L)
+        {
             oss << kib << " Ko";
+        }
         else
+        {
             oss << (long long)bytes << " bytes";
+        }
 
         return oss.str();
     }

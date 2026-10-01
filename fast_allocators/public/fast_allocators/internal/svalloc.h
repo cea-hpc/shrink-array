@@ -133,28 +133,27 @@
  * Copies min(oldthez, thesz) elements of `type` from the old buffer, then
  * frees it. Each size argument is evaluated once.
  */
-#define svrealloc_align(var, type, oldthez, thesz)                       \
-    do                                                                   \
-    {                                                                    \
-        void*        __sv_p     = NULL;                                  \
-        const size_t __sv_new   = (size_t)(thesz);                       \
-        const size_t __sv_old_n = (size_t)(oldthez);                     \
-        const size_t __sv_n     = __sv_new * sizeof(type);               \
-                                                                         \
-        assert((long)__sv_new);                                          \
-        void* __sv_old = (void*)(var);                                   \
-        if (posix_memalign(&__sv_p, __ALIGNEMENT__, __sv_n) != 0)        \
-            __sv_p = NULL;                                               \
-        assert(__sv_p);                                                  \
-        (var) = (type*)__sv_p;                                           \
-        if (__sv_old_n)                                                  \
-        {                                                                \
-            const size_t __sv_keep =                                     \
-                __sv_new > __sv_old_n ? __sv_old_n : __sv_new;           \
-            memcpy(__sv_p, __sv_old, __sv_keep * sizeof(type));          \
-        }                                                                \
-        if (__sv_old)                                                    \
-            svfree_align(__sv_old);                                      \
+#define svrealloc_align(var, type, oldthez, thesz)                                  \
+    do                                                                              \
+    {                                                                               \
+        void*        __sv_p     = NULL;                                             \
+        const size_t __sv_new   = (size_t)(thesz);                                  \
+        const size_t __sv_old_n = (size_t)(oldthez);                                \
+        const size_t __sv_n     = __sv_new * sizeof(type);                          \
+                                                                                    \
+        assert((long)__sv_new);                                                     \
+        void* __sv_old = (void*)(var);                                              \
+        if (posix_memalign(&__sv_p, __ALIGNEMENT__, __sv_n) != 0)                   \
+            __sv_p = NULL;                                                          \
+        assert(__sv_p);                                                             \
+        (var) = (type*)__sv_p;                                                      \
+        if (__sv_old_n)                                                             \
+        {                                                                           \
+            const size_t __sv_keep = __sv_new > __sv_old_n ? __sv_old_n : __sv_new; \
+            memcpy(__sv_p, __sv_old, __sv_keep * sizeof(type));                     \
+        }                                                                           \
+        if (__sv_old)                                                               \
+            svfree_align(__sv_old);                                                 \
     } while (0)
 
 

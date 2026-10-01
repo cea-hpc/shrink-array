@@ -70,11 +70,17 @@ using Ch = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 /// @brief How many of the @p n chunks hold a buffer (none should).
@@ -89,9 +95,13 @@ int materialised(const C* v, std::size_t n)
     for (std::size_t k = 0; k < n; ++k)
     {
         if constexpr (requires { v[k].written(0); })
+        {
             bad += v[k].written(0);
+        }
         else
+        {
             bad += v[k].written();
+        }
     }
     return bad;
 }
@@ -119,7 +129,9 @@ int one_case(std::size_t n, bool in_region)
     printf("[%s/array-new] %-6s n=%5zu : %s\n", variant_name(), in_region ? "region" : "serial", n,
            bad ? "FAIL" : "ok, every chunk at the first constant");
     if (bad)
+    {
         printf("  %d of %zu chunk(s) not initialised\n", bad, n);
+    }
     Ch::operator delete[](p);
     return bad ? 1 : 0;
 }

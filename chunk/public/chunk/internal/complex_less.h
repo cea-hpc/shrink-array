@@ -30,9 +30,13 @@ struct ComplexLess
     bool operator()(const std::complex<T>& lhs, const std::complex<T>& rhs) const noexcept
     {
         if (lhs.real() < rhs.real())
+        {
             return true;
+        }
         if (lhs.real() > rhs.real())
+        {
             return false;
+        }
         return lhs.imag() < rhs.imag();
     }
 };

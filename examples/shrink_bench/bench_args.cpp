@@ -40,7 +40,9 @@ Int parse_int_arg(const char* opt, const char* text)
         std::size_t used  = 0;
         const Int   value = std::stoi(text, &used, 10);
         if (used == std::string(text).size())
+        {
             return value;
+        }
     }
     catch (const std::exception&)
     {
@@ -58,7 +60,9 @@ double parse_positive_real_arg(const char* opt, const char* text)
     char*        end   = nullptr;
     const double value = std::strtod(text, &end);
     if (end != text && *end == '\0' && std::isfinite(value) && value > 0.0)
+    {
         return value;
+    }
     std::cerr << "error: " << opt << " expects a real > 0 (got \"" << text << "\")\n";
     std::exit(1);
 }
@@ -108,19 +112,33 @@ BenchArgs parse_bench_args(int argc, char* argv[])
         if (std::ranges::find(valid_args, arg) != valid_args.end())
         {
             if (arg == "--no_io")
+            {
                 no_io_v = true;
+            }
             else if (arg == "--compress")
+            {
                 compress_v = true;
+            }
             else if (arg == "--write_trace")
+            {
                 write_trace = true;
+            }
             else if (arg == "--test_stl")
+            {
                 test_stl = true;
+            }
             else if (arg == "--test_prealloc")
+            {
                 test_prealloc = true;
+            }
             else if (arg == "--no_struct")
+            {
                 no_struct = true;
+            }
             else if (arg == "--no_mask")
+            {
                 no_mask = true;
+            }
             else if (arg == "--mask_scale")
             {
                 mask_scale = parse_positive_real_arg("--mask_scale", next_value());
@@ -131,9 +149,13 @@ BenchArgs parse_bench_args(int argc, char* argv[])
                 // with -DCHECK or -DPERF, is one binary and this flag.
                 const std::string m = next_value();
                 if (m == "perf")
+                {
                     set_bench_mode(BenchMode::perf);
+                }
                 else if (m == "check")
+                {
                     set_bench_mode(BenchMode::check);
+                }
                 else
                 {
                     std::cerr << "error: unknown --mode '" << m << "' (expected check or perf)\n";
@@ -144,7 +166,9 @@ BenchArgs parse_bench_args(int argc, char* argv[])
                 }
             }
             else if (arg == "--read_trace")
+            {
                 read_trace = true;
+            }
             else if (arg == "--multiply")
             {
                 multiply_factor = parse_positive_real_arg("--multiply", next_value());

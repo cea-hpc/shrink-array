@@ -62,12 +62,16 @@ using namespace shrink_array;
 static void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 static void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 template <typename T>
@@ -78,11 +82,17 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 constexpr long kBlk = 64;
@@ -117,7 +127,9 @@ static int run_validation(long N, int rounds)
             for (long b = 0; b < nblk; ++b)
             {
                 if (!is_fill(b))
+                {
                     continue;
+                }
                 const long lo = b * kBlk;
                 const long hi = lo + kBlk < N ? lo + kBlk : N;
                 fill_range_mt(arr, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), fill_v);
@@ -126,11 +138,15 @@ static int run_validation(long N, int rounds)
             for (long b = 0; b < nblk; ++b)
             {
                 if (is_fill(b))
+                {
                     continue;
+                }
                 const long lo = b * kBlk;
                 const long hi = lo + kBlk < N ? lo + kBlk : N;
                 for (long i = lo; i < hi; ++i)
+                {
                     arr[i] = elem_value(i, r);
+                }
             }
         }
         end_phase();
@@ -140,7 +156,9 @@ static int run_validation(long N, int rounds)
             const long lo = b * kBlk;
             const long hi = lo + kBlk < N ? lo + kBlk : N;
             for (long i = lo; i < hi; ++i)
+            {
                 ref[static_cast<std::size_t>(i)] = is_fill(b) ? fill_v : elem_value(i, r);
+            }
         }
 
         if (r % 5 == 4) // an explicit compression pass between rounds
@@ -160,18 +178,24 @@ static int run_validation(long N, int rounds)
             if (got != ref[static_cast<std::size_t>(i)])
             {
                 if (bad < 5)
+                {
                     std::printf("[%s] FAIL round %d: arr[%ld] = %g, expected %g\n", variant_name(), r, i, got,
                                 ref[static_cast<std::size_t>(i)]);
+                }
                 ++bad;
             }
         }
     }
     arr.clear();
     if (bad)
+    {
         std::printf("[%s] %ld mismatch(es)\n", variant_name(), bad);
+    }
     else
+    {
         std::printf("[%s] OK: %d rounds, N=%ld, fills and element writes interleaved on shared chunks\n",
                     variant_name(), rounds, N);
+    }
     return bad ? 1 : 0;
 }
 
@@ -203,7 +227,9 @@ static void run_perf(long N)
                 const long   hi = lo + kPerfBlk < N ? lo + kPerfBlk : N;
                 const double x  = vb(b);
                 for (long i = lo; i < hi; ++i)
+                {
                     arr[i] = x;
+                }
             }
         }
         end_phase();

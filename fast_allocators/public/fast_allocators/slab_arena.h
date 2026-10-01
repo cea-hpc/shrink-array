@@ -36,7 +36,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP)
-#include <algorithm> // std::max, the high-water mark
+#include <algorithm>                               // std::max, the high-water mark
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -203,16 +203,22 @@ bool madvise_empty_slab_full(Slab* slab) noexcept
     if (slab == nullptr || slab->nn_ref != 0)
     {
         if (slab != nullptr)
+        {
             reclaim_skip_live().fetch_add(1, std::memory_order_relaxed);
+        }
         return false;
     }
     void*      base = slab->data;
     const auto len  = static_cast<std::size_t>(slab->BlockAllocator);
     if (base == nullptr || len == 0)
+    {
         return false;
+    }
     const long ps = ::sysconf(_SC_PAGESIZE);
     if (ps <= 0)
+    {
         return false;
+    }
     const auto up = static_cast<std::size_t>(ps);
     if ((reinterpret_cast<std::uintptr_t>(base) % up) != 0)
     {
@@ -288,7 +294,9 @@ class SlabArena
     {
         const std::scoped_lock lk(mtx_);
         if (fresh != nullptr)
+        {
             *fresh = false;
+        }
 
         // Reuse a same-size slab from this arena's free-list if available.
         const auto it = free_lists_.find(size);
@@ -325,7 +333,9 @@ class SlabArena
         }
         cursor_ = aligned + size;
         if (fresh != nullptr)
+        {
             *fresh = true; // below the cursor was never handed out: mmap's zeros
+        }
         live_.insert(aligned);
         bytes_live_ += size;
         bytes_high_ = std::max(bytes_high_, bytes_live_);
@@ -346,7 +356,9 @@ class SlabArena
     void deallocate(void* block, std::size_t size) noexcept
     {
         if (block == nullptr)
+        {
             return;
+        }
         const std::scoped_lock lk(mtx_);
         // SEGV hunt: a slab freed while not live. Warn but do NOT abort — at
         // program teardown a ~TCTypeCAllocator may deallocate() a slab whose
@@ -376,7 +388,9 @@ class SlabArena
         const std::scoped_lock lk(mtx_);
         const long             page = ::sysconf(_SC_PAGESIZE);
         if (page <= 0)
+        {
             return 0;
+        }
         const auto                 psz = static_cast<std::size_t>(page);
         std::size_t                res = 0;
         std::vector<unsigned char> vec;
@@ -386,9 +400,13 @@ class SlabArena
             const std::size_t pages = (len + psz - 1) / psz;
             vec.resize(pages);
             if (::mincore(reinterpret_cast<void*>(r.begin), len, vec.data()) != 0)
+            {
                 continue;
+            }
             for (const unsigned char v : vec)
+            {
                 res += (v & 1u) ? psz : 0;
+            }
         }
         return res;
     }
@@ -406,7 +424,9 @@ class SlabArena
         const std::scoped_lock lk(mtx_);
         std::size_t            mapped = 0;
         for (const auto& r : regions_)
+        {
             mapped += (r.end - r.begin);
+        }
         return mapped;
     }
 
@@ -429,10 +449,14 @@ class SlabArena
         const std::scoped_lock lk(mtx_);
         std::size_t            mapped = 0;
         for (const auto& r : regions_)
+        {
             mapped += (r.end - r.begin);
+        }
         std::size_t freelist = 0;
         for (const auto& kv : free_lists_)
+        {
             freelist += kv.first * kv.second.size();
+        }
         std::fprintf(stderr,
                      "[ARENA %-6s] %-16s mapped=%8zu KiB  live=%8zu KiB  high=%8zu KiB  "
                      "freelist=%8zu KiB  regions=%zu  allocs=%zu  deallocs=%zu  deallocMiB=%zu\n",
@@ -457,8 +481,12 @@ class SlabArena
         const auto             v = reinterpret_cast<std::uintptr_t>(ptr);
         const std::scoped_lock lk(mtx_);
         for (const auto& r : regions_)
+        {
             if (v >= r.begin && v < r.end)
+            {
                 return true;
+            }
+        }
         return false;
     }
 
@@ -470,7 +498,9 @@ class SlabArena
     {
         std::size_t want = reservation_chunk_;
         if (min_bytes > want)
+        {
             want = align_up(min_bytes, static_cast<std::size_t>(1) << 21U); // round to 2 MiB
+        }
 
         void* base = ::mmap(nullptr, want, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (base == MAP_FAILED)
@@ -481,7 +511,9 @@ class SlabArena
         // CHUNK_THP (experimental, off by default): the slabs are 2 MiB and
         // aligned on it, a huge page each. Advice only: a failure is ignored.
         if (alloc_config::thp_advise())
+        {
             (void)::madvise(base, want, MADV_HUGEPAGE);
+        }
         auto region_begin = reinterpret_cast<std::uintptr_t>(base);
         regions_.push_back(Region{.begin = region_begin, .end = region_begin + want});
         cursor_     = region_begin;
@@ -607,7 +639,9 @@ inline bool arena_report_enabled() noexcept
 inline void report_all_arenas(const char* when) noexcept
 {
     if (!arena_report_enabled())
+    {
         return;
+    }
     op_arena().report(when);
     ctx_arena().report(when);
     value_arena().report(when);

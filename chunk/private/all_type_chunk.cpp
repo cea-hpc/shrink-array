@@ -88,7 +88,9 @@ void begin_parallel_phase()
         __fast_omp_rank = CHUNK_PMP_THREAD_RANK;
     }
     if constexpr (phase_guard::active)
+    {
         phase_guard::arm();
+    }
 }
 
 void finalize_parallel_phase_only_flush()
@@ -97,7 +99,9 @@ void finalize_parallel_phase_only_flush()
     // thread of the region: count it once, on rank 0, or each phase counts
     // max_threads times on one shared atomic.
     if (CHUNK_PMP_THREAD_RANK == 0)
+    {
         churn::note_phase_end();
+    }
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
 // Barrier + flush must both happen inside the same enclosing
@@ -122,7 +126,9 @@ void finalize_parallel_phase_only_flush()
 void finalize_parallel_phase_after_flush()
 {
     if constexpr (phase_guard::active)
+    {
         phase_guard::next_phase();
+    }
     // (Historical breadcrumb: the is_shrink=0 CMake-variant bug was diagnosed at
     //  this entry point; fixed by the per-variant chunk_v1/v2/v2a targets.)
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
@@ -134,7 +140,9 @@ void finalize_parallel_phase_after_flush()
         if constexpr (!chunk_config::have_agressive_compression)
         {
             if (ens_type_chunk.have_chunk_to_compress_potentially())
+            {
                 ens_type_chunk.compress_chunk_to_compress_potentially(true);
+            }
         }
         // Restored: empirically load-bearing (see the checksum regression note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
@@ -148,7 +156,9 @@ void finalize_parallel_phase_after_flush()
 void finalize_parallel_phase()
 {
     if constexpr (phase_guard::active)
+    {
         phase_guard::next_phase();
+    }
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
         auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
@@ -164,7 +174,9 @@ void finalize_parallel_phase()
             // when there was NOTHING to compress); compress when there IS
             // something.
             if (ens_type_chunk.have_chunk_to_compress_potentially())
+            {
                 ens_type_chunk.compress_chunk_to_compress_potentially(true);
+            }
         }
         // Restored: empirically load-bearing (see the checksum regression note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
@@ -224,17 +236,23 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
     for (const auto& elm : getListTypeChunk())
     {
         if (elm->have_chunk_to_compress_potentially(max_thr))
+        {
             work.push_back(elm.get());
+        }
     }
     if (work.empty())
+    {
         return;
+    }
 
     // Inside a region (or without fast block compression, where the pass is
     // a no-op): each type's own path, which knows what to do there.
     if (!chunk_config::use_fast_block_compression || CHUNK_PMP_IN_PARALLEL_REGION)
     {
         for (auto* elm : work)
+        {
             elm->compress_chunk_to_compress_potentially(apply);
+        }
         return;
     }
 
@@ -244,7 +262,9 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
     // only, so the types need no barrier between them. Then the serial mop-up
     // of the ranks past the team, for the variants whose pass had one.
     for (auto* elm : work)
+    {
         elm->sweep_prepare();
+    }
 
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
     int team = 0;
@@ -252,15 +272,23 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
     {
         const int thr = CHUNK_PMP_THREAD_RANK;
         if (thr == 0)
+        {
             team = CHUNK_PMP_NUM_THREADS;
+        }
         for (auto* elm : work)
+        {
             elm->sweep_rank(thr, apply);
+        }
     }
     for (auto* elm : work)
     {
         if (elm->sweep_mops_up(apply))
+        {
             for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
+            {
                 elm->sweep_rank(thr, apply);
+            }
+        }
     }
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
 }
@@ -303,10 +331,14 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_pa
     // pairs with the owner's release on exit: this thread sees that flush's
     // effects. The in-region flush is collaborative by design and not gated.
     if (!in_parallel && g_serial_flush_owner.test_and_set(std::memory_order_acquire))
+    {
         return false;
+    }
     std::optional<SerialFlushOwnership> serial_ownership;
     if (!in_parallel)
+    {
         serial_ownership.emplace();
+    }
 
     for (const auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
     {
@@ -314,7 +346,9 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_pa
     }
 
     if (toggle_flag)
+    {
         __global_need_flush_deferred.store(false, std::memory_order_relaxed);
+    }
 
     // #pragma omp barrier // dead lock with ompt ?
 
@@ -326,7 +360,9 @@ bool AllTypeChunkParallelInterface<Derived, true>::flush_all_deferred(bool in_pa
     //  #pragma omp barrier // dead lock with ompt
 
     if (toggle_flag)
+    {
         __global_need_flush_deferred.store(true, std::memory_order_release);
+    }
 
     return have_flushed;
 }
@@ -377,7 +413,9 @@ std::size_t AllTypeChunk::reuse_pool_bytes() const
 {
     std::size_t total = 0;
     for (const auto& elm : getListTypeChunk())
+    {
         total += elm->reuse_pool_bytes_int();
+    }
     return total;
 }
 
@@ -385,7 +423,9 @@ std::size_t AllTypeChunk::trim_reuse_pools(std::size_t keep_per_thread)
 {
     std::size_t freed = 0;
     for (const auto& elm : getListTypeChunk())
+    {
         freed += elm->trim_reuse_pools_int(keep_per_thread);
+    }
 
 #if defined(__GLIBC__)
     // Give the pages back to the KERNEL, not just to malloc.
@@ -394,7 +434,9 @@ std::size_t AllTypeChunk::trim_reuse_pools(std::size_t keep_per_thread)
     // does not move, so without this the trim only changes which of our two
     // layers holds the memory -- invisible from outside the process.
     if (freed != 0)
+    {
         malloc_trim(0);
+    }
 #endif
 
     return freed;
@@ -403,7 +445,9 @@ std::size_t AllTypeChunk::trim_reuse_pools(std::size_t keep_per_thread)
 void AllTypeChunk::print_reuse_pool_breakdown(const char* label) const
 {
     for (const auto& elm : getListTypeChunk())
+    {
         elm->print_reuse_pool_breakdown_int(label);
+    }
 }
 
 void print_all_reuse_pool_breakdown(const char* label)
@@ -489,7 +533,9 @@ bool AllTypeChunkParallelInterface<Derived, true>::need_load_balance_list_block_
     for (const auto& elm : static_cast<const Derived&>(*this).getListTypeChunk())
     {
         if (elm->need_load_balance_list_block_free())
+        {
             return true;
+        }
     }
 
     return false;
@@ -528,7 +574,9 @@ void AllTypeChunkDynInterface<Derived, true>::register_chunk_size(unsigned int s
     auto&                             reg = static_cast<Derived&>(*this);
     const std::lock_guard<std::mutex> lock(reg.registry_mutex_);
     if (std::find(reg.registered_sizes_.begin(), reg.registered_sizes_.end(), size) == reg.registered_sizes_.end())
+    {
         reg.registered_sizes_.push_back(size);
+    }
     for (const auto& elm : reg.getListTypeChunk())
     {
         elm->register_chunk_size(size, block_size);
@@ -549,7 +597,9 @@ bool set_max_malloc_arenas(int max_arenas)
 {
 #if defined(__GLIBC__)
     if (max_arenas <= 0)
+    {
         return false;
+    }
     return mallopt(M_ARENA_MAX, max_arenas) == 1;
 #else
     (void)max_arenas;

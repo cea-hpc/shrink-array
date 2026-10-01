@@ -54,7 +54,9 @@ InfoFreeElt::InfoFreeElt()
 InfoFreeElt::~InfoFreeElt()
 {
     if (tab_ptr == nullptr)
+    {
         return; // serial build: nothing was allocated
+    }
     svfree(tab_ptr);
     svfree(tab_sz);
 
@@ -135,14 +137,18 @@ class ManageTCTypeAllocator
     void addTCTypeAllocatorInst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
     {
         if constexpr (!alloc_config::use_openmp)
+        {
             set_allocator.insert(ptr_tcallocator); // serial builds only: no concurrent insert
+        }
     }
 
     /// @brief Withdraw one. No-op in an OpenMP build.
     void removeTCTypeAllocatorInst([[maybe_unused]] VTCTypeAllocator* ptr_tcallocator)
     {
         if constexpr (!alloc_config::use_openmp)
+        {
             set_allocator.erase(ptr_tcallocator); // serial builds only: no concurrent erase
+        }
     }
 
     /// @brief Add every enrolled allocator's footprint to the totals.

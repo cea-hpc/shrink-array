@@ -354,7 +354,9 @@ struct BlkAllocator : public StaticConstArray
     static void free_block(void* ptr, size_t size)
     {
         if (ptr == nullptr)
+        {
             return;
+        }
 
         if constexpr (alloc_config::use_std_alloc)
         {
@@ -401,7 +403,9 @@ struct BlkAllocator : public StaticConstArray
     static void free_tab(void* user_ptr)
     {
         if (user_ptr == nullptr)
+        {
             return;
+        }
 
         int* m_ptr = (int*)((char*)user_ptr - __ALIGNEMENT__);
 
@@ -496,7 +500,9 @@ class FixedSizeAllocator : private StaticConstArray
     static void free_block(void* ptr)
     {
         if (ptr == nullptr)
+        {
             return;
+        }
 
         if constexpr (alloc_config::use_std_alloc)
         {

@@ -138,9 +138,13 @@ void init(int                              start0,
     {
         tab1[i] = std::sqrt(double(i));
         if (i > tab_nba1[k])
+        {
             tab2[i] = std::cos(double(2 * i));
+        }
         if (i > tab_nba2[k])
+        {
             tab3[i] = std::sin(tab1[i] + tab2[i]);
+        }
     }
 }
 
@@ -306,7 +310,9 @@ int main()
         int end0 = start0 + size;
 
         if (end0 > sz)
+        {
             end0 = sz;
+        }
 
         const int nsz = end0 - start0;
 
@@ -331,7 +337,9 @@ int main()
             // small -- the interval sizes go down to a few elements, and
             // one such iteration hung the run for good.
             if (nsz - sz - 1 < 1)
+            {
                 break;
+            }
             const int start = 1 + (std::rand() % (nsz - sz - 1));
 
             // Shuffle the vector to ensure the array is not ordered
@@ -422,7 +430,9 @@ int main()
     lbd(tab_chunk3);
 
     if constexpr (chunk_config::stats)
+    {
         ParamChunk::ChunkStats();
+    }
 
     struct rusage usage{};
     if (getrusage(RUSAGE_SELF, &usage) == 0)

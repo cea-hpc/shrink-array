@@ -77,12 +77,16 @@ using namespace shrink_array;
 static void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 static void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 template <typename T>
@@ -93,18 +97,26 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {
     if constexpr (requires(Arr x) { x.set_second_value(v); })
+    {
         a.set_second_value(v);
+    }
 }
 
 // Runs of kRun elements alternate constant 0 / second constant / varied, so
@@ -129,7 +141,9 @@ static void chain_int(C& c, long i)
     c[i] = ~T(c[i]);
     c[i] = 1;
     if (i % 3 == 0)
+    {
         c[i] = (T(c[i]) == 1) ? 2 : 0;
+    }
     ++c[i];
     c[i]--;
     c[i] += 5;
@@ -138,7 +152,9 @@ static void chain_int(C& c, long i)
     c[i] = -T(c[i]);
     c[i] = std::abs(T(c[i]));
     if (i % 5 == 0)
+    {
         c[i] = 0; // a run of the first constant, here and there
+    }
 }
 
 template <typename C>
@@ -153,9 +169,13 @@ static void chain_double(C& c, long i)
     c[i] = std::floor(T(c[i]) * 3.0);
     c[i] = T(c[i]) + 1.0;
     if (i % 4 == 0)
+    {
         c[i] = 0.0;
+    }
     else if (i % 4 == 1)
+    {
         c[i] = 3.5; // the second constant of the scenario
+    }
 }
 
 template <typename C>
@@ -166,9 +186,13 @@ static void chain_bool(C& c, long i)
     c[i] = bool(c[i]) || (i % 7 == 0);
     c[i] = bool(c[i]) && (i % 11 != 0);
     if (i % 5 == 0)
+    {
         c[i] = true;
+    }
     if (i % 13 == 0)
+    {
         c[i] = false;
+    }
 }
 
 // "x[i] op= other[j]": the read of `other` is the read gate on an array whose
@@ -178,11 +202,17 @@ template <typename T, typename C, typename O>
 static void mix_other(C& c, const O& o, long j, long i)
 {
     if constexpr (std::is_same_v<T, bool>)
+    {
         c[i] = bool(c[i]) != bool(o[j]);
+    }
     else if constexpr (std::is_integral_v<T>)
+    {
         c[i] += T(o[j]) & 0x7;
+    }
     else
+    {
         c[i] += T(o[j]) * 0.5;
+    }
 }
 
 template <typename T>
@@ -277,11 +307,15 @@ static int run(const char* label, long N, const Scenario<T>& sc)
         begin_phase();
 #pragma omp for
         for (long i = 0; i < N; ++i)
+        {
             sc.chain(arr, i);
+        }
     }
     end_phase();
     for (long i = 0; i < N; ++i)
+    {
         sc.chain_ref(ref, i);
+    }
     fails += compare(label, "chains", arr, ref);
 
     // A pass between regions, the way the bench drives it: compress() by
@@ -306,7 +340,9 @@ static int run(const char* label, long N, const Scenario<T>& sc)
         {
             mix_other<T>(arr, other, i, i);
             if (i & 1)
+            {
                 sc.chain(arr, i);
+            }
         }
     }
     end_phase();
@@ -314,7 +350,9 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     {
         mix_other<T>(ref, ref_other, i, i);
         if (i & 1)
+        {
             sc.chain_ref(ref, i);
+        }
     }
     fails += compare(label, "mix+chains", arr, ref);
 
@@ -330,24 +368,40 @@ static int run(const char* label, long N, const Scenario<T>& sc)
         begin_phase();
 #pragma omp for schedule(static)
         for (long i = 0; i < N; ++i)
+        {
             sc.chain(other, i);
+        }
         // (the omp for's own barrier)
 #pragma omp for schedule(static, 37)
         for (long i = 0; i < N; ++i)
+        {
             mix_other<T>(arr, other, (i + (N / 2)) % N, i);
+        }
 #pragma omp for schedule(static, 37)
         for (long i = 0; i < N; ++i)
+        {
             if (i % 3 != 1)
+            {
                 sc.chain(other, i);
+            }
+        }
     }
     end_phase();
     for (long i = 0; i < N; ++i)
+    {
         sc.chain_ref(ref_other, i);
+    }
     for (long i = 0; i < N; ++i)
+    {
         mix_other<T>(ref, ref_other, (i + (N / 2)) % N, i);
+    }
     for (long i = 0; i < N; ++i)
+    {
         if (i % 3 != 1)
+        {
             sc.chain_ref(ref_other, i);
+        }
+    }
     fails += compare(label, "barriers", arr, ref);
     fails += compare(label, "barriers(other)", other, ref_other);
 
@@ -357,16 +411,22 @@ static int run(const char* label, long N, const Scenario<T>& sc)
         begin_phase();
 #pragma omp for
         for (long i = 0; i < N; ++i)
+        {
             other[i] = T(arr[i]);
+        }
     }
     end_phase();
     for (long i = 0; i < N; ++i)
+    {
         ref_other[i] = ref[i];
+    }
     fails += compare(label, "copy(other)", other, ref_other);
 
     if (!fails)
+    {
         printf("[%s/%s] OK: %ld elements, chunk_size=%ld\n", variant_name(), label, N,
                static_cast<long>(arr.chunk_size()));
+    }
 
     arr.clear();
     other.clear();
@@ -403,7 +463,9 @@ int main(int argc, char** argv)
     {
         long deferred = 0;
         for (int v = 0; v < CHUNK_STATS_N_VARIANT; ++v)
+        {
             deferred += reduce_chunk_stats(v).gate_deferred;
+        }
         printf("[%s] writes deferred: %ld\n", variant_name(), deferred);
         if (deferred == 0)
         {

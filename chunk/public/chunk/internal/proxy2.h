@@ -72,7 +72,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
     using Base      = Proxy2Base<Derived, T, Chunk2<T>>;
     using Base::derived;
     using values_type_ref = Proxy2Base<Derived, T, ChunkType>::values_type_ref;
-    using inf_array_t = std::tuple<T, int, int>;
+    using inf_array_t     = std::tuple<T, int, int>;
 
     using Base::Base;
 
@@ -435,9 +435,13 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     [[nodiscard]] auto get_second_value() const noexcept
     {
         if constexpr (is_not_bool)
+        {
             return second_value;
+        }
         else
+        {
             return true;
+        }
     }
     /**
      * @brief Get the compression candidate list for a specific thread
@@ -455,7 +459,9 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
         auto&      candidates = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
         const auto it         = candidates.find(second_value);
         if (it == candidates.end() || it->second == nullptr) [[unlikely]]
+        {
             chunk2_missing_candidate_list(thr);
+        }
         return *it->second;
     }
 
@@ -473,7 +479,9 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
         auto&      candidates = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr];
         const auto it         = candidates.find(second_value);
         if (it == candidates.end() || it->second == nullptr) [[unlikely]]
+        {
             chunk2_missing_candidate_list(thr);
+        }
         return *it->second;
     }
 
@@ -566,9 +574,13 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     [[nodiscard]] static auto get_second_value(auto* ctx) noexcept
     {
         if constexpr (is_not_bool)
+        {
             return ctx->second_value;
+        }
         else
+        {
             return true;
+        }
     }
 
     /**
@@ -630,7 +642,7 @@ class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, 
 {
   public:
     using values_type_ref = Proxy2Base<Derived, T, ChunkType>::values_type_ref;
-    using Base = ProxyBase<Derived, T, Chunk2<T>>;
+    using Base            = ProxyBase<Derived, T, Chunk2<T>>;
     using Base::chunk;
     using CRTPSupport<Derived>::derived;
     using ProxySpec2<T, Derived>::second_value;
@@ -684,11 +696,17 @@ class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, 
         // confirmed fast-alloc-only (std-alloc's svfree() doesn't route by
         // ambient at all, so it never showed this).
         if constexpr (build_config::chunk_dynamic)
+        {
             shrink_array::set_thread_chunk_size(this->chunk_size());
+        }
         if constexpr (is_not_bool)
+        {
             chunk.clear_st(0, this->ind);
+        }
         else
+        {
             chunk.clear_st(0, 0); // bool: ind ignored by bool-aware clear_int_st
+        }
         chunk.values = static_cast<T*>(chunk.get_cst_val1());
     }
 
@@ -702,11 +720,17 @@ class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, 
     {
         // Same fix as manage_full_first_value(): see that function's comment.
         if constexpr (build_config::chunk_dynamic)
+        {
             shrink_array::set_thread_chunk_size(this->chunk_size());
+        }
         if constexpr (is_not_bool)
+        {
             chunk.clear_st(1, this->ind);
+        }
         else
+        {
             chunk.clear_st(1, 0); // bool: ind ignored by bool-aware clear_int_st
+        }
     }
 
   protected:
@@ -1133,7 +1157,9 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
             const auto& per_thr = manager_chunk2::map_chunk2_to_compress_potentially_thr;
             const int   thr     = get_thr_rank_fast();
             if (thr < 0 || static_cast<std::size_t>(thr) >= per_thr.size()) [[unlikely]]
+            {
                 return false;
+            }
             const auto& candidates = per_thr[thr];
             const auto  it         = candidates.find(second_val);
             return it != candidates.end() && it->second != nullptr;

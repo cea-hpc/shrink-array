@@ -146,7 +146,9 @@ class Chunk2Base : public ChunkBase<T, Derived>
     void check_not_constant_before_clear(int num_compress_value, std::optional<int> ind_opt) const noexcept
     {
         if constexpr (!build_config::any_check)
+        {
             return;
+        }
 
         const void* chunk_ptr  = static_cast<const void*>(this);
         const void* values_ptr = static_cast<const void*>(derived().values_load());
@@ -195,7 +197,9 @@ class Chunk2Base : public ChunkBase<T, Derived>
                     // A chunk compressed to a second constant reads from it
                     // through its values pointer; there is no other handle.
                     if (is_violating)
+                    {
                         cst2_ptr = static_cast<const void*>(derived().values_load());
+                    }
                 }
                 else
                 {
@@ -239,7 +243,9 @@ class Chunk2Base : public ChunkBase<T, Derived>
     {
         // Skip entirely if safety checks are disabled
         if constexpr (!build_config::any_check)
+        {
             return;
+        }
 
         const auto* c1 = static_cast<const void*>(Chunk2Base::get_cst_val1());
 
@@ -252,7 +258,9 @@ class Chunk2Base : public ChunkBase<T, Derived>
         {
             target_in_cst2_region = derived().tab_cst_val2_holder::is_cst_val2_ptr(target_ptr);
             if (target_in_cst2_region)
+            {
                 c2 = static_cast<const void*>(target_ptr);
+            }
         }
         else if constexpr (requires { derived().get_cst_val2(); })
         {

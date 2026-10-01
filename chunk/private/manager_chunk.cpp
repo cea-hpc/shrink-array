@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <atomic>  // std::atomic (__global_need_flush_deferred)
+#include <atomic> // std::atomic (__global_need_flush_deferred)
 
 // The extern declaration of the global below (manager_chunk_inline.h, through
 // the facade).

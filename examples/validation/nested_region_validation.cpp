@@ -56,12 +56,16 @@ using namespace shrink_array;
 static void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 static void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 template <typename T>
@@ -72,11 +76,17 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 /// The value element i holds after round `round` (zero runs of 2048 so the
@@ -98,7 +108,9 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
             begin_phase();
 #pragma omp for schedule(static)
             for (long i = 0; i < N; ++i)
+            {
                 a[i] = expected_before_inner(i, round);
+            }
 
             // A nested region per thread, over this thread's own slice (the
             // static schedule gives the same slice as above).
@@ -110,15 +122,21 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
                     begin_phase();
 #pragma omp single
                     for (long i = b * 1024; i < (b + 1) * 1024; ++i)
+                    {
                         if (i % 7 == 0)
+                        {
                             a[i] += 3;
+                        }
+                    }
                 }
                 // Back in the outer region: writes go to THIS thread's rank.
                 for (long i = b * 1024; i < (b + 1) * 1024; ++i)
                 {
                     a[i] *= 2;
                     if (i % 11 == 0)
+                    {
                         a[i] = 0;
+                    }
                 }
             }
         }
@@ -127,10 +145,14 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
         {
             ref[i] = expected_before_inner(i, round);
             if (i % 7 == 0)
+            {
                 ref[i] += 3;
+            }
             ref[i] *= 2;
             if (i % 11 == 0)
+            {
                 ref[i] = 0;
+            }
         }
     }
 
@@ -141,7 +163,9 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
         if (v != ref[i])
         {
             if (fails < 5)
+            {
                 std::printf("  MISMATCH i=%ld  %d (ref %d)\n", i, v, ref[i]);
+            }
             ++fails;
         }
     }
@@ -160,7 +184,9 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
     {
         char buf[4096];
         for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, f)) > 0;)
+        {
             out.append(buf, n);
+        }
         std::fclose(f);
     }
     std::remove(log.c_str());
@@ -202,7 +228,9 @@ int main(int argc, char** argv)
     }
 
     if constexpr (build_config::use_openmp)
+    {
         fails += check_nested_active(argv[0]);
+    }
 
     if (fails)
     {

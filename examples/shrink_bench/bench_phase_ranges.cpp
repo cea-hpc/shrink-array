@@ -328,7 +328,9 @@ void bench_phase_range_mt(BenchArrays& bench_arr, Int k, Int beg_s, Int end_s)
     auto& tab_long      = bench_arr.tab_long;
 
     if (end_s <= beg_s)
+    {
         return;
+    }
 
     // Smaller than a chunk at every geometry: several threads per chunk.
     constexpr Int kBlk = 64;

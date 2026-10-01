@@ -88,14 +88,18 @@ void init_chunks(C* v, std::size_t count, Init init) noexcept
         {
 #pragma omp parallel for simd
             for (std::size_t k = 0; k < count; ++k)
+            {
                 init(v[k]);
+            }
             return;
         }
     }
 
 #pragma omp simd
     for (std::size_t k = 0; k < count; ++k)
+    {
         init(v[k]);
+    }
 }
 
 } // namespace shrink_array::chunk_array_new

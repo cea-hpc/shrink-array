@@ -109,12 +109,18 @@ class PointerMapLinear
         for (auto& item : vec)
         {
             if (item.first == key_a)
+            {
                 pa = &item.second;
+            }
             else if (item.first == key_b)
+            {
                 pb = &item.second;
+            }
         }
         if (!pa || !pb)
+        {
             return false;
+        }
         std::swap(*pa, *pb);
         return true;
     }
@@ -158,8 +164,12 @@ class PointerMapLinear
     [[nodiscard]] Payload* find_payload(const void* key) noexcept
     {
         for (auto& item : vec)
+        {
             if (item.first == key)
+            {
                 return &item.second;
+            }
+        }
         return nullptr;
     }
 
@@ -167,8 +177,12 @@ class PointerMapLinear
     [[nodiscard]] const Payload* find_payload(const void* key) const noexcept
     {
         for (const auto& item : vec)
+        {
             if (item.first == key)
+            {
                 return &item.second;
+            }
+        }
         return nullptr;
     }
 

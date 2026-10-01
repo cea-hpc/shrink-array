@@ -64,7 +64,9 @@ void ask(const char* prompt, const char* name, T& value, Parse parse, Valid vali
     {
         const T v = parse(data);
         if (!valid(v))
+        {
             throw std::out_of_range("The value is not in the specified range.");
+        }
         value = v;
         std::cout << "You give : " << value << " " << name << "\n";
     }
@@ -130,7 +132,9 @@ void Simu::inputData()
             [](int v) { return v >= 1 && v <= 4; });
 
         if (option_chunk == 4)
+        {
             ask_int("Pourcentage of chunk array", "% chunk", chunk_rate);
+        }
     }
 
     dis.resize(nbmat);
@@ -195,17 +199,23 @@ void Simu::inputData()
     if constexpr (multi_mat::interactive_input)
     {
         if (option_chunk != 2)
+        {
             ask_int("Compression frequency", "compression frequency", freq_compress);
+        }
 
         ask_int("reset to zero frequency", "reset to zero frequency", freq_rtz);
 
         std::cout << "\n";
 
         if (!all_vector)
+        {
             ask_percentage("Average percentage occupation for chunk material", "%", pc_chunk);
+        }
 
         if (!all_chunk)
+        {
             ask_percentage("Average percentage occupation for vector material", "%", pc_vector);
+        }
     }
     else
     {

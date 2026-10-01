@@ -83,7 +83,9 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_pa
         chunk_t->fill_list_to_compress(ll_compt, num_chunk, num_tab, std::get<3>(tup).count());
         // Not selected by the scan: the writers may have it back now.
         if (ll_compt.size() == count)
+        {
             chunk_t->steal_unmark();
+        }
     }
 }
 
@@ -119,13 +121,17 @@ void ChunkOmpPolicy<T, Derived, Enabled>::compress(int thr_rank, unsigned int n_
     // the invariant inside clear_st first ("trying to clear a chunk that is not
     // written"); a release build reports nothing at all.
     if (!derived().written())
+    {
         return;
+    }
 
     Base::debug_check_written();
 
     // CHUNK_STATS: counted here so the scan yield reflects what actually runs.
     if constexpr (chunk_config::stats)
+    {
         increm_chunk_compress_attempt<ChunkType>();
+    }
 
     if (Base::is_constant_to(T{}, n_elems))
     {
@@ -136,7 +142,7 @@ void ChunkOmpPolicy<T, Derived, Enabled>::compress(int thr_rank, unsigned int n_
 template <typename T>
 void Chunk<T>::compress_sweep_rank(int thr)
 {
-    auto&     chunk_t = manager_chunk::chunk_to_compress_potentially_thr[thr];
+    auto& chunk_t = manager_chunk::chunk_to_compress_potentially_thr[thr];
     // Dynamic geometry: pin the ambient chunk size to EACH candidate's own
     // (the tuple's ChunkElems, captured when it was queued), restored after
     // the loop. clear_st() -> free_block_to_pool() parks the buffer in the
@@ -154,7 +160,9 @@ void Chunk<T>::compress_sweep_rank(int thr)
     {
         auto* chunk_p = std::get<0>(tup);
         if constexpr (build_config::chunk_dynamic)
+        {
             shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
+        }
         chunk_p->compress(thr, std::get<3>(tup).count());
 
         // Release the dedup gate for this chunk. add_to_compression_list only
@@ -170,7 +178,9 @@ void Chunk<T>::compress_sweep_rank(int thr)
     }
 
     if constexpr (build_config::chunk_dynamic)
+    {
         shrink_array::set_thread_chunk_size(saved_sz);
+    }
     // clear() keeps the capacity: the list is already reserved for the
     // next pass, at the size this one reached.
     chunk_t.clear();
@@ -194,7 +204,9 @@ template <typename T, typename Derived, bool Enabled>
 bool ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int max_thr)
 {
     if (manager_chunk::chunk_to_compress_potentially_thr.empty())
+    {
         return false;
+    }
 
     for (int thr = 0; thr < max_thr; ++thr)
     {
@@ -202,7 +214,9 @@ bool ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int max_th
 
         const bool is_empty = chunk_t.empty();
         if (!is_empty)
+        {
             return true;
+        }
     }
 
     return false;
@@ -303,14 +317,18 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
     // aborted every v1 array creation under a hardened libstdc++ (multi-mat),
     // and read past it elsewhere.
     if (thr < 0 || static_cast<size_t>(thr) >= manager_chunk::chunk_to_compress_potentially_thr.size())
+    {
         return;
+    }
 
     auto& vec_tuple_to_compress = manager_chunk::chunk_to_compress_potentially_thr[thr];
 
     const int sz = vec_tuple_to_compress.size();
 
     if (sz == 0)
+    {
         return;
+    }
 
     const int max_thr = CHUNK_PMP_MAX_THREADS;
 
@@ -320,14 +338,18 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
         // marking -- see block_pass_precheck.h (10 million mark/unmark rounds
         // at 128 threads on Grace otherwise).
         if (block_pass_yields_to_flush<Proxy<T>, Chunk<T>>(max_thr))
+        {
             return;
+        }
         // Per-chunk exclusion (ChunkBase::steal_mark_): claim every candidate
         // BEFORE start(), whose heavy barrier publishes the marks; released
         // per chunk as the pass goes, and all again at the end.
         for (int k = 0; k < sz; ++k)
         {
             if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+            {
                 chunk_t->steal_mark();
+            }
         }
         const bool ret = proxy->compression_mgr.template start<Proxy<T>>();
 
@@ -336,7 +358,9 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
             for (int k = 0; k < sz; ++k)
             {
                 if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+                {
                     chunk_t->steal_unmark();
+                }
             }
             return;
         }
@@ -347,7 +371,9 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
             for (int k = 0; k < sz; ++k)
             {
                 if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+                {
                     chunk_t->steal_commit();
+                }
             }
         }
     }
@@ -374,12 +400,16 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
         auto* chunk_ptr = std::get<0>(tup);
 
         if constexpr (build_config::chunk_dynamic)
+        {
             shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
+        }
         chunk_ptr->clear_int_st(thr);
         chunk_ptr->steal_unmark();
     }
     if constexpr (build_config::chunk_dynamic)
+    {
         set_thread_chunk_size(saved_sz);
+    }
 
     for (int k = 0; k < sz; ++k)
     {
@@ -391,7 +421,9 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
         Proxy<T>::reset_tab_inside_list_to_compress(num_tab, num_chunk);
         // The pass is over for every candidate: no mark may outlive it.
         if (auto* const chunk_t = std::get<0>(tup))
+        {
             chunk_t->steal_unmark();
+        }
     }
 
     vec_tuple_to_compress.clear();
@@ -423,9 +455,13 @@ void Chunk<T>::block_clear([[maybe_unused]] int thr_rank)
         add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) *
                                         static_cast<long>(shrink_array::alloc_chunk_count()));
         if constexpr (build_config::use_openmp)
+        {
             increm_chunk_release_pool<Chunk<T>>();
+        }
         else
+        {
             increm_chunk_release_free<Chunk<T>>();
+        }
     }
 
     if constexpr (build_config::use_openmp)
@@ -484,7 +520,9 @@ void ChunkOmpPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigned int 
     if constexpr (chunk_config::stats)
     {
         if (count_release)
+        {
             add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(n_elems));
+        }
     }
 
     if constexpr (build_config::any_check)
@@ -538,8 +576,10 @@ void ChunkOmpPolicy<T, Derived, false>::release_st(bool count_release)
     if constexpr (chunk_config::stats)
     {
         if (count_release)
+        {
             add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) *
                                                 static_cast<long>(shrink_array::alloc_chunk_count()));
+        }
     }
 
     if constexpr (build_config::is_debug)

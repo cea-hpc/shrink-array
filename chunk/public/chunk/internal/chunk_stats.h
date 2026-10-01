@@ -141,7 +141,9 @@ inline ChunkStatsThr& __chunk_stats_slot(int variant) noexcept
 {
     int rank = get_thr_rank_fast();
     if (rank < 0 || rank >= CHUNK_STATS_MAX_THR)
+    {
         rank = 0;
+    }
     return __chunk_stats[variant][rank];
 }
 
@@ -324,7 +326,9 @@ void increm_chunk_gate_wait(int yields, bool mark_hit) noexcept
     slot.gate_wait++;
     slot.gate_wait_yields += yields;
     if (mark_hit)
+    {
         slot.gate_mark_hit++;
+    }
 }
 /// @brief Count one element read done BY a compression-candidate scan (not an application read).
 template <typename C>
@@ -397,7 +401,9 @@ void increm_chunk_write(V v) noexcept
     if constexpr (ChunkStatsZeroComparable<V>)
     {
         if (v != V{})
+        {
             __chunk_stats_slot(C::stat_variant).write++;
+        }
     }
     else
     {
@@ -429,8 +435,12 @@ void add_chunk_compress(long nb) noexcept
 inline void init_all_stats() noexcept
 {
     for (auto& per_variant : __chunk_stats)
+    {
         for (ChunkStatsThr& slot : per_variant)
+        {
             slot = ChunkStatsThr{};
+        }
+    }
 }
 
 /**

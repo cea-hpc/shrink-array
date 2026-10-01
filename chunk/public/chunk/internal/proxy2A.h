@@ -98,14 +98,18 @@ class PointerMapChunk2A
             for (const auto& [k, tab] : small)
             {
                 if (k == key)
+                {
                     return tab;
+                }
             }
             INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
                              static_cast<const void*>(this), small.size(), key);
         }
 
         if (const auto it = big.find(key); it != big.end())
+        {
             return it->second;
+        }
         INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
                          static_cast<const void*>(this), big.size(), key);
     }
@@ -209,7 +213,9 @@ class PointerMapChunk2A
 
         const auto it = big.find(key);
         if (it == big.end())
+        {
             return false;
+        }
         it->second = new_num_tab;
         return true;
     }
@@ -245,13 +251,19 @@ class PointerMapChunk2A
                 }
             }
             if (!fa || !fb)
+            {
                 return false;
+            }
             for (auto& [k, tab] : small)
             {
                 if (k == key_a)
+                {
                     tab = nb;
+                }
                 else if (k == key_b)
+                {
                     tab = na;
+                }
             }
             return true;
         }
@@ -259,7 +271,9 @@ class PointerMapChunk2A
         const auto ia = big.find(key_a);
         const auto ib = big.find(key_b);
         if (ia == big.end() || ib == big.end())
+        {
             return false;
+        }
         std::swap(ia->second, ib->second);
         return true;
     }
@@ -276,12 +290,16 @@ class PointerMapChunk2A
         if (!using_big)
         {
             for (const auto& [k, tab] : small)
+            {
                 func(k);
+            }
         }
         else
         {
             for (const auto& [k, tab] : big)
+            {
                 func(k);
+            }
         }
     }
 
@@ -319,7 +337,9 @@ void realloc_unique(std::unique_ptr<T[]>& ptr, std::size_t old_size, std::size_t
 
     const std::size_t kept = std::min(old_size, new_size);
     if (kept != 0)
+    {
         std::copy_n(ptr.get(), kept, new_ptr.get()); // a memmove for a trivial T
+    }
 
     ptr = std::move(new_ptr);
 }
@@ -409,7 +429,9 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
         // leaked 4 bytes per old chunk at every re-chunk until Sept '26).
         // Swapped with an empty row: `= {}` would keep the capacity.
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_second_value.size())
+        {
             std::vector<second_value_slot_t>().swap(tab_second_value[static_cast<std::size_t>(num_tab)]);
+        }
     }
 
     SecondValueRef<T> ptr_second_value; ///< this chunk's slot in tab_second_value[num_tab]
@@ -500,7 +522,9 @@ class ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<bool
 
         // realloc_unique leaves the new tail indeterminate: fill it here.
         if (nb_chunk > nb_chunk_old)
+        {
             std::fill(tab_second_value[nb_tab].get() + nb_chunk_old, tab_second_value[nb_tab].get() + nb_chunk, false);
+        }
     }
 
     /*!
@@ -511,7 +535,9 @@ class ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<bool
     {
         // Released, not just emptied -- see the non-bool specialisation.
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_second_value.size())
+        {
             tab_second_value[static_cast<std::size_t>(num_tab)].reset();
+        }
     }
 
   private:
@@ -686,8 +712,10 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
             if constexpr (build_config::any_check)
             {
                 if (num_tab != share_info_array.get_num_tab(ptr_on_array))
+                {
                     INVARIANT_FAILED("Proxy2A::set_num_tab: armed num_tab {} differs from the registry's for array {}",
                                      num_tab, ptr_on_array);
+                }
             }
             return;
         }
@@ -774,7 +802,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
 
     static constexpr bool is_bool     = std::is_same_v<T, bool>;
     static constexpr bool is_not_bool = !is_bool;
-    static bool constexpr verbose = false;
+    static bool constexpr verbose     = false;
 
     // Small helpers about chunk const-value modes
 
@@ -898,11 +926,15 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     {
         if (CompressionManager<T, ChunkType>::should_mark_for_compression(old_value, new_value, second_value,
                                                                           first_value))
+        {
             return true;
+        }
         const bool discover = (second_value == first_value && new_value != first_value);
         const bool leave    = (second_value != first_value && old_value == second_value && new_value != second_value);
         if (!discover && !leave)
+        {
             return false;
+        }
         if constexpr (chunk_config::use_fast_block_compression)
         {
             // Already queued: add_to_compression_list() is a no-op, exactly as
@@ -910,7 +942,9 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
             // paid once the pass has reset the flag.
             if (this->ptr_is_inside_chunk_list_to_compress != nullptr &&
                 this->ptr_is_inside_chunk_list_to_compress->load(std::memory_order_relaxed) != 0)
+            {
                 return true;
+            }
         }
         return may_become_uniform(new_value);
     }
@@ -942,7 +976,9 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         {
             const int S = static_cast<int>(this->chunk_size());
             if (S < 3) [[unlikely]]
+            {
                 return true;
+            }
             const int i  = this->num;
             const int r0 = (i == 0) ? 1 : 0;
             const int r1 = (i == S - 1) ? S - 2 : S - 1;
@@ -1056,9 +1092,13 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         if (Base2::is_cst_val())
         {
             if constexpr (is_not_bool)
+            {
                 create_value(BaseSpec::ptr_second_value);
+            }
             else
+            {
                 create_value_bool();
+            }
         }
         return values[num];
     }

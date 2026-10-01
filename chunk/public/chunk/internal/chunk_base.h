@@ -275,7 +275,9 @@ struct DeferredReadGate<Derived, DeferReadGate::Coarse>
     {
         const auto& self = static_cast<const Derived&>(*this);
         if (self.is_not_available())
+        {
             self.wait_for_availability(i);
+        }
     }
 };
 
@@ -316,7 +318,9 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
                 auto           expected = static_cast<int32_t>(cur);
                 if (pending.compare_exchange_weak(expected, static_cast<int32_t>(nw), std::memory_order_acq_rel,
                                                   std::memory_order_acquire))
+                {
                     return;
+                }
                 cur = static_cast<uint32_t>(expected);
             }
         }
@@ -350,10 +354,11 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
                     if constexpr (build_config::any_check)
                     {
                         if (ncnt < 0) [[unlikely]]
+                        {
                             INVARIANT_FAILED("pending_retire: chunk {} pending count {} -> {} (retired {}): "
                                              "more ops retired than published -- a double count",
-                                             static_cast<const void*>(&static_cast<Derived&>(*this)), cnt, ncnt,
-                                             count);
+                                             static_cast<const void*>(&static_cast<Derived&>(*this)), cnt, ncnt, count);
+                        }
                     }
                     return;
                 }
@@ -415,7 +420,9 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
     void reader_sync(int i) const noexcept
     {
         if (pending_any()) [[unlikely]]
+        {
             static_cast<const Derived&>(*this).wait_for_availability(i);
+        }
     }
 
   private:
@@ -578,7 +585,9 @@ struct ChunkAllocPolicy<T, Derived, true>
         // both freelist-reuse and fresh-alloc). If one lands on/near a live op's
         // address, dump_ring_for_addr will show it (op/value pool aliasing).
         if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
+        {
             ring_log_op(get_tid(), EV_VALUE_ALLOC, 0, static_cast<const void*>(values_loc));
+        }
 
         return values_loc;
     }
@@ -798,7 +807,9 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
     void ensure_deferred_array_initialized() const
     {
         if (get_deferred_ops() != nullptr) [[likely]]
+        {
             return;
+        }
         DeferredOpsStorage<per_thread_map>::instance().allocate();
     }
 
@@ -916,13 +927,19 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
     {
         const unsigned int sz = thread_chunk_size();
         if (const auto it = allocator_pool_.find(pool_key(key, sz)); it != allocator_pool_.end())
+        {
             return it->second[thr_rank];
+        }
         // Unregistered KEY at a registered size: the shared set of that size is
         // the right fallback -- allocator_data below is the legacy single pool,
         // whose geometry has nothing to do with `sz`.
         if (key != 0)
+        {
             if (const auto it0 = allocator_pool_.find(pool_key(0u, sz)); it0 != allocator_pool_.end())
+            {
                 return it0->second[thr_rank];
+            }
+        }
         // Fallback: not registered (shouldn't happen on the alloc path
         // once set_chunk_size ran) — use the legacy single pool so the
         // free path and single-size use keep working.
@@ -939,7 +956,9 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
     {
         const unsigned int sz = thread_chunk_size();
         if (const auto it = allocator_pool_serial_.find(sz); it != allocator_pool_serial_.end())
+        {
             return *it->second; // deref unique_ptr
+        }
         // Fallback: unregistered size -> the legacy single allocator, so
         // single-size use and the free path keep working.
         return Derived::allocator_data;
@@ -1195,10 +1214,14 @@ class ChunkBase : public CRTPSupport<Derived>,
             const auto          all_of_v = [u](bool v) noexcept
             { return u == (v ? bits::Uniform::all_true : bits::Uniform::all_false); };
             if constexpr (chunk_config::stats)
+            {
                 add_chunk_scan_read<Derived>(static_cast<long>(count));
+            }
             ConstantScan packed{all_of_v(first_v), all_of_v(second_v)};
             if (packed.first)
+            {
                 packed.second = false;
+            }
             return packed;
         }
         ConstantScan scan{true, true};
@@ -1217,12 +1240,18 @@ class ChunkBase : public CRTPSupport<Derived>,
             scan.first  = scan.first && not_first == 0;
             scan.second = scan.second && not_second == 0;
             if (!scan.first && !scan.second)
+            {
                 break;
+            }
         }
         if constexpr (chunk_config::stats)
+        {
             add_chunk_scan_read<Derived>(static_cast<long>(i)); // block granularity
+        }
         if (scan.first)
+        {
             scan.second = false;
+        }
         return scan;
     }
 
@@ -1233,7 +1262,9 @@ class ChunkBase : public CRTPSupport<Derived>,
         if constexpr (is_packed)
         {
             if constexpr (chunk_config::stats)
+            {
                 add_chunk_scan_read<Derived>(static_cast<long>(count));
+            }
             return bits::scan_words(internal::as_words(values_load()), count) ==
                    (static_cast<bool>(v) ? bits::Uniform::all_true : bits::Uniform::all_false);
         }
@@ -1245,17 +1276,23 @@ class ChunkBase : public CRTPSupport<Derived>,
             const unsigned int block_end = std::min(count, i + kScanBlock);
             unsigned int       bad       = 0;
             for (unsigned int j = i; j < block_end; ++j)
+            {
                 bad |= static_cast<unsigned int>(vals[j] != v);
+            }
             i = block_end;
             if (bad != 0)
             {
                 if constexpr (chunk_config::stats)
+                {
                     add_chunk_scan_read<Derived>(static_cast<long>(i));
+                }
                 return false;
             }
         }
         if constexpr (chunk_config::stats)
+        {
             add_chunk_scan_read<Derived>(static_cast<long>(count));
+        }
         return true;
     }
 
@@ -1265,7 +1302,9 @@ class ChunkBase : public CRTPSupport<Derived>,
     [[nodiscard]] std::optional<T> constant_value(unsigned int count) const noexcept
     {
         if (const in_t<T> v0 = element_at(0); is_constant_to(v0, count))
+        {
             return v0;
+        }
         return std::nullopt;
     }
 
@@ -1284,9 +1323,13 @@ class ChunkBase : public CRTPSupport<Derived>,
             // whereas Chunk2::written() (no arg) deliberately aborts on non-bool
             // types -- it needs the second-value index, which a read does not have.
             if (is_cst_val1())
+            {
                 increm_chunk_read_cst<Derived>();
+            }
             else
+            {
                 increm_chunk_read<Derived>();
+            }
         }
         return element_at(i);
     }
@@ -1314,9 +1357,13 @@ class ChunkBase : public CRTPSupport<Derived>,
             // whereas Chunk2::written() (no arg) deliberately aborts on non-bool
             // types -- it needs the second-value index, which a read does not have.
             if (is_cst_val1())
+            {
                 increm_chunk_read_cst<Derived>();
+            }
             else
+            {
                 increm_chunk_read<Derived>();
+            }
         }
 
         chunk_config::CheckNaN<chunk_config::do_check>::maybe(element_at(i), static_cast<long>(i));
@@ -1355,7 +1402,9 @@ class ChunkBase : public CRTPSupport<Derived>,
         if constexpr (build_config::any_check && requires { derived().written(); })
         {
             if (!derived().written()) [[unlikely]]
+            {
                 INVARIANT_FAILED("operator()(int) on a chunk that is not materialised");
+            }
         }
         static_assert(!is_packed, "operator()(int) returns T&: a Bit has no address (bit.h)");
         return values_load()[i];
@@ -1399,7 +1448,9 @@ class ChunkBase : public CRTPSupport<Derived>,
     {
         // SEGV hunt: record value-buffer frees (aliasing investigation).
         if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
+        {
             ring_log_op(get_tid(), EV_VALUE_FREE, 0, static_cast<const void*>(ptr));
+        }
         // fw15 (ledger balance): free_values returns the block for real (no park
         // into a freelist), so notify the ledger LIVE -> FREE. Without this the
         // POOL_LEDGER (any_check builds) tracked the alloc but not this free: in
@@ -1528,9 +1579,13 @@ class ChunkBase : public CRTPSupport<Derived>,
     [[nodiscard]] static constexpr std::size_t storage_units(std::size_t n_elems) noexcept
     {
         if constexpr (is_packed)
+        {
             return bits::bytes_for(n_elems) / sizeof(T); // whole 64-bit words
+        }
         else
+        {
             return n_elems;
+        }
     }
 
     /// @brief init_block() over the active geometry's storage.
@@ -1578,7 +1633,9 @@ class ChunkBase : public CRTPSupport<Derived>,
 
             T* arr = static_cast<T*>(ptr);
             for (size_t i = 0; i < cst_buffer_size; ++i)
+            {
                 arr[i] = first_value;
+            }
 
             mprotect(ptr, allocsize, PROT_READ);
             return arr;
@@ -1864,7 +1921,9 @@ class ChunkBase : public CRTPSupport<Derived>,
                    "its second values are identifiers, not filled arrays");
             const T* const vals = values_load();
             if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
+            {
                 return derived().second_value_from_ptr(vals);
+            }
             return load_at<Relaxed>(vals, i);
         }
         return load_at<Relaxed>(values_load(), i);
@@ -1886,7 +1945,9 @@ class ChunkBase : public CRTPSupport<Derived>,
                       })
         {
             if (derived().is_cst_val2()) [[unlikely]]
+            {
                 derived().materialise_for_address();
+            }
         }
         static_assert(!is_packed, "print_adr: a Bit has no address (bit.h)");
         return &values_load()[i];
@@ -1912,7 +1973,9 @@ class ChunkBase : public CRTPSupport<Derived>,
         // code, both for "is it mine" and for which list a foreign block is
         // parked on (a rank only ever touches its own list inside a region).
         if (CHUNK_PMP_IN_PARALLEL_REGION)
+        {
             thr_rank = CHUNK_PMP_THREAD_RANK;
+        }
         auto& mine = get_chunk_allocator(thr_rank); // same slab geometry for every key
         auto* slab = mine.slab_of(ptr);
         if (slab == nullptr || slab->owner == nullptr)
@@ -1938,11 +2001,17 @@ class ChunkBase : public CRTPSupport<Derived>,
     [[nodiscard]] static T load_at(const T* vals, int i) noexcept
     {
         if constexpr (is_packed)
+        {
             return elem_get(vals, static_cast<std::size_t>(i)); // relaxed word load under OpenMP
+        }
         else if constexpr (Relaxed)
+        {
             return internal::load_element_relaxed(vals + i);
+        }
         else
+        {
             return vals[i];
+        }
     }
 };
 

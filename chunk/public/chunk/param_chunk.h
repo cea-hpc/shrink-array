@@ -386,8 +386,10 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     static void set_chunk_size(int v)
     {
         if (std::cmp_not_equal(v, __chunk_size))
+        {
             std::cerr << "Warning: set_chunk_size(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
                       << " (rebuild with -DCHUNK_SIZE=" << v << ")\n";
+        }
     }
 
     /**
@@ -417,8 +419,10 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     static void set_decalage_chunk(unsigned int v)
     {
         if (v != __decalage_chunk)
+        {
             std::cerr << "Warning: set_decalage_chunk(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
                       << " (shift " << __decalage_chunk << ")\n";
+        }
     }
 
     /**
@@ -439,8 +443,10 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     static void set_modulo_chunk(int v)
     {
         if (std::cmp_not_equal(v, __modulo_chunk))
+        {
             std::cerr << "Warning: set_modulo_chunk(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
                       << " (mask " << __modulo_chunk << ")\n";
+        }
     }
 
     /**

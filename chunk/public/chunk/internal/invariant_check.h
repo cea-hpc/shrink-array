@@ -108,9 +108,13 @@ template <typename V>
 std::string value_repr(const V& v)
 {
     if constexpr (invariant_formattable<V>)
+    {
         return std::format("{}", v);
+    }
     else
+    {
         return invariant_fmt_arg(v);
+    }
 }
 
 /// The type std::format deduces for that argument: the reference for an

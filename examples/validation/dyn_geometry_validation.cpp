@@ -70,11 +70,17 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 // set_second_value only exists on chunk2 / chunk2a; no-op elsewhere. Required on
@@ -84,7 +90,9 @@ template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {
     if constexpr (requires(Arr x) { x.set_second_value(v); })
+    {
         a.set_second_value(v);
+    }
 }
 
 // The pattern is piecewise-constant with long runs: it compresses well (so the
@@ -128,12 +136,16 @@ static int round_trip_at(unsigned int csz, long N)
     long bad   = 0;
     long first = -1;
     for (long i = 0; i < N; ++i)
+    {
         if (arr[i] != ref[i])
         {
             if (first < 0)
+            {
                 first = i;
+            }
             ++bad;
         }
+    }
 
     if (bad)
     {
@@ -166,7 +178,9 @@ int main(int argc, char** argv)
     // too narrow and the library refuses the geometry by design, so a larger
     // size here would test the refusal, not the round-trip.
     for (unsigned int csz = 64; csz <= shrink_array::cst_buffer_size; csz <<= 1)
+    {
         fails += round_trip_at(csz, N);
+    }
 
     printf("\n[%s] %s\n", variant_name(),
            fails == 0 ? "=== ALL GEOMETRIES ROUND-TRIP ===" : "=== GEOMETRY FAILURES ===");

@@ -57,14 +57,18 @@ template <typename T>
 {
     static_assert(std::is_arithmetic_v<T> && !std::is_same_v<T, bool>, "parse_number: a number type");
     if (text == nullptr || *text == '\0')
+    {
         return false;
+    }
     if constexpr (std::is_integral_v<T>)
     {
         const char* const end = text + std::strlen(text);
         T                 v{};
         const auto [ptr, ec] = std::from_chars(text, end, v);
         if (ec != std::errc{} || ptr != end)
+        {
             return false;
+        }
         out = v;
         return true;
     }
@@ -74,7 +78,9 @@ template <typename T>
         errno          = 0;
         const double v = std::strtod(text, &end);
         if (end == text || *end != '\0' || errno == ERANGE)
+        {
             return false;
+        }
         out = static_cast<T>(v);
         return true;
     }
@@ -97,10 +103,14 @@ template <typename T>
 {
     const char* env = std::getenv(name);
     if (env == nullptr || *env == '\0')
+    {
         return fallback;
+    }
     T v{};
     if (parse_number(env, v))
+    {
         return v;
+    }
     warn_invalid_env(name, env);
     return fallback;
 }
@@ -114,7 +124,9 @@ template <typename T>
 {
     T v{};
     if (parse_number(text, v))
+    {
         return v;
+    }
     std::fprintf(stderr, "[arg] %s \"%s\" is not a valid value: ignored, the default is kept\n", what,
                  text != nullptr ? text : "");
     return fallback;

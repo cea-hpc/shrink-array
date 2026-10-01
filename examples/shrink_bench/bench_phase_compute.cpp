@@ -47,13 +47,17 @@ static const unsigned long bench_ulong_mask = []() -> unsigned long
 {
     const long bands = shrink_array::env_number<long>("CHUNK_BENCH_ULONG_BANDS", 4096);
     if (bands <= 0)
+    {
         return ~0UL; // unbounded
+    }
     // Bands are 256 indices wide (the |0xFF, &~0x0F arithmetic below), so the
     // mask has to cover bands * 256 indices, rounded up to a power of two.
     const unsigned long span = static_cast<unsigned long>(bands) * 256UL;
     unsigned long       m    = 1;
     while (m < span)
+    {
         m <<= 1U;
+    }
     return m - 1UL;
 }();
 
@@ -139,15 +143,25 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             const Int j = i - deb;
 
             if (j < 60 + dec)
+            {
                 tab_complex[i] = complex_double(std::sin(i + k), std::cos(i + k));
+            }
             else if (j < 120 + dec)
+            {
                 tab_complex[i] = zero_complex;
+            }
             else if (j < 240 + dec)
+            {
                 tab_complex[i] = second_value_c;
+            }
             else if (j < 360 + dec)
+            {
                 tab_complex[i] = zero_complex;
+            }
             else
+            {
                 tab_complex[i] = second_value_c;
+            }
         }
 
         BENCH_OMP_FOR_STATIC_NOWAIT_SCALAR
@@ -280,7 +294,9 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             for (Int i = sched_base; i < end0; ++i)
             {
                 if (i < start0) // alignment head: same trip count in every loop
+                {
                     continue;
+                }
                 tab1[i] = std::sqrt(double(i));
 
                 SB_CHECKED_RMW(tab_float, i, += 1);
@@ -358,7 +374,9 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             for (Int i = sched_base; i < end0; ++i)
             {
                 if (i < start0) // alignment head: same trip count in every loop
+                {
                     continue;
+                }
                 tab_int[i]       = second_value_i;
                 tab_bool[i]      = second_value_b;
                 tab_bool_bits[i] = second_value_b;
@@ -434,9 +452,9 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 
                     const double common = std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val);
                     const double arm    = b ? (std::cos(t1) + std::sin(t2) + std::atan(t3) + std::cos(val)) -
-                                               (std::tan(t3) + std::cos(t5))
+                                                  (std::tan(t3) + std::cos(t5))
                                             : (std::sin(t1) + std::atan(t2) + std::cos(t3) + std::sin(val)) -
-                                               (std::sin(t3) + std::atan(t5));
+                                                  (std::sin(t3) + std::atan(t5));
 
                     p_val_sum += common + arm;
                     p_v_real += std::cos(valc.real()) - tab_float[i];
@@ -469,7 +487,9 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             for (Int i = sched_base; i < end0; ++i)
             {
                 if (i < start0) // alignment head: same trip count in every loop
+                {
                     continue;
+                }
                 val_sum += std::cos(tab1[i]) + std::sin(tab2[i]) + std::atan(tab3[i]) + std::cos(val);
                 val_sum += std::sin(tab4[i]) * std::cos(tab5[i]);
                 val_sum -= tab_float[i] + tab_short[i] - tab_char[i];

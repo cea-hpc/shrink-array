@@ -89,7 +89,9 @@ class Chunk2AConcurrentOps
     {
         T* old = base()->values_load();
         if (old == Base::get_cst_val1() || Holder::is_cst_val2_ptr(old))
+        {
             return nullptr;
+        }
 
         T* new_ptr  = (num_compress_value == 0) ? Base::get_cst_val1() : cst2_ptr;
         T* expected = old;
@@ -103,17 +105,21 @@ class Chunk2AConcurrentOps
 
         if (!self()->values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel,
                                                     std::memory_order_acquire))
+        {
             return nullptr;
+        }
 
         if constexpr (build_config::any_check)
         {
             T* observed = base()->values_load();
             if (observed != new_ptr && observed != Base::get_cst_val1() && !Holder::is_cst_val2_ptr(observed))
+            {
                 invariant_failed(std::source_location::current(),
                                  "try_mark_cst_and_get_old: post-CAS values={} not in expected set "
                                  "(new_ptr={}, cst1={}, a cst2 array)",
                                  static_cast<const void*>(observed), static_cast<const void*>(new_ptr),
                                  static_cast<const void*>(Base::get_cst_val1()));
+            }
         }
 
         if constexpr (chunk_config::ring_log_debug)
@@ -151,7 +157,9 @@ class Chunk2AConcurrentOps
             {
                 expected = base()->values_load();
                 if (!Holder::is_cst_val2_ptr(expected))
+                {
                     return true; // failed: someone else materialised it first
+                }
             }
             else
             {
@@ -171,11 +179,13 @@ class Chunk2AConcurrentOps
             {
                 T* current = base()->values_load();
                 if (current != values_loc && current != Base::get_cst_val1() && !Holder::is_cst_val2_ptr(current))
+                {
                     invariant_failed(std::source_location::current(),
                                      "post-create_value CAS: values={}, expected one of "
                                      "{{values_loc={}, cst1={}, a cst2 array}}",
                                      static_cast<const void*>(current), static_cast<const void*>(values_loc),
                                      static_cast<const void*>(Base::get_cst_val1()));
+                }
             }
         }
         if constexpr (chunk_config::ring_log_debug)
@@ -239,9 +249,13 @@ class Chunk2AStateQueries
     {
         const T* current_value = base()->values_load();
         if constexpr (is_not_bool)
+        {
             return Holder::is_cst_val2_ptr(current_value); // a range test on the region
+        }
         else
+        {
             return current_value == Holder::m_ptr.data();
+        }
     }
 
     /// @brief is_cst_val2() asked of a pointer the caller already loaded.
@@ -252,9 +266,13 @@ class Chunk2AStateQueries
     [[nodiscard]] bool is_cst_val2_ptr_of(const T* ptr) const noexcept
     {
         if constexpr (is_not_bool)
+        {
             return Holder::is_cst_val2_ptr(ptr);
+        }
         else
+        {
             return ptr == Holder::m_ptr.data();
+        }
     }
 
     /**
@@ -272,9 +290,13 @@ class Chunk2AStateQueries
     [[nodiscard]] T second_value_from_ptr(const T* ptr) const noexcept
     {
         if constexpr (is_not_bool)
+        {
             return Holder::value_of_id(Holder::id_of_ptr(ptr));
+        }
         else
+        {
             return true;
+        }
     }
 
     /**
@@ -290,7 +312,9 @@ class Chunk2AStateQueries
     void materialise_for_address() noexcept
     {
         if (is_cst_val2())
+        {
             base()->create_value(second_value_of_chunk());
+        }
     }
 
     /// @brief Is @p ptr one of the constant arrays (first or a second one)?
@@ -299,11 +323,17 @@ class Chunk2AStateQueries
     [[nodiscard]] static bool is_constant_ptr(const T* ptr) noexcept
     {
         if (ptr == Base::get_cst_val1())
+        {
             return true;
+        }
         if constexpr (is_not_bool)
+        {
             return Holder::is_cst_val2_ptr(ptr);
+        }
         else
+        {
             return ptr == Holder::m_ptr.data();
+        }
     }
 
     /// @brief Materialised (owns a buffer, i.e. compressed to neither constant)?
@@ -354,9 +384,13 @@ class Chunk2AStateQueries
     [[nodiscard]] T second_value_of_chunk() const noexcept
     {
         if constexpr (is_not_bool)
+        {
             return Holder::value_of_id(Holder::id_of_ptr(base()->values_load()));
+        }
         else
+        {
             return true; // bool: the second value is the only other one
+        }
     }
 };
 
@@ -591,7 +625,9 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     Chunk2A& operator=(const Chunk2A& other)
     {
         if (this != &other)
+        {
             Base::values_store(other.values_load());
+        }
         return *this;
     }
 
@@ -643,9 +679,11 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
             if constexpr (build_config::any_check)
             {
                 if (cst_val2_ptr == nullptr)
+                {
                     invariant_failed(std::source_location::current(),
                                      "init_values_cst_val: type says cst_val2 but no array is registered for the "
                                      "chunk's second value");
+                }
             }
             Base::values = cst_val2_ptr;
         }
@@ -685,9 +723,13 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
         {
             // bool has its own materialiser (the second value is the flag).
             if constexpr (is_not_bool)
+            {
                 create_value(false, ptr_second_value);
+            }
             else
+            {
                 create_value_bool(false);
+            }
         }
     }
 
@@ -707,16 +749,24 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
             if constexpr (build_config::use_openmp)
             {
                 if constexpr (is_not_bool)
+                {
                     create_value(false, ptr_second_value, thr_rank);
+                }
                 else
+                {
                     create_value_bool(false, thr_rank);
+                }
             }
             else
             {
                 if constexpr (is_not_bool)
+                {
                     create_value(false, ptr_second_value);
+                }
                 else
+                {
                     create_value_bool(false);
+                }
             }
         }
     }

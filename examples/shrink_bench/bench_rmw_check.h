@@ -65,7 +65,9 @@ void sb_check_compound(Arr& arr, Int idx, Result&& result, const char* expr)
     using T = std::decay_t<Arr>::value_type;
     static_assert(std::is_trivially_copyable_v<T>, "bit-wise comparison needs a trivially copyable element");
     if (!mode_check)
+    {
         return;
+    }
     const T returned = static_cast<T>(std::forward<Result>(result));
     const T stored   = arr[idx];
     if (std::memcmp(&returned, &stored, sizeof(T)) != 0)

@@ -51,12 +51,16 @@ using namespace shrink_array;
 static void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 static void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 template <typename T>
@@ -67,11 +71,17 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 static void set_team(int n)
@@ -139,11 +149,15 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
             begin_phase();
 #pragma omp for schedule(static)
             for (long i = 0; i < N / 2; ++i)
+            {
                 a[i] += static_cast<int>(a[N - 1 - i]);
+            }
         }
         end_phase();
         for (long i = 0; i < N / 2; ++i)
+        {
             ra[i] += snap[N - 1 - i];
+        }
     }
 
     long fails = 0;
@@ -154,7 +168,9 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
         if (ai != ra[i] || di != rd[i])
         {
             if (fails < 5)
+            {
                 std::printf("  MISMATCH i=%ld  int %d (ref %d)  double %g (ref %g)\n", i, ai, ra[i], di, rd[i]);
+            }
             ++fails;
         }
     }
@@ -173,7 +189,9 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
     {
         char buf[4096];
         for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, f)) > 0;)
+        {
             out.append(buf, n);
+        }
         std::fclose(f);
     }
     std::remove(log.c_str());
@@ -225,7 +243,9 @@ int main(int argc, char** argv)
 
     // 3. Past the capacity: must stop with the invariant failure.
     if constexpr (build_config::use_openmp)
+    {
         fails += check_beyond(argv[0]);
+    }
 
     if (fails)
     {

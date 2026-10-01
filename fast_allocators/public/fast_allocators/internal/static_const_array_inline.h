@@ -164,10 +164,14 @@ inline void* StaticConstArray::getBlockAllocAlignInt(int sz)
 // would make fast_allocators read a value the chunk layer owns.
 #if __ALIGNEMENT__ == 16
         if (sz <= 16)
+        {
             return _Allocator16.alloc();
+        }
 #elif __ALIGNEMENT__ >= 32
         if (sz <= 32)
+        {
             return _Allocator32.alloc();
+        }
 #endif
         if (sz <= 64)
         {

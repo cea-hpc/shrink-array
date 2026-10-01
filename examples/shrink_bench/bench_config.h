@@ -189,9 +189,13 @@ inline Int get_io_mode()
     // dump back and verifies it, which needs a shrink build; the baseline
     // writes it, 1). Nothing here names a variant API, so no directive.
     if (mode_check)
+    {
         return chunk_config::is_shrink_enabled ? 2 : 1;
+    }
     if (mode_perf)
+    {
         return 0;
+    }
     return -1;
 }
 
@@ -199,9 +203,13 @@ inline Int get_io_mode()
 inline long long get_size_base_interval()
 {
     if (mode_check)
+    {
         return 20000;
+    }
     if (mode_perf)
+    {
         return 100000;
+    }
     return -1;
 }
 
@@ -209,9 +217,13 @@ inline long long get_size_base_interval()
 inline long long get_size_base_data()
 {
     if (mode_check)
+    {
         return 5000000;
+    }
     if (mode_perf)
+    {
         return 1000000000;
+    }
     return -1;
 }
 
@@ -279,7 +291,9 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
     const long long base_data = get_size_base_data();
     const long long base_itv  = get_size_base_interval();
     if (base_data <= 0 || base_itv <= 0)
+    {
         return; // no --mode chosen: nothing is allocated from these sizes
+    }
 
     if (scaled_size(base_itv, multiplier, divisor) < 1)
     {
@@ -297,7 +311,9 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
 
     constexpr long long int_max = std::numeric_limits<Int>::max();
     if (reach(multiplier) <= int_max)
+    {
         return;
+    }
 
     // Each term of the bound, solved for m (the floors only lower the reach):
     //   2 * sz + 65536   <= int_max  ->  m <= (int_max - 65536) * d / (2 * base_data)
@@ -310,7 +326,9 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
                                    top * d / static_cast<double>(base_data + base_itv)});
     m_max              = std::floor(m_max * 1e6) / 1e6; // printed to 6 decimals: round DOWN
     while (m_max > 0.0 && reach(m_max) > int_max)
+    {
         m_max -= 1e-6;
+    }
 
     char buf[64];
     std::snprintf(buf, sizeof buf, "%.6f", m_max);
@@ -318,10 +336,14 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
               << scaled_size(base_data, multiplier, divisor) << " elements; the bench's Int arithmetic would reach "
               << reach(multiplier) << " > the Int range (" << int_max << ").\n";
     if (m_max > 0.0)
+    {
         std::cerr << "       Largest valid --multiply for --divisor " << divisor << " (iter_max " << iter_max
                   << "): " << buf << "\n";
+    }
     else
+    {
         std::cerr << "       No --multiply fits with --divisor " << divisor << ": raise --divisor.\n";
+    }
     std::cerr << "       Beyond that the bench and the library (ind_type = Int) need 64-bit indices:\n"
                  "       rebuild with -DSHRINK_BENCH_INT64=ON and run the int64 executable\n"
                  "       (shrink_bench_<variant>_int64_<1024|dyn>, perf only).\n";
@@ -334,9 +356,13 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
 inline Int get_iter_stop(Int iter_max)
 {
     if (mode_check)
+    {
         return 33;
+    }
     else if (mode_perf)
+    {
         return iter_max;
+    }
     return -1;
 }
 
@@ -346,7 +372,9 @@ inline Int get_iter_stop(Int iter_max)
 inline Int get_freq_raz(Int iter_max)
 {
     if (mode_check)
+    {
         return 4;
+    }
     else if (mode_perf)
     {
         Int ret = iter_max / 10;
@@ -369,11 +397,17 @@ inline Int get_freq_conso_mem()
     // from a blind spot into a curve, which is what locating a transient
     // peak needs. Decided once at startup, like every other CONSTEXPR site.
     if (const Int n = shrink_array::env_number<Int>("CHUNK_BENCH_MEM_PERIOD", 0); n > 0)
+    {
         return n;
+    }
     if (mode_check)
+    {
         return 1;
+    }
     else if (mode_perf)
+    {
         return 10;
+    }
     return -1;
 }
 
@@ -381,9 +415,13 @@ inline Int get_freq_conso_mem()
 inline bool have_stats()
 {
     if (mode_check)
+    {
         return true;
+    }
     else if (mode_perf)
+    {
         return false;
+    }
     return false;
 }
 
