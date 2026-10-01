@@ -164,7 +164,13 @@ double sorted_at(long i, long S)
     return (2.0 * kSecond) + static_cast<double>(i - (kC2 * S));
 }
 
-/// @brief Write @p value(i) at every i in [0, N) from a parallel region.
+/// @brief Write @p value(i) at every i in [0, N) from a parallel region, then
+///        the between-region pass.
+/// @details A serial chunk2a has no between-region pass (there is no region):
+///          its candidates wait for make_block_compression(), which a writer
+///          runs once its list is long enough -- a few dozen chunks never get
+///          there, and compress() only audits. The harness runs that pass
+///          itself there, as mark_path_validation does.
 template <typename Fn>
 void fill(Arr& a, long N, Fn&& value)
 {
@@ -176,6 +182,8 @@ void fill(Arr& a, long N, Fn&& value)
             a[static_cast<Ind>(i)] = value(i);
     }
     end_phase();
+    if constexpr (chunk_config::use_chunk2a && !build_config::use_openmp)
+        a.make_block_compression();
 }
 
 /// @brief Mismatch reporter: counts every failure, prints the first few.
