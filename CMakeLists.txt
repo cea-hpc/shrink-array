@@ -56,6 +56,18 @@ endif()
 # CHECK_OPTIM (option above) turns build_config::any_check on in a release
 # build: chunk/CMakeLists.txt passes it to the library, PUBLIC.
 
+# MM_PROTECT: Chunk/Chunk2's shared constant buffers (cst_val1, the cst_val2
+# region) are mprotect'ed read-only, so a stray write into a compressed chunk
+# faults at the culprit instead of corrupting a value shared by thousands of
+# chunks. A debugging build: one mprotect per buffer, and page-rounded slots.
+# Its code sits in `if constexpr (build_config::use_mm_protect)` branches of
+# class templates, which no other configuration instantiates -- compile_all.sh
+# builds it so they keep compiling.
+option(CHUNK_MM_PROTECT "Read-only (mprotect) constant buffers: a stray write to a compressed chunk faults" OFF)
+if(CHUNK_MM_PROTECT)
+    add_definitions(-DMM_PROTECT)
+endif()
+
 # ── Sanitizer option ──────────────────────────────────────────────────────────
 set(SANITIZER "none" CACHE STRING "Sanitizer to enable: none, thread, address, token")
 set_property(CACHE SANITIZER PROPERTY STRINGS none thread address token)
