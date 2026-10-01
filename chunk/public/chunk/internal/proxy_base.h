@@ -367,18 +367,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         num_tab = nt;
     }
 
-  public:
-    /// @brief The chunk that owns this element.
-    [[nodiscard]] ChunkType& get_chunk() const noexcept
-    {
-        return chunk;
-    }
-
     // ========================================================================
     // Common chunk state queries
     // ========================================================================
 
-  protected:
     /// @brief Is the chunk compressed to its single first value?
     [[nodiscard]] bool is_cst_val1() const noexcept
     {
@@ -424,6 +416,12 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
   public:
+    /// @brief The chunk that owns this element.
+    [[nodiscard]] ChunkType& get_chunk() const noexcept
+    {
+        return chunk;
+    }
+
     /**
      * @brief Initialize per-chunk pointers except second value.
      */
@@ -433,14 +431,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tabl][num_chunkl] = v;
     }
 
-  protected:
-    /// @brief Point this proxy at an already-known candidate flag.
-    void set_ptr_is_inside_chunk_list_to_compress(std::atomic<char>* pt) noexcept
-    {
-        ptr_is_inside_chunk_list_to_compress = pt;
-    }
-
-  public:
     /// @brief The whole candidate-flag row for array @p num_tab.
     static std::vector<std::atomic<char>>& get_tab_is_inside_list_to_compress(int num_tab) noexcept
     {
@@ -461,18 +451,21 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @post ptr_is_inside_chunk_list_to_compress points to correct atomic flag
      */
 
+    /// @brief Queue this chunk as a compression candidate in @p vec_tuple.
+    void add_to_compression_list([[maybe_unused]] auto& vec_tuple) const;
+
   protected:
+    /// @brief Point this proxy at an already-known candidate flag.
+    void set_ptr_is_inside_chunk_list_to_compress(std::atomic<char>* pt) noexcept
+    {
+        ptr_is_inside_chunk_list_to_compress = pt;
+    }
     void set_ptr_is_inside_chunk_list_to_compress() noexcept
     {
         ptr_is_inside_chunk_list_to_compress =
             &FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab][num_chunk];
     }
 
-  public:
-    /// @brief Queue this chunk as a compression candidate in @p vec_tuple.
-    void add_to_compression_list([[maybe_unused]] auto& vec_tuple) const;
-
-  protected:
     /// @brief add_to_compression_list() on the calling thread's own list.
     void add_to_compression_list() const;
 
@@ -569,22 +562,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         }
         return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
     }
-
-  public:
-    // PURE-READ entry (operator T(), the *=1 / /=1 early-outs). Under
-    // sync_on_read this pulls the offset to applied state then reads LIVE; the
-    // ctor-time `values` snapshot may be stale after materialisation. This is the
-    // ONLY place the read-side toll lives — never on the write path.
-    /// @brief The ordinary read: synchronise this offset, then read it live.
-    /// @details The only place the read-side synchronisation cost is paid, and
-    ///          the entry point behind `operator T()`.
-    [[nodiscard]] T read_pure() const noexcept
-    {
-        chunk.reader_sync(num);
-        return chunk.read_value(num); // read_value accounts the read in stats
-    }
-
-  protected:
     /// @brief Read through the chunk WITHOUT synchronising first.
     /// @warning Returns a stale value if a deferred write on this offset has
     ///          not been applied. Use read_pure() unless you know otherwise.
@@ -610,35 +587,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     [[nodiscard]] bool write_with_optional_lock_impl(WriteCallable&&           write_body,
                                                      [[maybe_unused]] LBD_INFO lbd_info) noexcept;
 
-    // Removed: the [[deprecated]] write_with_optional_lock() overload that armed
-    // NOTHING before the write (empty lbd_info). It had no caller left: Proxy
-    // declares its own same-named member, which HIDES this one for the only call
-    // site (proxy_inline.h), and Proxy2 / Proxy2A go through
-    // write_with_optional_lock_info() below. Its own deprecation note asked for
-    // exactly this removal.
-
-  private:
-    /**
-     * @brief Executes a write operation without parameters.
-     * @tparam WriteFn Callable to execute.
-     * @param write_fn Function to execute.
-     */
-    template <typename WriteFn>
-    [[nodiscard]] bool write_with_optional_lock_info(WriteFn write_fn)
-    {
-        const auto lbd_info = [this]
-        {
-            if constexpr (chunk_config::use_fast_block_compression)
-            {
-                // This code is only compiled and executed if the condition is true
-                derived().set_info_on_chunk();
-            }
-        };
-
-        return write_with_optional_lock_impl([&] { write_fn(); }, lbd_info);
-    }
-
-  protected:
     /**
      * @brief Has a thread's candidate list grown past the point where it must be drained?
      *
@@ -655,31 +603,20 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     {
         return sz > szm;
     }
-
-  private:
-    /**
-     * @brief Deferred-path tail: a dangerous rank still drives its pass.
-     *
-     * A write that must be deferred (a compressor is in flight) leaves without
-     * further ado -- unless this rank's candidate list is flagged dangerous, in
-     * which case it runs perform_compression() as the fast path would have
-     * after its store: the flush of the rank's own deferred ops, then a
-     * start() that waits for the in-flight compressor rather than yielding
-     * to a flush of its own making. The other ranks used to run the pass too,
-     * and each one flushed -- and announced -- the single op it had just
-     * enqueued.
-     *
-     * @param thr Calling thread's rank.
-     */
-    void drive_compression_if_dangerous(int thr) noexcept
-    {
-        if (CompressionManagerType::is_dangerous_list(thr)) [[unlikely]]
-        {
-            compression_mgr.run_slow_path([&] { derived().perform_compression(); });
-        }
-    }
-
   public:
+
+    // PURE-READ entry (operator T(), the *=1 / /=1 early-outs). Under
+    // sync_on_read this pulls the offset to applied state then reads LIVE; the
+    // ctor-time `values` snapshot may be stale after materialisation. This is the
+    // ONLY place the read-side toll lives — never on the write path.
+    /// @brief The ordinary read: synchronise this offset, then read it live.
+    /// @details The only place the read-side synchronisation cost is paid, and
+    ///          the entry point behind `operator T()`.
+    [[nodiscard]] T read_pure() const noexcept
+    {
+        chunk.reader_sync(num);
+        return chunk.read_value(num); // read_value accounts the read in stats
+    }
     // ========================================================================
     // Common metadata management
     // ========================================================================
@@ -713,6 +650,49 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         ptr_on_array = array_ptr;
         num_chunk    = num_chunk_;
         num_tab      = num_tab_;
+    }
+
+  private:
+    /**
+     * @brief Executes a write operation without parameters.
+     * @tparam WriteFn Callable to execute.
+     * @param write_fn Function to execute.
+     */
+    template <typename WriteFn>
+    [[nodiscard]] bool write_with_optional_lock_info(WriteFn write_fn)
+    {
+        const auto lbd_info = [this]
+        {
+            if constexpr (chunk_config::use_fast_block_compression)
+            {
+                // This code is only compiled and executed if the condition is true
+                derived().set_info_on_chunk();
+            }
+        };
+
+        return write_with_optional_lock_impl([&] { write_fn(); }, lbd_info);
+    }
+
+    /**
+     * @brief Deferred-path tail: a dangerous rank still drives its pass.
+     *
+     * A write that must be deferred (a compressor is in flight) leaves without
+     * further ado -- unless this rank's candidate list is flagged dangerous, in
+     * which case it runs perform_compression() as the fast path would have
+     * after its store: the flush of the rank's own deferred ops, then a
+     * start() that waits for the in-flight compressor rather than yielding
+     * to a flush of its own making. The other ranks used to run the pass too,
+     * and each one flushed -- and announced -- the single op it had just
+     * enqueued.
+     *
+     * @param thr Calling thread's rank.
+     */
+    void drive_compression_if_dangerous(int thr) noexcept
+    {
+        if (CompressionManagerType::is_dangerous_list(thr)) [[unlikely]]
+        {
+            compression_mgr.run_slow_path([&] { derived().perform_compression(); });
+        }
     }
 
   private:
