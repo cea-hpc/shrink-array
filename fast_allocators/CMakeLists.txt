@@ -72,7 +72,14 @@ endif ()
 
 include(GNUInstallDirs)
 
-set(INCLUDE_INSTALL_DIR ${CMAKE_INSTALL_INCLUDEDIR}/fast_allocators)
+# chunk-config.cmake pins the fast_allocators version it was built against
+# (find_dependency). chunk/ is configured first and records it as a GLOBAL
+# property: fail here, at configure time, if the two drifted apart.
+get_property(_chunk_wants_fa GLOBAL PROPERTY CHUNK_FAST_ALLOCATORS_VERSION)
+if (_chunk_wants_fa AND NOT _chunk_wants_fa VERSION_EQUAL ALLOCATORS_VERSION)
+  message(FATAL_ERROR "chunk/CMakeLists.txt pins fast_allocators ${_chunk_wants_fa} in chunk-config.cmake, "
+                      "this is ${ALLOCATORS_VERSION}: update CHUNK_FAST_ALLOCATORS_VERSION there.")
+endif ()
 
 install(TARGETS fast_allocators
   EXPORT fast_allocators-targets
@@ -90,8 +97,7 @@ install(DIRECTORY public/fast_allocators
 include(CMakePackageConfigHelpers)
 
 configure_package_config_file(fast_allocators-config.cmake.in fast_allocators-config.cmake
-  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/fast_allocators/cmake
-  PATH_VARS ALLOCATORS_VERSION)
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/fast_allocators/cmake)
 
 write_basic_package_version_file(fast_allocators-config-version.cmake
   VERSION ${ALLOCATORS_VERSION}
