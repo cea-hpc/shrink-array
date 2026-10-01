@@ -166,8 +166,12 @@ struct CompressionManagerOmpPolicy : FlushReplayState<T, ChunkType>
         std::atomic<int> value{0}; ///< 0 or 1 -- see mark_list_dangerous_for_thread
     };
 
-    /// @brief "This rank may hold deferred ops" hint, padded to its own line.
-    struct alignas(128) ThreadOpsFlag
+    /// @brief "This thread may hold deferred ops" hint.
+    /// @note Not padded: it is a thread_local touched by its owner only (see
+    ///       thread_may_have_ops_own), so no other thread shares its line. The
+    ///       alignas(128) it had dates from a rank-indexed array; on a
+    ///       thread_local it only spread the TLS block, one line per type.
+    struct ThreadOpsFlag
     {
         std::atomic<bool> v{false};
     };
