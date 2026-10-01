@@ -99,12 +99,13 @@ namespace shrink_array
  *       parameter of AllTypeChunkParallelInterface.
  */
 template <bool Enabled = build_config::use_openmp, typename AllT = AllTypeChunk>
-struct ParamChunkParallelInterface; // primary left undefined: only the 2 specializations exist
+class ParamChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief OpenMP builds: init_thread_structures() prints the allocator / thread-model banner.
 template <typename AllT>
-struct ParamChunkParallelInterface<true, AllT>
+class ParamChunkParallelInterface<true, AllT>
 {
+  public:
     /**
      * @brief What init_indexes() prints about the thread model (OpenMP build).
      *
@@ -120,8 +121,9 @@ struct ParamChunkParallelInterface<true, AllT>
 
 /// @brief Serial builds: init_thread_structures() is a no-op.
 template <typename AllT>
-struct ParamChunkParallelInterface<false, AllT>
+class ParamChunkParallelInterface<false, AllT>
 {
+  public:
     /**
      * @brief Serial build: nothing to print, nothing to size.
      * @see ParamChunkParallelInterface<true>::init_thread_structures
@@ -147,12 +149,13 @@ struct ParamChunkParallelInterface<false, AllT>
  *       \#ifdef CHUNK_DYNAMIC this replaced.
  */
 template <bool Enabled = build_config::chunk_dynamic, typename AllT = AllTypeChunk>
-struct ParamChunkDynInterface; // primary left undefined: only the 2 specializations exist
+class ParamChunkDynInterface; // primary left undefined: only the 2 specializations exist
 
 /// @brief Dynamic-geometry builds: provides register_chunk_size().
 template <typename AllT>
-struct ParamChunkDynInterface<true, AllT>
+class ParamChunkDynInterface<true, AllT>
 {
+  public:
     /**
      * @brief Declare a runtime chunk size so arrays of that geometry can allocate.
      *
@@ -177,8 +180,9 @@ struct ParamChunkDynInterface<true, AllT>
 
 /// @brief Fixed-geometry builds: no runtime size to declare.
 template <typename AllT>
-struct ParamChunkDynInterface<false, AllT>
+class ParamChunkDynInterface<false, AllT>
 {
+  public:
     /**
      * @brief Accepts the call and does nothing (fixed-geometry build).
      *
@@ -213,9 +217,9 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     // expression, which is access-checked against the template being defined --
     // naming only <true, AllTypeChunk> would not cover it.
     template <bool, typename>
-    friend struct ParamChunkParallelInterface;
+    friend class ParamChunkParallelInterface;
     template <bool, typename>
-    friend struct ParamChunkDynInterface;
+    friend class ParamChunkDynInterface;
 
     /// @brief Lower sanity bound for a configured CHUNK_SIZE.
     static constexpr int size_min = 32;

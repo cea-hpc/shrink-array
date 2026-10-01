@@ -41,7 +41,7 @@ namespace shrink_array
  * @brief Simple mixin to provide derived() and self() cast helpers for CRTP.
  */
 template <typename Derived>
-struct CRTPSupport
+class CRTPSupport
 {
   protected:
     /// @brief `*this` as the derived class.

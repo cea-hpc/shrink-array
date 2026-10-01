@@ -33,6 +33,7 @@ namespace shrink_array
 template <typename Derived>
 class ArrayChunk2Base : public ArrayChunkBase<Derived>
 {
+  private:
     using Base = ArrayChunkBase<Derived>;
 
   public:
@@ -111,6 +112,24 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     // bodies were identical. Reach it through derived(): it is a sibling base of
     // this one, so `this->` cannot see it.
 
+    /// @brief Compress every compressible chunk now, by every thread of the
+    ///        region compress_int() runs in (opened here when called outside one).
+    void compress()
+    {
+        if (CHUNK_PMP_IN_PARALLEL_REGION)
+            derived().compress_int();
+        else
+        {
+#pragma omp parallel
+            derived().compress_int();
+        }
+    }
+
+    // mark_chunk_dirty / is_chunk_dirty are inherited from ArrayChunkBase —
+    // the single owner of the dirty-bit verbs (this class used to carry a
+    // byte-identical duplicate of mark_chunk_dirty plus a caller-less
+    // mark_chunk_safe; both removed, one owner per protocol).
+
   protected:
     /// @brief The part of resize() both chunk2 variants share: compress the
     ///        pending candidates, drain the deferred ops, then grow or shrink
@@ -185,30 +204,11 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         }
     }
 
-  public:
-    /// @brief Compress every compressible chunk now, by every thread of the
-    ///        region compress_int() runs in (opened here when called outside one).
-    void compress()
-    {
-        if (CHUNK_PMP_IN_PARALLEL_REGION)
-        {
             // Inside the caller's region: other threads may be reading, so
             // the buffers released wait for a grace period (read_reclaim.h).
             const read_reclaim::PassScope pass_scope;
-            derived().compress_int();
-        }
-        else
         {
-#pragma omp parallel
-            derived().compress_int();
         }
-    }
-
-    // mark_chunk_dirty / is_chunk_dirty are inherited from ArrayChunkBase —
-    // the single owner of the dirty-bit verbs (this class used to carry a
-    // byte-identical duplicate of mark_chunk_dirty plus a caller-less
-    // mark_chunk_safe; both removed, one owner per protocol).
-
   private:
     /// @brief Is the chunk holding element @p i compressed to the first value?
     [[nodiscard]] bool is_cst_val1(ind_type i) const noexcept

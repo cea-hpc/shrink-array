@@ -52,8 +52,9 @@ static_assert(__chunk_size <= USHRT_MAX,
 ///        [[no_unique_address]] (two members of the same empty type may not
 ///        share an address) and the class stays empty.
 template <bool Enabled, int Tag = 0>
-struct ConditionalCounter
+class ConditionalCounter
 {
+  public:
     /// @name The operators do nothing when disabled; the conversion reads 0.
     /// @{
     void operator++() noexcept

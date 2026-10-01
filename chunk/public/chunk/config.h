@@ -244,8 +244,9 @@ inline constexpr bool second_value_indexed = false;
 /// alignas on the TYPE also makes sizeof 128, so nothing follows it on the
 /// line. Derived from std::atomic<int>, constructors included: every use is
 /// unchanged.
-struct alignas(128) OmptSuspendCounter : std::atomic<int>
+class alignas(128) OmptSuspendCounter : public std::atomic<int>
 {
+  public:
     using std::atomic<int>::atomic;
 };
 extern OmptSuspendCounter g_ompt_suspended;
@@ -524,8 +525,9 @@ inline constexpr bool stats = false;
 ///        drivers turn it off around their own passes (has_ompt builds; this
 ///        primary is the always-off stand-in for the others).
 template <bool Enabled>
-struct OMPTcc
+class OMPTcc
 {
+  public:
     /// @brief No switch to move.
     static void update([[maybe_unused]] bool state) noexcept {}
 
@@ -544,8 +546,9 @@ struct OMPTcc
 
 /// @brief The real switch, behind the process-wide ::g_ompt_suspended.
 template <>
-struct OMPTcc<true>
+class OMPTcc<true>
 {
+  public:
     /// @brief Set the switch.
     /// @details update(false) suspends the callbacks, update(true) resumes
     ///          them; they stay suspended while ANY thread holds a suspension.
@@ -581,8 +584,9 @@ struct OMPTcc<true>
 /// @brief Run-time switch of the NaN check on written values (do_check
 ///        builds; this primary is the always-off stand-in for the others).
 template <bool Enabled>
-struct CheckNaN
+class CheckNaN
 {
+  public:
     /// @brief No switch to move.
     static void update([[maybe_unused]] bool state) noexcept {}
     /// @brief No check.
@@ -598,11 +602,8 @@ struct CheckNaN
 
 /// @brief The real switch: maybe() checks while it is on.
 template <>
-struct CheckNaN<true>
+class CheckNaN<true>
 {
-  private:
-    static inline bool check_nan{true}; ///< the switch, on by default
-
   public:
     /// @brief Set the switch.
     static void update(bool state) noexcept
@@ -622,6 +623,8 @@ struct CheckNaN<true>
     {
         return true;
     }
+
+    static inline bool check_nan{true}; ///< the switch, on by default
 };
 
 } // namespace chunk_config

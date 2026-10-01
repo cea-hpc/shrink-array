@@ -57,9 +57,61 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
                    public FastBlockSupport<ArrayChunk<T, ind_type>>,
                    public RechunkHooks<ArrayChunk<T, ind_type>>
 {
+  private:
+    friend ArrayChunkBase<ArrayChunk<T, ind_type>>; // swap_identity()
+
     using Base     = ArrayChunkBase<ArrayChunk>;
     using Parallel = ParallelSupport<ArrayChunk>;
     using Hooks    = RechunkHooks<ArrayChunk>;
+
+    /// @brief Claim this array's identity before its storage is built:
+    ///        register its address and take the next free num_tab, which
+    ///        every per-tab metadata table is then indexed by. Called by
+    ///        create() through ArrayChunkBase.
+    void pre_create_hook()
+    {
+        auto& sh_inf = Proxy<T>::share_info_array;
+
+        sh_inf.insert(this->registry_key(), Base::nb_tab);
+
+        this->num_tab = Base::nb_tab;
+
+        ++nb_tab;
+    }
+
+    /// @brief Claim this array's identity and build its storage for @p sz
+    ///        elements (the constructors' body; registers the element type's
+    ///        manager on the way, see AllTypeChunk::ensure_manager).
+    void create(ind_type sz);
+
+    /// @brief Storage (re)allocation at the current active geometry, WITHOUT
+    ///        the identity work create_common() does. Used by create() and by
+    ///        rechunk_to().
+    /// @param sz element count to allocate for
+    void rebuild_storage(ind_type sz);
+
+    /// @brief Storage teardown shared by clear() and rechunk_to(): everything
+    ///        clear() does except the pre-drain stats. Parks buffers by THIS
+    ///        array's geometry and removes this array's compression candidates
+    ///        by num_tab.
+    void clear_core();
+
+    /// @brief Per-array compression stats + "would Chunk2 have helped?" probe.
+    /// Plain Chunk compresses a block only when it is constant to first_value;
+    /// this reports the compression ratio (vs a plain std::vector) and scans the
+    /// materialised (uncompressed) blocks for ones that are in fact constant to
+    /// some OTHER value — those a Chunk2/Chunk2A would have captured. Read at the
+    /// start of clear(), before the drain mutates chunk state.
+    void print_compression_stats(std::ostream& os = std::cout) const;
+
+    /// @brief The identity step of swap(): num_tab and the registry entry, so
+    ///        the per-num_tab tables follow the chunks.
+    void swap_identity(ArrayChunk& other)
+    {
+        using std::swap;
+        swap(this->num_tab, other.num_tab);
+        Proxy<T>::share_info_array.swap_keys(this->registry_key(), other.registry_key());
+    }
 
   public:
     using Traits       = Base::Traits;       ///< ArrayChunkTraits<ArrayChunk>.
@@ -86,6 +138,10 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     using Hooks::rechunk_drain_reuse_list;
     using Hooks::rechunk_drop_candidates;
     using Hooks::rechunk_swap_identity;
+
+    // make_block_compression() comes from FastBlockSupport (a no-op outside
+    // fast-block compression). Re-exported so resize() can call it unqualified.
+    using FastBlockSupport<ArrayChunk>::make_block_compression;
 
     /**
      * @brief Build an array of @p sz elements.
@@ -161,34 +217,6 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
         Proxy<T>::share_info_array.erase(this->registry_key());
     }
 
-  private:
-    /// @brief Claim this array's identity before its storage is built:
-    ///        register its address and take the next free num_tab, which
-    ///        every per-tab metadata table is then indexed by. Called by
-    ///        create() through ArrayChunkBase.
-    void pre_create_hook()
-    {
-        auto& sh_inf = Proxy<T>::share_info_array;
-
-        sh_inf.insert(this->registry_key(), Base::nb_tab);
-
-        this->num_tab = Base::nb_tab;
-
-        ++nb_tab;
-    }
-
-    /// @brief Claim this array's identity and build its storage for @p sz
-    ///        elements (the constructors' body; registers the element type's
-    ///        manager on the way, see AllTypeChunk::ensure_manager).
-    void create(ind_type sz);
-
-    /// @brief Storage (re)allocation at the current active geometry, WITHOUT
-    ///        the identity work create_common() does. Used by create() and by
-    ///        rechunk_to().
-    /// @param sz element count to allocate for
-    void rebuild_storage(ind_type sz);
-
-  public:
     /**
      * @brief Move-assign: this array's own contents are released (clear()),
      *        then it takes @p other's -- chunks, geometry and identity, by the
@@ -207,6 +235,15 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
             clear();
             this->swap_storage_and_identity(other);
         }
+        return *this;
+    }
+
+    /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
+    ///        is a no-op.
+    ArrayChunk& operator=(const ArrayChunk<T, ind_type>& from)
+    {
+        if (this != &from)
+            this->copy_from(from);
         return *this;
     }
 
@@ -229,10 +266,6 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
         chunk_list[this->chunk_index_of(i)].alloc_chunk(thr_rank);
     }
 
-    // make_block_compression() comes from FastBlockSupport (a no-op outside
-    // fast-block compression). Re-exported so resize() can call it unqualified.
-    using FastBlockSupport<ArrayChunk>::make_block_compression;
-
     /// @brief Resize to @p newsz elements; new elements read the first
     ///        constant. A sequential point: the rank's candidates are
     ///        compressed and the deferred ops drained first.
@@ -245,22 +278,6 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     /// @brief Release the storage and report this array's end-of-life stats.
     void clear();
 
-  private:
-    /// @brief Storage teardown shared by clear() and rechunk_to(): everything
-    ///        clear() does except the pre-drain stats. Parks buffers by THIS
-    ///        array's geometry and removes this array's compression candidates
-    ///        by num_tab.
-    void clear_core();
-
-    /// @brief Per-array compression stats + "would Chunk2 have helped?" probe.
-    /// Plain Chunk compresses a block only when it is constant to first_value;
-    /// this reports the compression ratio (vs a plain std::vector) and scans the
-    /// materialised (uncompressed) blocks for ones that are in fact constant to
-    /// some OTHER value — those a Chunk2/Chunk2A would have captured. Read at the
-    /// start of clear(), before the drain mutates chunk state.
-    void print_compression_stats(std::ostream& os = std::cout) const;
-
-  public:
     /// @brief The compression pass proper, run by every thread of the region
     ///        compress() opens (or on the calling thread outside one).
     void compress_int(bool verbose);
@@ -286,32 +303,10 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
         }
     }
 
-    /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
-    ///        is a no-op.
-    ArrayChunk& operator=(const ArrayChunk<T, ind_type>& from)
-    {
-        if (this != &from)
-            this->copy_from(from);
-        return *this;
-    }
-
     /// @brief Read-only access to the underlying chunk list.
     [[nodiscard]] const std::vector<Chunk<T>>& getChunkList() const noexcept
     {
         return chunk_list;
-    }
-
-  private:
-
-    friend ArrayChunkBase<ArrayChunk<T, ind_type>>; // swap_identity()
-
-    /// @brief The identity step of swap(): num_tab and the registry entry, so
-    ///        the per-num_tab tables follow the chunks.
-    void swap_identity(ArrayChunk& other)
-    {
-        using std::swap;
-        swap(this->num_tab, other.num_tab);
-        Proxy<T>::share_info_array.swap_keys(this->registry_key(), other.registry_key());
     }
 };
 

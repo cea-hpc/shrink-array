@@ -190,11 +190,9 @@ void fill(Arr& a, long N, Fn&& value)
 }
 
 /// @brief Mismatch reporter: counts every failure, prints the first few.
-struct Report
+class Report
 {
-    const char* step;
-    long        bad = 0;
-
+  public:
     // C varargs on purpose: the format attribute keeps -Wformat checking
     // every call (a forwarded, non-literal format would not be checked).
     [[gnu::format(printf, 2, 3)]] void fail(const char* fmt, ...) // NOLINT(cert-dcl50-cpp)
@@ -218,6 +216,9 @@ struct Report
             std::printf("[%s/%s] %ld failure(s)\n", variant_name(), step, bad);
         return bad ? 1 : 0;
     }
+
+    const char* step;
+    long        bad = 0;
 };
 
 /// @brief Chunks folded to a constant: expected at least the first-constant

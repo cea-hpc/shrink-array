@@ -58,28 +58,31 @@ class ManagerChunk;
 // (array_chunk_core.h), which is what ArrayChunkFor names.
 
 template <typename C>
-struct ChunkTraits;
+class ChunkTraits;
 
 /// @brief Chunk<T> maps to Proxy<T> and ManagerChunk<Chunk, T>.
 template <typename T>
-struct ChunkTraits<Chunk<T>>
+class ChunkTraits<Chunk<T>>
 {
+  public:
     using proxy_type   = Proxy<T>;               ///< Write proxy returned by the chunk's non-const operator[].
     using manager_type = ManagerChunk<Chunk, T>; ///< Per-type manager owning the compression machinery.
 };
 
 /// @brief Chunk2<T> maps to Proxy2<T> and ManagerChunk<Chunk2, T>.
 template <typename T>
-struct ChunkTraits<Chunk2<T>>
+class ChunkTraits<Chunk2<T>>
 {
+  public:
     using proxy_type   = Proxy2<T>;               ///< Write proxy returned by the chunk's non-const operator[].
     using manager_type = ManagerChunk<Chunk2, T>; ///< Per-type manager owning the compression machinery.
 };
 
 /// @brief Chunk2A<T> maps to Proxy2A<T> and ManagerChunk<Chunk2A, T>.
 template <typename T>
-struct ChunkTraits<Chunk2A<T>>
+class ChunkTraits<Chunk2A<T>>
 {
+  public:
     using proxy_type   = Proxy2A<T>;               ///< Write proxy returned by the chunk's non-const operator[].
     using manager_type = ManagerChunk<Chunk2A, T>; ///< Per-type manager owning the compression machinery.
 };
@@ -89,12 +92,13 @@ struct ChunkTraits<Chunk2A<T>>
 // ============================================================================
 
 template <typename Derived>
-struct ArrayChunkTraits;
+class ArrayChunkTraits;
 
 /// @brief ArrayChunk<T, ind_type> maps to Chunk<T>, Proxy<T>, ManagerChunk<Chunk, T>, value T and index ind_type.
 template <ArrayChunkElement T, typename ind_type>
-struct ArrayChunkTraits<ArrayChunk<T, ind_type>>
+class ArrayChunkTraits<ArrayChunk<T, ind_type>>
 {
+  public:
     using chunk_type   = Chunk<T>;               ///< Chunk type the array holds.
     using proxy_type   = Proxy<T>;               ///< Write proxy returned by the non-const accessors.
     using manager_type = ManagerChunk<Chunk, T>; ///< Per-type manager owning the compression machinery.
@@ -104,8 +108,9 @@ struct ArrayChunkTraits<ArrayChunk<T, ind_type>>
 
 /// @brief ArrayChunk2A<T, ind_type> maps to Chunk2A<T>, Proxy2A<T>, ManagerChunk<Chunk2A, T>, value T and index ind_type.
 template <ArrayChunkElement T, typename ind_type>
-struct ArrayChunkTraits<ArrayChunk2A<T, ind_type>>
+class ArrayChunkTraits<ArrayChunk2A<T, ind_type>>
 {
+  public:
     using chunk_type   = Chunk2A<T>;               ///< Chunk type the array holds.
     using proxy_type   = Proxy2A<T>;               ///< Write proxy returned by the non-const accessors.
     using manager_type = ManagerChunk<Chunk2A, T>; ///< Per-type manager owning the compression machinery.
@@ -115,8 +120,9 @@ struct ArrayChunkTraits<ArrayChunk2A<T, ind_type>>
 
 /// @brief ArrayChunk2<T, ind_type> maps to Chunk2<T>, Proxy2<T>, ManagerChunk<Chunk2, T>, value T and index ind_type.
 template <ArrayChunkElement T, typename ind_type>
-struct ArrayChunkTraits<ArrayChunk2<T, ind_type>>
+class ArrayChunkTraits<ArrayChunk2<T, ind_type>>
 {
+  public:
     using chunk_type   = Chunk2<T>;               ///< Chunk type the array holds.
     using proxy_type   = Proxy2<T>;               ///< Write proxy returned by the non-const accessors.
     using manager_type = ManagerChunk<Chunk2, T>; ///< Per-type manager owning the compression machinery.

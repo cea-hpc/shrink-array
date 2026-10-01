@@ -75,15 +75,12 @@ class ManagerChunk;
 // exactly as before. Reaches Chunk2A's bases via self(): Base = Chunk2Base,
 // Holder = TabCstVal2Holder. All accessed members are public (no friend needed).
 template <typename T, typename Derived>
-struct Chunk2AConcurrentOps
+class Chunk2AConcurrentOps
 {
+  public:
     using Base   = Chunk2Base<T, Derived>;
     using Holder = TabCstVal2Holder<T>;
 
-  private:
-    static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
-
-  public:
     /// @brief Atomically mark this chunk constant and hand back its old buffer.
     /// @param num_compress_value 0 for the first constant, 1 for the second.
     /// @param cst2_ptr The shared array to install when @p num_compress_value
@@ -192,6 +189,8 @@ struct Chunk2AConcurrentOps
     }
 
   private:
+    static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
+
     /// @brief `this` as a pointer to the derived class.
     Derived* self() noexcept
     {
@@ -228,15 +227,12 @@ struct Chunk2AConcurrentOps
 // gated on use_openmp like Chunk2AConcurrentOps). Same CRTP accessor pattern,
 // const-qualified since every query is a pure read.
 template <typename T, typename Derived>
-struct Chunk2AStateQueries
+class Chunk2AStateQueries
 {
+  public:
     using Base   = Chunk2Base<T, Derived>;
     using Holder = TabCstVal2Holder<T>;
 
-  private:
-    static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
-
-  public:
     /// @brief Is the chunk compressed to a second value (its values pointer
     ///        lies in the second-value region; for bool, IS the flag block)?
     [[nodiscard]] bool is_cst_val2() const noexcept
@@ -332,6 +328,8 @@ struct Chunk2AStateQueries
     }
 
   private:
+    static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
+
     [[nodiscard]] const Derived* self() const noexcept
     {
         return static_cast<const Derived*>(this);
@@ -379,8 +377,9 @@ struct Chunk2AStateQueries
  * @tparam Enabled build_config::use_openmp
  */
 template <typename T, typename Derived, bool Enabled = build_config::use_openmp>
-struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrentOps<T, Derived>
+class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrentOps<T, Derived>
 {
+  public:
     using Base                   = Chunk2Base<T, Derived>;
     using manager_chunk2A        = ManagerChunk<Chunk2A, T>;
     using CompressionManagerType = CompressionManager<T, Derived>;
@@ -490,8 +489,9 @@ struct Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurren
  * @tparam Derived CRTP derived chunk type (Chunk2A<T>)
  */
 template <typename T, typename Derived>
-struct Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
+class Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
 {
+  public:
     using Base            = Chunk2Base<T, Derived>;
     using manager_chunk2A = ManagerChunk<Chunk2A, T>;
 
@@ -546,19 +546,14 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
                 public TabCstVal2Holder<T>,
                 public Chunk2AStateQueries<T, Chunk2A<T>>
 {
-    using Base      = Chunk2Base<T, Chunk2A>;
-    using OmpPolicy = Chunk2AOmpPolicy<T, Chunk2A, build_config::use_openmp>;
-
-    using ChunkType              = Chunk2A;
-    using CompressionManagerType = CompressionManager<T, ChunkType>;
-
-  public:
+  private:
     friend class Chunk2Base<T, Chunk2A>;
     friend class Proxy2A<T>;
 
-    // Statistics variant tag (CHUNK_STATS): 2 = chunk2a.
-    static constexpr int stat_variant = 2;
+    using Base      = Chunk2Base<T, Chunk2A>;
+    using OmpPolicy = Chunk2AOmpPolicy<T, Chunk2A, build_config::use_openmp>;
 
+  public:
     using manager_chunk2A = ManagerChunk<Chunk2A, T>;
     // Same tuple as TChunk.h's VectorTuple4ChunkInt2 (the manager storage).
     using vec_tuple_chunkA2p_int2  = std::vector<std::tuple<Chunk2A*, int, int, ChunkElems>>;
@@ -570,14 +565,6 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
 
     using tab_cst_val2_holder = TabCstVal2Holder<T>;
 
-  private:
-    static constexpr char is_val1 = 0;
-    static constexpr char is_val2 = 1;
-
-    static constexpr bool is_bool     = std::is_same_v<T, bool>;
-    static constexpr bool is_not_bool = !is_bool;
-
-  public:
     // block_clear / clear_st / clear / clear_int_st / create_value* live on
     // Chunk2AOmpPolicy, one specialisation per mode (see above). Both declare
     // these names; the in-class bodies below call them unqualified.
@@ -587,6 +574,9 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     using OmpPolicy::clear_st;
     using OmpPolicy::create_value;
     using OmpPolicy::create_value_bool;
+
+    // Statistics variant tag (CHUNK_STATS): 2 = chunk2a.
+    static constexpr int stat_variant = 2;
 
     Chunk2A()  = default;
     ~Chunk2A() = default;
@@ -753,6 +743,15 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     static void make_block_compression(int thr, Proxy2A<T>* proxy2A);
 
   private:
+    using ChunkType              = Chunk2A;
+    using CompressionManagerType = CompressionManager<T, ChunkType>;
+
+    static constexpr char is_val1 = 0;
+    static constexpr char is_val2 = 1;
+
+    static constexpr bool is_bool     = std::is_same_v<T, bool>;
+    static constexpr bool is_not_bool = !is_bool;
+
     /// @brief Is every rank's candidate list empty (the calling thread's, in a
     ///        serial build)?
     [[nodiscard]] static bool is_vec_tuple_to_compress_potentially_empty_thr() noexcept

@@ -30,11 +30,11 @@ namespace shrink_array
 {
 
 template <typename Tuple>
-struct for_each_type_impl;
+class for_each_type_impl;
 
 /// @brief Specialisation for std::tuple<Ts...>: iterates over Ts.
 template <typename... Ts>
-struct for_each_type_impl<std::tuple<Ts...>>
+class for_each_type_impl<std::tuple<Ts...>>
 {
   private:
     /// @brief Call `f.template operator()<T>()` for each T of the tuple, in order.

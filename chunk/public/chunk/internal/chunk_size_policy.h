@@ -195,8 +195,9 @@ inline void set_thread_alloc_key(unsigned int k) noexcept
 // geometry (proxy.chunk_size()), not the flushing thread's ambient -- and must
 // not leak that size into the flusher's own in-flight write. No-op in static
 // builds (the geometry is compile-time there).
-struct DynChunkSizeGuard
+class DynChunkSizeGuard
 {
+  public:
     /// @brief Save the thread's active chunk size and, in dynamic builds, set it to @p size.
     /// @param size Chunk size to pin for the scope.
     explicit DynChunkSizeGuard([[maybe_unused]] unsigned int size) noexcept
@@ -225,8 +226,9 @@ struct DynChunkSizeGuard
 // default under-scan runtime-sized chunks and corrupt data in CHUNK_DYNAMIC
 // builds. The deleted default constructor and explicit conversion make every
 // creation of a count a visible, greppable act; count() is the only way out.
-struct ChunkElems
+class ChunkElems
 {
+  public:
     ChunkElems() = delete;
     /// @brief Wrap an element count.
     /// @param count The element count.
@@ -243,8 +245,9 @@ struct ChunkElems
 };
 
 // Compile-time geometry — the current, default behaviour.
-struct StaticChunkSize
+class StaticChunkSize
 {
+  public:
     static constexpr bool is_dynamic = false;
 
     /// @brief Elements per chunk (the compile-time constant).
@@ -273,8 +276,9 @@ struct StaticChunkSize
 // Run-time geometry — settable during execution. Defaults to the compile-time
 // geometry so a freshly constructed DynamicChunkSize behaves like StaticChunkSize
 // until set_size() is called.
-struct DynamicChunkSize
+class DynamicChunkSize
 {
+  public:
     static constexpr bool is_dynamic = true;
 
     /// @brief Elements per chunk.

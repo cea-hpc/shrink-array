@@ -122,12 +122,6 @@ class ManageTCTypeAllocator
   public:
     friend class Singleton<ManageTCTypeAllocator>;
 
-  protected:
-    // Filled in a serial build only (no concurrent insert); left empty under
-    // OpenMP, where the allocators are not enrolled.
-    using set_allocator_t = std::set<VTCTypeAllocator*>;
-
-  public:
     ManageTCTypeAllocator()  = default;
     ~ManageTCTypeAllocator() = default;
 
@@ -162,6 +156,10 @@ class ManageTCTypeAllocator
     }
 
   protected:
+    // Filled in a serial build only (no concurrent insert); left empty under
+    // OpenMP, where the allocators are not enrolled.
+    using set_allocator_t = std::set<VTCTypeAllocator*>;
+
     set_allocator_t set_allocator;
 };
 

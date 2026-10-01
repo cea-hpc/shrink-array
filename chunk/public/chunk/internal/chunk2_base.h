@@ -33,7 +33,7 @@ namespace shrink_array
 {
 
 template <typename Derived>
-struct ProxyTypeTrait;
+class ProxyTypeTrait;
 
 template <typename T>
 class Chunk2;
@@ -49,15 +49,17 @@ class Proxy2A;
 
 // Specialisation for Chunk2
 template <typename T>
-struct ProxyTypeTrait<Chunk2<T>>
+class ProxyTypeTrait<Chunk2<T>>
 {
+  public:
     using Type = Proxy2<T>;
 };
 
 // Specialisation for Chunk2A
 template <typename T>
-struct ProxyTypeTrait<Chunk2A<T>>
+class ProxyTypeTrait<Chunk2A<T>>
 {
+  public:
     using Type = Proxy2A<T>;
 };
 
@@ -83,11 +85,6 @@ class Chunk2Base : public ChunkBase<T, Derived>
     using Base::values_load;
     using Base::values_store;
 
-  private:
-    static constexpr bool is_chunk2A_derived = std::is_same_v<Derived, Chunk2A<T>>;
-    static constexpr bool is_chunk2_derived  = std::is_same_v<Derived, Chunk2<T>>;
-
-  public:
     Chunk2Base()  = default;
     ~Chunk2Base() = default;
 
@@ -219,6 +216,9 @@ class Chunk2Base : public ChunkBase<T, Derived>
     }
 
   private:
+    static constexpr bool is_chunk2A_derived = std::is_same_v<Derived, Chunk2A<T>>;
+    static constexpr bool is_chunk2_derived  = std::is_same_v<Derived, Chunk2<T>>;
+
     /// @brief Clear chunk and reset to constant value
     /// @tparam IndexType Type of index parameter
     /// @param index_opt Optional index (Chunk2) or std::nullopt (Chunk2A)

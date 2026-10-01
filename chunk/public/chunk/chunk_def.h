@@ -24,8 +24,9 @@ template <typename T>
 concept ComplexType = requires { typename T::value_type; } && std::is_same_v<T, std::complex<typename T::value_type>>;
 
 /// @brief Compile-time settings of Chunk: CHUNK_SIZE bound, compression-list and buffer-reuse thresholds.
-struct ChunkDef
+class ChunkDef
 {
+  public:
     /// Upper bound on CHUNK_SIZE. This is NOT the chunk geometry (use
     /// shrink_array::__chunk_size for that); it is only a sanity bound for the
     /// example/config validation. The real hard limit is the per-chunk counter
@@ -35,14 +36,11 @@ struct ChunkDef
     /// rejected CHUNK_SIZE=512.)
     constexpr static int size_max = 65535;
 
-  private:
-    constexpr static int nb_max_compress_value = 2;
-
-  public:
     constexpr static int size_min_list_chunk_to_check_compress = 100; ///< Floor of the per-thread list threshold
     constexpr static int factor_div_nb_chunk_for_compress      = 100; ///< Threshold = chunks / (this * max threads)
     constexpr static int size_min_buffer_reuse                 = 100; ///< Floor of a per-size reuse budget
 
   private:
+    constexpr static int nb_max_compress_value                = 2;
     constexpr static int factor_div_nb_chunk_for_buffer_reuse = 100;
 };

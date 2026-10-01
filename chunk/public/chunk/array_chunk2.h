@@ -73,12 +73,23 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
                     public FastBlockSupport2<ArrayChunk2<T, ind_type>>,
                     public RechunkHooks2<ArrayChunk2<T, ind_type>>
 {
+  private:
+    static constexpr bool is_bool = is_bool_like_v<T>; // bool and Bit (bit.h)
+
   public:
     using Base2      = ArrayChunk2Base<ArrayChunk2>;   ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
     using Base       = ArrayChunkBase<ArrayChunk2>;    ///< Base shared by every variant.
     using Parallel2  = ParallelSupport2<ArrayChunk2>;  ///< OpenMP-only members (deferred-op flush).
     using FastBlock2 = FastBlockSupport2<ArrayChunk2>; ///< Fast-block compression pass.
     using Hooks2     = RechunkHooks2<ArrayChunk2>;     ///< Re-chunk hooks (dynamic geometry).
+
+    friend Base2; ///< The CRTP base reaches this class's private members.
+    friend ArrayChunkBase<ArrayChunk2<T, ind_type>>; ///< For swap_identity().
+
+    // RechunkHooks2::rechunk_reown_after_swap copies ind_cst_val2, which is
+    // private below. Same reason ArrayChunkBase befriends RechunkSupport.
+    template <typename, bool>
+    friend class RechunkHooks2;
 
     // Traits and chunk_type are re-declared here (not only inherited): the
     // mixins above declare them too, so without a member of the same name in
@@ -103,13 +114,6 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
     using manager_chunk2 = ManagerChunk<Chunk2, T>; ///< Same type as manager_type.
 
-    friend Base2; ///< The CRTP base reaches this class's private members.
-
-    // RechunkHooks2::rechunk_reown_after_swap copies ind_cst_val2, which is
-    // private below. Same reason ArrayChunkBase befriends RechunkSupport.
-    template <typename, bool>
-    friend class RechunkHooks2;
-
     // Mode-specific members, moved out of this class into the mixins above.
     // The using-declarations are not decoration: ArrayChunkBase re-exports
     // RechunkSupport's hook DEFAULTS under these very names, so without them a
@@ -125,13 +129,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     using Hooks2::rechunk_seed_fresh;
     using Hooks2::rechunk_swap_identity;
 
-  private:
-    static constexpr bool is_bool = is_bool_like_v<T>; // bool and Bit (bit.h)
-
-  public:
     static constexpr bool is_not_bool = !is_bool; ///< T is neither bool nor Bit: it has a second value.
-
-    friend ArrayChunkBase<ArrayChunk2<T, ind_type>>; ///< For swap_identity().
 
     /**
      * @brief Build an array of @p sz elements.
@@ -236,6 +234,39 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     }
 
     /**
+     * @brief Move-assign: this array's own contents are released (clear()),
+     *        then it takes @p other's -- chunks, geometry and identity, by the
+     *        same exchange as swap(); @p other is left empty and valid.
+     * @details It used to steal @p other's chunk list and nothing else: this
+     *          array's old chunks were destroyed with their buffers still
+     *          queued as compression candidates, the moved chunks kept
+     *          @p other's metadata rows (num_tab), and @p other kept its
+     *          nb_chunk over an empty list. Sequential context, as clear().
+     * @note noexcept, as the move constructor: a failure here terminates.
+     */
+    ArrayChunk2& operator=(ArrayChunk2&& other) noexcept
+    {
+        if (this != &other)
+        {
+            clear();
+            this->swap_storage_and_identity(other);
+        }
+        return *this;
+    }
+
+    /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
+    ///        is a no-op.
+    ArrayChunk2& operator=(const ArrayChunk2& from)
+    {
+        if (this != &from)
+        {
+            copy_second_value_from(from);
+            this->copy_from(from);
+        }
+        return *this;
+    }
+
+    /**
      * @brief Set the array-wide second constant.
      * @details Registers @p sec_value in the shared cst_val2 registry, reusing
      *          the index of an identical value already registered by another
@@ -269,27 +300,6 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
         {
             return true;
         }
-    }
-
-    /**
-     * @brief Move-assign: this array's own contents are released (clear()),
-     *        then it takes @p other's -- chunks, geometry and identity, by the
-     *        same exchange as swap(); @p other is left empty and valid.
-     * @details It used to steal @p other's chunk list and nothing else: this
-     *          array's old chunks were destroyed with their buffers still
-     *          queued as compression candidates, the moved chunks kept
-     *          @p other's metadata rows (num_tab), and @p other kept its
-     *          nb_chunk over an empty list. Sequential context, as clear().
-     * @note noexcept, as the move constructor: a failure here terminates.
-     */
-    ArrayChunk2& operator=(ArrayChunk2&& other) noexcept
-    {
-        if (this != &other)
-        {
-            clear();
-            this->swap_storage_and_identity(other);
-        }
-        return *this;
     }
 
     /// @brief Full registry tuple for this array: second value, its index, num_tab.
@@ -382,18 +392,6 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      * @see compress_int, which this forwards to — including its `PERF` no-op.
      */
     void compress();
-
-    /// @brief Deep copy-assignment (see the copy constructor). Self-assignment
-    ///        is a no-op.
-    ArrayChunk2& operator=(const ArrayChunk2& from)
-    {
-        if (this != &from)
-        {
-            copy_second_value_from(from);
-            this->copy_from(from);
-        }
-        return *this;
-    }
 
     /// @brief Read-only access to the underlying chunk list.
     [[nodiscard]] const std::vector<Chunk2<T>>& getChunkList() const noexcept

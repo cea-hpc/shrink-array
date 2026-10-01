@@ -68,8 +68,9 @@ enum EventCode : uint8_t
 #ifdef RING_LOG_ANY
 
 /// @brief One ring-buffer record: timestamp, thread id, event, payload and (op events) address.
-struct RingEntry
+class RingEntry
 {
+  public:
     uint64_t  ts;
     uint32_t  tid;
     EventCode ev;
@@ -165,8 +166,9 @@ inline bool analyze_ring_sweep()
 /// explicitly. Useful when the end must happen at a precise point (after a
 /// CAS, before a return) rather than at scope exit.
 template <EventCode BEGIN_EVENT, EventCode END_EVENT, bool Manual = false>
-struct ScopedRingLog
+class ScopedRingLog
 {
+  public:
     /// @param payload_value Optional payload. 0 means no payload.
     explicit ScopedRingLog(uint32_t payload_value = 0) noexcept
     {
@@ -206,6 +208,12 @@ struct ScopedRingLog
         }
     }
 
+    // Non-copyable, non-movable: a scoped logger should not migrate scopes
+    ScopedRingLog(const ScopedRingLog&)            = delete;
+    ScopedRingLog& operator=(const ScopedRingLog&) = delete;
+    ScopedRingLog(ScopedRingLog&&)                 = delete;
+    ScopedRingLog& operator=(ScopedRingLog&&)      = delete;
+
     /// Explicit end. For Manual mode. Idempotent: calling twice is OK.
     void end() noexcept
     {
@@ -218,12 +226,6 @@ struct ScopedRingLog
             }
         }
     }
-
-    // Non-copyable, non-movable: a scoped logger should not migrate scopes
-    ScopedRingLog(const ScopedRingLog&)            = delete;
-    ScopedRingLog& operator=(const ScopedRingLog&) = delete;
-    ScopedRingLog(ScopedRingLog&&)                 = delete;
-    ScopedRingLog& operator=(ScopedRingLog&&)      = delete;
 
   private:
     [[maybe_unused]] uint32_t tid;

@@ -74,8 +74,9 @@ inline long rss_mib_now() noexcept
 ///        (median); dynamic,256/1024 were 2-3x slower on small rechunks.
 ///        CHUNK_RECHUNK_SCHEDULE=dynamic,64 restores the old schedule.
 ///        Serial builds parse it too; chunk_pmp_set_schedule() is then a no-op.
-struct RebuildSchedule
+class RebuildSchedule
 {
+  public:
     chunk_pmp_schedule schedule{chunk_pmp_sched::sched_guided, 16};
     char               text[32]{"guided,16"};
 };
@@ -592,8 +593,9 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // by every thread, kept one cache line of the caller's frame bouncing --
         // the line the lambda also reads n / new_size from at each call. Merged
         // once per thread and slice after the loop.
-        struct RebuildTally
+        class RebuildTally
         {
+          public:
             long folded    = 0;
             long refused   = 0;
             long installed = 0; // 2A: constant installed without a buffer

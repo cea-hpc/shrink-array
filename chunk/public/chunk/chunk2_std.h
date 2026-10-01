@@ -61,8 +61,9 @@ class Proxy2;
 /// @brief Static table of the registered second-constant arrays of element type T (tab_m_ptr_cst_val2),
 ///        with the lookups and checks on it.
 template <typename T>
-struct ChunkSpec2
+class ChunkSpec2
 {
+  public:
     // The registered second-constant arrays. A chunk compressed to one stores
     // its ADDRESS as `values`, so the container must never move them: a
     // std::deque grown at the end keeps every element where it is. It was a
@@ -76,10 +77,6 @@ struct ChunkSpec2
     using vec_array_chunk_size_max =
         std::conditional_t<build_config::use_mm_protect, std::vector<T*>, std::deque<std::array<T, cst_buffer_size>>>;
 
-  private:
-    static constexpr bool use_mm_protect = build_config::use_mm_protect;
-
-  public:
     /*!
      * \brief Gets the pointer to the second constant value.
      * \param ind Index of the second value.
@@ -143,6 +140,18 @@ struct ChunkSpec2
         std::fill_n(values_loc, alloc_chunk_count(), value);
     }
 
+    static inline vec_array_chunk_size_max tab_m_ptr_cst_val2;
+
+    // mm_protect mode only: element count currently allocated at
+    // tab_m_ptr_cst_val2[ind] (a raw mmap'd T*, unlike the plain-array mode
+    // where each slot is a fixed cst_buffer_size std::array and always big
+    // enough). Lets set_second_value's reuse path (a later array registering
+    // an already-known second_value at a LARGER geometry) detect an
+    // undersized allocation and grow it instead of overrunning it. Empty /
+    // short in the non-mm_protect build (still declared so it links, but
+    // logically unused).
+    static inline std::vector<std::size_t> tab_m_ptr_cst_val2_mm_elems;
+
   protected:
     // ANY-index marker test: is `v` one of the cst_val2 constant pointers,
     // whichever index? Needed at teardown where the chunk's own index is not to
@@ -164,6 +173,8 @@ struct ChunkSpec2
     }
 
   private:
+    static constexpr bool use_mm_protect = build_config::use_mm_protect;
+
     /*!
      * \brief Checks that this chunk is NOT currently compressed to the
      *        second constant at index `ind`.
@@ -175,26 +186,14 @@ struct ChunkSpec2
     {
         return !is_cst_val2(ind);
     }
-
-  public:
-    static inline vec_array_chunk_size_max tab_m_ptr_cst_val2;
-
-    // mm_protect mode only: element count currently allocated at
-    // tab_m_ptr_cst_val2[ind] (a raw mmap'd T*, unlike the plain-array mode
-    // where each slot is a fixed cst_buffer_size std::array and always big
-    // enough). Lets set_second_value's reuse path (a later array registering
-    // an already-known second_value at a LARGER geometry) detect an
-    // undersized allocation and grow it instead of overrunning it. Empty /
-    // short in the non-mm_protect build (still declared so it links, but
-    // logically unused).
-    static inline std::vector<std::size_t> tab_m_ptr_cst_val2_mm_elems;
 };
 
 // bool and Bit (bit.h): the second constant is `true`, one for the type.
 template <typename T>
     requires is_bool_like_v<T>
-struct ChunkSpec2<T>
+class ChunkSpec2<T>
 {
+  public:
     /*!
      * \brief Gets the pointer to the (single, shared) second constant value.
      * \return Pointer to the constant value array.
@@ -228,17 +227,6 @@ struct ChunkSpec2<T>
             std::fill_n(values_loc, alloc_chunk_count(), true);
     }
 
-  private:
-    /*!
-     * \brief Negation of is_cst_val2().
-     * \param values Pointer to compare.
-     * \return True if values does NOT equal the second constant.
-     */
-    [[nodiscard]] static bool is_not_cst_val2(const T* values) noexcept
-    {
-        return !is_cst_val2(values);
-    }
-
   protected:
     // Bit: every BIT set -- the buffer is read as 64-bit words, hence the
     // bytes 0xFF (a Bit{true} object is the byte 0x01) and the alignment.
@@ -251,6 +239,17 @@ struct ChunkSpec2<T>
             arr.fill(true); // Initialize everything to 'true'
         return arr;
     }();
+
+  private:
+    /*!
+     * \brief Negation of is_cst_val2().
+     * \param values Pointer to compare.
+     * \return True if values does NOT equal the second constant.
+     */
+    [[nodiscard]] static bool is_not_cst_val2(const T* values) noexcept
+    {
+        return !is_cst_val2(values);
+    }
 };
 
 // Base policy for counters
@@ -261,8 +260,9 @@ struct ChunkSpec2<T>
  * \tparam EnableCounters Whether the counters actually exist and count.
  */
 template <bool EnableCounters>
-struct Chunk2CounterPolicy
+class Chunk2CounterPolicy
 {
+  public:
     /// @brief Reset the second-value counter to 0.
     void reset_nb_val_eq_second_value() noexcept
     {
@@ -389,8 +389,9 @@ struct Chunk2CounterPolicy
  * @tparam Enabled build_config::use_openmp
  */
 template <typename T, typename Derived, bool Enabled = build_config::use_openmp>
-struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
+class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
 {
+  public:
     using Base           = Chunk2Base<T, Derived>;
     using BaseSpec       = ChunkSpec2<T>;
     using manager_chunk2 = ManagerChunk<Chunk2, T>;
@@ -546,8 +547,9 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
  * @tparam Derived CRTP derived chunk type (Chunk2<T>)
  */
 template <typename T, typename Derived>
-struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
+class Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
 {
+  public:
     using Base        = Chunk2Base<T, Derived>;
     using BaseSpec    = ChunkSpec2<T>;
     using inf_array_t = std::tuple<T, int, int>;
@@ -625,8 +627,9 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
 // --- In chunk2_std.h ---
 
 template <typename T, typename Derived, bool Enabled>
-struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Derived>
+class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Derived>
 {
+  public:
     using manager_chunk2 = ManagerChunk<Chunk2, T>;
     using Base           = Chunk2Base<T, Derived>;
     using BaseSpec       = ChunkSpec2<T>;
@@ -635,11 +638,6 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
     using Base::first_value;
     using Base::values;
 
-  private:
-    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
-    static constexpr bool is_not_bool = !is_bool;
-
-  public:
     // --- Same axis as this policy's own Enabled parameter
     // (chunk_config::use_fast_block_compression), following the precedent of
     // ChunkFastCompPolicy::make_block_compression for plain Chunk<T>. Local
@@ -811,6 +809,9 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
     void compress(int thr_rank, const inf_array_t& inf_array, bool apply, unsigned int n_elems);
 
   private:
+    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
+    static constexpr bool is_not_bool = !is_bool;
+
     /**
      * @brief Checks if the per-thread compression candidate map is empty.
      */
@@ -1002,8 +1003,9 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
 ///        no candidate list, so every query answers "empty" and every pass
 ///        is a no-op.
 template <typename T, typename Derived>
-struct Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derived>, public ChunkSpec2<T>
+class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derived>, public ChunkSpec2<T>
 {
+  public:
     // No-op counterparts of the 4 methods added to the true specialization
     // above -- same pattern as ChunkFastCompPolicy<T,Derived,false>::
     // make_block_compression(int, const Proxy<T>*) {}.
@@ -1055,14 +1057,14 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
                public Chunk2FastCompPolicy<T, Chunk2<T>, chunk_config::use_fast_block_compression>
 {
   public:
+    friend class Proxy2<T>;
+    friend class Chunk2Base<T, Chunk2>;
+
     using Base     = Chunk2Base<T, Chunk2>;
     using BaseSpec = ChunkSpec2<T>;
 
     using ChunkType              = Chunk2;
     using CompressionManagerType = CompressionManager<T, ChunkType>;
-
-    friend class Proxy2<T>;
-    friend class Chunk2Base<T, Chunk2>;
 
     using Base::allocator_data;
     using Base::first_value;
@@ -1081,14 +1083,6 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     using OmpPolicy::create_value;
     using OmpPolicy::create_value_bool;
 
-    // Statistics variant tag (CHUNK_STATS): 1 = chunk2.
-    static constexpr int stat_variant = 1;
-
-  private:
-    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
-    static constexpr bool is_not_bool = !is_bool;
-
-  public:
     using vec_tuple_chunk2p_int2 = std::vector<std::tuple<Chunk2*, int, int>>;
 
     using manager_chunk2 = ManagerChunk<Chunk2, T>;
@@ -1096,6 +1090,9 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     // bases declare the same name, and this one hides theirs so Chunk2's own
     // members see one type. It must stay THEIR type -- checked below.
     using inf_array_t = std::tuple<T, int, int>;
+
+    // Statistics variant tag (CHUNK_STATS): 1 = chunk2.
+    static constexpr int stat_variant = 1;
 
     /*!
      * \brief Default constructor.
@@ -1436,7 +1433,26 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
     }
 
+    static_assert(
+        std::is_same_v<
+            inf_array_t,
+            typename Chunk2FastCompPolicy<T, Chunk2<T>, chunk_config::use_fast_block_compression>::inf_array_t>,
+        "Chunk2::inf_array_t must be the policies' inf_array_t");
+
+    // --- what used to follow here, and where it went ---------------------
+    // The OpenMP surface (the create_value family, clear(),
+    // block_clear(), the clear_int_st family, clear_st()) sits on
+    // Chunk2OmpPolicy<T, Chunk2, build_config::use_openmp>, one specialisation
+    // per mode; the serial one carries the counter resets the parallel path
+    // does not maintain. The queue-driven compression (compress*,
+    // fill_list*, compress_chunk_to_compress*)
+    // sits on Chunk2FastCompPolicy<T, Chunk2, true>, next to
+    // make_block_compression -- same technique as ChunkOmpPolicy for Chunk v1.
+
   private:
+    static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
+    static constexpr bool is_not_bool = !is_bool;
+
     /*!
      * \brief Stores a pointer to the chunk's values.
      * \param ptr Pointer to store.
@@ -1571,23 +1587,6 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     }
 
     inline static manager_chunk2 s_manager_{};
-
-  public:
-    static_assert(
-        std::is_same_v<
-            inf_array_t,
-            typename Chunk2FastCompPolicy<T, Chunk2<T>, chunk_config::use_fast_block_compression>::inf_array_t>,
-        "Chunk2::inf_array_t must be the policies' inf_array_t");
-
-    // --- what used to follow here, and where it went ---------------------
-    // The OpenMP surface (the create_value family, clear(),
-    // block_clear(), the clear_int_st family, clear_st()) sits on
-    // Chunk2OmpPolicy<T, Chunk2, build_config::use_openmp>, one specialisation
-    // per mode; the serial one carries the counter resets the parallel path
-    // does not maintain. The queue-driven compression (compress*,
-    // fill_list*, compress_chunk_to_compress*)
-    // sits on Chunk2FastCompPolicy<T, Chunk2, true>, next to
-    // make_block_compression -- same technique as ChunkOmpPolicy for Chunk v1.
 };
 
 } // end namespace shrink_array

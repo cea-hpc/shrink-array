@@ -32,11 +32,13 @@ namespace shrink_array
 {
 
 /// @brief Per element type figures of the compression lists, keyed by type name, and their memory report.
-struct GlobalStatsChunkList
+class GlobalStatsChunkList
 {
+  public:
     /// @brief Figures recorded for one element type.
-    struct TypeStats
+    class TypeStats
     {
+      public:
         long   allocated_chunks;  ///< Total number of data chunks managed
         int    threshold_per_thr; ///< Compression list threshold per thread (entries)
         size_t element_size;      ///< Size in bytes of a single entry in the op-list (tuple)

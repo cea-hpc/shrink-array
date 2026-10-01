@@ -136,8 +136,9 @@ static void maybe_declare_second_value(Arr& a, double v)
 }
 
 // ── The workload ─────────────────────────────────────────────────────────────
-struct Role
+class Role
 {
+  public:
     int    kind;  ///< 0: constant, 1: non-uniform, 2: untouched
     double value; ///< the constant, for kind 0
 };
