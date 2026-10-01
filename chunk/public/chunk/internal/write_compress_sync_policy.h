@@ -407,6 +407,23 @@ class WriteCompressSyncPolicy
 
     ~WriteCompressSyncPolicy() = default;
 
+    /**
+     * @brief Is ANY rank currently inside a write critical section?
+     * @param max_thr number of ranks to scan
+     * @return true as soon as one raised flag is found
+     * @note O(max_thr). Acceptable because only the rare flush/compress side
+     *       calls it; the hot write path never does.
+     */
+    static bool any_thread_writing(int max_thr) noexcept
+    {
+        for (int i = 0; i < max_thr; ++i)
+        {
+            if (per_thread_writing[i].v.load(std::memory_order_acquire) != nullptr)
+                return true;
+        }
+        return false;
+    }
+
   private:
     /**
      * @brief Raise this thread's writer flag.
@@ -424,23 +441,6 @@ class WriteCompressSyncPolicy
         }
 
         per_thread_writing[thr].v.store(chunk, std::memory_order_seq_cst);
-    }
-
-    /**
-     * @brief Is ANY rank currently inside a write critical section?
-     * @param max_thr number of ranks to scan
-     * @return true as soon as one raised flag is found
-     * @note O(max_thr). Acceptable because only the rare flush/compress side
-     *       calls it; the hot write path never does.
-     */
-    static bool any_thread_writing(int max_thr) noexcept
-    {
-        for (int i = 0; i < max_thr; ++i)
-        {
-            if (per_thread_writing[i].v.load(std::memory_order_acquire) != nullptr)
-                return true;
-        }
-        return false;
     }
 
     /**

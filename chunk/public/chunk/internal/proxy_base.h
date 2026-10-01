@@ -37,7 +37,7 @@
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 #include "chunk/internal/proxy_operators.h"
-#include "chunk/internal/tab_cst_val2_holder.h" // TabCstVal2Holder (CHUNK_CST_VAL2_NO_ARRAYS)
+#include "chunk/internal/tab_cst_val2_holder.h" // TabCstVal2Holder: second-value identifiers
 #include "chunk/internal/relaxed_element.h"     // store_value: Chunk2A's relaxed element stores
 #include "chunk/internal/concept_is_clean_assignement.h"
 #include "chunk/internal/crp_helper.h"
@@ -541,8 +541,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // write path is handled by the P2 WAW erase before the write body; pure
         // reads use read_pure() below. Kept raw in BOTH sync_on_read states.
         //
-        // ... but NOT raw under CHUNK_CST_VAL2_NO_ARRAYS: there the shared
-        // array of a second constant is never written, so this would read a
+        // ... but NOT raw for a Chunk2A second constant: its identifier slot
+        // is never written, so this would read a
         // zero page and the compression decision downstream would be taken
         // against 0 instead of the chunk's constant. Resolving the registry
         // is arithmetic plus one table load -- it does not sync, so the
@@ -555,7 +555,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // converting a pointer that is NOT in the region gave an arbitrary
         // index into value_by_id[] and a SIGSEGV. One load, one exact range
         // test on it, one conversion of the same pointer.
-        if constexpr (build_config::cst_val2_no_arrays && requires(const T* ptr) {
+        if constexpr (requires(const T* ptr) {
                           TabCstVal2Holder<T>::is_cst_val2_ptr(ptr);
                           TabCstVal2Holder<T>::value_of_ptr_checked(ptr);
                       })

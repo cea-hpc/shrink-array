@@ -267,7 +267,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         // Base::read_values(), not values[num]: inherited from a dependent
         // base, so it must be qualified. This is the write path's read
         // entry and the only one that resolves a compressed chunk's
-        // constant under CHUNK_CST_VAL2_NO_ARRAYS. Indexing here read a
+        // constant (an unbacked identifier slot). Indexing here read a
         // zero page and the decision below was taken against 0.
         mark_for_compression_impl(Base::read_values(), new_value, isv, false, true);
     }

@@ -194,12 +194,12 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
         // over it while it was still queued: its flag is set, its entry is
         // still in vec_tuple_to_compress, and it comes back through here at
         // the next pass. The branch that used to scan it read through
-        // `values` -- under CHUNK_CST_VAL2_NO_ARRAYS a region that was never
+        // `values` -- a second-value slot, a region that was never
         // written, so every element read as 0 == first_value, the chunk
         // went on ll_compt1 and block_clear() freed the region pointer as a
         // buffer (SIGSEGV in free_elt_pow2 on aarch64, the invariant check
         // "Attempted to free 'cst_val2'" in a debug build). With the arrays
-        // filled it was merely useless: the re-scan sent the chunk to
+        // filled (before Oct '26) it was merely useless: the re-scan sent the chunk to
         // ll_compt2, and the OpenMP CAS refused the clear.
         if (this->is_cst_val2())
             return;
@@ -1147,8 +1147,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int               num_comp
     // Same refusal as try_mark_cst_and_get_old() on the OpenMP side: a chunk
     // whose values already point at a constant has no buffer to release, and
     // handing that pointer to the allocator corrupts it (or faults: a
-    // second-value identifier is not backed by a page under
-    // CHUNK_CST_VAL2_NO_ARRAYS). The type table is left as it is -- it
+    // second-value identifier is not backed by a page). The type table is left as it is -- it
     // describes the constant in place.
     if (values == Base::get_cst_val1() || Derived::tab_cst_val2_holder::is_cst_val2_ptr(values)) [[unlikely]]
         return;

@@ -1072,7 +1072,7 @@ template <typename T>
 std::ostream& operator<<(std::ostream& os, const Proxy2A<T>& proxy)
 {
     // Through the proxy's read entry: indexing values[] directly prints a zero
-    // for a compressed chunk under CHUNK_CST_VAL2_NO_ARRAYS.
+    // for a chunk compressed to a second constant (an unbacked slot).
     os << proxy.read_values();
     return os;
 }

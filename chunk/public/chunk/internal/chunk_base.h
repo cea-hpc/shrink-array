@@ -765,6 +765,13 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
     ///            agree on one signature.
     void wait_for_availability(int num) const;
 
+    /// @brief Cheap, conservative pre-check for wait_for_availability(): true
+    ///        means SOME deferred op is pending somewhere (possibly not for
+    ///        this chunk); false is a precise guarantee that nothing is
+    ///        pending anywhere.
+    /// @return false only if it is certain nothing is pending anywhere.
+    [[nodiscard]] bool is_not_available() const;
+
   private:
     // ── Compare and Swap ────────────────────────────────────────────────────
     /// @brief Type-tag helper: yields per_thread_map's type without needing
@@ -788,13 +795,6 @@ struct ChunkDeferredOpsPolicy<T, Derived, true>
             return;
         DeferredOpsStorage<per_thread_map>::instance().allocate();
     }
-
-    /// @brief Cheap, conservative pre-check for wait_for_availability(): true
-    ///        means SOME deferred op is pending somewhere (possibly not for
-    ///        this chunk); false is a precise guarantee that nothing is
-    ///        pending anywhere.
-    /// @return false only if it is certain nothing is pending anywhere.
-    [[nodiscard]] bool is_not_available() const;
 };
 
 // Serial: none of the above exists -- no deferred writes, no CAS
@@ -1036,7 +1036,6 @@ class ChunkBase : public CRTPSupport<Derived>,
     // in std builds, so those guards are plain shared code.
     struct NullValueAllocator
     {
-      private:
         /// @brief No pool to set up.
         void init(int /*element_size*/, int /*block_size*/, int /*munmap_flag*/) noexcept {}
         /// @brief No pool to tear down.
@@ -1171,17 +1170,11 @@ class ChunkBase : public CRTPSupport<Derived>,
     /**
      * @brief The element at @p i, whatever the chunk's state.
      *
-     * @details The single point every element READ goes through. Today it is
-     *          one dereference: a compressed chunk points at a shared array
-     *          filled with its constant, so a read needs no test. That is the
-     *          property that keeps the header at 16 bytes, and it is bought
-     *          with one filled array per distinct second value -- 32 KiB each
-     *          in dyn, where the stride follows chunk_dyn_max_size rather than
-     *          the geometry in use.
-     *
-     *          Dropping those arrays means reading the constant from the value
-     *          registry instead, i.e. branching on is_cst_val2(). This exists
-     *          so that branch has one place to live rather than seven.
+     * @details The single point every element READ goes through. A Chunk2A
+     *          chunk compressed to a second constant points at an identifier
+     *          slot that holds nothing (tab_cst_val2_holder.h), so its value
+     *          comes from the registry: one pointer range test on the read
+     *          path, in this one place rather than seven.
      *
      * @note NOT used by print_adr() or operator()(int): those hand out an
      *       address and a mutable reference into the buffer, which a registry
@@ -1192,48 +1185,45 @@ class ChunkBase : public CRTPSupport<Derived>,
     template <bool Relaxed = false>
     [[nodiscard]] T element_at(int i) const noexcept
     {
-        if constexpr (build_config::cst_val2_no_arrays)
+        // The one branch identifiers cost: a compressed-to-second-constant
+        // chunk points into a region that was never written, so the
+        // constant comes from the value table instead. The test is a
+        // pointer range test and it is very well predicted -- 83% of reads
+        // on the reference run go to materialised chunks.
+        //
+        // ONE load. Asking derived().is_cst_val2() and then dereferencing
+        // values_load() loads the pointer twice, and a compressor claiming
+        // the chunk in between swaps it for a region identifier: the second
+        // load then indexes that identifier as a buffer, in a page that was
+        // never mapped. SIGSEGV at 24 threads, in element_at, on a valid
+        // index. Same defect, same fix as read_values().
+        // Through the CRTP hooks, so chunk_base keeps knowing nothing of
+        // the registry -- but taking the pointer, so the test and the read
+        // are about the same load.
+        //
+        // Gated on the variant, NOT on a `requires` probe for the hooks. A
+        // probe fails OPEN: where it evaluates false the code falls through
+        // to values_load()[i], which on a compressed chunk reads the
+        // unwritten region and returns 0 -- a wrong number, not a build
+        // error. That happened twice: once with the hooks genuinely
+        // missing, and once under nvhpc, whose concept evaluation on the
+        // still-incomplete CRTP Derived did not see them while gcc and
+        // clang did. std::is_same_v against the forward-declared Chunk2A
+        // (chunk_traits.h) is a plain type comparison: no concepts, no
+        // member lookup, nothing a compiler can decide differently. It also
+        // works for the variants that have no such member at all.
+        if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
         {
-            // The one branch this flag buys: under it a compressed-to-second-
-            // constant chunk points into a region that was never written, so
-            // the constant comes from the value table instead. The test is a
-            // pointer range test and it is very well predicted -- 83% of reads
-            // on the reference run go to materialised chunks.
-            //
-            // ONE load. Asking derived().is_cst_val2() and then dereferencing
-            // values_load() loads the pointer twice, and a compressor claiming
-            // the chunk in between swaps it for a region identifier: the second
-            // load then indexes that identifier as a buffer, in a page that was
-            // never mapped. SIGSEGV at 24 threads, in element_at, on a valid
-            // index. Same defect, same fix as read_values().
-            // Through the CRTP hooks, so chunk_base keeps knowing nothing of
-            // the registry -- but taking the pointer, so the test and the read
-            // are about the same load.
-            //
-            // Gated on the variant, NOT on a `requires` probe for the hooks. A
-            // probe fails OPEN: where it evaluates false the code falls through
-            // to values_load()[i], which on a compressed chunk reads the
-            // unwritten region and returns 0 -- a wrong number, not a build
-            // error. That happened twice: once with the hooks genuinely
-            // missing, and once under nvhpc, whose concept evaluation on the
-            // still-incomplete CRTP Derived did not see them while gcc and
-            // clang did. std::is_same_v against the forward-declared Chunk2A
-            // (chunk_traits.h) is a plain type comparison: no concepts, no
-            // member lookup, nothing a compiler can decide differently. It also
-            // works for the variants that have no such member at all.
-            if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
-            {
-                static_assert(
-                    requires(const Derived& obj, const T* ptr) {
-                        obj.is_cst_val2_ptr_of(ptr);
-                        obj.second_value_from_ptr(ptr);
-                    }, "Chunk2A must provide is_cst_val2_ptr_of() and second_value_from_ptr() "
-                       "when second values carry identifiers (see CHUNK_CST_VAL2_FILLED_ARRAYS)");
-                const T* const vals = values_load();
-                if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
-                    return derived().second_value_from_ptr(vals);
-                return load_at<Relaxed>(vals, i);
-            }
+            static_assert(
+                requires(const Derived& obj, const T* ptr) {
+                    obj.is_cst_val2_ptr_of(ptr);
+                    obj.second_value_from_ptr(ptr);
+                }, "Chunk2A must provide is_cst_val2_ptr_of() and second_value_from_ptr(): "
+                   "its second values are identifiers, not filled arrays");
+            const T* const vals = values_load();
+            if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
+                return derived().second_value_from_ptr(vals);
+            return load_at<Relaxed>(vals, i);
         }
         return load_at<Relaxed>(values_load(), i);
     }
@@ -1514,11 +1504,11 @@ class ChunkBase : public CRTPSupport<Derived>,
     [[nodiscard]] T* print_adr(int i) const noexcept
     {
         // An ADDRESS into the buffer, which the registry cannot stand in for:
-        // under CHUNK_CST_VAL2_NO_ARRAYS there is no buffer. Materialise first,
+        // a second-value chunk has no buffer. Materialise first,
         // so the address is real and the semantics are exactly what they were.
         // Its only caller is ArrayChunkBase's re-export, itself never called
         // internally -- this is a diagnostic path.
-        if constexpr (build_config::cst_val2_no_arrays && requires {
+        if constexpr (requires {
                           derived().is_cst_val2();
                           derived().materialise_for_address();
                       })
@@ -1584,11 +1574,10 @@ class ChunkBase : public CRTPSupport<Derived>,
         // Contract, now executable: this hands out a mutable reference into
         // the buffer and is documented as "bypasses the write proxy: valid
         // only where the chunk is known to be materialised". On a compressed
-        // chunk the reference points into the SHARED constant array, so a
-        // write through it would corrupt the constant for every chunk holding
-        // it -- true today, and a dereference of an unbacked page under
-        // CHUNK_CST_VAL2_NO_ARRAYS. Checked builds say so; release is
-        // unchanged.
+        // chunk the reference points into a shared constant (Chunk/Chunk2) or
+        // into an unbacked identifier slot (Chunk2A), so a write through it
+        // corrupts the constant for every chunk holding it, or faults.
+        // Checked builds say so; release is unchanged.
         if constexpr (build_config::any_check && requires { derived().written(); })
         {
             if (!derived().written()) [[unlikely]]

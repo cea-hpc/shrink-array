@@ -168,7 +168,6 @@ struct ChunkSpec2
   public:
     static inline vec_array_chunk_size_max tab_m_ptr_cst_val2;
 
-  private:
     // mm_protect mode only: element count currently allocated at
     // tab_m_ptr_cst_val2[ind] (a raw mmap'd T*, unlike the plain-array mode
     // where each slot is a fixed cst_buffer_size std::array and always big

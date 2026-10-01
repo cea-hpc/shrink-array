@@ -55,46 +55,6 @@ inline constexpr bool chunk_dynamic = false;
 inline constexpr std::size_t alloc_affinity_min_bytes =
     CHUNK_ALLOC_AFFINITY_MIN_BYTES; // -D to override (0 = off; tiny = every array, for tests)
 
-/**
- * @brief Second values carry an identifier, not a filled array. ON by default.
- *
- * @details A chunk compressed to a second constant points into a region that is
- *          never written: the pointer names an identifier, and the value comes
- *          from the value table. is_cst_val2() stays a range test on the
- *          pointer and id_of_ptr() is arithmetic -- neither dereferences it --
- *          so the read path pays one well-predicted range test and the value
- *          costs 8 bytes.
- *
- *          The representation it replaced gave each distinct value a shared
- *          array FILLED with it, so `values[i]` returned the constant with no
- *          test at all. That property is what kept the chunk header at 16
- *          bytes, and it was bought twice over: 32 KiB per value in dyn, so the
- *          2 GiB region held 65 536 of them and a quantised field exhausted it
- *          and aborted; and a fill of cst_buffer_size elements per
- *          registration, with the page faults behind it.
- *
- *          Measured (chunk2a static 256, 2000 iterations, 64 threads, one
- *          seed): 17 503 G instructions against 18 990 G, -7.8%, IPC 5.75
- *          against 5.61, system time 199 s against 233 s. The branch costs less
- *          than the fill it removes, which is the opposite of what was expected
- *          when it was written.
- *
- *          -DCHUNK_CST_VAL2_FILLED_ARRAYS restores the arrays: for a workload
- *          whose read path dominates its registrations, or to bisect a
- *          suspected regression against the representation every release before
- *          this one used.
- *
- * @warning The failure mode of this code is a WRONG VALUE, not a crash: a site
- *          that reads a value out of the buffer, or loads `values` twice around
- *          a test, returns something plausible. Re-run rechunk_validation_*, a
- *          TSan pass and a --mode check run whenever it is touched.
- */
-#ifdef CHUNK_CST_VAL2_FILLED_ARRAYS
-inline constexpr bool cst_val2_no_arrays = false;
-#else
-inline constexpr bool cst_val2_no_arrays = true;
-#endif
-
 /// @brief Mirror of alloc_config::reclaim_empty_slabs, from the same CMake
 ///        option (CHUNK_RECLAIM_EMPTY_SLABS, a global add_definitions, so every
 ///        TU sees the same value).
