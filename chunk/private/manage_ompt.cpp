@@ -256,7 +256,8 @@ static void parallel_end_chunk_work()
     // written chunks' compression candidates (e.g. Chunk2A raw-fill), which is
     // what reclaims their materialised buffers; suppressing it caused a large
     // memory retention on global re-chunks.
-    if (shrink_array::__global_need_flush_deferred && !shrink_array::g_in_rechunk_rebuild)
+    const bool in_rebuild = shrink_array::g_in_rechunk_rebuild.load(std::memory_order_acquire);
+    if (shrink_array::__global_need_flush_deferred && !in_rebuild)
     {
         shrink_array::finalize_parallel_phase();
     }
@@ -270,7 +271,7 @@ static void parallel_end_chunk_work()
     // new chunks itself, afterwards, at the correct new geometry. (Buffer reclaim
     // that this used to do during the rebuild is handled by rechunk_drain_reuse_
     // list on the swapped-out storage — a separate, quiescent path.)
-    if (shrink_array::g_in_rechunk_rebuild)
+    if (in_rebuild)
         return;
 
     auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
@@ -373,7 +374,8 @@ void on_barrier_end(ompt_sync_region_t    kind,
     // writes here corrupts grow regions spanning several old chunks (rechunk_to
     // flushes them properly afterwards). Without this guard the barrier path
     // reintroduced the cst2 grow loss that on_parallel_end's guard alone fixed.
-    if (shrink_array::__global_need_flush_deferred && !shrink_array::g_in_rechunk_rebuild)
+    const bool in_rebuild = shrink_array::g_in_rechunk_rebuild.load(std::memory_order_acquire);
+    if (shrink_array::__global_need_flush_deferred && !in_rebuild)
     {
         if (slot) [[unlikely]]
         {
@@ -391,7 +393,7 @@ void on_barrier_end(ompt_sync_region_t    kind,
             shrink_array::finalize_barrier_phase();
         }
     }
-    else if (slot && !shrink_array::g_in_rechunk_rebuild) [[unlikely]]
+    else if (slot && !in_rebuild) [[unlikely]]
     {
         // Skipped because ANOTHER thread's flush_all_deferred() had cleared
         // the flag for the duration of its own pass.

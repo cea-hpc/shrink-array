@@ -954,7 +954,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             if (internal::g_rechunk_trace)
                 std::fprintf(stderr, "[RECHUNK] rebuild schedule: %s\n", rs.text);
         }
-        g_in_rechunk_rebuild = true;
+        g_in_rechunk_rebuild.store(true, std::memory_order_release);
         // Its own knob: one statm read per slice is nothing, but 18 to 34 lines
         // per array bury the summary that CHUNK_RECHUNK_TRACE is asked for.
         // This is the only view of the peak's SHAPE -- saw-tooth means the
@@ -1033,7 +1033,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             std::fprintf(stderr, "[RECHUNK-SLICE] %d/%d end         rss=%ld MB  (%+ld since start)\n", n_slices,
                          n_slices, rss_mib, rss_mib - rss_start);
         }
-        g_in_rechunk_rebuild = false;
+        g_in_rechunk_rebuild.store(false, std::memory_order_release);
         chunk_pmp_set_schedule(caller_schedule); // the caller's, untouched
         if (internal::g_rechunk_trace)
         {

@@ -612,10 +612,17 @@ struct CheckNaN<true>
 // consistently written — corrupting grow regions that span several old chunks.
 // rechunk_to flushes properly afterwards at a quiescent point, so the rebuild
 // sets this true around its parallel region to skip the premature finalize.
-// Master-only (set/read on the encountering thread around the region).
+// WRITTEN by the master only, outside any region (store, release). READ by
+// the OMPT callbacks (load, acquire): on_parallel_end on the master, but
+// on_sync_region on EVERY thread of the team. The fork and the closing
+// barrier order the reads made inside the region; the one that could cross
+// the master's `false` -- a worker leaving the closing implicit barrier -- is
+// filtered by on_sync_region's early return, a guard that exists for another
+// reason. Atomic so that this does not rest on it (it was a plain bool,
+// documented as master-only).
 namespace shrink_array
 {
-inline bool g_in_rechunk_rebuild = false;
+inline std::atomic<bool> g_in_rechunk_rebuild{false};
 
 // Monotonic count of committed rechunk_to() calls (ones that actually change the
 // geometry — early-returns for no-op/empty/refused rechunks do NOT count). Bumped
