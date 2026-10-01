@@ -499,7 +499,7 @@ void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression
  */
 template <typename Derived, typename T, typename ChunkType>
 template <typename WriteCallable, typename LBD_INFO>
-[[nodiscard]] bool
+[[nodiscard]] FORCE_INLINE bool
 ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&&           write_body,
                                                                 [[maybe_unused]] LBD_INFO lbd_info) noexcept
 {

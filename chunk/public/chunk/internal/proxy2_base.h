@@ -353,7 +353,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *          need tab/chunk information before writing.
      */
     template <typename WriteFn>
-    bool write_with_optional_lock_with_set_ptr(WriteFn write_fn) noexcept
+    FORCE_INLINE bool write_with_optional_lock_with_set_ptr(WriteFn write_fn) noexcept
     {
         const auto lbd_info = [this]
         {

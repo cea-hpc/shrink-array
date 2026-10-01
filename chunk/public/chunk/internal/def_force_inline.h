@@ -29,7 +29,12 @@
     #ifdef DEBUG
         #define FORCE_INLINE inline
     #else
-        #define FORCE_INLINE __attribute__((always_inline))
+        // `inline` included, as in the DEBUG branch (and as __forceinline
+        // implies): GNU warns "always_inline function might not be
+        // inlinable" on a function not declared inline -- e.g. a member
+        // template defined out of class -- and a caller cannot add `inline`
+        // itself without a duplicate-specifier error in DEBUG.
+        #define FORCE_INLINE inline __attribute__((always_inline))
     #endif
 #else
     #define FORCE_INLINE inline
