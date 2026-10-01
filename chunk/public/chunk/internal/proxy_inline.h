@@ -220,7 +220,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_arithmetic_compound_opera
         // Reload the current values pointer (with acquire semantics)
         T* values_ptr = chunk_loc.values_load();
 
-        const in_t<T> old_value = values_ptr[num];
+        const T old_value = values_ptr[num];
 
         // 1. Perform math in high precision to avoid rounding drift
         const CalcType res = op(static_cast<CalcType>(old_value), static_cast<CalcType>(v));
