@@ -78,6 +78,7 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 |---|---|
 | `CHUNK=1`, `CHUNK2=1`, `CHUNK2A=1` | la variante |
 | `CHUNK_DYNAMIC`, `DYN_CHUNK_SIZE=<n>` | géométrie dynamique, et taille de départ |
+| `CHUNK_DYN_MAX_SIZE=<n>` | géométrie dynamique : plus grande taille de chunk qu'un rechunk peut atteindre, puissance de deux (4096) ; dimensionne les tampons partagés des valeurs constantes, `cst_buffer_size × sizeof(T)` par seconde valeur distincte |
 | `CHUNK_ALLOC_AFFINITY_MIN_BYTES=<octets>` | seuil de métadonnées au-delà duquel un tableau peut avoir ses propres allocateurs (16 Mio ; 0 = jamais) |
 | `CHUNK_RECLAIM_EMPTY_SLABS` | rendre au système les slabs vidés (balayages explicites) |
 | `CHUNK_STATS` | compteurs d'instrumentation (build stats) |

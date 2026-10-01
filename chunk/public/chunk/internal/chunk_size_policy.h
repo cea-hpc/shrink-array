@@ -333,11 +333,7 @@ struct DynamicChunkSize
 using ActiveSizePolicy = std::conditional_t<build_config::chunk_dynamic, DynamicChunkSize, StaticChunkSize>;
 
 // Size of the shared constant-value buffers (m_ptr_cst_val1 / cst_val2). In
-// static mode they only ever need __chunk_size elements. In dynamic mode a chunk
-// may be up to size_max wide, and a compressed (constant) chunk is read as
-// buffer[num] for num in [0, N) — so the shared buffer must cover the largest
-// possible runtime chunk. size_max (65535) is that ceiling; one shared buffer
-// per type covers every runtime size at once.
+// static mode they only ever need __chunk_size elements.
 // Dynamic-mode ceiling for the shared constant buffers. A compressed (constant)
 // chunk is read as buffer[num] for num in [0, N), so this MUST be >= the largest
 // runtime chunk size ever produced by a re-chunk. It is NOT the absolute type
@@ -350,11 +346,15 @@ using ActiveSizePolicy = std::conditional_t<build_config::chunk_dynamic, Dynamic
 #ifndef CHUNK_DYN_MAX_SIZE
 inline constexpr unsigned int chunk_dyn_max_size = 4096u;
 #else
-inline constexpr unsigned int chunk_dyn_max_size = CHUNK_DYN_MAX_SIZE''
+inline constexpr unsigned int chunk_dyn_max_size = static_cast<unsigned int>(CHUNK_DYN_MAX_SIZE);
 #endif
 
 inline constexpr unsigned int cst_buffer_size = ActiveSizePolicy::is_dynamic ? chunk_dyn_max_size : __chunk_size;
 
-static_assert((chunk_dyn_max_size & (chunk_dyn_max_size - 1u)) == 0u, "chunk_dyn_max_size must be a power of two");
+static_assert(chunk_dyn_max_size != 0u && (chunk_dyn_max_size & (chunk_dyn_max_size - 1u)) == 0u,
+              "CHUNK_DYN_MAX_SIZE must be a power of two");
+static_assert(!ActiveSizePolicy::is_dynamic || chunk_dyn_max_size >= __chunk_size,
+              "CHUNK_DYN_MAX_SIZE must be at least the starting chunk size: the shared constant buffers are read "
+              "up to the chunk size");
 
 } // namespace shrink_array
