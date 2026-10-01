@@ -71,6 +71,20 @@ inline void TCAllocator::destroy()
 
 inline void TCAllocator::init(int ElementSize_, uintptr_t BlockAllocator_)
 {
+    // The free list is threaded THROUGH the freed elements: free_block() writes
+    // the next free index, an int, into a freed element's first bytes. An
+    // element must hold that int, at an int-aligned offset -- otherwise the
+    // write spills into the next element, or is misaligned. ElementSize is a
+    // run-time value (a chunk size times sizeof(T)), so this cannot be a
+    // static_assert; it runs once per slab and stays on in release.
+    if (ElementSize_ < static_cast<int>(sizeof(int)) || ElementSize_ % static_cast<int>(alignof(int)) != 0) [[unlikely]]
+    {
+        std::cerr << "[TCAllocator] element size " << ElementSize_
+                  << " bytes cannot hold the free-list index (an int: " << sizeof(int) << " bytes, aligned on "
+                  << alignof(int) << ")\n";
+        std::abort();
+    }
+
     ElementSize    = ElementSize_;
     BlockAllocator = BlockAllocator_;
 

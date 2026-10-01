@@ -247,6 +247,11 @@ struct FastAllocatorConcrete : FastAllocatorBase
             slot.alloc.set_arena(Arena);
 
             constexpr size_t element_size = sizeof(T);
+            // TCAllocator threads its free list through the freed elements (an
+            // int in each): the same condition TCAllocator::init() checks at run
+            // time, caught here at compile time where the size is known.
+            static_assert(element_size >= sizeof(int) && element_size % alignof(int) == 0,
+                          "deferred-op pool: an object must hold TCAllocator's free-list index");
 
             // Smart calculation: divide the target granularity (e.g. 2MB) by object size.
             // We guarantee a minimum of 64 blocks to prevent excessive system calls.
