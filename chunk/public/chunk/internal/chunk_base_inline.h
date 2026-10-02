@@ -37,6 +37,13 @@ namespace shrink_array
 template <typename T, typename Derived>
 void ChunkBase<T, Derived>::free_block_to_pool([[maybe_unused]] int thr_rank, T* val)
 {
+    // A pass that may run while other threads read (read_reclaim::PassScope:
+    // perform_compression, compress() inside a region) collects the buffer
+    // instead: a reader may still hold it between its `values` load and its
+    // element load. The pass releases it here, after one grace period.
+    if (read_reclaim::defer_release(&ChunkBase::release_deferred_block, this, thr_rank, val))
+        return;
+
     if constexpr (build_config::use_fast_alloc)
     {
         // The block's slab says which array it belongs to (owner_key): the

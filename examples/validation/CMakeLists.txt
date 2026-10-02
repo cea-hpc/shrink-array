@@ -366,6 +366,31 @@ if (OMP AND NOT CHUNK_STD_ALLOC)
   set_property(TEST slab_geometry_validation PROPERTY LABELS validation)
 endif()
 
+# --- read_reclaim_validation: a pure read against a compression pass that runs
+# inside the region and releases the buffer the read is about to dereference
+# (the harness says why). OpenMP builds only, default static size, the three
+# variants. CHUNK_TEST_READ_DELAY_EVERY on this target alone (the read path is
+# header-only, instantiated here -- same reasoning as CHUNK_FORCE_DEFER_EVERY):
+# one read in 16 of the reader threads waits 50 us between the pointer load and
+# the dereference. Run at 8 threads (2 writers, 6 readers); 77 = skipped.
+if (OMP)
+  foreach(_vi RANGE ${_rt_nvar_last})
+    list(GET _rt_variant_names   ${_vi} _vname)
+    list(GET _rt_variant_libbase ${_vi} _libbase)
+    list(GET _rt_variant_macro   ${_vi} _vmacro)
+    set(_tgt read_reclaim_validation_${_vname}_${CHUNK_DEFAULT_SIZE})
+    add_executable(${_tgt} read_reclaim_validation.cpp)
+    target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE})
+    target_compile_definitions(${_tgt} PRIVATE ${_vmacro} CHUNK_TEST_READ_DELAY_EVERY=16 CHUNK_TEST_READ_DELAY_US=50)
+    validation_setup_target(${_tgt})
+    add_test(NAME ${_tgt}_8thr COMMAND ${_tgt})
+    set_property(TEST ${_tgt}_8thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
+    set_property(TEST ${_tgt}_8thr PROPERTY LABELS validation)
+    set_property(TEST ${_tgt}_8thr PROPERTY SKIP_RETURN_CODE 77)
+    set_property(TEST ${_tgt}_8thr PROPERTY TIMEOUT 120)
+  endforeach()
+endif()
+
 # shrink-build-stamp: every executable of this directory prints the build stamp
 # and is built by `check` (cmake/shrink_build_stamp.cmake).
 shrink_stamp_directory_targets()

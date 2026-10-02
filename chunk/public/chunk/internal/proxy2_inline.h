@@ -29,6 +29,7 @@
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/internal/concept_is_clean_assignement.h"
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
+#include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 
 namespace shrink_array
 {
@@ -235,6 +236,9 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::trigger_compression_i
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression() noexcept
 {
+    // Runs inside a region, next to pure readers: the buffers this pass
+    // releases wait for one grace period (read_reclaim.h).
+    const read_reclaim::PassScope pass_scope;
     const int szm          = manager_chunk2::get_size_max_number_of_chunk_to_check_compress();
     const int thr_rank     = get_thr_rank_fast();
     const int sz_threshold = szm / 2;

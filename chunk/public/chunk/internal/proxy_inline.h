@@ -27,6 +27,7 @@
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/internal/arithmetic_context.h"
 #include "chunk/internal/concept_is_clean_assignement.h"
+#include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 
 namespace shrink_array
 {
@@ -688,6 +689,9 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::trigger_compression_if_needed(int
 template <typename Derived, typename T, bool Enabled>
 void ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression() const noexcept
 {
+    // Runs inside a region, next to pure readers: the buffers this pass
+    // releases wait for one grace period (read_reclaim.h).
+    const read_reclaim::PassScope pass_scope;
     const int thr_rank = get_thr_rank_fast();
 
     const int szm = manager_chunk::get_size_max_number_of_chunk_to_check_compress();

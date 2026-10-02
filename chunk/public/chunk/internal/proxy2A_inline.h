@@ -38,6 +38,7 @@
 #include "chunk/internal/invariant_check.h"   // INVARIANT_FAILED
 #include "chunk/internal/chunk_stats.h"       // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_size_policy.h" // DynChunkSizeGuard, set_thread_chunk_size
+#include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 
 /**
  * @file proxy2A_inline.h
@@ -262,6 +263,9 @@ void Proxy2A<T>::trigger_compression_if_needed(int thr_rank)
 template <typename T>
 void Proxy2A<T>::perform_compression() noexcept
 {
+    // Runs inside a region, next to pure readers: the buffers this pass
+    // releases wait for one grace period (read_reclaim.h).
+    const read_reclaim::PassScope pass_scope;
     const int szm = manager_chunk2A::get_size_max_number_of_chunk_to_check_compress();
 
     const int thr_rank = get_thr_rank_fast();

@@ -27,6 +27,7 @@
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 #include "chunk/chunk_std.h"
+#include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/array_chunk_base.h"
 #include "chunk/internal/array_chunk_parallel.h"      // ParallelSupport — OpenMP-only mixin
 #include "chunk/internal/array_chunk_rechunk_hooks.h" // RechunkHooks — CHUNK_DYNAMIC-only mixin
@@ -271,6 +272,9 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
 
         if (in_parr)
         {
+            // Inside the caller's region: other threads may be reading, so
+            // the buffers released wait for a grace period (read_reclaim.h).
+            const read_reclaim::PassScope pass_scope;
             compress_int(verbose);
         }
         else

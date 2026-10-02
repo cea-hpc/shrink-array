@@ -51,6 +51,8 @@
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
 
 #include "chunk/internal/freepath_counters.h" // [FREEPATH] counters, needed in std-alloc builds too
+#include "chunk/internal/test_read_delay.h"  // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (element_at)
+#include "chunk/internal/read_reclaim.h"     // ReadSection (element_at), defer_release (free_block_to_pool)
 
 #ifdef FAST_ALLOC
     #include "fast_allocators/tc_allocator.h"
@@ -1201,6 +1203,24 @@ class ChunkBase : public CRTPSupport<Derived>,
     template <bool Relaxed = false>
     [[nodiscard]] T element_at(int i) const noexcept
     {
+        // A pure read is bracketed by a ReadSection (read_reclaim.h): a
+        // compression pass running in the same region waits for it before it
+        // releases the buffer this read may have loaded. The Relaxed reads are
+        // the compressor's own scans and the marking filter: not bracketed.
+        if constexpr (Relaxed)
+            return element_at_unguarded<true>(i);
+        else
+        {
+            const read_reclaim::ReadSection section;
+            return element_at_unguarded<false>(i);
+        }
+    }
+
+    /// @brief element_at() without the read section: the load of `values` and
+    ///        the element, nothing else.
+    template <bool Relaxed>
+    [[nodiscard]] T element_at_unguarded(int i) const noexcept
+    {
         // The one branch identifiers cost: a compressed-to-second-constant
         // chunk points into a region that was never written, so the
         // constant comes from the value table instead. The test is a
@@ -1237,11 +1257,20 @@ class ChunkBase : public CRTPSupport<Derived>,
                 }, "Chunk2A must provide is_cst_val2_ptr_of() and second_value_from_ptr(): "
                    "its second values are identifiers, not filled arrays");
             const T* const vals = values_load();
+            if constexpr (!Relaxed)
+                test_hooks::maybe_read_delay(); // TEST KNOB, compiled out by default
             if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
                 return derived().second_value_from_ptr(vals);
             return load_at<Relaxed>(vals, i);
         }
-        return load_at<Relaxed>(values_load(), i);
+        const T* const vals = values_load();
+        // TEST KNOB (test_read_delay.h): widens the load -> dereference window
+        // a concurrent compressor's CAS + free can fall into. Compiled out
+        // unless CHUNK_TEST_READ_DELAY_EVERY > 0, and then only on threads
+        // that opted in. Not on the Relaxed (scan) reads.
+        if constexpr (!Relaxed)
+            test_hooks::maybe_read_delay();
+        return load_at<Relaxed>(vals, i);
     }
 
     template <bool Relaxed>
@@ -1785,6 +1814,13 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// @param thr_rank Calling thread's rank.
     /// @param val Block to return.
     void free_block_to_pool([[maybe_unused]] int thr_rank, T* val);
+
+    /// @brief free_block_to_pool() for a buffer a scoped pass collected
+    ///        (read_reclaim::PassScope): released after the grace period.
+    static void release_deferred_block(void* self, int thr_rank, void* val) noexcept
+    {
+        static_cast<ChunkBase*>(self)->free_block_to_pool(thr_rank, static_cast<T*>(val));
+    }
 
     // ensure_deferred_array_initialized/get_deferred_ops/
     // to_be_queued_for_deferred_processing/wait_for_availability/
