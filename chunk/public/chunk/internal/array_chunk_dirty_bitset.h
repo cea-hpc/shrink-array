@@ -40,12 +40,12 @@
  * @see ArrayChunkBase::sync_chunk — the sole hot-path reader of the bits
  */
 
+#include <algorithm> // std::min
 #include <atomic>
 #include <cstddef> // std::size_t
 #include <cstdint>
-#include <memory>
-#include <algorithm> // std::min
-#include <utility>   // std::swap
+#include <utility> // std::swap
+#include <vector>
 
 #include "chunk/config.h"
 
@@ -287,6 +287,7 @@ template <typename Derived>
 class DirtyBitsetSupport<Derived, false>
 {
   public:
+    /// @brief No-op: no bitset in this mode.
     void mark_chunk_dirty(int /*chunk_idx*/) noexcept {}
     /// @brief Never dirty: no deferred write can exist in this mode.
     [[nodiscard]] bool is_chunk_dirty(int /*chunk_idx*/) const noexcept
@@ -294,6 +295,7 @@ class DirtyBitsetSupport<Derived, false>
         return false;
     }
 
+    /// @brief No-op: no bitset in this mode.
     static void clear_all_dirty_bitsets() noexcept {}
 
   protected:

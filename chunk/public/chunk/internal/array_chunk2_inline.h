@@ -671,7 +671,7 @@ void ArrayChunk2<T, ind_type>::clear_core()
     // out), so it is wasted work that dominates the profile.
     if constexpr (chunk_config::not_use_compression_with_ompt && !chunk_config::have_agressive_compression)
     {
-        auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+        const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
 
         if (ens_type_chunk.have_chunk_to_compress_potentially())
         {
@@ -756,7 +756,7 @@ void ArrayChunk2<T, ind_type>::clear_core()
 
             const int nb = ll_chunk_loc.size();
 
-            if (nb)
+            if (nb > 0)
             {
                 // Park into the reuse list of THIS array's geometry, not the
                 // ambient t_active (which may be another size mid-rechunk).
@@ -874,7 +874,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
     {
         if (!CHUNK_PMP_IN_PARALLEL_REGION)
         {
-            auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
+            const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
             if (ens_type_chunk.have_chunk_to_compress_potentially())
             {
                 ens_type_chunk.compress_chunk_to_compress_potentially(true);

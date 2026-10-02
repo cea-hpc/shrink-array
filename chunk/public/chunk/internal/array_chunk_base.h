@@ -323,16 +323,19 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             check_same_owner(lhs, rhs);
             return lhs.lin_ < rhs.lin_;
         }
+        /** @brief Ordering by absolute index. */
         [[nodiscard]] friend bool operator>(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
             check_same_owner(lhs, rhs);
             return lhs.lin_ > rhs.lin_;
         }
+        /** @brief Ordering by absolute index. */
         [[nodiscard]] friend bool operator<=(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
             check_same_owner(lhs, rhs);
             return lhs.lin_ <= rhs.lin_;
         }
+        /** @brief Ordering by absolute index. */
         [[nodiscard]] friend bool operator>=(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
             check_same_owner(lhs, rhs);
@@ -419,11 +422,11 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         const_iterator(const ArrayChunkBase* owner, ind_type lin) noexcept
             : owner_(owner)
             , lin_(lin)
+            , num_chunk_(static_cast<int>(lin >> owner->size_policy_.decalage()))
+            , num_(static_cast<int>(lin & owner->size_policy_.modulo()))
             , modulo_(static_cast<int>(owner->size_policy_.modulo()))
             , decalage_(owner->size_policy_.decalage())
         {
-            num_chunk_ = static_cast<int>(lin >> decalage_);
-            num_       = static_cast<int>(lin & owner->size_policy_.modulo());
             enter_chunk();
         }
 
@@ -637,35 +640,43 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * Read-only ranges over the elements; all invalidated by any resize.
      * @{
      */
+    /// @brief First element.
     [[nodiscard]] const_iterator begin() const noexcept
     {
         return const_iterator(this, 0);
     }
+    /// @brief One past the last element.
     [[nodiscard]] const_iterator end() const noexcept
     {
         return const_iterator(this, m_size);
     }
+    /// @brief Same as begin().
     [[nodiscard]] const_iterator cbegin() const noexcept
     {
         return begin();
     }
+    /// @brief Same as end().
     [[nodiscard]] const_iterator cend() const noexcept
     {
         return end();
     }
 
+    /// @brief Last element (reverse order).
     [[nodiscard]] const_reverse_iterator rbegin() const noexcept
     {
         return const_reverse_iterator(end());
     }
+    /// @brief One before the first element (reverse order).
     [[nodiscard]] const_reverse_iterator rend() const noexcept
     {
         return const_reverse_iterator(begin());
     }
+    /// @brief Same as rbegin().
     [[nodiscard]] const_reverse_iterator crbegin() const noexcept
     {
         return rbegin();
     }
+    /// @brief Same as rend().
     [[nodiscard]] const_reverse_iterator crend() const noexcept
     {
         return rend();
@@ -1144,6 +1155,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         return (*this)(i);
     }
 
+    /// @brief The core's rechunk_fn_: casts @p core back to Derived and calls rechunk_to(@p new_size).
     static void rechunk_thunk(Core& core, unsigned int new_size)
     {
         // The core IS the base of a Derived: its fn pointer was set by this

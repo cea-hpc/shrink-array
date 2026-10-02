@@ -20,12 +20,14 @@
 // true>). Included at the end of array_chunk2.h, after the class, so the CRTP
 // self() down-cast sees a complete Derived and so the manager include stays out
 // of the container declaration itself.
+#include <tuple> // std::get on candidate tuples
+
 #include "chunk/internal/array_chunk2_rechunk_hooks.h"
 #include "chunk/internal/manager_chunk.h" // manager_type — candidate store + reuse free-lists
-#include <tuple>                          // std::get on candidate tuples
 #include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h"                  // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
+#include "chunk/internal/in_t.h"              // in_t<value_type>: the captured state
 
 namespace shrink_array
 {

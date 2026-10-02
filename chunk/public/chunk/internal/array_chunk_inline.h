@@ -271,7 +271,7 @@ void ArrayChunk<T, ind_type>::clear_core()
 
             const int nb = ll_chunk_loc.size();
 
-            if (nb)
+            if (nb > 0)
             {
                 const int thr_rank = CHUNK_PMP_THREAD_RANK;
 

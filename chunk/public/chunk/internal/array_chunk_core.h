@@ -73,7 +73,7 @@ namespace alloc_affinity_detail
 /// eager peaks 4.4 GB lower for the same end memory and time). Chunk2 /
 /// Chunk2A are not sliced and are metadata-heavy: a lazy start saves them the
 /// ~780 MiB of per-array slabs and matches the static build's memory.
-inline const bool g_eager = []
+inline const bool g_eager = []() noexcept
 {
     const char* e = std::getenv("CHUNK_ALLOC_AFFINITY_EAGER");
     if (e == nullptr || e[0] == '\0')
@@ -103,6 +103,8 @@ struct RechunkStorageScope
     }
     RechunkStorageScope(const RechunkStorageScope&)            = delete;
     RechunkStorageScope& operator=(const RechunkStorageScope&) = delete;
+    RechunkStorageScope(RechunkStorageScope&&)                 = delete;
+    RechunkStorageScope& operator=(RechunkStorageScope&&)      = delete;
 };
 } // namespace alloc_affinity_detail
 

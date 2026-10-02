@@ -1,5 +1,4 @@
 #pragma once
-#include <optional> // the affinity scope around tmp
 
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
@@ -30,6 +29,7 @@
 #include <cstddef>     // std::size_t
 #include <cstdio>      // std::fprintf (CHUNK_RECHUNK_TRACE)
 #include <cstdlib>     // std::getenv (CHUNK_RECHUNK_TRACE, CHUNK_RECHUNK_SCHEDULE)
+#include <optional>    // the affinity scope around tmp
 #include <type_traits> // std::is_same_v, the v1 bool guard
 #include <string_view> // CHUNK_RECHUNK_SCHEDULE parsing
 #include <utility>     // std::swap (the array swap)
@@ -37,6 +37,7 @@
 
 #include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
 #include "chunk/internal/array_chunk_base.h"
+#include "chunk/internal/array_chunk_core.h" // alloc_affinity_detail::RechunkStorageScope
 #include "chunk/internal/array_chunk_rechunk.h"
 #include "chunk/array_chunk_range_ops.h"        // copy_range -- the public bulk fill
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_rechunk* (CHUNK_STATS)

@@ -26,10 +26,10 @@
 namespace shrink_array
 {
 /**
- * @brief Cache-line aligned atomic word to prevent false sharing.
- * Each word covers 64 chunks.
+ * @brief The part of ArrayChunk2 and ArrayChunk2A that the two share, on top of
+ *        ArrayChunkBase: chunk allocation, compress(), and the common part of
+ *        resize().
  */
-
 template <typename Derived>
 class ArrayChunk2Base : public ArrayChunkBase<Derived>
 {

@@ -39,7 +39,6 @@
 #include "chunk/config.h"
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/internal/concept_array_chunk_element.h"
-#include "chunk/internal/in_t.h"
 #include "chunk/internal/pool_ledger.h" // CHUNK_LEDGER_* (check builds)
 
 namespace shrink_array
@@ -367,7 +366,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
         // !have_agressive_compression removes that waste in aggressive builds.
         if constexpr (!chunk_config::have_agressive_compression)
         {
-            auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+            const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
 
             if (ens_type_chunk.have_chunk_to_compress_potentially())
             {
@@ -489,7 +488,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
             int nb_val2 = 0;
             Chunk2A<T>::tab_cst_val2_holder::clear(nb_val2); // single thread here
             holds_cst2_registry_ = false;
-            if (nb_val2)
+            if (nb_val2 != 0)
             {
                 print_type_name<T>(nb_val2);
             }
@@ -526,7 +525,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
 
             const int nb = ll_chunk_loc.size();
 
-            if (nb)
+            if (nb > 0)
             {
                 // Park into the reuse list of THIS array's geometry, not the ambient
                 // t_active: these buffers are physically sized for size_policy_.size(),
@@ -583,7 +582,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
             }
         }
 
-        if (nb_val2)
+        if (nb_val2 != 0)
         {
             print_type_name<T>(nb_val2);
         }
