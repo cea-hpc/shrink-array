@@ -199,6 +199,7 @@ struct AllTypeChunkParallelInterface<Derived, false>
 template <typename Derived, bool Enabled = build_config::chunk_dynamic>
 struct AllTypeChunkDynInterface; // primary left undefined: only the 2 specializations exist
 
+/// @brief Dynamic-geometry builds: chunk sizes are declared at run time via register_chunk_size().
 template <typename Derived>
 struct AllTypeChunkDynInterface<Derived, true>
 {

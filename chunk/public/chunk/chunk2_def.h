@@ -42,11 +42,13 @@ struct Chunk2Def
     // threshold, and 2000 kept up to 64 x 2000 materialised candidates alive
     // until a rank compressed -- 256 MiB of 2 KiB buffers, whose slabs stay
     // resident (variant_compare, --constants 1: 584 vs 455 MiB for Chunk2A).
+    /// Floor of the per-thread "to compress" list threshold (entries), by chunk_config::tuning_level.
     constexpr static int size_min_list_chunk_to_check_compress = (chunk_config::tuning_level == 1)   ? 2
                                                                  : (chunk_config::tuning_level == 3) ? 500
                                                                                                      : 100;
 
     // Level 1: Divisor 2000 -> Threshold will be very low even for huge arrays
+    /// List threshold = chunks created / (this * max threads), floored by size_min_list_chunk_to_check_compress.
     constexpr static int factor_div_nb_chunk_for_compress = (chunk_config::tuning_level == 1)   ? 2000
                                                             : (chunk_config::tuning_level == 3) ? 50 // Chunk2A's (was 20)
                                                                                                 : 100;

@@ -57,11 +57,13 @@ struct Chunk2ADef
     constexpr static int compress_level = CHUNK2A_COMPRESS_LEVEL;
 
   public:
+    /// Floor of the per-thread "to compress" list threshold (entries), by CHUNK2A_COMPRESS_LEVEL.
     constexpr static int size_min_list_chunk_to_check_compress = (compress_level == 1)   ? 2
                                                                  : (compress_level == 2) ? 1000
                                                                  : (compress_level == 3) ? 2000
                                                                                          : 500;
 
+    /// List threshold = chunks created / (this * max threads), floored by size_min_list_chunk_to_check_compress.
     constexpr static int factor_div_nb_chunk_for_compress = (compress_level == 1)   ? 2000
                                                             : (compress_level == 2) ? 35
                                                             : (compress_level == 3) ? 20
@@ -71,11 +73,13 @@ struct Chunk2ADef
     constexpr static int nb_max_compress_value = 256;
 
   public:
+    /// Floor of the global (unsized) free-list reuse budget, in buffers per thread.
     constexpr static int size_min_buffer_reuse = 500;
 
   private:
     constexpr static int factor_div_nb_chunk_for_buffer_reuse = 100;
 
   public:
+    /// Reuse budget per thread = chunks / (this * max threads); used for every variant, global and per size.
     constexpr static int factor_div_somme_chunk_buffer_resuse = 50;
 };

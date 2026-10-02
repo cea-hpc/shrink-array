@@ -101,6 +101,7 @@ namespace shrink_array
 template <bool Enabled = build_config::use_openmp, typename AllT = AllTypeChunk>
 struct ParamChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
+/// @brief OpenMP builds: init_thread_structures() prints the allocator / thread-model banner.
 template <typename AllT>
 struct ParamChunkParallelInterface<true, AllT>
 {
@@ -117,6 +118,7 @@ struct ParamChunkParallelInterface<true, AllT>
     static void init_thread_structures();
 };
 
+/// @brief Serial builds: init_thread_structures() is a no-op.
 template <typename AllT>
 struct ParamChunkParallelInterface<false, AllT>
 {
@@ -147,6 +149,7 @@ struct ParamChunkParallelInterface<false, AllT>
 template <bool Enabled = build_config::chunk_dynamic, typename AllT = AllTypeChunk>
 struct ParamChunkDynInterface; // primary left undefined: only the 2 specializations exist
 
+/// @brief Dynamic-geometry builds: provides register_chunk_size().
 template <typename AllT>
 struct ParamChunkDynInterface<true, AllT>
 {

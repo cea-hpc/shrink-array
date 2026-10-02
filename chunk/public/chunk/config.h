@@ -259,26 +259,29 @@ namespace chunk_config
 using namespace build_config;
 
 // --- Array Type Selection ---
+/// True when built with -DCHUNK: the Chunk variant is the selected array type.
 #ifdef CHUNK
 inline constexpr bool use_chunk = true;
 #else
 inline constexpr bool use_chunk = false;
 #endif
 
+/// True when built with -DCHUNK2: the Chunk2 variant is the selected array type.
 #ifdef CHUNK2
 inline constexpr bool use_chunk2 = true;
 #else
 inline constexpr bool use_chunk2 = false;
 #endif
 
+/// True when built with -DCHUNK2A: the Chunk2A variant is the selected array type.
 #ifdef CHUNK2A
 inline constexpr bool use_chunk2a = true;
 #else
 inline constexpr bool use_chunk2a = false;
 #endif
 
-inline constexpr bool is_shrink_enabled = use_chunk || use_chunk2 || use_chunk2a;
-inline constexpr bool use_chunk2or2a    = use_chunk2 || use_chunk2a;
+inline constexpr bool is_shrink_enabled = use_chunk || use_chunk2 || use_chunk2a; ///< A chunked variant is selected.
+inline constexpr bool use_chunk2or2a    = use_chunk2 || use_chunk2a;              ///< Chunk2 or Chunk2A is selected.
 
 /**
  * @brief Chunk2's second-value index for an array that has declared none.
@@ -371,6 +374,7 @@ inline constexpr bool use_chunk_steal_mark = build_config::use_openmp && use_pre
     #define SHRINK_LEVEL 3 // Default to standard
 #endif
 
+/// SHRINK_LEVEL (1, 2 or 3, default 3) as a constexpr; selects Chunk2Def's thresholds.
 inline constexpr int tuning_level = SHRINK_LEVEL;
 // SEGV hunt: two independent switches.
 //   RING_LOG_DEBUG  -> ALL events, including hot-path (FLUSH/COMPRESS/STORE_VALUE).
@@ -386,12 +390,14 @@ inline constexpr int tuning_level = SHRINK_LEVEL;
     #define RING_LOG_ANY
 #endif
 
+/// True under RING_LOG_DEBUG: ring-log every event, hot path included.
 #ifdef RING_LOG_DEBUG
 inline constexpr bool ring_log_debug = true;
 #else
 inline constexpr bool ring_log_debug = false;
 #endif
 
+/// True under RING_LOG_OP: ring-log only the op-lifecycle events.
 #ifdef RING_LOG_OP
 inline constexpr bool ring_log_op_only = true;
 #else
@@ -416,6 +422,7 @@ inline constexpr bool use_fast_block_compression = use_openmp;
         #define CHUNK_TSAN_BUILD 1
     #endif
 #endif
+/// True in a ThreadSanitizer build (detected above): selects the symmetric handshake TSan can model.
 #ifdef CHUNK_TSAN_BUILD
 inline constexpr bool tsan_build = true;
 #else
@@ -502,9 +509,10 @@ inline constexpr bool use_compression_with_counter = !use_fast_block_compression
  * paths can be selected with `if constexpr` instead of the preprocessor.
  */
 inline constexpr bool use_compression_with_ompt     = has_ompt;
-inline constexpr bool not_use_compression_with_ompt = !has_ompt;
+inline constexpr bool not_use_compression_with_ompt = !has_ompt; ///< Complement of use_compression_with_ompt.
 
 // --- Stats ---
+/// True under CHUNK_STATS: per-thread chunk counters are collected and reported.
 #ifdef CHUNK_STATS
 inline constexpr bool stats = true;
 #else
