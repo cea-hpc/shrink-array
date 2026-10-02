@@ -365,3 +365,7 @@ if (OMP AND NOT CHUNK_STD_ALLOC)
   add_test(NAME slab_geometry_validation COMMAND slab_geometry_validation)
   set_property(TEST slab_geometry_validation PROPERTY LABELS validation)
 endif()
+
+# shrink-build-stamp: every executable of this directory prints the build stamp
+# and is built by `check` (cmake/shrink_build_stamp.cmake).
+shrink_stamp_directory_targets()

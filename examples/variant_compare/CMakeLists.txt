@@ -41,3 +41,7 @@ foreach(_vi RANGE ${_vc_nvar_last})
     set_property(TEST ${_tgt}_smoke_${_nthr}thr PROPERTY LABELS validation)
   endforeach()
 endforeach()
+
+# shrink-build-stamp: every executable of this directory prints the build stamp
+# and is built by `check` (cmake/shrink_build_stamp.cmake).
+shrink_stamp_directory_targets()

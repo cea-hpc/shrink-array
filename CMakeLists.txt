@@ -599,4 +599,7 @@ if(NOT CHUNK_STD_ALLOC)
     add_subdirectory(fast_allocators)
 endif()
 
+# shrink-build-stamp: [build] line in the validation binaries, `check` target
+include(${PROJECT_SOURCE_DIR}/cmake/shrink_build_stamp.cmake)
 add_subdirectory(examples)
+shrink_add_check_target()
