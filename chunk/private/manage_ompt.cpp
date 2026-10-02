@@ -40,7 +40,8 @@
 #include <chrono> // CHUNK_OMPT_STATS: time spent flushing
 #include <cstdint>
 #include <cstdio>  // CHUNK_OMPT_STATS report
-#include <cstdlib> // std::getenv
+#include <cstdlib> // std::getenv, std::abort (CHUNK_REQUIRE_OMPT)
+#include <cstring> // std::strlen (the refused callbacks' list)
 
 #include "chunk/config.h"
 #include "chunk/singleton.h"
@@ -76,6 +77,17 @@
  * counter, not a flag: see its declaration in chunk/config.h.
  */
 OmptSuspendCounter g_ompt_suspended{0}; // 0 = callbacks active
+
+namespace
+{
+/// @brief What ompt_initialize() managed to install, for check_ompt_tool_loaded().
+/// @details 0: ompt_initialize never ran (the runtime did not load the tool);
+///          1: it ran and every callback was accepted; 2: it ran but
+///          ompt_set_callback was missing or refused a callback.
+std::atomic<int> g_ompt_tool_state{0};
+/// @brief The callbacks the runtime refused (state 2), for the warning.
+char g_ompt_refused[128] = "";
+} // namespace
 
 // ── CHUNK_OMPT_STATS: what the sync-region callback does, counted ───────────
 //
@@ -422,13 +434,28 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
     auto ompt_set_callback = (ompt_set_callback_t)lookup("ompt_set_callback");
     if (ompt_set_callback)
     {
-        ompt_set_callback(ompt_callback_parallel_end, (ompt_callback_t)on_parallel_end);
-        ompt_set_callback(ompt_callback_sync_region, (ompt_callback_t)on_barrier_end);
+        // ompt_set_error / _never / _impossible: the callback will not be
+        // dispatched (check_ompt_tool_loaded() reports it).
+        bool       all_set = true;
+        const auto set     = [&](ompt_callbacks_t which, ompt_callback_t cb, const char* name)
+        {
+            if (ompt_set_callback(which, cb) < ompt_set_sometimes)
+            {
+                all_set = false;
+                std::snprintf(g_ompt_refused + std::strlen(g_ompt_refused),
+                              sizeof g_ompt_refused - std::strlen(g_ompt_refused), " %s", name);
+            }
+        };
+        set(ompt_callback_parallel_end, (ompt_callback_t)on_parallel_end, "parallel_end");
+        set(ompt_callback_sync_region, (ompt_callback_t)on_barrier_end, "sync_region");
 
-        ompt_set_callback(ompt_callback_implicit_task, (ompt_callback_t)on_implicit_task);
+        set(ompt_callback_implicit_task, (ompt_callback_t)on_implicit_task, "implicit_task");
+        g_ompt_tool_state.store(all_set ? 1 : 2, std::memory_order_release);
     }
     else
     {
+        std::snprintf(g_ompt_refused, sizeof g_ompt_refused, " (ompt_set_callback is null)");
+        g_ompt_tool_state.store(2, std::memory_order_release);
         std::fprintf(stderr, "[OMPT] ompt_set_callback is null: the chunk library's callbacks are not installed\n");
     }
     return 1;
@@ -453,6 +480,44 @@ extern "C" ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
     return &ompt_start_tool_result;
 }
 
+/**
+ * @brief See manage_ompt.h. Once per process (a magic static).
+ */
+void shrink_array::check_ompt_tool_loaded()
+{
+    [[maybe_unused]] static const bool checked = []
+    {
+        // The runtime loads its tool while it initialises: make sure it has.
+        (void)omp_get_max_threads();
+        const int state = g_ompt_tool_state.load(std::memory_order_acquire);
+        if (state == 1)
+            return true;
+
+        const char* req   = std::getenv("CHUNK_REQUIRE_OMPT");
+        const bool  fatal = req && req[0] && req[0] != '0';
+        if (state == 0)
+            std::fprintf(stderr,
+                         "[OMPT] %s: this build (HAVE_OMPT) runs its phase boundaries -- deferred-write flush, "
+                         "compression between parallel regions -- from an OMPT tool, and the OpenMP runtime did "
+                         "not load it. Usual causes: OMP_TOOL=disabled; another tool found first through "
+                         "OMP_TOOL_LIBRARIES; ompt_start_tool not found in the executable. "
+                         "OMP_TOOL_VERBOSE_INIT=stderr shows the runtime's search.%s\n",
+                         fatal ? "FATAL" : "WARNING",
+                         fatal ? "" : " CHUNK_REQUIRE_OMPT=1 makes this fatal.");
+        else
+            std::fprintf(stderr,
+                         "[OMPT] %s: the chunk library's OMPT tool is loaded but the runtime refused:%s -- the "
+                         "phase boundaries they run (deferred-write flush, compression between parallel "
+                         "regions) will not all happen.%s\n",
+                         fatal ? "FATAL" : "WARNING", g_ompt_refused,
+                         fatal ? "" : " CHUNK_REQUIRE_OMPT=1 makes this fatal.");
+        std::fflush(stderr);
+        if (fatal)
+            std::abort();
+        return false;
+    }();
+}
+
 #else
 
 /**
@@ -463,5 +528,8 @@ extern "C" ompt_start_tool_result_t* ompt_start_tool(unsigned int, const char*)
  * here no callback exists and the application drives the phase transitions.
  */
 OmptSuspendCounter g_ompt_suspended{1}; // no callback exists in this build
+
+/// @brief No OMPT tool in this build: nothing to check (see manage_ompt.h).
+void shrink_array::check_ompt_tool_loaded() {}
 
 #endif

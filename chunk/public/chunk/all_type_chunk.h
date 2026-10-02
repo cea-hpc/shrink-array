@@ -267,7 +267,10 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      * Private-by-convention: instances are created only by
      * `SingletonChk<AllTypeChunk>`, which is a friend.
      */
-    AllTypeChunk() = default;
+    /// @note Out of line (all_type_chunk.cpp): it checks, once per process,
+    ///       that the OMPT tool of a HAVE_OMPT build is loaded
+    ///       (check_ompt_tool_loaded, manage_ompt.h).
+    AllTypeChunk();
 
     /**
      * @brief The manager of @p ManagerT exists after this call -- registered

@@ -118,4 +118,25 @@ extern void finalize_parallel_phase_after_flush();
  */
 extern bool finalize_barrier_phase();
 
+/**
+ * @brief Once per process: warn if this build relies on the OMPT tool and the
+ *        OpenMP runtime did not load it.
+ *
+ * In a HAVE_OMPT build the phase boundaries (deferred-write flush, compression
+ * between parallel regions) are run by the OMPT callbacks only. If the runtime
+ * did not load the tool -- OMP_TOOL=disabled, another tool found first through
+ * OMP_TOOL_LIBRARIES, ompt_start_tool not found in the executable -- they never
+ * happen, and nothing else says so. This forces the runtime's initialisation
+ * (the tool is loaded during it), then prints one line to stderr if the tool
+ * is not active; with CHUNK_REQUIRE_OMPT=1 in the environment it aborts.
+ *
+ * Called by the AllTypeChunk constructor (first array, or init_indexes). A
+ * no-op in every build without HAVE_OMPT.
+ *
+ * Weak: a library built NO_OMPT_TOOL (the program ships its own tool, e.g.
+ * examples/multi-mat/manage_ompt.cpp) has no definition, and the constructor
+ * then skips the call -- nothing more for such a program to define.
+ */
+__attribute__((weak)) extern void check_ompt_tool_loaded();
+
 } // namespace shrink_array

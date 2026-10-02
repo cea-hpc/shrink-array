@@ -42,6 +42,15 @@
 
 namespace shrink_array
 {
+
+/// @brief Empty registry; warns once if the OMPT tool this build relies on is
+///        not loaded (manage_ompt.h, check_ompt_tool_loaded).
+AllTypeChunk::AllTypeChunk()
+{
+    // Weak: absent from a NO_OMPT_TOOL library (manage_ompt.h).
+    if (&check_ompt_tool_loaded != nullptr)
+        check_ompt_tool_loaded();
+}
 namespace
 {
 // Cross-thread exclusion of the SERIAL deferred flush. Deliberately SEPARATE
