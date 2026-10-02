@@ -186,6 +186,7 @@ void concurrent(std::size_t n, int rounds)
     // them. Neighbouring bits of one word belong to different threads, so
     // every word is written by all 8 at once.
     std::vector<std::thread> pool;
+    pool.reserve(n_thr);
     for (int t = 0; t < n_thr; ++t)
         pool.emplace_back(
             [&w, n, rounds, t]
@@ -221,6 +222,7 @@ void concurrent_ranges(std::size_t n, int rounds)
     bits::fill_bits(w.data(), n, false);
 
     std::vector<std::thread> pool;
+    pool.reserve(n_thr);
     for (int t = 0; t < n_thr; ++t)
         pool.emplace_back(
             [&w, &spans, rounds, t]
