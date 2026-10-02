@@ -98,6 +98,7 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 | `SHRINK_ARM_LIBM` | `OFF` | aarch64 : lier `libamath` d'ArmPL (aucun gain mesuré sur Grace) |
 | `CHUNK_ICPX_O0_WORKAROUND` | `OFF` | contournement d'une erreur interne d'icpx sur trois fichiers |
 | `CHUNK_MM_PROTECT` | `OFF` | définit `MM_PROTECT` (build de mise au point ; `compile_all.sh` le construit pour que ses branches continuent de compiler) |
+| `CHUNK_BUILD_VALIDATION` | selon le build | compiler les harnesses de `examples/validation` ; par défaut `ON` en Debug, avec `CHECK_OPTIM` ou un sanitizer, `OFF` ailleurs (non mis en cache : suit la configuration courante) |
 | `CHUNK_RECLAIM_EMPTY_SLABS` | `ON` | rendre au système (`madvise`) les slabs vidés aux balayages explicites (rechunk, destruction) ; `OFF` définit `CHUNK_NO_RECLAIM_EMPTY_SLABS` |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | Chunk2A : l'emplacement de seconde valeur contient un identifiant de 4 octets au lieu de la valeur (moins de mémoire, +3 % de temps d'écriture) |
 
