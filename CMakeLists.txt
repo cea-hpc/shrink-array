@@ -511,12 +511,45 @@ if(SHRINK_INTEL_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
         list(APPEND _imf_hints "$ENV{CMPLR_ROOT}/lib")
     endif()
     find_program(_shrink_icpx icpx)
-    if(_shrink_icpx)
-        execute_process(COMMAND "${_shrink_icpx}" -print-file-name=libimf.so
+    # An icpx installed but not loaded: the llvm builds of compile_all.sh
+    # reset the compiler modules, so neither icpx nor CMPLR_ROOT is visible
+    # there, and the omp-llvm build on Milan silently linked glibc's libm
+    # (34.6% of the chunk2a_256 profile). INTEL_ICPX names one; otherwise the
+    # newest match of INTEL_ICPX_GLOB is taken.
+    set(INTEL_ICPX "" CACHE FILEPATH "icpx whose libimf to link when icpx is not in PATH (default: newest match of INTEL_ICPX_GLOB)")
+    set(INTEL_ICPX_GLOB "/ccc/products/icx-*/system/default/*/bin/icpx" CACHE STRING
+        "Where to look for an installed icpx when it is not in PATH (SHRINK_INTEL_LIBM)")
+    set(_shrink_icpx_used "${_shrink_icpx}")
+    if(NOT _shrink_icpx)
+        if(INTEL_ICPX AND EXISTS "${INTEL_ICPX}")
+            set(_shrink_icpx_used "${INTEL_ICPX}")
+        elseif(INTEL_ICPX_GLOB)
+            file(GLOB _icpx_candidates LIST_DIRECTORIES false ${INTEL_ICPX_GLOB})
+            if(_icpx_candidates)
+                if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.18)
+                    list(SORT _icpx_candidates COMPARE NATURAL ORDER DESCENDING)
+                else()
+                    list(SORT _icpx_candidates)
+                    list(REVERSE _icpx_candidates)
+                endif()
+                list(GET _icpx_candidates 0 _shrink_icpx_used)
+            endif()
+        endif()
+    endif()
+    if(_shrink_icpx_used)
+        execute_process(COMMAND "${_shrink_icpx_used}" -print-file-name=libimf.so
                         OUTPUT_VARIABLE _imf_path OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
         if(_imf_path AND IS_ABSOLUTE "${_imf_path}" AND EXISTS "${_imf_path}")
             get_filename_component(_imf_dir0 "${_imf_path}" DIRECTORY)
             list(APPEND _imf_hints "${_imf_dir0}")
+        endif()
+        # The oneAPI layouts: <prefix>/bin/icpx with the runtime in <prefix>/lib
+        # (or <prefix>/compiler/lib in older trees).
+        get_filename_component(_icpx_prefix "${_shrink_icpx_used}" DIRECTORY)
+        get_filename_component(_icpx_prefix "${_icpx_prefix}" DIRECTORY)
+        list(APPEND _imf_hints "${_icpx_prefix}/lib" "${_icpx_prefix}/compiler/lib")
+        if(NOT _shrink_icpx)
+            message(STATUS "Intel libm: icpx not in PATH, looking next to ${_shrink_icpx_used}")
         endif()
     endif()
     if(_imf_hints)
