@@ -61,7 +61,8 @@
 #include "chunk/internal/concept_chunk.h"
 #include "chunk/internal/concept_is_clean_assignement.h"
 #include "chunk/internal/crp_helper.h"
-#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
+#include "chunk/internal/def_force_inline.h" // FORCE_INLINE
+#include "chunk/internal/invariant_check.h"  // INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h"
 
 namespace shrink_array
@@ -601,7 +602,8 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
             }
 
             int rank;
-        } own_replay_excl_guard{own_replay_excl_rank};
+        };
+        const OwnReplayExclGuard own_replay_excl_guard{own_replay_excl_rank};
 
         // ─── Check #1: pure optimisation, not correctness ───────────────────
         // Relaxed probe before touching begin_write's cache line. If a

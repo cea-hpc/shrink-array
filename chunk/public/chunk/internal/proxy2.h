@@ -16,14 +16,13 @@
 
 #pragma once
 
-#include <type_traits>
 #include <tuple>
 #include <atomic>
 #include <concepts>
 #include <cstddef>
 #include <cstdlib>
-#include <memory>
 #include <ostream>
+#include <vector>
 
 #include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"

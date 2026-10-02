@@ -51,7 +51,7 @@ void ChunkBase<T, Derived>::free_block_to_pool([[maybe_unused]] int thr_rank, T*
         // The block's slab says which array it belongs to (owner_key): the
         // reuse list is that array's, on this rank, and so is the budget. Key
         // 0 -- the shared pool -- is the list and budget everything used before.
-        auto&          mgr               = derived().get_manager();
+        const auto&    mgr               = derived().get_manager();
         auto&          allocator         = derived().get_chunk_allocator(thr_rank);
         auto*          slab              = allocator.slab_of(val); // resolved ONCE; every route below reuses it
         const unsigned key               = slab ? slab->owner_key : 0u;

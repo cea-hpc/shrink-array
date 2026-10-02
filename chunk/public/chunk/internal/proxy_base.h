@@ -29,7 +29,6 @@
 #include <cstdlib>
 #include <functional>
 #include <vector>
-#include <memory>
 
 #include "chunk/internal/element_access.h" // elem_get / elem_set, is_packed_bit_v: Bit buffers are words of bits
 #include "chunk/config.h"
@@ -179,7 +178,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      */
     static void release_tab_is_int(int num_tab) noexcept
     {
-        using row_t = typename decltype(tab_is_inside_chunk_list_to_compress)::value_type;
+        using row_t = decltype(tab_is_inside_chunk_list_to_compress)::value_type;
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
         {
             row_t{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);

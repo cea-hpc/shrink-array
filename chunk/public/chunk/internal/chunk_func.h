@@ -88,7 +88,7 @@ void load_balance_list_block_free_thr()
         lg += Chunk<T>::manager_chunk::get_list_block_free_thr(thr_rank).size();
     }
 
-    if (!lg || lg < max_thr)
+    if (lg < max_thr) // also covers lg == 0: max_thr >= 1
     {
         return;
     }

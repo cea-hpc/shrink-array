@@ -80,6 +80,7 @@ class PointerMapChunk2A
 {
   public:
     PointerMapChunk2A()                                        = default;
+    ~PointerMapChunk2A()                                       = default;
     PointerMapChunk2A(const PointerMapChunk2A&)                = default;
     PointerMapChunk2A(PointerMapChunk2A&&) noexcept            = default;
     PointerMapChunk2A& operator=(const PointerMapChunk2A&)     = default;

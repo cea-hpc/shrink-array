@@ -54,7 +54,7 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
     const double pct_cross = (n_cross >= 0) ? 100.0 * n_cross / nb_chunk : 0.0;
 
     // Automatic colour-support detection (disabled when output is redirected to a file).
-    const bool use_color = isatty(fileno(stdout));
+    const bool use_color = isatty(fileno(stdout)) != 0;
 
     const std::string RESET  = use_color ? "\033[0m" : "";
     const std::string BOLD   = use_color ? "\033[1m" : "";

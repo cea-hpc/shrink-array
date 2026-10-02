@@ -27,7 +27,8 @@
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/internal/arithmetic_context.h"
 #include "chunk/internal/concept_is_clean_assignement.h"
-#include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
+#include "chunk/internal/read_reclaim.h"    // read_reclaim::PassScope (perform_compression / compress in a region)
+#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 
 namespace shrink_array
 {

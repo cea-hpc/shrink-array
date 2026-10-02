@@ -19,20 +19,19 @@
 #include <atomic>          // std::atomic<char> (the "queued" flags)
 #include <cstdio>          // std::fprintf (check-build trace)
 #include <iostream>        // std::cerr (verbose)
-#include <memory>          // std::make_unique
 #include <source_location> // std::source_location
 #include <type_traits>     // std::remove_cvref_t
 #include <utility>         // std::move, std::cmp_greater_equal
+#include <vector>          // the per-chunk "queued" flags
 
 #include "chunk/internal/proxy2A.h" // the declarations these bodies belong to
 #include "chunk/internal/in_t.h"
-#include "chunk/array_chunk2A.h"
+#include "chunk/array_chunk2A.h" // ArrayChunk2A (dependent calls the include tools cannot attribute)
 #include "chunk/config.h"
 #include "chunk/PMP_CHUNK.h" // get_thr_rank_fast
 #include "chunk/internal/arithmetic_context.h"
 #include "chunk/internal/array_chunk_for.h"
 #include "chunk/internal/concept_is_clean_assignement.h"
-#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 #include "chunk/internal/deferred_op_pool.h"
 #include "chunk/internal/bad_ptr_check.h"     // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/internal/invariant_check.h"   // INVARIANT_FAILED

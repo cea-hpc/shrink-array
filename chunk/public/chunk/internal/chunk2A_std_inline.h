@@ -31,8 +31,9 @@
 #include "chunk/internal/cpu_pause.h" // CPU_PAUSE (spin in create_value*)
 #include "chunk/chunk2A_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/proxy2A.h"
-#include "chunk/internal/manager_chunk.h"
+#include "chunk/internal/manager_chunk.h" // manager_chunk2A:: (dependent calls the include tools cannot attribute)
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
+#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 
 /**
  * @file chunk2A_std_inline.h

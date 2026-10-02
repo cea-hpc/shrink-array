@@ -62,10 +62,12 @@ struct ProxyTypeTrait<Chunk2A<T>>
 };
 
 // ============================================================================
-// Chunk2Base: Base class for 2-value compression (Chunk2 and Chunk2A)
-// Inherits common functionality from ChunkBase
+// Chunk2Base
 // ============================================================================
 
+/// @brief CRTP base of the two-value chunks (Chunk2 and Chunk2A), on top of ChunkBase.
+/// @tparam T       Element type.
+/// @tparam Derived The chunk type.
 template <typename T, typename Derived>
 class Chunk2Base : public ChunkBase<T, Derived>
 {

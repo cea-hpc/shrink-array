@@ -36,6 +36,7 @@
 #include "chunk/internal/churn_counters.h"              // churn::note_materialisation
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/internal/in_t.h"            // in_t<T>: the scans' constants, by value or by reference
+#include "chunk/internal/bit_words.h"       // bits::scan_words / word_t: the Bit scans
 #include "chunk/internal/element_access.h"  // elem_get: Bit buffers are words of bits
 #include "chunk/internal/relaxed_element.h" // element_at<true>: the marking filter's reads
 #include "chunk/internal/svalloc.h"
@@ -55,6 +56,7 @@
 #include "chunk/internal/read_reclaim.h"      // ReadSection (element_at), defer_release (free_block_to_pool)
 
 #ifdef FAST_ALLOC
+    #include "fast_allocators/slab_arena.h" // the slab header slab_of() returns (owner, owner_key)
     #include "fast_allocators/tc_allocator.h"
 #else
 template <typename T>
@@ -62,8 +64,6 @@ class TCTypeCAllocator; // forward declaration
 
 template <typename T>
 class TCTypeAllocator;
-
-    #include "chunk/internal/svalloc.h"
 #endif
 
 #include "flat_hash_map.hpp"
@@ -496,8 +496,8 @@ struct ChunkAllocPolicy<T, Derived, true>
     template <typename InitReused, typename InitFresh>
     T* allocate_chunk_internal(int thr_rank, InitReused init_reused, InitFresh init_fresh)
     {
-        auto& self       = static_cast<Derived&>(*this);
-        T*    values_loc = nullptr;
+        const auto& self       = static_cast<const Derived&>(*this);
+        T*          values_loc = nullptr;
 
         // The per-thread reuse list is only indexable once
         // resize_all_list_block_free_thr() has sized it to max_thr, and that is NOT
@@ -624,8 +624,8 @@ struct ChunkAllocPolicy<T, Derived, false>
                                [[maybe_unused]] InitReused init_reused,
                                InitFresh                   init_fresh)
     {
-        auto& self       = static_cast<Derived&>(*this);
-        T*    values_loc = nullptr;
+        const auto& self       = static_cast<const Derived&>(*this);
+        T*          values_loc = nullptr;
 
         if constexpr (chunk_config::stats)
         {
@@ -756,7 +756,7 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
     /// @param thr_rank Thread rank/ID
     void recup_value(T* values_loc, int thr_rank)
     {
-        auto& self = static_cast<Derived&>(*this);
+        const auto& self = static_cast<const Derived&>(*this);
         // Ledger: LIVE -> PARKED. This block was just allocated by create_value
         // and lost the install CAS; parking a block that is not LIVE (e.g. one
         // another thread already owns) trips here.
@@ -1027,9 +1027,12 @@ struct ChunkDynamicAllocPolicy<T, Derived, false>
 };
 
 // ============================================================================
-// ChunkBase: Base class common to all chunk types (Chunk, Chunk2, Chunk2A)
+// ChunkBase
 // ============================================================================
 
+/// @brief CRTP base common to all chunk types (Chunk, Chunk2, Chunk2A).
+/// @tparam T       Element type.
+/// @tparam Derived The chunk type.
 template <typename T, typename Derived>
 class ChunkBase : public CRTPSupport<Derived>,
                   public DeferredReadGate<Derived>,

@@ -30,6 +30,7 @@
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)
 #include "chunk/internal/manager_chunk.h"       // manager_chunk:: candidate lists
+#include "chunk/internal/proxy.h"               // Proxy<T>: the compression pass's proxy
 #include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
 #include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_*
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush

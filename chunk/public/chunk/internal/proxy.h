@@ -30,6 +30,7 @@
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED
 #include "chunk/internal/conditional_counter.h" // counter_value_t — resync_nb_val_eq_zero
+#include "chunk/internal/def_force_inline.h"    // FORCE_INLINE
 #include "chunk/internal/map_helper.h"
 #include "chunk/internal/arithmetic_context.h"
 #include "chunk/internal/proxy_base.h"
@@ -43,12 +44,6 @@ namespace shrink_array
 
 template <template <typename> class CHUNK_T, typename T>
 class ManagerChunk;
-
-// ValueToInfMapHelper (with an "f" -- not to be confused with the real,
-// actively-used ValueToIntMapHelper in map_helper.h, referenced just below)
-// removed here: dead code, zero callers anywhere in the tree. Its near-
-// identical name to the real helper made it a genuine trap for a reader
-// skimming this file.
 
 /**
  * @brief Template class managing mappings between keys and tuple values.

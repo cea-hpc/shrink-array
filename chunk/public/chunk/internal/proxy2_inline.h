@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <atomic>
+#include <cstddef>     // std::size_t
 #include <iostream>    // std::cerr (verbose)
 #include <type_traits> // std::remove_cvref_t
 
@@ -44,7 +44,7 @@ namespace shrink_array
 // the proxy is not armed. Callers read the fields THROUGH this pointer: see the
 // note on set_info_on_chunk() below for why not through a returned copy.
 template <typename T, typename Derived>
-const typename ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_array() const
+const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_array() const
 {
     if (inf_array_src_ != nullptr) [[likely]]
     {
@@ -67,7 +67,7 @@ const typename ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::arme
 }
 
 template <typename T, typename Derived>
-typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
+ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
 {
     if (const inf_array_t* src = armed_inf_array()) [[likely]]
     {
@@ -78,7 +78,7 @@ typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_ar
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-const typename ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_array() const
+const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_array() const
 {
     if (inf_array_src_ != nullptr) [[likely]]
     {
@@ -102,7 +102,7 @@ const typename ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::arme
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
+ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() const
 {
     if (const inf_array_t* src = armed_inf_array()) [[likely]]
     {
