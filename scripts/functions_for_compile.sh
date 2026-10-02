@@ -810,6 +810,31 @@ __slot_dir() {
     printf '%s' "$CHUNK_SLOT_DIR"
 }
 
+# The pool dir used to outlive every run (.build-slots.<pid>/ piling up in
+# build_rep, one with a target-matched left by an interrupted run). Only the
+# process that opened it removes it -- the one that found no CHUNK_SLOT_DIR in
+# its environment; compile_all_gnu.sh under compile_all.sh inherits it and
+# leaves it alone. On EXIT, so ^C (cancel_all exits) and early exits clean up
+# too. The path is recomputed: __slot_dir mostly runs in $(...), so the
+# assignment may never have reached this shell. rmdir, never rm -rf: a token
+# still held by a live process keeps the dir.
+if [ -z "${CHUNK_SLOT_DIR:-}" ]; then
+    __slot_dir_cleanup() {
+        local d="${CHUNK_SLOT_DIR:-${build_rep:-/tmp}/.build-slots.$$}"
+        [ -d "$d" ] || return 0
+        rm -f "$d/target-matched" "$d/exec-matched" "$d/exec-candidates" 2>/dev/null
+        # Our own tokens first: still alive here, __slots_gc would keep them.
+        local tok
+        for tok in "$d"/slot-*; do
+            [ "$(cat "$tok/owner" 2>/dev/null)" = "$$" ] && __slot_release "$tok"
+        done
+        __slots_gc
+        rmdir "$d" 2>/dev/null
+        return 0
+    }
+    trap __slot_dir_cleanup EXIT
+fi
+
 # Drop stale tokens whose owning process is gone (a killed run leaves them).
 __slots_gc() {
     local d tok pid
