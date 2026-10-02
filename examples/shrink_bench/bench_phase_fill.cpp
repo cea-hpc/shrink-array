@@ -147,16 +147,19 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
 
             tab_long[i]  = second_value_l;
             tab_ulong[i] = second_value_ul;
-            // One level per CHUNK, spread over the array: this is the line that
-            // exercises the registry, at up to 2 * bench_double_bands + 1
-            // distinct second values instead of the one every other array
-            // declares. The level must be constant over a whole chunk: sin(i)
-            // of the element index changes at every element (sin of
-            // consecutive integers jumps around), so no chunk was ever
-            // constant and the registry saw nothing from this array.
-            tab_quant[i] = std::round(std::sin(static_cast<double>(i / static_cast<Int>(tab_quant.chunk_size()))) *
-                                      bench_double_bands) /
-                           bench_double_bands;
+            // One level per BAND of bench_quant_band elements, spread over the
+            // array: this is the line that exercises the registry, at up to
+            // 2 * bench_double_bands + 1 distinct second values instead of the
+            // one every other array declares. The level must be constant over
+            // a whole chunk: sin(i) of the element index changes at every
+            // element (sin of consecutive integers jumps around), so no chunk
+            // was ever constant and the registry saw nothing from this array.
+            // A fixed band, not chunk_size(): the same data in every build
+            // (std::vector reference, 64 / 256 / 1024, dyn), so the checksums
+            // still compare; 1024 is a multiple of each of those geometries.
+            constexpr Int bench_quant_band = 1024;
+            tab_quant[i] =
+                std::round(std::sin(static_cast<double>(i / bench_quant_band)) * bench_double_bands) / bench_double_bands;
         }
 
         begin_i = end_i;
