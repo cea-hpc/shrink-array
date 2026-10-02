@@ -51,9 +51,17 @@ What is not there, by construction: `data()` (no contiguous storage: a compresse
 
 The non-const `operator[]` returns a *proxy*: a handle on the element that reads it on conversion and routes every write through the compression machinery. It behaves like a value in expressions, with two differences worth knowing.
 
-It is a handle, not a copy. `T v = tab[i];` takes the value; `auto v = tab[i];` keeps the proxy, which then follows the element. The compound operators (`+=` ... `>>=`) and the prefix `++`/`--` return the same kind of proxy: `tab[i] += x;` discards it -- the operation can then be deferred at no cost -- while `T y = (tab[i] += x);` reads the result. The postfix `tab[i]++` returns the old value, as a `T`.
+It is a handle, not a copy. `T v = tab[i];` takes the value; `auto v = tab[i];` keeps the proxy, which then follows the element -- unlike `std::vector`, where `auto` copies: code ported from it wants `T`, not `auto`. The compound operators (`+=` ... `>>=`) and the prefix `++`/`--` return the same kind of proxy: `tab[i] += x;` discards it -- the operation can then be deferred at no cost -- while `T y = (tab[i] += x);` reads the result. The postfix `tab[i]++` returns the old value, as a `T`.
 
 It must not outlive the storage it points into. A proxy holds references into the array's chunks, so it is invalidated by anything that rebuilds or releases them: `resize` (a `push_back` beyond the capacity included), `reserve`, `shrink_to_fit`, `clear`, `assign`, `swap`, an assignment to the array, its destruction -- and a re-chunk, whether you call `rechunk_to` or a `RechunkDecider` decides it for you. Keep proxies short-lived, and take a `T` whenever a value has to survive.
+
+### Threads
+
+Under OpenMP the contract is `std::vector`'s, element by element:
+
+- Different elements need no synchronisation, even when they share a chunk: compression, materialisation and the writes a compressor in flight makes the library defer are the library's business.
+- Accesses to the same element from different threads must be ordered by the program, by any means -- a barrier, a `critical` section, a lock, an atomic flag with release/acquire. Ordered, they behave exactly as on a `std::vector`: a deferred write is applied before any later access the program has ordered after it, on whichever thread. Unordered, it is a data race, as it is on a `std::vector`; do not rely on which write wins.
+- Everything that rebuilds the storage -- the operations that invalidate proxies above, re-chunks included -- is a sequential point: call it outside any parallel region.
 
 ## Compilation
 
