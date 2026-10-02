@@ -64,7 +64,10 @@
 #include "chunk/manage_ompt.h"
 #include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
 
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::cst2_registry_validation
+{
 
 using namespace shrink_array;
 
@@ -165,7 +168,7 @@ static void check_id_limit(const char* self)
 {
     const std::string log = "/tmp/cst2_id_limit_" + std::to_string(getpid()) + ".log";
     const std::string cmd =
-        std::string("CHUNK_CST_VAL2_ID_LIMIT=16 \"") + self + "\" --id-limit > \"" + log + "\" 2>&1";
+        std::string("CHUNK_CST_VAL2_ID_LIMIT=16 ") + validation::self_command(self) + " --id-limit > \"" + log + "\" 2>&1";
     const int status  = std::system(cmd.c_str());
     const bool stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
     bool              said = false;
@@ -182,7 +185,7 @@ static void check_id_limit(const char* self)
         ++fails;
 }
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     if (argc > 1 && std::string(argv[1]) == "--id-limit")
     {
@@ -255,3 +258,5 @@ int main(int argc, char** argv)
     std::printf("=== %s ===\n", fails ? "CST2_REGISTRY FAILED" : "CST2_REGISTRY OK");
     return fails ? 1 : 0;
 }
+
+} // namespace validation::cst2_registry_validation

@@ -42,7 +42,10 @@
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"
 
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::stale_proxy_validation
+{
 
 using namespace shrink_array;
 
@@ -192,7 +195,7 @@ static int check_case(const char* self, int k)
 {
     const Case&       c      = kCases[k];
     const std::string log    = "/tmp/stale_proxy_" + std::to_string(getpid()) + "_" + std::to_string(k) + ".log";
-    const std::string cmd    = std::string("\"") + self + "\" --case " + std::to_string(k) + " > \"" + log + "\" 2>&1";
+    const std::string cmd    = validation::self_command(self) + " --case " + std::to_string(k) + " > \"" + log + "\" 2>&1";
     const int         status = std::system(cmd.c_str());
     std::string       out;
     if (FILE* f = std::fopen(log.c_str(), "r"))
@@ -218,7 +221,7 @@ static int check_case(const char* self, int k)
     return 0;
 }
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
 
@@ -244,3 +247,5 @@ int main(int argc, char** argv)
     std::printf("\n[%s] %s\n", variant_name(), fails == 0 ? "=== STALE PROXY OK ===" : "=== STALE PROXY FAILURES ===");
     return fails;
 }
+
+} // namespace validation::stale_proxy_validation

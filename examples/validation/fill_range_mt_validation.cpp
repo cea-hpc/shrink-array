@@ -55,7 +55,10 @@
 #include "chunk/manage_ompt.h"
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::fill_range_mt_validation
+{
 
 using namespace shrink_array;
 
@@ -232,7 +235,7 @@ static void run_perf(long N)
     arr.clear();
 }
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
     const long N    = argc > 1 ? shrink_array::arg_number<long>(argv[1], (1L << 20) + 777, "N") : (1L << 20) + 777;
@@ -250,3 +253,5 @@ int main(int argc, char** argv)
     std::printf("[%s] === %s ===\n", variant_name(), fails ? "FILL_RANGE_MT FAILED" : "FILL_RANGE_MT OK");
     return fails;
 }
+
+} // namespace validation::fill_range_mt_validation

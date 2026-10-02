@@ -44,7 +44,10 @@
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"
 
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::thread_growth_validation
+{
 
 using namespace shrink_array;
 
@@ -166,7 +169,7 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
 [[maybe_unused]] static int check_beyond(const char* self) // OpenMP builds only
 {
     const std::string log    = "/tmp/thread_growth_beyond_" + std::to_string(getpid()) + ".log";
-    const std::string cmd    = std::string("\"") + self + "\" --beyond > \"" + log + "\" 2>&1";
+    const std::string cmd    = validation::self_command(self) + " --beyond > \"" + log + "\" 2>&1";
     const int         status = std::system(cmd.c_str());
     std::string       out;
     if (FILE* f = std::fopen(log.c_str(), "r"))
@@ -190,7 +193,7 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
     return 0;
 }
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     __mem_page_size   = getpagesize();
     const bool beyond = argc > 1 && std::string(argv[1]) == "--beyond";
@@ -235,3 +238,5 @@ int main(int argc, char** argv)
     std::printf("=== THREAD GROWTH OK ===\n");
     return 0;
 }
+
+} // namespace validation::thread_growth_validation

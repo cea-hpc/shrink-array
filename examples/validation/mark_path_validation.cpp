@@ -71,7 +71,10 @@
 #include "chunk/manage_ompt.h" // begin_parallel_phase / finalize_parallel_phase
 
 // Defined by every executable of the library (the fast allocator reads it).
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::mark_path_validation
+{
 
 using namespace shrink_array;
 
@@ -200,7 +203,7 @@ static int check(const char* scenario, const char* step, const Array<double>& ar
     return 0;
 }
 
-int main()
+int run(int /*argc*/, char** /*argv*/)
 {
     __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
@@ -274,3 +277,5 @@ int main()
            fails == 0 ? "=== MARK PATH OK, TEARDOWN OK ===" : "=== MARK PATH FAILURES ===");
     return fails ? 1 : 0;
 }
+
+} // namespace validation::mark_path_validation

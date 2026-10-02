@@ -52,7 +52,10 @@
 
 using namespace shrink_array;
 
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::dyn_geometry_validation
+{
 
 // --- Active variant selection (same shape as rechunk_validation.cpp) ---------
 static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a,
@@ -150,7 +153,7 @@ static int round_trip_at(unsigned int csz, long N)
     return 0;
 }
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
 
@@ -172,3 +175,5 @@ int main(int argc, char** argv)
            fails == 0 ? "=== ALL GEOMETRIES ROUND-TRIP ===" : "=== GEOMETRY FAILURES ===");
     return fails;
 }
+
+} // namespace validation::dyn_geometry_validation

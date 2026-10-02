@@ -58,7 +58,10 @@
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"
 
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::swap_move_validation
+{
 
 using namespace shrink_array;
 
@@ -351,7 +354,7 @@ int check_vector_realloc()
 
 } // namespace
 
-int main()
+int run(int /*argc*/, char** /*argv*/)
 {
     __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
@@ -370,3 +373,5 @@ int main()
     std::printf("\n[%s] %s\n", variant_name(), fails ? "=== SWAP/MOVE FAILED ===" : "=== SWAP/MOVE OK ===");
     return fails ? 1 : 0;
 }
+
+} // namespace validation::swap_move_validation

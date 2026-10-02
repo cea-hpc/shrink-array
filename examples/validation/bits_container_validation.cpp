@@ -68,7 +68,10 @@
 #include "chunk/manage_ompt.h" // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"
 
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::bits_container_validation
+{
 
 using namespace shrink_array;
 
@@ -560,7 +563,7 @@ int parallel_fill(long N)
 
 } // namespace
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
     const long N    = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
@@ -583,3 +586,5 @@ int main(int argc, char** argv)
     std::printf("[bits] %s\n", fails == 0 ? "=== ALL CHECKS PASSED ===" : "=== FAILURES ===");
     return fails;
 }
+
+} // namespace validation::bits_container_validation
