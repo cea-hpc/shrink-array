@@ -30,17 +30,11 @@
 #include "chunk/config.h"
 #include "chunk/internal/invariant_check.h"
 #include "chunk/internal/tab_cst_val2_holder.h"
-#include "chunk/chunk_define.h" // FAST_ALLOC
-#include "chunk/chunk_def.h"
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/ring_log_debug.h"             // ScopedRingLog, ring_log_* (RING_LOG builds)
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems
 #include "chunk/internal/chunk2_base.h"
 #include "chunk/internal/chunk_stats.h"
-
-#ifdef FAST_ALLOC
-    #include "fast_allocators/tc_allocator.h"
-#endif
 
 #include "chunk/internal/TChunk.h"
 

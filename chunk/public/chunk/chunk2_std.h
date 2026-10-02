@@ -34,6 +34,7 @@
 #include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
 #include "chunk/internal/in_t.h"
 #include "chunk/internal/element_access.h" // Bit buffers: words of bits
+#include "chunk/internal/bit_words.h"      // bits::fill_bits, bits::word_t
 #include <cstring>                         // std::memset (the Bit second constant)
 #include "chunk/config.h"
 #include "chunk/internal/invariant_check.h"
@@ -675,8 +676,8 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
 
         for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
         {
-            auto& map_thr = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
-            auto  it      = map_thr.find(second_value);
+            auto&      map_thr = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
+            const auto it      = map_thr.find(second_value);
             if (it != map_thr.end() && !it->second->empty())
             {
                 return true;
@@ -916,6 +917,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      *                 clear_int_st_bool() call).
      * \param apply The scan always runs; the compression only happens when
      *              this is true.
+     * \param n_elems Element count of this chunk (the owning array's geometry).
      */
     void compress_bool(int thr_rank, bool apply, unsigned int n_elems);
 
@@ -978,6 +980,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * \param check_cst_val2 Whether the second-constant check is worth doing
      *                        at all (skipped if the chunk is already known
      *                        to hold the second constant).
+     * \param n_elems Element count of this chunk (the owning array's geometry).
      */
     template <typename SecondValueFunc>
     void fill_list_to_compress_impl(vec_tuple_chunk2p_int2& ll_compt1,
@@ -996,6 +999,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * \param inf_array (second_value, ...) tuple supplying the second constant.
      * \param num_chunk This chunk's index within its array.
      * \param num_tab Which array this chunk belongs to.
+     * \param n_elems Element count of this chunk (the owning array's geometry).
      */
     void fill_list_to_compress(vec_tuple_chunk2p_int2& ll_compt1,
                                vec_tuple_chunk2p_int2& ll_compt2,
@@ -1011,6 +1015,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * \param ll_compt2 Output bucket for "uniform on the second constant".
      * \param num_chunk This chunk's index within its array.
      * \param num_tab Which array this chunk belongs to.
+     * \param n_elems Element count of this chunk (the owning array's geometry).
      */
     void fill_list_to_compress_bool(vec_tuple_chunk2p_int2& ll_compt1,
                                     vec_tuple_chunk2p_int2& ll_compt2,
@@ -1026,15 +1031,16 @@ template <typename T, typename Derived>
 class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derived>, public ChunkSpec2<T>
 {
   public:
-    // No-op counterparts of the 4 methods added to the true specialization
-    // above -- same pattern as ChunkFastCompPolicy<T,Derived,false>::
-    // make_block_compression(int, const Proxy<T>*) {}.
-    // (chunk, num_chunk, num_tab, n_elems) -- n_elems is the chunk's OWN
-    // geometry, carried from the candidate queue so the clear loop can pin the
-    // thread to it before freeing (same shape as vec_tuple_chunkA2p_int2).
+    /// (chunk, num_chunk, num_tab, n_elems) -- n_elems is the chunk's OWN
+    /// geometry, carried from the candidate queue so the clear loop can pin the
+    /// thread to it before freeing (same shape as vec_tuple_chunkA2p_int2).
     using vec_tuple_chunk2p_int2 = std::vector<std::tuple<Chunk2<T>*, int, int, unsigned int>>;
-    using inf_array_t            = std::tuple<T, int, int>;
+    /// (second value, its index in the shared value table, num_tab).
+    using inf_array_t = std::tuple<T, int, int>;
 
+    /// @name No-op counterparts of the true specialization's queries and passes
+    ///       (same pattern as ChunkFastCompPolicy<T, Derived, false>)
+    /// @{
     static bool have_chunk_to_compress(T, int)
     {
         return false;
@@ -1049,6 +1055,7 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
     static void make_block_compression_bool(int, Proxy2<T>*) {}
 
     static void make_block_compression(int) {}
+    /// @}
 
   private:
     /// @name Empty candidate lists
@@ -1057,6 +1064,7 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
     {
         return true;
     }
+    /// @}
 
     /// @name No-op compression passes
     /// @{

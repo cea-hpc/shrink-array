@@ -305,8 +305,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     /// @brief Full registry tuple for this array: second value, its index, num_tab.
     [[nodiscard]] inf_array_t get_info_second_value() const noexcept
     {
-        auto* key = const_cast<void*>(this->registry_key());
-        return Proxy2<T>::share_info_array.get_info_second_value(key);
+        return Proxy2<T>::share_info_array.get_info_second_value(this->registry_key());
     }
 
     /// @brief Index of this array's second value in the shared value table.

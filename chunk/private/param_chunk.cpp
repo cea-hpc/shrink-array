@@ -257,7 +257,7 @@ void ParamChunk::ChunkStats()
         std::cout << "  write/compress handshake : " << dekker::protocol_name() << "\n";
     }
     std::cout << "  alloc          blocks obtained from a fresh allocation\n";
-    if (all.list)
+    if (all.list != 0)
     {
         std::cout << "  list           blocks taken from the reuse list instead (alloc+list = create)\n";
     }
@@ -275,7 +275,7 @@ void ParamChunk::ChunkStats()
                  "                 compressed, so no data was touched -- this is the\n"
                  "                 share the compression actually saves on reads\n"
                  "   materialised  served from a real buffer (normal memory access)\n";
-    if (all.read_sync)
+    if (all.read_sync != 0)
     {
         std::cout << "   sync          accesses that had to enter the slow synchronisation\n"
                      "                 path (deferred ops had to be flushed first)\n"
@@ -286,13 +286,13 @@ void ParamChunk::ChunkStats()
                  "  create         chunks materialised (a buffer was attached)\n"
                  "  compress (during exec) chunks compressed: a materialised buffer\n"
                  "                 was released, observed WHILE the program ran\n";
-    if (all.still_compressed_at_exit)
+    if (all.still_compressed_at_exit != 0)
     {
         std::cout << "  still compressed (at exit) chunks found at the constant when\n"
                      "                 each array was destroyed -- includes chunks\n"
                      "                 never written at all, NOT just real compressions\n";
     }
-    if (all.mark_ok || all.mark_refused)
+    if (all.mark_ok != 0 || all.mark_refused != 0)
     {
         std::cout << "  mark           writes that flagged a chunk as a compression candidate:\n"
                      "   queued        the flag went 0->1, the chunk was queued\n"
@@ -300,7 +300,7 @@ void ParamChunk::ChunkStats()
                      "                 near 100% with a flat queued count means the flag\n"
                      "                 is never reset after the sweep\n";
     }
-    if (all.compress_attempt)
+    if (all.compress_attempt != 0)
     {
         std::cout << "   attempts      chunks scanned as compression candidates, and how\n"
                      "                 many of those scans paid off\n"
@@ -309,13 +309,13 @@ void ParamChunk::ChunkStats()
     }
     std::cout << "  teardown_clear chunks swept by the end-of-life clear pass (NOT a\n"
                  "                 compression); non-zero only once the arrays are cleared\n";
-    if (all.rechunk)
+    if (all.rechunk != 0)
     {
         std::cout << "  rechunk        geometry changes, and the work they cost:\n"
                      "   rebuilt       new chunks actually rebuilt from the old ones\n"
                      "   skipped       new chunks left compressed -- nothing to rebuild\n";
     }
-    if (all.gate_start || all.gate_flush || all.gate_driver)
+    if (all.gate_start != 0 || all.gate_flush != 0 || all.gate_driver != 0)
     {
         std::cout << "  gate           the write/compress handshake's RARE side, with its\n"
                      "                 rate over the run's wall time -- each of these is one\n"
@@ -332,32 +332,35 @@ void ParamChunk::ChunkStats()
         const ChunkStatsThr stats = reduce_chunk_stats(v);
         // Skip a variant that saw no activity at all (e.g. chunk2 in a chunk-only
         // binary): printing an all-zero block would just be noise.
-        const bool any = stats.alloc || stats.write || stats.read || stats.read_cst || stats.create || stats.list ||
-                         stats.teardown_clear || stats.compress || stats.compress_attempt || stats.rechunk ||
-                         stats.read_sync || stats.mark_ok || stats.mark_refused || stats.gate_start ||
-                         stats.gate_flush || stats.gate_driver;
+        const bool any = stats.alloc != 0 || stats.write != 0 || stats.read != 0 || stats.read_cst != 0 ||
+                         stats.create != 0 || stats.list != 0 || stats.teardown_clear != 0 || stats.compress != 0 ||
+                         stats.compress_attempt != 0 || stats.rechunk != 0 || stats.read_sync != 0 ||
+                         stats.mark_ok != 0 || stats.mark_refused != 0 || stats.gate_start != 0 ||
+                         stats.gate_flush != 0 || stats.gate_driver != 0;
         if (!any)
         {
             continue;
         }
         std::cout << "\n----- CHUNK_STATS [" << chunk_variant_name[v] << "] -----\n";
         std::cout << "  alloc          = " << stats.alloc << "\n";
-        if (stats.bytes_alloc)
+        if (stats.bytes_alloc != 0)
         {
             std::cout << "    bytes        = " << (stats.bytes_alloc / (1024L * 1024)) << " MB\n";
         }
-        if (stats.list)
+        if (stats.list != 0)
         {
             std::cout << "  list           = " << stats.list << "\n";
         }
-        if (stats.bytes_reused)
+        if (stats.bytes_reused != 0)
         {
             std::cout << "    bytes        = " << (stats.bytes_reused / (1024L * 1024)) << " MB\n";
         }
         const long   reads_all = stats.read + stats.read_cst;
         const long   total_rw  = stats.write + reads_all;
-        const double pct_w = total_rw ? 100.0 * static_cast<double>(stats.write) / static_cast<double>(total_rw) : 0.0;
-        const double pct_r = total_rw ? 100.0 * static_cast<double>(reads_all) / static_cast<double>(total_rw) : 0.0;
+        const double pct_w =
+            total_rw != 0 ? 100.0 * static_cast<double>(stats.write) / static_cast<double>(total_rw) : 0.0;
+        const double pct_r =
+            total_rw != 0 ? 100.0 * static_cast<double>(reads_all) / static_cast<double>(total_rw) : 0.0;
         std::cout << "  write          = " << stats.write << "  (" << std::fixed << std::setprecision(1) << pct_w
                   << "% of r/w)\n";
         // Write-side counterpart to the read hit-rate below: of all writes, how
@@ -367,7 +370,7 @@ void ParamChunk::ChunkStats()
         // Materialisation is only ever write-triggered (never by a read), so
         // this derivation needs no extra instrumentation: write_materialize
         // is exactly `create`, and write_hit is the remainder.
-        if (stats.write)
+        if (stats.write != 0)
         {
             const long   write_materialize = stats.create;
             const long   write_hit         = stats.write - write_materialize;
@@ -381,7 +384,7 @@ void ParamChunk::ChunkStats()
         // Compression hit rate on reads: share served straight from the constant
         // (no data touched) vs from a materialised buffer. This is what the
         // compression actually buys on the read path.
-        if (reads_all)
+        if (reads_all != 0)
         {
             const double hit = 100.0 * static_cast<double>(stats.read_cst) / static_cast<double>(reads_all);
             std::cout << "    constant     = " << stats.read_cst << "  (" << hit << "% hit)\n";
@@ -390,10 +393,10 @@ void ParamChunk::ChunkStats()
         // Read-side synchronisation cost: how many accesses had to enter the slow
         // sync path at all, and how many of those needed the expensive cross-rank
         // walk rather than settling on their own rank.
-        if (stats.read_sync)
+        if (stats.read_sync != 0)
         {
             std::cout << "    sync         = " << stats.read_sync;
-            if (reads_all)
+            if (reads_all != 0)
             {
                 std::cout << "  (" << std::fixed << std::setprecision(1)
                           << 100.0 * static_cast<double>(stats.read_sync) / static_cast<double>(reads_all)
@@ -405,7 +408,7 @@ void ParamChunk::ChunkStats()
                       << "% of sync)\n"
                       << std::defaultfloat;
         }
-        if (stats.write)
+        if (stats.write != 0)
         {
             std::cout << "  read/write     = " << std::setprecision(2)
                       << static_cast<double>(reads_all) / static_cast<double>(stats.write) << " reads per write\n";
@@ -418,7 +421,7 @@ void ParamChunk::ChunkStats()
         // refusal rate near 100% with a flat mark_ok means the flag is never reset
         // after the sweep -- the chunk can then never be re-queued, and compression
         // silently stops for it.
-        if (stats.mark_ok || stats.mark_refused)
+        if (stats.mark_ok != 0 || stats.mark_refused != 0)
         {
             const long marks = stats.mark_ok + stats.mark_refused;
             std::cout << "  mark           = " << marks << "\n";
@@ -440,19 +443,19 @@ void ParamChunk::ChunkStats()
         // orders of magnitude on a run with few writes -- that is expected, not a
         // counting bug (this took a full debugging session to pin down).
         std::cout << "  compress (during exec) = " << stats.compress << "\n";
-        if (stats.bytes_freed)
+        if (stats.bytes_freed != 0)
         {
             std::cout << "    bytes        = " << (stats.bytes_freed / (1024L * 1024)) << " MB\n";
+        }
+        if (stats.still_compressed_at_exit != 0)
+        {
+            std::cout << "  still compressed (at exit) = " << stats.still_compressed_at_exit << "\n";
         }
         // Scan yield: how many of the chunks examined as compression candidates
         // actually got compressed, and what those scans cost in element reads
         // (scan_read is kept out of `read` so the read hit-rate stays about the
         // application's own accesses).
-        if (stats.still_compressed_at_exit)
-        {
-            std::cout << "  still compressed (at exit) = " << stats.still_compressed_at_exit << "\n";
-        }
-        if (stats.compress_attempt)
+        if (stats.compress_attempt != 0)
         {
             std::cout << "    attempts     = " << stats.compress_attempt << "  (" << std::fixed << std::setprecision(1)
                       << 100.0 * static_cast<double>(stats.compress) / static_cast<double>(stats.compress_attempt)
@@ -465,7 +468,7 @@ void ParamChunk::ChunkStats()
         std::cout << "  teardown_clear = " << stats.teardown_clear << "\n";
         std::cout << "  released       = " << stats.released
                   << "  (buffers released without a compression: re-chunk sources, teardown sweeps)\n";
-        if (stats.gate_start || stats.gate_flush || stats.gate_driver)
+        if (stats.gate_start != 0 || stats.gate_flush != 0 || stats.gate_driver != 0)
         {
             const double secs =
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - __chunk_stats_t0).count();
@@ -487,12 +490,12 @@ void ParamChunk::ChunkStats()
         // never re-chunks), so the block is compiled out elsewhere.
         if constexpr (build_config::chunk_dynamic)
         {
-            if (stats.rechunk)
+            if (stats.rechunk != 0)
             {
                 const long touched = stats.rechunk_rebuilt + stats.rechunk_skipped;
                 std::cout << "  rechunk        = " << stats.rechunk << "\n";
                 std::cout << "    rebuilt      = " << stats.rechunk_rebuilt;
-                if (touched)
+                if (touched != 0)
                 {
                     std::cout << "  (" << std::fixed << std::setprecision(1)
                               << 100.0 * static_cast<double>(stats.rechunk_rebuilt) / static_cast<double>(touched)

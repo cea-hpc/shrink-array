@@ -36,7 +36,6 @@
 #include "chunk/config.h"                               // for use_openmp
 #include "chunk/internal/tab_cst_val2_holder.h"         // for GlobalVecHolder (cst2 GC)
 #include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
-#include "chunk/internal/in_t.h"                        // in_t<T>: the element snapshots
 #include "chunk/internal/array_chunk_core.h"            // the core the bases share
 #include "chunk/internal/proxy2A.h"                     // Proxy2A<T> and its tables
 #include "chunk/chunk2A_std.h"                          // Chunk2A<T>

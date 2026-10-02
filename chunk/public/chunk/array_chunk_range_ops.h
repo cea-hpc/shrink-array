@@ -49,6 +49,7 @@
 
 #include "chunk/bit.h"                          // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/element_access.h"      // internal::as_words: Bit chunks are words of bits
+#include "chunk/internal/bit_words.h"           // bits::count_ones, bits::scan_words, bits::fill_bit_range
 #include "chunk/internal/in_t.h"                // in_t<T>: the element snapshots
 #include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size

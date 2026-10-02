@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-#include <array>
+#include <array>   // __chunk_stats (CHUNK_STATS only)
 #include <cstddef> // std::size_t
 
 #include "chunk/all_type_chunk.h"
 #include "chunk/chunk_std.h"
 #include "chunk/config.h"
-#include "chunk/internal/chunk_stats.h" // ChunkStatsThr (CHUNK_STATS only)
+#include "chunk/internal/chunk_stats.h"   // ChunkStatsThr (CHUNK_STATS only)
+#include "chunk/internal/process_verbs.h" // compress_now_and_trim_pools, defined here
 #include "chunk/singleton.h"
 
 namespace shrink_array

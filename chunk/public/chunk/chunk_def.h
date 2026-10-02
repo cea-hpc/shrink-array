@@ -19,7 +19,7 @@
 #include <complex>
 #include <type_traits> // std::is_same_v
 
-// Concept to check if a type is an instance of std::complex
+/// @brief True when T is an instance of std::complex.
 template <typename T>
 concept ComplexType = requires { typename T::value_type; } && std::is_same_v<T, std::complex<typename T::value_type>>;
 

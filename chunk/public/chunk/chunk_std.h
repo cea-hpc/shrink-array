@@ -28,7 +28,6 @@
 /// @brief The complex element type of the library (chunk_std.cpp instantiates it).
 using complex_double = std::complex<double>;
 
-#include "chunk/internal/process_verbs.h" // compress_now_and_trim_pools, defined in chunk_std.cpp
 #include "chunk/internal/chunk_base.h"
 #include "chunk/config.h"
 #include "chunk/internal/chunk_size_config.h" // ChunkElems

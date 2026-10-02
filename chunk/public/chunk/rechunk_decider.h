@@ -221,4 +221,3 @@ class RechunkDecider
 // Method bodies. Included here (after the class) so every translation unit
 // using RechunkDecider sees the definitions and instantiates the T/Arr it needs.
 #include "chunk/internal/rechunk_decider_inline.h"
-#include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size

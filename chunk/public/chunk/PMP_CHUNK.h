@@ -21,7 +21,9 @@
 
 namespace shrink_array
 {
-inline thread_local int __fast_omp_rank = -1;
+/// @brief Thread-local cache of the calling thread's rank in the active team;
+///        -1 until get_thr_rank_fast() or begin_parallel_phase() fills it.
+inline thread_local int g_fast_omp_rank = -1;
 
 /// @brief The loop schedules a `schedule(runtime)` loop can be given -- the
 ///        values of omp_sched_t (OpenMP 5.x: static 1, dynamic 2, guided 3,
@@ -207,12 +209,12 @@ inline int get_thr_rank_fast() noexcept
 {
     // If OMPT is working, this value is already set at the start of the region.
     // No guards, no OpenMP library calls, just a direct TLS read.
-    int rank = ::shrink_array::__fast_omp_rank;
+    int rank = ::shrink_array::g_fast_omp_rank;
 
     // Fallback if OMPT is disabled or not supported by the runtime
     if (rank == -1) [[unlikely]]
     {
-        rank = ::shrink_array::__fast_omp_rank =
+        rank = ::shrink_array::g_fast_omp_rank =
             ::shrink_array::chunk_pmp_checked_rank(::shrink_array::chunk_pmp_library_rank());
     }
     if constexpr (build_config::any_check)

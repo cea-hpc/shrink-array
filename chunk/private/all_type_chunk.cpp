@@ -27,7 +27,7 @@
 #include "chunk/internal/manager_chunk.h"
 #include "chunk/all_type_chunk.h"
 #include "chunk/internal/churn_counters.h"   // churn::note_phase_end
-#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, __fast_omp_rank
+#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, g_fast_omp_rank
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
 #include "chunk/manage_ompt.h"               // the declarations of the five phase functions below
@@ -96,7 +96,7 @@ void begin_parallel_phase()
 {
     if constexpr (build_config::use_openmp)
     {
-        __fast_omp_rank = CHUNK_PMP_THREAD_RANK;
+        g_fast_omp_rank = CHUNK_PMP_THREAD_RANK;
     }
     if constexpr (phase_guard::active)
     {
