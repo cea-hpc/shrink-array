@@ -30,11 +30,12 @@
  */
 
 #include <charconv>     // std::from_chars (CHUNK_RECLAIM_MIN_SLABS)
+#include <cstddef>      // std::size_t
 #include <cstdio>       // std::fprintf
 #include <cstdlib>      // std::getenv
 #include <cstring>      // std::strlen
 #include <system_error> // std::errc
-#include <cstddef>      // std::size_t
+
 namespace alloc_config
 {
 

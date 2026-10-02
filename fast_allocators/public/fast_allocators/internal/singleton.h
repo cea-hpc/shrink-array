@@ -29,8 +29,12 @@ template <typename T>
 class Singleton
 {
   public:
+    // Never an object: everything is static. Neither copied nor moved.
     Singleton(const Singleton&)            = delete;
     Singleton& operator=(const Singleton&) = delete;
+    Singleton(Singleton&&)                 = delete;
+    Singleton& operator=(Singleton&&)      = delete;
+    ~Singleton()                           = default;
 
     /// @brief getInstance(), as a reference.
     /// @return The instance.
