@@ -344,8 +344,22 @@ endif()
 #            runtime-sized) — pass empty "" for dyn.
 #   is_dyn : TRUE  -> add CHUNK_DYNAMIC (runtime size), no CHUNK_SIZE
 #            FALSE -> add CHUNK_SIZE=<size> (compile-time fixed geometry)
+#
+# CHUNK_LIB_UNITY (ON): each variant archive compiled as one unity translation
+# unit. Its nine sources each included the whole header-only engine:
+# chunk_v2a_256 took 19.4 s of compilation in Debug and 21.3 s at -O2 -g
+# apart, 3.0 s and 5.0 s as one unit -- for twelve archives per configuration.
+# A source with options of its own (CHUNK_ICPX_O0_WORKAROUND's -O0,
+# alloc_token_rt.cpp's -fno-sanitize) is left out of the unit by CMake and
+# keeps them. What changes is the order in which the archive's globals are
+# initialised: the order of the sources in the unit, where it was the
+# unspecified one of separate objects.
+option(CHUNK_LIB_UNITY "Compile each chunk variant archive as one unity translation unit" ON)
 function(chunk_add_variant target_name variant_define size is_dyn)
   add_library(${target_name})
+  if (CHUNK_LIB_UNITY)
+    set_target_properties(${target_name} PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE 0)
+  endif()
 
   # NO_OMPT_TOOL (extra argument): the variant is built without the OMPT tool
   # of private/manage_ompt.cpp, for a program that ships its own (the symbols
