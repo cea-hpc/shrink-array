@@ -50,7 +50,9 @@
 // Chunk2 builds only (ArrayChunkBits is ArrayChunk2<Bit>). Exit 0 = pass.
 
 #include <algorithm> // std::min
+#include <cstdint>
 #include <cstdio>
+#include <random>
 #include <unistd.h>
 #include <utility> // std::pair
 #include <vector>
@@ -59,7 +61,6 @@
 #include "chunk/array_chunk_bits.h"
 #include "chunk/chunk_size_advisor.h"
 #include "chunk/array_chunk_range_ops.h" // fill_range, copy_range
-#include <random>
 #include "chunk/param_chunk.h"
 #include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"
@@ -370,7 +371,7 @@ int advisor_and_rechunk(long N)
     // check is about. No change for S >= 128.
     typename ChunkSizeAdvisor<Bit>::Options opt;
     if (static_cast<long>(opt.min_size) > S / 2)
-        opt.min_size = static_cast<uint32_t>(S / 2);
+        opt.min_size = static_cast<std::uint32_t>(S / 2);
     const auto rep = ChunkSizeAdvisor<Bit>::analyze(a, opt);
     if (rep.cur < 0)
     {

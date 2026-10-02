@@ -52,7 +52,6 @@
  *          Usage: fill_range_mt_v1v2_validation [chunks]
  */
 
-#include <atomic>
 #include <cstdio>
 #include <unistd.h>
 
