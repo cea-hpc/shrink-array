@@ -246,9 +246,12 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      * @param sec_value value chunks may now compress to
      * @param message   print the "useless for bool" warning; ignored for every
      *                  other T, and it gates nothing else
-     * @warning Registered cst_val2 blocks are never released, even when replaced
-     *          by a larger one: a still-live chunk of another array may hold the
-     *          old address as its `values`.
+     * @warning Registered cst_val2 blocks never move and are never released
+     *          while the program runs, even when replaced by a larger one: a
+     *          still-live chunk of another array may hold the address as its
+     *          `values`. The table grows by one block per DISTINCT value ever
+     *          declared (cst_buffer_size elements each), plus a candidate list
+     *          per thread -- bounded, but not reclaimed.
      */
     void set_second_value(T sec_value, bool message = true);
     /**

@@ -21,6 +21,7 @@
 
 #include <algorithm> // std::fill_n
 #include <array>
+#include <deque> // tab_m_ptr_cst_val2: grows without moving its arrays
 #include <atomic>
 #include <cstddef> // std::size_t
 #include <cstdlib> // std::abort
@@ -62,8 +63,18 @@ class Proxy2;
 template <typename T>
 struct ChunkSpec2
 {
+    // The registered second-constant arrays. A chunk compressed to one stores
+    // its ADDRESS as `values`, so the container must never move them: a
+    // std::deque grown at the end keeps every element where it is. It was a
+    // std::vector, whose resize() past capacity moved every array and freed
+    // the old storage -- every chunk of every other array compressed to its
+    // second value then read freed memory (wrong values, a heap-use-after-free
+    // under ASan), and the next pass took that pointer for a materialised
+    // buffer and released it to the allocator (SIGSEGV in slab_from).
+    // chunk2_registry_growth_validation guards it. MM_PROTECT holds pointers
+    // to its own mappings, which never move.
     using vec_array_chunk_size_max =
-        std::conditional_t<build_config::use_mm_protect, std::vector<T*>, std::vector<std::array<T, cst_buffer_size>>>;
+        std::conditional_t<build_config::use_mm_protect, std::vector<T*>, std::deque<std::array<T, cst_buffer_size>>>;
 
   private:
     static constexpr bool use_mm_protect = build_config::use_mm_protect;

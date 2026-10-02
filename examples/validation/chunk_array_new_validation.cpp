@@ -55,7 +55,10 @@
 static_assert(build_config::use_openmp, "OpenMP builds only: the array-new is the *OmpPolicy's");
 
 // Defined by every executable of the library (the fast allocator reads it).
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::chunk_array_new_validation
+{
 
 using namespace shrink_array;
 
@@ -140,7 +143,7 @@ int placement_case(std::size_t n)
 
 } // namespace
 
-int main()
+int run(int /*argc*/, char** /*argv*/)
 {
     __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
@@ -160,3 +163,5 @@ int main()
     printf("\n[%s] %s\n", variant_name(), fails == 0 ? "=== ARRAY-NEW OK ===" : "=== ARRAY-NEW FAILURES ===");
     return fails ? 1 : 0;
 }
+
+} // namespace validation::chunk_array_new_validation

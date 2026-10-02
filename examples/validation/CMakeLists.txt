@@ -1,6 +1,8 @@
 # ============================================================================
-# Validation harnesses: exit 0 / 1 programs registered with ctest, one
-# executable per chunk variant, dyn-geometry builds only.
+# Validation harnesses: exit 0 / 1 programs registered with ctest. Most of
+# them share one executable per variant and geometry, validation_<variant>_
+# <geometry> (see "The grouped harnesses" below); the test names are per
+# harness all the same.
 #
 #   rechunk_validation      content invariance across rechunk_to(), and the
 #                           location of the first mismatch when it fails;
@@ -117,71 +119,34 @@ function(validation_setup_target tgt)
     target_compile_definitions(${tgt} PRIVATE CHECK)
 endfunction()
 
-if (CHUNK_BUILD_DYN)
-
-  set(_val_harnesses      rechunk_validation dyn_geometry_validation)
-  set(_val_variant_names   chunk       chunk2      chunk2a)
-  set(_val_variant_libbase chunk_v1    chunk_v2    chunk_v2a)
-  set(_val_variant_macro   CHUNK       CHUNK2      CHUNK2A)
-
-  list(LENGTH _val_variant_names _val_nvar)
-  math(EXPR _val_nvar_last "${_val_nvar} - 1")
-
-  foreach(_harness IN LISTS _val_harnesses)
-    foreach(_vi RANGE ${_val_nvar_last})
-      list(GET _val_variant_names   ${_vi} _vname)
-      list(GET _val_variant_libbase ${_vi} _libbase)
-      list(GET _val_variant_macro   ${_vi} _vmacro)
-
-      set(_tgt ${_harness}_${_vname}_dyn)
-      add_executable(${_tgt} ${_harness}.cpp)
-      target_link_libraries(${_tgt} PRIVATE ${_libbase}_dyn)
-      target_compile_definitions(${_tgt} PRIVATE
-          ${_vmacro} CHUNK_DYNAMIC DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE}
-          # rechunk_validation only: trace the reuse pools around a re-chunk.
-          $<$<AND:$<BOOL:${RECHUNK_TRACE_POOL}>,$<STREQUAL:${_harness},rechunk_validation>>:RECHUNK_TRACE_POOL>)
-      validation_setup_target(${_tgt})
-
-      if (_harness STREQUAL "rechunk_validation")
-        # One test per case (rechunk_validation --list), each in its serial and
-        # parallel passes: `ctest -j` spreads them over the cores. The names
-        # must match the case table of rechunk_validation.cpp -- an unknown
-        # --case fails the test, so a drift shows up at once.
-        foreach(_case coexistence range-ops scale-64-to-tgt mostly-constant sin-quantized
-                      shrink-to-smaller all-same all-different val2-grow val2-shrink
-                      non-pow2-refused)
-          add_test(NAME ${_tgt}_${_case} COMMAND ${_tgt} --case ${_case})
-          set_property(TEST ${_tgt}_${_case} PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
-          set_property(TEST ${_tgt}_${_case} PROPERTY LABELS validation)
-        endforeach()
-      else()
-        add_test(NAME ${_tgt} COMMAND ${_tgt})
-        set_property(TEST ${_tgt} PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
-        set_property(TEST ${_tgt} PROPERTY LABELS validation)
-      endif()
-    endforeach()
-  endforeach()
-
-endif()
-
-# --- compress_roundtrip and pool_accounting: one executable per harness,
-# variant and geometry (the default static size and, when built, dyn). Two
-# tests per executable: the properties must not depend on the team, so they
-# are asserted at 1 thread and at 8.
+# --- The grouped harnesses: one executable per variant and geometry,
+# validation_<variant>_<geometry>, a unity build. Compiled one by one, each
+# harness re-instantiated the whole library for itself: 14 s apiece in a Debug
+# build, against 0.4 s of link. Together they share the instantiations -- a
+# pilot of six of them compiled in 13.8 s instead of 56.8 (Debug) and 28.4
+# instead of 119.4 (-O2), for the same peak memory. Each harness is a
+# namespace, validation::<harness>, with a run() the shared driver calls
+# (validation_harness.h, validation_driver.cpp):
 #
-# Only the harnesses of _rt_dyn_harnesses get the dyn geometry as well: the
-# ones with code of their own there (rechunk_to, set_chunk_size, a
-# chunk_dynamic branch) and deferred_path_validation, whose replay path reads
-# the frozen geometry a dynamic build alone has. The others test nothing
-# geometry-specific and are built at the default static size only -- it
-# exists in every configuration, CHUNK_BUILD_DYN or not. A third of the
-# compilation of this directory went to those dyn duplicates.
-set(_rt_dyn_harnesses   pool_accounting deferred_path_validation open_types_validation index64_validation
-                        stale_proxy_validation)
-set(_rt_harnesses       compress_roundtrip pool_accounting deferred_path_validation open_types_validation
-                        mark_path_validation fill_range_mt_validation index64_validation
-                        swap_move_validation range_counters_validation thread_growth_validation
-                        nested_region_validation iterator_validation stale_proxy_validation)
+#     validation_chunk2a_256 compress_roundtrip [args...]
+#
+# The ctest names are the ones of the one-executable-per-harness layout
+# (compress_roundtrip_chunk2a_256_8thr, rechunk_validation_chunk_dyn_val2-grow,
+# ...), so `ctest -R` and python/bench_and_test.py see no difference.
+# CHUNK_VALIDATION_UNITY=OFF goes back to one executable per harness, named as
+# before -- the one to debug a harness alone. CHUNK_VALIDATION_UNITY_BATCH caps
+# the harnesses per unity TU (0: all of a group in one).
+#
+# Not grouped: the harnesses built with a knob of their own that changes
+# header-only library code (deferred_path_validation, CHUNK_FORCE_DEFER_EVERY;
+# read_reclaim_validation, CHUNK_TEST_READ_DELAY_*) -- in one executable with
+# the others it would be an ODR violation -- and those built against another
+# library or none (fill_range_mt_v1v2, bit_words, blk_allocator,
+# slab_geometry). RECHUNK_TRACE_POOL, a trace, applies to the whole group of
+# rechunk_validation.
+option(CHUNK_VALIDATION_UNITY "One unity-built executable per variant and geometry for the validation harnesses" ON)
+set(CHUNK_VALIDATION_UNITY_BATCH "0" CACHE STRING "Harnesses per unity translation unit (0: all of a group)")
+
 set(_rt_variant_names   chunk       chunk2      chunk2a)
 set(_rt_variant_libbase chunk_v1    chunk_v2    chunk_v2a)
 set(_rt_variant_macro   CHUNK       CHUNK2      CHUNK2A)
@@ -194,100 +159,170 @@ endif()
 list(LENGTH _rt_variant_names _rt_nvar)
 math(EXPR _rt_nvar_last "${_rt_nvar} - 1")
 
-foreach(_harness IN LISTS _rt_harnesses)
-foreach(_geom IN LISTS _rt_geometries)
-  if (_geom STREQUAL "dyn" AND NOT _harness IN_LIST _rt_dyn_harnesses)
-    continue()
+# The round-trip harnesses, at 1 and 8 threads. Only those of
+# _rt_dyn_harnesses are built at dyn as well: the ones with code of their own
+# there (rechunk_to, set_chunk_size, a chunk_dynamic branch). The others test
+# nothing geometry-specific and are built at the default static size only --
+# it exists in every configuration, CHUNK_BUILD_DYN or not.
+set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
+                        mark_path_validation fill_range_mt_validation index64_validation
+                        swap_move_validation range_counters_validation thread_growth_validation
+                        nested_region_validation iterator_validation stale_proxy_validation)
+set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
+
+# Compile definitions of a variant at a geometry.
+function(validation_variant_defs tgt vmacro geom)
+  if (geom STREQUAL "dyn")
+    target_compile_definitions(${tgt} PRIVATE ${vmacro} CHUNK_DYNAMIC DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
+  else()
+    target_compile_definitions(${tgt} PRIVATE ${vmacro}) # CHUNK_SIZE comes from the lib (PUBLIC)
   endif()
+endfunction()
+
+# An executable of the shared driver and the harnesses of ARGN.
+function(validation_harness_executable tgt libbase vmacro geom)
+  add_executable(${tgt} validation_driver.cpp)
+  set(_list "")
+  foreach(_h IN LISTS ARGN)
+    target_sources(${tgt} PRIVATE ${_h}.cpp)
+    string(APPEND _list "VALIDATION_HARNESS(${_h})\n")
+  endforeach()
+  # The driver's table: rewritten only when it changes, so a re-configure does
+  # not rebuild the driver.
+  set(_hdr ${CMAKE_CURRENT_BINARY_DIR}/harness_lists/${tgt}.h)
+  file(WRITE ${_hdr}.in "${_list}")
+  configure_file(${_hdr}.in ${_hdr} COPYONLY)
+  target_compile_definitions(${tgt} PRIVATE VALIDATION_HARNESS_LIST="${_hdr}")
+  target_include_directories(${tgt} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(${tgt} PRIVATE ${libbase}_${geom})
+  validation_variant_defs(${tgt} ${vmacro} ${geom})
+  if (RECHUNK_TRACE_POOL AND "rechunk_validation" IN_LIST ARGN)
+    target_compile_definitions(${tgt} PRIVATE RECHUNK_TRACE_POOL)
+  endif()
+  validation_setup_target(${tgt})
+  if (CHUNK_VALIDATION_UNITY)
+    set_target_properties(${tgt} PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE ${CHUNK_VALIDATION_UNITY_BATCH})
+  endif()
+endfunction()
+set_source_files_properties(validation_driver.cpp PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+
+# test name, executable, harness, thread counts ("" = one test, OMP_NUM_THREADS=8), args...
+function(validation_add_test name exe harness nthreads)
+  if (nthreads STREQUAL "")
+    add_test(NAME ${name} COMMAND ${exe} ${harness} ${ARGN})
+    set_property(TEST ${name} PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
+    set_property(TEST ${name} PROPERTY LABELS validation)
+  else()
+    foreach(_nthr IN LISTS nthreads)
+      add_test(NAME ${name}_${_nthr}thr COMMAND ${exe} ${harness} ${ARGN})
+      set(_env OMP_NUM_THREADS=${_nthr})
+      # nested_region_validation opens its outer team with num_threads(4),
+      # whatever OMP_NUM_THREADS says. At 1 thread the per-thread capacity is
+      # max(omp_get_max_threads(), omp_get_num_procs()): 1 on a node that grants
+      # the job one core, and rank 3 is then (rightly) refused. The harness
+      # declares the team it uses.
+      if (harness STREQUAL "nested_region_validation")
+        list(APPEND _env CHUNK_THREAD_CAPACITY=4)
+      endif()
+      set_property(TEST ${name}_${_nthr}thr PROPERTY ENVIRONMENT ${_env})
+      set_property(TEST ${name}_${_nthr}thr PROPERTY LABELS validation)
+    endforeach()
+  endif()
+endfunction()
+
+foreach(_geom IN LISTS _rt_geometries)
   foreach(_vi RANGE ${_rt_nvar_last})
     list(GET _rt_variant_names   ${_vi} _vname)
     list(GET _rt_variant_libbase ${_vi} _libbase)
     list(GET _rt_variant_macro   ${_vi} _vmacro)
 
-    set(_tgt ${_harness}_${_vname}_${_geom})
-    add_executable(${_tgt} ${_harness}.cpp)
-    target_link_libraries(${_tgt} PRIVATE ${_libbase}_${_geom})
-    if (_geom STREQUAL "dyn")
-      target_compile_definitions(${_tgt} PRIVATE
-          ${_vmacro} CHUNK_DYNAMIC DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
-    else()
-      target_compile_definitions(${_tgt} PRIVATE ${_vmacro}) # CHUNK_SIZE comes from the lib (PUBLIC)
+    # The group: the round-trip harnesses, then the special cases below.
+    set(_group "")
+    foreach(_h IN LISTS _rt_harnesses)
+      if (NOT _geom STREQUAL "dyn" OR _h IN_LIST _rt_dyn_harnesses)
+        list(APPEND _group ${_h})
+      endif()
+    endforeach()
+    # chunk_array_new_validation: the variant's operator new[] hands back an
+    # array whose every chunk is at the first constant. OpenMP builds only: the
+    # operators are the *OmpPolicy's, and their serial specialisations declare
+    # nothing.
+    if (OMP)
+      list(APPEND _group chunk_array_new_validation)
     endif()
-    validation_setup_target(${_tgt})
-    # The forced-deferral knob, on this harness alone (the write engine is
-    # header-only, instantiated in the executable: the library archive holds
-    # none of it, so a target-scoped value is consistent). A global value set
-    # on the cache (a whole-tree forced build) is not overridden.
-    if (_harness STREQUAL "deferred_path_validation" AND "${CHUNK_FORCE_DEFER_EVERY}" STREQUAL "0")
-      target_compile_definitions(${_tgt} PRIVATE CHUNK_FORCE_DEFER_EVERY=7)
+    # bits_container_validation: ArrayChunkBits (ArrayChunk2<Bit>) against
+    # std::vector<bool>. Chunk2 libraries only, every geometry.
+    if (_vname STREQUAL "chunk2")
+      list(APPEND _group bits_container_validation)
+    endif()
+    # cst2_registry_validation: Chunk2A's second-value registry lifecycle.
+    # Chunk2A only, at the default static size.
+    if (_vname STREQUAL "chunk2a" AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group cst2_registry_validation)
+    endif()
+    # rechunk_validation (content invariance across rechunk_to(), one test per
+    # case) and dyn_geometry_validation (an array reads back what was written
+    # at every registered runtime chunk size): dyn only, at 8 threads.
+    if (_geom STREQUAL "dyn")
+      list(APPEND _group rechunk_validation dyn_geometry_validation)
     endif()
 
-    # nested_region_validation opens its outer team with num_threads(4),
-    # whatever OMP_NUM_THREADS says. At 1 thread the per-thread capacity is
-    # max(omp_get_max_threads(), omp_get_num_procs()): 1 on a node that grants
-    # the job one core, and rank 3 is then (rightly) refused. The harness
-    # declares the team it uses.
-    set(_env_extra "")
-    if (_harness STREQUAL "nested_region_validation")
-      set(_env_extra "CHUNK_THREAD_CAPACITY=4")
+    if (CHUNK_VALIDATION_UNITY)
+      validation_harness_executable(validation_${_vname}_${_geom} ${_libbase} ${_vmacro} ${_geom} ${_group})
     endif()
-    foreach(_nthr 1 8)
-      add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
-      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr} ${_env_extra})
-      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY LABELS validation)
+    foreach(_h IN LISTS _group)
+      set(_base ${_h}_${_vname}_${_geom})
+      if (CHUNK_VALIDATION_UNITY)
+        set(_exe validation_${_vname}_${_geom})
+      else()
+        validation_harness_executable(${_base} ${_libbase} ${_vmacro} ${_geom} ${_h})
+        set(_exe ${_base})
+      endif()
+      if (_h STREQUAL "rechunk_validation")
+        # One test per case (rechunk_validation --list), each in its serial and
+        # parallel passes: `ctest -j` spreads them over the cores. The names
+        # must match the case table of rechunk_validation.cpp -- an unknown
+        # --case fails the test, so a drift shows up at once.
+        foreach(_case coexistence range-ops scale-64-to-tgt mostly-constant sin-quantized
+                      shrink-to-smaller all-same all-different val2-grow val2-shrink
+                      non-pow2-refused)
+          validation_add_test(${_base}_${_case} ${_exe} ${_h} "" --case ${_case})
+        endforeach()
+      elseif (_h STREQUAL "dyn_geometry_validation")
+        validation_add_test(${_base} ${_exe} ${_h} "")
+      elseif (_h STREQUAL "bits_container_validation")
+        validation_add_test(bits_container_validation_${_geom} ${_exe} ${_h} "1;8")
+      else()
+        validation_add_test(${_base} ${_exe} ${_h} "1;8")
+      endif()
     endforeach()
   endforeach()
 endforeach()
-endforeach()
 
-# --- chunk_array_new_validation: the three variants, one executable per
-# variant and geometry, at 1 and 8 threads like the others. OpenMP builds
-# only: the operators are the *OmpPolicy's, and their serial specialisations
-# declare nothing (there is no array-new to test there).
-if (OMP)
+# --- deferred_path_validation: on its own, one executable per variant and
+# geometry (both: its replay path reads the frozen geometry a dynamic build
+# alone has), at 1 and 8 threads. The forced-deferral knob, on this harness
+# alone (the write engine is header-only, instantiated in the executable: the
+# library archive holds none of it, so a target-scoped value is consistent). A
+# global value set on the cache (a whole-tree forced build) is not overridden.
 foreach(_geom IN LISTS _rt_geometries)
   foreach(_vi RANGE ${_rt_nvar_last})
     list(GET _rt_variant_names   ${_vi} _vname)
     list(GET _rt_variant_libbase ${_vi} _libbase)
     list(GET _rt_variant_macro   ${_vi} _vmacro)
-
-    set(_tgt chunk_array_new_validation_${_vname}_${_geom})
-    add_executable(${_tgt} chunk_array_new_validation.cpp)
+    set(_tgt deferred_path_validation_${_vname}_${_geom})
+    add_executable(${_tgt} deferred_path_validation.cpp)
     target_link_libraries(${_tgt} PRIVATE ${_libbase}_${_geom})
-    if (_geom STREQUAL "dyn")
-      target_compile_definitions(${_tgt} PRIVATE ${_vmacro} CHUNK_DYNAMIC DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
-    else()
-      target_compile_definitions(${_tgt} PRIVATE ${_vmacro}) # CHUNK_SIZE comes from the lib (PUBLIC)
-    endif()
+    validation_variant_defs(${_tgt} ${_vmacro} ${_geom})
     validation_setup_target(${_tgt})
-
+    if ("${CHUNK_FORCE_DEFER_EVERY}" STREQUAL "0")
+      target_compile_definitions(${_tgt} PRIVATE CHUNK_FORCE_DEFER_EVERY=7)
+    endif()
     foreach(_nthr 1 8)
       add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
       set_property(TEST ${_tgt}_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
       set_property(TEST ${_tgt}_${_nthr}thr PROPERTY LABELS validation)
     endforeach()
-  endforeach()
-endforeach()
-endif()
-
-# --- bits_container_validation: ArrayChunkBits (ArrayChunk2<Bit>) against
-# std::vector<bool>: round trip through compress(), the pass compresses the
-# constant runs, neighbouring elements written by different threads. Chunk2
-# libraries only, every geometry of the round-trip harnesses.
-foreach(_geom IN LISTS _rt_geometries)
-  set(_tgt bits_container_validation_${_geom})
-  add_executable(${_tgt} bits_container_validation.cpp)
-  target_link_libraries(${_tgt} PRIVATE chunk_v2_${_geom})
-  if (_geom STREQUAL "dyn")
-    target_compile_definitions(${_tgt} PRIVATE CHUNK2 CHUNK_DYNAMIC DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
-  else()
-    target_compile_definitions(${_tgt} PRIVATE CHUNK2)
-  endif()
-  validation_setup_target(${_tgt})
-  foreach(_nthr 1 8)
-    add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
-    set_property(TEST ${_tgt}_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
-    set_property(TEST ${_tgt}_${_nthr}thr PROPERTY LABELS validation)
   endforeach()
 endforeach()
 
@@ -299,22 +334,6 @@ if (TARGET chunk_v1v2_${CHUNK_DEFAULT_SIZE})
   set(_tgt fill_range_mt_v1v2_validation)
   add_executable(${_tgt} fill_range_mt_v1v2_validation.cpp)
   target_link_libraries(${_tgt} PRIVATE chunk_v1v2_${CHUNK_DEFAULT_SIZE}) # CHUNK, CHUNK2, CHUNK_SIZE: PUBLIC
-  validation_setup_target(${_tgt})
-  foreach(_nthr 1 8)
-    add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
-    set_property(TEST ${_tgt}_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
-    set_property(TEST ${_tgt}_${_nthr}thr PROPERTY LABELS validation)
-  endforeach()
-endif()
-
-# --- cst2_registry_validation: Chunk2A's second-value registry lifecycle
-# (users / entries across successive and overlapping arrays). Chunk2A only,
-# at the default static size, at 1 and 8 threads like the others.
-if (TARGET chunk_v2a_${CHUNK_DEFAULT_SIZE})
-  set(_tgt cst2_registry_validation_chunk2a_${CHUNK_DEFAULT_SIZE})
-  add_executable(${_tgt} cst2_registry_validation.cpp)
-  target_link_libraries(${_tgt} PRIVATE chunk_v2a_${CHUNK_DEFAULT_SIZE})
-  target_compile_definitions(${_tgt} PRIVATE CHUNK2A) # CHUNK_SIZE comes from the lib (PUBLIC)
   validation_setup_target(${_tgt})
   foreach(_nthr 1 8)
     add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
@@ -408,6 +427,21 @@ if (OMP)
     set_property(TEST ${_tgt}_8thr PROPERTY TIMEOUT 120)
   endforeach()
 endif()
+
+# --- chunk2_registry_growth_validation: Chunk2's second-value registry must
+# not move the constant arrays chunks point at when a new value is declared
+# (the harness says why). Chunk2 only, default static size, every build; at 1
+# and 4 threads.
+set(_tgt chunk2_registry_growth_validation)
+add_executable(${_tgt} chunk2_registry_growth_validation.cpp)
+target_link_libraries(${_tgt} PRIVATE chunk_v2_${CHUNK_DEFAULT_SIZE})
+target_compile_definitions(${_tgt} PRIVATE CHUNK2)
+validation_setup_target(${_tgt})
+foreach(_nthr 1 4)
+  add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
+  set_property(TEST ${_tgt}_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
+  set_property(TEST ${_tgt}_${_nthr}thr PROPERTY LABELS validation)
+endforeach()
 
 # shrink-build-stamp: every executable of this directory prints the build stamp
 # and is built by `check` (cmake/shrink_build_stamp.cmake).
