@@ -100,12 +100,28 @@ endif()
 # by a handful of integers, and paying for a second compilation of a 2400-line
 # translation unit -- 21 s and 2.2 GB apiece -- to bake them in was the single
 # largest item in this directory's build time.
+#
+# Unity build (SHRINK_BENCH_UNITY, ON): the 16 sources of a bench executable
+# compiled as one translation unit. Compiled apart, each re-instantiated the
+# whole header-only library for itself: shrink_bench_chunk2a_256 took 198 s
+# of compilation in Debug and 312 s at -O2 -g, against 49 s and 90 s as one
+# unit, for a peak of 2.9 / 3.4 GB instead of 2.3 / 2.8 (the checksums are the
+# same). The sources needed no change. Two costs: the compiler may now inline
+# across what were separate files, so the timings may differ from campaigns
+# measured before (OFF to compare with them); and editing one bench file
+# recompiles the whole unit (SHRINK_BENCH_UNITY_BATCH sources per unit, 0 =
+# all, trades that back).
+option(SHRINK_BENCH_UNITY "Compile each shrink_bench executable as one unity translation unit" ON)
+set(SHRINK_BENCH_UNITY_BATCH "0" CACHE STRING "Bench sources per unity translation unit (0: all)")
 function(sa2_setup_target tgt)
     if (OMP)
         target_link_libraries(${tgt} PUBLIC OpenMP::OpenMP_CXX)
     endif ()
     chunk_require_cxx20(${tgt} PRIVATE)
     target_link_libraries(${tgt} PRIVATE BZip2::BZip2)
+    if (SHRINK_BENCH_UNITY)
+        set_target_properties(${tgt} PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE ${SHRINK_BENCH_UNITY_BATCH})
+    endif()
 endfunction()
 
 # ============================================================================
