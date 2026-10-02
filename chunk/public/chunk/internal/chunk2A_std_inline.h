@@ -559,6 +559,7 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
  * per-chunk compress() is a no-op, and the pass is make_block_compression()
  * over every rank instead (see below).
  *
+ * @param thr            Rank whose candidate chunks are compressed.
  * @param apply          Forwarded to compress().
  */
 template <typename T>

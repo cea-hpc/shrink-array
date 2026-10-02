@@ -740,7 +740,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     [[nodiscard]] reference       back();
 
     /** @} */
-    /** @} */
 
     /**
      * @brief assign(count, val): std::vector semantics.

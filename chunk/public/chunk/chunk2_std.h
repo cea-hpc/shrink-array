@@ -993,8 +993,6 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
 template <typename T, typename Derived>
 struct Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derived>, public ChunkSpec2<T>
 {
-    /// @}
-
     // No-op counterparts of the 4 methods added to the true specialization
     // above -- same pattern as ChunkFastCompPolicy<T,Derived,false>::
     // make_block_compression(int, const Proxy<T>*) {}.

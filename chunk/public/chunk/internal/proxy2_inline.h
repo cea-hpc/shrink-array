@@ -160,6 +160,9 @@ void ProxySpec2<T, Derived>::set_info_second_value_ind_from_key(const void* key)
     ind          = std::get<1>(inf_array);
 }
 
+// Hidden from Doxygen: the Proxy2 alias (BaseSpec) and the bool specialization
+// make this out-of-line definition ambiguous to it. Documented in proxy2.h.
+/// @cond
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_second_value()
 {
@@ -172,6 +175,7 @@ void ProxySpec2<T, Derived>::set_second_value()
     inf_array    = Derived::get_info_second_value(get_ptr_on_array());
     second_value = std::get<0>(inf_array);
 }
+/// @endcond
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
