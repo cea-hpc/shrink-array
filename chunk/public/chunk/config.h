@@ -55,9 +55,10 @@ inline constexpr bool chunk_dynamic = false;
 inline constexpr std::size_t alloc_affinity_min_bytes =
     CHUNK_ALLOC_AFFINITY_MIN_BYTES; // -D to override (0 = off; tiny = every array, for tests)
 
-/// @brief Mirror of alloc_config::reclaim_empty_slabs, from the same CMake
-///        option (CHUNK_RECLAIM_EMPTY_SLABS, a global add_definitions, so every
-///        TU sees the same value).
+/// @brief Mirror of alloc_config::reclaim_empty_slabs, from the same macro
+///        (CHUNK_NO_RECLAIM_EMPTY_SLABS, defined only by the CMake option
+///        CHUNK_RECLAIM_EMPTY_SLABS=OFF, a global add_definitions, so every TU
+///        sees the same value). On by default, as the original.
 ///
 /// Duplicated deliberately. The original lives in
 /// fast_allocators/alloc_config.h, a header a std-alloc build never pulls in,
@@ -67,10 +68,10 @@ inline constexpr std::size_t alloc_affinity_min_bytes =
 /// when that template is DEFINED, discarded branch or not (gcc says so with
 /// -Wtemplate-body). This mirror is what lets such a site be a plain
 /// `if constexpr` with no \#ifdef, exactly as alloc_affinity_min_bytes above.
-#ifdef CHUNK_RECLAIM_EMPTY_SLABS
-inline constexpr bool reclaim_empty_slabs = true;
-#else
+#ifdef CHUNK_NO_RECLAIM_EMPTY_SLABS
 inline constexpr bool reclaim_empty_slabs = false;
+#else
+inline constexpr bool reclaim_empty_slabs = true;
 #endif
 
 #ifdef _OPENMP

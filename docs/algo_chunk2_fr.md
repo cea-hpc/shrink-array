@@ -412,8 +412,8 @@ compressions. Un tampon libéré par un autre rang que son propriétaire est mis
 (« parked ») puis rendu à sa réserve d'origine. Les tableaux assez gros (au-delà de
 `alloc_affinity_min_bytes`, 16 Mio par défaut) peuvent avoir leur propre jeu d'allocateurs
 (clé d'affinité), ce qui permet de restituer leur mémoire d'un bloc quand ils sont
-reconstruits ou détruits ; avec `CHUNK_RECLAIM_EMPTY_SLABS`, les slabs vides sont rendus au
-système.
+reconstruits ou détruits ; les slabs vides sont alors rendus au système (sauf build
+`CHUNK_RECLAIM_EMPTY_SLABS=OFF`).
 
 Pour Chunk2, ce jeu n'est créé qu'au **premier rechunk** du tableau (affinité paresseuse) :
 chaque jeu coûte un slab entamé par rang et par taille, soit ~780 Mio sur les 16 tableaux de

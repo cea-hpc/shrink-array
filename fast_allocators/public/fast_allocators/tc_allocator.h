@@ -1546,7 +1546,7 @@ struct TCTypeCAllocator
             block, block_full, block_empty.data(), nb_block_empty, nb_max_block_empty, slab,
             [](TCCAllocator* kept) noexcept
             {
-                // NO madvise here, whatever CHUNK_RECLAIM_EMPTY_SLABS says.
+                // NO madvise here, whatever reclaim_empty_slabs says.
                 //
                 // This lambda runs on the hot path, on every free that brings a
                 // slab to nn_ref == 0, and nn_ref is its ONLY evidence that the

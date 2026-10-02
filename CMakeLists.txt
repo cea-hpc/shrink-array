@@ -31,9 +31,16 @@ option(CHUNK_FORCE_LEDGER "Keep the pool ledger active under OpenMP (off by defa
 #
 # Turn it OFF if a profile ever shows page faults from slabs that empty and
 # refill in a loop; "strace -c -e trace=madvise" gives the call count directly.
+#
+# ON is the headers' own default (alloc_config.h, config.h), so ON defines
+# nothing and only OFF does, as CHUNK_NO_RECLAIM_EMPTY_SLABS. It used to be the
+# other way round -- ON defined CHUNK_RECLAIM_EMPTY_SLABS over headers that said
+# false without it -- and a project using the installed package, which never
+# sees this add_definitions, compiled the inline allocator code with the
+# opposite value from the library it linked.
 option(CHUNK_RECLAIM_EMPTY_SLABS "Release an emptied slab's pages with madvise instead of keeping them resident" ON)
-if(CHUNK_RECLAIM_EMPTY_SLABS)
-    add_definitions(-DCHUNK_RECLAIM_EMPTY_SLABS)
+if(NOT CHUNK_RECLAIM_EMPTY_SLABS)
+    add_definitions(-DCHUNK_NO_RECLAIM_EMPTY_SLABS)
 endif()
 
 # The write/compress handshake (chunk_config::asymmetric_dekker, config.h) is
