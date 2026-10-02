@@ -168,6 +168,16 @@ endif()
 # variant and geometry (the default static size and, when built, dyn). Two
 # tests per executable: the properties must not depend on the team, so they
 # are asserted at 1 thread and at 8.
+#
+# Only the harnesses of _rt_dyn_harnesses get the dyn geometry as well: the
+# ones with code of their own there (rechunk_to, set_chunk_size, a
+# chunk_dynamic branch) and deferred_path_validation, whose replay path reads
+# the frozen geometry a dynamic build alone has. The others test nothing
+# geometry-specific and are built at the default static size only -- it
+# exists in every configuration, CHUNK_BUILD_DYN or not. A third of the
+# compilation of this directory went to those dyn duplicates.
+set(_rt_dyn_harnesses   pool_accounting deferred_path_validation open_types_validation index64_validation
+                        stale_proxy_validation)
 set(_rt_harnesses       compress_roundtrip pool_accounting deferred_path_validation open_types_validation
                         mark_path_validation fill_range_mt_validation index64_validation
                         swap_move_validation range_counters_validation thread_growth_validation
@@ -186,6 +196,9 @@ math(EXPR _rt_nvar_last "${_rt_nvar} - 1")
 
 foreach(_harness IN LISTS _rt_harnesses)
 foreach(_geom IN LISTS _rt_geometries)
+  if (_geom STREQUAL "dyn" AND NOT _harness IN_LIST _rt_dyn_harnesses)
+    continue()
+  endif()
   foreach(_vi RANGE ${_rt_nvar_last})
     list(GET _rt_variant_names   ${_vi} _vname)
     list(GET _rt_variant_libbase ${_vi} _libbase)
