@@ -406,16 +406,15 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
     /*!
      * \brief Materialise this chunk's buffer (allocate + init), for a
      *        specific thread. Non-bool only.
-     * \param need_set_second_value Whether to also register/set the
-     *                               chunk's second-value slot.
-     * \param inf_array (second_value, ...) tuple describing the target state.
+     * \param need_set_second_value True to pre-fill with the second value, false for first_value.
+     * \param inf_array (second_value, index, ...) tuple of the owning array.
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
     void create_value(bool need_set_second_value, const inf_array_t& inf_array, int thr_rank) noexcept;
 
     /*!
      * \brief Bool specialization of create_value().
-     * \param need_set_second_value Whether to also register the second-value slot.
+     * \param need_set_second_value True to pre-fill with `true`, false for first_value.
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
     void create_value_bool(bool need_set_second_value, int thr_rank) noexcept;
@@ -424,8 +423,8 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \brief Convenience overload of create_value() that resolves the
      *        calling thread's rank automatically (get_thr_rank_fast()).
      *        Non-bool only; aborts in debug builds otherwise.
-     * \param need_set_second_value Whether to also register the second-value slot.
-     * \param inf_array (second_value, ...) tuple describing the target state.
+     * \param need_set_second_value True to pre-fill with the second value, false for first_value.
+     * \param inf_array (second_value, index, ...) tuple of the owning array.
      */
     void create_value(bool need_set_second_value, const inf_array_t& inf_array) noexcept
     {
@@ -444,7 +443,7 @@ struct Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \brief Convenience overload of create_value_bool() that resolves the
      *        calling thread's rank automatically (get_thr_rank_fast()).
      *        Bool-only; aborts in debug builds otherwise.
-     * \param need_set_second_value Whether to also register the second-value slot.
+     * \param need_set_second_value True to pre-fill with `true`, false for first_value.
      */
     void create_value_bool(bool need_set_second_value) noexcept
     {
@@ -552,15 +551,14 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \brief Materialise this chunk's buffer (allocate + init). Serial
      *        builds have a single rank, so no thr_rank parameter. Non-bool
      *        only.
-     * \param need_set_second_value Whether to also register/set the
-     *                               chunk's second-value slot.
-     * \param inf_array (second_value, ...) tuple describing the target state.
+     * \param need_set_second_value True to pre-fill with the second value, false for first_value.
+     * \param inf_array (second_value, index, ...) tuple of the owning array.
      */
     void create_value(bool need_set_second_value, const inf_array_t& inf_array) noexcept;
 
     /*!
      * \brief Bool specialization of create_value() (serial builds).
-     * \param need_set_second_value Whether to also register the second-value slot.
+     * \param need_set_second_value True to pre-fill with `true`, false for first_value.
      */
     void create_value_bool(bool need_set_second_value) noexcept;
 
@@ -570,7 +568,7 @@ struct Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \param num_compress_value 0 for the first constant, non-zero for the
      *                            second constant at index `ind`.
      * \param ind Index of the second constant (unused when
-     *            num_compress_value == 0).
+     *            num_compress_value == 0, and for bool).
      */
     void clear_int_st(int num_compress_value, int ind);
 
@@ -758,7 +756,7 @@ struct Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, De
     /*!
      * \brief Drain the compression-candidate queue for the given second
      *        value, across all threads.
-     * \param inf_array (second_value, ...) tuple identifying which
+     * \param inf_array (second_value, index, ...) tuple identifying which
      *                  candidate list to drain.
      * \param apply true: compress the constant candidates; false: walk only.
      */

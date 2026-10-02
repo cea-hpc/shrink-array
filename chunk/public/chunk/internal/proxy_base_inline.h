@@ -315,8 +315,6 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list() const
  *
  * @tparam ProxyType Proxy type to rebuild.
  * @tparam Ctx       Context type recorded at enqueue time.
- * @param ctx Context to rebuild from.
- * @return The rebuilt proxy, ready for the replayed write body.
  */
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 template <typename ProxyType, typename Ctx>
@@ -854,8 +852,6 @@ unsigned int ProxyBase<Derived, T, ChunkType>::alloc_key() const noexcept
  *
  * @tparam CtxType    Context type holding the write location and operands.
  * @tparam LambdaBody Callable replaying the write from that context.
- * @param ctx  Context, already pool-allocated by the caller.
- * @param body Write body to replay.
  */
 template <typename Derived, typename T, typename ChunkType>
 template <typename CtxType, typename LambdaBody>
@@ -967,9 +963,6 @@ constexpr bool check_is_cst_val2([[maybe_unused]] const P& proxy)
  *
  * @tparam U  Operand type.
  * @tparam Op Binary operation, invocable as `T(T, U)`.
- * @param operation Operation to apply.
- * @param v         Operand.
- * @param v_old     Unused (the bodies reload the current value themselves).
  */
 template <typename Derived, typename T, typename ChunkType>
 template <typename U, typename Op>

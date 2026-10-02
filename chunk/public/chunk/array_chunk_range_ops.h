@@ -115,11 +115,11 @@ inline constexpr bool raw_fillable_v = !is_bool_like_v<T>;
 template <typename Arr>
 inline constexpr bool is_v1_v = std::is_same_v<typename Arr::chunk_type, Chunk<typename Arr::value_type>>;
 
-/** @copydoc is_v1_v */
+/// @brief True when @p Arr holds Chunk2 chunks (see is_v1_v: dispatch on the type).
 template <typename Arr>
 inline constexpr bool is_v2_v = std::is_same_v<typename Arr::chunk_type, Chunk2<typename Arr::value_type>>;
 
-/** @copydoc is_v1_v */
+/// @brief True when @p Arr holds Chunk2A chunks (see is_v1_v: dispatch on the type).
 template <typename Arr>
 inline constexpr bool is_v2a_v = std::is_same_v<typename Arr::chunk_type, Chunk2A<typename Arr::value_type>>;
 

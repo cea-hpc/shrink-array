@@ -166,6 +166,7 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      * @brief Rebuild a usable proxy from a deferred operation's context.
      * @tparam ProxyType The concrete proxy to produce.
      * @param ctx The context captured when the write was enqueued.
+     * @return The rebuilt proxy, ready for the replayed write body.
      * @details Replay happens after the original proxy is gone, so the parts of
      *          it the write body needs are reconstructed here -- including the
      *          frozen chunk geometry, so the replayed write uses the geometry in
@@ -863,7 +864,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /**
      * @brief Record a write to be applied later, when the fast path refuses it.
      * @param ctx Captures everything the replay needs -- offset, chunk indices,
-     *        and the frozen geometry.
+     *        and the frozen geometry; already pool-allocated by the caller.
      * @param body The write, run at replay time against a proxy rebuilt by
      *        make_proxy_with_info().
      */
@@ -884,7 +885,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *        refuses. Not a hardware atomic read-modify-write: there is no
      *        compare-exchange loop, and two threads updating the same element
      *        race as they would on a plain T.
-     * @param v_old Unused by the body (kept for the callers' signature).
+     * @param operation Operation to apply.
+     * @param v         Operand.
+     * @param v_old     Unused by the body (kept for the callers' signature; the
+     *                  bodies reload the current value themselves).
      */
     template <typename U, typename Op>
         requires std::is_invocable_r_v<T, Op, T, U>

@@ -71,7 +71,7 @@ extern void begin_parallel_phase();
  * where compression is left entirely to the opportunistic in-loop path.
  *
  * This is the "all-in-one" variant; use the
- * @ref finalize_parallel_phase_only_flush / @ref finalize_parallel_phase_after_flush
+ * finalize_parallel_phase_only_flush() / finalize_parallel_phase_after_flush()
  * pair instead when the flush must happen while the region is still open.
  */
 extern void finalize_parallel_phase();
@@ -84,7 +84,7 @@ extern void finalize_parallel_phase();
  * then each thread drains its **own** deferred queue, using the rank that is
  * only stable while the region is open.
  *
- * Must be paired with @ref finalize_parallel_phase_after_flush, called once the
+ * Must be paired with finalize_parallel_phase_after_flush(), called once the
  * region is closed.
  */
 extern void finalize_parallel_phase_only_flush();
@@ -97,7 +97,7 @@ extern void finalize_parallel_phase_only_flush();
  * the deferred-compression backlog (again, unless
  * `chunk_config::have_agressive_compression`).
  *
- * @pre @ref finalize_parallel_phase_only_flush has run inside the region that
+ * @pre finalize_parallel_phase_only_flush() has run inside the region that
  *      just ended.
  */
 extern void finalize_parallel_phase_after_flush();

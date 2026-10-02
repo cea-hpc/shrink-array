@@ -842,10 +842,6 @@ void wait_before_materialise(const ChunkT& chunk) noexcept
  * or the finished buffer, never a partially built one. Losing the CAS means
  * another thread materialised first; apply_cas_or_recup() recycles our buffer.
  *
- * @param need_set_second_value True to pre-fill with the second value, false for first_value.
- * @param ptr_second_value      The chunk's second value; read only when the flag is set.
- * @param thr_rank              Rank whose allocator provides the buffer.
- *
  * @warning Spins until no HARD compression is in flight. The wait is on that
  *          narrow condition on purpose: waiting on the broad
  *          "compression active" deadlocks, because this can run from a
@@ -909,8 +905,6 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(bool              need_
  * Same allocate-fill-CAS shape as create_value(), simplified by bool having no
  * per-chunk second value: the flag doubles as the fill value.
  *
- * @param need_set_second_value Fill value — true for the second constant, false for the first.
- * @param thr_rank              Rank whose allocator provides the buffer.
  * @note No compression-inflight wait here, unlike create_value().
  */
 template <typename T, typename Derived, bool Enabled>
@@ -970,9 +964,6 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(bool need_set_seco
  *
  * No CAS and no inflight wait — with nothing else running, the buffer is simply
  * assigned to `values`.
- *
- * @param need_set_second_value True to pre-fill with the second value, false for first_value.
- * @param ptr_second_value      The chunk's second value; read only when the flag is set.
  */
 template <typename T, typename Derived>
 void Chunk2AOmpPolicy<T, Derived, false>::create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value)
@@ -1076,11 +1067,6 @@ void Chunk2AOmpPolicy<T, Derived, false>::clear_st(char* ptr_type_cst, SecondVal
  * The single point every compression path funnels through, in both modes and
  * every chunk variant — which is why the "block compressed" statistic is
  * counted here and nowhere else.
- *
- * @param num_compress_value 0 for the first constant, otherwise the second.
- * @param ptr_type_cst       Slot of the per-chunk type table to update.
- * @param ptr_second_value   The chunk's second-value slot.
- * @param thr_rank           Rank whose pool receives the released buffer.
  */
 template <typename T, typename Derived, bool Enabled>
 void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(int                  num_compress_value,
@@ -1106,13 +1092,6 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(int                  num
  * The full compression step. When compressing to the second constant it
  * publishes the registered pointer BEFORE releasing the buffer: block_clear()
  * reads that pointer while doing so, and would otherwise pick up a stale one.
- *
- * @param num_compress_value 0 for the first constant, 1 for the second.
- * @param ptr_type_cst       Slot of the per-chunk type table to update.
- * @param ptr_second_value   The chunk's second-value slot.
- * @param thr_rank           Rank whose pool receives the buffer.
- * @param new_cst_val2_ptr   Pointer returned by find_or_set_ind_cst_val2();
- *                           required when @p num_compress_value is 1.
  */
 template <typename T, typename Derived, bool Enabled>
 void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(int               num_compress_value,
