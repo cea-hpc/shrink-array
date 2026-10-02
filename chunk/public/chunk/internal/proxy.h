@@ -784,6 +784,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     operator T() const noexcept
     {
+        this->check_not_stale();
         if constexpr (chunk_config::stats)
         {
             increm_chunk_read<ChunkType>();

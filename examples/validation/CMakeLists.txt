@@ -53,6 +53,11 @@
 #                           keeps. Plain-then-constant, second-constant
 #                           round trips, and an array with no declared second
 #                           value, per variant.
+#   stale_proxy_validation  check builds: a write proxy used after its array
+#                           rebuilt its storage (resize, reserve, clear,
+#                           assign, swap, assignments, shrink_to_fit, a
+#                           re-chunk) stops on an invariant failure; each case
+#                           in a child, which re-runs this executable.
 #   thread_growth_validation arrays created under a 2-thread team keep
 #                           working when the team grows to the thread
 #                           capacity afterwards (the per-rank structures are
@@ -166,7 +171,7 @@ endif()
 set(_rt_harnesses       compress_roundtrip pool_accounting deferred_path_validation open_types_validation
                         mark_path_validation fill_range_mt_validation index64_validation
                         swap_move_validation range_counters_validation thread_growth_validation
-                        nested_region_validation iterator_validation)
+                        nested_region_validation iterator_validation stale_proxy_validation)
 set(_rt_variant_names   chunk       chunk2      chunk2a)
 set(_rt_variant_libbase chunk_v1    chunk_v2    chunk_v2a)
 set(_rt_variant_macro   CHUNK       CHUNK2      CHUNK2A)

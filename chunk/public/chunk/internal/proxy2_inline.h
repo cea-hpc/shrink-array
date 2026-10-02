@@ -420,6 +420,7 @@ template <typename T>
 template <typename U>
 T Proxy2<T>::assign_impl(in_t<U> v) noexcept
 {
+    this->check_not_stale();
     // Only one read of values_loc
     const T* const values_loc = chunk.values_load();
 
@@ -945,6 +946,7 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
                                          in_t<U>               v,
                                          [[maybe_unused]] bool check_first_value_result) noexcept
 {
+    this->check_not_stale();
     // Cross-rank RMW materialisation (CHUNK_SYNC_ON_READ): pull any foreign
     // deferred write to this offset to applied state before reading v_old, so the
     // RMW cannot clobber it. Precise gate, outside begin_write. See

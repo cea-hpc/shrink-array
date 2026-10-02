@@ -1117,6 +1117,7 @@ template <typename Derived, typename T, typename ChunkType>
 template <typename U, typename Op>
 void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation) noexcept
 {
+    check_not_stale();
     if constexpr (chunk_config::stats)
     {
         increm_chunk_write<ChunkType>(v);
@@ -1261,6 +1262,7 @@ template <typename U, typename Op>
 void ProxyBase<Derived, T, ChunkType>::bitwise_assign(in_t<U> v, Op operation) noexcept
     requires std::is_integral_v<T> && std::is_integral_v<U>
 {
+    check_not_stale();
     if constexpr (chunk_config::stats)
     {
         increm_chunk_write<ChunkType>(v);
@@ -1332,6 +1334,7 @@ template <typename SyncOp, typename AsyncOp>
 void ProxyBase<Derived, T, ChunkType>::apply_inplace_operation(SyncOp                   sync_op,
                                                                [[maybe_unused]] AsyncOp async_op) noexcept
 {
+    check_not_stale();
     // Cross-rank RMW materialisation (CHUNK_SYNC_ON_READ): ++/-- and other
     // in-place ops read val[num] directly; pull any foreign deferred write to
     // this offset to applied state first, outside begin_write. See

@@ -220,6 +220,7 @@ void ArrayChunk2A<T, ind_type>::print_compression_stats(std::ostream& os) const
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2A<T, ind_type>::clear()
 {
+    this->invalidate_proxies();
     // Chunk-size predictor (observation phase, log only — no re-chunk). Scans
     // this array's chunks once, predicts memory at larger sizes, logs the
     // current vs predicted-optimal size. Same pre-drain point as the stats, for
@@ -715,6 +716,7 @@ void ArrayChunk2A<T, ind_type>::make_block_compression()
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
 {
+    this->invalidate_proxies();
     const auto& sh_inf = Proxy2A<T>::share_info_array;
 
     const int num_tab      = sh_inf.get_num_tab(this->registry_key());

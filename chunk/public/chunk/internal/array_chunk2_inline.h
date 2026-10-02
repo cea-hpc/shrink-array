@@ -560,6 +560,7 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2<T, ind_type>::clear()
 {
+    this->invalidate_proxies();
     clear_core();
 }
 
@@ -1120,6 +1121,7 @@ void ArrayChunk2<T, ind_type>::compress()
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2<T, ind_type>::resize(ind_type newsz)
 {
+    this->invalidate_proxies();
     const int old_nb_chunk = nb_chunk;
 
     Base2::resize_common(newsz);

@@ -172,6 +172,7 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk<T, ind_type>::clear()
 {
+    this->invalidate_proxies();
     // Per-array compression stats, read BEFORE the drain below mutates state.
     print_compression_stats();
 
@@ -441,6 +442,7 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk<T, ind_type>::resize(ind_type newsz)
 {
+    this->invalidate_proxies();
     if constexpr (chunk_config::use_fast_block_compression)
     {
         make_block_compression();

@@ -297,6 +297,7 @@ template <typename T>
 template <typename U>
 T Proxy<T>::assign_impl(in_t<U> v) noexcept
 {
+    this->check_not_stale();
     if (is_cst_val_and_v_equal_zero(v))
     {
         return v;
@@ -605,6 +606,7 @@ template <typename T>
 template <typename U, typename BinaryOp>
 void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
 {
+    this->check_not_stale();
     // Cross-rank RMW materialisation: pull any foreign deferred write first.
     chunk.reader_sync(num);
 

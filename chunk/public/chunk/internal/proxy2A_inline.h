@@ -597,6 +597,7 @@ template <typename T>
 template <typename U>
 T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
 {
+    this->check_not_stale();
     if (Base::is_cst_val1_and_v_equal_first_value(v))
     {
         return v;
@@ -1263,6 +1264,7 @@ template <typename T>
 template <typename U, typename Op>
 void Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v, bool /*check_first_value_result*/) noexcept
 {
+    this->check_not_stale();
     // No set_info_on_chunk() here: nothing before apply_atomic_op() reads the
     // cached pointers (reader_sync is the chunk's, read_values resolves the
     // values pointer itself), and under fast block compression the engine

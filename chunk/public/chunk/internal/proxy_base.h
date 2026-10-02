@@ -354,6 +354,37 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        on a deferred replay ptr_on_array may be dead. 0 until frozen.
     mutable unsigned int alloc_key_frozen_ = 0;
 
+    /// @brief Check builds: the array's storage generation, and its value when
+    ///        operator[] built this proxy (ArrayChunkBase::storage_generation_).
+    ///        Empty elsewhere. gen stays null on the proxies the library builds
+    ///        for itself (set_value, deferred replays): those are never stale.
+    struct StaleGuardOn
+    {
+        const unsigned int* gen  = nullptr;
+        unsigned int        seen = 0;
+    };
+    struct StaleGuardOff
+    {
+    };
+    [[no_unique_address]] mutable std::conditional_t<build_config::any_check, StaleGuardOn, StaleGuardOff> stale_guard_{};
+
+    /// @brief Check builds: abort when the array rebuilt its storage after
+    ///        operator[] built this proxy -- the proxy then points into
+    ///        swapped-out or released chunks. Called first by every read and
+    ///        write entry (read_pure, operator T, assign_impl, the compound and
+    ///        in-place funnels). Nothing in other builds.
+    void check_not_stale() const noexcept
+    {
+        if constexpr (build_config::any_check)
+        {
+            if (stale_guard_.gen != nullptr && *stale_guard_.gen != stale_guard_.seen) [[unlikely]]
+                INVARIANT_FAILED("write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
+                                 "storage (resize, reserve, shrink_to_fit, clear, assign, swap, an assignment or a "
+                                 "re-chunk): keep a value with `T v = a[i];`, not `auto v = a[i];`",
+                                 ptr_on_array, num_chunk, num);
+        }
+    }
+
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
   public:
@@ -665,6 +696,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          the entry point behind `operator T()`.
     [[nodiscard]] T read_pure() const noexcept
     {
+        check_not_stale();
         chunk.reader_sync(num);
         return chunk.read_value(num); // read_value accounts the read in stats
     }
@@ -677,6 +709,18 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @param array_ptr pointer to the array
      * @param num_chunk_ chunk index
      */
+
+    /// @brief Check builds: arm the stale-proxy check with the array's storage
+    ///        generation (see check_not_stale). Nothing in other builds.
+    /// @param gen the array's ArrayChunkBase::storage_generation_
+    void arm_storage_generation([[maybe_unused]] const unsigned int* gen) const noexcept
+    {
+        if constexpr (build_config::any_check)
+        {
+            stale_guard_.gen  = gen;
+            stale_guard_.seen = *gen;
+        }
+    }
 
     void set_this_and_num_chunk(const void* array_ptr, int num_chunk_) const noexcept
     {
