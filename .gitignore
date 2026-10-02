@@ -44,6 +44,10 @@ apply_*.py
 # ShAIrLock: session vault backup
 .git_vault/
 
+# Build-slot token dirs of scripts/functions_for_compile.sh (__slot_dir), left
+# behind when build_rep is the source tree.
+.build-slots.*/
+
 # Editor / patch fossils (backups and one-shot fix scripts): never part of the tree.
 *.bak*
 fix_*.py
