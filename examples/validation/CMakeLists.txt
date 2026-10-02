@@ -260,6 +260,13 @@ foreach(_geom IN LISTS _rt_geometries)
     if (_vname STREQUAL "chunk2a" AND NOT _geom STREQUAL "dyn")
       list(APPEND _group cst2_registry_validation)
     endif()
+    # chunk2_registry_growth_validation: Chunk2's second-value registry must
+    # not move the constant arrays chunks point at when a new value is
+    # declared (the harness says why). Chunk2 only, default static size, at 1
+    # and 4 threads.
+    if (_vname STREQUAL "chunk2" AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group chunk2_registry_growth_validation)
+    endif()
     # rechunk_validation (content invariance across rechunk_to(), one test per
     # case) and dyn_geometry_validation (an array reads back what was written
     # at every registered runtime chunk size): dyn only, at 8 threads.
@@ -292,6 +299,8 @@ foreach(_geom IN LISTS _rt_geometries)
         validation_add_test(${_base} ${_exe} ${_h} "")
       elseif (_h STREQUAL "bits_container_validation")
         validation_add_test(bits_container_validation_${_geom} ${_exe} ${_h} "1;8")
+      elseif (_h STREQUAL "chunk2_registry_growth_validation")
+        validation_add_test(chunk2_registry_growth_validation ${_exe} ${_h} "1;4")
       else()
         validation_add_test(${_base} ${_exe} ${_h} "1;8")
       endif()
@@ -427,21 +436,6 @@ if (OMP)
     set_property(TEST ${_tgt}_8thr PROPERTY TIMEOUT 120)
   endforeach()
 endif()
-
-# --- chunk2_registry_growth_validation: Chunk2's second-value registry must
-# not move the constant arrays chunks point at when a new value is declared
-# (the harness says why). Chunk2 only, default static size, every build; at 1
-# and 4 threads.
-set(_tgt chunk2_registry_growth_validation)
-add_executable(${_tgt} chunk2_registry_growth_validation.cpp)
-target_link_libraries(${_tgt} PRIVATE chunk_v2_${CHUNK_DEFAULT_SIZE})
-target_compile_definitions(${_tgt} PRIVATE CHUNK2)
-validation_setup_target(${_tgt})
-foreach(_nthr 1 4)
-  add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
-  set_property(TEST ${_tgt}_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
-  set_property(TEST ${_tgt}_${_nthr}thr PROPERTY LABELS validation)
-endforeach()
 
 # shrink-build-stamp: every executable of this directory prints the build stamp
 # and is built by `check` (cmake/shrink_build_stamp.cmake).

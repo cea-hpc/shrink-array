@@ -62,7 +62,10 @@
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"
 
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::chunk2_registry_growth_validation
+{
 
 using namespace shrink_array;
 
@@ -139,7 +142,7 @@ long check_all(const char* what, const Arr& arr, double v)
 
 } // namespace
 
-int main()
+int run(int /*argc*/, char** /*argv*/)
 {
     __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
@@ -208,3 +211,5 @@ int main()
     std::printf("\n[chunk2] %s\n", fails ? "=== REGISTRY GROWTH FAILED ===" : "=== REGISTRY GROWTH OK ===");
     return fails ? 1 : 0;
 }
+
+} // namespace validation::chunk2_registry_growth_validation
