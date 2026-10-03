@@ -474,7 +474,12 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        (element_access.h). No sync, no check -- the old spelling.
     [[nodiscard]] T raw_elem() const noexcept
     {
-        // raw-read: read_values -- write-path helper; outside the session read_values_outside_session
+        // Only the serial counter mode reads through this: no pass runs
+        // concurrently there. A build with in-region passes must read through
+        // the write session, element_at, or read_values_outside_session.
+        static_assert(chunk_config::use_compression_with_counter || sizeof(T) == 0,
+                      "raw_elem(): serial counter mode only -- no concurrent pass may release the buffer");
+        // raw-read: serial counter mode (no fast block compression, no concurrent pass)
         return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
     }
 
