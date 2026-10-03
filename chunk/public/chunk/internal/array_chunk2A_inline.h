@@ -117,12 +117,16 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
             {
 #pragma omp parallel for schedule(static)
                 for (int i = 0; i < nb_chunk; ++i)
+                {
                     init_chunk(i);
+                }
             }
             else
             {
                 for (int i = 0; i < nb_chunk; ++i)
+                {
                     init_chunk(i);
+                }
             }
         }
     }
@@ -145,7 +149,9 @@ template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2A<T, ind_type>::print_compression_stats(std::ostream& os) const
 {
     if (nb_chunk == 0)
+    {
         return;
+    }
 
     // Chunk2A-specific classification. FIXED: tab_type_cst_val[num_tab][j] is
     // ONLY ever written at construction (array_chunk2A_inline.h) -- it records
@@ -193,16 +199,24 @@ void ArrayChunk2A<T, ind_type>::print_compression_stats(std::ostream& os) const
                 continue;
             }
             if (*v0 == Chunk2A<T>::first_value)
+            {
                 ++n_t0;
+            }
             else
+            {
                 ++n_t1;
+            }
             continue;
         }
         const char ct = Proxy2A<T>::tab_type_cst_val[num_tab][j];
         if (ct == 0)
+        {
             ++n_t0;
+        }
         else
+        {
             ++n_t1;
+        }
     }
     const int n_compressed = n_t0 + n_t1;
     if constexpr (chunk_config::stats)
@@ -267,7 +281,9 @@ void ArrayChunk2A<T, ind_type>::clear_core()
     // below. Same fix and rationale as ArrayChunk2::clear_core() -- see that
     // function's comment.
     if constexpr (build_config::chunk_dynamic)
+    {
         set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
+    }
 
     // Drain any deferred write still targeting this array's chunks before
     // chunk_list is freed below (inherited from ArrayChunk2Base).
@@ -318,9 +334,11 @@ void ArrayChunk2A<T, ind_type>::clear_core()
     // its buffer. Done here (before the terminal sweep below and before
     // chunk_list.clear()) so no dangling Chunk2A* of this array can be compressed.
     if (!chunk_list.empty())
+    {
         manager_chunk2A::remove_from_compress_list_chunk2a_by_ptr_range(
             static_cast<const void*>(chunk_list.data()),
             static_cast<const void*>(chunk_list.data() + chunk_list.size()));
+    }
 
     if (!nb_chunk)
     {
@@ -397,21 +415,33 @@ void ArrayChunk2A<T, ind_type>::clear_core()
             {
                 const auto& ck = chunk_list[j];
                 if (!ck.written())
+                {
                     continue; // already constant/compressed — nothing owed
+                }
                 if (inside[j].load(std::memory_order_acquire) != 0)
+                {
                     continue; // legitimately queued (a straggler the pass left) — not "missed"
+                }
 
                 // Is it actually constant? (same notion fill_list_to_compress uses:
                 // every element equal to the block's first element.)
                 const auto v = ck.constant_value(csz);
                 if (!v)
+                {
                     continue;
+                }
                 if (*v == static_cast<T>(Chunk2A<T>::first_value))
+                {
                     ++missed_first;
+                }
                 else if (*v == Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, j).get())
+                {
                     ++missed_second;
+                }
                 else
+                {
                     ++stuck;
+                }
             }
 
             if (missed_first + missed_second != 0)
@@ -442,7 +472,9 @@ void ArrayChunk2A<T, ind_type>::clear_core()
             if (chunk_list[j].written())
             {
                 if constexpr (chunk_config::stats)
+                {
                     increm_chunk_teardown_clear<Chunk2A<T>>();
+                }
                 chunk_list[j].clear_st(&Proxy2A<T>::tab_type_cst_val[num_tab][j],
                                        Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, j));
             }
@@ -458,7 +490,9 @@ void ArrayChunk2A<T, ind_type>::clear_core()
             Chunk2A<T>::tab_cst_val2_holder::clear(nb_val2); // single thread here
             holds_cst2_registry_ = false;
             if (nb_val2)
+            {
                 print_type_name<T>(nb_val2);
+            }
         }
     }
     else
@@ -571,7 +605,9 @@ void ArrayChunk2A<T, ind_type>::clear_core()
     // region. Key 0 (shared pool) keeps the old behaviour: nothing to give
     // back per array.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
+    {
         ManagerChunk<Chunk2A, T>::drain_reuse_list_for_size(this->size_policy_.size());
+    }
 }
 
 template <ArrayChunkElement T, typename ind_type>
@@ -582,7 +618,9 @@ void ArrayChunk2A<T, ind_type>::compress_int()
     // whichever array the thread last served, a re-chunked array's buffers
     // went to another size's allocator (sl_remove assertion, fast-alloc only).
     if constexpr (build_config::chunk_dynamic)
+    {
         shrink_array::set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
+    }
 
     std::vector<int> tab_nb1;
     std::vector<int> tab_nb2;
@@ -659,7 +697,9 @@ void ArrayChunk2A<T, ind_type>::compress_int()
                 std::cerr << ind << " " << static_cast<ind_type>(ind) * static_cast<ind_type>(this->size_policy_.size())
                           << "\n";
                 if (++shown >= 10)
+                {
                     break;
+                }
             }
             if (nb1 > shown)
             {
@@ -686,7 +726,9 @@ void ArrayChunk2A<T, ind_type>::compress_int()
                 std::cerr << ind << " " << static_cast<ind_type>(ind) * static_cast<ind_type>(this->size_policy_.size())
                           << "\n";
                 if (++shown >= 10)
+                {
                     break;
+                }
             }
             if (nb2 > shown)
             {
@@ -724,7 +766,9 @@ void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
 
     Base2::resize_common(newsz);
     if (nb_chunk > 0)
+    {
         acquire_cst2_registry(); // an array built empty gets its chunks here
+    }
 
     Proxy2A<T>::resize_tab_is_int(num_tab, old_nb_chunk, nb_chunk);
 

@@ -77,7 +77,9 @@ class Materialisations
     {
         ensure();
         if (thr < 0 || static_cast<std::size_t>(thr) >= slots_.size())
+        {
             return;
+        }
         ++slots_[static_cast<std::size_t>(thr)].n[key % kKeys];
     }
 
@@ -85,10 +87,14 @@ class Materialisations
     [[nodiscard]] static long total(unsigned key) noexcept
     {
         if (key == 0)
+        {
             return 0;
+        }
         long s = 0;
         for (const RankSlot& slot : slots_)
+        {
             s += slot.n[key % kKeys];
+        }
         return s;
     }
 
@@ -116,7 +122,9 @@ inline void note_materialisation([[maybe_unused]] int thr, [[maybe_unused]] unsi
     if constexpr (build_config::chunk_dynamic)
     {
         if (key != 0)
+        {
             Materialisations<T>::note(thr, key);
+        }
     }
 }
 

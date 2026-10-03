@@ -83,7 +83,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     using FastBlock2 = FastBlockSupport2<ArrayChunk2>; ///< Fast-block compression pass.
     using Hooks2     = RechunkHooks2<ArrayChunk2>;     ///< Re-chunk hooks (dynamic geometry).
 
-    friend Base2; ///< The CRTP base reaches this class's private members.
+    friend Base2;                                    ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<ArrayChunk2<T, ind_type>>; ///< For swap_identity().
 
     // RechunkHooks2::rechunk_reown_after_swap copies ind_cst_val2, which is
@@ -462,7 +462,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
         {
             const in_t<T> sv = from.get_second_value();
             if (sv != T{} && get_second_value() != sv)
+            {
                 set_second_value(sv, false);
+            }
         }
     }
 
@@ -505,7 +507,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
                 {
                     auto& slot = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr][T{}];
                     if (!slot)
+                    {
                         slot = std::make_shared<typename std::remove_reference_t<decltype(slot)>::element_type>();
+                    }
                 }
             }
         }
@@ -534,7 +538,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
             {
                 const T value = std::get<0>(arr->inf_array);
                 if (value != T{})
+                {
                     sh_inf.insert(value, &arr->inf_array);
+                }
             }
         }
     }

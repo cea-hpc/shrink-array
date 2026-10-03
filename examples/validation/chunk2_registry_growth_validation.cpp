@@ -81,13 +81,17 @@ constexpr int kOthers = 40; ///< arrays declaring a new second value each: sever
 void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 
 void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 /// @brief Write @p v everywhere from a region, then compress from a region.
@@ -99,7 +103,9 @@ void fill_and_compress(Arr& arr, double v)
         begin_phase();
 #pragma omp for schedule(static)
         for (long i = 0; i < n; ++i)
+        {
             arr[static_cast<Ind>(i)] = v;
+        }
     }
     end_phase();
 #pragma omp parallel
@@ -118,7 +124,9 @@ int materialised(const Arr& arr)
     const long n = static_cast<long>(arr.size());
     int        m = 0;
     for (long j = 0; j * S < n; ++j)
+    {
         m += arr.written(static_cast<Ind>(j * S)) ? 1 : 0;
+    }
     return m;
 }
 
@@ -133,7 +141,9 @@ long check_all(const char* what, const Arr& arr, double v)
         if (got != v)
         {
             if (bad < 4)
+            {
                 std::printf("[chunk2/registry] FAIL %s[%ld] = %g, expected %g\n", what, i, got, v);
+            }
             ++bad;
         }
     }
@@ -160,8 +170,8 @@ int run(int /*argc*/, char** /*argv*/)
         fill_and_compress(a, 1.0);
         if (const int m = materialised(a); m != 0)
         {
-            std::printf("[chunk2/registry] FAIL premise: %d of %d chunks of `a` still materialised after the pass\n",
-                        m, kChunks);
+            std::printf("[chunk2/registry] FAIL premise: %d of %d chunks of `a` still materialised after the pass\n", m,
+                        kChunks);
             ++fails;
         }
 
@@ -177,7 +187,9 @@ int run(int /*argc*/, char** /*argv*/)
         // 3. Everything reads back.
         long bad = check_all("a", a, 1.0);
         for (int k = 0; k < kOthers; ++k)
+        {
             bad += check_all("other", *others[static_cast<std::size_t>(k)], 2.0 + k);
+        }
         if (bad)
         {
             std::printf("[chunk2/registry] FAIL %ld wrong read(s) after the registry grew -- chunks pointing at "
@@ -186,8 +198,10 @@ int run(int /*argc*/, char** /*argv*/)
             ++fails;
         }
         else
-            std::printf("[chunk2/registry] OK: %d arrays, %d second values, every element reads back\n",
-                        kOthers + 1, kOthers + 1);
+        {
+            std::printf("[chunk2/registry] OK: %d arrays, %d second values, every element reads back\n", kOthers + 1,
+                        kOthers + 1);
+        }
 
         // 4. `a` materialised and compressed again: still recognised.
         a[0] = 7.0;
@@ -197,12 +211,14 @@ int run(int /*argc*/, char** /*argv*/)
         const long bad2 = check_all("a (recompressed)", a, 1.0);
         if (m2 != 0 || bad2 != 0)
         {
-            std::printf("[chunk2/registry] FAIL after recompression: %d chunk(s) materialised, %ld wrong read(s)\n",
-                        m2, bad2);
+            std::printf("[chunk2/registry] FAIL after recompression: %d chunk(s) materialised, %ld wrong read(s)\n", m2,
+                        bad2);
             ++fails;
         }
         else
+        {
             std::printf("[chunk2/registry] OK: `a` recompressed to its second value after the growth\n");
+        }
     }
 
     release_chunk_pools();

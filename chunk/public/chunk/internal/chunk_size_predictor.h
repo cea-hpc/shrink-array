@@ -65,14 +65,18 @@ predict_at_multiple(const std::vector<std::pair<bool, T>>& summary, unsigned S, 
         {
             const int idx = base + static_cast<int>(j);
             if (idx >= nchunks)
+            {
                 break; // partial trailing block
+            }
             if (!summary[idx].first)
             {
                 all_const = false;
                 break;
             }
             if (!ref)
+            {
                 ref = summary[idx].second;
+            }
             else if (*ref != summary[idx].second)
             {
                 all_const = false;
@@ -80,7 +84,9 @@ predict_at_multiple(const std::vector<std::pair<bool, T>>& summary, unsigned S, 
             }
         }
         if (all_const)
+        {
             ++n_const;
+        }
     }
 
     const std::size_t mem = (static_cast<std::size_t>(n_blocks - n_const) * Sp * sizeof(T)) +
@@ -100,7 +106,9 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
 {
     const int nb_chunk = static_cast<int>(summary.size());
     if (nb_chunk <= 0)
+    {
         return;
+    }
 
     PredictorPoint best{S, ~std::size_t{0}, 0, 0};
     PredictorPoint current{};
@@ -109,7 +117,9 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
     for (unsigned k = 1; k <= max_multiple; k *= 2)
     {
         if (static_cast<int>(k) > nb_chunk && k != 1)
+        {
             break;
+        }
         const PredictorPoint point = predict_at_multiple<T>(summary, S, k, meta_per_block);
         if (k == 1)
         {
@@ -117,11 +127,15 @@ void report_size_prediction(const std::vector<std::pair<bool, T>>& summary,
             have_current = true;
         }
         if (point.mem_bytes < best.mem_bytes)
+        {
             best = point;
+        }
     }
 
     if (!have_current)
+    {
         return;
+    }
 
     if (best.S_prime != current.S_prime && best.mem_bytes < current.mem_bytes)
     {

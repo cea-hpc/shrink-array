@@ -102,7 +102,8 @@ struct ArrayChunkTraits<ArrayChunk<T, ind_type>>
     using index_type   = ind_type;               ///< Signed global index type.
 };
 
-/// @brief ArrayChunk2A<T, ind_type> maps to Chunk2A<T>, Proxy2A<T>, ManagerChunk<Chunk2A, T>, value T and index ind_type.
+/// @brief ArrayChunk2A<T, ind_type> maps to Chunk2A<T>, Proxy2A<T>, ManagerChunk<Chunk2A, T>, value T and index
+/// ind_type.
 template <ArrayChunkElement T, typename ind_type>
 struct ArrayChunkTraits<ArrayChunk2A<T, ind_type>>
 {

@@ -55,12 +55,16 @@ class DeferredOpsStorage
     {
         // Fast path: already allocated (lock-free).
         if (arr_raw.load(std::memory_order_acquire) != nullptr)
+        {
             return;
+        }
 
         const std::scoped_lock lk(alloc_mutex);
         // Double-check under the lock.
         if (arr_raw.load(std::memory_order_relaxed) != nullptr)
+        {
             return;
+        }
 
         arr_owner = std::vector<per_thread_map>(static_cast<std::size_t>(CHUNK_PMP_THREAD_CAPACITY));
         // Publish last, with release, so a reader that acquire-observes the
@@ -78,7 +82,9 @@ class DeferredOpsStorage
     {
         const std::scoped_lock lk(alloc_mutex);
         if (arr_raw.load(std::memory_order_relaxed) == nullptr)
+        {
             return;
+        }
 
         // Invalidate the global pointer so threads see it as null immediately,
         // then free.

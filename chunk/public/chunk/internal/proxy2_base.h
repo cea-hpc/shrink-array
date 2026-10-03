@@ -119,7 +119,9 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
             // read-side gate under CHUNK_SYNC_ON_READ.
             // base_t<U> extracts the arithmetic type (e.g., double) even if U is a Proxy.
             if (v == static_cast<base_t<U>>(1))
+            {
                 return derived();
+            }
 
             // 2. Call the common math engine
             // We use the transparent functor std::multiplies<>
@@ -151,14 +153,18 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
             if constexpr (build_config::do_check)
             {
                 if (v == 0)
+                {
                     std::abort();
+                }
             }
 
             // Early-out: dividing by 1 changes nothing -- nothing to write, and
             // nothing to read: reading the returned proxy goes through
             // operator T() -> read_pure() (see operator*=).
             if (v == static_cast<base_t<U>>(1))
+            {
                 return derived();
+            }
             // 2. Execution via the common engine
             derived().template apply_compound_operation<U>(std::divides<>{}, v, true);
             return derived();

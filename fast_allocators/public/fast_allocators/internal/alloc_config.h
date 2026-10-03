@@ -117,7 +117,9 @@ inline std::size_t reclaim_min_empty_slabs() noexcept
         // library cannot include. strtol's result used to be clamped silently.
         const char* env = std::getenv("CHUNK_RECLAIM_MIN_SLABS");
         if (env == nullptr || env[0] == '\0')
+        {
             return 0;
+        }
         std::size_t v   = 0;
         const char* end = env + std::strlen(env);
         const auto  res = std::from_chars(env, end, v);
@@ -155,22 +157,31 @@ inline bool thp_advise() noexcept
     {
         const char* env = std::getenv("CHUNK_THP");
         if (env == nullptr || env[0] == '\0' || env[0] == '0')
+        {
             return false;
+        }
         long pmd = -1;
         if (std::FILE* f = std::fopen("/sys/kernel/mm/transparent_hugepage/hpage_pmd_size", "r"))
         {
             if (std::fscanf(f, "%ld", &pmd) != 1)
+            {
                 pmd = -1;
+            }
             std::fclose(f);
         }
         constexpr long slab_bytes = 2L << 20;
         if (pmd <= 0 || pmd > slab_bytes)
         {
             if (pmd <= 0)
+            {
                 std::fprintf(stderr, "[env] CHUNK_THP=%s ignored: the huge page size is unknown here\n", env);
+            }
             else
-                std::fprintf(stderr, "[env] CHUNK_THP=%s ignored: the huge page is %ld MiB here, not a 2 MiB slab's size\n",
+            {
+                std::fprintf(stderr,
+                             "[env] CHUNK_THP=%s ignored: the huge page is %ld MiB here, not a 2 MiB slab's size\n",
                              env, pmd >> 20);
+            }
             return false;
         }
         std::fprintf(stderr, "[env] CHUNK_THP: MADV_HUGEPAGE on the slab arenas and the cst2 region (%ld KiB)\n",

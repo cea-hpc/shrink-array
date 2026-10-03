@@ -42,10 +42,12 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
                                         const std::string& chunk_name,         // ex: "Chunk", "Chunk2" ou "Chunk2A"
                                         int                n_cross       = -1, // cross-variant probe count (-1 = none)
                                         const std::string& cross_name    = "", // richer variant the probe refers to
-                                        bool               bool_elements = false)            // bool: one second value, true
+                                        bool               bool_elements = false) // bool: one second value, true
 {
     if (nb_chunk == 0)
+    {
         return;
+    }
 
     const double pct_total = 100.0 * n_compressed / nb_chunk;
     const double pct_t1    = 100.0 * n_t1 / nb_chunk;

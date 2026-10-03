@@ -180,8 +180,10 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
             // that way was never marked, which is what TSan reports as
             // scan_constants() reading a chunk another thread is writing.
             if (claimed && !Base::steal_marked()) [[unlikely]]
+            {
                 INVARIANT_FAILED("fill_list_to_compress on an unclaimed chunk (num_chunk=%d num_tab=%d)", num_chunk,
                                  num_tab);
+            }
         }
 
         // CHUNK_STATS: one compression candidate scanned. compress/compress_attempt
@@ -202,7 +204,9 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
         // filled (before Oct '26) it was merely useless: the re-scan sent the chunk to
         // ll_compt2, and the OpenMP CAS refused the clear.
         if (this->is_cst_val2())
+        {
             return;
+        }
 
         // No second value yet: whatever the first element holds is the
         // candidate second constant.
@@ -267,7 +271,9 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
     const auto sz = static_cast<int>(vec_tuple_to_compress.size());
 
     if (sz == 0)
+    {
         return;
+    }
 
     // The compression body runs in BOTH modes. Only the inter-thread
     // coordination (compression_mgr start/finish) is OpenMP-specific; the type-2
@@ -286,11 +292,15 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
             // A flush in progress makes start() decline: ask first, before
             // marking -- see block_pass_precheck.h.
             if (block_pass_yields_to_flush<Proxy2A<T>, Chunk2A<T>>(CHUNK_PMP_MAX_THREADS))
+            {
                 return;
+            }
             for (int k = 0; k < sz; ++k)
             {
                 if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+                {
                     chunk_t->steal_mark();
+                }
             }
             const bool ret = proxy2A->compression_mgr.template start<Proxy2A<T>>();
             if (!ret)
@@ -298,7 +308,9 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
                 for (int k = 0; k < sz; ++k)
                 {
                     if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+                    {
                         chunk_t->steal_unmark();
+                    }
                 }
                 return;
             }
@@ -309,7 +321,9 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
                 for (int k = 0; k < sz; ++k)
                 {
                     if (auto* const chunk_t = std::get<0>(vec_tuple_to_compress[k]))
+                    {
                         chunk_t->steal_commit();
+                    }
                 }
             }
         }
@@ -337,7 +351,9 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
 
         // Per-chunk geometry pin -- see this function's header comment.
         if constexpr (build_config::chunk_dynamic)
+        {
             shrink_array::set_thread_chunk_size(std::get<3>(tup).count());
+        }
 
         char* ptr_type_cst = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
 
@@ -354,7 +370,9 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
 
         // Per-chunk geometry pin -- see this function's header comment.
         if constexpr (build_config::chunk_dynamic)
+        {
             shrink_array::set_thread_chunk_size(csize.count());
+        }
 
         if constexpr (Base::is_not_bool)
         {
@@ -401,7 +419,9 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
         if constexpr (build_config::any_check)
         {
             if (num_chunk < 0) [[unlikely]]
+            {
                 INVARIANT_FAILED("Chunk2A block pass: candidate {} of {} has num_chunk={}", k, sz, num_chunk);
+            }
         }
         // Hand the candidate back: its mark FIRST, then the dedup flag. While
         // the flag is up the chunk is in no other thread's list, so no other
@@ -412,14 +432,18 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
         // then wrote into a chunk that pass was scanning and stealing
         // (read_reclaim_validation, mode `remark`).
         if (auto* const chunk_t = std::get<0>(tup))
+        {
             chunk_t->steal_unmark();
+        }
         test_hooks::maybe_pass_delay(); // TEST KNOB (test_read_delay.h)
         if constexpr (build_config::any_check)
         {
             if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]
+            {
                 INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
                                  "dedup flag -- two passes on one chunk",
                                  static_cast<const void*>(marked));
+            }
         }
         if (num_chunk >= 0)
         {
@@ -496,7 +520,9 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
     if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
     {
         if (!apply)
+        {
             return;
+        }
     }
 
     // Only a MATERIALISED chunk can be compressed: a queued entry can outlive
@@ -529,7 +555,9 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
             compact1                                 = scan.first;
             compact2                                 = scan.second;
             if (compact2)
+            {
                 new_cst_val2_ptr = tab_cst_val2_holder::find_or_set_ind_cst_val2(second_v, ptr_second_value);
+            }
         }
         else
         {
@@ -537,7 +565,9 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
             compact1        = scan.first;
             compact2        = scan.second;
             if (compact2)
+            {
                 tab_cst_val2_holder::find_or_set_ind_cst_val2();
+            }
         }
 
         // Serial: clears here, outside any callback. OMPT: clears only from the
@@ -556,9 +586,13 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
             const SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
             char*                   ptr_type_cst     = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
             if (compact1)
+            {
                 clear_int_st(0, ptr_type_cst, ptr_second_value, thr_rank);
+            }
             if (compact2)
+            {
                 clear_int_st(1, ptr_type_cst, ptr_second_value, thr_rank, new_cst_val2_ptr);
+            }
         }
     }
 }
@@ -622,12 +656,18 @@ void Chunk2A<T>::compress_chunk_to_compress(bool apply)
         {
             const int thr = CHUNK_PMP_THREAD_RANK;
             if (thr == 0)
+            {
                 team = CHUNK_PMP_NUM_THREADS;
+            }
             compress_sweep_rank(thr, apply);
         }
         if (compress_sweep_mops_up(apply))
+        {
             for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
+            {
                 compress_sweep_rank(thr, apply);
+            }
+        }
     }
 
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
@@ -658,13 +698,17 @@ bool Chunk2A<T>::have_chunk_to_compress([[maybe_unused]] int max_thr)
             const auto& chunk_t      = get_vec_tuple_to_compress_potentially_thr(thr);
             const bool  is_empty_thr = chunk_t.empty();
             if (!is_empty_thr)
+            {
                 return true;
+            }
         }
     }
     else
     {
         if (!is_empty)
+        {
             return true;
+        }
     }
 
     return false;
@@ -714,7 +758,9 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
             if (chunk_t)
             {
                 if constexpr (build_config::chunk_dynamic)
+                {
                     set_thread_chunk_size(csize.count());
+                }
 
                 chunk_t->compress(thr, num_chunk, num_tab, apply, csize);
                 // DEDUP FLAG / LIST must be reset TOGETHER. The is_inside flag is
@@ -728,12 +774,16 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
                 // check_not_constant_before_clear fires: Values == Cst1).
                 // So gate the flag reset on the SAME condition as the list clear.
                 if constexpr (chunk_config::use_compression_with_ompt)
+                {
                     Proxy2A<T>::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
+                }
             }
         }
 
         if constexpr (build_config::chunk_dynamic)
+        {
             set_thread_chunk_size(saved_sz);
+        }
     }
     else
     {
@@ -799,7 +849,9 @@ void Chunk2A<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int      th
             // Not selected: nothing will be stolen, the writers may have it
             // back now rather than at the end of the pass.
             if (ll_compt1.size() == n1 && ll_compt2.size() == n2)
+            {
                 chunk_t->steal_unmark();
+            }
         }
     }
 }
@@ -839,12 +891,16 @@ void wait_before_materialise(const ChunkT& chunk) noexcept
     if constexpr (chunk_config::use_chunk_steal_mark)
     {
         while (chunk.steal_marked())
+        {
             CPU_PAUSE();
+        }
     }
     else
     {
         while (CompressionManager<T, ChunkT>::is_hard_compression_inflight())
+        {
             CPU_PAUSE();
+        }
     }
 }
 
@@ -1121,7 +1177,9 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(int               num_c
     // registered for the chunk's second value (the bool path, which passes
     // none; there it is the single shared array).
     if (num_compress_value == 1 && new_cst_val2_ptr == nullptr)
+    {
         new_cst_val2_ptr = Derived::tab_cst_val2_holder::find_cst_val2_ptr(ptr_second_value.get());
+    }
 
     block_clear(num_compress_value, ptr_type_cst, ptr_second_value, thr_rank, new_cst_val2_ptr);
 }
@@ -1146,16 +1204,22 @@ void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int               num_comp
     // second-value identifier is not backed by a page). The type table is left as it is -- it
     // describes the constant in place.
     if (values == Base::get_cst_val1() || Derived::tab_cst_val2_holder::is_cst_val2_ptr(values)) [[unlikely]]
+    {
         return;
+    }
     increm_chunk_compress<Derived>();
     Base::free_values(values);
     Derived::set_cst_val_to_cst_val(num_compress_value, ptr_type_cst);
     // Serial: no CAS, the values pointer is set outright to the constant --
     // the caller's array for a type 2, from the tables otherwise.
     if (num_compress_value == 1 && cst2_ptr != nullptr)
+    {
         values = cst2_ptr;
+    }
     else
+    {
         derived().init_values_cst_val(ptr_type_cst, ptr_second_value);
+    }
 }
 
 /**
@@ -1173,7 +1237,9 @@ void Chunk2AOmpPolicy<T, Derived, false>::clear_int_st(int               num_com
 {
     Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
     if (num_compress_value == 1 && new_cst_val2_ptr == nullptr)
+    {
         new_cst_val2_ptr = Derived::tab_cst_val2_holder::find_cst_val2_ptr(ptr_second_value.get());
+    }
     block_clear(num_compress_value, ptr_type_cst, ptr_second_value, thr_rank, new_cst_val2_ptr);
 }
 

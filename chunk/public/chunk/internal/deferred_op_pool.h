@@ -197,7 +197,9 @@ struct DeferredFreeListSlot
         if constexpr (!build_config::use_fast_alloc)
         {
             for (T* p : fl)
+            {
                 ::operator delete(static_cast<void*>(p));
+            }
         }
     }
 
@@ -232,9 +234,13 @@ class FastAllocatorConcrete : public FastAllocatorBase
     [[nodiscard]] const void* slab_addr() const noexcept override
     {
         if constexpr (build_config::use_fast_alloc)
+        {
             return static_cast<const void*>(&allocator());
+        }
         else
+        {
             return static_cast<const void*>(&free_list());
+        }
     }
 
     /**
@@ -263,7 +269,9 @@ class FastAllocatorConcrete : public FastAllocatorBase
             // catches it at the source and blames the free-list path (a corrupt
             // recycled pointer, e.g. a bad recycle() push) rather than the slab.
             if constexpr (build_config::any_check)
+            {
                 probe_returned_block(static_cast<void*>(block), "freelist");
+            }
             return block;
         }
 
@@ -275,7 +283,9 @@ class FastAllocatorConcrete : public FastAllocatorBase
             // a wild address (corrupt block/bump state); if only the free-list
             // probe fires, recycling is the culprit.
             if constexpr (build_config::any_check)
+            {
                 probe_returned_block(static_cast<void*>(raw), "slab");
+            }
             return static_cast<void*>(raw);
         }
         else
@@ -431,11 +441,15 @@ class FastAllocatorConcrete : public FastAllocatorBase
             const auto addr = reinterpret_cast<std::uintptr_t>(ptr);
 
             if (ptr == nullptr)
+            {
                 INVARIANT_FAILED("[ALLOC_PROBE {}] allocate_raw returned NULL for T size={}", path, sizeof(T));
+            }
 
             if ((addr & (alignof(std::max_align_t) - 1)) != 0 && (addr & 0x7U) != 0)
+            {
                 INVARIANT_FAILED("[ALLOC_PROBE {}] misaligned block p={} (T size={})", path,
                                  static_cast<const void*>(ptr), sizeof(T));
+            }
 
             // Page-containing-p mapped? msync(MS_ASYNC) touches nothing but the
             // kernel's VMA table: 0 = mapped, -1/ENOMEM = not mapped. The whole
@@ -450,9 +464,11 @@ class FastAllocatorConcrete : public FastAllocatorBase
             const void* pg1  = base + (sizeof(T) - 1) - ((addr + sizeof(T) - 1) & mask);
 
             if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)
+            {
                 INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path,
                                  static_cast<const void*>(ptr), sizeof(T),
                                  build_config::use_fast_alloc ? static_cast<const void*>(&allocator()) : nullptr);
+            }
         }
     }
 };
@@ -501,8 +517,12 @@ class AllocatorRegistry
         const size_t sz = sizeof(T);
 
         for (auto& a : v)
+        {
             if (a->block_size == sz)
+            {
                 return a.get();
+            }
+        }
 
         auto               ptr = std::make_unique<FastAllocatorConcrete<T, arena_of_tag<Tag>::value>>();
         FastAllocatorBase* raw = ptr.get();
@@ -569,7 +589,9 @@ template <typename T, typename... Args>
     // written). If the crash op's last event is this OP_ALLOC yet its vptr reads
     // as data, the corruption happens AFTER construction, not a half-built read.
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
+    {
         ring_log_op(get_tid(), EV_OP_ALLOC, 0, mem);
+    }
     return constructed;
 }
 
@@ -598,7 +620,9 @@ void free_op(T* op)
     // so dump_ring_for_addr can show if a free happened while the op was still
     // referenced by op_map (the use-after-free we're chasing).
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
+    {
         ring_log_op(get_tid(), EV_OP_FREE, 0, static_cast<const void*>(op));
+    }
     pool_ledger::on_op_free(static_cast<void*>(op));
     FastAllocatorBase* alloc = OpRegistry::get_or_create<T>();
     alloc->recycle(static_cast<void*>(op));

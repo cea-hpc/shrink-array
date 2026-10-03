@@ -104,7 +104,9 @@ void Chunk2Base<T, Derived>::clear_impl(IndexType         index_opt,
     }
 
     if (!is_written)
+    {
         return;
+    }
 
     if constexpr (build_config::any_check)
     {

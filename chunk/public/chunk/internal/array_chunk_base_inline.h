@@ -171,13 +171,17 @@ int ArrayChunkBase<Derived>::get_nb_chunk_written() const
     {
 #pragma omp for schedule(static) nowait
         for (int j = 0; j < nb_chunk; ++j)
+        {
             nb_written += lbd(j);
+        }
     }
     else
     {
 #pragma omp parallel for reduction(+ : nb_written)
         for (int j = 0; j < nb_chunk; ++j)
+        {
             nb_written += lbd(j);
+        }
     }
     return nb_written;
 }
@@ -197,7 +201,9 @@ template <typename Derived>
 double ArrayChunkBase<Derived>::stats_seq() const
 {
     if (nb_chunk == 0)
+    {
         return 0.0;
+    }
     const int nb_chunk_written = get_nb_chunk_written_seq();
     return 100.0 * static_cast<double>(nb_chunk_written) / nb_chunk;
 }
@@ -207,7 +213,9 @@ void ArrayChunkBase<Derived>::assign(ind_type count, T val)
 {
     derived().resize(count);
     for (ind_type i = 0; i < count; ++i)
+    {
         (*this)[i] = val;
+    }
 }
 
 template <typename Derived>
@@ -217,14 +225,18 @@ void ArrayChunkBase<Derived>::assign(It first, It last)
     derived().resize(static_cast<ind_type>(std::distance(first, last)));
     ind_type i = 0;
     for (; first != last; ++first)
+    {
         (*this)[i++] = static_cast<T>(*first);
+    }
 }
 
 template <typename Derived>
 void ArrayChunkBase<Derived>::reserve(ind_type new_capacity)
 {
     if (static_cast<size_type>(new_capacity) <= capacity())
+    {
         return;
+    }
     // resize() builds the storage of new_capacity elements and sets the size to it; the
     // size is what reserve() leaves alone. resize() to new_capacity allocates
     // new_capacity / chunk_size + 1 chunks, so the capacity covers it afterwards.
@@ -239,7 +251,9 @@ void ArrayChunkBase<Derived>::copy_from(const Derived& from)
     const ind_type from_size = from.m_size;
     derived().resize(from_size);
     for (ind_type i = 0; i < from_size; ++i)
+    {
         (*this)[i] = std::as_const(from)[i];
+    }
 }
 
 template <typename Derived>
@@ -261,7 +275,9 @@ template <typename Derived>
 ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::at(ind_type i) const
 {
     if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(m_size)) [[unlikely]]
+    {
         throw std::out_of_range("ArrayChunk::at: index out of range");
+    }
     return (*this)[i]; // const operator[] -> T (value)
 }
 
@@ -269,7 +285,9 @@ template <typename Derived>
 ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::at(ind_type i)
 {
     if (i < 0 || static_cast<size_type>(i) >= static_cast<size_type>(m_size)) [[unlikely]]
+    {
         throw std::out_of_range("ArrayChunk::at: index out of range");
+    }
     return (*this)[i]; // non-const operator[] -> proxy_type (write entry)
 }
 
@@ -277,7 +295,9 @@ template <typename Derived>
 ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::front() const
 {
     if (empty()) [[unlikely]]
+    {
         throw std::out_of_range("ArrayChunk::front: container is empty");
+    }
     return (*this)[0];
 }
 
@@ -285,7 +305,9 @@ template <typename Derived>
 ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::front()
 {
     if (empty()) [[unlikely]]
+    {
         throw std::out_of_range("ArrayChunk::front: container is empty");
+    }
     return (*this)[0];
 }
 
@@ -293,7 +315,9 @@ template <typename Derived>
 ArrayChunkBase<Derived>::const_reference ArrayChunkBase<Derived>::back() const
 {
     if (empty()) [[unlikely]]
+    {
         throw std::out_of_range("ArrayChunk::back: container is empty");
+    }
     return (*this)[m_size - 1];
 }
 
@@ -301,7 +325,9 @@ template <typename Derived>
 ArrayChunkBase<Derived>::reference ArrayChunkBase<Derived>::back()
 {
     if (empty()) [[unlikely]]
+    {
         throw std::out_of_range("ArrayChunk::back: container is empty");
+    }
     return (*this)[m_size - 1];
 }
 

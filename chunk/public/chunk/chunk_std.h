@@ -316,7 +316,9 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
     {
         T* old = Base::values_load();
         if (old == Base::get_cst_val1()) [[unlikely]]
+        {
             return nullptr;
+        }
 
         T* expected = old;
         T* new_ptr  = Base::get_cst_val1();
@@ -562,7 +564,9 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     Chunk& operator=(const Chunk<T>& other)
     {
         if (this == &other)
+        {
             return *this;
+        }
 
         // Same reason as the copy ctor: propagate the zero-counter state.
         ChunkCounterPolicy<chunk_config::use_compression_with_counter>::operator=(other);

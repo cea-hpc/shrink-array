@@ -42,7 +42,9 @@ void ChunkBase<T, Derived>::free_block_to_pool([[maybe_unused]] int thr_rank, T*
     // instead: a reader may still hold it between its `values` load and its
     // element load. The pass releases it here, after one grace period.
     if (read_reclaim::defer_release(&ChunkBase::release_deferred_block, this, thr_rank, val))
+    {
         return;
+    }
 
     if constexpr (build_config::use_fast_alloc)
     {
@@ -283,7 +285,9 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unu
     // was invisible in the counters. read_sync / (read + read_cst) is the share
     // of accesses that pay synchronisation at all.
     if constexpr (chunk_config::stats)
+    {
         increm_chunk_read_sync<Derived>();
+    }
 
     auto* chunk_ptr = static_cast<Derived*>(const_cast<ChunkDeferredOpsPolicy*>(this));
 
@@ -301,7 +305,9 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unu
     {
         static_cast<void>(CompressionManager<T, Derived>::flush_chunk_all_ranks(chunk_ptr, /*self_only=*/true));
         if (!chunk_ptr->pending_any())
+        {
             return; // every pending op was ours — no cross-rank walk needed
+        }
     }
 
     // ── Stage 2: cross-thread flush (option 4) ────────────────────────────
@@ -314,7 +320,9 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unu
     // walk (every rank's lock). read_sync_cross / read_sync tells how often the
     // cheap self-rank drain was enough.
     if constexpr (chunk_config::stats)
+    {
         increm_chunk_read_sync_cross<Derived>();
+    }
     static_cast<void>(CompressionManager<T, Derived>::flush_chunk_all_ranks(chunk_ptr));
 }
 

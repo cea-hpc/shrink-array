@@ -71,30 +71,42 @@ using VariantDef = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {
     if constexpr (requires(Arr x) { x.set_second_value(v); })
+    {
         a.set_second_value(v);
+    }
 }
 
 // The phase brackets (see compress_roundtrip.cpp): no-ops under OMPT and serially.
 static void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 static void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 // Serial builds free a cleared array's buffers outright; OpenMP parks them.
@@ -106,7 +118,9 @@ static int  g_fails = 0;
 static void expect(bool ok, const char* what, long got, long want)
 {
     if (ok)
+    {
         printf("[%s] OK   %-58s %ld\n", variant_name(), what, got);
+    }
     else
     {
         printf("[%s] FAIL %-58s got=%ld expected=%ld\n", variant_name(), what, got, want);
@@ -122,7 +136,9 @@ static void materialise_all(Array<double>& arr, long N)
         begin_phase();
 #pragma omp for
         for (long i = 0; i < N; ++i)
+        {
             arr[i] = 1.0 + static_cast<double>(i);
+        }
     }
     end_phase();
 }

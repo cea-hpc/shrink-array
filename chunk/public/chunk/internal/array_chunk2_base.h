@@ -20,7 +20,7 @@
 #include "chunk/config.h"
 #include "chunk/chunk_traits.h"
 #include "chunk/internal/in_t.h"
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_IN_PARALLEL_REGION
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 
 namespace shrink_array
@@ -169,7 +169,9 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         nb_chunk               = this->chunks_for(newsz);
 
         if (nb_chunk <= old_nb_chunk)
+        {
             return; // Only handling growth here
+        }
 
         chunk_list.resize(nb_chunk);
         Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk);

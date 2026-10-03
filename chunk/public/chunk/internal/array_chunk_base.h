@@ -435,10 +435,12 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             if constexpr (build_config::any_check && chunk_type::precise)
             {
                 if (chunk_->read_gate_should_wait(num_)) [[unlikely]]
+                {
                     INVARIANT_FAILED("ArrayChunkBase::const_iterator: a write was deferred onto chunk {} of array {} "
                                      "during the iteration (offset {}); the iterator would not see it -- no other "
                                      "thread may write an array that is being iterated",
                                      num_chunk_, static_cast<const void*>(owner_), num_);
+                }
             }
         }
 
@@ -488,9 +490,11 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             if constexpr (build_config::any_check)
             {
                 if (lhs.owner_ != rhs.owner_) [[unlikely]]
+                {
                     INVARIANT_FAILED("ArrayChunkBase::const_iterator: iterators of two different arrays compared "
                                      "or subtracted ({} vs {})",
                                      static_cast<const void*>(lhs.owner_), static_cast<const void*>(rhs.owner_));
+                }
             }
         }
 
@@ -605,9 +609,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     void push_back(in_t<T> val)
     {
         if (static_cast<size_type>(m_size) < capacity()) [[likely]]
+        {
             ++m_size;
+        }
         else
+        {
             derived().resize(m_size + 1);
+        }
         (*this)[m_size - 1] = val;
     }
 
@@ -675,7 +683,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     void pop_back() noexcept
     {
         if (!empty())
+        {
             --m_size;
+        }
     }
 
     /**
@@ -779,8 +789,10 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         if constexpr (build_config::any_check)
         {
             if (size_policy_.size() != other.size_policy_.size())
+            {
                 INVARIANT_FAILED("ArrayChunk::swap: mismatched chunk geometry ({} vs {})", size_policy_.size(),
                                  other.size_policy_.size());
+            }
         }
         swap_storage_and_identity(other);
     }
@@ -987,7 +999,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     void swap_storage_and_identity(Derived& other)
     {
         if (&derived() == &other)
+        {
             return;
+        }
         derived().flush_pending_deferred_ops(/*force=*/true);
         other.flush_pending_deferred_ops(/*force=*/true);
         invalidate_proxies();

@@ -133,9 +133,11 @@ inline void set_active_chunk_size(unsigned int size) noexcept
     if constexpr (build_config::any_check)
     {
         if (!is_valid_chunk_size(size)) [[unlikely]]
+        {
             INVARIANT_FAILED("set_active_chunk_size({}): a chunk size must be a power of two "
                              "(the index split is a shift and a mask)",
                              size);
+        }
     }
     g_active_chunk_size = size;
     register_runtime_chunk_size(size);
@@ -184,9 +186,13 @@ inline void set_thread_alloc_key(unsigned int k) noexcept
 [[nodiscard]] inline unsigned int alloc_chunk_count() noexcept
 {
     if constexpr (build_config::chunk_dynamic)
+    {
         return thread_chunk_size();
+    }
     else
+    {
         return __chunk_size;
+    }
 }
 
 // RAII: pin the per-thread active chunk size to `size` (dynamic builds only) and
@@ -203,13 +209,17 @@ class DynChunkSizeGuard
     explicit DynChunkSizeGuard([[maybe_unused]] unsigned int size) noexcept
     {
         if constexpr (build_config::chunk_dynamic)
+        {
             t_active_chunk_size = size;
+        }
     }
     /// @brief In dynamic builds, restore the saved thread chunk size.
     ~DynChunkSizeGuard() noexcept
     {
         if constexpr (build_config::chunk_dynamic)
+        {
             t_active_chunk_size = saved_;
+        }
     }
     DynChunkSizeGuard(const DynChunkSizeGuard&)            = delete;
     DynChunkSizeGuard& operator=(const DynChunkSizeGuard&) = delete;
@@ -306,9 +316,11 @@ class DynamicChunkSize
         if constexpr (build_config::any_check)
         {
             if (!is_valid_chunk_size(size)) [[unlikely]]
+            {
                 INVARIANT_FAILED("ChunkSizePolicy::set_size({}): not a power of two -- shift {} with mask {} "
                                  "would send two elements to one slot",
                                  size, log2int(static_cast<std::size_t>(size)), size - 1u);
+            }
         }
         size_               = size;
         decalage_           = static_cast<unsigned int>(log2int(static_cast<std::size_t>(size)));

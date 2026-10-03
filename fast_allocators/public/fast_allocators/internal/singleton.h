@@ -54,7 +54,9 @@ class Singleton
         // serialised on it at each one). The acquire pairs with the release
         // store below: seeing the pointer implies seeing the constructed T.
         if (T* instance = unique_instance.load(std::memory_order_acquire)) [[likely]]
+        {
             return instance;
+        }
 
         const std::scoped_lock lock(unique_instance_mutex);
         T*                     instance = unique_instance.load(std::memory_order_relaxed); // under the lock

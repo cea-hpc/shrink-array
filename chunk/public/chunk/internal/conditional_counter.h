@@ -60,25 +60,35 @@ class ConditionalCounter
     void operator++() noexcept
     {
         if constexpr (Enabled)
+        {
             ++value;
+        }
     }
     void operator--() noexcept
     {
         if constexpr (Enabled)
+        {
             --value;
+        }
     }
     void operator=(counter_value_t v) noexcept
     {
         if constexpr (Enabled)
+        {
             value = v;
+        }
     }
 
     operator counter_value_t() const noexcept
     {
         if constexpr (Enabled)
+        {
             return value;
+        }
         else
+        {
             return 0;
+        }
     }
 
   private:

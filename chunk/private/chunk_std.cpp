@@ -147,7 +147,9 @@ std::size_t compress_now_and_trim_pools()
 {
     auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
     if constexpr (chunk_config::use_fast_block_compression)
+    {
         ens_type_chunk.force_chunk_to_compress();
+    }
     return ens_type_chunk.trim_reuse_pools(0);
 }
 

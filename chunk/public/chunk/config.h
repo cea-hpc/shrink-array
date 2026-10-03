@@ -613,7 +613,9 @@ class CheckNaN<true>
     static void maybe(auto val, long i) noexcept
     {
         if (check_nan)
+        {
             global_check_nan(val, i);
+        }
     }
 
   private:

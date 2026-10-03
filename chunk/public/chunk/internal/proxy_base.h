@@ -95,7 +95,9 @@ template <typename T>
                   })
     {
         if (TabCstVal2Holder<T>::is_cst_val2_ptr(vals)) [[unlikely]]
+        {
             return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
+        }
     }
     // elem_get, not vals[n]: for Bit that indexed BYTES, up to chunk_size of
     // them in a chunk_size / 8 byte buffer.
@@ -179,7 +181,9 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     {
         using row_t = typename decltype(tab_is_inside_chunk_list_to_compress)::value_type;
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
+        {
             row_t{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
+        }
     }
 
     /// @brief Write @p v at the offset @p ctx recorded, on the replay path.
@@ -366,7 +370,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     struct StaleGuardOff
     {
     };
-    [[no_unique_address]] mutable std::conditional_t<build_config::any_check, StaleGuardOn, StaleGuardOff> stale_guard_{};
+    [[no_unique_address]] mutable std::conditional_t<build_config::any_check, StaleGuardOn, StaleGuardOff>
+        stale_guard_{};
 
     /// @brief Check builds: abort when the array rebuilt its storage after
     ///        operator[] built this proxy -- the proxy then points into
@@ -378,10 +383,12 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         if constexpr (build_config::any_check)
         {
             if (stale_guard_.gen != nullptr && *stale_guard_.gen != stale_guard_.seen) [[unlikely]]
+            {
                 INVARIANT_FAILED("write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
                                  "storage (resize, reserve, shrink_to_fit, clear, assign, swap, an assignment or a "
                                  "re-chunk): keep a value with `T v = a[i];`, not `auto v = a[i];`",
                                  ptr_on_array, num_chunk, num);
+            }
         }
     }
 
@@ -497,7 +504,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         if constexpr (build_config::any_check && chunk_config::use_chunk_steal_mark)
         {
             if (chunk.steal_committed()) [[unlikely]]
+            {
                 INVARIANT_FAILED("store_value on a chunk committed to a compressor (num={})", num);
+            }
         }
         // Chunk2A: the marking filter of another writer may be reading this
         // element -- relaxed atomic store, see relaxed_element.h.
@@ -1040,7 +1049,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires is_packed_bit_v<T> && bit_operand_v<U>
     {
         if (static_cast<bool>(v))
+        {
             derived() = true;
+        }
         return derived();
     }
 
@@ -1050,7 +1061,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         requires is_packed_bit_v<T> && bit_operand_v<U>
     {
         if (!static_cast<bool>(v))
+        {
             derived() = false;
+        }
         return derived();
     }
 

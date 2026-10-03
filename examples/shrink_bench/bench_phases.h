@@ -42,7 +42,9 @@
 inline void begin_parallel_phase_g()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 
 /// @brief Without OMPT: `omp barrier`, then shrink_array::finalize_barrier_phase(); no-op otherwise.
@@ -59,14 +61,18 @@ inline void finalize_barrier_phase_g()
 inline void finalize_parallel_phase_only_flush_g()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase_only_flush();
+    }
 }
 
 /// @brief Without OMPT: shrink_array::finalize_parallel_phase_after_flush(); no-op otherwise.
 inline void finalize_parallel_phase_after_flush_g()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase_after_flush();
+    }
 }
 
 /**
@@ -108,12 +114,18 @@ void neutral_sqrt_assign(Arr& tab, Int i, T v)
     if constexpr (chunk_config::use_chunk)
     {
         if (tab.written(i))
+        {
             tab(i) = std::sqrt(v); // discarded quand Arr=std::vector : never typed
+        }
         else
+        {
             tab[i] = std::sqrt(v);
+        }
     }
     else
+    {
         tab[i] = std::sqrt(v);
+    }
 }
 
 /**

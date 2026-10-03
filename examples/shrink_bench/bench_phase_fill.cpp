@@ -158,8 +158,8 @@ void bench_phase_fill(BenchArrays&                           bench_arr,
             // (std::vector reference, 64 / 256 / 1024, dyn), so the checksums
             // still compare; 1024 is a multiple of each of those geometries.
             constexpr Int bench_quant_band = 1024;
-            tab_quant[i] =
-                std::round(std::sin(static_cast<double>(i / bench_quant_band)) * bench_double_bands) / bench_double_bands;
+            tab_quant[i] = std::round(std::sin(static_cast<double>(i / bench_quant_band)) * bench_double_bands) /
+                           bench_double_bands;
         }
 
         begin_i = end_i;

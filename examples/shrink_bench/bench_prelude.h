@@ -170,10 +170,14 @@ inline Int bench_sched_block_env() noexcept
     {
         const long b = shrink_array::env_number<long>("BENCH_SCHED_BLOCK", 64L);
         if (b <= 0)
+        {
             return 0;
+        }
         long p = 1;
         while (p < b && p < (1L << 30))
+        {
             p <<= 1;
+        }
         return static_cast<Int>(p);
     }();
     return v;
@@ -192,7 +196,9 @@ inline BenchSched bench_sched_for(Int start, Int end) noexcept
 {
     const Int b = bench_sched_block_env();
     if (b > 0)
+    {
         return {b, start - (start % b)};
+    }
     const Int t = CHUNK_PMP_MAX_THREADS;
     return {std::max<Int>(1, (end - start + t - 1) / t), start}; // contiguous slices
 }

@@ -77,7 +77,9 @@ inline const bool g_eager = []
 {
     const char* e = std::getenv("CHUNK_ALLOC_AFFINITY_EAGER");
     if (e == nullptr || e[0] == '\0')
+    {
         return chunk_config::use_chunk; // the variant's default
+    }
     return e[0] != '0';
 }();
 
@@ -191,19 +193,27 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
     {
         if constexpr (build_config::alloc_affinity_min_bytes == 0 || !build_config::chunk_dynamic ||
                       !build_config::use_fast_alloc || !build_config::use_openmp)
+        {
             return;
+        }
         if (nb_chunk <= 0)
+        {
             return;
+        }
         // Lazy affinity: only the storage a re-chunk builds takes its own set
         // (an array already keyed keeps its key). A set costs one partly-filled
         // 1 MiB slab per (rank, size): ~780 MiB over the 64-thread chunk2a bench's
         // 16 arrays, for a benefit -- whole slabs emptied by the NEXT re-chunk --
         // that only an array that gets re-chunked ever collects.
         if (alloc_key_ == 0 && !alloc_affinity_detail::g_eager && !alloc_affinity_detail::g_building_rechunk_storage)
+        {
             return;
+        }
         const std::size_t meta_bytes = static_cast<std::size_t>(nb_chunk) * sizeof(chunk_type);
         if (meta_bytes < build_config::alloc_affinity_min_bytes)
+        {
             return;
+        }
         const unsigned int key =
             (alloc_key_ != 0) ? alloc_key_ : next_alloc_key_.fetch_add(1, std::memory_order_relaxed);
         // Keep the key ONLY if the manager really built its allocator set and
@@ -259,7 +269,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
 class RegistryKeyCanary
 {
   private:
-   [[maybe_unused]] std::uint64_t registry_key_canary_{0};
+    [[maybe_unused]] std::uint64_t registry_key_canary_{0};
 };
 /// @brief Empty stand-in for RegistryKeyCanary when any_check is off.
 struct NoRegistryKeyCanary

@@ -102,8 +102,7 @@ template <typename V>
 // jump-label pass of the serial build.
 __attribute__((optimize("O2")))
 #endif
-uint64_t
-calculate_checksum(const V& vec)
+uint64_t calculate_checksum(const V& vec)
 {
     uint64_t checksum = 0;
 
@@ -190,7 +189,9 @@ template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {
     if constexpr (requires(Arr x) { x.set_second_value(v); })
+    {
         a.set_second_value(v);
+    }
 }
 
 // -----------------------------------------------------------------------------

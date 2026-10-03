@@ -58,15 +58,23 @@ struct ValueLess
     bool operator()(in_t<T> lhs, in_t<T> rhs) const noexcept
     {
         if constexpr (ComplexType<T>)
+        {
             return ComplexLess<typename T::value_type>{}(lhs, rhs);
+        }
         else if constexpr (std::totally_ordered<T>)
+        {
             return lhs < rhs;
+        }
         else if constexpr (std::has_unique_object_representations_v<T>)
+        {
             return std::memcmp(&lhs, &rhs, sizeof(T)) < 0;
+        }
         else
+        {
             static_assert(std::totally_ordered<T>,
                           "chunk2 orders second values: this element type needs an operator< "
                           "(a defaulted operator<=> will do), or no padding and no floating point");
+        }
         // Unreachable: the static_assert above always fires for a type reaching
         // this branch. Present only for nvc++ (EDG), whose flow analysis does
         // not prune discarded `if constexpr` branches and otherwise warns

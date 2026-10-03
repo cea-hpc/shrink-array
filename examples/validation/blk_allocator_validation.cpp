@@ -47,9 +47,8 @@ int __mem_page_size = 0;
 namespace
 {
 
-constexpr std::size_t kSizes[] = {1,    3,    4,     5,     8,     16,    24,     63,     64,     65,
-                                  100,  512,  513,   1000,  4096,  4097,  32768,  65535,  65536,  65537,
-                                  100000, std::size_t{1} << 20};
+constexpr std::size_t kSizes[] = {1,   3,   4,    5,    8,    16,    24,    63,    64,    65,     100,
+                                  512, 513, 1000, 4096, 4097, 32768, 65535, 65536, 65537, 100000, std::size_t{1} << 20};
 
 unsigned char pattern(std::size_t id, std::size_t k)
 {
@@ -60,15 +59,21 @@ void fill(void* p, std::size_t n, std::size_t id)
 {
     auto* b = static_cast<unsigned char*>(p);
     for (std::size_t k = 0; k < n; ++k)
+    {
         b[k] = pattern(id, k);
+    }
 }
 
 bool intact(const void* p, std::size_t n, std::size_t id)
 {
     const auto* b = static_cast<const unsigned char*>(p);
     for (std::size_t k = 0; k < n; ++k)
+    {
         if (b[k] != pattern(id, k))
+        {
             return false;
+        }
+    }
     return true;
 }
 
@@ -78,7 +83,9 @@ void expect(bool ok, const char* what)
 {
     std::printf("  [%s] %s\n", ok ? " ok " : "FAIL", what);
     if (!ok)
+    {
         ++fails;
+    }
 }
 
 /// @brief One block per size, both front-end pairs.
@@ -135,7 +142,9 @@ void check_distinct()
         }
         bool ok = true;
         for (std::size_t j = 0; j < kN; ++j)
+        {
             ok = ok && intact(blk[j], sz[j], 2 * j) && intact(tab[j], sz[j], 2 * j + 1);
+        }
         for (std::size_t j = 0; j < kN; ++j)
         {
             BlkAllocator::free_block(blk[j], sz[j]);
@@ -160,11 +169,17 @@ void check_parallel()
             void*             p  = (it % 2) ? BlkAllocator::alloc_tab(n) : BlkAllocator::alloc_block(n);
             fill(p, n, id);
             if (!intact(p, n, id))
+            {
                 ++bad;
+            }
             if (it % 2)
+            {
                 BlkAllocator::free_tab(p);
+            }
             else
+            {
                 BlkAllocator::free_block(p, n);
+            }
         }
     }
     // Quiescent point: the blocks freed inside the region were batched per

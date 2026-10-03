@@ -82,12 +82,16 @@ using namespace shrink_array;
 static void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 static void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 template <typename T>
@@ -98,11 +102,17 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 // set_second_value only exists on chunk2 / chunk2a; no-op elsewhere.
@@ -110,7 +120,9 @@ template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {
     if constexpr (requires(Arr x) { x.set_second_value(v); })
+    {
         a.set_second_value(v);
+    }
 }
 
 constexpr int kChunks = 100;
@@ -130,7 +142,9 @@ static int materialised(const Array<double>& arr)
     const int S = static_cast<int>(arr.chunk_size());
     int       n = 0;
     for (int j = 0; j < kChunks; ++j)
+    {
         n += arr.written(j * S);
+    }
     return n;
 }
 
@@ -153,11 +167,15 @@ static void phase(Array<double>& arr, int N, Fn&& body)
         begin_phase();
 #pragma omp for schedule(static)
         for (int i = 0; i < N; ++i)
+        {
             body(i);
+        }
     }
     end_phase();
     if constexpr (chunk_config::use_chunk2a && !build_config::use_openmp)
+    {
         arr.make_block_compression();
+    }
 }
 
 /// @brief What a constant written everywhere must leave materialised, per
@@ -259,7 +277,9 @@ int run(int /*argc*/, char** /*argv*/)
 
         long bad = 0;
         for (int i = 0; i < N; ++i)
+        {
             bad += (std::as_const(c)[i] != 0.0);
+        }
         if (bad)
         {
             printf("[%s/C] FAIL: %ld element(s) do not read back 0\n", variant_name(), bad);

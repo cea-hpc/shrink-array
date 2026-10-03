@@ -37,9 +37,13 @@ template <typename ProxyType>
 constexpr int get_num_tab_helper(const ProxyType& proxy, const void* array_ptr) noexcept
 {
     if constexpr (requires { proxy.get_num_tab(array_ptr); })
+    {
         return proxy.get_num_tab(array_ptr);
+    }
     else
+    {
         return proxy.get_num_tab();
+    }
 }
 
 // ============================================================================

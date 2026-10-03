@@ -83,23 +83,33 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 
 void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 /// Chunk2 compresses to the second value only once the array declared one.
@@ -107,7 +117,9 @@ template <typename Arr, typename Val>
 void maybe_set_second_value(Arr& a, const Val& v)
 {
     if constexpr (requires(Arr x) { x.set_second_value(v); })
+    {
         a.set_second_value(v);
+    }
 }
 
 /// The compression pass, driven the way the bench drives it: from a region.
@@ -159,7 +171,9 @@ int check_past_int_max()
 
     // (1) sequential writes
     for (std::size_t k = 0; k < pos.size(); ++k)
+    {
         big[pos[k]] = value_at(k);
+    }
 
     const auto verify = [&](const char* step, auto expected) -> int
     {
@@ -173,22 +187,30 @@ int check_past_int_max()
             if (got != want || gat != want)
             {
                 if (nbad < 5)
+                {
                     std::printf("[%s/%s] FAIL %s: [%ld] = %d, at() = %d, expected %d\n", variant_name(), label, step,
                                 pos[k], got, gat, want);
+                }
                 ++nbad;
             }
             // The neighbours nobody wrote are still the first constant.
             for (const long q : {pos[k] - 2, pos[k] + 2})
             {
                 if (q < 0 || q >= N)
+                {
                     continue;
+                }
                 bool written = false;
                 for (const long p : pos)
+                {
                     written = written || p == q;
+                }
                 if (!written && cbig[q] != char(0))
                 {
                     if (nbad < 5)
+                    {
                         std::printf("[%s/%s] FAIL %s: untouched [%ld] = %d\n", variant_name(), label, step, q, cbig[q]);
+                    }
                     ++nbad;
                 }
             }
@@ -205,20 +227,26 @@ int check_past_int_max()
         begin_phase();
 #pragma omp for schedule(static, 1)
         for (long k = 0; k < npos; ++k)
+        {
             big[pos[static_cast<std::size_t>(k)]] = value_at(static_cast<std::size_t>(k) + 3);
+        }
     }
     end_phase();
     bad += verify("parallel", [&](std::size_t k) { return value_at(k + 3); });
 
     // (3) back to the first constant, then a compression pass
     for (const long p : pos)
+    {
         big[p] = char(0);
+    }
     compress_in_region(big);
     bad += verify("zeroed+compressed", [](std::size_t) { return char(0); });
 
     if (!bad)
+    {
         std::printf("[%s/%s] OK: N=%ld (INT_MAX + %ld), %zu positions across 2^31, chunk_size=%ld\n", variant_name(),
                     label, N, N - I, pos.size(), S);
+    }
     return bad ? 1 : 0;
 }
 
@@ -253,8 +281,10 @@ int verify_mixed(const char* label, const char* step, const Arr& a, int which, l
         if (got != want)
         {
             if (nbad < 5)
+            {
                 std::printf("[%s/%s] FAIL %s: array %d [%ld] = %g, expected %g\n", variant_name(), label, step, which,
                             i, got, want);
+            }
             ++nbad;
         }
     }
@@ -322,12 +352,14 @@ int check_mixed()
         ParamChunk::register_chunk_size(tgt);
 
         for (const unsigned int got : {a.chunk_size(), b.chunk_size(), c.chunk_size()})
+        {
             if (got != tgt)
             {
                 std::printf("[%s/%s] FAIL rechunk_all_to: chunk_size %u, expected %u\n", variant_name(), label, got,
                             tgt);
                 ++bad;
             }
+        }
         bad += verify_mixed(label, "rechunked", std::as_const(a), 0, M, S);
         bad += verify_mixed(label, "rechunked", std::as_const(b), 1, M, S);
         bad += verify_mixed(label, "rechunked", std::as_const(c), 2, M, S);
@@ -341,8 +373,10 @@ int check_mixed()
     }
 
     if (!bad)
+    {
         std::printf("[%s/%s] OK: <double,int> x2 and <double,long> x1, M=%ld, written in parallel, compressed%s\n",
                     variant_name(), label, M, build_config::chunk_dynamic ? ", rechunked together" : "");
+    }
     return bad ? 1 : 0;
 }
 

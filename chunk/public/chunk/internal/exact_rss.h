@@ -47,11 +47,17 @@ inline long exact_rss_kib() noexcept
         char line[256];
         long kib = -1;
         while (std::fgets(line, sizeof line, f) != nullptr)
+        {
             if (std::sscanf(line, "Rss: %ld kB", &kib) == 1)
+            {
                 break;
+            }
+        }
         std::fclose(f);
         if (kib >= 0)
+        {
             return kib;
+        }
     }
     if (std::FILE* f = std::fopen("/proc/self/statm", "r"))
     {
@@ -61,7 +67,9 @@ inline long exact_rss_kib() noexcept
         std::fclose(f);
         const long ps = ::sysconf(_SC_PAGESIZE);
         if (n == 2 && ps > 0)
+        {
             return res * (ps / 1024);
+        }
     }
     return -1;
 }
@@ -82,14 +90,18 @@ class RssPeakSampler
     explicit RssPeakSampler(int period_ms) : period_ms_(period_ms)
     {
         if (period_ms_ > 0)
+        {
             thread_ = std::thread([this] { run(); });
+        }
     }
     /// @brief Signal the sampling thread to stop and join it.
     ~RssPeakSampler()
     {
         stop_.store(true, std::memory_order_relaxed);
         if (thread_.joinable())
+        {
             thread_.join();
+        }
     }
     // Owns the sampling thread, which captured `this`: neither copied nor moved.
     RssPeakSampler(const RssPeakSampler&)            = delete;

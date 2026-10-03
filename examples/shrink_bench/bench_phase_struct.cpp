@@ -46,7 +46,9 @@
 void bench_phase_struct_fill(BenchArrays& bench_arr)
 {
     if (!bench_arr.with_struct) // --no_struct
+    {
         return;
+    }
 
     auto& tab_point = bench_arr.tab_point;
     auto& tab_cell  = bench_arr.tab_cell;
@@ -109,7 +111,9 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
                                 double&                 point_sum)
 {
     if (!bench_arr.with_struct) // --no_struct
+    {
         return;
+    }
 
     auto& tab_point = bench_arr.tab_point;
     auto& tab_cell  = bench_arr.tab_cell;
@@ -137,7 +141,9 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
         for (Int i = sched_base; i < end0; ++i)
         {
             if (i < start0) // alignment head: same trip count in both loops
+            {
                 continue;
+            }
             if (i < nba1)
             {
                 tab_point[i] = Point3{};
@@ -164,7 +170,9 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
         for (Int i = sched_base; i < end0; ++i)
         {
             if (i < start0)
+            {
                 continue;
+            }
             const Point3& p = tab_point[i];
             const Cell&   c = tab_cell[i];
             sum += p.x + (p.y * static_cast<double>(c.fraction)) + p.z + static_cast<double>(c.material);
@@ -183,7 +191,9 @@ void bench_phase_struct_compute(BenchArrays&            bench_arr,
 void bench_phase_struct_raz(BenchArrays& bench_arr, Int start0, Int end0)
 {
     if (!bench_arr.with_struct) // --no_struct
+    {
         return;
+    }
 
     auto& tab_point = bench_arr.tab_point;
     auto& tab_cell  = bench_arr.tab_cell;

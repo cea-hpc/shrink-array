@@ -73,7 +73,9 @@ template <typename T>
 
         // nullptr is tolerated — is_written checks handle it explicitly.
         if (ptr == nullptr)
+        {
             return;
+        }
 
         // Valid: address above the low pages AND aligned to alignof(T).
         // NB: must be alignof(T), NOT a hard-coded 8. The cst_val1/cst_val2
@@ -84,7 +86,9 @@ template <typename T>
         // (redzones) onto merely alignof(T)-aligned addresses, tripping this.
         constexpr std::uintptr_t align_mask = alignof(T) - 1;
         if (addr >= 0x1000 && (addr & align_mask) == 0) [[likely]]
+        {
             return;
+        }
 
         // Deliberately the RAW rank, not get_thr_rank_fast() below: printing
         // both is how a divergence between OpenMP's own numbering and the

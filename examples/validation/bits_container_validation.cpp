@@ -81,12 +81,16 @@ namespace
 void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 // A multiple of every chunk size the harness is built at: a run is whole chunks.
@@ -107,13 +111,17 @@ long compare(const ArrayChunkBits<>& a, const std::vector<bool>& ref, const char
         if (got != ref[static_cast<std::size_t>(i)])
         {
             if (first < 0)
+            {
                 first = i;
+            }
             ++bad;
         }
     }
     if (bad)
+    {
         std::printf("[bits] FAIL %s: %ld mismatches, first at %ld (chunk %ld)\n", step, bad, first,
                     first / static_cast<long>(a.chunk_size()));
+    }
     return bad;
 }
 
@@ -128,11 +136,15 @@ int round_trip(long N)
         begin_phase();
 #pragma omp for
         for (long i = 0; i < N; ++i)
+        {
             a[i] = varied(i);
+        }
     }
     end_phase();
     for (long i = 0; i < N; ++i)
+    {
         ref[static_cast<std::size_t>(i)] = varied(i);
+    }
     fails += compare(a, ref, "materialise") != 0;
 
     // Runs: 0 -> all false, 1 -> all true, 2 -> left mixed.
@@ -144,9 +156,13 @@ int round_trip(long N)
         {
             const long run = (i / kRun) % 3;
             if (run == 0)
+            {
                 a[i] = false;
+            }
             else if (run == 1)
+            {
                 a[i] = true;
+            }
         }
     }
     end_phase();
@@ -154,7 +170,9 @@ int round_trip(long N)
     {
         const long run = (i / kRun) % 3;
         if (run != 2)
+        {
             ref[static_cast<std::size_t>(i)] = (run == 1);
+        }
     }
     fails += compare(a, ref, "constant runs") != 0;
 
@@ -184,16 +202,22 @@ int round_trip(long N)
         begin_phase();
 #pragma omp for
         for (long i = 0; i < N / 4; ++i)
+        {
             a[i] = (i % 5) == 1;
+        }
     }
     end_phase();
     for (long i = 0; i < N / 4; ++i)
+    {
         ref[static_cast<std::size_t>(i)] = (i % 5) == 1;
+    }
     fails += compare(a, ref, "after refill") != 0;
 
     if (fails == 0)
+    {
         std::printf("[bits] OK round trip: %ld elements, chunk_size=%u, %.1f%% of chunks written after the pass\n", N,
                     a.chunk_size(), written);
+    }
     a.clear();
     return fails;
 }
@@ -208,7 +232,9 @@ int neighbours(long N)
         begin_phase();
 #pragma omp for schedule(static, 1)
         for (long i = 0; i < N; ++i)
+        {
             a[i] = true;
+        }
     }
     end_phase();
 #pragma omp parallel
@@ -216,17 +242,25 @@ int neighbours(long N)
         begin_phase();
 #pragma omp for schedule(static, 1)
         for (long i = 0; i < N; ++i)
+        {
             if ((i / 2) % 2 == 1)
+            {
                 a[i] = false;
+            }
+        }
     }
     end_phase();
 
     std::vector<bool> ref(static_cast<std::size_t>(N));
     for (long i = 0; i < N; ++i)
+    {
         ref[static_cast<std::size_t>(i)] = (i / 2) % 2 == 0;
+    }
     fails += compare(a, ref, "neighbouring writes") != 0;
     if (fails == 0)
+    {
         std::printf("[bits] OK neighbouring elements written by %d threads: none lost\n", CHUNK_PMP_MAX_THREADS);
+    }
     a.clear();
     return fails;
 }
@@ -234,7 +268,9 @@ int neighbours(long N)
 int birth_size()
 {
     if constexpr (!build_config::chunk_dynamic)
+    {
         return 0;
+    }
     const unsigned int active = active_chunk_size();
     const unsigned int expect = std::min(active * packed_bit_birth_factor, cst_buffer_size);
     ArrayChunkBits<>   a(1L << 16);
@@ -247,7 +283,9 @@ int birth_size()
         ++fails;
     }
     else
+    {
         std::printf("[bits] OK birth size: bits at %u, the active size stays %u\n", a.chunk_size(), active);
+    }
     a.clear();
     b.clear();
     return fails;
@@ -263,7 +301,9 @@ int surface()
     a[4]                   = !b4;
     fails += !(b3 && !b4 && a[4] == true && a[3] == b3 && a[5] == false);
     if (fails)
+    {
         std::printf("[bits] FAIL element surface\n");
+    }
     a.clear();
     return fails;
 }
@@ -281,11 +321,15 @@ int logical_ops(long N)
         begin_phase();
 #pragma omp for
         for (long i = 0; i < N; ++i)
+        {
             a[i] = ((i / kRun) % 3 == 1) || ((i / kRun) % 3 == 2 && i % 2 == 0);
+        }
     }
     end_phase();
     for (long i = 0; i < N; ++i)
+    {
         ref[static_cast<std::size_t>(i)] = ((i / kRun) % 3 == 1) || ((i / kRun) % 3 == 2 && i % 2 == 0);
+    }
 
     for (int k = 0; k < 3; ++k)
     {
@@ -297,11 +341,17 @@ int logical_ops(long N)
             {
                 const bool b = opnd(i, k);
                 if (k == 0)
+                {
                     a[i] |= b;
+                }
                 else if (k == 1)
+                {
                     a[i] &= b;
+                }
                 else
+                {
                     a[i] ^= b;
+                }
             }
         }
         end_phase();
@@ -325,7 +375,9 @@ int logical_ops(long N)
     fails += !(a[0] == true && a[1] == false);
 
     if (fails == 0)
+    {
         std::printf("[bits] OK |= &= ^= against std::vector<bool>, neighbouring elements in parallel\n");
+    }
     m.clear();
     a.clear();
     return fails;
@@ -336,7 +388,9 @@ int advisor_and_rechunk(long N)
     ArrayChunkBits<> a(N);
     int              fails = 0;
     if constexpr (build_config::chunk_dynamic)
+    {
         a.rechunk_to(256); // room for a finer row (the advisor stops at 64)
+    }
     const long S = static_cast<long>(a.chunk_size());
 
     // Runs of whole chunks: all false, all true, and chunks whose first half
@@ -345,7 +399,9 @@ int advisor_and_rechunk(long N)
     {
         const long run = (i / kRun) % 3;
         if (run != 2)
+        {
             return run == 1;
+        }
         return (i % S) < S / 2 ? true : varied(i);
     };
 #pragma omp parallel
@@ -353,7 +409,9 @@ int advisor_and_rechunk(long N)
         begin_phase();
 #pragma omp for
         for (long i = 0; i < N; ++i)
+        {
             a[i] = pattern(i);
+        }
     }
     end_phase();
 #pragma omp parallel
@@ -365,7 +423,9 @@ int advisor_and_rechunk(long N)
     end_phase();
     std::vector<bool> ref(static_cast<std::size_t>(N));
     for (long i = 0; i < N; ++i)
+    {
         ref[static_cast<std::size_t>(i)] = pattern(i);
+    }
     fails += compare(a, ref, "advisor setup") != 0;
 
     const long mat_expected = (N / kRun) / 3 * (kRun / S);
@@ -374,7 +434,9 @@ int advisor_and_rechunk(long N)
     // check is about. No change for S >= 128.
     typename ChunkSizeAdvisor<Bit>::Options opt;
     if (static_cast<long>(opt.min_size) > S / 2)
+    {
         opt.min_size = static_cast<std::uint32_t>(S / 2);
+    }
     const auto rep = ChunkSizeAdvisor<Bit>::analyze(a, opt);
     if (rep.cur < 0)
     {
@@ -393,6 +455,7 @@ int advisor_and_rechunk(long N)
     // At S/2 each such chunk is one compressible half (all true) and one mixed.
     bool seen_half = false;
     for (const auto& row : rep.table)
+    {
         if (static_cast<long>(row.size) == S / 2)
         {
             seen_half      = true;
@@ -404,6 +467,7 @@ int advisor_and_rechunk(long N)
                 ++fails;
             }
         }
+    }
     if (!seen_half)
     {
         std::printf("[bits] FAIL advisor: no finer row at S=%ld\n", S / 2);
@@ -414,7 +478,9 @@ int advisor_and_rechunk(long N)
     {
         ArrayChunk2<bool> b(N);
         for (long i = 0; i < N; ++i)
+        {
             b[i] = pattern(i);
+        }
         const auto rb = ChunkSizeAdvisor<bool>::analyze(b);
         fails += rb.cur < 0;
         b.clear();
@@ -437,8 +503,10 @@ int advisor_and_rechunk(long N)
     }
 
     if (fails == 0)
+    {
         std::printf("[bits] OK advisor (exact row, S/8 bytes, finer row by word)%s\n",
                     build_config::chunk_dynamic ? ", rechunk down and up" : "");
+    }
     a.clear();
     return fails;
 }
@@ -461,7 +529,9 @@ int bulk_ranges(long N)
     std::mt19937_64   rng(4242);
     std::vector<bool> src(static_cast<std::size_t>(N));
     for (long i = 0; i < N; ++i)
+    {
         src[static_cast<std::size_t>(i)] = ((i * 2654435761L) >> 7) % 3 == 0;
+    }
 
     for (int round = 0; round < 400; ++round)
     {
@@ -478,13 +548,17 @@ int bulk_ranges(long N)
             const bool v = (rng() & 1) != 0;
             fill_range(a, static_cast<std::size_t>(first), static_cast<std::size_t>(last), v);
             for (long i = first; i < last; ++i)
+            {
                 ref[static_cast<std::size_t>(i)] = v;
+            }
         }
         else
         {
             copy_range(a, static_cast<std::size_t>(first), static_cast<std::size_t>(last), src.begin() + first);
             for (long i = first; i < last; ++i)
+            {
                 ref[static_cast<std::size_t>(i)] = src[static_cast<std::size_t>(i)];
+            }
         }
     }
     fails += compare(a, ref, "fill_range / copy_range") != 0;
@@ -495,9 +569,13 @@ int bulk_ranges(long N)
     fill_range(a, static_cast<std::size_t>(c0 * S), static_cast<std::size_t>((c0 + 3) * S), false);
     fill_range(a, static_cast<std::size_t>(c1 * S), static_cast<std::size_t>((c1 + 3) * S), true);
     for (long i = c0 * S; i < (c0 + 3) * S; ++i)
+    {
         ref[static_cast<std::size_t>(i)] = false;
+    }
     for (long i = c1 * S; i < (c1 + 3) * S; ++i)
+    {
         ref[static_cast<std::size_t>(i)] = true;
+    }
 #pragma omp parallel
     {
         begin_phase();
@@ -507,6 +585,7 @@ int bulk_ranges(long N)
     end_phase();
     fails += compare(a, ref, "after the pass") != 0;
     for (long c = 0; c < 3; ++c)
+    {
         if (a.getChunkList()[static_cast<std::size_t>(c0 + c)].written() ||
             a.getChunkList()[static_cast<std::size_t>(c1 + c)].written())
         {
@@ -515,9 +594,12 @@ int bulk_ranges(long N)
             ++fails;
             break;
         }
+    }
 
     if (fails == 0)
+    {
         std::printf("[bits] OK fill_range / copy_range (64 per word), constant chunks compressed after the pass\n");
+    }
     a.clear();
     return fails;
 }
@@ -530,7 +612,9 @@ int parallel_fill(long N)
 
     std::vector<std::pair<long, long>> spans;
     for (long lo = 0, len = 1; lo < N; lo += len, len = (len % 97) + 1)
+    {
         spans.emplace_back(lo, std::min(N, lo + len));
+    }
     const auto nspans = static_cast<long>(spans.size());
 
     for (int pass = 0; pass < 2; ++pass)
@@ -551,12 +635,16 @@ int parallel_fill(long N)
         {
             const bool v = pass == 0 ? (s % 3 != 0) : (s % 2 == 0);
             for (long i = spans[static_cast<std::size_t>(s)].first; i < spans[static_cast<std::size_t>(s)].second; ++i)
+            {
                 ref[static_cast<std::size_t>(i)] = v;
+            }
         }
         fails += compare(a, ref, pass == 0 ? "fill_range_mt pass 1" : "fill_range_mt pass 2") != 0;
     }
     if (fails == 0)
+    {
         std::printf("[bits] OK fill_range_mt from %d threads, neighbouring spans in one word\n", CHUNK_PMP_MAX_THREADS);
+    }
     a.clear();
     return fails;
 }

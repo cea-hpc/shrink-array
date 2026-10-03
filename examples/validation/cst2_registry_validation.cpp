@@ -50,8 +50,8 @@
  */
 
 #include <cstdio>
-#include <cstdlib>    // std::system
-#include <fstream>    // the --id-limit child's log
+#include <cstdlib> // std::system
+#include <fstream> // the --id-limit child's log
 #include <string>
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
 #include <unistd.h>
@@ -79,15 +79,21 @@ using Registry = Chunk2A<double>::tab_cst_val2_holder::global_vec_holder;
 static void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 static void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
     // Serial chunk2a has no between-region pass: run the writers' pass.
     if constexpr (!build_config::use_openmp)
+    {
         Arr::make_block_compression();
+    }
 }
 
 /// @brief Write @p v everywhere in @p a (whole chunks: it compresses to a
@@ -100,7 +106,9 @@ static void fill(Arr& a, long n, double v)
         begin_phase();
 #pragma omp for schedule(static)
         for (int i = 0; i < ni; ++i)
+        {
             a[i] = v;
+        }
     }
     end_phase();
 }
@@ -110,7 +118,9 @@ static long mismatches(const Arr& a, long n, double v)
 {
     long bad = 0;
     for (long i = 0; i < n; ++i)
+    {
         bad += (a[static_cast<int>(i)] != v) ? 1 : 0;
+    }
     return bad;
 }
 
@@ -120,15 +130,16 @@ static int fails = 0;
 ///        @p min_entries: at least that many; -1 for exactly 0.
 static void expect(const char* where, int users, long min_entries)
 {
-    const int  u = Registry::users();
-    const long e = static_cast<long>(Registry::count_entries());
+    const int  u    = Registry::users();
+    const long e    = static_cast<long>(Registry::count_entries());
     const bool ok_u = (u == users);
     const bool ok_e = (min_entries < 0) ? (e == 0) : (e >= min_entries);
     std::printf("  %-44s users %d (expect %d)  entries %ld (expect %s%ld)%s\n", where, u, users, e,
-                min_entries < 0 ? "" : ">= ", min_entries < 0 ? 0L : min_entries,
-                (ok_u && ok_e) ? "" : "  <-- WRONG");
+                min_entries < 0 ? "" : ">= ", min_entries < 0 ? 0L : min_entries, (ok_u && ok_e) ? "" : "  <-- WRONG");
     if (!ok_u || !ok_e)
+    {
         ++fails;
+    }
 }
 
 static void expect_values(const char* where, const Arr& a, long n, double v)
@@ -154,7 +165,9 @@ static int run_id_limit_child()
         begin_phase();
 #pragma omp for schedule(static)
         for (int i = 0; i < ni; ++i)
+        {
             a[i] = 100. + static_cast<double>(i / S);
+        }
     }
     end_phase();
     std::printf("[id-limit] 40 distinct second values registered under a limit of 16: RAN ON\n");
@@ -166,23 +179,27 @@ static int run_id_limit_child()
 ///        used to write value_by_id[] out of bounds instead.
 static void check_id_limit(const char* self)
 {
-    const std::string log = "/tmp/cst2_id_limit_" + std::to_string(getpid()) + ".log";
-    const std::string cmd =
-        std::string("CHUNK_CST_VAL2_ID_LIMIT=16 ") + validation::self_command(self) + " --id-limit > \"" + log + "\" 2>&1";
-    const int status  = std::system(cmd.c_str());
-    const bool stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
-    bool              said = false;
+    const std::string log     = "/tmp/cst2_id_limit_" + std::to_string(getpid()) + ".log";
+    const std::string cmd     = std::string("CHUNK_CST_VAL2_ID_LIMIT=16 ") + validation::self_command(self) +
+                                " --id-limit > \"" + log + "\" 2>&1";
+    const int         status  = std::system(cmd.c_str());
+    const bool        stopped = status != -1 && (!WIFEXITED(status) || WEXITSTATUS(status) != 0);
+    bool              said    = false;
     {
         std::ifstream in(log);
         std::string   line;
         while (std::getline(in, line))
+        {
             said = said || line.find("identifiers exhausted") != std::string::npos;
+        }
     }
     std::remove(log.c_str());
     std::printf("D  identifier limit (16, 40 distinct values)       %s, %s%s\n", stopped ? "stopped" : "RAN ON",
                 said ? "with the message" : "no message", (stopped && said) ? "" : "  <-- WRONG");
     if (!stopped || !said)
+    {
         ++fails;
+    }
 }
 
 int run(int argc, char** argv)

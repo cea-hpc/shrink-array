@@ -91,12 +91,12 @@ struct alignas(64) ReaderSlot
     std::atomic<std::uint64_t> seq{0}; ///< Odd while a read is in flight.
 };
 
-inline ReaderSlot          g_slots[kSlots];
-inline std::atomic<int>    g_nslots{0};
+inline ReaderSlot       g_slots[kSlots];
+inline std::atomic<int> g_nslots{0};
 /// @brief Readers past kSlots: counted in one shared RMW (seq_cst), slow but
 ///        correct. A program with more reader threads than kSlots raises
 ///        CHUNK_READ_RECLAIM_SLOTS.
-inline std::atomic<long>   g_overflow_readers{0};
+inline std::atomic<long>        g_overflow_readers{0};
 inline thread_local ReaderSlot* t_slot     = nullptr;
 inline thread_local bool        t_overflow = false;
 
@@ -104,7 +104,9 @@ inline thread_local bool        t_overflow = false;
 inline ReaderSlot* claim_slot() noexcept
 {
     if (t_overflow)
+    {
         return nullptr;
+    }
     const int i = g_nslots.fetch_add(1, std::memory_order_acq_rel);
     if (i < kSlots) [[likely]]
     {
@@ -119,9 +121,13 @@ inline ReaderSlot* claim_slot() noexcept
 inline void light_fence() noexcept
 {
     if (dekker::asymmetric_active()) [[likely]]
+    {
         std::atomic_signal_fence(std::memory_order_seq_cst);
+    }
     else
+    {
         std::atomic_thread_fence(std::memory_order_seq_cst);
+    }
 }
 
 /**
@@ -137,7 +143,9 @@ class ReadSection
         {
             ReaderSlot* s = t_slot;
             if (s == nullptr) [[unlikely]]
+            {
                 s = claim_slot();
+            }
             if (s != nullptr) [[likely]]
             {
                 slot_ = s;
@@ -156,9 +164,13 @@ class ReadSection
         if constexpr (enabled)
         {
             if (slot_ != nullptr) [[likely]]
+            {
                 slot_->seq.store(seq_ + 1, std::memory_order_release); // even: the element load is done
+            }
             else
+            {
                 g_overflow_readers.fetch_sub(1, std::memory_order_release);
+            }
         }
     }
     ReadSection(const ReadSection&)            = delete;
@@ -182,10 +194,14 @@ inline void wait_for_readers() noexcept
     for (int i = 0; i < n; ++i)
     {
         if (&g_slots[i] == mine)
+        {
             continue;
+        }
         const std::uint64_t v = g_slots[i].seq.load(std::memory_order_acquire);
         if ((v & 1U) == 0U)
+        {
             continue;
+        }
         for (int spins = 0; g_slots[i].seq.load(std::memory_order_acquire) == v;)
         {
             CPU_PAUSE();
@@ -251,11 +267,15 @@ class PassScope
         if constexpr (enabled)
         {
             if (!owner_)
+            {
                 return;
+            }
             t_batch     = nullptr;
             auto& batch = storage();
             if (batch.empty())
+            {
                 return;
+            }
             wait_for_readers();
             const unsigned int saved_size = t_active_chunk_size;
             const unsigned int saved_key  = t_alloc_key;

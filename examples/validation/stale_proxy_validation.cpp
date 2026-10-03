@@ -57,11 +57,17 @@ using Array = std::conditional_t<chunk_config::use_chunk2a,
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 constexpr long kN = 4096;
@@ -99,10 +105,10 @@ constexpr int kNbCases = static_cast<int>(sizeof kCases / sizeof kCases[0]);
 template <typename A>
 static int run_case(int k)
 {
-    A a(kN);
-    A b(kN);
-    auto p = a[10];
-    p      = 1; // armed and valid
+    A    a(kN);
+    A    b(kN);
+    auto p   = a[10];
+    p        = 1; // armed and valid
     int sink = 0;
 
     switch (k)
@@ -111,7 +117,9 @@ static int run_case(int k)
             break;
         case 1:
             while (a.size() + 1 < a.capacity())
+            {
                 a.push_back(0);
+            }
             break;
         case 2:
             a.resize(2 * kN);
@@ -156,12 +164,16 @@ static int run_case(int k)
             break;
         case 15:
             while (a.size() < a.capacity())
+            {
                 a.push_back(0);
+            }
             a.push_back(0);
             break;
         case 16:
             if constexpr (build_config::chunk_dynamic)
+            {
                 a.rechunk_to(a.chunk_size() * 2);
+            }
             break;
         default:
             return 2;
@@ -169,13 +181,21 @@ static int run_case(int k)
 
     // The use after the operation: what a rebuild case must stop on.
     if (k == 5)
+    {
         sink += static_cast<int>(p);
+    }
     else if (k == 6)
+    {
         p += 1;
+    }
     else if (k == 7)
+    {
         ++p;
+    }
     else
+    {
         p = 4;
+    }
 
     std::printf("[child] ran to the end (sink %d)\n", sink);
     return 0;
@@ -193,16 +213,18 @@ static int run_child(int k)
 /// Re-runs this executable on case @p k and checks the outcome.
 static int check_case(const char* self, int k)
 {
-    const Case&       c      = kCases[k];
-    const std::string log    = "/tmp/stale_proxy_" + std::to_string(getpid()) + "_" + std::to_string(k) + ".log";
-    const std::string cmd    = validation::self_command(self) + " --case " + std::to_string(k) + " > \"" + log + "\" 2>&1";
+    const Case&       c   = kCases[k];
+    const std::string log = "/tmp/stale_proxy_" + std::to_string(getpid()) + "_" + std::to_string(k) + ".log";
+    const std::string cmd = validation::self_command(self) + " --case " + std::to_string(k) + " > \"" + log + "\" 2>&1";
     const int         status = std::system(cmd.c_str());
     std::string       out;
     if (FILE* f = std::fopen(log.c_str(), "r"))
     {
         char buf[4096];
         for (std::size_t n = 0; (n = std::fread(buf, 1, sizeof buf, f)) > 0;)
+        {
             out.append(buf, n);
+        }
         std::fclose(f);
     }
     std::remove(log.c_str());
@@ -226,13 +248,14 @@ int run(int argc, char** argv)
     __mem_page_size = getpagesize();
 
     if (argc > 2 && std::string(argv[1]) == "--case")
+    {
         return run_child(std::atoi(argv[2]));
+    }
 
     std::printf("=== stale_proxy_validation [variant = %s] ===\n", variant_name());
     if constexpr (!build_config::any_check)
     {
-        std::printf("[%s] not a check build: the stale-proxy check is compiled out, nothing to test\n",
-                    variant_name());
+        std::printf("[%s] not a check build: the stale-proxy check is compiled out, nothing to test\n", variant_name());
         return 0;
     }
 
@@ -240,7 +263,9 @@ int run(int argc, char** argv)
     for (int k = 0; k < kNbCases; ++k)
     {
         if (kCases[k].dyn_only && !build_config::chunk_dynamic)
+        {
             continue;
+        }
         fails += check_case(argv[0], k);
     }
 

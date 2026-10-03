@@ -154,23 +154,33 @@ using Ind = Arr::ind_type;
 constexpr const char* variant_name()
 {
     if constexpr (chunk_config::use_chunk2a)
+    {
         return "chunk2a";
+    }
     else if constexpr (chunk_config::use_chunk2)
+    {
         return "chunk2";
+    }
     else
+    {
         return "chunk";
+    }
 }
 
 void begin_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 
 void end_phase()
 {
     if constexpr (build_config::has_not_ompt)
+    {
         shrink_array::finalize_parallel_phase();
+    }
 }
 
 // Victims per writer: twice the largest in-region trigger floor (Chunk2:
@@ -205,7 +215,9 @@ template <typename A, typename Val>
 void maybe_set_second_value(A& a, const Val& v)
 {
     if constexpr (requires(A x) { x.set_second_value(v); })
+    {
         a.set_second_value(v);
+    }
 }
 
 constexpr double kSecond = 2.0;
@@ -235,9 +247,15 @@ int run_compound(int team, int writers, double seconds, long pollute)
 
         // Victims uniform at the second value, serially, before any region.
         for (long w = 0; w < writers; ++w)
+        {
             for (long c = 0; c < kVictims; ++c)
+            {
                 for (long k = 0; k < S; ++k)
+                {
                     a[static_cast<Ind>((w * kPerWriter + c) * S + k)] = kSecond;
+                }
+            }
+        }
 
         std::atomic<int>  writers_left{writers};
         std::atomic<long> rmw_ops{0};
@@ -279,7 +297,9 @@ int run_compound(int team, int writers, double seconds, long pollute)
                     }
                     long n = 0;
                     for (long c = 0; c < kVictims; ++c)
+                    {
                         n += ca.written(static_cast<Ind>((base_v + c) * S)) ? 0 : 1;
+                    }
                     compressed_seen.fetch_add(n, std::memory_order_relaxed);
                     sweeps.fetch_add(1, std::memory_order_relaxed);
                 }
@@ -318,7 +338,9 @@ int run_compound(int team, int writers, double seconds, long pollute)
         // Every victim element must be back to V.
         long bad = 0;
         for (long w = 0; w < writers; ++w)
+        {
             for (long c = 0; c < kVictims; ++c)
+            {
                 for (long k = 0; k < S; ++k)
                 {
                     const Ind    idx = static_cast<Ind>((w * kPerWriter + c) * S + k);
@@ -326,14 +348,18 @@ int run_compound(int team, int writers, double seconds, long pollute)
                     if (v != kSecond) [[unlikely]]
                     {
                         if (bad < 8)
+                        {
                             std::printf("[%s/read-reclaim compound] FAIL element %ld (chunk %ld, offset %ld) = %g, "
                                         "expected %g -- a compound operation was lost%s\n",
                                         variant_name(), static_cast<long>(idx), w * kPerWriter + c, k, v, kSecond,
                                         v == kSecond / 2 ? " (a *= 2 dropped)"
                                                          : (v == kSecond * 2 ? " (a *= 0.5 dropped)" : ""));
+                        }
                         ++bad;
                     }
                 }
+            }
+        }
 
         const long seen = compressed_seen.load();
         std::printf("[%s/read-reclaim compound] %ld compound ops, %ld sweeps, %ld victim chunks found compressed "
@@ -391,7 +417,9 @@ int run_remark(int team, double seconds)
             begin_phase();
             const int me = omp_get_thread_num();
             if (me == 0)
+            {
                 test_hooks::pass_delay_enabled = true;
+            }
             // Offsets of my own, j = me + k * team: two threads never write
             // the same element.
             const long n_own = (S - me + team - 1) / team;
@@ -411,9 +439,11 @@ int run_remark(int team, double seconds)
                     {
                         const long k = lost.fetch_add(1, std::memory_order_relaxed);
                         if (k < 8)
+                        {
                             std::printf("[%s/read-reclaim remark] FAIL thread %d: element %ld (chunk %ld, offset %ld) "
                                         "reads %g right after writing 1 -- the write was lost\n",
                                         variant_name(), me, static_cast<long>(idx), c, j, got);
+                        }
                     }
                     a[idx] = 0.0; // constant again: a candidate
                     ++local;
@@ -426,7 +456,9 @@ int run_remark(int team, double seconds)
 
         long nonzero = 0;
         for (long i = 0; i < kPool * S; ++i)
+        {
             nonzero += (ca[static_cast<Ind>(i)] != 0.0) ? 1 : 0;
+        }
 
         std::printf("[%s/read-reclaim remark] %ld write pairs, %ld lost read-backs, %ld elements left non-zero\n",
                     variant_name(), writes.load(), lost.load(), nonzero);
@@ -462,20 +494,24 @@ int main(int argc, char** argv)
         std::printf("[%s/read-reclaim] SKIP: needs at least 2 threads (OMP_NUM_THREADS=%d)\n", variant_name(), team);
         return 77;
     }
-    const int    writers = team >= 8 ? team / 4 : 1;
+    const int writers = team >= 8 ? team / 4 : 1;
     // Tunables (environment): run time, polluter chunks filled per victim,
     // reader delay in microseconds.
-    const double seconds = static_cast<double>(env_long("READ_RECLAIM_SECONDS", 2));
-    const long   pollute = env_long("READ_RECLAIM_POLLUTE", 4);
+    const double seconds      = static_cast<double>(env_long("READ_RECLAIM_SECONDS", 2));
+    const long   pollute      = env_long("READ_RECLAIM_POLLUTE", 4);
     test_hooks::read_delay_us = static_cast<unsigned>(env_long("READ_RECLAIM_DELAY_US", CHUNK_TEST_READ_DELAY_US));
 
     if (argc > 1 && std::string_view(argv[1]) == "compound")
+    {
         return run_compound(team, writers, seconds, pollute);
+    }
     if (argc > 1 && std::string_view(argv[1]) == "remark")
+    {
         return run_remark(team, seconds);
+    }
 
-    long   fails = 0;
-    int    rc    = 0;
+    long fails = 0;
+    int  rc    = 0;
     {
         Arr        a;
         const long S = static_cast<long>(a.chunk_size());
@@ -526,17 +562,23 @@ int main(int argc, char** argv)
                         {
                             const Ind old0 = static_cast<Ind>((base_p + (next_p + kPolluters / 2) % kPolluters) * S);
                             for (long k = 0; k < S; ++k)
+                            {
                                 a[old0 + static_cast<Ind>(k)] = 0.0;
+                            }
                             const Ind p0 = static_cast<Ind>((base_p + next_p) * S);
                             next_p       = (next_p + 1) % kPolluters;
                             a[p0]        = kPollute + 1.0;
                             for (long k = 1; k < S; ++k)
+                            {
                                 a[p0 + static_cast<Ind>(k)] = kPollute;
+                            }
                         }
                     }
                     long n = 0;
                     for (long c = 0; c < kVictims; ++c)
+                    {
                         n += ca.written(static_cast<Ind>((base_v + c) * S)) ? 0 : 1;
+                    }
                     compressed_seen.fetch_add(n, std::memory_order_relaxed);
                     sweeps.fetch_add(1, std::memory_order_relaxed);
                 }
@@ -563,10 +605,12 @@ int main(int argc, char** argv)
                     {
                         const long k = bad.fetch_add(1, std::memory_order_relaxed);
                         if (k < 8)
+                        {
                             std::printf("[%s/read-reclaim] FAIL stale read: element %ld (chunk %ld, offset %ld) = %g, "
                                         "expected 0 -- read from a released buffer%s\n",
                                         variant_name(), static_cast<long>(idx), w * kPerWriter + c, j, v,
                                         v == kPollute ? " (reused and overwritten)" : "");
+                        }
                     }
                 }
                 test_hooks::read_delay_enabled = false;
@@ -575,7 +619,7 @@ int main(int argc, char** argv)
         }
         end_phase();
 
-        fails = bad.load();
+        fails           = bad.load();
         const long seen = compressed_seen.load();
         std::printf("[%s/read-reclaim] %ld reads, %ld sweeps, %ld victim chunks found compressed after a sweep\n",
                     variant_name(), reads.load(), sweeps.load(), seen);

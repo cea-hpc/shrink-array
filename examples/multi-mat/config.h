@@ -131,7 +131,9 @@ inline constexpr bool chunk_stats = chunk_config::stats;
 inline void begin_parallel_phase()
 {
     if constexpr (!embedded_compression)
+    {
         shrink_array::begin_parallel_phase();
+    }
 }
 
 /// @brief After a barrier, before the reads that must see the writes of
@@ -151,7 +153,9 @@ inline void barrier_phase()
 inline void end_parallel_phase_in_region()
 {
     if constexpr (!embedded_compression)
+    {
         shrink_array::finalize_parallel_phase_only_flush();
+    }
 }
 
 /// @brief First thing after the region: the pools reset and the candidates
@@ -160,7 +164,9 @@ inline void end_parallel_phase_in_region()
 inline void end_parallel_phase_after_region()
 {
     if constexpr (!embedded_compression)
+    {
         shrink_array::finalize_parallel_phase_after_flush();
+    }
 }
 
 } // namespace multi_mat

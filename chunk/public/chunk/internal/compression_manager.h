@@ -194,29 +194,37 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
                 // (1) This op must still be alive. A poisoned magic means the op
                 //     was already destroy()'d — i.e. we are flushing it twice.
                 if (magic != deferred_lifecycle::op_alive_magic)
+                {
                     INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op magic corrupt/poisoned "
                                      "(op={}, magic={:#x}, executed={}, enqueue_rank={}, flusher_rank={})",
                                      static_cast<const void*>(this), magic, executed, this->thread_rank, flusher_rank);
+                }
 
                 // (2) This op must not have run before (double-flush guard).
                 if (executed)
+                {
                     INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op executed twice "
                                      "(op={}, enqueue_rank={}, flusher_rank={})",
                                      static_cast<const void*>(this), this->thread_rank, flusher_rank);
+                }
 
                 // (3) The captured ctx must still be alive. A poisoned or absent
                 //     ctx_alive_magic means the ctx was destroyed/recycled while
                 //     this op still referenced it (the root use-after-recycle).
                 if (ctx == nullptr)
+                {
                     INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op has null ctx at write_body "
                                      "(op={}, enqueue_rank={}, flusher_rank={})",
                                      static_cast<const void*>(this), this->thread_rank, flusher_rank);
+                }
 
                 if (ctx->magic != deferred_lifecycle::ctx_alive_magic)
+                {
                     INVARIANT_FAILED("[DEFERRED_LIFECYCLE] ctx not alive at write_body "
                                      "(op={}, ctx={}, ctx_magic={:#x}, enqueue_rank={}, flusher_rank={})",
                                      static_cast<const void*>(this), static_cast<const void*>(ctx), ctx->magic,
                                      this->thread_rank, flusher_rank);
+                }
 
                 executed = true;
             }
@@ -245,7 +253,9 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
                 const unsigned int saved     = t_active_chunk_size;
                 const unsigned int saved_key = t_alloc_key;
                 if (ctx->chunk_size_frozen != 0U)
+                {
                     set_thread_chunk_size(ctx->chunk_size_frozen);
+                }
                 set_thread_alloc_key(ctx->alloc_key_frozen); // the array's slabs, not the caller's
 
                 fn();
@@ -269,7 +279,9 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
             // flush paths call destroy() on the same op concurrently. The first
             // caller wins; the rest return without touching ctx/this again.
             if (destroyed.exchange(true, std::memory_order_acq_rel))
+            {
                 return;
+            }
 
             // Destroy the context object if present
             if (ctx)
@@ -443,7 +455,9 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     [[nodiscard]] static int64_t pending_ops_rank(int thr_rank) noexcept
     {
         if (pending_ops_shard.empty())
+        {
             return 0;
+        }
         return pending_ops_shard[thr_rank].v.load(std::memory_order_acquire);
     }
 
@@ -455,11 +469,15 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         // acquire sum across shards. A non-zero result means at least one
         // rank has an unflushed op; we then take the (rare) scan path.
         if (pending_ops_shard.empty())
+        {
             return false;
+        }
         const int max_thr = CHUNK_PMP_RANK_BOUND;
         int64_t   total   = 0;
         for (int i = 0; i < max_thr; ++i)
+        {
             total += pending_ops_shard[i].v.load(std::memory_order_acquire);
+        }
         return total > 0;
     }
 
@@ -491,8 +509,10 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         if constexpr (build_config::any_check)
         {
             if (FlushReplayState<T, ChunkType>::in_flush_replay) [[unlikely]]
+            {
                 INVARIANT_FAILED("record_enqueue_deferred: op enqueued during a flush replay (rank {}, chunk {})",
                                  thr_rank, static_cast<const void*>(&chunk));
+            }
         }
         enqueue_lock(thr_rank);
         // The insert allocates, and ankerl throws on a bucket overflow; the
@@ -703,7 +723,9 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     {
         auto& v = dangerous_lists_per_thread[thr_rank].value;
         if (v.load(std::memory_order_relaxed) == 0)
+        {
             v.store(1, std::memory_order_release);
+        }
     }
 
     /// @brief The list has been looked at: clear the flag. Idempotent; the
@@ -892,9 +914,11 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         if constexpr (build_config::any_check)
         {
             if (before - count < 0) [[unlikely]]
+            {
                 INVARIANT_FAILED("dec_pending_ops: rank {} count {} -> {} (retired {}): more ops retired than "
                                  "published -- a double count",
                                  thr_rank, before, before - count, count);
+            }
         }
     }
 

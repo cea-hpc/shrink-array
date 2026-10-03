@@ -243,7 +243,9 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     ArrayChunk& operator=(const ArrayChunk<T, ind_type>& from)
     {
         if (this != &from)
+        {
             this->copy_from(from);
+        }
         return *this;
     }
 

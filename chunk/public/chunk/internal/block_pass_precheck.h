@@ -50,11 +50,15 @@ template <typename ProxyType, typename ChunkType>
 [[nodiscard]] inline bool block_pass_yields_to_flush([[maybe_unused]] int max_thr) noexcept
 {
     if constexpr (!build_config::use_openmp)
+    {
         return false;
+    }
     else
     {
         if (!WriteCompressSyncPolicy<ProxyType>::any_thread_flushing(max_thr))
+        {
             return false;
+        }
         // What a declined start() counts: an attempt, yielded to a flush.
         increm_chunk_gate_start<ChunkType>();
         increm_chunk_gate_start_flush_yield<ChunkType>();

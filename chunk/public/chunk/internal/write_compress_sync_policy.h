@@ -78,12 +78,16 @@ inline std::atomic<bool> membarrier_ready{false};
 inline bool register_membarrier() noexcept
 {
     if constexpr (!chunk_config::asymmetric_dekker)
+    {
         return false;
+    }
     else
     {
 #if defined(__linux__) && defined(SYS_membarrier)
         if (membarrier_ready.load(std::memory_order_relaxed))
+        {
             return true;
+        }
         const long rc = ::syscall(SYS_membarrier, MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED, 0, 0);
         membarrier_ready.store(rc == 0, std::memory_order_release);
         return rc == 0;
@@ -109,7 +113,9 @@ inline void heavy_barrier() noexcept
     {
 #if defined(__linux__) && defined(SYS_membarrier)
         if (membarrier_ready.load(std::memory_order_relaxed)) [[likely]]
+        {
             ::syscall(SYS_membarrier, MEMBARRIER_CMD_PRIVATE_EXPEDITED, 0, 0);
+        }
 #endif
     }
 }
@@ -118,9 +124,13 @@ inline void heavy_barrier() noexcept
 [[nodiscard]] inline bool asymmetric_active() noexcept
 {
     if constexpr (!chunk_config::asymmetric_dekker)
+    {
         return false;
+    }
     else
+    {
         return membarrier_ready.load(std::memory_order_relaxed);
+    }
 }
 
 /// @brief What print_chunk_stats() reports as the handshake in use.
@@ -129,14 +139,20 @@ inline void heavy_barrier() noexcept
     if constexpr (!chunk_config::asymmetric_dekker)
     {
         if constexpr (chunk_config::tsan_build)
+        {
             return "symmetric (fences; ThreadSanitizer build)";
+        }
         else
+        {
             return "symmetric (fences; no membarrier on this platform)";
+        }
     }
     else
+    {
         return membarrier_ready.load(std::memory_order_relaxed)
                    ? "asymmetric (plain store + membarrier on the rare side)"
                    : "symmetric (fences; membarrier registration FAILED, kernel < 4.14 or seccomp)";
+    }
 }
 } // namespace dekker
 
@@ -332,7 +348,9 @@ class WriteCompressSyncPolicy
         {
             const auto* chunk = static_cast<const ChunkT*>(per_thread_writing[i].v.load(std::memory_order_acquire));
             if (chunk != nullptr && chunk->steal_marked())
+            {
                 return true;
+            }
         }
         return false;
     }
@@ -419,7 +437,9 @@ class WriteCompressSyncPolicy
         for (int i = 0; i < max_thr; ++i)
         {
             if (per_thread_writing[i].v.load(std::memory_order_acquire) != nullptr)
+            {
                 return true;
+            }
         }
         return false;
     }

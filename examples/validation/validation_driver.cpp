@@ -16,10 +16,10 @@
 
 int __mem_page_size = 0;
 
-#define VALIDATION_HARNESS(name)                                                                                       \
-    namespace validation::name                                                                                         \
-    {                                                                                                                  \
-    int run(int argc, char** argv);                                                                                    \
+#define VALIDATION_HARNESS(name)    \
+    namespace validation::name      \
+    {                               \
+    int run(int argc, char** argv); \
     }
 #include VALIDATION_HARNESS_LIST
 #undef VALIDATION_HARNESS
@@ -48,7 +48,9 @@ std::string validation::self_command(const char* argv0)
 {
     std::string cmd = std::string("\"") + argv0 + "\"";
     if (g_running != nullptr)
+    {
         cmd += std::string(" ") + g_running;
+    }
     return cmd;
 }
 
@@ -67,10 +69,14 @@ int main(int argc, char** argv)
         }
     }
     if (kNbHarnesses == 1)
+    {
         return kHarnesses[0].run(argc, argv);
+    }
 
     std::fprintf(stderr, "usage: %s <harness> [args...]\nharnesses:\n", argv[0]);
     for (const Harness& h : kHarnesses)
+    {
         std::fprintf(stderr, "  %s\n", h.name);
+    }
     return 2;
 }

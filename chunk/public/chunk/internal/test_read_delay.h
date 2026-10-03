@@ -72,15 +72,21 @@ inline void maybe_read_delay() noexcept
     if constexpr (read_delay_every > 0)
     {
         if (!read_delay_enabled)
+        {
             return;
+        }
         thread_local unsigned count = 0;
         if (++count < read_delay_every)
+        {
             return;
-        count         = 0;
-        const auto t0 = std::chrono::steady_clock::now();
+        }
+        count           = 0;
+        const auto t0   = std::chrono::steady_clock::now();
         const auto wait = std::chrono::microseconds(read_delay_us);
         while (std::chrono::steady_clock::now() - t0 < wait)
+        {
             CPU_PAUSE();
+        }
     }
 }
 
@@ -114,15 +120,21 @@ inline void maybe_pass_delay() noexcept
     if constexpr (pass_delay_every > 0)
     {
         if (!pass_delay_enabled)
+        {
             return;
+        }
         thread_local unsigned count = 0;
         if (++count < pass_delay_every)
+        {
             return;
+        }
         count           = 0;
         const auto t0   = std::chrono::steady_clock::now();
         const auto wait = std::chrono::microseconds(pass_delay_us);
         while (std::chrono::steady_clock::now() - t0 < wait)
+        {
             CPU_PAUSE();
+        }
     }
 }
 
