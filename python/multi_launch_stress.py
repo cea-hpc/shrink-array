@@ -49,7 +49,17 @@ import sys
 
 # --numa-interleave: numactl prefix for runs spanning several NUMA nodes.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import numa_launch as _numa  # noqa: E402
+try:
+    import numa_launch as _numa  # noqa: E402
+except ImportError:
+    # Copied alone next to the binaries (cp python/<script> build_dir/): run
+    # without NUMA interleave rather than not at all. Copy numa_launch.py too,
+    # or run the script from python/, to get it back.
+    import types as _types  # noqa: E402
+
+    _numa = _types.SimpleNamespace(MODES=("auto", "off"), interleave_prefix=lambda env, mode="auto": [])
+    print(f"[{os.path.basename(__file__)}] numa_launch.py not found next to the script: "
+          "--numa-interleave has no effect", file=sys.stderr)
 
 import atexit
 import datetime
