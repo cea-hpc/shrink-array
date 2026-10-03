@@ -267,6 +267,12 @@ foreach(_geom IN LISTS _rt_geometries)
     if (_vname STREQUAL "chunk2" AND NOT _geom STREQUAL "dyn")
       list(APPEND _group chunk2_registry_growth_validation)
     endif()
+    # chunk2_foreign_key_validation: a chunk is only ever compressed to its own
+    # array's second value (the harness says why). Chunk2 only, default static
+    # size, at 8 threads; OpenMP builds only (the passes run in a region).
+    if (OMP AND _vname STREQUAL "chunk2" AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group chunk2_foreign_key_validation)
+    endif()
     # rechunk_validation (content invariance across rechunk_to(), one test per
     # case) and dyn_geometry_validation (an array reads back what was written
     # at every registered runtime chunk size): dyn only, at 8 threads.
@@ -301,6 +307,8 @@ foreach(_geom IN LISTS _rt_geometries)
         validation_add_test(bits_container_validation_${_geom} ${_exe} ${_h} "1;8")
       elseif (_h STREQUAL "chunk2_registry_growth_validation")
         validation_add_test(chunk2_registry_growth_validation ${_exe} ${_h} "1;4")
+      elseif (_h STREQUAL "chunk2_foreign_key_validation")
+        validation_add_test(chunk2_foreign_key_validation ${_exe} ${_h} "8")
       else()
         validation_add_test(${_base} ${_exe} ${_h} "1;8")
       endif()
