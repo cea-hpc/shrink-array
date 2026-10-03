@@ -73,6 +73,36 @@ template <typename T>
 struct is_simple_proxy<Proxy<T>> : std::true_type
 {
 };
+namespace internal
+{
+/// @brief Element @p n behind a values pointer the caller has loaded -- the
+///        raw read of ProxyBase::read_values() and read_values_async().
+/// @details NOT raw for a Chunk2A second constant: its pointer names an
+///          identifier in a region that is never written, so indexing it reads
+///          a zero page; the value comes from the registry instead (arithmetic
+///          plus one table load, no sync). The question is asked of the
+///          POINTER, not of the chunk: the callers run with a write or a replay
+///          in flight, so the chunk's state and the pointer can disagree, and
+///          converting a pointer that is NOT in the region gave an arbitrary
+///          index into value_by_id[] and a SIGSEGV. One exact range test on the
+///          pointer, one conversion.
+template <typename T>
+[[nodiscard]] T element_of(const T* vals, std::size_t n) noexcept
+{
+    if constexpr (requires(const T* ptr) {
+                      TabCstVal2Holder<T>::is_cst_val2_ptr(ptr);
+                      TabCstVal2Holder<T>::value_of_ptr_checked(ptr);
+                  })
+    {
+        if (TabCstVal2Holder<T>::is_cst_val2_ptr(vals)) [[unlikely]]
+            return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
+    }
+    // elem_get, not vals[n]: for Bit that indexed BYTES, up to chunk_size of
+    // them in a chunk_size / 8 byte buffer.
+    return elem_get(vals, n);
+}
+} // namespace internal
+
 /**
  * @brief The compression-bookkeeping half of ProxyBase.
  *
@@ -180,10 +210,15 @@ struct ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
   public:
     /// @brief Read at the offset @p ctx recorded, on the replay path.
     /// @warning Same reload caveat as store_value_async().
+    /// @details Through internal::element_of(), like read_values(): a replay of `*=` on
+    ///          a Chunk2A chunk compressed to its second value read 0 here
+    ///          (the identifier region) instead of the constant; if another
+    ///          thread materialised the chunk before the replay tested its
+    ///          state, the replay stored 0 * x into the fresh buffer -- one
+    ///          element at 0 among the second values.
     [[nodiscard]] static T read_values_async(auto* ctx) noexcept
     {
-        const T* const values_loc = ctx->chunk.values_load();
-        return elem_get(values_loc, static_cast<std::size_t>(ctx->num));
+        return internal::element_of(ctx->chunk.values_load(), static_cast<std::size_t>(ctx->num));
     }
 
     /// @brief set_ptr_is_inside_chunk_list_to_compress() for the replay path,
@@ -609,40 +644,15 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // pending_ops_>0, wait_for_availability's replay reallocates `values`
         // under the in-flight writer -> SIGSEGV. Same-offset visibility on the
         // write path is handled by the P2 WAW erase before the write body; pure
-        // reads use read_pure() below. Kept raw in BOTH sync_on_read states.
-        //
-        // ... but NOT raw for a Chunk2A second constant: its identifier slot
-        // is never written, so this would read a
-        // zero page and the compression decision downstream would be taken
-        // against 0 instead of the chunk's constant. Resolving the registry
-        // is arithmetic plus one table load -- it does not sync, so the
-        // contract above still holds.
-        //
-        // The question is asked of the POINTER, not of the chunk. This
-        // function runs with a write in flight -- that is its reason to
-        // exist -- so the chunk's state and the pointer this proxy is about
-        // to index can disagree, and asking chunk.is_cst_val2() then
-        // converting a pointer that is NOT in the region gave an arbitrary
-        // index into value_by_id[] and a SIGSEGV. One load, one exact range
-        // test on it, one conversion of the same pointer.
-        if constexpr (requires(const T* ptr) {
-                          TabCstVal2Holder<T>::is_cst_val2_ptr(ptr);
-                          TabCstVal2Holder<T>::value_of_ptr_checked(ptr);
-                      })
-        {
-            const T* const vals = values;
-            // TEST KNOB (test_read_delay.h), as in ChunkBase::element_at: widens
-            // the load -> dereference window. Compiled out by default.
-            test_hooks::maybe_read_delay();
-            if (TabCstVal2Holder<T>::is_cst_val2_ptr(vals)) [[unlikely]]
-                return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
-            // elem_get, not vals[num]: for Bit that indexed BYTES, up to
-            // chunk_size of them in a chunk_size / 8 byte buffer.
-            return elem_get(vals, static_cast<std::size_t>(num));
-        }
+        // reads use read_pure() below. Kept raw in BOTH sync_on_read states --
+        // but not raw for a Chunk2A second constant, see internal::element_of(): the
+        // compression decision downstream would otherwise be taken against 0
+        // instead of the chunk's constant. One load of the pointer.
         const T* const vals = values;
-        test_hooks::maybe_read_delay(); // TEST KNOB, see above
-        return elem_get(vals, static_cast<std::size_t>(num));
+        // TEST KNOB (test_read_delay.h), as in ChunkBase::element_at: widens
+        // the load -> dereference window. Compiled out by default.
+        test_hooks::maybe_read_delay();
+        return internal::element_of(vals, static_cast<std::size_t>(num));
     }
     /// @brief read_values() for a pre-check made BEFORE the write session
     ///        (the `0 * x` shortcut of the compound operations): inside a
