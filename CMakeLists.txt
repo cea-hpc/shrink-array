@@ -572,6 +572,13 @@ if(SHRINK_INTEL_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"
         # and the executable's RUNPATH only serves its direct dependencies.
         link_libraries("${SHRINK_LIBIMF}" "-Wl,--push-state,--no-as-needed" "${SHRINK_LIBINTLC}" "-Wl,--pop-state")
         add_link_options("LINKER:-rpath,${_imf_dir}")
+        # And its -L, as a raw flag. CMake (3.28) writes libintlc as a bare
+        # -lintlc, without the directory, so the link only worked where
+        # LIBRARY_PATH held it -- a shell that had sourced oneAPI's setvars.sh,
+        # as compile_all.sh does -- and failed elsewhere with "library not
+        # found: intlc". link_directories() would be dropped too when the
+        # directory is among the compiler's implicit ones; a raw -L is not.
+        add_link_options("-L${_imf_dir}")
     else()
         message(STATUS "Intel libm: not found -- glibc libm (set INTEL_LIBM_DIR, or load the oneAPI environment)")
     endif()
