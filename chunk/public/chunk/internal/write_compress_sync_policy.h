@@ -505,7 +505,7 @@ class WriteCompressSyncPolicy
  * @tparam PROX proxy type the policy would be instantiated for
  */
 template <typename PROX>
-struct WriteCompressSyncPolicy<PROX, false>
+class WriteCompressSyncPolicy<PROX, false>
 {
 };
 

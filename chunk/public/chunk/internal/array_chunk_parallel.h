@@ -125,8 +125,9 @@ class FastBlockSupport<Derived, true>
  * @brief Inert specialisation: nothing queues block-compression candidates.
  */
 template <typename Derived>
-struct FastBlockSupport<Derived, false>
+class FastBlockSupport<Derived, false>
 {
+  public:
     /** @brief No-op: this mode has no deferred candidate list. */
     void make_block_compression() noexcept {}
 };

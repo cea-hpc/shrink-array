@@ -524,8 +524,9 @@ class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrent
  * @tparam Derived CRTP derived chunk type (Chunk2A<T>)
  */
 template <typename T, typename Derived>
-struct Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
+class Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
 {
+  public:
     using Base            = Chunk2Base<T, Derived>;
     using manager_chunk2A = ManagerChunk<Chunk2A, T>;
 
