@@ -824,7 +824,15 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
 
     if (proxy2)
     {
-        if (proxy2->is_not_cst_val())
+        // Re-queue the writer's chunk only into the list of ITS array's second
+        // value. Proxy2::perform_compression runs the pass of every key of the
+        // rank with the same writer: queued under another array's key, the
+        // chunk was compressed by that key's next pass to the OTHER array's
+        // constant whenever it was constant at that value -- and its own
+        // array, which only recognises its own constant, then wrote into that
+        // shared array, changing every chunk compressed to it
+        // (chunk2_foreign_key_validation).
+        if (proxy2->is_not_cst_val() && proxy2->second_value == second_value)
         {
             proxy2->add_to_compression_list(vec_tuple_to_compress);
         }
