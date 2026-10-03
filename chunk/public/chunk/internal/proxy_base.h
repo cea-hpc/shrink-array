@@ -42,7 +42,7 @@
 #include "chunk/internal/concept_is_clean_assignement.h"
 #include "chunk/internal/crp_helper.h"
 #include "chunk/internal/arithmetic_context.h"
-#include "chunk/internal/test_read_delay.h" // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
+#include "chunk/internal/test_hooks.h" // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
 #include "chunk/internal/read_reclaim.h"    // ReadSection: read_values_outside_session
 
 namespace shrink_array
@@ -542,7 +542,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // compression decision downstream would otherwise be taken against 0
         // instead of the chunk's constant. One load of the pointer.
         const T* const vals = values;
-        // TEST KNOB (test_read_delay.h), as in ChunkBase::element_at: widens
+        // TEST KNOB (test_hooks.h), as in ChunkBase::element_at: widens
         // the load -> dereference window. Compiled out by default.
         test_hooks::maybe_read_delay();
         return internal::element_of(vals, static_cast<std::size_t>(num));

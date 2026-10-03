@@ -77,7 +77,11 @@
     #include "chunk/internal/chunk_stats.h"
 #endif
 
-int __mem_page_size = 0;
+#include "chunk/internal/test_hooks.h" // force_defer_every
+#include "validation_harness.h"        // __mem_page_size; run() is called by validation_driver.cpp
+
+namespace validation::deferred_path_validation
+{
 
 using namespace shrink_array;
 
@@ -563,9 +567,22 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     return fails ? 1 : 0;
 }
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
+
+    // The forced-deferral hook (test_hooks.h), on for this harness only: one
+    // write in 7 of every thread, unless a whole-tree build fixed another N.
+    test_hooks::force_defer_every = build_config::force_defer_every > 0 ? build_config::force_defer_every : 7U;
+    if constexpr (!build_config::use_openmp)
+    {
+        printf("[deferred_path] note: serial build, no deferred path to force\n");
+    }
+    else if constexpr (!test_hooks::force_defer_compiled)
+    {
+        printf("[deferred_path] note: this build has no test hooks (CHUNK_TEST_HOOKS): no write is forced down "
+               "the deferred path\n");
+    }
 
     // 128 Ki elements: some 60 chunks per run at the default geometry, a
     // million deferred writes per run of the executable, and a Debug build
@@ -576,7 +593,7 @@ int main(int argc, char** argv)
     ParamChunk::init_indexes(true);
 
     printf("=== deferred_path_validation [variant = %s]  N=%ld  threads=%d  force_defer_every=%u ===\n", variant_name(),
-           N, CHUNK_PMP_MAX_THREADS, build_config::force_defer_every);
+           N, CHUNK_PMP_MAX_THREADS, test_hooks::force_defer_compiled ? test_hooks::force_defer_every : 0U);
 
     int fails = 0;
 
@@ -588,8 +605,22 @@ int main(int argc, char** argv)
     fails += run<double>("double", N, sd);
     fails += run<bool>("bool", N, sb);
 
+    // The hook really fired, in every build that has it (the deferral count
+    // below needs CHUNK_STATS).
+    if (test_hooks::force_defer_compiled && test_hooks::force_defer_every > 0)
+    {
+        const unsigned long forced = test_hooks::forced_deferrals.load();
+        printf("[%s] writes forced down the deferred path: %lu\n", variant_name(), forced);
+        if (forced == 0)
+        {
+            printf("[%s] FAIL: the forced-deferral hook is on and fired 0 times -- the path was not exercised\n",
+                   variant_name());
+            ++fails;
+        }
+    }
+
 #ifdef CHUNK_STATS
-    if constexpr (build_config::force_defer_every > 0)
+    if (test_hooks::force_defer_compiled && test_hooks::force_defer_every > 0)
     {
         long deferred = 0;
         for (int v = 0; v < CHUNK_STATS_N_VARIANT; ++v)
@@ -612,3 +643,5 @@ int main(int argc, char** argv)
     printf("\n[%s] %s\n", variant_name(), fails == 0 ? "=== DEFERRED PATH OK ===" : "=== DEFERRED PATH FAILURES ===");
     return fails;
 }
+
+} // namespace validation::deferred_path_validation

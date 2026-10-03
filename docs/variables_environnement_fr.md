@@ -84,7 +84,8 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 | `CHUNK_STATS` | compteurs d'instrumentation (build stats) |
 | `CHECK_OPTIM` | vérifications d'invariants en build optimisé |
 | `MM_PROTECT` | Chunk, Chunk2 : tampons partagés des valeurs constantes en lecture seule (`mprotect`) ; une écriture parasite dans un chunk compressé fait une erreur de segmentation au lieu de corrompre la valeur (option CMake `CHUNK_MM_PROTECT`) |
-| `CHUNK_FORCE_DEFER_EVERY=<N>` | une écriture sur N passe par le chemin différé (validation ; 32 threads au plus) |
+| `CHUNK_FORCE_DEFER_EVERY=<N>` | une écriture sur N passe par le chemin différé, dans tout l'arbre (validation ; 32 threads au plus) |
+| `CHUNK_TEST_HOOKS` | compile les crochets de test des harnesses (`chunk/internal/test_hooks.h` : écritures différées forcées, délais de lecture et de passe), éteints à l'exécution tant qu'un harness ne les allume pas ; défini pour tout l'arbre là où les harnesses sont compilés (`CHUNK_BUILD_VALIDATION`), jamais dans les builds de performance |
 
 ## 7. Options CMake
 
@@ -101,7 +102,7 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 | `CHUNK_LIB_UNITY` | `ON` | chaque archive de variante (`chunk_v2a_256`, ...) compilée en une seule unité (unity build, 4 à 6 fois moins de compilation) ; un fichier qui a ses propres options de compilation reste à part |
 | `SHRINK_BENCH_UNITY` | `ON` | chaque exécutable `shrink_bench` compilé en une seule unité (unity build, 3,5 à 4 fois moins de compilation) ; `OFF` pour comparer des temps avec des campagnes antérieures, l'inlining entre fichiers du banc pouvant les changer ; `SHRINK_BENCH_UNITY_BATCH` fichiers par unité (0 = tous) |
 | `CHUNK_VALIDATION_UNITY` | `ON` | les harnesses de validation regroupés en un exécutable par variante et géométrie (unity build) ; `OFF` : un exécutable par harness |
-| `CHUNK_BUILD_VALIDATION` | selon le build | compiler les harnesses de `examples/validation` ; par défaut `ON` en Debug, avec `CHECK_OPTIM` ou un sanitizer, `OFF` ailleurs (non mis en cache : suit la configuration courante) |
+| `CHUNK_BUILD_VALIDATION` | selon le build | compiler les harnesses de `examples/validation`, et avec eux les crochets de test (`CHUNK_TEST_HOOKS`) ; par défaut `ON` en Debug, avec `CHECK_OPTIM` ou un sanitizer, `OFF` ailleurs (non mis en cache : suit la configuration courante) |
 | `CHUNK_RECLAIM_EMPTY_SLABS` | `ON` | rendre au système (`madvise`) les slabs vidés aux balayages explicites (rechunk, destruction) ; `OFF` définit `CHUNK_NO_RECLAIM_EMPTY_SLABS` |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | Chunk2A : l'emplacement de seconde valeur contient un identifiant de 4 octets au lieu de la valeur (moins de mémoire, +3 % de temps d'écriture) |
 

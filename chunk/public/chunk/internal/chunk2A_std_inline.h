@@ -436,7 +436,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
         {
             chunk_t->steal_unmark();
         }
-        test_hooks::maybe_pass_delay(); // TEST KNOB (test_read_delay.h)
+        test_hooks::maybe_pass_delay(); // TEST KNOB (test_hooks.h)
         if constexpr (build_config::any_check)
         {
             if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]

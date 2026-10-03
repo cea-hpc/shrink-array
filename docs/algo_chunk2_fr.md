@@ -539,8 +539,11 @@ Chunk2 :
 | `CHUNK_RECHUNK_MAX_COARSEN=<n>` | facteur maximal d'un grossissement (4 par défaut) |
 | `CHUNK_ALLOC_AFFINITY_EAGER=1` | jeu d'allocateurs par tableau dès sa création (paresseux par défaut pour Chunk2) |
 
-Option de compilation utile pour la validation : `CHUNK_FORCE_DEFER_EVERY=N` force une
-écriture sur N à passer par le chemin différé (à utiliser à 32 threads au plus).
+Pour la validation, le crochet de test « écritures différées forcées »
+(`chunk/internal/test_hooks.h`, compilé avec les harnesses) envoie une écriture sur N
+par le chemin différé ; `deferred_path_validation` l'allume (N = 7). L'option de
+compilation `CHUNK_FORCE_DEFER_EVERY=N` le force dans tout l'arbre (à utiliser à 32
+threads au plus).
 
 Options CMake liées aux performances des bancs :
 

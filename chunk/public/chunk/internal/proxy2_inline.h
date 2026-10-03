@@ -479,7 +479,7 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
                 }
                 const read_reclaim::ReadSection section;
                 const T* const                  live = chunk.values_load();
-                test_hooks::maybe_read_delay(); // TEST KNOB (test_read_delay.h)
+                test_hooks::maybe_read_delay(); // TEST KNOB (test_hooks.h)
                 // raw-read: inside a read_reclaim::ReadSection
                 if (live == chunk.get_cst_val2(BaseSpec::ind) || live[num] == second_value)
                 {

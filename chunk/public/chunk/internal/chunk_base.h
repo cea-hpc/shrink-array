@@ -52,7 +52,7 @@
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
 
 #include "chunk/internal/freepath_counters.h" // [FREEPATH] counters, needed in std-alloc builds too
-#include "chunk/internal/test_read_delay.h"   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (element_at)
+#include "chunk/internal/test_hooks.h"   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (element_at)
 #include "chunk/internal/read_reclaim.h"      // ReadSection (element_at), defer_release (free_block_to_pool)
 
 #ifdef FAST_ALLOC
@@ -1967,7 +1967,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             return load_at<Relaxed>(vals, i);
         }
         const T* const vals = values_load();
-        // TEST KNOB (test_read_delay.h): widens the load -> dereference window
+        // TEST KNOB (test_hooks.h): widens the load -> dereference window
         // a concurrent compressor's CAS + free can fall into. Compiled out
         // unless CHUNK_TEST_READ_DELAY_EVERY > 0, and then only on threads
         // that opted in. Not on the Relaxed (scan) reads.

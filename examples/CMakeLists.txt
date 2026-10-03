@@ -101,23 +101,9 @@ add_subdirectory(simple_array)
 # Simple example chunk : double value compression
 add_subdirectory(shrink_bench)
 
-# Validation harnesses (ctest): re-chunk content invariance, dyn geometry.
-#
-# Built where they check something an optimised build does not: Debug,
-# CHECK_OPTIM and the sanitizer builds. Some 100 executables of 14 s each
-# (omp gnu debug), compiled in every one of the 30-odd configurations of
-# compile_all*.sh, were most of the build time; the perf configurations
-# (release, stats, aggressive compression, MM_PROTECT, std_alloc) now skip
-# them. -DCHUNK_BUILD_VALIDATION=ON / OFF forces the choice. Deliberately not
-# an option(): the default follows the build type and options of THIS
-# configure, so a cached value cannot go stale when they change.
-if(DEFINED CHUNK_BUILD_VALIDATION)
-    set(_build_validation ${CHUNK_BUILD_VALIDATION})
-elseif(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CHECK_OPTIM OR NOT SANITIZER STREQUAL "none")
-    set(_build_validation ON)
-else()
-    set(_build_validation OFF)
-endif()
+# Validation harnesses (ctest): built where the top-level CMakeLists decided
+# (_build_validation: Debug, CHECK_OPTIM, sanitizers, or forced by
+# -DCHUNK_BUILD_VALIDATION), the same decision that compiles the test hooks in.
 # Read by python/bench_and_test.py (CMakeCache.txt) to tell "not built here"
 # from "no test found".
 set(CHUNK_VALIDATION_BUILT ${_build_validation} CACHE INTERNAL "examples/validation was built")

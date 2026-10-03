@@ -639,6 +639,34 @@ if (DOXYGEN_FOUND)
 endif()
 
 # ── Subdirectories ────────────────────────────────────────────────────────────
+# Validation harnesses (examples/validation): built where they check something
+# an optimised build does not -- Debug, CHECK_OPTIM and the sanitizer builds.
+# Some 100 executables of 14 s each (omp gnu debug), compiled in every one of
+# the 30-odd configurations of compile_all*.sh, were most of the build time;
+# the perf configurations (release, stats, aggressive compression,
+# MM_PROTECT, std_alloc) skip them. -DCHUNK_BUILD_VALIDATION=ON / OFF forces
+# the choice. Deliberately not an option(): the default follows the build type
+# and options of THIS configure, so a cached value cannot go stale when they
+# change. Decided here, before the library: see CHUNK_TEST_HOOKS below.
+if(DEFINED CHUNK_BUILD_VALIDATION)
+    set(_build_validation ${CHUNK_BUILD_VALIDATION})
+elseif(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CHECK_OPTIM OR NOT SANITIZER STREQUAL "none")
+    set(_build_validation ON)
+else()
+    set(_build_validation OFF)
+endif()
+
+# The harnesses' test hooks (chunk/internal/test_hooks.h: forced deferrals,
+# read and pass delays) are compiled into the whole tree wherever the
+# harnesses are built, OFF at run time until a harness switches them on --
+# so the harnesses that use them share one executable with the others (one
+# definition of the header-only engine for all) instead of one each. A global
+# definition, like the CHUNK_* configuration macros: the library archives and
+# every executable see the same engine. Perf configurations never have it.
+if(_build_validation)
+    add_definitions(-DCHUNK_TEST_HOOKS)
+endif()
+
 add_subdirectory(chunk)
 
 if(NOT CHUNK_STD_ALLOC)

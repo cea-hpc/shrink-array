@@ -638,22 +638,13 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
             compression_mgr.wait_out_compressor(chunk);
         }
 
-        // Test knob (build_config::force_defer_every): one write in N takes
-        // the deferred exit as if a compressor held the chunk -- the even
-        // hits fail check #1, the odd ones check #2. Compiled out at 0.
-        bool force_defer_1 = false;
-        bool force_defer_2 = false;
-        if constexpr (build_config::force_defer_every > 0)
-        {
-            thread_local unsigned force_defer_count = 0;
-            thread_local bool     force_defer_odd   = false;
-            if (++force_defer_count == build_config::force_defer_every) [[unlikely]]
-            {
-                force_defer_count                                 = 0;
-                force_defer_odd                                   = !force_defer_odd;
-                (force_defer_odd ? force_defer_2 : force_defer_1) = true;
-            }
-        }
+        // Test hook (test_hooks.h, force_defer_every): one write in N takes
+        // the deferred exit as if a compressor held the chunk -- alternately
+        // at check #1 and at check #2. Compiled out outside the harnesses'
+        // builds; 0 at run time unless a harness set it.
+        const int  forced        = test_hooks::forced_deferral();
+        const bool force_defer_1 = forced == 1;
+        const bool force_defer_2 = forced == 2;
 
         if (!force_defer_1 && !compression_mgr.must_defer_write(chunk)) [[likely]]
         {
