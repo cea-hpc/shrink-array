@@ -434,6 +434,13 @@ if (OMP)
     set_property(TEST ${_tgt}_8thr PROPERTY LABELS validation)
     set_property(TEST ${_tgt}_8thr PROPERTY SKIP_RETURN_CODE 77)
     set_property(TEST ${_tgt}_8thr PROPERTY TIMEOUT 120)
+    # The same window on the write side: a compound operation's v_old read
+    # (the `compound` argument; the harness says why). 77 on chunk (v1).
+    add_test(NAME ${_tgt}_compound_8thr COMMAND ${_tgt} compound)
+    set_property(TEST ${_tgt}_compound_8thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
+    set_property(TEST ${_tgt}_compound_8thr PROPERTY LABELS validation)
+    set_property(TEST ${_tgt}_compound_8thr PROPERTY SKIP_RETURN_CODE 77)
+    set_property(TEST ${_tgt}_compound_8thr PROPERTY TIMEOUT 120)
   endforeach()
 endif()
 

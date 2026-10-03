@@ -43,7 +43,8 @@
 #include "chunk/internal/concept_is_clean_assignement.h"
 #include "chunk/internal/crp_helper.h"
 #include "chunk/internal/arithmetic_context.h"
-#include "chunk/internal/read_reclaim.h" // ReadSection: read_values_outside_session
+#include "chunk/internal/test_read_delay.h" // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
+#include "chunk/internal/read_reclaim.h"    // ReadSection: read_values_outside_session
 
 namespace shrink_array
 {
@@ -630,13 +631,18 @@ class ProxyBase : public ProxyOperators<Derived, T>,
                       })
         {
             const T* const vals = values;
+            // TEST KNOB (test_read_delay.h), as in ChunkBase::element_at: widens
+            // the load -> dereference window. Compiled out by default.
+            test_hooks::maybe_read_delay();
             if (TabCstVal2Holder<T>::is_cst_val2_ptr(vals)) [[unlikely]]
                 return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
             // elem_get, not vals[num]: for Bit that indexed BYTES, up to
             // chunk_size of them in a chunk_size / 8 byte buffer.
             return elem_get(vals, static_cast<std::size_t>(num));
         }
-        return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
+        const T* const vals = values;
+        test_hooks::maybe_read_delay(); // TEST KNOB, see above
+        return elem_get(vals, static_cast<std::size_t>(num));
     }
     /// @brief read_values() for a pre-check made BEFORE the write session
     ///        (the `0 * x` shortcut of the compound operations): inside a
