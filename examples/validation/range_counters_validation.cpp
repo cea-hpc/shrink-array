@@ -60,7 +60,10 @@
 #include "chunk/config.h"
 #include "chunk/manage_ompt.h"
 
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::range_counters_validation
+{
 
 using namespace shrink_array;
 
@@ -209,7 +212,7 @@ int run_case(Case c)
 
 } // namespace
 
-int main()
+int run(int /*argc*/, char** /*argv*/)
 {
     __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
@@ -228,3 +231,5 @@ int main()
     std::println("\n[{}] {}", variant_name(), fails ? "=== RANGE COUNTERS FAILED ===" : "=== RANGE COUNTERS OK ===");
     return fails ? 1 : 0;
 }
+
+} // namespace validation::range_counters_validation

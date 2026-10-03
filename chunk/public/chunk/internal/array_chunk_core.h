@@ -173,7 +173,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
     {
         return this;
     }
-    /// @copydoc registry_key()
+    /// @brief Const overload of registry_key(): the same address.
     [[nodiscard]] const void* registry_key() const noexcept
     {
         return this;
@@ -227,7 +227,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
     [[no_unique_address]] ActiveSizePolicy size_policy_{};
 
     std::vector<chunk_type> chunk_list;  ///< The chunks, in index order.
-    int                     nb_chunk{0}; ///< Number of live chunks in @ref chunk_list.
+    int                     nb_chunk{0}; ///< Number of live chunks in `chunk_list`.
 
     int num_tab{0}; ///< Identity of this array in the per-type registries.
     /// @brief Number of arrays of this element type created so far (source of

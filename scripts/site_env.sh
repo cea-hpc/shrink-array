@@ -31,7 +31,9 @@ CHUNK_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${CHUNK_SRC_DIR:=$(cd "$CHUNK_SCRIPT_DIR/.." && pwd)}"
 
 if [ -z "${CHUNK_SITE:-}" ]; then
-    if [ -d /ccc/products ]; then CHUNK_SITE=cea; else CHUNK_SITE=local; fi
+    # The GCC toolchain, not the bare /ccc/products: a workstation can carry an
+    # empty /ccc/products (and Environment Modules without any compiler).
+    if [ -d /ccc/products/gcc-15.2.0 ]; then CHUNK_SITE=cea; else CHUNK_SITE=local; fi
 fi
 
 # chunk_local_gcc: the newest GCC built from source under ~/opt or /opt
@@ -58,7 +60,9 @@ fi
 # Environment Modules: absent on a workstation. A stand-in that fails quietly
 # keeps every `module load x || ...` and `if run_cmd "module load x"` of the
 # scripts on their "not available" path; the tools are then taken from PATH.
-if type module >/dev/null 2>&1; then
+# A local site never takes its compilers from modules, even where the command
+# exists (AlmaLinux ships Environment Modules with no compiler module).
+if [ "$CHUNK_SITE" = cea ] && type module >/dev/null 2>&1; then
     CHUNK_HAVE_MODULES=true
 else
     CHUNK_HAVE_MODULES=false
@@ -110,7 +114,11 @@ if [ "$CHUNK_HAVE_MODULES" = false ]; then
     if [ -n "${CHUNK_LOCAL_GCC_DIR:-}" ]; then
         : "${CHUNK_GXX:=$CHUNK_LOCAL_GCC_DIR/bin/g++}"
     fi
-    : "${CHUNK_GXX:=$(chunk_newest g++)}"
+    # RHEL-likes: the newest gcc-toolset before the system g++.
+    if [ -z "${CHUNK_GXX:-}" ]; then
+        CHUNK_GXX=$(ls -d /opt/rh/gcc-toolset-*/root/usr/bin/g++ 2>/dev/null | sort -V | tail -1)
+        [ -n "$CHUNK_GXX" ] || CHUNK_GXX=$(chunk_newest g++)
+    fi
     : "${CHUNK_CLANGXX:=$(chunk_newest clang++)}"
     # oneAPI: its setvars.sh puts icpx on PATH (sourced by compile_all.sh).
     : "${CHUNK_ONEAPI_SETVARS:=/opt/intel/oneapi/setvars.sh}"

@@ -80,7 +80,7 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 | `CHUNK_DYNAMIC`, `DYN_CHUNK_SIZE=<n>` | géométrie dynamique, et taille de départ |
 | `CHUNK_DYN_MAX_SIZE=<n>` | géométrie dynamique : plus grande taille de chunk qu'un rechunk peut atteindre, puissance de deux (4096) ; dimensionne les tampons partagés des valeurs constantes, `cst_buffer_size × sizeof(T)` par seconde valeur distincte |
 | `CHUNK_ALLOC_AFFINITY_MIN_BYTES=<octets>` | seuil de métadonnées au-delà duquel un tableau peut avoir ses propres allocateurs (16 Mio ; 0 = jamais) |
-| `CHUNK_RECLAIM_EMPTY_SLABS` | rendre au système les slabs vidés (balayages explicites) |
+| `CHUNK_NO_RECLAIM_EMPTY_SLABS` | garder résidents les slabs vidés, au lieu de les rendre au système aux balayages explicites (défini par l'option CMake `CHUNK_RECLAIM_EMPTY_SLABS=OFF`) |
 | `CHUNK_STATS` | compteurs d'instrumentation (build stats) |
 | `CHECK_OPTIM` | vérifications d'invariants en build optimisé |
 | `MM_PROTECT` | Chunk, Chunk2 : tampons partagés des valeurs constantes en lecture seule (`mprotect`) ; une écriture parasite dans un chunk compressé fait une erreur de segmentation au lieu de corrompre la valeur (option CMake `CHUNK_MM_PROTECT`) |
@@ -98,6 +98,11 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 | `SHRINK_ARM_LIBM` | `OFF` | aarch64 : lier `libamath` d'ArmPL (aucun gain mesuré sur Grace) |
 | `CHUNK_ICPX_O0_WORKAROUND` | `OFF` | contournement d'une erreur interne d'icpx sur trois fichiers |
 | `CHUNK_MM_PROTECT` | `OFF` | définit `MM_PROTECT` (build de mise au point ; `compile_all.sh` le construit pour que ses branches continuent de compiler) |
+| `CHUNK_LIB_UNITY` | `ON` | chaque archive de variante (`chunk_v2a_256`, ...) compilée en une seule unité (unity build, 4 à 6 fois moins de compilation) ; un fichier qui a ses propres options de compilation reste à part |
+| `SHRINK_BENCH_UNITY` | `ON` | chaque exécutable `shrink_bench` compilé en une seule unité (unity build, 3,5 à 4 fois moins de compilation) ; `OFF` pour comparer des temps avec des campagnes antérieures, l'inlining entre fichiers du banc pouvant les changer ; `SHRINK_BENCH_UNITY_BATCH` fichiers par unité (0 = tous) |
+| `CHUNK_VALIDATION_UNITY` | `ON` | les harnesses de validation regroupés en un exécutable par variante et géométrie (unity build) ; `OFF` : un exécutable par harness |
+| `CHUNK_BUILD_VALIDATION` | selon le build | compiler les harnesses de `examples/validation` ; par défaut `ON` en Debug, avec `CHECK_OPTIM` ou un sanitizer, `OFF` ailleurs (non mis en cache : suit la configuration courante) |
+| `CHUNK_RECLAIM_EMPTY_SLABS` | `ON` | rendre au système (`madvise`) les slabs vidés aux balayages explicites (rechunk, destruction) ; `OFF` définit `CHUNK_NO_RECLAIM_EMPTY_SLABS` |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | Chunk2A : l'emplacement de seconde valeur contient un identifiant de 4 octets au lieu de la valeur (moins de mémoire, +3 % de temps d'écriture) |
 
 Et une macro propre à Chunk2A : `CHUNK2A_COMPRESS_LEVEL=<0|1|2|3>` (0 par défaut) choisit le

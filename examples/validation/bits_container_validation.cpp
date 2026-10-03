@@ -50,7 +50,9 @@
 // Chunk2 builds only (ArrayChunkBits is ArrayChunk2<Bit>). Exit 0 = pass.
 
 #include <algorithm> // std::min
+#include <cstdint>
 #include <cstdio>
+#include <random>
 #include <unistd.h>
 #include <utility> // std::pair
 #include <vector>
@@ -59,7 +61,6 @@
 #include "chunk/array_chunk_bits.h"
 #include "chunk/chunk_size_advisor.h"
 #include "chunk/array_chunk_range_ops.h" // fill_range, copy_range
-#include <random>
 #include "chunk/param_chunk.h"
 #include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"
@@ -67,7 +68,10 @@
 #include "chunk/manage_ompt.h" // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"
 
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::bits_container_validation
+{
 
 using namespace shrink_array;
 
@@ -431,7 +435,7 @@ int advisor_and_rechunk(long N)
     typename ChunkSizeAdvisor<Bit>::Options opt;
     if (static_cast<long>(opt.min_size) > S / 2)
     {
-        opt.min_size = static_cast<uint32_t>(S / 2);
+        opt.min_size = static_cast<std::uint32_t>(S / 2);
     }
     const auto rep = ChunkSizeAdvisor<Bit>::analyze(a, opt);
     if (rep.cur < 0)
@@ -647,7 +651,7 @@ int parallel_fill(long N)
 
 } // namespace
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
     const long N    = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
@@ -670,3 +674,5 @@ int main(int argc, char** argv)
     std::printf("[bits] %s\n", fails == 0 ? "=== ALL CHECKS PASSED ===" : "=== FAILURES ===");
     return fails;
 }
+
+} // namespace validation::bits_container_validation

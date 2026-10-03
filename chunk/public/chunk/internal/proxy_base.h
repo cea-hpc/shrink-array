@@ -43,6 +43,8 @@
 #include "chunk/internal/concept_is_clean_assignement.h"
 #include "chunk/internal/crp_helper.h"
 #include "chunk/internal/arithmetic_context.h"
+#include "chunk/internal/test_read_delay.h" // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
+#include "chunk/internal/read_reclaim.h"    // ReadSection: read_values_outside_session
 
 namespace shrink_array
 {
@@ -71,6 +73,38 @@ template <typename T>
 struct is_simple_proxy<Proxy<T>> : public std::true_type
 {
 };
+namespace internal
+{
+/// @brief Element @p n behind a values pointer the caller has loaded -- the
+///        raw read of ProxyBase::read_values() and read_values_async().
+/// @details NOT raw for a Chunk2A second constant: its pointer names an
+///          identifier in a region that is never written, so indexing it reads
+///          a zero page; the value comes from the registry instead (arithmetic
+///          plus one table load, no sync). The question is asked of the
+///          POINTER, not of the chunk: the callers run with a write or a replay
+///          in flight, so the chunk's state and the pointer can disagree, and
+///          converting a pointer that is NOT in the region gave an arbitrary
+///          index into value_by_id[] and a SIGSEGV. One exact range test on the
+///          pointer, one conversion.
+template <typename T>
+[[nodiscard]] T element_of(const T* vals, std::size_t n) noexcept
+{
+    if constexpr (requires(const T* ptr) {
+                      TabCstVal2Holder<T>::is_cst_val2_ptr(ptr);
+                      TabCstVal2Holder<T>::value_of_ptr_checked(ptr);
+                  })
+    {
+        if (TabCstVal2Holder<T>::is_cst_val2_ptr(vals)) [[unlikely]]
+        {
+            return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
+        }
+    }
+    // elem_get, not vals[n]: for Bit that indexed BYTES, up to chunk_size of
+    // them in a chunk_size / 8 byte buffer.
+    return elem_get(vals, n);
+}
+} // namespace internal
+
 /**
  * @brief The compression-bookkeeping half of ProxyBase.
  *
@@ -158,10 +192,15 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
 
     /// @brief Read at the offset @p ctx recorded, on the replay path.
     /// @warning Same reload caveat as store_value_async().
+    /// @details Through internal::element_of(), like read_values(): a replay of `*=` on
+    ///          a Chunk2A chunk compressed to its second value read 0 here
+    ///          (the identifier region) instead of the constant; if another
+    ///          thread materialised the chunk before the replay tested its
+    ///          state, the replay stored 0 * x into the fresh buffer -- one
+    ///          element at 0 among the second values.
     [[nodiscard]] static T read_values_async(auto* ctx) noexcept
     {
-        const T* const values_loc = ctx->chunk.values_load();
-        return elem_get(values_loc, static_cast<std::size_t>(ctx->num));
+        return internal::element_of(ctx->chunk.values_load(), static_cast<std::size_t>(ctx->num));
     }
 
   protected:
@@ -169,6 +208,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      * @brief Rebuild a usable proxy from a deferred operation's context.
      * @tparam ProxyType The concrete proxy to produce.
      * @param ctx The context captured when the write was enqueued.
+     * @return The rebuilt proxy, ready for the replayed write body.
      * @details Replay happens after the original proxy is gone, so the parts of
      *          it the write body needs are reconstructed here -- including the
      *          frozen chunk geometry, so the replayed write uses the geometry in
@@ -459,37 +499,31 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // pending_ops_>0, wait_for_availability's replay reallocates `values`
         // under the in-flight writer -> SIGSEGV. Same-offset visibility on the
         // write path is handled by the P2 WAW erase before the write body; pure
-        // reads use read_pure() below. Kept raw in BOTH sync_on_read states.
-        //
-        // ... but NOT raw for a Chunk2A second constant: its identifier slot
-        // is never written, so this would read a
-        // zero page and the compression decision downstream would be taken
-        // against 0 instead of the chunk's constant. Resolving the registry
-        // is arithmetic plus one table load -- it does not sync, so the
-        // contract above still holds.
-        //
-        // The question is asked of the POINTER, not of the chunk. This
-        // function runs with a write in flight -- that is its reason to
-        // exist -- so the chunk's state and the pointer this proxy is about
-        // to index can disagree, and asking chunk.is_cst_val2() then
-        // converting a pointer that is NOT in the region gave an arbitrary
-        // index into value_by_id[] and a SIGSEGV. One load, one exact range
-        // test on it, one conversion of the same pointer.
-        if constexpr (requires(const T* ptr) {
-                          TabCstVal2Holder<T>::is_cst_val2_ptr(ptr);
-                          TabCstVal2Holder<T>::value_of_ptr_checked(ptr);
-                      })
-        {
-            const T* const vals = values;
-            if (TabCstVal2Holder<T>::is_cst_val2_ptr(vals)) [[unlikely]]
-            {
-                return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
-            }
-            // elem_get, not vals[num]: for Bit that indexed BYTES, up to
-            // chunk_size of them in a chunk_size / 8 byte buffer.
-            return elem_get(vals, static_cast<std::size_t>(num));
-        }
-        return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
+        // reads use read_pure() below. Kept raw in BOTH sync_on_read states --
+        // but not raw for a Chunk2A second constant, see internal::element_of(): the
+        // compression decision downstream would otherwise be taken against 0
+        // instead of the chunk's constant. One load of the pointer.
+        const T* const vals = values;
+        // TEST KNOB (test_read_delay.h), as in ChunkBase::element_at: widens
+        // the load -> dereference window. Compiled out by default.
+        test_hooks::maybe_read_delay();
+        return internal::element_of(vals, static_cast<std::size_t>(num));
+    }
+    /// @brief read_values() for a pre-check made BEFORE the write session
+    ///        (the `0 * x` shortcut of the compound operations): inside a
+    ///        read_reclaim::ReadSection.
+    /// @details Outside the session nothing stops a pass running in the region
+    ///          from compressing the chunk and releasing its buffer between the
+    ///          pointer load and the element load; the buffer goes back to the
+    ///          reuse list and the next materialisation overwrites it -- with
+    ///          zeros, for a first-constant one, and the shortcut then dropped
+    ///          the operation (read_reclaim_validation, mode `compound`). The
+    ///          section makes that pass wait for this read before it releases
+    ///          anything, exactly as for element_at.
+    [[nodiscard]] T read_values_outside_session() const noexcept
+    {
+        const read_reclaim::ReadSection section;
+        return read_values();
     }
     /// @brief Read through the chunk WITHOUT synchronising first.
     /// @warning Returns a stale value if a deferred write on this offset has
@@ -527,7 +561,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /**
      * @brief Record a write to be applied later, when the fast path refuses it.
      * @param ctx Captures everything the replay needs -- offset, chunk indices,
-     *        and the frozen geometry.
+     *        and the frozen geometry; already pool-allocated by the caller.
      * @param body The write, run at replay time against a proxy rebuilt by
      *        make_proxy_with_info().
      */
@@ -541,7 +575,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *        refuses. Not a hardware atomic read-modify-write: there is no
      *        compare-exchange loop, and two threads updating the same element
      *        race as they would on a plain T.
-     * @param v_old Unused by the body (kept for the callers' signature).
+     * @param operation Operation to apply.
+     * @param v         Operand.
+     * @param v_old     Unused by the body (kept for the callers' signature; the
+     *                  bodies reload the current value themselves).
      */
     template <typename U, typename Op>
         requires std::is_invocable_r_v<T, Op, T, U>
@@ -610,6 +647,40 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief Affinity key captured with chunk_size_frozen_ for the same reason:
     ///        on a deferred replay ptr_on_array may be dead. 0 until frozen.
     mutable unsigned int alloc_key_frozen_ = 0;
+
+    /// @brief Check builds: the array's storage generation, and its value when
+    ///        operator[] built this proxy (ArrayChunkBase::storage_generation_).
+    ///        Empty elsewhere. gen stays null on the proxies the library builds
+    ///        for itself (set_value, deferred replays): those are never stale.
+    struct StaleGuardOn
+    {
+        const unsigned int* gen  = nullptr;
+        unsigned int        seen = 0;
+    };
+    struct StaleGuardOff
+    {
+    };
+    [[no_unique_address]] mutable std::conditional_t<build_config::any_check, StaleGuardOn, StaleGuardOff>
+        stale_guard_{};
+
+    /// @brief Check builds: abort when the array rebuilt its storage after
+    ///        operator[] built this proxy -- the proxy then points into
+    ///        swapped-out or released chunks. Called first by every read and
+    ///        write entry (read_pure, operator T, assign_impl, the compound and
+    ///        in-place funnels). Nothing in other builds.
+    void check_not_stale() const noexcept
+    {
+        if constexpr (build_config::any_check)
+        {
+            if (stale_guard_.gen != nullptr && *stale_guard_.gen != stale_guard_.seen) [[unlikely]]
+            {
+                INVARIANT_FAILED("write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
+                                 "storage (resize, reserve, shrink_to_fit, clear, assign, swap, an assignment or a "
+                                 "re-chunk): keep a value with `T v = a[i];`, not `auto v = a[i];`",
+                                 ptr_on_array, num_chunk, num);
+            }
+        }
+    }
 
   public:
     // Required for template concepts to recognize this as a Proxy
@@ -731,6 +802,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          the entry point behind `operator T()`.
     [[nodiscard]] T read_pure() const noexcept
     {
+        check_not_stale();
         chunk.reader_sync(num);
         return chunk.read_value(num); // read_value accounts the read in stats
     }
@@ -743,6 +815,18 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @param array_ptr pointer to the array
      * @param num_chunk_ chunk index
      */
+
+    /// @brief Check builds: arm the stale-proxy check with the array's storage
+    ///        generation (see check_not_stale). Nothing in other builds.
+    /// @param gen the array's ArrayChunkBase::storage_generation_
+    void arm_storage_generation([[maybe_unused]] const unsigned int* gen) const noexcept
+    {
+        if constexpr (build_config::any_check)
+        {
+            stale_guard_.gen  = gen;
+            stale_guard_.seen = *gen;
+        }
+    }
 
     void set_this_and_num_chunk(const void* array_ptr, int num_chunk_) const noexcept
     {

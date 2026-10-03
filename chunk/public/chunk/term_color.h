@@ -30,14 +30,14 @@
 /// no allocation.
 struct TermColor
 {
-    const char* RESET;
-    const char* BOLD;
-    const char* RED;
-    const char* GREEN;
-    const char* YELLOW;
-    const char* CYAN;
-    const char* WHITE;
-    const char* MAGENTA;
+    const char* RESET;   ///< Reset all attributes (SGR 0).
+    const char* BOLD;    ///< Bold (SGR 1).
+    const char* RED;     ///< Red foreground.
+    const char* GREEN;   ///< Green foreground.
+    const char* YELLOW;  ///< Yellow foreground.
+    const char* CYAN;    ///< Cyan foreground.
+    const char* WHITE;   ///< White foreground.
+    const char* MAGENTA; ///< Magenta foreground.
 };
 
 /// @brief The one shared instance.

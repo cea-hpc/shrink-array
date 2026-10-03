@@ -75,25 +75,25 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
                      public RechunkHooks2A<ArrayChunk2A<T, ind_type>>
 {
   public:
-    using manager_chunk2A = ManagerChunk<Chunk2A, T>;
+    using manager_chunk2A = ManagerChunk<Chunk2A, T>; ///< Same type as manager_type.
 
-    using Base2      = ArrayChunk2Base<ArrayChunk2A>;
-    using Base       = ArrayChunkBase<ArrayChunk2A>;
-    using Parallel2A = ParallelSupport2A<ArrayChunk2A>;
-    using Hooks2A    = RechunkHooks2A<ArrayChunk2A>;
+    using Base2      = ArrayChunk2Base<ArrayChunk2A>; ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
+    using Base       = ArrayChunkBase<ArrayChunk2A>;  ///< Base shared by every variant.
+    using Parallel2A = ParallelSupport2A<ArrayChunk2A>; ///< OpenMP-only members (deferred-op flush).
+    using Hooks2A    = RechunkHooks2A<ArrayChunk2A>;    ///< Re-chunk hooks (dynamic geometry).
 
-    friend Base2;
-    friend ArrayChunkBase<ArrayChunk2A<T, ind_type>>; // swap_identity()
+    friend Base2;                                     ///< The CRTP base reaches this class's private members.
+    friend ArrayChunkBase<ArrayChunk2A<T, ind_type>>; ///< For swap_identity().
 
     // Re-declared here (not only inherited): the mixins above declare them too,
     // so without a member of the same name in ArrayChunk2A an outside
     // `Arr::chunk_type` would be ambiguous between base subobjects. Name lookup
     // precedes access control, so hiding them in the mixins would not help.
-    using Traits       = Base2::Traits;
-    using chunk_type   = Base2::chunk_type;
-    using manager_type = Base2::manager_type;
-    using proxy_type   = Base2::proxy_type;
-    using value_type   = T;
+    using Traits       = Base2::Traits;       ///< ArrayChunkTraits<ArrayChunk2A>.
+    using chunk_type   = Base2::chunk_type;   ///< Chunk2A<T>, the chunk type held in chunk_list.
+    using manager_type = Base2::manager_type; ///< ManagerChunk<Chunk2A, T>, the per-type manager.
+    using proxy_type   = Base2::proxy_type;   ///< Proxy2A<T>, the write proxy of the non-const accessors.
+    using value_type   = T;                   ///< Stored element type.
 
     using Base2::chunk_list;
     using Base2::m_size;
@@ -140,6 +140,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     // the (first, last) and initializer-list constructors are the same loop
     // over an iterator. All sequential, like resize().
     // chunk2a finds each chunk's second value by itself: nothing to carry over.
+
+    /// @brief Deep copy: from.size() elements read from @p from. Sequential context.
+    /// @param from Source array.
     ArrayChunk2A(const ArrayChunk2A& from) : ArrayChunk2A(from.size())
     {
         this->copy_from(from);

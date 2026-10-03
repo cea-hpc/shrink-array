@@ -334,8 +334,6 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list(this const Derive
  *
  * @tparam ProxyType Proxy type to rebuild.
  * @tparam Ctx       Context type recorded at enqueue time.
- * @param ctx Context to rebuild from.
- * @return The rebuilt proxy, ready for the replayed write body.
  */
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 template <typename ProxyType, typename Ctx>
@@ -848,8 +846,6 @@ unsigned int ProxyBase<Derived, T, ChunkType>::alloc_key() const noexcept
  *
  * @tparam CtxType    Context type holding the write location and operands.
  * @tparam LambdaBody Callable replaying the write from that context.
- * @param ctx  Context, already pool-allocated by the caller.
- * @param body Write body to replay.
  */
 template <typename Derived, typename T, typename ChunkType>
 template <typename CtxType, typename LambdaBody>
@@ -964,9 +960,6 @@ constexpr bool check_is_cst_val2([[maybe_unused]] const P& proxy)
  *
  * @tparam U  Operand type.
  * @tparam Op Binary operation, invocable as `T(T, U)`.
- * @param operation Operation to apply.
- * @param v         Operand.
- * @param v_old     Unused (the bodies reload the current value themselves).
  */
 template <typename Derived, typename T, typename ChunkType>
 template <typename U, typename Op>
@@ -1124,6 +1117,7 @@ template <typename Derived, typename T, typename ChunkType>
 template <typename U, typename Op>
 void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(this Derived& self, in_t<U> v, Op operation) noexcept
 {
+    self.check_not_stale();
     if constexpr (chunk_config::stats)
     {
         increm_chunk_write<ChunkType>(v);
@@ -1272,6 +1266,7 @@ template <typename U, typename Op>
 void ProxyBase<Derived, T, ChunkType>::bitwise_assign(this Derived& self, in_t<U> v, Op operation) noexcept
     requires std::is_integral_v<T> && std::is_integral_v<U>
 {
+    self.check_not_stale();
     if constexpr (chunk_config::stats)
     {
         increm_chunk_write<ChunkType>(v);
@@ -1345,6 +1340,7 @@ void ProxyBase<Derived, T, ChunkType>::apply_inplace_operation(this Derived&    
                                                                SyncOp                   sync_op,
                                                                [[maybe_unused]] AsyncOp async_op) noexcept
 {
+    self.check_not_stale();
     // Cross-rank RMW materialisation (CHUNK_SYNC_ON_READ): ++/-- and other
     // in-place ops read val[num] directly; pull any foreign deferred write to
     // this offset to applied state first, outside begin_write. See

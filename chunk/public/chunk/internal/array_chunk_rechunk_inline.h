@@ -351,6 +351,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         swap(self().m_size, tmp.m_size);
         swap(self().nb_chunk, tmp.nb_chunk);
         swap(self().size_policy_, tmp.size_policy_);
+        self().invalidate_proxies();
 
         const bool ok = self().rechunk_swap_identity(tmp);
         if constexpr (build_config::any_check)

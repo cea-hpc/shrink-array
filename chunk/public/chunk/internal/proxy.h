@@ -969,6 +969,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     operator T() const noexcept
     {
+        this->check_not_stale();
         if constexpr (chunk_config::stats)
         {
             increm_chunk_read<ChunkType>();
@@ -987,6 +988,10 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
                 using ArrayType = ArrayChunkFor_t<ChunkType>;
                 if (!static_cast<const ArrayType*>(ptr_on_array)->is_chunk_dirty(num_chunk)) [[likely]]
                 {
+                    // A pure read, like element_at: inside a ReadSection, or a
+                    // pass in the region may release the buffer between the
+                    // pointer load and the element load (read_reclaim.h).
+                    const read_reclaim::ReadSection section;
                     return values[num];
                 }
             }

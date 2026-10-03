@@ -69,6 +69,7 @@ struct assume_drained_t
 {
     explicit assume_drained_t() = default;
 };
+/// @brief The tag value callers pass; see assume_drained_t for when it is safe.
 inline constexpr assume_drained_t assume_drained{};
 
 namespace internal

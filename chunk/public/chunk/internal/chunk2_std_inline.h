@@ -336,10 +336,6 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_bool(this Derived&     
  * Entry point used between parallel phases. The OMPT callbacks are disarmed for
  * the duration, so nothing re-enters the compression machinery underneath.
  *
- * @param inf_array      (second_value, index, ...) selecting which candidate
- *                       lists to drain.
- * @param apply          Forwarded to compress().
- *
  * @note Like the Chunk2A equivalent: outside a parallel region it opens one and
  *       lets each rank sweep its own list (serial mop-up for ranks beyond the
  *       team size); inside a region it sweeps the calling rank only.
@@ -389,7 +385,6 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress(const
 
 /**
  * @brief Bool twin of compress_chunk_to_compress().
- * @param apply          Forwarded to compress_bool().
  */
 template <typename T, typename Derived, bool Enabled>
 void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool(bool apply)
@@ -1019,10 +1014,6 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::create_value_impl(this Derived&      
  * cst_val1/cst_val2 race; losing it means another thread materialised first,
  * and apply_cas_or_recup() recycles our buffer.
  *
- * @param need_set_second_value True to pre-fill with the second value, false for first_value.
- * @param inf_array             (second_value, index, ...) of the owning array.
- * @param thr_rank              Rank whose allocator provides the buffer.
- *
  * @note In a serial build there is no CAS to call — the policy has no such
  *       member — so the publication falls back to the non-CAS branch of
  *       apply_cas_or_recup().
@@ -1060,9 +1051,6 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::create_value(this Derived&      self,
  * @brief Materialises a `bool` chunk.
  *
  * Same allocate-fill-CAS shape as create_value(), with no index to carry.
- *
- * @param need_set_second_value True to pre-fill with `true`, false for first_value.
- * @param thr_rank              Rank whose allocator provides the buffer.
  */
 template <typename T, typename Derived, bool Enabled>
 void Chunk2OmpPolicy<T, Derived, Enabled>::create_value_bool(this Derived& self,
@@ -1146,7 +1134,6 @@ void Chunk2OmpPolicy<T, Derived, false>::create_value(this Derived&      self,
 
 /**
  * @brief Materialises a `bool` chunk (serial build).
- * @param need_set_second_value True to pre-fill with `true`, false for first_value.
  */
 template <typename T, typename Derived>
 void Chunk2OmpPolicy<T, Derived, false>::create_value_bool(this Derived& self, bool need_set_second_value) noexcept
@@ -1163,8 +1150,6 @@ void Chunk2OmpPolicy<T, Derived, false>::create_value_bool(this Derived& self, b
 
 /**
  * @brief Compresses this chunk back to first_value, if it is materialised.
- * @param ind      Index of the array's second value, needed by the state test.
- * @param thr_rank Rank whose pool receives the released buffer.
  */
 template <typename T, typename Derived, bool Enabled>
 void Chunk2OmpPolicy<T, Derived, Enabled>::clear(int ind, int thr_rank)
@@ -1177,8 +1162,6 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::clear(int ind, int thr_rank)
  *
  * For callers that have already established the chunk is materialised; the test
  * survives as a debug-only assertion.
- *
- * @param ind Index of the array's second value, used by that assertion.
  */
 template <typename T, typename Derived>
 void Chunk2OmpPolicy<T, Derived, false>::clear_st(this Derived& self, int ind)
@@ -1200,10 +1183,6 @@ void Chunk2OmpPolicy<T, Derived, false>::clear_st(this Derived& self, int ind)
  * The single point every compression path funnels through, in both modes and
  * every chunk variant — which is why the "block compressed" and "bytes freed"
  * statistics are counted here and nowhere else.
- *
- * @param num_compress_value 0 for first_value, otherwise the second value.
- * @param ind                Index of the array's second value.
- * @param thr_rank           Rank whose pool receives the released buffer.
  */
 template <typename T, typename Derived, bool Enabled>
 void Chunk2OmpPolicy<T, Derived, Enabled>::block_clear(int num_compress_value, int ind, [[maybe_unused]] int thr_rank)
@@ -1240,9 +1219,6 @@ void Chunk2OmpPolicy<T, Derived, false>::block_clear(this Derived& self, int num
 
 /**
  * @brief Compresses this chunk to the named constant, after an invariant check.
- * @param num_compress_value 0 for first_value, otherwise the second value.
- * @param ind                Index of the array's second value.
- * @param thr_rank           Rank whose pool receives the released buffer.
  * @pre The chunk is materialised — compressing an already-constant chunk would
  *      release a shared constant block. Checked by
  *      check_not_constant_before_clear().
@@ -1256,8 +1232,6 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::clear_int_st(int num_compress_value, 
 
 /**
  * @brief Bool twin of clear_int_st(): no second-value index to pass.
- * @param num_compress_value 0 for first_value, otherwise `true`.
- * @param thr_rank           Rank whose pool receives the released buffer.
  */
 template <typename T, typename Derived, bool Enabled>
 void Chunk2OmpPolicy<T, Derived, Enabled>::clear_int_st_bool(int num_compress_value, int thr_rank)
@@ -1277,8 +1251,6 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::clear_int_st_bool(int num_compress_va
  * copies of the statistics and, unlike the parallel path, resets the per-chunk
  * element counter of the constant being adopted.
  *
- * @param num_compress_value 0 for first_value, otherwise the second value.
- * @param ind                Index of the array's second value; unused for bool.
  * @pre The chunk is materialised (debug-only assertion).
  */
 template <typename T, typename Derived>

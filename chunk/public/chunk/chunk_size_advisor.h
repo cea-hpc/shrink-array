@@ -62,12 +62,12 @@ namespace shrink_array
 /// @brief Model figures for one candidate chunk size: chunk counts and estimated memory.
 struct ChunkSizeEstimate
 {
-    uint32_t size      = 0;     // candidate chunk size (elements)
-    int64_t  n_chunks  = 0;     // total chunks at that size
-    int64_t  mat       = 0;     // materialized chunks (estimated or exact)
-    int64_t  cst       = 0;     // compressed chunks (cst_val1 + cst_val2)
-    double   mem_bytes = 0.;    // model memory
-    bool     exact     = false; // true: exact fold; false: sampled estimate
+    uint32_t size      = 0;     ///< candidate chunk size (elements)
+    int64_t  n_chunks  = 0;     ///< total chunks at that size
+    int64_t  mat       = 0;     ///< materialized chunks (estimated or exact)
+    int64_t  cst       = 0;     ///< compressed chunks (cst_val1 + cst_val2)
+    double   mem_bytes = 0.;    ///< model memory (bytes)
+    bool     exact     = false; ///< true: exact fold; false: sampled estimate
 };
 
 /// @brief ChunkSizeAdvisor's result: one ChunkSizeEstimate per candidate size, with the best and current indices.
@@ -84,12 +84,12 @@ struct ChunkSizeReport
         return table[cur].mem_bytes - table[best].mem_bytes;
     }
 
-    uint32_t                       current_size = 0;
-    double                         meta_bytes   = 0.;
-    double                         elem_bytes   = 0.; // per element in a materialised chunk (1/8 for Bit)
-    std::vector<ChunkSizeEstimate> table;             // ascending sizes
-    int                            best = -1;         // index into table
-    int                            cur  = -1;         // index of current size
+    uint32_t                       current_size = 0;  ///< the array's chunk size now (elements)
+    double                         meta_bytes   = 0.; ///< per-chunk metadata: sizeof(chunk) + Options::meta_extra_bytes
+    double                         elem_bytes   = 0.; ///< per element in a materialised chunk (1/8 for Bit)
+    std::vector<ChunkSizeEstimate> table;             ///< ascending sizes
+    int                            best = -1;         ///< index into table (-1: none)
+    int                            cur  = -1;         ///< index of current size (-1: none)
 };
 
 /// @brief Estimates an array's model memory at other chunk sizes without re-chunking (see the header comment).
@@ -100,20 +100,20 @@ struct ChunkSizeAdvisor
     /// @brief Which sizes analyze() evaluates, its scan cap and the per-chunk metadata cost it adds.
     struct Options
     {
-        int     coarser_levels = 4;     // evaluate S*2 .. S*2^levels
-        int     finer_levels   = 2;     // evaluate S/2 .. S/2^levels (data sampled)
-        int64_t max_mat_scans  = 65536; // cap on materialized chunks whose DATA is read
-        // Per-chunk metadata beyond sizeof(chunk): tracking-list entry (~0.8 B,
-        // see the GLOBAL COMPRESSION LISTS monitoring table: List Memory /
-        // Allocated Chunks) + dirty bitset (128 B / 64 chunks = 2 B) + slack.
+        int     coarser_levels = 4;     ///< evaluate S*2 .. S*2^levels
+        int     finer_levels   = 2;     ///< evaluate S/2 .. S/2^levels (data sampled)
+        int64_t max_mat_scans  = 65536; ///< cap on materialized chunks whose DATA is read
+        /// Per-chunk metadata beyond sizeof(chunk): tracking-list entry (~0.8 B,
+        /// see the GLOBAL COMPRESSION LISTS monitoring table: List Memory /
+        /// Allocated Chunks) + dirty bitset (128 B / 64 chunks = 2 B) + slack.
         double   meta_extra_bytes = 3.0;
-        uint32_t min_size         = 64; // don't evaluate below this. Raised from
-                                        // 16: the cost model under-counts real
-                                        // per-chunk overhead (slab block +
-                                        // fragmentation, not just meta_bytes),
-                                        // so it over-shrinks toward tiny chunks
-                                        // that fragment. 64 caps the descent at
-                                        // a sane overhead ratio.
+        uint32_t min_size         = 64; ///< don't evaluate below this. Raised from
+                                        ///< 16: the cost model under-counts real
+                                        ///< per-chunk overhead (slab block +
+                                        ///< fragmentation, not just meta_bytes),
+                                        ///< so it over-shrinks toward tiny chunks
+                                        ///< that fragment. 64 caps the descent at
+                                        ///< a sane overhead ratio.
     };
 
     /// @brief Estimate, from @p tab's constant runs, the memory each

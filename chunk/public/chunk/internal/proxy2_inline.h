@@ -29,6 +29,7 @@
 #include "chunk/internal/chunk_size_policy.h"
 #include "chunk/internal/concept_is_clean_assignement.h"
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
+#include "chunk/internal/read_reclaim.h"    // read_reclaim::PassScope (perform_compression / compress in a region)
 
 namespace shrink_array
 {
@@ -232,9 +233,12 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::trigger_compression_i
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression(this Derived& self) noexcept
 {
-    const int szm          = manager_chunk2::get_size_max_number_of_chunk_to_check_compress();
-    const int thr_rank     = get_thr_rank_fast();
-    const int sz_threshold = szm / 2;
+    // Runs inside a region, next to pure readers: the buffers this pass
+    // releases wait for one grace period (read_reclaim.h).
+    const read_reclaim::PassScope pass_scope;
+    const int                     szm          = manager_chunk2::get_size_max_number_of_chunk_to_check_compress();
+    const int                     thr_rank     = get_thr_rank_fast();
+    const int                     sz_threshold = szm / 2;
 
     const auto& ml = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
 
@@ -421,6 +425,7 @@ template <typename T>
 template <typename U>
 T Proxy2<T>::assign_impl(in_t<U> v) noexcept
 {
+    this->check_not_stale();
     // Only one read of values_loc
     const T* const values_loc = chunk.values_load();
 
@@ -440,23 +445,48 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
     // is_cst_val1_and_v_equal_first_value). The stored-value test is what made
     // this early-out the frequent one: a bool re-set to true over a pending
     // `false` lost the true in deferred_path_validation.
+    //
+    // The stored-value test reads the buffer OUTSIDE the write session: a pass
+    // in the region may release it between a pointer load and the element load,
+    // and a second-constant materialisation refill it with second_value -- the
+    // early-out then skipped a real write. The test reloads the pointer inside
+    // a ReadSection (read_reclaim.h), which that pass waits for; only when it
+    // is reached, so an ordinary assignment pays nothing.
     if (!chunk.pending_any()) [[likely]]
     {
         if constexpr (is_not_bool)
         {
-            if (v == second_value &&
-                (values_loc == chunk.get_cst_val2(BaseSpec::ind) || values_loc[num] == second_value))
+            if (v == second_value)
             {
-                return v;
+                if (values_loc == chunk.get_cst_val2(BaseSpec::ind))
+                {
+                    return v;
+                }
+                const read_reclaim::ReadSection section;
+                const T* const                  live = chunk.values_load();
+                test_hooks::maybe_read_delay(); // TEST KNOB (test_read_delay.h)
+                if (live == chunk.get_cst_val2(BaseSpec::ind) || live[num] == second_value)
+                {
+                    return v;
+                }
             }
         }
         else
         {
-            // elem_get: for Bit, values_loc[num] would be a whole byte of 8
-            // elements, non-zero as soon as a NEIGHBOUR is true.
-            if (v && (values_loc == chunk.get_cst_val2() || elem_get(values_loc, static_cast<std::size_t>(num))))
+            if (v)
             {
-                return true;
+                if (values_loc == chunk.get_cst_val2())
+                {
+                    return true;
+                }
+                // elem_get: for Bit, values_loc[num] would be a whole byte of 8
+                // elements, non-zero as soon as a NEIGHBOUR is true.
+                const read_reclaim::ReadSection section;
+                const T* const                  live = chunk.values_load();
+                if (live == chunk.get_cst_val2() || elem_get(live, static_cast<std::size_t>(num)))
+                {
+                    return true;
+                }
             }
         }
     }
@@ -988,6 +1018,7 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
                                          in_t<U>               v,
                                          [[maybe_unused]] bool check_first_value_result) noexcept
 {
+    this->check_not_stale();
     // Cross-rank RMW materialisation (CHUNK_SYNC_ON_READ): pull any foreign
     // deferred write to this offset to applied state before reading v_old, so the
     // RMW cannot clobber it. Precise gate, outside begin_write. See
@@ -1055,7 +1086,10 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
 
     if constexpr (chunk_config::use_compression_without_counter)
     {
-        const in_t<T> v_old = read_values();
+        // Outside the write session: under a ReadSection, or the `0 * x`
+        // shortcut may act on a released, zero-filled buffer (see
+        // ProxyBase::read_values_outside_session).
+        const in_t<T> v_old = Base::read_values_outside_session();
         if (v_old != Chunk2<T>::first_value)
         {
             Base::apply_atomic_op(op, v, v_old);

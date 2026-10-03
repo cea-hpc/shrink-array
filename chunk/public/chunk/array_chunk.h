@@ -27,6 +27,7 @@
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
 #include "chunk/chunk_std.h"
+#include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/array_chunk_base.h"
 #include "chunk/internal/array_chunk_parallel.h"      // ParallelSupport — OpenMP-only mixin
 #include "chunk/internal/array_chunk_rechunk_hooks.h" // RechunkHooks — CHUNK_DYNAMIC-only mixin
@@ -113,18 +114,18 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     }
 
   public:
-    using Traits       = Base::Traits;
-    using chunk_type   = Base::chunk_type;
-    using manager_type = Base::manager_type;
-    using proxy_type   = Base::proxy_type;
-    using value_type   = T;
+    using Traits       = Base::Traits;       ///< ArrayChunkTraits<ArrayChunk>.
+    using chunk_type   = Base::chunk_type;   ///< Chunk<T>, the chunk type held in chunk_list.
+    using manager_type = Base::manager_type; ///< ManagerChunk<Chunk, T>, the per-type manager.
+    using proxy_type   = Base::proxy_type;   ///< Proxy<T>, the write proxy of the non-const accessors.
+    using value_type   = T;                  ///< Stored element type.
 
     using Base::chunk_list;
     using Base::m_size;
     using Base::nb_chunk;
     using Base::nb_tab;
     using Base::size_policy_;
-    using manager_chunk = ManagerChunk<Chunk, T>;
+    using manager_chunk = ManagerChunk<Chunk, T>; ///< Same type as manager_type.
 
     // Mode-specific members, moved out of this class into the two mixins above.
     // The using-declarations are not decoration: ArrayChunkBase re-exports
@@ -165,6 +166,8 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     // through the source's gate and written through this array's proxy);
     // the (first, last) and initializer-list constructors are the same loop
     // over an iterator. All sequential, like resize().
+    /// @brief Deep copy: an array of from.size() elements, each read from @p from. Sequential context.
+    /// @param from Source array.
     ArrayChunk(const ArrayChunk& from) : ArrayChunk(from.size())
     {
         this->copy_from(from);
@@ -288,6 +291,9 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
 
         if (in_parr)
         {
+            // Inside the caller's region: other threads may be reading, so
+            // the buffers released wait for a grace period (read_reclaim.h).
+            const read_reclaim::PassScope pass_scope;
             compress_int(verbose);
         }
         else

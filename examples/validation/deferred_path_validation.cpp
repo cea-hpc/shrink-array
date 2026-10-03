@@ -36,9 +36,13 @@
 //   barriers with no phase bracket: reads of elements another thread wrote
 //   before the barrier while its ops are still queued (the foreign-pending
 //   read gate), and writes under a remapped schedule over elements whose ops
-//   sit in another rank's queue (the cross-rank WAW drain). The same chain is
-//   applied, by the same template, to a std::vector reference; every element
-//   must compare equal at the end of each region. int, double and bool.
+//   sit in another rank's queue (the cross-rank WAW drain). Then the same
+//   drain with the order set by something other than a barrier: writes to a
+//   few hot elements from every thread inside an omp critical, and blocks
+//   handed from one thread to the next by an atomic release/acquire flag,
+//   with no barrier between the two writes. The same chain is applied, by
+//   the same template, to a std::vector reference; every element must
+//   compare equal at the end of each region. int, double and bool.
 //
 // WHAT IT DOES NOT COVER
 //
@@ -49,10 +53,13 @@
 // Exit 0 = every element matches the reference after every region, and, in a
 // CHUNK_STATS build with the knob on, at least one write really was deferred.
 
+#include <algorithm> // std::min
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
 #include <print>
+#include <thread> // std::this_thread::yield
 #include <type_traits>
 #include <vector>
 #include <unistd.h>
@@ -123,6 +130,21 @@ void maybe_set_second_value(Arr& a, const Val& v)
 // Runs of kRun elements alternate constant 0 / second constant / varied, so
 // that the pass between regions has blocks to collapse.
 constexpr long kRun = 2048;
+
+// The values regions 6 and 7 write: 0 among them, so some writes are the
+// constant a still-compressed chunk holds (the early-outs).
+template <typename T>
+static T waw_value(long k)
+{
+    if constexpr (std::is_same_v<T, bool>)
+    {
+        return (k % 3) != 0;
+    }
+    else
+    {
+        return static_cast<T>(k % 23);
+    }
+}
 
 // ── The chains, one per type, applied to the array AND to the reference ─────
 // Every read of the container goes through T(c[i]) -- the proxy's conversion
@@ -422,6 +444,114 @@ static int run(const char* label, long N, const Scenario<T>& sc)
         ref_other[i] = ref[i];
     }
     fails += compare(label, "copy(other)", other, ref_other);
+
+    // Region 6: the cross-rank WAW drain with the order set by an omp critical
+    // instead of a barrier. A few hot elements, spread over the chunks, each
+    // written by every thread in turn (consecutive k, schedule(static, 1): k,
+    // k+1 and k+2 hit the same element from three threads). The reference is
+    // updated INSIDE the same critical, so it records the order the threads
+    // actually took; a write deferred on one rank and replayed after the next
+    // thread's write would leave the older value.
+    {
+        const long H      = std::min<long>(N, 256);
+        const long stride = N / H;
+        const long M      = 3 * 64 * H; // every hot element written 192 times
+        long       tick   = 0;          // only touched inside the critical
+#pragma omp parallel
+        {
+            begin_phase();
+#pragma omp for schedule(static, 1)
+            for (long k = 0; k < M; ++k)
+            {
+                const long i = ((k / 3) % H) * stride;
+#pragma omp critical(deferred_waw)
+                {
+                    const long t = tick++;
+                    if constexpr (!std::is_same_v<T, bool>)
+                    {
+                        if (t % 4 == 3)
+                        {
+                            arr[i] += T(1); // a compound op over a maybe-pending write
+                            ref[i] += T(1);
+                        }
+                        else
+                        {
+                            arr[i] = waw_value<T>(t);
+                            ref[i] = waw_value<T>(t);
+                        }
+                    }
+                    else
+                    {
+                        arr[i] = waw_value<T>(t);
+                        ref[i] = waw_value<T>(t);
+                    }
+                }
+            }
+        }
+        end_phase();
+        fails += compare(label, "critical", arr, ref);
+    }
+
+    // Region 7: the same drain with the order set by an atomic flag. One region,
+    // no barrier between its two loops (nowait): block b is written by its
+    // owner, which then publishes ready[b] with release; the thread that owns
+    // block b-1 in the second loop waits for it with acquire and overwrites
+    // it. The first loop never waits, so every flag is eventually set.
+    {
+        constexpr long                B  = 1000; // not a chunk multiple: blocks straddle chunks
+        const long                    nb = (N + B - 1) / B;
+        std::vector<std::atomic<int>> ready(nb);
+        for (auto& r : ready)
+        {
+            r.store(0, std::memory_order_relaxed);
+        }
+#pragma omp parallel
+        {
+            begin_phase();
+#pragma omp for schedule(static, 1) nowait
+            for (long b = 0; b < nb; ++b)
+            {
+                for (long i = b * B; i < std::min(N, (b + 1) * B); ++i)
+                {
+                    arr[i] = waw_value<T>(i);
+                }
+                ready[b].store(1, std::memory_order_release);
+            }
+#pragma omp for schedule(static, 1)
+            for (long j = 0; j < nb; ++j)
+            {
+                const long b = (j + 1) % nb; // another thread's block of the first loop
+                while (ready[b].load(std::memory_order_acquire) == 0)
+                {
+                    std::this_thread::yield();
+                }
+                for (long i = b * B; i < std::min(N, (b + 1) * B); ++i)
+                {
+                    arr[i] = waw_value<T>(i + 5);
+                    if constexpr (!std::is_same_v<T, bool>)
+                    {
+                        if (i % 4 == 0)
+                        {
+                            arr[i] += T(2);
+                        }
+                    }
+                }
+            }
+        }
+        end_phase();
+        for (long i = 0; i < N; ++i)
+        {
+            ref[i] = waw_value<T>(i + 5);
+            if constexpr (!std::is_same_v<T, bool>)
+            {
+                if (i % 4 == 0)
+                {
+                    ref[i] += T(2);
+                }
+            }
+        }
+        fails += compare(label, "acq-rel flags", arr, ref);
+    }
 
     if (!fails)
     {

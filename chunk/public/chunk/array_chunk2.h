@@ -77,14 +77,14 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     static constexpr bool is_bool = is_bool_like_v<T>; // bool and Bit (bit.h)
 
   public:
-    using Base2      = ArrayChunk2Base<ArrayChunk2>;
-    using Base       = ArrayChunkBase<ArrayChunk2>;
-    using Parallel2  = ParallelSupport2<ArrayChunk2>;
-    using FastBlock2 = FastBlockSupport2<ArrayChunk2>;
-    using Hooks2     = RechunkHooks2<ArrayChunk2>;
+    using Base2      = ArrayChunk2Base<ArrayChunk2>;   ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
+    using Base       = ArrayChunkBase<ArrayChunk2>;    ///< Base shared by every variant.
+    using Parallel2  = ParallelSupport2<ArrayChunk2>;  ///< OpenMP-only members (deferred-op flush).
+    using FastBlock2 = FastBlockSupport2<ArrayChunk2>; ///< Fast-block compression pass.
+    using Hooks2     = RechunkHooks2<ArrayChunk2>;     ///< Re-chunk hooks (dynamic geometry).
 
-    friend Base2;
-    friend ArrayChunkBase<ArrayChunk2<T, ind_type>>; // swap_identity()
+    friend Base2;                                    ///< The CRTP base reaches this class's private members.
+    friend ArrayChunkBase<ArrayChunk2<T, ind_type>>; ///< For swap_identity().
 
     // RechunkHooks2::rechunk_reown_after_swap copies ind_cst_val2, which is
     // private below. Same reason ArrayChunkBase befriends RechunkSupport.
@@ -95,11 +95,11 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     // mixins above declare them too, so without a member of the same name in
     // ArrayChunk2 an outside `Arr::chunk_type` would be ambiguous between base
     // subobjects. ArrayChunk does the same for the same reason.
-    using Traits       = Base2::Traits;
-    using chunk_type   = Base2::chunk_type;
-    using manager_type = Base2::manager_type;
-    using proxy_type   = Base2::proxy_type;
-    using value_type   = T;
+    using Traits       = Base2::Traits;       ///< ArrayChunkTraits<ArrayChunk2>.
+    using chunk_type   = Base2::chunk_type;   ///< Chunk2<T>, the chunk type held in chunk_list.
+    using manager_type = Base2::manager_type; ///< ManagerChunk<Chunk2, T>, the per-type manager.
+    using proxy_type   = Base2::proxy_type;   ///< Proxy2<T>, the write proxy of the non-const accessors.
+    using value_type   = T;                   ///< Stored element type.
 
     using Base2::chunk_list;
 
@@ -109,9 +109,10 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     using Base2::nb_chunk;
     using Base2::resize; // Import resize(sz, val)
 
+    /// Registry entry of an array: (second value, its index in the shared value table, num_tab).
     using inf_array_t = std::tuple<T, int, int>;
 
-    using manager_chunk2 = ManagerChunk<Chunk2, T>;
+    using manager_chunk2 = ManagerChunk<Chunk2, T>; ///< Same type as manager_type.
 
     // Mode-specific members, moved out of this class into the mixins above.
     // The using-declarations are not decoration: ArrayChunkBase re-exports
@@ -128,7 +129,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     using Hooks2::rechunk_seed_fresh;
     using Hooks2::rechunk_swap_identity;
 
-    static constexpr bool is_not_bool = !is_bool;
+    static constexpr bool is_not_bool = !is_bool; ///< T is neither bool nor Bit: it has a second value.
 
     /**
      * @brief Build an array of @p sz elements.
@@ -155,6 +156,8 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     // over an iterator. All sequential, like resize().
     // chunk2's second value is array-wide: the source's is re-declared here
     // before the elements are written, so that its runs stay what they are.
+    /// @brief Deep copy: @p from's second value, then from.size() elements read from @p from. Sequential context.
+    /// @param from Source array.
     ArrayChunk2(const ArrayChunk2& from) : ArrayChunk2(from.size())
     {
         copy_second_value_from(from);
@@ -274,9 +277,12 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      * @param sec_value value chunks may now compress to
      * @param message   print the "useless for bool" warning; ignored for every
      *                  other T, and it gates nothing else
-     * @warning Registered cst_val2 blocks are never released, even when replaced
-     *          by a larger one: a still-live chunk of another array may hold the
-     *          old address as its `values`.
+     * @warning Registered cst_val2 blocks never move and are never released
+     *          while the program runs, even when replaced by a larger one: a
+     *          still-live chunk of another array may hold the address as its
+     *          `values`. The table grows by one block per DISTINCT value ever
+     *          declared (cst_buffer_size elements each), plus a candidate list
+     *          per thread -- bounded, but not reclaimed.
      */
     void set_second_value(T sec_value, bool message = true);
     /**

@@ -18,3 +18,7 @@ if (CHUNK_BUILD_DYN)
     set_property(TEST advisor_demo PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
     set_property(TEST advisor_demo PROPERTY LABELS validation)
 endif ()
+
+# shrink-build-stamp: every executable of this directory prints the build stamp
+# and is built by `check` (cmake/shrink_build_stamp.cmake).
+shrink_stamp_directory_targets()

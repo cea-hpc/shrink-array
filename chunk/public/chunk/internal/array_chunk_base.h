@@ -748,7 +748,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     [[nodiscard]] reference       back(this Derived& self);
 
     /** @} */
-    /** @} */
 
     /**
      * @brief assign(count, val): std::vector semantics.
@@ -895,6 +894,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         // share_info_array; leaving it unset caused "[share_info get] key NOT
         // FOUND" aborts in Proxy2/Proxy2A check builds.
         val.set_this_and_num_chunk(self.registry_key(), num_chunk, self.num_tab);
+        val.arm_storage_generation(&self.storage_generation_); // check builds only
 
         // Chunk2 only: arm the proxy with the address of this array's registry
         // mirror, so the write path copies the (second_value, ind, num_tab)
@@ -1016,6 +1016,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         }
         self.flush_pending_deferred_ops(/*force=*/true);
         other.flush_pending_deferred_ops(/*force=*/true);
+        self.invalidate_proxies();
+        other.invalidate_proxies();
 
         using std::swap;
         swap(self.chunk_list, other.chunk_list);
@@ -1028,6 +1030,19 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     }
 
     ind_type m_size; ///< Number of elements exposed by size().
+
+    /// @brief Bumped by every operation that rebuilds or releases the storage
+    ///        -- the list that invalidates a proxy (see operator[]). A check
+    ///        build's proxy keeps the value it saw and aborts on use when it
+    ///        changed (ProxyBase::check_not_stale); other builds never read
+    ///        it. Per array, not swapped: a swap invalidates both sides.
+    unsigned int storage_generation_ = 0;
+
+    /// @brief Every proxy of this array built so far is now stale.
+    void invalidate_proxies() noexcept
+    {
+        ++storage_generation_;
+    }
 
   private:
     /**

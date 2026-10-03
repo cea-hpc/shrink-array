@@ -201,6 +201,7 @@ class AllTypeChunkParallelInterface<Derived, false>
 template <typename Derived, bool Enabled = build_config::chunk_dynamic>
 struct AllTypeChunkDynInterface; // primary left undefined: only the 2 specializations exist
 
+/// @brief Dynamic-geometry builds: chunk sizes are declared at run time via register_chunk_size().
 template <typename Derived>
 struct AllTypeChunkDynInterface<Derived, true>
 {
@@ -248,7 +249,10 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      * Private-by-convention: instances are created only by
      * `SingletonChk<AllTypeChunk>`, which is a friend.
      */
-    AllTypeChunk() = default;
+    /// @note Out of line (all_type_chunk.cpp): it checks, once per process,
+    ///       that the OMPT tool of a HAVE_OMPT build is loaded
+    ///       (check_ompt_tool_loaded, manage_ompt.h).
+    AllTypeChunk();
 
     /// Non-copyable: the registry owns the managers and is a singleton.
     AllTypeChunk(const AllTypeChunk&)            = delete;

@@ -69,7 +69,10 @@
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
 // Defined by every executable of the library (the fast allocator reads it).
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::compress_roundtrip
+{
 
 using namespace shrink_array;
 
@@ -251,7 +254,7 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
     return bad ? 1 : 0;
 }
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
 
@@ -286,3 +289,5 @@ int main(int argc, char** argv)
                  fails == 0 ? "=== ROUND-TRIP OK, TEARDOWN OK ===" : "=== ROUND-TRIP FAILURES ===");
     return fails;
 }
+
+} // namespace validation::compress_roundtrip

@@ -91,7 +91,9 @@ void expect(bool ok, const char* what)
 /// @brief One block per size, both front-end pairs.
 void check_sizes()
 {
-    bool ok_blk = true, ok_tab = true, aligned = true;
+    bool ok_blk  = true;
+    bool ok_tab  = true;
+    bool aligned = true;
     for (std::size_t i = 0; i < std::size(kSizes); ++i)
     {
         const std::size_t n = kSizes[i];

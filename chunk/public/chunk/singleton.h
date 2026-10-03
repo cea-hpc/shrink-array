@@ -58,22 +58,22 @@ class SingletonChk
     }
 
   protected:
-    // IMMORTAL raw pointer (was std::unique_ptr<T>): created once with `new`
-    // under the mutex and NEVER deleted. Rationale identical to the
-    // fast_allocators Singleton: a global unique_ptr's exit-time destructor
-    // races worker-thread TLS destructors that still touch the singleton at
-    // shutdown (static/TLS destruction-order data race). Leaking avoids the
-    // exit-time destructor; the OS reclaims the memory at process end.
-    //
-    // Atomic so that getInstance() can read it without the mutex (double-
-    // checked locking, see there).
+    /// IMMORTAL raw pointer (was std::unique_ptr<T>): created once with `new`
+    /// under the mutex and NEVER deleted. Rationale identical to the
+    /// fast_allocators Singleton: a global unique_ptr's exit-time destructor
+    /// races worker-thread TLS destructors that still touch the singleton at
+    /// shutdown (static/TLS destruction-order data race). Leaking avoids the
+    /// exit-time destructor; the OS reclaims the memory at process end.
+    ///
+    /// Atomic so that getInstance() can read it without the mutex (double-
+    /// checked locking, see there).
     static inline std::atomic<T*> unique_instance{nullptr};
 
-    // Guards lazy construction. The previous version had NO lock, so two threads
-    // hitting getInstance() on first use could both new the instance and the
-    // second assignment free the first → double-free. Held only while the
-    // instance does not exist yet: getInstance() IS on a hot path (per-barrier
-    // bookkeeping, every thread), so its steady state must not lock.
+    /// Guards lazy construction. The previous version had NO lock, so two threads
+    /// hitting getInstance() on first use could both new the instance and the
+    /// second assignment free the first → double-free. Held only while the
+    /// instance does not exist yet: getInstance() IS on a hot path (per-barrier
+    /// bookkeeping, every thread), so its steady state must not lock.
     static inline std::mutex unique_instance_mutex;
 
   private:

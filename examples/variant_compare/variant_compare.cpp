@@ -243,7 +243,10 @@ int main(int argc, char** argv)
     using clk       = std::chrono::steady_clock;
     const auto secs = [](clk::time_point t0) { return std::chrono::duration<double>(clk::now() - t0).count(); };
 
-    double    t_const = 0., t_plain = 0., t_read = 0., t_rmw = 0.;
+    double    t_const  = 0.;
+    double    t_plain  = 0.;
+    double    t_read   = 0.;
+    double    t_rmw    = 0.;
     double    checksum = 0.;
     const int n        = static_cast<int>(N);
 

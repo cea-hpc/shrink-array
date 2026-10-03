@@ -27,6 +27,7 @@
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/internal/arithmetic_context.h"
 #include "chunk/internal/concept_is_clean_assignement.h"
+#include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 
 namespace shrink_array
 {
@@ -306,6 +307,7 @@ template <typename T>
 template <typename U>
 T Proxy<T>::assign_impl(in_t<U> v) noexcept
 {
+    this->check_not_stale();
     if (is_cst_val_and_v_equal_zero(v))
     {
         return v;
@@ -614,6 +616,7 @@ template <typename T>
 template <typename U, typename BinaryOp>
 void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
 {
+    this->check_not_stale();
     // Cross-rank RMW materialisation: pull any foreign deferred write first.
     chunk.reader_sync(num);
 
@@ -654,7 +657,9 @@ void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
         {
             // const T, not in_t<T>: apply_atomic_op() stores to values[num]
             // and still reads v_old (in_t.h, corollary for local variables).
-            const T v_old = values[num];
+            // Outside the write session: under a ReadSection (see
+            // ProxyBase::read_values_outside_session).
+            const T v_old = Base::read_values_outside_session();
             // we can't test values[num] if deferred mode is activate : because values[num] could be affect after
             if (v_old != zero || CompressionManagerType::have_deferred_queue())
             {
@@ -700,7 +705,10 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::trigger_compression_if_needed(int
 template <typename Derived, typename T, bool Enabled>
 void ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression() const noexcept
 {
-    const int thr_rank = get_thr_rank_fast();
+    // Runs inside a region, next to pure readers: the buffers this pass
+    // releases wait for one grace period (read_reclaim.h).
+    const read_reclaim::PassScope pass_scope;
+    const int                     thr_rank = get_thr_rank_fast();
 
     const int szm = manager_chunk::get_size_max_number_of_chunk_to_check_compress();
 

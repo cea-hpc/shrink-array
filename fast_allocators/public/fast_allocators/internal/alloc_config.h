@@ -67,16 +67,19 @@ inline constexpr bool is_debug =
 
 /**
  * @brief An emptied slab gets MADV_DONTNEED instead of staying resident.
- * @details CMake option `CHUNK_RECLAIM_EMPTY_SLABS`, off by default. Only worth
- *          anything once slabs actually reach nn_ref == 0 -- see
- *          ManagerChunk::drain_reuse_list_for_size, which is what empties the
- *          old geometry's slabs after a re-chunk.
+ * @details On by default; `-DCHUNK_NO_RECLAIM_EMPTY_SLABS` (CMake option
+ *          `CHUNK_RECLAIM_EMPTY_SLABS=OFF`) turns it off. The default lives
+ *          here, not in CMake, so a project that includes the installed
+ *          headers without our definitions gets the value the library was
+ *          built with. Only worth anything once slabs actually reach
+ *          nn_ref == 0 -- see ManagerChunk::drain_reuse_list_for_size, which
+ *          is what empties the old geometry's slabs after a re-chunk.
  */
 inline constexpr bool reclaim_empty_slabs =
-#if defined(CHUNK_RECLAIM_EMPTY_SLABS)
-    true;
-#else
+#if defined(CHUNK_NO_RECLAIM_EMPTY_SLABS)
     false;
+#else
+    true;
 #endif
 
 /**
@@ -97,7 +100,7 @@ inline constexpr bool reclaim_empty_slabs =
  *          sweeping that trades that speed back for pages. Before this the
  *          choice needed a rebuild.
  *
- *          0 sweeps everything (what CHUNK_RECLAIM_EMPTY_SLABS=ON always did),
+ *          0 sweeps everything (what reclaim_empty_slabs always did),
  *          which is the default when unset, so existing builds do not change.
  *          Read once, at a point that runs a handful of times per re-chunk:
  *          the free path is deliberately not a consumer of this -- it stopped

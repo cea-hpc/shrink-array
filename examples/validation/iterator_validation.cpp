@@ -75,7 +75,10 @@
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"
 
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::iterator_validation
+{
 
 using namespace shrink_array;
 
@@ -592,7 +595,7 @@ int check_sort_recipe(const std::vector<double>& ref)
 
 } // namespace
 
-int main()
+int run(int /*argc*/, char** /*argv*/)
 {
     __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
@@ -634,3 +637,5 @@ int main()
     std::printf("\n[%s] %s\n", variant_name(), fails ? "=== ITERATOR FAILED ===" : "=== ITERATOR OK ===");
     return fails ? 1 : 0;
 }
+
+} // namespace validation::iterator_validation

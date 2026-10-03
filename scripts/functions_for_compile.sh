@@ -311,9 +311,13 @@ N_FAILED=0
 # entirely (useful when a build gets OOM-killed), and an explicitly set
 # CMAKE_BUILD_PARALLEL_LEVEL is always respected as-is.
 # Remember whether --jobs / CHUNK_MAX_JOBS was given: only the default is
-# narrowed to what --target selects (below, once __target_wants exists).
+# narrowed: to what --target selects, and when the budget is too small for
+# it (both below).
 __max_jobs_given="${CHUNK_MAX_JOBS:+1}"
 CHUNK_MAX_JOBS="${CHUNK_MAX_JOBS:-4}"
+# Fewest compile jobs a build should get before the default number of builds
+# at a time is lowered (see __narrow_slots_to_budget).
+CHUNK_MIN_JOBS_PER_BUILD="${CHUNK_MIN_JOBS_PER_BUILD:-3}"
 
 # How many cores to plan for. nproc is the right answer: it already reflects the
 # CPU affinity mask, so taskset / scheduler placement are respected.
@@ -485,6 +489,28 @@ if [ -n "${CHUNK_BUILD_TARGET:-}" ] && [ -z "$__max_jobs_given" ]; then
     fi
 fi
 
+# Fewer builds at a time when the budget cannot feed the default number of
+# them. A WSL with 23 GB of 24 threads had room for 6 compilers (3 GB each):
+# 4 builds at a time got 6 / 4 = 1 job each -- 4 compilers out of 6, and as
+# the builds finished at different times, often a single core busy. Lower the
+# DEFAULT number of builds until each one gets CHUNK_MIN_JOBS_PER_BUILD jobs
+# (2 builds x 3 jobs there); a --jobs / CHUNK_MAX_JOBS given explicitly is
+# kept. Exported: compile_all_gnu.sh, run by compile_all.sh, shares the slots.
+__narrow_slots_to_budget() {  # <mb-per-job>
+    [ -n "$__max_jobs_given" ] && return 0
+    local total=$__ncores slots
+    if [ -n "$__mem_mb" ] && [ $(( __mem_mb / $1 )) -lt "$total" ]; then
+        total=$(( __mem_mb / $1 ))
+    fi
+    slots=$(( total / CHUNK_MIN_JOBS_PER_BUILD ))
+    [ "$slots" -lt 1 ] && slots=1
+    if [ "$slots" -lt "$CHUNK_MAX_JOBS" ]; then
+        __narrowed_from=$CHUNK_MAX_JOBS
+        CHUNK_MAX_JOBS=$slots
+        export CHUNK_MAX_JOBS
+    fi
+}
+
 # CHUNK_PAR_DERIVED marks a level WE derived and exported: compile_all.sh
 # exports CMAKE_BUILD_PARALLEL_LEVEL before delegating to compile_all_gnu.sh,
 # which must re-derive (and size its sanitizer builds) rather than take that
@@ -492,6 +518,7 @@ fi
 if [ -z "${CMAKE_BUILD_PARALLEL_LEVEL:-}" ] || [ "${CHUNK_PAR_DERIVED:-}" = 1 ]; then
     __ncores="$(__usable_cores)"
     __mem_avail_mb
+    __narrow_slots_to_budget "$CHUNK_MEM_PER_JOB_MB"
     CMAKE_BUILD_PARALLEL_LEVEL="$(__jobs_for_budget "$CHUNK_MEM_PER_JOB_MB")"
     CHUNK_SAN_PARALLEL_LEVEL="$(__jobs_for_budget "$CHUNK_MEM_PER_JOB_MB_SANITIZER")"
     if [ -n "$__mem_mb" ] && [ $(( __mem_mb / CHUNK_MEM_PER_JOB_MB )) -lt "$__ncores" ]; then
@@ -513,6 +540,10 @@ fi
 printf '[JOBS] %s usable core(s), %s build(s) at a time, %s compile job(s) each (%s) -> ~%s compiler process(es)\n' \
        "$__ncores" "$CHUNK_MAX_JOBS" "$CMAKE_BUILD_PARALLEL_LEVEL" "$__derived" \
        "$(( CHUNK_MAX_JOBS * CMAKE_BUILD_PARALLEL_LEVEL ))"
+if [ -n "${__narrowed_from:-}" ]; then
+    printf '[JOBS] %s build(s) at a time instead of %s: the budget gives each at least %s job(s) (CHUNK_MIN_JOBS_PER_BUILD; --jobs=N overrides)\n' \
+           "$CHUNK_MAX_JOBS" "$__narrowed_from" "$CHUNK_MIN_JOBS_PER_BUILD"
+fi
 if [ "$CHUNK_SAN_PARALLEL_LEVEL" != "$CMAKE_BUILD_PARALLEL_LEVEL" ]; then
     printf '[JOBS] sanitizer builds: %s compile job(s) each (%s MB per job, CHUNK_MEM_PER_JOB_MB_SANITIZER)\n' \
            "$CHUNK_SAN_PARALLEL_LEVEL" "$CHUNK_MEM_PER_JOB_MB_SANITIZER"
@@ -527,7 +558,7 @@ if [ "$CMAKE_BUILD_PARALLEL_LEVEL" -le 2 ] && [ "$CHUNK_MAX_JOBS" -gt 1 ]; then
            "$CMAKE_BUILD_PARALLEL_LEVEL"
     printf '[JOBS] fewer, wider builds are usually faster here: try --jobs=1 or --jobs=2.\n'
 fi
-unset __ncores __derived __quota __mem_mb __mem_source
+unset __ncores __derived __quota __mem_mb __mem_source __narrowed_from
 
 launch_build() {  # <build-dir> [cmake --build extra args…]
     local dir=$1; shift
@@ -828,6 +859,31 @@ __slot_dir() {
     mkdir -p "$CHUNK_SLOT_DIR" 2>/dev/null
     printf '%s' "$CHUNK_SLOT_DIR"
 }
+
+# The pool dir used to outlive every run (.build-slots.<pid>/ piling up in
+# build_rep, one with a target-matched left by an interrupted run). Only the
+# process that opened it removes it -- the one that found no CHUNK_SLOT_DIR in
+# its environment; compile_all_gnu.sh under compile_all.sh inherits it and
+# leaves it alone. On EXIT, so ^C (cancel_all exits) and early exits clean up
+# too. The path is recomputed: __slot_dir mostly runs in $(...), so the
+# assignment may never have reached this shell. rmdir, never rm -rf: a token
+# still held by a live process keeps the dir.
+if [ -z "${CHUNK_SLOT_DIR:-}" ]; then
+    __slot_dir_cleanup() {
+        local d="${CHUNK_SLOT_DIR:-${build_rep:-/tmp}/.build-slots.$$}"
+        [ -d "$d" ] || return 0
+        rm -f "$d/target-matched" "$d/exec-matched" "$d/exec-candidates" 2>/dev/null
+        # Our own tokens first: still alive here, __slots_gc would keep them.
+        local tok
+        for tok in "$d"/slot-*; do
+            [ "$(cat "$tok/owner" 2>/dev/null)" = "$$" ] && __slot_release "$tok"
+        done
+        __slots_gc
+        rmdir "$d" 2>/dev/null
+        return 0
+    }
+    trap __slot_dir_cleanup EXIT
+fi
 
 # Drop stale tokens whose owning process is gone (a killed run leaves them).
 __slots_gc() {

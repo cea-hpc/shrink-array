@@ -1,0 +1,537 @@
+/*
+ * Copyright 2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+// ============================================================================
+// Read / reclaim harness. Variant-agnostic: chunk / chunk2 / chunk2a follow the
+// compile-time macro (CHUNK / CHUNK2 / CHUNK2A), like the other harnesses here.
+// OpenMP builds only: the property is about two threads.
+// ============================================================================
+//
+// Guards ONE property: a pure read never sees the buffer a concurrent
+// compression has just released.
+//
+// THE WINDOW
+//
+//   A pure read (ArrayChunkBase::operator[] const -> ChunkBase::element_at)
+//   loads the chunk's `values` pointer, then reads vals[i]. A compression pass
+//   run INSIDE the region -- by a writer whose candidate list crossed the
+//   threshold (trigger_compression_if_needed -> make_block_compression) --
+//   CASes `values` to the constant and frees the old buffer at once
+//   (clear_int_st -> free_block_to_pool). Nothing orders the two: the
+//   write/compress handshake (start(), steal_mark) waits for WRITERS only.
+//
+//     CHUNK_STD_ALLOC    the buffer goes back to malloc: use-after-free. ASan
+//                        reports it; without ASan, free()'s bin pointers sit in
+//                        the first 16 bytes (elements 0 and 1 of a double).
+//     fast allocator     the buffer is parked at the top of the rank's LIFO
+//                        reuse list; the next materialisation pops it and
+//                        overwrites it: the reader returns a value the chunk
+//                        never held, silently.
+//
+//   The window is two instructions wide. CHUNK_TEST_READ_DELAY_EVERY (set on
+//   this target, see test_read_delay.h) makes one read in N of the READER
+//   threads wait between the load and the dereference.
+//
+// WHAT IT DOES
+//
+//   One array, partitioned per writer into VICTIM chunks and POLLUTER chunks.
+//   Everything is the first constant (0) unless said otherwise.
+//
+//   writers   sweep their victims: element 0 of each to 1.0 (materialise),
+//             back to 0.0 (the chunk is constant again: a candidate). The
+//             list crosses the variant's threshold, and the compression pass
+//             runs inside the region, freeing victim buffers. After each
+//             victim, polluter chunks taken round a ring are filled with 3.0
+//             (4.0 at element 0: not constant) -- materialised from the reuse
+//             list, i.e. from the buffers just freed -- and stay so for half a
+//             ring before going back to 0.0 (a candidate, freed in turn).
+//   readers   read random victim elements 1 .. S-1, alternately through the
+//             const operator[] and through the write proxy's conversion
+//             (`double v = a[i]` on a non-const array). Nobody writes those
+//             elements: the answer is 0.0, always. Anything else is a read
+//             from a released buffer.
+//
+//   Premise, checked: victim chunks were found compressed at the end of a
+//   sweep, i.e. the pass did run inside the region. Without it the test
+//   proves nothing and fails as such.
+//
+// EXIT STATUS: 0 = no stale read and the premise held, 1 otherwise,
+// 77 = skipped (fewer than 2 threads).
+//
+// MODE `compound` (argument): the same window, on the WRITE side
+//
+//   `a[i] *= x` (and /=, %=) on Chunk2 / Chunk2A reads the element first
+//   (Proxy2 / Proxy2A apply_compound_operation: v_old = read_values()), outside
+//   the write session, and drops the operation when it reads first_value (0):
+//   "0 * x is 0". If a pass in the region compressed the chunk and released
+//   its buffer between that read's pointer load and its element load, and a
+//   first-constant materialisation took the buffer back (zero-filled), the
+//   read sees 0 and the multiplication is lost -- the element keeps its old
+//   value.
+//
+//   victims   chunks uniform at the second value V: the writers take each
+//             one through materialise (element 0 to 1.0) and back to V (a
+//             candidate), so the passes keep compressing them inside the
+//             region and releasing their buffers.
+//   polluters first-constant chunks the writers materialise with element 0
+//             only: the buffer they take from the reuse list is zero-filled.
+//   RMW       threads (opted into the delay) apply `*= 2` then `*= 0.5` to
+//             random victim elements 1 .. S-1, each thread on offsets of its
+//             own. The two are exact on V, so every victim element ends at V;
+//             one lost operation leaves V / 2 or 2 V.
+//
+//   Chunk (v1) has no second value: the mode is skipped there (77).
+
+#include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <string_view>
+#include <type_traits>
+#include <unistd.h>
+#include <omp.h>
+
+#include "chunk/chunk_traits.h"
+#include "chunk/array_chunk.h"
+#include "chunk/array_chunk2.h"
+#include "chunk/array_chunk2A.h"
+#include "chunk/param_chunk.h"
+#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"
+#include "chunk/PMP_CHUNK.h"
+#include "chunk/manage_ompt.h"
+#include "chunk/internal/test_read_delay.h"
+
+int __mem_page_size = 0;
+
+using namespace shrink_array;
+
+namespace
+{
+
+static_assert(build_config::use_openmp, "read_reclaim_validation needs an OpenMP build");
+
+template <typename T>
+using Array = std::conditional_t<chunk_config::use_chunk2a,
+                                 ArrayChunk2A<T>,
+                                 std::conditional_t<chunk_config::use_chunk2, ArrayChunk2<T>, ArrayChunk<T>>>;
+
+using Arr = Array<double>;
+using Ind = Arr::ind_type;
+
+constexpr const char* variant_name()
+{
+    if constexpr (chunk_config::use_chunk2a)
+    {
+        return "chunk2a";
+    }
+    else if constexpr (chunk_config::use_chunk2)
+    {
+        return "chunk2";
+    }
+    else
+    {
+        return "chunk";
+    }
+}
+
+void begin_phase()
+{
+    if constexpr (build_config::has_not_ompt)
+    {
+        shrink_array::begin_parallel_phase();
+    }
+}
+
+void end_phase()
+{
+    if constexpr (build_config::has_not_ompt)
+    {
+        shrink_array::finalize_parallel_phase();
+    }
+}
+
+// Victims per writer: twice the largest in-region trigger floor (Chunk2:
+// 2000), so a single sweep crosses it on every variant.
+constexpr long kVictims   = 4096;
+constexpr long kPolluters = 512;
+constexpr long kPerWriter = kVictims + kPolluters;
+
+constexpr double kPollute = 3.0;
+
+long env_long(const char* name, long dflt)
+{
+    const char* e = std::getenv(name);
+    const long  v = e ? std::atol(e) : 0;
+    return v > 0 ? v : dflt;
+}
+
+struct Xorshift
+{
+    std::uint64_t s;
+    std::uint64_t next() noexcept
+    {
+        s ^= s << 13U;
+        s ^= s >> 7U;
+        s ^= s << 17U;
+        return s;
+    }
+};
+
+// set_second_value only exists on chunk2 / chunk2a.
+template <typename A, typename Val>
+void maybe_set_second_value(A& a, const Val& v)
+{
+    if constexpr (requires(A x) { x.set_second_value(v); })
+    {
+        a.set_second_value(v);
+    }
+}
+
+constexpr double kSecond = 2.0;
+
+/// @brief The `compound` mode (see the file header). @return the exit status.
+int run_compound(int team, int writers, double seconds, long pollute)
+{
+    if constexpr (!chunk_config::use_chunk2 && !chunk_config::use_chunk2a)
+    {
+        std::printf("[%s/read-reclaim compound] SKIP: no second value on this variant\n", variant_name());
+        return 77;
+    }
+
+    int rc = 0;
+    {
+        Arr        a;
+        const long S = static_cast<long>(a.chunk_size());
+        const long N = writers * kPerWriter * S;
+        a.resize(static_cast<Ind>(N));
+        maybe_set_second_value(a, kSecond);
+        const Arr& ca = a;
+
+        std::printf("=== read_reclaim_validation compound [variant = %s]  threads=%d (writers %d)  chunk_size=%ld  "
+                    "read_delay_every=%u (%u us)  pollute=%ld  %.0f s ===\n",
+                    variant_name(), team, writers, S, test_hooks::read_delay_every, test_hooks::read_delay_us, pollute,
+                    seconds);
+
+        // Victims uniform at the second value, serially, before any region.
+        for (long w = 0; w < writers; ++w)
+        {
+            for (long c = 0; c < kVictims; ++c)
+            {
+                for (long k = 0; k < S; ++k)
+                {
+                    a[static_cast<Ind>((w * kPerWriter + c) * S + k)] = kSecond;
+                }
+            }
+        }
+
+        std::atomic<int>  writers_left{writers};
+        std::atomic<long> rmw_ops{0};
+        std::atomic<long> compressed_seen{0};
+        std::atomic<long> sweeps{0};
+
+#pragma omp parallel num_threads(team)
+        {
+            begin_phase();
+            const int me = omp_get_thread_num();
+
+            if (me < writers)
+            {
+                const long base_v = me * kPerWriter;
+                const long base_p = base_v + kVictims;
+                long       next_p = 0;
+                const auto t0     = std::chrono::steady_clock::now();
+                while (std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count() < seconds)
+                {
+                    for (long c = 0; c < kVictims; ++c)
+                    {
+                        const Ind v0 = static_cast<Ind>((base_v + c) * S);
+                        a[v0]        = 1.0;     // materialise (filled with V)
+                        a[v0]        = kSecond; // uniform again: a candidate
+
+                        // Polluters, as a ring: the chunk half a ring behind goes
+                        // back to 0 (a candidate), the one at the head is
+                        // materialised from the reuse list with element 0 only --
+                        // a zero-filled buffer, which is what a delayed v_old read
+                        // then sees.
+                        for (long q = 0; q < pollute; ++q)
+                        {
+                            const Ind old0 = static_cast<Ind>((base_p + (next_p + kPolluters / 2) % kPolluters) * S);
+                            a[old0]        = 0.0;
+                            const Ind p0   = static_cast<Ind>((base_p + next_p) * S);
+                            next_p         = (next_p + 1) % kPolluters;
+                            a[p0]          = kPollute;
+                        }
+                    }
+                    long n = 0;
+                    for (long c = 0; c < kVictims; ++c)
+                    {
+                        n += ca.written(static_cast<Ind>((base_v + c) * S)) ? 0 : 1;
+                    }
+                    compressed_seen.fetch_add(n, std::memory_order_relaxed);
+                    sweeps.fetch_add(1, std::memory_order_relaxed);
+                }
+                writers_left.fetch_sub(1, std::memory_order_release);
+            }
+            else
+            {
+                // Each RMW thread owns the offsets j = 1 + rmw_rank + k * n_rmw:
+                // two read-modify-writes of the SAME element from two threads
+                // race in the library as in a std::vector (nothing serialises
+                // writers between themselves), and would lose an operation
+                // that has nothing to do with the window under test.
+                test_hooks::read_delay_enabled = true;
+                Xorshift   rng{0x9E3779B97F4A7C15ULL ^ (static_cast<std::uint64_t>(me) * 0xBF58476D1CE4E5B9ULL)};
+                const long n_rmw     = team - writers;
+                const long rmw_rank  = me - writers;
+                const long n_own     = (S - 1 - rmw_rank + n_rmw - 1) / n_rmw; // offsets of this thread
+                long       local_ops = 0;
+                while (n_own > 0 && writers_left.load(std::memory_order_acquire) > 0)
+                {
+                    const long w   = static_cast<long>(rng.next() % static_cast<std::uint64_t>(writers));
+                    const long c   = static_cast<long>(rng.next() % static_cast<std::uint64_t>(kVictims));
+                    const long kk  = static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_own));
+                    const long j   = 1 + rmw_rank + kk * n_rmw;
+                    const Ind  idx = static_cast<Ind>((w * kPerWriter + c) * S + j);
+                    a[idx] *= 2.0;
+                    a[idx] *= 0.5;
+                    local_ops += 2;
+                }
+                test_hooks::read_delay_enabled = false;
+                rmw_ops.fetch_add(local_ops, std::memory_order_relaxed);
+            }
+        }
+        end_phase();
+
+        // Every victim element must be back to V.
+        long bad = 0;
+        for (long w = 0; w < writers; ++w)
+        {
+            for (long c = 0; c < kVictims; ++c)
+            {
+                for (long k = 0; k < S; ++k)
+                {
+                    const Ind    idx = static_cast<Ind>((w * kPerWriter + c) * S + k);
+                    const double v   = ca[idx];
+                    if (v != kSecond) [[unlikely]]
+                    {
+                        if (bad < 8)
+                        {
+                            std::printf("[%s/read-reclaim compound] FAIL element %ld (chunk %ld, offset %ld) = %g, "
+                                        "expected %g -- a compound operation was lost%s\n",
+                                        variant_name(), static_cast<long>(idx), w * kPerWriter + c, k, v, kSecond,
+                                        v == kSecond / 2 ? " (a *= 2 dropped)"
+                                                         : (v == kSecond * 2 ? " (a *= 0.5 dropped)" : ""));
+                        }
+                        ++bad;
+                    }
+                }
+            }
+        }
+
+        const long seen = compressed_seen.load();
+        std::printf("[%s/read-reclaim compound] %ld compound ops, %ld sweeps, %ld victim chunks found compressed "
+                    "after a sweep\n",
+                    variant_name(), rmw_ops.load(), sweeps.load(), seen);
+        if (seen == 0)
+        {
+            std::printf("[%s/read-reclaim compound] FAIL premise: no victim chunk was compressed inside the region "
+                        "-- the test proves nothing\n",
+                        variant_name());
+            rc = 1;
+        }
+        if (bad > 0)
+        {
+            std::printf("[%s/read-reclaim compound] FAIL %ld element(s) off V\n", variant_name(), bad);
+            rc = 1;
+        }
+        else if (seen > 0)
+        {
+            std::printf("[%s/read-reclaim compound] OK: every compound operation applied\n", variant_name());
+        }
+    }
+
+    release_chunk_pools();
+    destroy_block_chunk();
+
+    std::printf("\n[%s] %s\n", variant_name(),
+                rc ? "=== READ RECLAIM COMPOUND FAILED ===" : "=== READ RECLAIM COMPOUND OK ===");
+    return rc;
+}
+
+} // namespace
+
+int main(int argc, char** argv)
+{
+    __mem_page_size = getpagesize();
+    ParamChunk::init_indexes(true);
+
+    const int team = omp_get_max_threads();
+    if (team < 2)
+    {
+        std::printf("[%s/read-reclaim] SKIP: needs at least 2 threads (OMP_NUM_THREADS=%d)\n", variant_name(), team);
+        return 77;
+    }
+    const int writers = team >= 8 ? team / 4 : 1;
+    // Tunables (environment): run time, polluter chunks filled per victim,
+    // reader delay in microseconds.
+    const double seconds      = static_cast<double>(env_long("READ_RECLAIM_SECONDS", 2));
+    const long   pollute      = env_long("READ_RECLAIM_POLLUTE", 4);
+    test_hooks::read_delay_us = static_cast<unsigned>(env_long("READ_RECLAIM_DELAY_US", CHUNK_TEST_READ_DELAY_US));
+
+    if (argc > 1 && std::string_view(argv[1]) == "compound")
+    {
+        return run_compound(team, writers, seconds, pollute);
+    }
+
+    long fails = 0;
+    int  rc    = 0;
+    {
+        Arr        a;
+        const long S = static_cast<long>(a.chunk_size());
+        const long N = writers * kPerWriter * S;
+        a.resize(static_cast<Ind>(N));
+        const Arr& ca = a;
+
+        std::printf("=== read_reclaim_validation [variant = %s]  threads=%d (writers %d)  chunk_size=%ld  "
+                    "read_delay_every=%u (%u us)  pollute=%ld  %.0f s ===\n",
+                    variant_name(), team, writers, S, test_hooks::read_delay_every, test_hooks::read_delay_us, pollute,
+                    seconds);
+
+        std::atomic<int>  writers_left{writers};
+        std::atomic<long> bad{0};
+        std::atomic<long> reads{0};
+        std::atomic<long> compressed_seen{0}; // victims found compressed at the end of a sweep
+        std::atomic<long> sweeps{0};
+
+#pragma omp parallel num_threads(team)
+        {
+            begin_phase();
+            const int me = omp_get_thread_num();
+
+            if (me < writers)
+            {
+                // ── Writer ──────────────────────────────────────────────────
+                const long base_v = me * kPerWriter;
+                const long base_p = base_v + kVictims;
+                long       next_p = 0;
+                const auto t0     = std::chrono::steady_clock::now();
+                while (std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count() < seconds)
+                {
+                    for (long c = 0; c < kVictims; ++c)
+                    {
+                        const Ind v0 = static_cast<Ind>((base_v + c) * S);
+                        a[v0]        = 1.0; // materialise
+                        a[v0]        = 0.0; // constant again: a candidate
+
+                        // Pollute, as a ring: the chunk half a ring behind
+                        // goes back to 0 (a candidate: the pass frees it),
+                        // the chunk at the head is materialised from the
+                        // reuse list -- the buffers the pass just freed --
+                        // and filled with kPollute, element 0 apart so the
+                        // chunk is NOT constant and stays materialised (and
+                        // its buffer overwritten) for half a ring. A pollution
+                        // undone at once would hand a late reader zeros again.
+                        for (long q = 0; q < pollute; ++q)
+                        {
+                            const Ind old0 = static_cast<Ind>((base_p + (next_p + kPolluters / 2) % kPolluters) * S);
+                            for (long k = 0; k < S; ++k)
+                            {
+                                a[old0 + static_cast<Ind>(k)] = 0.0;
+                            }
+                            const Ind p0 = static_cast<Ind>((base_p + next_p) * S);
+                            next_p       = (next_p + 1) % kPolluters;
+                            a[p0]        = kPollute + 1.0;
+                            for (long k = 1; k < S; ++k)
+                            {
+                                a[p0 + static_cast<Ind>(k)] = kPollute;
+                            }
+                        }
+                    }
+                    long n = 0;
+                    for (long c = 0; c < kVictims; ++c)
+                    {
+                        n += ca.written(static_cast<Ind>((base_v + c) * S)) ? 0 : 1;
+                    }
+                    compressed_seen.fetch_add(n, std::memory_order_relaxed);
+                    sweeps.fetch_add(1, std::memory_order_relaxed);
+                }
+                writers_left.fetch_sub(1, std::memory_order_release);
+            }
+            else
+            {
+                // ── Reader ──────────────────────────────────────────────────
+                test_hooks::read_delay_enabled = true;
+                Xorshift rng{0x9E3779B97F4A7C15ULL ^ (static_cast<std::uint64_t>(me) * 0xBF58476D1CE4E5B9ULL)};
+                long     local_reads = 0;
+                while (writers_left.load(std::memory_order_acquire) > 0)
+                {
+                    const long w   = static_cast<long>(rng.next() % static_cast<std::uint64_t>(writers));
+                    const long c   = static_cast<long>(rng.next() % static_cast<std::uint64_t>(kVictims));
+                    const long j   = 1 + static_cast<long>(rng.next() % static_cast<std::uint64_t>(S - 1));
+                    const Ind  idx = static_cast<Ind>((w * kPerWriter + c) * S + j);
+                    // Both read entries: the const operator[] and the write
+                    // proxy's conversion (operator T -> read_pure), which a
+                    // `double v = a[i]` on a non-const array goes through.
+                    const double v = (local_reads & 1) ? ca[idx] : static_cast<double>(a[idx]);
+                    ++local_reads;
+                    if (v != 0.0) [[unlikely]]
+                    {
+                        const long k = bad.fetch_add(1, std::memory_order_relaxed);
+                        if (k < 8)
+                        {
+                            std::printf("[%s/read-reclaim] FAIL stale read: element %ld (chunk %ld, offset %ld) = %g, "
+                                        "expected 0 -- read from a released buffer%s\n",
+                                        variant_name(), static_cast<long>(idx), w * kPerWriter + c, j, v,
+                                        v == kPollute ? " (reused and overwritten)" : "");
+                        }
+                    }
+                }
+                test_hooks::read_delay_enabled = false;
+                reads.fetch_add(local_reads, std::memory_order_relaxed);
+            }
+        }
+        end_phase();
+
+        fails           = bad.load();
+        const long seen = compressed_seen.load();
+        std::printf("[%s/read-reclaim] %ld reads, %ld sweeps, %ld victim chunks found compressed after a sweep\n",
+                    variant_name(), reads.load(), sweeps.load(), seen);
+        if (seen == 0)
+        {
+            std::printf("[%s/read-reclaim] FAIL premise: no victim chunk was compressed inside the region -- the "
+                        "pass never ran there, the test proves nothing\n",
+                        variant_name());
+            rc = 1;
+        }
+        if (fails > 0)
+        {
+            std::printf("[%s/read-reclaim] FAIL %ld stale read(s)\n", variant_name(), fails);
+            rc = 1;
+        }
+        else if (seen > 0)
+        {
+            std::printf("[%s/read-reclaim] OK: no read returned anything but the constant\n", variant_name());
+        }
+    }
+
+    release_chunk_pools();
+    destroy_block_chunk();
+
+    std::printf("\n[%s] %s\n", variant_name(), rc ? "=== READ RECLAIM FAILED ===" : "=== READ RECLAIM OK ===");
+    return rc;
+}

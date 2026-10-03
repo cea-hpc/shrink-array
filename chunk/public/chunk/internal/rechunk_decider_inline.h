@@ -479,7 +479,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                 (std::strcmp(table_env, "1") == 0 || std::strcmp(table_env, name) == 0))
             {
                 char title[96];
-                std::snprintf(title, sizeof title, "%s tick %d iter %d", name, static_cast<int>(tick), iter);
+                std::snprintf(title, sizeof title, "%s tick %d iter %d", name, tick, iter);
                 ChunkSizeAdvisor<T>::print(rep, title);
                 std::fflush(stdout);
             }

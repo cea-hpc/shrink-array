@@ -63,7 +63,10 @@
 #include "chunk/manage_ompt.h"
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::index64_validation
+{
 
 using namespace shrink_array;
 
@@ -380,7 +383,7 @@ int check_mixed()
 
 } // namespace
 
-int main()
+int run(int /*argc*/, char** /*argv*/)
 {
     __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
@@ -397,3 +400,5 @@ int main()
     std::println("\n[{}] {}", variant_name(), fails ? "=== INDEX64 FAILED ===" : "=== INDEX64 OK ===");
     return fails ? 1 : 0;
 }
+
+} // namespace validation::index64_validation

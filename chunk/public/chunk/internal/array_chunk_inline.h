@@ -180,6 +180,7 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk<T, ind_type>::clear()
 {
+    this->invalidate_proxies();
     // Per-array compression stats, read BEFORE the drain below mutates state.
     print_compression_stats();
 
@@ -347,7 +348,7 @@ void ArrayChunk<T, ind_type>::clear_core()
     // An array with its own slab affinity gives its memory back NOW: every
     // buffer parked above (own rank) or by another rank (foreign, under this
     // array's key) goes home to its allocator set, whose slabs hold nothing
-    // else and so empty -- and CHUNK_RECLAIM_EMPTY_SLABS madvises them away.
+    // else and so empty -- and reclaim_empty_slabs madvises them away.
     // Sequential point (destructor / rechunk_to); the drain opens its own
     // region. Key 0 (shared pool) keeps the old behaviour: nothing to give
     // back per array. Same hook as ArrayChunk2 / ArrayChunk2A.
@@ -457,6 +458,7 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk<T, ind_type>::resize(ind_type newsz)
 {
+    this->invalidate_proxies();
     if constexpr (chunk_config::use_fast_block_compression)
     {
         make_block_compression();

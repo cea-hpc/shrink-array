@@ -50,7 +50,10 @@
 #include "chunk/PMP_CHUNK.h"
 #include "chunk/manage_ompt.h"
 
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::nested_region_validation
+{
 
 using namespace shrink_array;
 
@@ -178,7 +181,7 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
 [[maybe_unused]] static int check_nested_active(const char* self) // OpenMP builds only
 {
     const std::string log    = "/tmp/nested_region_active_" + std::to_string(getpid()) + ".log";
-    const std::string cmd    = std::string("\"") + self + "\" --nested-active > \"" + log + "\" 2>&1";
+    const std::string cmd    = validation::self_command(self) + " --nested-active > \"" + log + "\" 2>&1";
     const int         status = std::system(cmd.c_str());
     std::string       out;
     if (FILE* f = std::fopen(log.c_str(), "r"))
@@ -204,7 +207,7 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
     return 0;
 }
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     __mem_page_size          = getpagesize();
     const bool nested_active = argc > 1 && std::string(argv[1]) == "--nested-active";
@@ -241,3 +244,5 @@ int main(int argc, char** argv)
     std::println("=== NESTED REGION OK ===");
     return 0;
 }
+
+} // namespace validation::nested_region_validation

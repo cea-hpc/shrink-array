@@ -53,7 +53,10 @@
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
 // Defined by every executable of the library (the fast allocator reads it).
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+
+namespace validation::pool_accounting
+{
 
 using namespace shrink_array;
 
@@ -141,7 +144,7 @@ static void materialise_all(Array<double>& arr, long N)
     end_phase();
 }
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
 
@@ -248,3 +251,5 @@ int main(int argc, char** argv)
                  g_fails == 0 ? "=== POOL ACCOUNTING OK, TEARDOWN OK ===" : "=== POOL ACCOUNTING FAILURES ===");
     return g_fails;
 }
+
+} // namespace validation::pool_accounting

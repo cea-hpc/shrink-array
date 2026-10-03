@@ -20,7 +20,8 @@
 #include "chunk/config.h"
 #include "chunk/chunk_traits.h"
 #include "chunk/internal/in_t.h"
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 
 namespace shrink_array
 {
@@ -117,6 +118,9 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     {
         if (CHUNK_PMP_IN_PARALLEL_REGION)
         {
+            // Inside the caller's region: other threads may be reading, so
+            // the buffers released wait for a grace period (read_reclaim.h).
+            const read_reclaim::PassScope pass_scope;
             derived().compress_int();
         }
         else

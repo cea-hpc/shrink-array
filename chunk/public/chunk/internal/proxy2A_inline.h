@@ -38,6 +38,7 @@
 #include "chunk/internal/invariant_check.h"   // INVARIANT_FAILED
 #include "chunk/internal/chunk_stats.h"       // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_size_policy.h" // DynChunkSizeGuard, set_thread_chunk_size
+#include "chunk/internal/read_reclaim.h"      // read_reclaim::PassScope (perform_compression / compress in a region)
 
 /**
  * @file proxy2A_inline.h
@@ -263,7 +264,10 @@ void Proxy2A<T>::trigger_compression_if_needed(int thr_rank)
 template <typename T>
 void Proxy2A<T>::perform_compression() noexcept
 {
-    const int szm = manager_chunk2A::get_size_max_number_of_chunk_to_check_compress();
+    // Runs inside a region, next to pure readers: the buffers this pass
+    // releases wait for one grace period (read_reclaim.h).
+    const read_reclaim::PassScope pass_scope;
+    const int                     szm = manager_chunk2A::get_size_max_number_of_chunk_to_check_compress();
 
     const int thr_rank = get_thr_rank_fast();
 
@@ -596,6 +600,7 @@ template <typename T>
 template <typename U>
 T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
 {
+    this->check_not_stale();
     if (Base::is_cst_val1_and_v_equal_first_value(v))
     {
         return v;
@@ -1283,6 +1288,7 @@ template <typename T>
 template <typename U, typename Op>
 void Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v, bool /*check_first_value_result*/) noexcept
 {
+    this->check_not_stale();
     // No set_info_on_chunk() here: nothing before apply_atomic_op() reads the
     // cached pointers (reader_sync is the chunk's, read_values resolves the
     // values pointer itself), and under fast block compression the engine
@@ -1294,12 +1300,17 @@ void Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v, bool /*check_first_v
     // read v_old, so the RMW cannot clobber it. Precise gate, outside begin_write.
     chunk.reader_sync(num);
 
-    const in_t<T> v_old = read_values();
+    // Outside the write session: read under a ReadSection, or a pass in the
+    // region may release (and a materialisation zero-fill) the buffer between
+    // the pointer load and the element load -- the shortcut below then drops
+    // the operation (read_reclaim_validation, mode `compound`).
+    const in_t<T> v_old = Base::read_values_outside_session();
 
     // Fast shortcut: if current value is first_value (usually 0), 0 * v is 0.
     // Safe to short-circuit because a concurrent writer that changes this
     // value cannot make the previous-value-was-first_value branch wrong:
-    // the operation would have left it unchanged anyway.
+    // the operation would have left it unchanged anyway. That holds for a
+    // value the element really held -- hence the ReadSection above.
     if (v_old != Chunk2A<T>::first_value)
     {
         // Serial build: apply_atomic_op() runs the body straight away, without

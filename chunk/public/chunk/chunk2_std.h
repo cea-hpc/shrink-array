@@ -21,6 +21,7 @@
 
 #include <algorithm> // std::fill_n
 #include <array>
+#include <deque> // tab_m_ptr_cst_val2: grows without moving its arrays
 #include <atomic>
 #include <cstddef> // std::size_t
 #include <cstdlib> // std::abort
@@ -63,8 +64,18 @@ template <typename T>
 class ChunkSpec2
 {
   public:
+    // The registered second-constant arrays. A chunk compressed to one stores
+    // its ADDRESS as `values`, so the container must never move them: a
+    // std::deque grown at the end keeps every element where it is. It was a
+    // std::vector, whose resize() past capacity moved every array and freed
+    // the old storage -- every chunk of every other array compressed to its
+    // second value then read freed memory (wrong values, a heap-use-after-free
+    // under ASan), and the next pass took that pointer for a materialised
+    // buffer and released it to the allocator (SIGSEGV in slab_from).
+    // chunk2_registry_growth_validation guards it. MM_PROTECT holds pointers
+    // to its own mappings, which never move.
     using vec_array_chunk_size_max =
-        std::conditional_t<build_config::use_mm_protect, std::vector<T*>, std::vector<std::array<T, cst_buffer_size>>>;
+        std::conditional_t<build_config::use_mm_protect, std::vector<T*>, std::deque<std::array<T, cst_buffer_size>>>;
 
     /*!
      * \brief Gets the pointer to the second constant value.
@@ -421,9 +432,8 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
     /*!
      * \brief Materialise this chunk's buffer (allocate + init), for a
      *        specific thread. Non-bool only.
-     * \param need_set_second_value Whether to also register/set the
-     *                               chunk's second-value slot.
-     * \param inf_array (second_value, ...) tuple describing the target state.
+     * \param need_set_second_value True to pre-fill with the second value, false for first_value.
+     * \param inf_array (second_value, index, ...) tuple of the owning array.
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
     void
@@ -431,7 +441,7 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
 
     /*!
      * \brief Bool specialization of create_value().
-     * \param need_set_second_value Whether to also register the second-value slot.
+     * \param need_set_second_value True to pre-fill with `true`, false for first_value.
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
     void create_value_bool(this Derived& self, bool need_set_second_value, int thr_rank) noexcept;
@@ -440,8 +450,8 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \brief Convenience overload of create_value() that resolves the
      *        calling thread's rank automatically (get_thr_rank_fast()).
      *        Non-bool only; a compile error otherwise.
-     * \param need_set_second_value Whether to also register the second-value slot.
-     * \param inf_array (second_value, ...) tuple describing the target state.
+     * \param need_set_second_value True to pre-fill with the second value, false for first_value.
+     * \param inf_array (second_value, index, ...) tuple of the owning array.
      */
     void create_value(this Derived& self, bool need_set_second_value, const inf_array_t& inf_array) noexcept
     {
@@ -459,7 +469,7 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \brief Convenience overload of create_value_bool() that resolves the
      *        calling thread's rank automatically (get_thr_rank_fast()).
      *        Bool-only; a compile error otherwise.
-     * \param need_set_second_value Whether to also register the second-value slot.
+     * \param need_set_second_value True to pre-fill with `true`, false for first_value.
      */
     void create_value_bool(this Derived& self, bool need_set_second_value) noexcept
     {
@@ -571,15 +581,14 @@ class Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \brief Materialise this chunk's buffer (allocate + init). Serial
      *        builds have a single rank, so no thr_rank parameter. Non-bool
      *        only.
-     * \param need_set_second_value Whether to also register/set the
-     *                               chunk's second-value slot.
-     * \param inf_array (second_value, ...) tuple describing the target state.
+     * \param need_set_second_value True to pre-fill with the second value, false for first_value.
+     * \param inf_array (second_value, index, ...) tuple of the owning array.
      */
     void create_value(this Derived& self, bool need_set_second_value, const inf_array_t& inf_array) noexcept;
 
     /*!
      * \brief Bool specialization of create_value() (serial builds).
-     * \param need_set_second_value Whether to also register the second-value slot.
+     * \param need_set_second_value True to pre-fill with `true`, false for first_value.
      */
     void create_value_bool(this Derived& self, bool need_set_second_value) noexcept;
 
@@ -589,7 +598,7 @@ class Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \param num_compress_value 0 for the first constant, non-zero for the
      *                            second constant at index `ind`.
      * \param ind Index of the second constant (unused when
-     *            num_compress_value == 0).
+     *            num_compress_value == 0, and for bool).
      */
     void clear_int_st(this Derived& self, int num_compress_value, int ind);
 
@@ -779,7 +788,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
     /*!
      * \brief Drain the compression-candidate queue for the given second
      *        value, across all threads.
-     * \param inf_array (second_value, ...) tuple identifying which
+     * \param inf_array (second_value, index, ...) tuple identifying which
      *                  candidate list to drain.
      * \param apply true: compress the constant candidates; false: walk only.
      */
@@ -1025,8 +1034,6 @@ template <typename T, typename Derived>
 class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derived>, public ChunkSpec2<T>
 {
   public:
-    /// @}
-
     // No-op counterparts of the 4 methods added to the true specialization
     // above -- same pattern as ChunkFastCompPolicy<T,Derived,false>::
     // make_block_compression(int, const Proxy<T>*) {}.

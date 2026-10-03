@@ -260,6 +260,7 @@ void ArrayChunkBase<Derived>::copy_from(this Derived& self, const Derived& from)
 template <typename Derived>
 void ArrayChunkBase<Derived>::shrink_to_fit()
 {
+    invalidate_proxies();
     compress_now_and_trim_pools();
 }
 

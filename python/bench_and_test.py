@@ -1705,6 +1705,20 @@ def resolve_build_dir(build_root, config):
     return None
 
 
+def validation_built(bdir):
+    """False when examples/CMakeLists.txt skipped the validation harnesses in
+    this build dir (CHUNK_VALIDATION_BUILT=OFF in its CMakeCache.txt: a perf
+    configuration). True when the cache says ON, or predates the switch."""
+    try:
+        with open(os.path.join(bdir, "CMakeCache.txt")) as f:
+            for line in f:
+                if line.startswith("CHUNK_VALIDATION_BUILT:"):
+                    return line.strip().split("=", 1)[1].upper() not in ("OFF", "0", "FALSE", "NO")
+    except OSError:
+        pass
+    return True
+
+
 _CTEST_SUMMARY_RE = _re.compile(
     r"(\d+)% tests passed, (\d+) tests failed out of (\d+)")
 
@@ -1724,7 +1738,9 @@ def run_ctest_phase(args, extra_ldpath, errors):
     directory (the one holding CTestTestfile.cmake, with or without the $arch
     level). ctest's own per-test timeout applies; the phase timeout is the
     bench one scaled by the test count. A config with no build directory is
-    noted once and skipped.
+    noted once and skipped, and so is one whose configuration does not build
+    the harnesses: only Debug, CHECK_OPTIM and sanitizer builds compile them
+    (examples/CMakeLists.txt, CHUNK_BUILD_VALIDATION).
     """
     print(cyan(bold(f"\n🧪 Validation harnesses — ctest -L {args.ctest_label}")))
 
@@ -1734,6 +1750,9 @@ def run_ctest_phase(args, extra_ldpath, errors):
         lead = f"{dim(_hms())} {short_config_label(cfg)[:CONFIG_W]:<{CONFIG_W}} | "
         if not bdir:
             print(lead + dim("no CTestTestfile.cmake (not a CMake build dir) — skipped"))
+            continue
+        if not validation_built(bdir):
+            print(lead + dim("validation not built here (Debug, CHECK_OPTIM and sanitizer builds only) — skipped"))
             continue
 
         cmd = ["ctest", "-L", args.ctest_label, "--output-on-failure",
