@@ -32,22 +32,22 @@
 // entries do), or the per-thread capacity refuses rank 3 -- rightly.
 // ============================================================================
 
-#include <cstdio>
-#include <cstdlib>
-#include <string>
-#include <type_traits>
-#include <vector>
-#include <unistd.h>
-#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
+#include <cstdio>      // std::printf, std::fopen, std::remove
+#include <cstdlib>     // std::system
+#include <string>      // std::string, std::to_string
+#include <type_traits> // std::conditional_t
+#include <vector>      // std::vector
+#include <unistd.h>    // getpid, getpagesize
+#include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h"
+#include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"   // ArrayChunk
+#include "chunk/array_chunk2.h"  // ArrayChunk2
+#include "chunk/array_chunk2A.h" // ArrayChunk2A
+#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
+#include "chunk/config.h"        // chunk_config::use_chunk2*, build_config::use_openmp / has_not_ompt
+#include "chunk/PMP_CHUNK.h"     // chunk_pmp_set_max_active_levels
+#include "chunk/manage_ompt.h"   // begin_parallel_phase / finalize_parallel_phase
 
 #include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
 

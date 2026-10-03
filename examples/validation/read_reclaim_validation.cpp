@@ -113,26 +113,25 @@
 //   erasure itself (INVARIANT_FAILED in the pass); every build checks the
 //   read-backs and that the pool ends at 0.
 
-#include <atomic>
-#include <chrono>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <string_view>
-#include <type_traits>
-#include <unistd.h>
-#include <omp.h>
+#include <atomic>      // std::atomic, std::memory_order
+#include <chrono>      // std::chrono::steady_clock, std::chrono::duration
+#include <cstdint>     // std::uint64_t
+#include <cstdio>      // std::printf
+#include <cstdlib>     // std::getenv, std::atol
+#include <string_view> // std::string_view
+#include <type_traits> // std::conditional_t
+#include <unistd.h>    // getpagesize
+#include <omp.h>       // omp_get_thread_num, omp_get_max_threads
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h"
-#include "chunk/internal/test_hooks.h"
+#include "chunk/chunk_traits.h"        // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"         // ArrayChunk
+#include "chunk/array_chunk2.h"        // ArrayChunk2
+#include "chunk/array_chunk2A.h"       // ArrayChunk2A
+#include "chunk/param_chunk.h"         // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"              // chunk_config::use_chunk2*, build_config::use_openmp / has_not_ompt
+#include "chunk/manage_ompt.h"         // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/test_hooks.h" // test_hooks::read_delay_* / pass_delay_*
 
 #include "validation_harness.h" // __mem_page_size; run() is called by validation_driver.cpp
 

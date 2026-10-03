@@ -52,20 +52,20 @@
 // EXIT STATUS: 0 when both hold and the passes ran, 1 otherwise; 77 when the
 // build has no OpenMP.
 
-#include <atomic>
-#include <chrono>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib> // std::getenv, std::atof
-#include <unistd.h>
+#include <atomic>   // std::atomic, std::memory_order_relaxed
+#include <chrono>   // std::chrono::steady_clock, std::chrono::duration
+#include <cstdint>  // std::uint64_t
+#include <cstdio>   // std::printf
+#include <cstdlib>  // std::getenv, std::atof
+#include <unistd.h> // getpagesize
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h"
+#include "chunk/chunk_traits.h" // forward decls + default ind_type = int
+#include "chunk/array_chunk2.h" // ArrayChunk2
+#include "chunk/param_chunk.h"  // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"       // build_config::has_not_ompt, build_config::use_openmp
+#include "chunk/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
+#include "chunk/manage_ompt.h"  // begin_parallel_phase / finalize_parallel_phase
 
 #include "validation_harness.h" // __mem_page_size; run() is called by validation_driver.cpp
 

@@ -43,25 +43,25 @@
 // Compile OMP or non-OMP, static or dyn, check. Exit 0 = every element of
 // every type round-trips and the teardown returned.
 
-#include <array>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <type_traits>
-#include <utility> // std::as_const
-#include <unistd.h>
-#include <vector>
+#include <array>       // std::array
+#include <cstdint>     // std::int16_t
+#include <cstdio>      // printf
+#include <cstdlib>     // std::strtol
+#include <type_traits> // std::conditional_t
+#include <utility>     // std::as_const
+#include <unistd.h>    // getpagesize
+#include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
+#include "chunk/chunk_traits.h"               // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"                // ArrayChunk
+#include "chunk/array_chunk2.h"               // ArrayChunk2
+#include "chunk/array_chunk2A.h"              // ArrayChunk2A
+#include "chunk/param_chunk.h"                // ParamChunk::init_indexes, register_chunk_size
 #include "chunk/chunk_std.h"                  // release_chunk_pools, destroy_block_chunk
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size, set_active_chunk_size, set_thread_chunk_size
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h"
+#include "chunk/config.h"                     // chunk_config::use_chunk2*, build_config::chunk_dynamic / has_not_ompt
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
 
 #include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
 

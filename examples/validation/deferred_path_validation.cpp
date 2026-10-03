@@ -53,28 +53,28 @@
 // Exit 0 = every element matches the reference after every region, and, in a
 // CHUNK_STATS build with the knob on, at least one write really was deferred.
 
-#include <algorithm> // std::min
-#include <atomic>
-#include <cstdio>
-#include <cstdlib>
-#include <cmath>
-#include <thread> // std::this_thread::yield
-#include <type_traits>
-#include <vector>
-#include <unistd.h>
+#include <algorithm>   // std::min
+#include <atomic>      // std::atomic, std::memory_order
+#include <cstdio>      // printf
+#include <cstdlib>     // std::abs (int, chain_int)
+#include <cmath>       // std::floor
+#include <thread>      // std::this_thread::yield
+#include <type_traits> // std::is_same_v, std::conditional_t, std::is_integral_v
+#include <vector>      // std::vector
+#include <unistd.h>    // getpagesize
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h"
+#include "chunk/chunk_traits.h"       // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"        // ArrayChunk
+#include "chunk/array_chunk2.h"       // ArrayChunk2
+#include "chunk/array_chunk2A.h"      // ArrayChunk2A
+#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"          // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"             // chunk_config::use_chunk2*, build_config::force_defer_every / has_not_ompt
+#include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 #ifdef CHUNK_STATS
-    #include "chunk/internal/chunk_stats.h"
+    #include "chunk/internal/chunk_stats.h" // CHUNK_STATS_N_VARIANT, reduce_chunk_stats
 #endif
 
 #include "chunk/internal/test_hooks.h" // force_defer_every

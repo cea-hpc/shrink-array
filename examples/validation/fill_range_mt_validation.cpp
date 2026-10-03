@@ -36,24 +36,23 @@
  *                                                      vs fill_range_mt
  */
 
-#include <chrono>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <type_traits>
-#include <unistd.h>
-#include <vector>
+#include <chrono>      // std::chrono::steady_clock, std::chrono::duration
+#include <cstdio>      // std::printf
+#include <cstring>     // std::strcmp
+#include <type_traits> // std::conditional_t
+#include <unistd.h>    // getpagesize
+#include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/array_chunk_range_ops.h"
-#include "chunk/param_chunk.h"
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h"
-#include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
+#include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"           // ArrayChunk
+#include "chunk/array_chunk2.h"          // ArrayChunk2
+#include "chunk/array_chunk2A.h"         // ArrayChunk2A
+#include "chunk/array_chunk_range_ops.h" // fill_range_mt
+#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
+#include "chunk/config.h"                // chunk_config::use_chunk2*, build_config::has_not_ompt
+#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/env_parse.h"    // env_number / arg_number (checked, not atoi)
 
 #include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
 

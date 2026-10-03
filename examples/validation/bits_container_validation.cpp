@@ -50,23 +50,23 @@
 // Chunk2 builds only (ArrayChunkBits is ArrayChunk2<Bit>). Exit 0 = pass.
 
 #include <algorithm> // std::min
-#include <cstdint>
-#include <cstdio>
-#include <random>
-#include <unistd.h>
-#include <utility> // std::pair
-#include <vector>
+#include <cstdint>   // std::uint64_t, std::uint32_t
+#include <cstdio>    // std::printf, std::snprintf
+#include <random>    // std::mt19937_64
+#include <unistd.h>  // getpagesize
+#include <utility>   // std::pair
+#include <vector>    // std::vector
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk_bits.h"
-#include "chunk/chunk_size_advisor.h"
+#include "chunk/chunk_traits.h"          // forward decls + default ind_type = int (ArrayChunk2<bool>)
+#include "chunk/array_chunk_bits.h"      // ArrayChunkBits, Bit (and ArrayChunk2 with them)
+#include "chunk/chunk_size_advisor.h"    // ChunkSizeAdvisor
 #include "chunk/array_chunk_range_ops.h" // fill_range, copy_range
-#include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h" // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/internal/env_parse.h"
+#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"             // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"                // build_config::chunk_dynamic, build_config::has_not_ompt
+#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
 
 #include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
 

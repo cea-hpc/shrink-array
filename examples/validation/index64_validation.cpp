@@ -43,23 +43,22 @@
 //
 // Exit 0 = every check holds. Any thread count (the tests run it at 1 and 8).
 
-#include <climits>
-#include <cstdio>
-#include <cstdlib>
-#include <type_traits>
-#include <utility>
-#include <unistd.h>
-#include <vector>
+#include <climits>     // INT_MAX
+#include <cstdio>      // std::printf
+#include <type_traits> // std::conditional_t
+#include <utility>     // std::as_const
+#include <unistd.h>    // getpagesize
+#include <vector>      // std::vector
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h"
+#include "chunk/chunk_traits.h"               // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"                // ArrayChunk
+#include "chunk/array_chunk2.h"               // ArrayChunk2
+#include "chunk/array_chunk2A.h"              // ArrayChunk2A
+#include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
+#include "chunk/chunk_std.h"                  // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"                     // chunk_config::use_chunk*, build_config::chunk_dynamic / has_not_ompt
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 
 #include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp

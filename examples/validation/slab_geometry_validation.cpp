@@ -40,11 +40,11 @@
 //
 // Exit 0 = every check holds.
 
-#include <cstdint>
-#include <cstdio>
-#include <unistd.h>
+#include <cstdint>  // std::uintptr_t
+#include <cstdio>   // std::printf
+#include <unistd.h> // getpagesize
 
-#include "fast_allocators/tc_allocator.h"
+#include "fast_allocators/tc_allocator.h" // TCTypeCAllocator, TCCAllocator
 
 int __mem_page_size = 0;
 
