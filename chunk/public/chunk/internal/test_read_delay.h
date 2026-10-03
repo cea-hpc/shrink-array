@@ -84,4 +84,46 @@ inline void maybe_read_delay() noexcept
     }
 }
 
+// ── Pass side ────────────────────────────────────────────────────────────────
+// CHUNK_TEST_PASS_DELAY_EVERY = N > 0: on a thread that has opted in
+// (pass_delay_enabled = true), one candidate in N of a compression pass's
+// closing loop waits CHUNK_TEST_PASS_DELAY_US microseconds at the point where
+// the pass hands the candidate back -- between releasing its mark and
+// releasing the dedup flag that lets another thread queue it again. That is
+// the window in which another pass could claim the chunk; a pass that touched
+// the mark after the flag would erase that claim. 0 compiles it out.
+#ifndef CHUNK_TEST_PASS_DELAY_EVERY
+    #define CHUNK_TEST_PASS_DELAY_EVERY 0
+#endif
+#ifndef CHUNK_TEST_PASS_DELAY_US
+    #define CHUNK_TEST_PASS_DELAY_US 200
+#endif
+
+inline constexpr unsigned pass_delay_every = CHUNK_TEST_PASS_DELAY_EVERY;
+
+/// @brief Opt-in, per thread: only the harness's slow-pass thread sets it.
+inline thread_local bool pass_delay_enabled = false;
+
+/// @brief The wait, in microseconds (CHUNK_TEST_PASS_DELAY_US by default).
+inline unsigned pass_delay_us = CHUNK_TEST_PASS_DELAY_US;
+
+/// @brief One call in pass_delay_every on an opted-in thread spins
+///        pass_delay_us microseconds. Compiled out at 0.
+inline void maybe_pass_delay() noexcept
+{
+    if constexpr (pass_delay_every > 0)
+    {
+        if (!pass_delay_enabled)
+            return;
+        thread_local unsigned count = 0;
+        if (++count < pass_delay_every)
+            return;
+        count           = 0;
+        const auto t0   = std::chrono::steady_clock::now();
+        const auto wait = std::chrono::microseconds(pass_delay_us);
+        while (std::chrono::steady_clock::now() - t0 < wait)
+            CPU_PAUSE();
+    }
+}
+
 } // namespace shrink_array::test_hooks
