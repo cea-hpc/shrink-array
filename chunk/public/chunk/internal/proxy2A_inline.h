@@ -1276,12 +1276,17 @@ void Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v, bool /*check_first_v
     // read v_old, so the RMW cannot clobber it. Precise gate, outside begin_write.
     chunk.reader_sync(num);
 
-    const in_t<T> v_old = read_values();
+    // Outside the write session: read under a ReadSection, or a pass in the
+    // region may release (and a materialisation zero-fill) the buffer between
+    // the pointer load and the element load -- the shortcut below then drops
+    // the operation (read_reclaim_validation, mode `compound`).
+    const in_t<T> v_old = Base::read_values_outside_session();
 
     // Fast shortcut: if current value is first_value (usually 0), 0 * v is 0.
     // Safe to short-circuit because a concurrent writer that changes this
     // value cannot make the previous-value-was-first_value branch wrong:
-    // the operation would have left it unchanged anyway.
+    // the operation would have left it unchanged anyway. That holds for a
+    // value the element really held -- hence the ReadSection above.
     if (v_old != Chunk2A<T>::first_value)
     {
         // Serial build: apply_atomic_op() runs the body straight away, without

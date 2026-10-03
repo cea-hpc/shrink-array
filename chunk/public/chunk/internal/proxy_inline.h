@@ -647,7 +647,9 @@ void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
         {
             // const T, not in_t<T>: apply_atomic_op() stores to values[num]
             // and still reads v_old (in_t.h, corollary for local variables).
-            const T v_old = values[num];
+            // Outside the write session: under a ReadSection (see
+            // ProxyBase::read_values_outside_session).
+            const T v_old = Base::read_values_outside_session();
             // we can't test values[num] if deferred mode is activate : because values[num] could be affect after
             if (v_old != zero || CompressionManagerType::have_deferred_queue())
             {

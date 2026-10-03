@@ -43,6 +43,7 @@
 #include "chunk/internal/concept_is_clean_assignement.h"
 #include "chunk/internal/crp_helper.h"
 #include "chunk/internal/arithmetic_context.h"
+#include "chunk/internal/read_reclaim.h" // ReadSection: read_values_outside_session
 
 namespace shrink_array
 {
@@ -636,6 +637,22 @@ class ProxyBase : public ProxyOperators<Derived, T>,
             return elem_get(vals, static_cast<std::size_t>(num));
         }
         return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
+    }
+    /// @brief read_values() for a pre-check made BEFORE the write session
+    ///        (the `0 * x` shortcut of the compound operations): inside a
+    ///        read_reclaim::ReadSection.
+    /// @details Outside the session nothing stops a pass running in the region
+    ///          from compressing the chunk and releasing its buffer between the
+    ///          pointer load and the element load; the buffer goes back to the
+    ///          reuse list and the next materialisation overwrites it -- with
+    ///          zeros, for a first-constant one, and the shortcut then dropped
+    ///          the operation (read_reclaim_validation, mode `compound`). The
+    ///          section makes that pass wait for this read before it releases
+    ///          anything, exactly as for element_at.
+    [[nodiscard]] T read_values_outside_session() const noexcept
+    {
+        const read_reclaim::ReadSection section;
+        return read_values();
     }
     /// @brief Read through the chunk WITHOUT synchronising first.
     /// @warning Returns a stale value if a deferred write on this offset has

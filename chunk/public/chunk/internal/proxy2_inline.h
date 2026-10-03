@@ -438,20 +438,40 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
     // is_cst_val1_and_v_equal_first_value). The stored-value test is what made
     // this early-out the frequent one: a bool re-set to true over a pending
     // `false` lost the true in deferred_path_validation.
+    //
+    // The stored-value test reads the buffer OUTSIDE the write session: a pass
+    // in the region may release it between a pointer load and the element load,
+    // and a second-constant materialisation refill it with second_value -- the
+    // early-out then skipped a real write. The test reloads the pointer inside
+    // a ReadSection (read_reclaim.h), which that pass waits for; only when it
+    // is reached, so an ordinary assignment pays nothing.
     if (!chunk.pending_any()) [[likely]]
     {
         if constexpr (is_not_bool)
         {
-            if (v == second_value &&
-                (values_loc == chunk.get_cst_val2(BaseSpec::ind) || values_loc[num] == second_value))
-                return v;
+            if (v == second_value)
+            {
+                if (values_loc == chunk.get_cst_val2(BaseSpec::ind))
+                    return v;
+                const read_reclaim::ReadSection section;
+                const T* const                  live = chunk.values_load();
+                if (live == chunk.get_cst_val2(BaseSpec::ind) || live[num] == second_value)
+                    return v;
+            }
         }
         else
         {
-            // elem_get: for Bit, values_loc[num] would be a whole byte of 8
-            // elements, non-zero as soon as a NEIGHBOUR is true.
-            if (v && (values_loc == chunk.get_cst_val2() || elem_get(values_loc, static_cast<std::size_t>(num))))
-                return true;
+            if (v)
+            {
+                if (values_loc == chunk.get_cst_val2())
+                    return true;
+                // elem_get: for Bit, values_loc[num] would be a whole byte of 8
+                // elements, non-zero as soon as a NEIGHBOUR is true.
+                const read_reclaim::ReadSection section;
+                const T* const                  live = chunk.values_load();
+                if (live == chunk.get_cst_val2() || elem_get(live, static_cast<std::size_t>(num)))
+                    return true;
+            }
         }
     }
 
@@ -1010,7 +1030,10 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
 
     if constexpr (chunk_config::use_compression_without_counter)
     {
-        const in_t<T> v_old = read_values();
+        // Outside the write session: under a ReadSection, or the `0 * x`
+        // shortcut may act on a released, zero-filled buffer (see
+        // ProxyBase::read_values_outside_session).
+        const in_t<T> v_old = Base::read_values_outside_session();
         if (v_old != Chunk2<T>::first_value)
             Base::apply_atomic_op(op, v, v_old);
     }
