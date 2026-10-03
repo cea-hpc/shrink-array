@@ -311,8 +311,9 @@ N_FAILED=0
 # entirely (useful when a build gets OOM-killed), and an explicitly set
 # CMAKE_BUILD_PARALLEL_LEVEL is always respected as-is.
 # Remember whether --jobs / CHUNK_MAX_JOBS was given: only the default is
-# narrowed when the budget is too small for it (below).
-__max_jobs_explicit="${CHUNK_MAX_JOBS:+1}"
+# narrowed: to what --target selects, and when the budget is too small for
+# it (both below).
+__max_jobs_given="${CHUNK_MAX_JOBS:+1}"
 CHUNK_MAX_JOBS="${CHUNK_MAX_JOBS:-4}"
 # Fewest compile jobs a build should get before the default number of builds
 # at a time is lowered (see __narrow_slots_to_budget).
@@ -472,6 +473,22 @@ __jobs_for_budget() {  # <mb-per-job>
     echo "$n"
 }
 
+# A --target that keeps fewer configurations than CHUNK_MAX_JOBS leaves the
+# other slots empty, and their share of the cores with them: --target=omp-gnu
+# alone ran ONE build with a quarter of the budget (2 compile jobs on a
+# 24-thread machine). Size the slots by what can actually run.
+if [ -n "${CHUNK_BUILD_TARGET:-}" ] && [ -z "$__max_jobs_given" ]; then
+    __n_selected=0
+    for __n in $(known_build_names "$(dirname "${BASH_SOURCE[0]}")/compile_all.sh" \
+                                   "$(dirname "${BASH_SOURCE[0]}")/compile_all_gnu.sh"); do
+        __target_wants "$__n" && __n_selected=$(( __n_selected + 1 ))
+    done
+    if [ "$__n_selected" -ge 1 ] && [ "$__n_selected" -lt "$CHUNK_MAX_JOBS" ]; then
+        CHUNK_MAX_JOBS="$__n_selected"
+        export CHUNK_MAX_JOBS # compile_all_gnu.sh, run by compile_all.sh, shares the slots
+    fi
+fi
+
 # Fewer builds at a time when the budget cannot feed the default number of
 # them. A WSL with 23 GB of 24 threads had room for 6 compilers (3 GB each):
 # 4 builds at a time got 6 / 4 = 1 job each -- 4 compilers out of 6, and as
@@ -480,7 +497,7 @@ __jobs_for_budget() {  # <mb-per-job>
 # (2 builds x 3 jobs there); a --jobs / CHUNK_MAX_JOBS given explicitly is
 # kept. Exported: compile_all_gnu.sh, run by compile_all.sh, shares the slots.
 __narrow_slots_to_budget() {  # <mb-per-job>
-    [ -n "$__max_jobs_explicit" ] && return 0
+    [ -n "$__max_jobs_given" ] && return 0
     local total=$__ncores slots
     if [ -n "$__mem_mb" ] && [ $(( __mem_mb / $1 )) -lt "$total" ]; then
         total=$(( __mem_mb / $1 ))
