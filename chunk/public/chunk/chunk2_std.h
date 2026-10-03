@@ -19,32 +19,32 @@
 //
 #pragma once
 
-#include <algorithm> // std::fill_n
-#include <array>
-#include <deque> // tab_m_ptr_cst_val2: grows without moving its arrays
-#include <atomic>
-#include <cstddef> // std::size_t
-#include <cstdlib> // std::abort
-#include <tuple>   // inf_array_t, the candidate-list entries
-#include <type_traits>
-#include <vector>
+#include <algorithm>   // std::fill_n
+#include <array>       // std::array
+#include <deque>       // tab_m_ptr_cst_val2: grows without moving its arrays
+#include <atomic>      // std::memory_order_acquire, std::memory_order_release
+#include <cstddef>     // std::size_t
+#include <cstdlib>     // std::abort
+#include <tuple>       // inf_array_t, the candidate-list entries
+#include <type_traits> // std::is_same_v, std::conditional_t
+#include <vector>      // std::vector
+#include <cstring>     // std::memset (the Bit second constant)
 
-#include "chunk/internal/chunk_size_config.h"
-#include "chunk/internal/chunk_size_policy.h"
-#include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
-#include "chunk/internal/in_t.h"
-#include "chunk/internal/element_access.h" // Bit buffers: words of bits
-#include "chunk/internal/bit_words.h"      // bits::fill_bits, bits::word_t
-#include <cstring>                         // std::memset (the Bit second constant)
-#include "chunk/config.h"
-#include "chunk/internal/invariant_check.h"
-#include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
-#include "chunk/PMP_CHUNK.h"
+#include "chunk/internal/chunk_size_config.h"           // __chunk_size
+#include "chunk/internal/chunk_size_policy.h"           // ChunkElems, DynamicChunkSize
+#include "chunk/internal/dependent_false.h"             // dependent_false_v (wrong-type branches)
+#include "chunk/internal/in_t.h"                        // in_t
+#include "chunk/internal/element_access.h"              // Bit buffers: words of bits
+#include "chunk/internal/bit_words.h"                   // bits::fill_bits, bits::word_t
+#include "chunk/config.h"                               // build_config::use_openmp, chunk_config
+#include "chunk/internal/invariant_check.h"             // INVARIANT_FAILED
+#include "chunk/internal/bad_ptr_check.h"               // CHUNK_CHECK_VALUES_PTR (check builds)
+#include "chunk/PMP_CHUNK.h"                            // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/chunk2_candidate_list_check.h" // chunk2_missing_candidate_list
-#include "chunk/internal/proxy2.h"
-#include "chunk/internal/chunk2_base.h"
-#include "chunk/internal/conditional_counter.h"
-#include "chunk/internal/TChunk.h" // VectorTuple4ChunkInt2 (the candidate lists)
+#include "chunk/internal/proxy2.h"                      // Proxy2
+#include "chunk/internal/chunk2_base.h"                 // Chunk2Base
+#include "chunk/internal/conditional_counter.h"         // ConditionalCounter, counter_value_t
+#include "chunk/internal/TChunk.h"                      // VectorTuple4ChunkInt2 (the candidate lists)
 
 namespace shrink_array
 {
@@ -1645,4 +1645,4 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
 
 } // end namespace shrink_array
 
-#include "chunk/internal/chunk2_std_inline.h"
+#include "chunk/internal/chunk2_std_inline.h" // the template bodies

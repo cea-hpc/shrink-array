@@ -16,13 +16,13 @@
  * limitations under the License.
  */
 
-#include <vector>
-#include <map>
-#include <tuple>
-#include <memory>
+#include <vector>      // std::vector
+#include <map>         // std::map
+#include <tuple>       // std::tuple
+#include <memory>      // std::shared_ptr
 #include <type_traits> // std::conditional_t (TChunk2CompMap)
 
-#include "chunk/internal/value_less.h"
+#include "chunk/internal/value_less.h"        // ValueLess
 #include "chunk/config.h"                     // build_config::use_openmp (TChunk2CompMap)
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems (VectorTuple4ChunkInt2)
 

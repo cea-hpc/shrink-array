@@ -24,7 +24,7 @@
 #include <tuple>           // the candidate-list entries
 
 #include "chunk/chunk_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/config.h"
+#include "chunk/config.h"    // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count

@@ -19,7 +19,7 @@
 
 #pragma once
 
-#include <complex>
+#include <complex> // std::complex
 
 /// @brief Lexicographic ordering of std::complex<T>: real part first, then imaginary part.
 template <typename T>

@@ -23,27 +23,26 @@
  * leaving only chunk-specific logic in derived classes.
  */
 
-#include <type_traits>
-#include <atomic>
-#include <complex>
-#include <cstdlib>
-#include <functional>
-#include <vector>
+#include <type_traits> // std::is_integral_v, std::is_same_v, std::conditional_t
+#include <atomic>      // std::atomic
+#include <complex>     // std::complex
+#include <cstdlib>     // std::size_t, std::abort
+#include <functional>  // std::plus, std::minus
+#include <vector>      // std::vector
 
 #include "chunk/internal/element_access.h" // elem_get / elem_set, is_packed_bit_v: Bit buffers are words of bits
-#include "chunk/config.h"
+#include "chunk/config.h"                  // chunk_config::use_fast_block_compression, build_config::any_check
 #include "chunk/internal/chunk_stats.h" // increm_chunk_* in the bodies (dependent calls the include tools cannot attribute)
-#include "chunk/internal/def_force_inline.h" // FORCE_INLINE: the write engine and its wrappers
-#include "chunk/internal/in_t.h"
-#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
-#include "chunk/internal/proxy_operators.h"
-#include "chunk/internal/tab_cst_val2_holder.h" // TabCstVal2Holder: second-value identifiers
-#include "chunk/internal/relaxed_element.h"     // store_value: Chunk2A's relaxed element stores
-#include "chunk/internal/concept_is_clean_assignement.h"
-#include "chunk/internal/crp_helper.h"
-#include "chunk/internal/arithmetic_context.h"
-#include "chunk/internal/test_hooks.h" // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
-#include "chunk/internal/read_reclaim.h"    // ReadSection: read_values_outside_session
+#include "chunk/internal/def_force_inline.h"             // FORCE_INLINE: the write engine and its wrappers
+#include "chunk/internal/in_t.h"                         // in_t<T>
+#include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
+#include "chunk/internal/proxy_operators.h"              // ProxyOperators
+#include "chunk/internal/tab_cst_val2_holder.h"          // TabCstVal2Holder: second-value identifiers
+#include "chunk/internal/relaxed_element.h"              // store_value: Chunk2A's relaxed element stores
+#include "chunk/internal/concept_is_clean_assignement.h" // IsCleanCompoundOp, IsCleanShiftOp, base_t
+#include "chunk/internal/crp_helper.h"                   // CRTPSupport, CRTP_USE_DEDUCING_THIS
+#include "chunk/internal/test_hooks.h"                   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
+#include "chunk/internal/read_reclaim.h"                 // ReadSection: read_values_outside_session
 
 namespace shrink_array
 {
@@ -1404,4 +1403,4 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
 } // namespace shrink_array
 
-#include "chunk/internal/proxy_base_inline.h"
+#include "chunk/internal/proxy_base_inline.h" // the template bodies

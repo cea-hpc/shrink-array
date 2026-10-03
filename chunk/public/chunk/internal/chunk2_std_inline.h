@@ -21,13 +21,13 @@
 #include <cstdlib>  // std::abort
 #include <optional> // std::nullopt (the clears)
 
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/internal/chunk_array_new.h"   // chunk_array_new::init_chunks (operator new[])
-#include "chunk/internal/chunk_size_policy.h" // ChunkElems, set_thread_chunk_size
-#include "chunk/internal/in_t.h"
-#include "chunk/chunk2_std.h"
-#include "chunk/internal/proxy2.h"
+#include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::OMPTcc
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
+#include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
+#include "chunk/internal/chunk_size_policy.h"   // ChunkElems, set_thread_chunk_size
+#include "chunk/internal/in_t.h"                // in_t<T>
+#include "chunk/chunk2_std.h"                   // Chunk2, the class these bodies belong to
+#include "chunk/internal/proxy2.h"              // Proxy2<T>
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/dependent_false.h"     // dependent_false_v (wrong-type branches)
 

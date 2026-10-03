@@ -16,12 +16,12 @@
  * limitations under the License.
  */
 
-#include "chunk/internal/array_chunk_base.h"
-#include "chunk/config.h"
-#include "chunk/chunk_traits.h"
-#include "chunk/internal/in_t.h"
-#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_IN_PARALLEL_REGION
-#include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
+#include "chunk/internal/array_chunk_base.h" // ArrayChunkBase
+#include "chunk/config.h"                    // build_config::not_use_openmp, chunk_config::use_fast_block_compression
+#include "chunk/chunk_traits.h"              // ArrayChunk2A forward declaration
+#include "chunk/internal/in_t.h"             // in_t<T>
+#include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/internal/read_reclaim.h"     // read_reclaim::PassScope (perform_compression / compress in a region)
 
 namespace shrink_array
 {

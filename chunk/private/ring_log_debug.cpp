@@ -2,30 +2,26 @@
 // Created by ballereaup on 13/10/2025.
 //
 
-#include <algorithm> // std::max, std::min, std::sort
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>     // std::fflush, stdout
-#include <functional> // std::hash
-#include <limits>
-#include <atomic>
-#include <iostream>
-#include <thread>
-#include <unordered_map>
-#include <vector>
-#include <iomanip>
+#include <algorithm>     // std::max, std::min, std::sort
+#include <cstddef>       // size_t
+#include <cstdint>       // uint32_t, uint64_t
+#include <cstdio>        // std::fflush, stdout
+#include <functional>    // std::hash
+#include <limits>        // std::numeric_limits
+#include <atomic>        // std::atomic, std::memory_order
+#include <iostream>      // std::cout, std::cerr
+#include <thread>        // std::thread::id, std::this_thread
+#include <unordered_map> // std::unordered_map
+#include <vector>        // std::vector
+#include <iomanip>       // std::setw, std::hex
 
-#include <string>
+#include <string>   // std::string
 #include <stdio.h>  // fileno (POSIX)
 #include <unistd.h> // isatty
 
-#ifdef _OPENMP
-    #include <omp.h>
-#endif
-
-#include "chunk/config.h"    // build_config::use_openmp (get_tid)
-#include "chunk/PMP_CHUNK.h" // chunk_pmp_team_rank (get_tid)
-#include "chunk/ring_log_debug.h"
+#include "chunk/config.h"         // build_config::use_openmp (get_tid)
+#include "chunk/PMP_CHUNK.h"      // chunk_pmp_team_rank (get_tid)
+#include "chunk/ring_log_debug.h" // the declarations defined here
 
 #ifdef RING_LOG_ANY
 
@@ -325,7 +321,6 @@ struct Endpoint
     uint32_t  tid; // tid owning this interval
     size_t    idx; // index of interval in the vector for that tid
 };
-
 
 bool is_stdout_tty()
 {

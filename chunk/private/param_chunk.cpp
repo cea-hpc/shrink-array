@@ -50,16 +50,15 @@
 #include <utility>   // std::cmp_greater
 #include <unistd.h>  // sysconf(_SC_PAGESIZE): page-aware slab floor
 
-#include "chunk/config.h"
-#include "chunk/singleton.h"
-#include "chunk/internal/chunk_size_config.h" // __chunk_size
-#include "chunk/internal/chunk_size_policy.h" // active_chunk_size
-#include "chunk/internal/chunk_stats.h"       // per-variant stats reduce/print
-#include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h"
-#include "chunk/PMP_CHUNK.h"
+#include "chunk/config.h"                              // build_config::chunk_dynamic, use_openmp
+#include "chunk/singleton.h"                           // SingletonChk
+#include "chunk/internal/chunk_size_config.h"          // __chunk_size
+#include "chunk/internal/chunk_size_policy.h"          // active_chunk_size
+#include "chunk/internal/chunk_stats.h"                // per-variant stats reduce/print
+#include "chunk/param_chunk.h"                         // the declarations defined here
+#include "chunk/PMP_CHUNK.h"                           // CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::protocol_name (CHUNK_STATS report only)
-#include "chunk/all_type_chunk.h"
+#include "chunk/all_type_chunk.h"                      // AllTypeChunk
 
 namespace shrink_array
 {
@@ -549,7 +548,6 @@ void ParamChunk::ChunkStats()
 ///       report; the function still exists so call sites need no guard.
 void ParamChunk::ChunkStats() {}
 #endif
-
 
 // Defined for EVERY dyn build (matching its unconditional declaration in
 // param_chunk.h), with the OMP/FAST_ALLOC specifics guarded INSIDE the body.

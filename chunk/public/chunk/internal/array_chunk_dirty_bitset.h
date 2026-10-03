@@ -41,13 +41,13 @@
  */
 
 #include <algorithm> // std::min
-#include <atomic>
-#include <cstddef> // std::size_t
-#include <cstdint>
-#include <utility> // std::swap
-#include <vector>
+#include <atomic>    // std::atomic, std::memory_order
+#include <cstddef>   // std::size_t
+#include <cstdint>   // uint64_t
+#include <utility>   // std::swap
+#include <vector>    // std::vector
 
-#include "chunk/config.h"
+#include "chunk/config.h" // build_config::use_openmp
 
 namespace shrink_array
 {

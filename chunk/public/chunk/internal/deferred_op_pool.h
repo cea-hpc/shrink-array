@@ -16,26 +16,26 @@
  * limitations under the License.
  */
 
-#include <algorithm> // std::max (slab sizing)
-#include <cassert>
-#include <cstddef> // std::byte, std::size_t
-#include <cstdint> // std::uintptr_t (the block probe)
-#include <cstdio>  // std::fprintf (diagnostics)
-#include <cstdlib> // std::abort, std::getenv (CHUNK_RECYCLE_TRACE)
-#include <memory>  // std::unique_ptr
-#include <utility> // std::move
-#include <vector>
+#include <algorithm>  // std::max (slab sizing)
+#include <cassert>    // assert
+#include <cstddef>    // std::byte, std::size_t
+#include <cstdint>    // std::uintptr_t (the block probe)
+#include <cstdio>     // std::fprintf (diagnostics)
+#include <cstdlib>    // std::abort, std::getenv (CHUNK_RECYCLE_TRACE)
+#include <memory>     // std::unique_ptr
+#include <utility>    // std::move
+#include <vector>     // std::vector
 #include <sys/mman.h> // msync / MS_ASYNC (the block probe)
 #include <unistd.h>   // sysconf (same)
 
-#include "chunk/config.h"
+#include "chunk/config.h"                   // build_config::use_fast_alloc, build_config::deferred_pool_granularity
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED (the block probe)
-#include "chunk/internal/pool_ledger.h"
-#include "chunk/ring_log_debug.h"
+#include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
+#include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, EV_OP_ALLOC / EV_OP_FREE
 
 #ifdef FAST_ALLOC
-    #include "fast_allocators/slab_arena.h" // fast_alloc::ArenaKind
-    #include "fast_allocators/tc_allocator.h"
+    #include "fast_allocators/slab_arena.h"   // fast_alloc::ArenaKind
+    #include "fast_allocators/tc_allocator.h" // TCTypeAllocator<std::byte>
 #else
 /**
  * @brief Fallback definitions when FAST_ALLOC is disabled.

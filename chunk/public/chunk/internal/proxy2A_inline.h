@@ -24,20 +24,20 @@
 #include <utility>         // std::move, std::cmp_greater_equal
 #include <vector>          // the per-chunk "queued" flags
 
-#include "chunk/internal/proxy2A.h" // the declarations these bodies belong to
-#include "chunk/internal/in_t.h"
-#include "chunk/array_chunk2A.h" // ArrayChunk2A (dependent calls the include tools cannot attribute)
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h" // get_thr_rank_fast
-#include "chunk/internal/arithmetic_context.h"
-#include "chunk/internal/array_chunk_for.h"
-#include "chunk/internal/concept_is_clean_assignement.h"
-#include "chunk/internal/deferred_op_pool.h"
-#include "chunk/internal/bad_ptr_check.h"     // CHUNK_CHECK_VALUES_PTR (check builds)
-#include "chunk/internal/invariant_check.h"   // INVARIANT_FAILED
-#include "chunk/internal/chunk_stats.h"       // increm_chunk_* (CHUNK_STATS)
-#include "chunk/internal/chunk_size_policy.h" // DynChunkSizeGuard, set_thread_chunk_size
-#include "chunk/internal/read_reclaim.h"      // read_reclaim::PassScope (perform_compression / compress in a region)
+#include "chunk/internal/proxy2A.h"            // the declarations these bodies belong to
+#include "chunk/internal/in_t.h"               // in_t<T>
+#include "chunk/array_chunk2A.h"               // ArrayChunk2A (dependent calls the include tools cannot attribute)
+#include "chunk/config.h"                      // build_config::any_check, build_config::chunk_dynamic
+#include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
+#include "chunk/internal/arithmetic_context.h" // ArithmeticAffectationContext
+#include "chunk/internal/array_chunk_for.h"    // ArrayChunkFor_t
+#include "chunk/internal/concept_is_clean_assignement.h" // base_t
+#include "chunk/internal/deferred_op_pool.h"             // pool_new_ctx
+#include "chunk/internal/bad_ptr_check.h"                // CHUNK_CHECK_VALUES_PTR (check builds)
+#include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
+#include "chunk/internal/chunk_stats.h"                  // increm_chunk_* (CHUNK_STATS)
+#include "chunk/internal/chunk_size_policy.h"            // DynChunkSizeGuard, set_thread_chunk_size
+#include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 
 /**
  * @file proxy2A_inline.h

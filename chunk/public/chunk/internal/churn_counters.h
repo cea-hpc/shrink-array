@@ -32,14 +32,14 @@
  * own key; key 0 (the shared pool) is not counted.
  */
 
-#include <array>
-#include <atomic>
-#include <cstddef>
-#include <mutex>
-#include <vector>
+#include <array>   // std::array
+#include <atomic>  // std::atomic, std::memory_order
+#include <cstddef> // std::size_t
+#include <mutex>   // std::once_flag, std::call_once
+#include <vector>  // std::vector
 
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
+#include "chunk/config.h"    // build_config::chunk_dynamic
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
 
 namespace shrink_array::churn
 {

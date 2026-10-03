@@ -34,7 +34,7 @@
 // All checks compile away when build_config::any_check is false.
 // ============================================================================
 
-#include <cstdint>
+#include <cstdint> // std::uint64_t
 
 namespace shrink_array::deferred_lifecycle
 {

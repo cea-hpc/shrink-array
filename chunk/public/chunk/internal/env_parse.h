@@ -40,7 +40,7 @@
 #include <cstdlib>      // std::getenv, std::strtod
 #include <cstring>      // std::strlen
 #include <system_error> // std::errc
-#include <type_traits>
+#include <type_traits>  // std::is_arithmetic_v, std::is_integral_v, std::is_same_v
 
 namespace shrink_array
 {

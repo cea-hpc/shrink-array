@@ -38,12 +38,12 @@
 // All checks compile to nothing when build_config::any_check is false.
 // ============================================================================
 
-#include <cstdint>
-#include <source_location>
+#include <cstdint>         // std::uintptr_t
+#include <source_location> // std::source_location
 
-#include "chunk/config.h"
-#include "chunk/internal/invariant_check.h"
-#include "chunk/PMP_CHUNK.h" // get_thr_rank_fast, CHUNK_PMP_*, and <omp.h> with them
+#include "chunk/config.h"                   // build_config::any_check
+#include "chunk/internal/invariant_check.h" // invariant_failed
+#include "chunk/PMP_CHUNK.h"                // get_thr_rank_fast, CHUNK_PMP_*, and <omp.h> with them
 
 namespace shrink_array::bad_ptr
 {

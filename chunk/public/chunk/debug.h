@@ -17,11 +17,11 @@
 
 #pragma once
 
-#include <array>
-#include <execinfo.h>
-#include <cxxabi.h>
-#include <cstdlib> // std::free (demangled name)
-#include <iostream>
+#include <array>      // std::array
+#include <execinfo.h> // backtrace, backtrace_symbols
+#include <cxxabi.h>   // abi::__cxa_demangle
+#include <cstdlib>    // std::free (demangled name)
+#include <iostream>   // std::cerr
 
 #define DEBUG_TRACE(x) std::cerr << " ... " #x " = " << (x) << "\n";
 

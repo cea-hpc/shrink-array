@@ -22,9 +22,9 @@
 // of the container declaration itself.
 #include <tuple> // std::get on candidate tuples
 
-#include "chunk/internal/array_chunk2_rechunk_hooks.h"
-#include "chunk/internal/manager_chunk.h" // manager_type — candidate store + reuse free-lists
-#include "chunk/config.h"
+#include "chunk/internal/array_chunk2_rechunk_hooks.h" // RechunkHooks2, the class these bodies belong to
+#include "chunk/internal/manager_chunk.h"              // manager_type — candidate store + reuse free-lists
+#include "chunk/config.h"                     // build_config::use_openmp, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h"                  // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
 #include "chunk/internal/in_t.h"              // in_t<value_type>: the captured state

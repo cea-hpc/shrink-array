@@ -20,9 +20,9 @@
 // array_chunk_parallel_common.h so the declaration stays light enough to be
 // included next to the container declarations, while the compression manager
 // only reaches the three *_parallel_inline.h files.
-#include "chunk/internal/array_chunk_parallel_common.h"
-#include "chunk/internal/compression_manager.h" // CompressionManager<> in flush_pending_deferred_ops
-#include "chunk/config.h"
+#include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, the class these bodies belong to
+#include "chunk/internal/compression_manager.h"         // CompressionManager<> in flush_pending_deferred_ops
+#include "chunk/config.h"                   // build_config::any_check, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_RANK_BOUND, CHUNK_PMP_IN_PARALLEL_REGION
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED (check builds)
 

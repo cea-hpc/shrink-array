@@ -34,25 +34,25 @@
  * @see chunk/manage_ompt.h for the semantics of the phase transitions.
  */
 
-#include <array>
+#include <array>     // std::array
 #include <algorithm> // std::min (CHUNK_OMPT_STATS report)
-#include <atomic>
-#include <chrono> // CHUNK_OMPT_STATS: time spent flushing
-#include <cstdint>
-#include <cstdio>  // CHUNK_OMPT_STATS report
-#include <cstdlib> // std::getenv, std::abort (CHUNK_REQUIRE_OMPT)
-#include <cstring> // std::strlen (the refused callbacks' list)
+#include <atomic>    // std::atomic, std::memory_order
+#include <chrono>    // CHUNK_OMPT_STATS: time spent flushing
+#include <cstdint>   // std::uint64_t
+#include <cstdio>    // CHUNK_OMPT_STATS report
+#include <cstdlib>   // std::getenv, std::abort (CHUNK_REQUIRE_OMPT)
+#include <cstring>   // std::strlen (the refused callbacks' list)
 
-#include "chunk/config.h"
-#include "chunk/singleton.h"
-#include "chunk/manage_ompt.h"
-#include "chunk/PMP_CHUNK.h" // g_fast_omp_rank
+#include "chunk/config.h"      // g_ompt_suspended (defined here), chunk_config::is_shrink_enabled
+#include "chunk/singleton.h"   // SingletonChk
+#include "chunk/manage_ompt.h" // begin_parallel_phase, finalize_parallel_phase, finalize_barrier_phase
+#include "chunk/PMP_CHUNK.h"   // g_fast_omp_rank
 
-#include "chunk/all_type_chunk.h"
+#include "chunk/all_type_chunk.h"          // AllTypeChunk
 #include "chunk/internal/churn_counters.h" // churn::note_phase_end
 
 #ifdef HAVE_OMPT
-    #include <omp-tools.h>
+    #include <omp-tools.h> // ompt_set_callback, ompt_start_tool_result_t
 #endif
 
 // Stays a directive: it gates the WHOLE translation unit -- the global switch

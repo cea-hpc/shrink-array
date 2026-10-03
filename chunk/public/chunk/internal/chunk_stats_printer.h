@@ -1,9 +1,9 @@
 #pragma once
 
-#include <iomanip>
-#include <iostream>
-#include <sstream>
-#include <string>
+#include <iomanip>  // std::setw, std::setprecision, std::fixed
+#include <iostream> // std::ostream
+#include <sstream>  // std::stringstream
+#include <string>   // std::string, std::to_string
 #include <stdio.h>  // fileno: POSIX, not declared by <cstdio>
 #include <unistd.h> // isatty
 

@@ -21,12 +21,12 @@
 #include <type_traits> // std::common_type_t
 #include <utility>     // std::move
 
-#include "chunk/internal/in_t.h"
+#include "chunk/internal/in_t.h"  // in_t<T>
 #include "chunk/internal/proxy.h" // the declarations these bodies belong to
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/internal/arithmetic_context.h"
-#include "chunk/internal/concept_is_clean_assignement.h"
+#include "chunk/config.h"    // chunk_config::use_compression_with_counter, chunk_config::use_fast_block_compression
+#include "chunk/PMP_CHUNK.h" // get_thr_rank_fast
+#include "chunk/internal/arithmetic_context.h"           // ArithmeticAffectationProxyContext
+#include "chunk/internal/concept_is_clean_assignement.h" // base_t
 #include "chunk/internal/read_reclaim.h"    // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 

@@ -47,22 +47,22 @@
 // vector, so growth never invalidates a held entry). Only the value -> inf_array
 // side is an ordered std::map.
 
-#include <cstdio> // fprintf / fflush in report_key_not_found
-#include <deque>  // std::deque: share_info storage, no realloc invalidation
-#include <map>
+#include <cstdio>      // fprintf / fflush in report_key_not_found
+#include <deque>       // std::deque: share_info storage, no realloc invalidation
+#include <map>         // std::map
 #include <tuple>       // std::tuple / std::get / std::make_tuple
 #include <type_traits> // std::is_same_v
 #include <utility>     // std::swap (swap_entries), std::pair
-#include <vector>
+#include <vector>      // std::vector
 
 #include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_* — thread rank without an #ifdef _OPENMP
-#include "chunk/internal/value_less.h"
-#include "chunk/internal/map_helper.h"
-#include "chunk/internal/in_t.h"
-#include "chunk/config.h"                   // build_config::any_check
-#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
+#include "chunk/internal/value_less.h"         // ValueLess
+#include "chunk/internal/map_helper.h"         // ValueToIntMapHelper
+#include "chunk/internal/in_t.h"               // in_t<T>
+#include "chunk/config.h"                      // build_config::any_check
+#include "chunk/internal/invariant_check.h"    // INVARIANT_FAILED
 
 namespace shrink_array
 {

@@ -39,8 +39,8 @@
  * @see array_chunk2_rechunk_hooks_inline.h for the bodies
  */
 
-#include "chunk/config.h"
-#include "chunk/chunk_traits.h"
+#include "chunk/config.h"        // build_config::chunk_dynamic
+#include "chunk/chunk_traits.h"  // ArrayChunkTraits
 #include "chunk/internal/in_t.h" // in_t<T>: the captured state
 
 namespace shrink_array

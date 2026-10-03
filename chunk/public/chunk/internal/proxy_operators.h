@@ -16,9 +16,9 @@
 
 #pragma once
 
-#include <type_traits>
+#include <type_traits> // std::common_type_t
 
-#include "chunk/internal/concept_composite_arithmetic.h"
+#include "chunk/internal/concept_composite_arithmetic.h" // composite_arithmetic, scalar_arithmetic
 
 namespace shrink_array
 {

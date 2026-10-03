@@ -32,7 +32,7 @@
  * writer wait), so a flush beginning after this check is caught as before.
  */
 
-#include "chunk/config.h"
+#include "chunk/config.h"                              // build_config::use_openmp
 #include "chunk/internal/chunk_stats.h"                // increm_chunk_gate_start*
 #include "chunk/internal/write_compress_sync_policy.h" // any_thread_flushing
 

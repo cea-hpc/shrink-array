@@ -16,24 +16,23 @@
 
 #pragma once
 
-#include <concepts>
-#include <functional>
-#include <ostream>
-#include <utility>
-#include <vector>
+#include <concepts>   // std::assignable_from
+#include <functional> // std::plus, std::minus, std::multiplies, std::divides
+#include <ostream>    // std::ostream
+#include <utility>    // std::pair
+#include <vector>     // std::vector
 
 #include "chunk/internal/pointer_map_linear.h" // linear scan shared with PointerMapChunk2
-#include "chunk/config.h"
-#include "chunk/internal/array_chunk_for.h"
-#include "chunk/internal/chunk_size_policy.h"
-#include "chunk/internal/concept_is_clean_assignement.h"
-#include "chunk/internal/in_t.h"
-#include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED
-#include "chunk/internal/conditional_counter.h" // counter_value_t — resync_nb_val_eq_zero
-#include "chunk/internal/def_force_inline.h"    // FORCE_INLINE
-#include "chunk/internal/map_helper.h"
-#include "chunk/internal/arithmetic_context.h"
-#include "chunk/internal/proxy_base.h"
+#include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
+#include "chunk/internal/array_chunk_for.h"    // ArrayChunkFor_t
+#include "chunk/internal/chunk_size_policy.h"  // set_thread_chunk_size, set_thread_alloc_key
+#include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment, ElementAddable, ElementModulable
+#include "chunk/internal/in_t.h"                         // in_t<T>
+#include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
+#include "chunk/internal/conditional_counter.h"          // counter_value_t — resync_nb_val_eq_zero
+#include "chunk/internal/def_force_inline.h"             // FORCE_INLINE
+#include "chunk/internal/map_helper.h"                   // ValueToIntMapHelper
+#include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/internal/chunk_stats.h" // increm_chunk_read<> (a dependent call the include tools cannot attribute)
 
 /*---------------------------------------------------------------------------*/
@@ -1030,4 +1029,4 @@ std::ostream& operator<<(std::ostream& os, const Proxy<T>& proxy)
 
 } // namespace shrink_array
 
-#include "chunk/internal/proxy_inline.h"
+#include "chunk/internal/proxy_inline.h" // the template bodies

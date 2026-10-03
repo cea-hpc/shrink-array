@@ -22,21 +22,22 @@
 
 #include <iostream> // std::cout: print_compression_stats' default stream
 #include <utility>  // std::swap
-#include <vector>
+#include <vector>   // std::vector
 
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
-#include "chunk/chunk_std.h"
-#include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
-#include "chunk/internal/array_chunk_base.h"
-#include "chunk/internal/array_chunk_parallel.h"      // ParallelSupport — OpenMP-only mixin
-#include "chunk/internal/array_chunk_rechunk_hooks.h" // RechunkHooks — CHUNK_DYNAMIC-only mixin
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/internal/concept_array_chunk_element.h"
-#include "chunk/config.h"
-#include "chunk/internal/write_compress_sync_policy.h"
-#include "chunk/internal/in_t.h"  // in_t<T>: resize's fill value
-#include "chunk/internal/proxy.h" // Proxy<T>: the element proxy and its registry
+
+#include "chunk/chunk_std.h"                     // Chunk<T>
+#include "chunk/internal/read_reclaim.h"         // read_reclaim::PassScope (perform_compression / compress in a region)
+#include "chunk/internal/array_chunk_base.h"     // ArrayChunkBase
+#include "chunk/internal/array_chunk_parallel.h" // ParallelSupport — OpenMP-only mixin
+#include "chunk/internal/array_chunk_rechunk_hooks.h"   // RechunkHooks — CHUNK_DYNAMIC-only mixin
+#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
+#include "chunk/config.h"                               // build_config::use_openmp
+#include "chunk/internal/write_compress_sync_policy.h"  // WriteCompressSyncPolicy
+#include "chunk/internal/in_t.h"                        // in_t<T>: resize's fill value
+#include "chunk/internal/proxy.h"                       // Proxy<T>: the element proxy and its registry
 
 namespace shrink_array
 {
@@ -317,9 +318,9 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
 // Template method bodies. Included here (after the class definition) so that
 // every translation unit using ArrayChunk<T> sees the definitions and can
 // auto-instantiate the exact T it needs.
-#include "chunk/internal/array_chunk_inline.h"
+#include "chunk/internal/array_chunk_inline.h" // the template bodies
 
 // Bodies of the two mode-specific mixins. After array_chunk_inline.h, so their
 // CRTP self() sees a complete ArrayChunk.
-#include "chunk/internal/array_chunk_parallel_inline.h"
-#include "chunk/internal/array_chunk_rechunk_hooks_inline.h"
+#include "chunk/internal/array_chunk_parallel_inline.h"      // ParallelSupport's bodies
+#include "chunk/internal/array_chunk_rechunk_hooks_inline.h" // RechunkHooks' bodies

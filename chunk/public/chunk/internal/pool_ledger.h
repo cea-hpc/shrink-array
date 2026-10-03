@@ -39,16 +39,16 @@
 // All hooks compile to nothing when build_config::any_check is false.
 // ============================================================================
 
-#include <array>
+#include <array>   // std::array
 #include <cstddef> // std::size_t
 #include <cstdint> // std::uintptr_t (the aarch64 alignment probe)
 #include <cstdio>  // std::fprintf
 #include <cstdlib> // std::abort
-#include <mutex>
+#include <mutex>   // std::mutex, std::scoped_lock
 
-#include "chunk/config.h"
-#include "chunk/debug.h" // print_backtrace
-#include "chunk/internal/invariant_check.h"
+#include "chunk/config.h"                   // build_config::any_check
+#include "chunk/debug.h"                    // print_backtrace
+#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 
 #include "ankerl/unordered_dense.h" // the live maps
 

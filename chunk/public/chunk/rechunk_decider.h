@@ -27,13 +27,13 @@
 // re-chunk cost is sub-millisecond, hysteresis here is about avoiding
 // OSCILLATION, not about protecting from an expensive operation.
 
-#include <cstddef>
-#include <cstdio>
-#include <string>
-#include <unordered_map>
-#include <vector>
+#include <cstddef>       // std::size_t
+#include <cstdio>        // std::FILE, stdout
+#include <string>        // std::string
+#include <unordered_map> // std::unordered_map
+#include <vector>        // std::vector
 
-#include "chunk/chunk_size_advisor.h"
+#include "chunk/chunk_size_advisor.h" // ChunkSizeReport
 
 namespace shrink_array
 {
@@ -220,4 +220,4 @@ class RechunkDecider
 
 // Method bodies. Included here (after the class) so every translation unit
 // using RechunkDecider sees the definitions and instantiates the T/Arr it needs.
-#include "chunk/internal/rechunk_decider_inline.h"
+#include "chunk/internal/rechunk_decider_inline.h" // the method bodies

@@ -37,11 +37,12 @@
  */
 
 // All of these serve the CHUNK_STATS half of the file only.
-#include <array>
-#include <chrono> // __chunk_stats_t0, the rates in print_chunk_stats
-#include <map>
-#include <mutex>
-#include <concepts>          // ChunkStatsZeroComparable
+#include <array>    // std::array
+#include <chrono>   // __chunk_stats_t0, the rates in print_chunk_stats
+#include <map>      // std::map
+#include <mutex>    // std::mutex, std::lock_guard
+#include <concepts> // ChunkStatsZeroComparable
+
 #include "chunk/PMP_CHUNK.h" // get_thr_rank_fast / CHUNK_PMP_MAX_THREADS
 #include "chunk/config.h"    // build_config::chunk_dynamic
 

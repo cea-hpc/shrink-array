@@ -19,8 +19,8 @@
 #include <optional> // std::nullopt_t (the index-less overloads)
 
 #include "chunk/internal/chunk2_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
+#include "chunk/config.h"               // build_config::any_check, chunk_config::use_compression_with_counter
+#include "chunk/PMP_CHUNK.h"            // get_thr_rank_fast
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 
 namespace shrink_array

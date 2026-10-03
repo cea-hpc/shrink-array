@@ -21,11 +21,11 @@
 // its own inline file, so the CRTP self() down-cast sees a complete Derived and
 // so the compression manager stays out of the container declaration itself.
 
-#include "chunk/internal/array_chunk2_parallel.h"
+#include "chunk/internal/array_chunk2_parallel.h"              // FastBlockSupport2, the class these bodies belong to
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
 #include "chunk/PMP_CHUNK.h"                                   // CHUNK_PMP_* (make_block_compression)
 #include "chunk/internal/chunk_size_policy.h"                  // set_thread_chunk_size in make_block_compression
-#include "chunk/config.h"
+#include "chunk/config.h"                                      // build_config::chunk_dynamic
 
 namespace shrink_array
 {

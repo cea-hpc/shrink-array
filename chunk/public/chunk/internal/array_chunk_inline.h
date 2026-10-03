@@ -18,20 +18,20 @@
 
 #include <cstdlib>  // std::abort
 #include <iostream> // std::cerr
-#include <vector>
+#include <vector>   // std::vector
 
-#include "chunk/all_type_chunk.h" // ensure_manager, from create
-#include "chunk/array_chunk.h"
-#include "chunk/internal/chunk_stats.h"         // increm_chunk_* (CHUNK_STATS)
-#include "chunk/internal/chunk_stats_printer.h" // print_formatted_chunk_stats
-#include "chunk/internal/manager_chunk.h"       // per-size free lists, candidate filter
-#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
-#include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_PARK / DISCARD
-#include "chunk/type_name.h"
-#include "chunk/config.h"
-#include "chunk/internal/chunk_size_policy.h"
-#include "chunk/internal/concept_array_chunk_element.h"
-#include "chunk/internal/in_t.h"
+#include "chunk/all_type_chunk.h"                       // ensure_manager, from create
+#include "chunk/array_chunk.h"                          // ArrayChunk, the class these bodies belong to
+#include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
+#include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
+#include "chunk/internal/manager_chunk.h"               // per-size free lists, candidate filter
+#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*
+#include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_PARK / DISCARD
+#include "chunk/type_name.h"                            // type_name<T>
+#include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
+#include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
+#include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
+#include "chunk/internal/in_t.h"                        // in_t<T>
 
 namespace shrink_array
 {

@@ -43,11 +43,11 @@
  *          non-zero one compiles its hook in.
  */
 
-#include <atomic>
-#include <chrono>
+#include <atomic> // std::atomic, std::memory_order_relaxed
+#include <chrono> // std::chrono::steady_clock, std::chrono::microseconds
 
-#include "chunk/config.h"
-#include "chunk/internal/cpu_pause.h"
+#include "chunk/config.h"             // build_config::force_defer_every, build_config::use_openmp
+#include "chunk/internal/cpu_pause.h" // CPU_PAUSE
 
 #ifndef CHUNK_TEST_READ_DELAY_EVERY
     #define CHUNK_TEST_READ_DELAY_EVERY 0

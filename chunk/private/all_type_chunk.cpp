@@ -15,17 +15,17 @@
  */
 #include <algorithm> // std::find, the registered sizes
 #include <cstddef>   // std::size_t (the reuse-pool byte counts)
-#include <mutex>
-#include <atomic>   // for atomic_thread_fence, memory_order_seq_cst, atomic
-#include <memory>   // for unique_ptr
-#include <optional> // SerialFlushOwnership
-#include <vector>   // for vector
-#include <malloc.h>
+#include <mutex>     // std::mutex, std::lock_guard
+#include <atomic>    // for atomic_thread_fence, memory_order_seq_cst, atomic
+#include <memory>    // for unique_ptr
+#include <optional>  // SerialFlushOwnership
+#include <vector>    // for vector
+#include <malloc.h>  // malloc_trim, mallopt
 
-#include "chunk/config.h"
-#include "chunk/singleton.h"
-#include "chunk/internal/manager_chunk.h"
-#include "chunk/all_type_chunk.h"
+#include "chunk/config.h"                    // build_config::use_openmp, chunk_config
+#include "chunk/singleton.h"                 // SingletonChk
+#include "chunk/internal/manager_chunk.h"    // ManagerChunkInt, ManagerChunkParallelImpl
+#include "chunk/all_type_chunk.h"            // the declarations defined here
 #include "chunk/internal/churn_counters.h"   // churn::note_phase_end
 #include "chunk/PMP_CHUNK.h"                 // CHUNK_PMP_THREAD_RANK / _RANK_BOUND / _NUM_THREADS, g_fast_omp_rank
 #include "chunk/internal/deferred_op_pool.h" // for reset_all

@@ -467,9 +467,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
 // every translation unit using ArrayChunk2A<T> sees the definitions and can
 // auto-instantiate the exact T it needs.
 
-#include "chunk/internal/array_chunk2A_inline.h"
+#include "chunk/internal/array_chunk2A_inline.h" // the template bodies
 
 // Bodies of the two mode-specific mixins. After array_chunk2A_inline.h, so their
 // CRTP self() sees a complete ArrayChunk2A.
-#include "chunk/internal/array_chunk2A_parallel_inline.h"
-#include "chunk/internal/array_chunk2A_rechunk_hooks_inline.h"
+#include "chunk/internal/array_chunk2A_parallel_inline.h"      // ParallelSupport2A's bodies
+#include "chunk/internal/array_chunk2A_rechunk_hooks_inline.h" // RechunkHooks2A's bodies

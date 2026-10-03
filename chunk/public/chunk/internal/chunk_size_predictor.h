@@ -28,11 +28,11 @@
 // Sizes < current are out of scope here (need intra-chunk re-reading, usually
 // lose on metadata). Gated by the caller on any_check — never in production.
 
-#include <cstddef>
-#include <cstdio>
-#include <optional>
-#include <utility>
-#include <vector>
+#include <cstddef>  // std::size_t
+#include <cstdio>   // std::fprintf, std::fflush
+#include <optional> // std::optional
+#include <utility>  // std::pair
+#include <vector>   // std::vector
 
 namespace shrink_array
 {

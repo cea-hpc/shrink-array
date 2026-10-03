@@ -6,40 +6,39 @@
 // the CURRENT branch versions (with the kMaxDrainPasses drain and the defensive
 // destroy_after_flush drain) — NOT the older gen-dev-27 versions.
 
-#include <atomic>
-#include <cstdio>
-#include <cstdlib>  // std::getenv (the trace switches)
-#include <iostream> // std::cout (DEBUG_SET_SIZE)
-#include <algorithm>
-#include <functional>
-#include <tuple> // std::tuple (the memory estimate)
-#include <type_traits>
-#include <unordered_set>
-#include <vector>
+#include <atomic>        // std::atomic, std::memory_order
+#include <cstdio>        // std::fprintf, std::fflush
+#include <cstdlib>       // std::getenv (the trace switches)
+#include <iostream>      // std::cout (DEBUG_SET_SIZE)
+#include <algorithm>     // std::max, std::ranges::sort, std::ranges::push_heap
+#include <functional>    // std::less
+#include <tuple>         // std::tuple (the memory estimate)
+#include <type_traits>   // std::decay_t, std::conditional_t
+#include <unordered_set> // std::unordered_set
+#include <vector>        // std::vector
 
-#include "chunk/internal/manager_chunk.h" // the declarations these bodies belong to
-#include "chunk/config.h"
-#include "chunk/internal/svalloc.h" // svfree
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/internal/chunk_size_policy.h"
+#include "chunk/internal/manager_chunk.h"     // the declarations these bodies belong to
+#include "chunk/config.h"                     // build_config::use_fast_alloc, chunk_config::use_fast_block_compression
+#include "chunk/internal/svalloc.h"           // svfree
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_MAX_THREADS
+#include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count
 #include "chunk/internal/compression_manager.h"  // CompressionManager (the barrier flushes)
 #include "chunk/internal/deferred_op_pool.h"     // fast_alloc::ArenaKind (its std-alloc stand-in too)
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
 #include "chunk/internal/pool_ledger.h"          // CHUNK_LEDGER_DISCARD
-#include "chunk/chunk_std.h"
-#include "chunk/chunk2_std.h"
-#include "chunk/chunk2A_std.h"
-#include "chunk/chunk_def.h"
-#include "chunk/chunk2_def.h"
-#include "chunk/chunk2A_def.h"
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/internal/array_chunk_for.h"
-#include "chunk/internal/concept_chunk.h"
-#include "chunk/global_stats_chunk_list.h"
-#include "chunk/type_name.h"
-#include "chunk/internal/chunk_func.h"
-#include "chunk/singleton.h"
+#include "chunk/chunk_std.h"                     // Chunk<T>: the CHUNK_T<T>:: calls
+#include "chunk/chunk2_std.h"                    // Chunk2<T>: the CHUNK_T<T>:: calls
+#include "chunk/chunk2A_std.h"                   // Chunk2A<T>: the CHUNK_T<T>:: calls
+#include "chunk/chunk_def.h"                     // ChunkDef
+#include "chunk/chunk2_def.h"                    // Chunk2Def
+#include "chunk/chunk2A_def.h"                   // Chunk2ADef
+#include "chunk/array_chunk.h"                   // ArrayChunkCore complete: ArrayType::clear_all_dirty_bitsets
+#include "chunk/internal/array_chunk_for.h"      // ArrayChunkFor_t
+#include "chunk/internal/concept_chunk.h"        // IsChunk, IsChunk2, IsChunk2A, IsChunk2Or2A
+#include "chunk/global_stats_chunk_list.h"       // GlobalStatsChunkList
+#include "chunk/type_name.h"                     // type_name<T>
+#include "chunk/internal/chunk_func.h"           // load_balance_list_block_free_thr
+#include "chunk/singleton.h"                     // SingletonChk
 
 namespace shrink_array
 {
@@ -55,7 +54,6 @@ bool need_load_balance_list_block_free_thr();
 template <typename T>
 void load_balance_list_block_free_thr();
 } // namespace shrink_array
-
 
 /**
  * @file manager_chunk_inline.h
@@ -785,7 +783,6 @@ void ManagerChunk<CHUNK_T, T>::destroy_block_chunk()
         CHUNK_T<T>::allocator_data.destroy();
     }
 }
-
 
 /**
  * @brief Redistribute released buffers across the per-thread free-lists.

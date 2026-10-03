@@ -41,18 +41,18 @@
 
 #include <cmath>   // std::lround (the extrapolated materialised count)
 #include <cstddef> // std::size_t
-#include <cstdint>
-#include <cstdio> // std::printf (print)
-#include <vector>
+#include <cstdint> // int64_t, uint32_t
+#include <cstdio>  // std::printf (print)
+#include <vector>  // std::vector
 
-#include "chunk/internal/in_t.h"           // in_t<T>: the element snapshots
-#include "chunk/bit.h"                     // is_bool_like_v, is_packed_bit_v
-#include "chunk/internal/element_access.h" // internal::as_words: Bit sub-blocks scanned by word
-#include "chunk/internal/bit_words.h"      // bits::scan_range, bits::Uniform
-#include "chunk/config.h"                  // chunk_config::use_chunk2 / use_chunk2a
-#include "chunk/PMP_CHUNK.h"               // CHUNK_PMP_NUM_THREADS (the parts per thread)
-#include "chunk/internal/rechunk_cost_model.h"
-#include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size
+#include "chunk/internal/in_t.h"               // in_t<T>: the element snapshots
+#include "chunk/bit.h"                         // is_bool_like_v, is_packed_bit_v
+#include "chunk/internal/element_access.h"     // internal::as_words: Bit sub-blocks scanned by word
+#include "chunk/internal/bit_words.h"          // bits::scan_range, bits::Uniform
+#include "chunk/config.h"                      // chunk_config::use_chunk2 / use_chunk2a
+#include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_NUM_THREADS (the parts per thread)
+#include "chunk/internal/rechunk_cost_model.h" // rechunk_cost_ms, rechunk_is_worth_it
+#include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
 
 namespace shrink_array
 {

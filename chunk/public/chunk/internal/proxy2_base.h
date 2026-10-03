@@ -22,12 +22,12 @@
 #include <type_traits> // std::is_integral_v, std::is_same_v
 #include <utility>     // std::forward
 
-#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/config.h"
-#include "chunk/internal/concept_is_clean_assignement.h"
-#include "chunk/internal/def_force_inline.h" // FORCE_INLINE
-#include "chunk/internal/in_t.h"
-#include "chunk/internal/proxy_base.h"
+#include "chunk/bit.h"    // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/config.h" // chunk_config::use_fast_block_compression, build_config::do_check
+#include "chunk/internal/concept_is_clean_assignement.h" // base_t, ElementMultipliable, ElementModulable
+#include "chunk/internal/def_force_inline.h"             // FORCE_INLINE
+#include "chunk/internal/in_t.h"                         // in_t<T>
+#include "chunk/internal/proxy_base.h"                   // ProxyBase
 
 namespace shrink_array
 {
@@ -486,4 +486,4 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
 
 } // namespace shrink_array
 
-#include "chunk/internal/proxy2_base_inline.h"
+#include "chunk/internal/proxy2_base_inline.h" // the template bodies

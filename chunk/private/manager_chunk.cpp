@@ -18,7 +18,7 @@
 
 // The extern declaration of the global below (manager_chunk_inline.h, through
 // the facade).
-#include "chunk/internal/manager_chunk.h"
+#include "chunk/internal/manager_chunk.h" // extern __global_need_flush_deferred (manager_chunk_inline.h)
 
 namespace shrink_array
 {

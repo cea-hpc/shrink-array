@@ -33,8 +33,8 @@
  * @see array_chunk_parallel.h, array_chunk2_parallel.h for the other two variants
  */
 
-#include "chunk/config.h"
-#include "chunk/internal/array_chunk_parallel_common.h"
+#include "chunk/config.h"                               // build_config::use_openmp
+#include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, ParallelSupportCommonSerial
 
 namespace shrink_array
 {

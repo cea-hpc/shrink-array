@@ -46,17 +46,18 @@
  *       biggest tokens (default 40), =all prints them all.
  */
 
-#include <array>
+#include <array>     // std::array
 #include <algorithm> // std::sort, the report
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>  // malloc & co, std::getenv
-#include <cstring>  // std::strcmp
-#include <malloc.h> // memalign
-#include <stdlib.h> // ::posix_memalign: POSIX, not declared by <cstdlib>
-#include <new>
+#include <atomic>    // std::atomic, std::memory_order_relaxed
+#include <cstddef>   // std::size_t, std::ptrdiff_t
+#include <cstdint>   // std::uint64_t
+#include <cstdio>    // std::fprintf, std::fflush
+#include <cstdlib>   // malloc & co, std::getenv
+#include <cstring>   // std::strcmp
+#include <malloc.h>  // memalign
+#include <stdlib.h>  // ::posix_memalign: POSIX, not declared by <cstdlib>
+#include <new>       // std::align_val_t, std::nothrow_t
+
 #include "chunk/internal/env_parse.h" // env_number / env_flag (checked, not atoi)
 
 namespace

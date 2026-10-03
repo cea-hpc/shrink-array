@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-#include <type_traits>
+#include <type_traits> // std::remove_cvref_t, std::is_arithmetic_v
 
 namespace shrink_array
 {

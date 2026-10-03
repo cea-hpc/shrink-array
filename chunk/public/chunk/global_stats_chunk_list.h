@@ -18,15 +18,15 @@
  * limitations under the License.
  */
 
-#include <cstddef> // std::size_t
-#include <iomanip>
-#include <iostream>
-#include <map>
-#include <sstream> // std::ostringstream
-#include <string>
+#include <cstddef>  // std::size_t
+#include <iomanip>  // std::setw, std::setprecision
+#include <iostream> // std::cout
+#include <map>      // std::map
+#include <sstream>  // std::ostringstream
+#include <string>   // std::string
 
-#include "chunk/term_color.h"
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_* macros — used HERE, not via includers
+#include "chunk/term_color.h" // tc (TermColor)
+#include "chunk/PMP_CHUNK.h"  // CHUNK_PMP_* macros — used HERE, not via includers
 
 namespace shrink_array
 {

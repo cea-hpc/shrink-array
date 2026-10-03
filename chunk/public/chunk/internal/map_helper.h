@@ -17,9 +17,9 @@
 
 #pragma once
 
-#include <map>
+#include <map> // std::map
 
-#include "chunk/internal/value_less.h"
+#include "chunk/internal/value_less.h" // ValueLess
 
 // The map from a second value to its index, ordered by ValueLess (see
 // value_less.h for what that means per element type).

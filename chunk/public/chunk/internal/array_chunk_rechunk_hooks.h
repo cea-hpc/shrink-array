@@ -44,8 +44,8 @@
  * @see array_chunk_rechunk_hooks_inline.h for the bodies
  */
 
-#include "chunk/config.h"
-#include "chunk/chunk_traits.h"
+#include "chunk/config.h"       // build_config::chunk_dynamic
+#include "chunk/chunk_traits.h" // ArrayChunkTraits
 
 namespace shrink_array
 {

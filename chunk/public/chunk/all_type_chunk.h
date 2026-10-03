@@ -19,13 +19,13 @@
 //
 #pragma once
 
-#include <array>
-#include <atomic>
+#include <array>   // std::array
+#include <atomic>  // std::atomic
 #include <cstddef> // std::size_t
-#include <memory>
-#include <mutex>
-#include <span>
-#include <vector>
+#include <memory>  // std::unique_ptr
+#include <mutex>   // std::mutex, std::scoped_lock
+#include <span>    // std::span
+#include <vector>  // std::vector
 
 #include "chunk/config.h" // build_config:: mirrors that select the policies below
 
@@ -479,4 +479,4 @@ void print_all_reuse_pool_breakdown(const char* label);
 
 // Template method definitions (kept out of this header to avoid pulling the
 // full Chunk/Chunk2/Chunk2A definitions into every includer of AllTypeChunk.h).
-#include "chunk/internal/all_type_chunk_inline.h"
+#include "chunk/internal/all_type_chunk_inline.h" // the template bodies

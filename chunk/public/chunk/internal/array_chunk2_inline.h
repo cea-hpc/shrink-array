@@ -23,29 +23,29 @@
 #include <iostream>  // std::cerr
 #include <ostream>   // print_compression_stats(std::ostream&)
 #include <string>    // the healed-chunk report
-#include <vector>
+#include <vector>    // std::vector
 
 #include <sys/mman.h> // mprotect (use_mm_protect: the read-only cst_val2 blocks)
 #include <unistd.h>   // sysconf(_SC_PAGESIZE) (same)
 
-#include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
-#include "chunk/array_chunk2.h"
-#include "chunk/type_name.h"
-#include "chunk/singleton.h"
-#include "chunk/internal/proxy2.h"
-#include "chunk/internal/chunk_stats.h"
-#include "chunk/all_type_chunk.h"
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_*
-#include "chunk/internal/concept_array_chunk_element.h"
+#include "chunk/internal/in_t.h"                        // in_t<T>: the element snapshots
+#include "chunk/array_chunk2.h"                         // ArrayChunk2, the class these bodies belong to
+#include "chunk/type_name.h"                            // type_name<T>
+#include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::getRef
+#include "chunk/internal/proxy2.h"                      // Proxy2<T>
+#include "chunk/internal/chunk_stats.h"                 // increm_chunk_teardown_clear, add_chunk_released
+#include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
+#include "chunk/config.h"                               // chunk_config::use_fast_block_compression, chunk_config::stats
+#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*
+#include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 // Explicit includes for symbols used by clear_core() below: ManagerChunk
 // (per-size free-list + candidate-filter helpers), pool_ledger
 // (CHUNK_LEDGER_PARK/DISCARD), chunk_size_policy (runtime geometry). All
 // pragma-once; reachable transitively today, made explicit here so this TU
 // never depends on the include chain staying that way.
-#include "chunk/internal/manager_chunk.h"
-#include "chunk/internal/pool_ledger.h"
-#include "chunk/internal/chunk_size_policy.h"
+#include "chunk/internal/manager_chunk.h"     // ManagerChunk: per-size free lists, candidate filter
+#include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_PARK
+#include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, cst_buffer_size
 
 /**
  * @file array_chunk2_inline.h

@@ -40,9 +40,9 @@
  * @see array_chunk_parallel.h for v1's version of the same split
  */
 
-#include "chunk/config.h"
-#include "chunk/chunk_traits.h"
-#include "chunk/internal/array_chunk_parallel_common.h"
+#include "chunk/config.h"       // build_config::use_openmp, chunk_config::use_fast_block_compression
+#include "chunk/chunk_traits.h" // ArrayChunkTraits
+#include "chunk/internal/array_chunk_parallel_common.h" // ParallelSupportCommon, ParallelSupportCommonSerial
 
 namespace shrink_array
 {

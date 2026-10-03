@@ -16,8 +16,7 @@
 
 #pragma once
 
-#include <cassert>
-#include "chunk/config.h"
+#include "chunk/config.h" // build_config::any_check
 
 namespace shrink_array
 {
@@ -45,10 +44,10 @@ struct chunk_pmp_schedule
 } // namespace shrink_array
 
 #ifdef _OPENMP
-    #include <algorithm>
-    #include <atomic>
+    #include <algorithm> // std::max, std::min
+    #include <atomic>    // std::atomic
 
-    #include <omp.h>
+    #include <omp.h> // omp_get_thread_num, omp_get_max_threads, omp_in_parallel
 
     #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
     #include "chunk/internal/env_parse.h"       // CHUNK_THREAD_CAPACITY

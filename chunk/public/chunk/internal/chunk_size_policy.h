@@ -45,10 +45,10 @@
 // cst_buffer_size: the chunk size in static builds, chunk_dyn_max_size in
 // dynamic ones.
 
-#include <cstddef> // std::size_t (func_p2.h uses size_t unqualified)
-#include <type_traits>
+#include <cstddef>     // std::size_t (func_p2.h uses size_t unqualified)
+#include <type_traits> // std::conditional_t
 
-#include "chunk/config.h"
+#include "chunk/config.h"                     // build_config::chunk_dynamic, build_config::any_check
 #include "chunk/internal/func_p2.h"           // log2int (constexpr, also usable at run time)
 #include "chunk/internal/chunk_size_config.h" // __chunk_size / __decalage_chunk / __modulo_chunk
 #include "chunk/internal/invariant_check.h"   // INVARIANT_FAILED (non-power-of-two geometry)

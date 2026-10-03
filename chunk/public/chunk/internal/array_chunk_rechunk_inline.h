@@ -35,10 +35,10 @@
 #include <utility>     // std::swap (the array swap)
 #include <vector>      // the refill buffers
 
-#include "chunk/internal/in_t.h" // in_t<T>: the element snapshots
-#include "chunk/internal/array_chunk_base.h"
-#include "chunk/internal/array_chunk_core.h" // alloc_affinity_detail::RechunkStorageScope
-#include "chunk/internal/array_chunk_rechunk.h"
+#include "chunk/internal/in_t.h"                // in_t<T>: the element snapshots
+#include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase: self().set_chunk_size, invalidate_proxies
+#include "chunk/internal/array_chunk_core.h"    // alloc_affinity_detail::RechunkStorageScope
+#include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport, the class these bodies belong to
 #include "chunk/array_chunk_range_ops.h"        // copy_range -- the public bulk fill
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_rechunk* (CHUNK_STATS)
 #include "chunk/internal/compression_manager.h" // CompressionManager<>::FlushReplayGuard in rechunk_refill
@@ -46,9 +46,9 @@
 #include "chunk/internal/env_parse.h"           // env_number / env_flag (checked, not atoi)
 #include "chunk/internal/exact_rss.h"           // exact_rss_kib (rss_mib_now)
 #include "chunk/vector_range_ops.h"             // assume_drained
-#include "chunk/config.h"
-#include "chunk/chunk_traits.h"
-#include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size / set_active_chunk_size
+#include "chunk/config.h"                       // build_config::use_openmp, chunk_config::use_chunk2a
+#include "chunk/chunk_traits.h"                 // Proxy2A<T>
+#include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size / set_active_chunk_size
 
 namespace shrink_array::internal
 {

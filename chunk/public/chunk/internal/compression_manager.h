@@ -16,22 +16,22 @@
 
 #pragma once
 
-#include <vector>
-#include <cstdint>
+#include <vector>    // std::vector
+#include <cstdint>   // std::int32_t, std::uint64_t, int64_t
 #include <exception> // std::exception (record_enqueue_deferred)
-#include <utility>
-#include <atomic>
-#include <memory> // std::destroy_at
+#include <utility>   // std::move, std::forward
+#include <atomic>    // std::atomic, std::memory_order
+#include <memory>    // std::destroy_at
 
-#include "ankerl/unordered_dense.h"
+#include "ankerl/unordered_dense.h" // ankerl::unordered_dense::set
 
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h" // get_thr_rank_fast
-#include "chunk/internal/in_t.h"
-#include "chunk/ring_log_debug.h"
-#include "chunk/internal/invariant_check.h"
-#include "chunk/internal/chunk_size_policy.h" // t_active_chunk_size — per-op geometry pin in write_body
-#include "chunk/internal/deferred_op_pool.h"
+#include "chunk/config.h"                            // build_config::any_check, chunk_config::ring_log_debug
+#include "chunk/PMP_CHUNK.h"                         // get_thr_rank_fast
+#include "chunk/internal/in_t.h"                     // in_t<T>
+#include "chunk/ring_log_debug.h"                    // ring_log, get_tid, EV_*_THREAD_HAS_OPS
+#include "chunk/internal/invariant_check.h"          // INVARIANT_FAILED
+#include "chunk/internal/chunk_size_policy.h"        // t_active_chunk_size — per-op geometry pin in write_body
+#include "chunk/internal/deferred_op_pool.h"         // DeferredOperationBase
 #include "chunk/internal/deferred_lifecycle_check.h" // DEFERRED_LIFECYCLE sentinels
 #include "chunk/internal/chunk_stats.h"              // increm_chunk_gate_* (the handshake, rare side)
 
@@ -1111,4 +1111,4 @@ struct CompressionManager : public CompressionManagerOmpPolicy<T, ChunkType, bui
 
 } // namespace shrink_array
 
-#include "chunk/internal/compression_manager_inline.h"
+#include "chunk/internal/compression_manager_inline.h" // the template bodies

@@ -16,32 +16,32 @@
 
 #pragma once
 
-#include <algorithm> // std::min, std::copy_n, std::fill (the resize copy)
-#include <atomic>
-#include <cstdlib>   // std::abort (debug stubs)
-#include <exception> // std::exception (PointerMapChunk2A::erase)
-#include <iostream>  // std::cerr (debug stubs)
-#include <memory>    // std::unique_ptr
-#include <type_traits>
-#include <utility> // std::pair, std::swap
-#include <vector>
+#include <algorithm>   // std::min, std::copy_n, std::fill (the resize copy)
+#include <atomic>      // std::memory_order_relaxed
+#include <cstdlib>     // std::abort (debug stubs)
+#include <exception>   // std::exception (PointerMapChunk2A::erase)
+#include <iostream>    // std::cerr (debug stubs)
+#include <memory>      // std::unique_ptr
+#include <type_traits> // std::is_same_v
+#include <utility>     // std::pair, std::swap
+#include <vector>      // std::vector
 #ifndef __NVCOMPILER
-    #include <concepts>
+    #include <concepts> // std::assignable_from
 #endif
 
 #include <ankerl/unordered_dense.h> // PointerMapChunk2A::big
 
-#include "chunk/config.h"
-#include "chunk/internal/chunk_size_policy.h"
-#include "chunk/internal/concept_is_clean_assignement.h"
-#include "chunk/internal/crp_helper.h"
-#include "chunk/internal/in_t.h"
-#include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED
-#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
-#include "chunk/internal/TChunk.h"
-#include "chunk/internal/proxy_base.h"
-#include "chunk/internal/proxy2_base.h"
-#include "chunk/internal/dependent_false.h" // dependent_false_v (wrong-type branches)
+#include "chunk/config.h"                     // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
+#include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, set_thread_alloc_key
+#include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
+#include "chunk/internal/crp_helper.h"                   // CRTPSupport
+#include "chunk/internal/in_t.h"                         // in_t<T>
+#include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
+#include "chunk/internal/tab_cst_val2_holder.h"          // SecondValueRef
+#include "chunk/internal/TChunk.h"                       // TChunk2AComp
+#include "chunk/internal/proxy_base.h"                   // ProxyBase
+#include "chunk/internal/proxy2_base.h"                  // Proxy2Base
+#include "chunk/internal/dependent_false.h"              // dependent_false_v (wrong-type branches)
 
 namespace shrink_array
 {
@@ -1122,4 +1122,4 @@ std::ostream& operator<<(std::ostream& os, const Proxy2A<T>& proxy)
 
 } // namespace shrink_array
 
-#include "chunk/internal/proxy2A_inline.h"
+#include "chunk/internal/proxy2A_inline.h" // the template bodies

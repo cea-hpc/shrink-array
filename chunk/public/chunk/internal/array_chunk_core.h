@@ -46,15 +46,15 @@
  * @see array_chunk_for.h, which maps a chunk type to it for the proxies
  */
 
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
-#include <cstdlib> // std::getenv (CHUNK_ALLOC_AFFINITY_EAGER)
-#include <type_traits>
-#include <vector>
+#include <atomic>      // std::atomic (next_alloc_key_)
+#include <cstddef>     // std::size_t
+#include <cstdint>     // std::uint64_t
+#include <cstdlib>     // std::getenv (CHUNK_ALLOC_AFFINITY_EAGER)
+#include <type_traits> // std::conditional_t
+#include <vector>      // std::vector (chunk_list)
 
-#include "chunk/config.h"
-#include "chunk/chunk_traits.h"
+#include "chunk/config.h"                            // build_config::alloc_affinity_min_bytes, build_config::any_check
+#include "chunk/chunk_traits.h"                      // ChunkTraits (proxy_type, manager_type)
 #include "chunk/internal/chunk_size_policy.h"        // ActiveSizePolicy
 #include "chunk/internal/array_chunk_dirty_bitset.h" // DirtyBitsetSupport
 

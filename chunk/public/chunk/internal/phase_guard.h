@@ -41,9 +41,9 @@
  * make the calls themselves. Costs nothing elsewhere.
  */
 
-#include <atomic>
+#include <atomic> // std::atomic, std::memory_order_relaxed
 
-#include "chunk/config.h"
+#include "chunk/config.h" // build_config::any_check, build_config::has_not_ompt
 
 namespace shrink_array::phase_guard
 {

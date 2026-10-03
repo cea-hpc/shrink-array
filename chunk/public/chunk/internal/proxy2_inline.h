@@ -20,16 +20,16 @@
 #include <iostream>    // std::cerr (verbose)
 #include <type_traits> // std::remove_cvref_t
 
-#include "chunk/internal/in_t.h"
+#include "chunk/internal/in_t.h"          // in_t<T>
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/internal/proxy2.h"        // the declarations these bodies belong to
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/internal/arithmetic_context.h"
-#include "chunk/internal/chunk_size_policy.h"
-#include "chunk/internal/concept_is_clean_assignement.h"
-#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
-#include "chunk/internal/read_reclaim.h"    // read_reclaim::PassScope (perform_compression / compress in a region)
+#include "chunk/config.h"                 // chunk_config::use_compression_with_counter, build_config::chunk_dynamic
+#include "chunk/PMP_CHUNK.h"              // get_thr_rank_fast
+#include "chunk/internal/arithmetic_context.h"           // ArithmeticAffectationContext
+#include "chunk/internal/chunk_size_policy.h"            // DynChunkSizeGuard, set_thread_chunk_size
+#include "chunk/internal/concept_is_clean_assignement.h" // base_t
+#include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
+#include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 
 namespace shrink_array
 {

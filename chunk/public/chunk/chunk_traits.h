@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-#include "chunk/internal/concept_array_chunk_element.h"
+#include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 
 namespace shrink_array
 {

@@ -20,9 +20,9 @@
 
 #pragma once
 
-#include <climits>
-#include <variant>
-#include <type_traits>
+#include <climits>     // USHRT_MAX
+#include <variant>     // std::monostate
+#include <type_traits> // std::conditional_t
 
 #include "chunk/internal/chunk_size_config.h" // __chunk_size (compile-time)
 

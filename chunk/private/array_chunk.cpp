@@ -22,4 +22,4 @@
 // instantiations have been removed (Stage 5b): each ArrayChunk<T> the
 // consumer uses auto-instantiates at its use site (weak-symbol dedup).
 
-#include "chunk/array_chunk.h"
+#include "chunk/array_chunk.h" // its own header: ArrayChunk<T>, bodies in array_chunk_inline.h

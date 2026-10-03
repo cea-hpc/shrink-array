@@ -20,14 +20,14 @@
 // includes this file after the class). Only the one-liners stay in the class.
 
 #include <algorithm> // std::max
-#include <cstddef>
-#include <cstdio>
-#include <cstdlib> // std::getenv -- CHUNK_FORCE_RECHUNK debug hooks
-#include <cstring> // std::strcmp (CHUNK_ADVISOR_TABLE)
-#include <string>
+#include <cstddef>   // std::size_t
+#include <cstdio>    // std::fprintf, std::fflush, std::snprintf
+#include <cstdlib>   // std::getenv -- CHUNK_FORCE_RECHUNK debug hooks
+#include <cstring>   // std::strcmp (CHUNK_ADVISOR_TABLE)
+#include <string>    // std::string
 
-#include "chunk/rechunk_decider.h"
-#include "chunk/chunk_size_advisor.h"
+#include "chunk/rechunk_decider.h"             // the declarations these bodies belong to
+#include "chunk/chunk_size_advisor.h"          // ChunkSizeAdvisor, ChunkSizeReport
 #include "chunk/config.h"                      // build_config::chunk_dynamic
 #include "chunk/internal/env_parse.h"          // env_number / env_flag (checked, not atoi)
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_MAX_THREADS (the rebuild's team, for its cost)

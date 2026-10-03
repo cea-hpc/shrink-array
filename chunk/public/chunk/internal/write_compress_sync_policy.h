@@ -16,15 +16,14 @@
  * limitations under the License.
  */
 
-#include <vector>
-#include <memory>
-#include <atomic>
+#include <vector>  // std::vector
+#include <atomic>  // std::atomic, std::atomic_thread_fence, std::memory_order
 #include <cstdint> // uint32_t (the ring_log payloads)
 #include <mutex>   // std::once_flag / std::call_once — NOT just std::mutex; do not remove again
 
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/ring_log_debug.h"
+#include "chunk/config.h"         // chunk_config::asymmetric_dekker, chunk_config::ring_log_debug
+#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_THREAD_CAPACITY
+#include "chunk/ring_log_debug.h" // ring_log, get_tid
 
 #if defined(__linux__)
     #include <sys/syscall.h> // SYS_membarrier

@@ -24,12 +24,12 @@
 #include <limits>    // std::numeric_limits (max_size)
 #include <stdexcept> // std::out_of_range (at())
 
-#include "chunk/internal/array_chunk_base.h"
-#include "chunk/config.h"
+#include "chunk/internal/array_chunk_base.h"  // ArrayChunkBase, the class these bodies belong to
+#include "chunk/config.h"                     // build_config::chunk_dynamic, chunk_config::CheckNaN
 #include "chunk/internal/chunk_size_policy.h" // register_runtime_chunk_size / set_thread_chunk_size
-#include "chunk/internal/in_t.h"
-#include "chunk/internal/process_verbs.h" // compress_now_and_trim_pools -- shrink_to_fit()
-#include "chunk/PMP_CHUNK.h"              // CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/internal/in_t.h"              // in_t<T>
+#include "chunk/internal/process_verbs.h"     // compress_now_and_trim_pools -- shrink_to_fit()
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_IN_PARALLEL_REGION
 
 namespace shrink_array
 {

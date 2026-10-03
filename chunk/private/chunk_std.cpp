@@ -17,12 +17,12 @@
 #include <array>   // __chunk_stats (CHUNK_STATS only)
 #include <cstddef> // std::size_t
 
-#include "chunk/all_type_chunk.h"
-#include "chunk/chunk_std.h"
-#include "chunk/config.h"
+#include "chunk/all_type_chunk.h"         // AllTypeChunk
+#include "chunk/chunk_std.h"              // the declarations defined here (ChunkPoolParallelInterface)
+#include "chunk/config.h"                 // build_config::use_openmp, use_fast_alloc
 #include "chunk/internal/chunk_stats.h"   // ChunkStatsThr (CHUNK_STATS only)
 #include "chunk/internal/process_verbs.h" // compress_now_and_trim_pools, defined here
-#include "chunk/singleton.h"
+#include "chunk/singleton.h"              // SingletonChk
 
 namespace shrink_array
 {

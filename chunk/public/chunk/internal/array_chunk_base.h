@@ -41,14 +41,14 @@
 #include <utility>  // std::swap
 #include <iterator> // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
 
-#include "chunk/config.h"
-#include "chunk/internal/in_t.h"
-#include "chunk/chunk_traits.h"
-#include "chunk/internal/crp_helper.h"
+#include "chunk/config.h"                       // build_config::any_check, chunk_config::do_check
+#include "chunk/internal/in_t.h"                // in_t<T>
+#include "chunk/chunk_traits.h"                 // ArrayChunkTraits, Proxy2
+#include "chunk/internal/crp_helper.h"          // CRTPSupport
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED — used HERE (swap check)
-#include "chunk/internal/def_force_inline.h"
+#include "chunk/internal/def_force_inline.h"    // FORCE_INLINE
 
 namespace shrink_array
 {
@@ -1166,5 +1166,5 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
 } // namespace shrink_array
 
-#include "chunk/internal/array_chunk_base_inline.h"
-#include "chunk/internal/array_chunk_rechunk_inline.h"
+#include "chunk/internal/array_chunk_base_inline.h"    // the template bodies
+#include "chunk/internal/array_chunk_rechunk_inline.h" // the RechunkSupport bodies (CHUNK_DYNAMIC)

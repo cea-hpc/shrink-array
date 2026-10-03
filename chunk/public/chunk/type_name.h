@@ -14,11 +14,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include <typeinfo>
+#include <typeinfo> // typeid
 
-#include <cxxabi.h>
-#include <cstdlib> // std::free
-#include <string>
+#include <cxxabi.h> // abi::__cxa_demangle
+#include <cstdlib>  // std::free
+#include <string>   // std::string
 
 /// @brief Name of type T, demangled when possible.
 /// @return The demangled name, or typeid(T).name() when demangling fails.
