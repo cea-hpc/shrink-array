@@ -19,13 +19,13 @@
  */
 
 #include <cstddef> // std::size_t
+#include <map>     // std::map
+#include <string>  // std::string
 #include <format>  // std::format (format_memory)
-#include <map>
-#include <print> // std::println (print)
-#include <string>
+#include <print>   // std::println (print)
 
-#include "chunk/term_color.h"
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_* macros — used HERE, not via includers
+#include "chunk/term_color.h" // tc (TermColor)
+#include "chunk/PMP_CHUNK.h"  // CHUNK_PMP_* macros — used HERE, not via includers
 
 namespace shrink_array
 {

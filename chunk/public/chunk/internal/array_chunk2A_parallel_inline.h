@@ -20,5 +20,5 @@
 // Included at the end of array_chunk2A.h, after the class and its own inline
 // file, so the CRTP self() down-cast sees a complete Derived. The one body left,
 // flush_pending_deferred_ops(), is the shared one.
-#include "chunk/internal/array_chunk2A_parallel.h"
+#include "chunk/internal/array_chunk2A_parallel.h"             // ParallelSupport2A, the declarations completed here
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops

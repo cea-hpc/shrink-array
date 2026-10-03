@@ -31,12 +31,8 @@
     #define BZIP2
 #endif
 
-#ifdef BZIP2
-    #include <bzlib.h>
-#endif
-
 #ifdef _OPENMP
-    #include <omp.h>
+    #include <omp.h> // omp_get_max_threads (shrink_bench.cpp)
 #endif
 
 // Standard library headers that chunk/* transitively assumes but does not
@@ -44,37 +40,38 @@
 // bench TUs portable across libstdc++ (looser transitive includes) and
 // libc++ (stricter). If chunk/* gets its own hygiene pass later, this
 // block becomes redundant and can be trimmed.
-#include <algorithm>
-#include <array>
-#include <atomic>
-#include <chrono>
-#include <complex>
-#include <cstddef>
-#include <cstdint>
-#include <cstring>
-#include <fstream>
-#include <functional>
-#include <iomanip>
-#include <iostream>
-#include <iterator>
-#include <memory>
-#include <random>
-#include <sstream>
-#include <string>
-#include <tuple>
-#include <type_traits>
-#include <vector>
-#include <cstdlib>                    // std::getenv
+#include <algorithm>   // std::max (bench_sched_for); for chunk/*, see above
+#include <array>       // std::array, for chunk/*
+#include <atomic>      // std::atomic, for chunk/*
+#include <chrono>      // std::chrono, for chunk/*
+#include <complex>     // std::complex (complex_double)
+#include <cstddef>     // std::size_t (CACHE_LINE_SIZE)
+#include <cstdint>     // std::uint64_t, for chunk/*
+#include <cstring>     // std::memcpy, for chunk/*
+#include <fstream>     // std::ifstream, for chunk/*
+#include <functional>  // std::function, for chunk/*
+#include <iomanip>     // std::setw, for chunk/*
+#include <iostream>    // std::cout, for chunk/*
+#include <iterator>    // std::distance, for chunk/*
+#include <memory>      // std::unique_ptr, for chunk/*
+#include <random>      // std::mt19937, for chunk/*
+#include <sstream>     // std::ostringstream, for chunk/*
+#include <string>      // std::string, for chunk/*
+#include <tuple>       // std::tuple, for chunk/*
+#include <type_traits> // std::is_same_v, for chunk/*
+#include <vector>      // std::vector, for chunk/*
+#include <cstdlib>     // std::getenv
+
 #include "chunk/internal/env_parse.h" // env_number (BENCH_SCHED_BLOCK, before its use below)
 
 #include "bench_int.h" // Int / UInt: the bench index type (32- or 64-bit)
 
-#include "chunk/chunk_define.h"
-#include "chunk/term_color.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h"
-#include "chunk/singleton.h"
-#include "chunk/global_stats_chunk_list.h"
+#include "chunk/chunk_define.h"            // FAST_ALLOC (the bench TUs)
+#include "chunk/term_color.h"              // tc (the bench TUs)
+#include "chunk/PMP_CHUNK.h"               // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"             // begin_parallel_phase, finalize_barrier_phase (bench_phases.h)
+#include "chunk/singleton.h"               // SingletonChk (the bench TUs)
+#include "chunk/global_stats_chunk_list.h" // GlobalStatsChunkList (shrink_bench.cpp)
 
 #if (defined CHUNK || defined CHUNK2 || defined CHUNK2A)
     #define SHRINK_ARRAY
@@ -215,21 +212,19 @@ inline BenchSched bench_sched_for(Int start, Int end) noexcept
     #define NEED_COMPRESSION
 #endif
 
-#include "chunk/param_chunk.h"
-#include "chunk/config.h"
-#include "chunk/type_name.h"
-#include "chunk/chunk_std.h"
+#include "chunk/param_chunk.h" // ParamChunk (the bench TUs)
+#include "chunk/config.h"      // chunk_config::, build_config:: (the bench TUs)
+#include "chunk/type_name.h"   // type_name<T>() (shrink_bench.cpp)
 
 #ifdef CHUNK
-    #include "chunk/array_chunk.h"
+    #include "chunk/array_chunk.h" // ArrayChunk (the CHUNK variant)
 #elifdef CHUNK2
-    #include "chunk/array_chunk2.h"
-    #include "chunk/debug.h"
+    #include "chunk/array_chunk2.h" // ArrayChunk2 (the CHUNK2 variant)
 #elifdef CHUNK2A
-    #include "chunk/array_chunk2.h"
-    #include "chunk/array_chunk2A.h"
+    #include "chunk/array_chunk2.h"  // ArrayChunk2 (tab_bool, see bench_array.h)
+    #include "chunk/array_chunk2A.h" // ArrayChunk2A (the CHUNK2A variant)
 #else
-    #include <vector>
+    #include <vector> // std::vector (the baseline build)
 #endif
 
 using complex_double = std::complex<double>;

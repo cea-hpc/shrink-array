@@ -23,15 +23,15 @@
 #include <atomic>  // std::memory_order (nb_managers_)
 #include <cstdio>  // the refusal messages of register_manager
 #include <cstdlib> // std::abort
-#include <memory>
-#include <mutex>
+#include <memory>  // std::make_unique
+#include <mutex>   // std::scoped_lock (registry_mutex_)
 
-#include "chunk/all_type_chunk.h" // the declarations these bodies belong to
-#include "chunk/config.h"         // build_config::chunk_dynamic, chunk_config::use_chunk*
-#include "chunk/internal/for_each_type.h"
-#include "chunk/internal/manager_chunk.h"
-#include "chunk/singleton.h"    // SingletonChk<AllTypeChunk>, for ensure_manager
-#include "chunk/chunk_traits.h" // the Chunk / Chunk2 / Chunk2A declarations initialize<Types> names
+#include "chunk/all_type_chunk.h"         // the declarations these bodies belong to
+#include "chunk/config.h"                 // build_config::chunk_dynamic, chunk_config::use_chunk*
+#include "chunk/internal/for_each_type.h" // for_each_type
+#include "chunk/internal/manager_chunk.h" // ManagerChunk<CHUNK_T, T>
+#include "chunk/singleton.h"              // SingletonChk<AllTypeChunk>, for ensure_manager
+#include "chunk/chunk_traits.h"           // the Chunk / Chunk2 / Chunk2A declarations initialize<Types> names
 // Not the chunk definitions: a ManagerChunk<CHUNK_T, T> is only built at the
 // instantiation of register_manager<>, in the TU that constructs the array (and
 // so has the chunk), and including them here from the arrays' own headers

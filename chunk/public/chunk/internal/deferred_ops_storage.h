@@ -1,10 +1,10 @@
 #pragma once
 
-#include <vector>
-#include <atomic>
-#include <memory>
-#include <mutex>
-#include <utility>           // std::move
+#include <vector>  // std::vector
+#include <atomic>  // std::atomic, std::memory_order
+#include <mutex>   // std::mutex, std::scoped_lock
+#include <utility> // std::move
+
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_* macros — used HERE, not via includers
 
 namespace shrink_array

@@ -32,9 +32,9 @@
 
 #include <algorithm> // std::min
 #include <cstdint>   // int32_t
-#include <vector>
+#include <vector>    // std::vector
 
-#include "bench_phases.h"
+#include "bench_phases.h" // bench_phase_struct_* (defined here), BenchArrays
 
 // ─── Fill ────────────────────────────────────────────────────────────────────
 // The same partition as bench_phase_fill: [0, sz/2) stays at the null element

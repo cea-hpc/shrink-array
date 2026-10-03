@@ -33,27 +33,27 @@
  * manage_ompt.cpp drive the library.
  */
 
-#include <cstdio>
-#include <cstdlib>
-#include <print>
-#include <vector>
-#include <functional>
-#include <fstream>
-#include <type_traits>
-#include <chrono>
+#include <cstdlib>     // std::abort
+#include <vector>      // std::vector
+#include <functional>  // std::function
+#include <fstream>     // std::ofstream
+#include <type_traits> // std::is_same_v, std::remove_reference_t
+#include <chrono>      // std::chrono::steady_clock
 
-#include <unistd.h>
-#include <sys/resource.h>
+#include <unistd.h>       // getpagesize
+#include <sys/resource.h> // getrusage
+#include <cstdio>         // stderr
+#include <print>          // std::println, std::print
 
-#include "chunk/param_chunk.h"
+#include "chunk/param_chunk.h"                // ParamChunk
 #include "chunk/internal/chunk_size_config.h" // __chunk_size
 
-#include "config.h"
-#include "MultiMatAlgo.h"
+#include "config.h"       // multi_mat::max_threads, embedded_compression
+#include "MultiMatAlgo.h" // MultiMatAlgo
 #include "ComputeLoops.h" // Simu::computeLoops, the template main() instantiates
-#include "Containers.h"
-#include "Dispatch.h"
-#include "Simu.h"
+#include "Containers.h"   // VectChunk
+#include "Dispatch.h"     // Dispatch
+#include "Simu.h"         // Simu
 
 using namespace shrink_array;
 

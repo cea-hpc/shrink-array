@@ -19,7 +19,7 @@
 
 #pragma once
 
-#include <cstddef>
+#include <cstddef> // std::size_t
 
 /**
  * @file process_verbs.h

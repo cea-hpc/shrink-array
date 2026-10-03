@@ -17,19 +17,19 @@
 /// @file bench_stats.cpp
 /// @brief The value census and filling-rate report. See bench_phases.h.
 
-#include <algorithm> // std::max (name_padding)
-#include <complex>
-#include <cstddef> // std::size_t
-#include <cstdio>  // std::fflush
-#include <print>
-#include <sstream> // the label of the second value (its operator<<)
-#include <string>
-#include <type_traits>
+#include <algorithm>   // std::max (name_padding)
+#include <complex>     // operator== on complex_double
+#include <cstddef>     // std::size_t
+#include <sstream>     // std::ostringstream
+#include <string>      // std::string
+#include <type_traits> // std::is_same_v
+#include <cstdio>      // std::fflush
+#include <print>       // std::println, std::print
 
 #include "bench_config.h"  // the CONSTEXPR macro
 #include "bench_prelude.h" // Proxy2<T>::share_info_array (share_info line)
-#include "bench_phases.h"
-#include "bench_utils.h" // calculate_checksum
+#include "bench_phases.h"  // bench_stats, bench_print_checksums (defined here)
+#include "bench_utils.h"   // calculate_checksum
 
 void bench_stats(BenchArrays& bench_arr, bool stats)
 {

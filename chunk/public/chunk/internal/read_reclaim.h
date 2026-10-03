@@ -63,15 +63,15 @@
  *          whenever any of it is touched.
  */
 
-#include <algorithm>
-#include <atomic>
-#include <cstdint>
-#include <thread>
-#include <vector>
+#include <algorithm> // std::min
+#include <atomic>    // std::atomic, std::atomic_thread_fence, std::memory_order
+#include <cstdint>   // std::uint64_t
+#include <thread>    // std::this_thread::yield
+#include <vector>    // std::vector
 
-#include "chunk/config.h"
-#include "chunk/internal/chunk_size_policy.h" // t_active_chunk_size / t_alloc_key, restored per released block
-#include "chunk/internal/cpu_pause.h"
+#include "chunk/config.h"                              // build_config::use_openmp
+#include "chunk/internal/chunk_size_policy.h"          // t_active_chunk_size / t_alloc_key, restored per released block
+#include "chunk/internal/cpu_pause.h"                  // CPU_PAUSE
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::heavy_barrier / asymmetric_active
 
 #ifndef CHUNK_READ_RECLAIM_SLOTS

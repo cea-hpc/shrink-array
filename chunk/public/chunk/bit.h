@@ -41,7 +41,7 @@
  *          bool, which keeps `bit == true` unambiguous.
  */
 
-#include <type_traits>
+#include <type_traits> // std::is_same_v, std::is_trivially_copyable_v
 
 namespace shrink_array
 {

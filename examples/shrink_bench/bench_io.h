@@ -21,22 +21,22 @@
 // values of a 512-wide chunk.
 
 
-#include "bench_prelude.h"
+#include "bench_prelude.h" // Int, UInt, chunk_config::, build_config::has_bzip2
 
-#include <algorithm>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib> // std::abort
-#include <fstream>
-#include <sstream> // the diagnostic strings (format_val, the address dumps)
-#include <string>
-#include <unistd.h> // unlink
-#include <format>
-#include <print>
-#include <vector>
+#include <algorithm> // std::max
+#include <cstddef>   // size_t
+#include <cstdint>   // std::uint64_t, std::uintptr_t
+#include <cstdlib>   // std::abort
+#include <fstream>   // std::ifstream, std::ofstream
+#include <sstream>   // std::ostringstream
+#include <string>    // std::string, std::to_string, std::getline
+#include <unistd.h>  // unlink
+#include <format>    // std::format
+#include <vector>    // std::vector
+#include <cstdio>    // stdout, stderr, std::fflush
+#include <print>     // std::println, std::print
 
-#include "bench_utils.h"
+#include "bench_utils.h"          // is_vector
 #include "chunk/ring_log_debug.h" // SEGV hunt: analyze_ring_sweep / dump_ring decls
 
 // -----------------------------------------------------------------------------

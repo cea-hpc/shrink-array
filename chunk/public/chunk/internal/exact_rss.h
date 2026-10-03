@@ -29,11 +29,11 @@
  * cost ~3 s. Fine for traces and checkpoints; never on a periodic hot path.
  */
 
-#include <atomic>
-#include <chrono>
-#include <cstdio>
-#include <thread>
-#include <unistd.h>
+#include <atomic>   // std::atomic, std::memory_order
+#include <chrono>   // std::chrono::milliseconds
+#include <cstdio>   // std::FILE, std::fopen, std::fclose
+#include <thread>   // std::thread, std::this_thread::sleep_for
+#include <unistd.h> // sysconf(_SC_PAGESIZE)
 
 namespace shrink_array
 {

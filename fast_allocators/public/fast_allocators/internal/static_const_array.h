@@ -51,17 +51,16 @@
  * static_const_array_define.h only keeps MAX_CONST_BLOCK_SIZE.
  */
 
-#include <array>
+#include <array>   // std::array
 #include <cassert> // TypeAllocator::alloc: the size its free will route by
 #include <cstddef> // std::size_t
 
-#include "fast_allocators/internal/svalloc.h"
+#include "fast_allocators/internal/svalloc.h"   // __ALIGNEMENT__
 #include "fast_allocators/internal/pmp_alloc.h" // PMP_MAX_THREADS / PMP_THREAD_RANK / PMP_IN_PARALLEL_REGION
 
-#include "fast_allocators/internal/int_alloc.h"
+#include "fast_allocators/internal/int_alloc.h"    // int_alloc, int_free
 #include "fast_allocators/internal/alloc_config.h" // constexpr mirror of STD_ALLOC
-#include "fast_allocators/tc_allocator.h"
-#include "fast_allocators/internal/static_const_array_define.h" // MAX_CONST_BLOCK_SIZE, for the _inline.h part
+#include "fast_allocators/tc_allocator.h"          // TCTypeAllocatorEBC
 
 /**
  * @brief A per-thread batch of blocks freed but not yet returned to the ladder.
@@ -90,11 +89,11 @@ class InfoFreeElt
     /// @brief Batch capacity, in blocks. The other bound is 4 MiB of payload.
     static constexpr int max_free_elt = 10000;
 
-    int* somme_sz{nullptr};
+    int* somme_sz{nullptr}; ///< Per rank: bytes batched, bounded at 4 MiB.
 
   public:
-    using IntMaxFreeElt  = std::array<int, max_free_elt>;
-    using VoidMaxFreeElt = void* [max_free_elt];
+    using IntMaxFreeElt  = std::array<int, max_free_elt>; ///< One rank's batched sizes.
+    using VoidMaxFreeElt = void* [max_free_elt];          ///< One rank's batched blocks.
 
     /// @brief Allocates the four per-thread arrays, sized by PMP_MAX_THREADS.
     ///        A serial build has no batching to do and allocates nothing (the
@@ -150,9 +149,9 @@ class InfoFreeElt
         somme_sz[thr_rank] = compt[thr_rank] = 0;
     }
 
-    VoidMaxFreeElt* tab_ptr{nullptr};
-    IntMaxFreeElt*  tab_sz{nullptr};
-    int*            compt{nullptr};
+    VoidMaxFreeElt* tab_ptr{nullptr}; ///< Per rank: the batched blocks.
+    IntMaxFreeElt*  tab_sz{nullptr};  ///< Per rank: their sizes.
+    int*            compt{nullptr};   ///< Per rank: how many are batched.
 
     /// @brief Ranks the four arrays were sized for (PMP_MAX_THREADS at
     ///        construction); 0 in a serial build, which allocates nothing.
@@ -218,27 +217,27 @@ class StaticConstArray
     // main() returns cleanly with every in-run integrity check passing.
     // A reference has no destructor of its own to run, so leaking the
     // pointee here is intentional and harmless, matching the arena.
-    static inline TCTypeAllocatorEBC<4, SIZE_BLOCK>&   _Allocator4   = *(new TCTypeAllocatorEBC<4, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<8, SIZE_BLOCK>&   _Allocator8   = *(new TCTypeAllocatorEBC<8, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<16, SIZE_BLOCK>&  _Allocator16  = *(new TCTypeAllocatorEBC<16, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<32, SIZE_BLOCK>&  _Allocator32  = *(new TCTypeAllocatorEBC<32, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<64, SIZE_BLOCK>&  _Allocator64  = *(new TCTypeAllocatorEBC<64, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<128, SIZE_BLOCK>& _Allocator128 = *(new TCTypeAllocatorEBC<128, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<256, SIZE_BLOCK>& _Allocator256 = *(new TCTypeAllocatorEBC<256, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<512, SIZE_BLOCK>& _Allocator512 = *(new TCTypeAllocatorEBC<512, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<1024, 2 * SIZE_BLOCK>& _Allocator1024 =
+    static inline TCTypeAllocatorEBC<4, SIZE_BLOCK>&        bucket4   = *(new TCTypeAllocatorEBC<4, SIZE_BLOCK>());
+    static inline TCTypeAllocatorEBC<8, SIZE_BLOCK>&        bucket8   = *(new TCTypeAllocatorEBC<8, SIZE_BLOCK>());
+    static inline TCTypeAllocatorEBC<16, SIZE_BLOCK>&       bucket16  = *(new TCTypeAllocatorEBC<16, SIZE_BLOCK>());
+    static inline TCTypeAllocatorEBC<32, SIZE_BLOCK>&       bucket32  = *(new TCTypeAllocatorEBC<32, SIZE_BLOCK>());
+    static inline TCTypeAllocatorEBC<64, SIZE_BLOCK>&       bucket64  = *(new TCTypeAllocatorEBC<64, SIZE_BLOCK>());
+    static inline TCTypeAllocatorEBC<128, SIZE_BLOCK>&      bucket128 = *(new TCTypeAllocatorEBC<128, SIZE_BLOCK>());
+    static inline TCTypeAllocatorEBC<256, SIZE_BLOCK>&      bucket256 = *(new TCTypeAllocatorEBC<256, SIZE_BLOCK>());
+    static inline TCTypeAllocatorEBC<512, SIZE_BLOCK>&      bucket512 = *(new TCTypeAllocatorEBC<512, SIZE_BLOCK>());
+    static inline TCTypeAllocatorEBC<1024, 2 * SIZE_BLOCK>& bucket1024 =
         *(new TCTypeAllocatorEBC<1024, 2 * SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<2048, 4 * SIZE_BLOCK>& _Allocator2048 =
+    static inline TCTypeAllocatorEBC<2048, 4 * SIZE_BLOCK>& bucket2048 =
         *(new TCTypeAllocatorEBC<2048, 4 * SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<4096, 8 * SIZE_BLOCK>& _Allocator4096 =
+    static inline TCTypeAllocatorEBC<4096, 8 * SIZE_BLOCK>& bucket4096 =
         *(new TCTypeAllocatorEBC<4096, 8 * SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<8192, 16 * SIZE_BLOCK>& _Allocator8192 =
+    static inline TCTypeAllocatorEBC<8192, 16 * SIZE_BLOCK>& bucket8192 =
         *(new TCTypeAllocatorEBC<8192, 16 * SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<16384, 16 * SIZE_BLOCK>& _Allocator16384 =
+    static inline TCTypeAllocatorEBC<16384, 16 * SIZE_BLOCK>& bucket16384 =
         *(new TCTypeAllocatorEBC<16384, 16 * SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<32768, 16 * SIZE_BLOCK>& _Allocator32768 =
+    static inline TCTypeAllocatorEBC<32768, 16 * SIZE_BLOCK>& bucket32768 =
         *(new TCTypeAllocatorEBC<32768, 16 * SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<65536, 32 * SIZE_BLOCK>& _Allocator65536 =
+    static inline TCTypeAllocatorEBC<65536, 32 * SIZE_BLOCK>& bucket65536 =
         *(new TCTypeAllocatorEBC<65536, 32 * SIZE_BLOCK>());
 
   protected:
@@ -421,47 +420,47 @@ struct BlkAllocator : public StaticConstArray
 /**
  * @brief Ladder front end for a fixed element TYPE.
  *
- * @tparam _ElementType The type whose `sizeof` is the block size.
+ * @tparam ElemT The type whose `sizeof` is the block size.
  *
  * @details Same fallback as ::BlkAllocator (a bucket, malloc past the top of
  *          the ladder), with a shortcut: 8 and 24 bytes are
  *          by far the most common sizes here, so they go straight to
  *          ::Allocator8 / ::Allocator24 instead of walking the ladder.
  */
-template <typename _ElementType>
+template <typename ElemT>
 class FixedSizeAllocator : private StaticConstArray
 {
   public:
-    /// @brief One block of `sizeof(_ElementType)` bytes.
+    /// @brief One block of `sizeof(ElemT)` bytes.
     static void* alloc_block()
     {
         if constexpr (alloc_config::use_std_alloc)
         {
-            return int_alloc(sizeof(_ElementType));
+            return int_alloc(sizeof(ElemT));
         }
         else
         {
-            if (sizeof(_ElementType) == 8)
+            if (sizeof(ElemT) == 8)
             {
                 return shortcut_alloc(Allocator8);
             }
-            if (sizeof(_ElementType) == 24)
+            if (sizeof(ElemT) == 24)
             {
                 return shortcut_alloc(Allocator24);
             }
 
-            void* ptr = getBlockAlloc(sizeof(_ElementType));
+            void* ptr = getBlockAlloc(sizeof(ElemT));
 
             if (!ptr)
             {
-                return int_alloc(sizeof(_ElementType));
+                return int_alloc(sizeof(ElemT));
             }
 
             return ptr;
         }
     }
 
-    /// @brief One block of @p size bytes, ignoring `sizeof(_ElementType)`.
+    /// @brief One block of @p size bytes, ignoring `sizeof(ElemT)`.
     /// @note Used by ::TypeAllocator, where the caller knows the size and the
     ///       type parameter only selects the pool.
     static void* alloc_block(size_t size)
@@ -493,9 +492,9 @@ class FixedSizeAllocator : private StaticConstArray
     }
 
     /// @brief Give back a block from either alloc_block() overload.
-    /// @warning Routes by `sizeof(_ElementType)`, NOT by the size the block was
+    /// @warning Routes by `sizeof(ElemT)`, NOT by the size the block was
     ///          actually taken with. A block from `alloc_block(size)` with
-    ///          `size != sizeof(_ElementType)` goes back to the wrong bucket;
+    ///          `size != sizeof(ElemT)` goes back to the wrong bucket;
     ///          TypeAllocator::alloc() asserts it never is.
     static void free_block(void* ptr)
     {
@@ -510,17 +509,17 @@ class FixedSizeAllocator : private StaticConstArray
         }
         else
         {
-            if (sizeof(_ElementType) == 8)
+            if (sizeof(ElemT) == 8)
             {
                 shortcut_free(Allocator8, ptr);
             }
-            else if (sizeof(_ElementType) == 24)
+            else if (sizeof(ElemT) == 24)
             {
                 shortcut_free(Allocator24, ptr);
             }
             else
             {
-                if (freeBlock(sizeof(_ElementType), ptr))
+                if (freeBlock(sizeof(ElemT), ptr))
                 {
                     return;
                 }
@@ -602,8 +601,9 @@ struct TypeAllocator
  * @param sum_nn_ref Bytes currently handed out.
  * @param alloc_sz Bytes held in blocks, whether handed out or not.
  * @details Walks the ladder, then the registry of ::TCTypeAllocator instances.
- * @note Serial builds only report the registry part -- see the note there.
+ * @note Only a serial build fills the registry, so an OpenMP build reports
+ *       the ladder alone.
  */
 void compute_sum_allocated_size_TCAlloc(size_t& sum_UsedSize, size_t& sum_nn_ref, size_t& alloc_sz);
 
-#include "fast_allocators/internal/static_const_array_inline.h"
+#include "fast_allocators/internal/static_const_array_inline.h" // the template bodies

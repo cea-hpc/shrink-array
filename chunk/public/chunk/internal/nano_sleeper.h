@@ -17,8 +17,8 @@
 
 #pragma once
 
-#include <chrono>
-#include <random>
+#include <chrono> // std::chrono
+#include <random> // std::mt19937, std::uniform_int_distribution
 
 namespace shrink_array
 {

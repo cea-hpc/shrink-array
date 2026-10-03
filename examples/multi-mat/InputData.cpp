@@ -25,17 +25,17 @@
  * behind `if constexpr`, compiled in every build.
  */
 
-#include <format>
+#include <iostream>    // std::cout, std::cerr, std::cin
+#include <random>      // std::mt19937, std::uniform_int_distribution
+#include <string>      // std::string, std::stoi, std::stod
+#include <stdexcept>   // std::invalid_argument, std::out_of_range
+#include <algorithm>   // std::max
+#include <format>      // std::format
 #include <type_traits> // std::is_floating_point_v (shown)
-#include <iostream>    // std::cin, std::getline
-#include <print>
-#include <random>
-#include <string>
-#include <stdexcept>
-#include <algorithm>
+#include <print>       // std::println, std::print
 
-#include "config.h"
-#include "Simu.h"
+#include "config.h" // multi_mat::interactive_input
+#include "Simu.h"   // Simu::inputData
 
 namespace
 {

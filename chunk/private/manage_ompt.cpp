@@ -34,24 +34,25 @@
  * @see chunk/manage_ompt.h for the semantics of the phase transitions.
  */
 
-#include <array>
+#include <array>     // std::array
 #include <algorithm> // std::min (CHUNK_OMPT_STATS report)
-#include <atomic>
-#include <chrono> // CHUNK_OMPT_STATS: time spent flushing
-#include <cstdint>
-#include <cstdio>  // CHUNK_OMPT_STATS report
-#include <cstdlib> // std::getenv, std::abort (CHUNK_REQUIRE_OMPT)
-#include <cstring> // std::strlen (the refused callbacks' list)
+#include <atomic>    // std::atomic, std::memory_order
+#include <chrono>    // CHUNK_OMPT_STATS: time spent flushing
+#include <cstdint>   // std::uint64_t
+#include <cstdio>    // CHUNK_OMPT_STATS report
+#include <cstdlib>   // std::getenv, std::abort (CHUNK_REQUIRE_OMPT)
+#include <cstring>   // std::strlen (the refused callbacks' list)
 
-#include "chunk/config.h"
-#include "chunk/singleton.h"
-#include "chunk/manage_ompt.h"
+#include "chunk/config.h"      // g_ompt_suspended (defined here), chunk_config::is_shrink_enabled
+#include "chunk/singleton.h"   // SingletonChk
+#include "chunk/manage_ompt.h" // begin_parallel_phase, finalize_parallel_phase, finalize_barrier_phase
+#include "chunk/PMP_CHUNK.h"   // g_fast_omp_rank
 
-#include "chunk/all_type_chunk.h"
+#include "chunk/all_type_chunk.h"          // AllTypeChunk
 #include "chunk/internal/churn_counters.h" // churn::note_phase_end
 
 #ifdef HAVE_OMPT
-    #include <omp-tools.h>
+    #include <omp-tools.h> // ompt_set_callback, ompt_start_tool_result_t
 #endif
 
 // Stays a directive: it gates the WHOLE translation unit -- the global switch
@@ -63,7 +64,6 @@
     // Directive, like all_type_chunk.cpp's: a std-alloc build does not put
     // fast_allocators/public on the include path at all.
     #ifndef CHUNK_STD_ALLOC
-        #include "fast_allocators/tc_allocator.h"
         #include "fast_allocators/internal/static_const_array.h" // StaticConstArray::clearInfoFreeElt
     #endif
 
@@ -208,7 +208,6 @@ void ompt_finalize(ompt_data_t*)
     }
     std::fflush(stderr);
 }
-} // namespace
 
 /**
  * @brief `ompt_callback_implicit_task`: start/end of a thread's implicit task.
@@ -240,7 +239,7 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
     }
     if (endpoint != ompt_scope_begin || g_ompt_suspended.load(std::memory_order_relaxed) != 0)
     {
-        shrink_array::__fast_omp_rank = -1; // recomputed on the next get_thr_rank_fast()
+        shrink_array::g_fast_omp_rank = -1; // recomputed on the next get_thr_rank_fast()
         return;
     }
     // ompt_scope_begin is the start of the thread's work in the parallel region:
@@ -263,7 +262,7 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
  * comments, which record why each suppression is needed and what regressed
  * when it was missing.
  */
-static void parallel_end_chunk_work()
+void parallel_end_chunk_work()
 {
     shrink_array::churn::note_phase_end(); // one compression phase (churn_counters.h)
     // Vector-mode build: chunk lib is inactive, nothing to finalize.
@@ -325,10 +324,10 @@ static void parallel_end_chunk_work()
  *          flush takes no lock, so no rank may be freeing meanwhile. A nested
  *          region's end leaves its batches to the enclosing one's.
  */
-static void flush_allocator_free_batches()
+void flush_allocator_free_batches()
 {
     #ifndef CHUNK_STD_ALLOC
-    if (!omp_in_parallel())
+    if (omp_in_parallel() == 0)
     {
         StaticConstArray::clearInfoFreeElt();
     }
@@ -445,7 +444,7 @@ void on_barrier_end(ompt_sync_region_t    kind,
 /**
  * @brief OMPT tool initialiser, called once by the runtime at startup.
  *
- * Looks up `ompt_set_callback` and registers the four callbacks above. If the
+ * Looks up `ompt_set_callback` and registers the three callbacks above. If the
  * lookup fails the tool stays inert (an error is printed): no phase transition
  * happens at all, which shows up as retained memory rather than as a crash.
  *
@@ -456,7 +455,7 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
 {
     {
         const char* env = std::getenv("CHUNK_OMPT_STATS");
-        g_ompt_stats    = env && env[0] && env[0] != '0'; // before any team: no race
+        g_ompt_stats    = env != nullptr && env[0] != '\0' && env[0] != '0'; // before any team: no race
     }
 
     auto ompt_set_callback = (ompt_set_callback_t)lookup("ompt_set_callback");
@@ -488,6 +487,8 @@ int ompt_initialize(ompt_function_lookup_t lookup, int, ompt_data_t*)
     }
     return 1;
 }
+
+} // namespace
 
 /**
  * @brief OMPT entry point looked up by the OpenMP runtime at program start.

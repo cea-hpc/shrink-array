@@ -22,7 +22,7 @@
 #include <cstdint> // uint8_t (EventCode underlying type)
 #include <cstdio>  // std::fprintf/std::snprintf — used HERE, not via includers
 
-#include "chunk/config.h"
+#include "chunk/config.h" // chunk_config::ring_log_debug, RING_LOG_ANY
 
 namespace shrink_array
 {

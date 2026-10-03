@@ -37,22 +37,21 @@
 // ambient chunk size, the registries -- so they run in separate processes,
 // never side by side in one).
 
-#include <cstdlib>
-#include <cstdio>
-#include <cstring>
-#include <print>
-#include <functional>
-#include <string>
-#include <vector>
-#include <cmath>
-#include <type_traits>
-#include <unistd.h>
+#include <cstdio>      // printf, fprintf
+#include <cstring>     // std::strcmp
+#include <functional>  // std::function
+#include <string>      // std::string
+#include <vector>      // std::vector
+#include <cmath>       // std::floor, std::sin
+#include <type_traits> // std::conditional_t
+#include <unistd.h>    // getpagesize
+#include <print>       // std::println
 
-#include "chunk/chunk_traits.h" // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
+#include "chunk/chunk_traits.h"               // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"                // ArrayChunk
+#include "chunk/array_chunk2.h"               // ArrayChunk2
+#include "chunk/array_chunk2A.h"              // ArrayChunk2A
+#include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 #include "chunk/config.h"                     // chunk_config::use_chunk*
 #include "chunk/array_chunk_range_ops.h"      // fill_range / copy_range
@@ -411,7 +410,6 @@ int check_coexistence(const char* label, long N, unsigned moved_size, int rounds
     }
     return bad ? 1 : 0;
 }
-
 
 // ── RANGE OPS ────────────────────────────────────────────────────────────────
 // fill_range / copy_range take one decision per CHUNK where operator[] takes one

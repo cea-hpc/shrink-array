@@ -33,7 +33,7 @@
     // the AArch64 cluster always had the `yield` instruction above.
     #define CPU_PAUSE() __builtin_ia32_pause()
 #elif defined(_M_IX86) || defined(_M_X64) // x86/x64, MSVC
-    #include <intrin.h>
+    #include <intrin.h>                   // _mm_pause
     #define CPU_PAUSE() _mm_pause()
 #else
     #define CPU_PAUSE() std::this_thread::yield()

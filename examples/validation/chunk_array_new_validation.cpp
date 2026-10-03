@@ -37,19 +37,18 @@
 //
 // EXIT STATUS: 0 when every chunk of every case is at the first constant.
 
-#include <cstdio>
-#include <cstdlib>
-#include <print>
-#include <type_traits>
-#include <unistd.h>
+#include <cstdio>      // printf
+#include <type_traits> // std::conditional_t
+#include <unistd.h>    // getpagesize
+#include <print>       // std::println
 
-#include "chunk/chunk_traits.h" // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
-#include "chunk/config.h"    // chunk_config::use_chunk*
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS
+#include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"   // Chunk<T> complete (chunk_std.h): its operator new[]
+#include "chunk/array_chunk2.h"  // Chunk2<T> complete (chunk2_std.h): its operator new[]
+#include "chunk/array_chunk2A.h" // Chunk2A<T> complete (chunk2A_std.h): its operator new[]
+#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
+#include "chunk/config.h"        // chunk_config::use_chunk*
+#include "chunk/PMP_CHUNK.h"     // CHUNK_PMP_MAX_THREADS
 
 // The *OmpPolicy serial specialisations declare no array-new, so there is
 // nothing to test without OpenMP; CMake builds this target under OMP alone.

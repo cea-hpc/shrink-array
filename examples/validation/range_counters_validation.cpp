@@ -41,24 +41,23 @@
 //
 // Exit 0 = every check holds. Any thread count.
 
-#include <cstddef>
-#include <cstdio>
-#include <cstdlib>
-#include <print>
-#include <type_traits>
-#include <utility>
-#include <unistd.h>
-#include <vector>
+#include <cstddef>     // std::size_t
+#include <cstdio>      // std::printf
+#include <type_traits> // std::conditional_t
+#include <utility>     // std::as_const
+#include <unistd.h>    // getpagesize
+#include <vector>      // std::vector
+#include <print>       // std::println
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/array_chunk_range_ops.h"
-#include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"
-#include "chunk/manage_ompt.h"
+#include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"           // ArrayChunk
+#include "chunk/array_chunk2.h"          // ArrayChunk2
+#include "chunk/array_chunk2A.h"         // ArrayChunk2A
+#include "chunk/array_chunk_range_ops.h" // fill_range, copy_range
+#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"             // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"                // chunk_config::use_chunk2*, use_compression_with_counter
+#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 
 #include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
 

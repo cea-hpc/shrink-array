@@ -27,8 +27,8 @@
 // every example .cpp. Individual examples that only need a subset are
 // encouraged to declare their own tuple locally rather than pulling this one.
 
-#include <complex>
-#include <tuple>
+#include <complex> // std::complex
+#include <tuple>   // std::tuple (MyChunkTypes)
 
 using MyChunkTypes =
     std::tuple<int, double, bool, short, unsigned long, long, std::complex<double>, float, unsigned char>;

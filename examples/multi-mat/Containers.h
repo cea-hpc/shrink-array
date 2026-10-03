@@ -22,11 +22,11 @@
  *        base, and the multi-material array that holds one per material.
  */
 
-#include <vector>
+#include <vector> // std::vector
 
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "Dispatch.h"
+#include "chunk/array_chunk.h"  // shrink_array::ArrayChunk
+#include "chunk/array_chunk2.h" // shrink_array::ArrayChunk2
+#include "Dispatch.h"           // Dispatch (extern dispatch)
 
 extern Dispatch dispatch;
 

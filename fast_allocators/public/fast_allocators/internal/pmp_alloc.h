@@ -16,7 +16,7 @@
 // inline-header include order. Mirrors chunk's public/chunk/PMP_CHUNK.h.
 
 #ifdef _OPENMP
-    #include <omp.h>
+    #include <omp.h> // omp_get_max_threads, omp_get_thread_num, omp_in_parallel
 
     #ifndef PMP_MAX_THREADS
         #define PMP_MAX_THREADS omp_get_max_threads()

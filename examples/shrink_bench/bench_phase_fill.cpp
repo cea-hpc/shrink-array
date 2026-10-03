@@ -19,10 +19,10 @@
 
 #include <algorithm> // std::min
 #include <cmath>     // std::round, std::sin (tab_quant)
-#include <chrono>
-#include <print>
+#include <chrono>    // std::chrono::steady_clock
+#include <print>     // std::println
 
-#include "bench_phases.h"
+#include "bench_phases.h" // bench_phase_fill (defined here), BenchArrays
 
 void bench_phase_fill(BenchArrays&                           bench_arr,
                       std::chrono::steady_clock::time_point& start,

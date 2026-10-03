@@ -42,9 +42,9 @@
  */
 #pragma once
 
-#include <compare>
-#include <cstdint>
-#include <ostream>
+#include <compare> // the defaulted operator<=>
+#include <cstdint> // std::int32_t
+#include <ostream> // std::ostream
 
 /// Three doubles. The defaulted <=> gives the == every element type needs and
 /// the < chunk2 asks of a floating-point aggregate (value_less.h).

@@ -26,9 +26,9 @@
 
 #include <algorithm> // std::min (bench_phase_range_mt)
 #include <cstddef>   // std::size_t (bench_phase_range_mt)
-#include <print>
+#include <print>     // std::println
 
-#include "bench_phases.h"
+#include "bench_phases.h" // bench_phase_range_* (defined here), BenchArrays
 
 void bench_phase_range_a(BenchArrays& bench_arr, Int beg, Int i)
 {

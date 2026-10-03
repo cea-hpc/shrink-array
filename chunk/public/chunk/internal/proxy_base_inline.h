@@ -41,28 +41,29 @@
  * @see proxy_base.h, compression_manager.h, write_compress_sync_policy.h
  */
 
-#include <atomic>
-#include <cstdint>
-#include <cstdlib>
-#include <source_location>
-#include <tuple>
-#include <type_traits>
+#include <atomic>          // std::atomic, std::memory_order
+#include <cstdint>         // uint32_t, uintptr_t (the ring_log payloads)
+#include <cstdlib>         // std::size_t
+#include <source_location> // std::source_location
+#include <tuple>           // std::tuple_size_v, std::ignore
+#include <type_traits>     // std::remove_cvref_t, std::common_type_t, std::conditional_t
 
 #include "chunk/internal/in_t.h"       // in_t<T>: the element snapshots
 #include "chunk/internal/proxy_base.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/internal/chunk_size_policy.h" // ChunkElems — used HERE, not via includers
-#include "chunk/internal/phase_guard.h"       // check-build guard of the phase protocol
-#include "chunk/config.h"
-#include "chunk/chunk_traits.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/ring_log_debug.h"
-#include "chunk/internal/arithmetic_context.h"
-#include "chunk/internal/array_chunk_for.h"
-#include "chunk/internal/concept_chunk.h"
-#include "chunk/internal/concept_is_clean_assignement.h"
-#include "chunk/internal/crp_helper.h"
-#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
-#include "chunk/internal/write_compress_sync_policy.h"
+#include "chunk/internal/chunk_size_policy.h"  // ChunkElems — used HERE, not via includers
+#include "chunk/internal/phase_guard.h"        // check-build guard of the phase protocol
+#include "chunk/config.h"                      // build_config::any_check, chunk_config::use_fast_block_compression
+#include "chunk/chunk_traits.h"                // Chunk2A fwd decl
+#include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast, CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/ring_log_debug.h"              // ScopedRingLog, ring_log, get_tid
+#include "chunk/internal/arithmetic_context.h" // ArithmeticProxyContext, ArithmeticContext
+#include "chunk/internal/array_chunk_for.h"    // ArrayChunkFor_t
+#include "chunk/internal/concept_chunk.h"      // IsChunk2, chunk_template_of
+#include "chunk/internal/concept_is_clean_assignement.h" // base_t
+#include "chunk/internal/crp_helper.h"                   // CRTP_USE_DEDUCING_THIS
+#include "chunk/internal/def_force_inline.h"             // FORCE_INLINE
+#include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
+#include "chunk/internal/write_compress_sync_policy.h"   // WriteCompressSyncPolicy
 
 namespace shrink_array
 {
@@ -552,7 +553,8 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
             }
 
             int rank;
-        } own_replay_excl_guard{own_replay_excl_rank};
+        };
+        const OwnReplayExclGuard own_replay_excl_guard{own_replay_excl_rank};
 
         // ─── Check #1: pure optimisation, not correctness ───────────────────
         // Relaxed probe before touching begin_write's cache line. If a
@@ -587,22 +589,13 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
             compression_mgr.wait_out_compressor(self.chunk);
         }
 
-        // Test knob (build_config::force_defer_every): one write in N takes
-        // the deferred exit as if a compressor held the chunk -- the even
-        // hits fail check #1, the odd ones check #2. Compiled out at 0.
-        bool force_defer_1 = false;
-        bool force_defer_2 = false;
-        if constexpr (build_config::force_defer_every > 0)
-        {
-            thread_local unsigned force_defer_count = 0;
-            thread_local bool     force_defer_odd   = false;
-            if (++force_defer_count == build_config::force_defer_every) [[unlikely]]
-            {
-                force_defer_count                                 = 0;
-                force_defer_odd                                   = !force_defer_odd;
-                (force_defer_odd ? force_defer_2 : force_defer_1) = true;
-            }
-        }
+        // Test hook (test_hooks.h, force_defer_every): one write in N takes
+        // the deferred exit as if a compressor held the chunk -- alternately
+        // at check #1 and at check #2. Compiled out outside the harnesses'
+        // builds; 0 at run time unless a harness set it.
+        const int  forced        = test_hooks::forced_deferral();
+        const bool force_defer_1 = forced == 1;
+        const bool force_defer_2 = forced == 2;
 
         if (!force_defer_1 && !compression_mgr.must_defer_write(self.chunk)) [[likely]]
         {

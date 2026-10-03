@@ -38,11 +38,11 @@
 #                           write and read of the element. The bench and the
 #                           fuzz replays no longer reach that path (a
 #                           compressor must hold the chunk at the instant of
-#                           the write), so this executable alone is built
-#                           with CHUNK_FORCE_DEFER_EVERY=7: one write in 7
-#                           per thread is deferred with no compressor in
-#                           sight, and the result must still equal a
-#                           std::vector's, bit for bit.
+#                           the write), so this harness switches on the
+#                           forced-deferral test hook (test_hooks.h): one
+#                           write in 7 per thread is deferred with no
+#                           compressor in sight, and the result must still
+#                           equal a std::vector's, bit for bit.
 #   chunk_array_new_validation  the variant's operator new[] hands back an
 #                           array whose every chunk is at the first constant,
 #                           at every size and from inside a parallel region as
@@ -137,12 +137,13 @@ endfunction()
 # before -- the one to debug a harness alone. CHUNK_VALIDATION_UNITY_BATCH caps
 # the harnesses per unity TU (0: all of a group in one).
 #
-# Not grouped: the harnesses built with a knob of their own that changes
-# header-only library code (deferred_path_validation, CHUNK_FORCE_DEFER_EVERY;
-# read_reclaim_validation, CHUNK_TEST_READ_DELAY_*) -- in one executable with
-# the others it would be an ODR violation -- and those built against another
-# library or none (fill_range_mt_v1v2, bit_words, blk_allocator,
-# slab_geometry). RECHUNK_TRACE_POOL, a trace, applies to the whole group of
+# deferred_path_validation and read_reclaim_validation are grouped too: their
+# test hooks (forced deferrals, read and pass delays: chunk/internal/
+# test_hooks.h) are compiled into the whole tree wherever the harnesses are
+# built (CHUNK_TEST_HOOKS, top-level CMakeLists), off until a harness switches
+# them on in its own process -- one definition of the header-only engine for
+# every harness. Not grouped: those built against another library or none
+# (fill_range_mt_v1v2, bit_words, blk_allocator, slab_geometry). RECHUNK_TRACE_POOL, a trace, applies to the whole group of
 # rechunk_validation.
 option(CHUNK_VALIDATION_UNITY "One unity-built executable per variant and geometry for the validation harnesses" ON)
 set(CHUNK_VALIDATION_UNITY_BATCH "0" CACHE STRING "Harnesses per unity translation unit (0: all of a group)")
@@ -267,6 +268,24 @@ foreach(_geom IN LISTS _rt_geometries)
     if (_vname STREQUAL "chunk2" AND NOT _geom STREQUAL "dyn")
       list(APPEND _group chunk2_registry_growth_validation)
     endif()
+    # chunk2_foreign_key_validation: a chunk is only ever compressed to its own
+    # array's second value (the harness says why). Chunk2 only, default static
+    # size, at 8 threads; OpenMP builds only (the passes run in a region).
+    if (OMP AND _vname STREQUAL "chunk2" AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group chunk2_foreign_key_validation)
+    endif()
+    # deferred_path_validation: every write path through the deferred queue,
+    # forced by the test hook (test_hooks.h, switched on by the harness), at
+    # 1 and 8 threads. Every variant and geometry: its replay path reads the
+    # frozen geometry a dynamic build alone has.
+    list(APPEND _group deferred_path_validation)
+    # read_reclaim_validation: a read or a compound op against an in-region
+    # pass that releases the buffer, and a pass that must not erase another
+    # pass's claim (the harness says why). OpenMP builds only, default static
+    # size, at 8 threads (2 writers, 6 readers); 77 = skipped.
+    if (OMP AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group read_reclaim_validation)
+    endif()
     # rechunk_validation (content invariance across rechunk_to(), one test per
     # case) and dyn_geometry_validation (an array reads back what was written
     # at every registered runtime chunk size): dyn only, at 8 threads.
@@ -301,36 +320,21 @@ foreach(_geom IN LISTS _rt_geometries)
         validation_add_test(bits_container_validation_${_geom} ${_exe} ${_h} "1;8")
       elseif (_h STREQUAL "chunk2_registry_growth_validation")
         validation_add_test(chunk2_registry_growth_validation ${_exe} ${_h} "1;4")
+      elseif (_h STREQUAL "chunk2_foreign_key_validation")
+        validation_add_test(chunk2_foreign_key_validation ${_exe} ${_h} "8")
+      elseif (_h STREQUAL "deferred_path_validation")
+        validation_add_test(${_base} ${_exe} ${_h} "1;8")
+      elseif (_h STREQUAL "read_reclaim_validation")
+        validation_add_test(${_base} ${_exe} ${_h} "8")
+        validation_add_test(${_base}_compound ${_exe} ${_h} "8" compound)
+        validation_add_test(${_base}_remark ${_exe} ${_h} "8" remark)
+        foreach(_t ${_base}_8thr ${_base}_compound_8thr ${_base}_remark_8thr)
+          set_property(TEST ${_t} PROPERTY SKIP_RETURN_CODE 77)
+          set_property(TEST ${_t} PROPERTY TIMEOUT 120)
+        endforeach()
       else()
         validation_add_test(${_base} ${_exe} ${_h} "1;8")
       endif()
-    endforeach()
-  endforeach()
-endforeach()
-
-# --- deferred_path_validation: on its own, one executable per variant and
-# geometry (both: its replay path reads the frozen geometry a dynamic build
-# alone has), at 1 and 8 threads. The forced-deferral knob, on this harness
-# alone (the write engine is header-only, instantiated in the executable: the
-# library archive holds none of it, so a target-scoped value is consistent). A
-# global value set on the cache (a whole-tree forced build) is not overridden.
-foreach(_geom IN LISTS _rt_geometries)
-  foreach(_vi RANGE ${_rt_nvar_last})
-    list(GET _rt_variant_names   ${_vi} _vname)
-    list(GET _rt_variant_libbase ${_vi} _libbase)
-    list(GET _rt_variant_macro   ${_vi} _vmacro)
-    set(_tgt deferred_path_validation_${_vname}_${_geom})
-    add_executable(${_tgt} deferred_path_validation.cpp)
-    target_link_libraries(${_tgt} PRIVATE ${_libbase}_${_geom})
-    validation_variant_defs(${_tgt} ${_vmacro} ${_geom})
-    validation_setup_target(${_tgt})
-    if ("${CHUNK_FORCE_DEFER_EVERY}" STREQUAL "0")
-      target_compile_definitions(${_tgt} PRIVATE CHUNK_FORCE_DEFER_EVERY=7)
-    endif()
-    foreach(_nthr 1 8)
-      add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})
-      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=${_nthr})
-      set_property(TEST ${_tgt}_${_nthr}thr PROPERTY LABELS validation)
     endforeach()
   endforeach()
 endforeach()
@@ -412,45 +416,6 @@ if (OMP AND NOT CHUNK_STD_ALLOC)
   set_property(TEST slab_geometry_validation PROPERTY LABELS validation)
 endif()
 
-# --- read_reclaim_validation: a pure read against a compression pass that runs
-# inside the region and releases the buffer the read is about to dereference
-# (the harness says why). OpenMP builds only, default static size, the three
-# variants. CHUNK_TEST_READ_DELAY_EVERY on this target alone (the read path is
-# header-only, instantiated here -- same reasoning as CHUNK_FORCE_DEFER_EVERY):
-# one read in 16 of the reader threads waits 50 us between the pointer load and
-# the dereference. Run at 8 threads (2 writers, 6 readers); 77 = skipped.
-if (OMP)
-  foreach(_vi RANGE ${_rt_nvar_last})
-    list(GET _rt_variant_names   ${_vi} _vname)
-    list(GET _rt_variant_libbase ${_vi} _libbase)
-    list(GET _rt_variant_macro   ${_vi} _vmacro)
-    set(_tgt read_reclaim_validation_${_vname}_${CHUNK_DEFAULT_SIZE})
-    add_executable(${_tgt} read_reclaim_validation.cpp)
-    target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE})
-    target_compile_definitions(${_tgt} PRIVATE ${_vmacro} CHUNK_TEST_READ_DELAY_EVERY=16 CHUNK_TEST_READ_DELAY_US=50
-                                                  CHUNK_TEST_PASS_DELAY_EVERY=8 CHUNK_TEST_PASS_DELAY_US=200)
-    validation_setup_target(${_tgt})
-    add_test(NAME ${_tgt}_8thr COMMAND ${_tgt})
-    set_property(TEST ${_tgt}_8thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
-    set_property(TEST ${_tgt}_8thr PROPERTY LABELS validation)
-    set_property(TEST ${_tgt}_8thr PROPERTY SKIP_RETURN_CODE 77)
-    set_property(TEST ${_tgt}_8thr PROPERTY TIMEOUT 120)
-    # The same window on the write side: a compound operation's v_old read
-    # (the `compound` argument; the harness says why). 77 on chunk (v1).
-    add_test(NAME ${_tgt}_compound_8thr COMMAND ${_tgt} compound)
-    set_property(TEST ${_tgt}_compound_8thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
-    set_property(TEST ${_tgt}_compound_8thr PROPERTY LABELS validation)
-    set_property(TEST ${_tgt}_compound_8thr PROPERTY SKIP_RETURN_CODE 77)
-    set_property(TEST ${_tgt}_compound_8thr PROPERTY TIMEOUT 120)
-    # A pass handing its candidates back must not erase another pass's claim
-    # (the `remark` argument; the harness says why). All three variants.
-    add_test(NAME ${_tgt}_remark_8thr COMMAND ${_tgt} remark)
-    set_property(TEST ${_tgt}_remark_8thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
-    set_property(TEST ${_tgt}_remark_8thr PROPERTY LABELS validation)
-    set_property(TEST ${_tgt}_remark_8thr PROPERTY SKIP_RETURN_CODE 77)
-    set_property(TEST ${_tgt}_remark_8thr PROPERTY TIMEOUT 120)
-  endforeach()
-endif()
 
 # shrink-build-stamp: every executable of this directory prints the build stamp
 # and is built by `check` (cmake/shrink_build_stamp.cmake).

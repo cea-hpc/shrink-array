@@ -16,10 +16,10 @@
 
 #pragma once
 
-#include <cstring>
+#include <cstring> // size_t
 
 #include "fast_allocators/internal/alloc_config.h" // alloc_config::alloc_align
-#include "fast_allocators/internal/svalloc.h"
+#include "fast_allocators/internal/svalloc.h"      // svalloc, svalloc_align, svfree, svfree_align
 
 /// @brief Release a buffer obtained from int_alloc(T*&, size_t), with the
 ///        matching routine: aligned or not, as alloc_config::alloc_align says.

@@ -17,21 +17,21 @@
 
 #pragma once
 
-#include <atomic>
-#include <cstdint>
+#include <atomic>      // std::atomic, std::memory_order, std::atomic_thread_fence
+#include <cstdint>     // std::uintptr_t, uint32_t, int64_t
 #include <exception>   // std::exception (erase failures)
 #include <iostream>    // std::cerr (the counter checks)
 #include <thread>      // std::this_thread — used HERE, not by our includers
 #include <type_traits> // std::remove_reference_t (the swap-drain batch type)
 
-#include "chunk/internal/compression_manager.h" // the declarations these bodies belong to
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"                 // get_thr_rank_fast, CHUNK_PMP_RANK_BOUND
-#include "chunk/ring_log_debug.h"            // ScopedRingLogManualEnd, ring_log_op
-#include "chunk/internal/cpu_pause.h"        // CPU_PAUSE
-#include "chunk/internal/deferred_op_pool.h" // DeferredOperationBase
-#include "chunk/internal/invariant_check.h"  // INVARIANT_FAILED
-#include "chunk/internal/write_compress_sync_policy.h"
+#include "chunk/internal/compression_manager.h"        // the declarations these bodies belong to
+#include "chunk/config.h"                              // build_config::any_check, chunk_config::ring_log_debug
+#include "chunk/PMP_CHUNK.h"                           // get_thr_rank_fast, CHUNK_PMP_RANK_BOUND
+#include "chunk/ring_log_debug.h"                      // ScopedRingLogManualEnd, ring_log_op
+#include "chunk/internal/cpu_pause.h"                  // CPU_PAUSE
+#include "chunk/internal/deferred_op_pool.h"           // DeferredOperationBase
+#include "chunk/internal/invariant_check.h"            // INVARIANT_FAILED
+#include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy
 
 namespace shrink_array
 {

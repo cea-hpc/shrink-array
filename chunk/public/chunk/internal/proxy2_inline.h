@@ -16,20 +16,20 @@
 
 #pragma once
 
-#include <atomic>
+#include <cstddef>     // std::size_t
 #include <iostream>    // std::cerr (verbose)
 #include <type_traits> // std::remove_cvref_t
 
-#include "chunk/internal/in_t.h"
+#include "chunk/internal/in_t.h"          // in_t<T>
 #include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/internal/proxy2.h"        // the declarations these bodies belong to
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/internal/arithmetic_context.h"
-#include "chunk/internal/chunk_size_policy.h"
-#include "chunk/internal/concept_is_clean_assignement.h"
-#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
-#include "chunk/internal/read_reclaim.h"    // read_reclaim::PassScope (perform_compression / compress in a region)
+#include "chunk/config.h"                 // chunk_config::use_compression_with_counter, build_config::chunk_dynamic
+#include "chunk/PMP_CHUNK.h"              // get_thr_rank_fast
+#include "chunk/internal/arithmetic_context.h"           // ArithmeticAffectationContext
+#include "chunk/internal/chunk_size_policy.h"            // DynChunkSizeGuard, set_thread_chunk_size
+#include "chunk/internal/concept_is_clean_assignement.h" // base_t
+#include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
+#include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 
 namespace shrink_array
 {
@@ -44,7 +44,7 @@ namespace shrink_array
 // the proxy is not armed. Callers read the fields THROUGH this pointer: see the
 // note on set_info_on_chunk() below for why not through a returned copy.
 template <typename T, typename Derived>
-const typename ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_array(this const Derived& self)
+const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_array(this const Derived& self)
 {
     if (self.inf_array_src_ != nullptr) [[likely]]
     {
@@ -68,7 +68,7 @@ const typename ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::arme
 }
 
 template <typename T, typename Derived>
-typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array(this const Derived& self)
+ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array(this const Derived& self)
 {
     if (const inf_array_t* src = self.armed_inf_array()) [[likely]]
     {
@@ -79,7 +79,7 @@ typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_ar
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-const typename ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_array(this const Derived& self)
+const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_array(this const Derived& self)
 {
     if (self.inf_array_src_ != nullptr) [[likely]]
     {
@@ -104,7 +104,7 @@ const typename ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::arme
 
 template <typename T, typename Derived>
     requires is_bool_like_v<T>
-typename ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array(this const Derived& self)
+ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array(this const Derived& self)
 {
     if (const inf_array_t* src = self.armed_inf_array()) [[likely]]
     {
@@ -464,7 +464,7 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
                 }
                 const read_reclaim::ReadSection section;
                 const T* const                  live = chunk.values_load();
-                test_hooks::maybe_read_delay(); // TEST KNOB (test_read_delay.h)
+                test_hooks::maybe_read_delay(); // TEST KNOB (test_hooks.h)
                 // raw-read: inside a read_reclaim::ReadSection
                 if (live == chunk.get_cst_val2(BaseSpec::ind) || live[num] == second_value)
                 {

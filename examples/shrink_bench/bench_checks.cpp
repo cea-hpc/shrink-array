@@ -18,13 +18,13 @@
 /// @brief The reference-file verification pass. See bench_phases.h.
 
 #include <cstdint> // std::uint64_t
-#include <print>
-#include <string>
+#include <string>  // std::string, std::to_string
+#include <print>   // std::println
 
 #include "bench_config.h" // the CONSTEXPR macro, empty since the check/perf merge
-#include "bench_phases.h"
-#include "bench_io.h"    // write_binary_file, read_check_binary_file
-#include "bench_utils.h" // calculate_checksum
+#include "bench_phases.h" // bench_check_all (defined here), BenchIoFlags
+#include "bench_io.h"     // write_binary_file, read_check_binary_file
+#include "bench_utils.h"  // calculate_checksum
 
 void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 {

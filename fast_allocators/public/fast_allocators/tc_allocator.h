@@ -39,20 +39,20 @@
  *          afterwards.
  */
 
-#include <vector>
-#include <array>
-#include <bit>     // std::has_single_bit: the shift or the division in free_elt_pow2
-#include <cerrno>  // errno, after a failed mmap
-#include <cstddef> // std::size_t
-#include <cstdio>  // std::fprintf / std::fflush (the [MUNMAP] traces)
-#include <cstring>
-#include <iostream>
-#include <cstdlib>
-#include <cstdint>
-#include <limits> // std::numeric_limits: TCAllocatorEB's index range
-#include <cassert>
-#include <sys/mman.h>
-#include <unistd.h>
+#include <vector>     // std::vector
+#include <array>      // std::array
+#include <bit>        // std::has_single_bit: the shift or the division in free_elt_pow2
+#include <cerrno>     // errno, after a failed mmap
+#include <cstddef>    // std::size_t
+#include <cstdio>     // std::fprintf / std::fflush (the [MUNMAP] traces)
+#include <cstring>    // std::strerror
+#include <iostream>   // std::cerr
+#include <cstdlib>    // std::abort
+#include <cstdint>    // uintptr_t
+#include <limits>     // std::numeric_limits: TCAllocatorEB's index range
+#include <cassert>    // assert (DBG_ASSERT)
+#include <sys/mman.h> // mmap, munmap
+#include <unistd.h>   // getpagesize
 
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
@@ -105,6 +105,7 @@ inline void* sctk_mmap(size_t size)
     return tmp;
 }
 
+/// @brief assert() in a DEBUG build; expands to nothing otherwise.
 #ifdef DEBUG
     #define DBG_ASSERT(x) assert(x)
 #else
@@ -146,7 +147,7 @@ class alignas(64) TCAllocator
 {
   public:
     /// @brief Leaves the slab unusable; init() is what makes it a slab.
-    TCAllocator() {}
+    TCAllocator() = default;
 
     /// @brief Returns the block to its arena.
     ~TCAllocator()
@@ -344,7 +345,7 @@ class alignas(64) TCCAllocator
     static constexpr short first_free_init = 32767;
 
     /// @brief Leaves the slab unusable; init() is what makes it a slab.
-    TCCAllocator() {}
+    TCCAllocator() = default;
 
     /// @brief Returns the block to the value arena.
     ~TCCAllocator()
@@ -707,8 +708,17 @@ void sl_manage_full_empty(Node*&  block,
  */
 struct VTCTypeAllocator
 {
+    /// @brief Nothing to set up: the derived allocator enrols itself.
+    VTCTypeAllocator() = default;
+
     /// @brief Virtual, so the registry may hold any element type.
     virtual ~VTCTypeAllocator() = default;
+
+    // Enrolled by address in the registry: neither copied nor moved.
+    VTCTypeAllocator(const VTCTypeAllocator&)            = delete;
+    VTCTypeAllocator& operator=(const VTCTypeAllocator&) = delete;
+    VTCTypeAllocator(VTCTypeAllocator&&)                 = delete;
+    VTCTypeAllocator& operator=(VTCTypeAllocator&&)      = delete;
 
     /**
      * @brief Accumulate this allocator's footprint into the running totals.
@@ -735,7 +745,7 @@ void remove_TCTypeAllocator_inst(VTCTypeAllocator*);
  *          free_elt() move slabs between them; the moves themselves live in
  *          ::sl_manage_full_empty.
  *
- * @tparam _ElementType Element type. What is handed out is an ARRAY of these --
+ * @tparam ElemT Element type. What is handed out is an ARRAY of these --
  *         init() takes a count, and alloc() returns a pointer to the first.
  *
  * @note Every instance enrols itself in the ::VTCTypeAllocator registry, so the
@@ -747,19 +757,17 @@ void remove_TCTypeAllocator_inst(VTCTypeAllocator*);
  *
  * @see bypass_slabs for when none of this machinery runs at all.
  */
-template <typename _ElementType>
+template <typename ElemT>
 class TCTypeAllocator final : public VTCTypeAllocator
 {
   public:
-    using ElementType = _ElementType;
+    using ElementType = ElemT; ///< The element type.
 
-    using TCAllocatorT = TCTypeAllocator<_ElementType>;
+    using TCAllocatorT = TCTypeAllocator<ElemT>;
 
     /// @brief Empty and unusable until init(); enrols in the report registry.
     TCTypeAllocator()
     {
-        ElementSize = 0;
-
         add_TCTypeAllocator_inst(this);
     }
 
@@ -1057,7 +1065,7 @@ class TCTypeAllocator final : public VTCTypeAllocator
     ///        create one. Out of line and cold -- see FAST_ALLOC_COLD.
     FAST_ALLOC_COLD ElementType* alloc_slow()
     {
-        if (nb_block_empty)
+        if (nb_block_empty > 0)
         {
             auto* slab = block_empty[--nb_block_empty];
 
@@ -1194,7 +1202,7 @@ class TCTypeAllocator final : public VTCTypeAllocator
     // the ctx pool sets Ctx via set_arena() so op and ctx never share an address.
     fast_alloc::ArenaKind arena_kind = fast_alloc::ArenaKind::Op;
 
-    size_t    ElementSize;         ///< Bytes per allocation; a COUNT when bypassing.
+    size_t    ElementSize    = 0;  ///< Bytes per allocation; a COUNT when bypassing.
     uintptr_t BlockAllocator = 0;  ///< Slab size in bytes, passed on to each slab.
     uintptr_t slab_bytes_    = 0;  ///< The ROUNDED slab size every slab of ours is cut at; 0 until init().
     int       rank_          = -1; ///< Rank served; stamped into slabs as owner_rank.
@@ -1224,7 +1232,7 @@ class TCTypeAllocator final : public VTCTypeAllocator
  *          ::VTCTypeAllocator report registry. Like it, it gives no guarantee
  *          on the contents of what it hands out.
  *
- * @tparam _ElementType Element type; an allocation is an ARRAY of these.
+ * @tparam ElemT Element type; an allocation is an ARRAY of these.
  *
  * @note One instance per (element size, thread). Nothing here is synchronised:
  *       the design is that a thread only ever touches its own instance.
@@ -1235,17 +1243,14 @@ class TCTypeAllocator final : public VTCTypeAllocator
  *          before free_elt_pow2(); freeing through a non-owning instance
  *          corrupts the owner's free list.
  */
-template <typename _ElementType>
+template <typename ElemT>
 class TCTypeCAllocator
 {
   public:
-    using ElementType = _ElementType;
+    using ElementType = ElemT; ///< The element type.
 
     /// @brief Empty and unusable until init().
-    TCTypeCAllocator()
-    {
-        ElementSize = 0;
-    }
+    TCTypeCAllocator() = default;
 
     /// @brief Frees every slab.
     ~TCTypeCAllocator()
@@ -1271,7 +1276,7 @@ class TCTypeCAllocator
         if constexpr (alloc_config::use_std_alloc)
         {
             auto* elements = new ElementType[ElementSize];
-            memset(elements, 0, ElementSize * sizeof(_ElementType));
+            memset(elements, 0, ElementSize * sizeof(ElementType));
             return elements;
         }
 
@@ -1536,7 +1541,7 @@ class TCTypeCAllocator
     ///        create one. Out of line and cold -- see FAST_ALLOC_COLD.
     FAST_ALLOC_COLD ElementType* alloc_slow()
     {
-        if (nb_block_empty)
+        if (nb_block_empty > 0)
         {
             auto* slab = block_empty[--nb_block_empty];
 
@@ -1681,7 +1686,7 @@ class TCTypeCAllocator
         sl_insert(list, node);
     }
 
-    size_t    ElementSize;         ///< Bytes per allocation; a COUNT under STD_ALLOC.
+    size_t    ElementSize    = 0;  ///< Bytes per allocation; a COUNT under STD_ALLOC.
     uintptr_t BlockAllocator = 0;  ///< Slab size in bytes, passed on to each slab.
     uintptr_t slab_bytes_    = 0;  ///< The ROUNDED slab size every slab of ours is cut at; 0 until init().
     int       rank_          = -1; ///< Rank served; stamped into slabs as owner_rank.
@@ -1821,28 +1826,30 @@ extern int __mem_page_size;
  *          width all become constants, so the division in num_block() and the
  *          per-slab geometry fields go away.
  *
- * @tparam _ElementSize Element size in bytes.
- * @tparam _BlockSize Block size in bytes.
+ * @tparam ElementBytes Element size in bytes.
+ * @tparam BlockBytes Block size in bytes.
  *
  * @note Used only through ::TCTypeAllocatorEBC, which owns the slab lists.
  */
-template <unsigned int _ElementSize, unsigned int _BlockSize>
+template <unsigned int ElementBytes, unsigned int BlockBytes>
 class TCAllocatorEB
 {
   public:
+    /// @brief The compile-time geometry: sizes in bytes, capacity in elements.
     enum
     {
-        ElementSize      = _ElementSize,
+        ElementSize      = ElementBytes,
         Log2ElementSize  = CstLog2<ElementSize>::value - 1,
-        ElementSizePrev2 = PrevPOT<_ElementSize>::value,
-        BlockSize        = _BlockSize,
+        ElementSizePrev2 = PrevPOT<ElementBytes>::value,
+        BlockSize        = BlockBytes,
         BlockSizePOT     = NextPOT<BlockSize>::value,
         BlockAddrMask    = ~(BlockSizePOT - 1),
         getSizeOf        = sizeof(TCAllocatorEB*),
-        UsedBlockSize    = _BlockSize - getSizeOf,
-        MaxElements      = UsedBlockSize / _ElementSize
+        UsedBlockSize    = BlockBytes - getSizeOf,
+        MaxElements      = UsedBlockSize / ElementBytes
     };
 
+    /// @brief Free-list index type, as narrow as the element allows.
     using T = TypeFromSize<ElementSizePrev2>::Tindex;
 
     // The free list stores an element INDEX of type T inside each freed
@@ -1987,7 +1994,7 @@ class TCAllocatorEB
     // A free element holds the index of the next free one, in T -- a type
     // sized from the element. The block must be addressable by it: a
     // compile-time check (it was a runtime DBG_ASSERT, DEBUG builds only).
-    static_assert(static_cast<uintptr_t>(_BlockSize) < (uintptr_t{1} << ((sizeof(T) * 8) - 1)),
+    static_assert(static_cast<uintptr_t>(BlockBytes) < (uintptr_t{1} << ((sizeof(T) * 8) - 1)),
                   "TCAllocatorEB: block too large for the element's free-list index type");
 
   private:
@@ -2006,12 +2013,12 @@ class TCAllocatorEB
      */
     int alloc_block()
     {
-        if (!__mem_page_size)
+        if (__mem_page_size == 0)
         {
             __mem_page_size = getpagesize();
         }
 
-        if (((2 * BlockSize) % __mem_page_size == 0) && __mem_page_size)
+        if (__mem_page_size > 0 && (2 * BlockSize) % __mem_page_size == 0)
         {
             use_mmap = true;
 
@@ -2140,7 +2147,7 @@ class TCTypeAllocatorEBC : public VTCAllocatorEB
     {
         if (!block)
         {
-            if (nb_block_empty)
+            if (nb_block_empty > 0)
             {
                 auto* slab = block_empty[--nb_block_empty];
 
@@ -2304,30 +2311,32 @@ class TCTypeAllocatorEBC : public VTCAllocatorEB
     std::array<TCAllocatorEBT*, nb_max_block_empty> block_empty{};     ///< The reserve, inline.
 };
 
-// SIZE_BLOCK: default slab size (1 MiB). constexpr rather than #define so it
-// carries a type and scope; used as a non-type template argument below and
-// in StaticConstArray, where an unsigned int constant expression is required.
+/// @brief Default slab size (1 MiB).
+/// @details constexpr rather than #define so it carries a type and scope; used
+///          as a non-type template argument below and in StaticConstArray,
+///          where an unsigned int constant expression is required.
 inline constexpr unsigned int SIZE_BLOCK = 1u << 20u; // 1048576
 
 /**
  * @brief ::TCTypeAllocatorEBC addressed by element TYPE rather than by size.
  *
- * @tparam _ElementType Element type; its `sizeof` becomes the element size.
- * @tparam _BlockSize Block size in bytes.
+ * @tparam ElemT Element type; its `sizeof` becomes the element size.
+ * @tparam BlockBytes Block size in bytes.
  *
  * @note Nothing in the tree uses this -- ::TCTypeAllocatorEBC is instantiated
  *       directly, by size, from StaticConstArray. Kept as the typed front end.
  */
-template <typename _ElementType, unsigned int _BlockSize = SIZE_BLOCK>
-class TCTypeAllocatorEB : public TCTypeAllocatorEBC<sizeof(_ElementType), _BlockSize>
+template <typename ElemT, unsigned int BlockBytes = SIZE_BLOCK>
+class TCTypeAllocatorEB : public TCTypeAllocatorEBC<sizeof(ElemT), BlockBytes>
 {
   public:
-    using ElementType = _ElementType;
+    using ElementType = ElemT; ///< The element type.
 
+    /// @brief The geometry handed to ::TCTypeAllocatorEBC, in bytes.
     enum
     {
         ElementSize = sizeof(ElementType),
-        BlockSize   = _BlockSize
+        BlockSize   = BlockBytes
     };
 
   private:
@@ -2344,4 +2353,4 @@ class TCTypeAllocatorEB : public TCTypeAllocatorEBC<sizeof(_ElementType), _Block
     }
 };
 
-#include "fast_allocators/internal/tc_allocator_inline.h"
+#include "fast_allocators/internal/tc_allocator_inline.h" // the template bodies

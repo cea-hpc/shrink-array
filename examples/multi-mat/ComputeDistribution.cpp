@@ -21,12 +21,12 @@
  *        every iteration, drawn up front.
  */
 
-#include <cassert>
-#include <print>
-#include <random>
+#include <cassert> // assert
+#include <random>  // std::mt19937, std::uniform_int_distribution
+#include <print>   // std::println
 
 #include "Containers.h" // dispatch
-#include "Simu.h"
+#include "Simu.h"       // Simu::computeDistribution
 
 void Simu::computeDistribution()
 {

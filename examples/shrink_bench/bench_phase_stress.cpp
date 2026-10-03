@@ -17,7 +17,7 @@
 /// @file bench_phase_stress.cpp
 /// @brief The two per-iteration stress regions. See bench_phases.h.
 
-#include "bench_phases.h"
+#include "bench_phases.h" // bench_phase_stress_teams / _dynamic (defined here), BenchArrays
 
 void bench_phase_stress_teams(BenchArrays& bench_arr, [[maybe_unused]] Int team, Int beg_s, Int end_s)
 {

@@ -54,22 +54,22 @@
 //
 // EXIT STATUS: 0 when every count matches, 1 otherwise.
 
-#include <cstdint> // std::uint8_t (the Kind enum's base)
-#include <cstdio>
-#include <print>
-#include <type_traits>
-#include <utility> // std::as_const
-#include <unistd.h>
+#include <cstdint>     // std::uint8_t (the Kind enum's base)
+#include <cstdio>      // printf
+#include <type_traits> // std::conditional_t
+#include <utility>     // std::as_const
+#include <unistd.h>    // getpagesize
+#include <print>       // std::println
 
-#include "chunk/chunk_traits.h" // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h"   // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"      // chunk_config::use_chunk*
-#include "chunk/PMP_CHUNK.h"   // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h" // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"   // ArrayChunk
+#include "chunk/array_chunk2.h"  // ArrayChunk2
+#include "chunk/array_chunk2A.h" // ArrayChunk2A
+#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"     // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"        // chunk_config::use_chunk*
+#include "chunk/PMP_CHUNK.h"     // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"   // begin_parallel_phase / finalize_parallel_phase
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp

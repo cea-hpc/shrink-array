@@ -1,11 +1,19 @@
+#pragma once
 
-#include <cmath>                        // std::log2, the element-size shift
-#include <cstddef>                      // std::ptrdiff_t, the element offsets
-#include <cstdlib>                      // std::abort on an arena failure
-#include <iostream>                     // std::cerr on an arena failure
-#include "fast_allocators/slab_arena.h" // FIX: disjoint op/value slab arenas
+// Bodies of the slab classes declared in tc_allocator.h, which includes this
+// file at its end.
 
-#include "fast_allocators/internal/next_power_of_2.h"
+#include <cmath>    // std::log2, the element-size shift
+#include <cstddef>  // std::ptrdiff_t, the element offsets
+#include <cstdint>  // std::uintptr_t
+#include <cstdlib>  // std::abort on an arena failure
+#include <iostream> // std::cerr on an arena failure
+#include <unistd.h> // getpagesize
+#include <vector>   // std::vector
+
+#include "fast_allocators/tc_allocator.h"             // the declarations these bodies belong to
+#include "fast_allocators/slab_arena.h"               // FIX: disjoint op/value slab arenas
+#include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2
 
 inline void TCAllocator::alloc_block()
 {

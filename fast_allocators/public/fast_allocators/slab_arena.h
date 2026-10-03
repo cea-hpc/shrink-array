@@ -33,19 +33,20 @@
 
 #pragma once
 
-#include <sys/mman.h>
-#include <unistd.h>
+#include <sys/mman.h>    // mmap, madvise
+#include <unistd.h>      // sysconf(_SC_PAGESIZE)
+#include <algorithm>     // std::max, the high-water mark
+#include <cstddef>       // std::size_t
+#include <cstdint>       // std::uintptr_t, std::uint8_t
+#include <cstdio>        // std::fprintf, std::fflush
+#include <cstdlib>       // std::abort, std::getenv
+#include <vector>        // std::vector
+#include <mutex>         // std::mutex, std::scoped_lock
+#include <atomic>        // std::atomic, std::memory_order_relaxed
+#include <unordered_map> // std::unordered_map
+#include <unordered_set> // std::unordered_set
+
 #include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP)
-#include <algorithm>                               // std::max, the high-water mark
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <vector>
-#include <mutex>
-#include <atomic>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace fast_alloc
 {
@@ -474,22 +475,6 @@ class SlabArena
         std::uintptr_t end;   ///< One past its last address.
     };
 
-    /// @brief Does @p ptr fall inside one of this arena's reservations?
-    /// @note Linear in the region count, and takes the lock. Diagnostics only.
-    bool owns(const void* ptr) const noexcept
-    {
-        const auto             v = reinterpret_cast<std::uintptr_t>(ptr);
-        const std::scoped_lock lk(mtx_);
-        for (const auto& r : regions_)
-        {
-            if (v >= r.begin && v < r.end)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /// @brief Map a fresh reservation and restart the bump cursor in it.
     /// @param min_bytes Lower bound for the new region; larger than
     ///        #reservation_chunk_ rounds up to a 2 MiB multiple.
@@ -530,7 +515,7 @@ class SlabArena
     std::size_t         reservation_chunk_; ///< Size of each new mmap region.
     std::uintptr_t      cursor_     = 0;    ///< Bump pointer inside the current region.
     std::uintptr_t      region_end_ = 0;    ///< End of the current region.
-    std::vector<Region> regions_;           ///< Every reservation, for owns().
+    std::vector<Region> regions_;           ///< Every reservation, for the reports.
 
     /// @brief Recycled slabs, keyed by their exact allocation size.
     std::unordered_map<std::size_t, std::vector<void*>> free_lists_;

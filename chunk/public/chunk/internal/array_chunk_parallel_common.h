@@ -36,7 +36,7 @@
  * @see array_chunk_parallel_common_inline.h for the body
  */
 
-#include "chunk/chunk_traits.h"
+#include "chunk/chunk_traits.h"        // ArrayChunkTraits
 #include "chunk/internal/crp_helper.h" // crtp_cast_t
 
 namespace shrink_array

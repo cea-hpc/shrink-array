@@ -17,12 +17,11 @@
 /// @file bench_teardown.cpp
 /// @brief Array release, final report and library shutdown. See bench_phases.h.
 
-#include <cstdlib>
-#include <print>
+#include <print> // std::println
 
-#include "bench_config.h" // check_compression, and chunk_config:: through bench_prelude.h
-#include "bench_phases.h"
-#include "bench_stl_checks.h"
+#include "bench_config.h"      // check_compression, and chunk_config:: through bench_prelude.h
+#include "bench_phases.h"      // bench_teardown (defined here), BenchArrays
+#include "bench_stl_checks.h"  // run_stl_self_checks
 #include "chunk/chunk_std.h"   // clear_all_list_block_free_thr, delete_chunk_allocator
 #include "chunk/param_chunk.h" // ParamChunk::ChunkStats
 

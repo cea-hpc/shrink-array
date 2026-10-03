@@ -30,8 +30,8 @@
  *          a discarded branch, and it is not declared in a std-alloc build.
  */
 
-#include <cstddef>
-#include <optional>
+#include <cstddef>  // std::size_t
+#include <optional> // std::optional, std::nullopt
 
 #if !defined CHUNK_STD_ALLOC                // std-alloc builds have no fast_allocators include path
     #include "fast_allocators/slab_arena.h" // fast_alloc::value_arena

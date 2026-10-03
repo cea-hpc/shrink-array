@@ -7,21 +7,20 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-#include <algorithm>
-#include <cmath>
-#include <cstdlib> // std::getenv, std::atoi
-#include <fstream>
-#include <print>
-#include <limits>
-#include <random> // std::mt19937 / std::random_device (initializeRNG)
-#include <string>
-#include <sys/resource.h>
-#include <unistd.h>
-#include <malloc.h>
-#include <cstdio>
-#include <vector>
+#include <algorithm>      // std::min, std::max
+#include <cmath>          // sqrt, pow
+#include <cstdlib>        // std::getenv, std::atoi
+#include <fstream>        // std::ifstream, std::ofstream
+#include <limits>         // std::numeric_limits
+#include <random>         // std::mt19937 / std::random_device (initializeRNG)
+#include <string>         // std::string
+#include <sys/resource.h> // getrusage
+#include <unistd.h>       // sysconf
+#include <malloc.h>       // malloc_trim
+#include <vector>         // std::vector
+#include <print>          // std::println, std::print
 
-#include "bench_utils.h"
+#include "bench_utils.h"              // the declarations defined here
 #include "chunk/internal/env_parse.h" // env_flag
 #include "chunk/internal/exact_rss.h" // exact current and peak memory
 

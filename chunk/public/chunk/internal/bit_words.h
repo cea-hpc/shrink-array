@@ -41,7 +41,7 @@
  *          a buffer whose tail holds garbage still classifies right.
  */
 
-#include <atomic>
+#include <atomic>  // std::atomic_ref, std::memory_order
 #include <bit>     // std::popcount
 #include <cstddef> // std::size_t
 #include <cstdint> // std::uint64_t

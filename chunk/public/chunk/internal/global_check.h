@@ -18,8 +18,8 @@
 
 #ifdef DO_CHECK
 
-    #include <cmath> // std::isnan
-    #include <complex>
+    #include <cmath>    // std::isnan
+    #include <complex>  // std::complex
     #include <cstdlib>  // std::abort
     #include <iostream> // std::cerr
 

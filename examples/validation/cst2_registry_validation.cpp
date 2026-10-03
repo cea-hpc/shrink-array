@@ -49,19 +49,19 @@
  *          Usage: cst2_registry_validation [chunks]
  */
 
-#include <cstdio>
-#include <cstdlib> // std::system
-#include <fstream> // the --id-limit child's log
-#include <string>
+#include <cstdio>     // std::printf, std::snprintf, std::remove
+#include <cstdlib>    // std::system
+#include <fstream>    // the --id-limit child's log
+#include <string>     // std::string, std::to_string, std::getline
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
-#include <unistd.h>
+#include <unistd.h>   // getpagesize, getpid
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h"
+#include "chunk/chunk_traits.h"       // forward decls (Chunk2A) + default ind_type = int
+#include "chunk/array_chunk2A.h"      // ArrayChunk2A, Chunk2A complete (its registry types)
+#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
+#include "chunk/config.h"             // chunk_config::use_chunk2a, build_config::has_not_ompt
+#include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
 
 #include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp

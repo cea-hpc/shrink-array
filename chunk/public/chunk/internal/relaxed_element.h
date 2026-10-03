@@ -40,8 +40,8 @@
  *          may_become_uniform()).
  */
 
-#include <atomic>
-#include <type_traits>
+#include <atomic>      // std::atomic_ref, std::memory_order_relaxed
+#include <type_traits> // std::is_same_v, std::is_trivially_copyable_v
 
 #include "chunk/chunk_traits.h" // Chunk2A fwd decl
 

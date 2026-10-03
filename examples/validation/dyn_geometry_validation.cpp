@@ -36,17 +36,17 @@
 //
 // Compile OMP or non-OMP, dyn, check. Exit 0 = every size round-trips.
 
-#include <cstdio>
-#include <print>
-#include <type_traits>
-#include <unistd.h>
-#include <vector>
+#include <cstdio>      // printf
+#include <type_traits> // std::conditional_t
+#include <unistd.h>    // getpagesize
+#include <vector>      // std::vector
+#include <print>       // std::println
 
-#include "chunk/chunk_traits.h" // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
+#include "chunk/chunk_traits.h"               // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"                // ArrayChunk
+#include "chunk/array_chunk2.h"               // ArrayChunk2
+#include "chunk/array_chunk2A.h"              // ArrayChunk2A
+#include "chunk/param_chunk.h"                // ParamChunk::register_chunk_size, init_indexes
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size, set_active_chunk_size, set_thread_chunk_size
 #include "chunk/config.h"                     // chunk_config::use_chunk*
 #include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)

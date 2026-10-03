@@ -18,18 +18,18 @@
 /// @brief Bodies of the --test_stl self-checks. See bench_stl_checks.h for why
 ///        they live here rather than in main().
 
-#include <algorithm>
-#include <cstddef> // std::size_t
-#include <print>
+#include <algorithm>   // std::find
+#include <cstddef>     // std::size_t
+#include <print>       // std::println, std::print
 #include <numeric>     // std::accumulate -- STL self-checks
 #include <stdexcept>   // std::out_of_range -- STL self-checks
 #include <type_traits> // std::is_same_v -- STL self-checks
 #include <utility>     // std::as_const -- STL self-checks
-#include <vector>
+#include <vector>      // std::vector
 
-#include "bench_array.h"
-#include "bench_stl_checks.h"
-#include "bench_utils.h" // maybe_set_second_value
+#include "bench_array.h"      // Array, second_value_d1
+#include "bench_stl_checks.h" // the declarations defined here
+#include "bench_utils.h"      // maybe_set_second_value
 
 void run_stl_self_checks([[maybe_unused]] bool test_stl)
 {

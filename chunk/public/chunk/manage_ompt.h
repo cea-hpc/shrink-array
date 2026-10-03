@@ -54,7 +54,7 @@ namespace shrink_array
  * @brief Entry point of a parallel phase, called by **every** thread of the team.
  *
  * Caches the OpenMP rank of the calling thread into the thread-local
- * `__fast_omp_rank`, so the per-thread deferred queues can be indexed without
+ * `g_fast_omp_rank`, so the per-thread deferred queues can be indexed without
  * paying an `omp_get_thread_num()` call on each write.
  *
  * @note Must run inside the parallel region, before any chunk write.

@@ -14,11 +14,19 @@
  * limitations under the License.
  */
 
-#include <cassert>
-#include "fast_allocators/internal/int_alloc.h"
+#pragma once
 
-#include "fast_allocators/internal/alloc_config.h" // constexpr mirrors of STD_ALLOC / DEBUG
-#include "fast_allocators/internal/pmp_alloc.h"
+// Bodies of StaticConstArray, declared in static_const_array.h, which includes
+// this file at its end.
+
+#include <cassert> // assert
+
+#include "fast_allocators/internal/static_const_array.h"        // the declarations these bodies belong to
+#include "fast_allocators/internal/int_alloc.h"                 // int_alloc, int_free, int_alloc_align, int_free_align
+#include "fast_allocators/internal/alloc_config.h"              // constexpr mirrors of STD_ALLOC / DEBUG
+#include "fast_allocators/internal/pmp_alloc.h"                 // PMP_IN_PARALLEL_REGION / PMP_THREAD_RANK
+#include "fast_allocators/internal/static_const_array_define.h" // MAX_CONST_BLOCK_SIZE
+#include "fast_allocators/internal/svalloc.h"                   // __ALIGNEMENT__
 
 /**
  * @copydoc StaticConstArray::getBlockAllocInt
@@ -37,11 +45,11 @@ inline void* StaticConstArray::getBlockAllocInt(unsigned int sz)
     {
         if (sz <= 4)
         {
-            return _Allocator4.alloc();
+            return bucket4.alloc();
         }
         else
         {
-            return _Allocator8.alloc();
+            return bucket8.alloc();
         }
     }
     else if (sz <= 128)
@@ -50,22 +58,22 @@ inline void* StaticConstArray::getBlockAllocInt(unsigned int sz)
         {
             if (sz <= 16)
             {
-                return _Allocator16.alloc();
+                return bucket16.alloc();
             }
             else
             {
-                return _Allocator32.alloc();
+                return bucket32.alloc();
             }
         }
         else
         {
             if (sz <= 64)
             {
-                return _Allocator64.alloc();
+                return bucket64.alloc();
             }
             else
             {
-                return _Allocator128.alloc();
+                return bucket128.alloc();
             }
         }
     }
@@ -75,42 +83,42 @@ inline void* StaticConstArray::getBlockAllocInt(unsigned int sz)
         {
             if (sz <= 256)
             {
-                return _Allocator256.alloc();
+                return bucket256.alloc();
             }
             else if (sz <= 512)
             {
-                return _Allocator512.alloc();
+                return bucket512.alloc();
             }
             else
             {
-                return _Allocator1024.alloc();
+                return bucket1024.alloc();
             }
         }
         else
         {
             if (sz <= 2048)
             {
-                return _Allocator2048.alloc();
+                return bucket2048.alloc();
             }
             else if (sz <= 4096)
             {
-                return _Allocator4096.alloc();
+                return bucket4096.alloc();
             }
             else if (sz <= 8192)
             {
-                return _Allocator8192.alloc();
+                return bucket8192.alloc();
             }
             else if (sz <= 16384)
             {
-                return _Allocator16384.alloc();
+                return bucket16384.alloc();
             }
             else if (sz <= 32768)
             {
-                return _Allocator32768.alloc();
+                return bucket32768.alloc();
             }
             else
             {
-                return _Allocator65536.alloc();
+                return bucket65536.alloc();
             }
         }
     }
@@ -165,21 +173,21 @@ inline void* StaticConstArray::getBlockAllocAlignInt(int sz)
 #if __ALIGNEMENT__ == 16
         if (sz <= 16)
         {
-            return _Allocator16.alloc();
+            return bucket16.alloc();
         }
 #elif __ALIGNEMENT__ >= 32
         if (sz <= 32)
         {
-            return _Allocator32.alloc();
+            return bucket32.alloc();
         }
 #endif
         if (sz <= 64)
         {
-            return _Allocator64.alloc();
+            return bucket64.alloc();
         }
         else
         {
-            return _Allocator128.alloc();
+            return bucket128.alloc();
         }
     }
     else
@@ -188,42 +196,42 @@ inline void* StaticConstArray::getBlockAllocAlignInt(int sz)
         {
             if (sz <= 256)
             {
-                return _Allocator256.alloc();
+                return bucket256.alloc();
             }
             else if (sz <= 512)
             {
-                return _Allocator512.alloc();
+                return bucket512.alloc();
             }
             else
             {
-                return _Allocator1024.alloc();
+                return bucket1024.alloc();
             }
         }
         else
         {
             if (sz <= 2048)
             {
-                return _Allocator2048.alloc();
+                return bucket2048.alloc();
             }
             else if (sz <= 4096)
             {
-                return _Allocator4096.alloc();
+                return bucket4096.alloc();
             }
             else if (sz <= 8192)
             {
-                return _Allocator8192.alloc();
+                return bucket8192.alloc();
             }
             else if (sz <= 16384)
             {
-                return _Allocator16384.alloc();
+                return bucket16384.alloc();
             }
             else if (sz <= 32768)
             {
-                return _Allocator32768.alloc();
+                return bucket32768.alloc();
             }
             else
             {
-                return _Allocator65536.alloc();
+                return bucket65536.alloc();
             }
         }
     }
@@ -275,12 +283,12 @@ inline void StaticConstArray::freeBlockWithInt(int sz, void* ptr)
     {
         if (sz <= 4)
         {
-            _Allocator4.free_elt_pow2(ptr);
+            bucket4.free_elt_pow2(ptr);
             return;
         }
         else
         {
-            _Allocator8.free_elt_pow2(ptr);
+            bucket8.free_elt_pow2(ptr);
             return;
         }
     }
@@ -290,12 +298,12 @@ inline void StaticConstArray::freeBlockWithInt(int sz, void* ptr)
         {
             if (sz <= 16)
             {
-                _Allocator16.free_elt_pow2(ptr);
+                bucket16.free_elt_pow2(ptr);
                 return;
             }
             else
             {
-                _Allocator32.free_elt_pow2(ptr);
+                bucket32.free_elt_pow2(ptr);
                 return;
             }
         }
@@ -303,12 +311,12 @@ inline void StaticConstArray::freeBlockWithInt(int sz, void* ptr)
         {
             if (sz <= 64)
             {
-                _Allocator64.free_elt_pow2(ptr);
+                bucket64.free_elt_pow2(ptr);
                 return;
             }
             else
             {
-                _Allocator128.free_elt_pow2(ptr);
+                bucket128.free_elt_pow2(ptr);
                 return;
             }
         }
@@ -319,17 +327,17 @@ inline void StaticConstArray::freeBlockWithInt(int sz, void* ptr)
         {
             if (sz <= 256)
             {
-                _Allocator256.free_elt_pow2(ptr);
+                bucket256.free_elt_pow2(ptr);
                 return;
             }
             else if (sz <= 512)
             {
-                _Allocator512.free_elt_pow2(ptr);
+                bucket512.free_elt_pow2(ptr);
                 return;
             }
             else
             {
-                _Allocator1024.free_elt_pow2(ptr);
+                bucket1024.free_elt_pow2(ptr);
                 return;
             }
         }
@@ -337,27 +345,27 @@ inline void StaticConstArray::freeBlockWithInt(int sz, void* ptr)
         {
             if (sz <= 2048)
             {
-                _Allocator2048.free_elt_pow2(ptr);
+                bucket2048.free_elt_pow2(ptr);
             }
             else if (sz <= 4096)
             {
-                _Allocator4096.free_elt_pow2(ptr);
+                bucket4096.free_elt_pow2(ptr);
             }
             else if (sz <= 8192)
             {
-                _Allocator8192.free_elt_pow2(ptr);
+                bucket8192.free_elt_pow2(ptr);
             }
             else if (sz <= 16384)
             {
-                _Allocator16384.free_elt_pow2(ptr);
+                bucket16384.free_elt_pow2(ptr);
             }
             else if (sz <= 32768)
             {
-                _Allocator32768.free_elt_pow2(ptr);
+                bucket32768.free_elt_pow2(ptr);
             }
             else
             {
-                _Allocator65536.free_elt_pow2(ptr);
+                bucket65536.free_elt_pow2(ptr);
             }
         }
     }
@@ -439,25 +447,25 @@ inline void StaticConstArray::freeBlockWithAlignInt(int sz, void* ptr)
 #if __ALIGNEMENT__ == 16
         if (sz <= 16)
         {
-            _Allocator16.free_elt_pow2(ptr);
+            bucket16.free_elt_pow2(ptr);
             return;
         }
 #elif __ALIGNEMENT__ >= 32
         if (sz <= 32)
         {
-            _Allocator32.free_elt_pow2(ptr);
+            bucket32.free_elt_pow2(ptr);
             return;
         }
 #endif
 
         if (sz <= 64)
         {
-            _Allocator64.free_elt_pow2(ptr);
+            bucket64.free_elt_pow2(ptr);
             return;
         }
         else
         {
-            _Allocator128.free_elt_pow2(ptr);
+            bucket128.free_elt_pow2(ptr);
             return;
         }
     }
@@ -467,17 +475,17 @@ inline void StaticConstArray::freeBlockWithAlignInt(int sz, void* ptr)
         {
             if (sz <= 256)
             {
-                _Allocator256.free_elt_pow2(ptr);
+                bucket256.free_elt_pow2(ptr);
                 return;
             }
             else if (sz <= 512)
             {
-                _Allocator512.free_elt_pow2(ptr);
+                bucket512.free_elt_pow2(ptr);
                 return;
             }
             else
             {
-                _Allocator1024.free_elt_pow2(ptr);
+                bucket1024.free_elt_pow2(ptr);
                 return;
             }
         }
@@ -485,27 +493,27 @@ inline void StaticConstArray::freeBlockWithAlignInt(int sz, void* ptr)
         {
             if (sz <= 2048)
             {
-                _Allocator2048.free_elt_pow2(ptr);
+                bucket2048.free_elt_pow2(ptr);
             }
             else if (sz <= 4096)
             {
-                _Allocator4096.free_elt_pow2(ptr);
+                bucket4096.free_elt_pow2(ptr);
             }
             else if (sz <= 8192)
             {
-                _Allocator8192.free_elt_pow2(ptr);
+                bucket8192.free_elt_pow2(ptr);
             }
             else if (sz <= 16384)
             {
-                _Allocator16384.free_elt_pow2(ptr);
+                bucket16384.free_elt_pow2(ptr);
             }
             else if (sz <= 32768)
             {
-                _Allocator32768.free_elt_pow2(ptr);
+                bucket32768.free_elt_pow2(ptr);
             }
             else
             {
-                _Allocator65536.free_elt_pow2(ptr);
+                bucket65536.free_elt_pow2(ptr);
             }
         }
     }

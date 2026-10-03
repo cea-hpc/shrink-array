@@ -9,10 +9,10 @@
 // harness) the name may be left out.
 // ============================================================================
 
-#include <cstdio>
-#include <cstring>
+#include <cstdio>  // std::fprintf, stderr
+#include <cstring> // std::strcmp
 
-#include "validation_harness.h"
+#include "validation_harness.h" // validation::self_command (defined here), __mem_page_size
 
 int __mem_page_size = 0;
 
@@ -21,7 +21,7 @@ int __mem_page_size = 0;
     {                               \
     int run(int argc, char** argv); \
     }
-#include VALIDATION_HARNESS_LIST
+#include VALIDATION_HARNESS_LIST // one VALIDATION_HARNESS(name) per harness: declares its run()
 #undef VALIDATION_HARNESS
 
 namespace
@@ -35,7 +35,7 @@ struct Harness
 
 const Harness kHarnesses[] = {
 #define VALIDATION_HARNESS(name) {#name, &validation::name::run},
-#include VALIDATION_HARNESS_LIST
+#include VALIDATION_HARNESS_LIST // one VALIDATION_HARNESS(name) per harness: its table entry
 #undef VALIDATION_HARNESS
 };
 constexpr int kNbHarnesses = static_cast<int>(sizeof kHarnesses / sizeof kHarnesses[0]);

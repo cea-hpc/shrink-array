@@ -32,8 +32,8 @@
  * @see array_chunk2A_rechunk_hooks_inline.h for the bodies
  */
 
-#include "chunk/config.h"
-#include "chunk/chunk_traits.h"
+#include "chunk/config.h"              // build_config::chunk_dynamic
+#include "chunk/chunk_traits.h"        // ArrayChunkTraits
 #include "chunk/internal/crp_helper.h" // crtp_cast_t
 
 namespace shrink_array

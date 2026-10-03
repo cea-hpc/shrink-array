@@ -25,25 +25,19 @@
 #include <source_location> // std::source_location::current() in the invariants
 #include <tuple>           // the candidate-list entries
 #include <type_traits>     // std::is_same_v (concurrent-ops base)
-#include <vector>
+#include <vector>          // std::vector
 
-#include "chunk/config.h"
-#include "chunk/internal/invariant_check.h"
-#include "chunk/internal/tab_cst_val2_holder.h"
-#include "chunk/chunk_define.h" // FAST_ALLOC
-#include "chunk/chunk_def.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/ring_log_debug.h"             // ScopedRingLog, ring_log_* (RING_LOG builds)
-#include "chunk/internal/chunk_size_policy.h" // ChunkElems
-#include "chunk/internal/chunk2_base.h"
-#include "chunk/internal/crp_helper.h" // crtp_cast_t
-#include "chunk/internal/chunk_stats.h"
+#include "chunk/config.h"                       // build_config::use_openmp, chunk_config
+#include "chunk/internal/invariant_check.h"     // invariant_failed
+#include "chunk/internal/tab_cst_val2_holder.h" // TabCstVal2Holder, SecondValueRef
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_THREAD_RANK
+#include "chunk/ring_log_debug.h"               // ScopedRingLog, ring_log_* (RING_LOG builds)
+#include "chunk/internal/chunk_size_policy.h"   // ChunkElems
+#include "chunk/internal/chunk2_base.h"         // Chunk2Base
+#include "chunk/internal/chunk_stats.h"         // increm_chunk_write
+#include "chunk/internal/crp_helper.h"          // crtp_cast_t
 
-#ifdef FAST_ALLOC
-    #include "fast_allocators/tc_allocator.h"
-#endif
-
-#include "chunk/internal/TChunk.h"
+#include "chunk/internal/TChunk.h" // TChunk2AComp, VectorTuple4ChunkInt2
 
 
 namespace shrink_array
@@ -857,4 +851,4 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
 
 } // namespace shrink_array
 
-#include "chunk/internal/chunk2A_std_inline.h"
+#include "chunk/internal/chunk2A_std_inline.h" // the template bodies

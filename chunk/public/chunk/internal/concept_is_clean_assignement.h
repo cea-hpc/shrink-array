@@ -17,9 +17,9 @@
  */
 #pragma once
 
-#include <complex>
-#include <concepts> // std::convertible_to
-#include <type_traits>
+#include <complex>     // std::complex
+#include <concepts>    // std::convertible_to
+#include <type_traits> // std::remove_cvref_t, std::is_same_v, std::is_integral_v
 
 #include "chunk/bit.h" // Bit: the packed bool, assigned from bool
 

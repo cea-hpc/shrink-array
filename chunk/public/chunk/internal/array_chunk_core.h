@@ -46,15 +46,15 @@
  * @see array_chunk_for.h, which maps a chunk type to it for the proxies
  */
 
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
-#include <cstdlib> // std::getenv (CHUNK_ALLOC_AFFINITY_EAGER)
-#include <type_traits>
-#include <vector>
+#include <atomic>      // std::atomic (next_alloc_key_)
+#include <cstddef>     // std::size_t
+#include <cstdint>     // std::uint64_t
+#include <cstdlib>     // std::getenv (CHUNK_ALLOC_AFFINITY_EAGER)
+#include <type_traits> // std::conditional_t
+#include <vector>      // std::vector (chunk_list)
 
-#include "chunk/config.h"
-#include "chunk/chunk_traits.h"
+#include "chunk/config.h"                            // build_config::alloc_affinity_min_bytes, build_config::any_check
+#include "chunk/chunk_traits.h"                      // ChunkTraits (proxy_type, manager_type)
 #include "chunk/internal/chunk_size_policy.h"        // ActiveSizePolicy
 #include "chunk/internal/array_chunk_dirty_bitset.h" // DirtyBitsetSupport
 
@@ -73,7 +73,7 @@ namespace alloc_affinity_detail
 /// eager peaks 4.4 GB lower for the same end memory and time). Chunk2 /
 /// Chunk2A are not sliced and are metadata-heavy: a lazy start saves them the
 /// ~780 MiB of per-array slabs and matches the static build's memory.
-inline const bool g_eager = []
+inline const bool g_eager = []() noexcept
 {
     const char* e = std::getenv("CHUNK_ALLOC_AFFINITY_EAGER");
     if (e == nullptr || e[0] == '\0')
@@ -103,6 +103,8 @@ struct RechunkStorageScope
     }
     RechunkStorageScope(const RechunkStorageScope&)            = delete;
     RechunkStorageScope& operator=(const RechunkStorageScope&) = delete;
+    RechunkStorageScope(RechunkStorageScope&&)                 = delete;
+    RechunkStorageScope& operator=(RechunkStorageScope&&)      = delete;
 };
 } // namespace alloc_affinity_detail
 

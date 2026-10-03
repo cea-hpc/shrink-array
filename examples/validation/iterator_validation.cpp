@@ -53,27 +53,26 @@
 // EXIT STATUS: 0 when every check holds, 1 otherwise. Any thread count (the
 // tests run it at 1 and 8).
 
-#include <algorithm>
-#include <cstdarg> // va_list (Report::fail)
-#include <cstdio>
-#include <initializer_list>
-#include <functional> // std::greater
-#include <iterator>
-#include <ranges>
-#include <type_traits>
-#include <utility>
-#include <vector>
-#include <unistd.h>
+#include <algorithm>        // std::lower_bound, std::sort, std::ranges::equal_range
+#include <cstdarg>          // va_list (Report::fail)
+#include <cstdio>           // std::printf, std::snprintf
+#include <initializer_list> // std::initializer_list (range-for over a braced list)
+#include <functional>       // std::greater
+#include <iterator>         // std::random_access_iterator, std::iterator_traits, std::distance
+#include <ranges>           // std::ranges::random_access_range
+#include <type_traits>      // std::conditional_t, std::is_same_v
+#include <vector>           // std::vector
+#include <unistd.h>         // getpagesize
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h"
+#include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"   // ArrayChunk
+#include "chunk/array_chunk2.h"  // ArrayChunk2
+#include "chunk/array_chunk2A.h" // ArrayChunk2A
+#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"     // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"        // chunk_config::use_chunk*, build_config::has_not_ompt
+#include "chunk/PMP_CHUNK.h"     // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"   // begin_parallel_phase / finalize_parallel_phase
 
 #include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
 

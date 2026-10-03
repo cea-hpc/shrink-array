@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-#include <type_traits>
+#include <type_traits> // std::conditional_t, std::is_trivially_copyable_v
 
 namespace shrink_array
 {

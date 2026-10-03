@@ -16,26 +16,26 @@
 
 #pragma once
 
-#include <algorithm>
-#include <functional> // std::plus (parked_blocks)
-#include <map>
-#include <ranges> // fold_left, views::transform / values (parked_blocks)
-#include <vector>
-#include <tuple>
-#include <cstdio> // fprintf (pool breakdown)
-#include <unordered_map>
-#include <cstdint>     // pool keys (drain_reuse_list_for_size, keyed lists)
-#include <type_traits> // remove_reference_t / remove_pointer_t (same)
+#include <algorithm>     // std::max
+#include <map>           // std::map
+#include <vector>        // std::vector
+#include <tuple>         // std::tuple, std::get
+#include <cstdio>        // fprintf (pool breakdown)
+#include <unordered_map> // std::unordered_map
+#include <cstdint>       // pool keys (drain_reuse_list_for_size, keyed lists)
+#include <type_traits>   // remove_reference_t / remove_pointer_t (same)
+#include <functional>    // std::plus (parked_blocks)
+#include <ranges>        // fold_left, views::transform / values (parked_blocks)
 
-#include "chunk/bit.h"       // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/chunk_def.h" // ChunkDef::size_min_buffer_reuse
-#include "chunk/config.h"
-#include "chunk/internal/chunk_size_policy.h"
-#include "chunk/internal/TChunk.h"
-#include "chunk/PMP_CHUNK.h"            // CHUNK_PMP_THREAD_CAPACITY (max_thr)
-#include "chunk/internal/pool_ledger.h" // CHUNK_LEDGER_DISCARD (drain_reuse_list_for_size)
-#include "chunk/type_name.h"            // type_name<T> (pool breakdown)
-#include "chunk/internal/svalloc.h"     // svfree (drain_reuse_list_for_size)
+#include "chunk/bit.h"                        // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/chunk_def.h"                  // ChunkDef::size_min_buffer_reuse
+#include "chunk/config.h"                     // build_config::use_openmp, chunk_config::chunk_dynamic
+#include "chunk/internal/chunk_size_policy.h" // thread_chunk_size, set_thread_chunk_size
+#include "chunk/internal/TChunk.h"            // TChunkComp, TChunk2CompMap, TChunk2AComp
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_CAPACITY (max_thr)
+#include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_DISCARD (drain_reuse_list_for_size)
+#include "chunk/type_name.h"                  // type_name<T> (pool breakdown)
+#include "chunk/internal/svalloc.h"           // svfree (drain_reuse_list_for_size)
 
 #include "chunk/internal/freepath_counters.h" // CHUNK_FREEPATH_INC (CHUNK_ARENA_REPORT)
 
@@ -1348,4 +1348,4 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
 } // namespace shrink_array
 
-#include "chunk/internal/manager_chunk_inline.h"
+#include "chunk/internal/manager_chunk_inline.h" // the template bodies

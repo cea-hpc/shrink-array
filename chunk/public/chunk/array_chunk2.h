@@ -26,11 +26,12 @@
 #include <utility>     // for get, move
 #include <vector>      // for vector
 
-#include <initializer_list>                   // the {a, b, c} constructor
-#include <iterator>                           // std::forward_iterator, std::distance -- the (first, last) constructor
-#include "chunk/bit.h"                        // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/internal/in_t.h"              // in_t<T>: the element snapshots
-#include "chunk/internal/array_chunk2_base.h" // for ArrayChunk2Base
+#include <initializer_list> // the {a, b, c} constructor
+#include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
+
+#include "chunk/bit.h"                                  // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/internal/in_t.h"                        // in_t<T>: the element snapshots
+#include "chunk/internal/array_chunk2_base.h"           // for ArrayChunk2Base
 #include "chunk/internal/array_chunk2_parallel.h"       // ParallelSupport2 — OpenMP-only mixin
 #include "chunk/internal/array_chunk2_rechunk_hooks.h"  // RechunkHooks2 — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
@@ -305,8 +306,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     /// @brief Full registry tuple for this array: second value, its index, num_tab.
     [[nodiscard]] inf_array_t get_info_second_value() const noexcept
     {
-        auto* key = const_cast<void*>(this->registry_key());
-        return Proxy2<T>::share_info_array.get_info_second_value(key);
+        return Proxy2<T>::share_info_array.get_info_second_value(this->registry_key());
     }
 
     /// @brief Index of this array's second value in the shared value table.
@@ -582,9 +582,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 // every translation unit using ArrayChunk2<T> sees the definitions and can
 // auto-instantiate the exact T it needs, instead of relying on a fixed list of
 // explicit instantiations in array_chunk2.cpp.
-#include "chunk/internal/array_chunk2_inline.h"
+#include "chunk/internal/array_chunk2_inline.h" // the template bodies
 
 // Bodies of the two mode-specific mixins. After array_chunk2_inline.h, so their
 // CRTP self() sees a complete ArrayChunk2.
-#include "chunk/internal/array_chunk2_parallel_inline.h"
-#include "chunk/internal/array_chunk2_rechunk_hooks_inline.h"
+#include "chunk/internal/array_chunk2_parallel_inline.h"      // ParallelSupport2's bodies
+#include "chunk/internal/array_chunk2_rechunk_hooks_inline.h" // RechunkHooks2's bodies

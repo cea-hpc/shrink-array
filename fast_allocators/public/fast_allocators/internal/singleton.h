@@ -1,15 +1,15 @@
 #pragma once
 
-#include <atomic>
-#include <mutex>
+#include <atomic> // std::atomic, std::memory_order
+#include <mutex>  // std::mutex, std::scoped_lock
 
 #if defined(__has_feature)
     #if __has_feature(address_sanitizer) || __has_feature(leak_sanitizer)
-        #include <sanitizer/lsan_interface.h>
+        #include <sanitizer/lsan_interface.h> // __lsan_ignore_object
         #define SA_LSAN_IGNORE(p) __lsan_ignore_object(p)
     #endif
 #elifdef __SANITIZE_ADDRESS__
-    #include <sanitizer/lsan_interface.h>
+    #include <sanitizer/lsan_interface.h> // __lsan_ignore_object
     #define SA_LSAN_IGNORE(p) __lsan_ignore_object(p)
 #endif
 
@@ -29,8 +29,12 @@ template <typename T>
 class Singleton
 {
   public:
+    // Never an object: everything is static. Neither copied nor moved.
     Singleton(const Singleton&)            = delete;
     Singleton& operator=(const Singleton&) = delete;
+    Singleton(Singleton&&)                 = delete;
+    Singleton& operator=(Singleton&&)      = delete;
+    ~Singleton()                           = default;
 
     /// @brief getInstance(), as a reference.
     /// @return The instance.

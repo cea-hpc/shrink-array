@@ -24,23 +24,21 @@
 // the detection is compiled out and the harness only says so.
 // ============================================================================
 
-#include <cstdio>
-#include <cstdlib>
-#include <string>
-#include <type_traits>
-#include <utility>
-#include <unistd.h>
-#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
+#include <cstdio>      // std::printf, std::fopen, std::remove
+#include <cstdlib>     // std::system, std::atoi
+#include <string>      // std::string, std::to_string
+#include <type_traits> // std::conditional_t
+#include <utility>     // std::move
+#include <unistd.h>    // getpid, getpagesize
+#include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h"
+#include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"   // ArrayChunk
+#include "chunk/array_chunk2.h"  // ArrayChunk2
+#include "chunk/array_chunk2A.h" // ArrayChunk2A
+#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"     // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"        // chunk_config::use_chunk2*, build_config::chunk_dynamic / any_check
 
 #include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
 

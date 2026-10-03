@@ -9,13 +9,13 @@
  */
 #pragma once
 
-#include <cmath>
-#include <cstdio>
+#include <cmath>  // std::floor, std::isfinite
+#include <cstdio> // std::snprintf
 
-#include <algorithm>
-#include <print>
-#include <limits>
-#include <string>
+#include <algorithm> // std::min, std::max
+#include <limits>    // std::numeric_limits
+#include <string>    // std::string
+#include <print>     // std::println
 
 // Bench-mode configuration. Defines whether we run in --check or --perf mode
 // and the derived sizing / frequency constants. All functions are constexpr
@@ -24,7 +24,7 @@
 
 #include <cstdlib> // std::getenv
 
-#include "bench_prelude.h"
+#include "bench_prelude.h"            // Int, build_config::, CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
 // PRINT_MEM is enabled by default to preserve historical behaviour.

@@ -44,16 +44,17 @@
  *          already carry.
  */
 
-#include <cstddef>
-#include <type_traits>
+#include <cstddef>     // std::size_t, std::ptrdiff_t
+#include <type_traits> // std::is_same_v
 
-#include "chunk/bit.h"                          // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/internal/element_access.h"      // internal::as_words: Bit chunks are words of bits
-#include "chunk/internal/in_t.h"                // in_t<T>: the element snapshots
-#include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
-#include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
-#include "chunk/internal/conditional_counter.h" // counter_value_t
-#include "chunk/config.h"
+#include "chunk/bit.h"                                 // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/internal/element_access.h"             // internal::as_words: Bit chunks are words of bits
+#include "chunk/internal/bit_words.h"                  // bits::count_ones, bits::scan_words, bits::fill_bit_range
+#include "chunk/internal/in_t.h"                       // in_t<T>: the element snapshots
+#include "chunk/PMP_CHUNK.h"                           // get_thr_rank_fast
+#include "chunk/internal/chunk_size_policy.h"          // set_thread_chunk_size
+#include "chunk/internal/conditional_counter.h"        // counter_value_t
+#include "chunk/config.h"                              // build_config::use_openmp, chunk_config
 #include "chunk/internal/chunk_stats.h"                // increm_chunk_* (used directly, not via compression_manager.h)
 #include "chunk/chunk_traits.h"                        // Chunk / Chunk2 / Chunk2A: the type traits below
 #include "chunk/vector_range_ops.h"                    // internal::ChunkedArray + the std::vector fallback

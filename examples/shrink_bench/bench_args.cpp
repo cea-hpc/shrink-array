@@ -17,14 +17,14 @@
 /// @file bench_args.cpp
 /// @brief Command-line parsing. See bench_args.h.
 
-#include <algorithm>
-#include <cmath>
-#include <cstdlib>
+#include <algorithm> // std::ranges::find
+#include <cmath>     // std::isfinite
+#include <cstdlib>   // std::exit, std::strtod
 #include <exception> // std::exception (the stoi guard below)
-#include <print>
-#include <string>
+#include <string>    // std::string, std::stoi
+#include <print>     // std::println
 
-#include "bench_args.h"
+#include "bench_args.h"   // the declarations defined here
 #include "bench_config.h" // set_bench_mode, BenchMode
 #include "bench_utils.h"  // valid_args, suggest_closest, print_help
 

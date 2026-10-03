@@ -17,12 +17,12 @@
  * limitations under the License.
  */
 
-#include <cstddef>
-#include <cstdint>
-#include <atomic> // g_ompt_suspended
+#include <cstddef> // std::size_t
+#include <cstdint> // std::int64_t
+#include <atomic>  // g_ompt_suspended
 
-#include "chunk/internal/define_mm_protect.h"
-#include "chunk/chunk_define.h"
+#include "chunk/internal/define_mm_protect.h" // MM_PROTECT (the switch, off by default)
+#include "chunk/chunk_define.h"               // FAST_ALLOC
 
 namespace build_config
 {

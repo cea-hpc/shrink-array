@@ -25,9 +25,9 @@
  * range per thread. The OpenMP queries come from config.h.
  */
 
-#include <utility>
+#include <utility> // std::pair, std::make_pair
 
-#include "config.h"
+#include "config.h" // multi_mat::in_parallel_region
 
 /**
  * @brief The share of @p nb iterations of thread @p trank among

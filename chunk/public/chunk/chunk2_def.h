@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "chunk/config.h"
+#include "chunk/config.h" // chunk_config::tuning_level
 /**
  * @class Chunk2Def
  * @brief Configuration constants for buffer sizing and compression thresholds.

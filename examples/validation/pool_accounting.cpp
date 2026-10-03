@@ -32,25 +32,25 @@
 //
 // Compile OMP or non-OMP, static or dyn, check. Exit 0 = every count matches.
 
-#include <cstdio>
-#include <print>
-#include <type_traits>
-#include <unistd.h>
+#include <cstdio>      // printf
+#include <type_traits> // std::conditional_t
+#include <unistd.h>    // getpagesize
+#include <print>       // std::println
 
-#include "chunk/chunk_traits.h" // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
+#include "chunk/chunk_traits.h"               // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"                // ArrayChunk
+#include "chunk/array_chunk2.h"               // ArrayChunk2
+#include "chunk/array_chunk2A.h"              // ArrayChunk2A
+#include "chunk/param_chunk.h"                // ParamChunk::init_indexes
 #include "chunk/chunk_std.h"                  // release_chunk_pools, destroy_block_chunk
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size
 #include "chunk/config.h"                     // chunk_config::use_chunk*
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/chunk_def.h"
-#include "chunk/chunk2_def.h"
-#include "chunk/chunk2A_def.h"
-#include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
+#include "chunk/chunk_def.h"                  // ChunkDef
+#include "chunk/chunk2_def.h"                 // Chunk2Def
+#include "chunk/chunk2A_def.h"                // Chunk2ADef
+#include "chunk/internal/env_parse.h"         // env_number / arg_number (checked, not atoi)
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp

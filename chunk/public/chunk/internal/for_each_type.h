@@ -16,8 +16,8 @@
 
 #pragma once
 
-#include <tuple>
-#include <utility>
+#include <tuple>   // std::tuple
+#include <utility> // std::forward
 
 // Compile-time iteration over a std::tuple<Ts...> of types. Used by consumer
 // TUs to drive per-type instantiation from a type list they own (e.g. a

@@ -40,8 +40,8 @@
  * @see chunk_size_policy.h for the geometry policies this switches between
  */
 
-#include "chunk/config.h"
-#include "chunk/chunk_traits.h"
+#include "chunk/config.h"                   // build_config::chunk_dynamic
+#include "chunk/chunk_traits.h"             // ArrayChunkTraits
 #include "chunk/internal/crp_helper.h"      // crtp_cast_t
 #include "chunk/internal/in_t.h"            // in_t<T>: the captured state
 #include "chunk/internal/array_chunk_for.h" // ArrayChunkCore -- rechunk_all_to's registry keys

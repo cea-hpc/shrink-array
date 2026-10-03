@@ -53,27 +53,26 @@
  *          missing barrier that made this a SIGSEGV.
  */
 
-#include <sys/mman.h>
-#include <cstring>
-#include <cstdint>
-#include <cstdlib> // std::abort
-#include <unistd.h>
-#include <atomic>
-#include <array>
-#include <memory>
-#include <mutex>
-#include <type_traits>
-#include <vector> // index_generations
+#include <sys/mman.h>  // mmap, mprotect, madvise
+#include <cstring>     // std::memcpy
+#include <cstdint>     // std::uint32_t, uint64_t
+#include <cstdlib>     // std::abort
+#include <atomic>      // std::atomic, std::memory_order
+#include <array>       // std::array
+#include <memory>      // std::unique_ptr, std::make_unique
+#include <mutex>       // std::mutex, std::scoped_lock
+#include <type_traits> // std::conditional_t
+#include <vector>      // index_generations
 // <iostream> is included directly: it used to come through param_chunk.h,
 // whose include created a heavy circular dependency (ParamChunk ->
 // AllTypeChunk -> ... -> this header) while nothing here uses a ParamChunk
 // symbol.
-#include <iostream>
+#include <iostream> // std::cerr, std::cout
 
-#include "chunk/internal/chunk_size_policy.h"
-#include "chunk/internal/env_parse.h" // env_number (CHUNK_CST_VAL2_ID_LIMIT)
-#include "chunk/internal/in_t.h"      // in_t<T>: the value parameters
-#include "chunk/config.h"
+#include "chunk/internal/chunk_size_policy.h" // cst_buffer_size
+#include "chunk/internal/env_parse.h"         // env_number (CHUNK_CST_VAL2_ID_LIMIT)
+#include "chunk/internal/in_t.h"              // in_t<T>: the value parameters
+#include "chunk/config.h"                     // build_config::use_mm_protect
 #ifdef FAST_ALLOC
     #include "fast_allocators/internal/alloc_config.h" // alloc_config::thp_advise (CHUNK_THP)
 #endif

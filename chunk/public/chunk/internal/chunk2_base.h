@@ -17,17 +17,17 @@
 
 #pragma once
 
-#include <atomic> // std::atomic_thread_fence, std::memory_order_release
-#include <optional>
+#include <atomic>          // std::atomic_thread_fence, std::memory_order_release
+#include <optional>        // std::optional
 #include <source_location> // std::source_location
 #include <type_traits>     // std::is_same_v
 #include <utility>         // std::forward
 
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h" // get_thr_rank_fast (the constant-buffer write check)
-#include "chunk/internal/chunk_base.h"
+#include "chunk/config.h"                       // build_config::any_check, chunk_config::use_fast_block_compression
+#include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast (the constant-buffer write check)
+#include "chunk/internal/chunk_base.h"          // ChunkBase
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef, the Chunk2A second-value slot handle
-#include "chunk/type_name.h"
+#include "chunk/type_name.h"                    // type_name<T>
 
 namespace shrink_array
 {
@@ -62,10 +62,12 @@ struct ProxyTypeTrait<Chunk2A<T>>
 };
 
 // ============================================================================
-// Chunk2Base: Base class for 2-value compression (Chunk2 and Chunk2A)
-// Inherits common functionality from ChunkBase
+// Chunk2Base
 // ============================================================================
 
+/// @brief CRTP base of the two-value chunks (Chunk2 and Chunk2A), on top of ChunkBase.
+/// @tparam T       Element type.
+/// @tparam Derived The chunk type.
 template <typename T, typename Derived>
 class Chunk2Base : public ChunkBase<T, Derived>
 {
@@ -285,4 +287,4 @@ class Chunk2Base : public ChunkBase<T, Derived>
 
 } // namespace shrink_array
 
-#include "chunk/internal/chunk2_base_inline.h"
+#include "chunk/internal/chunk2_base_inline.h" // the template bodies

@@ -41,9 +41,9 @@
 //                        overwrites it: the reader returns a value the chunk
 //                        never held, silently.
 //
-//   The window is two instructions wide. CHUNK_TEST_READ_DELAY_EVERY (set on
-//   this target, see test_read_delay.h) makes one read in N of the READER
-//   threads wait between the load and the dereference.
+//   The window is two instructions wide. The read-delay test hook
+//   (test_hooks.h, switched on by this harness: one read in 16, 50 us) makes
+//   the READER threads wait between the load and the dereference.
 //
 // WHAT IT DOES
 //
@@ -109,32 +109,34 @@
 //   chunks (offsets of its own), reading each 1.0 back; the 0.0 makes the
 //   chunk constant again, a candidate, so passes run all the time on every
 //   thread. Thread 0's passes wait at the hand-back point
-//   (CHUNK_TEST_PASS_DELAY_*, test_read_delay.h). Check builds stop on the
+//   (CHUNK_TEST_PASS_DELAY_*, test_hooks.h). Check builds stop on the
 //   erasure itself (INVARIANT_FAILED in the pass); every build checks the
 //   read-backs and that the pool ends at 0.
 
-#include <atomic>
-#include <chrono>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <string_view>
-#include <type_traits>
-#include <unistd.h>
-#include <omp.h>
+#include <atomic>      // std::atomic, std::memory_order
+#include <chrono>      // std::chrono::steady_clock, std::chrono::duration
+#include <cstdint>     // std::uint64_t
+#include <cstdio>      // std::printf
+#include <cstdlib>     // std::getenv, std::atol
+#include <string_view> // std::string_view
+#include <type_traits> // std::conditional_t
+#include <unistd.h>    // getpagesize
+#include <omp.h>       // omp_get_thread_num, omp_get_max_threads
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h"
-#include "chunk/internal/test_read_delay.h"
+#include "chunk/chunk_traits.h"        // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"         // ArrayChunk
+#include "chunk/array_chunk2.h"        // ArrayChunk2
+#include "chunk/array_chunk2A.h"       // ArrayChunk2A
+#include "chunk/param_chunk.h"         // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"           // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"              // chunk_config::use_chunk2*, build_config::use_openmp / has_not_ompt
+#include "chunk/manage_ompt.h"         // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/internal/test_hooks.h" // test_hooks::read_delay_* / pass_delay_*
 
-int __mem_page_size = 0;
+#include "validation_harness.h" // __mem_page_size; run() is called by validation_driver.cpp
+
+namespace validation::read_reclaim_validation
+{
 
 using namespace shrink_array;
 
@@ -483,10 +485,24 @@ int run_remark(int team, double seconds)
 
 } // namespace
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
+
+    // The test hooks this harness widens its windows with (test_hooks.h), on
+    // for this process only: one pure read in 16 of a reader thread, one
+    // candidate in 8 of thread 0's passes -- unless a whole-tree build fixed
+    // other values. A build without the hooks (no CHUNK_TEST_HOOKS) runs the
+    // same checks without the delays.
+    if (test_hooks::read_delay_every == 0)
+    {
+        test_hooks::read_delay_every = 16;
+    }
+    if (test_hooks::pass_delay_every == 0)
+    {
+        test_hooks::pass_delay_every = 8;
+    }
 
     const int team = omp_get_max_threads();
     if (team < 2)
@@ -647,3 +663,5 @@ int main(int argc, char** argv)
     std::printf("\n[%s] %s\n", variant_name(), rc ? "=== READ RECLAIM FAILED ===" : "=== READ RECLAIM OK ===");
     return rc;
 }
+
+} // namespace validation::read_reclaim_validation

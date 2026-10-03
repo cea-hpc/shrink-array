@@ -53,32 +53,36 @@
 // Exit 0 = every element matches the reference after every region, and, in a
 // CHUNK_STATS build with the knob on, at least one write really was deferred.
 
-#include <algorithm> // std::min
-#include <atomic>
-#include <cstdio>
-#include <cstdlib>
-#include <cmath>
-#include <print>
-#include <thread> // std::this_thread::yield
-#include <type_traits>
-#include <vector>
-#include <unistd.h>
+#include <algorithm>   // std::min
+#include <atomic>      // std::atomic, std::memory_order
+#include <cstdio>      // printf
+#include <cstdlib>     // std::abs (int, chain_int)
+#include <cmath>       // std::floor
+#include <thread>      // std::this_thread::yield
+#include <type_traits> // std::is_same_v, std::conditional_t, std::is_integral_v
+#include <vector>      // std::vector
+#include <unistd.h>    // getpagesize
+#include <print>       // std::println
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
-#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h"
+#include "chunk/chunk_traits.h"       // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"        // ArrayChunk
+#include "chunk/array_chunk2.h"       // ArrayChunk2
+#include "chunk/array_chunk2A.h"      // ArrayChunk2A
+#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"          // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"             // chunk_config::use_chunk2*, build_config::force_defer_every / has_not_ompt
+#include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 #ifdef CHUNK_STATS
-    #include "chunk/internal/chunk_stats.h"
+    #include "chunk/internal/chunk_stats.h" // CHUNK_STATS_N_VARIANT, reduce_chunk_stats
 #endif
 
-int __mem_page_size = 0;
+#include "chunk/internal/test_hooks.h" // force_defer_every
+#include "validation_harness.h"        // __mem_page_size; run() is called by validation_driver.cpp
+
+namespace validation::deferred_path_validation
+{
 
 using namespace shrink_array;
 
@@ -564,9 +568,22 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     return fails ? 1 : 0;
 }
 
-int main(int argc, char** argv)
+int run(int argc, char** argv)
 {
     __mem_page_size = getpagesize();
+
+    // The forced-deferral hook (test_hooks.h), on for this harness only: one
+    // write in 7 of every thread, unless a whole-tree build fixed another N.
+    test_hooks::force_defer_every = build_config::force_defer_every > 0 ? build_config::force_defer_every : 7U;
+    if constexpr (!build_config::use_openmp)
+    {
+        printf("[deferred_path] note: serial build, no deferred path to force\n");
+    }
+    else if constexpr (!test_hooks::force_defer_compiled)
+    {
+        printf("[deferred_path] note: this build has no test hooks (CHUNK_TEST_HOOKS): no write is forced down "
+               "the deferred path\n");
+    }
 
     // 128 Ki elements: some 60 chunks per run at the default geometry, a
     // million deferred writes per run of the executable, and a Debug build
@@ -576,8 +593,9 @@ int main(int argc, char** argv)
 
     ParamChunk::init_indexes(true);
 
-    std::println("=== deferred_path_validation [variant = {}]  N={}  threads={}  force_defer_every={} ===",
-                 variant_name(), N, CHUNK_PMP_MAX_THREADS, build_config::force_defer_every);
+    std::println(
+        "=== deferred_path_validation [variant = {}]  N={}  threads={}  force_defer_every={} ===", variant_name(), N,
+        CHUNK_PMP_MAX_THREADS, test_hooks::force_defer_compiled ? test_hooks::force_defer_every : 0U);
 
     int fails = 0;
 
@@ -589,8 +607,22 @@ int main(int argc, char** argv)
     fails += run<double>("double", N, sd);
     fails += run<bool>("bool", N, sb);
 
+    // The hook really fired, in every build that has it (the deferral count
+    // below needs CHUNK_STATS).
+    if (test_hooks::force_defer_compiled && test_hooks::force_defer_every > 0)
+    {
+        const unsigned long forced = test_hooks::forced_deferrals.load();
+        printf("[%s] writes forced down the deferred path: %lu\n", variant_name(), forced);
+        if (forced == 0)
+        {
+            printf("[%s] FAIL: the forced-deferral hook is on and fired 0 times -- the path was not exercised\n",
+                   variant_name());
+            ++fails;
+        }
+    }
+
 #ifdef CHUNK_STATS
-    if constexpr (build_config::force_defer_every > 0)
+    if (test_hooks::force_defer_compiled && test_hooks::force_defer_every > 0)
     {
         long deferred = 0;
         for (int v = 0; v < CHUNK_STATS_N_VARIANT; ++v)
@@ -614,3 +646,5 @@ int main(int argc, char** argv)
                  fails == 0 ? "=== DEFERRED PATH OK ===" : "=== DEFERRED PATH FAILURES ===");
     return fails;
 }
+
+} // namespace validation::deferred_path_validation

@@ -14,26 +14,26 @@
  * limitations under the License.
  */
 
-#include <cassert>
-#include <chrono>
-#include <cmath>
-#include <cstdio>
-#include <cstdlib>
-#include <ctime>
-#include <print>
-#include <random>
-#include <array>
-#include <fstream>
+#include <cassert>   // assert
+#include <chrono>    // std::chrono::steady_clock
+#include <cmath>     // std::cos, std::sin, std::sqrt
+#include <cstdlib>   // std::abort, std::srand
+#include <ctime>     // std::time
+#include <random>    // std::mt19937, std::uniform_int_distribution, std::default_random_engine
+#include <array>     // std::array
+#include <fstream>   // std::ifstream, std::ofstream
+#include <cstdio>    // stderr
+#include <print>     // std::println, std::print
 #include <algorithm> // For std::shuffle
-#include <string>
+#include <string>    // std::string, std::to_string
 
-#include <sys/resource.h>
+#include <sys/resource.h> // getrusage
 
-#include <vector>
+#include <vector> // std::vector
 
 
-#include "chunk/param_chunk.h"
-#include "chunk/array_chunk.h"
+#include "chunk/param_chunk.h"                // ParamChunk
+#include "chunk/array_chunk.h"                // ArrayChunk
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
 #include "chunk/chunk_def.h"                  // ChunkDef
 #include "chunk/chunk_std.h"                  // destroy_block_chunk

@@ -19,23 +19,22 @@
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 
-#include <atomic>
-#include <complex>
+#include <atomic>  // std::memory_order_acquire, std::memory_order_acq_rel
+#include <complex> // std::complex (complex_double)
 #include <cstddef> // std::size_t
 #include <tuple>   // the candidate-list entries
-#include <vector>
+#include <vector>  // std::vector
 
 /// @brief The complex element type of the library (chunk_std.cpp instantiates it).
 using complex_double = std::complex<double>;
 
-#include "chunk/internal/process_verbs.h" // compress_now_and_trim_pools, defined in chunk_std.cpp
-#include "chunk/internal/chunk_base.h"
-#include "chunk/config.h"
-#include "chunk/internal/chunk_size_config.h" // ChunkElems
-#include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count
-#include "chunk/internal/chunk_stats.h"       // increm_chunk_write (CHUNK_STATS)
-#include "chunk/internal/conditional_counter.h"
-#include "chunk/internal/proxy.h"
+#include "chunk/internal/chunk_base.h"          // ChunkBase
+#include "chunk/config.h"                       // build_config::use_openmp, chunk_config
+#include "chunk/internal/chunk_size_config.h"   // ChunkElems
+#include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
+#include "chunk/internal/chunk_stats.h"         // increm_chunk_write (CHUNK_STATS)
+#include "chunk/internal/conditional_counter.h" // ConditionalCounter
+#include "chunk/internal/proxy.h"               // Proxy<T>
 
 namespace shrink_array
 {
@@ -681,4 +680,4 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
 } // namespace shrink_array
 
-#include "chunk/internal/chunk_std_inline.h"
+#include "chunk/internal/chunk_std_inline.h" // the template bodies

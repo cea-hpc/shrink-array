@@ -28,12 +28,12 @@
  * isolated unit test cannot force.
  */
 
-#include <cstdlib>
-#include <cstring>
-#include <cstdio>
-#include <print>
-#include <type_traits>
-#include <utility>
+#include <cstdlib>     // std::abort
+#include <cstring>     // std::memcmp
+#include <type_traits> // std::decay_t, std::is_trivially_copyable_v
+#include <utility>     // std::forward
+#include <cstdio>      // stderr
+#include <print>       // std::println
 
 #include "bench_config.h" // mode_check
 #include "bench_int.h"    // Int

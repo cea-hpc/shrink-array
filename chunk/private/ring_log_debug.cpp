@@ -2,45 +2,41 @@
 // Created by ballereaup on 13/10/2025.
 //
 
-#include <cstdint>
-#include <limits>
-#include <memory>
-#include <chrono>
-#include <atomic>
-#include <iostream>
-#include <thread>
-#include <unordered_map>
-#include <vector>
-#include <iomanip>
+#include <algorithm>     // std::max, std::min, std::sort
+#include <cstddef>       // size_t
+#include <cstdint>       // uint32_t, uint64_t
+#include <cstdio>        // std::fflush, stdout
+#include <functional>    // std::hash
+#include <limits>        // std::numeric_limits
+#include <atomic>        // std::atomic, std::memory_order
+#include <iostream>      // std::cout, std::cerr
+#include <thread>        // std::thread::id, std::this_thread
+#include <unordered_map> // std::unordered_map
+#include <vector>        // std::vector
+#include <iomanip>       // std::setw, std::hex
 
-#include <string>
-#include <unistd.h> // isatty, fileno
+#include <string>   // std::string
+#include <stdio.h>  // fileno (POSIX)
+#include <unistd.h> // isatty
 
-#ifdef _OPENMP
-    #include <omp.h>
-#endif
-
-#include "chunk/PMP_CHUNK.h" // chunk_pmp_team_rank (get_tid)
-#include "chunk/ring_log_debug.h"
+#include "chunk/config.h"         // build_config::use_openmp (get_tid)
+#include "chunk/PMP_CHUNK.h"      // chunk_pmp_team_rank (get_tid)
+#include "chunk/ring_log_debug.h" // the declarations defined here
 
 #ifdef RING_LOG_ANY
 
 namespace shrink_array
 {
 
-static constexpr size_t RING_SIZE = size_t{1} << 24U;
+namespace
+{
+constexpr size_t RING_SIZE = size_t{1} << 24U;
 
-static std::vector<RingEntry> ring_buf(RING_SIZE);
+std::vector<RingEntry> ring_buf(RING_SIZE);
 
-static std::atomic<uint32_t> ring_head{0};
+std::atomic<uint32_t> ring_head{0};
 
     #if defined(__aarch64__)
-
-uint64_t now_ns()
-{
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
-        .count();
-}
 
 inline uint64_t now_cycles()
 {
@@ -48,12 +44,12 @@ inline uint64_t now_cycles()
     asm volatile("mrs %0, cntvct_el0" : "=r"(cnt));
     return cnt;
 }
-static inline uint64_t rdtsc_start()
+inline uint64_t rdtsc_start()
 {
     return now_cycles();
 }
 
-static inline uint64_t rdtsc_end()
+inline uint64_t rdtsc_end()
 {
     return now_cycles();
 }
@@ -71,7 +67,7 @@ inline uint64_t now_cycles()
     return ((uint64_t)hi << 32U) | lo;
 }
 
-static inline uint64_t rdtsc_start()
+inline uint64_t rdtsc_start()
 {
     unsigned int eax = 0;
     unsigned int edx = 0;
@@ -83,7 +79,7 @@ static inline uint64_t rdtsc_start()
     return ((uint64_t)edx << 32U) | eax;
 }
 
-static inline uint64_t rdtsc_end()
+inline uint64_t rdtsc_end()
 {
     unsigned int eax = 0;
     unsigned int edx = 0;
@@ -93,6 +89,7 @@ static inline uint64_t rdtsc_end()
 }
 
     #endif
+} // namespace
 
 void ring_init()
 {
@@ -146,27 +143,27 @@ const char* event_color(EventCode ev)
         case EV_BEGIN_SLOW_PATH:
             return "\033[36m"; // cyan
         case EV_END_SLOW_PATH:
-            return "\033[32m"; // vert
+            return "\033[32m"; // green
         case EV_BEGIN_FAST_PATH:
-            return "\033[33m"; // jaune
+            return "\033[33m"; // yellow
         case EV_END_FAST_PATH:
-            return "\033[90m"; // gris
+            return "\033[90m"; // grey
         case EV_COMPRESS_ATTEMPT:
             return "\033[35m"; // magenta
         case EV_COMPRESS_STARTED:
-            return "\033[34m"; // bleu
+            return "\033[34m"; // blue
         case EV_COMPRESS_ABORTED:
-            return "\033[31m"; // rouge
+            return "\033[31m"; // red
         case EV_COMPRESS_FINISHED:
-            return "\033[92m"; // vert clair
+            return "\033[92m"; // light green
         case EV_POLICY_BEGIN_WRITE:
-            return "\033[96m"; // cyan clair
+            return "\033[96m"; // light cyan
         case EV_POLICY_END_WRITE:
-            return "\033[94m"; // bleu clai
+            return "\033[94m"; // light blue
         case EV_MARK_THREAD_HAS_OPS:
-            return "\033[93m"; // jaune clair
+            return "\033[93m"; // light yellow
         case EV_CLEAR_THREAD_HAS_OPS:
-            return "\033[95m"; // magenta clairr
+            return "\033[95m"; // light magenta
         default:
             return "\033[0m"; // reset
     }
@@ -299,6 +296,8 @@ uint32_t get_tid()
     }
 }
 
+namespace
+{
 struct Interval
 {
     uint64_t start;
@@ -307,7 +306,7 @@ struct Interval
 };
 
 // Event types for sweep line; order matters for tie-breaking
-enum EventType
+enum EventType : std::uint8_t
 {
     COMP_START = 0,
     FAST_START = 1,
@@ -323,8 +322,7 @@ struct Endpoint
     size_t    idx; // index of interval in the vector for that tid
 };
 
-
-static bool is_stdout_tty()
+bool is_stdout_tty()
 {
     // Cached result to avoid repeated syscalls
     static std::atomic<int> cached{-1};
@@ -334,23 +332,26 @@ static bool is_stdout_tty()
         return v != 0;
     }
 
-    const int result = isatty(fileno(stdout)) ? 1 : 0;
+    const int result = isatty(fileno(stdout)) != 0 ? 1 : 0;
     cached.store(result, std::memory_order_release);
     return result != 0;
 }
 
 // Change this to control how often to log in non-TTY mode (percent steps)
-static constexpr int PROGRESS_PERCENT_STEP = 5;
+constexpr int PROGRESS_PERCENT_STEP = 5;
 
 // Utility: print progress line (overwrites using '\r' when stdout is a TTY)
 // In non-TTY mode, emit full lines only when integer percent crosses PROGRESS_PERCENT_STEP or at completion
-static void
-print_progress_line(const std::string& icon, const std::string& stage, size_t done, size_t total, size_t spinner_idx)
+void print_progress_line(const std::string& icon,
+                         const std::string& stage,
+                         size_t             done,
+                         size_t             total,
+                         size_t             spinner_idx)
 {
     const char   spinner_chars[] = {'|', '/', '-', '\\'};
-    const double pct_double      = total ? (100.0 * static_cast<double>(done) / static_cast<double>(total)) : 100.0;
-    const int    pct             = static_cast<int>(pct_double);
-    const char   spinner         = spinner_chars[spinner_idx % 4];
+    const double pct_double = total != 0 ? (100.0 * static_cast<double>(done) / static_cast<double>(total)) : 100.0;
+    const int    pct        = static_cast<int>(pct_double);
+    const char   spinner    = spinner_chars[spinner_idx % 4];
 
     if (is_stdout_tty())
     {
@@ -395,6 +396,7 @@ print_progress_line(const std::string& icon, const std::string& stage, size_t do
         }
     }
 }
+} // namespace
 
 // Analyze the ring buffer and report overlaps where one thread is in fast-path
 // while another thread is performing compression using a sweep-line algorithm.
@@ -485,9 +487,8 @@ bool analyze_ring_sweep()
     {
         if (end_ts <= start_ts)
         {
-            return;
+            return; // invalid
         }
-        // invalid
         const uint64_t     dur             = end_ts - start_ts;
         constexpr uint64_t MIN_INTERVAL_NS = 1000;
         if (dur < MIN_INTERVAL_NS)
@@ -533,51 +534,6 @@ bool analyze_ring_sweep()
         }
     }
 
-    #if 0
-    // Close open intervals conservatively at last_ts
-    for (auto& p : state)
-    {
-        uint32_t     tid = p.first;
-        ThreadState& thr_state   = p.second;
-
-        if (thr_state.in_fast)
-        {
-            // Check there isn't already a closed interval with last_ts
-            bool already_closed = false;
-            if (!fast_intervals[tid].empty())
-            {
-                const Interval& last = fast_intervals[tid].back();
-                if (last.end == last_ts && last.start == thr_state.fast_start)
-                    already_closed = true;
-            }
-
-            if (!already_closed && thr_state.fast_start < last_ts)
-            {
-                fast_intervals[tid].push_back({thr_state.fast_start, last_ts, true});
-            }
-
-            thr_state.in_fast = false;
-        }
-
-        if (thr_state.in_compress)
-        {
-            bool already_closed = false;
-            if (!compress_intervals[tid].empty())
-            {
-                const Interval& last = compress_intervals[tid].back();
-                if (last.end == last_ts && last.start == thr_state.compress_start)
-                    already_closed = true;
-            }
-
-            if (!already_closed && thr_state.compress_start < last_ts)
-            {
-                compress_intervals[tid].push_back({thr_state.compress_start, last_ts, true});
-            }
-
-            thr_state.in_compress = false;
-        }
-    }
-    #endif
     // Stage 2: build endpoints
     std::cout << "📦 Building endpoints for sweep-line...\n";
     std::vector<Endpoint> endpoints;

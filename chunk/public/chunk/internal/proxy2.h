@@ -16,28 +16,27 @@
 
 #pragma once
 
-#include <type_traits>
-#include <tuple>
-#include <atomic>
-#include <concepts>
-#include <cstddef>
-#include <cstdlib>
-#include <memory>
-#include <ostream>
+#include <tuple>    // std::tuple, std::get
+#include <atomic>   // std::atomic, std::memory_order_release
+#include <concepts> // std::assignable_from
+#include <cstddef>  // std::size_t
+#include <cstdlib>  // std::abort
+#include <ostream>  // std::ostream
+#include <vector>   // std::vector
 
-#include "chunk/bit.h" // is_bool_like_v: bool and Bit share the bool path
-#include "chunk/internal/in_t.h"
-#include "chunk/config.h"
-#include "chunk/internal/crp_helper.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/internal/pointer_map_chunk2.h"
-#include "chunk/internal/concept_is_clean_assignement.h"
-#include "chunk/internal/chunk_size_policy.h"
-#include "chunk/internal/TChunk.h"
+#include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
+#include "chunk/internal/in_t.h"               // in_t<T>
+#include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
+#include "chunk/internal/crp_helper.h"         // CRTPSupport
+#include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
+#include "chunk/internal/pointer_map_chunk2.h" // PointerMapChunk2
+#include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
+#include "chunk/internal/chunk_size_policy.h"            // set_thread_chunk_size
+#include "chunk/internal/TChunk.h"                       // VectorTuple4ChunkInt2
 
 #include "chunk/internal/chunk2_candidate_list_check.h" // chunk2_missing_candidate_list
-#include "chunk/internal/proxy_base.h"
-#include "chunk/internal/proxy2_base.h"
+#include "chunk/internal/proxy_base.h"                  // ProxyBase
+#include "chunk/internal/proxy2_base.h"                 // Proxy2Base
 #include "chunk/internal/chunk_stats.h" // increm_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
 
 // compression_manager.h is already included unconditionally by proxy_base.h
@@ -1156,4 +1155,4 @@ std::ostream& operator<<(std::ostream& os, const Proxy2<T>& proxy)
 
 } // namespace shrink_array
 
-#include "chunk/internal/proxy2_inline.h"
+#include "chunk/internal/proxy2_inline.h" // the template bodies

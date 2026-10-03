@@ -46,17 +46,18 @@
  *       biggest tokens (default 40), =all prints them all.
  */
 
-#include <array>
+#include <array>     // std::array
 #include <algorithm> // std::sort, the report
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>  // malloc & co, std::getenv
-#include <cstring>  // std::strcmp
-#include <malloc.h> // memalign
-#include <stdlib.h> // ::posix_memalign: POSIX, not declared by <cstdlib>
-#include <new>
+#include <atomic>    // std::atomic, std::memory_order_relaxed
+#include <cstddef>   // std::size_t, std::ptrdiff_t
+#include <cstdint>   // std::uint64_t
+#include <cstdio>    // std::fprintf, std::fflush
+#include <cstdlib>   // malloc & co, std::getenv
+#include <cstring>   // std::strcmp
+#include <malloc.h>  // memalign
+#include <stdlib.h>  // ::posix_memalign: POSIX, not declared by <cstdlib>
+#include <new>       // std::align_val_t, std::nothrow_t
+
 #include "chunk/internal/env_parse.h" // env_number / env_flag (checked, not atoi)
 
 namespace
@@ -163,12 +164,12 @@ __attribute__((destructor)) void report()
 
     std::fprintf(stderr, "\n===== ALLOC_TOKEN (per-type allocation census, -fsanitize=alloc-token) =====\n");
     std::fprintf(stderr, "  %zu distinct tokens, %llu allocations, %llu MiB requested", count,
-                 static_cast<unsigned long long>(tot_allocs), static_cast<unsigned long long>(tot_bytes >> 20));
+                 static_cast<unsigned long long>(tot_allocs), static_cast<unsigned long long>(tot_bytes >> 20U));
     if (const auto dropped = g_dropped.load(std::memory_order_relaxed); dropped != 0)
     {
         std::fprintf(stderr, "  (table full: %llu allocations / %llu MiB NOT counted)",
                      static_cast<unsigned long long>(dropped),
-                     static_cast<unsigned long long>(g_dropped_bytes.load(std::memory_order_relaxed) >> 20));
+                     static_cast<unsigned long long>(g_dropped_bytes.load(std::memory_order_relaxed) >> 20U));
     }
     std::fprintf(stderr, "\n  %-18s  %-3s  %14s  %18s\n", "token", "ptr", "allocs", "bytes");
     for (std::size_t i = 0; i < count && i < top; ++i)

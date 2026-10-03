@@ -32,14 +32,14 @@
 // Exit status 0 when every check passes.
 
 #include <algorithm> // std::min
-#include <cstddef>
-#include <cstdio>
-#include <random>
-#include <thread>
-#include <utility> // std::pair
-#include <vector>
+#include <cstddef>   // std::size_t
+#include <cstdio>    // std::printf
+#include <random>    // std::mt19937_64, std::uniform_int_distribution
+#include <thread>    // std::thread
+#include <utility>   // std::pair
+#include <vector>    // std::vector
 
-#include "chunk/internal/bit_words.h"
+#include "chunk/internal/bit_words.h" // bits::word_t, bits::fill_bits, bits::get_bit, bits::scan_words
 
 namespace bits = shrink_array::bits;
 

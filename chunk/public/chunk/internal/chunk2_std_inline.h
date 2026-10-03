@@ -21,13 +21,13 @@
 #include <cstdlib>  // std::abort
 #include <optional> // std::nullopt (the clears)
 
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/internal/chunk_array_new.h"   // chunk_array_new::init_chunks (operator new[])
-#include "chunk/internal/chunk_size_policy.h" // ChunkElems, set_thread_chunk_size
-#include "chunk/internal/in_t.h"
-#include "chunk/chunk2_std.h"
-#include "chunk/internal/proxy2.h"
+#include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::OMPTcc
+#include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
+#include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
+#include "chunk/internal/chunk_size_policy.h"   // ChunkElems, set_thread_chunk_size
+#include "chunk/internal/in_t.h"                // in_t<T>
+#include "chunk/chunk2_std.h"                   // Chunk2, the class these bodies belong to
+#include "chunk/internal/proxy2.h"              // Proxy2<T>
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 
 /**
@@ -810,7 +810,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
         {
             chunk_t->steal_unmark();
         }
-        test_hooks::maybe_pass_delay(); // TEST KNOB (test_read_delay.h)
+        test_hooks::maybe_pass_delay(); // TEST KNOB (test_hooks.h)
         if constexpr (build_config::any_check)
         {
             if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]
@@ -828,7 +828,15 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
 
     if (proxy2)
     {
-        if (proxy2->is_not_cst_val())
+        // Re-queue the writer's chunk only into the list of ITS array's second
+        // value. Proxy2::perform_compression runs the pass of every key of the
+        // rank with the same writer: queued under another array's key, the
+        // chunk was compressed by that key's next pass to the OTHER array's
+        // constant whenever it was constant at that value -- and its own
+        // array, which only recognises its own constant, then wrote into that
+        // shared array, changing every chunk compressed to it
+        // (chunk2_foreign_key_validation).
+        if (proxy2->is_not_cst_val() && proxy2->second_value == second_value)
         {
             proxy2->add_to_compression_list(vec_tuple_to_compress);
         }

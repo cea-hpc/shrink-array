@@ -14,67 +14,67 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#include "chunk/chunk_traits.h" // Chunk2A fwd decl (element_at variant gate)
-#include <vector>
-#include <unistd.h>
-#include <algorithm> // std::min, the constant scans
-#include <map>
-#include <cstdint>
-#include <type_traits>
-#include <atomic>
-#include <array>
-#include <cstddef>
-#include <cstdio> // perror (use_mm_protect: the cst_val1 buffer)
-#include <cstdlib>
-#include <cstring> // std::memset
-#include <iostream>
-#include <memory>
-#include <optional>
-#include <sys/mman.h>
+#include <vector>      // std::vector
+#include <unistd.h>    // sysconf(_SC_PAGESIZE)
+#include <algorithm>   // std::min, the constant scans
+#include <map>         // std::map
+#include <cstdint>     // uint32_t, int32_t, std::uint64_t
+#include <type_traits> // std::conditional_t, std::is_arithmetic_v
+#include <atomic>      // std::atomic, std::memory_order
+#include <array>       // std::array
+#include <cstddef>     // std::size_t
+#include <cstdio>      // perror (use_mm_protect: the cst_val1 buffer)
+#include <cstdlib>     // std::abort
+#include <cstring>     // std::memset
+#include <iostream>    // std::cerr
+#include <memory>      // std::unique_ptr, std::make_unique
+#include <optional>    // std::optional (constant_value)
+#include <sys/mman.h>  // mmap, mprotect, PROT_READ
 
+#include "chunk/chunk_traits.h"                         // Chunk2A fwd decl (element_at variant gate)
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement, asserted on ChunkBase
 #include "chunk/internal/churn_counters.h"              // churn::note_materialisation
-#include "chunk/internal/chunk_size_policy.h"
-#include "chunk/internal/in_t.h"            // in_t<T>: the scans' constants, by value or by reference
-#include "chunk/internal/element_access.h"  // elem_get: Bit buffers are words of bits
-#include "chunk/internal/relaxed_element.h" // element_at<true>: the marking filter's reads
-#include "chunk/internal/svalloc.h"
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/ring_log_debug.h"           // SEGV hunt: EV_VALUE_ALLOC/FREE to prove aliasing
-#include "chunk/internal/global_check.h"    // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
-#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
-#include "chunk/internal/deferred_op_pool.h"
-#include "chunk/internal/pool_ledger.h" // CHUNK_LEDGER_* block-lifecycle checks (check builds)
-#include "chunk/internal/chunk_stats.h"
-#include "chunk/internal/crp_helper.h"
-#include "chunk/internal/bad_ptr_check.h" // CHUNK_CHECK_VALUES_PTR (check builds)
+#include "chunk/internal/chunk_size_policy.h"           // cst_buffer_size, thread_chunk_size, alloc_chunk_count
+#include "chunk/internal/in_t.h"                        // in_t<T>: the scans' constants, by value or by reference
+#include "chunk/internal/bit_words.h"                   // bits::scan_words / word_t: the Bit scans
+#include "chunk/internal/element_access.h"              // elem_get: Bit buffers are words of bits
+#include "chunk/internal/relaxed_element.h"             // element_at<true>: the marking filter's reads
+#include "chunk/internal/svalloc.h"                     // svcalloc_align, svfree
+#include "chunk/config.h"                               // build_config::use_openmp, chunk_config::stats
+#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_IN_PARALLEL_REGION
+#include "chunk/ring_log_debug.h"                       // SEGV hunt: EV_VALUE_ALLOC/FREE to prove aliasing
+#include "chunk/internal/global_check.h"                // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
+#include "chunk/internal/invariant_check.h"             // INVARIANT_FAILED
+#include "chunk/internal/deferred_op_pool.h"            // DeferredOperationBase, DeferredOpDeleter
+#include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_* block-lifecycle checks (check builds)
+#include "chunk/internal/chunk_stats.h"                 // increm_chunk_* / add_chunk_* (CHUNK_STATS)
+#include "chunk/internal/crp_helper.h"                  // CRTPSupport
+#include "chunk/internal/bad_ptr_check.h"               // CHUNK_CHECK_VALUES_PTR (check builds)
 
 #include "chunk/internal/freepath_counters.h" // [FREEPATH] counters, needed in std-alloc builds too
-#include "chunk/internal/test_read_delay.h"   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (element_at)
+#include "chunk/internal/test_hooks.h"        // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (element_at)
 #include "chunk/internal/read_reclaim.h"      // ReadSection (element_at), defer_release (free_block_to_pool)
 
 #ifdef FAST_ALLOC
-    #include "fast_allocators/tc_allocator.h"
+    #include "fast_allocators/slab_arena.h"   // the slab header slab_of() returns (owner, owner_key)
+    #include "fast_allocators/tc_allocator.h" // TCTypeAllocator, TCTypeCAllocator
 #else
 template <typename T>
 class TCTypeCAllocator; // forward declaration
 
 template <typename T>
 class TCTypeAllocator;
-
-    #include "chunk/internal/svalloc.h"
 #endif
 
-#include "flat_hash_map.hpp"
-#include "ankerl/unordered_dense.h"
+#include "flat_hash_map.hpp"        // ska::flat_hash_map
+#include "ankerl/unordered_dense.h" // ankerl::unordered_dense::map
 
 // deferred_ops_storage.h has no internal dependency on _OPENMP (just
 // <memory>/<mutex>/<atomic>/PMP_CHUNK.h), so it is always included: nothing
 // in it costs anything when DeferredOpsStorage<...> is never instantiated
 // (serial builds), and doing so lets ChunkDeferredOpsPolicy below reference
 // it unconditionally.
-#include "chunk/internal/deferred_ops_storage.h"
+#include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
 namespace shrink_array
 {
 // Forward declaration: only named here, in contexts that depend on T. The
@@ -499,8 +499,8 @@ struct ChunkAllocPolicy<T, Derived, true>
     template <typename InitReused, typename InitFresh>
     T* allocate_chunk_internal(int thr_rank, InitReused init_reused, InitFresh init_fresh)
     {
-        auto& self       = static_cast<Derived&>(*this);
-        T*    values_loc = nullptr;
+        const auto& self       = static_cast<const Derived&>(*this);
+        T*          values_loc = nullptr;
 
         // The per-thread reuse list is only indexable once
         // resize_all_list_block_free_thr() has sized it to max_thr, and that is NOT
@@ -627,8 +627,8 @@ struct ChunkAllocPolicy<T, Derived, false>
                                [[maybe_unused]] InitReused init_reused,
                                InitFresh                   init_fresh)
     {
-        auto& self       = static_cast<Derived&>(*this);
-        T*    values_loc = nullptr;
+        const auto& self       = static_cast<const Derived&>(*this);
+        T*          values_loc = nullptr;
 
         if constexpr (chunk_config::stats)
         {
@@ -761,7 +761,7 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
     /// @param thr_rank Thread rank/ID
     void recup_value(T* values_loc, int thr_rank)
     {
-        auto& self = static_cast<Derived&>(*this);
+        const auto& self = static_cast<const Derived&>(*this);
         // Ledger: LIVE -> PARKED. This block was just allocated by create_value
         // and lost the install CAS; parking a block that is not LIVE (e.g. one
         // another thread already owns) trips here.
@@ -1032,9 +1032,12 @@ struct ChunkDynamicAllocPolicy<T, Derived, false>
 };
 
 // ============================================================================
-// ChunkBase: Base class common to all chunk types (Chunk, Chunk2, Chunk2A)
+// ChunkBase
 // ============================================================================
 
+/// @brief CRTP base common to all chunk types (Chunk, Chunk2, Chunk2A).
+/// @tparam T       Element type.
+/// @tparam Derived The chunk type.
 template <typename T, typename Derived>
 class ChunkBase : public CRTPSupport<Derived>,
                   public DeferredReadGate<Derived>,
@@ -1969,7 +1972,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             return load_at<Relaxed>(vals, i);
         }
         const T* const vals = values_load();
-        // TEST KNOB (test_read_delay.h): widens the load -> dereference window
+        // TEST KNOB (test_hooks.h): widens the load -> dereference window
         // a concurrent compressor's CAS + free can fall into. Compiled out
         // unless CHUNK_TEST_READ_DELAY_EVERY > 0, and then only on threads
         // that opted in. Not on the Relaxed (scan) reads.
@@ -2072,4 +2075,4 @@ class ChunkBase : public CRTPSupport<Derived>,
 
 } // namespace shrink_array
 
-#include "chunk/internal/chunk_base_inline.h"
+#include "chunk/internal/chunk_base_inline.h" // the template bodies

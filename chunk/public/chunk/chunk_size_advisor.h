@@ -39,22 +39,22 @@
 // ops drained). The walk reads chunk states and, for finer sizes, chunk data.
 // ============================================================================
 
-#include <algorithm> // std::ranges::min_element (best)
 #include <cmath>     // std::lround (the extrapolated materialised count)
 #include <cstddef>   // std::size_t
-#include <cstdint>
-#include <print>       // std::println (print)
-#include <ranges>      // std::views::enumerate (print)
-#include <type_traits> // std::is_same_v (the bool second value)
-#include <vector>
+#include <cstdint>   // int64_t, uint32_t
+#include <vector>    // std::vector
+#include <algorithm> // std::ranges::min_element (best)
+#include <print>     // std::println (print)
+#include <ranges>    // std::views::enumerate (print)
 
-#include "chunk/internal/in_t.h"           // in_t<T>: the element snapshots
-#include "chunk/bit.h"                     // is_bool_like_v, is_packed_bit_v
-#include "chunk/internal/element_access.h" // internal::as_words: Bit sub-blocks scanned by word
-#include "chunk/config.h"                  // chunk_config::use_chunk2 / use_chunk2a
-#include "chunk/PMP_CHUNK.h"               // CHUNK_PMP_NUM_THREADS (the parts per thread)
-#include "chunk/internal/rechunk_cost_model.h"
-#include "chunk/internal/chunk_size_policy.h" // shrink_array::cst_buffer_size
+#include "chunk/internal/in_t.h"               // in_t<T>: the element snapshots
+#include "chunk/bit.h"                         // is_bool_like_v, is_packed_bit_v
+#include "chunk/internal/element_access.h"     // internal::as_words: Bit sub-blocks scanned by word
+#include "chunk/internal/bit_words.h"          // bits::scan_range, bits::Uniform
+#include "chunk/config.h"                      // chunk_config::use_chunk2 / use_chunk2a
+#include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_NUM_THREADS (the parts per thread)
+#include "chunk/internal/rechunk_cost_model.h" // rechunk_cost_ms, rechunk_is_worth_it
+#include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
 
 namespace shrink_array
 {
@@ -502,7 +502,7 @@ struct ChunkSizeAdvisor
         }
 
         // ── Assemble the table (ascending sizes) ──────────────────────────────
-        auto push = [&](uint32_t size, int64_t nchunks, int64_t mat, bool exact)
+        const auto push = [&](uint32_t size, int64_t nchunks, int64_t mat, bool exact)
         {
             ChunkSizeEstimate est;
             est.size      = size;
@@ -563,11 +563,11 @@ struct ChunkSizeAdvisor
                      rep.meta_bytes);
         for (const auto& [i, row] : std::views::enumerate(rep.table))
         {
-            std::println("   S={:5} : chunks={:9}  mat={:9} ({:5.1f}%)  mem={:9.2f} Mo {}{}{}", row.size, row.n_chunks,
-                         row.mat,
-                         row.n_chunks ? 100. * static_cast<double>(row.mat) / static_cast<double>(row.n_chunks) : 0.,
-                         row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~", i == rep.cur ? " <- current" : "",
-                         i == rep.best ? "  ** BEST **" : "");
+            std::println(
+                "   S={:5} : chunks={:9}  mat={:9} ({:5.1f}%)  mem={:9.2f} Mo {}{}{}", row.size, row.n_chunks, row.mat,
+                row.n_chunks != 0 ? 100. * static_cast<double>(row.mat) / static_cast<double>(row.n_chunks) : 0.,
+                row.mem_bytes / (1024. * 1024.), row.exact ? "" : "~", i == rep.cur ? " <- current" : "",
+                i == rep.best ? "  ** BEST **" : "");
         }
         std::println("   estimated gain best vs current : {:.2f} Mo", rep.best_gain_bytes() / (1024. * 1024.));
 
@@ -585,7 +585,7 @@ struct ChunkSizeAdvisor
             const auto gain_bytes = static_cast<std::size_t>(rep.best_gain_bytes() > 0 ? rep.best_gain_bytes() : 0.);
             // Observation-phase thresholds (not a decision, just a hint label):
             // >= 1 Mo gained and <= 50 ms spent reads as clearly worth it.
-            const bool worth = rechunk_is_worth_it(gain_bytes, cost_ms, 1uz << 20, 50.0);
+            const bool worth = rechunk_is_worth_it(gain_bytes, cost_ms, 1uz << 20U, 50.0);
             std::println("   estimated re-chunk cost       : {:.3f} ms  ({})", cost_ms,
                          worth ? "worth it" : "marginal");
         }

@@ -46,8 +46,8 @@
  *          (operator()(i) returning a reference does not compile).
  */
 
-#include "chunk/bit.h"
-#include "chunk/array_chunk2.h"
+#include "chunk/bit.h"          // Bit
+#include "chunk/array_chunk2.h" // ArrayChunk2
 
 namespace shrink_array
 {

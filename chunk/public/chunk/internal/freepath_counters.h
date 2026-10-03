@@ -21,8 +21,9 @@
 #include "chunk/chunk_define.h" // FAST_ALLOC
 
 #ifdef FAST_ALLOC
-    #include <atomic>
-    #include "fast_allocators/slab_arena.h"
+    #include <atomic> // std::memory_order_relaxed
+
+    #include "fast_allocators/slab_arena.h" // fast_alloc::arena_report_enabled, fast_alloc::freepath_*
     // Counted only while the report that prints them is on (CHUNK_ARENA_REPORT
     // in the environment, read once): these sit on the materialisation and
     // release paths of every thread, and a shared counter there is a store to

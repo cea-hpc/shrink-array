@@ -42,7 +42,7 @@
 #include <expected>     // std::expected, std::unexpected (parse_number)
 #include <optional>     // std::optional (env_optional)
 #include <system_error> // std::errc
-#include <type_traits>
+#include <type_traits>  // std::is_arithmetic_v, std::is_integral_v, std::is_same_v
 
 namespace shrink_array
 {

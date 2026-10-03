@@ -17,11 +17,11 @@
 
 #pragma once
 
-#include <array>
-#include <execinfo.h>
-#include <cxxabi.h>
-#include <cstdlib> // std::free (demangled name)
-#include <iostream>
+#include <array>      // std::array
+#include <execinfo.h> // backtrace, backtrace_symbols
+#include <cxxabi.h>   // abi::__cxa_demangle
+#include <cstdlib>    // std::free (demangled name)
+#include <iostream>   // std::cerr
 
 #define DEBUG_TRACE(x) std::cerr << " ... " #x " = " << (x) << "\n";
 
@@ -32,6 +32,10 @@ inline void print_backtrace()
     std::array<void*, max_frames> buffer{};
     const int                     nptrs   = backtrace(buffer.data(), max_frames);
     char**                        symbols = backtrace_symbols(buffer.data(), nptrs);
+    if (symbols == nullptr)
+    {
+        return; // backtrace_symbols could not allocate
+    }
 
     for (int i = 0; i < nptrs; ++i)
     {
@@ -39,7 +43,7 @@ inline void print_backtrace()
         char*       offset_begin = nullptr;
         char*       offset_end   = nullptr;
 
-        for (char* p = symbols[i]; *p; ++p)
+        for (char* p = symbols[i]; *p != '\0'; ++p)
         {
             if (*p == '(')
             {

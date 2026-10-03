@@ -20,16 +20,16 @@
 
 #pragma once
 
-#include <cstddef> // std::size_t
-#include <iostream>
-#include <utility> // std::cmp_not_equal
+#include <cstddef>  // std::size_t
+#include <iostream> // std::cout, std::cerr
+#include <utility>  // std::cmp_not_equal
 
-#include "chunk/config.h"
-#include "chunk/internal/chunk_size_config.h"
+#include "chunk/config.h"                     // build_config::use_openmp, chunk_dynamic
+#include "chunk/internal/chunk_size_config.h" // __chunk_size, __decalage_chunk, __modulo_chunk
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size
-#include "chunk/internal/func_p2.h"
-#include "chunk/singleton.h"
-#include "chunk/all_type_chunk.h"
+#include "chunk/internal/func_p2.h"           // is_power_of_tow, log2int
+#include "chunk/singleton.h"                  // SingletonChk
+#include "chunk/all_type_chunk.h"             // AllTypeChunk
 
 namespace shrink_array
 {

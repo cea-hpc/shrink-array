@@ -20,16 +20,16 @@
 #pragma once
 
 
-#include <format>  // std::format, std::format_string, std::formatter
-#include <string>  // the byte dump of an unformattable argument
-#include <cstdio>  // std::fputs, std::fwrite, std::fputc, std::fflush
-#include <cstdlib> // std::abort
-#include <utility> // std::forward
-#include <type_traits>
-#include <source_location>
-#include <complex>
+#include <format>          // std::format, std::format_string, std::formatter
+#include <string>          // the byte dump of an unformattable argument
+#include <cstdio>          // std::fputs, std::fwrite, std::fputc, std::fflush
+#include <cstdlib>         // std::abort
+#include <utility>         // std::forward
+#include <type_traits>     // std::remove_cvref_t, std::conditional_t
+#include <source_location> // std::source_location
+#include <complex>         // std::complex (its std::formatter)
 
-#include "chunk/debug.h"
+#include "chunk/debug.h"  // print_backtrace
 #include "chunk/config.h" // build_config
 
 // --- Specialization must be in the std namespace ---

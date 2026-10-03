@@ -47,8 +47,8 @@
 
 #include <algorithm> // std::max (the thread factor)
 #include <cmath>     // std::pow (same)
-#include <cstddef>
-#include <cstdint>
+#include <cstddef>   // std::size_t
+#include <cstdint>   // std::int64_t
 
 namespace shrink_array
 {

@@ -17,21 +17,23 @@
 
 #pragma once
 
+#include <algorithm> // std::fill_n (the create_value fills)
+#include <cstdlib>   // std::abort
+#include <optional>  // std::nullopt (the clears)
+
 #include "chunk/internal/in_t.h"            // in_t<T>: the element snapshots
 #include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED (steal-mark check)
-#include <algorithm>                        // std::fill_n (the create_value fills)
-#include <cstdlib>                          // std::abort
-#include <optional>                         // std::nullopt (the clears)
 
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems, set_thread_chunk_size
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/config.h"
-#include "chunk/internal/cpu_pause.h" // CPU_PAUSE (spin in create_value*)
+#include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_*, get_thr_rank_fast
+#include "chunk/config.h"                     // build_config::use_openmp, chunk_config::use_chunk_steal_mark
+#include "chunk/internal/cpu_pause.h"         // CPU_PAUSE (spin in create_value*)
 #include "chunk/chunk2A_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/internal/proxy2A.h"
-#include "chunk/internal/manager_chunk.h"
+#include "chunk/internal/proxy2A.h"       // Proxy2A<T>
+#include "chunk/internal/manager_chunk.h" // manager_chunk2A:: (dependent calls the include tools cannot attribute)
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
+#include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
 
 /**
  * @file chunk2A_std_inline.h
@@ -434,7 +436,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
         {
             chunk_t->steal_unmark();
         }
-        test_hooks::maybe_pass_delay(); // TEST KNOB (test_read_delay.h)
+        test_hooks::maybe_pass_delay(); // TEST KNOB (test_hooks.h)
         if constexpr (build_config::any_check)
         {
             if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]

@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
-#include <cstdlib>
-#include <set> // the registry of allocator instances, filled in serial builds only
+#include <cstdlib> // size_t
+#include <set>     // the registry of allocator instances, filled in serial builds only
 
-#include "fast_allocators/internal/singleton.h"
-#include "fast_allocators/tc_allocator.h"
-#include "fast_allocators/internal/alloc_config.h" // constexpr mirror of STD_ALLOC
-#include "fast_allocators/internal/static_const_array.h"
-#include "fast_allocators/internal/pmp_alloc.h" // PMP_MAX_THREADS (was in static_const_array_inline.h)
-#include "fast_allocators/internal/svalloc.h"   // svalloc, svcalloc, svfree
+#include "fast_allocators/internal/singleton.h"          // Singleton
+#include "fast_allocators/tc_allocator.h"                // VTCTypeAllocator, TCTypeAllocatorEBC
+#include "fast_allocators/internal/alloc_config.h"       // constexpr mirror of STD_ALLOC
+#include "fast_allocators/internal/static_const_array.h" // the declarations defined here
+#include "fast_allocators/internal/pmp_alloc.h"          // PMP_MAX_THREADS (was in static_const_array_inline.h)
+#include "fast_allocators/internal/svalloc.h"            // svalloc, svcalloc, svfree
 
 InfoFreeElt StaticConstArray::tab_info_free_elt;
 InfoFreeElt StaticConstArray::tab_info_free_elt_align;
@@ -191,21 +191,21 @@ void compute_sum_allocated_size_TCAlloc(size_t& sum_UsedSize, size_t& sum_nn_ref
     // STD_ALLOC nothing was ever allocated from it, so there is nothing to add.
     if constexpr (alloc_config::use_slabs)
     {
-        StaticConstArray::_Allocator4.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::_Allocator8.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::_Allocator16.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::_Allocator32.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::_Allocator64.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::_Allocator128.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::_Allocator256.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::_Allocator512.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::_Allocator1024.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::_Allocator2048.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::_Allocator4096.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::_Allocator8192.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::_Allocator16384.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::_Allocator32768.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::_Allocator65536.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket4.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket8.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket16.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket32.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket64.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket128.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket256.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket512.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket1024.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket2048.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket4096.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket8192.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket16384.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket32768.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        StaticConstArray::bucket65536.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
     }
 
     // Not part of StaticConstArray, but it's now or never to count them!

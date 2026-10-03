@@ -25,22 +25,21 @@
 #include <string>      // the type name in print_type_name
 #include <type_traits> // std::remove_reference_t
 #include <utility>     // std::pair (the clear() summary)
-#include <vector>
+#include <vector>      // std::vector
 
-#include "chunk/array_chunk2A.h"
-#include "chunk/all_type_chunk.h"
-#include "chunk/internal/chunk_size_predictor.h"
-#include "chunk/internal/chunk_stats.h"         // increm_chunk_* (CHUNK_STATS)
-#include "chunk/internal/chunk_stats_printer.h" // print_formatted_chunk_stats
-#include "chunk/internal/manager_chunk.h"
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_*, get_size_max_tab_omp
-#include "chunk/singleton.h"
-#include "chunk/type_name.h"
-#include "chunk/config.h"
-#include "chunk/internal/chunk_size_policy.h"
-#include "chunk/internal/concept_array_chunk_element.h"
-#include "chunk/internal/in_t.h"
-#include "chunk/internal/pool_ledger.h" // CHUNK_LEDGER_* (check builds)
+#include "chunk/array_chunk2A.h"                        // ArrayChunk2A, the class these bodies belong to
+#include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
+#include "chunk/internal/chunk_size_predictor.h"        // report_size_prediction
+#include "chunk/internal/chunk_stats.h"                 // increm_chunk_* (CHUNK_STATS)
+#include "chunk/internal/chunk_stats_printer.h"         // print_formatted_chunk_stats
+#include "chunk/internal/manager_chunk.h"               // ManagerChunk: per-size free lists, candidate filter
+#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*, get_size_max_tab_omp
+#include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::getRef
+#include "chunk/type_name.h"                            // type_name<T>
+#include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
+#include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
+#include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
+#include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_* (check builds)
 
 namespace shrink_array
 {
@@ -366,7 +365,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
         // !have_agressive_compression removes that waste in aggressive builds.
         if constexpr (!chunk_config::have_agressive_compression)
         {
-            auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
+            const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
 
             if (ens_type_chunk.have_chunk_to_compress_potentially())
             {
@@ -488,7 +487,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
             int nb_val2 = 0;
             Chunk2A<T>::tab_cst_val2_holder::clear(nb_val2); // single thread here
             holds_cst2_registry_ = false;
-            if (nb_val2)
+            if (nb_val2 != 0)
             {
                 print_type_name<T>(nb_val2);
             }
@@ -525,7 +524,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
 
             const int nb = ll_chunk_loc.size();
 
-            if (nb)
+            if (nb > 0)
             {
                 // Park into the reuse list of THIS array's geometry, not the ambient
                 // t_active: these buffers are physically sized for size_policy_.size(),
@@ -582,7 +581,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
             }
         }
 
-        if (nb_val2)
+        if (nb_val2 != 0)
         {
             print_type_name<T>(nb_val2);
         }

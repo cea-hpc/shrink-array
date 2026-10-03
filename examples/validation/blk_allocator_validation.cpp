@@ -34,13 +34,12 @@
 //
 // EXIT STATUS: 0 when every check holds, 1 otherwise.
 
-#include <cstdint>
-#include <cstdio>
-#include <cstring>
-#include <vector>
-#include <unistd.h>
+#include <cstdint>  // std::uintptr_t
+#include <cstdio>   // std::printf
+#include <vector>   // std::vector
+#include <unistd.h> // getpagesize
 
-#include "fast_allocators/internal/static_const_array.h"
+#include "fast_allocators/internal/static_const_array.h" // BlkAllocator, StaticConstArray
 
 int __mem_page_size = 0;
 

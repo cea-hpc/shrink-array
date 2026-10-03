@@ -18,7 +18,7 @@
 
 #include <vector> // std::vector (the per-rank reuse lists)
 
-#include "chunk/PMP_CHUNK.h"
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_RANK_BOUND
 #include "chunk/chunk_std.h" // self-contained: needs Chunk<T>::manager_chunk
 
 // Function templates over the per-thread reuse lists. Only the OpenMP manager
@@ -88,7 +88,7 @@ void load_balance_list_block_free_thr()
         lg += Chunk<T>::manager_chunk::get_list_block_free_thr(thr_rank).size();
     }
 
-    if (!lg || lg < max_thr)
+    if (lg < max_thr) // also covers lg == 0: max_thr >= 1
     {
         return;
     }

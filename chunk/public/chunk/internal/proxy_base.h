@@ -23,28 +23,26 @@
  * leaving only chunk-specific logic in derived classes.
  */
 
-#include <type_traits>
-#include <atomic>
-#include <complex>
-#include <cstdlib>
-#include <functional>
-#include <vector>
-#include <memory>
+#include <type_traits> // std::is_integral_v, std::is_same_v, std::conditional_t
+#include <atomic>      // std::atomic
+#include <complex>     // std::complex
+#include <cstdlib>     // std::size_t, std::abort
+#include <functional>  // std::plus, std::minus
+#include <vector>      // std::vector
 
 #include "chunk/internal/element_access.h" // elem_get / elem_set, is_packed_bit_v: Bit buffers are words of bits
-#include "chunk/config.h"
+#include "chunk/config.h"                  // chunk_config::use_fast_block_compression, build_config::any_check
 #include "chunk/internal/chunk_stats.h" // increm_chunk_* in the bodies (dependent calls the include tools cannot attribute)
-#include "chunk/internal/def_force_inline.h" // FORCE_INLINE: the write engine and its wrappers
-#include "chunk/internal/in_t.h"
-#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
-#include "chunk/internal/proxy_operators.h"
-#include "chunk/internal/tab_cst_val2_holder.h" // TabCstVal2Holder: second-value identifiers
-#include "chunk/internal/relaxed_element.h"     // store_value: Chunk2A's relaxed element stores
-#include "chunk/internal/concept_is_clean_assignement.h"
-#include "chunk/internal/crp_helper.h"
-#include "chunk/internal/arithmetic_context.h"
-#include "chunk/internal/test_read_delay.h" // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
-#include "chunk/internal/read_reclaim.h"    // ReadSection: read_values_outside_session
+#include "chunk/internal/def_force_inline.h"             // FORCE_INLINE: the write engine and its wrappers
+#include "chunk/internal/in_t.h"                         // in_t<T>
+#include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
+#include "chunk/internal/proxy_operators.h"              // ProxyOperators
+#include "chunk/internal/tab_cst_val2_holder.h"          // TabCstVal2Holder: second-value identifiers
+#include "chunk/internal/relaxed_element.h"              // store_value: Chunk2A's relaxed element stores
+#include "chunk/internal/concept_is_clean_assignement.h" // IsCleanCompoundOp, IsCleanShiftOp, base_t
+#include "chunk/internal/crp_helper.h"                   // CRTPSupport, CRTP_USE_DEDUCING_THIS
+#include "chunk/internal/test_hooks.h"                   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
+#include "chunk/internal/read_reclaim.h"                 // ReadSection: read_values_outside_session
 
 namespace shrink_array
 {
@@ -175,7 +173,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      */
     static void release_tab_is_int(int num_tab) noexcept
     {
-        using row_t = typename decltype(tab_is_inside_chunk_list_to_compress)::value_type;
+        using row_t = decltype(tab_is_inside_chunk_list_to_compress)::value_type;
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
         {
             row_t{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
@@ -443,7 +441,12 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        (element_access.h). No sync, no check -- the old spelling.
     [[nodiscard]] T raw_elem() const noexcept
     {
-        // raw-read: read_values -- write-path helper; outside the session read_values_outside_session
+        // Only the serial counter mode reads through this: no pass runs
+        // concurrently there. A build with in-region passes must read through
+        // the write session, element_at, or read_values_outside_session.
+        static_assert(chunk_config::use_compression_with_counter || sizeof(T) == 0,
+                      "raw_elem(): serial counter mode only -- no concurrent pass may release the buffer");
+        // raw-read: serial counter mode (no fast block compression, no concurrent pass)
         return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
     }
 
@@ -506,7 +509,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // compression decision downstream would otherwise be taken against 0
         // instead of the chunk's constant. One load of the pointer.
         const T* const vals = values;
-        // TEST KNOB (test_read_delay.h), as in ChunkBase::element_at: widens
+        // TEST KNOB (test_hooks.h), as in ChunkBase::element_at: widens
         // the load -> dereference window. Compiled out by default.
         test_hooks::maybe_read_delay();
         return internal::element_of(vals, static_cast<std::size_t>(num));
@@ -1404,4 +1407,4 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
 } // namespace shrink_array
 
-#include "chunk/internal/proxy_base_inline.h"
+#include "chunk/internal/proxy_base_inline.h" // the template bodies

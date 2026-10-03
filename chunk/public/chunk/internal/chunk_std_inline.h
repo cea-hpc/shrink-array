@@ -24,12 +24,13 @@
 #include <tuple>           // the candidate-list entries
 
 #include "chunk/chunk_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
-#include "chunk/config.h"
+#include "chunk/config.h"    // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)
 #include "chunk/internal/manager_chunk.h"       // manager_chunk:: candidate lists
+#include "chunk/internal/proxy.h"               // Proxy<T>: the compression pass's proxy
 #include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
 #include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_*
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
@@ -431,7 +432,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
         {
             chunk_t->steal_unmark();
         }
-        test_hooks::maybe_pass_delay(); // TEST KNOB (test_read_delay.h)
+        test_hooks::maybe_pass_delay(); // TEST KNOB (test_hooks.h)
         if constexpr (build_config::any_check)
         {
             if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]

@@ -17,10 +17,10 @@
 /// @file bench_phase_compress.cpp
 /// @brief The compression dispatch. See bench_phases.h.
 
-#include <cstdio>
-#include <print>
+#include <cstdio> // stdout, std::fflush
+#include <print>  // std::println
 
-#include "bench_phases.h"
+#include "bench_phases.h" // bench_phase_compress_all (defined here), BenchArrays
 
 namespace
 {
