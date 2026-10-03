@@ -422,17 +422,33 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
                 INVARIANT_FAILED("Chunk2A block pass: candidate {} of {} has num_chunk={}", k, sz, num_chunk);
             }
         }
+        // Hand the candidate back: its mark FIRST, then the dedup flag. While
+        // the flag is up the chunk is in no other thread's list, so no other
+        // pass can have marked it and this unmark only drops our own claim
+        // (idempotent for the ones released above). The other way round,
+        // another thread could queue the chunk once the flag was down, start
+        // its pass and mark it -- and this unmark erased that claim: writers
+        // then wrote into a chunk that pass was scanning and stealing
+        // (read_reclaim_validation, mode `remark`).
+        if (auto* const chunk_t = std::get<0>(tup))
+        {
+            chunk_t->steal_unmark();
+        }
+        test_hooks::maybe_pass_delay(); // TEST KNOB (test_read_delay.h)
+        if constexpr (build_config::any_check)
+        {
+            if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]
+            {
+                INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
+                                 "dedup flag -- two passes on one chunk",
+                                 static_cast<const void*>(marked));
+            }
+        }
         if (num_chunk >= 0)
         {
             const int num_tab = std::get<2>(tup);
 
             Proxy2A<T>::Base::reset_tab_inside_list_to_compress(num_tab, num_chunk);
-        }
-        // The pass is over for every candidate: no mark may outlive it
-        // (idempotent for the ones released above).
-        if (auto* const chunk_t = std::get<0>(tup))
-        {
-            chunk_t->steal_unmark();
         }
     }
 

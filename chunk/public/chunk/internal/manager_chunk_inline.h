@@ -353,11 +353,12 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::resize_all_list_block_free_thr(
  * @param in_parallel True when called from inside a parallel region, where the
  *        destruction has to be serialised with `omp single`.
  *
- * @note Under `build_config::any_check` this first walks the maps looking for
- *       ops that were enqueued but never drained. It does NOT abort on them: it
- *       reports, then applies and clears them, deliberately, so a run can
- *       continue far enough to show whether the leftovers were a harmless race
- *       or real corruption upstream.
+ * @note It first walks the maps for ops that were enqueued but never drained,
+ *       in EVERY build. It does not abort on them: it reports (stderr, the
+ *       first 16 times), then applies and clears them. Release builds used to
+ *       skip the walk and destroy the maps with the ops in them: a leftover op
+ *       was a write lost without a word, and its block was never recycled.
+ *       The walk is one empty() test per rank when nothing is left.
  */
 template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_parallel)
@@ -365,15 +366,12 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
     using Storage = DeferredOpsStorage<typename CHUNK_T<T>::per_thread_map>;
     auto& storage = Storage::instance();
 
-    if constexpr (build_config::any_check)
     {
-        // Defensive drain: log any leftovers (they represent ops that were
+        // Defensive drain, every build: log any leftovers (ops that were
         // enqueued via to_be_queued_for_deferred_processing but never
-        // drained by flush_deferred). Then execute them and clear the maps
-        // rather than aborting. This is a diagnostic mode: it lets the
-        // run continue so we can see whether the downstream data behavior
-        // is correct (leftovers were harmless races) or corrupt (real bug
-        // upstream).
+        // drained by flush_deferred), then execute them and clear the maps
+        // rather than aborting. Destroying the maps with the ops in them
+        // would drop those writes silently -- what release builds did.
         auto* arr = storage.get();
         if (arr)
         {
@@ -394,10 +392,15 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
                     return;
                 }
 
-                std::fprintf(
-                    stderr,
-                    "[LEAK] destroy_after_flush: thr=%d has %zu chunks with deferred ops (draining defensively)\n",
-                    rank, arr[rank].size());
+                // Should never happen: say so, but not for every phase of a
+                // run where it does.
+                static std::atomic<int> reports{0};
+                const int               report = reports.fetch_add(1, std::memory_order_relaxed);
+                if (report < 16)
+                    std::fprintf(stderr,
+                                 "[LEAK] destroy_after_flush: thr=%d has %zu chunks with deferred ops (draining "
+                                 "defensively)%s\n",
+                                 rank, arr[rank].size(), report == 15 ? " -- further reports suppressed" : "");
 
                 for (auto& [chunk_ptr, ops_map_ptr] : arr[rank])
                 {

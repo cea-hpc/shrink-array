@@ -1240,6 +1240,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             unsigned int       not_second = 0;
             for (unsigned int j = i; j < block_end; ++j)
             {
+                // raw-read: compressor scan of a chunk this pass claimed (steal mark), or a sequential caller
                 not_first |= static_cast<unsigned int>(vals[j] != first_v);
                 not_second |= static_cast<unsigned int>(vals[j] != second_v);
             }
@@ -1284,6 +1285,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             unsigned int       bad       = 0;
             for (unsigned int j = i; j < block_end; ++j)
             {
+                // raw-read: compressor scan of a chunk this pass claimed (steal mark), or a sequential caller
                 bad |= static_cast<unsigned int>(vals[j] != v);
             }
             i = block_end;
@@ -1414,6 +1416,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             }
         }
         static_assert(!is_packed, "operator()(int) returns T&: a Bit has no address (bit.h)");
+        // raw-read: hands out an address / reference -- materialised first, the caller keeps it valid
         return self.values_load()[i];
     }
 
@@ -1962,6 +1965,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             {
                 return derived().second_value_from_ptr(vals);
             }
+            // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
             return load_at<Relaxed>(vals, i);
         }
         const T* const vals = values_load();
@@ -1973,6 +1977,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         {
             test_hooks::maybe_read_delay();
         }
+        // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
         return load_at<Relaxed>(vals, i);
     }
 
@@ -1997,6 +2002,7 @@ class ChunkBase : public CRTPSupport<Derived>,
             }
         }
         static_assert(!is_packed, "print_adr: a Bit has no address (bit.h)");
+        // raw-read: hands out an address / reference -- materialised first, the caller keeps it valid
         return &self.values_load()[i];
     }
 
@@ -2049,6 +2055,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     {
         if constexpr (is_packed)
         {
+            // raw-read: load_at, called by element_at_unguarded only
             return elem_get(vals, static_cast<std::size_t>(i)); // relaxed word load under OpenMP
         }
         else if constexpr (Relaxed)
@@ -2057,6 +2064,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         }
         else
         {
+            // raw-read: load_at, called by element_at_unguarded only
             return vals[i];
         }
     }

@@ -950,6 +950,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         {
             create_value();
         }
+        // raw-read: hands out an address / reference -- materialised first, the caller keeps it valid
         return values[num];
     }
 

@@ -777,6 +777,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
 
         create_value(need_alloc);
 
+        // raw-read: hands out an address / reference -- materialised first, the caller keeps it valid
         return values[num];
     }
 
@@ -992,12 +993,14 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
                     // pass in the region may release the buffer between the
                     // pointer load and the element load (read_reclaim.h).
                     const read_reclaim::ReadSection section;
+                    // raw-read: inside a read_reclaim::ReadSection
                     return values[num];
                 }
             }
             return Base::read_pure();
         }
 
+        // raw-read: serial build (no OpenMP, no concurrent pass)
         return values[num];
     }
 

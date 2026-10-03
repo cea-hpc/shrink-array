@@ -735,6 +735,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                     }
 
                     // Safe to write.
+                    // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                     values_before[num] = static_cast<T>(ctx->operand);
 
                     // Post-store confirmation.
@@ -772,6 +773,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                                              static_cast<const void*>(values_before),
                                              static_cast<const void*>(values_after));
                         }
+                        // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                         const in_t<T> readback = values_after[num];
                         const auto    expected = static_cast<T>(ctx->operand);
                         if (readback != expected)

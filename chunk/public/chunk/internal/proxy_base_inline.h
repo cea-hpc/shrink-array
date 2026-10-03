@@ -1087,6 +1087,7 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(this Derived& self, Op op
                                 }
                                 // Additional sanity: the stored value should be readable back
                                 // from the current pointer.
+                                // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                                 const in_t<T> readback = elem_get(values_after, static_cast<std::size_t>(ctx->num));
                                 const auto    expected = static_cast<T>(res);
                                 if (readback != expected)
@@ -1174,6 +1175,7 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(this Derived& self, in_
                         [ctx, &proxy](T* values)
                         {
                             static_cast<void>(proxy);
+                            // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                             const in_t<T>  current = elem_get(values, static_cast<std::size_t>(ctx->num));
                             const CalcType intermediate =
                                 ctx->operation(static_cast<CalcType>(current), static_cast<CalcType>(ctx->operand));
