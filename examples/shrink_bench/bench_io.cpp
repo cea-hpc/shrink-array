@@ -7,7 +7,7 @@
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
-#include "bench_io.h"
+#include "bench_io.h" // the declarations defined here
 
 // BZip2 helpers. Only present when BZIP2 is defined at build time.
 // build_config::has_bzip2 (in chunk/config.h) must be consistent with
@@ -16,13 +16,13 @@
 
 #ifdef BZIP2
 
-    #include <bzlib.h>
-    #include <cstdlib> // std::abort
-    #include <fstream>
-    #include <iostream>
-    #include <iterator>
-    #include <string>
-    #include <vector>
+    #include <bzlib.h>  // BZ2_bzBuffToBuffCompress, BZ2_bzBuffToBuffDecompress
+    #include <cstdlib>  // std::abort
+    #include <fstream>  // std::ifstream, std::ofstream
+    #include <iostream> // std::cout, std::cerr
+    #include <iterator> // std::istreambuf_iterator
+    #include <string>   // std::string
+    #include <vector>   // std::vector
 
 void compress_file(const std::string& source_file, const std::string& dest_file)
 {

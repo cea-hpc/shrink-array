@@ -14,28 +14,28 @@
  * limitations under the License.
  */
 
-#include <bit> // std::bit_cast (calculate_checksum)
-#include <cassert>
-#include <chrono>
-#include <cmath>
-#include <cstdint>
-#include <cstdlib>
-#include <iostream>
-#include <random>
-#include <array>
-#include <fstream>
-#include <string>
+#include <bit>      // std::bit_cast (calculate_checksum)
+#include <cassert>  // assert
+#include <chrono>   // std::chrono::steady_clock
+#include <cmath>    // std::cos, std::sin, std::sqrt
+#include <cstdint>  // std::int64_t, uint64_t
+#include <cstdlib>  // std::abort
+#include <iostream> // std::cout, std::cerr
+#include <random>   // std::mt19937, std::uniform_int_distribution
+#include <array>    // std::array
+#include <fstream>  // std::ifstream, std::ofstream
+#include <string>   // std::string, std::to_string
 
-#include <iomanip>
-#include <type_traits> // std::conditional_t (Array)
-#include <vector>
-#include <sys/resource.h>
-#include <unistd.h>
+#include <iomanip>        // std::setprecision, std::fixed
+#include <type_traits>    // std::conditional_t (Array)
+#include <vector>         // std::vector
+#include <sys/resource.h> // getrusage
+#include <unistd.h>       // getpagesize
 
 // Both executables have the chunk headers: simple_array_vector links
 // chunk_vector, simple_array_chunk chunk_v1.
-#include "chunk/param_chunk.h"
-#include "chunk/array_chunk.h"
+#include "chunk/param_chunk.h"                // ParamChunk
+#include "chunk/array_chunk.h"                // ArrayChunk
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
 #include "chunk/chunk_def.h"                  // ChunkDef
 #include "chunk/chunk_std.h"                  // destroy_block_chunk

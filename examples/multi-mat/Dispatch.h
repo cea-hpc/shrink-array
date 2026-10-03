@@ -21,7 +21,7 @@
  * @brief Which materials are stored in chunk arrays, which in std::vectors.
  */
 
-#include <vector>
+#include <vector> // std::vector
 
 /// @brief The storage kind of every material, decided once by Simu::inputData().
 class Dispatch

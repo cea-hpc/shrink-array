@@ -30,18 +30,18 @@
  * to the library (config.h).
  */
 
-#include <iostream>
-#include <array>
-#include <vector>
-#include <cmath>
-#include <functional>
-#include <type_traits>
+#include <iostream>    // std::cout
+#include <array>       // Simu::tabs (std::array)
+#include <vector>      // Simu::ll, tab_size, tab_start (std::vector)
+#include <cmath>       // std::cos, std::sin, std::tan
+#include <functional>  // std::function
+#include <type_traits> // std::is_same_v, std::remove_reference_t
 
-#include "config.h"
-#include "Containers.h"
-#include "Dispatch.h"
-#include "MultiMatAlgo.h"
-#include "Simu.h"
+#include "config.h"       // multi_mat::begin_parallel_phase, barrier_phase, embedded_compression
+#include "Containers.h"   // VectChunk, dispatch
+#include "Dispatch.h"     // Dispatch::isChunk
+#include "MultiMatAlgo.h" // MultiMatAlgo
+#include "Simu.h"         // Simu: computeLoops() is defined here
 
 template <typename LOOPS, typename LOOPSCHUNK>
 void Simu::computeLoops(MultiMatAlgo<LOOPS, LOOPSCHUNK>& mm_algo,

@@ -25,14 +25,14 @@
  * behind `if constexpr`, compiled in every build.
  */
 
-#include <iostream>
-#include <random>
-#include <string>
-#include <stdexcept>
-#include <algorithm>
+#include <iostream>  // std::cout, std::cerr, std::cin
+#include <random>    // std::mt19937, std::uniform_int_distribution
+#include <string>    // std::string, std::stoi, std::stod
+#include <stdexcept> // std::invalid_argument, std::out_of_range
+#include <algorithm> // std::max
 
-#include "config.h"
-#include "Simu.h"
+#include "config.h" // multi_mat::interactive_input
+#include "Simu.h"   // Simu::inputData
 
 namespace
 {

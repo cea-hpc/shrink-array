@@ -2,15 +2,15 @@
 // several REAL chunk sizes, then compare the advisor's per-size predictions
 // (each set made from ONE reference size: 256, then 1024) against ground
 // truth at each size.
-#include <cstdio>
+#include <cstdio>   // std::printf, std::snprintf
 #include <iterator> // std::size
-#include <vector>
+#include <vector>   // std::vector
 
-#include "chunk/array_chunk2A.h"
-#include "chunk/chunk2A_std.h" // Chunk2A
-#include "chunk/chunk_size_advisor.h"
+#include "chunk/array_chunk2A.h"              // ArrayChunk2A
+#include "chunk/chunk2A_std.h"                // Chunk2A
+#include "chunk/chunk_size_advisor.h"         // ChunkSizeAdvisor
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
-#include "chunk/param_chunk.h"
+#include "chunk/param_chunk.h"                // ParamChunk::init_indexes
 
 using namespace shrink_array;
 

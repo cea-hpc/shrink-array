@@ -9,17 +9,17 @@
  */
 #pragma once
 
-#include "bench_prelude.h"
+#include "bench_prelude.h" // Int, chunk_config::has_ompt
 
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
-#include <random>
-#include <string>
-#include <type_traits>
-#include <vector>
+#include <atomic>      // std::atomic
+#include <cstddef>     // size_t
+#include <cstdint>     // uint64_t, int64_t
+#include <random>      // std::mt19937
+#include <string>      // std::string
+#include <type_traits> // std::true_type, std::false_type
+#include <vector>      // std::vector
 
-#include "chunk/PMP_CHUNK.h"
+#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK
 
 // -----------------------------------------------------------------------------
 // Cache-line-padded uint64 used as a per-thread accumulator to avoid false

@@ -11,40 +11,40 @@
 // Central prelude first: fixes the chunk/ include order and derives the
 // SHRINK_ARRAY / CHECK_COMPRESSION / NEED_COMPRESSION macros from the
 // build-time variant selector.
-#include "bench_prelude.h"
+#include "bench_prelude.h" // Int, tc, complex_double, SHRINK_ARRAY
 
-#include <algorithm>
-#include <limits> // std::numeric_limits (tab_mask's size)
-#include <cfenv>
-#include <chrono>
-#include <cmath>  // std::sin (the range-API checks)
-#include <cstdio> // std::fprintf
-#include <cstdlib>
-#include <iomanip>
-#include <iostream>
-#include <random>
+#include <algorithm> // std::min, std::max
+#include <limits>    // std::numeric_limits (tab_mask's size)
+#include <cfenv>     // feenableexcept, FE_DIVBYZERO
+#include <chrono>    // std::chrono::steady_clock
+#include <cmath>     // std::sin (the range-API checks)
+#include <cstdio>    // std::fprintf
+#include <cstdlib>   // std::getenv, std::exit, std::abort
+#include <iomanip>   // std::setw, std::left
+#include <iostream>  // std::cout, std::cerr, std::cin
+#include <random>    // std::mt19937, std::uniform_int_distribution
 #include <stdexcept> // std::invalid_argument (the INPUT_DATA prompt)
-#include <string>
-#include <unistd.h>
-#include <vector>
+#include <string>    // std::string, std::to_string, std::getline
+#include <unistd.h>  // getpid
+#include <vector>    // std::vector
 
 // The bulk range API (the chunked arrays' overloads or the std::vector
 // fallback) comes with bench_array.h, through bench_phases.h below.
 
 // Bench-mode configuration (mode_perf / mode_check / get_size_* / ...).
-#include "bench_config.h"
+#include "bench_config.h" // mode_perf, get_size_data, get_iter_stop
 
 // Utility templates and function declarations (checksums, correlations,
 // seed I/O, help/suggest, memory report).
-#include "bench_utils.h"
+#include "bench_utils.h" // initializeRNG, memory_consumption
 
 // The phases extracted from main() and their shared context: the array type,
 // the second_value_* constants, the BenchArrays handle, and the OMPT phase
 // wrappers (which lived here until the parallel regions left).
-#include "bench_phases.h"
+#include "bench_phases.h" // bench_phase_*, BenchArrays
 
 // The command line (BenchArgs, parse_bench_args).
-#include "bench_args.h"
+#include "bench_args.h" // parse_bench_args, BenchArgs
 
 
 #include "chunk/ring_log_debug.h"     // SEGV hunt: ring_init/analyze_ring_sweep decls

@@ -28,10 +28,10 @@
  * (a chunk element access is a proxy, not a lane).
  */
 
-#include <tuple>
+#include <tuple> // std::tie
 
-#include "config.h"
-#include "PMP.h"
+#include "config.h" // PRAGMA_FORCEINLINE, multi_mat::thread_rank
+#include "PMP.h"    // get_parallel_loop_boundaries
 
 /// @brief Loop policy of the chunk materials: work-shared, never vectorised.
 struct Loops

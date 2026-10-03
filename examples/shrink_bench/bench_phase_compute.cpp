@@ -18,15 +18,15 @@
 /// @brief The main compute loop's parallel region. See bench_phases.h.
 
 #include <cstdlib> // std::getenv
-#include <cmath>
-#include <complex>
-#include <limits>
-#include <vector>
+#include <cmath>   // std::cos, std::sin, std::sqrt
+#include <complex> // complex_double (std::complex) arithmetic
+#include <limits>  // std::numeric_limits
+#include <vector>  // std::vector
 
 #include <algorithm> // std::min / std::max (block bounds)
 
-#include "bench_phases.h"
-#include "bench_rmw_check.h"
+#include "bench_phases.h"             // bench_phase_compute (defined here), BenchArrays
+#include "bench_rmw_check.h"          // SB_CHECKED_RMW
 #include "bench_utils.h"              // linear_correlation, exponential_correlation
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 

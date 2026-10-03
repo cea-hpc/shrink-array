@@ -21,10 +21,10 @@
  *        vector material, from their average occupation of the mesh.
  */
 
-#include <cmath>
-#include <iostream>
+#include <cmath>    // std::round
+#include <iostream> // std::cout
 
-#include "Simu.h"
+#include "Simu.h" // Simu::computeInterval
 
 void Simu::computeInterval()
 {

@@ -22,12 +22,12 @@
  *        runs in order.
  */
 
-#include <vector>
-#include <array>
-#include <functional>
-#include <algorithm>
+#include <vector>     // std::vector
+#include <array>      // std::array
+#include <functional> // std::function
+#include <algorithm>  // std::min, std::max
 
-#include "Containers.h"
+#include "Containers.h" // MultiArray, VectChunk2
 
 template <typename LOOPS, typename LOOPSCHUNK>
 class MultiMatAlgo;

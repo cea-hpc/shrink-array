@@ -22,8 +22,8 @@
  *        concrete arrays and its loop policy.
  */
 
-#include "Loops.h"
-#include "Containers.h"
+#include "Loops.h"      // Loops, LoopsSimd
+#include "Containers.h" // MultiArray, dispatch
 
 /**
  * @brief Runs a loop body once per material, handing it the material's

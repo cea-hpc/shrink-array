@@ -27,11 +27,11 @@
 
 #pragma once
 
-#include <chrono>
-#include <cmath>
-#include <vector>
+#include <chrono> // std::chrono::steady_clock
+#include <cmath>  // std::sqrt
+#include <vector> // std::vector
 
-#include "bench_array.h"
+#include "bench_array.h" // BenchArrays
 
 // Guarded inline wrappers around the OMPT phase transitions. Semantics are
 // strictly identical to the manual `if constexpr (build_config::has_not_ompt)

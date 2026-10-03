@@ -31,9 +31,9 @@
 /// The chunked containers do not need it (ArrayChunkBits writes each word
 /// atomically), but the workload has to be the same in every build.
 
-#include <cstdint>
+#include <cstdint> // std::uint64_t
 
-#include "bench_phases.h"
+#include "bench_phases.h" // bench_phase_mask_fill / _compute (defined here), BenchArrays
 
 namespace
 {

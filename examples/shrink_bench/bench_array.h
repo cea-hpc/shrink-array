@@ -25,11 +25,11 @@
 
 #pragma once
 
-#include <cstdint> // std::uint64_t (bench_mask_hash)
-#include <type_traits>
-#include <vector> // std::vector<bool>: tab_mask in the baseline
+#include <cstdint>     // std::uint64_t (bench_mask_hash)
+#include <type_traits> // std::conditional_t
+#include <vector>      // std::vector<bool>: tab_mask in the baseline
 
-#include "bench_prelude.h"
+#include "bench_prelude.h" // Int, complex_double, chunk_config::
 
 #include "bench_struct.h" // Point3, Cell: the aggregate element types
 
@@ -37,8 +37,8 @@
 // ChunkedArray concept, so they select nothing in the std::vector build) on
 // top of the std::vector fallback they include. Also what drags in the
 // ArrayChunk* definitions the alias below selects between.
-#include "chunk/array_chunk_range_ops.h"
-#include "chunk/array_chunk_bits.h" // tab_bool_bits, tab_mask: bools packed 8 per byte
+#include "chunk/array_chunk_range_ops.h" // the bulk range API and the ArrayChunk* definitions (see above)
+#include "chunk/array_chunk_bits.h"      // tab_bool_bits, tab_mask: bools packed 8 per byte
 
 namespace shrink_array
 {

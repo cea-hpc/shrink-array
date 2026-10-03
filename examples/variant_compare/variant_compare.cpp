@@ -70,24 +70,22 @@
  *          Usage: variant_compare [--n N] [--iters I] [--constants K] [--verify]
  */
 
-#include <chrono>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <string>
-#include <type_traits>
-#include <utility> // std::as_const
-#include <vector>
-#include <unistd.h>
+#include <chrono>      // std::chrono::steady_clock
+#include <cstdint>     // std::uint64_t
+#include <cstdio>      // std::printf, std::fprintf
+#include <string>      // std::string
+#include <type_traits> // std::conditional_t
+#include <utility>     // std::as_const
+#include <vector>      // std::vector
+#include <unistd.h>    // getpagesize
 
-#include "chunk/chunk_traits.h"
-#include "chunk/array_chunk.h"
-#include "chunk/array_chunk2.h"
-#include "chunk/array_chunk2A.h"
-#include "chunk/param_chunk.h"
-#include "chunk/config.h"
-#include "chunk/PMP_CHUNK.h"
-#include "chunk/manage_ompt.h"
+#include "chunk/chunk_traits.h"       // the ind_type = int default of ArrayChunk2<T> / ArrayChunk2A<T>
+#include "chunk/array_chunk2.h"       // ArrayChunk2
+#include "chunk/array_chunk2A.h"      // ArrayChunk2A
+#include "chunk/param_chunk.h"        // ParamChunk::init_indexes
+#include "chunk/config.h"             // chunk_config::use_chunk2a, build_config::use_openmp
+#include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"        // shrink_array::begin_parallel_phase, finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
 #include "chunk/internal/exact_rss.h" // exact_rss_kib (smaps_rollup)
 

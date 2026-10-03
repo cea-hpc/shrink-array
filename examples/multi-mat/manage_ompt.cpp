@@ -46,13 +46,13 @@
  * the switch the library reads in ompt_off.cpp, and has no tool.
  */
 
-#include <atomic>
-#include <cstdio>
+#include <atomic> // std::atomic, std::memory_order
+#include <cstdio> // std::puts, std::fputs
 
-#include <omp-tools.h>
+#include <omp-tools.h> // ompt_* (the OMPT tool interface)
 
-#include "chunk/config.h"
-#include "chunk/manage_ompt.h"
+#include "chunk/config.h"      // OmptSuspendCounter
+#include "chunk/manage_ompt.h" // shrink_array::begin_parallel_phase, finalize_parallel_phase
 
 /// @brief The suspension counter the library reads and updates
 ///        (chunk_config::OMPTcc, declared in chunk/config.h): the callbacks
