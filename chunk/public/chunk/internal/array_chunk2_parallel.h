@@ -135,8 +135,9 @@ class FastBlockSupport2<Derived, true>
  *          declared member in every mode.
  */
 template <typename Derived>
-struct FastBlockSupport2<Derived, false>
+class FastBlockSupport2<Derived, false>
 {
+  public:
     /** @brief No-op: this mode has no deferred candidate list. */
     void make_block_compression() noexcept {}
 };

@@ -607,8 +607,9 @@ class Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
  * @brief Specialization for Disabled Fast Compression (Zero Overhead).
  */
 template <typename Derived, typename T, typename ChunkType>
-struct Proxy2AFastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2A<T, Derived>
+class Proxy2AFastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2A<T, Derived>
 {
+  public:
     using BaseSpec = ProxySpec2A<T, Derived>;
 
     using values_type_ref = BaseSpec::values_type_ref;

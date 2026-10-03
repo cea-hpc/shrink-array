@@ -56,8 +56,9 @@ enum class ArenaKind
 ///        behind the same call surface (init/set_arena no-ops, every
 ///        element "free-able").
 template <typename T>
-struct TCTypeAllocator
+class TCTypeAllocator
 {
+  public:
     /// @brief No-op.
     void init(size_t, size_t, size_t) {}
     /// @brief No-op.

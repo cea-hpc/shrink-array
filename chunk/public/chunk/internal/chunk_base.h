@@ -181,8 +181,9 @@ class DeferredReadGate; // primary left undefined: only the 3 specializations ex
 // Serial build: the deferred-op machinery does not exist, nothing is ever
 // pending, so the gate is a pure no-op (and names no OpenMP-only member).
 template <typename Derived>
-struct DeferredReadGate<Derived, DeferReadGate::None>
+class DeferredReadGate<Derived, DeferReadGate::None>
 {
+  public:
     static constexpr bool precise = false;
 
     /// @brief Read-side gate check: always false (serial build has no
@@ -226,8 +227,9 @@ struct DeferredReadGate<Derived, DeferReadGate::None>
 // OpenMP + SHRINK_SMALL_CHUNK: no per-chunk counter; the authoritative gate is
 // the (coarser) map-scan is_not_available().
 template <typename Derived>
-struct DeferredReadGate<Derived, DeferReadGate::Coarse>
+class DeferredReadGate<Derived, DeferReadGate::Coarse>
 {
+  public:
     static constexpr bool precise = false;
 
     // No counter in this build: publish/retire are no-ops and pending_any() is
@@ -830,7 +832,7 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
 // (nothing concurrent to protect against), no thread-local free list
 // (nothing to contend over).
 template <typename T, typename Derived>
-struct ChunkDeferredOpsPolicy<T, Derived, false>
+class ChunkDeferredOpsPolicy<T, Derived, false>
 {
 };
 
@@ -1006,8 +1008,9 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
 // per-size pool to keep -- allocator_data (on ChunkBase) is the only
 // allocator that ever exists. Both routing methods just return it directly.
 template <typename T, typename Derived>
-struct ChunkDynamicAllocPolicy<T, Derived, false>
+class ChunkDynamicAllocPolicy<T, Derived, false>
 {
+  public:
     /// @brief Static builds have no per-size pool: always route to the
     ///        single legacy allocator.
     /// @param thr_rank Calling thread's rank.
