@@ -427,7 +427,8 @@ if (OMP)
     set(_tgt read_reclaim_validation_${_vname}_${CHUNK_DEFAULT_SIZE})
     add_executable(${_tgt} read_reclaim_validation.cpp)
     target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE})
-    target_compile_definitions(${_tgt} PRIVATE ${_vmacro} CHUNK_TEST_READ_DELAY_EVERY=16 CHUNK_TEST_READ_DELAY_US=50)
+    target_compile_definitions(${_tgt} PRIVATE ${_vmacro} CHUNK_TEST_READ_DELAY_EVERY=16 CHUNK_TEST_READ_DELAY_US=50
+                                                  CHUNK_TEST_PASS_DELAY_EVERY=8 CHUNK_TEST_PASS_DELAY_US=200)
     validation_setup_target(${_tgt})
     add_test(NAME ${_tgt}_8thr COMMAND ${_tgt})
     set_property(TEST ${_tgt}_8thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
@@ -441,6 +442,13 @@ if (OMP)
     set_property(TEST ${_tgt}_compound_8thr PROPERTY LABELS validation)
     set_property(TEST ${_tgt}_compound_8thr PROPERTY SKIP_RETURN_CODE 77)
     set_property(TEST ${_tgt}_compound_8thr PROPERTY TIMEOUT 120)
+    # A pass handing its candidates back must not erase another pass's claim
+    # (the `remark` argument; the harness says why). All three variants.
+    add_test(NAME ${_tgt}_remark_8thr COMMAND ${_tgt} remark)
+    set_property(TEST ${_tgt}_remark_8thr PROPERTY ENVIRONMENT OMP_NUM_THREADS=8)
+    set_property(TEST ${_tgt}_remark_8thr PROPERTY LABELS validation)
+    set_property(TEST ${_tgt}_remark_8thr PROPERTY SKIP_RETURN_CODE 77)
+    set_property(TEST ${_tgt}_remark_8thr PROPERTY TIMEOUT 120)
   endforeach()
 endif()
 

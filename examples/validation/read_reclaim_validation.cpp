@@ -94,6 +94,24 @@
 //             one lost operation leaves V / 2 or 2 V.
 //
 //   Chunk (v1) has no second value: the mode is skipped there (77).
+//
+// MODE `remark` (argument): a pass must not erase another pass's claim
+//
+//   A compression pass marks its candidates (ChunkBase::steal_mark) so that
+//   writers keep off them while it scans and steals, and hands each one back
+//   at the end: its mark, and the dedup flag that lets a writer queue the
+//   chunk again. Released flag first, mark second, another thread could queue
+//   the chunk in between, start its own pass and mark it -- and the first
+//   pass's unmark erased that claim: writers then wrote into a chunk the
+//   second pass was scanning and stealing.
+//
+//   Every thread writes 1.0 then 0.0 to elements of a small pool of shared
+//   chunks (offsets of its own), reading each 1.0 back; the 0.0 makes the
+//   chunk constant again, a candidate, so passes run all the time on every
+//   thread. Thread 0's passes wait at the hand-back point
+//   (CHUNK_TEST_PASS_DELAY_*, test_read_delay.h). Check builds stop on the
+//   erasure itself (INVARIANT_FAILED in the pass); every build checks the
+//   read-backs and that the pool ends at 0.
 
 #include <atomic>
 #include <chrono>
@@ -347,6 +365,90 @@ int run_compound(int team, int writers, double seconds, long pollute)
     return rc;
 }
 
+/// @brief The `remark` mode (see the file header). @return the exit status.
+int run_remark(int team, double seconds)
+{
+    constexpr long kPool = 4096; // chunks shared by every thread
+
+    int rc = 0;
+    {
+        Arr        a;
+        const long S = static_cast<long>(a.chunk_size());
+        a.resize(static_cast<Ind>(kPool * S));
+        const Arr& ca = a;
+        test_hooks::pass_delay_us =
+            static_cast<unsigned>(env_long("READ_RECLAIM_PASS_DELAY_US", CHUNK_TEST_PASS_DELAY_US));
+
+        std::printf("=== read_reclaim_validation remark [variant = %s]  threads=%d  chunk_size=%ld  pool=%ld chunks  "
+                    "pass_delay_every=%u (%u us, thread 0)  %.0f s ===\n",
+                    variant_name(), team, S, kPool, test_hooks::pass_delay_every, test_hooks::pass_delay_us, seconds);
+
+        std::atomic<long> lost{0};
+        std::atomic<long> writes{0};
+
+#pragma omp parallel num_threads(team)
+        {
+            begin_phase();
+            const int me = omp_get_thread_num();
+            if (me == 0)
+                test_hooks::pass_delay_enabled = true;
+            // Offsets of my own, j = me + k * team: two threads never write
+            // the same element.
+            const long n_own = (S - me + team - 1) / team;
+            Xorshift   rng{0xD1B54A32D192ED03ULL ^ (static_cast<std::uint64_t>(me + 1) * 0x9E3779B97F4A7C15ULL)};
+            long       local = 0;
+            const auto t0    = std::chrono::steady_clock::now();
+            while (n_own > 0 && std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count() < seconds)
+            {
+                for (int r = 0; r < 256; ++r)
+                {
+                    const long c     = static_cast<long>(rng.next() % static_cast<std::uint64_t>(kPool));
+                    const long j     = me + static_cast<long>(rng.next() % static_cast<std::uint64_t>(n_own)) * team;
+                    const Ind  idx   = static_cast<Ind>(c * S + j);
+                    a[idx]           = 1.0;
+                    const double got = static_cast<double>(a[idx]); // read_pure: synchronised
+                    if (got != 1.0) [[unlikely]]
+                    {
+                        const long k = lost.fetch_add(1, std::memory_order_relaxed);
+                        if (k < 8)
+                            std::printf("[%s/read-reclaim remark] FAIL thread %d: element %ld (chunk %ld, offset %ld) "
+                                        "reads %g right after writing 1 -- the write was lost\n",
+                                        variant_name(), me, static_cast<long>(idx), c, j, got);
+                    }
+                    a[idx] = 0.0; // constant again: a candidate
+                    ++local;
+                }
+            }
+            test_hooks::pass_delay_enabled = false;
+            writes.fetch_add(local, std::memory_order_relaxed);
+        }
+        end_phase();
+
+        long nonzero = 0;
+        for (long i = 0; i < kPool * S; ++i)
+            nonzero += (ca[static_cast<Ind>(i)] != 0.0) ? 1 : 0;
+
+        std::printf("[%s/read-reclaim remark] %ld write pairs, %ld lost read-backs, %ld elements left non-zero\n",
+                    variant_name(), writes.load(), lost.load(), nonzero);
+        if (lost.load() > 0 || nonzero > 0)
+        {
+            std::printf("[%s/read-reclaim remark] FAIL\n", variant_name());
+            rc = 1;
+        }
+        else
+        {
+            std::printf("[%s/read-reclaim remark] OK: no write lost\n", variant_name());
+        }
+    }
+
+    release_chunk_pools();
+    destroy_block_chunk();
+
+    std::printf("\n[%s] %s\n", variant_name(),
+                rc ? "=== READ RECLAIM REMARK FAILED ===" : "=== READ RECLAIM REMARK OK ===");
+    return rc;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -369,6 +471,8 @@ int main(int argc, char** argv)
 
     if (argc > 1 && std::string_view(argv[1]) == "compound")
         return run_compound(team, writers, seconds, pollute);
+    if (argc > 1 && std::string_view(argv[1]) == "remark")
+        return run_remark(team, seconds);
 
     long   fails = 0;
     int    rc    = 0;
