@@ -33,19 +33,20 @@
 
 #pragma once
 
-#include <sys/mman.h>
-#include <unistd.h>
+#include <sys/mman.h>    // mmap, madvise
+#include <unistd.h>      // sysconf(_SC_PAGESIZE)
+#include <algorithm>     // std::max, the high-water mark
+#include <cstddef>       // std::size_t
+#include <cstdint>       // std::uintptr_t, std::uint8_t
+#include <cstdio>        // std::fprintf, std::fflush
+#include <cstdlib>       // std::abort, std::getenv
+#include <vector>        // std::vector
+#include <mutex>         // std::mutex, std::scoped_lock
+#include <atomic>        // std::atomic, std::memory_order_relaxed
+#include <unordered_map> // std::unordered_map
+#include <unordered_set> // std::unordered_set
+
 #include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP)
-#include <algorithm>                               // std::max, the high-water mark
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <vector>
-#include <mutex>
-#include <atomic>
-#include <unordered_map>
-#include <unordered_set>
 
 namespace fast_alloc
 {

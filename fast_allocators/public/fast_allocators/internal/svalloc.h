@@ -29,15 +29,12 @@
  * -Wmacro-redefined and the last definition silently wins.
  */
 
-#include <assert.h>
-#include <stdlib.h>
+#include <assert.h> // assert
+#include <stdlib.h> // posix_memalign, malloc, free
 #include <string.h> // memset / memcpy in the macros below
 
 #ifdef HAVE_ALLOCA
-    #include <alloca.h>
-#endif
-#ifdef __cplusplus
-    #include <memory>
+    #include <alloca.h> // alloca
 #endif
 
 #ifndef SIMD_SZ
@@ -155,7 +152,6 @@
         if (__sv_old)                                                               \
             svfree_align(__sv_old);                                                 \
     } while (0)
-
 
 #define svalloc(var, type, thesz)                     \
     do                                                \

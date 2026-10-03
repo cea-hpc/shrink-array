@@ -9,11 +9,11 @@
 #include <cstdlib>  // std::abort on an arena failure
 #include <iostream> // std::cerr on an arena failure
 #include <unistd.h> // getpagesize
-#include <vector>
+#include <vector>   // std::vector
 
-#include "fast_allocators/tc_allocator.h" // the declarations these bodies belong to
-#include "fast_allocators/slab_arena.h"   // FIX: disjoint op/value slab arenas
-#include "fast_allocators/internal/next_power_of_2.h"
+#include "fast_allocators/tc_allocator.h"             // the declarations these bodies belong to
+#include "fast_allocators/slab_arena.h"               // FIX: disjoint op/value slab arenas
+#include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2
 
 inline void TCAllocator::alloc_block()
 {

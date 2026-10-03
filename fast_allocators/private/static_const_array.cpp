@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
-#include <cstdlib>
-#include <set> // the registry of allocator instances, filled in serial builds only
+#include <cstdlib> // size_t
+#include <set>     // the registry of allocator instances, filled in serial builds only
 
-#include "fast_allocators/internal/singleton.h"
-#include "fast_allocators/tc_allocator.h"
-#include "fast_allocators/internal/alloc_config.h" // constexpr mirror of STD_ALLOC
-#include "fast_allocators/internal/static_const_array.h"
-#include "fast_allocators/internal/pmp_alloc.h" // PMP_MAX_THREADS (was in static_const_array_inline.h)
-#include "fast_allocators/internal/svalloc.h"   // svalloc, svcalloc, svfree
+#include "fast_allocators/internal/singleton.h"          // Singleton
+#include "fast_allocators/tc_allocator.h"                // VTCTypeAllocator, TCTypeAllocatorEBC
+#include "fast_allocators/internal/alloc_config.h"       // constexpr mirror of STD_ALLOC
+#include "fast_allocators/internal/static_const_array.h" // the declarations defined here
+#include "fast_allocators/internal/pmp_alloc.h"          // PMP_MAX_THREADS (was in static_const_array_inline.h)
+#include "fast_allocators/internal/svalloc.h"            // svalloc, svcalloc, svfree
 
 InfoFreeElt StaticConstArray::tab_info_free_elt;
 InfoFreeElt StaticConstArray::tab_info_free_elt_align;

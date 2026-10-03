@@ -19,10 +19,10 @@
 // Bodies of StaticConstArray, declared in static_const_array.h, which includes
 // this file at its end.
 
-#include <cassert>
+#include <cassert> // assert
 
-#include "fast_allocators/internal/static_const_array.h" // the declarations these bodies belong to
-#include "fast_allocators/internal/int_alloc.h"
+#include "fast_allocators/internal/static_const_array.h"        // the declarations these bodies belong to
+#include "fast_allocators/internal/int_alloc.h"                 // int_alloc, int_free, int_alloc_align, int_free_align
 #include "fast_allocators/internal/alloc_config.h"              // constexpr mirrors of STD_ALLOC / DEBUG
 #include "fast_allocators/internal/pmp_alloc.h"                 // PMP_IN_PARALLEL_REGION / PMP_THREAD_RANK
 #include "fast_allocators/internal/static_const_array_define.h" // MAX_CONST_BLOCK_SIZE

@@ -51,16 +51,16 @@
  * static_const_array_define.h only keeps MAX_CONST_BLOCK_SIZE.
  */
 
-#include <array>
+#include <array>   // std::array
 #include <cassert> // TypeAllocator::alloc: the size its free will route by
 #include <cstddef> // std::size_t
 
-#include "fast_allocators/internal/svalloc.h"
+#include "fast_allocators/internal/svalloc.h"   // __ALIGNEMENT__
 #include "fast_allocators/internal/pmp_alloc.h" // PMP_MAX_THREADS / PMP_THREAD_RANK / PMP_IN_PARALLEL_REGION
 
-#include "fast_allocators/internal/int_alloc.h"
+#include "fast_allocators/internal/int_alloc.h"    // int_alloc, int_free
 #include "fast_allocators/internal/alloc_config.h" // constexpr mirror of STD_ALLOC
-#include "fast_allocators/tc_allocator.h"
+#include "fast_allocators/tc_allocator.h"          // TCTypeAllocatorEBC
 
 /**
  * @brief A per-thread batch of blocks freed but not yet returned to the ladder.
@@ -606,4 +606,4 @@ struct TypeAllocator
  */
 void compute_sum_allocated_size_TCAlloc(size_t& sum_UsedSize, size_t& sum_nn_ref, size_t& alloc_sz);
 
-#include "fast_allocators/internal/static_const_array_inline.h"
+#include "fast_allocators/internal/static_const_array_inline.h" // the template bodies

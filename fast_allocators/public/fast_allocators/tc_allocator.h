@@ -39,20 +39,20 @@
  *          afterwards.
  */
 
-#include <vector>
-#include <array>
-#include <bit>     // std::has_single_bit: the shift or the division in free_elt_pow2
-#include <cerrno>  // errno, after a failed mmap
-#include <cstddef> // std::size_t
-#include <cstdio>  // std::fprintf / std::fflush (the [MUNMAP] traces)
-#include <cstring>
-#include <iostream>
-#include <cstdlib>
-#include <cstdint>
-#include <limits> // std::numeric_limits: TCAllocatorEB's index range
-#include <cassert>
-#include <sys/mman.h>
-#include <unistd.h>
+#include <vector>     // std::vector
+#include <array>      // std::array
+#include <bit>        // std::has_single_bit: the shift or the division in free_elt_pow2
+#include <cerrno>     // errno, after a failed mmap
+#include <cstddef>    // std::size_t
+#include <cstdio>     // std::fprintf / std::fflush (the [MUNMAP] traces)
+#include <cstring>    // std::strerror
+#include <iostream>   // std::cerr
+#include <cstdlib>    // std::abort
+#include <cstdint>    // uintptr_t
+#include <limits>     // std::numeric_limits: TCAllocatorEB's index range
+#include <cassert>    // assert (DBG_ASSERT)
+#include <sys/mman.h> // mmap, munmap
+#include <unistd.h>   // getpagesize
 
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
@@ -2353,4 +2353,4 @@ class TCTypeAllocatorEB : public TCTypeAllocatorEBC<sizeof(ElemT), BlockBytes>
     }
 };
 
-#include "fast_allocators/internal/tc_allocator_inline.h"
+#include "fast_allocators/internal/tc_allocator_inline.h" // the template bodies
