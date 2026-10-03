@@ -129,16 +129,16 @@ void ProxySpec2<T, Derived>::set_info_on_chunk(this Derived& self)
 {
     if (const inf_array_t* src = self.armed_inf_array()) [[likely]]
     {
-        self.ProxySpec2::inf_array = *src;
-        self.second_value          = std::get<0>(*src);
-        self.ind                   = std::get<1>(*src);
+        static_cast<ProxySpec2&>(self).inf_array = *src;
+        self.second_value                        = std::get<0>(*src);
+        self.ind                                 = std::get<1>(*src);
         self.set_num_tab(std::get<2>(*src)); // what set_num_tab() would read back from inf_array
     }
     else
     {
-        self.ProxySpec2::inf_array = Derived::get_info_second_value(self.get_ptr_on_array());
-        self.second_value          = std::get<0>(self.ProxySpec2::inf_array);
-        self.ind                   = std::get<1>(self.ProxySpec2::inf_array);
+        static_cast<ProxySpec2&>(self).inf_array = Derived::get_info_second_value(self.get_ptr_on_array());
+        self.second_value                        = std::get<0>(static_cast<ProxySpec2&>(self).inf_array);
+        self.ind                                 = std::get<1>(static_cast<ProxySpec2&>(self).inf_array);
         self.set_num_tab();
     }
 
@@ -153,14 +153,14 @@ void ProxySpec2<T, Derived>::set_info_second_value_ind(this Derived& self)
 {
     if (const inf_array_t* src = self.armed_inf_array()) [[likely]]
     {
-        self.ProxySpec2::inf_array = *src;
-        self.second_value          = std::get<0>(*src);
-        self.ind                   = std::get<1>(*src);
+        static_cast<ProxySpec2&>(self).inf_array = *src;
+        self.second_value                        = std::get<0>(*src);
+        self.ind                                 = std::get<1>(*src);
         return;
     }
-    self.ProxySpec2::inf_array = Derived::get_info_second_value(self.get_ptr_on_array());
-    self.second_value          = std::get<0>(self.ProxySpec2::inf_array);
-    self.ind                   = std::get<1>(self.ProxySpec2::inf_array);
+    static_cast<ProxySpec2&>(self).inf_array = Derived::get_info_second_value(self.get_ptr_on_array());
+    self.second_value                        = std::get<0>(static_cast<ProxySpec2&>(self).inf_array);
+    self.ind                                 = std::get<1>(static_cast<ProxySpec2&>(self).inf_array);
 }
 
 template <typename T, typename Derived>
@@ -177,12 +177,12 @@ void ProxySpec2<T, Derived>::set_info_on_chunk(this Derived& self)
 {
     if (const inf_array_t* src = self.armed_inf_array()) [[likely]]
     {
-        self.ProxySpec2::inf_array = *src;
+        static_cast<ProxySpec2&>(self).inf_array = *src;
         self.set_num_tab(std::get<2>(*src)); // not read back from inf_array (see above)
     }
     else
     {
-        self.ProxySpec2::inf_array = Derived::get_info_second_value(self.get_ptr_on_array());
+        static_cast<ProxySpec2&>(self).inf_array = Derived::get_info_second_value(self.get_ptr_on_array());
         self.set_num_tab();
     }
 

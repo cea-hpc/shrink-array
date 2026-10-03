@@ -237,7 +237,7 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
      */
     void set_info_second_value_ind(this Derived& self)
     {
-        self.ProxySpec2::inf_array = self.load_inf_array();
+        static_cast<ProxySpec2&>(self).inf_array = self.load_inf_array();
     }
 
     /**
@@ -248,7 +248,7 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
      */
     void set_info_second_value_ind_from_key(this Derived& self, const void* key)
     {
-        self.ProxySpec2::inf_array = self.get_info_second_value(key);
+        static_cast<ProxySpec2&>(self).inf_array = self.get_info_second_value(key);
     }
 
   protected:
