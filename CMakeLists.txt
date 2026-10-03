@@ -686,4 +686,9 @@ if(BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_raw_reads
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_raw_reads.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_raw_reads PROPERTY LABELS validation)
+    # Every #include says why it is there; system and project headers are not
+    # mixed in one block (scripts/check_includes.py).
+    add_test(NAME check_includes
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_includes.py ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_includes PROPERTY LABELS validation)
 endif()
