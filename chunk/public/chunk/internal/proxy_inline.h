@@ -64,6 +64,7 @@ void Proxy<T>::perform_core_assignment(in_t<T> v) const noexcept
         {
             if (is_not_cst_val())
             {
+                // raw-read: serial counter mode (no fast block compression, no concurrent pass)
                 if (values[num] != Chunk<T>::first_value)
                 {
                     chunk.inc_nb_val_eq_zero();
@@ -76,6 +77,7 @@ void Proxy<T>::perform_core_assignment(in_t<T> v) const noexcept
                 }
             }
         }
+        // raw-read: serial counter mode (no fast block compression, no concurrent pass)
         else if (is_not_cst_val() && values[num] == Chunk<T>::first_value)
         {
             chunk.dec_nb_val_eq_zero();
@@ -174,6 +176,7 @@ void Proxy<T>::execute_arithmetic_compound_operation(OP op, [[maybe_unused]] con
     {
         // const T, not in_t<T>: a snapshot read before the store below and
         // used after it (in_t.h, corollary for local variables).
+        // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
         const T v_old = values[num];
 
         // 1. Perform math in high precision using CalcType
@@ -182,6 +185,7 @@ void Proxy<T>::execute_arithmetic_compound_operation(OP op, [[maybe_unused]] con
         // 2. Truncate back to storage type T
         const auto v_new = static_cast<T>(v_new_precise);
 
+        // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
         values[num] = v_new;
 
         if constexpr (chunk_config::use_fast_block_compression)
@@ -314,6 +318,7 @@ T Proxy<T>::assign_impl(in_t<U> v) noexcept
                 return zero;
             }
 
+            // raw-read: serial counter mode (no fast block compression, no concurrent pass)
             if (values[num] != zero)
             {
                 chunk.inc_nb_val_eq_zero();
@@ -325,6 +330,7 @@ T Proxy<T>::assign_impl(in_t<U> v) noexcept
                 return zero;
             }
         }
+        // raw-read: serial counter mode (no fast block compression, no concurrent pass)
         else if (!is_cst_val() && values[num] == zero)
         {
             chunk.dec_nb_val_eq_zero();
@@ -405,9 +411,11 @@ T Proxy<T>::assign_impl(in_t<U> v) noexcept
                 // Replay body: see "The v1 replay bodies" above.
                 T* values = chunk.values_load();
 
+                // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                 values[num] = static_cast<T>(ctx->operand);
                 internal::check_replay_store(chunk, values, "assign_impl (deferred)", num);
 
+                // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                 proxy.mark_for_compression_if_needed_with_value(v_old, values[num]);
             };
 
@@ -458,6 +466,7 @@ void Proxy<T>::execute_simple_operation(LAMBDA operation)
     // to __chunk_size and manage_full_zero() wrongly re-compressed a chunk that
     // was not actually all-zero (non-OMP-only: the OpenMP += path is async and
     // maintains the counter separately). Mirrors execute_inplace_operation.
+    // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
     [[maybe_unused]] const bool was_first_value = values[num] == static_cast<T>(Chunk<T>::first_value);
 
     const bool is_val1 = Base::is_cst_val1();
@@ -477,10 +486,12 @@ void Proxy<T>::execute_simple_operation(LAMBDA operation)
     if constexpr (chunk_config::use_compression_with_counter)
     {
         // Already-armed transitions (arming handled above).
+        // raw-read: serial counter mode (no fast block compression, no concurrent pass)
         if (was_first_value && !is_val1 && values[num] != static_cast<T>(Chunk<T>::first_value))
         {
             chunk.dec_nb_val_eq_zero();
         }
+        // raw-read: serial counter mode (no fast block compression, no concurrent pass)
         if (values[num] == static_cast<T>(Chunk<T>::first_value) && !was_first_value)
         {
             chunk.inc_nb_val_eq_zero();
@@ -515,6 +526,7 @@ template <typename T>
 template <typename LAMBDA>
 void Proxy<T>::execute_inplace_operation(LAMBDA operation)
 {
+    // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
     [[maybe_unused]] const bool was_first_value = values[num] == static_cast<T>(Chunk<T>::first_value);
 
     const bool         is_val = is_cst_val();
@@ -542,14 +554,17 @@ void Proxy<T>::execute_inplace_operation(LAMBDA operation)
         }
     }
 
+    // raw-read: write session -- the write/compress handshake keeps compressors off this chunk
     operation(Base::values[num]);
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
+        // raw-read: serial counter mode (no fast block compression, no concurrent pass)
         if (was_first_value && !is_val && values[num] != Chunk<T>::first_value)
         {
             chunk.dec_nb_val_eq_zero();
         }
+        // raw-read: serial counter mode (no fast block compression, no concurrent pass)
         if (values[num] == static_cast<T>(Chunk<T>::first_value) && !was_first_value)
         {
             chunk.inc_nb_val_eq_zero();
@@ -592,11 +607,13 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::execute_inplace_operation_async(a
     T* values = chunk_loc.values_load();
 
     // Apply the user-provided operation on the real values
+    // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
     operation(values[num]);
     internal::check_replay_store(chunk_loc, values, "execute_inplace_operation_async", num);
 
     // Re-read the updated value: nothing writes it afterwards, in_t (a
     // reference for a struct) rather than a copy.
+    // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
     const in_t<T> v_new = values[num];
 
     mark_for_compression_if_needed_with_value_async(proxy, v_old, v_new);
@@ -614,6 +631,7 @@ void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
     {
         if constexpr (chunk_config::use_compression_with_counter)
         {
+            // raw-read: serial counter mode (no fast block compression, no concurrent pass)
             if (values[num] != zero)
             {
                 if constexpr (build_config::do_check)
@@ -633,6 +651,7 @@ void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
                         Base::store_value(result);
                     });
 
+                // raw-read: serial counter mode (no fast block compression, no concurrent pass)
                 if ((v == zero || values[num] == zero) && !is_cst_val())
                 {
                     chunk.inc_nb_val_eq_zero();

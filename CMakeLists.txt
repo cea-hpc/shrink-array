@@ -643,3 +643,12 @@ endif()
 include(${PROJECT_SOURCE_DIR}/cmake/shrink_build_stamp.cmake)
 add_subdirectory(examples)
 shrink_add_check_target()
+
+# Every raw read of a chunk's buffer in the library states why it is safe
+# (scripts/check_raw_reads.py): a source check, run with the validation tests.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(BUILD_TESTING AND Python3_Interpreter_FOUND)
+    add_test(NAME check_raw_reads
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_raw_reads.py ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_raw_reads PROPERTY LABELS validation)
+endif()

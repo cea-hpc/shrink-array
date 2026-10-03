@@ -99,6 +99,7 @@ template <typename T>
     }
     // elem_get, not vals[n]: for Bit that indexed BYTES, up to chunk_size of
     // them in a chunk_size / 8 byte buffer.
+    // raw-read: element_of -- callers hold the write session, a ReadSection, or replay after materialisation
     return elem_get(vals, n);
 }
 } // namespace internal
@@ -589,6 +590,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///        (element_access.h). No sync, no check -- the old spelling.
     [[nodiscard]] T raw_elem() const noexcept
     {
+        // raw-read: read_values -- write-path helper; outside the session read_values_outside_session
         return elem_get(static_cast<const T*>(values), static_cast<std::size_t>(num));
     }
 

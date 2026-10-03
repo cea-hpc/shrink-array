@@ -1052,6 +1052,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
             else
                 create_value_bool();
         }
+        // raw-read: hands out an address / reference -- materialised first, the caller keeps it valid
         return values[num];
     }
 

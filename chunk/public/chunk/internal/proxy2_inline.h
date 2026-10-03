@@ -456,6 +456,7 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
                 const read_reclaim::ReadSection section;
                 const T* const                  live = chunk.values_load();
                 test_hooks::maybe_read_delay(); // TEST KNOB (test_read_delay.h)
+                // raw-read: inside a read_reclaim::ReadSection
                 if (live == chunk.get_cst_val2(BaseSpec::ind) || live[num] == second_value)
                     return v;
             }
@@ -470,6 +471,7 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
                 // elements, non-zero as soon as a NEIGHBOUR is true.
                 const read_reclaim::ReadSection section;
                 const T* const                  live = chunk.values_load();
+                // raw-read: inside a read_reclaim::ReadSection
                 if (live == chunk.get_cst_val2() || elem_get(live, static_cast<std::size_t>(num)))
                     return true;
             }
@@ -953,10 +955,12 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_opera
     }
 
     T* values = chunk.values_load();
+    // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
     elem_update(values, static_cast<std::size_t>(num), operation);
 
     // The value just written, read for the counters: nothing writes it
     // afterwards, so in_t (a reference for a struct) rather than a copy.
+    // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
     const in_t<T> v_new = elem_get(values, static_cast<std::size_t>(num));
     Base2::mark_for_compression_if_needed_with_value_async(proxy, v_old, v_new);
 }
