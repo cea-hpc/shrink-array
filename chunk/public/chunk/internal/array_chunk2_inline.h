@@ -636,7 +636,10 @@ void ArrayChunk2<T, ind_type>::clear_core()
     // volume of async compression work potentially still in flight,
     // producing a thread-count-dependent snapshot (still@exit disagreed
     // between sequential and OpenMP with the same seed).
-    print_compression_stats();
+    if (this->exit_census_)
+    {
+        print_compression_stats();
+    }
 
     if constexpr (chunk_config::use_fast_block_compression)
     {

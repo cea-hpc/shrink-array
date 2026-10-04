@@ -395,7 +395,9 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         t4_out = t_now();
         r_swap = rss_now();
         // tmp destroyed here: clear_core drops tmp's candidates by num_tab
-        // and parks its OLD-geometry blocks by size.
+        // and parks its OLD-geometry blocks by size. Without the end-of-life
+        // census: tmp's death is not an exit (ArrayChunkBase::exit_census_).
+        tmp.exit_census_ = false;
     }
     const auto t5 = t_now(); // tmp destroyed
     r_teardown    = rss_now();

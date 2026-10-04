@@ -1043,6 +1043,17 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         ++storage_generation_;
     }
 
+    /// @brief clear() takes the end-of-life census (print_compression_stats():
+    ///        the per-array line and the "still compressed (at exit)" counter).
+    ///        False on a re-chunk's tmp, which dies mid-run holding the OLD
+    ///        geometry: its census is not an exit, and it is not even the same
+    ///        state from one build to the next -- an OpenMP re-chunk releases
+    ///        the source chunks during the copy (tmp then reads 100%
+    ///        compressed), a serial one leaves them materialised. Counted, it
+    ///        made still@exit of a dyn run differ between the sequential and
+    ///        the OpenMP build on identical data (seq/omp compare).
+    bool exit_census_ = true;
+
   private:
     /**
      * @brief Debug helper: physical address backing element @p i, if any.
