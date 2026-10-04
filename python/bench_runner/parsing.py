@@ -149,6 +149,16 @@ def _parse_still_at_exit(stdout_text, variant_base):
     return None
 
 
+_RECHUNK_APPLIED_RE = _re.compile(
+    r"^\[RECHUNK-DECIDE\] (\S+): re-chunk S=(\d+) -> S'=(\d+) .*\[APPLIED\]", _re.MULTILINE)
+
+
+def _parse_applied_rechunks(text):
+    """The re-chunks a dyn run applied, in order: [(array, S, S'), ...]. Empty
+    for a static run, or one whose decider never fired."""
+    return [(m.group(1), int(m.group(2)), int(m.group(3))) for m in _RECHUNK_APPLIED_RE.finditer(text)]
+
+
 def _parse_last_long_val_sum(stdout_text):
     """The LAST long_val_sum printed (the final iteration's exact integer
     checksum), or None if the bench never printed one (e.g. a build without

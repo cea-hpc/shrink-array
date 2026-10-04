@@ -5,7 +5,8 @@ from ..builds import (
     find_llvm_seq_omp_pairs, resolve_exe, short_config_label, skip_variant_on_config,
 )
 from ..parsing import (
-    _parse_last_long_val_sum, _parse_still_at_exit, _seed_was_pinned, _write_pinned_seed,
+    _parse_applied_rechunks, _parse_last_long_val_sum, _parse_still_at_exit, _seed_was_pinned,
+    _write_pinned_seed,
 )
 from ..progress import CONFIG_W, VARIANT_W
 from ..runs import _append_error_now, effective_timeout, run_capture_stdout
@@ -21,6 +22,12 @@ def run_seq_omp_compare_phase(args, extra_ldpath, errors):
     this number is a function of the array's final CONTENT alone (verified
     via long_val_sum) -- it must be identical across every mode and thread
     count. A mismatch is a real, actionable signal, not scheduling noise.
+
+    Except where the geometry itself differs: a dyn run whose re-chunk
+    decider applied other re-chunks than the sequential run ends with other
+    chunk counts on the same data. Those runs are reported "not comparable"
+    (the first differing decision is printed) and are not errors; a dyn run
+    with the same decisions is compared like a static size.
     """
     print(cyan(bold("\n🌱 Seq vs OMP compression-classification compare "
                     f"(seed={args.seq_omp_seed}, threads={args.seq_omp_threads})")))
@@ -65,6 +72,7 @@ def run_seq_omp_compare_phase(args, extra_ldpath, errors):
 
     n_pass = n_total = 0
     n_pairs_skipped = 0
+    n_diverged = 0  # dyn runs whose re-chunk decisions differed: not comparable
     for omp_cfg, seq_cfg in pairs:
         # The compare reads CHUNK_STATS. A pair whose binaries are not stats
         # builds has nothing to compare: found out on its FIRST sequential run
@@ -96,7 +104,7 @@ def run_seq_omp_compare_phase(args, extra_ldpath, errors):
                 sys.stdout.flush()
                 ok, _dur, code, out, err_tail = run_capture_stdout(
                     [seq_exe] + bench_args, {}, to,
-                    extra_ld_library_path=extra_ldpath, cwd=args.output_dir,
+                    extra_ld_library_path=extra_ldpath, cwd=args.output_dir, merge_stderr=True,
                 )
                 if not ok:
                     sys.stdout.write("\r" + lead + red("sequential FAIL") +
@@ -117,6 +125,7 @@ def run_seq_omp_compare_phase(args, extra_ldpath, errors):
                     continue
                 seq_still = _parse_still_at_exit(out, base)
                 seq_checksum = _parse_last_long_val_sum(out)
+                seq_rechunks = _parse_applied_rechunks(out)
                 if seq_still is None:
                     sys.stdout.write("\r" + lead +
                                      yellow("no CHUNK_STATS block in the sequential output "
@@ -133,7 +142,7 @@ def run_seq_omp_compare_phase(args, extra_ldpath, errors):
                     sys.stdout.flush()
                     ok, _dur, code, out, err_tail = run_capture_stdout(
                         [omp_exe] + bench_args, {"OMP_NUM_THREADS": str(tc)}, to,
-                        extra_ld_library_path=extra_ldpath, cwd=args.output_dir,
+                        extra_ld_library_path=extra_ldpath, cwd=args.output_dir, merge_stderr=True,
                     )
                     n_total += 1
                     if not ok:
@@ -170,6 +179,30 @@ def run_seq_omp_compare_phase(args, extra_ldpath, errors):
                         _append_error_now(args.errors_log, _entry)
                         continue
 
+                    # A dyn run's geometry is the re-chunk decider's to choose, and
+                    # its marginal calls (a gain a hair above or below the
+                    # deadband) read the live compression state -- which differs
+                    # by construction between the builds: Chunk2/Chunk2A compress
+                    # by deferred block passes in OpenMP only. Two runs that
+                    # re-chunked differently end with different chunk counts on
+                    # the same data; their still@exit says nothing about either.
+                    # Not comparable, said so, not an error. Same decisions: the
+                    # counts must agree, and are compared as for a static size.
+                    omp_rechunks = _parse_applied_rechunks(out)
+                    if omp_rechunks != seq_rechunks:
+                        n_diverged += 1
+                        first = next((k for k, (a, b) in enumerate(zip(seq_rechunks, omp_rechunks)) if a != b),
+                                     min(len(seq_rechunks), len(omp_rechunks)))
+                        def _fmt(lst):
+                            return f"{lst[first][0]} {lst[first][1]}->{lst[first][2]}" if first < len(lst) else "none"
+                        sys.stdout.write(
+                            "\r" + lead +
+                            yellow(f"omp {tc:>3}th re-chunk geometry diverged ({len(seq_rechunks)} vs "
+                                   f"{len(omp_rechunks)} applied; #{first + 1}: seq {_fmt(seq_rechunks)}, "
+                                   f"omp {_fmt(omp_rechunks)}) -- not comparable") + "\n")
+                        sys.stdout.flush()
+                        continue
+
                     omp_still = _parse_still_at_exit(out, base)
                     if seq_still is None or omp_still is None:
                         sys.stdout.write("\r" + lead +
@@ -202,9 +235,11 @@ def run_seq_omp_compare_phase(args, extra_ldpath, errors):
                      "-- build the -stats pair (-DCHUNK_STATS=ON, OMP on and off)")
     elif n_total == 0:
         tag = yellow("no runs (missing binaries?)")
-    elif n_pass == n_total:
+    elif n_pass + n_diverged == n_total:
         tag = green(f"{n_pass}/{n_total} passed")
     else:
         tag = red(f"{n_pass}/{n_total} passed")
+    if n_diverged:
+        tag += yellow(f", {n_diverged} not comparable (re-chunk geometry diverged)")
     print(f"   Seq vs OMP compare: {tag}")
     return n_pass, n_total

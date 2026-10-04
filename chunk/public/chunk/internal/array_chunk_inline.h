@@ -182,7 +182,10 @@ void ArrayChunk<T, ind_type>::clear()
 {
     this->invalidate_proxies();
     // Per-array compression stats, read BEFORE the drain below mutates state.
-    print_compression_stats();
+    if (this->exit_census_)
+    {
+        print_compression_stats();
+    }
 
     clear_core();
 }

@@ -313,7 +313,10 @@ void ArrayChunk2A<T, ind_type>::clear_core()
     // live state test (unlike the old tab_type_cst_val read), so it is safe to
     // read here, past the flush but before the terminal compression/release
     // sweep further down still mutates state.
-    print_compression_stats();
+    if (this->exit_census_)
+    {
+        print_compression_stats();
+    }
 
     // Remove this array's chunks from the shared compression candidate list
     // before they are freed. In non-OMPT builds nothing else clears that list,
