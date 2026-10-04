@@ -766,7 +766,9 @@ class TCSlabPool
      */
     [[nodiscard]] ElementType* alloc()
     {
-        if (bypass_slabs())
+        // if constexpr: the memset must not even be instantiated in a slab
+        // build (gcc's -Wclass-memaccess on Bit, std::complex).
+        if constexpr (bypass_slabs())
         {
             auto* elements = new ElementType[ElementSize]; // ElementSize is a COUNT here
             if constexpr (Derived::zero_std_alloc)
