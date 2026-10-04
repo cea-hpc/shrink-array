@@ -337,7 +337,7 @@ ref_dir_of = {}
 vector_of = {}
 if args.builds:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from bench_and_test import resolve_exe  # the layout logic, shared
+    from bench_runner.builds import resolve_exe  # the layout logic, shared with bench_and_test.py
 
     build_root = args.build_root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     builds = []
