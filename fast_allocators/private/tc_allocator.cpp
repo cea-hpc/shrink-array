@@ -21,12 +21,14 @@
 
 #ifndef _OPENMP // openmp problem allocator remembers itself
                 // --> deadlock
-void* TCAllocator::operator new(size_t size)
+template <>
+void* TCSlab<FreeLinks::InPayload>::operator new(size_t size)
 {
     return TypeAllocator<TCAllocator>::alloc(size);
 }
 
-void TCAllocator::operator delete(void* ptr)
+template <>
+void TCSlab<FreeLinks::InPayload>::operator delete(void* ptr)
 {
     TypeAllocator<TCAllocator>::free(ptr);
 }
