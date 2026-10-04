@@ -1111,7 +1111,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::clear(this Derived&     self,
 {
     if (self.written())
     {
-        self.Base::free_values(self.values);
+        self.Chunk2Base<T, Derived>::free_values(self.values);
 
         ptr_second_value.reset();
         Derived::set_cst_val_to_cst_val1(ptr_type_cst);
@@ -1134,10 +1134,10 @@ void Chunk2AOmpPolicy<T, Derived, false>::clear_st(this Derived&     self,
                                                    SecondValueRef<T> ptr_second_value)
 {
     // Check condition only if debug mode is active at compile-time
-    self.Base::debug_check_written();
+    self.Chunk2Base<T, Derived>::debug_check_written();
 
     // Core logic: executed always in Release, and only if written() is true in Debug
-    self.Base::free_values(self.values);
+    self.Chunk2Base<T, Derived>::free_values(self.values);
 
     ptr_second_value.reset();
     Derived::set_cst_val_to_cst_val1(ptr_type_cst);
@@ -1221,7 +1221,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::block_clear(this Derived&     self,
         return;
     }
     increm_chunk_compress<Derived>();
-    self.Base::free_values(self.values);
+    self.Chunk2Base<T, Derived>::free_values(self.values);
     Derived::set_cst_val_to_cst_val(num_compress_value, ptr_type_cst);
     // Serial: no CAS, the values pointer is set outright to the constant --
     // the caller's array for a type 2, from the tables otherwise.
@@ -1249,7 +1249,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::clear_int_st(this Derived&     self,
                                                        int               thr_rank,
                                                        T*                new_cst_val2_ptr)
 {
-    self.Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
+    self.Chunk2Base<T, Derived>::check_not_constant_before_clear(num_compress_value, std::nullopt);
     if (num_compress_value == 1 && new_cst_val2_ptr == nullptr)
     {
         new_cst_val2_ptr = Derived::tab_cst_val2_holder::find_cst_val2_ptr(ptr_second_value.get());
