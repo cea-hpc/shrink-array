@@ -28,7 +28,7 @@
 #include "chunk/internal/deferred_ops_storage.h"       // DeferredOpsStorage
 #include "chunk/internal/freepath_counters.h"          // CHUNK_FREEPATH_INC
 #include "chunk/internal/invariant_check.h"            // INVARIANT_FAILED
-#include "chunk/internal/svalloc.h"                    // svfree
+#include "fast_allocators/internal/svalloc.h"          // svfree
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy
 
 namespace shrink_array

@@ -19,7 +19,7 @@
 
 #include "chunk/internal/manager_chunk.h"     // the declarations these bodies belong to
 #include "chunk/config.h"                     // build_config::use_fast_alloc, chunk_config::use_fast_block_compression
-#include "chunk/internal/svalloc.h"           // svfree
+#include "fast_allocators/internal/svalloc.h" // svfree
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count
 #include "chunk/internal/compression_manager.h"  // CompressionManager (the barrier flushes)

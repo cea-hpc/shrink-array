@@ -37,11 +37,11 @@
  *      through, and manage_ompt.h for the phase transitions that drive it.
  */
 
+template <typename T>
+class Singleton; // fast_allocators/internal/singleton.h; chunk names it SingletonChk
+
 namespace shrink_array
 {
-
-template <typename T>
-class SingletonChk;
 
 struct ManagerChunkInt;
 
@@ -233,7 +233,7 @@ struct AllTypeChunkDynInterface<Derived, false>
 class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public AllTypeChunkDynInterface<AllTypeChunk>
 {
   public:
-    friend class SingletonChk<AllTypeChunk>;
+    friend class ::Singleton<AllTypeChunk>; // SingletonChk<AllTypeChunk>
     /// The dynamic-geometry policy records the sizes it declares (registered_sizes_).
     template <typename D, bool E>
     friend struct AllTypeChunkDynInterface;

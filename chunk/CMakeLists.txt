@@ -279,7 +279,6 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/proxy_operators.h
         public/chunk/internal/rechunk_cost_model.h
         public/chunk/internal/rechunk_decider_inline.h
-        public/chunk/internal/svalloc.h
         public/chunk/internal/tab_cst_val2_holder.h
         public/chunk/internal/write_compress_sync_policy.h
 )
@@ -406,6 +405,11 @@ function(chunk_add_variant target_name variant_define size is_dyn)
 
   if (CHUNK_STD_ALLOC)
     target_compile_definitions(${target_name} PUBLIC CHUNK_STD_ALLOC)
+    # No fast_allocators library here, but two of its headers -- svalloc.h and
+    # singleton.h, standard library only -- are chunk's too (one copy, see
+    # them): their directory stays on the include path. Installed below.
+    target_include_directories(${target_name}
+            PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/fast_allocators/public>)
   else()
     target_link_libraries(${target_name} PUBLIC fast_allocators::fast_allocators)
   endif()
@@ -543,6 +547,15 @@ install(DIRECTORY public/chunk
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         COMPONENT chunk-devel
         FILES_MATCHING PATTERN "*.h")
+
+# A std-alloc build installs no fast_allocators, yet chunk's headers include
+# its svalloc.h and singleton.h: install those two with chunk then.
+if (CHUNK_STD_ALLOC)
+  install(FILES ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/svalloc.h
+                ${PROJECT_SOURCE_DIR}/fast_allocators/public/fast_allocators/internal/singleton.h
+          DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fast_allocators/internal
+          COMPONENT chunk-devel)
+endif()
 
 # And the vendored third-party headers those include (ankerl/unordered_dense.h
 # from pool_ledger.h and four others): they are on the build-tree include path

@@ -21,12 +21,11 @@
 #pragma once
 
 /*
- * Two copies of this header exist, chunk/internal/svalloc.h and
- * fast_allocators/internal/svalloc.h: fast_allocators must not depend on
- * chunk, and a std-alloc build has no fast_allocators on its include path.
- * A translation unit can include both, so they MUST stay identical: a macro
- * redefined with the same tokens is accepted silently, a different one draws
- * -Wmacro-redefined and the last definition silently wins.
+ * Shared with the chunk library, which includes it from here: a std-alloc
+ * build, which has no fast_allocators library, still has fast_allocators'
+ * headers on chunk's include path for this one and singleton.h (see
+ * chunk/CMakeLists.txt). There used to be a copy in chunk/internal, kept
+ * identical by hand.
  */
 
 #include <assert.h> // assert
