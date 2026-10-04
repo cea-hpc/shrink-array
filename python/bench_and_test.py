@@ -439,6 +439,58 @@ MODE_PRESETS = {
     },
 }
 
+# --- Fitting the thread counts to the machine ----------------------------
+# Every thread list above was written for the aarch64 node (4 x 72 cores, no
+# SMT), where 64 threads is the reference point. A 12-core desktop (AMD
+# 9900X, 24 hardware threads) cannot run 64, 128 or 288 threads, and an
+# oversubscribed run measures the scheduler and spinning barriers, not the
+# library. So, unless a flag pins it, every thread count is fitted to the CPUs
+# this process may use (its affinity mask: a Slurm allocation or a taskset is
+# honoured), capped by --max-threads:
+#   - the reference count -- full repetitions, smoke runs -- is
+#     min(REFERENCE_THREADS, physical cores);
+#   - a list keeps the counts the machine can run; when it had to drop some,
+#     it gains the machine's own top points instead: its physical cores and
+#     its CPUs (the reference count too, so the full repetitions still have a
+#     point to run on). On the 288-core node nothing is dropped: the lists
+#     are unchanged.
+REFERENCE_THREADS = 64
+
+
+def machine_cpus():
+    """(usable logical CPUs, physical cores among them, sockets among them).
+
+    Usable = this process's affinity mask, not os.cpu_count(): a job confined
+    to 32 CPUs of a 288-CPU node must plan for 32. Physical cores are the
+    distinct SMT sibling sets (thread_siblings_list), which -- unlike core_id
+    -- are unique on every architecture. Without sysfs, every CPU counts as a
+    core of a single socket."""
+    try:
+        cpus = sorted(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        cpus = list(range(os.cpu_count() or 1))
+    cores, sockets = set(), set()
+    for c in cpus:
+        topo = f"/sys/devices/system/cpu/cpu{c}/topology/"
+        try:
+            with open(topo + "thread_siblings_list") as fh:
+                cores.add(fh.read().strip())
+            with open(topo + "physical_package_id") as fh:
+                sockets.add(fh.read().strip())
+        except OSError:
+            return len(cpus), len(cpus), 1
+    return len(cpus), len(cores), max(1, len(sockets))
+
+
+def fit_threads(wanted, cap, machine_points):
+    """`wanted` without the counts above `cap`; when some were dropped, plus
+    `machine_points` (those <= cap). Sorted, without duplicates."""
+    kept = {t for t in wanted if t <= cap}
+    if len(kept) < len(set(wanted)):
+        kept |= {t for t in machine_points if 1 <= t <= cap}
+    return sorted(kept)
+
+
 EXE_SUBPATH = "examples/shrink_bench"
 
 # $arch sub-directory of the CURRENT machine. build_rep may hold builds for
@@ -1435,7 +1487,7 @@ def run_fuzz_phase(args, extra_ldpath, errors):
         size    = rng.choice(FUZZ_SIZES)
         divisor = rng.choice(FUZZ_DIVISORS)
         itmax   = rng.choice(FUZZ_ITER_MAX)
-        threads = rng.choice(FUZZ_THREADS)
+        threads = rng.choice(args.fuzz_threads)
         seed    = rng.randrange(1, 2 ** 31 - 1)
         var     = f"{base}@{size}"
 
@@ -1992,7 +2044,7 @@ def run_scaling_phase(args, extra_ldpath, errors):
 
     # Oversubscription measures the scheduler, not the library: drop the
     # points the machine cannot run one thread per CPU.
-    ncpu = os.cpu_count() or 1
+    ncpu = args.max_threads
     threads = [t for t in SCALING_THREADS if t <= ncpu]
     dropped = [t for t in SCALING_THREADS if t > ncpu]
     if dropped:
@@ -2190,7 +2242,8 @@ def main():
                         help="Build sub-directories to test (in order).")
     parser.add_argument("--skip-sanitizers", action="store_true",
                         help="Skip the ASan/TSan CHECK phase (2d). Sanitizers run "
-                             f"at {SANITIZER_THREADS} threads, {SANITIZER_REPS} run(s) per variant, "
+                             f"at {SANITIZER_THREADS} threads (fewer on a smaller machine), "
+                             f"{SANITIZER_REPS} run(s) per variant, "
                              "diagnostic only.")
     parser.add_argument("--skip-stl-test", action="store_true",
                         help="Skip the --test_stl STL-interface self-check (2c).")
@@ -2237,15 +2290,24 @@ def main():
                              "still work. Default from --mode (fast: std_alloc).")
     parser.add_argument("--light-threads", type=int, default=None,
                         help="Thread count used for --light-variants smoke runs "
-                             "(default 64).")
+                             f"(default: the reference count, min({REFERENCE_THREADS}, "
+                             "physical cores)).")
     parser.add_argument("--full-reps-threads", nargs="+", type=int, default=None,
                         help="Thread count(s) on which to run --reps_perf repetitions "
                              "(for a reliable averaged measurement). On ALL other thread "
                              "counts from --threads, a single run is done (just for the "
                              "scalability curve). Pass a count absent from --threads to "
                              "disable. Overrides the --mode preset.")
-    parser.add_argument("--check-threads", type=int, default=DEFAULT_THREADS_CHECK,
-                        help="OMP_NUM_THREADS value for the correctness loop.")
+    parser.add_argument("--check-threads", type=int, default=None,
+                        help="OMP_NUM_THREADS value for the correctness loop "
+                             f"(default: {DEFAULT_THREADS_CHECK}, or the usable CPUs "
+                             "when there are fewer).")
+    parser.add_argument("--max-threads", type=int, default=None,
+                        help="Highest thread count any phase may use (default: the "
+                             "CPUs this process may run on, its affinity mask). The "
+                             "--mode thread lists, the reference count and the "
+                             "check / seq-omp / fuzz / sanitizer counts are fitted "
+                             "to it; counts passed explicitly are kept as given.")
     parser.add_argument("--reps_perf",  type=int, default=None,
                         help="Repetitions per (config, variant, thread count) in the "
                              "perf loop (subject to --full-reps-threads). "
@@ -2316,10 +2378,10 @@ def main():
                              "compression-classification comparison (LLVM "
                              "seq/omp config pairs, chunk/chunk2/chunk2a, "
                              "256/1024/dyn, several thread counts).")
-    parser.add_argument("--seq-omp-threads", nargs="+", type=int,
-                        default=list(DEFAULT_SEQ_OMP_THREADS),
+    parser.add_argument("--seq-omp-threads", nargs="+", type=int, default=None,
                         help="OMP thread counts for the seq-vs-omp compare "
-                             "phase.")
+                             f"phase (default: {DEFAULT_SEQ_OMP_THREADS}, fitted "
+                             "to the machine).")
     parser.add_argument("--seq-omp-sizes", nargs="+",
                         default=list(DEFAULT_SEQ_OMP_SIZES),
                         help="Chunk size declinations for the seq-vs-omp "
@@ -2492,20 +2554,47 @@ def main():
         pass
     print(f"📂 Output directory: {out_dir}")
 
+    # --- Fit the thread counts to this machine (see machine_cpus) -----------
+    usable, physical, sockets = machine_cpus()
+    if args.max_threads is None:
+        args.max_threads = usable
+    cap  = args.max_threads
+    phys = min(physical, cap)
+    ref  = min(REFERENCE_THREADS, phys)
+    machine_points = (ref, phys, cap)
+    print(f"🖥️  Machine: {usable} usable CPUs, {physical} physical cores, {sockets} socket(s)"
+          f" -> up to {cap} threads, reference {ref}")
+
     # --- Apply the --mode preset for any arg the user did NOT set explicitly ---
     preset = MODE_PRESETS[args.mode]
     if args.threads is None:
-        args.threads = list(preset["threads"])
+        args.threads = fit_threads(preset["threads"], cap, machine_points)
     if args.reps_perf is None:
         args.reps_perf = preset["reps_perf"]
     if args.reps_check is None:
         args.reps_check = preset["reps_check"]
     if args.full_reps_threads is None:
-        args.full_reps_threads = list(preset["full_reps_threads"])
+        args.full_reps_threads = fit_threads(preset["full_reps_threads"], cap, (ref,))
+        # --threads given without --full-reps-threads: the full repetitions go
+        # to the count of that list nearest the reference, rather than to a
+        # count the sweep never runs.
+        if not set(args.full_reps_threads) & set(args.threads):
+            args.full_reps_threads = [min(args.threads, key=lambda t: (abs(t - ref), t))]
     if args.light_variants is None:
         args.light_variants = list(preset.get("light_variants", []))
     if args.light_threads is None:
-        args.light_threads = preset.get("light_threads", 64)
+        light = preset.get("light_threads", REFERENCE_THREADS)
+        args.light_threads = light if light <= cap else ref
+    if args.check_threads is None:
+        args.check_threads = min(DEFAULT_THREADS_CHECK, cap)
+    if args.seq_omp_threads is None:
+        args.seq_omp_threads = fit_threads(DEFAULT_SEQ_OMP_THREADS, cap, machine_points)
+    args.fuzz_threads      = fit_threads(FUZZ_THREADS, cap, machine_points)
+    args.sanitizer_threads = min(SANITIZER_THREADS, cap)
+    over = sorted({t for t in [*args.threads, args.check_threads, *args.seq_omp_threads] if t > cap})
+    if over:
+        print(yellow(f"⚠️  Thread count(s) {over} passed explicitly exceed the {cap} usable CPUs: "
+                     "those runs are oversubscribed"))
     # --- Expand variants across the requested size declinations -----------
     # Shrink variants (chunk/chunk2/chunk2a/std_alloc) gain a "@<size>" suffix
     # so each (variant, size) pair is handled independently by the existing
@@ -3053,14 +3142,14 @@ def main():
                     sys.stdout.write(
                         f"\r{get_progress_bar(current_run_idx, overall_runs)} "
                         + _prog("STL", cyan, cfg,
-                                th=SANITIZER_THREADS,
+                                th=args.sanitizer_threads,
                                 extra="--test_stl --no_io ")
                     )
                     sys.stdout.flush()
                     ok, _, code, err_tail, _ = run_cmd(
                         [exe, "--test_stl", "--no_io"],
-                        {"OMP_NUM_THREADS": str(SANITIZER_THREADS)},
-                        effective_timeout(args.timeout, args.timeout_per_thread, SANITIZER_THREADS),
+                        {"OMP_NUM_THREADS": str(args.sanitizer_threads)},
+                        effective_timeout(args.timeout, args.timeout_per_thread, args.sanitizer_threads),
                         extra_ld_library_path=extra_ldpath, cwd=args.output_dir
                     )
                     if ok:
@@ -3100,16 +3189,16 @@ def main():
                             sys.stdout.write(
                                 f"\r{get_progress_bar(current_run_idx, overall_runs)} "
                                 + _prog("SAN", cyan, cfg, var,
-                                        th=SANITIZER_THREADS, run=r + 1,
+                                        th=args.sanitizer_threads, run=r + 1,
                                         reps=SANITIZER_REPS,
                                         extra=f"OK:{ok_in_row:3} ")
                             )
                             sys.stdout.flush()
                             ok, _, code, err_tail, _ = run_cmd(
                                 [exe, "--no_io"],
-                                {"OMP_NUM_THREADS": str(SANITIZER_THREADS), **san_env},
+                                {"OMP_NUM_THREADS": str(args.sanitizer_threads), **san_env},
                                 effective_timeout(args.timeout, args.timeout_per_thread,
-                                                  SANITIZER_THREADS),
+                                                  args.sanitizer_threads),
                                 extra_ld_library_path=extra_ldpath, cwd=args.output_dir
                             )
                             if ok:
@@ -3118,7 +3207,7 @@ def main():
                                 _entry = (
                                     f"SANITIZER_FAIL: {exe} --no_io "
                                     f"({'TSan' if 'thread' in cfg else 'ASan'}) "
-                                    f"iter={r+1} code={code} threads={SANITIZER_THREADS}\n"
+                                    f"iter={r+1} code={code} threads={args.sanitizer_threads}\n"
                                     f"  report:\n    " + err_tail.replace('\n', '\n    ')
                                 )
                                 errors.append(_entry)
