@@ -44,6 +44,14 @@
 //   the same template, to a std::vector reference; every element must
 //   compare equal at the end of each region. int, double and bool.
 //
+//   And the compound operators' RETURN contract: `y = (a[i] op= x)` must
+//   yield the value now stored, whether the write went through or was
+//   deferred. Every compound operator, for int, long, unsigned long, float,
+//   double and std::complex<double>, is applied with its result USED: the
+//   returned value is compared bit by bit with a fresh read of the element.
+//   (shrink_bench checked this in its --check mode, with chunk-only code in a
+//   container-agnostic bench; here the deferred path is forced.)
+//
 // WHAT IT DOES NOT COVER
 //
 //   Re-chunking and resize (sequential quiescent points: they drain first),
@@ -58,6 +66,8 @@
 #include <cstdio>      // printf
 #include <cstdlib>     // std::abs (int, chain_int)
 #include <cmath>       // std::floor
+#include <complex>     // std::complex<double> (the return-contract region)
+#include <cstring>     // std::memcmp (the return-contract region)
 #include <thread>      // std::this_thread::yield
 #include <type_traits> // std::is_same_v, std::conditional_t, std::is_integral_v
 #include <vector>      // std::vector
@@ -148,6 +158,132 @@ static T waw_value(long k)
     {
         return static_cast<T>(k % 23);
     }
+}
+
+// ── The compound operators' return contract ─────────────────────────────────
+// `y = (a[i] op= x)` must yield the value now stored. A discarded result keeps
+// the operation deferrable; a converted one synchronises the element and reads
+// the result. On the deferred path the operators used to return the operand,
+// or an unspecified value, while storing the right one: the arrays' contents
+// were correct and only a caller USING the result was wrong -- which a check of
+// the contents never sees.
+
+/// @brief Bit-wise equality: a NaN (x /= 0-ish, inf - inf) never compares equal
+///        to itself, and the question is "same value", not "==".
+template <typename T>
+static bool same_bits(const T& a, const T& b)
+{
+    return std::memcmp(&a, &b, sizeof(T)) == 0;
+}
+
+/// @brief Apply @p op to c[i] -- a compound operator whose result @p op
+///        converts to T -- and check that result against a fresh read of the
+///        element. @return 1 on a mismatch, 0 otherwise.
+/// @note Sound under a static schedule only: each thread re-reads an element
+///       it wrote itself.
+template <typename T, typename C, typename Op>
+static long check_returned(C& c, long i, Op op)
+{
+    const T returned = op(c[i]);
+    const T stored   = c[i];
+    return same_bits(returned, stored) ? 0 : 1;
+}
+
+template <typename T>
+inline constexpr bool is_complex_v = false;
+template <typename V>
+inline constexpr bool is_complex_v<std::complex<V>> = true;
+
+/// @brief Every compound operator of T on c[i], each result used and checked.
+///        Values stay small: no overflow, no shift past the width, no division
+///        by zero. @return the number of results that were not the stored value.
+template <typename T, typename C>
+static long returns_chain(C& c, long i)
+{
+    long bad = 0;
+    bad += check_returned<T>(c, i, [&](auto&& e) { return T(e = static_cast<T>((i % 17) + 1)); });
+    if constexpr (is_complex_v<T>)
+    {
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e += T(1.5, -0.5)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e -= T(0.25, 0.75)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e *= T(2.0, 1.0)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e /= T(2.0, 3.0)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e *= 2.0); });
+    }
+    else if constexpr (std::is_floating_point_v<T>)
+    {
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e += T(1.25)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e -= T(0.5)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e *= T(3)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e /= T(1.01)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(++e); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(--e); });
+    }
+    else
+    {
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e += T(5)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e -= T(2)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e *= T(3)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e %= T(7)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e |= T(0x1)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e &= T(0x1F)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e ^= T(0x3)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e <<= 2); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(e >>= 1); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(++e); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(--e); });
+    }
+    return bad;
+}
+
+/**
+ * @brief The return contract for T: returns_chain() on every element, in a
+ *        parallel region with the deferred path forced, then the same chain on
+ *        a reference vector and a comparison of the contents.
+ * @return 0 if every result and every element matched, 1 otherwise.
+ */
+template <typename T>
+static int run_returns(const char* label, long N)
+{
+    Array<T>       arr(N);
+    std::vector<T> ref(N);
+    long           bad = 0;
+#pragma omp parallel reduction(+ : bad)
+    {
+        begin_phase();
+#pragma omp for schedule(static)
+        for (long i = 0; i < N; ++i)
+        {
+            bad += returns_chain<T>(arr, i);
+        }
+    }
+    end_phase();
+    for (long i = 0; i < N; ++i)
+    {
+        returns_chain<T>(ref, i);
+    }
+    long mismatched = 0;
+    for (long i = 0; i < N; ++i)
+    {
+        const T got = arr[i];
+        if (!same_bits(got, ref[i]))
+        {
+            ++mismatched;
+        }
+    }
+    if (bad != 0 || mismatched != 0)
+    {
+        printf("[%s/returns-%s] FAIL: %ld compound result(s) not the stored value, %ld/%ld elements off the "
+               "reference\n",
+               variant_name(), label, bad, mismatched, N);
+    }
+    else
+    {
+        printf("[%s/returns-%s] OK: every compound operator returned the stored value (%ld elements)\n", variant_name(),
+               label, N);
+    }
+    arr.clear();
+    return (bad != 0 || mismatched != 0) ? 1 : 0;
 }
 
 // ── The chains, one per type, applied to the array AND to the reference ─────
@@ -606,6 +742,13 @@ int run(int argc, char** argv)
     fails += run<int>("int", N, si);
     fails += run<double>("double", N, sd);
     fails += run<bool>("bool", N, sb);
+
+    fails += run_returns<int>("int", N);
+    fails += run_returns<long>("long", N);
+    fails += run_returns<unsigned long>("ulong", N);
+    fails += run_returns<float>("float", N);
+    fails += run_returns<double>("double", N);
+    fails += run_returns<std::complex<double>>("complex", N);
 
     // The hook really fired, in every build that has it (the deferral count
     // below needs CHUNK_STATS).
