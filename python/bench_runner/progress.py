@@ -1,4 +1,5 @@
 """The live progress line and bar shared by every phase."""
+import time
 
 from .builds import short_config_label
 from .term import _hms, dim, green
@@ -44,3 +45,13 @@ def get_progress_bar(current, total, width=20):
     done = int(width * percent)
     bar = green("█" * done) + dim("-" * (width - done))
     return f"|{bar}| {percent:5.1%}"
+
+
+class RunCounter:
+    """Runs done so far out of the campaign's total: the progress bar and the
+    ETA of the check, STL, sanitizer and perf phases."""
+
+    def __init__(self, total):
+        self.idx = 0
+        self.total = total
+        self.start = time.time()

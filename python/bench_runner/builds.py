@@ -43,10 +43,14 @@ def int64_variant(var):
     return f"{var}_int64"
 
 
+# Written by a config's vector baseline AFTER a complete oracle generation:
+# data_tab* files without it are an interrupted generation.
+ORACLE_MARKER = "data_tab_ORACLE_COMPLETE.marker"
+
+
 def oracle_complete(output_dir, config):
     """Whether `config`'s oracle (oracle_dir) was written to the end."""
-    return os.path.exists(os.path.join(oracle_dir(output_dir, config),
-                                       "data_tab_ORACLE_COMPLETE.marker"))
+    return os.path.exists(os.path.join(oracle_dir(output_dir, config), ORACLE_MARKER))
 
 
 def resolve_exe(build_root, config, var, stage):
