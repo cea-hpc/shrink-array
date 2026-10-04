@@ -44,9 +44,6 @@
 namespace shrink_array
 {
 
-template <typename T>
-class SingletonChk;
-
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2A<T, ind_type>::create(ind_type sz)
 {

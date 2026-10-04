@@ -21,6 +21,8 @@
  * @brief Process-wide lazily-constructed instance of T, shared by every thread.
  * @details Created on the first getInstance() and never destroyed unless
  *          deleteInstance() is called: an intentional leak, marked for LSan.
+ *          The chunk library reaches it as shrink_array::SingletonChk
+ *          (chunk/singleton.h), an alias of this one.
  *          Nothing in shrink-array calls deleteInstance(); it is there for code
  *          outside it that wants an explicit teardown (see its contract).
  * @tparam T The type to host; default-constructible.
@@ -44,9 +46,21 @@ class Singleton
     }
 
   protected:
-    // Atomic: getInstance() reads it without the mutex (double-checked locking).
+    /// IMMORTAL raw pointer (was std::unique_ptr<T>): created once with `new`
+    /// under the mutex and NEVER deleted. A global unique_ptr's exit-time
+    /// destructor races worker-thread TLS destructors that still touch the
+    /// singleton at shutdown (static/TLS destruction-order data race). Leaking
+    /// avoids the exit-time destructor; the OS reclaims the memory at process
+    /// end. Atomic so that getInstance() can read it without the mutex
+    /// (double-checked locking, see there).
     static inline std::atomic<T*> unique_instance{nullptr};
-    static inline std::mutex      unique_instance_mutex;
+
+    /// Guards lazy construction. A version with NO lock let two threads hitting
+    /// getInstance() on first use both new the instance and the second
+    /// assignment free the first -> double-free. Held only while the instance
+    /// does not exist yet: getInstance() IS on a hot path (per-barrier
+    /// bookkeeping, every thread), so its steady state must not lock.
+    static inline std::mutex unique_instance_mutex;
 
   private:
     /// @brief The instance, created on first use (double-checked locking).

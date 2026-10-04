@@ -35,7 +35,7 @@
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_CAPACITY (max_thr)
 #include "chunk/internal/pool_ledger.h"       // CHUNK_LEDGER_DISCARD (drain_reuse_list_for_size)
 #include "chunk/type_name.h"                  // type_name<T> (pool breakdown)
-#include "chunk/internal/svalloc.h"           // svfree (drain_reuse_list_for_size)
+#include "fast_allocators/internal/svalloc.h" // svfree (drain_reuse_list_for_size)
 
 #include "chunk/internal/freepath_counters.h" // CHUNK_FREEPATH_INC (CHUNK_ARENA_REPORT)
 
