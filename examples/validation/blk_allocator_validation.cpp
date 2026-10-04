@@ -188,6 +188,35 @@ void check_parallel()
     expect(bad == 0, "every thread allocating, writing and freeing at once");
 }
 
+/// @brief The ladder reached from inside the CALLER's own unnamed critical
+///        section, by every thread. The ladder's criticals are named
+///        (fast_alloc_ladder): unnamed, they were the same lock as the
+///        caller's, and a critical is not reentrant -- this hung.
+void check_inside_caller_critical()
+{
+    long bad = 0;
+#pragma omp parallel reduction(+ : bad)
+    {
+        for (int it = 0; it < 200; ++it)
+        {
+            const std::size_t n  = kSizes[static_cast<std::size_t>(it) % 20];
+            const std::size_t id = static_cast<std::size_t>(it) * 131u;
+#pragma omp critical
+            {
+                void* p = BlkAllocator::alloc_block(n);
+                fill(p, n, id);
+                if (!intact(p, n, id))
+                {
+                    ++bad;
+                }
+                BlkAllocator::free_block(p, n);
+            }
+        }
+    }
+    StaticConstArray::clearInfoFreeElt();
+    expect(bad == 0, "alloc and free from inside the caller's own unnamed omp critical");
+}
+
 } // namespace
 
 int main()
@@ -197,6 +226,7 @@ int main()
     check_sizes();
     check_distinct();
     check_parallel();
+    check_inside_caller_critical();
     check_distinct(); // the ladder is still sound after the batches went back
     std::printf("\n%s\n", fails ? "=== BLK ALLOCATOR FAILED ===" : "=== BLK ALLOCATOR OK ===");
     return fails ? 1 : 0;

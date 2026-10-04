@@ -43,6 +43,13 @@
  * path, a freed block is instead batched in a per-thread ::InfoFreeElt and the
  * whole batch is released at once when it fills.
  *
+ * The critical sections are NAMED (fast_alloc_ladder), all the same name, so
+ * that an allocation and a free still exclude each other. Unnamed, they were
+ * the one process-wide lock every unnamed `omp critical` shares: a caller
+ * reaching the allocator from inside its own unnamed critical deadlocked (a
+ * critical is not reentrant), and every unrelated critical section in the
+ * program waited on the ladder and the ladder on it.
+ *
  * @par Configuration
  * The macros are read in alloc_config.h; the bodies branch with `if constexpr`.
  * What still has to be a directive, and why, is written at each site.
@@ -586,7 +593,7 @@ class FixedSizeAllocator : private StaticConstArray
         if (PMP_IN_PARALLEL_REGION)
         {
             void* ptr = nullptr;
-#pragma omp critical
+#pragma omp critical(fast_alloc_ladder)
             {
                 ptr = bucket.alloc();
             }
@@ -601,7 +608,7 @@ class FixedSizeAllocator : private StaticConstArray
     {
         if (PMP_IN_PARALLEL_REGION)
         {
-#pragma omp critical
+#pragma omp critical(fast_alloc_ladder)
             {
                 bucket.free_elt(ptr);
             }

@@ -80,7 +80,7 @@ inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
         void* vv = nullptr;
         if (PMP_IN_PARALLEL_REGION)
         {
-#pragma omp critical
+#pragma omp critical(fast_alloc_ladder)
             {
                 vv = getBlockAllocInt(sz);
             }
@@ -124,7 +124,7 @@ inline void* StaticConstArray::getBlockAllocAlign(int sz)
         void* vv = nullptr;
         if (PMP_IN_PARALLEL_REGION)
         {
-#pragma omp critical
+#pragma omp critical(fast_alloc_ladder)
             {
                 vv = getBlockAllocAlignInt(sz);
             }
@@ -186,7 +186,7 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
             // free at once, under the critical section the full path takes.
             if (thr_rank >= tab_info_free_elt.nb_thr) [[unlikely]]
             {
-#pragma omp critical
+#pragma omp critical(fast_alloc_ladder)
                 freeBlockWithInt(sz, ptr);
                 return true;
             }
@@ -195,7 +195,7 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
 
             if (is_full)
             {
-#pragma omp critical
+#pragma omp critical(fast_alloc_ladder)
                 {
                     freeBlockWithInt(sz, ptr);
 
@@ -249,7 +249,7 @@ inline bool StaticConstArray::freeBlockAlign(int sz, void* ptr)
             // Same bound as freeBlock(): no batch for this rank, free at once.
             if (thr_rank >= tab_info_free_elt_align.nb_thr) [[unlikely]]
             {
-#pragma omp critical
+#pragma omp critical(fast_alloc_ladder)
                 freeBlockWithAlignInt(sz, ptr);
                 return true;
             }
@@ -258,7 +258,7 @@ inline bool StaticConstArray::freeBlockAlign(int sz, void* ptr)
 
             if (is_full)
             {
-#pragma omp critical
+#pragma omp critical(fast_alloc_ladder)
                 {
                     freeBlockWithAlignInt(sz, ptr);
 
