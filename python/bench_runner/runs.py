@@ -178,10 +178,10 @@ def run_cmd(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, must_c
     return res
 
 
-def run_capture_stdout(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None):
+def run_capture_stdout(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, merge_stderr=False):
     """_run_capture_stdout_impl(), recording a failed run for --rerun-failed."""
     res = _run_capture_stdout_impl(cmd, env_vars, timeout, extra_ld_library_path=extra_ld_library_path,
-                                   cwd=cwd)
+                                   cwd=cwd, merge_stderr=merge_stderr)
     _note_run("capture", res[0], cmd, env_vars, timeout, extra_ld_library_path, cwd, None,
               stdout_text=res[3])
     return res
@@ -322,7 +322,7 @@ def run_with_rebuild_retry(build_root, config, var, stage, exe, env_vars,
     return ok, dur, code, err_tail, mem_mo, exe
 
 
-def _run_capture_stdout_impl(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None):
+def _run_capture_stdout_impl(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, merge_stderr=False):
     """Sibling of run_cmd() that returns the FULL stdout instead of parsing
     peak memory / sanitizer hits / must_contain. This phase needs the raw
     CHUNK_STATS text and the checksum line, neither of which run_cmd()
@@ -330,6 +330,9 @@ def _run_capture_stdout_impl(cmd, env_vars, timeout, extra_ld_library_path=None,
     run_cmd()'s established return shape, which every other phase depends on.
 
     Returns (success, duration_s, returncode, stdout_text, stderr_tail).
+    With merge_stderr, stdout_text is followed by the whole stderr: what the
+    library traces there (the re-chunk decider's [RECHUNK-DECIDE] lines) is
+    then readable by the caller too.
     """
     start = time.perf_counter()
     _bind = {"OMP_PROC_BIND": "close", "OMP_PLACES": "cores"}
@@ -348,8 +351,8 @@ def _run_capture_stdout_impl(cmd, env_vars, timeout, extra_ld_library_path=None,
         )
         err_tail = "\n".join(res.stderr.splitlines()[-30:]) if res.stderr else ""
         _write_full_log(cmd, child_env, res.returncode, res.stdout, res.stderr)
-        return (res.returncode == 0, time.perf_counter() - start, res.returncode,
-                res.stdout or "", err_tail)
+        text = (res.stdout or "") + ("\n" + res.stderr if merge_stderr and res.stderr else "")
+        return (res.returncode == 0, time.perf_counter() - start, res.returncode, text, err_tail)
     except subprocess.TimeoutExpired:
         return False, float(timeout), -9, "", f"TIMEOUT after {timeout}s"
     except FileNotFoundError as e:
