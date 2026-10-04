@@ -197,10 +197,6 @@ void maybe_set_second_value(Arr& a, const Val& v)
 // -----------------------------------------------------------------------------
 // Non-template utilities defined in bench_utils.cpp.
 // -----------------------------------------------------------------------------
-// __mem_page_size is defined in bench_utils.cpp. fast_allocators declares it
-// too, but that header is not in a CHUNK_STD_ALLOC build: the declaration has
-// to be here (removed once as a duplicate -- the std-alloc builds broke).
-extern int  __mem_page_size; // NOT Int: shared with fast_allocators, which declares it `int`
 extern bool __debug_flag;
 
 extern const std::vector<std::string> valid_args;

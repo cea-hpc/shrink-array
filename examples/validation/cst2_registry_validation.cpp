@@ -54,7 +54,7 @@
 #include <fstream>    // the --id-limit child's log
 #include <string>     // std::string, std::to_string, std::getline
 #include <sys/wait.h> // WIFEXITED, WEXITSTATUS
-#include <unistd.h>   // getpagesize, getpid
+#include <unistd.h>   // getpid
 
 #include "chunk/chunk_traits.h"       // forward decls (Chunk2A) + default ind_type = int
 #include "chunk/array_chunk2A.h"      // ArrayChunk2A, Chunk2A complete (its registry types)
@@ -64,7 +64,7 @@
 #include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
 
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::cst2_registry_validation
 {
@@ -206,12 +206,10 @@ int run(int argc, char** argv)
 {
     if (argc > 1 && std::string(argv[1]) == "--id-limit")
     {
-        __mem_page_size = getpagesize();
         ParamChunk::init_indexes(true);
         return run_id_limit_child();
     }
 
-    __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
 
     const long nchunks = argc > 1 ? shrink_array::arg_number<long>(argv[1], 16, "chunks") : 16;

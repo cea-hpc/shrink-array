@@ -37,7 +37,7 @@
 #include <string>      // std::string, std::to_string
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector
-#include <unistd.h>    // getpid, getpagesize
+#include <unistd.h>    // getpid
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 #include <print>       // std::println
 
@@ -50,7 +50,7 @@
 #include "chunk/PMP_CHUNK.h"     // chunk_pmp_set_max_active_levels
 #include "chunk/manage_ompt.h"   // begin_parallel_phase / finalize_parallel_phase
 
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::nested_region_validation
 {
@@ -209,7 +209,6 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
 
 int run(int argc, char** argv)
 {
-    __mem_page_size          = getpagesize();
     const bool nested_active = argc > 1 && std::string(argv[1]) == "--nested-active";
 
     chunk_pmp_set_max_active_levels(nested_active ? 2 : 1);

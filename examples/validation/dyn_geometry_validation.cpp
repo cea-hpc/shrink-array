@@ -38,7 +38,6 @@
 
 #include <cstdio>      // printf
 #include <type_traits> // std::conditional_t
-#include <unistd.h>    // getpagesize
 #include <vector>      // std::vector
 #include <print>       // std::println
 
@@ -53,7 +52,7 @@
 
 using namespace shrink_array;
 
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::dyn_geometry_validation
 {
@@ -168,8 +167,6 @@ static int round_trip_at(unsigned int csz, long N)
 
 int run(int argc, char** argv)
 {
-    __mem_page_size = getpagesize();
-
     const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], 200000L, "N") : 200000L;
 
     ParamChunk::init_indexes(true);

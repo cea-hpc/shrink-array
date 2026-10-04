@@ -15,7 +15,6 @@
 
 using namespace shrink_array;
 
-int __mem_page_size = 0; // required by fast_allocators (defined per-executable)
 
 static constexpr int N = 1 << 22; // 4M elements
 

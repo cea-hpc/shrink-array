@@ -43,6 +43,15 @@ if(NOT CHUNK_RECLAIM_EMPTY_SLABS)
     add_definitions(-DCHUNK_NO_RECLAIM_EMPTY_SLABS)
 endif()
 
+# Reinforced debug level for fast_allocators' slab lists: on a Debug build,
+# every insert / remove also walks the whole list (sl_check, sl_contains) --
+# linear per operation, quadratic over a run, so off unless asked for. A plain
+# Debug build keeps the cheap assertions. See alloc_config::check_slab_lists.
+option(FAST_ALLOC_CHECK_LISTS "Debug builds: check every slab list in full on each insert / remove (slow)" OFF)
+if(FAST_ALLOC_CHECK_LISTS)
+    add_definitions(-DFAST_ALLOC_CHECK_LISTS)
+endif()
+
 # The write/compress handshake (chunk_config::asymmetric_dekker, config.h) is
 # asymmetric wherever it can be, with no option: the write announces itself
 # with a plain store, the compressor / flush side pays a membarrier() for

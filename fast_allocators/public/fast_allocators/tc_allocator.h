@@ -49,13 +49,13 @@
 #include <cstdio>      // std::fprintf / std::fflush (the [MUNMAP] traces)
 #include <cstring>     // std::strerror
 #include <iostream>    // std::cerr
-#include <cstdlib>     // std::abort
+#include <cstdlib>     // std::abort, std::getenv (FAST_ALLOC_TRACE)
 #include <cstdint>     // uintptr_t
 #include <limits>      // std::numeric_limits: TCAllocatorEB's index range
 #include <type_traits> // std::conditional_t (free_index_t)
 #include <cassert>     // assert (DBG_ASSERT)
 #include <sys/mman.h>  // mmap, munmap
-#include <unistd.h>    // getpagesize
+#include <unistd.h>    // sysconf (fast_alloc::page_size)
 
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
@@ -82,13 +82,31 @@
     return alloc_config::use_std_alloc;
 }
 
+namespace fast_alloc
+{
+
+/// @brief The system page size, read once (sysconf).
+[[nodiscard]] inline long page_size() noexcept
+{
+    static const long ps = ::sysconf(_SC_PAGESIZE);
+    return ps;
+}
+
+/// @brief FAST_ALLOC_TRACE is set in the environment: trace the evictions of
+///        emptied slabs (the [MUNMAP] lines). Read once.
+[[nodiscard]] inline bool trace_evictions() noexcept
+{
+    static const bool on = std::getenv("FAST_ALLOC_TRACE") != nullptr;
+    return on;
+}
+
 /**
  * @brief Map @p size anonymous, zero-filled bytes, or abort.
  * @param size Byte count; the caller is expected to have rounded it to pages.
  * @return The mapping. Never null -- a failure prints errno and aborts, because
  *         every caller here is on a path with no way to report failure upward.
  */
-inline void* sctk_mmap(size_t size)
+inline void* map_anonymous(size_t size)
 {
 #if defined(BSD)
     void* const tmp = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -107,6 +125,8 @@ inline void* sctk_mmap(size_t size)
 
     return tmp;
 }
+
+} // namespace fast_alloc
 
 /// @brief assert() in a DEBUG build; expands to nothing otherwise.
 #ifdef DEBUG
@@ -416,6 +436,21 @@ template <>
 void TCSlab<FreeLinks::InPayload>::operator delete(void* ptr);
 #endif
 
+/// @brief A whole-list check (sl_check, sl_contains): linear in the list, on
+///        every insert and remove -- quadratic over a run, which made Debug
+///        builds crawl once a pool held thousands of slabs. Only at the
+///        reinforced debug level (FAST_ALLOC_CHECK_LISTS on a DEBUG build, see
+///        alloc_config::check_slab_lists); a plain Debug build keeps the cheap
+///        DBG_ASSERTs.
+#define SL_LIST_CHECK(x)                              \
+    do                                                \
+    {                                                 \
+        if constexpr (alloc_config::check_slab_lists) \
+        {                                             \
+            assert(x);                                \
+        }                                             \
+    } while (0)
+
 // ---------------------------------------------------------------------------
 // Intrusive doubly-linked slab-list primitives, single-sourced. The three slab
 // families (TCTypeAllocator / TCTypeCAllocator / TCTypeAllocatorEBC) used to
@@ -473,8 +508,8 @@ void sl_remove(Node*& list, Node* node) noexcept
 {
     DBG_ASSERT(node != nullptr);
     DBG_ASSERT(list != nullptr);
-    DBG_ASSERT(sl_check(list));
-    DBG_ASSERT(sl_contains(list, node));
+    SL_LIST_CHECK(sl_check(list));
+    SL_LIST_CHECK(sl_contains(list, node));
 
     if (node == list)
     {
@@ -495,7 +530,7 @@ void sl_remove(Node*& list, Node* node) noexcept
     }
     node->prev = nullptr;
     node->next = nullptr;
-    DBG_ASSERT(sl_check(list));
+    SL_LIST_CHECK(sl_check(list));
 }
 
 /**
@@ -509,7 +544,7 @@ template <typename Node>
 void sl_insert(Node*& list, Node* node) noexcept
 {
     DBG_ASSERT(node != nullptr);
-    DBG_ASSERT(sl_check(list));
+    SL_LIST_CHECK(sl_check(list));
 
     node->prev = nullptr;
     node->next = list;
@@ -519,8 +554,8 @@ void sl_insert(Node*& list, Node* node) noexcept
     }
     list = node;
 
-    DBG_ASSERT(sl_check(list));
-    DBG_ASSERT(sl_contains(list, node));
+    SL_LIST_CHECK(sl_check(list));
+    SL_LIST_CHECK(sl_contains(list, node));
 }
 
 
@@ -970,7 +1005,7 @@ class TCSlabPool
     {
         // Nothing to walk when the slabs were never built: under STD_ALLOC there
         // are no slabs at all, each element was an independent new[] that
-        // free_elt() has already deleted.
+        // free_elt_pow2() has already deleted.
         if constexpr (alloc_config::use_slabs)
         {
             if (bypass_slabs())
@@ -1051,12 +1086,16 @@ class TCSlabPool
     }
 
     /// @brief Release an emptied slab the reserve has no room for. Out of
-    ///        line and cold: an fprintf and a `delete` on every free path.
+    ///        line and cold: a `delete` (and, with FAST_ALLOC_TRACE, a trace)
+    ///        on every free path.
     FAST_ALLOC_COLD void evict_slab(Slab* slab) noexcept
     {
-        std::fprintf(stderr, "[MUNMAP] %s delete slab p=%p nb_max_block_empty=%d\n", Derived::pool_name,
-                     static_cast<void*>(slab), nb_max_block_empty);
-        std::fflush(stderr);
+        if (fast_alloc::trace_evictions())
+        {
+            std::fprintf(stderr, "[MUNMAP] %s delete slab p=%p nb_max_block_empty=%d\n", Derived::pool_name,
+                         static_cast<void*>(slab), nb_max_block_empty);
+            std::fflush(stderr);
+        }
         delete slab;
     }
 
@@ -1068,29 +1107,6 @@ class TCSlabPool
     [[nodiscard]] Slab* get_allocator(const ElementType* ptr) const noexcept
     {
         return Slab::slab_from(ptr, slab_bytes_);
-    }
-
-    /**
-     * @brief Take back a block obtained from alloc(), by division.
-     * @param ptr Must come from THIS allocator -- check is_free_able_elt() when
-     *        that is not certain. Freeing through a non-owning allocator
-     *        corrupts the owner's free list.
-     */
-    void free_elt(const ElementType* ptr) noexcept
-    {
-        if (bypass_slabs())
-        {
-            delete[] ptr;
-            return;
-        }
-
-        auto* slab = get_allocator(ptr);
-
-        const int i = slab->num_block(ptr);
-
-        slab->free_block(i);
-
-        manage_full_empty(slab);
     }
 
     /// @copydoc sl_remove
@@ -1306,9 +1322,6 @@ using free_index_t = std::conditional_t<bytes == 1, signed char, std::conditiona
 template <typename V>
 struct TypeAllocator;
 
-/// @brief Page size, cached from the environment at startup.
-extern int __mem_page_size;
-
 /**
  * @brief One slab whose element and block sizes are template parameters.
  *
@@ -1503,18 +1516,14 @@ class TCAllocatorEB
      */
     int alloc_block()
     {
-        if (__mem_page_size == 0)
-        {
-            __mem_page_size = getpagesize();
-        }
-
-        if (__mem_page_size > 0 && (2 * BlockSize) % __mem_page_size == 0)
+        const long ps = fast_alloc::page_size();
+        if (ps > 0 && (2 * BlockSize) % ps == 0)
         {
             use_mmap = true;
 
             const uintptr_t block_bytes = BlockSize;
 
-            char* mapping = static_cast<char*>(sctk_mmap(2 * BlockSize));
+            char* mapping = static_cast<char*>(fast_alloc::map_anonymous(2 * BlockSize));
 
             data = reinterpret_cast<char*>((reinterpret_cast<uintptr_t>(mapping) + (block_bytes - 1)) & -block_bytes);
 

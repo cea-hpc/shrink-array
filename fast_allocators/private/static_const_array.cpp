@@ -41,11 +41,11 @@ InfoFreeElt::InfoFreeElt()
     {
         const int max_thr = PMP_MAX_THREADS;
 
-        svalloc(tab_sz, IntMaxFreeElt, max_thr);
-        svalloc(tab_ptr, VoidMaxFreeElt, max_thr);
+        tab_sz  = svalloc<IntMaxFreeElt>(max_thr);
+        tab_ptr = svalloc<VoidMaxFreeElt>(max_thr);
 
-        svcalloc(compt, int, max_thr);
-        svcalloc(somme_sz, int, max_thr);
+        compt    = svcalloc<int>(max_thr);
+        somme_sz = svcalloc<int>(max_thr);
 
         nb_thr = max_thr;
     }

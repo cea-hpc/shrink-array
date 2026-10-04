@@ -43,7 +43,6 @@
 
 using namespace shrink_array;
 
-int __mem_page_size = 0; // read by the fast allocator; unused otherwise
 
 double convert_memory(double memoryValue)
 {

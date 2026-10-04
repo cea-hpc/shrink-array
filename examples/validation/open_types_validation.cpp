@@ -49,7 +49,6 @@
 #include <cstdlib>     // std::strtol
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
-#include <unistd.h>    // getpagesize
 #include <vector>      // std::vector
 #include <print>       // std::println
 
@@ -64,7 +63,7 @@
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
 
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::open_types_validation
 {
@@ -284,8 +283,6 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc)
 
 int run(int argc, char** argv)
 {
-    __mem_page_size = getpagesize();
-
     const long N = argc > 1 ? std::strtol(argv[1], nullptr, 10) : (1L << 19);
 
     // No type list: each array registers its own element type at its

@@ -47,7 +47,6 @@
 #include <cstdio>      // std::printf
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
-#include <unistd.h>    // getpagesize
 #include <vector>      // std::vector
 #include <print>       // std::println
 
@@ -62,7 +61,7 @@
 #include "chunk/manage_ompt.h"                // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/chunk_size_policy.h" // set_active_chunk_size, set_thread_chunk_size
 
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::index64_validation
 {
@@ -384,7 +383,6 @@ int check_mixed()
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
 
     std::println("=== index64_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);

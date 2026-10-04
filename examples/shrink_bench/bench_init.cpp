@@ -17,16 +17,11 @@
 /// @file bench_init.cpp
 /// @brief Geometry validation and library start-up. See bench_phases.h.
 
-#include <cstdlib>  // std::abort
-#include <cstdio>   // stderr
-#include <print>    // std::println, std::print
-#include <unistd.h> // getpagesize
+#include <cstdlib> // std::abort
+#include <cstdio>  // stderr
+#include <print>   // std::println, std::print
 
 #include "bench_phases.h" // bench_init_library (defined here)
-// __mem_page_size: declared here, defined in bench_utils.cpp. In a fast-alloc
-// build it arrived through a transitive include, hence a build that passed
-// locally and broke on std-alloc. The dependency is now explicit.
-#include "bench_utils.h" // __mem_page_size
 
 // As in shrink_bench.cpp, where this body comes from: it names ParamChunk,
 // ChunkDef and __chunk_size unqualified. In a .cpp the directive stays
@@ -37,7 +32,6 @@ void bench_init_library()
 {
     if constexpr (chunk_config::is_shrink_enabled)
     {
-        __mem_page_size          = getpagesize();
         constexpr Int chunk_size = static_cast<Int>(__chunk_size);
 
         static_assert(chunk_size <= ChunkDef::size_max);

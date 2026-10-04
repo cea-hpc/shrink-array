@@ -52,12 +52,11 @@
 // EXIT STATUS: 0 when both hold and the passes ran, 1 otherwise; 77 when the
 // build has no OpenMP.
 
-#include <atomic>   // std::atomic, std::memory_order_relaxed
-#include <chrono>   // std::chrono::steady_clock, std::chrono::duration
-#include <cstdint>  // std::uint64_t
-#include <cstdio>   // std::printf
-#include <cstdlib>  // std::getenv, std::atof
-#include <unistd.h> // getpagesize
+#include <atomic>  // std::atomic, std::memory_order_relaxed
+#include <chrono>  // std::chrono::steady_clock, std::chrono::duration
+#include <cstdint> // std::uint64_t
+#include <cstdio>  // std::printf
+#include <cstdlib> // std::getenv, std::atof
 
 #include "chunk/chunk_traits.h" // forward decls + default ind_type = int
 #include "chunk/array_chunk2.h" // ArrayChunk2
@@ -67,7 +66,7 @@
 #include "chunk/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK, CHUNK_PMP_NUM_THREADS
 #include "chunk/manage_ompt.h"  // begin_parallel_phase / finalize_parallel_phase
 
-#include "validation_harness.h" // __mem_page_size; run() is called by validation_driver.cpp
+#include "validation_harness.h" // run() is called by validation_driver.cpp
 
 namespace validation::chunk2_foreign_key_validation
 {
@@ -140,7 +139,6 @@ long compressed(const Arr& arr, long n_chunks, long S)
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
 
     if constexpr (!build_config::use_openmp)

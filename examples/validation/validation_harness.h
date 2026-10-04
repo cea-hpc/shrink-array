@@ -20,11 +20,6 @@
 
 #include <string> // std::string (self_command)
 
-/// The page size the allocators read (fast_allocators/tc_allocator.h). Defined
-/// once, by the driver; declared here for the std-alloc builds, whose headers
-/// do not declare it.
-extern int __mem_page_size;
-
 namespace validation
 {
 

@@ -29,7 +29,7 @@
 #include <string>      // std::string, std::to_string
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::move
-#include <unistd.h>    // getpid, getpagesize
+#include <unistd.h>    // getpid
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 
 #include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
@@ -40,7 +40,7 @@
 #include "chunk/chunk_std.h"     // release_chunk_pools, destroy_block_chunk
 #include "chunk/config.h"        // chunk_config::use_chunk2*, build_config::chunk_dynamic / any_check
 
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::stale_proxy_validation
 {
@@ -243,8 +243,6 @@ static int check_case(const char* self, int k)
 
 int run(int argc, char** argv)
 {
-    __mem_page_size = getpagesize();
-
     if (argc > 2 && std::string(argv[1]) == "--case")
     {
         return run_child(std::atoi(argv[2]));

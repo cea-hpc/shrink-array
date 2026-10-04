@@ -40,7 +40,6 @@
 #include <type_traits> // std::is_same_v, std::remove_reference_t
 #include <chrono>      // std::chrono::steady_clock
 
-#include <unistd.h>       // getpagesize
 #include <sys/resource.h> // getrusage
 #include <cstdio>         // stderr
 #include <print>          // std::println, std::print
@@ -83,7 +82,6 @@ double convert_memory(double memoryValue)
 }
 
 /// @brief Required by fast_allocators (one definition per executable).
-int __mem_page_size = 0;
 
 using std::vector;
 
@@ -135,7 +133,6 @@ int main()
     std::println("Phases            : {}\n",
                  multi_mat::embedded_compression ? "OMPT callbacks (manage_ompt.cpp)" : "phase calls from the program");
 
-    __mem_page_size          = getpagesize();
     constexpr int chunk_size = static_cast<int>(shrink_array::__chunk_size);
 
     if constexpr (chunk_size == 0)

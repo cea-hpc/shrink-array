@@ -54,11 +54,11 @@ void int_alloc(T*& var, size_t size)
 {
     if constexpr (alloc_config::alloc_align)
     {
-        svalloc_align(var, T, size);
+        var = svalloc_align<T>(size);
     }
     else
     {
-        svalloc(var, T, size);
+        var = svalloc<T>(size);
     }
 }
 
@@ -69,7 +69,7 @@ void int_alloc(T*& var, size_t size)
 template <typename T>
 void int_alloc_align(T*& var, size_t size)
 {
-    svalloc_align(var, T, size);
+    var = svalloc_align<T>(size);
 }
 
 /// @brief Untyped int_alloc(T*&, size_t): @p size bytes.
@@ -81,11 +81,11 @@ inline void* int_alloc(size_t size)
 
     if constexpr (alloc_config::alloc_align)
     {
-        svalloc_align(ptr, char, size);
+        ptr = svalloc_align<char>(size);
     }
     else
     {
-        svalloc(ptr, char, size);
+        ptr = svalloc<char>(size);
     }
 
     return (void*)ptr;
@@ -98,7 +98,7 @@ inline void* int_alloc_align(size_t size)
 {
     char* ptr = nullptr;
 
-    svalloc_align(ptr, char, size);
+    ptr = svalloc_align<char>(size);
 
     return (void*)ptr;
 }

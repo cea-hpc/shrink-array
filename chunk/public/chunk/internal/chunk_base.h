@@ -577,7 +577,7 @@ struct ChunkAllocPolicy<T, Derived, true>
                 // Every caller's initialiser returns void, so the guard was
                 // always true; it only stood in the way of ever writing one
                 // that did not.
-                svcalloc_align(values_loc, T, Derived::storage_units(alloc_chunk_count()));
+                values_loc = svcalloc_align<T>(Derived::storage_units(alloc_chunk_count()));
                 CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.svcalloc");
                 CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.svcalloc");
                 init_fresh(values_loc);
@@ -653,7 +653,7 @@ struct ChunkAllocPolicy<T, Derived, false>
         }
         else
         {
-            svcalloc_align(values_loc, T, Derived::storage_units(alloc_chunk_count()));
+            values_loc = svcalloc_align<T>(Derived::storage_units(alloc_chunk_count()));
             CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.svcalloc_serial");
             CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.svcalloc_serial");
             init_fresh(values_loc);

@@ -31,8 +31,7 @@
 // -----------------------------------------------------------------------------
 // File-scope globals (declared in bench_utils.h).
 // -----------------------------------------------------------------------------
-int  __mem_page_size = 0; // NOT Int: see bench_utils.h
-bool __debug_flag    = false;
+bool __debug_flag = false;
 
 // FIX: "--test_stl" was missing here while main() has always had a branch to
 // parse it. The filter below (ranges::find over valid_args) runs FIRST, so the

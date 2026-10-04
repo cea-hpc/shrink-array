@@ -32,7 +32,7 @@
 #include <string>      // std::string, std::to_string
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector
-#include <unistd.h>    // getpid, getpagesize
+#include <unistd.h>    // getpid
 #include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
 #include <print>       // std::println
 
@@ -45,7 +45,7 @@
 #include "chunk/PMP_CHUNK.h"     // chunk_pmp_set_num_threads, CHUNK_PMP_THREAD_CAPACITY
 #include "chunk/manage_ompt.h"   // begin_parallel_phase / finalize_parallel_phase
 
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::thread_growth_validation
 {
@@ -214,7 +214,6 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
 
 int run(int argc, char** argv)
 {
-    __mem_page_size   = getpagesize();
     const bool beyond = argc > 1 && std::string(argv[1]) == "--beyond";
 
     // 1. The arrays are created under a 2-thread team.
