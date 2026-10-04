@@ -120,7 +120,6 @@
 #include <cstdlib>     // std::getenv, std::atol
 #include <string_view> // std::string_view
 #include <type_traits> // std::conditional_t
-#include <unistd.h>    // getpagesize
 #include <omp.h>       // omp_get_thread_num, omp_get_max_threads
 
 #include "chunk/chunk_traits.h"        // forward decls + default ind_type = int
@@ -133,7 +132,7 @@
 #include "chunk/manage_ompt.h"         // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/test_hooks.h" // test_hooks::read_delay_* / pass_delay_*
 
-#include "validation_harness.h" // __mem_page_size; run() is called by validation_driver.cpp
+#include "validation_harness.h" // run() is called by validation_driver.cpp
 
 namespace validation::read_reclaim_validation
 {
@@ -487,7 +486,6 @@ int run_remark(int team, double seconds)
 
 int run(int argc, char** argv)
 {
-    __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
 
     // The test hooks this harness widens its windows with (test_hooks.h), on

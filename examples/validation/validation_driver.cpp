@@ -12,9 +12,8 @@
 #include <cstdio>  // std::fprintf, stderr
 #include <cstring> // std::strcmp
 
-#include "validation_harness.h" // validation::self_command (defined here), __mem_page_size
+#include "validation_harness.h" // validation::self_command (defined here)
 
-int __mem_page_size = 0;
 
 #define VALIDATION_HARNESS(name)    \
     namespace validation::name      \

@@ -58,7 +58,6 @@
 #include <cstdio>      // printf
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
-#include <unistd.h>    // getpagesize
 
 #include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
 #include "chunk/array_chunk.h"   // ArrayChunk
@@ -71,7 +70,7 @@
 #include "chunk/manage_ompt.h"   // begin_parallel_phase / finalize_parallel_phase
 
 // Defined by every executable of the library (the fast allocator reads it).
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::mark_path_validation
 {
@@ -223,7 +222,6 @@ static int check(const char* scenario, const char* step, const Array<double>& ar
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
 
     // The geometry this build runs at, read off a throwaway array.

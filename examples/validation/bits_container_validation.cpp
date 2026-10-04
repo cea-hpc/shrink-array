@@ -53,7 +53,6 @@
 #include <cstdint>   // std::uint64_t, std::uint32_t
 #include <cstdio>    // std::printf, std::snprintf
 #include <random>    // std::mt19937_64
-#include <unistd.h>  // getpagesize
 #include <utility>   // std::pair
 #include <vector>    // std::vector
 
@@ -68,7 +67,7 @@
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
 
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::bits_container_validation
 {
@@ -653,8 +652,7 @@ int parallel_fill(long N)
 
 int run(int argc, char** argv)
 {
-    __mem_page_size = getpagesize();
-    const long N    = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
+    const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
     ParamChunk::init_indexes(true);
 
     std::printf("=== bits_container_validation  N=%ld  threads=%d ===\n", N, CHUNK_PMP_MAX_THREADS);

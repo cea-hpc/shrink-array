@@ -71,7 +71,6 @@
 #include <thread>      // std::this_thread::yield
 #include <type_traits> // std::is_same_v, std::conditional_t, std::is_integral_v
 #include <vector>      // std::vector
-#include <unistd.h>    // getpagesize
 
 #include "chunk/chunk_traits.h"       // forward decls + default ind_type = int
 #include "chunk/array_chunk.h"        // ArrayChunk
@@ -88,7 +87,7 @@
 #endif
 
 #include "chunk/internal/test_hooks.h" // force_defer_every
-#include "validation_harness.h"        // __mem_page_size; run() is called by validation_driver.cpp
+#include "validation_harness.h"        // run() is called by validation_driver.cpp
 
 namespace validation::deferred_path_validation
 {
@@ -705,8 +704,6 @@ static int run(const char* label, long N, const Scenario<T>& sc)
 
 int run(int argc, char** argv)
 {
-    __mem_page_size = getpagesize();
-
     // The forced-deferral hook (test_hooks.h), on for this harness only: one
     // write in 7 of every thread, unless a whole-tree build fixed another N.
     test_hooks::force_defer_every = build_config::force_defer_every > 0 ? build_config::force_defer_every : 7U;

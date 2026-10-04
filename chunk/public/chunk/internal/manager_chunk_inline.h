@@ -674,7 +674,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::init_allocators([[maybe_unused]
         {
             // FIX (op/value slab aliasing): -1 = never munmap a value slab. A freed
             // value slab's address could be reobtained by the op pool's
-            // sctk_mmap(nullptr) and overwrite a live op (or vice-versa). Value slabs
+            // fast_alloc::map_anonymous() and overwrite a live op (or vice-versa). Value slabs
             // are long-lived (data), so few become empty and retained memory is modest.
             auto& allocator = CHUNK_T<T>::get_chunk_allocator(thr_rank);
             allocator.set_rank(thr_rank); // stamped into every slab as owner_rank

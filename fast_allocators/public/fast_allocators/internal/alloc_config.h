@@ -66,6 +66,17 @@ inline constexpr bool is_debug =
     false;
 #endif
 
+/// @brief The reinforced debug level of the slab lists: a DEBUG build with
+///        FAST_ALLOC_CHECK_LISTS (CMake option of the same name) walks a whole
+///        list on every insert and remove (SL_LIST_CHECK in tc_allocator.h).
+///        Linear per operation: a plain Debug build does not.
+inline constexpr bool check_slab_lists =
+#if defined(DEBUG) && defined(FAST_ALLOC_CHECK_LISTS)
+    true;
+#else
+    false;
+#endif
+
 /**
  * @brief An emptied slab gets MADV_DONTNEED instead of staying resident.
  * @details On by default; `-DCHUNK_NO_RECLAIM_EMPTY_SLABS` (CMake option

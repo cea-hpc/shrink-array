@@ -39,7 +39,6 @@
 
 #include <cstdio>      // printf
 #include <type_traits> // std::conditional_t
-#include <unistd.h>    // getpagesize
 
 #include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
 #include "chunk/array_chunk.h"   // Chunk<T> complete (chunk_std.h): its operator new[]
@@ -54,7 +53,7 @@
 static_assert(build_config::use_openmp, "OpenMP builds only: the array-new is the *OmpPolicy's");
 
 // Defined by every executable of the library (the fast allocator reads it).
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::chunk_array_new_validation
 {
@@ -156,7 +155,6 @@ int placement_case(std::size_t n)
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
 
     printf("=== chunk_array_new_validation [variant = %s]  threads=%d ===\n", variant_name(), CHUNK_PMP_MAX_THREADS);

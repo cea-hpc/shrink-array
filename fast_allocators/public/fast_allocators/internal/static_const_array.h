@@ -28,7 +28,7 @@
  * bool -- "the ladder took it" or "it was never mine".
  *
  * There are two parallel ladders. The plain one serves any size; the aligned
- * one skips the buckets narrower than `__ALIGNEMENT__`, since a 4-byte bucket
+ * one skips the buckets narrower than `fast_alloc::alignment`, since a 4-byte bucket
  * cannot satisfy a 32-byte alignment.
  *
  * @par Who uses it
@@ -65,7 +65,7 @@
 #include <tuple>   // std::tuple, std::get, std::apply (the ladder)
 #include <utility> // std::index_sequence (with_bucket)
 
-#include "fast_allocators/internal/svalloc.h"   // __ALIGNEMENT__
+#include "fast_allocators/internal/svalloc.h"   // fast_alloc::alignment
 #include "fast_allocators/internal/pmp_alloc.h" // PMP_MAX_THREADS / PMP_THREAD_RANK / PMP_IN_PARALLEL_REGION
 
 #include "fast_allocators/internal/int_alloc.h"    // int_alloc, int_free
@@ -265,7 +265,7 @@ class StaticConstArray
     /**
      * @brief The bucket of the aligned ladder for @p sz bytes.
      * @details bucket_index() with the bottom of the ladder cut off where
-     *          `__ALIGNEMENT__` says: 16 starts at the 16-byte bucket and then
+     *          `fast_alloc::alignment` says: 16 starts at the 16-byte bucket and then
      *          goes straight to the 64-byte one; 32 or more starts at the
      *          32-byte bucket; anything else at the 64-byte one. (The rules are
      *          the ones the comparison trees had; aligned_bucket_index is
@@ -274,11 +274,11 @@ class StaticConstArray
     [[nodiscard]] static constexpr std::size_t aligned_bucket_index(unsigned int sz) noexcept
     {
         const std::size_t i = bucket_index(sz);
-        if constexpr (__ALIGNEMENT__ == 16)
+        if constexpr (fast_alloc::alignment == 16)
         {
             return i <= 2 ? 2 : (i == 3 ? 4 : i);
         }
-        else if constexpr (__ALIGNEMENT__ >= 32)
+        else if constexpr (fast_alloc::alignment >= 32)
         {
             return i <= 3 ? 3 : i;
         }
@@ -323,7 +323,7 @@ class StaticConstArray
     static void freeBlockWithInt(int sz, void* ptr);
 
     /// @brief getBlockAllocInt() over the aligned ladder.
-    /// @details Skips the buckets narrower than `__ALIGNEMENT__`.
+    /// @details Skips the buckets narrower than `fast_alloc::alignment`.
     static void* getBlockAllocAlignInt(int sz);
 
     /// @brief freeBlockWithInt() over the aligned ladder.
@@ -365,7 +365,7 @@ extern TCTypeAllocatorEBC<24, SIZE_BLOCK> Allocator24;
  *
  *          Two pairs, never mixed: alloc_block()/free_block(size) when the
  *          caller knows the size at free time, alloc_tab()/free_tab() when it
- *          does not (a header of `__ALIGNEMENT__` bytes keeps it, size <
+ *          does not (a header of `fast_alloc::alignment` bytes keeps it, size <
  *          INT_MAX). Thread-safe: inside an OpenMP region the ladder takes its
  *          critical section and frees are batched per thread until
  *          StaticConstArray::clearInfoFreeElt() runs at a quiescent point.
@@ -429,24 +429,24 @@ struct BlkAllocator : public StaticConstArray
 
     /**
      * @brief A block of @p size bytes that remembers its own size.
-     * @return A pointer past a header of `__ALIGNEMENT__` bytes holding @p size,
+     * @return A pointer past a header of `fast_alloc::alignment` bytes holding @p size,
      *         so free_tab() needs no size argument. The alignment padding is
      *         what makes the returned pointer suitably aligned.
      */
     static void* alloc_tab(size_t size)
     {
-        int* ptr = (int*)getBlockAlloc(size + __ALIGNEMENT__);
+        int* ptr = (int*)getBlockAlloc(size + fast_alloc::alignment);
 
         if (!ptr)
         {
-            ptr = (int*)int_alloc_align(size + __ALIGNEMENT__);
+            ptr = (int*)int_alloc_align(size + fast_alloc::alignment);
         }
 
         ptr[0] = static_cast<int>(size);
 
         char* user_ptr = (char*)ptr;
 
-        user_ptr += __ALIGNEMENT__;
+        user_ptr += fast_alloc::alignment;
 
         return user_ptr;
     }
@@ -459,11 +459,11 @@ struct BlkAllocator : public StaticConstArray
             return;
         }
 
-        int* m_ptr = (int*)((char*)user_ptr - __ALIGNEMENT__);
+        int* m_ptr = (int*)((char*)user_ptr - fast_alloc::alignment);
 
         const int size = m_ptr[0];
 
-        if (!freeBlock(static_cast<int>(size + __ALIGNEMENT__), m_ptr))
+        if (!freeBlock(static_cast<int>(size + fast_alloc::alignment), m_ptr))
         {
             int_free_align(m_ptr);
         }

@@ -30,7 +30,7 @@
 #include "fast_allocators/internal/alloc_config.h"              // constexpr mirrors of STD_ALLOC / DEBUG
 #include "fast_allocators/internal/pmp_alloc.h"                 // PMP_IN_PARALLEL_REGION / PMP_THREAD_RANK
 #include "fast_allocators/internal/static_const_array_define.h" // MAX_CONST_BLOCK_SIZE
-#include "fast_allocators/internal/svalloc.h"                   // __ALIGNEMENT__
+#include "fast_allocators/internal/svalloc.h"                   // fast_alloc::alignment
 
 template <class F>
 decltype(auto) StaticConstArray::with_bucket(std::size_t i, F&& f)
@@ -97,7 +97,7 @@ inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
 
 /**
  * @copydoc StaticConstArray::getBlockAllocAlignInt
- * @details Which small classes are skipped depends on `__ALIGNEMENT__`: see
+ * @details Which small classes are skipped depends on `fast_alloc::alignment`: see
  *          aligned_bucket_index().
  */
 inline void* StaticConstArray::getBlockAllocAlignInt(int sz)

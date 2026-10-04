@@ -398,7 +398,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
             // FIX (op/value slab aliasing): last arg = nb_max_block_empty = -1
             // → the op allocator NEVER munmaps an empty slab. Previously it was 1
             // (retain one empty slab, munmap the rest), so a freed op slab's
-            // address could be reobtained by sctk_mmap(nullptr) from the chunk
+            // address could be reobtained by fast_alloc::map_anonymous() from the chunk
             // VALUE pool on another thread and overwrite a still-live op (proven
             // via ring log: OP_ALLOC then VALUE_ALLOC at the same address on a
             // different tid). Keeping op slabs mapped for the program's lifetime
@@ -426,7 +426,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
     // it to construct_at. The observed crash is a wild address (e.g.
     // 0xffff63ff0000, mapped in NO region) written by the ctx constructor.
     //
-    // IMPORTANT: we must NOT discriminate on the address range. sctk_mmap() uses
+    // IMPORTANT: we must NOT discriminate on the address range. fast_alloc::map_anonymous() uses
     // mmap(nullptr, …) so the kernel is free to place a perfectly valid slab high
     // in the 0xffff… band (same band as thread stacks). An earlier version keyed
     // on bits[47:32]==0xffff and false-positived on such legitimate high slabs.

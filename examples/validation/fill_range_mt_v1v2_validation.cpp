@@ -52,8 +52,7 @@
  *          Usage: fill_range_mt_v1v2_validation [chunks]
  */
 
-#include <cstdio>   // std::printf
-#include <unistd.h> // getpagesize
+#include <cstdio> // std::printf
 
 #include "chunk/array_chunk.h"           // ArrayChunk
 #include "chunk/array_chunk2.h"          // ArrayChunk2
@@ -64,7 +63,6 @@
 #include "chunk/manage_ompt.h"           // begin_parallel_phase, finalize_parallel_phase_only_flush / _after_flush
 #include "chunk/internal/env_parse.h"    // arg_number (checked, not atoi)
 
-int __mem_page_size = 0;
 
 /// The suspension counter read by chunk_config::OMPTcc: non-zero, no OMPT
 /// callback exists in this binary (chunk_v1v2 is built without the tool).
@@ -166,7 +164,6 @@ static int run_case(const char* name, Arr& arr, long nchunks, double v, long exp
 
 int main(int argc, char** argv)
 {
-    __mem_page_size    = getpagesize();
     const long nchunks = argc > 1 ? shrink_array::arg_number<long>(argv[1], 64, "chunks") : 64;
     ParamChunk::init_indexes(true);
 

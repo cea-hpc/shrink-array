@@ -54,7 +54,6 @@
 
 #include <cstdio>      // printf
 #include <type_traits> // std::conditional_t
-#include <unistd.h>    // getpagesize
 
 #include "chunk/chunk_traits.h"       // forward decls + default ind_type = int
 #include "chunk/array_chunk.h"        // ArrayChunk
@@ -68,7 +67,7 @@
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
 // Defined by every executable of the library (the fast allocator reads it).
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::compress_roundtrip
 {
@@ -255,8 +254,6 @@ static int round_trip(const char* label, long N, const Scenario<T>& sc, bool dec
 
 int run(int argc, char** argv)
 {
-    __mem_page_size = getpagesize();
-
     const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
 
     ParamChunk::init_indexes(true);

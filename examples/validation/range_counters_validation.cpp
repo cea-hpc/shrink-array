@@ -45,7 +45,6 @@
 #include <cstdio>      // std::printf
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
-#include <unistd.h>    // getpagesize
 #include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
@@ -58,7 +57,7 @@
 #include "chunk/config.h"                // chunk_config::use_chunk2*, use_compression_with_counter
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::range_counters_validation
 {
@@ -212,7 +211,6 @@ int run_case(Case c)
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
 
     std::printf("=== range_counters_validation [variant = %s]  counters=%s ===\n", variant_name(),

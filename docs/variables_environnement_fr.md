@@ -45,6 +45,7 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 | `CHUNK_OMPT_STATS` | statistiques des régions de synchronisation (builds OMPT) |
 | `CHUNK_CST2_PROBE` | Chunk2A : rapport du registre des secondes valeurs à chaque passage (banc) |
 | `ALLOC_TOKEN_REPORT` | à la sortie, le recensement des allocations par jeton |
+| `FAST_ALLOC_TRACE` | une ligne `[MUNMAP]` par slab vidé que la réserve d'un pool ne garde pas et qui est libéré (muet par défaut) |
 
 ## 4. Rechunks forcés (tests)
 
@@ -80,6 +81,7 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 | `CHUNK_DYNAMIC`, `DYN_CHUNK_SIZE=<n>` | géométrie dynamique, et taille de départ |
 | `CHUNK_DYN_MAX_SIZE=<n>` | géométrie dynamique : plus grande taille de chunk qu'un rechunk peut atteindre, puissance de deux (4096) ; dimensionne les tampons partagés des valeurs constantes, `cst_buffer_size × sizeof(T)` par seconde valeur distincte |
 | `CHUNK_ALLOC_AFFINITY_MIN_BYTES=<octets>` | seuil de métadonnées au-delà duquel un tableau peut avoir ses propres allocateurs (16 Mio ; 0 = jamais) |
+| `FAST_ALLOC_CHECK_LISTS` | build Debug : chaque insertion ou retrait dans une liste de slabs vérifie la liste entière (coût linéaire par opération ; défini par l'option CMake du même nom) |
 | `CHUNK_NO_RECLAIM_EMPTY_SLABS` | garder résidents les slabs vidés, au lieu de les rendre au système aux balayages explicites (défini par l'option CMake `CHUNK_RECLAIM_EMPTY_SLABS=OFF`) |
 | `CHUNK_STATS` | compteurs d'instrumentation (build stats) |
 | `CHECK_OPTIM` | vérifications d'invariants en build optimisé |
@@ -104,6 +106,7 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 | `CHUNK_VALIDATION_UNITY` | `ON` | les harnesses de validation regroupés en un exécutable par variante et géométrie (unity build) ; `OFF` : un exécutable par harness |
 | `CHUNK_BUILD_VALIDATION` | selon le build | compiler les harnesses de `examples/validation`, et avec eux les crochets de test (`CHUNK_TEST_HOOKS`) ; par défaut `ON` en Debug, avec `CHECK_OPTIM` ou un sanitizer, `OFF` ailleurs (non mis en cache : suit la configuration courante) |
 | `CHUNK_RECLAIM_EMPTY_SLABS` | `ON` | rendre au système (`madvise`) les slabs vidés aux balayages explicites (rechunk, destruction) ; `OFF` définit `CHUNK_NO_RECLAIM_EMPTY_SLABS` |
+| `FAST_ALLOC_CHECK_LISTS` | `OFF` | niveau de debug renforcé des listes de slabs : en Debug, vérification complète de la liste à chaque insertion et retrait (lent) ; un Debug ordinaire garde les vérifications légères |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | Chunk2A : l'emplacement de seconde valeur contient un identifiant de 4 octets au lieu de la valeur (moins de mémoire, +3 % de temps d'écriture) |
 
 Et une macro propre à Chunk2A : `CHUNK2A_COMPRESS_LEVEL=<0|1|2|3>` (0 par défaut) choisit le

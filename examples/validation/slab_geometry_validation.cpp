@@ -40,13 +40,11 @@
 //
 // Exit 0 = every check holds.
 
-#include <cstdint>  // std::uintptr_t
-#include <cstdio>   // std::printf
-#include <unistd.h> // getpagesize
+#include <cstdint> // std::uintptr_t
+#include <cstdio>  // std::printf
 
 #include "fast_allocators/tc_allocator.h" // TCTypeCAllocator, TCCAllocator
 
-int __mem_page_size = 0;
 
 namespace
 {
@@ -87,8 +85,6 @@ int check_pair(int small_bytes, int large_bytes, std::uintptr_t budget)
 
 int main()
 {
-    __mem_page_size = getpagesize();
-
     std::printf("=== slab_geometry_validation ===\n");
     int fails = 0;
     // 1.875 MiB per rank (15 MiB / 8, one thread) -> 2 MiB slabs: 64 and 128

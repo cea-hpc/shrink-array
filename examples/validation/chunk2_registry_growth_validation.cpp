@@ -49,10 +49,9 @@
 //
 // EXIT STATUS: 0 when every read matches and the premises hold, 1 otherwise.
 
-#include <cstdio>   // std::printf
-#include <memory>   // std::unique_ptr, std::make_unique
-#include <vector>   // std::vector
-#include <unistd.h> // getpagesize
+#include <cstdio> // std::printf
+#include <memory> // std::unique_ptr, std::make_unique
+#include <vector> // std::vector
 
 #include "chunk/chunk_traits.h" // forward decls + default ind_type = int
 #include "chunk/array_chunk2.h" // ArrayChunk2
@@ -62,7 +61,7 @@
 #include "chunk/PMP_CHUNK.h"    // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"  // begin_parallel_phase / finalize_parallel_phase
 
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::chunk2_registry_growth_validation
 {
@@ -154,7 +153,6 @@ long check_all(const char* what, const Arr& arr, double v)
 
 int run(int /*argc*/, char** /*argv*/)
 {
-    __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
 
     int fails = 0;

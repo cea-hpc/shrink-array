@@ -77,7 +77,6 @@
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::as_const
 #include <vector>      // std::vector
-#include <unistd.h>    // getpagesize
 
 #include "chunk/chunk_traits.h"       // the ind_type = int default of ArrayChunk2<T> / ArrayChunk2A<T>
 #include "chunk/array_chunk2.h"       // ArrayChunk2
@@ -89,7 +88,6 @@
 #include "chunk/internal/env_parse.h" // arg_number (checked, not atoi)
 #include "chunk/internal/exact_rss.h" // exact_rss_kib (smaps_rollup)
 
-int __mem_page_size = 0;
 
 using namespace shrink_array;
 
@@ -182,7 +180,6 @@ static double plain(long i, int iter)
 
 int main(int argc, char** argv)
 {
-    __mem_page_size = getpagesize();
     ParamChunk::init_indexes(true);
 
     long N      = 1L << 28;

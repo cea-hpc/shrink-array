@@ -44,7 +44,6 @@
 #include <vector>      // std::vector
 #include <cmath>       // std::floor, std::sin
 #include <type_traits> // std::conditional_t
-#include <unistd.h>    // getpagesize
 
 #include "chunk/chunk_traits.h"               // forward decls + default ind_type = int
 #include "chunk/array_chunk.h"                // ArrayChunk
@@ -59,7 +58,7 @@
 
 using namespace shrink_array;
 
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::rechunk_validation
 {
@@ -617,8 +616,6 @@ void set_start_geometry(unsigned size)
 
 int run(int argc, char** argv)
 {
-    __mem_page_size = getpagesize();
-
     // Positional arguments (the scale repro: N and the 64->target geometry are
     // configurable, to hunt a size-dependent rechunk crash under ASan without
     // the perf bench's weight):  [N (1e6)] [target size (1024)] [rounds (200)]

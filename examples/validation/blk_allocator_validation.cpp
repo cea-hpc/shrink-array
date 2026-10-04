@@ -27,21 +27,19 @@
 //   distinct  a few thousand live blocks of mixed sizes at once never overlap
 //             (each is filled with its own pattern and checked after all the
 //             others were written), then all are freed and taken again;
-//   tab       alloc_tab's result is aligned to __ALIGNEMENT__;
+//   tab       alloc_tab's result is aligned to fast_alloc::alignment;
 //   parallel  (OpenMP builds) the same from every thread at once -- the
 //             ladder's critical sections and the per-thread free batches --
 //             then clearInfoFreeElt() at the quiescent point after the region.
 //
 // EXIT STATUS: 0 when every check holds, 1 otherwise.
 
-#include <cstdint>  // std::uintptr_t
-#include <cstdio>   // std::printf
-#include <vector>   // std::vector
-#include <unistd.h> // getpagesize
+#include <cstdint> // std::uintptr_t
+#include <cstdio>  // std::printf
+#include <vector>  // std::vector
 
 #include "fast_allocators/internal/static_const_array.h" // BlkAllocator, StaticConstArray
 
-int __mem_page_size = 0;
 
 namespace
 {
@@ -112,14 +110,14 @@ void check_sizes()
             ok_tab = false;
             continue;
         }
-        aligned = aligned && (reinterpret_cast<std::uintptr_t>(t) % __ALIGNEMENT__) == 0;
+        aligned = aligned && (reinterpret_cast<std::uintptr_t>(t) % fast_alloc::alignment) == 0;
         fill(t, n, i + 1000);
         ok_tab = ok_tab && intact(t, n, i + 1000);
         BlkAllocator::free_tab(t);
     }
     expect(ok_blk, "alloc_block/free_block: 1 B to 1 MiB, on, between and past the buckets");
     expect(ok_tab, "alloc_tab/free_tab: same sizes, size read back from the header");
-    expect(aligned, "alloc_tab: aligned to __ALIGNEMENT__");
+    expect(aligned, "alloc_tab: aligned to fast_alloc::alignment");
 }
 
 /// @brief Many live blocks at once: no two overlap; then reuse after free.
@@ -221,7 +219,6 @@ void check_inside_caller_critical()
 
 int main()
 {
-    __mem_page_size = getpagesize();
     std::printf("=== blk_allocator_validation ===\n");
     check_sizes();
     check_distinct();

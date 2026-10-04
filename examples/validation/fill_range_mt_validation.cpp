@@ -40,7 +40,6 @@
 #include <cstdio>      // std::printf
 #include <cstring>     // std::strcmp
 #include <type_traits> // std::conditional_t
-#include <unistd.h>    // getpagesize
 #include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
@@ -54,7 +53,7 @@
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // env_number / arg_number (checked, not atoi)
 
-#include "validation_harness.h" // __mem_page_size, self_command; run() is called by validation_driver.cpp
+#include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::fill_range_mt_validation
 {
@@ -262,8 +261,7 @@ static void run_perf(long N)
 
 int run(int argc, char** argv)
 {
-    __mem_page_size = getpagesize();
-    const long N    = argc > 1 ? shrink_array::arg_number<long>(argv[1], (1L << 20) + 777, "N") : (1L << 20) + 777;
+    const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], (1L << 20) + 777, "N") : (1L << 20) + 777;
     ParamChunk::init_indexes(true);
 
     if (argc > 2 && std::strcmp(argv[2], "perf") == 0)

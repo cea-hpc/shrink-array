@@ -30,7 +30,6 @@
 #include <type_traits>    // std::conditional_t (Array)
 #include <vector>         // std::vector
 #include <sys/resource.h> // getrusage
-#include <unistd.h>       // getpagesize
 
 // Both executables have the chunk headers: simple_array_vector links
 // chunk_vector, simple_array_chunk chunk_v1.
@@ -42,7 +41,6 @@
 #include "chunk/config.h"                     // chunk_config::use_chunk*, stats
 #include "chunk/internal/chunk_size_config.h" // __chunk_size
 
-int __mem_page_size = 0;
 
 /// @brief splitmix64's finaliser: a bijection on 64 bits that spreads every
 ///        input bit over the whole output.
@@ -187,7 +185,6 @@ int main()
 {
     if constexpr (use_chunk_array)
     {
-        __mem_page_size          = getpagesize();
         constexpr int chunk_size = static_cast<int>(shrink_array::__chunk_size);
 
         assert(chunk_size <= ChunkDef::size_max);

@@ -3,12 +3,11 @@
 // Bodies of the slab classes declared in tc_allocator.h, which includes this
 // file at its end.
 
-#include <cmath>    // std::log2, the element-size shift
+#include <bit>      // std::bit_width, the element-size shift
 #include <cstddef>  // std::ptrdiff_t, the element offsets
 #include <cstdint>  // std::uintptr_t
 #include <cstdlib>  // std::abort on an arena failure
 #include <iostream> // std::cerr on an arena failure
-#include <unistd.h> // getpagesize
 #include <vector>   // std::vector
 
 #include "fast_allocators/tc_allocator.h"             // the declarations these bodies belong to
@@ -33,11 +32,6 @@ inline void TCSlab<Links>::alloc_block()
         }
 
         tab_firstFree.resize(static_cast<std::size_t>(BlockSize));
-    }
-
-    if (__mem_page_size == 0)
-    {
-        __mem_page_size = getpagesize();
     }
 
     // FIX (op/value slab aliasing): the block comes from the slab's own arena,
@@ -109,7 +103,7 @@ inline void TCSlab<Links>::init(int ElementSize_, uintptr_t BlockAllocator_)
     ElementSize    = ElementSize_;
     BlockAllocator = BlockAllocator_;
 
-    Log2ElementSize = static_cast<int>(std::log2(static_cast<double>(ElementSize)) + 1.e-13);
+    Log2ElementSize = static_cast<int>(std::bit_width(static_cast<unsigned int>(ElementSize))) - 1;
 
     alloc_block();
 }
