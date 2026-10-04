@@ -52,8 +52,11 @@
  */
 
 #include <array>   // std::array
+#include <bit>     // std::bit_width (bucket_index)
 #include <cassert> // TypeAllocator::alloc: the size its free will route by
 #include <cstddef> // std::size_t
+#include <tuple>   // std::tuple, std::get, std::apply (the ladder)
+#include <utility> // std::index_sequence (with_bucket)
 
 #include "fast_allocators/internal/svalloc.h"   // __ALIGNEMENT__
 #include "fast_allocators/internal/pmp_alloc.h" // PMP_MAX_THREADS / PMP_THREAD_RANK / PMP_IN_PARALLEL_REGION
@@ -217,28 +220,66 @@ class StaticConstArray
     // main() returns cleanly with every in-run integrity check passing.
     // A reference has no destructor of its own to run, so leaking the
     // pointee here is intentional and harmless, matching the arena.
-    static inline TCTypeAllocatorEBC<4, SIZE_BLOCK>&        bucket4   = *(new TCTypeAllocatorEBC<4, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<8, SIZE_BLOCK>&        bucket8   = *(new TCTypeAllocatorEBC<8, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<16, SIZE_BLOCK>&       bucket16  = *(new TCTypeAllocatorEBC<16, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<32, SIZE_BLOCK>&       bucket32  = *(new TCTypeAllocatorEBC<32, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<64, SIZE_BLOCK>&       bucket64  = *(new TCTypeAllocatorEBC<64, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<128, SIZE_BLOCK>&      bucket128 = *(new TCTypeAllocatorEBC<128, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<256, SIZE_BLOCK>&      bucket256 = *(new TCTypeAllocatorEBC<256, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<512, SIZE_BLOCK>&      bucket512 = *(new TCTypeAllocatorEBC<512, SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<1024, 2 * SIZE_BLOCK>& bucket1024 =
-        *(new TCTypeAllocatorEBC<1024, 2 * SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<2048, 4 * SIZE_BLOCK>& bucket2048 =
-        *(new TCTypeAllocatorEBC<2048, 4 * SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<4096, 8 * SIZE_BLOCK>& bucket4096 =
-        *(new TCTypeAllocatorEBC<4096, 8 * SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<8192, 16 * SIZE_BLOCK>& bucket8192 =
-        *(new TCTypeAllocatorEBC<8192, 16 * SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<16384, 16 * SIZE_BLOCK>& bucket16384 =
-        *(new TCTypeAllocatorEBC<16384, 16 * SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<32768, 16 * SIZE_BLOCK>& bucket32768 =
-        *(new TCTypeAllocatorEBC<32768, 16 * SIZE_BLOCK>());
-    static inline TCTypeAllocatorEBC<65536, 32 * SIZE_BLOCK>& bucket65536 =
-        *(new TCTypeAllocatorEBC<65536, 32 * SIZE_BLOCK>());
+    /// @brief The ladder's buckets, smallest first: element sizes 4 << i bytes.
+    using Ladder = std::tuple<TCTypeAllocatorEBC<4, SIZE_BLOCK>,
+                              TCTypeAllocatorEBC<8, SIZE_BLOCK>,
+                              TCTypeAllocatorEBC<16, SIZE_BLOCK>,
+                              TCTypeAllocatorEBC<32, SIZE_BLOCK>,
+                              TCTypeAllocatorEBC<64, SIZE_BLOCK>,
+                              TCTypeAllocatorEBC<128, SIZE_BLOCK>,
+                              TCTypeAllocatorEBC<256, SIZE_BLOCK>,
+                              TCTypeAllocatorEBC<512, SIZE_BLOCK>,
+                              TCTypeAllocatorEBC<1024, 2 * SIZE_BLOCK>,
+                              TCTypeAllocatorEBC<2048, 4 * SIZE_BLOCK>,
+                              TCTypeAllocatorEBC<4096, 8 * SIZE_BLOCK>,
+                              TCTypeAllocatorEBC<8192, 16 * SIZE_BLOCK>,
+                              TCTypeAllocatorEBC<16384, 16 * SIZE_BLOCK>,
+                              TCTypeAllocatorEBC<32768, 16 * SIZE_BLOCK>,
+                              TCTypeAllocatorEBC<65536, 32 * SIZE_BLOCK>>;
+
+    /// @brief How many buckets the ladder has.
+    static constexpr std::size_t n_buckets = std::tuple_size_v<Ladder>;
+
+    static inline Ladder& buckets = *(new Ladder()); ///< The ladder; immortal, see above.
+
+    /// @brief The bucket getBlockAllocInt() / freeBlockWithInt() use for
+    ///        @p sz bytes: the smallest that holds it, the top one past 32768.
+    [[nodiscard]] static constexpr std::size_t bucket_index(unsigned int sz) noexcept
+    {
+        if (sz <= 4)
+        {
+            return 0;
+        }
+        // (2^(k-1), 2^k] -> bucket k - 2, the one of 2^k bytes.
+        const auto k = static_cast<std::size_t>(std::bit_width(sz - 1));
+        return k - 2 < n_buckets ? k - 2 : n_buckets - 1;
+    }
+
+    /**
+     * @brief The bucket of the aligned ladder for @p sz bytes.
+     * @details bucket_index() with the bottom of the ladder cut off where
+     *          `__ALIGNEMENT__` says: 16 starts at the 16-byte bucket and then
+     *          goes straight to the 64-byte one; 32 or more starts at the
+     *          32-byte bucket; anything else at the 64-byte one. (The rules are
+     *          the ones the comparison trees had; aligned_bucket_index is
+     *          checked against them.)
+     */
+    [[nodiscard]] static constexpr std::size_t aligned_bucket_index(unsigned int sz) noexcept
+    {
+        const std::size_t i = bucket_index(sz);
+        if constexpr (__ALIGNEMENT__ == 16)
+        {
+            return i <= 2 ? 2 : (i == 3 ? 4 : i);
+        }
+        else if constexpr (__ALIGNEMENT__ >= 32)
+        {
+            return i <= 3 ? 3 : i;
+        }
+        else
+        {
+            return i <= 4 ? 4 : i;
+        }
+    }
 
   protected:
     /**
@@ -286,6 +327,11 @@ class StaticConstArray
 
     /// @brief freeBlock() over the aligned ladder. Same bool convention.
     static bool freeBlockAlign(int sz, void* ptr);
+
+    /// @brief Run @p f on bucket @p i of the ladder; its result, if any.
+    /// @pre @p i < n_buckets.
+    template <class F>
+    static decltype(auto) with_bucket(std::size_t i, F&& f);
 
     /// @brief The largest size the ladder serves.
     /// @warning Asserts in a STD_ALLOC build, where there is no ladder to size.

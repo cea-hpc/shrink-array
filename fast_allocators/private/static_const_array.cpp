@@ -16,6 +16,7 @@
 
 #include <cstdlib> // size_t
 #include <set>     // the registry of allocator instances, filled in serial builds only
+#include <tuple>   // std::apply (the ladder report)
 
 #include "fast_allocators/internal/singleton.h"          // Singleton
 #include "fast_allocators/tc_allocator.h"                // VTCTypeAllocator, TCTypeAllocatorEBC
@@ -191,21 +192,8 @@ void compute_sum_allocated_size_TCAlloc(size_t& sum_UsedSize, size_t& sum_nn_ref
     // STD_ALLOC nothing was ever allocated from it, so there is nothing to add.
     if constexpr (alloc_config::use_slabs)
     {
-        StaticConstArray::bucket4.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::bucket8.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::bucket16.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::bucket32.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::bucket64.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::bucket128.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::bucket256.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::bucket512.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::bucket1024.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::bucket2048.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::bucket4096.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::bucket8192.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::bucket16384.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::bucket32768.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
-        StaticConstArray::bucket65536.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
+        std::apply([&](const auto&... bucket) { (bucket.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz), ...); },
+                   StaticConstArray::buckets);
     }
 
     // Not part of StaticConstArray, but it's now or never to count them!

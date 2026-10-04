@@ -19,7 +19,11 @@
 // Bodies of StaticConstArray, declared in static_const_array.h, which includes
 // this file at its end.
 
-#include <cassert> // assert
+#include <cassert>     // assert
+#include <cstddef>     // std::size_t
+#include <tuple>       // std::get
+#include <type_traits> // std::is_void_v
+#include <utility>     // std::index_sequence
 
 #include "fast_allocators/internal/static_const_array.h"        // the declarations these bodies belong to
 #include "fast_allocators/internal/int_alloc.h"                 // int_alloc, int_free, int_alloc_align, int_free_align
@@ -28,11 +32,30 @@
 #include "fast_allocators/internal/static_const_array_define.h" // MAX_CONST_BLOCK_SIZE
 #include "fast_allocators/internal/svalloc.h"                   // __ALIGNEMENT__
 
+template <class F>
+decltype(auto) StaticConstArray::with_bucket(std::size_t i, F&& f)
+{
+    // One comparison per bucket, unrolled; the compiler is free to make it a
+    // jump table.
+    return [&]<std::size_t... I>(std::index_sequence<I...>) -> decltype(auto)
+    {
+        using R = decltype(f(std::get<0>(buckets)));
+        if constexpr (std::is_void_v<R>)
+        {
+            ((i == I ? (f(std::get<I>(buckets)), true) : false) || ...);
+        }
+        else
+        {
+            R result{};
+            ((i == I ? (result = f(std::get<I>(buckets)), true) : false) || ...);
+            return result;
+        }
+    }(std::make_index_sequence<n_buckets>{});
+}
+
 /**
  * @copydoc StaticConstArray::getBlockAllocInt
- * @details The comparison tree is deliberately unbalanced: the small classes,
- *          which are the common ones, are reached in fewer tests than the
- *          large ones.
+ * @details The bucket is computed (bucket_index()), not searched for.
  */
 inline void* StaticConstArray::getBlockAllocInt(unsigned int sz)
 {
@@ -41,87 +64,7 @@ inline void* StaticConstArray::getBlockAllocInt(unsigned int sz)
         return int_alloc(sz);
     }
 
-    if (sz <= 8)
-    {
-        if (sz <= 4)
-        {
-            return bucket4.alloc();
-        }
-        else
-        {
-            return bucket8.alloc();
-        }
-    }
-    else if (sz <= 128)
-    {
-        if (sz <= 32)
-        {
-            if (sz <= 16)
-            {
-                return bucket16.alloc();
-            }
-            else
-            {
-                return bucket32.alloc();
-            }
-        }
-        else
-        {
-            if (sz <= 64)
-            {
-                return bucket64.alloc();
-            }
-            else
-            {
-                return bucket128.alloc();
-            }
-        }
-    }
-    else
-    {
-        if (sz <= 1024)
-        {
-            if (sz <= 256)
-            {
-                return bucket256.alloc();
-            }
-            else if (sz <= 512)
-            {
-                return bucket512.alloc();
-            }
-            else
-            {
-                return bucket1024.alloc();
-            }
-        }
-        else
-        {
-            if (sz <= 2048)
-            {
-                return bucket2048.alloc();
-            }
-            else if (sz <= 4096)
-            {
-                return bucket4096.alloc();
-            }
-            else if (sz <= 8192)
-            {
-                return bucket8192.alloc();
-            }
-            else if (sz <= 16384)
-            {
-                return bucket16384.alloc();
-            }
-            else if (sz <= 32768)
-            {
-                return bucket32768.alloc();
-            }
-            else
-            {
-                return bucket65536.alloc();
-            }
-        }
-    }
+    return with_bucket(bucket_index(sz), [](auto& bucket) { return bucket.alloc(); });
 }
 
 inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
@@ -154,9 +97,8 @@ inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
 
 /**
  * @copydoc StaticConstArray::getBlockAllocAlignInt
- * @details Which small classes are skipped depends on `__ALIGNEMENT__`: a
- *          bucket narrower than the required alignment cannot satisfy it, so
- *          the ladder starts at the first one that can.
+ * @details Which small classes are skipped depends on `__ALIGNEMENT__`: see
+ *          aligned_bucket_index().
  */
 inline void* StaticConstArray::getBlockAllocAlignInt(int sz)
 {
@@ -165,76 +107,8 @@ inline void* StaticConstArray::getBlockAllocAlignInt(int sz)
         return int_alloc_align(sz);
     }
 
-
-    if (sz <= 128)
-    {
-// Stays a directive: __ALIGNEMENT__ is SIMD_SZ, and mirroring it as constexpr
-// would make fast_allocators read a value the chunk layer owns.
-#if __ALIGNEMENT__ == 16
-        if (sz <= 16)
-        {
-            return bucket16.alloc();
-        }
-#elif __ALIGNEMENT__ >= 32
-        if (sz <= 32)
-        {
-            return bucket32.alloc();
-        }
-#endif
-        if (sz <= 64)
-        {
-            return bucket64.alloc();
-        }
-        else
-        {
-            return bucket128.alloc();
-        }
-    }
-    else
-    {
-        if (sz <= 1024)
-        {
-            if (sz <= 256)
-            {
-                return bucket256.alloc();
-            }
-            else if (sz <= 512)
-            {
-                return bucket512.alloc();
-            }
-            else
-            {
-                return bucket1024.alloc();
-            }
-        }
-        else
-        {
-            if (sz <= 2048)
-            {
-                return bucket2048.alloc();
-            }
-            else if (sz <= 4096)
-            {
-                return bucket4096.alloc();
-            }
-            else if (sz <= 8192)
-            {
-                return bucket8192.alloc();
-            }
-            else if (sz <= 16384)
-            {
-                return bucket16384.alloc();
-            }
-            else if (sz <= 32768)
-            {
-                return bucket32768.alloc();
-            }
-            else
-            {
-                return bucket65536.alloc();
-            }
-        }
-    }
+    return with_bucket(aligned_bucket_index(static_cast<unsigned int>(sz)),
+                       [](auto& bucket) { return bucket.alloc(); });
 }
 
 inline void* StaticConstArray::getBlockAllocAlign(int sz)
@@ -267,9 +141,9 @@ inline void* StaticConstArray::getBlockAllocAlign(int sz)
 
 /**
  * @copydoc StaticConstArray::freeBlockWithInt
- * @details Mirrors getBlockAllocInt()'s tree exactly. The two must agree: a
- *          block released through a different bucket than the one it came from
- *          corrupts that bucket's free list.
+ * @details Same bucket_index() as getBlockAllocInt(), which is what keeps the
+ *          two in agreement: a block released through a different bucket than
+ *          the one it came from corrupts that bucket's free list.
  */
 inline void StaticConstArray::freeBlockWithInt(int sz, void* ptr)
 {
@@ -279,96 +153,7 @@ inline void StaticConstArray::freeBlockWithInt(int sz, void* ptr)
         return;
     }
 
-    if (sz <= 8)
-    {
-        if (sz <= 4)
-        {
-            bucket4.free_elt_pow2(ptr);
-            return;
-        }
-        else
-        {
-            bucket8.free_elt_pow2(ptr);
-            return;
-        }
-    }
-    else if (sz <= 128)
-    {
-        if (sz <= 32)
-        {
-            if (sz <= 16)
-            {
-                bucket16.free_elt_pow2(ptr);
-                return;
-            }
-            else
-            {
-                bucket32.free_elt_pow2(ptr);
-                return;
-            }
-        }
-        else
-        {
-            if (sz <= 64)
-            {
-                bucket64.free_elt_pow2(ptr);
-                return;
-            }
-            else
-            {
-                bucket128.free_elt_pow2(ptr);
-                return;
-            }
-        }
-    }
-    else
-    {
-        if (sz <= 1024)
-        {
-            if (sz <= 256)
-            {
-                bucket256.free_elt_pow2(ptr);
-                return;
-            }
-            else if (sz <= 512)
-            {
-                bucket512.free_elt_pow2(ptr);
-                return;
-            }
-            else
-            {
-                bucket1024.free_elt_pow2(ptr);
-                return;
-            }
-        }
-        else
-        {
-            if (sz <= 2048)
-            {
-                bucket2048.free_elt_pow2(ptr);
-            }
-            else if (sz <= 4096)
-            {
-                bucket4096.free_elt_pow2(ptr);
-            }
-            else if (sz <= 8192)
-            {
-                bucket8192.free_elt_pow2(ptr);
-            }
-            else if (sz <= 16384)
-            {
-                bucket16384.free_elt_pow2(ptr);
-            }
-            else if (sz <= 32768)
-            {
-                bucket32768.free_elt_pow2(ptr);
-            }
-            else
-            {
-                bucket65536.free_elt_pow2(ptr);
-            }
-        }
-    }
+    with_bucket(bucket_index(static_cast<unsigned int>(sz)), [ptr](auto& bucket) { bucket.free_elt_pow2(ptr); });
 }
 
 /**
@@ -432,6 +217,7 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
 }
 
 /// @copydoc StaticConstArray::freeBlockWithAlignInt
+/// @details Same aligned_bucket_index() as getBlockAllocAlignInt().
 inline void StaticConstArray::freeBlockWithAlignInt(int sz, void* ptr)
 {
     if constexpr (alloc_config::use_std_alloc)
@@ -440,83 +226,8 @@ inline void StaticConstArray::freeBlockWithAlignInt(int sz, void* ptr)
         return;
     }
 
-    if (sz <= 128)
-    {
-// Stays a directive: __ALIGNEMENT__ is SIMD_SZ, and mirroring it as constexpr
-// would make fast_allocators read a value the chunk layer owns.
-#if __ALIGNEMENT__ == 16
-        if (sz <= 16)
-        {
-            bucket16.free_elt_pow2(ptr);
-            return;
-        }
-#elif __ALIGNEMENT__ >= 32
-        if (sz <= 32)
-        {
-            bucket32.free_elt_pow2(ptr);
-            return;
-        }
-#endif
-
-        if (sz <= 64)
-        {
-            bucket64.free_elt_pow2(ptr);
-            return;
-        }
-        else
-        {
-            bucket128.free_elt_pow2(ptr);
-            return;
-        }
-    }
-    else
-    {
-        if (sz <= 1024)
-        {
-            if (sz <= 256)
-            {
-                bucket256.free_elt_pow2(ptr);
-                return;
-            }
-            else if (sz <= 512)
-            {
-                bucket512.free_elt_pow2(ptr);
-                return;
-            }
-            else
-            {
-                bucket1024.free_elt_pow2(ptr);
-                return;
-            }
-        }
-        else
-        {
-            if (sz <= 2048)
-            {
-                bucket2048.free_elt_pow2(ptr);
-            }
-            else if (sz <= 4096)
-            {
-                bucket4096.free_elt_pow2(ptr);
-            }
-            else if (sz <= 8192)
-            {
-                bucket8192.free_elt_pow2(ptr);
-            }
-            else if (sz <= 16384)
-            {
-                bucket16384.free_elt_pow2(ptr);
-            }
-            else if (sz <= 32768)
-            {
-                bucket32768.free_elt_pow2(ptr);
-            }
-            else
-            {
-                bucket65536.free_elt_pow2(ptr);
-            }
-        }
-    }
+    with_bucket(aligned_bucket_index(static_cast<unsigned int>(sz)),
+                [ptr](auto& bucket) { bucket.free_elt_pow2(ptr); });
 }
 
 inline bool StaticConstArray::freeBlockAlign(int sz, void* ptr)
