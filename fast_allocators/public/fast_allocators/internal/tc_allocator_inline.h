@@ -15,161 +15,97 @@
 #include "fast_allocators/slab_arena.h"               // FIX: disjoint op/value slab arenas
 #include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2
 
-inline void TCAllocator::alloc_block()
+template <FreeLinks Links>
+inline void TCSlab<Links>::alloc_block()
 {
-    BlockAllocator = NextPowerOf2(BlockAllocator);
+    // The rounding rule lives in slab_bytes_for(): the owning pool applies the
+    // same one at init(), so it can resolve a pointer to its slab without a
+    // slab to ask (TCSlabPool::slab_bytes_).
+    BlockAllocator = slab_bytes_for(BlockAllocator);
 
     BlockSize = static_cast<int>((BlockAllocator - sizeof(void*)) / ElementSize);
+
+    if constexpr (side_links)
+    {
+        if (BlockSize > free_list_end - 1)
+        {
+            BlockSize = free_list_end - 1;
+        }
+
+        tab_firstFree.resize(static_cast<std::size_t>(BlockSize));
+    }
 
     if (__mem_page_size == 0)
     {
         __mem_page_size = getpagesize();
     }
 
-    // FIX (op/value slab aliasing): allocate the op slab from the dedicated OP
-    // arena, never the glibc. Arena addresses are never returned to the OS and are
-    // disjoint from the value arena, so a freed op slab's address can never be
-    // reobtained by the value pool (the proven crash path: OP_ALLOC then
-    // VALUE_ALLOC at the same address on different tids). Recycled within the op
-    // arena's own free-list in destroy().
+    // FIX (op/value slab aliasing): the block comes from the slab's own arena,
+    // never the glibc. Arena addresses are never returned to the OS and the
+    // op, ctx and value arenas are disjoint, so a freed op slab's address can
+    // never be reobtained by the value pool (the proven crash path: OP_ALLOC
+    // then VALUE_ALLOC at the same address on different tids). Recycled within
+    // that arena's own free-list in destroy().
     data = static_cast<char*>(fast_alloc::arena_for(arena_kind).allocate(BlockAllocator, BlockAllocator));
 
     if (data == nullptr) [[unlikely]]
     {
-        std::cerr << "Fatal Error: op_arena failed to allocate " << BlockAllocator << " bytes\n";
-        std::abort();
-    }
-
-    // NOTE: no slab-wide memset here. A fresh arena slab is already zero
-    // (MAP_ANONYMOUS), and a recycled slab must NOT be blanket-zeroed — doing so
-    // wipes any block the pool still considers live (seen: an entire op read back
-    // as all-zero, vptr=0, after a slab was reused). Each op is fully initialized
-    // by construct_at at its own block, so slab-wide zeroing is unnecessary.
-
-    *reinterpret_cast<TCAllocator**>(data + BlockAllocator - sizeof(void*)) = this;
-
-    firstFree = -1;
-}
-
-inline void* TCAllocator::alloc() noexcept
-{
-    ++nn_ref;
-    char* elemPtr = nullptr;
-
-    if (firstFree != -1)
-    {
-        elemPtr   = data + (static_cast<std::ptrdiff_t>(firstFree) * ElementSize);
-        firstFree = *reinterpret_cast<int*>(elemPtr); // read the index stored in the first element of the array
-    }
-    else
-    {
-        elemPtr = data + (static_cast<std::ptrdiff_t>(UsedSize) * ElementSize);
-        ++UsedSize;
-    }
-    return elemPtr;
-}
-
-inline void TCAllocator::destroy()
-{
-    // FIX (op/value slab aliasing): return the op slab to the OP arena's
-    // free-list, NEVER to the glibc. This is what breaks the crash: the address
-    // stays inside the op arena and can never be handed to the value pool.
-    fast_alloc::arena_for(arena_kind).deallocate(static_cast<void*>(data), BlockAllocator);
-}
-
-inline void TCAllocator::init(int ElementSize_, uintptr_t BlockAllocator_)
-{
-    // The free list is threaded THROUGH the freed elements: free_block() writes
-    // the next free index, an int, into a freed element's first bytes. An
-    // element must hold that int, at an int-aligned offset -- otherwise the
-    // write spills into the next element, or is misaligned. ElementSize is a
-    // run-time value (a chunk size times sizeof(T)), so this cannot be a
-    // static_assert; it runs once per slab and stays on in release.
-    if (ElementSize_ < static_cast<int>(sizeof(int)) || ElementSize_ % static_cast<int>(alignof(int)) != 0) [[unlikely]]
-    {
-        std::cerr << "[TCAllocator] element size " << ElementSize_
-                  << " bytes cannot hold the free-list index (an int: " << sizeof(int) << " bytes, aligned on "
-                  << alignof(int) << ")\n";
-        std::abort();
-    }
-
-    ElementSize    = ElementSize_;
-    BlockAllocator = BlockAllocator_;
-
-    Log2ElementSize = static_cast<int>(std::log2(static_cast<double>(ElementSize)) + 1.e-13);
-
-    alloc_block();
-}
-
-inline void TCAllocator::free_block(int i) noexcept
-{
-    if (i == (UsedSize - 1))
-    {
-        *reinterpret_cast<int*>(data + (static_cast<std::ptrdiff_t>(i) * ElementSize)) = -1;
-        --UsedSize;
-    }
-    else
-    {
-        // store the index in the first element of the block
-        *reinterpret_cast<int*>(data + (static_cast<std::ptrdiff_t>(i) * ElementSize)) = firstFree;
-        firstFree                                                                      = i;
-    }
-    --nn_ref;
-}
-
-inline void TCCAllocator::alloc_block()
-{
-    // The rounding rule lives in slab_bytes_for(): the owning instance applies
-    // the same one at init(), so it can resolve a pointer to its slab without
-    // a slab to ask (TCTypeCAllocator::slab_bytes_).
-    BlockAllocator = slab_bytes_for(BlockAllocator, ElementSize);
-
-    BlockSize = static_cast<int>((BlockAllocator - sizeof(void*)) / ElementSize);
-
-    if (BlockSize > first_free_init - 1)
-    {
-        BlockSize = first_free_init - 1;
-    }
-
-    tab_firstFree.resize(static_cast<std::size_t>(BlockSize));
-
-    // FIX (op/value slab aliasing): allocate the value slab from the dedicated
-    // VALUE arena (disjoint from the op arena, never returned to the OS). Value
-    // slabs live in their own address space and can never land on an op slab's
-    // address. Recycled within the value arena's own free-list in destroy().
-    data = static_cast<char*>(fast_alloc::value_arena().allocate(BlockAllocator, BlockAllocator));
-
-    if (data == nullptr) [[unlikely]]
-    {
-        std::cerr << "Fatal Error: value_arena failed to allocate " << BlockAllocator << " bytes\n";
+        std::cerr << "Fatal Error: slab arena (kind " << static_cast<int>(arena_kind) << ") failed to allocate "
+                  << BlockAllocator << " bytes\n";
         std::abort();
     }
 
     // NOTE: no memset here, fresh slab or recycled. The pool makes no promise
-    // about element contents (TCCAllocator's @warning): every consumer
-    // initialises what it gets. Clearing only ever made the WHOLE slab resident
-    // at once -- 2 MiB at the first alloc of a rank for a fresh slab (a
-    // 16-chunk array of bools, init_indexes(true), one thread), and for a
-    // recycled one right after the re-chunk or teardown that gave it back.
-    // Left alone, its pages become resident as the elements are handed out.
+    // about element contents (TCSlab's @warning): every consumer initialises
+    // what it gets. A fresh arena slab is already zero (MAP_ANONYMOUS), and a
+    // recycled one must NOT be blanket-zeroed -- that wiped a block the op pool
+    // still considered live (an op read back as all-zero, vptr=0) -- and for
+    // values it only ever made the WHOLE slab resident at once: 2 MiB at the
+    // first alloc of a rank for a fresh slab, and for a recycled one right
+    // after the re-chunk or teardown that gave it back. Left alone, its pages
+    // become resident as the elements are handed out.
 
-    *reinterpret_cast<TCCAllocator**>(data + BlockAllocator - sizeof(void*)) = this;
+    *reinterpret_cast<TCSlab**>(data + BlockAllocator - sizeof(void*)) = this;
 
-    firstFree = first_free_init;
+    firstFree = free_list_end;
 }
 
-inline void TCCAllocator::destroy()
+template <FreeLinks Links>
+inline void TCSlab<Links>::destroy()
 {
-    std::vector<unsigned short>().swap(tab_firstFree); // releases the free-list links
-    // (not `= {}`: that is operator=(initializer_list), which keeps the capacity)
+    if constexpr (side_links)
+    {
+        std::vector<unsigned short>().swap(tab_firstFree); // releases the free-list links
+        // (not `= {}`: that is operator=(initializer_list), which keeps the capacity)
+    }
 
-    // FIX (op/value slab aliasing): return the value slab to the VALUE arena's
-    // free-list, never to the glibc.
-    fast_alloc::value_arena().deallocate(static_cast<void*>(data), BlockAllocator);
+    // FIX (op/value slab aliasing): back to the slab's own arena's free-list,
+    // never to the glibc: the address stays inside that arena.
+    fast_alloc::arena_for(arena_kind).deallocate(static_cast<void*>(data), BlockAllocator);
 }
 
-inline void TCCAllocator::init(int ElementSize_, uintptr_t BlockAllocator_)
+template <FreeLinks Links>
+inline void TCSlab<Links>::init(int ElementSize_, uintptr_t BlockAllocator_)
 {
+    if constexpr (!side_links)
+    {
+        // The free list is threaded THROUGH the freed elements: free_block()
+        // writes the next free index, an int, into a freed element's first
+        // bytes. An element must hold that int, at an int-aligned offset --
+        // otherwise the write spills into the next element, or is misaligned.
+        // ElementSize is a run-time value (a chunk size times sizeof(T)), so
+        // this cannot be a static_assert; it runs once per slab and stays on in
+        // release.
+        if (ElementSize_ < static_cast<int>(sizeof(int)) || ElementSize_ % static_cast<int>(alignof(int)) != 0)
+            [[unlikely]]
+        {
+            std::cerr << "[TCAllocator] element size " << ElementSize_
+                      << " bytes cannot hold the free-list index (an int: " << sizeof(int) << " bytes, aligned on "
+                      << alignof(int) << ")\n";
+            std::abort();
+        }
+    }
+
     ElementSize    = ElementSize_;
     BlockAllocator = BlockAllocator_;
 
@@ -178,27 +114,32 @@ inline void TCCAllocator::init(int ElementSize_, uintptr_t BlockAllocator_)
     alloc_block();
 }
 
-inline void* TCCAllocator::alloc() noexcept
+template <FreeLinks Links>
+inline void* TCSlab<Links>::alloc() noexcept
 {
-    // A sweep may have given this slab's pages back INCLUDING the trailing
-    // back-pointer (madvise_empty_slab_full). Put it back before the block
-    // escapes: the pointer we are about to return is exactly what makes a free
-    // through this slab possible again, and free_elt() resolves it by reading
-    // that word. The store is idempotent -- every writer writes `this` -- and
-    // this runs on the slab's own rank, so no atomic is needed.
-    if (backptr_dropped) [[unlikely]]
+    if constexpr (side_links)
     {
-        *reinterpret_cast<TCCAllocator**>(data + BlockAllocator - sizeof(void*)) = this;
-        backptr_dropped                                                          = false;
+        // A sweep may have given this slab's pages back INCLUDING the trailing
+        // back-pointer (madvise_empty_slab_full). Put it back before the block
+        // escapes: the pointer we are about to return is exactly what makes a
+        // free through this slab possible again, and free_elt() resolves it by
+        // reading that word. The store is idempotent -- every writer writes
+        // `this` -- and this runs on the slab's own rank, so no atomic is
+        // needed.
+        if (backptr_dropped) [[unlikely]]
+        {
+            *reinterpret_cast<TCSlab**>(data + BlockAllocator - sizeof(void*)) = this;
+            backptr_dropped                                                    = false;
+        }
     }
 
     ++nn_ref;
     char* elemPtr = nullptr;
 
-    if (firstFree != first_free_init)
+    if (firstFree != free_list_end)
     {
         elemPtr   = data + (static_cast<std::ptrdiff_t>(firstFree) * ElementSize);
-        firstFree = tab_firstFree[firstFree];
+        firstFree = link(firstFree); // the link is read before the element is handed out
     }
     else
     {
@@ -209,17 +150,18 @@ inline void* TCCAllocator::alloc() noexcept
     return elemPtr;
 }
 
-inline void TCCAllocator::free_block(int i) noexcept
+template <FreeLinks Links>
+inline void TCSlab<Links>::free_block(int i) noexcept
 {
     if (i == (UsedSize - 1))
     {
-        tab_firstFree[i] = first_free_init;
+        link(i) = free_list_end;
         --UsedSize;
     }
     else
     {
-        tab_firstFree[i] = firstFree;
-        firstFree        = i;
+        link(i)   = firstFree;
+        firstFree = static_cast<index_type>(i);
     }
 
     --nn_ref;
