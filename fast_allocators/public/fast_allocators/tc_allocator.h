@@ -33,26 +33,27 @@
  * that is the point. See ::bypass_slabs.
  *
  * @warning A slab's own address is recovered from any interior pointer by
- *          masking (TCAllocator::addr_to_block), which requires the block to be
+ *          masking (TCAllocator::slab_from), which requires the block to be
  *          aligned on its own size and to store a back-pointer in its last
  *          word. Both are established by alloc_block(); neither is checked
  *          afterwards.
  */
 
-#include <vector>     // std::vector
-#include <array>      // std::array
-#include <bit>        // std::has_single_bit: the shift or the division in free_elt_pow2
-#include <cerrno>     // errno, after a failed mmap
-#include <cstddef>    // std::size_t
-#include <cstdio>     // std::fprintf / std::fflush (the [MUNMAP] traces)
-#include <cstring>    // std::strerror
-#include <iostream>   // std::cerr
-#include <cstdlib>    // std::abort
-#include <cstdint>    // uintptr_t
-#include <limits>     // std::numeric_limits: TCAllocatorEB's index range
-#include <cassert>    // assert (DBG_ASSERT)
-#include <sys/mman.h> // mmap, munmap
-#include <unistd.h>   // getpagesize
+#include <vector>      // std::vector
+#include <array>       // std::array
+#include <bit>         // std::has_single_bit, bit_width, bit_ceil, bit_floor
+#include <cerrno>      // errno, after a failed mmap
+#include <cstddef>     // std::size_t
+#include <cstdio>      // std::fprintf / std::fflush (the [MUNMAP] traces)
+#include <cstring>     // std::strerror
+#include <iostream>    // std::cerr
+#include <cstdlib>     // std::abort
+#include <cstdint>     // uintptr_t
+#include <limits>      // std::numeric_limits: TCAllocatorEB's index range
+#include <type_traits> // std::conditional_t (free_index_t)
+#include <cassert>     // assert (DBG_ASSERT)
+#include <sys/mman.h>  // mmap, munmap
+#include <unistd.h>    // getpagesize
 
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
@@ -264,19 +265,6 @@ class alignas(64) TCAllocator
      */
     inline void alloc_block();
 
-    /**
-     * @brief Recover the owning slab from a pointer to any element inside it.
-     * @param ptr Interior pointer, previously returned by alloc().
-     * @return The slab that owns @p ptr -- whichever allocator it belongs to.
-     * @details Masks @p ptr down to the block base, then reads the back-pointer
-     *          stored in the block's last word. This is what lets a block be
-     *          freed without knowing which allocator handed it out.
-     */
-    [[nodiscard]] TCAllocator* addr_to_block(const void* ptr) const noexcept
-    {
-        return slab_from(ptr, BlockAllocator);
-    }
-
     char* data = nullptr; ///< The block itself, aligned on #BlockAllocator.
 
     uintptr_t BlockAllocator = 0; ///< Block size in bytes; a power of two.
@@ -465,21 +453,6 @@ class alignas(64) TCCAllocator
      *          cleared, fresh or recycled: see the class @warning.
      */
     inline void alloc_block();
-
-    /**
-     * @brief Recover the owning slab from a pointer to any element inside it.
-     * @param ptr Interior pointer, previously returned by alloc().
-     * @return The slab that owns @p ptr, whichever allocator handed it out.
-     * @see TCAllocator::addr_to_block for the mechanism.
-     */
-    TCCAllocator* addr_to_block(const void* ptr) const noexcept
-    {
-        // the block is aligned on BlockAllocator: allows direct access to the block start from any pointer into it
-
-        const char* debutBlock = reinterpret_cast<char*>(reinterpret_cast<uintptr_t>(ptr) & (~(BlockAllocator - 1)));
-        // this pointer stored at the end of the block
-        return *reinterpret_cast<TCCAllocator**>(const_cast<char*>(debutBlock) + BlockAllocator - sizeof(void*));
-    }
 
     /// @brief Complement of is_full().
     [[nodiscard]] bool is_not_full() const noexcept
@@ -1702,113 +1675,11 @@ class TCTypeCAllocator
 #endif
 
 
-/**
- * @brief Smallest power of two >= @p i, at compile time.
- * @tparam i Non-negative.
- * @note <tt>NextPOT\<0\>\::value</tt> and <tt>NextPOT\<1\>\::value</tt> are both 1.
- */
-template <int i>
-struct NextPOT
-{
-    enum
-    {
-        value = 2 * NextPOT<(i + 1) / 2>::value
-    };
-};
-template <>
-struct NextPOT<0>
-{
-    enum
-    {
-        value = 1
-    };
-};
-template <>
-struct NextPOT<1>
-{
-    enum
-    {
-        value = 1
-    };
-};
-
-/**
- * @brief Largest power of two <= @p i, at compile time.
- * @tparam i Non-negative.
- * @note <tt>PrevPOT\<0\>\::value</tt> is 1, not 0.
- */
-template <int i>
-struct PrevPOT
-{
-    enum
-    {
-        value = 2 * PrevPOT<i / 2>::value
-    };
-};
-template <>
-struct PrevPOT<0>
-{
-    enum
-    {
-        value = 1
-    };
-};
-template <>
-struct PrevPOT<1>
-{
-    enum
-    {
-        value = 1
-    };
-};
-
-/**
- * @brief floor(log2(@p i)) + 1, at compile time: the bit width of @p i.
- * @tparam i Strictly positive -- there is no specialisation for 0, so it
- *         recurses without end.
- * @note The "+1" is why callers subtract one to get a shift count.
- */
-template <int i>
-struct CstLog2
-{
-    enum
-    {
-        value = 1 + CstLog2<i / 2>::value
-    };
-};
-
-template <>
-struct CstLog2<1>
-{
-    enum
-    {
-        value = 1
-    };
-};
-
-/**
- * @brief Narrowest signed integer that fits in @p sz bytes.
- * @tparam sz Byte width: 1, 2, or anything else for `int`.
- * @details Used to size a slab's free-list index to the slab itself, rather
- *          than spend an `int` per element on a small block.
- */
-template <int sz>
-struct TypeFromSize
-{
-    using Tindex = int;
-};
-
-template <>
-struct TypeFromSize<2>
-{
-    using Tindex = short;
-};
-
-template <>
-struct TypeFromSize<1>
-{
-    using Tindex = signed char;
-};
+/// @brief Narrowest signed integer that fits in @p bytes bytes (1, 2, else int):
+///        a slab's free-list index sized to the element, rather than an `int`
+///        per element on a small block.
+template <unsigned int bytes>
+using free_index_t = std::conditional_t<bytes == 1, signed char, std::conditional_t<bytes == 2, short, int>>;
 
 
 /// @brief Maps an element type to the allocator that serves it. Specialised elsewhere.
@@ -1838,19 +1709,18 @@ class TCAllocatorEB
     /// @brief The compile-time geometry: sizes in bytes, capacity in elements.
     enum
     {
-        ElementSize      = ElementBytes,
-        Log2ElementSize  = CstLog2<ElementSize>::value - 1,
-        ElementSizePrev2 = PrevPOT<ElementBytes>::value,
-        BlockSize        = BlockBytes,
-        BlockSizePOT     = NextPOT<BlockSize>::value,
-        BlockAddrMask    = ~(BlockSizePOT - 1),
-        getSizeOf        = sizeof(TCAllocatorEB*),
-        UsedBlockSize    = BlockBytes - getSizeOf,
-        MaxElements      = UsedBlockSize / ElementBytes
+        ElementSize     = ElementBytes,
+        Log2ElementSize = static_cast<int>(std::bit_width(ElementBytes)) - 1,
+        BlockSize       = BlockBytes,
+        BlockSizePOT    = static_cast<int>(std::bit_ceil(BlockBytes)), // int: the mask below must sign-extend
+        BlockAddrMask   = ~(BlockSizePOT - 1),
+        getSizeOf       = sizeof(TCAllocatorEB*),
+        UsedBlockSize   = BlockBytes - getSizeOf,
+        MaxElements     = UsedBlockSize / ElementBytes
     };
 
     /// @brief Free-list index type, as narrow as the element allows.
-    using T = TypeFromSize<ElementSizePrev2>::Tindex;
+    using T = free_index_t<std::bit_floor(ElementBytes)>;
 
     // The free list stores an element INDEX of type T inside each freed
     // element: T must fit in an element, and must count every element of the
@@ -2064,12 +1934,6 @@ class TCAllocatorEB
     bool use_mmap = false; ///< Which of munmap / free the destructor must use.
 };
 
-/// @brief Common base for the compile-time-geometry allocators. Carries nothing;
-///        it exists so they can be held behind one pointer type.
-struct VTCAllocatorEB
-{
-};
-
 /**
  * @brief Owns every ::TCAllocatorEB slab for one compile-time geometry.
  *
@@ -2090,7 +1954,7 @@ struct VTCAllocatorEB
  *          away rather than waiting for the first alloc().
  */
 template <unsigned int ElementSize, unsigned int BlockSize, typename T = int>
-class TCTypeAllocatorEBC : public VTCAllocatorEB
+class TCTypeAllocatorEBC
 {
   public:
     /// @brief The slab type this instance owns.
@@ -2316,41 +2180,5 @@ class TCTypeAllocatorEBC : public VTCAllocatorEB
 ///          as a non-type template argument below and in StaticConstArray,
 ///          where an unsigned int constant expression is required.
 inline constexpr unsigned int SIZE_BLOCK = 1u << 20u; // 1048576
-
-/**
- * @brief ::TCTypeAllocatorEBC addressed by element TYPE rather than by size.
- *
- * @tparam ElemT Element type; its `sizeof` becomes the element size.
- * @tparam BlockBytes Block size in bytes.
- *
- * @note Nothing in the tree uses this -- ::TCTypeAllocatorEBC is instantiated
- *       directly, by size, from StaticConstArray. Kept as the typed front end.
- */
-template <typename ElemT, unsigned int BlockBytes = SIZE_BLOCK>
-class TCTypeAllocatorEB : public TCTypeAllocatorEBC<sizeof(ElemT), BlockBytes>
-{
-  public:
-    using ElementType = ElemT; ///< The element type.
-
-    /// @brief The geometry handed to ::TCTypeAllocatorEBC, in bytes.
-    enum
-    {
-        ElementSize = sizeof(ElementType),
-        BlockSize   = BlockBytes
-    };
-
-  private:
-    /// @brief One element's worth of raw memory, typed.
-    static ElementType* alloc()
-    {
-        return static_cast<ElementType*>(TCTypeAllocatorEBC<ElementSize, BlockSize>::alloc());
-    }
-
-    /// @brief Take back a pointer from alloc().
-    static void free(ElementType* ptr)
-    {
-        TCTypeAllocatorEBC<ElementSize, BlockSize>::free_elt(static_cast<void*>(ptr));
-    }
-};
 
 #include "fast_allocators/internal/tc_allocator_inline.h" // the template bodies
