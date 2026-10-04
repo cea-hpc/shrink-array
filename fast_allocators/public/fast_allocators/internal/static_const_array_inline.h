@@ -42,12 +42,12 @@ decltype(auto) StaticConstArray::with_bucket(std::size_t i, F&& f)
         using R = decltype(f(std::get<0>(buckets)));
         if constexpr (std::is_void_v<R>)
         {
-            ((i == I ? (f(std::get<I>(buckets)), true) : false) || ...);
+            (void)((i == I ? (f(std::get<I>(buckets)), true) : false) || ...);
         }
         else
         {
             R result{};
-            ((i == I ? (result = f(std::get<I>(buckets)), true) : false) || ...);
+            (void)((i == I ? (result = f(std::get<I>(buckets)), true) : false) || ...);
             return result;
         }
     }(std::make_index_sequence<n_buckets>{});
