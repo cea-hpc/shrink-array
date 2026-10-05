@@ -144,6 +144,8 @@ void ChunkOmpPolicy<T, Derived, Enabled>::compress(this Derived& self, int thr_r
 template <typename T>
 void Chunk<T>::compress_sweep_rank(int thr)
 {
+    // Bypasses CompressionManager::start(): see check_no_flush_outside_start.
+    check_no_flush_outside_start<Proxy<T>>("Chunk::compress_sweep_rank");
     auto& chunk_t = manager_chunk::chunk_to_compress_potentially_thr[thr];
     // Dynamic geometry: pin the ambient chunk size to EACH candidate's own
     // (the tuple's ChunkElems, captured when it was queued), restored after

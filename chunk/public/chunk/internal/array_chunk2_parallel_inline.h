@@ -42,16 +42,31 @@ void FastBlockSupport2<Derived, true>::make_block_compression()
         shrink_array::set_thread_chunk_size(self().chunk_size());
     }
 
+    // bool has its own pass and no second value: the (thr, inf_array, proxy)
+    // overload static_asserts for it, so ArrayChunk2<bool>::resize() did not
+    // compile with fast-block compression.
+    const auto pass_on_rank = [this](int thr)
+    {
+        if constexpr (Derived::is_not_bool)
+        {
+            chunk_type::make_block_compression(thr, self().get_info_second_value(), nullptr);
+        }
+        else
+        {
+            chunk_type::make_block_compression_bool(thr, nullptr);
+        }
+    };
+
     if (!CHUNK_PMP_IN_PARALLEL_REGION)
     {
         for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)
         {
-            chunk_type::make_block_compression(thr, self().get_info_second_value(), nullptr);
+            pass_on_rank(thr);
         }
     }
     else
     {
-        chunk_type::make_block_compression(CHUNK_PMP_THREAD_RANK, self().get_info_second_value(), nullptr);
+        pass_on_rank(CHUNK_PMP_THREAD_RANK);
     }
 }
 

@@ -462,6 +462,20 @@ template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk<T, ind_type>::resize(ind_type newsz)
 {
     this->invalidate_proxies();
+
+    // Drain the deferred ops on the CURRENT chunks, before chunk_list (a
+    // std::vector) and the dirty bitset are reallocated below: a queued op
+    // holds a reference to its chunk, and replaying it after the realloc
+    // wrote into freed memory. The declaration always said "drained first";
+    // the body never did. No-op without fast-block compression.
+    //
+    // And BEFORE the compression pass, not after -- as in
+    // ArrayChunk2Base::resize_common(): a replayed write can queue its chunk
+    // again (flag 1, &chunk_list[j] pushed). The pass that follows empties
+    // the lists and clears the flags, which is what the realloc and
+    // Proxy<T>::resize_tab_is_int() below rely on.
+    this->flush_pending_deferred_ops();
+
     if constexpr (chunk_config::use_fast_block_compression)
     {
         make_block_compression();
@@ -470,6 +484,8 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
     const auto& sh_inf = Proxy<T>::share_info_array;
 
     const int num_tab = sh_inf.get_num_tab(this->registry_key());
+
+    const ind_type old_size = m_size; // the stale-tail reset at the end
 
     m_size = newsz;
 
@@ -505,6 +521,24 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
         for (int i = old_nb_chunk; i < nb_chunk; ++i)
         {
             chunk_list[i].init_values_cst_val();
+        }
+    }
+
+    // std::vector semantics for the regrown range [old_size, newsz): it reads
+    // T{}. The chunks added above are fresh, but the one holding the OLD end
+    // keeps its tail -- after a shrink, the values written there before came
+    // back on the next growth (deferred_path_validation, resize-grow-again).
+    // Reset that tail: at most one chunk, through the normal write path, after
+    // the reallocations. `omp for` like the init loop above.
+    if (newsz > old_size)
+    {
+        const auto     csz       = static_cast<ind_type>(this->chunk_size());
+        const ind_type old_cover = ((old_size + csz - 1) / csz) * csz;
+        const ind_type stale_end = newsz < old_cover ? newsz : old_cover;
+#pragma omp for
+        for (ind_type i = old_size; i < stale_end; ++i)
+        {
+            (*this)[i] = T{};
         }
     }
 }

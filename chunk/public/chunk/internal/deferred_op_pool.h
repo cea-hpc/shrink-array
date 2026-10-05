@@ -29,6 +29,7 @@
 #include <unistd.h>   // sysconf (same)
 
 #include "chunk/config.h"                   // build_config::use_fast_alloc, build_config::deferred_pool_granularity
+#include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB)
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED (the block probe)
 #include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
 #include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, EV_OP_ALLOC / EV_OP_FREE
@@ -361,9 +362,30 @@ class FastAllocatorConcrete : public FastAllocatorBase
     }
 
     /**
+     * @brief Target slab size of the op / ctx pools, in bytes: the build's
+     *        deferred_pool_granularity (64 KiB), or CHUNK_DEFERRED_POOL_KB KiB.
+     * @details Read once. The knob is for measuring: the pools are per thread,
+     *          per element type and per op/ctx variant, and op slabs are never
+     *          returned, so the slab size trades allocator traffic against
+     *          resident memory -- the more so under transparent huge pages
+     *          (`always`), where a fresh 2 MiB-aligned slab can fault a whole
+     *          huge page in at its first object.
+     */
+    [[nodiscard]] static uintptr_t deferred_pool_slab_granularity() noexcept
+    {
+        static const uintptr_t bytes = []
+        {
+            constexpr std::size_t def_kb = build_config::deferred_pool_granularity / 1024;
+            const std::size_t     kb     = shrink_array::env_number<std::size_t>("CHUNK_DEFERRED_POOL_KB", def_kb);
+            return static_cast<uintptr_t>(kb == 0 ? def_kb : kb) * 1024;
+        }();
+        return bytes;
+    }
+
+    /**
      * @brief Returns the per-thread byte allocator for type T.
-     * The number of blocks per pool is calculated dynamically to match
-     * the target memory granularity.
+     * @details Slabs of deferred_pool_slab_granularity() bytes, at least 64
+     *          objects (TCSlabPool rounds the size up to a power of two).
      */
     static ByteAlloc& allocator()
     {
@@ -389,11 +411,13 @@ class FastAllocatorConcrete : public FastAllocatorBase
             static_assert(element_size >= sizeof(int) && element_size % alignof(int) == 0,
                           "deferred-op pool: an object must hold TCAllocator's free-list index");
 
-            // Smart calculation: divide the target granularity (e.g. 2MB) by object size.
-            // We guarantee a minimum of 64 blocks to prevent excessive system calls.
-            constexpr uintptr_t blocks_per_pool = (element_size >= build_config::deferred_pool_granularity)
-                                                      ? 64
-                                                      : (build_config::deferred_pool_granularity / element_size);
+            // Slab size in BYTES -- what TCSlabPool::init's second parameter is.
+            // It used to be given an OBJECT count (granularity / sizeof(T)):
+            // 48-80 B ops and contexts got 32-64 KiB slabs instead of the
+            // granularity of the time (2 MiB), and an object above ~2 KiB would have got a
+            // slab smaller than itself. Never fewer than 64 objects per slab.
+            const uintptr_t slab_request =
+                std::max<uintptr_t>(deferred_pool_slab_granularity(), uintptr_t{64} * element_size);
 
             // FIX (op/value slab aliasing): last arg = nb_max_block_empty = -1
             // → the op allocator NEVER munmaps an empty slab. Previously it was 1
@@ -404,7 +428,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
             // different tid). Keeping op slabs mapped for the program's lifetime
             // removes the address reuse. Op slabs are small and bounded, so the
             // retained memory is modest.
-            slot.alloc.init(element_size, std::max<uintptr_t>(64, blocks_per_pool), -1);
+            slot.alloc.init(element_size, slab_request, -1);
             slot.initialized = true;
         }
         return slot.alloc;

@@ -52,9 +52,16 @@
 //   (shrink_bench checked this in its --check mode, with chunk-only code in a
 //   container-agnostic bench; here the deferred path is forced.)
 //
+//   And resize() with ops still QUEUED: a sequential fill (writes outside any
+//   region take the same gate, so the hook defers them too, and no region end
+//   drains them), then a growth, a shrink and a growth, each straight after
+//   writes, with no explicit flush. resize() must drain the queue itself
+//   before it reallocates chunk_list -- ArrayChunk (v1) did not until Oct '26:
+//   a queued op then referenced a freed chunk.
+//
 // WHAT IT DOES NOT COVER
 //
-//   Re-chunking and resize (sequential quiescent points: they drain first),
+//   Re-chunking (a sequential quiescent point: it drains first),
 //   the array copy-assignment (a shallow alias of the chunks, no concurrent
 //   contract), geometry sweeps. One geometry per executable.
 //
@@ -703,6 +710,66 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     return fails ? 1 : 0;
 }
 
+// ── resize() with deferred ops still queued ─────────────────────────────────
+
+/**
+ * @brief Sequential writes (one in force_defer_every left queued by the hook),
+ *        then resize() with no flush in between -- grow, shrink, grow -- each
+ *        checked against a std::vector.
+ * @details The writes are OUTSIDE any parallel region: they take the same
+ *          gate, the hook defers them all the same, and there is no region end
+ *          to drain the queue before the resize. Growth reallocates
+ *          chunk_list under the queued ops; the shrink drops chunks that may
+ *          hold some. New elements read the first constant, T{}.
+ * @return 0 if every element matched after every resize, 1 otherwise.
+ */
+template <typename T>
+static int run_resize(const char* label, long N)
+{
+    Array<T>       arr(N);
+    std::vector<T> ref(static_cast<std::size_t>(N));
+    long           fails = 0;
+
+    const auto write_range = [&](long lo, long hi, long salt)
+    {
+        for (long i = lo; i < hi; ++i)
+        {
+            const T v                        = waw_value<T>(i + salt);
+            arr[i]                           = v;
+            ref[static_cast<std::size_t>(i)] = v;
+        }
+    };
+    const auto resize_both = [&](long n)
+    {
+        arr.resize(n);
+        ref.resize(static_cast<std::size_t>(n), T{});
+        if (static_cast<long>(arr.size()) != n)
+        {
+            printf("[%s/resize] FAIL: size() = %ld after resize(%ld)\n", label, static_cast<long>(arr.size()), n);
+            ++fails;
+        }
+    };
+
+    write_range(0, N, 1);
+    resize_both(2 * N); // growth, ops queued on the old chunks
+    fails += compare(label, "resize-grow", arr, ref);
+
+    write_range(N / 2, 2 * N, 5);
+    resize_both(N + N / 3); // shrink, the dropped chunks may hold queued ops
+    fails += compare(label, "resize-shrink", arr, ref);
+
+    write_range(0, N + N / 3, 11);
+    resize_both(3 * N); // growth again
+    fails += compare(label, "resize-grow-again", arr, ref);
+
+    arr.clear();
+    if (fails == 0)
+    {
+        printf("[%s/resize] ok: grow, shrink, grow with deferred ops queued\n", label);
+    }
+    return fails ? 1 : 0;
+}
+
 int run(int argc, char** argv)
 {
     // The forced-deferral hook (test_hooks.h), on for this harness only: one
@@ -746,6 +813,10 @@ int run(int argc, char** argv)
     fails += run_returns<float>("float", N);
     fails += run_returns<double>("double", N);
     fails += run_returns<std::complex<double>>("complex", N);
+
+    fails += run_resize<int>("int", N);
+    fails += run_resize<double>("double", N);
+    fails += run_resize<bool>("bool", N);
 
     // The hook really fired, in every build that has it (the deferral count
     // below needs CHUNK_STATS).

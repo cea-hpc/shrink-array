@@ -26,7 +26,15 @@
  *
  * Functions, not the macros they were (`svalloc(var, type, n)` wrote into
  * `var`; `var = svalloc<type>(n)` now). Each allocation asserts a non-zero
- * count and a non-null result; a failure returns null in a release build.
+ * count (debug builds). An allocation that fails -- or whose byte count would
+ * overflow size_t -- prints what was asked and aborts, in EVERY build: the
+ * policy of the rest of the library (SlabArena, the mmap of tc_allocator.h,
+ * TCAllocatorEB, TCSlab::alloc_block). Callers never see null. A release
+ * build used to return null here, and no caller tested it: BlkAllocator's
+ * alloc_tab() wrote its header through it, the std-alloc chunk path
+ * initialised it -- a bare SIGSEGV under memory pressure, with nothing saying
+ * an allocation had failed. And an overflowing n * sizeof(T) handed malloc a
+ * small size, which succeeded.
  *
  * posix_memalign writes into a real `void*` here. The macros used to pass it
  * `(void**)&var` with `var` a `type*`: storing a `void*` into an object of type
@@ -37,10 +45,13 @@
  */
 #pragma once
 
-#include <cassert> // assert
+#include <cassert> // assert (the non-zero counts)
+#include <cerrno>  // errno, ENOMEM: the failure message
 #include <cstddef> // std::size_t
-#include <cstdlib> // posix_memalign, std::malloc, std::calloc, std::free
-#include <cstring> // std::memset
+#include <cstdint> // SIZE_MAX
+#include <cstdio>  // std::fprintf, std::fflush
+#include <cstdlib> // posix_memalign, std::malloc, std::calloc, std::free, std::abort
+#include <cstring> // std::memset, std::strerror
 
 #ifndef SIMD_SZ
 
@@ -63,7 +74,43 @@ namespace fast_alloc
 ///        ladder: SIMD_SZ bytes (a build may define SIMD_SZ itself).
 inline constexpr std::size_t alignment = SIMD_SZ;
 
-/// @brief @p bytes bytes aligned on #alignment, or null.
+/**
+ * @brief Report a failed allocation and stop -- the library's policy on
+ *        allocation failure, in every build.
+ * @param what the allocating function, for the message
+ * @param n    elements requested
+ * @param elem bytes per element
+ * @param err  the error (errno, or posix_memalign's result); 0 when n * elem
+ *             overflows size_t
+ */
+[[noreturn]] [[gnu::cold]] [[gnu::noinline]] inline void
+out_of_memory(const char* what, std::size_t n, std::size_t elem, int err) noexcept
+{
+    if (err != 0)
+    {
+        std::fprintf(stderr, "Fatal Error: %s: allocation of %zu x %zu bytes failed (%s)\n", what, n, elem,
+                     std::strerror(err));
+    }
+    else
+    {
+        std::fprintf(stderr, "Fatal Error: %s: %zu x %zu bytes overflows size_t\n", what, n, elem);
+    }
+    std::fflush(stderr);
+    std::abort();
+}
+
+/// @brief @p n * @p elem, or out_of_memory() when the product overflows.
+[[nodiscard]] inline std::size_t checked_bytes(const char* what, std::size_t n, std::size_t elem) noexcept
+{
+    if (elem != 0 && n > SIZE_MAX / elem) [[unlikely]]
+    {
+        out_of_memory(what, n, elem, 0);
+    }
+    return n * elem;
+}
+
+/// @brief @p bytes bytes aligned on #alignment, or null. The raw primitive:
+///        the sv*_align functions below call aligned_or_die(), which aborts.
 [[nodiscard]] inline void* aligned_bytes(std::size_t bytes) noexcept
 {
     void* p = nullptr; // the only object posix_memalign may legally write
@@ -74,17 +121,42 @@ inline constexpr std::size_t alignment = SIMD_SZ;
     return p;
 }
 
+namespace detail
+{
+/// @brief @p n elements of @p elem bytes aligned on #alignment; never null
+///        for a non-zero size (out_of_memory() otherwise).
+[[nodiscard]] inline void* aligned_or_die(const char* what, std::size_t n, std::size_t elem) noexcept
+{
+    const std::size_t bytes = checked_bytes(what, n, elem);
+    void*             p     = nullptr; // the only object posix_memalign may legally write
+    const int         rc    = posix_memalign(&p, alignment, bytes);
+    if (rc != 0 || (p == nullptr && bytes != 0)) [[unlikely]]
+    {
+        out_of_memory(what, n, elem, rc != 0 ? rc : ENOMEM);
+    }
+    return p;
+}
+
+/// @brief Abort with the message when malloc/calloc returned null for a
+///        non-zero size.
+inline void check_malloc(const void* p, const char* what, std::size_t n, std::size_t elem) noexcept
+{
+    if (p == nullptr && n != 0 && elem != 0) [[unlikely]]
+    {
+        out_of_memory(what, n, elem, errno != 0 ? errno : ENOMEM);
+    }
+}
+} // namespace detail
+
 } // namespace fast_alloc
 
 /// @brief @p n elements of T, uninitialised, aligned on fast_alloc::alignment.
-///        Release with svfree_align().
+///        Release with svfree_align(). Never null: aborts on failure.
 template <typename T>
 [[nodiscard]] T* svalloc_align(std::size_t n) noexcept
 {
     assert(n != 0);
-    void* p = fast_alloc::aligned_bytes(n * sizeof(T));
-    assert(p != nullptr);
-    return static_cast<T*>(p);
+    return static_cast<T*>(fast_alloc::detail::aligned_or_die("svalloc_align", n, sizeof(T)));
 }
 
 /// @brief svalloc_align(), every byte zero. The fill is a raw memset: every T
@@ -93,12 +165,8 @@ template <typename T>
 [[nodiscard]] T* svcalloc_align(std::size_t n) noexcept
 {
     assert(n != 0);
-    void* p = fast_alloc::aligned_bytes(n * sizeof(T));
-    assert(p != nullptr);
-    if (p != nullptr)
-    {
-        std::memset(p, 0, n * sizeof(T));
-    }
+    void* p = fast_alloc::detail::aligned_or_die("svcalloc_align", n, sizeof(T));
+    std::memset(p, 0, n * sizeof(T)); // n * sizeof(T) checked by aligned_or_die
     return static_cast<T*>(p);
 }
 
@@ -110,22 +178,25 @@ inline void svfree_align(const void* p) noexcept
 }
 
 /// @brief @p n elements of T, uninitialised (malloc). Release with svfree().
+///        Never null: aborts on failure.
 template <typename T>
 [[nodiscard]] T* svalloc(std::size_t n) noexcept
 {
     assert(n != 0);
-    void* p = std::malloc(n * sizeof(T));
-    assert(p != nullptr);
+    void* p = std::malloc(fast_alloc::checked_bytes("svalloc", n, sizeof(T)));
+    fast_alloc::detail::check_malloc(p, "svalloc", n, sizeof(T));
     return static_cast<T*>(p);
 }
 
 /// @brief @p n elements of T, zeroed (calloc). Release with svfree().
+///        Never null: aborts on failure.
 template <typename T>
 [[nodiscard]] T* svcalloc(std::size_t n) noexcept
 {
     assert(n != 0);
+    (void)fast_alloc::checked_bytes("svcalloc", n, sizeof(T)); // the overflow message, before calloc's null
     void* p = std::calloc(n, sizeof(T));
-    assert(p != nullptr);
+    fast_alloc::detail::check_malloc(p, "svcalloc", n, sizeof(T));
     return static_cast<T*>(p);
 }
 

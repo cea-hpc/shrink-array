@@ -95,8 +95,10 @@ inline constexpr bool reclaim_empty_slabs =
 #endif
 
 /**
- * @brief Fewest empty slabs a set must hold for reclaim_empty_slabs_now() to
- *        sweep it, read once from `CHUNK_RECLAIM_MIN_SLABS`.
+ * @brief Fewest distinct empty slabs an EmptySlabSweep must hold for its
+ *        flush() to advise them, read once from `CHUNK_RECLAIM_MIN_SLABS`.
+ *        A re-chunk's sweep spans every rank, so the bar is the whole
+ *        abandoned set's, not one rank's share of it.
  *
  * @details A sweep costs one madvise per slab -- a 2000-iteration bench run
  *          made 82708 of them -- and returns that slab's pages. The two scale

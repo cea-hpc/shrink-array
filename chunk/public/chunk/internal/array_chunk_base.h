@@ -1,4 +1,3 @@
-
 #pragma once
 
 /*
@@ -275,6 +274,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             check_same_owner(lhs, rhs);
             return lhs.lin_ == rhs.lin_;
         }
+
         /** @brief Negation of operator==. */
         [[nodiscard]] friend bool operator!=(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
@@ -290,36 +290,42 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             seek(lin_ + static_cast<ind_type>(n));
             return *this;
         }
+
         /** @brief Jump back @p n elements. */
         const_iterator& operator-=(difference_type n) noexcept
         {
             seek(lin_ - static_cast<ind_type>(n));
             return *this;
         }
+
         /** @brief The iterator @p n elements after @p it. */
         [[nodiscard]] friend const_iterator operator+(const_iterator it, difference_type n) noexcept
         {
             it += n;
             return it;
         }
+
         /** @brief The iterator @p n elements after @p it (n + it form). */
         [[nodiscard]] friend const_iterator operator+(difference_type n, const_iterator it) noexcept
         {
             it += n;
             return it;
         }
+
         /** @brief The iterator @p n elements before @p it. */
         [[nodiscard]] friend const_iterator operator-(const_iterator it, difference_type n) noexcept
         {
             it -= n;
             return it;
         }
+
         /** @brief Signed distance from @p rhs to @p lhs, in elements. */
         [[nodiscard]] friend difference_type operator-(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
             check_same_owner(lhs, rhs);
             return static_cast<difference_type>(lhs.lin_) - static_cast<difference_type>(rhs.lin_);
         }
+
         /**
          * @brief The element @p n positions away, by VALUE (see the class comment).
          * @details A seek per call: a sync per element in a loop, where ++ syncs
@@ -329,24 +335,28 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         {
             return *(*this + n);
         }
+
         /** @brief Orderings: by absolute index, like operator==. */
         [[nodiscard]] friend bool operator<(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
             check_same_owner(lhs, rhs);
             return lhs.lin_ < rhs.lin_;
         }
+
         /** @brief Ordering by absolute index. */
         [[nodiscard]] friend bool operator>(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
             check_same_owner(lhs, rhs);
             return lhs.lin_ > rhs.lin_;
         }
+
         /** @brief Ordering by absolute index. */
         [[nodiscard]] friend bool operator<=(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
             check_same_owner(lhs, rhs);
             return lhs.lin_ <= rhs.lin_;
         }
+
         /** @brief Ordering by absolute index. */
         [[nodiscard]] friend bool operator>=(const const_iterator& lhs, const const_iterator& rhs) noexcept
         {
@@ -393,6 +403,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             }
             return *this;
         }
+
         /** @brief Post-increment; prefer the prefix form on the hot path. */
         const_iterator operator++(int) noexcept
         {
@@ -417,6 +428,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             }
             return *this;
         }
+
         /** @brief Post-decrement; prefer the prefix form on the hot path. */
         const_iterator operator--(int) noexcept
         {
@@ -657,16 +669,19 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     {
         return const_iterator(std::addressof(self), 0);
     }
+
     /// @brief One past the last element.
     [[nodiscard]] const_iterator end(this const Derived& self) noexcept
     {
         return const_iterator(std::addressof(self), self.m_size);
     }
+
     /// @brief Same as begin().
     [[nodiscard]] const_iterator cbegin(this const Derived& self) noexcept
     {
         return self.begin();
     }
+
     /// @brief Same as end().
     [[nodiscard]] const_iterator cend(this const Derived& self) noexcept
     {
@@ -678,16 +693,19 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     {
         return const_reverse_iterator(self.end());
     }
+
     /// @brief One before the first element (reverse order).
     [[nodiscard]] const_reverse_iterator rend(this const Derived& self) noexcept
     {
         return const_reverse_iterator(self.begin());
     }
+
     /// @brief Same as rbegin().
     [[nodiscard]] const_reverse_iterator crbegin(this const Derived& self) noexcept
     {
         return self.rbegin();
     }
+
     /// @brief Same as rend().
     [[nodiscard]] const_reverse_iterator crend(this const Derived& self) noexcept
     {
@@ -696,6 +714,179 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
     /** @} */
 
+    /**
+     * @name Bulk reads
+     * The read half of fill_range / copy_range. Call them through the free
+     * functions shrink_array::for_each_value / read_range
+     * (array_chunk_range_ops.h), which take a std::vector as well.
+     * @{
+     */
+    /**
+     * @brief Call @p f(value) on every element of [@p first, @p last), in order.
+     *
+     * @details Chunk by chunk: one sync_chunk per chunk (as the iterator on
+     *          chunk entry), then blocks of kBulkBlock elements copied under
+     *          one read section each (ChunkBase::read_block), @p f called
+     *          outside it. A range-for pays a section and the iterator's
+     *          bookkeeping per element.
+     *
+     *          Stats and NaN-check builds read through the iterator instead,
+     *          so every element still goes through the const operator[].
+     * @param first first index, inclusive (clamped to [0, size()])
+     * @param last  last index, exclusive (clamped to size())
+     * @param f     called as f(value); its return value is ignored
+     * @warning Same contract as the iterator: no other thread may write the
+     *          array during the call. Check builds stop on a write deferred
+     *          onto the chunk being read. Callable from a parallel region,
+     *          every thread on its own slice.
+     */
+    template <typename F>
+    void for_each_value(ind_type first, ind_type last, F&& f) const
+    {
+        if constexpr (kBulkFast)
+        {
+            T buf[kBulkBlock];
+            for_each_chunk_span(first, last,
+                                [&](const chunk_type& ch, int num_chunk, int lo, int hi)
+                                {
+                                    for (int j = lo; j < hi; j += kBulkBlock)
+                                    {
+                                        const int n = (hi - j) < kBulkBlock ? (hi - j) : kBulkBlock;
+                                        ch.read_block(j, n, buf);
+                                        check_no_write_during_bulk_read(ch, num_chunk, j);
+                                        for (int k = 0; k < n; ++k)
+                                        {
+                                            f(buf[k]);
+                                        }
+                                    }
+                                });
+        }
+        else
+        {
+            if (first < 0)
+            {
+                first = 0;
+            }
+            if (last > m_size)
+            {
+                last = m_size;
+            }
+            if (first >= last)
+            {
+                return;
+            }
+            const const_iterator e = begin() + last;
+            for (const_iterator it = begin() + first; it != e; ++it)
+            {
+                f(*it);
+            }
+        }
+    }
+
+    /// @brief for_each_value() over every element.
+    template <typename F>
+    void for_each_value(F&& f) const
+    {
+        for_each_value(ind_type{0}, m_size, std::forward<F>(f));
+    }
+
+    /**
+     * @brief Copy the elements of [@p first, @p last) to @p out.
+     * @details for_each_value() writing to @p out. Into a T*, each block is
+     *          read straight into the destination: no intermediate copy.
+     * @return @p out advanced past the last element written.
+     */
+    template <typename OutIt>
+    OutIt read_range(ind_type first, ind_type last, OutIt out) const
+    {
+        if constexpr (kBulkFast && std::is_same_v<OutIt, T*>)
+        {
+            for_each_chunk_span(first, last,
+                                [&](const chunk_type& ch, int num_chunk, int lo, int hi)
+                                {
+                                    for (int j = lo; j < hi; j += kBulkBlock)
+                                    {
+                                        const int n = (hi - j) < kBulkBlock ? (hi - j) : kBulkBlock;
+                                        ch.read_block(j, n, out);
+                                        check_no_write_during_bulk_read(ch, num_chunk, j);
+                                        out += n;
+                                    }
+                                });
+            return out;
+        }
+        else
+        {
+            for_each_value(first, last,
+                           [&out](const T& x)
+                           {
+                               *out = x;
+                               ++out;
+                           });
+            return out;
+        }
+    }
+    /** @} */
+
+  private:
+    /// @brief Elements per read section in the bulk reads (8 to 64 measure
+    ///        alike; the larger, the fewer sections on long ranges).
+    static constexpr int kBulkBlock = 64;
+    /// @brief Bulk reads by block only where per-element stats and NaN checks
+    ///        do not rely on every element going through operator[].
+    static constexpr bool kBulkFast = !chunk_config::stats && !chunk_config::do_check;
+
+    /// @brief Call @p fn(chunk, num_chunk, lo, hi) for each chunk the range
+    ///        [first, last) touches -- offsets [lo, hi) in it -- after one
+    ///        sync_chunk, as the iterator does on chunk entry.
+    template <typename Fn>
+    void for_each_chunk_span(ind_type first, ind_type last, Fn&& fn) const
+    {
+        if (first < 0)
+        {
+            first = 0;
+        }
+        if (last > m_size)
+        {
+            last = m_size;
+        }
+        if (first >= last)
+        {
+            return;
+        }
+        const unsigned int dec     = size_policy_.decalage();
+        const auto         mod     = static_cast<ind_type>(size_policy_.modulo());
+        const int          c_first = static_cast<int>(first >> dec);
+        const int          c_last  = static_cast<int>((last - 1) >> dec);
+        for (int c = c_first; c <= c_last; ++c)
+        {
+            const int         lo = c == c_first ? static_cast<int>(first & mod) : 0;
+            const int         hi = c == c_last ? static_cast<int>((last - 1) & mod) + 1 : static_cast<int>(mod) + 1;
+            const chunk_type& ch = chunk_list[static_cast<std::size_t>(c)];
+            // sync_chunk takes the derived array (deducing this).
+            static_cast<const Derived&>(*this).sync_chunk(ch, c, lo);
+            fn(ch, c, lo, hi);
+        }
+    }
+
+    /// @brief Check builds, precise read gate: nothing was deferred onto
+    ///        the chunk since its sync -- the iterator's check, per block.
+    void check_no_write_during_bulk_read([[maybe_unused]] const chunk_type& ch,
+                                         [[maybe_unused]] int               num_chunk,
+                                         [[maybe_unused]] int               offset) const noexcept
+    {
+        if constexpr (build_config::any_check && chunk_type::precise)
+        {
+            if (ch.read_gate_should_wait(offset)) [[unlikely]]
+            {
+                INVARIANT_FAILED("ArrayChunkBase bulk read: a write was deferred onto chunk {} of array {} "
+                                 "during the read (offset {}); it would not be seen -- no other thread may "
+                                 "write an array that is being read in bulk",
+                                 num_chunk, static_cast<const void*>(this), offset);
+            }
+        }
+    }
+
+  public:
     /**
      * @brief Drop the last element, if any.
      * @note Unlike std::vector, calling it on an empty container is harmless
@@ -827,7 +1018,17 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param i global element index (unchecked)
      * @return the element value, after the read gate has been honoured
      */
-    T operator()(this const Derived& self, ind_type i) noexcept;
+    SA_FLATTEN FORCE_INLINE T operator()(this const Derived& self, ind_type i) noexcept
+    {
+        const int   num_chunk = self.chunk_index_of(i);
+        const int   num       = self.offset_in_chunk(i);
+        const auto& chunk_t   = self.chunk_list[num_chunk];
+
+        self.sync_chunk(chunk_t, num_chunk, num);
+
+        // 2. Direct read from chunk
+        return chunk_t.read_value(num);
+    }
 
     /**
      * @brief NON-CONST operator() for direct REFERENCE access (Write).
@@ -837,7 +1038,18 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @warning Bypasses the write proxy: valid only where the chunk is known to
      *          be materialised. Prefer operator[] or set_value() otherwise.
      */
-    T& operator()(this Derived& self, ind_type i) noexcept;
+    SA_FLATTEN FORCE_INLINE T& operator()(this Derived& self, ind_type i) noexcept
+    {
+        const int num_chunk = self.chunk_index_of(i);
+        const int num       = self.offset_in_chunk(i);
+        auto&     chunk_t   = self.chunk_list[num_chunk];
+
+        // 2. Concurrency check
+        self.sync_chunk(chunk_t, num_chunk, num);
+
+        // 3. Return reference to physical storage
+        return chunk_t(num);
+    }
 
     /**
      * @brief Unchecked read access (hot path).
@@ -892,7 +1104,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          `auto v = a[i];` (which keeps the proxy). The compound operators
      *          (+= ... >>=) and the prefix ++/-- return the same kind of proxy.
      */
-    proxy_type operator[](this Derived& self, ind_type i) noexcept
+    SA_FLATTEN FORCE_INLINE proxy_type operator[](this Derived& self, ind_type i) noexcept
     {
         const int         num_chunk = self.chunk_index_of(i);
         auto&             chunk_t   = self.chunk_list[num_chunk];
@@ -968,11 +1180,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     {
         return static_cast<int>(i >> size_policy_.decalage());
     }
+
     /// @brief Element @p i's offset inside its chunk: `i & chunk_modulo()`.
     [[nodiscard]] int offset_in_chunk(ind_type i) const noexcept
     {
         return static_cast<int>(i & size_policy_.modulo());
     }
+
     /// @brief Chunks allocated for @p n elements: n / chunk_size() + 1 (the last
     ///        chunk is never full -- see capacity()).
     [[nodiscard]] int chunks_for(ind_type n) const noexcept
@@ -1187,7 +1401,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         static_cast<Derived&>(core).rechunk_to(new_size);
     }
 };
-
 } // namespace shrink_array
 
 #include "chunk/internal/array_chunk_base_inline.h"    // the template bodies

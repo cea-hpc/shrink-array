@@ -105,8 +105,8 @@ void StaticConstArray::clearInfoFreeElt()
     }
 }
 
-TCTypeAllocatorEBC<8, SIZE_BLOCK>  Allocator8;  ///< @copydoc ::Allocator8
-TCTypeAllocatorEBC<24, SIZE_BLOCK> Allocator24; ///< @copydoc ::Allocator24
+// ::Allocator8 / ::Allocator24: inline in static_const_array.h (Allocator8 is
+// the ladder's 8-byte bucket; both immortal).
 
 /**
  * @brief Registry of the live ::TCTypeAllocator instances, for the memory report.

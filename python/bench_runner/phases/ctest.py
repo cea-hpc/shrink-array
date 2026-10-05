@@ -5,7 +5,7 @@ import re as _re
 from ..builds import resolve_build_dir, short_config_label, validation_built
 from ..progress import CONFIG_W
 from ..runs import _append_error_now, effective_timeout, run_capture_stdout
-from ..settings import is_sanitizer_config, sanitizer_env_for
+from ..settings import SANITIZER_CONFIGS, is_sanitizer_config, sanitizer_env_for
 from ..term import _hms, bold, cyan, dim, green, red, yellow
 
 
@@ -26,16 +26,27 @@ def run_ctest_phase(args, extra_ldpath, errors):
 
     Runs `ctest -L <label> --output-on-failure` in each config's build
     directory (the one holding CTestTestfile.cmake, with or without the $arch
-    level). ctest's own per-test timeout applies; the phase timeout is the
-    bench one scaled by the test count. A config with no build directory is
+    level), then in the sanitizer configs' (SANITIZER_CONFIGS, unless
+    --skip-sanitizers): the default configs are perf builds, which do not
+    compile the harnesses. ctest's own per-test timeout applies; the phase
+    timeout is the bench one at 8 threads, x4 (x20 under a sanitizer). A
+    config with no build directory is
     noted once and skipped, and so is one whose configuration does not build
     the harnesses: only Debug, CHECK_OPTIM and sanitizer builds compile them
     (examples/CMakeLists.txt, CHUNK_BUILD_VALIDATION).
     """
     print(cyan(bold(f"\n🧪 Validation harnesses — ctest -L {args.ctest_label}")))
 
+    # The sanitizer configs too: they are Debug builds, the ones that compile
+    # the harnesses, while every default config is a perf (Release) build
+    # that does not. Without them the phase found nothing to run.
+    configs = list(args.configs)
+    if not args.skip_sanitizers:
+        configs += [c for c in SANITIZER_CONFIGS if c not in configs]
+
     n_pass = n_total = 0
-    for cfg in args.configs:
+    n_not_built = 0  # configs skipped: CHUNK_VALIDATION_BUILT=OFF
+    for cfg in configs:
         bdir = resolve_build_dir(args.build_root, cfg)
         lead = f"{dim(_hms())} {short_config_label(cfg)[:CONFIG_W]:<{CONFIG_W}} | "
         if not bdir:
@@ -43,6 +54,7 @@ def run_ctest_phase(args, extra_ldpath, errors):
             continue
         if not validation_built(bdir):
             print(lead + dim("validation not built here (Debug, CHECK_OPTIM and sanitizer builds only) — skipped"))
+            n_not_built += 1
             continue
 
         cmd = ["ctest", "-L", args.ctest_label, "--output-on-failure",
@@ -52,7 +64,9 @@ def run_ctest_phase(args, extra_ldpath, errors):
         # The harnesses set OMP_NUM_THREADS themselves (test property); only
         # the sanitizer options need to reach them.
         env = sanitizer_env_for(cfg) if is_sanitizer_config(cfg) else {}
-        to  = effective_timeout(args.timeout, args.timeout_per_thread, 8) * 4
+        # A sanitizer runs the harnesses 5-20x slower (settings.py).
+        to  = effective_timeout(args.timeout, args.timeout_per_thread, 8) * (
+            20 if is_sanitizer_config(cfg) else 4)
 
         sys.stdout.write("\r" + lead + "running…       ")
         sys.stdout.flush()
@@ -90,7 +104,12 @@ def run_ctest_phase(args, extra_ldpath, errors):
             _append_error_now(args.errors_log, _entry)
         sys.stdout.flush()
 
-    if n_total == 0:
+    if n_total == 0 and n_not_built > 0:
+        # Perf configurations only: nothing went wrong, the harnesses are
+        # not compiled there (-DCHUNK_BUILD_VALIDATION=ON forces them).
+        tag = dim("not built in any of these configurations (Debug, CHECK_OPTIM and "
+                  "sanitizer builds only; -DCHUNK_BUILD_VALIDATION=ON forces them)")
+    elif n_total == 0:
         tag = yellow("no validation test found")
     elif n_pass == n_total:
         tag = green(f"{n_pass}/{n_total} passed")

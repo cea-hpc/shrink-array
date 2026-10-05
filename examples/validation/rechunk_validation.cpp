@@ -59,6 +59,7 @@
 
 using namespace shrink_array;
 
+#include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::rechunk_validation
@@ -617,7 +618,7 @@ void set_start_geometry(unsigned size)
 }
 } // namespace
 
-int run(int argc, char** argv)
+static int run_body(int argc, char** argv)
 {
     // Positional arguments (the scale repro: N and the 64->target geometry are
     // configurable, to hunt a size-dependent rechunk crash under ASan without
@@ -790,6 +791,18 @@ int run(int argc, char** argv)
     std::println("\n[{}] {}", variant_name(),
                  fails == 0 ? "=== ALL INVARIANCE CHECKS PASSED ===" : "=== INVARIANCE FAILURES ===");
     return fails;
+}
+
+int run(int argc, char** argv)
+{
+    // The arrays live in run_body() and are destroyed when it returns, which
+    // parks their buffers in the reuse lists; release_chunk_pools() frees them.
+    // Without it they stay parked until exit, and LeakSanitizer reports every
+    // one in the std-alloc builds (each buffer is a real malloc there).
+    const int rc = run_body(argc, argv);
+    release_chunk_pools();
+    destroy_block_chunk();
+    return rc;
 }
 
 } // namespace validation::rechunk_validation

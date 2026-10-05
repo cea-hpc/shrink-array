@@ -28,6 +28,7 @@
 #include <ratio>       // std::milli (the same timers)
 #include <cstddef>     // std::size_t
 #include <cstdio>      // std::fprintf (CHUNK_RECHUNK_TRACE)
+#include <cstring>     // std::memcpy / std::memcmp (refill bulk read)
 #include <cstdlib>     // std::getenv (CHUNK_RECHUNK_TRACE, CHUNK_RECHUNK_SCHEDULE)
 #include <optional>    // the affinity scope around tmp
 #include <type_traits> // std::is_same_v, the v1 bool guard
@@ -49,6 +50,8 @@
 #include "chunk/config.h"                       // build_config::use_openmp, chunk_config::use_chunk2a
 #include "chunk/chunk_traits.h"                 // Proxy2A<T>
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size / set_active_chunk_size
+#include "chunk/bit.h"                          // is_bool_like_v (refill bulk read gate)
+#include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED (refill bulk read check)
 
 namespace shrink_array::internal
 {
@@ -438,14 +441,19 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     {
         const unsigned int saved_sz = thread_chunk_size();
         set_thread_chunk_size(old_size);
+        // Every rank, both keys, into ONE sweep: the abandoned set's slabs were
+        // carved back to back across ranks, so one madvise per contiguous run
+        // instead of one per slab (each one a TLB shootdown on every CPU).
+        typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(0, 0u))>::empty_slab_sweep sweep;
         for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
         {
             if (old_key != 0)
             {
-                chunk_type::get_chunk_allocator(r, old_key).reclaim_empty_slabs_now();
+                chunk_type::get_chunk_allocator(r, old_key).collect_empty_slabs(sweep);
             }
-            chunk_type::get_chunk_allocator(r, 0u).reclaim_empty_slabs_now();
+            chunk_type::get_chunk_allocator(r, 0u).collect_empty_slabs(sweep);
         }
+        sweep.flush();
         set_thread_chunk_size(saved_sz);
     }
     if (internal::g_rechunk_trace)
@@ -751,11 +759,93 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 }
             }
 
-            // read *this at OLD (const operator[] = pure read); TLS is per-thread
+            // read *this at OLD; TLS is per-thread
             set_thread_chunk_size(old_size);
-            for (ind_type k = 0; k < len; ++k)
+            // Bulk read, one values_load() per SOURCE chunk instead of the full
+            // read protocol per element (const operator[]: index split,
+            // sync_chunk, a ReadSection with its light_fence -- a full seq_cst
+            // fence without asymmetric Dekker --, acquire load, 2A range test;
+            // none of it vectorises).
+            //
+            // Sound because the source is QUIESCENT for the whole refill:
+            // rechunk_to() flushed its deferred ops (nothing for sync_chunk to
+            // pull) and dropped its compression candidates
+            // (rechunk_drop_candidates), and nobody writes *this meanwhile, so
+            // no pass can claim, compress or release one of its chunks -- what
+            // the ReadSection guards against. The only release is v1's
+            // release_st below, coordinated by old_done: a source chunk is
+            // freed once every span reading it is done.
+            //
+            // Per source chunk, the same decision element_at_unguarded() makes
+            // per element, on the same single load: a 2A cst2 pointer names an
+            // identifier region that was never written -> fill with the
+            // constant; anything else (materialised buffer, cst1 sentinel,
+            // Chunk2's filled cst2 array) is readable as is -> memcpy.
+            // bool / Bit keep the per-element path (bit-packed storage).
+            if constexpr (std::is_trivially_copyable_v<T> && !is_bool_like_v<T>)
             {
-                buf[static_cast<std::size_t>(k)] = static_cast<T>(std::as_const(self())[base + k]);
+                std::size_t k = 0;
+                for (int oc = old_first; oc <= old_last; ++oc)
+                {
+                    const auto&    och     = self().chunk_list[static_cast<std::size_t>(oc)];
+                    const ind_type oc_base = static_cast<ind_type>(oc) * static_cast<ind_type>(old_size);
+                    const ind_type lo      = base > oc_base ? base : oc_base;
+                    const ind_type oc_end  = oc_base + static_cast<ind_type>(old_size);
+                    const ind_type hi      = end < oc_end ? end : oc_end;
+                    const auto     n       = static_cast<std::size_t>(hi - lo);
+                    const auto     off     = static_cast<std::size_t>(lo - oc_base);
+                    const T* const vals    = och.values_load();
+                    if constexpr (chunk_config::use_chunk2a)
+                    {
+                        if (och.is_cst_val2_ptr_of(vals))
+                        {
+                            std::fill_n(buf.begin() + static_cast<std::ptrdiff_t>(k), n,
+                                        och.second_value_from_ptr(vals));
+                            k += n;
+                            continue;
+                        }
+                    }
+                    // raw-read: refill bulk read -- quiescent source, see above
+                    std::memcpy(buf.data() + k, vals + off, n * sizeof(T));
+                    k += n;
+                }
+                // Check builds: the bulk read must agree with the per-element
+                // path. Sampled (first, last, every 64th): this is a check, not
+                // a second copy. Bytewise, so only where bytes ARE the value:
+                // scalars (floats included -- both paths copy the same bits,
+                // NaN and -0.0 alike) and classes without padding.
+                if constexpr (build_config::any_check &&
+                              (!std::is_class_v<T> || std::has_unique_object_representations_v<T>))
+                {
+                    if (k != static_cast<std::size_t>(len)) [[unlikely]]
+                    {
+                        INVARIANT_FAILED("rechunk refill bulk read: new chunk {} copied {} elements, span is {}",
+                                         new_chunk, k, static_cast<std::size_t>(len));
+                    }
+                    const auto check_at = [&](ind_type j)
+                    {
+                        const T ref = static_cast<T>(std::as_const(self())[base + j]);
+                        if (std::memcmp(&ref, &buf[static_cast<std::size_t>(j)], sizeof(T)) != 0) [[unlikely]]
+                        {
+                            INVARIANT_FAILED("rechunk refill bulk read: new chunk {} element {} (global {}) differs "
+                                             "from the per-element read ({} -> {})",
+                                             new_chunk, static_cast<long long>(j), static_cast<long long>(base + j),
+                                             old_size, new_size);
+                        }
+                    };
+                    for (ind_type j = 0; j < len; j += 64)
+                    {
+                        check_at(j);
+                    }
+                    check_at(len - 1);
+                }
+            }
+            else
+            {
+                for (ind_type k = 0; k < len; ++k)
+                {
+                    buf[static_cast<std::size_t>(k)] = static_cast<T>(std::as_const(self())[base + k]);
+                }
             }
 
             // Release the source chunks this span has just consumed, NOW rather
@@ -1085,10 +1175,14 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     // the 64-thread chunk_dyn bench, 7.3 GB given back only at the
                     // end). Safe for the final sweep's reason: a serial, quiescent
                     // point, so a slab found empty is empty.
+                    // One sweep across ranks: one madvise per contiguous run.
+                    typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(0, 0u))>::empty_slab_sweep
+                        sweep;
                     for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
                     {
-                        chunk_type::get_chunk_allocator(r, old_key_refill).reclaim_empty_slabs_now();
+                        chunk_type::get_chunk_allocator(r, old_key_refill).collect_empty_slabs(sweep);
                     }
+                    sweep.flush();
                 }
                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
                 if (slice_trace)

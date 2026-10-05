@@ -114,7 +114,7 @@ inline void* TCSlab<Links>::alloc() noexcept
     if constexpr (side_links)
     {
         // A sweep may have given this slab's pages back INCLUDING the trailing
-        // back-pointer (madvise_empty_slab_full). Put it back before the block
+        // back-pointer (fast_alloc::EmptySlabSweep). Put it back before the block
         // escapes: the pointer we are about to return is exactly what makes a
         // free through this slab possible again, and free_elt() resolves it by
         // reading that word. The store is idempotent -- every writer writes

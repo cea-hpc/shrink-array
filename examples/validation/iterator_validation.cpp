@@ -63,15 +63,16 @@
 #include <type_traits>      // std::conditional_t, std::is_same_v
 #include <vector>           // std::vector
 
-#include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"   // ArrayChunk
-#include "chunk/array_chunk2.h"  // ArrayChunk2
-#include "chunk/array_chunk2A.h" // ArrayChunk2A
-#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
-#include "chunk/chunk_std.h"     // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"        // chunk_config::use_chunk*, build_config::has_not_ompt
-#include "chunk/PMP_CHUNK.h"     // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"   // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"           // ArrayChunk
+#include "chunk/array_chunk2.h"          // ArrayChunk2
+#include "chunk/array_chunk2A.h"         // ArrayChunk2A
+#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"             // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"                // chunk_config::use_chunk*, build_config::has_not_ompt
+#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/array_chunk_range_ops.h" // for_each_value / read_range (bulk-reads step)
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -568,6 +569,106 @@ int check_reverse(const Arr& a, const std::vector<double>& ref)
     return r.done("rbegin()/rend(), rbegin()[k]");
 }
 
+/// @brief for_each_value / read_range against the reference: whole range,
+///        sub-ranges around every boundary, clamping, a T* and an
+///        output-iterator destination, slices read from every thread at once,
+///        and the same calls on the std::vector (the generic overloads).
+int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
+{
+    Report     r{"bulk-reads"};
+    const long S  = static_cast<long>(a.chunk_size());
+    const long N  = static_cast<long>(ref.size());
+    const auto sz = [](long v) { return static_cast<std::size_t>(v); };
+
+    // Whole range, both containers, through the same call.
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        std::vector<double> got;
+        got.reserve(sz(N));
+        const auto push = [&got](double x) { got.push_back(x); };
+        if (pass == 0)
+        {
+            shrink_array::for_each_value(a, push);
+        }
+        else
+        {
+            shrink_array::for_each_value(ref, push);
+        }
+        if (got != ref)
+        {
+            r.fail("for_each_value(%s) over the whole range differs from the reference (%zu values)",
+                   pass == 0 ? "array" : "vector", got.size());
+        }
+    }
+
+    // Sub-ranges around the boundaries: both destinations, both containers.
+    const long pos[] = {0, 1, S - 1, S, S + 1, (kC0 * S) - 1, kC0 * S, kC1 * S, (kC2 * S) - 1, N - kTail, N - 1, N};
+    const long len[] = {0, 1, 2, 63, 64, 65, S - 1, S, S + 1, (3 * S) + 7, N};
+    long       n     = 0;
+    for (const long p : pos)
+    {
+        for (const long l : len)
+        {
+            const long first = p;
+            const long last  = p + l; // may pass N: clamped
+            const long want  = std::max(0L, std::min(last, N) - first);
+            ++n;
+
+            std::vector<double> buf(sz(want) + 1, -1.0);
+            double* const       end_a = shrink_array::read_range(a, sz(first), sz(last), buf.data());
+            if (end_a - buf.data() != want || !std::equal(buf.begin(), buf.begin() + want, ref.begin() + first) ||
+                buf[sz(want)] != -1.0)
+            {
+                r.fail("read_range(array, %ld, %ld, T*): %ld written, content %s", first, last,
+                       static_cast<long>(end_a - buf.data()),
+                       std::equal(buf.begin(), buf.begin() + want, ref.begin() + first) ? "ok" : "WRONG");
+            }
+
+            std::vector<double> via_it;
+            shrink_array::read_range(a, sz(first), sz(last), std::back_inserter(via_it));
+            std::vector<double> via_vec;
+            shrink_array::read_range(ref, sz(first), sz(last), std::back_inserter(via_vec));
+            if (via_it != via_vec || static_cast<long>(via_vec.size()) != want)
+            {
+                r.fail("read_range(%ld, %ld) into a back_inserter: array %zu values, vector %zu, expected %ld", first,
+                       last, via_it.size(), via_vec.size(), want);
+            }
+
+            double sum_a = 0.0;
+            double sum_v = 0.0;
+            shrink_array::for_each_value(a, sz(first), sz(last), [&](double x) { sum_a += x; });
+            shrink_array::for_each_value(ref, sz(first), sz(last), [&](double x) { sum_v += x; });
+            if (sum_a != sum_v)
+            {
+                r.fail("for_each_value(%ld, %ld): array sum %.17g, vector sum %.17g", first, last, sum_a, sum_v);
+            }
+        }
+    }
+
+    // Every thread reads its own slice at once (odd slice length: the slices
+    // cut chunks in the middle).
+    std::vector<double> par(sz(N), -1.0);
+    const long          slice = (S / 2) + 3;
+#pragma omp parallel
+    {
+        begin_phase();
+#pragma omp for schedule(dynamic, 1)
+        for (long s = 0; s < N; s += slice)
+        {
+            shrink_array::read_range(a, sz(s), sz(s + slice), par.data() + s);
+        }
+    }
+    end_phase();
+    if (par != ref)
+    {
+        r.fail("slices read with read_range from every thread at once differ from the reference");
+    }
+
+    char msg[128];
+    std::snprintf(msg, sizeof msg, "%ld sub-ranges, both containers, T* and back_inserter, parallel slices", n);
+    return r.done(msg);
+}
+
 /// @brief What the iterator cannot do in place, done on a copy.
 int check_sort_recipe(const std::vector<double>& ref)
 {
@@ -625,6 +726,7 @@ int run(int /*argc*/, char** /*argv*/)
         fails += check_searches(ca, ref);
         fails += check_parallel_searches(ca, ref);
         fails += check_reverse(ca, ref);
+        fails += check_bulk_reads(ca, ref);
         fails += check_sort_recipe(ref);
     }
 

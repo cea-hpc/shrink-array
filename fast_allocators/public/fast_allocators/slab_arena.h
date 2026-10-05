@@ -21,8 +21,8 @@
  * @par What that costs
  * A slab returned with deallocate() stays resident: the arena keeps it, the OS
  * never gets it back. That is the RSS the free-list holds, and what
- * madvise_empty_slab_full() addresses -- it drops an emptied slab's pages while
- * leaving the address valid and the slab reusable.
+ * EmptySlabSweep addresses -- it drops emptied slabs' pages while leaving
+ * their addresses valid and the slabs reusable.
  *
  * @note Three arenas, not two: ctx slabs were later found to alias op slabs the
  *       same way. @see ArenaKind
@@ -33,20 +33,27 @@
 
 #pragma once
 
-#include <sys/mman.h>    // mmap, madvise
-#include <unistd.h>      // sysconf(_SC_PAGESIZE)
-#include <algorithm>     // std::max, the high-water mark
-#include <cstddef>       // std::size_t
-#include <cstdint>       // std::uintptr_t, std::uint8_t
-#include <cstdio>        // std::fprintf, std::fflush
-#include <cstdlib>       // std::abort, std::getenv
-#include <vector>        // std::vector
-#include <mutex>         // std::mutex, std::scoped_lock
-#include <atomic>        // std::atomic, std::memory_order_relaxed
+#include <sys/mman.h> // mmap, madvise
+#include <unistd.h>   // sysconf(_SC_PAGESIZE)
+#include <algorithm>  // std::max, the high-water mark
+#include <cstddef>    // std::size_t
+#include <cstdint>    // std::uintptr_t, std::uint8_t
+#include <cstdio>     // std::fprintf, std::fflush
+#include <cstdlib>    // std::abort, std::getenv
+#include <functional> // std::less (the sweep orders slab pointers)
+#include <vector>     // std::vector
+#include <mutex>      // std::mutex, std::scoped_lock
+#include <atomic>     // std::atomic, std::memory_order_relaxed
+#include <charconv>   // std::from_chars (CHUNK_RECLAIM_THREADS)
+#include <chrono>     // the sweep timer
+#include <cstring>    // std::strlen
+#ifdef _OPENMP
+    #include <omp.h> // omp_in_parallel, omp_get_max_threads (parallel sweep)
+#endif
 #include <unordered_map> // std::unordered_map
 #include <unordered_set> // std::unordered_set
 
-#include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP)
+#include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP), reclaim_min_empty_slabs
 
 namespace fast_alloc
 {
@@ -55,7 +62,9 @@ namespace fast_alloc
 // call sites in tc_allocator.h and report_all_arenas() below all see one
 // definition -- no cross-header ordering or two-phase-lookup question.
 
-/// @brief How many times madvise_empty_slab_full() has advised a slab away.
+/// @brief How many slabs have been advised away (by an EmptySlabSweep, or
+///        one by one by detail::advise_one_slab()). A count of SLABS, not of syscalls: see
+///        reclaim_syscalls().
 inline std::atomic<std::size_t>& reclaim_calls() noexcept
 {
     static std::atomic<std::size_t> counter{0};
@@ -63,6 +72,28 @@ inline std::atomic<std::size_t>& reclaim_calls() noexcept
 }
 /// @brief How many bytes that represents.
 inline std::atomic<std::size_t>& reclaim_bytes() noexcept
+{
+    static std::atomic<std::size_t> counter{0};
+    return counter;
+}
+/// @brief How many madvise() system calls those slabs took. Equal to
+///        reclaim_calls() when every slab is advised on its own; an
+///        EmptySlabSweep that merges adjacent slabs makes it smaller. The
+///        ratio is what the coalescing buys: each syscall is one TLB shootdown
+///        to every CPU the process runs on.
+inline std::atomic<std::size_t>& reclaim_syscalls() noexcept
+{
+    static std::atomic<std::size_t> counter{0};
+    return counter;
+}
+/// @brief Wall time spent in EmptySlabSweep::flush() (sort, flags, madvise), ns.
+inline std::atomic<std::size_t>& reclaim_sweep_ns() noexcept
+{
+    static std::atomic<std::size_t> counter{0};
+    return counter;
+}
+/// @brief Number of non-empty EmptySlabSweep::flush() calls.
+inline std::atomic<std::size_t>& reclaim_sweeps() noexcept
 {
     static std::atomic<std::size_t> counter{0};
     return counter;
@@ -155,14 +186,145 @@ inline std::atomic<std::size_t>& freepath_alloc_keyed() noexcept
 ///@}
 
 
+namespace detail
+{
+/// @brief A non-negative integer from the environment, read once by the
+///        caller's static; @p fallback when unset, empty or malformed (warned).
+inline std::size_t reclaim_env_number(const char* name, std::size_t fallback) noexcept
+{
+    const char* env = std::getenv(name);
+    if (env == nullptr || env[0] == '\0')
+    {
+        return fallback;
+    }
+    std::size_t v   = 0;
+    const char* end = env + std::strlen(env);
+    const auto  res = std::from_chars(env, end, v);
+    if (res.ec != std::errc{} || res.ptr != end)
+    {
+        std::fprintf(stderr, "[env] %s=\"%s\" is not a valid value: ignored, %zu kept\n", name, env, fallback);
+        return fallback;
+    }
+    return v;
+}
+
+/// @brief CHUNK_RECLAIM_COALESCE (default 1): 0 issues one madvise per slab,
+///        the pre-coalescing behaviour, for an A/B in the same binary.
+inline bool reclaim_coalesce() noexcept
+{
+    static const bool on = reclaim_env_number("CHUNK_RECLAIM_COALESCE", 1) != 0;
+    return on;
+}
+
+/// @brief CHUNK_RECLAIM_THREADS (default 1 = serial): threads issuing the
+///        sweep's madvise calls; 0 = omp_get_max_threads().
+inline int reclaim_sweep_threads() noexcept
+{
+    static const int n = []
+    {
+        const std::size_t v = reclaim_env_number("CHUNK_RECLAIM_THREADS", 1);
+#ifdef _OPENMP
+        if (v == 0)
+        {
+            return omp_get_max_threads();
+        }
+#endif
+        return v == 0 ? 1 : static_cast<int>(std::min<std::size_t>(v, 4096));
+    }();
+    return n;
+}
+
+/// @brief The system page size, read once.
+inline std::size_t reclaim_page_size() noexcept
+{
+    static const std::size_t page = []
+    {
+        const long ps = ::sysconf(_SC_PAGESIZE);
+        return ps > 0 ? static_cast<std::size_t>(ps) : std::size_t{0};
+    }();
+    return page;
+}
+
+/// @brief The checks before a slab is advised away, without the syscall: how
+///        many bytes of @p slab may be advised away, or 0 if none. Bumps the
+///        reclaim_entered() / reclaim_skip_*() counters exactly as the
+///        single-slab path always did.
+template <typename Slab>
+std::size_t reclaimable_bytes(const Slab* slab) noexcept
+{
+    reclaim_entered().fetch_add(1, std::memory_order_relaxed);
+    if (slab == nullptr || slab->nn_ref != 0)
+    {
+        if (slab != nullptr)
+        {
+            reclaim_skip_live().fetch_add(1, std::memory_order_relaxed);
+        }
+        return 0;
+    }
+    const void* base = slab->data;
+    const auto  len  = static_cast<std::size_t>(slab->BlockAllocator);
+    if (base == nullptr || len == 0)
+    {
+        return 0;
+    }
+    const std::size_t up = reclaim_page_size();
+    if (up == 0)
+    {
+        return 0;
+    }
+    if ((reinterpret_cast<std::uintptr_t>(base) % up) != 0)
+    {
+        reclaim_skip_unaligned().fetch_add(1, std::memory_order_relaxed);
+        return 0;
+    }
+    const std::size_t adv = (len / up) * up;
+    if (adv == 0)
+    {
+        reclaim_skip_small().fetch_add(1, std::memory_order_relaxed);
+        return 0;
+    }
+    return adv;
+}
+
 /**
- * @brief Give back an emptied slab's resident pages, the last one included.
+ * @brief Give ONE emptied slab's pages back, on its own: the fallback of
+ *        EmptySlabSweep::add() when the batch cannot grow (bad_alloc).
+ * @details The same work as a sweep, for one slab and one syscall: the checks
+ *          of reclaimable_bytes(), backptr_dropped set before the madvise, the
+ *          same counters. The rationale and the two preconditions are
+ *          EmptySlabSweep's. No other caller is meant to exist -- a sweep
+ *          merges adjacent slabs into one madvise, this cannot.
+ * @return true if the pages were dropped and @p slab was flagged.
+ */
+template <typename Slab>
+bool advise_one_slab(Slab* slab) noexcept
+{
+    const std::size_t adv = detail::reclaimable_bytes(slab);
+    if (adv == 0)
+    {
+        return false;
+    }
+    // Flag first: from here the trailing back-pointer is not to be trusted, and
+    // alloc() is what puts it back.
+    slab->backptr_dropped = true;
+    ::madvise(slab->data, adv, MADV_DONTNEED);
+    reclaim_calls().fetch_add(1, std::memory_order_relaxed);
+    reclaim_syscalls().fetch_add(1, std::memory_order_relaxed);
+    reclaim_bytes().fetch_add(adv, std::memory_order_relaxed);
+    return true;
+}
+} // namespace detail
+
+/**
+ * @brief Give emptied slabs' resident pages back, the last page included, with
+ *        ONE madvise() per run of adjacent slabs.
  *
  * @tparam Slab Duck-typed on `nn_ref`, `data`, `BlockAllocator` and
  *         `backptr_dropped`. A template so those members need only be complete
  *         at instantiation.
  *
- * @details MADV_DONTNEED returns the pages to the OS but leaves the mapping in
+ * @par Giving a slab's pages back
+ *          MADV_DONTNEED returns the pages to the OS but leaves the mapping in
  *          place: the address stays valid, the slab stays on its owner's list,
  *          and the next allocation from it faults fresh zero pages back in.
  *          Safe only for a pool whose free list lives OUTSIDE the slab: the
@@ -182,64 +344,230 @@ inline std::atomic<std::size_t>& freepath_alloc_keyed() noexcept
  *          exactly.
  *
  *          The back-pointer can go because nobody can read it: the slab holds
- *          no block (nn_ref == 0 is checked here), so no free can resolve
+ *          no block (nn_ref == 0 is checked first), so no free can resolve
  *          through it, and the only way one becomes possible again is an
  *          alloc() from this slab -- which restores the back-pointer before it
  *          hands the block out. The slab carries the flag saying so.
  *
- * @warning Two preconditions, neither checkable here. The caller must know the
- *          slab's emptiness is a FACT, not just what nn_ref says -- the same
- *          rule as reclaim_empty_slabs_now(), which is the only caller. And it
- *          must run where no alloc() from this slab can interleave: the flag is
- *          set before the madvise, so a concurrent alloc could restore the
- *          back-pointer only to have it wiped a moment later. A re-chunk's
- *          end-of-move sweep is such a point; a free path is not.
+ * @par Batching
+ *          Each MADV_DONTNEED is a syscall plus a TLB shootdown to every CPU
+ *          the process runs on, and the re-chunk sweep used to pay that once
+ *          per slab -- ~82 700 times on the 64-thread bench. Slabs of one size
+ *          are carved back to back from the value arena and aligned on their
+ *          size, so an abandoned (key, size) set is largely contiguous across
+ *          ranks; merging adjacent ones turns thousands of calls into a few.
  *
- * @return true if the pages were dropped and @p slab was flagged.
+ *          add() only records the slab. flush() drops duplicates (the same slab
+ *          reached through two routes, e.g. an unregistered key falling back to
+ *          key 0), applies the CHUNK_RECLAIM_MIN_SLABS floor to the WHOLE
+ *          sweep, runs detail::reclaimable_bytes() on each slab
+ *          (bumping the same counters), sorts by address, merges runs whose
+ *          bytes touch exactly, sets backptr_dropped on every slab of a run,
+ *          then advises the run. A slab whose advisable length is shorter than
+ *          the slab (not a page multiple) ends its run, so nothing outside a
+ *          slab is ever advised.
+ *
+ *          The floor is the sweep's, not each instance's: a re-chunk gathers
+ *          every rank into one sweep, and each rank holds only ~1/ranks of the
+ *          abandoned set. A per-instance floor dropped whole ranks -- holes in
+ *          the very runs the batching is there to merge -- while the set as a
+ *          whole was far above the bar.
+ *
+ * @warning Two preconditions, neither checkable here, held from the first
+ *          add() until flush() returns. Every collected slab is empty as a
+ *          FACT, not just by what nn_ref says. And no alloc() from any of them
+ *          can interleave: backptr_dropped is set before the madvise, so a
+ *          concurrent alloc() could restore the back-pointer only to have it
+ *          wiped a moment later. A re-chunk's quiescent end-of-move point
+ *          qualifies; a free path does not.
  */
 template <typename Slab>
-bool madvise_empty_slab_full(Slab* slab) noexcept
+class EmptySlabSweep
 {
-    reclaim_entered().fetch_add(1, std::memory_order_relaxed);
-    if (slab == nullptr || slab->nn_ref != 0)
+  public:
+    EmptySlabSweep()                                 = default;
+    EmptySlabSweep(const EmptySlabSweep&)            = delete;
+    EmptySlabSweep& operator=(const EmptySlabSweep&) = delete;
+    EmptySlabSweep(EmptySlabSweep&&)                 = delete;
+    EmptySlabSweep& operator=(EmptySlabSweep&&)      = delete;
+    /// @brief Anything collected and not yet flushed is flushed: a collected
+    ///        slab is never silently left resident.
+    ~EmptySlabSweep()
     {
-        if (slab != nullptr)
+        flush();
+    }
+
+    /// @brief Collect @p slab; flush() decides whether it is advised away (see
+    ///        detail::reclaimable_bytes() for the checks).
+    void add(Slab* slab) noexcept
+    {
+        if (slab == nullptr)
         {
-            reclaim_skip_live().fetch_add(1, std::memory_order_relaxed);
+            return;
         }
-        return false;
+        try
+        {
+            items_.push_back(Item{0, 0, slab});
+        }
+        catch (...)
+        {
+            // Out of memory for the batch: advise this one on its own rather
+            // than leave it resident (the floor is not consulted: it cannot
+            // be, the sweep's size is unknown yet).
+            detail::advise_one_slab(slab);
+        }
     }
-    void*      base = slab->data;
-    const auto len  = static_cast<std::size_t>(slab->BlockAllocator);
-    if (base == nullptr || len == 0)
+
+    /// @brief Advise every collected slab away, one madvise() per run -- or
+    ///        none of them if the sweep holds fewer distinct slabs than
+    ///        CHUNK_RECLAIM_MIN_SLABS.
+    /// @details Serial part: sort, drop duplicates, floor, checks, runs
+    ///          (merging adjacent slabs unless CHUNK_RECLAIM_COALESCE=0), every
+    ///          backptr_dropped flag and the counters. Then the madvise calls,
+    ///          from CHUNK_RECLAIM_THREADS threads (serial by default). Every
+    ///          flag is set before the first madvise, which is what the
+    ///          flag-before-madvise rule asks; the syscalls touch disjoint
+    ///          ranges and are thread-safe. The whole call is timed
+    ///          (reclaim_sweep_ns / reclaim_sweeps).
+    /// @return Number of slabs advised.
+    std::size_t flush() noexcept
     {
-        return false;
+        if (items_.empty())
+        {
+            return 0;
+        }
+        // Whatever path this flush leaves by, it is timed and counted.
+        struct SweepTimer
+        {
+            std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+            SweepTimer()                                = default;
+            SweepTimer(const SweepTimer&)               = delete;
+            SweepTimer& operator=(const SweepTimer&)    = delete;
+            ~SweepTimer()
+            {
+                const auto dt = std::chrono::steady_clock::now() - start;
+                reclaim_sweep_ns().fetch_add(
+                    static_cast<std::size_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(dt).count()),
+                    std::memory_order_relaxed);
+                reclaim_sweeps().fetch_add(1, std::memory_order_relaxed);
+            }
+        } const timer;
+
+        std::sort(items_.begin(), items_.end(),
+                  [](const Item& a, const Item& b) { return std::less<Slab*>{}(a.slab, b.slab); });
+        items_.erase(
+            std::unique(items_.begin(), items_.end(), [](const Item& a, const Item& b) { return a.slab == b.slab; }),
+            items_.end());
+        // CHUNK_RECLAIM_MIN_SLABS: madvise syscalls against the pages they
+        // return, decided by how many slabs this sweep empties at once.
+        if (items_.size() < alloc_config::reclaim_min_empty_slabs())
+        {
+            items_.clear();
+            return 0;
+        }
+        for (Item& it : items_)
+        {
+            it.len   = detail::reclaimable_bytes(it.slab);
+            it.begin = reinterpret_cast<std::uintptr_t>(it.slab->data);
+        }
+        items_.erase(std::remove_if(items_.begin(), items_.end(), [](const Item& it) { return it.len == 0; }),
+                     items_.end());
+        std::sort(items_.begin(), items_.end(), [](const Item& a, const Item& b) { return a.begin < b.begin; });
+
+        const bool  coalesce     = detail::reclaim_coalesce();
+        std::size_t bytes        = 0;
+        std::size_t inline_calls = 0; // runs advised at once because runs_ could not grow
+        runs_.clear();
+        std::size_t first = 0;
+        while (first < items_.size())
+        {
+            // Extend the run while the next slab starts exactly where this one's
+            // advisable bytes end.
+            std::size_t last = first;
+            while (coalesce && last + 1 < items_.size() &&
+                   items_[last].begin + items_[last].len == items_[last + 1].begin)
+            {
+                ++last;
+            }
+            const std::uintptr_t begin = items_[first].begin;
+            const std::uintptr_t end   = items_[last].begin + items_[last].len;
+            // Flag first, for every slab of the run: from here their trailing
+            // back-pointers are not to be trusted, and alloc() puts them back.
+            for (std::size_t i = first; i <= last; ++i)
+            {
+                items_[i].slab->backptr_dropped = true;
+            }
+            try
+            {
+                runs_.push_back(Run{begin, end - begin});
+            }
+            catch (...)
+            {
+                ::madvise(reinterpret_cast<void*>(begin), end - begin, MADV_DONTNEED); // no room: now
+                ++inline_calls;
+            }
+            bytes += end - begin;
+            first = last + 1;
+        }
+        const std::size_t slabs = items_.size();
+        reclaim_calls().fetch_add(slabs, std::memory_order_relaxed);
+        reclaim_syscalls().fetch_add(runs_.size() + inline_calls, std::memory_order_relaxed);
+        reclaim_bytes().fetch_add(bytes, std::memory_order_relaxed);
+
+        advise_runs();
+
+        items_.clear();
+        runs_.clear();
+        return slabs;
     }
-    const long ps = ::sysconf(_SC_PAGESIZE);
-    if (ps <= 0)
+
+    /// @brief Slabs collected and not yet flushed.
+    [[nodiscard]] std::size_t pending() const noexcept
     {
-        return false;
+        return items_.size();
     }
-    const auto up = static_cast<std::size_t>(ps);
-    if ((reinterpret_cast<std::uintptr_t>(base) % up) != 0)
+
+  private:
+    struct Item
     {
-        reclaim_skip_unaligned().fetch_add(1, std::memory_order_relaxed);
-        return false;
-    }
-    const std::size_t adv = (len / up) * up;
-    if (adv == 0)
+        std::uintptr_t begin; ///< slab->data, set by flush()
+        std::size_t    len;   ///< advisable bytes (page multiple), set by flush()
+        Slab*          slab;  ///< to set backptr_dropped
+    };
+    struct Run
     {
-        reclaim_skip_small().fetch_add(1, std::memory_order_relaxed);
-        return false;
+        std::uintptr_t begin; ///< first byte of the run
+        std::size_t    len;   ///< bytes, page multiple
+    };
+
+    /// @brief madvise every run of runs_, serially or from an OpenMP team.
+    void advise_runs() noexcept
+    {
+        const auto n_runs = static_cast<long>(runs_.size());
+#ifdef _OPENMP
+        const int nthr = detail::reclaim_sweep_threads();
+        // No nested team (the sweep is meant for a quiescent, serial point),
+        // and not for a handful of runs: a team costs more than it saves.
+        if (nthr > 1 && omp_in_parallel() == 0 && n_runs >= 4L * nthr)
+        {
+            const Run* runs = runs_.data();
+    #pragma omp parallel for schedule(dynamic, 16) num_threads(nthr)
+            for (long i = 0; i < n_runs; ++i)
+            {
+                ::madvise(reinterpret_cast<void*>(runs[i].begin), runs[i].len, MADV_DONTNEED);
+            }
+            return;
+        }
+#endif
+        for (long i = 0; i < n_runs; ++i)
+        {
+            ::madvise(reinterpret_cast<void*>(runs_[i].begin), runs_[i].len, MADV_DONTNEED);
+        }
     }
-    // Flag first: from here the trailing back-pointer is not to be trusted, and
-    // alloc() is what puts it back.
-    slab->backptr_dropped = true;
-    ::madvise(base, adv, MADV_DONTNEED);
-    reclaim_calls().fetch_add(1, std::memory_order_relaxed);
-    reclaim_bytes().fetch_add(adv, std::memory_order_relaxed);
-    return true;
-}
+
+    std::vector<Item> items_;
+    std::vector<Run>  runs_;
+};
 
 
 /**
@@ -618,7 +946,7 @@ inline bool arena_report_enabled() noexcept
  * @param when Free-text label for the moment of the call.
  * @details Called at each end-of-parallel-region drain point. What it is for:
  *          telling apart an RSS gap made of recycled-but-resident free-list
- *          bytes -- which madvise_empty_slab_full() can reclaim -- from one made of
+ *          bytes -- which an EmptySlabSweep can reclaim -- from one made of
  *          genuinely live bytes, which nothing can.
  */
 inline void report_all_arenas(const char* when) noexcept
@@ -632,11 +960,16 @@ inline void report_all_arenas(const char* when) noexcept
     value_arena().report(when);
     std::fprintf(
         stderr,
-        "[RECLAIM] %-16s madvise_calls=%zu  advised=%zu MiB  "
-        "(emptied-slab calls=%zu, skipped: still-live=%zu unaligned=%zu too-small=%zu)\n",
-        when, reclaim_calls().load(std::memory_order_relaxed), reclaim_bytes().load(std::memory_order_relaxed) >> 20U,
-        reclaim_entered().load(std::memory_order_relaxed), reclaim_skip_live().load(std::memory_order_relaxed),
-        reclaim_skip_unaligned().load(std::memory_order_relaxed), reclaim_skip_small().load(std::memory_order_relaxed));
+        "[RECLAIM] %-16s madvise_calls=%zu  slabs=%zu  advised=%zu MiB  "
+        "(emptied-slab calls=%zu, skipped: still-live=%zu unaligned=%zu too-small=%zu)  "
+        "sweep=%.1f ms in %zu flushes (coalesce=%d threads=%d)\n",
+        when, reclaim_syscalls().load(std::memory_order_relaxed), reclaim_calls().load(std::memory_order_relaxed),
+        reclaim_bytes().load(std::memory_order_relaxed) >> 20U, reclaim_entered().load(std::memory_order_relaxed),
+        reclaim_skip_live().load(std::memory_order_relaxed), reclaim_skip_unaligned().load(std::memory_order_relaxed),
+        reclaim_skip_small().load(std::memory_order_relaxed),
+        static_cast<double>(reclaim_sweep_ns().load(std::memory_order_relaxed)) * 1e-6,
+        reclaim_sweeps().load(std::memory_order_relaxed), detail::reclaim_coalesce() ? 1 : 0,
+        detail::reclaim_sweep_threads());
     std::fprintf(stderr, "[FREEPATH] %-15s freed=%zu  parked_own=%zu  parked_foreign=%zu  kept_no_migrate=%zu\n", when,
                  freepath_freed().load(std::memory_order_relaxed), freepath_park_own().load(std::memory_order_relaxed),
                  freepath_park_foreign().load(std::memory_order_relaxed),

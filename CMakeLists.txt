@@ -291,6 +291,25 @@ include(CheckCXXCompilerFlag)
 option(ONEAPI_XHOST "icpx: build an Intel-only binary (-xHost) instead of one that also runs on AMD" OFF)
 option(ONEAPI_NO_INTEL_LIBS "icpx: link no Intel runtime library (no libirc, no libsvml: no vector math) -- the last resort when the vendor check still fires on a non-Intel CPU" OFF)
 
+# icpx floating-point model. Unlike GCC and Clang, icpx defaults to
+# -fp-model=fast (-ffast-math): reassociation, and SVML for the vectorised
+# math calls while the scalar ones go to libm. The vector baseline is
+# vectorised and the chunk variants are not, so they no longer compute the
+# same bits and the correctness check (checksums against the vector oracle)
+# fails by 1e-13 (double) to 6e-7 (float). -fp-model=precise is what GCC and
+# Clang do by default; -fimf-use-svml=true sends the scalar calls to SVML too,
+# so scalar and vector paths call the same routines (not under
+# ONEAPI_NO_INTEL_LIBS: no SVML there, everything goes to libm already).
+# ONEAPI_FAST_FP=ON restores icpx's default, for timings comparable with
+# campaigns measured before -- the check is then expected to fail.
+option(ONEAPI_FAST_FP "icpx: keep the default -fp-model=fast (the vector oracle check then fails)" OFF)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM" AND NOT ONEAPI_FAST_FP)
+    add_compile_options(-fp-model=precise)
+    if(NOT ONEAPI_NO_INTEL_LIBS)
+        add_compile_options(-fimf-use-svml=true)
+    endif()
+endif()
+
 if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
         add_compile_options(-tp=host)
@@ -472,6 +491,14 @@ else()
 endif()
 
 # ── include-what-you-use (optional) ──────────────────────────────────────────
+# Ninja job pool for the unity-built executables (shrink_bench, validation):
+# each of their translation units peaks at ~3 GB under GCC, so two at once can
+# exhaust a 16 GB machine. Empty (default): they share CMAKE_JOB_POOL_COMPILE
+# like every other compile. On a small machine, declare a pool of depth 1 and
+# name it here, e.g.
+#   -DCMAKE_JOB_POOLS="compile=2;link=1;heavy=1" -DCHUNK_HEAVY_JOB_POOL=heavy
+set(CHUNK_HEAVY_JOB_POOL "" CACHE STRING "Ninja job pool for the unity-built shrink_bench and validation executables (empty: the default compile pool)")
+
 # Opt-in header hygiene. -DENABLE_IWYU=ON runs include-what-you-use alongside
 # each C++ compile, using the project mapping file iwyu.imp (routes *_inline.h
 # implementations to their public facade, ankerl internals to

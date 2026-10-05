@@ -960,4 +960,58 @@ void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Bulk reads, chunked half (the generic one is in vector_range_ops.h).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @brief for_each_value() on a chunked array: chunk by chunk, one read section
+ *        per block of elements (ArrayChunkBase::for_each_value).
+ * @warning No other thread may write @p arr during the call (the iterator's
+ *          contract). Callable from a parallel region on disjoint slices.
+ */
+template <internal::ChunkedArray Arr, typename F>
+void for_each_value(const Arr& arr, std::size_t first, std::size_t last, F&& f)
+{
+    using ind_type  = decltype(arr.size());
+    const auto size = static_cast<std::size_t>(arr.size());
+    if (last > size)
+    {
+        last = size;
+    }
+    if (first >= last)
+    {
+        return;
+    }
+    arr.for_each_value(static_cast<ind_type>(first), static_cast<ind_type>(last), std::forward<F>(f));
+}
+
+/// @brief for_each_value() over every element of a chunked array.
+template <internal::ChunkedArray Arr, typename F>
+void for_each_value(const Arr& arr, F&& f)
+{
+    arr.for_each_value(std::forward<F>(f));
+}
+
+/**
+ * @brief read_range() on a chunked array: into a T*, each block is read
+ *        straight into the destination (ArrayChunkBase::read_range).
+ * @return @p out advanced past the last element written.
+ */
+template <internal::ChunkedArray Arr, typename OutIt>
+OutIt read_range(const Arr& arr, std::size_t first, std::size_t last, OutIt out)
+{
+    using ind_type  = decltype(arr.size());
+    const auto size = static_cast<std::size_t>(arr.size());
+    if (last > size)
+    {
+        last = size;
+    }
+    if (first >= last)
+    {
+        return out;
+    }
+    return arr.read_range(static_cast<ind_type>(first), static_cast<ind_type>(last), out);
+}
+
 } // namespace shrink_array

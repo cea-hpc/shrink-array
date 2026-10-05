@@ -155,6 +155,30 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      */
     static void resize_tab_is_int(int num_tab, int nb_chunk)
     {
+        // Check builds: the row is REALLOCATED, so every flag goes back to 0,
+        // not only the new ones. A chunk still flagged here still sits in a
+        // candidate list: its entry outlives the caller's chunk_list realloc,
+        // and the cleared flag lets the same chunk be queued a second time.
+        // The callers' compression pass (resize, after its deferred-op drain)
+        // empties the lists first; this is what checks it did. A fresh tab's
+        // row is empty and passes trivially. Mirrors
+        // Proxy2A::resize_tab_is_int(num_tab, old, nb).
+        if constexpr (build_config::any_check)
+        {
+            if (static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
+            {
+                const auto& row = tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)];
+                for (std::size_t j = 0; j < row.size(); ++j)
+                {
+                    if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
+                    {
+                        INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
+                                         "flag row is reallocated ({} -> {} chunks)",
+                                         num_tab, j, row.size(), nb_chunk);
+                    }
+                }
+            }
+        }
         // Value-initialised: every flag 0 (C++20 atomics).
         tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)] =
             std::vector<std::atomic<char>>(static_cast<std::size_t>(nb_chunk));
@@ -461,6 +485,15 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @pre The chunk is materialised and the caller holds the write path.
     void store_value(in_t<T> v) const noexcept
     {
+        store_value_at(values, v);
+    }
+
+    /// @brief store_value() through a pointer the caller has already loaded.
+    /// @param vals The chunk's values pointer, loaded inside the write session
+    ///        (after the materialisation, if there was one); saves a reload.
+    /// @pre As store_value().
+    void store_value_at(T* const vals, in_t<T> v) const noexcept
+    {
         // The chunk must not be COMMITTED to a compressor at this point: a
         // writer on a marked chunk is sent to the slow path by
         // must_defer_write(), and a compressor commits its claims only once
@@ -483,13 +516,12 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // element -- relaxed atomic store, see relaxed_element.h.
         if constexpr (internal::relaxed_element_stores_v<ChunkType, T>)
         {
-            T* const vals = values;
             internal::store_element_relaxed(vals + num, static_cast<T>(v));
         }
         else
         {
             // Bit: an atomic RMW of the word (element_access.h); values[num] otherwise.
-            elem_set(static_cast<T*>(values), static_cast<std::size_t>(num), static_cast<T>(v));
+            elem_set(vals, static_cast<std::size_t>(num), static_cast<T>(v));
         }
     }
 
@@ -508,7 +540,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // but not raw for a Chunk2A second constant, see internal::element_of(): the
         // compression decision downstream would otherwise be taken against 0
         // instead of the chunk's constant. One load of the pointer.
-        const T* const vals = values;
+        return read_values_at(values);
+    }
+    /// @brief read_values() through a pointer the caller has already loaded.
+    /// @param vals The chunk's values pointer, loaded inside the write session;
+    ///        saves the reload when the write path has one in hand.
+    [[nodiscard]] T read_values_at(const T* const vals) const noexcept
+    {
         // TEST KNOB (test_hooks.h), as in ChunkBase::element_at: widens
         // the load -> dereference window. Compiled out by default.
         test_hooks::maybe_read_delay();

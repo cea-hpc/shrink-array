@@ -25,9 +25,10 @@
 
 #include "chunk/internal/array_chunk_rechunk_hooks.h" // RechunkHooks, the class these bodies belong to
 #include "chunk/internal/manager_chunk.h"             // manager_type — candidate store + reuse free-lists
-#include "chunk/config.h"                     // build_config::use_openmp, chunk_config::use_fast_block_compression
-#include "chunk/PMP_CHUNK.h"                  // get_thr_rank_fast
-#include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size
+#include "chunk/config.h"                       // build_config::use_openmp, chunk_config::use_fast_block_compression
+#include "chunk/PMP_CHUNK.h"                    // get_thr_rank_fast
+#include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size
+#include "chunk/internal/block_pass_precheck.h" // check_no_flush_outside_start
 
 namespace shrink_array
 {
@@ -40,6 +41,8 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
     // v1's compress() guards the already-compressed chunk (the zero sentinel).
     if constexpr (chunk_config::use_fast_block_compression)
     {
+        // Bypasses CompressionManager::start(): see check_no_flush_outside_start.
+        check_no_flush_outside_start<proxy_type>("RechunkHooks::rechunk_drop_candidates");
         const int num_tab = proxy_type::share_info_array.get_num_tab(self().registry_key());
         const int thr     = get_thr_rank_fast();
         shrink_array::set_thread_chunk_size(self().size_policy_.size());

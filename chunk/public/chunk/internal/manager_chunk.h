@@ -825,6 +825,54 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     ///         on key 0 rather than route to a set that does not exist.
     [[nodiscard]] static bool register_alloc_key(unsigned int key, unsigned int size, int nb_chunk);
 
+    /**
+     * @brief Resolve the reuse list of (@p thr_rank, @p key) at the ambient
+     *        geometry ONCE, or report that no slot exists.
+     *
+     * @details The hot-path form of get_list_block_free_thr_size(thr_rank, key)
+     *          followed by get_list_block_free_thr(thr_rank, key): those two
+     *          each walk the same std::map(s), so testing then popping cost 2
+     *          to 4 lookups per materialisation in dynamic builds. Resolution
+     *          order is identical to theirs:
+     *          - keyed list (key != 0, registered, thr_rank in range);
+     *          - per-size list (dynamic builds, registered, thr_rank in range);
+     *          - legacy store (thr_rank in range);
+     *          - otherwise nullptr -- the slot was never sized (see
+     *            get_list_block_free_thr_size(int) for why that happens).
+     *
+     * @param thr_rank owning thread's rank
+     * @param key      affinity key (0 = the rank's shared pool)
+     * @return the list, or nullptr when no slot exists for @p thr_rank
+     * @note The pointer is valid until the next registration, resize or
+     *       teardown of the reuse stores -- use it immediately, never cache it.
+     */
+    [[nodiscard]] static std::vector<T*>* find_list_block_free_thr(int thr_rank, unsigned int key) noexcept
+    {
+        const auto         rank = static_cast<size_t>(thr_rank);
+        const unsigned int sz   = thread_chunk_size();
+        if (key != 0)
+        {
+            const auto it = list_block_free_thr_keyed_.find(keyed_index(key, sz));
+            if (it != list_block_free_thr_keyed_.end() && rank < it->second.size())
+            {
+                return &it->second[thr_rank].list;
+            }
+        }
+        if constexpr (chunk_config::chunk_dynamic)
+        {
+            const auto it = list_block_free_thr_by_size_.find(sz);
+            if (it != list_block_free_thr_by_size_.end() && rank < it->second.size())
+            {
+                return &it->second[thr_rank].list;
+            }
+        }
+        if (rank < list_block_free_thr.size())
+        {
+            return &list_block_free_thr[thr_rank].list;
+        }
+        return nullptr;
+    }
+
     /// @brief Reuse list of (thr_rank, key) at the ambient geometry. Key 0 is
     ///        get_list_block_free_thr(thr_rank); an unregistered key falls back
     ///        to the shared pool rather than indexing blindly.
@@ -841,18 +889,11 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         return get_list_block_free_thr(thr_rank);
     }
     /// @brief Number of blocks parked in rank @p thr_rank's reuse list for
-    ///        @p key at the ambient geometry.
+    ///        @p key at the ambient geometry (0 when no slot exists).
     [[nodiscard]] static size_t get_list_block_free_thr_size(int thr_rank, unsigned int key) noexcept
     {
-        if (key != 0)
-        {
-            const auto it = list_block_free_thr_keyed_.find(keyed_index(key, thread_chunk_size()));
-            if (it != list_block_free_thr_keyed_.end() && static_cast<size_t>(thr_rank) < it->second.size())
-            {
-                return it->second[thr_rank].list.size();
-            }
-        }
-        return get_list_block_free_thr_size(thr_rank);
+        const auto* const list = find_list_block_free_thr(thr_rank, key);
+        return list != nullptr ? list->size() : 0;
     }
     /// @brief Number of buffers currently parked for @p thr_rank at the ambient geometry.
     [[nodiscard]] static size_t get_list_block_free_thr_size(int thr_rank) noexcept

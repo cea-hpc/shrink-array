@@ -45,6 +45,7 @@
 #include "chunk/PMP_CHUNK.h"     // chunk_pmp_set_num_threads, CHUNK_PMP_THREAD_CAPACITY
 #include "chunk/manage_ompt.h"   // begin_parallel_phase / finalize_parallel_phase
 
+#include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::thread_growth_validation
@@ -212,7 +213,7 @@ static long run_regions(Array<int>& a, std::vector<int>& ra, Array<double>& d, s
     return 0;
 }
 
-int run(int argc, char** argv)
+static int run_body(int argc, char** argv)
 {
     const bool beyond = argc > 1 && std::string(argv[1]) == "--beyond";
 
@@ -257,6 +258,18 @@ int run(int argc, char** argv)
     }
     std::println("=== THREAD GROWTH OK ===");
     return 0;
+}
+
+int run(int argc, char** argv)
+{
+    // The arrays live in run_body() and are destroyed when it returns, which
+    // parks their buffers in the reuse lists; release_chunk_pools() frees them.
+    // Without it they stay parked until exit, and LeakSanitizer reports every
+    // one in the std-alloc builds (each buffer is a real malloc there).
+    const int rc = run_body(argc, argv);
+    release_chunk_pools();
+    destroy_block_chunk();
+    return rc;
 }
 
 } // namespace validation::thread_growth_validation

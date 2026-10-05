@@ -50,6 +50,7 @@
 #include "chunk/PMP_CHUNK.h"     // chunk_pmp_set_max_active_levels
 #include "chunk/manage_ompt.h"   // begin_parallel_phase / finalize_parallel_phase
 
+#include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::nested_region_validation
@@ -207,7 +208,7 @@ static long run_nested(Array<int>& a, std::vector<int>& ref, int rounds)
     return 0;
 }
 
-int run(int argc, char** argv)
+static int run_body(int argc, char** argv)
 {
     const bool nested_active = argc > 1 && std::string(argv[1]) == "--nested-active";
 
@@ -242,6 +243,18 @@ int run(int argc, char** argv)
     }
     std::println("=== NESTED REGION OK ===");
     return 0;
+}
+
+int run(int argc, char** argv)
+{
+    // The arrays live in run_body() and are destroyed when it returns, which
+    // parks their buffers in the reuse lists; release_chunk_pools() frees them.
+    // Without it they stay parked until exit, and LeakSanitizer reports every
+    // one in the std-alloc builds (each buffer is a real malloc there).
+    const int rc = run_body(argc, argv);
+    release_chunk_pools();
+    destroy_block_chunk();
+    return rc;
 }
 
 } // namespace validation::nested_region_validation

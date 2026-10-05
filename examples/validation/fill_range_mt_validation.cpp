@@ -54,6 +54,7 @@
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h"    // env_number / arg_number (checked, not atoi)
 
+#include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::fill_range_mt_validation
@@ -260,7 +261,7 @@ static void run_perf(long N)
     arr.clear();
 }
 
-int run(int argc, char** argv)
+static int run_body(int argc, char** argv)
 {
     const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], (1L << 20) + 777, "N") : (1L << 20) + 777;
     ParamChunk::init_indexes(true);
@@ -276,6 +277,18 @@ int run(int argc, char** argv)
     const int fails = run_validation(N, rounds);
     std::println("[{}] === {} ===", variant_name(), fails ? "FILL_RANGE_MT FAILED" : "FILL_RANGE_MT OK");
     return fails;
+}
+
+int run(int argc, char** argv)
+{
+    // The arrays live in run_body() and are destroyed when it returns, which
+    // parks their buffers in the reuse lists; release_chunk_pools() frees them.
+    // Without it they stay parked until exit, and LeakSanitizer reports every
+    // one in the std-alloc builds (each buffer is a real malloc there).
+    const int rc = run_body(argc, argv);
+    release_chunk_pools();
+    destroy_block_chunk();
+    return rc;
 }
 
 } // namespace validation::fill_range_mt_validation

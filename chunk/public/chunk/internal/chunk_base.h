@@ -515,9 +515,9 @@ struct ChunkAllocPolicy<T, Derived, true>
         // showed up, from here, on nvhpc.
         //
         // Both geometries go through the same call now:
-        // get_list_block_free_thr_size() is bounds-checked at the source (see
-        // ManagerChunk), so a slot that was never sized answers 0 instead of
-        // indexing out of bounds. The earlier version guarded only the static
+        // find_list_block_free_thr() is bounds-checked at the source (see
+        // ManagerChunk), so a slot that was never sized answers nullptr instead
+        // of indexing out of bounds. The earlier version guarded only the static
         // case, on the assumption that in dynamic builds the by-size map always
         // owns the list -- but a geometry born from a re-chunk is never
         // registered, so the lookup falls back to the very legacy store the
@@ -532,11 +532,13 @@ struct ChunkAllocPolicy<T, Derived, true>
         // Churn measurement (churn_counters.h): one materialisation of the
         // array this key names -- rank-local, dynamic builds only.
         churn::note_materialisation<T>(thr_rank, alloc_key);
-        if (const auto nb_free = static_cast<int>(self.get_manager().get_list_block_free_thr_size(thr_rank, alloc_key));
-            nb_free > 0)
+        // One resolution of the list serves both the emptiness test and the pop
+        // (formerly get_list_block_free_thr_size() then get_list_block_free_thr(),
+        // i.e. the same std::map walked twice on every materialisation).
+        if (auto* const free_list = self.get_manager().find_list_block_free_thr(thr_rank, alloc_key);
+            free_list != nullptr && !free_list->empty())
         {
-            // Safe now: nb_free > 0 implies the slot for thr_rank exists.
-            auto& ll_block_free_thr = self.get_manager().get_list_block_free_thr(thr_rank, alloc_key);
+            auto& ll_block_free_thr = *free_list;
             if constexpr (chunk_config::stats)
             {
                 increm_chunk_list<Derived>();
@@ -1237,6 +1239,13 @@ class ChunkBase : public CRTPSupport<Derived>,
             }
             return packed;
         }
+        // Coinciding constants (frequent in 2A: second_v is values[0], and a
+        // sparse chunk often starts at first_value): one compare per element,
+        // not two identical ones. Same verdict -- `first` only -- as below.
+        if (first_v == second_v)
+        {
+            return ConstantScan{is_constant_to(first_v, count), false};
+        }
         ConstantScan scan{true, true};
         unsigned int i = 0;
         while (i < count)
@@ -1384,6 +1393,50 @@ class ChunkBase : public CRTPSupport<Derived>,
         chunk_config::CheckNaN<chunk_config::do_check>::maybe(element_at(i), static_cast<long>(i));
 
         return element_at(i);
+    }
+
+    /**
+     * @brief Copy elements [@p first, @p first + @p count) into @p out under ONE
+     *        read section.
+     *
+     * @details The reads of @p count element_at() calls for the price of one
+     *          read_reclaim::ReadSection: `values` is loaded once, the elements
+     *          are copied, the section closes. A compression pass running in
+     *          the region waits for the copy (bounded, no caller code inside)
+     *          before releasing the buffer, exactly as it waits for one
+     *          element_at(). The block is what the chunk held at that load.
+     *
+     *          Raw like element_at(): no stats, no NaN check. The bulk reads
+     *          (ArrayChunkBase::for_each_value / read_range) use it only in
+     *          builds without those.
+     * @param first first offset in the chunk
+     * @param count number of elements, first + count <= chunk size
+     * @param out   destination, @p count elements
+     */
+    void read_block(int first, int count, T* out) const noexcept
+    {
+        const read_reclaim::ReadSection section;
+        const T* const                  vals = values_load();
+        test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+        if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
+        {
+            // Same single load as element_at_unguarded: a chunk compressed to a
+            // second constant points at an identifier, not at values.
+            if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
+            {
+                const T v = derived().second_value_from_ptr(vals);
+                for (int j = 0; j < count; ++j)
+                {
+                    out[j] = v;
+                }
+                return;
+            }
+        }
+        for (int j = 0; j < count; ++j)
+        {
+            // raw-read: read_block -- under its own ReadSection
+            out[j] = load_at<false>(vals, first + j);
+        }
     }
 
     /// @brief Proxy access for read-write operations
