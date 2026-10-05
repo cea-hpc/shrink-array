@@ -55,7 +55,9 @@ namespace fast_alloc
 // call sites in tc_allocator.h and report_all_arenas() below all see one
 // definition -- no cross-header ordering or two-phase-lookup question.
 
-/// @brief How many times madvise_empty_slab_full() has advised a slab away.
+/// @brief How many slabs have been advised away (madvise_empty_slab_full() or
+///        an EmptySlabSweep run). A count of SLABS, not of syscalls: see
+///        reclaim_syscalls().
 inline std::atomic<std::size_t>& reclaim_calls() noexcept
 {
     static std::atomic<std::size_t> counter{0};
@@ -63,6 +65,16 @@ inline std::atomic<std::size_t>& reclaim_calls() noexcept
 }
 /// @brief How many bytes that represents.
 inline std::atomic<std::size_t>& reclaim_bytes() noexcept
+{
+    static std::atomic<std::size_t> counter{0};
+    return counter;
+}
+/// @brief How many madvise() system calls those slabs took. Equal to
+///        reclaim_calls() when every slab is advised on its own; an
+///        EmptySlabSweep that merges adjacent slabs makes it smaller. The
+///        ratio is what the coalescing buys: each syscall is one TLB shootdown
+///        to every CPU the process runs on.
+inline std::atomic<std::size_t>& reclaim_syscalls() noexcept
 {
     static std::atomic<std::size_t> counter{0};
     return counter;
@@ -197,8 +209,25 @@ inline std::atomic<std::size_t>& freepath_alloc_keyed() noexcept
  *
  * @return true if the pages were dropped and @p slab was flagged.
  */
+namespace detail
+{
+/// @brief The system page size, read once.
+inline std::size_t reclaim_page_size() noexcept
+{
+    static const std::size_t page = []
+    {
+        const long ps = ::sysconf(_SC_PAGESIZE);
+        return ps > 0 ? static_cast<std::size_t>(ps) : std::size_t{0};
+    }();
+    return page;
+}
+
+/// @brief The checks of madvise_empty_slab_full(), without the syscall: how
+///        many bytes of @p slab may be advised away, or 0 if none. Bumps the
+///        reclaim_entered() / reclaim_skip_*() counters exactly as the
+///        single-slab path always did.
 template <typename Slab>
-bool madvise_empty_slab_full(Slab* slab) noexcept
+std::size_t reclaimable_bytes(const Slab* slab) noexcept
 {
     reclaim_entered().fetch_add(1, std::memory_order_relaxed);
     if (slab == nullptr || slab->nn_ref != 0)
@@ -207,39 +236,179 @@ bool madvise_empty_slab_full(Slab* slab) noexcept
         {
             reclaim_skip_live().fetch_add(1, std::memory_order_relaxed);
         }
-        return false;
+        return 0;
     }
-    void*      base = slab->data;
-    const auto len  = static_cast<std::size_t>(slab->BlockAllocator);
+    const void* base = slab->data;
+    const auto  len  = static_cast<std::size_t>(slab->BlockAllocator);
     if (base == nullptr || len == 0)
     {
-        return false;
+        return 0;
     }
-    const long ps = ::sysconf(_SC_PAGESIZE);
-    if (ps <= 0)
+    const std::size_t up = reclaim_page_size();
+    if (up == 0)
     {
-        return false;
+        return 0;
     }
-    const auto up = static_cast<std::size_t>(ps);
     if ((reinterpret_cast<std::uintptr_t>(base) % up) != 0)
     {
         reclaim_skip_unaligned().fetch_add(1, std::memory_order_relaxed);
-        return false;
+        return 0;
     }
     const std::size_t adv = (len / up) * up;
     if (adv == 0)
     {
         reclaim_skip_small().fetch_add(1, std::memory_order_relaxed);
+        return 0;
+    }
+    return adv;
+}
+} // namespace detail
+
+template <typename Slab>
+bool madvise_empty_slab_full(Slab* slab) noexcept
+{
+    const std::size_t adv = detail::reclaimable_bytes(slab);
+    if (adv == 0)
+    {
         return false;
     }
     // Flag first: from here the trailing back-pointer is not to be trusted, and
     // alloc() is what puts it back.
     slab->backptr_dropped = true;
-    ::madvise(base, adv, MADV_DONTNEED);
+    ::madvise(slab->data, adv, MADV_DONTNEED);
     reclaim_calls().fetch_add(1, std::memory_order_relaxed);
+    reclaim_syscalls().fetch_add(1, std::memory_order_relaxed);
     reclaim_bytes().fetch_add(adv, std::memory_order_relaxed);
     return true;
 }
+
+/**
+ * @brief Batch form of madvise_empty_slab_full(): collect emptied slabs, then
+ *        give their pages back with ONE madvise() per run of adjacent slabs.
+ *
+ * @tparam Slab Same duck typing as madvise_empty_slab_full().
+ *
+ * @details Each MADV_DONTNEED is a syscall plus a TLB shootdown to every CPU
+ *          the process runs on, and the re-chunk sweep used to pay that once
+ *          per slab -- ~82 700 times on the 64-thread bench. Slabs of one size
+ *          are carved back to back from the value arena and aligned on their
+ *          size, so an abandoned (key, size) set is largely contiguous across
+ *          ranks; merging adjacent ones turns thousands of calls into a few.
+ *
+ *          add() runs the very checks of the single-slab path (and bumps the
+ *          same counters); flush() sorts by address, drops duplicates (the
+ *          same slab reached through two routes, e.g. an unregistered key
+ *          falling back to key 0), merges runs whose bytes touch exactly, sets
+ *          backptr_dropped on every slab of a run, then advises the run.
+ *          A slab whose advisable length is shorter than the slab (not a page
+ *          multiple) ends its run, so nothing outside a slab is ever advised.
+ *
+ * @warning Same two preconditions as madvise_empty_slab_full(), held from the
+ *          first add() until flush() returns: every collected slab is empty
+ *          as a FACT, and no alloc() from any of them can interleave. A
+ *          re-chunk's quiescent end-of-move point qualifies; a free path does
+ *          not.
+ */
+template <typename Slab>
+class EmptySlabSweep
+{
+  public:
+    EmptySlabSweep()                                 = default;
+    EmptySlabSweep(const EmptySlabSweep&)            = delete;
+    EmptySlabSweep& operator=(const EmptySlabSweep&) = delete;
+    EmptySlabSweep(EmptySlabSweep&&)                 = delete;
+    EmptySlabSweep& operator=(EmptySlabSweep&&)      = delete;
+    /// @brief Anything collected and not yet flushed is flushed: a collected
+    ///        slab is never silently left resident.
+    ~EmptySlabSweep()
+    {
+        flush();
+    }
+
+    /// @brief Collect @p slab if it can be advised away (see
+    ///        madvise_empty_slab_full() for the checks).
+    void add(Slab* slab) noexcept
+    {
+        const std::size_t adv = detail::reclaimable_bytes(slab);
+        if (adv == 0)
+        {
+            return;
+        }
+        try
+        {
+            items_.push_back(Item{reinterpret_cast<std::uintptr_t>(slab->data), adv, slab});
+        }
+        catch (...)
+        {
+            // Out of memory for the batch: advise this one on its own rather
+            // than leave it resident.
+            slab->backptr_dropped = true;
+            ::madvise(slab->data, adv, MADV_DONTNEED);
+            reclaim_calls().fetch_add(1, std::memory_order_relaxed);
+            reclaim_syscalls().fetch_add(1, std::memory_order_relaxed);
+            reclaim_bytes().fetch_add(adv, std::memory_order_relaxed);
+        }
+    }
+
+    /// @brief Advise every collected slab away, one madvise() per run.
+    /// @return Number of slabs advised.
+    std::size_t flush() noexcept
+    {
+        if (items_.empty())
+        {
+            return 0;
+        }
+        std::sort(items_.begin(), items_.end(), [](const Item& a, const Item& b) { return a.begin < b.begin; });
+        items_.erase(std::unique(items_.begin(), items_.end(),
+                                 [](const Item& a, const Item& b) { return a.slab == b.slab; }),
+                     items_.end());
+
+        std::size_t slabs = 0;
+        std::size_t first = 0;
+        while (first < items_.size())
+        {
+            // Extend the run while the next slab starts exactly where this one's
+            // advisable bytes end.
+            std::size_t last = first;
+            while (last + 1 < items_.size() && items_[last].begin + items_[last].len == items_[last + 1].begin)
+            {
+                ++last;
+            }
+            const std::uintptr_t begin = items_[first].begin;
+            const std::uintptr_t end   = items_[last].begin + items_[last].len;
+            // Flag first, for every slab of the run: from here their trailing
+            // back-pointers are not to be trusted, and alloc() puts them back.
+            for (std::size_t i = first; i <= last; ++i)
+            {
+                items_[i].slab->backptr_dropped = true;
+            }
+            ::madvise(reinterpret_cast<void*>(begin), end - begin, MADV_DONTNEED);
+            const std::size_t n = last - first + 1;
+            reclaim_calls().fetch_add(n, std::memory_order_relaxed);
+            reclaim_syscalls().fetch_add(1, std::memory_order_relaxed);
+            reclaim_bytes().fetch_add(end - begin, std::memory_order_relaxed);
+            slabs += n;
+            first = last + 1;
+        }
+        items_.clear();
+        return slabs;
+    }
+
+    /// @brief Slabs collected and not yet flushed.
+    [[nodiscard]] std::size_t pending() const noexcept
+    {
+        return items_.size();
+    }
+
+  private:
+    struct Item
+    {
+        std::uintptr_t begin; ///< slab->data
+        std::size_t    len;   ///< advisable bytes (page multiple)
+        Slab*          slab;  ///< to set backptr_dropped
+    };
+    std::vector<Item> items_;
+};
 
 
 /**
@@ -632,9 +801,10 @@ inline void report_all_arenas(const char* when) noexcept
     value_arena().report(when);
     std::fprintf(
         stderr,
-        "[RECLAIM] %-16s madvise_calls=%zu  advised=%zu MiB  "
+        "[RECLAIM] %-16s madvise_calls=%zu  slabs=%zu  advised=%zu MiB  "
         "(emptied-slab calls=%zu, skipped: still-live=%zu unaligned=%zu too-small=%zu)\n",
-        when, reclaim_calls().load(std::memory_order_relaxed), reclaim_bytes().load(std::memory_order_relaxed) >> 20U,
+        when, reclaim_syscalls().load(std::memory_order_relaxed), reclaim_calls().load(std::memory_order_relaxed),
+        reclaim_bytes().load(std::memory_order_relaxed) >> 20U,
         reclaim_entered().load(std::memory_order_relaxed), reclaim_skip_live().load(std::memory_order_relaxed),
         reclaim_skip_unaligned().load(std::memory_order_relaxed), reclaim_skip_small().load(std::memory_order_relaxed));
     std::fprintf(stderr, "[FREEPATH] %-15s freed=%zu  parked_own=%zu  parked_foreign=%zu  kept_no_migrate=%zu\n", when,

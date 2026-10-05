@@ -1241,6 +1241,9 @@ class TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, ElemT, TCCAl
     static constexpr bool zero_std_alloc = true;
     /// @brief For the [MUNMAP] trace.
     static constexpr const char* pool_name = "TCCAllocator";
+    /// @brief The batch that reclaim_empty_slabs_now() and the re-chunk sweeps
+    ///        feed: one madvise per run of adjacent empty slabs.
+    using empty_slab_sweep = fast_alloc::EmptySlabSweep<TCCAllocator>;
 
     /// @brief Empty and unusable until init(); its slabs draw from the value arena.
     TCTypeCAllocator() : TCSlabPool<TCTypeCAllocator<ElemT>, ElemT, TCCAllocator>(fast_alloc::ArenaKind::Value) {}
@@ -1257,14 +1260,30 @@ class TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, ElemT, TCCAl
     ///          re-chunk drain, an array's teardown), not on the hot path.
     std::size_t reclaim_empty_slabs_now() noexcept
     {
+        empty_slab_sweep sweep;
+        collect_empty_slabs(sweep);
+        return sweep.flush();
+    }
+
+
+    /// @brief Hand every slab of this instance that currently holds no block to
+    ///        @p sweep, which advises them away at its flush().
+    /// @details Lets a caller gather several instances (every rank, several
+    ///          keys) into ONE sweep, so runs of adjacent slabs merge across
+    ///          instances. Same preconditions as reclaim_empty_slabs_now(),
+    ///          held until the sweep is flushed.
+    /// @return Number of slabs handed over (0 below the CHUNK_RECLAIM_MIN_SLABS
+    ///         floor, which stays per instance).
+    std::size_t collect_empty_slabs([[maybe_unused]] empty_slab_sweep& sweep) noexcept
+    {
         if constexpr (alloc_config::use_std_alloc || !alloc_config::reclaim_empty_slabs)
         {
             return 0;
         }
         else
         {
-            // CHUNK_RECLAIM_MIN_SLABS: a sweep costs one madvise per slab and
-            // returns that slab's pages, so what decides whether it is worth
+            // CHUNK_RECLAIM_MIN_SLABS: a sweep costs madvise syscalls and
+            // returns this set's pages, so what decides whether it is worth
             // doing is how many slabs this set empties at once. Count first,
             // sweep only if the set clears the bar. The count walks the same
             // two lists the sweep would, which is cheap next to the syscalls
@@ -1288,7 +1307,7 @@ class TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, ElemT, TCCAl
                     return 0;
                 }
             }
-            std::size_t reclaimed = 0;
+            std::size_t collected = 0;
             for (auto* node : {this->block, this->block_full})
             {
                 for (auto* p = node; p != nullptr; p = p->next)
@@ -1297,13 +1316,14 @@ class TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, ElemT, TCCAl
                     // context that can afford it (see madvise_empty_slab_full).
                     // The last page is 6% of a 1 MiB slab and was the entire
                     // unexplained residue of a re-chunk.
-                    if (p->nn_ref == 0 && fast_alloc::madvise_empty_slab_full(p))
+                    if (p->nn_ref == 0)
                     {
-                        ++reclaimed;
+                        sweep.add(p);
+                        ++collected;
                     }
                 }
             }
-            return reclaimed;
+            return collected;
         }
     }
 };

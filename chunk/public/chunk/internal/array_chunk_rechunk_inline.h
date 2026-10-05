@@ -438,14 +438,19 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     {
         const unsigned int saved_sz = thread_chunk_size();
         set_thread_chunk_size(old_size);
+        // Every rank, both keys, into ONE sweep: the abandoned set's slabs were
+        // carved back to back across ranks, so one madvise per contiguous run
+        // instead of one per slab (each one a TLB shootdown on every CPU).
+        typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(0, 0u))>::empty_slab_sweep sweep;
         for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
         {
             if (old_key != 0)
             {
-                chunk_type::get_chunk_allocator(r, old_key).reclaim_empty_slabs_now();
+                chunk_type::get_chunk_allocator(r, old_key).collect_empty_slabs(sweep);
             }
-            chunk_type::get_chunk_allocator(r, 0u).reclaim_empty_slabs_now();
+            chunk_type::get_chunk_allocator(r, 0u).collect_empty_slabs(sweep);
         }
+        sweep.flush();
         set_thread_chunk_size(saved_sz);
     }
     if (internal::g_rechunk_trace)
@@ -1085,10 +1090,14 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     // the 64-thread chunk_dyn bench, 7.3 GB given back only at the
                     // end). Safe for the final sweep's reason: a serial, quiescent
                     // point, so a slab found empty is empty.
+                    // One sweep across ranks: one madvise per contiguous run.
+                    typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(
+                        0, 0u))>::empty_slab_sweep sweep;
                     for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
                     {
-                        chunk_type::get_chunk_allocator(r, old_key_refill).reclaim_empty_slabs_now();
+                        chunk_type::get_chunk_allocator(r, old_key_refill).collect_empty_slabs(sweep);
                     }
+                    sweep.flush();
                 }
                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
                 if (slice_trace)
