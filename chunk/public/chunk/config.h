@@ -170,13 +170,17 @@ inline constexpr bool do_check = true;
 inline constexpr bool do_check = false;
 #endif
 
-// std::size_t{2}, not 2: the product is otherwise computed in int and then
-// widened (bugprone-implicit-widening-of-multiplication-result). It fits in an
-// int today; expressing the type once means it still will if the value grows.
-// Single source of the deferred-pool granularity (deferred_op_pool.h): a
-// level-dependent chunk_config twin once shadowed it here, unconsumed; removed
-// — the pool ran at this 2 MiB in every SHRINK_LEVEL, so this keeps that.
-inline constexpr std::size_t deferred_pool_granularity = std::size_t{2} * 1024 * 1024;
+// Single source of the deferred op / ctx pool slab size, in bytes
+// (deferred_op_pool.h; CHUNK_DEFERRED_POOL_KB overrides it at run time).
+// 64 KiB, measured. The pools used to be handed an object count where
+// TCSlabPool::init expects bytes, so their 48-80 B ops and contexts lived in
+// 32-64 KiB slabs while 2 MiB was written here. With the units fixed, 2 MiB
+// was slower for the same peak RSS -- Milan, shrink_bench_chunk_dyn --mode
+// perf, 64 / 128 threads: 26.13 / 31.11 s at 64 KiB, 26.68 / 32.33 s at
+// 256 KiB, 27.11 / 32.93 s at 2 MiB, ~46.7 GB peak RSS in every run.
+// std::size_t{64}: the product in size_t, not in int then widened
+// (bugprone-implicit-widening-of-multiplication-result).
+inline constexpr std::size_t deferred_pool_granularity = std::size_t{64} * 1024;
 
 inline constexpr bool verbose = false;
 

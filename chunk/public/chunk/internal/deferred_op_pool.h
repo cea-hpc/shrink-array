@@ -363,7 +363,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
 
     /**
      * @brief Target slab size of the op / ctx pools, in bytes: the build's
-     *        deferred_pool_granularity (2 MiB), or CHUNK_DEFERRED_POOL_KB KiB.
+     *        deferred_pool_granularity (64 KiB), or CHUNK_DEFERRED_POOL_KB KiB.
      * @details Read once. The knob is for measuring: the pools are per thread,
      *          per element type and per op/ctx variant, and op slabs are never
      *          returned, so the slab size trades allocator traffic against
@@ -414,7 +414,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
             // Slab size in BYTES -- what TCSlabPool::init's second parameter is.
             // It used to be given an OBJECT count (granularity / sizeof(T)):
             // 48-80 B ops and contexts got 32-64 KiB slabs instead of the
-            // 2 MiB granularity, and an object above ~2 KiB would have got a
+            // granularity of the time (2 MiB), and an object above ~2 KiB would have got a
             // slab smaller than itself. Never fewer than 64 objects per slab.
             const uintptr_t slab_request =
                 std::max<uintptr_t>(deferred_pool_slab_granularity(), uintptr_t{64} * element_size);
