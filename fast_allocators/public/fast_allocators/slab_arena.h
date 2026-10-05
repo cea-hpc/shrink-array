@@ -44,6 +44,12 @@
 #include <vector>        // std::vector
 #include <mutex>         // std::mutex, std::scoped_lock
 #include <atomic>        // std::atomic, std::memory_order_relaxed
+#include <charconv>      // std::from_chars (CHUNK_RECLAIM_THREADS)
+#include <chrono>        // the sweep timer
+#include <cstring>       // std::strlen
+#ifdef _OPENMP
+    #include <omp.h> // omp_in_parallel, omp_get_max_threads (parallel sweep)
+#endif
 #include <unordered_map> // std::unordered_map
 #include <unordered_set> // std::unordered_set
 
@@ -76,6 +82,18 @@ inline std::atomic<std::size_t>& reclaim_bytes() noexcept
 ///        ratio is what the coalescing buys: each syscall is one TLB shootdown
 ///        to every CPU the process runs on.
 inline std::atomic<std::size_t>& reclaim_syscalls() noexcept
+{
+    static std::atomic<std::size_t> counter{0};
+    return counter;
+}
+/// @brief Wall time spent in EmptySlabSweep::flush() (sort, flags, madvise), ns.
+inline std::atomic<std::size_t>& reclaim_sweep_ns() noexcept
+{
+    static std::atomic<std::size_t> counter{0};
+    return counter;
+}
+/// @brief Number of non-empty EmptySlabSweep::flush() calls.
+inline std::atomic<std::size_t>& reclaim_sweeps() noexcept
 {
     static std::atomic<std::size_t> counter{0};
     return counter;
@@ -212,6 +230,52 @@ inline std::atomic<std::size_t>& freepath_alloc_keyed() noexcept
  */
 namespace detail
 {
+/// @brief A non-negative integer from the environment, read once by the
+///        caller's static; @p fallback when unset, empty or malformed (warned).
+inline std::size_t reclaim_env_number(const char* name, std::size_t fallback) noexcept
+{
+    const char* env = std::getenv(name);
+    if (env == nullptr || env[0] == '\0')
+    {
+        return fallback;
+    }
+    std::size_t v   = 0;
+    const char* end = env + std::strlen(env);
+    const auto  res = std::from_chars(env, end, v);
+    if (res.ec != std::errc{} || res.ptr != end)
+    {
+        std::fprintf(stderr, "[env] %s=\"%s\" is not a valid value: ignored, %zu kept\n", name, env, fallback);
+        return fallback;
+    }
+    return v;
+}
+
+/// @brief CHUNK_RECLAIM_COALESCE (default 1): 0 issues one madvise per slab,
+///        the pre-coalescing behaviour, for an A/B in the same binary.
+inline bool reclaim_coalesce() noexcept
+{
+    static const bool on = reclaim_env_number("CHUNK_RECLAIM_COALESCE", 1) != 0;
+    return on;
+}
+
+/// @brief CHUNK_RECLAIM_THREADS (default 1 = serial): threads issuing the
+///        sweep's madvise calls; 0 = omp_get_max_threads().
+inline int reclaim_sweep_threads() noexcept
+{
+    static const int n = []
+    {
+        const std::size_t v = reclaim_env_number("CHUNK_RECLAIM_THREADS", 1);
+#ifdef _OPENMP
+        if (v == 0)
+        {
+            return omp_get_max_threads();
+        }
+#endif
+        return v == 0 ? 1 : static_cast<int>(std::min<std::size_t>(v, 4096));
+    }();
+    return n;
+}
+
 /// @brief The system page size, read once.
 inline std::size_t reclaim_page_size() noexcept
 {
@@ -358,6 +422,14 @@ class EmptySlabSweep
     /// @brief Advise every collected slab away, one madvise() per run -- or
     ///        none of them if the sweep holds fewer distinct slabs than
     ///        CHUNK_RECLAIM_MIN_SLABS.
+    /// @details Serial part: sort, drop duplicates, floor, checks, runs
+    ///          (merging adjacent slabs unless CHUNK_RECLAIM_COALESCE=0), every
+    ///          backptr_dropped flag and the counters. Then the madvise calls,
+    ///          from CHUNK_RECLAIM_THREADS threads (serial by default). Every
+    ///          flag is set before the first madvise, which is what the
+    ///          flag-before-madvise rule asks; the syscalls touch disjoint
+    ///          ranges and are thread-safe. The whole call is timed
+    ///          (reclaim_sweep_ns / reclaim_sweeps).
     /// @return Number of slabs advised.
     std::size_t flush() noexcept
     {
@@ -365,6 +437,23 @@ class EmptySlabSweep
         {
             return 0;
         }
+        // Whatever path this flush leaves by, it is timed and counted.
+        struct SweepTimer
+        {
+            std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+            SweepTimer()                             = default;
+            SweepTimer(const SweepTimer&)            = delete;
+            SweepTimer& operator=(const SweepTimer&) = delete;
+            ~SweepTimer()
+            {
+                const auto dt = std::chrono::steady_clock::now() - start;
+                reclaim_sweep_ns().fetch_add(
+                    static_cast<std::size_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(dt).count()),
+                    std::memory_order_relaxed);
+                reclaim_sweeps().fetch_add(1, std::memory_order_relaxed);
+            }
+        } const timer;
+
         std::sort(items_.begin(), items_.end(),
                   [](const Item& a, const Item& b) { return std::less<Slab*>{}(a.slab, b.slab); });
         items_.erase(std::unique(items_.begin(), items_.end(),
@@ -386,14 +475,18 @@ class EmptySlabSweep
                      items_.end());
         std::sort(items_.begin(), items_.end(), [](const Item& a, const Item& b) { return a.begin < b.begin; });
 
-        std::size_t slabs = 0;
+        const bool  coalesce     = detail::reclaim_coalesce();
+        std::size_t bytes        = 0;
+        std::size_t inline_calls = 0; // runs advised at once because runs_ could not grow
+        runs_.clear();
         std::size_t first = 0;
         while (first < items_.size())
         {
             // Extend the run while the next slab starts exactly where this one's
             // advisable bytes end.
             std::size_t last = first;
-            while (last + 1 < items_.size() && items_[last].begin + items_[last].len == items_[last + 1].begin)
+            while (coalesce && last + 1 < items_.size() &&
+                   items_[last].begin + items_[last].len == items_[last + 1].begin)
             {
                 ++last;
             }
@@ -405,15 +498,27 @@ class EmptySlabSweep
             {
                 items_[i].slab->backptr_dropped = true;
             }
-            ::madvise(reinterpret_cast<void*>(begin), end - begin, MADV_DONTNEED);
-            const std::size_t n = last - first + 1;
-            reclaim_calls().fetch_add(n, std::memory_order_relaxed);
-            reclaim_syscalls().fetch_add(1, std::memory_order_relaxed);
-            reclaim_bytes().fetch_add(end - begin, std::memory_order_relaxed);
-            slabs += n;
+            try
+            {
+                runs_.push_back(Run{begin, end - begin});
+            }
+            catch (...)
+            {
+                ::madvise(reinterpret_cast<void*>(begin), end - begin, MADV_DONTNEED); // no room: now
+                ++inline_calls;
+            }
+            bytes += end - begin;
             first = last + 1;
         }
+        const std::size_t slabs = items_.size();
+        reclaim_calls().fetch_add(slabs, std::memory_order_relaxed);
+        reclaim_syscalls().fetch_add(runs_.size() + inline_calls, std::memory_order_relaxed);
+        reclaim_bytes().fetch_add(bytes, std::memory_order_relaxed);
+
+        advise_runs();
+
         items_.clear();
+        runs_.clear();
         return slabs;
     }
 
@@ -430,7 +535,39 @@ class EmptySlabSweep
         std::size_t    len;   ///< advisable bytes (page multiple), set by flush()
         Slab*          slab;  ///< to set backptr_dropped
     };
+    struct Run
+    {
+        std::uintptr_t begin; ///< first byte of the run
+        std::size_t    len;   ///< bytes, page multiple
+    };
+
+    /// @brief madvise every run of runs_, serially or from an OpenMP team.
+    void advise_runs() noexcept
+    {
+        const auto n_runs = static_cast<long>(runs_.size());
+#ifdef _OPENMP
+        const int nthr = detail::reclaim_sweep_threads();
+        // No nested team (the sweep is meant for a quiescent, serial point),
+        // and not for a handful of runs: a team costs more than it saves.
+        if (nthr > 1 && omp_in_parallel() == 0 && n_runs >= 4L * nthr)
+        {
+            const Run* runs = runs_.data();
+    #pragma omp parallel for schedule(dynamic, 16) num_threads(nthr)
+            for (long i = 0; i < n_runs; ++i)
+            {
+                ::madvise(reinterpret_cast<void*>(runs[i].begin), runs[i].len, MADV_DONTNEED);
+            }
+            return;
+        }
+#endif
+        for (long i = 0; i < n_runs; ++i)
+        {
+            ::madvise(reinterpret_cast<void*>(runs_[i].begin), runs_[i].len, MADV_DONTNEED);
+        }
+    }
+
     std::vector<Item> items_;
+    std::vector<Run>  runs_;
 };
 
 
@@ -825,11 +962,15 @@ inline void report_all_arenas(const char* when) noexcept
     std::fprintf(
         stderr,
         "[RECLAIM] %-16s madvise_calls=%zu  slabs=%zu  advised=%zu MiB  "
-        "(emptied-slab calls=%zu, skipped: still-live=%zu unaligned=%zu too-small=%zu)\n",
+        "(emptied-slab calls=%zu, skipped: still-live=%zu unaligned=%zu too-small=%zu)  "
+        "sweep=%.1f ms in %zu flushes (coalesce=%d threads=%d)\n",
         when, reclaim_syscalls().load(std::memory_order_relaxed), reclaim_calls().load(std::memory_order_relaxed),
         reclaim_bytes().load(std::memory_order_relaxed) >> 20U,
         reclaim_entered().load(std::memory_order_relaxed), reclaim_skip_live().load(std::memory_order_relaxed),
-        reclaim_skip_unaligned().load(std::memory_order_relaxed), reclaim_skip_small().load(std::memory_order_relaxed));
+        reclaim_skip_unaligned().load(std::memory_order_relaxed), reclaim_skip_small().load(std::memory_order_relaxed),
+        static_cast<double>(reclaim_sweep_ns().load(std::memory_order_relaxed)) * 1e-6,
+        reclaim_sweeps().load(std::memory_order_relaxed), detail::reclaim_coalesce() ? 1 : 0,
+        detail::reclaim_sweep_threads());
     std::fprintf(stderr, "[FREEPATH] %-15s freed=%zu  parked_own=%zu  parked_foreign=%zu  kept_no_migrate=%zu\n", when,
                  freepath_freed().load(std::memory_order_relaxed), freepath_park_own().load(std::memory_order_relaxed),
                  freepath_park_foreign().load(std::memory_order_relaxed),

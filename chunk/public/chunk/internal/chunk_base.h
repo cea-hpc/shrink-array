@@ -1234,6 +1234,13 @@ class ChunkBase : public CRTPSupport<Derived>,
             }
             return packed;
         }
+        // Coinciding constants (frequent in 2A: second_v is values[0], and a
+        // sparse chunk often starts at first_value): one compare per element,
+        // not two identical ones. Same verdict -- `first` only -- as below.
+        if (first_v == second_v)
+        {
+            return ConstantScan{is_constant_to(first_v, count), false};
+        }
         ConstantScan scan{true, true};
         unsigned int i = 0;
         while (i < count)
