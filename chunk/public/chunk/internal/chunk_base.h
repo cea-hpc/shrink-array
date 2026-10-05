@@ -512,9 +512,9 @@ struct ChunkAllocPolicy<T, Derived, true>
         // showed up, from here, on nvhpc.
         //
         // Both geometries go through the same call now:
-        // get_list_block_free_thr_size() is bounds-checked at the source (see
-        // ManagerChunk), so a slot that was never sized answers 0 instead of
-        // indexing out of bounds. The earlier version guarded only the static
+        // find_list_block_free_thr() is bounds-checked at the source (see
+        // ManagerChunk), so a slot that was never sized answers nullptr instead
+        // of indexing out of bounds. The earlier version guarded only the static
         // case, on the assumption that in dynamic builds the by-size map always
         // owns the list -- but a geometry born from a re-chunk is never
         // registered, so the lookup falls back to the very legacy store the
@@ -529,11 +529,13 @@ struct ChunkAllocPolicy<T, Derived, true>
         // Churn measurement (churn_counters.h): one materialisation of the
         // array this key names -- rank-local, dynamic builds only.
         churn::note_materialisation<T>(thr_rank, alloc_key);
-        if (const auto nb_free = static_cast<int>(self.get_manager().get_list_block_free_thr_size(thr_rank, alloc_key));
-            nb_free > 0)
+        // One resolution of the list serves both the emptiness test and the pop
+        // (formerly get_list_block_free_thr_size() then get_list_block_free_thr(),
+        // i.e. the same std::map walked twice on every materialisation).
+        if (auto* const free_list = self.get_manager().find_list_block_free_thr(thr_rank, alloc_key);
+            free_list != nullptr && !free_list->empty())
         {
-            // Safe now: nb_free > 0 implies the slot for thr_rank exists.
-            auto& ll_block_free_thr = self.get_manager().get_list_block_free_thr(thr_rank, alloc_key);
+            auto& ll_block_free_thr = *free_list;
             if constexpr (chunk_config::stats)
             {
                 increm_chunk_list<Derived>();
