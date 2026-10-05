@@ -1583,8 +1583,9 @@ class TCAllocatorEB
  * @note This is what StaticConstArray's size ladder is built from -- one
  *       instance per small block size (4, 8, 24, ... bytes).
  *
- * @warning Unlike the other two families, the constructor takes a slab straight
- *          away rather than waiting for the first alloc().
+ * @note Like ::TCTypeCAllocator, the constructor takes no slab: the first
+ *       alloc() makes one. Seeding all of StaticConstArray's buckets eagerly
+ *       reserved ~104 MiB of address space before any of them was needed.
  */
 template <unsigned int ElementSize, unsigned int BlockSize, typename T = int>
 class TCTypeAllocatorEBC
@@ -1593,12 +1594,9 @@ class TCTypeAllocatorEBC
     /// @brief The slab type this instance owns.
     using TCAllocatorEBT = TCAllocatorEB<ElementSize, BlockSize>;
 
-    /// @brief Creates the first slab immediately; there is no init() to call.
+    /// @brief No slab yet; the first alloc() creates one. No init() to call.
     TCTypeAllocatorEBC() : block_full(nullptr), block(nullptr)
     {
-        auto* slab = new TCAllocatorEBT;
-
-        insert(block, slab);
     }
 
     /// @brief Deletes every slab, the reserve included.
@@ -1781,7 +1779,7 @@ class TCTypeAllocatorEBC
     }
 
     TCAllocatorEBT* block_full; ///< Slabs with no room left.
-    TCAllocatorEBT* block;      ///< Slabs with room. Never null: the ctor seeds one.
+    TCAllocatorEBT* block;      ///< Slabs with room. Null until the first alloc(), and again whenever the last one fills.
 
     int                                             nb_block_empty{0}; ///< Reserve occupancy.
     std::array<TCAllocatorEBT*, nb_max_block_empty> block_empty{};     ///< The reserve, inline.
