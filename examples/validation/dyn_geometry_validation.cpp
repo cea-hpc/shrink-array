@@ -51,6 +51,7 @@
 
 using namespace shrink_array;
 
+#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::dyn_geometry_validation
@@ -164,7 +165,7 @@ static int round_trip_at(unsigned int csz, long N)
     return 0;
 }
 
-int run(int argc, char** argv)
+static int run_body(int argc, char** argv)
 {
     const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], 200000L, "N") : 200000L;
 
@@ -185,6 +186,18 @@ int run(int argc, char** argv)
     printf("\n[%s] %s\n", variant_name(),
            fails == 0 ? "=== ALL GEOMETRIES ROUND-TRIP ===" : "=== GEOMETRY FAILURES ===");
     return fails;
+}
+
+int run(int argc, char** argv)
+{
+    // The arrays live in run_body() and are destroyed when it returns, which
+    // parks their buffers in the reuse lists; release_chunk_pools() frees them.
+    // Without it they stay parked until exit, and LeakSanitizer reports every
+    // one in the std-alloc builds (each buffer is a real malloc there).
+    const int rc = run_body(argc, argv);
+    release_chunk_pools();
+    destroy_block_chunk();
+    return rc;
 }
 
 } // namespace validation::dyn_geometry_validation
