@@ -760,8 +760,9 @@ void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
     this->invalidate_proxies();
     const auto& sh_inf = Proxy2A<T>::share_info_array;
 
-    const int num_tab      = sh_inf.get_num_tab(this->registry_key());
-    const int old_nb_chunk = nb_chunk;
+    const int      num_tab      = sh_inf.get_num_tab(this->registry_key());
+    const int      old_nb_chunk = nb_chunk;
+    const ind_type old_size     = this->m_size; // the stale-tail reset at the end
 
     Base2::resize_common(newsz);
     if (nb_chunk > 0)
@@ -794,6 +795,24 @@ void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
         Proxy2A<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab, i, 0);
         Proxy2A<T>::tab_type_cst_val[num_tab][i] = is_val1;
         Proxy2A<T>::BaseSpec::set(num_tab, i, T{}); // T{}: the struct elements have no conversion from 0
+    }
+
+    // std::vector semantics for the regrown range [old_size, newsz): it reads
+    // T{}. The chunks added above are fresh, but the one holding the OLD end
+    // keeps its tail -- after a shrink, the values written there before came
+    // back on the next growth (deferred_path_validation, resize-grow-again).
+    // Reset that tail: at most one chunk, through the normal write path, after
+    // the reallocations. `omp for`, the convention of the resize loops.
+    if (newsz > old_size)
+    {
+        const auto     csz       = static_cast<ind_type>(this->chunk_size());
+        const ind_type old_cover = ((old_size + csz - 1) / csz) * csz;
+        const ind_type stale_end = newsz < old_cover ? newsz : old_cover;
+#pragma omp for
+        for (ind_type i = old_size; i < stale_end; ++i)
+        {
+            (*this)[i] = T{};
+        }
     }
     //     else
     //     {

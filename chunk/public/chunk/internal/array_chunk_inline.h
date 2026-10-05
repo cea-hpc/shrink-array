@@ -485,6 +485,8 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
 
     const int num_tab = sh_inf.get_num_tab(this->registry_key());
 
+    const ind_type old_size = m_size; // the stale-tail reset at the end
+
     m_size = newsz;
 
     const int old_nb_chunk = nb_chunk;
@@ -519,6 +521,24 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
         for (int i = old_nb_chunk; i < nb_chunk; ++i)
         {
             chunk_list[i].init_values_cst_val();
+        }
+    }
+
+    // std::vector semantics for the regrown range [old_size, newsz): it reads
+    // T{}. The chunks added above are fresh, but the one holding the OLD end
+    // keeps its tail -- after a shrink, the values written there before came
+    // back on the next growth (deferred_path_validation, resize-grow-again).
+    // Reset that tail: at most one chunk, through the normal write path, after
+    // the reallocations. `omp for` like the init loop above.
+    if (newsz > old_size)
+    {
+        const auto     csz       = static_cast<ind_type>(this->chunk_size());
+        const ind_type old_cover = ((old_size + csz - 1) / csz) * csz;
+        const ind_type stale_end = newsz < old_cover ? newsz : old_cover;
+#pragma omp for
+        for (ind_type i = old_size; i < stale_end; ++i)
+        {
+            (*this)[i] = T{};
         }
     }
 }
