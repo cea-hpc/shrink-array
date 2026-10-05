@@ -108,33 +108,6 @@ void ArrayChunkBase<Derived>::set_value(ind_type i, in_t<T> v)
 }
 
 template <typename Derived>
-ArrayChunkBase<Derived>::T ArrayChunkBase<Derived>::operator()(ind_type i) const noexcept
-{
-    const int   num_chunk = chunk_index_of(i);
-    const int   num       = offset_in_chunk(i);
-    const auto& chunk_t   = chunk_list[num_chunk];
-
-    sync_chunk(chunk_t, num_chunk, num);
-
-    // 2. Direct read from chunk
-    return chunk_t.read_value(num);
-}
-
-template <typename Derived>
-ArrayChunkBase<Derived>::T& ArrayChunkBase<Derived>::operator()(ind_type i) noexcept
-{
-    const int num_chunk = chunk_index_of(i);
-    const int num       = offset_in_chunk(i);
-    auto&     chunk_t   = chunk_list[num_chunk];
-
-    // 2. Concurrency check
-    sync_chunk(chunk_t, num_chunk, num);
-
-    // 3. Return reference to physical storage
-    return chunk_t(num);
-}
-
-template <typename Derived>
 void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept
 {
     // Same rule as rechunk_to() (this is also its path on an empty array):
