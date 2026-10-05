@@ -63,6 +63,7 @@
 #include <cassert> // TypeAllocator::alloc: the size its free will route by
 #include <cstddef> // std::size_t
 #include <tuple>   // std::tuple, std::get, std::apply (the ladder)
+#include <type_traits> // std::is_same_v (Allocator8 alias check)
 #include <utility> // std::index_sequence (with_bucket)
 
 #include "fast_allocators/internal/svalloc.h"   // fast_alloc::alignment
@@ -349,13 +350,28 @@ class StaticConstArray
     static InfoFreeElt tab_info_free_elt_align; ///< Batches for the aligned one.
 };
 
-/// @brief Standalone bucket for 8-byte blocks, the most common size.
-/// @details Not part of the ladder: ::FixedSizeAllocator reaches it directly,
-///          skipping the size comparisons the ladder walk would cost.
-extern TCTypeAllocatorEBC<8, SIZE_BLOCK> Allocator8;
+static_assert(std::is_same_v<std::tuple_element_t<1, StaticConstArray::Ladder>, TCTypeAllocatorEBC<8, SIZE_BLOCK>>,
+              "Allocator8 aliases the ladder's bucket 1: it must stay the 8-byte one");
 
-/// @brief Standalone bucket for 24-byte blocks. @see Allocator8
-extern TCTypeAllocatorEBC<24, SIZE_BLOCK> Allocator24;
+/// @brief The 8-byte bucket, the most common size, by name.
+/// @details IS the ladder's bucket 1 (sizes 5..8), not a pool of its own:
+///          ::FixedSizeAllocator reaches it directly, skipping the size
+///          comparisons of the ladder walk. It used to be a separate global --
+///          a second 8-byte pool priming a second 1 MiB slab, and an ordinary
+///          static destroyed at exit in an unspecified order although it backs
+///          the same TypeAllocator allocations the ladder is kept immortal for.
+///          Immortal now, with the ladder. Same lock either way
+///          (critical(fast_alloc_ladder)).
+/// @note Inline, defined after StaticConstArray in this header, which every
+///       user includes: partially-ordered initialisation sets up `buckets`
+///       before this reference binds to it.
+inline TCTypeAllocatorEBC<8, SIZE_BLOCK>& Allocator8 = std::get<1>(StaticConstArray::buckets);
+
+/// @brief Standalone bucket for 24-byte blocks (the ladder goes 16 -> 32).
+/// @details IMMORTAL, like the ladder and for the same reason: it backs
+///          TypeAllocator's 24-byte allocations, which may still be released
+///          during static teardown. Leaked on purpose. @see Allocator8
+inline TCTypeAllocatorEBC<24, SIZE_BLOCK>& Allocator24 = *(new TCTypeAllocatorEBC<24, SIZE_BLOCK>());
 
 /**
  * @brief Ladder front end that falls back to malloc, by size. PUBLIC API.
