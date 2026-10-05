@@ -1534,11 +1534,13 @@ class TCAllocatorEB
             const uintptr_t lng = reinterpret_cast<uintptr_t>(data) - reinterpret_cast<uintptr_t>(mapping);
             if (lng != 0 && munmap(mapping, lng) == -1)
             {
-                std::cerr << "munmap (head trim) failed: " << std::strerror(errno) << " -- surplus left mapped\n";
+                const int err = errno;
+                std::cerr << "munmap (head trim) failed: " << std::strerror(err) << " -- surplus left mapped\n";
             }
             if (munmap(data + BlockSize, (2 * BlockSize) - (lng + BlockSize)) == -1)
             {
-                std::cerr << "munmap (tail trim) failed: " << std::strerror(errno) << " -- surplus left mapped\n";
+                const int err = errno;
+                std::cerr << "munmap (tail trim) failed: " << std::strerror(err) << " -- surplus left mapped\n";
             }
         }
         else
