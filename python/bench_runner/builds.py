@@ -1,4 +1,5 @@
 """Build directories, binaries and oracle locations: what to run, and where."""
+import hashlib
 import os
 import platform as _platform
 from pathlib import Path
@@ -46,6 +47,37 @@ def int64_variant(var):
 # Written by a config's vector baseline AFTER a complete oracle generation:
 # data_tab* files without it are an interrupted generation.
 ORACLE_MARKER = "data_tab_ORACLE_COMPLETE.marker"
+
+
+# The marker also records which vector binary wrote the oracle, as a line
+# "<ORACLE_EXE_KEY><sha256>". A config rebuilt with different codegen (other
+# flags, other compiler, a fix in the vector path) must not keep comparing
+# against the old reference: prepare_oracles regenerates it when the
+# fingerprint differs or is missing.
+ORACLE_EXE_KEY = "exe-sha256: "
+
+
+def exe_fingerprint(path):
+    """SHA-256 of the executable's content: a relink that changes nothing
+    keeps the oracle, a codegen change does not."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def oracle_exe_fingerprint(marker_path):
+    """The fingerprint recorded in an oracle marker, or None (no marker, or
+    one written before fingerprints were recorded)."""
+    try:
+        with open(marker_path) as f:
+            for line in f:
+                if line.startswith(ORACLE_EXE_KEY):
+                    return line[len(ORACLE_EXE_KEY):].strip()
+    except OSError:
+        pass
+    return None
 
 
 def oracle_complete(output_dir, config):

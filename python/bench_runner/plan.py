@@ -5,8 +5,9 @@ import sys
 from pathlib import Path
 
 from .builds import (
-    CURRENT_MACHINE, ORACLE_MARKER, config_dir_present, is_compression_only_config,
-    is_omp_config, oracle_dir, resolve_exe, short_config_label, skip_variant_on_config,
+    CURRENT_MACHINE, ORACLE_MARKER, config_dir_present, exe_fingerprint, is_compression_only_config,
+    is_omp_config, oracle_dir, oracle_exe_fingerprint, resolve_exe, short_config_label,
+    skip_variant_on_config,
 )
 from .phases.fuzz import FUZZ_THREADS
 from .phases.stl import stl_representative_exes
@@ -345,6 +346,21 @@ def prepare_oracles(args, check_exes, baseline_check_exe_of):
             n = _purge_oracle(d)
             print(f"ℹ️  --regen-ref: removed {n} file(s) in {d} → regenerating.")
             present = False
+        # Stale oracle: the config's vector binary is not the one that wrote
+        # it (rebuilt with other flags, another compiler...). Without this the
+        # check compared every variant against a reference the current
+        # baseline no longer produces. A marker with no fingerprint predates
+        # the check: regenerated once.
+        if present and cfg in baseline_check_exe_of:
+            recorded = oracle_exe_fingerprint(marker)
+            current  = exe_fingerprint(baseline_check_exe_of[cfg])
+            if recorded != current:
+                n = _purge_oracle(d)
+                why = ("no binary fingerprint in its marker (older run)" if recorded is None
+                       else "the vector binary changed since it was generated")
+                print(f"ℹ️  Oracle for {short_config_label(cfg)}: {why} → "
+                      f"removed {n} file(s), regenerating.")
+                present = False
         if present:
             print(f"ℹ️  Oracle for {short_config_label(cfg)} present in {d} → "
                   f"'{args.baseline_variant}' run SKIPPED.")
