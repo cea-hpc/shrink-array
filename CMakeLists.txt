@@ -457,6 +457,14 @@ else()
 endif()
 
 # ── include-what-you-use (optional) ──────────────────────────────────────────
+# Ninja job pool for the unity-built executables (shrink_bench, validation):
+# each of their translation units peaks at ~3 GB under GCC, so two at once can
+# exhaust a 16 GB machine. Empty (default): they share CMAKE_JOB_POOL_COMPILE
+# like every other compile. On a small machine, declare a pool of depth 1 and
+# name it here, e.g.
+#   -DCMAKE_JOB_POOLS="compile=2;link=1;heavy=1" -DCHUNK_HEAVY_JOB_POOL=heavy
+set(CHUNK_HEAVY_JOB_POOL "" CACHE STRING "Ninja job pool for the unity-built shrink_bench and validation executables (empty: the default compile pool)")
+
 # Opt-in header hygiene. -DENABLE_IWYU=ON runs include-what-you-use alongside
 # each C++ compile, using the project mapping file iwyu.imp (routes *_inline.h
 # implementations to their public facade, ankerl internals to
