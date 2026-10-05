@@ -28,6 +28,10 @@
 //             (each is filled with its own pattern and checked after all the
 //             others were written), then all are freed and taken again;
 //   tab       alloc_tab's result is aligned to fast_alloc::alignment;
+//   huge      (opt-in, BLK_HUGE=1) 2 GiB - 64, 2 GiB + 64 and 4 GiB + 64
+//             through both pairs: the size_t -> int / unsigned truncations
+//             (first and last 4 KiB written and read back; up to ~4 GiB
+//             resident, one block at a time);
 //   parallel  (OpenMP builds) the same from every thread at once -- the
 //             ladder's critical sections and the per-thread free batches --
 //             then clearInfoFreeElt() at the quiescent point after the region.
@@ -36,6 +40,7 @@
 
 #include <cstdint> // std::uintptr_t
 #include <cstdio>  // std::printf
+#include <cstdlib> // std::getenv (BLK_HUGE)
 #include <vector>  // std::vector
 
 #include "fast_allocators/internal/static_const_array.h" // BlkAllocator, StaticConstArray
@@ -118,6 +123,48 @@ void check_sizes()
     expect(ok_blk, "alloc_block/free_block: 1 B to 1 MiB, on, between and past the buckets");
     expect(ok_tab, "alloc_tab/free_tab: same sizes, size read back from the header");
     expect(aligned, "alloc_tab: aligned to fast_alloc::alignment");
+}
+
+/// @brief Sizes past INT_MAX and UINT_MAX, where the front end used to narrow
+///        before routing: free_block() sent [2 GiB, 4 GiB) to the ladder,
+///        alloc_block() served 4 GiB + 64 from the 64-byte bucket, alloc_tab()
+///        kept an int header. Opt-in (BLK_HUGE=1): it touches gigabytes.
+///        Before the fix this crashes rather than reporting FAIL.
+void check_huge()
+{
+    if (sizeof(std::size_t) < 8 || std::getenv("BLK_HUGE") == nullptr)
+    {
+        std::printf("  [skip] sizes past 2 GiB / 4 GiB (set BLK_HUGE=1)\n");
+        return;
+    }
+    constexpr std::size_t kGiB    = std::size_t{1} << 30;
+    constexpr std::size_t kWin    = 4096; // bytes checked at each end
+    const std::size_t     sizes[] = {2 * kGiB - 64, 2 * kGiB + 64, 4 * kGiB + 64};
+
+    const auto ends_ok = [](void* p, std::size_t n, std::size_t id)
+    {
+        auto* b = static_cast<unsigned char*>(p);
+        fill(b, kWin, id);
+        fill(b + n - kWin, kWin, id + 1);
+        return intact(b, kWin, id) && intact(b + n - kWin, kWin, id + 1);
+    };
+
+    bool ok_blk = true;
+    bool ok_tab = true;
+    for (std::size_t i = 0; i < std::size(sizes); ++i)
+    {
+        const std::size_t n = sizes[i];
+
+        void* p = BlkAllocator::alloc_block(n);
+        ok_blk  = ok_blk && p != nullptr && ends_ok(p, n, 10 * i);
+        BlkAllocator::free_block(p, n);
+
+        void* t = BlkAllocator::alloc_tab(n);
+        ok_tab  = ok_tab && t != nullptr && ends_ok(t, n, 10 * i + 5);
+        BlkAllocator::free_tab(t);
+    }
+    expect(ok_blk, "alloc_block/free_block: 2 GiB - 64, 2 GiB + 64, 4 GiB + 64");
+    expect(ok_tab, "alloc_tab/free_tab: same sizes, size_t header");
 }
 
 /// @brief Many live blocks at once: no two overlap; then reuse after free.
@@ -221,6 +268,7 @@ int main()
 {
     std::printf("=== blk_allocator_validation ===\n");
     check_sizes();
+    check_huge();
     check_distinct();
     check_parallel();
     check_inside_caller_critical();

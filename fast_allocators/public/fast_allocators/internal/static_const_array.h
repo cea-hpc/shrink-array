@@ -70,6 +70,7 @@
 
 #include "fast_allocators/internal/int_alloc.h"    // int_alloc, int_free
 #include "fast_allocators/internal/alloc_config.h" // constexpr mirror of STD_ALLOC
+#include "fast_allocators/internal/static_const_array_define.h" // MAX_CONST_BLOCK_SIZE (BlkAllocator routing)
 #include "fast_allocators/tc_allocator.h"          // TCTypeAllocatorEBC
 
 /**
@@ -365,8 +366,9 @@ extern TCTypeAllocatorEBC<24, SIZE_BLOCK> Allocator24;
  *
  *          Two pairs, never mixed: alloc_block()/free_block(size) when the
  *          caller knows the size at free time, alloc_tab()/free_tab() when it
- *          does not (a header of `fast_alloc::alignment` bytes keeps it, size <
- *          INT_MAX). Thread-safe: inside an OpenMP region the ladder takes its
+ *          does not (a header of `fast_alloc::alignment` bytes keeps it as a
+ *          size_t). Every size is compared with the ladder's ceiling in size_t,
+ *          before any narrowing to the ladder's int / unsigned int. Thread-safe: inside an OpenMP region the ladder takes its
  *          critical section and frees are batched per thread until
  *          StaticConstArray::clearInfoFreeElt() runs at a quiescent point.
  *
@@ -386,7 +388,10 @@ struct BlkAllocator : public StaticConstArray
         }
         else
         {
-            void* ptr = getBlockAlloc(size);
+            // Compared in size_t BEFORE narrowing: getBlockAlloc() takes an
+            // unsigned int, and 4 GiB + 64 used to reach it as 64 -- a 64-byte
+            // block for a 4 GiB request.
+            void* ptr = size <= MAX_CONST_BLOCK_SIZE ? getBlockAlloc(static_cast<unsigned int>(size)) : nullptr;
 
             // getBlockAlloc() returns null for a size past the largest bucket;
             // that is not a failure, it is "too big for the ladder".
@@ -418,7 +423,10 @@ struct BlkAllocator : public StaticConstArray
         {
             // freeBlock() returns false for a size the ladder does not serve --
             // it came from int_alloc(), so it goes back to int_free().
-            if (freeBlock(static_cast<int>(size), ptr))
+            // Same size_t test as alloc_block(): static_cast<int> alone made
+            // [2 GiB, 4 GiB) negative, hence "<= MAX_CONST_BLOCK_SIZE", and a
+            // malloc'd block went to the ladder at an out-of-range bucket.
+            if (size <= MAX_CONST_BLOCK_SIZE && freeBlock(static_cast<int>(size), ptr))
             {
                 return;
             }
@@ -435,14 +443,20 @@ struct BlkAllocator : public StaticConstArray
      */
     static void* alloc_tab(size_t size)
     {
-        int* ptr = (int*)getBlockAlloc(size + fast_alloc::alignment);
+        // size_t header: an int one silently wrapped past INT_MAX, and
+        // free_tab() then routed the block by a garbage size.
+        static_assert(fast_alloc::alignment >= sizeof(std::size_t), "alloc_tab: the header must hold a size_t");
+        const std::size_t total = size + fast_alloc::alignment;
+
+        auto* ptr = static_cast<std::size_t*>(
+            total <= MAX_CONST_BLOCK_SIZE ? getBlockAlloc(static_cast<unsigned int>(total)) : nullptr);
 
         if (!ptr)
         {
-            ptr = (int*)int_alloc_align(size + fast_alloc::alignment);
+            ptr = static_cast<std::size_t*>(int_alloc_align(total));
         }
 
-        ptr[0] = static_cast<int>(size);
+        ptr[0] = size;
 
         char* user_ptr = (char*)ptr;
 
@@ -459,11 +473,12 @@ struct BlkAllocator : public StaticConstArray
             return;
         }
 
-        int* m_ptr = (int*)((char*)user_ptr - fast_alloc::alignment);
+        auto* m_ptr = reinterpret_cast<std::size_t*>(static_cast<char*>(user_ptr) - fast_alloc::alignment);
 
-        const int size = m_ptr[0];
+        const std::size_t total = m_ptr[0] + fast_alloc::alignment;
 
-        if (!freeBlock(static_cast<int>(size + fast_alloc::alignment), m_ptr))
+        // Same routing as alloc_tab(), decided in size_t.
+        if (!(total <= MAX_CONST_BLOCK_SIZE && freeBlock(static_cast<int>(total), m_ptr)))
         {
             int_free_align(m_ptr);
         }
@@ -533,7 +548,8 @@ class FixedSizeAllocator : private StaticConstArray
                 return shortcut_alloc(Allocator24);
             }
 
-            void* ptr = getBlockAlloc(size);
+            // size_t test before narrowing, as BlkAllocator::alloc_block().
+            void* ptr = size <= MAX_CONST_BLOCK_SIZE ? getBlockAlloc(static_cast<unsigned int>(size)) : nullptr;
 
             if (!ptr)
             {
