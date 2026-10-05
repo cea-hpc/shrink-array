@@ -142,6 +142,22 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     ///        The variant's resize() materialises or seeds the new chunks.
     void resize_common(ind_type newsz)
     {
+        // Drain pending deferred ops on the CURRENT chunks BEFORE nb_chunk,
+        // chunk_list and the dirty bitset are grown below. Called here — while
+        // nb_chunk still holds the OLD count and chunk_list / chunk_dirty_bitset
+        // are still the OLD size — so is_chunk_dirty(j) and &chunk_list[j] stay
+        // in bounds. (Calling it after nb_chunk grew but before the reallocs
+        // read past the old bitset → heap-buffer-overflow.)
+        //
+        // And BEFORE the compression pass below, not after: a replayed write
+        // goes through mark_for_compression -> add_to_compression_list (the
+        // replay proxy is wired to the dedup flag), so it can queue a chunk
+        // again -- flag 1, &chunk_list[j] pushed. Flushed after the pass, that
+        // entry outlived it: chunk_list.resize() left it dangling, and
+        // resize_tab_is_int() cleared its flag, letting the same chunk be
+        // queued a second time.
+        derived().flush_pending_deferred_ops();
+
         // Compress the pending list BEFORE chunk_list is reallocated below.
         // vec_to_compress_potantially holds &chunk_list[j] pointers; a growth
         // resize reallocates the vector and would leave them dangling, so they
@@ -150,19 +166,15 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         // the write path) can also have queued chunks, so it must run here too —
         // otherwise the next perform_compression dereferences freed chunks
         // (SIGSEGV in fill_list_to_compress -> values_load).
+        // Last thing to touch the lists before the reallocs: this pass runs
+        // without a proxy, sequentially, and queues nothing, so every rank's
+        // list is empty and every dedup flag is 0 from here on -- the
+        // precondition of Proxy2A::resize_tab_is_int(num_tab, ...).
         if constexpr (chunk_config::use_fast_block_compression ||
                       (build_config::not_use_openmp && std::is_same_v<Derived, ArrayChunk2A<T, ind_type>>))
         {
             derived().make_block_compression();
         }
-
-        // Drain pending deferred ops on the CURRENT chunks BEFORE nb_chunk,
-        // chunk_list and the dirty bitset are grown below. Called here — while
-        // nb_chunk still holds the OLD count and chunk_list / chunk_dirty_bitset
-        // are still the OLD size — so is_chunk_dirty(j) and &chunk_list[j] stay
-        // in bounds. (Calling it after nb_chunk grew but before the reallocs
-        // read past the old bitset → heap-buffer-overflow.)
-        derived().flush_pending_deferred_ops();
 
         const int old_nb_chunk = nb_chunk;
         m_size                 = newsz;

@@ -199,11 +199,33 @@ void Proxy2A<T>::resize_tab_is_int(int nb_tab)
 // REALLOCATED outright, so every chunk's "already queued for compression" flag
 // is reset to 0, not just the new ones. That is only safe if no chunk of this
 // tab is queued at the time -- a chunk still sitting in a candidate list with a
-// cleared flag could be queued a second time.
+// cleared flag could be queued a second time (and its entry would point into
+// the chunk_list the caller just reallocated).
+// Guaranteed by ArrayChunk2Base::resize_common(), which flushes the deferred
+// ops (whose replay can queue chunks) THEN runs the compression pass that
+// empties every rank's list, before any realloc. Not merely by resize being a
+// sequential point: with the flush after the pass, the invariant did not hold.
+// Asserted below in check builds -- flag 1 <=> entry in a list.
 template <typename T>
 void Proxy2A<T>::resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk)
 {
     BaseSpec::resize(num_tab, nb_chunk_old, nb_chunk);
+    // Check builds: no chunk of this tab may still be queued -- see the
+    // comment above. A flag at 1 here means a candidate entry survives the
+    // realloc, and the zeroed flag would admit it into a list again.
+    if constexpr (build_config::any_check)
+    {
+        const auto& row = Base::tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)];
+        for (std::size_t j = 0; j < row.size(); ++j)
+        {
+            if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
+            {
+                INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
+                                 "flag row is reallocated ({} -> {} chunks)",
+                                 num_tab, j, nb_chunk_old, nb_chunk);
+            }
+        }
+    }
     // Value-initialised, every flag 0 (make_unique<T[]> value-initialised too:
     // the tail loop that followed it stored zeros over zeros).
     Base::tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)] =

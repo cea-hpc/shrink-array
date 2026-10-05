@@ -231,19 +231,31 @@ void Proxy<T>::execute_arithmetic_compound_operation(OP op, [[maybe_unused]] con
 // CompressionManager::flush_deferred() / flush_chunk_all_ranks(), which
 // wait_for_availability() reaches too. Both drains announce the flush
 // (Policy::announce_flush()) and then wait out the in-flight hard
-// compressors; every compressor that steals a chunk's buffer goes through
-// CompressionManager::start(), which refuses while a flush is announced.
-// Hence: NO COMPRESSOR CAN CHANGE `values` DURING A REPLAY, and these bodies
-// load the values pointer once and store through it, with no retry.
+// compressors. The invariant these bodies rest on: NO COMPRESSOR CAN CHANGE
+// `values` DURING A REPLAY. So they load the values pointer once and store
+// through it, with no retry. Two kinds of compressor keep it:
+//
+//   - the block passes (make_block_compression) go through
+//     CompressionManager::start(), which refuses while a flush is announced;
+//   - two v1 compressors bypass start() and call compress() directly:
+//     Chunk::compress_sweep_rank (the phase-end sweep, its own parallel
+//     region) and RechunkHooks::rechunk_drop_candidates (right after the
+//     re-chunk's own flush, from serial code). They are safe because they run
+//     where no drain can -- outside the writers' parallel region, after the
+//     flush -- not because of start(). check_no_flush_outside_start()
+//     (block_pass_precheck.h) trips in check builds if one is ever reached
+//     while a flush is in progress.
+//
+// (The re-chunk's fold, a direct compress() for Chunk2 / Chunk2A, has no v1
+// branch: array_chunk_rechunk_inline.h.)
 //
 // Proxy2A's twins (proxy2A_inline.h) carry a pre-/post-store retry loop
-// instead; v1 does not need one as long as the hypothesis holds. It breaks if
-// a v1 chunk is ever compressed outside start() (a direct compress(), as the
-// re-chunk folds do for Chunk2 / Chunk2A) or an `_async` body is called
-// outside a drain. A store would then land in a released buffer and the write
-// would be lost in silence -- which is what check_replay_store() below turns
-// into an INVARIANT_FAILED in check builds (build_config::any_check; nothing
-// in release).
+// instead; v1 does not need one as long as the invariant holds. It breaks if
+// a new compressor bypasses start() from where a drain can run, or an
+// `_async` body is called outside a drain. A store would then land in a
+// released buffer and the write would be lost in silence -- which is what
+// check_replay_store() below turns into an INVARIANT_FAILED in check builds
+// (build_config::any_check; nothing in release).
 
 namespace internal
 {
