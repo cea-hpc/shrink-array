@@ -1,7 +1,10 @@
 """Launching one run: timeout, environment, NUMA prefix, logs, failure records."""
 import subprocess
 import os
+import queue
+import signal
 import sys
+import threading
 import time
 import json
 
@@ -185,6 +188,143 @@ def run_capture_stdout(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=N
     _note_run("capture", res[0], cmd, env_vars, timeout, extra_ld_library_path, cwd, None,
               stdout_text=res[3])
     return res
+
+
+def run_capture_stdout_streaming(cmd, env_vars, timeout, on_line=None, on_tick=None, tick_s=1.0,
+                                 extra_ld_library_path=None, cwd=None):
+    """run_capture_stdout() for a long child whose progress is in its stdout.
+
+    Each stdout line goes to on_line(line) as it arrives, and on_tick() runs
+    every tick_s seconds even when nothing arrives -- a test under a sanitizer
+    can run for many minutes before ctest prints its line. Same return shape
+    and same --rerun-failed record as run_capture_stdout() (the replay itself
+    goes through the non-streaming capture). The callbacks only display:
+    an exception in one is swallowed, never raised into the run.
+    """
+    res = _run_capture_stdout_streaming_impl(cmd, env_vars, timeout, on_line, on_tick, tick_s,
+                                             extra_ld_library_path, cwd)
+    _note_run("capture", res[0], cmd, env_vars, timeout, extra_ld_library_path, cwd, None,
+              stdout_text=res[3])
+    return res
+
+
+def _run_capture_stdout_streaming_impl(cmd, env_vars, timeout, on_line, on_tick, tick_s,
+                                       extra_ld_library_path, cwd):
+    """_run_capture_stdout_impl() with stdout read line by line (see
+    run_capture_stdout_streaming). stderr is drained by its own thread so a
+    child that fills the stderr pipe cannot block on it."""
+    start = time.perf_counter()
+    _bind = {"OMP_PROC_BIND": "close", "OMP_PLACES": "cores"}
+    child_env = {**_bind, **os.environ, **env_vars}
+    if extra_ld_library_path:
+        prev = child_env.get("LD_LIBRARY_PATH", "")
+        child_env["LD_LIBRARY_PATH"] = (
+            extra_ld_library_path + (":" + prev if prev else "")
+        )
+    cmd = _numa.interleave_prefix(child_env, state._NUMA_MODE) + list(cmd)  # --numa-interleave
+
+    def _safe(fn, *a):
+        if fn is None:
+            return
+        try:
+            fn(*a)
+        except Exception:
+            pass
+
+    try:
+        # Own process group: on a timeout the whole tree goes (ctest AND the
+        # tests it started). Killing ctest alone leaves the tests running and
+        # holding the stdout pipe open.
+        proc = subprocess.Popen(cmd, env=child_env, cwd=cwd, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, bufsize=1,
+                                start_new_session=True)
+    except FileNotFoundError as e:
+        return False, 0.0, -2, "", f"FileNotFoundError: {e}"
+    except OSError as e:
+        if getattr(e, "errno", None) == 26:  # ETXTBSY
+            return False, 0.0, -2, "", f"ETXTBSY (text file busy): {e}"
+        return False, 0.0, -1, "", f"{type(e).__name__}: {e}"
+
+    lines_q = queue.Queue()
+    err_parts = []
+
+    def _pump_out():
+        try:
+            for ln in proc.stdout:
+                lines_q.put(ln)
+        finally:
+            lines_q.put(None)  # EOF
+
+    def _pump_err():
+        try:
+            err_parts.append(proc.stderr.read())
+        except Exception:
+            pass
+
+    def _kill_tree():
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        proc.wait()
+
+    t_out = threading.Thread(target=_pump_out, daemon=True)
+    t_err = threading.Thread(target=_pump_err, daemon=True)
+    t_out.start()
+    t_err.start()
+
+    out_lines = []
+    timed_out = False
+    next_tick = time.perf_counter() + tick_s
+    try:
+        while True:
+            now = time.perf_counter()
+            if timeout is not None and now - start > timeout:
+                timed_out = True
+                break
+            try:
+                ln = lines_q.get(timeout=max(0.05, min(tick_s, next_tick - now)))
+            except queue.Empty:
+                ln = ""
+            if ln is None:
+                break
+            if ln:
+                out_lines.append(ln)
+                _safe(on_line, ln.rstrip("\n"))
+            if time.perf_counter() >= next_tick:
+                _safe(on_tick)
+                next_tick = time.perf_counter() + tick_s
+
+        if not timed_out:
+            try:
+                left = None if timeout is None else max(1.0, timeout - (time.perf_counter() - start))
+                proc.wait(timeout=left)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+    except KeyboardInterrupt:
+        # The group no longer gets the terminal's SIGINT: take it down here.
+        _kill_tree()
+        raise
+
+    if timed_out:
+        _kill_tree()
+        t_out.join(timeout=5)
+        while True:  # what the pump read before the kill
+            try:
+                ln = lines_q.get_nowait()
+            except queue.Empty:
+                break
+            if ln:
+                out_lines.append(ln)
+        return False, float(timeout), -9, "".join(out_lines), f"TIMEOUT after {timeout}s"
+
+    t_out.join(timeout=5)
+    t_err.join(timeout=5)
+    out_text = "".join(out_lines)
+    err_text = "".join(err_parts)
+    err_tail = "\n".join(err_text.splitlines()[-30:]) if err_text else ""
+    _write_full_log(cmd, child_env, proc.returncode, out_text, err_text)
+    return proc.returncode == 0, time.perf_counter() - start, proc.returncode, out_text, err_tail
 
 
 def _failed_cases_path(errors_log):
