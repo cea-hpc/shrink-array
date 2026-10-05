@@ -35,6 +35,7 @@ def run_ctest_phase(args, extra_ldpath, errors):
     print(cyan(bold(f"\n🧪 Validation harnesses — ctest -L {args.ctest_label}")))
 
     n_pass = n_total = 0
+    n_not_built = 0  # configs skipped: CHUNK_VALIDATION_BUILT=OFF
     for cfg in args.configs:
         bdir = resolve_build_dir(args.build_root, cfg)
         lead = f"{dim(_hms())} {short_config_label(cfg)[:CONFIG_W]:<{CONFIG_W}} | "
@@ -43,6 +44,7 @@ def run_ctest_phase(args, extra_ldpath, errors):
             continue
         if not validation_built(bdir):
             print(lead + dim("validation not built here (Debug, CHECK_OPTIM and sanitizer builds only) — skipped"))
+            n_not_built += 1
             continue
 
         cmd = ["ctest", "-L", args.ctest_label, "--output-on-failure",
@@ -90,7 +92,12 @@ def run_ctest_phase(args, extra_ldpath, errors):
             _append_error_now(args.errors_log, _entry)
         sys.stdout.flush()
 
-    if n_total == 0:
+    if n_total == 0 and args.configs and n_not_built == len(args.configs):
+        # Perf configurations only: nothing went wrong, the harnesses are
+        # not compiled there (-DCHUNK_BUILD_VALIDATION=ON forces them).
+        tag = dim("not built in any of these configurations (Debug, CHECK_OPTIM and "
+                  "sanitizer builds only; -DCHUNK_BUILD_VALIDATION=ON forces them)")
+    elif n_total == 0:
         tag = yellow("no validation test found")
     elif n_pass == n_total:
         tag = green(f"{n_pass}/{n_total} passed")
