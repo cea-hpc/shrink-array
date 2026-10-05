@@ -493,6 +493,15 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @pre The chunk is materialised and the caller holds the write path.
     void store_value(in_t<T> v) const noexcept
     {
+        store_value_at(values, v);
+    }
+
+    /// @brief store_value() through a pointer the caller has already loaded.
+    /// @param vals The chunk's values pointer, loaded inside the write session
+    ///        (after the materialisation, if there was one); saves a reload.
+    /// @pre As store_value().
+    void store_value_at(T* const vals, in_t<T> v) const noexcept
+    {
         // The chunk must not be COMMITTED to a compressor at this point: a
         // writer on a marked chunk is sent to the slow path by
         // must_defer_write(), and a compressor commits its claims only once
@@ -515,13 +524,12 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // element -- relaxed atomic store, see relaxed_element.h.
         if constexpr (internal::relaxed_element_stores_v<ChunkType, T>)
         {
-            T* const vals = values;
             internal::store_element_relaxed(vals + num, static_cast<T>(v));
         }
         else
         {
             // Bit: an atomic RMW of the word (element_access.h); values[num] otherwise.
-            elem_set(static_cast<T*>(values), static_cast<std::size_t>(num), static_cast<T>(v));
+            elem_set(vals, static_cast<std::size_t>(num), static_cast<T>(v));
         }
     }
 
@@ -540,7 +548,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // but not raw for a Chunk2A second constant, see internal::element_of(): the
         // compression decision downstream would otherwise be taken against 0
         // instead of the chunk's constant. One load of the pointer.
-        const T* const vals = values;
+        return read_values_at(values);
+    }
+    /// @brief read_values() through a pointer the caller has already loaded.
+    /// @param vals The chunk's values pointer, loaded inside the write session;
+    ///        saves the reload when the write path has one in hand.
+    [[nodiscard]] T read_values_at(const T* const vals) const noexcept
+    {
         // TEST KNOB (test_hooks.h), as in ChunkBase::element_at: widens
         // the load -> dereference window. Compiled out by default.
         test_hooks::maybe_read_delay();

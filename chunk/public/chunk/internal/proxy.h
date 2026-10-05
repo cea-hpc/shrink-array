@@ -262,6 +262,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     using Base::ptr_on_array;
     using Base::read_values;
     using Base::read_values_async;
+    using Base::read_values_at;
     using Base::tab_is_inside_chunk_list_to_compress;
 
     using ProxyBase<Derived, T, Chunk<T>>::ProxyBase;
@@ -336,6 +337,20 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         // race-check/slow-path fallback for non-zero-transition writes even
         // with it on. Call unconditionally.
         mark_for_compression_impl(old_value, new_value);
+    }
+
+    /**
+     * @brief mark_for_compression_if_needed_with_value() for a write body
+     *        that holds the chunk's values pointer: the race check reads
+     *        through @p vals instead of reloading it.
+     * @param vals Loaded inside the write session (or the replay), after the
+     *        materialisation if there was one -- no compressor can change it
+     *        until the session ends, and no writer either once it is not the
+     *        constant (see Proxy::assign_impl).
+     */
+    void mark_for_compression_if_needed_with_value(in_t<T> old_value, in_t<T> new_value, const T* vals) const
+    {
+        mark_for_compression_core(old_value, new_value, new_value, vals);
     }
 
     /**
@@ -419,6 +434,13 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      *                           raced this one).
      */
     void mark_for_compression_core(in_t<T> old_value, in_t<T> new_value, in_t<T> expected_in_memory) const;
+
+    /// @brief mark_for_compression_core() reading memory through @p vals, a
+    ///        values pointer the caller loaded inside the write session.
+    void mark_for_compression_core(in_t<T> old_value,
+                                   in_t<T> new_value,
+                                   in_t<T> expected_in_memory,
+                                   const T* vals) const;
 
     // Wrapper for post-write check: we expect the 'new_value' to be in memory
 
@@ -647,9 +669,13 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     /**
      * @brief Perform the actual write: install `v` at this proxy's index,
      *        materialising the chunk first if it is currently compressed.
+     * @param vals The chunk's values pointer, loaded by the caller inside the
+     *        write session; it decides whether to materialise.
      * @param v Value to write.
+     * @return The pointer the store went through: @p vals, or the one loaded
+     *         again after the materialisation.
      */
-    void perform_core_assignment(in_t<T> v) const noexcept;
+    T* perform_core_assignment(T* vals, in_t<T> v) const noexcept;
 
     /**
      * @brief Shared implementation behind operator+=/operator-=: materialise

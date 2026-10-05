@@ -57,7 +57,7 @@ const Proxy<T>& Proxy<T>::operator=(const Proxy<T>& from) noexcept
 }
 
 template <typename T>
-void Proxy<T>::perform_core_assignment(in_t<T> v) const noexcept
+T* Proxy<T>::perform_core_assignment(T* vals, in_t<T> v) const noexcept
 {
     if constexpr (chunk_config::use_compression_with_counter)
     {
@@ -74,7 +74,7 @@ void Proxy<T>::perform_core_assignment(in_t<T> v) const noexcept
                 if (chunk.is_full_zero(this->chunk_size()))
                 {
                     this->manage_full_zero();
-                    return;
+                    return vals;
                 }
             }
         }
@@ -90,7 +90,7 @@ void Proxy<T>::perform_core_assignment(in_t<T> v) const noexcept
         increm_chunk_write<ChunkType>(v);
     }
 
-    const bool need_alloc = is_cst_val();
+    const bool need_alloc = this->is_cst_val1(vals);
 
     if (need_alloc)
     {
@@ -131,14 +131,20 @@ void Proxy<T>::perform_core_assignment(in_t<T> v) const noexcept
         create_value(); // Perform heap allocation
 
         state.apply(this, v); // Becomes a No-Op if counters are disabled
+
+        // The one reload: create_value() does not return the live buffer, and
+        // a concurrent writer may have won its CAS (ours then went back to the
+        // pool). Materialised now, so stable until the session ends.
+        vals = chunk.values_load();
     }
 
-    Base::store_value(v);
+    Base::store_value_at(vals, v);
 
     if constexpr (build_config::do_check)
     {
         global_check_write_nan(v, num);
     }
+    return vals;
 }
 
 /**
@@ -152,6 +158,19 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(in_t<T>
 {
     // Check if transition qualifies for compression OR if a data race occurred (value changed)
     if (should_mark_for_compression(old_value, new_value) || (read_values() != expected_in_memory)) [[unlikely]]
+    {
+        Base::add_to_compression_list();
+    }
+}
+
+template <typename Derived, typename T, bool Enabled>
+void ProxyFastCompPolicy<Derived, T, Enabled>::mark_for_compression_core(in_t<T>  old_value,
+                                                                         in_t<T>  new_value,
+                                                                         in_t<T>  expected_in_memory,
+                                                                         const T* vals) const
+{
+    // Same test; the race check reads the element again, not the pointer.
+    if (should_mark_for_compression(old_value, new_value) || (read_values_at(vals) != expected_in_memory)) [[unlikely]]
     {
         Base::add_to_compression_list();
     }
@@ -317,13 +336,14 @@ T Proxy<T>::assign_impl(in_t<U> v) noexcept
         return v;
     }
 
-    const bool need_alloc = is_cst_val();
-
+    // No `need_alloc = is_cst_val()` hoisted here: it is an acquire load,
+    // which the compiler cannot drop, paid by every write for a test only
+    // the `v == zero` branch makes.
     if constexpr (chunk_config::use_compression_with_counter)
     {
         if (v == zero)
         {
-            if (need_alloc)
+            if (is_cst_val())
             {
                 return zero;
             }
@@ -346,43 +366,57 @@ T Proxy<T>::assign_impl(in_t<U> v) noexcept
             chunk.dec_nb_val_eq_zero();
         }
     }
-    else
-    {
-        // Same early-out as is_cst_val_and_v_equal_zero() above, same rule:
-        // not over a pending deferred op (deferred_path_validation, chunk #7
-        // offset 0: the chunk's first write deferred, then `= 0` skipped here,
-        // then the replay).
-        if (v == zero && need_alloc && !chunk.pending_any())
-        {
-            return zero;
-        }
-    }
+    // Without the counter, the early-out for `= 0` on a compressed chunk is
+    // is_cst_val_and_v_equal_zero() above, and only it: a second copy of the
+    // same test stood here, one more load of `values` for every `= 0`. Same
+    // rule for both: not over a pending deferred op (deferred_path_validation,
+    // chunk #7 offset 0: the chunk's first write deferred, then `= 0` skipped,
+    // then the replay).
 
     // By reference: v is this call's parameter, alive for the synchronous
     // call (see Proxy2A::assign_impl); the deferred path copies it.
     [[maybe_unused]] const auto lbd_equal_core = [this, &v]
     {
-        // Capture the value that is there BEFORE the write, reading it THROUGH the
-        // chunk. Two distinct traps sit here:
+        // ONE load of the values pointer for the whole body, taken here, inside
+        // the session (or a flush replay). From here to end_write no compressor
+        // can change it (the Dekker handshake, or the flush's exclusion of the
+        // stealers); a concurrent WRITER can, but only once and one way --
+        // constant -> materialised -- so a materialised capture is stable and a
+        // constant one is reloaded once, by perform_core_assignment(), after
+        // create_value(). The body used to reload it five times (old value,
+        // is_cst_val, store, the race check of the marking), each an acquire.
+        T* vals = chunk.values_load();
+
+        // The value there BEFORE the write. Two distinct traps sit here:
         //  - it must be read before perform_core_assignment(), which materialises
         //    the chunk: a freshly materialised buffer is all-zero, so reading
         //    afterwards always yields 0;
-        //  - it must NOT go through the proxy's `values`, which is a reference to
-        //    the chunk pointer captured when the proxy was built. On a compressed
-        //    chunk that reference still designates the shared constant buffer, so
-        //    values[num] returned the constant (zero) whatever the real content.
+        //  - it must be read through a pointer loaded NOW, not one captured when
+        //    the proxy was built: on a chunk compressed since, that one still
+        //    designates the shared constant buffer, and the read returned the
+        //    constant (zero) whatever the real content.
         // Either way old_value came back as 0, the non-zero -> zero transition was
         // never seen, and no chunk was ever queued for compression under OpenMP
         // (CHUNK_STATS: 70M calls from this path, 0 marks, compress flat at 0).
-        // read_value() re-loads the atomic pointer at call time, so it sees the
-        // buffer that is actually live now.
-        const in_t<T> old_value = chunk.read_value(num);
+        // On a still-constant chunk the capture yields the constant: the right
+        // old value. read_value() under CHUNK_STATS, for its read counters.
+        const in_t<T> old_value = [&]
+        {
+            if constexpr (chunk_config::stats)
+            {
+                return chunk.read_value(num);
+            }
+            else
+            {
+                return Base::read_values_at(vals);
+            }
+        }();
 
-        perform_core_assignment(v);
+        vals = perform_core_assignment(vals, v);
 
         if constexpr (chunk_config::use_fast_block_compression)
         {
-            this->mark_for_compression_if_needed_with_value(old_value, v);
+            this->mark_for_compression_if_needed_with_value(old_value, v, vals);
         }
     };
 
@@ -402,7 +436,12 @@ T Proxy<T>::assign_impl(in_t<U> v) noexcept
 
                 const auto proxy = Base::template make_proxy_with_info<Proxy>(ctx);
 
-                const bool is_cst = proxy.is_cst_val();
+                // Replay body: see "The v1 replay bodies" above. One load of the
+                // pointer, reloaded once after a materialisation -- as in
+                // lbd_equal_core.
+                T* values = chunk.values_load();
+
+                const bool is_cst = chunk.is_cst_val1(values);
 
                 // Capture the previous value BEFORE materialising. create_value()
                 // installs a fresh all-zero buffer, so reading values[num] after it
@@ -411,22 +450,30 @@ T Proxy<T>::assign_impl(in_t<U> v) noexcept
                 // (CHUNK_STATS: 81M entries in mark_for_compression_core, 0 marks,
                 // compress stuck at 0 for the whole run). On a still-compressed
                 // chunk values[] holds the constant, which is the correct old value.
-                const in_t<T> v_old = chunk.read_value(num);
+                const in_t<T> v_old = [&]
+                {
+                    if constexpr (chunk_config::stats)
+                    {
+                        return chunk.read_value(num);
+                    }
+                    else
+                    {
+                        return internal::element_of(values, static_cast<std::size_t>(num));
+                    }
+                }();
 
                 if (is_cst)
                 {
                     chunk.create_value();
+                    values = chunk.values_load();
                 }
-
-                // Replay body: see "The v1 replay bodies" above.
-                T* values = chunk.values_load();
 
                 // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                 values[num] = static_cast<T>(ctx->operand);
                 internal::check_replay_store(chunk, values, "assign_impl (deferred)", num);
 
                 // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
-                proxy.mark_for_compression_if_needed_with_value(v_old, values[num]);
+                proxy.mark_for_compression_if_needed_with_value(v_old, values[num], values);
             };
 
             Base::enqueue_deferred_write(ctx, std::move(lbd_equal_asynch));
