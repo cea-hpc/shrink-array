@@ -63,15 +63,15 @@
 #include <type_traits>      // std::conditional_t, std::is_same_v
 #include <vector>           // std::vector
 
-#include "chunk/chunk_traits.h"  // forward decls + default ind_type = int
-#include "chunk/array_chunk.h"   // ArrayChunk
-#include "chunk/array_chunk2.h"  // ArrayChunk2
-#include "chunk/array_chunk2A.h" // ArrayChunk2A
-#include "chunk/param_chunk.h"   // ParamChunk::init_indexes
-#include "chunk/chunk_std.h"     // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"        // chunk_config::use_chunk*, build_config::has_not_ompt
-#include "chunk/PMP_CHUNK.h"     // CHUNK_PMP_MAX_THREADS
-#include "chunk/manage_ompt.h"   // begin_parallel_phase / finalize_parallel_phase
+#include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
+#include "chunk/array_chunk.h"           // ArrayChunk
+#include "chunk/array_chunk2.h"          // ArrayChunk2
+#include "chunk/array_chunk2A.h"         // ArrayChunk2A
+#include "chunk/param_chunk.h"           // ParamChunk::init_indexes
+#include "chunk/chunk_std.h"             // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"                // chunk_config::use_chunk*, build_config::has_not_ompt
+#include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
+#include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/array_chunk_range_ops.h" // for_each_value / read_range (bulk-reads step)
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
@@ -616,8 +616,8 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
 
             std::vector<double> buf(sz(want) + 1, -1.0);
             double* const       end_a = shrink_array::read_range(a, sz(first), sz(last), buf.data());
-            if (end_a - buf.data() != want ||
-                !std::equal(buf.begin(), buf.begin() + want, ref.begin() + first) || buf[sz(want)] != -1.0)
+            if (end_a - buf.data() != want || !std::equal(buf.begin(), buf.begin() + want, ref.begin() + first) ||
+                buf[sz(want)] != -1.0)
             {
                 r.fail("read_range(array, %ld, %ld, T*): %ld written, content %s", first, last,
                        static_cast<long>(end_a - buf.data()),
@@ -630,8 +630,8 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
             shrink_array::read_range(ref, sz(first), sz(last), std::back_inserter(via_vec));
             if (via_it != via_vec || static_cast<long>(via_vec.size()) != want)
             {
-                r.fail("read_range(%ld, %ld) into a back_inserter: array %zu values, vector %zu, expected %ld",
-                       first, last, via_it.size(), via_vec.size(), want);
+                r.fail("read_range(%ld, %ld) into a back_inserter: array %zu values, vector %zu, expected %ld", first,
+                       last, via_it.size(), via_vec.size(), want);
             }
 
             double sum_a = 0.0;

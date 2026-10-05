@@ -437,10 +437,8 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
 
     /// @brief mark_for_compression_core() reading memory through @p vals, a
     ///        values pointer the caller loaded inside the write session.
-    void mark_for_compression_core(in_t<T> old_value,
-                                   in_t<T> new_value,
-                                   in_t<T> expected_in_memory,
-                                   const T* vals) const;
+    void
+    mark_for_compression_core(in_t<T> old_value, in_t<T> new_value, in_t<T> expected_in_memory, const T* vals) const;
 
     // Wrapper for post-write check: we expect the 'new_value' to be in memory
 

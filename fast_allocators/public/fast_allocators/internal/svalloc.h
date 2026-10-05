@@ -83,8 +83,8 @@ inline constexpr std::size_t alignment = SIMD_SZ;
  * @param err  the error (errno, or posix_memalign's result); 0 when n * elem
  *             overflows size_t
  */
-[[noreturn]] [[gnu::cold]] [[gnu::noinline]] inline void out_of_memory(const char* what, std::size_t n,
-                                                                       std::size_t elem, int err) noexcept
+[[noreturn]] [[gnu::cold]] [[gnu::noinline]] inline void
+out_of_memory(const char* what, std::size_t n, std::size_t elem, int err) noexcept
 {
     if (err != 0)
     {

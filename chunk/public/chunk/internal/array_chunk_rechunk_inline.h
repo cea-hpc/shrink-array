@@ -829,8 +829,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                         {
                             INVARIANT_FAILED("rechunk refill bulk read: new chunk {} element {} (global {}) differs "
                                              "from the per-element read ({} -> {})",
-                                             new_chunk, static_cast<long long>(j),
-                                             static_cast<long long>(base + j), old_size, new_size);
+                                             new_chunk, static_cast<long long>(j), static_cast<long long>(base + j),
+                                             old_size, new_size);
                         }
                     };
                     for (ind_type j = 0; j < len; j += 64)
@@ -1176,8 +1176,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     // end). Safe for the final sweep's reason: a serial, quiescent
                     // point, so a slab found empty is empty.
                     // One sweep across ranks: one madvise per contiguous run.
-                    typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(
-                        0, 0u))>::empty_slab_sweep sweep;
+                    typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(0, 0u))>::empty_slab_sweep
+                        sweep;
                     for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
                     {
                         chunk_type::get_chunk_allocator(r, old_key_refill).collect_empty_slabs(sweep);

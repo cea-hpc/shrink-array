@@ -33,20 +33,20 @@
 
 #pragma once
 
-#include <sys/mman.h>    // mmap, madvise
-#include <unistd.h>      // sysconf(_SC_PAGESIZE)
-#include <algorithm>     // std::max, the high-water mark
-#include <cstddef>       // std::size_t
-#include <cstdint>       // std::uintptr_t, std::uint8_t
-#include <cstdio>        // std::fprintf, std::fflush
-#include <cstdlib>       // std::abort, std::getenv
-#include <functional>    // std::less (the sweep orders slab pointers)
-#include <vector>        // std::vector
-#include <mutex>         // std::mutex, std::scoped_lock
-#include <atomic>        // std::atomic, std::memory_order_relaxed
-#include <charconv>      // std::from_chars (CHUNK_RECLAIM_THREADS)
-#include <chrono>        // the sweep timer
-#include <cstring>       // std::strlen
+#include <sys/mman.h> // mmap, madvise
+#include <unistd.h>   // sysconf(_SC_PAGESIZE)
+#include <algorithm>  // std::max, the high-water mark
+#include <cstddef>    // std::size_t
+#include <cstdint>    // std::uintptr_t, std::uint8_t
+#include <cstdio>     // std::fprintf, std::fflush
+#include <cstdlib>    // std::abort, std::getenv
+#include <functional> // std::less (the sweep orders slab pointers)
+#include <vector>     // std::vector
+#include <mutex>      // std::mutex, std::scoped_lock
+#include <atomic>     // std::atomic, std::memory_order_relaxed
+#include <charconv>   // std::from_chars (CHUNK_RECLAIM_THREADS)
+#include <chrono>     // the sweep timer
+#include <cstring>    // std::strlen
 #ifdef _OPENMP
     #include <omp.h> // omp_in_parallel, omp_get_max_threads (parallel sweep)
 #endif
@@ -440,9 +440,9 @@ class EmptySlabSweep
         struct SweepTimer
         {
             std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
-            SweepTimer()                             = default;
-            SweepTimer(const SweepTimer&)            = delete;
-            SweepTimer& operator=(const SweepTimer&) = delete;
+            SweepTimer()                                = default;
+            SweepTimer(const SweepTimer&)               = delete;
+            SweepTimer& operator=(const SweepTimer&)    = delete;
             ~SweepTimer()
             {
                 const auto dt = std::chrono::steady_clock::now() - start;
@@ -455,9 +455,9 @@ class EmptySlabSweep
 
         std::sort(items_.begin(), items_.end(),
                   [](const Item& a, const Item& b) { return std::less<Slab*>{}(a.slab, b.slab); });
-        items_.erase(std::unique(items_.begin(), items_.end(),
-                                 [](const Item& a, const Item& b) { return a.slab == b.slab; }),
-                     items_.end());
+        items_.erase(
+            std::unique(items_.begin(), items_.end(), [](const Item& a, const Item& b) { return a.slab == b.slab; }),
+            items_.end());
         // CHUNK_RECLAIM_MIN_SLABS: madvise syscalls against the pages they
         // return, decided by how many slabs this sweep empties at once.
         if (items_.size() < alloc_config::reclaim_min_empty_slabs())
@@ -964,9 +964,9 @@ inline void report_all_arenas(const char* when) noexcept
         "(emptied-slab calls=%zu, skipped: still-live=%zu unaligned=%zu too-small=%zu)  "
         "sweep=%.1f ms in %zu flushes (coalesce=%d threads=%d)\n",
         when, reclaim_syscalls().load(std::memory_order_relaxed), reclaim_calls().load(std::memory_order_relaxed),
-        reclaim_bytes().load(std::memory_order_relaxed) >> 20U,
-        reclaim_entered().load(std::memory_order_relaxed), reclaim_skip_live().load(std::memory_order_relaxed),
-        reclaim_skip_unaligned().load(std::memory_order_relaxed), reclaim_skip_small().load(std::memory_order_relaxed),
+        reclaim_bytes().load(std::memory_order_relaxed) >> 20U, reclaim_entered().load(std::memory_order_relaxed),
+        reclaim_skip_live().load(std::memory_order_relaxed), reclaim_skip_unaligned().load(std::memory_order_relaxed),
+        reclaim_skip_small().load(std::memory_order_relaxed),
         static_cast<double>(reclaim_sweep_ns().load(std::memory_order_relaxed)) * 1e-6,
         reclaim_sweeps().load(std::memory_order_relaxed), detail::reclaim_coalesce() ? 1 : 0,
         detail::reclaim_sweep_threads());

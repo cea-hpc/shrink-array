@@ -1597,9 +1597,7 @@ class TCTypeAllocatorEBC
     using TCAllocatorEBT = TCAllocatorEB<ElementSize, BlockSize>;
 
     /// @brief No slab yet; the first alloc() creates one. No init() to call.
-    TCTypeAllocatorEBC() : block_full(nullptr), block(nullptr)
-    {
-    }
+    TCTypeAllocatorEBC() : block_full(nullptr), block(nullptr) {}
 
     /// @brief Deletes every slab, the reserve included.
     ~TCTypeAllocatorEBC()
@@ -1781,7 +1779,7 @@ class TCTypeAllocatorEBC
     }
 
     TCAllocatorEBT* block_full; ///< Slabs with no room left.
-    TCAllocatorEBT* block;      ///< Slabs with room. Null until the first alloc(), and again whenever the last one fills.
+    TCAllocatorEBT* block; ///< Slabs with room. Null until the first alloc(), and again whenever the last one fills.
 
     int                                             nb_block_empty{0}; ///< Reserve occupancy.
     std::array<TCAllocatorEBT*, nb_max_block_empty> block_empty{};     ///< The reserve, inline.

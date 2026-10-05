@@ -58,21 +58,21 @@
  * static_const_array_define.h only keeps MAX_CONST_BLOCK_SIZE.
  */
 
-#include <array>   // std::array
-#include <bit>     // std::bit_width (bucket_index)
-#include <cassert> // TypeAllocator::alloc: the size its free will route by
-#include <cstddef> // std::size_t
-#include <tuple>   // std::tuple, std::get, std::apply (the ladder)
+#include <array>       // std::array
+#include <bit>         // std::bit_width (bucket_index)
+#include <cassert>     // TypeAllocator::alloc: the size its free will route by
+#include <cstddef>     // std::size_t
+#include <tuple>       // std::tuple, std::get, std::apply (the ladder)
 #include <type_traits> // std::is_same_v (Allocator8 alias check)
-#include <utility> // std::index_sequence (with_bucket)
+#include <utility>     // std::index_sequence (with_bucket)
 
 #include "fast_allocators/internal/svalloc.h"   // fast_alloc::alignment
 #include "fast_allocators/internal/pmp_alloc.h" // PMP_MAX_THREADS / PMP_THREAD_RANK / PMP_IN_PARALLEL_REGION
 
-#include "fast_allocators/internal/int_alloc.h"    // int_alloc, int_free
-#include "fast_allocators/internal/alloc_config.h" // constexpr mirror of STD_ALLOC
+#include "fast_allocators/internal/int_alloc.h"                 // int_alloc, int_free
+#include "fast_allocators/internal/alloc_config.h"              // constexpr mirror of STD_ALLOC
 #include "fast_allocators/internal/static_const_array_define.h" // MAX_CONST_BLOCK_SIZE (BlkAllocator routing)
-#include "fast_allocators/tc_allocator.h"          // TCTypeAllocatorEBC
+#include "fast_allocators/tc_allocator.h"                       // TCTypeAllocatorEBC
 
 /**
  * @brief A per-thread batch of blocks freed but not yet returned to the ladder.
@@ -384,8 +384,9 @@ inline TCTypeAllocatorEBC<24, SIZE_BLOCK>& Allocator24 = *(new TCTypeAllocatorEB
  *          caller knows the size at free time, alloc_tab()/free_tab() when it
  *          does not (a header of `fast_alloc::alignment` bytes keeps it as a
  *          size_t). Every size is compared with the ladder's ceiling in size_t,
- *          before any narrowing to the ladder's int / unsigned int. Thread-safe: inside an OpenMP region the ladder takes its
- *          critical section and frees are batched per thread until
+ *          before any narrowing to the ladder's int / unsigned int.
+ *          Thread-safe: inside an OpenMP region the ladder takes its critical
+ *          section and frees are batched per thread until
  *          StaticConstArray::clearInfoFreeElt() runs at a quiescent point.
  *
  *          Nothing in shrink-array calls it: it is fast_allocators' entry point

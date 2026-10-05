@@ -278,7 +278,7 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         // A zero-cost estimate (empty array) passes.
         const bool rate_ok = min_rate <= 0. || est_cost_ms <= 0. || meta_rate >= min_rate;
         clears_gate        = (gain_meta >= static_cast<double>(meta_floor) && rate_ok && gain_bytes >= meta_floor) ||
-                             gain_bytes >= data_gate;
+                      gain_bytes >= data_gate;
     }
     else
     {

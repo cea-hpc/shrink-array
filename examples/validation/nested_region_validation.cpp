@@ -49,7 +49,7 @@
 #include "chunk/PMP_CHUNK.h"     // chunk_pmp_set_max_active_levels
 #include "chunk/manage_ompt.h"   // begin_parallel_phase / finalize_parallel_phase
 
-#include "chunk/chunk_std.h" // release_chunk_pools, destroy_block_chunk
+#include "chunk/chunk_std.h"    // release_chunk_pools, destroy_block_chunk
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
 namespace validation::nested_region_validation

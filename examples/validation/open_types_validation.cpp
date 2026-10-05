@@ -315,7 +315,7 @@ int run(int argc, char** argv)
     const Scenario<Color>  sc{Color::red, Color::cyan, [](long i) { return i % 3 == 0 ? Color::blue : Color::cyan; }};
     const Scenario<Quad>   sq{{1.f, 2.f, 3.f, 4.f},
                               {9.f, 8.f, 7.f, 6.f},
-                              [](long i) { return Quad{static_cast<float>(i), 0.5f, static_cast<float>(i % 5), 1.f}; }};
+                            [](long i) { return Quad{static_cast<float>(i), 0.5f, static_cast<float>(i % 5), 1.f}; }};
     const Scenario<Pair16> s16{
         {7, 7},
         {-3, 3},
