@@ -168,7 +168,10 @@ void Proxy2A<T>::mark_for_compression_if_needed(in_t<T> new_value) const
 
 // Explicit-old-value variant: preferred over mark_for_compression_if_needed()
 // because it does not re-read the slot, which could race with another writer.
-// bool has no per-chunk second value, so it routes to the plain ProxyBase form.
+// bool has no per-chunk second value, so it routes to Proxy2Base's
+// (old, new) bool form. (It called Base::, which has no such member: nothing
+// instantiates this arm -- the bool compound replay that would is
+// unreachable -- so the error never surfaced.)
 template <typename T>
 void Proxy2A<T>::mark_for_compression_if_needed_with_value(in_t<T> old_value, in_t<T> new_value) const
 {
@@ -179,7 +182,7 @@ void Proxy2A<T>::mark_for_compression_if_needed_with_value(in_t<T> old_value, in
     }
     else
     {
-        Base::mark_for_compression_if_needed(old_value, new_value);
+        Base2::mark_for_compression_if_needed(old_value, new_value);
     }
 }
 
@@ -1154,28 +1157,71 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
         }
         else
         {
-            // bool specialization — same pattern, adapted
+            // bool: the same protocol as above -- pre-store guard, store,
+            // post-store confirmation, re-tested no-op -- with the bool second
+            // value (true) in place of ptr_second_value. Unreachable today (no
+            // compound operator on a bool proxy), kept complete so that a future
+            // one does not skip the protocol in silence.
+            const auto retry_or_fail = [&](const char* path)
+            {
+                if constexpr (build_config::any_check)
+                {
+                    if (++retry_count > 1000)
+                    {
+                        INVARIANT_FAILED("execute_arithmetic_compound_operation_async (bool, {}): "
+                                         "retry > 1000 on chunk={} num={}",
+                                         path, static_cast<const void*>(&ctx->chunk), ctx->num);
+                    }
+                }
+            };
             const bool will_be_not_second_value = !v_new_truncated && cst_val2;
 
             if (will_be_not_second_value)
             {
                 ctx->chunk.create_value_bool(true);
+
+                const T* values_before = ctx->chunk.values_load();
+                if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
+                {
+                    retry_or_fail("decompress path");
+                    continue;
+                }
+
                 lbd(op);
-                // Optional: post-store check on bool — left as exercise
+
+                if (ctx->chunk.values_load() != values_before) [[unlikely]]
+                {
+                    retry_or_fail("decompress path post-store");
+                    continue;
+                }
                 break;
             }
             if (proxy.is_not_cst_val2())
             {
+                const T* values_before = ctx->chunk.values_load();
+                if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
+                {
+                    retry_or_fail("heap path");
+                    continue;
+                }
+
                 Base::store_value_async(ctx, v_new_truncated);
+
+                if (ctx->chunk.values_load() != values_before) [[unlikely]]
+                {
+                    retry_or_fail("heap path post-store");
+                    continue;
+                }
+
                 proxy.mark_for_compression_if_needed_with_value(v_old, v_new_truncated);
                 break;
             }
+            if (proxy.is_cst_val2() && v_new_truncated)
             {
-                if (proxy.is_cst_val2() && v_new_truncated)
-                {
-                    break;
-                }
+                break;
             }
+            // State changed between decision and now: retry.
+            retry_or_fail("no-op path");
         }
     }
 }
