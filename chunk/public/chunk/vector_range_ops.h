@@ -178,4 +178,63 @@ void fill_range_mt(C& container, std::size_t first, std::size_t last, const U& v
     fill_range(container, first, last, v);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Bulk reads, generic half: for_each_value / read_range on any container.
+// array_chunk_range_ops.h adds the chunked overloads (one read section per
+// block of elements instead of one per element).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @brief Call @p f(value) on every element of [@p first, @p last), in order.
+ * @param container source container
+ * @param first     first index, inclusive (clamped to container.size())
+ * @param last      last index, exclusive (clamped to container.size())
+ * @param f         called as f(value); its return value is ignored
+ */
+template <typename C, typename F>
+    requires(!internal::ChunkedArray<C>)
+void for_each_value(const C& container, std::size_t first, std::size_t last, F&& f)
+{
+    const auto size = static_cast<std::size_t>(container.size());
+    last            = std::min(last, size);
+    if (first >= last)
+    {
+        return;
+    }
+    const auto e = std::next(container.begin(), static_cast<std::ptrdiff_t>(last));
+    for (auto it = std::next(container.begin(), static_cast<std::ptrdiff_t>(first)); it != e; ++it)
+    {
+        f(*it);
+    }
+}
+
+/// @brief for_each_value() over every element of @p container.
+template <typename C, typename F>
+    requires(!internal::ChunkedArray<C>)
+void for_each_value(const C& container, F&& f)
+{
+    for (auto it = container.begin(); it != container.end(); ++it)
+    {
+        f(*it);
+    }
+}
+
+/**
+ * @brief Copy the elements of [@p first, @p last) to @p out.
+ * @return @p out advanced past the last element written.
+ */
+template <typename C, typename OutIt>
+    requires(!internal::ChunkedArray<C>)
+OutIt read_range(const C& container, std::size_t first, std::size_t last, OutIt out)
+{
+    const auto size = static_cast<std::size_t>(container.size());
+    last            = std::min(last, size);
+    if (first >= last)
+    {
+        return out;
+    }
+    return std::copy(std::next(container.begin(), static_cast<std::ptrdiff_t>(first)),
+                     std::next(container.begin(), static_cast<std::ptrdiff_t>(last)), out);
+}
+
 } // namespace shrink_array

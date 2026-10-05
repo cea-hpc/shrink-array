@@ -1390,6 +1390,50 @@ class ChunkBase : public CRTPSupport<Derived>,
         return element_at(i);
     }
 
+    /**
+     * @brief Copy elements [@p first, @p first + @p count) into @p out under ONE
+     *        read section.
+     *
+     * @details The reads of @p count element_at() calls for the price of one
+     *          read_reclaim::ReadSection: `values` is loaded once, the elements
+     *          are copied, the section closes. A compression pass running in
+     *          the region waits for the copy (bounded, no caller code inside)
+     *          before releasing the buffer, exactly as it waits for one
+     *          element_at(). The block is what the chunk held at that load.
+     *
+     *          Raw like element_at(): no stats, no NaN check. The bulk reads
+     *          (ArrayChunkBase::for_each_value / read_range) use it only in
+     *          builds without those.
+     * @param first first offset in the chunk
+     * @param count number of elements, first + count <= chunk size
+     * @param out   destination, @p count elements
+     */
+    void read_block(int first, int count, T* out) const noexcept
+    {
+        const read_reclaim::ReadSection section;
+        const T* const                  vals = values_load();
+        test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+        if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
+        {
+            // Same single load as element_at_unguarded: a chunk compressed to a
+            // second constant points at an identifier, not at values.
+            if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
+            {
+                const T v = derived().second_value_from_ptr(vals);
+                for (int j = 0; j < count; ++j)
+                {
+                    out[j] = v;
+                }
+                return;
+            }
+        }
+        for (int j = 0; j < count; ++j)
+        {
+            // raw-read: read_block -- under its own ReadSection
+            out[j] = load_at<false>(vals, first + j);
+        }
+    }
+
     /// @brief Proxy access for read-write operations
     /// @param i Index in the chunk
     /// @return Proxy object for lazy write

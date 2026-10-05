@@ -705,6 +705,179 @@ namespace shrink_array
         /** @} */
 
         /**
+         * @name Bulk reads
+         * The read half of fill_range / copy_range. Call them through the free
+         * functions shrink_array::for_each_value / read_range
+         * (array_chunk_range_ops.h), which take a std::vector as well.
+         * @{
+         */
+        /**
+         * @brief Call @p f(value) on every element of [@p first, @p last), in order.
+         *
+         * @details Chunk by chunk: one sync_chunk per chunk (as the iterator on
+         *          chunk entry), then blocks of kBulkBlock elements copied under
+         *          one read section each (ChunkBase::read_block), @p f called
+         *          outside it. A range-for pays a section and the iterator's
+         *          bookkeeping per element.
+         *
+         *          Stats and NaN-check builds read through the iterator instead,
+         *          so every element still goes through the const operator[].
+         * @param first first index, inclusive (clamped to [0, size()])
+         * @param last  last index, exclusive (clamped to size())
+         * @param f     called as f(value); its return value is ignored
+         * @warning Same contract as the iterator: no other thread may write the
+         *          array during the call. Check builds stop on a write deferred
+         *          onto the chunk being read. Callable from a parallel region,
+         *          every thread on its own slice.
+         */
+        template <typename F>
+        void for_each_value(ind_type first, ind_type last, F&& f) const
+        {
+            if constexpr (kBulkFast)
+            {
+                T buf[kBulkBlock];
+                for_each_chunk_span(first, last,
+                                    [&](const chunk_type& ch, int num_chunk, int lo, int hi)
+                                    {
+                                        for (int j = lo; j < hi; j += kBulkBlock)
+                                        {
+                                            const int n = (hi - j) < kBulkBlock ? (hi - j) : kBulkBlock;
+                                            ch.read_block(j, n, buf);
+                                            check_no_write_during_bulk_read(ch, num_chunk, j);
+                                            for (int k = 0; k < n; ++k)
+                                            {
+                                                f(buf[k]);
+                                            }
+                                        }
+                                    });
+            }
+            else
+            {
+                if (first < 0)
+                {
+                    first = 0;
+                }
+                if (last > m_size)
+                {
+                    last = m_size;
+                }
+                if (first >= last)
+                {
+                    return;
+                }
+                const const_iterator e = begin() + last;
+                for (const_iterator it = begin() + first; it != e; ++it)
+                {
+                    f(*it);
+                }
+            }
+        }
+
+        /// @brief for_each_value() over every element.
+        template <typename F>
+        void for_each_value(F&& f) const
+        {
+            for_each_value(ind_type{0}, m_size, std::forward<F>(f));
+        }
+
+        /**
+         * @brief Copy the elements of [@p first, @p last) to @p out.
+         * @details for_each_value() writing to @p out. Into a T*, each block is
+         *          read straight into the destination: no intermediate copy.
+         * @return @p out advanced past the last element written.
+         */
+        template <typename OutIt>
+        OutIt read_range(ind_type first, ind_type last, OutIt out) const
+        {
+            if constexpr (kBulkFast && std::is_same_v<OutIt, T*>)
+            {
+                for_each_chunk_span(first, last,
+                                    [&](const chunk_type& ch, int num_chunk, int lo, int hi)
+                                    {
+                                        for (int j = lo; j < hi; j += kBulkBlock)
+                                        {
+                                            const int n = (hi - j) < kBulkBlock ? (hi - j) : kBulkBlock;
+                                            ch.read_block(j, n, out);
+                                            check_no_write_during_bulk_read(ch, num_chunk, j);
+                                            out += n;
+                                        }
+                                    });
+                return out;
+            }
+            else
+            {
+                for_each_value(first, last,
+                               [&out](const T& x)
+                               {
+                                   *out = x;
+                                   ++out;
+                               });
+                return out;
+            }
+        }
+        /** @} */
+
+      private:
+        /// @brief Elements per read section in the bulk reads (8 to 64 measure
+        ///        alike; the larger, the fewer sections on long ranges).
+        static constexpr int kBulkBlock = 64;
+        /// @brief Bulk reads by block only where per-element stats and NaN checks
+        ///        do not rely on every element going through operator[].
+        static constexpr bool kBulkFast = !chunk_config::stats && !chunk_config::do_check;
+
+        /// @brief Call @p fn(chunk, num_chunk, lo, hi) for each chunk the range
+        ///        [first, last) touches -- offsets [lo, hi) in it -- after one
+        ///        sync_chunk, as the iterator does on chunk entry.
+        template <typename Fn>
+        void for_each_chunk_span(ind_type first, ind_type last, Fn&& fn) const
+        {
+            if (first < 0)
+            {
+                first = 0;
+            }
+            if (last > m_size)
+            {
+                last = m_size;
+            }
+            if (first >= last)
+            {
+                return;
+            }
+            const unsigned int dec     = size_policy_.decalage();
+            const auto         mod     = static_cast<ind_type>(size_policy_.modulo());
+            const int          c_first = static_cast<int>(first >> dec);
+            const int          c_last  = static_cast<int>((last - 1) >> dec);
+            for (int c = c_first; c <= c_last; ++c)
+            {
+                const int lo = c == c_first ? static_cast<int>(first & mod) : 0;
+                const int hi = c == c_last ? static_cast<int>((last - 1) & mod) + 1 : static_cast<int>(mod) + 1;
+                const chunk_type& ch = chunk_list[static_cast<std::size_t>(c)];
+                sync_chunk(ch, c, lo);
+                fn(ch, c, lo, hi);
+            }
+        }
+
+        /// @brief Check builds, precise read gate: nothing was deferred onto
+        ///        the chunk since its sync -- the iterator's check, per block.
+        void check_no_write_during_bulk_read([[maybe_unused]] const chunk_type& ch,
+                                             [[maybe_unused]] int num_chunk,
+                                             [[maybe_unused]] int offset) const noexcept
+        {
+            if constexpr (build_config::any_check && chunk_type::precise)
+            {
+                if (ch.read_gate_should_wait(offset)) [[unlikely]]
+                {
+                    INVARIANT_FAILED("ArrayChunkBase bulk read: a write was deferred onto chunk {} of array {} "
+                                     "during the read (offset {}); it would not be seen -- no other thread may "
+                                     "write an array that is being read in bulk",
+                                     num_chunk, static_cast<const void*>(this), offset);
+                }
+            }
+        }
+
+      public:
+
+        /**
          * @brief Drop the last element, if any.
          * @note Unlike std::vector, calling it on an empty container is harmless
          *       (no-op) rather than undefined. The capacity is kept, as
