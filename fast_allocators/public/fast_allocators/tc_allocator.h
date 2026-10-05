@@ -1229,10 +1229,16 @@ class TCTypeAllocator final : public VTCTypeAllocator, public TCSlabPool<TCTypeA
  *          ::VTCTypeAllocator report registry; under STD_ALLOC it zero-fills
  *          what it hands out.
  *
+ *          alignas(64): it lives in per-rank arrays (one per thread), and at
+ *          96 bytes two neighbouring ranks shared a cache line -- one rank's
+ *          slab list heads (block_full, block: offsets 0 and 8) with the
+ *          previous rank's reserve (block_empty, nb_block_empty). Each now
+ *          starts its own line (128 bytes a rank).
+ *
  * @tparam ElemT Element type; an allocation is an ARRAY of these.
  */
 template <typename ElemT>
-class TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, ElemT, TCCAllocator>
+class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, ElemT, TCCAllocator>
 {
   public:
     /// @brief No slab at init(): the first alloc() makes one. See TCSlabPool::init.
