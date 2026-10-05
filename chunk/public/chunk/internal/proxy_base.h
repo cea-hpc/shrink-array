@@ -159,6 +159,30 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      */
     static void resize_tab_is_int(int num_tab, int nb_chunk)
     {
+        // Check builds: the row is REALLOCATED, so every flag goes back to 0,
+        // not only the new ones. A chunk still flagged here still sits in a
+        // candidate list: its entry outlives the caller's chunk_list realloc,
+        // and the cleared flag lets the same chunk be queued a second time.
+        // The callers' compression pass (resize, after its deferred-op drain)
+        // empties the lists first; this is what checks it did. A fresh tab's
+        // row is empty and passes trivially. Mirrors
+        // Proxy2A::resize_tab_is_int(num_tab, old, nb).
+        if constexpr (build_config::any_check)
+        {
+            if (static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
+            {
+                const auto& row = tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)];
+                for (std::size_t j = 0; j < row.size(); ++j)
+                {
+                    if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
+                    {
+                        INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
+                                         "flag row is reallocated ({} -> {} chunks)",
+                                         num_tab, j, row.size(), nb_chunk);
+                    }
+                }
+            }
+        }
         // Value-initialised: every flag 0 (C++20 atomics).
         tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)] =
             std::vector<std::atomic<char>>(static_cast<std::size_t>(nb_chunk));
