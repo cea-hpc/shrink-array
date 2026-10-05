@@ -21,8 +21,8 @@
  * @par What that costs
  * A slab returned with deallocate() stays resident: the arena keeps it, the OS
  * never gets it back. That is the RSS the free-list holds, and what
- * madvise_empty_slab_full() addresses -- it drops an emptied slab's pages while
- * leaving the address valid and the slab reusable.
+ * EmptySlabSweep addresses -- it drops emptied slabs' pages while leaving
+ * their addresses valid and the slabs reusable.
  *
  * @note Three arenas, not two: ctx slabs were later found to alias op slabs the
  *       same way. @see ArenaKind
@@ -62,8 +62,8 @@ namespace fast_alloc
 // call sites in tc_allocator.h and report_all_arenas() below all see one
 // definition -- no cross-header ordering or two-phase-lookup question.
 
-/// @brief How many slabs have been advised away (madvise_empty_slab_full() or
-///        an EmptySlabSweep run). A count of SLABS, not of syscalls: see
+/// @brief How many slabs have been advised away (by an EmptySlabSweep, or
+///        one by one by detail::advise_one_slab()). A count of SLABS, not of syscalls: see
 ///        reclaim_syscalls().
 inline std::atomic<std::size_t>& reclaim_calls() noexcept
 {
@@ -186,48 +186,6 @@ inline std::atomic<std::size_t>& freepath_alloc_keyed() noexcept
 ///@}
 
 
-/**
- * @brief Give back an emptied slab's resident pages, the last one included.
- *
- * @tparam Slab Duck-typed on `nn_ref`, `data`, `BlockAllocator` and
- *         `backptr_dropped`. A template so those members need only be complete
- *         at instantiation.
- *
- * @details MADV_DONTNEED returns the pages to the OS but leaves the mapping in
- *          place: the address stays valid, the slab stays on its owner's list,
- *          and the next allocation from it faults fresh zero pages back in.
- *          Safe only for a pool whose free list lives OUTSIDE the slab: the
- *          value family keeps links in a side array, the op/ctx family threads
- *          them through the freed elements and would be destroyed by this.
- *
- *          The last page holds the self back-pointer addr_to_block() reads on
- *          every free. A former variant, madvise_empty_slab() (removed in Oct
- *          '26, it had no caller left), kept that page resident -- and had to
- *          refuse single-page slabs outright: advising one zeroed the
- *          back-pointer and the next free through it dereferenced null (short /
- *          char / bool at 64 threads on 64 KiB pages). The page is 6% of a
- *          1 MiB slab, and at scale it is the whole residue: 17 205
- *          slabs emptied by the four re-chunks of iteration 1000 (64 threads,
- *          10^9 elements, v1) kept 1 075 MB, against 1 032 MB of memory the
- *          re-chunk failed to give back -- the rest of the accounting balances
- *          exactly.
- *
- *          The back-pointer can go because nobody can read it: the slab holds
- *          no block (nn_ref == 0 is checked here), so no free can resolve
- *          through it, and the only way one becomes possible again is an
- *          alloc() from this slab -- which restores the back-pointer before it
- *          hands the block out. The slab carries the flag saying so.
- *
- * @warning Two preconditions, neither checkable here. The caller must know the
- *          slab's emptiness is a FACT, not just what nn_ref says -- the same
- *          rule as reclaim_empty_slabs_now(), which is the only caller. And it
- *          must run where no alloc() from this slab can interleave: the flag is
- *          set before the madvise, so a concurrent alloc could restore the
- *          back-pointer only to have it wiped a moment later. A re-chunk's
- *          end-of-move sweep is such a point; a free path is not.
- *
- * @return true if the pages were dropped and @p slab was flagged.
- */
 namespace detail
 {
 /// @brief A non-negative integer from the environment, read once by the
@@ -287,7 +245,7 @@ inline std::size_t reclaim_page_size() noexcept
     return page;
 }
 
-/// @brief The checks of madvise_empty_slab_full(), without the syscall: how
+/// @brief The checks before a slab is advised away, without the syscall: how
 ///        many bytes of @p slab may be advised away, or 0 if none. Bumps the
 ///        reclaim_entered() / reclaim_skip_*() counters exactly as the
 ///        single-slab path always did.
@@ -327,10 +285,19 @@ std::size_t reclaimable_bytes(const Slab* slab) noexcept
     }
     return adv;
 }
-} // namespace detail
 
+/**
+ * @brief Give ONE emptied slab's pages back, on its own: the fallback of
+ *        EmptySlabSweep::add() when the batch cannot grow (bad_alloc).
+ * @details The same work as a sweep, for one slab and one syscall: the checks
+ *          of reclaimable_bytes(), backptr_dropped set before the madvise, the
+ *          same counters. The rationale and the two preconditions are
+ *          EmptySlabSweep's. No other caller is meant to exist -- a sweep
+ *          merges adjacent slabs into one madvise, this cannot.
+ * @return true if the pages were dropped and @p slab was flagged.
+ */
 template <typename Slab>
-bool madvise_empty_slab_full(Slab* slab) noexcept
+bool advise_one_slab(Slab* slab) noexcept
 {
     const std::size_t adv = detail::reclaimable_bytes(slab);
     if (adv == 0)
@@ -346,14 +313,44 @@ bool madvise_empty_slab_full(Slab* slab) noexcept
     reclaim_bytes().fetch_add(adv, std::memory_order_relaxed);
     return true;
 }
+} // namespace detail
 
 /**
- * @brief Batch form of madvise_empty_slab_full(): collect emptied slabs, then
- *        give their pages back with ONE madvise() per run of adjacent slabs.
+ * @brief Give emptied slabs' resident pages back, the last page included, with
+ *        ONE madvise() per run of adjacent slabs.
  *
- * @tparam Slab Same duck typing as madvise_empty_slab_full().
+ * @tparam Slab Duck-typed on `nn_ref`, `data`, `BlockAllocator` and
+ *         `backptr_dropped`. A template so those members need only be complete
+ *         at instantiation.
  *
- * @details Each MADV_DONTNEED is a syscall plus a TLB shootdown to every CPU
+ * @par Giving a slab's pages back
+ *          MADV_DONTNEED returns the pages to the OS but leaves the mapping in
+ *          place: the address stays valid, the slab stays on its owner's list,
+ *          and the next allocation from it faults fresh zero pages back in.
+ *          Safe only for a pool whose free list lives OUTSIDE the slab: the
+ *          value family keeps links in a side array, the op/ctx family threads
+ *          them through the freed elements and would be destroyed by this.
+ *
+ *          The last page holds the self back-pointer addr_to_block() reads on
+ *          every free. A former variant, madvise_empty_slab() (removed in Oct
+ *          '26, it had no caller left), kept that page resident -- and had to
+ *          refuse single-page slabs outright: advising one zeroed the
+ *          back-pointer and the next free through it dereferenced null (short /
+ *          char / bool at 64 threads on 64 KiB pages). The page is 6% of a
+ *          1 MiB slab, and at scale it is the whole residue: 17 205
+ *          slabs emptied by the four re-chunks of iteration 1000 (64 threads,
+ *          10^9 elements, v1) kept 1 075 MB, against 1 032 MB of memory the
+ *          re-chunk failed to give back -- the rest of the accounting balances
+ *          exactly.
+ *
+ *          The back-pointer can go because nobody can read it: the slab holds
+ *          no block (nn_ref == 0 is checked first), so no free can resolve
+ *          through it, and the only way one becomes possible again is an
+ *          alloc() from this slab -- which restores the back-pointer before it
+ *          hands the block out. The slab carries the flag saying so.
+ *
+ * @par Batching
+ *          Each MADV_DONTNEED is a syscall plus a TLB shootdown to every CPU
  *          the process runs on, and the re-chunk sweep used to pay that once
  *          per slab -- ~82 700 times on the 64-thread bench. Slabs of one size
  *          are carved back to back from the value arena and aligned on their
@@ -363,7 +360,7 @@ bool madvise_empty_slab_full(Slab* slab) noexcept
  *          add() only records the slab. flush() drops duplicates (the same slab
  *          reached through two routes, e.g. an unregistered key falling back to
  *          key 0), applies the CHUNK_RECLAIM_MIN_SLABS floor to the WHOLE
- *          sweep, runs the very checks of the single-slab path on each slab
+ *          sweep, runs detail::reclaimable_bytes() on each slab
  *          (bumping the same counters), sorts by address, merges runs whose
  *          bytes touch exactly, sets backptr_dropped on every slab of a run,
  *          then advises the run. A slab whose advisable length is shorter than
@@ -376,11 +373,13 @@ bool madvise_empty_slab_full(Slab* slab) noexcept
  *          the very runs the batching is there to merge -- while the set as a
  *          whole was far above the bar.
  *
- * @warning Same two preconditions as madvise_empty_slab_full(), held from the
- *          first add() until flush() returns: every collected slab is empty
- *          as a FACT, and no alloc() from any of them can interleave. A
- *          re-chunk's quiescent end-of-move point qualifies; a free path does
- *          not.
+ * @warning Two preconditions, neither checkable here, held from the first
+ *          add() until flush() returns. Every collected slab is empty as a
+ *          FACT, not just by what nn_ref says. And no alloc() from any of them
+ *          can interleave: backptr_dropped is set before the madvise, so a
+ *          concurrent alloc() could restore the back-pointer only to have it
+ *          wiped a moment later. A re-chunk's quiescent end-of-move point
+ *          qualifies; a free path does not.
  */
 template <typename Slab>
 class EmptySlabSweep
@@ -399,7 +398,7 @@ class EmptySlabSweep
     }
 
     /// @brief Collect @p slab; flush() decides whether it is advised away (see
-    ///        madvise_empty_slab_full() for the checks).
+    ///        detail::reclaimable_bytes() for the checks).
     void add(Slab* slab) noexcept
     {
         if (slab == nullptr)
@@ -415,7 +414,7 @@ class EmptySlabSweep
             // Out of memory for the batch: advise this one on its own rather
             // than leave it resident (the floor is not consulted: it cannot
             // be, the sweep's size is unknown yet).
-            madvise_empty_slab_full(slab);
+            detail::advise_one_slab(slab);
         }
     }
 
@@ -947,7 +946,7 @@ inline bool arena_report_enabled() noexcept
  * @param when Free-text label for the moment of the call.
  * @details Called at each end-of-parallel-region drain point. What it is for:
  *          telling apart an RSS gap made of recycled-but-resident free-list
- *          bytes -- which madvise_empty_slab_full() can reclaim -- from one made of
+ *          bytes -- which an EmptySlabSweep can reclaim -- from one made of
  *          genuinely live bytes, which nothing can.
  */
 inline void report_all_arenas(const char* when) noexcept

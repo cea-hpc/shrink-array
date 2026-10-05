@@ -160,7 +160,7 @@ enum class FreeLinks
     InPayload,
     /// In a side array (TCSlab::tab_firstFree), never in the elements: the
     /// allocator never writes into a free element, so an emptied slab's pages
-    /// can be dropped (fast_alloc::madvise_empty_slab_full()) without losing a
+    /// can be dropped (fast_alloc::EmptySlabSweep) without losing a
     /// link. The array is `unsigned short`, which caps a slab at
     /// TCSlab::free_list_end - 1 elements.
     SideArray
@@ -368,7 +368,7 @@ class alignas(64) TCSlab
     ///        array whose blocks this slab holds). Tells a freeing thread which
     ///        (rank, key) reuse list a block belongs to, without a lookup.
     unsigned owner_key = 0;
-    /// @brief Set when madvise_empty_slab_full() dropped this slab's pages
+    /// @brief Set when a sweep (fast_alloc::EmptySlabSweep) dropped this slab's pages
     ///        INCLUDING the trailing back-pointer (side links only: the
     ///        in-payload links would go with the pages). alloc() restores it
     ///        before handing out the first block, which is the only moment a
@@ -1297,7 +1297,7 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
                 for (auto* p = node; p != nullptr; p = p->next)
                 {
                     // Whole slab, trailing page included: this sweep is the one
-                    // context that can afford it (see madvise_empty_slab_full).
+                    // context that can afford it (see fast_alloc::EmptySlabSweep).
                     // The last page is 6% of a 1 MiB slab and was the entire
                     // unexplained residue of a re-chunk.
                     if (p->nn_ref == 0)
