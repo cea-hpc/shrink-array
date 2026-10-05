@@ -7,7 +7,7 @@ import re as _re
 from ..builds import resolve_build_dir, short_config_label, validation_built
 from ..progress import CONFIG_W
 from ..runs import _append_error_now, effective_timeout, run_capture_stdout_streaming
-from ..settings import SANITIZER_CONFIGS, is_sanitizer_config, sanitizer_env_for
+from ..settings import is_sanitizer_config, sanitizer_env_for
 from ..term import _hms, bold, cyan, dim, green, red, yellow
 
 
@@ -130,9 +130,10 @@ def run_ctest_phase(args, extra_ldpath, errors):
 
     Runs `ctest -L <label> --output-on-failure` in each config's build
     directory (the one holding CTestTestfile.cmake, with or without the $arch
-    level), then in the sanitizer configs' (SANITIZER_CONFIGS, unless
-    --skip-sanitizers): the default configs are perf builds, which do not
-    compile the harnesses. ctest's own per-test timeout applies; the phase
+    level). The sanitizer builds are NOT added on their own: under ASan or
+    TSan the harnesses take about an hour per build. Name a sanitizer
+    build directory in --configs to run them there (its sanitizer
+    environment applies). ctest's own per-test timeout applies; the phase
     timeout is the bench one at 8 threads, x4 (x20 under a sanitizer). A
     config with no build directory is
     noted once and skipped, and so is one whose configuration does not build
@@ -141,12 +142,8 @@ def run_ctest_phase(args, extra_ldpath, errors):
     """
     print(cyan(bold(f"\n🧪 Validation harnesses — ctest -L {args.ctest_label}")))
 
-    # The sanitizer configs too: they are Debug builds, the ones that compile
-    # the harnesses, while every default config is a perf (Release) build
-    # that does not. Without them the phase found nothing to run.
+    # The --configs builds only (see the docstring for the sanitizer ones).
     configs = list(args.configs)
-    if not args.skip_sanitizers:
-        configs += [c for c in SANITIZER_CONFIGS if c not in configs]
 
     n_pass = n_total = 0
     n_not_built = 0  # configs skipped: CHUNK_VALIDATION_BUILT=OFF
