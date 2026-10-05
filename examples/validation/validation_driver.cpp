@@ -10,7 +10,12 @@
 // ============================================================================
 
 #include <cstdio>  // std::fprintf, stderr
+#include <cstdlib> // std::getenv
 #include <cstring> // std::strcmp
+
+#ifdef __linux__
+    #include <sys/prctl.h> // prctl(PR_SET_DUMPABLE)
+#endif
 
 #include "validation_harness.h" // validation::self_command (defined here)
 
@@ -45,7 +50,10 @@ const char* g_running = nullptr; // the harness name given on the command line, 
 
 std::string validation::self_command(const char* argv0)
 {
-    std::string cmd = std::string("\"") + argv0 + "\"";
+    // CHUNK_VALIDATION_CHILD=1: the child is one this harness runs to watch it
+    // fail -- most of them abort on purpose -- and main() makes it
+    // non-dumpable (see there).
+    std::string cmd = std::string("CHUNK_VALIDATION_CHILD=1 \"") + argv0 + "\"";
     if (g_running != nullptr)
     {
         cmd += std::string(" ") + g_running;
@@ -55,6 +63,18 @@ std::string validation::self_command(const char* argv0)
 
 int main(int argc, char** argv)
 {
+#ifdef __linux__
+    // A child run through self_command() aborts on purpose. Dumpable, every
+    // such abort is a core dump: under WSL each one is captured and written to
+    // Windows' %TEMP%\wsl-crashes, some 300 MB apiece for an executable whose
+    // arenas reserve that much address space. stale_proxy_validation's 1- and
+    // 8-thread runs fire dozens back to back -- 261 captures, 7.7 GB, and WSL
+    // went down mid-capture. A non-dumpable process writes no core at all.
+    if (std::getenv("CHUNK_VALIDATION_CHILD") != nullptr)
+    {
+        prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
+    }
+#endif
     if (argc > 1)
     {
         for (const Harness& h : kHarnesses)
