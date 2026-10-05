@@ -34,6 +34,7 @@
 
 #include "chunk/config.h"                              // build_config::use_openmp
 #include "chunk/internal/chunk_stats.h"                // increm_chunk_gate_start*
+#include "chunk/internal/invariant_check.h"            // INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h" // any_thread_flushing
 
 namespace shrink_array
@@ -63,6 +64,36 @@ template <typename ProxyType, typename ChunkType>
         increm_chunk_gate_start<ChunkType>();
         increm_chunk_gate_start_flush_yield<ChunkType>();
         return true;
+    }
+}
+
+/**
+ * @brief Check builds: trip if a flush is in progress while a compressor runs
+ *        OUTSIDE CompressionManager::start().
+ * @details The v1 replay bodies (proxy_inline.h, `*_async`) store through a
+ *          values pointer loaded once, with no retry: they rely on no
+ *          compressor changing `values` during a flush drain. start() refuses
+ *          while a flush is announced; the compressors that bypass it
+ *          (Chunk::compress_sweep_rank, RechunkHooks::rechunk_drop_candidates)
+ *          are safe only because they run where no drain can: outside the
+ *          writers' parallel region, after the flush. This turns a caller that
+ *          breaks that into an INVARIANT_FAILED instead of a write lost in
+ *          silence. A tripwire, not a lock: a flush announced after the check
+ *          is not seen.
+ * @tparam ProxyType the proxy whose WriteCompressSyncPolicy the drains announce on
+ * @param where caller, for the message
+ */
+template <typename ProxyType>
+inline void check_no_flush_outside_start([[maybe_unused]] const char* where) noexcept
+{
+    if constexpr (build_config::use_openmp && build_config::any_check)
+    {
+        if (WriteCompressSyncPolicy<ProxyType>::any_thread_flushing(0)) [[unlikely]]
+        {
+            INVARIANT_FAILED("{}: compresses outside CompressionManager::start() while a deferred-op flush is in "
+                             "progress; a v1 replay storing into this chunk would be lost (proxy_inline.h)",
+                             where);
+        }
     }
 }
 
