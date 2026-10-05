@@ -60,6 +60,11 @@ execute_process(COMMAND ${CMAKE_COMMAND} -E copy_if_different
 file(REMOVE "${_shrink_stamp_list}.tmp")
 
 # --- git: HEAD moving (commit, checkout, reset) re-runs the stamp too --------
+# The cluster's modules export GIT_ROOT (the git install): honouring it as a
+# hint is right, and silences CMP0144 (CMake >= 3.27). include() scopes it.
+if(POLICY CMP0144)
+  cmake_policy(SET CMP0144 NEW)
+endif()
 find_package(Git QUIET)
 set(_shrink_stamp_git_deps "")
 if(GIT_FOUND AND IS_DIRECTORY "${PROJECT_SOURCE_DIR}/.git")
