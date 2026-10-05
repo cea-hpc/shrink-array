@@ -114,7 +114,7 @@ static int run_case(int k)
         case 0:
             break;
         case 1:
-            while (a.size() + 1 < a.capacity())
+            while (a.size() + 1 < static_cast<long>(a.capacity()))
             {
                 a.push_back(0);
             }
@@ -161,7 +161,7 @@ static int run_case(int k)
             a.shrink_to_fit();
             break;
         case 15:
-            while (a.size() < a.capacity())
+            while (a.size() < static_cast<long>(a.capacity()))
             {
                 a.push_back(0);
             }
