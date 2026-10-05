@@ -40,13 +40,14 @@
 #include <cstdint>       // std::uintptr_t, std::uint8_t
 #include <cstdio>        // std::fprintf, std::fflush
 #include <cstdlib>       // std::abort, std::getenv
+#include <functional>    // std::less (the sweep orders slab pointers)
 #include <vector>        // std::vector
 #include <mutex>         // std::mutex, std::scoped_lock
 #include <atomic>        // std::atomic, std::memory_order_relaxed
 #include <unordered_map> // std::unordered_map
 #include <unordered_set> // std::unordered_set
 
-#include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP)
+#include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP), reclaim_min_empty_slabs
 
 namespace fast_alloc
 {
@@ -295,13 +296,21 @@ bool madvise_empty_slab_full(Slab* slab) noexcept
  *          size, so an abandoned (key, size) set is largely contiguous across
  *          ranks; merging adjacent ones turns thousands of calls into a few.
  *
- *          add() runs the very checks of the single-slab path (and bumps the
- *          same counters); flush() sorts by address, drops duplicates (the
- *          same slab reached through two routes, e.g. an unregistered key
- *          falling back to key 0), merges runs whose bytes touch exactly, sets
- *          backptr_dropped on every slab of a run, then advises the run.
- *          A slab whose advisable length is shorter than the slab (not a page
- *          multiple) ends its run, so nothing outside a slab is ever advised.
+ *          add() only records the slab. flush() drops duplicates (the same slab
+ *          reached through two routes, e.g. an unregistered key falling back to
+ *          key 0), applies the CHUNK_RECLAIM_MIN_SLABS floor to the WHOLE
+ *          sweep, runs the very checks of the single-slab path on each slab
+ *          (bumping the same counters), sorts by address, merges runs whose
+ *          bytes touch exactly, sets backptr_dropped on every slab of a run,
+ *          then advises the run. A slab whose advisable length is shorter than
+ *          the slab (not a page multiple) ends its run, so nothing outside a
+ *          slab is ever advised.
+ *
+ *          The floor is the sweep's, not each instance's: a re-chunk gathers
+ *          every rank into one sweep, and each rank holds only ~1/ranks of the
+ *          abandoned set. A per-instance floor dropped whole ranks -- holes in
+ *          the very runs the batching is there to merge -- while the set as a
+ *          whole was far above the bar.
  *
  * @warning Same two preconditions as madvise_empty_slab_full(), held from the
  *          first add() until flush() returns: every collected slab is empty
@@ -325,32 +334,30 @@ class EmptySlabSweep
         flush();
     }
 
-    /// @brief Collect @p slab if it can be advised away (see
+    /// @brief Collect @p slab; flush() decides whether it is advised away (see
     ///        madvise_empty_slab_full() for the checks).
     void add(Slab* slab) noexcept
     {
-        const std::size_t adv = detail::reclaimable_bytes(slab);
-        if (adv == 0)
+        if (slab == nullptr)
         {
             return;
         }
         try
         {
-            items_.push_back(Item{reinterpret_cast<std::uintptr_t>(slab->data), adv, slab});
+            items_.push_back(Item{0, 0, slab});
         }
         catch (...)
         {
             // Out of memory for the batch: advise this one on its own rather
-            // than leave it resident.
-            slab->backptr_dropped = true;
-            ::madvise(slab->data, adv, MADV_DONTNEED);
-            reclaim_calls().fetch_add(1, std::memory_order_relaxed);
-            reclaim_syscalls().fetch_add(1, std::memory_order_relaxed);
-            reclaim_bytes().fetch_add(adv, std::memory_order_relaxed);
+            // than leave it resident (the floor is not consulted: it cannot
+            // be, the sweep's size is unknown yet).
+            madvise_empty_slab_full(slab);
         }
     }
 
-    /// @brief Advise every collected slab away, one madvise() per run.
+    /// @brief Advise every collected slab away, one madvise() per run -- or
+    ///        none of them if the sweep holds fewer distinct slabs than
+    ///        CHUNK_RECLAIM_MIN_SLABS.
     /// @return Number of slabs advised.
     std::size_t flush() noexcept
     {
@@ -358,10 +365,26 @@ class EmptySlabSweep
         {
             return 0;
         }
-        std::sort(items_.begin(), items_.end(), [](const Item& a, const Item& b) { return a.begin < b.begin; });
+        std::sort(items_.begin(), items_.end(),
+                  [](const Item& a, const Item& b) { return std::less<Slab*>{}(a.slab, b.slab); });
         items_.erase(std::unique(items_.begin(), items_.end(),
                                  [](const Item& a, const Item& b) { return a.slab == b.slab; }),
                      items_.end());
+        // CHUNK_RECLAIM_MIN_SLABS: madvise syscalls against the pages they
+        // return, decided by how many slabs this sweep empties at once.
+        if (items_.size() < alloc_config::reclaim_min_empty_slabs())
+        {
+            items_.clear();
+            return 0;
+        }
+        for (Item& it : items_)
+        {
+            it.len   = detail::reclaimable_bytes(it.slab);
+            it.begin = reinterpret_cast<std::uintptr_t>(it.slab->data);
+        }
+        items_.erase(std::remove_if(items_.begin(), items_.end(), [](const Item& it) { return it.len == 0; }),
+                     items_.end());
+        std::sort(items_.begin(), items_.end(), [](const Item& a, const Item& b) { return a.begin < b.begin; });
 
         std::size_t slabs = 0;
         std::size_t first = 0;
@@ -403,8 +426,8 @@ class EmptySlabSweep
   private:
     struct Item
     {
-        std::uintptr_t begin; ///< slab->data
-        std::size_t    len;   ///< advisable bytes (page multiple)
+        std::uintptr_t begin; ///< slab->data, set by flush()
+        std::size_t    len;   ///< advisable bytes (page multiple), set by flush()
         Slab*          slab;  ///< to set backptr_dropped
     };
     std::vector<Item> items_;

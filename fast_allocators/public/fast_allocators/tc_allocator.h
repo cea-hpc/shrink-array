@@ -1272,8 +1272,8 @@ class TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, ElemT, TCCAl
     ///          keys) into ONE sweep, so runs of adjacent slabs merge across
     ///          instances. Same preconditions as reclaim_empty_slabs_now(),
     ///          held until the sweep is flushed.
-    /// @return Number of slabs handed over (0 below the CHUNK_RECLAIM_MIN_SLABS
-    ///         floor, which stays per instance).
+    /// @return Number of slabs handed over. The CHUNK_RECLAIM_MIN_SLABS floor
+    ///         is applied by the sweep, to all instances together.
     std::size_t collect_empty_slabs([[maybe_unused]] empty_slab_sweep& sweep) noexcept
     {
         if constexpr (alloc_config::use_std_alloc || !alloc_config::reclaim_empty_slabs)
@@ -1282,31 +1282,9 @@ class TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, ElemT, TCCAl
         }
         else
         {
-            // CHUNK_RECLAIM_MIN_SLABS: a sweep costs madvise syscalls and
-            // returns this set's pages, so what decides whether it is worth
-            // doing is how many slabs this set empties at once. Count first,
-            // sweep only if the set clears the bar. The count walks the same
-            // two lists the sweep would, which is cheap next to the syscalls
-            // it may save.
-            const std::size_t floor_slabs = alloc_config::reclaim_min_empty_slabs();
-            if (floor_slabs > 0)
-            {
-                std::size_t empty = 0;
-                for (const auto* node : {this->block, this->block_full})
-                {
-                    for (const auto* p = node; p != nullptr; p = p->next)
-                    {
-                        if (p->nn_ref == 0)
-                        {
-                            ++empty;
-                        }
-                    }
-                }
-                if (empty < floor_slabs)
-                {
-                    return 0;
-                }
-            }
+            // No CHUNK_RECLAIM_MIN_SLABS test here: the floor is the sweep's
+            // (EmptySlabSweep::flush), so that one rank's share of a set
+            // gathered across every rank is not dropped on its own.
             std::size_t collected = 0;
             for (auto* node : {this->block, this->block_full})
             {
