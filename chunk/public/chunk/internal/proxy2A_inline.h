@@ -20,6 +20,7 @@
 #include <cstdio>          // std::fprintf (check-build trace)
 #include <iostream>        // std::cerr (verbose)
 #include <source_location> // std::source_location
+#include <thread>          // std::this_thread::yield (replay_retry)
 #include <type_traits>     // std::remove_cvref_t
 #include <utility>         // std::move, std::cmp_greater_equal
 #include <vector>          // the per-chunk "queued" flags
@@ -79,6 +80,70 @@
 
 namespace shrink_array
 {
+
+namespace internal
+{
+/// Deferred-replay retries past which a check build fails and a release
+/// build warns (once per process).
+inline constexpr int kReplayRetryCap = 1000;
+/// Retries past which each further one yields the core first.
+inline constexpr int kReplayRetrySpin = 64;
+
+/**
+ * @brief One more turn of a deferred-replay retry loop (the `_async` bodies
+ *        below and lbd_equal_asynch).
+ *
+ * @details A retry means `values` changed under the replay -- a compressor
+ *          finished in between, so the system made progress. The loop is
+ *          therefore NOT bounded in release: an abort there would turn a
+ *          contention spike into a lost run. What happens instead, in every
+ *          build: each turn is counted (saturating); past kReplayRetrySpin the
+ *          thread yields its core so the compressor it waits for can run; at
+ *          kReplayRetryCap a check build fails (INVARIANT_FAILED -- the tests
+ *          are where a runaway loop must stop) and a release build prints one
+ *          warning to stderr for the whole process, then keeps going.
+ *
+ * @param retry_count the loop's counter, starting at 0
+ * @param where       the loop and path, for the message
+ * @param chunk       chunk being written, for the message
+ * @param num         element offset, for the message
+ * @param loc         the caller (defaulted: the retry site, not this function)
+ */
+inline void replay_retry(int&                        retry_count,
+                         const char*                 where,
+                         const void*                 chunk,
+                         int                         num,
+                         const std::source_location& loc = std::source_location::current()) noexcept
+{
+    if (retry_count <= kReplayRetryCap)
+    {
+        ++retry_count;
+    }
+    if (retry_count > kReplayRetryCap)
+    {
+        if constexpr (build_config::any_check)
+        {
+            invariant_failed(loc, "{}: retry > {} on chunk={} num={} -- pathological contention?", where,
+                             kReplayRetryCap, chunk, num);
+        }
+        else
+        {
+            static std::atomic<bool> warned{false};
+            if (!warned.exchange(true, std::memory_order_relaxed))
+            {
+                std::fprintf(stderr,
+                             "[shrink_array] warning: %s: deferred replay retried more than %d times "
+                             "on chunk=%p num=%d (still retrying; reported once per process)\n",
+                             where, kReplayRetryCap, chunk, num);
+            }
+        }
+    }
+    if (retry_count > kReplayRetrySpin)
+    {
+        std::this_thread::yield();
+    }
+}
+} // namespace internal
 
 // Metadata arming. These four form a family: each arms a different subset of the
 // cached per-chunk pointers, and callers pick the cheapest one that covers what
@@ -673,7 +738,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                 // in-flight write is untouched. Dynamic geometry only.
                 [[maybe_unused]] const DynChunkSizeGuard sz_guard{proxy.chunk_size()};
 
-                [[maybe_unused]] int retry_count = 0;
+                int retry_count = 0;
 
                 while (true)
                 {
@@ -697,15 +762,8 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                     // Pre-store guard: ensure values_before is a heap buffer.
                     if (chunk.is_constant_ptr(values_before)) [[unlikely]]
                     {
-                        if constexpr (build_config::any_check)
-                        {
-                            if (++retry_count > 1000)
-                            {
-                                INVARIANT_FAILED("lbd_equal_asynch: pre-store retry loop exceeded 1000 "
-                                                 "iterations on chunk={} num={} — pathological contention?",
-                                                 static_cast<const void*>(&chunk), num);
-                            }
-                        }
+                        internal::replay_retry(retry_count, "lbd_equal_asynch (pre-store)",
+                                               static_cast<const void*>(&chunk), num);
                         continue;
                     }
 
@@ -744,7 +802,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                         // a persistent loop into a diagnosable failure.
                         if (proxy.is_cst_val1() || proxy.is_cst_val2()) [[unlikely]]
                         {
-                            if (++retry_count > 1000)
+                            if (++retry_count > internal::kReplayRetryCap)
                             {
                                 INVARIANT_FAILED("[deferred2A write] chunk keeps reverting to cst before "
                                                  "store (chunk={}, num={}, values_before={}, cur_cst_val1={}, "
@@ -766,15 +824,8 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                     const T* values_after = chunk.values_load();
                     if (values_after != values_before) [[unlikely]]
                     {
-                        if constexpr (build_config::any_check)
-                        {
-                            if (++retry_count > 1000)
-                            {
-                                INVARIANT_FAILED("lbd_equal_asynch: post-store retry loop exceeded 1000 "
-                                                 "iterations on chunk={} num={} — pathological contention?",
-                                                 static_cast<const void*>(&chunk), num);
-                            }
-                        }
+                        internal::replay_retry(retry_count, "lbd_equal_asynch (post-store)",
+                                               static_cast<const void*>(&chunk), num);
                         continue;
                     }
 
@@ -859,7 +910,7 @@ template <typename Derived, typename T, typename ChunkType, bool Enabled>
 template <typename LAMBDA>
 void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_operation_async(auto* ctx, LAMBDA operation)
 {
-    [[maybe_unused]] int retry_count = 0;
+    int retry_count = 0;
 
     while (true)
     {
@@ -874,16 +925,8 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_opera
         // Pre-store guard
         if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
         {
-            if constexpr (build_config::any_check)
-            {
-                if (++retry_count > 1000)
-                {
-                    invariant_failed(std::source_location::current(),
-                                     "execute_simple_operation_async: pre-store retry > 1000 "
-                                     "on chunk={} num={}",
-                                     static_cast<const void*>(&ctx->chunk), ctx->num);
-                }
-            }
+            internal::replay_retry(retry_count, "execute_simple_operation_async (pre-store)",
+                                   static_cast<const void*>(&ctx->chunk), ctx->num);
             continue;
         }
 
@@ -893,16 +936,8 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_simple_opera
         const T* values_after = ctx->chunk.values_load();
         if (values_after != values_before) [[unlikely]]
         {
-            if constexpr (build_config::any_check)
-            {
-                if (++retry_count > 1000)
-                {
-                    invariant_failed(std::source_location::current(),
-                                     "execute_simple_operation_async: post-store retry > 1000 "
-                                     "on chunk={} num={}",
-                                     static_cast<const void*>(&ctx->chunk), ctx->num);
-                }
-            }
+            internal::replay_retry(retry_count, "execute_simple_operation_async (post-store)",
+                                   static_cast<const void*>(&ctx->chunk), ctx->num);
             continue;
         }
 
@@ -1021,7 +1056,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
 {
     using CalcType = std::common_type_t<T, base_t<U>>;
 
-    [[maybe_unused]] int retry_count = 0;
+    int retry_count = 0;
 
     while (true)
     {
@@ -1061,15 +1096,8 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                 // Pre-store guard inside the decompressed-path branch
                 if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
                 {
-                    if constexpr (build_config::any_check)
-                    {
-                        if (++retry_count > 1000)
-                        {
-                            INVARIANT_FAILED("execute_arithmetic_compound_operation_async (decompress path): "
-                                             "retry > 1000 on chunk={} num={}",
-                                             static_cast<const void*>(&ctx->chunk), ctx->num);
-                        }
-                    }
+                    internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (decompress path)",
+                                           static_cast<const void*>(&ctx->chunk), ctx->num);
                     continue;
                 }
 
@@ -1079,16 +1107,9 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                 const T* values_after = ctx->chunk.values_load();
                 if (values_after != values_before) [[unlikely]]
                 {
-                    if constexpr (build_config::any_check)
-                    {
-                        if (++retry_count > 1000)
-                        {
-                            INVARIANT_FAILED(
-                                "execute_arithmetic_compound_operation_async (decompress path post-store): "
-                                "retry > 1000 on chunk={} num={}",
-                                static_cast<const void*>(&ctx->chunk), ctx->num);
-                        }
-                    }
+                    internal::replay_retry(retry_count,
+                                           "execute_arithmetic_compound_operation_async (decompress path post-store)",
+                                           static_cast<const void*>(&ctx->chunk), ctx->num);
                     continue;
                 }
 
@@ -1101,15 +1122,8 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                 // Pre-store guard
                 if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
                 {
-                    if constexpr (build_config::any_check)
-                    {
-                        if (++retry_count > 1000)
-                        {
-                            INVARIANT_FAILED("execute_arithmetic_compound_operation_async (heap path): "
-                                             "retry > 1000 on chunk={} num={}",
-                                             static_cast<const void*>(&ctx->chunk), ctx->num);
-                        }
-                    }
+                    internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (heap path)",
+                                           static_cast<const void*>(&ctx->chunk), ctx->num);
                     continue;
                 }
 
@@ -1119,15 +1133,9 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                 const T* values_after = ctx->chunk.values_load();
                 if (values_after != values_before) [[unlikely]]
                 {
-                    if constexpr (build_config::any_check)
-                    {
-                        if (++retry_count > 1000)
-                        {
-                            INVARIANT_FAILED("execute_arithmetic_compound_operation_async (heap path post-store): "
-                                             "retry > 1000 on chunk={} num={}",
-                                             static_cast<const void*>(&ctx->chunk), ctx->num);
-                        }
-                    }
+                    internal::replay_retry(retry_count,
+                                           "execute_arithmetic_compound_operation_async (heap path post-store)",
+                                           static_cast<const void*>(&ctx->chunk), ctx->num);
                     continue;
                 }
 
@@ -1144,15 +1152,8 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                     break;
                 }
                 // State changed between decision and now: retry.
-                if constexpr (build_config::any_check)
-                {
-                    if (++retry_count > 1000)
-                    {
-                        INVARIANT_FAILED("execute_arithmetic_compound_operation_async (no-op path): "
-                                         "retry > 1000 on chunk={} num={}",
-                                         static_cast<const void*>(&ctx->chunk), ctx->num);
-                    }
-                }
+                internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (no-op path)",
+                                       static_cast<const void*>(&ctx->chunk), ctx->num);
             }
         }
         else
@@ -1162,18 +1163,6 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
             // value (true) in place of ptr_second_value. Unreachable today (no
             // compound operator on a bool proxy), kept complete so that a future
             // one does not skip the protocol in silence.
-            const auto retry_or_fail = [&](const char* path)
-            {
-                if constexpr (build_config::any_check)
-                {
-                    if (++retry_count > 1000)
-                    {
-                        INVARIANT_FAILED("execute_arithmetic_compound_operation_async (bool, {}): "
-                                         "retry > 1000 on chunk={} num={}",
-                                         path, static_cast<const void*>(&ctx->chunk), ctx->num);
-                    }
-                }
-            };
             const bool will_be_not_second_value = !v_new_truncated && cst_val2;
 
             if (will_be_not_second_value)
@@ -1183,7 +1172,9 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                 const T* values_before = ctx->chunk.values_load();
                 if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
                 {
-                    retry_or_fail("decompress path");
+                    internal::replay_retry(retry_count,
+                                           "execute_arithmetic_compound_operation_async (bool, decompress path)",
+                                           static_cast<const void*>(&ctx->chunk), ctx->num);
                     continue;
                 }
 
@@ -1191,7 +1182,9 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
 
                 if (ctx->chunk.values_load() != values_before) [[unlikely]]
                 {
-                    retry_or_fail("decompress path post-store");
+                    internal::replay_retry(
+                        retry_count, "execute_arithmetic_compound_operation_async (bool, decompress path post-store)",
+                        static_cast<const void*>(&ctx->chunk), ctx->num);
                     continue;
                 }
                 break;
@@ -1201,7 +1194,8 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                 const T* values_before = ctx->chunk.values_load();
                 if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
                 {
-                    retry_or_fail("heap path");
+                    internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (bool, heap path)",
+                                           static_cast<const void*>(&ctx->chunk), ctx->num);
                     continue;
                 }
 
@@ -1209,7 +1203,9 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
 
                 if (ctx->chunk.values_load() != values_before) [[unlikely]]
                 {
-                    retry_or_fail("heap path post-store");
+                    internal::replay_retry(retry_count,
+                                           "execute_arithmetic_compound_operation_async (bool, heap path post-store)",
+                                           static_cast<const void*>(&ctx->chunk), ctx->num);
                     continue;
                 }
 
@@ -1221,7 +1217,8 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_c
                 break;
             }
             // State changed between decision and now: retry.
-            retry_or_fail("no-op path");
+            internal::replay_retry(retry_count, "execute_arithmetic_compound_operation_async (bool, no-op path)",
+                                   static_cast<const void*>(&ctx->chunk), ctx->num);
         }
     }
 }
@@ -1261,7 +1258,7 @@ template <typename LAMBDA>
 void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_operation_async(auto*  ctx,
                                                                                             LAMBDA operation) const
 {
-    [[maybe_unused]] int retry_count = 0;
+    int retry_count = 0;
 
     while (true)
     {
@@ -1280,15 +1277,8 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
         // Pre-store guard
         if (ctx->chunk.is_constant_ptr(values_before)) [[unlikely]]
         {
-            if constexpr (build_config::any_check)
-            {
-                if (++retry_count > 1000)
-                {
-                    INVARIANT_FAILED("execute_inplace_operation_async: pre-store retry > 1000 "
-                                     "on chunk={} num={}",
-                                     static_cast<const void*>(&ctx->chunk), ctx->num);
-                }
-            }
+            internal::replay_retry(retry_count, "execute_inplace_operation_async (pre-store)",
+                                   static_cast<const void*>(&ctx->chunk), ctx->num);
             continue;
         }
 
@@ -1299,15 +1289,8 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
         const T* values_after = ctx->chunk.values_load();
         if (values_after != values_before) [[unlikely]]
         {
-            if constexpr (build_config::any_check)
-            {
-                if (++retry_count > 1000)
-                {
-                    INVARIANT_FAILED("execute_inplace_operation_async: post-store retry > 1000 "
-                                     "on chunk={} num={}",
-                                     static_cast<const void*>(&ctx->chunk), ctx->num);
-                }
-            }
+            internal::replay_retry(retry_count, "execute_inplace_operation_async (post-store)",
+                                   static_cast<const void*>(&ctx->chunk), ctx->num);
             continue;
         }
 
