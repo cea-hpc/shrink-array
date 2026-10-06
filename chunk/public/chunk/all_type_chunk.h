@@ -90,12 +90,10 @@ struct ManagerChunkInt;
 // ManagerChunkParallelInterface / DynInterface; these forward
 // to those.
 //
-// Each body reaches the registry with an inline static_cast rather than through
-// a self() helper or CRTPSupport<Derived>. That is the same rule ChunkAllocPolicy
-// and ChunkDeferredOpsPolicy follow, for the same reason, and here it bites
-// harder: AllTypeChunk inherits THREE of these policies at once, so a helper
-// named in more than one of them makes that name ambiguous on AllTypeChunk --
-// measured, in a CHUNK_DYNAMIC build, as four candidates for self().
+// Each body reaches the registry with an inline static_cast rather than an
+// explicit object parameter. That is the same rule ChunkAllocPolicy
+// and ChunkDeferredOpsPolicy follow, for the same reason: these members are
+// called from sibling policies whose *this is not a Derived.
 // ===========================================================================
 
 /**

@@ -137,8 +137,9 @@ void ChunkBase<T, Derived>::free_block_to_pool(this Derived& self, [[maybe_unuse
 // unconditionally declared elsewhere, and ChunkDeferredOpsPolicy<T,Derived,
 // true> is simply never instantiated in a serial build (nothing ever names
 // it there), so these definitions are never compiled/linked in that case.
-// self() -> static_cast<Derived*>(this): this policy does not inherit
-// CRTPSupport<Derived> a second time (see the class comment in chunk_base.h).
+// static_cast<Derived*>(this), not an explicit object parameter: these
+// members are called from sibling policies whose *this is not a Derived
+// (see the class comment in chunk_base.h).
 
 template <typename T, typename Derived>
 void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_processing(

@@ -254,7 +254,6 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/concept_is_clean_assignement.h
         public/chunk/internal/conditional_counter.h
         public/chunk/internal/cpu_pause.h
-        public/chunk/internal/crp_helper.h
         public/chunk/internal/def_force_inline.h
         public/chunk/internal/deferred_lifecycle_check.h
         public/chunk/internal/deferred_op_pool.h

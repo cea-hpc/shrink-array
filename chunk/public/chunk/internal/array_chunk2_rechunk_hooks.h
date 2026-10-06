@@ -42,7 +42,6 @@
 #include "chunk/config.h"              // build_config::chunk_dynamic
 #include "chunk/chunk_traits.h"        // ArrayChunkTraits
 #include "chunk/internal/in_t.h"       // in_t<T>: the captured state
-#include "chunk/internal/crp_helper.h" // crtp_cast_t
 
 namespace shrink_array
 {

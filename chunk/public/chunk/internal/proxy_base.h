@@ -40,7 +40,6 @@
 #include "chunk/internal/tab_cst_val2_holder.h"          // TabCstVal2Holder: second-value identifiers
 #include "chunk/internal/relaxed_element.h"              // store_value: Chunk2A's relaxed element stores
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanCompoundOp, IsCleanShiftOp, base_t
-#include "chunk/internal/crp_helper.h"                   // CRTPSupport, CRTP_USE_DEDUCING_THIS
 #include "chunk/internal/test_hooks.h"                   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
 #include "chunk/internal/read_reclaim.h"                 // ReadSection: read_values_outside_session
 
@@ -132,7 +131,7 @@ class ProxyBaseFastCompPolicy
 
     /// @brief Queue the chunk @p ctx names as a compression candidate, on the
     ///        replay path.
-    // Explicit object parameter (C++23) in place of CRTPSupport::derived().
+    // Explicit object parameter (C++23), reaching the derived proxy directly.
     void add_to_compression_list_async(this const auto& self, auto* ctx);
 
     /**

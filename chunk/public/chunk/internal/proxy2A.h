@@ -34,7 +34,6 @@
 #include "chunk/config.h"                     // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, set_thread_alloc_key
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
-#include "chunk/internal/crp_helper.h"                   // CRTPSupport
 #include "chunk/internal/in_t.h"                         // in_t<T>
 #include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
 #include "chunk/internal/tab_cst_val2_holder.h"          // SecondValueRef

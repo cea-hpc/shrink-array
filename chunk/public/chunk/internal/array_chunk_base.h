@@ -26,8 +26,8 @@
  *          pre-filter the OpenMP read gate, the STL-like surface (size/empty,
  *          at/front/back, assign/swap, const_iterator) and the generic
  *          re-chunking algorithm. Anything variant-specific is reached through
- *          derived() (CRTP) or through the `rechunk_*` hooks, whose no-op
- *          defaults live at the bottom of the class.
+ *          self (the explicit object parameter) or through the `rechunk_*`
+ *          hooks, whose no-op defaults live at the bottom of the class.
  *
  *          Declarations only: the out-of-line template bodies are in
  *          array_chunk_base_inline.h, included at the end of this file.
@@ -44,7 +44,6 @@
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::do_check
 #include "chunk/internal/in_t.h"                // in_t<T>
 #include "chunk/chunk_traits.h"                 // ArrayChunkTraits, Proxy2
-#include "chunk/internal/crp_helper.h"          // CRTPSupport
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED — used HERE (swap check)
@@ -64,10 +63,10 @@ namespace shrink_array
  *          reports chunks written that are not.
  *
  *          NOTE: deliberately NOT written inline as
- *          @code if constexpr (requires { derived().chunk_written(j); }) @endcode
- *          inside is_written_at(): nvc++ (EDG) mis-evaluates a requires-expression
- *          that references a CRTP-cast (`derived()`) plus a captured local
- *          parameter, taking the FALSE branch even when the overload exists.
+ *          @code if constexpr (requires { self.chunk_written(j); }) @endcode
+ *          inside is_written_at(): nvc++ (EDG) mis-evaluates such a
+ *          requires-expression (a dependent call plus a captured local
+ *          parameter), taking the FALSE branch even when the overload exists.
  *          A free trait with explicit declval'd parameters is standard SFINAE
  *          that all three frontends (gcc/llvm/nvc++) evaluate identically.
  *

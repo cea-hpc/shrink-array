@@ -103,7 +103,7 @@ void ArrayChunkBase<Derived>::set_value(this Derived& self, ind_type i, in_t<T> 
     }
 
     // Assignment triggers Proxy::operator= which handles everything internally,
-    // including calling derived().get_metadata(i) if needed
+    // including calling get_metadata(i) if needed
     proxy = v;
 }
 

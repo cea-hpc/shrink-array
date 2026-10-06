@@ -27,7 +27,6 @@
 #include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"               // in_t<T>
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
-#include "chunk/internal/crp_helper.h"         // CRTPSupport
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
 #include "chunk/internal/pointer_map_chunk2.h" // PointerMapChunk2
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment

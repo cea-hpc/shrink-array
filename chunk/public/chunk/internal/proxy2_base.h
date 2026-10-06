@@ -431,7 +431,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     /**
      * @brief Core unified logic for 2-value compression marking.
      * @details When `isv` is true, checks whether this write's transition
-     *          qualifies for compression (derived().should_mark_for_compression())
+     *          qualifies for compression (should_mark_for_compression())
      *          or whether the in-memory value no longer matches
      *          `expected_in_memory` (a race with a concurrent writer); either
      *          way, adds this element to the compression candidate list.

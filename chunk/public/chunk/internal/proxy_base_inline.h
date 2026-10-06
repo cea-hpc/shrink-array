@@ -60,7 +60,6 @@
 #include "chunk/internal/array_chunk_for.h"    // ArrayChunkFor_t
 #include "chunk/internal/concept_chunk.h"      // IsChunk2, chunk_template_of
 #include "chunk/internal/concept_is_clean_assignement.h" // base_t
-#include "chunk/internal/crp_helper.h"                   // CRTP_USE_DEDUCING_THIS
 #include "chunk/internal/def_force_inline.h"             // FORCE_INLINE
 #include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h"   // WriteCompressSyncPolicy
@@ -389,9 +388,8 @@ ProxyType ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::make_proxy_wi
  * @param self The proxy, deduced (explicit object parameter).
  * @param ctx  Deferred-operation context being replayed.
  */
-// Deducing this: `self` replaces derived(). The class still has its Derived
-// parameter, so Derived::tab_... and the CRTPSupport base are unchanged; only
-// the derived() calls become self.
+// Deducing this: `self` replaces the CRTP down-cast. The class keeps its
+// Derived parameter; the calls go through the explicit object parameter.
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
 void ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::add_to_compression_list_async(this const auto& self,
                                                                                             auto*            ctx)

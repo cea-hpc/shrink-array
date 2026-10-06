@@ -48,7 +48,6 @@
 #include "chunk/internal/deferred_op_pool.h"            // DeferredOperationBase, DeferredOpDeleter
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_* block-lifecycle checks (check builds)
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_* / add_chunk_* (CHUNK_STATS)
-#include "chunk/internal/crp_helper.h"                  // CRTPSupport
 #include "chunk/internal/bad_ptr_check.h"               // CHUNK_CHECK_VALUES_PTR (check builds)
 
 #include "chunk/internal/freepath_counters.h" // [FREEPATH] counters, needed in std-alloc builds too
@@ -439,9 +438,7 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
 // this is a genuine two-implementation split: BOTH modes allocate a chunk,
 // initialize it, and keep stats/ledger/leak-tracking in sync -- only the
 // OpenMP version additionally tries the per-thread free list first.
-// static_cast<Derived&>(*this) inline rather than inheriting CRTPSupport<Derived>
-// a second time, which would make ChunkBase's own derived()/self() ambiguous
-// (two paths to the same stateless mixin). Not an explicit object parameter
+// static_cast<Derived&>(*this) inline. Not an explicit object parameter
 // as in DeferredReadGate: allocate_chunk_internal is called as
 // Base::allocate_chunk_internal(...) from sibling policies (Chunk2OmpPolicy,
 // ...), whose *this is not a Derived and would not bind to `this Derived&`.
@@ -639,8 +636,7 @@ struct ChunkAllocPolicy<T, Derived, false>
 // Storage note: `values` (ChunkBase's own atomic pointer) and `pending_ops_`
 // stay declared on ChunkBase itself for object-layout stability (same
 // principle as DeferredReadGate above); this policy only owns the access,
-// reaching back via static_cast<Derived&>(*this), not CRTPSupport<Derived>, to
-// avoid making ChunkBase's derived()/self() ambiguous -- and not through an
+// reaching back via static_cast<Derived&>(*this) -- and not through an
 // explicit object parameter, for the reason given at ChunkAllocPolicy:
 // compare_and_swap_gen / recup_value are called as Base::... from sibling
 // policies whose *this is not a Derived.
