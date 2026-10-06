@@ -67,6 +67,13 @@ inline const bool g_rechunk_trace = std::getenv("CHUNK_RECHUNK_TRACE") != nullpt
 /// seconds per run at tens of GB and 128 threads).
 inline const bool g_rechunk_trace_mem = std::getenv("CHUNK_RECHUNK_TRACE_MEM") != nullptr;
 
+/// CHUNK_RECHUNK_TRACE: the v1 refill's inter-slice costs for the re-chunk in
+/// progress (ms), reset by rechunk_to() and printed in its phases line.
+/// Written by the master between the slice regions only.
+inline double g_slice_drain_ms   = 0.0;
+inline double g_slice_collect_ms = 0.0;
+inline double g_slice_madvise_ms = 0.0;
+
 /// @brief Resident set size of this process in MiB, or -1 if unreadable.
 /// @details EXACT (smaps_rollup, see exact_rss.h): statm lags by gigabytes at
 ///          64 threads. Only the CHUNK_RECHUNK_TRACE paths read it (per phase
@@ -218,6 +225,9 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     const auto t_ms         = [](auto start, auto stop)
     { return std::chrono::duration<double, std::milli>(stop - start).count(); };
     const auto                            t0 = t_now();
+    internal::g_slice_drain_ms   = 0.0; // filled by rechunk_refill's slice boundaries
+    internal::g_slice_collect_ms = 0.0;
+    internal::g_slice_madvise_ms = 0.0;
     std::chrono::steady_clock::time_point t1_out;
     std::chrono::steady_clock::time_point t2_out;
     std::chrono::steady_clock::time_point t3_out;
@@ -501,8 +511,10 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         const auto t6 = t_now();
         std::fprintf(stderr,
                      "[RECHUNK] %u -> %u phases (ms): prologue %.0f | tmp create %.0f | refill %.0f | "
+                     "of which slice drain %.0f | of which slice collect %.0f | of which slice madvise %.0f | "
                      "flush+swap %.0f | tmp teardown %.0f | old-pool drain %.0f | slab sweep %.0f | total %.0f\n",
                      old_size, new_size, t_ms(t0, t1_out), t_ms(t1_out, t2_out), t_ms(t2_out, t3_out),
+                     internal::g_slice_drain_ms, internal::g_slice_collect_ms, internal::g_slice_madvise_ms,
                      t_ms(t3_out, t4_out), t_ms(t4_out, t5), t_ms(t5, t5b), t_ms(t5b, t6), t_ms(t0, t6));
     }
     if (internal::g_rechunk_trace_mem)
@@ -1105,7 +1117,14 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 // already released by release_st are touched -- the source chunks
                 // the remaining slices still have to read are untouched.
                 set_thread_chunk_size(static_cast<unsigned int>(old_size));
+                // CHUNK_RECHUNK_TRACE: drain / collect / madvise, timed apart.
+                using slice_clock = std::chrono::steady_clock;
+                const auto slice_ms = [](slice_clock::time_point a, slice_clock::time_point b)
+                { return std::chrono::duration<double, std::milli>(b - a).count(); };
+                const auto sd0 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
                 self().rechunk_drain_reuse_list(static_cast<unsigned int>(old_size));
+                if (internal::g_rechunk_trace)
+                    internal::g_slice_drain_ms += slice_ms(sd0, slice_clock::now());
                 if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
                 {
                     // The old storage's allocator set -- the shared pool (key 0)
@@ -1117,11 +1136,18 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     // One sweep across ranks: one madvise per contiguous run.
                     typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(0, 0u))>::empty_slab_sweep
                         sweep;
+                    const auto sc0 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
                     for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
                     {
                         chunk_type::get_chunk_allocator(r, old_key_refill).collect_empty_slabs(sweep);
                     }
+                    const auto sc1 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
                     sweep.flush();
+                    if (internal::g_rechunk_trace)
+                    {
+                        internal::g_slice_collect_ms += slice_ms(sc0, sc1);
+                        internal::g_slice_madvise_ms += slice_ms(sc1, slice_clock::now());
+                    }
                 }
                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
                 if (slice_trace)
