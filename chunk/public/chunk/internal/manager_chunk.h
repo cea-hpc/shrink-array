@@ -17,6 +17,8 @@
 #pragma once
 
 #include <algorithm>     // std::max
+#include <atomic>        // TeamDrainScratch's rank flags
+#include <memory>        // std::unique_ptr (the same flags)
 #include <map>           // std::map
 #include <vector>        // std::vector
 #include <tuple>         // std::tuple, std::get
@@ -1152,10 +1154,12 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      * @brief Drain pass 1 for one rank: sort rank @p rank's parked blocks into
      *        row @p rank of @p bucket by owning rank; blocks no slab claims stay
      *        parked. Touches rank @p rank's list and row only.
+     * @param col_dirty when given (the team drain), flag o is raised for every
+     *        owning rank o that receives a block: column o needs a free pass.
      */
     template <typename Alloc>
     static void drain_sort_rank(std::vector<PerThreadFreeList>& per_thr, int n_thr, int rank, Alloc* geometry,
-                                DrainBuckets& bucket) noexcept
+                                DrainBuckets& bucket, std::atomic<unsigned char>* col_dirty = nullptr) noexcept
     {
         if (rank < 0 || rank >= n_thr)
         {
@@ -1175,6 +1179,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             if (slab && slab->owner && slab->owner_rank >= 0 && slab->owner_rank < n_thr)
             {
                 row[static_cast<std::size_t>(slab->owner_rank)].push_back(block);
+                // Load first: the flag's line is shared by the team, raise it
+                // once rather than write it on every block.
+                if (col_dirty != nullptr &&
+                    col_dirty[slab->owner_rank].load(std::memory_order_relaxed) == 0)
+                {
+                    col_dirty[slab->owner_rank].store(1, std::memory_order_relaxed);
+                }
             }
             else
             {
@@ -1233,6 +1244,16 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         DrainBuckets                                 bucket;
         std::vector<std::vector<PerThreadFreeList>*> sets;
         void*                                        geometry = nullptr;
+        /// Per rank, sized like @c bucket: held = a team member is this rank
+        /// (it sorts and frees its own row and column); dirty = column r got
+        /// blocks in the current set. The single-thread tails visit only the
+        /// ranks no member holds, and of those only the dirty columns: the
+        /// matrix is capacity x capacity (288 x 288 on Grace whatever the
+        /// team), and walking all of it on one thread cost ~1.5-2 ms per
+        /// slice boundary.
+        std::unique_ptr<std::atomic<unsigned char>[]> held;
+        std::unique_ptr<std::atomic<unsigned char>[]> dirty;
+        std::size_t                                   n_flags = 0;
     };
 
     /**
@@ -1283,6 +1304,17 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 {
                     s.bucket.assign(n, std::vector<std::vector<T*>>(n));
                 }
+                if (s.n_flags < n)
+                {
+                    s.held    = std::make_unique<std::atomic<unsigned char>[]>(n);
+                    s.dirty   = std::make_unique<std::atomic<unsigned char>[]>(n);
+                    s.n_flags = n;
+                }
+                for (std::size_t r = 0; r < s.n_flags; ++r)
+                {
+                    s.held[r].store(0, std::memory_order_relaxed);
+                    s.dirty[r].store(0, std::memory_order_relaxed);
+                }
                 const unsigned int saved_sz = shrink_array::thread_chunk_size();
                 shrink_array::set_thread_chunk_size(size);
                 s.geometry = &CHUNK_T<T>::get_chunk_allocator(0, 0u);
@@ -1290,11 +1322,19 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             } // implicit barrier: s is complete for every thread
             auto* const geometry = static_cast<alloc_t*>(s.geometry);
             const int   me       = CHUNK_PMP_THREAD_RANK;
+            auto* const held     = s.held.get();
+            auto* const dirty    = s.dirty.get();
+            if (me >= 0 && static_cast<std::size_t>(me) < s.n_flags)
+            {
+                held[me].store(1, std::memory_order_relaxed); // read after the first set's barrier
+            }
             for (auto* set : s.sets)
             {
                 auto&     per_thr = *set;
                 const int n_thr   = static_cast<int>(per_thr.size());
-                drain_sort_rank(per_thr, n_thr, me, geometry, s.bucket);
+                const auto is_set = [](const std::atomic<unsigned char>* f, int r) noexcept
+                { return f[r].load(std::memory_order_relaxed) != 0; };
+                drain_sort_rank(per_thr, n_thr, me, geometry, s.bucket, dirty);
 #pragma omp barrier
 #pragma omp single
                 {
@@ -1302,16 +1342,29 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                     // capacity); cheap for the lists just emptied.
                     for (int q = 0; q < n_thr; ++q)
                     {
-                        drain_sort_rank(per_thr, n_thr, q, geometry, s.bucket);
+                        if (!is_set(held, q))
+                        {
+                            drain_sort_rank(per_thr, n_thr, q, geometry, s.bucket, dirty);
+                        }
                     }
-                } // implicit barrier: every row is sorted
-                drain_free_rank(n_thr, me, geometry, s.bucket, /*release_cells=*/false);
+                } // implicit barrier: every row is sorted, every dirty flag raised
+                if (me >= 0 && me < n_thr && is_set(dirty, me))
+                {
+                    drain_free_rank(n_thr, me, geometry, s.bucket, /*release_cells=*/false);
+                }
 #pragma omp barrier
 #pragma omp single
                 {
                     for (int r = 0; r < n_thr; ++r)
                     {
-                        drain_free_rank(n_thr, r, geometry, s.bucket, /*release_cells=*/false);
+                        if (!is_set(held, r) && is_set(dirty, r))
+                        {
+                            drain_free_rank(n_thr, r, geometry, s.bucket, /*release_cells=*/false);
+                        }
+                    }
+                    for (int r = 0; r < n_thr; ++r) // the next set starts clean
+                    {
+                        dirty[r].store(0, std::memory_order_relaxed);
                     }
                 } // implicit barrier: this set is drained
             }
