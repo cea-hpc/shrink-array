@@ -16,19 +16,10 @@
 
 #pragma once
 
-/// @brief Compile-time settings of Chunk2A: CHUNK_SIZE bound, compression-list and buffer-reuse thresholds.
+/// @brief Compile-time settings of Chunk2A: compression-list and buffer-reuse thresholds.
 class Chunk2ADef
 {
   private:
-    // Upper bound on CHUNK_SIZE. This is NOT the chunk geometry (use
-    // shrink_array::__chunk_size for that); it is only a sanity bound for the
-    // example/config validation. The real hard limit is the per-chunk counter
-    // capacity (unsigned short) enforced by static_assert in
-    // conditional_counter.h, so 65535 is the true maximum. (Was 256/128, a
-    // stale value that predates the constexpr-geometry refactor and wrongly
-    // rejected CHUNK_SIZE=512.)
-    constexpr static int size_max = 65535;
-
     // --- Compression List Settings ---
     // The compression pass (make_block_compression -> start()) runs only once
     // the per-thread "to compress" list grows past szm/2, where szm derives
@@ -53,10 +44,6 @@ class Chunk2ADef
 #endif
 
     constexpr static int compress_level = CHUNK2A_COMPRESS_LEVEL;
-
-    constexpr static int nb_max_compress_value = 256;
-
-    constexpr static int factor_div_nb_chunk_for_buffer_reuse = 100;
 
   public:
     /// Floor of the per-thread "to compress" list threshold (entries), by CHUNK2A_COMPRESS_LEVEL.

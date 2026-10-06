@@ -23,8 +23,6 @@
 #include <cstdlib>    // std::free (demangled name)
 #include <iostream>   // std::cerr
 
-#define DEBUG_TRACE(x) std::cerr << " ... " #x " = " << (x) << "\n";
-
 /// @brief Print the calling thread's backtrace (up to 100 frames) to std::cerr, demangling names when possible.
 inline void print_backtrace()
 {

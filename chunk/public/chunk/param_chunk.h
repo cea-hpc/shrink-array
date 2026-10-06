@@ -330,8 +330,9 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *          known point (a measurement, a checkpoint) rather than at whatever
      *          moment the next sweep happens.
      *
-     * @note An empty no-op unless the build defines
-     *       HAVE_EMBEDDED_FAST_BLOCK_COMPRESSION, so call sites need no guard.
+     * @note An empty no-op unless the build has fast block compression
+     *       (chunk_config::use_fast_block_compression, OpenMP builds), so call
+     *       sites need no guard.
      */
     static void force_compression();
 

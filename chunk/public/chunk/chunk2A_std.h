@@ -68,6 +68,7 @@ class ManagerChunk;
 // replaced by a typed base: in a serial build the methods do not exist,
 // exactly as before. Reaches Chunk2A's bases via self(): Base = Chunk2Base,
 // Holder = TabCstVal2Holder. All accessed members are public (no friend needed).
+/// @brief Chunk2A's lock-free CAS operations on `values` (OpenMP builds only).
 template <typename T, typename Derived>
 class Chunk2AConcurrentOps
 {
@@ -230,6 +231,7 @@ class Chunk2AConcurrentOps
 // serial and OMP builds, so this base is mixed into Chunk2A UNCONDITIONALLY (not
 // gated on use_openmp like Chunk2AConcurrentOps). Same CRTP accessor pattern,
 // const-qualified since every query is a pure read.
+/// @brief Chunk2A's lock-free reads of its constant state (cst_val1 / cst_val2 / written), every build.
 template <typename T, typename Derived>
 class Chunk2AStateQueries
 {
@@ -517,9 +519,8 @@ class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrent
  * @tparam Derived CRTP derived chunk type (Chunk2A<T>)
  */
 template <typename T, typename Derived>
-class Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
+struct Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
 {
-  public:
     using Base            = Chunk2Base<T, Derived>;
     using manager_chunk2A = ManagerChunk<Chunk2A, T>;
 
@@ -574,14 +575,13 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
                 public TabCstVal2Holder<T>,
                 public Chunk2AStateQueries<T, Chunk2A<T>>
 {
-  private:
+  public:
     friend class Chunk2Base<T, Chunk2A>;
     friend class Proxy2A<T>;
 
-    using Base      = Chunk2Base<T, Chunk2A>;
-    using OmpPolicy = Chunk2AOmpPolicy<T, Chunk2A, build_config::use_openmp>;
+    using Base      = Chunk2Base<T, Chunk2A>;                                 ///< The CRTP chunk base.
+    using OmpPolicy = Chunk2AOmpPolicy<T, Chunk2A, build_config::use_openmp>; ///< This build's thread-model policy.
 
-  public:
     using manager_chunk2A = ManagerChunk<Chunk2A, T>;
     // Same tuple as TChunk.h's VectorTuple4ChunkInt2 (the manager storage).
     using vec_tuple_chunkA2p_int2  = std::vector<std::tuple<Chunk2A*, int, int, ChunkElems>>;

@@ -189,7 +189,7 @@ class ChunkSpec2
     }
 };
 
-// bool and Bit (bit.h): the second constant is `true`, one for the type.
+/// @brief ChunkSpec2 for bool and Bit (bit.h): the second constant is `true`, one for the type.
 template <typename T>
     requires is_bool_like_v<T>
 class ChunkSpec2<T>
@@ -633,8 +633,7 @@ class Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
     void create_value_serial_impl(bool need_set_second_value, Init2ndFn&& init_2nd) noexcept;
 };
 
-// --- In chunk2_std.h ---
-
+/// @brief Chunk2's batched candidate queue and block compression (fast-block builds).
 template <typename T, typename Derived, bool Enabled>
 class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Derived>
 {
@@ -689,7 +688,6 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
         // that key.
         return have_chunk_to_compress(static_cast<T>(true), max_thr);
     }
-
 
 
     /**
@@ -1068,7 +1066,6 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
 /*!
  * \brief Block compression class (power of 2) 2 values automatic detection
  */
-
 template <typename T>
 class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_counter>,
                public Chunk2FastCompPolicy<T, Chunk2<T>, chunk_config::use_fast_block_compression>
@@ -1087,7 +1084,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     using Base::first_value;
     using Base::values;
 
-    using CounterPolicy = Chunk2CounterPolicy;
+    using CounterPolicy = Chunk2CounterPolicy; ///< The counter base, Chunk2CounterPolicy<use_compression_with_counter>.
 
     using FastCompPolicy = Chunk2FastCompPolicy<T, Chunk2, chunk_config::use_fast_block_compression>;
     using OmpPolicy      = Chunk2OmpPolicy<T, Chunk2, build_config::use_openmp>;
@@ -1153,7 +1150,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      *          (chunk_std.h). `values` is atomic, so it
      *          cannot come through a base copy and is copied by hand below.
      */
-    Chunk2(const Chunk2& other) : Chunk2CounterPolicy<chunk_config::use_compression_with_counter>(other)
+    Chunk2(const Chunk2& other) : CounterPolicy(other)
     {
         if constexpr (build_config::use_openmp)
         {
@@ -1181,7 +1178,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
 
         // Same reason as the copy ctor: propagate the counter state.
-        Chunk2CounterPolicy<chunk_config::use_compression_with_counter>::operator=(other);
+        CounterPolicy::operator=(other);
 
         if constexpr (build_config::use_openmp)
         {

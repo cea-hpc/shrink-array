@@ -45,39 +45,13 @@ namespace shrink_array
 
 struct ManagerChunkInt;
 
-/**
- * @brief Process-wide registry of the per-type chunk managers, reached as a singleton.
- *
- * A ManagerChunk is parameterised by both a chunk template (Chunk / Chunk2 /
- * Chunk2A) and an element type, so there is one manager per combination and no
- * single type can name them all. AllTypeChunk owns them behind
- * ManagerChunkInt pointers and offers the "do it for every type" operations the
- * rest of the library needs: allocator setup, deferred-write flush,
- * compression passes, free-list load balancing and teardown.
- *
- * Every public method below is a fan-out: it walks getListTypeChunk() and
- * forwards to the matching ManagerChunkInt virtual, so the semantics of each
- * one are those of the manager method it calls, applied to all types at once.
- *
- * Access is through <tt>SingletonChk\<AllTypeChunk\>\::getRef()</tt>. The registry starts
- * empty and fills itself: the first array of each (chunk template, element
- * type) registers its manager from its create() (ensure_manager), once
- * ParamChunk::init_indexes() has published the block size. A program may also
- * register a list of types up front with ParamChunk::init_indexes<Types>().
- *
- * @note The available surface depends on the build, and the parts that vary
- *       live in the three policies above:
- *       AllTypeChunkParallelInterface picks the per-thread allocator and
- *       free-list methods over the single-allocator ones,
- *       AllTypeChunkDynInterface adds register_chunk_size().
- */
 // ===========================================================================
 // Build-dependent halves of the registry's surface.
 //
 // Which methods AllTypeChunk offers depends on the build, and a method cannot
 // be declared conditionally -- so the conditional halves live here, in
 // policies selected by a constexpr.
-// AllTypeChunk inherits all three; each contributes the members its own
+// AllTypeChunk inherits both; each contributes the members its own
 // configuration has.
 //
 // The bodies stay in all_type_chunk.cpp. A template's member is only
@@ -93,9 +67,8 @@ struct ManagerChunkInt;
 // Each body reaches the registry with an inline static_cast rather than through
 // a self() helper or CRTPSupport<Derived>. That is the same rule ChunkAllocPolicy
 // and ChunkDeferredOpsPolicy follow, for the same reason, and here it bites
-// harder: AllTypeChunk inherits THREE of these policies at once, so a helper
-// named in more than one of them makes that name ambiguous on AllTypeChunk --
-// measured, in a CHUNK_DYNAMIC build, as four candidates for self().
+// harder: AllTypeChunk inherits both policies at once, so a helper named in
+// more than one of them makes that name ambiguous on AllTypeChunk.
 // ===========================================================================
 
 /**
@@ -156,7 +129,7 @@ class AllTypeChunkParallelInterface<Derived, true>
      *        slot indexed by rank, not a thread-local; its slab comes at the
      *        rank's first allocation). Any thread, no parallel region.
      * @param manager    The manager being registered.
-     * @param block_size Number of chunks per allocation block.
+     * @param block_size Allocation block (slab) size, in bytes.
      */
     void init_manager(ManagerChunkInt& manager, int block_size) const;
 
@@ -188,7 +161,7 @@ class AllTypeChunkParallelInterface<Derived, false>
     /**
      * @brief The single allocator of ONE manager, at its registration.
      * @param manager    The manager being registered.
-     * @param block_size Number of chunks per allocation block.
+     * @param block_size Allocation block (slab) size, in bytes.
      * @note No-op in std-alloc builds.
      */
     void init_manager(ManagerChunkInt& manager, int block_size) const;
@@ -217,7 +190,7 @@ struct AllTypeChunkDynInterface<Derived, true>
      * replays the list. Sequential context.
      *
      * @param size       Chunk size, in elements, being registered.
-     * @param block_size Number of chunks per allocation block for that size.
+     * @param block_size Allocation block (slab) size, in bytes, for that size.
      */
     void register_chunk_size(unsigned int size, int block_size);
 };
@@ -228,8 +201,32 @@ struct AllTypeChunkDynInterface<Derived, false>
 {
 };
 
-/// @brief Registry of every per-type chunk manager of the process (see the description at the top of this file),
-///        combining the build-dependent policies AllTypeChunkParallelInterface and AllTypeChunkDynInterface.
+/**
+ * @brief Process-wide registry of the per-type chunk managers, reached as a singleton.
+ *
+ * A ManagerChunk is parameterised by both a chunk template (Chunk / Chunk2 /
+ * Chunk2A) and an element type, so there is one manager per combination and no
+ * single type can name them all. AllTypeChunk owns them behind
+ * ManagerChunkInt pointers and offers the "do it for every type" operations the
+ * rest of the library needs: allocator setup, deferred-write flush,
+ * compression passes, free-list load balancing and teardown.
+ *
+ * Every public method below is a fan-out: it walks getListTypeChunk() and
+ * forwards to the matching ManagerChunkInt virtual, so the semantics of each
+ * one are those of the manager method it calls, applied to all types at once.
+ *
+ * Access is through <tt>SingletonChk\<AllTypeChunk\>\::getRef()</tt>. The registry starts
+ * empty and fills itself: the first array of each (chunk template, element
+ * type) registers its manager from its create() (ensure_manager), once
+ * ParamChunk::init_indexes() has published the block size. A program may also
+ * register a list of types up front with ParamChunk::init_indexes<Types>().
+ *
+ * @note The available surface depends on the build, and the parts that vary
+ *       live in the two policies above:
+ *       AllTypeChunkParallelInterface picks the per-thread allocator and
+ *       free-list methods over the single-allocator ones,
+ *       AllTypeChunkDynInterface adds register_chunk_size().
+ */
 class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public AllTypeChunkDynInterface<AllTypeChunk>
 {
   public:
@@ -248,10 +245,11 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      *
      * Private-by-convention: instances are created only by
      * `SingletonChk<AllTypeChunk>`, which is a friend.
+     *
+     * @note Out of line (all_type_chunk.cpp): it checks, once per process,
+     *       that the OMPT tool of a HAVE_OMPT build is loaded
+     *       (check_ompt_tool_loaded, manage_ompt.h).
      */
-    /// @note Out of line (all_type_chunk.cpp): it checks, once per process,
-    ///       that the OMPT tool of a HAVE_OMPT build is loaded
-    ///       (check_ompt_tool_loaded, manage_ompt.h).
     AllTypeChunk();
 
     /// Non-copyable: the registry owns the managers and is a singleton.
@@ -302,17 +300,15 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      * @brief Bytes parked across every manager's reuse pools, at the moment of
      *        the call.
      *
-     * @details Printed with CHUNK_STATS (see ParamChunk.cpp). The stats counters
+     * @details Printed with CHUNK_STATS (see param_chunk.cpp). The stats counters
      *          measure EVENTS -- allocations, reuses, compressions -- and say
      *          nothing about what is still held when a run ends; this does. On
      *          chunk2a@256 at 64 threads it reported 3.4 GB of a 4.9 GB
      *          footprint, i.e. 70% of the resident memory sitting in the pools.
      *
-     * @warning Declared OUTSIDE the _OPENMP block on purpose. It first landed
-     *          inside it, and the serial builds then failed to compile
-     *          ParamChunk.cpp ("no member named 'reuse_pool_bytes'"): the reuse
-     *          pools exist in every build, and so does the stats block that
-     *          prints them.
+     * @note Declared in every build, not in the OpenMP policy: the reuse pools
+     *       exist in every build, and so does the CHUNK_STATS block of
+     *       param_chunk.cpp that prints them.
      */
     [[nodiscard]] std::size_t reuse_pool_bytes() const;
 

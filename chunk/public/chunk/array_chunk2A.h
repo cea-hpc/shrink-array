@@ -67,7 +67,6 @@ class ManagerChunk;
  * @tparam T        stored element type
  * @tparam ind_type index type used for sizes and element positions
  */
-
 template <ArrayChunkElement T, typename ind_type>
 class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
                      public ParallelSupport2A<ArrayChunk2A<T, ind_type>>,
@@ -76,10 +75,9 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
   public:
     using manager_chunk2A = ManagerChunk<Chunk2A, T>; ///< Same type as manager_type.
 
-    using Base2      = ArrayChunk2Base<ArrayChunk2A>; ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
-    using Base       = ArrayChunkBase<ArrayChunk2A>;  ///< Base shared by every variant.
-    using Parallel2A = ParallelSupport2A<ArrayChunk2A>; ///< OpenMP-only members (deferred-op flush).
-    using Hooks2A    = RechunkHooks2A<ArrayChunk2A>;    ///< Re-chunk hooks (dynamic geometry).
+    using Base2   = ArrayChunk2Base<ArrayChunk2A>; ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
+    using Base    = ArrayChunkBase<ArrayChunk2A>;  ///< Base shared by every variant.
+    using Hooks2A = RechunkHooks2A<ArrayChunk2A>;  ///< Re-chunk hooks (dynamic geometry).
 
     friend Base2;                                     ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<ArrayChunk2A<T, ind_type>>; ///< For swap_identity().
@@ -316,8 +314,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     static void make_block_compression();
 
   private:
-    static constexpr char is_val1 = 0; ///< Tag: chunk compressed to the first constant
-    static constexpr char is_val2 = 1; ///< Tag: chunk compressed to its own second value
+    static constexpr char is_val1 = 0; ///< Tag of tab_type_cst_val: chunk compressed to the first constant
 
     /**
      * @brief Claim this array's identity before its storage is built.

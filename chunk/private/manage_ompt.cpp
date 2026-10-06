@@ -57,7 +57,7 @@
 
 // Stays a directive: it gates the WHOLE translation unit -- the global switch
 // below and every callback -- so there is no statement for an `if constexpr` to
-// sit in. A build without OMPT compiles this file to nothing.
+// sit in. A build without OMPT compiles only the stand-ins of the #else branch.
 #if defined HAVE_EMBEDDED_COMPRESSION_WITH_OMPT
 
     #include <omp.h> // omp_in_parallel: the allocator flush runs outside any active region
@@ -299,7 +299,7 @@ void parallel_end_chunk_work()
         return;
     }
 
-    auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
+    const auto& ens_type_chunk = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
 
     if (!ens_type_chunk.have_chunk_to_compress_potentially())
     {

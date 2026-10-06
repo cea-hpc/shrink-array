@@ -16,23 +16,13 @@
 
 #pragma once
 
-//  attention this "kills" thread perfs
-
-// #define CHUNK_STATS
+// CHUNK_STATS comes from the CMake option of that name, never from here: its
+// counters cost thread performance.
 
 #if !defined CHUNK_STD_ALLOC
-    #define NO_CHUNK_STD_ALLOC
     #define FAST_ALLOC
 #endif
 
-#define HAVE_CHUNK_EMBEDDED_COMPRESSION
-
 #if defined HAVE_OMPT
     #define HAVE_EMBEDDED_COMPRESSION_WITH_OMPT
-#endif
-
-#ifdef _OPENMP
-    #define HAVE_EMBEDDED_FAST_BLOCK_COMPRESSION
-#else
-    #define HAVE_EMBEDDED_COMPRESSION_WITH_COUNTER
 #endif

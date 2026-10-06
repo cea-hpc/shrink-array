@@ -184,22 +184,6 @@ void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, uns
 }
 
 /**
- * @brief Does this chunk own a buffer the bulk store may write into?
- *
- * @details NOT `!is_cst_val1()`. A Chunk2A parked on its SECOND constant is
- *          not cst_val1 either, and its values pointer is a second-value slot,
- *          not a buffer: stores through it are lost, and the chunk keeps
- *          reading its constant.
- *          written() is each variant's own "materialised" test -- v1: not
- *          cst_val1; Chunk2A: neither constant.
- */
-template <typename Chunk>
-[[nodiscard]] bool materialised(const Chunk& ch) noexcept
-{
-    return ch.written();
-}
-
-/**
  * @brief Can the chunk whose buffer is @p dst (@p S elements) be uniform?
  * @details NECESSARY condition only -- first, middle and last element equal.
  *          A uniform chunk always passes; a chunk that fails cannot be
@@ -283,8 +267,17 @@ template <typename Arr>
     }
 }
 
-/// @brief materialised() for any variant: Chunk2's index-less written() is
-///        bool-only (false for every other T), so it is asked with @p ind2.
+/**
+ * @brief Does this chunk own a buffer the bulk store may write into?
+ *
+ * @details NOT `!is_cst_val1()`. A Chunk2A parked on its SECOND constant is
+ *          not cst_val1 either, and its values pointer is a second-value slot,
+ *          not a buffer: stores through it are lost, and the chunk keeps
+ *          reading its constant.
+ *          written() is each variant's own "materialised" test -- v1: not
+ *          cst_val1; Chunk2A: neither constant. Chunk2's index-less written()
+ *          is bool-only (false for every other T), so it is asked with @p ind2.
+ */
 template <typename Arr, typename Chunk>
 [[nodiscard]] bool materialised(const Arr&, const Chunk& ch, [[maybe_unused]] int ind2) noexcept
 {
