@@ -18,10 +18,10 @@
 
 #include <atomic>      // std::memory_order (the missed-compression audit)
 #include <cstddef>     // std::size_t
-#include <cstdio>      // std::fprintf (check-build trace)
+#include <cstdio>      // std::fprintf (check-build trace), stderr
 #include <cstdlib>     // std::getenv, std::abort
-#include <iostream>    // std::cerr (compress-residual dumps)
-#include <print>       // std::println (print_type_name)
+#include <ostream>     // print_compression_stats(std::ostream&)
+#include <print>       // std::println (print_type_name, compress-residual dumps)
 #include <string>      // the type name in print_type_name
 #include <type_traits> // std::remove_reference_t
 #include <utility>     // std::pair (the clear() summary)
@@ -73,7 +73,7 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
         }
         else if (sz && !this->size_policy_.size())
         {
-            std::cerr << "__chunk_size null !\n";
+            std::println(stderr, "__chunk_size null !");
             std::abort();
         }
 
@@ -670,19 +670,19 @@ void ArrayChunk2A<T, ind_type>::compress_int()
     {
 #pragma omp critical
         {
-            std::cerr << "[compress-residual chunk2a] " << nb1
-                      << " block(s) constant at first_value, still materialised "
-                         "(awaiting the next compression pass)\n";
-            std::cerr << "ArrayChunk2A type: ArrayChunk2A<" << type_name<T>() << ", " << type_name<ind_type>() << ">"
-                      << std::endl;
+            std::println(stderr,
+                         "[compress-residual chunk2a] {} block(s) constant at first_value, still materialised "
+                         "(awaiting the next compression pass)",
+                         nb1);
+            std::println(stderr, "ArrayChunk2A type: ArrayChunk2A<{}, {}>", type_name<T>(), type_name<ind_type>());
 
             // Cap the dump at 10 ENTRIES (not at chunk index 10: an array whose
             // residual starts past chunk 10 would print a single line).
             int shown = 0;
             for (const int ind : tab_nb1)
             {
-                std::cerr << ind << " " << static_cast<ind_type>(ind) * static_cast<ind_type>(this->size_policy_.size())
-                          << "\n";
+                std::println(stderr, "{} {}", ind,
+                             static_cast<ind_type>(ind) * static_cast<ind_type>(this->size_policy_.size()));
                 if (++shown >= 10)
                 {
                     break;
@@ -690,7 +690,7 @@ void ArrayChunk2A<T, ind_type>::compress_int()
             }
             if (nb1 > shown)
             {
-                std::cerr << "\n...\n";
+                std::print(stderr, "\n...\n");
             }
         }
     }
@@ -701,17 +701,17 @@ void ArrayChunk2A<T, ind_type>::compress_int()
     {
 #pragma omp critical
         {
-            std::cerr << "[compress-residual chunk2a] " << nb2
-                      << " block(s) constant at the second value, still materialised "
-                         "(awaiting the next compression pass)\n";
-            std::cerr << "ArrayChunk2A type: ArrayChunk2A<" << type_name<T>() << ", " << type_name<ind_type>() << ">"
-                      << std::endl;
+            std::println(stderr,
+                         "[compress-residual chunk2a] {} block(s) constant at the second value, still materialised "
+                         "(awaiting the next compression pass)",
+                         nb2);
+            std::println(stderr, "ArrayChunk2A type: ArrayChunk2A<{}, {}>", type_name<T>(), type_name<ind_type>());
 
             int shown = 0;
             for (const int ind : tab_nb2)
             {
-                std::cerr << ind << " " << static_cast<ind_type>(ind) * static_cast<ind_type>(this->size_policy_.size())
-                          << "\n";
+                std::println(stderr, "{} {}", ind,
+                             static_cast<ind_type>(ind) * static_cast<ind_type>(this->size_policy_.size()));
                 if (++shown >= 10)
                 {
                     break;
@@ -719,7 +719,7 @@ void ArrayChunk2A<T, ind_type>::compress_int()
             }
             if (nb2 > shown)
             {
-                std::cerr << "\n...\n";
+                std::print(stderr, "\n...\n");
             }
         }
     }

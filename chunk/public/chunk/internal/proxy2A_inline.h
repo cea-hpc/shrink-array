@@ -17,8 +17,8 @@
 #pragma once
 
 #include <atomic>          // std::atomic<char> (the "queued" flags)
-#include <cstdio>          // std::fprintf (check-build trace)
-#include <iostream>        // std::cerr (verbose)
+#include <cstdio>          // std::fprintf (check-build trace), stderr
+#include <print>           // std::println (verbose)
 #include <source_location> // std::source_location
 #include <thread>          // std::this_thread::yield (replay_retry)
 #include <type_traits>     // std::remove_cvref_t
@@ -331,7 +331,7 @@ void Proxy2A<T>::trigger_compression_if_needed(int thr_rank)
 
             if constexpr (chunk_config::verbose)
             {
-                std::cerr << "⚠️ List became dangerous: size=" << sz << "\n";
+                std::println(stderr, "⚠️ List became dangerous: size={}", sz);
             }
         }
     }

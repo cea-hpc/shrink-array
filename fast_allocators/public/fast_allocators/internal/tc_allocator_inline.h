@@ -6,8 +6,9 @@
 #include <bit>      // std::bit_width, the element-size shift
 #include <cstddef>  // std::ptrdiff_t, the element offsets
 #include <cstdint>  // std::uintptr_t
+#include <cstdio>   // stderr
 #include <cstdlib>  // std::abort on an arena failure
-#include <iostream> // std::cerr on an arena failure
+#include <print>    // std::println on an arena failure
 #include <vector>   // std::vector
 
 #include "fast_allocators/tc_allocator.h"             // the declarations these bodies belong to
@@ -45,8 +46,8 @@ inline void TCSlab<Links>::alloc_block()
 
     if (data == nullptr) [[unlikely]]
     {
-        std::cerr << "Fatal Error: slab arena (kind " << static_cast<int>(arena_kind) << ") failed to allocate "
-                  << BlockAllocator << " bytes\n";
+        std::println(stderr, "Fatal Error: slab arena (kind {}) failed to allocate {} bytes",
+                     static_cast<int>(arena_kind), BlockAllocator);
         std::abort();
     }
 
@@ -94,9 +95,10 @@ inline void TCSlab<Links>::init(int ElementSize_, uintptr_t BlockAllocator_)
         if (ElementSize_ < static_cast<int>(sizeof(int)) || ElementSize_ % static_cast<int>(alignof(int)) != 0)
             [[unlikely]]
         {
-            std::cerr << "[TCAllocator] element size " << ElementSize_
-                      << " bytes cannot hold the free-list index (an int: " << sizeof(int) << " bytes, aligned on "
-                      << alignof(int) << ")\n";
+            std::println(stderr,
+                         "[TCAllocator] element size {} bytes cannot hold the free-list index (an int: {} bytes, "
+                         "aligned on {})",
+                         ElementSize_, sizeof(int), alignof(int));
             std::abort();
         }
     }

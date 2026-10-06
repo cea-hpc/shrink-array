@@ -16,9 +16,10 @@
  * limitations under the License.
  */
 
+#include <cstdio>      // stderr
 #include <cstdlib>     // std::abort
 #include <functional>  // std::divides, std::multiplies
-#include <iostream>    // std::cerr
+#include <print>       // std::println
 #include <type_traits> // std::is_integral_v, std::is_same_v
 #include <utility>     // std::forward
 
@@ -100,7 +101,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     {
         if constexpr (is_bool)
         {
-            std::cerr << "operator not implemented for bool\n";
+            std::println(stderr, "operator not implemented for bool");
             return self;
         }
         else
@@ -136,7 +137,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     {
         if constexpr (is_bool)
         {
-            std::cerr << "operator not implemented for bool\n";
+            std::println(stderr, "operator not implemented for bool");
             return self;
         }
         else
@@ -183,7 +184,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         }
         else
         {
-            std::cerr << "operator not implemented (requires integral non-bool type)\n";
+            std::println(stderr, "operator not implemented (requires integral non-bool type)");
             return self;
         }
     }

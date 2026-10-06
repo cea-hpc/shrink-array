@@ -19,9 +19,10 @@
 #include <algorithm> // std::ranges::find (the healed-chunk report), std::min (the birth size of bits)
 #include <atomic>    // std::memory_order
 #include <cstddef>   // std::size_t
+#include <cstdio>    // stderr
 #include <cstdlib>   // std::abort
-#include <iostream>  // std::cerr
 #include <ostream>   // print_compression_stats(std::ostream&)
+#include <print>     // std::println
 #include <string>    // the healed-chunk report
 #include <vector>    // std::vector
 
@@ -164,7 +165,7 @@ void ArrayChunk2<T, ind_type>::rebuild_storage(ind_type sz)
         }
         else if (sz && !this->size_policy_.size())
         {
-            std::cerr << "__chunk_size null !\n";
+            std::println(stderr, "__chunk_size null !");
             std::abort();
         }
 
@@ -228,7 +229,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
     {
         if constexpr (is_bool)
         {
-            std::cerr << "\nWarning useless method for bool : second_value is true\n";
+            std::println(stderr, "\nWarning useless method for bool : second_value is true");
         }
     }
 
@@ -1065,13 +1066,13 @@ void ArrayChunk2<T, ind_type>::compress_int()
             };
 #pragma omp critical
             {
-                std::cerr << "[compress_int self-heal] ArrayChunk2<" << type_name<T>() << ", " << type_name<ind_type>()
-                          << ">: " << healed1 << " chunk(s) at first_value [" << healed_indices(keep1_scanned, tab_nb1)
-                          << " ], " << healed2 << " at second_value [" << healed_indices(keep2_scanned, tab_nb2)
-                          << " ], materialised and not compressed: compressed now"
-                          << (drained ? " (pending list drained first: never marked)"
-                                      : " (in a parallel region, pending list NOT drained: maybe only queued)")
-                          << "\n";
+                std::println(stderr,
+                             "[compress_int self-heal] ArrayChunk2<{}, {}>: {} chunk(s) at first_value [{} ], {} at "
+                             "second_value [{} ], materialised and not compressed: compressed now{}",
+                             type_name<T>(), type_name<ind_type>(), healed1, healed_indices(keep1_scanned, tab_nb1),
+                             healed2, healed_indices(keep2_scanned, tab_nb2),
+                             drained ? " (pending list drained first: never marked)"
+                                     : " (in a parallel region, pending list NOT drained: maybe only queued)");
             }
         }
     }
@@ -1082,27 +1083,26 @@ void ArrayChunk2<T, ind_type>::compress_int()
     {
 #pragma omp critical
         {
-            std::cerr << "Should not have compress (0) values\n";
-            std::cerr << "Number of compress block : " << nb1 << "\n";
-            std::cerr << "ArrayChunk2 type: ArrayChunk2<" << type_name<T>() << ", " << type_name<ind_type>() << ">"
-                      << std::endl;
+            std::println(stderr, "Should not have compress (0) values");
+            std::println(stderr, "Number of compress block : {}", nb1);
+            std::println(stderr, "ArrayChunk2 type: ArrayChunk2<{}, {}>", type_name<T>(), type_name<ind_type>());
 
             for (int k = 0; k < nb1; ++k)
             {
                 const int ind1 = tab_nb1[k];
-                std::cerr << ind1 << " "
-                          << static_cast<ind_type>(ind1) * static_cast<ind_type>(this->size_policy_.size());
+                std::print(stderr, "{} {}", ind1,
+                           static_cast<ind_type>(ind1) * static_cast<ind_type>(this->size_policy_.size()));
                 // The candidate-list flag exists in fast-block builds only: a
                 // serial build has no such table, indexing it aborted here.
                 if constexpr (chunk_config::use_fast_block_compression)
                 {
-                    std::cerr << " is_inside="
-                              << static_cast<int>(shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
-                                                      shrink_array::Proxy2<T>::share_info_array.get_num_tab(
-                                                          const_cast<void*>(this->registry_key())))[ind1]
-                                                      .load(std::memory_order_acquire));
+                    std::print(stderr, " is_inside={}",
+                               static_cast<int>(shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
+                                                    shrink_array::Proxy2<T>::share_info_array.get_num_tab(
+                                                        const_cast<void*>(this->registry_key())))[ind1]
+                                                    .load(std::memory_order_acquire)));
                 }
-                std::cerr << "\n";
+                std::println(stderr);
                 if (k > 10)
                 {
                     break;
@@ -1110,12 +1110,12 @@ void ArrayChunk2<T, ind_type>::compress_int()
                 if constexpr (chunk_config::use_compression_with_counter)
                 {
                     const auto& chunk = chunk_list[ind1];
-                    std::cerr << "nb first_value : " << static_cast<unsigned>(chunk.get_nb_first_value()) << "\n";
+                    std::println(stderr, "nb first_value : {}", static_cast<unsigned>(chunk.get_nb_first_value()));
                 }
             }
             if (nb1 > 10)
             {
-                std::cerr << "\n...\n";
+                std::print(stderr, "\n...\n");
             }
         }
     }
@@ -1125,34 +1125,33 @@ void ArrayChunk2<T, ind_type>::compress_int()
     {
 #pragma omp critical
         {
-            std::cerr << "Should not have compress of second values ( ";
             if constexpr (is_not_bool)
             {
-                std::cerr << value_repr(second_value) << " )\n";
+                std::println(stderr, "Should not have compress of second values ( {} )", value_repr(second_value));
             }
             else
             {
-                std::cerr << true << " )\n";
+                std::println(stderr, "Should not have compress of second values ( {:d} )", true);
             }
-            std::cerr << "Number of compress block : " << nb2 << "\n";
-            std::cerr << "ArrayChunk2 type: ArrayChunk2<" << type_name<T>() << ", " << type_name<ind_type>() << ">\n";
+            std::println(stderr, "Number of compress block : {}", nb2);
+            std::println(stderr, "ArrayChunk2 type: ArrayChunk2<{}, {}>", type_name<T>(), type_name<ind_type>());
 
             for (int k = 0; k < nb2; ++k)
             {
                 const int ind2 = tab_nb2[k];
-                std::cerr << ind2 << " "
-                          << static_cast<ind_type>(ind2) * static_cast<ind_type>(this->size_policy_.size());
+                std::print(stderr, "{} {}", ind2,
+                           static_cast<ind_type>(ind2) * static_cast<ind_type>(this->size_policy_.size()));
                 // The candidate-list flag exists in fast-block builds only: a
                 // serial build has no such table, indexing it aborted here.
                 if constexpr (chunk_config::use_fast_block_compression)
                 {
-                    std::cerr << " is_inside="
-                              << static_cast<int>(shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
-                                                      shrink_array::Proxy2<T>::share_info_array.get_num_tab(
-                                                          const_cast<void*>(this->registry_key())))[ind2]
-                                                      .load(std::memory_order_acquire));
+                    std::print(stderr, " is_inside={}",
+                               static_cast<int>(shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
+                                                    shrink_array::Proxy2<T>::share_info_array.get_num_tab(
+                                                        const_cast<void*>(this->registry_key())))[ind2]
+                                                    .load(std::memory_order_acquire)));
                 }
-                std::cerr << "\n";
+                std::println(stderr);
                 if (k > 10)
                 {
                     break;
@@ -1160,20 +1159,20 @@ void ArrayChunk2<T, ind_type>::compress_int()
                 if constexpr (chunk_config::use_compression_with_counter)
                 {
                     const auto& chunk = chunk_list[ind2];
-                    std::cerr << "nb second_value : " << static_cast<unsigned>(chunk.get_nb_second_value()) << "\n";
+                    std::println(stderr, "nb second_value : {}", static_cast<unsigned>(chunk.get_nb_second_value()));
                 }
             }
             if (nb2 > 10)
             {
-                std::cerr << "\n...\n";
+                std::print(stderr, "\n...\n");
             }
         }
     }
 
     if (nb1 > 0 || nb2 > 0)
     {
-        std::cerr << "the algorithm can miss certain blocks to compress: normally rare:"
-                     " it’s an issue if there are many\n";
+        std::println(stderr, "the algorithm can miss certain blocks to compress: normally rare:"
+                             " it’s an issue if there are many");
     }
 }
 

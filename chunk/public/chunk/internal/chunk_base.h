@@ -23,12 +23,12 @@
 #include <atomic>      // std::atomic, std::memory_order
 #include <array>       // std::array
 #include <cstddef>     // std::size_t
-#include <cstdio>      // perror (use_mm_protect: the cst_val1 buffer)
+#include <cstdio>      // perror (use_mm_protect: the cst_val1 buffer), stderr
 #include <cstdlib>     // std::abort
 #include <cstring>     // std::memset
-#include <iostream>    // std::cerr
 #include <memory>      // std::unique_ptr, std::make_unique
 #include <optional>    // std::optional (constant_value)
+#include <print>       // std::println
 #include <sys/mman.h>  // mmap, mprotect, PROT_READ
 
 #include "chunk/chunk_traits.h"                         // Chunk2A fwd decl (element_at variant gate)
@@ -1624,7 +1624,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
         {
             if (!self.is_written_at(j))
             {
-                std::cerr << "Error: trying to clear a chunk that is not written\n";
+                std::println(stderr, "Error: trying to clear a chunk that is not written");
                 std::abort();
             }
         }
@@ -1639,7 +1639,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
         {
             if (!self.written())
             {
-                std::cerr << "Error: trying to clear a chunk that is not written\n";
+                std::println(stderr, "Error: trying to clear a chunk that is not written");
                 std::abort();
             }
         }

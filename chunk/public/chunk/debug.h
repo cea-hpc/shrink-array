@@ -17,7 +17,9 @@
 
 #pragma once
 
-#include <iostream> // std::cerr
+#include <cstdio>   // stderr
+#include <iostream> // std::cerr (DEBUG_TRACE streams an expression of any type)
+#include <print>    // std::println
 
 // CHUNK_HAVE_STACKTRACE: set by chunk/CMakeLists.txt when the standard library
 // has std::stacktrace (and linked with the archive that holds it).
@@ -33,7 +35,7 @@
 #define DEBUG_TRACE(x) std::cerr << " ... " #x " = " << (x) << "\n";
 
 /**
- * @brief Print the calling thread's backtrace (up to 100 frames) to std::cerr.
+ * @brief Print the calling thread's backtrace (up to 100 frames) to stderr.
  * @details With std::stacktrace: demangled names, and file:line when the
  *          binary has debug info. No frame is skipped: this function is
  *          inline, and when it is inlined the first frame is its caller's.
@@ -44,7 +46,7 @@ inline void print_backtrace()
 {
     constexpr int max_frames = 100;
 #ifdef CHUNK_HAVE_STACKTRACE
-    std::cerr << std::stacktrace::current(0, max_frames) << '\n';
+    std::println(stderr, "{}", std::stacktrace::current(0, max_frames));
 #else
     std::array<void*, max_frames> buffer{};
     const int                     nptrs   = backtrace(buffer.data(), max_frames);
@@ -87,17 +89,17 @@ inline void print_backtrace()
 
             if (status == 0 && real_name)
             {
-                std::cerr << symbols[i] << " : " << real_name << "+" << (offset_begin + 1) << '\n';
+                std::println(stderr, "{} : {}+{}", symbols[i], real_name, offset_begin + 1);
                 std::free(real_name);
             }
             else
             {
-                std::cerr << symbols[i] << " : " << mangled_name << "+" << (offset_begin + 1) << '\n';
+                std::println(stderr, "{} : {}+{}", symbols[i], mangled_name, offset_begin + 1);
             }
         }
         else
         {
-            std::cerr << symbols[i] << '\n';
+            std::println(stderr, "{}", symbols[i]);
         }
     }
 

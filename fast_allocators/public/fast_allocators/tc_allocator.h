@@ -46,9 +46,9 @@
 #include <bit>         // std::has_single_bit, bit_width, bit_ceil, bit_floor
 #include <cerrno>      // errno, after a failed mmap
 #include <cstddef>     // std::size_t
-#include <cstdio>      // std::fprintf / std::fflush (the [MUNMAP] traces)
+#include <cstdio>      // std::fprintf / std::fflush (the [MUNMAP] traces), stderr
 #include <cstring>     // std::strerror
-#include <iostream>    // std::cerr
+#include <print>       // std::println
 #include <cstdlib>     // std::abort, std::getenv (FAST_ALLOC_TRACE)
 #include <cstdint>     // uintptr_t
 #include <limits>      // std::numeric_limits: TCAllocatorEB's index range
@@ -118,8 +118,8 @@ inline void* map_anonymous(size_t size)
     if (tmp == MAP_FAILED)
     {
         const int err = errno;
-        std::cerr << "mmap failed: errno = " << err << " (" << std::strerror(err) << ")\n";
-        std::cerr << "size = " << size << "\n";
+        std::println(stderr, "mmap failed: errno = {} ({})", err, std::strerror(err));
+        std::println(stderr, "size = {}", size);
         std::abort();
     }
 
@@ -1606,12 +1606,12 @@ class TCAllocatorEB
             if (lng != 0 && munmap(mapping, lng) == -1)
             {
                 const int err = errno;
-                std::cerr << "munmap (head trim) failed: " << std::strerror(err) << " -- surplus left mapped\n";
+                std::println(stderr, "munmap (head trim) failed: {} -- surplus left mapped", std::strerror(err));
             }
             if (munmap(data + BlockSize, (2 * BlockSize) - (lng + BlockSize)) == -1)
             {
                 const int err = errno;
-                std::cerr << "munmap (tail trim) failed: " << std::strerror(err) << " -- surplus left mapped\n";
+                std::println(stderr, "munmap (tail trim) failed: {} -- surplus left mapped", std::strerror(err));
             }
         }
         else
@@ -1623,8 +1623,8 @@ class TCAllocatorEB
 
             if (result != 0)
             {
-                std::cerr << "posix_memalign failed with error code: " << result << '\n';
-                std::cerr << "Error message: " << std::strerror(result) << '\n';
+                std::println(stderr, "posix_memalign failed with error code: {}", result);
+                std::println(stderr, "Error message: {}", std::strerror(result));
                 return 1;
             }
             data = static_cast<char*>(datal);

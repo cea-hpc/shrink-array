@@ -21,7 +21,9 @@
 #pragma once
 
 #include <cstddef>  // std::size_t
-#include <iostream> // std::cout, std::cerr
+#include <cstdio>   // stderr
+#include <iostream> // std::cout
+#include <print>    // std::println
 #include <utility>  // std::cmp_not_equal
 
 #include "chunk/config.h"                     // build_config::use_openmp, chunk_dynamic
@@ -382,8 +384,9 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     {
         if (std::cmp_not_equal(v, __chunk_size))
         {
-            std::cerr << "Warning: set_chunk_size(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
-                      << " (rebuild with -DCHUNK_SIZE=" << v << ")\n";
+            std::println(stderr,
+                         "Warning: set_chunk_size({}) ignored; built with CHUNK_SIZE={} (rebuild with -DCHUNK_SIZE={})",
+                         v, __chunk_size, v);
         }
     }
 
@@ -415,8 +418,8 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     {
         if (v != __decalage_chunk)
         {
-            std::cerr << "Warning: set_decalage_chunk(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
-                      << " (shift " << __decalage_chunk << ")\n";
+            std::println(stderr, "Warning: set_decalage_chunk({}) ignored; built with CHUNK_SIZE={} (shift {})", v,
+                         __chunk_size, __decalage_chunk);
         }
     }
 
@@ -439,8 +442,8 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     {
         if (std::cmp_not_equal(v, __modulo_chunk))
         {
-            std::cerr << "Warning: set_modulo_chunk(" << v << ") ignored; built with CHUNK_SIZE=" << __chunk_size
-                      << " (mask " << __modulo_chunk << ")\n";
+            std::println(stderr, "Warning: set_modulo_chunk({}) ignored; built with CHUNK_SIZE={} (mask {})", v,
+                         __chunk_size, __modulo_chunk);
         }
     }
 

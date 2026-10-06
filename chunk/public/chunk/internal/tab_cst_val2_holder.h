@@ -61,9 +61,11 @@
 #include <mutex>       // std::mutex, std::scoped_lock
 #include <type_traits> // std::conditional_t
 #include <vector>      // index_generations
+#include <cstdio>      // stderr
+#include <print>       // std::println
 // <iostream> directly, not through param_chunk.h: that include made a heavy
 // circular dependency (ParamChunk -> AllTypeChunk -> ... -> this header).
-#include <iostream> // std::cerr, std::cout
+#include <iostream> // std::cout
 
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size
 #include "chunk/internal/env_parse.h"         // env_number (CHUNK_CST_VAL2_ID_LIMIT)
@@ -392,19 +394,19 @@ class GlobalVecHolder
             bool               expected = false;
             if (warned.compare_exchange_strong(expected, true, std::memory_order_relaxed))
             {
-                std::cerr << "[cst_val2] second-value identifiers past half used: " << (off / bytes) << " of "
-                          << (cap_bytes / bytes) << " (bound by " << limiting
-                          << "). Raise it if the count keeps growing; running out aborts.\n";
+                std::println(stderr,
+                             "[cst_val2] second-value identifiers past half used: {} of {} (bound by {}). Raise it if "
+                             "the count keeps growing; running out aborts.",
+                             off / bytes, cap_bytes / bytes, limiting);
             }
         }
         if (off + bytes > cap_bytes) [[unlikely]]
         {
-            std::cerr << "[cst_val2] second-value identifiers exhausted: " << (off / bytes) << " of "
-                      << (cap_bytes / (bytes != 0 ? bytes : 1)) << ", bound by " << limiting
-                      << " (CHUNK_CST_VAL2_MAX_IDS=" << kMaxIds
-                      << ", CHUNK_CST_VAL2_REGION_BYTES=" << (kRegionBytes >> 20U)
-                      << " MiB). Raise it, or reduce the number of DISTINCT second "
-                      << "values the workload registers.\n";
+            std::println(stderr,
+                         "[cst_val2] second-value identifiers exhausted: {} of {}, bound by {} "
+                         "(CHUNK_CST_VAL2_MAX_IDS={}, CHUNK_CST_VAL2_REGION_BYTES={} MiB). Raise it, or reduce the "
+                         "number of DISTINCT second values the workload registers.",
+                         off / bytes, cap_bytes / (bytes != 0 ? bytes : 1), limiting, kMaxIds, kRegionBytes >> 20U);
             std::abort();
         }
         return region_begin.load(std::memory_order_relaxed) + off;
@@ -733,7 +735,7 @@ class GlobalVecHolder
         void*     raw  = mmap(nullptr, kRegionUsable, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
         if (raw == MAP_FAILED) [[unlikely]]
         {
-            std::cerr << "[cst_val2] cannot reserve the second-value region (" << (kRegionUsable >> 20U) << " MiB)\n";
+            std::println(stderr, "[cst_val2] cannot reserve the second-value region ({} MiB)", kRegionUsable >> 20U);
             std::abort();
         }
         // CHUNK_THP (experimental, off by default): read by every thread that

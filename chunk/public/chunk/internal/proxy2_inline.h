@@ -17,7 +17,8 @@
 #pragma once
 
 #include <cstddef>     // std::size_t
-#include <iostream>    // std::cerr (verbose)
+#include <cstdio>      // stderr
+#include <print>       // std::println (verbose)
 #include <type_traits> // std::remove_cvref_t
 
 #include "chunk/internal/in_t.h"          // in_t<T>
@@ -225,7 +226,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::trigger_compression_i
 
         if constexpr (chunk_config::verbose)
         {
-            std::cerr << "⚠️ List became dangerous: size=" << sz << "\n";
+            std::println(stderr, "⚠️ List became dangerous: size={}", sz);
         }
     }
 }

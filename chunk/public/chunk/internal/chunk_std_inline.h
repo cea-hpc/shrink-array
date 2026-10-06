@@ -19,7 +19,8 @@
 #include <algorithm>       // std::fill_n (init_block)
 #include <atomic>          // std::atomic_thread_fence
 #include <cstddef>         // std::size_t
-#include <iostream>        // std::cerr (debug-build clear guard)
+#include <cstdio>          // stderr
+#include <print>           // std::println (debug-build clear guard)
 #include <source_location> // std::source_location
 #include <tuple>           // the candidate-list entries
 
@@ -600,7 +601,7 @@ void ChunkOmpPolicy<T, Derived, false>::release_st(this Derived& self, bool coun
     {
         if (!self.written())
         {
-            std::cerr << "Error: trying to clear a chunk that is not written\n";
+            std::println(stderr, "Error: trying to clear a chunk that is not written");
             return;
         }
     }

@@ -16,9 +16,11 @@
 
 #pragma once
 
-#include <cstdlib>  // std::abort
-#include <iostream> // std::cerr
-#include <vector>   // std::vector
+#include <cstdio>  // stderr
+#include <cstdlib> // std::abort
+#include <ostream> // print_compression_stats(std::ostream&)
+#include <print>   // std::println
+#include <vector>  // std::vector
 
 #include "chunk/all_type_chunk.h"                       // ensure_manager, from create
 #include "chunk/array_chunk.h"                          // ArrayChunk, the class these bodies belong to
@@ -67,7 +69,7 @@ void ArrayChunk<T, ind_type>::rebuild_storage(ind_type sz)
         }
         else if (sz && !this->size_policy_.size())
         {
-            std::cerr << "__chunk_size null !\n";
+            std::println(stderr, "__chunk_size null !");
             std::abort();
         }
 
@@ -425,11 +427,11 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
     {
 #pragma omp critical
         {
-            std::cerr << "[compress-residual chunk] " << nb
-                      << " chunk(s) constant at zero, still materialised "
-                         "(awaiting the next compression pass)\n";
-            std::cerr << "ArrayChunk type: ArrayChunk<" << type_name<T>() << ", " << type_name<ind_type>() << ">"
-                      << std::endl;
+            std::println(stderr,
+                         "[compress-residual chunk] {} chunk(s) constant at zero, still materialised "
+                         "(awaiting the next compression pass)",
+                         nb);
+            std::println(stderr, "ArrayChunk type: ArrayChunk<{}, {}>", type_name<T>(), type_name<ind_type>());
 
             // Cap at 10 ENTRIES. `k > 10` printed twelve, and the ellipsis
             // below it fired on nb > 10, so eleven and twelve entries came out
@@ -438,12 +440,12 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
             for (int k = 0; k < shown; ++k)
             {
                 const int ind1 = ll[k];
-                std::cerr << ind1 << " "
-                          << static_cast<ind_type>(ind1) * static_cast<ind_type>(this->size_policy_.size()) << "\n";
+                std::println(stderr, "{} {}", ind1,
+                             static_cast<ind_type>(ind1) * static_cast<ind_type>(this->size_policy_.size()));
             }
             if (nb > shown)
             {
-                std::cerr << "... (" << (nb - shown) << " more)\n";
+                std::println(stderr, "... ({} more)", nb - shown);
             }
         }
     }

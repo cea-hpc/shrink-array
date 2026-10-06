@@ -19,8 +19,9 @@
 
 #include <atomic>      // std::atomic, std::memory_order, std::atomic_thread_fence
 #include <cstdint>     // std::uintptr_t, uint32_t, int64_t
+#include <cstdio>      // stderr
 #include <exception>   // std::exception (erase failures)
-#include <iostream>    // std::cerr (the counter checks)
+#include <print>       // std::println (the counter checks)
 #include <thread>      // std::this_thread — used HERE, not by our includers
 #include <type_traits> // std::remove_reference_t (the swap-drain batch type)
 
@@ -843,7 +844,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::finish([[maybe_unused]]
     {
         if constexpr (verbose)
         {
-            std::cerr << "🐞 Compression counter went negative!\n";
+            std::println(stderr, "🐞 Compression counter went negative!");
         }
         return;
     }
@@ -854,7 +855,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::finish([[maybe_unused]]
     {
         if constexpr (verbose)
         {
-            std::cerr << "⚠️ Compression still active in another thread\n";
+            std::println(stderr, "⚠️ Compression still active in another thread");
         }
         return;
     }

@@ -20,7 +20,7 @@
 #include <atomic>      // std::memory_order_relaxed
 #include <cstdlib>     // std::abort (debug stubs)
 #include <exception>   // std::exception (PointerMapChunk2A::erase)
-#include <iostream>    // std::cerr (debug stubs)
+#include <ostream>     // std::ostream (operator<<)
 #include <memory>      // std::unique_ptr
 #include <type_traits> // std::is_same_v
 #include <utility>     // std::pair, std::swap

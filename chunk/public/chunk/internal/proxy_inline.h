@@ -17,7 +17,8 @@
 #pragma once
 
 #include <atomic>      // std::atomic_thread_fence, std::memory_order_seq_cst
-#include <iostream>    // std::cerr (the mismatch diagnostic)
+#include <cstdio>      // stderr
+#include <print>       // std::println (the mismatch diagnostic)
 #include <type_traits> // std::common_type_t
 #include <utility>     // std::move
 
@@ -758,7 +759,7 @@ void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
     }
     else
     {
-        std::cerr << "operator not implemented for bool\n";
+        std::println(stderr, "operator not implemented for bool");
     }
 }
 
@@ -779,7 +780,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::trigger_compression_if_needed(int
 
         if constexpr (chunk_config::verbose)
         {
-            std::cerr << "⚠️ List became dangerous: size=" << sz << "\n";
+            std::println(stderr, "⚠️ List became dangerous: size={}", sz);
         }
     }
 }

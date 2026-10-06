@@ -20,14 +20,15 @@
 
     #include <cmath>    // std::isnan
     #include <complex>  // std::complex
+    #include <cstdio>   // stderr
     #include <cstdlib>  // std::abort
-    #include <iostream> // std::cerr
+    #include <print>    // std::println
 
-/// @brief Report element @p i as NaN on std::cerr and abort.
+/// @brief Report element @p i as NaN on stderr and abort.
 /// @param i Index of the element.
 static void global_check_nan(long i) noexcept
 {
-    std::cerr << " ** FATAL: Element : " << i << " of the array is nan\n\n";
+    std::println(stderr, " ** FATAL: Element : {} of the array is nan\n", i);
     std::abort();
 }
 
