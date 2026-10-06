@@ -33,7 +33,7 @@ namespace shrink_array
 {
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
+void RechunkHooks2<Derived, true>::rechunk_drop_candidates(this Derived& self)
 {
     // Chunk2 resolves num_tab from the registry (keyed by `this`), never the
     // member. See RechunkSupport::rechunk_to for why the drop must happen at the
@@ -45,12 +45,12 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
     // bool has no second value and is left to the drop.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const int num_tab = proxy_type::share_info_array.get_num_tab(self().registry_key());
+        const int num_tab = proxy_type::share_info_array.get_num_tab(self.registry_key());
         if constexpr (Derived::is_not_bool && build_config::use_openmp)
         {
-            const auto inf = self().get_info_second_value();
+            const auto inf = self.get_info_second_value();
             const int  thr = get_thr_rank_fast();
-            shrink_array::set_thread_chunk_size(self().size_policy_.size());
+            shrink_array::set_thread_chunk_size(self.size_policy_.size());
             for (const auto& per_rank : manager_type::map_chunk2_to_compress_potentially_thr)
             {
                 for (const auto& kv : per_rank)
@@ -74,20 +74,20 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
 }
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_drain_reuse_list(unsigned int new_size)
+void RechunkHooks2<Derived, true>::rechunk_drain_reuse_list(this Derived& /*self*/, unsigned int new_size)
 {
     manager_type::drain_reuse_list_for_size(new_size);
 }
 
 template <typename Derived>
-RechunkHooks2<Derived, true>::value_type RechunkHooks2<Derived, true>::rechunk_capture_state() const
+RechunkHooks2<Derived, true>::value_type RechunkHooks2<Derived, true>::rechunk_capture_state(this const Derived& self)
 {
     // Preserve the array-level second_value across the rechunk (2A has no such
     // scalar; it is per-chunk there). Bool's second_value is re-established by the
     // fresh array's create(), so capture nothing (value_type{}) for it.
     if constexpr (Derived::is_not_bool)
     {
-        return self().get_second_value();
+        return self.get_second_value();
     }
     else
     {
@@ -96,7 +96,7 @@ RechunkHooks2<Derived, true>::value_type RechunkHooks2<Derived, true>::rechunk_c
 }
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_seed_fresh(in_t<value_type> state)
+void RechunkHooks2<Derived, true>::rechunk_seed_fresh(this Derived& self, in_t<value_type> state)
 {
     // Called on the FRESH array before refill, so its compression decisions use
     // the same second_value. Only propagate a NON-TRIVIAL value: the default
@@ -106,7 +106,7 @@ void RechunkHooks2<Derived, true>::rechunk_seed_fresh(in_t<value_type> state)
     {
         if (state != value_type{})
         {
-            self().set_second_value(state, false);
+            self.set_second_value(state, false);
         }
     }
     else
@@ -116,7 +116,7 @@ void RechunkHooks2<Derived, true>::rechunk_seed_fresh(in_t<value_type> state)
 }
 
 template <typename Derived>
-bool RechunkHooks2<Derived, true>::rechunk_swap_identity(Derived& tmp)
+bool RechunkHooks2<Derived, true>::rechunk_swap_identity(this Derived& self, Derived& tmp)
 {
     // The num_tab, ind_cst_val2 and inf_array MEMBERS are deliberately NOT
     // swapped: Chunk2 never reads them on the access / compression / teardown
@@ -124,11 +124,11 @@ bool RechunkHooks2<Derived, true>::rechunk_swap_identity(Derived& tmp)
     // `this`; the members are only touched by operator= / set_second_value) and
     // they may be uninitialized, so swapping would read indeterminate values
     // (MSan / valgrind). The registry-tuple swap IS the identity swap.
-    return proxy_type::share_info_array.swap_entries(self().registry_key(), tmp.registry_key());
+    return proxy_type::share_info_array.swap_entries(self.registry_key(), tmp.registry_key());
 }
 
 template <typename Derived>
-void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(Derived& tmp, in_t<value_type> state)
+void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(this Derived& self, Derived& tmp, in_t<value_type> state)
 {
     // Re-own the fast-block registration the fresh array created for `state`.
     // set_second_value() pointed map_inf_array[state] at &tmp.inf_array; when tmp
@@ -144,11 +144,9 @@ void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(Derived& tmp, in_t<v
         {
             if (state != value_type{})
             {
-                Derived& arr = self();
-
-                arr.inf_array    = tmp.inf_array; // tmp's is valid (set_second_value ran)
-                arr.ind_cst_val2 = tmp.ind_cst_val2;
-                proxy_type::share_info_array.insert(state, &arr.inf_array);
+                self.inf_array    = tmp.inf_array; // tmp's is valid (set_second_value ran)
+                self.ind_cst_val2 = tmp.ind_cst_val2;
+                proxy_type::share_info_array.insert(state, &self.inf_array);
             }
         }
     }
@@ -163,7 +161,7 @@ void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(Derived& tmp, in_t<v
     // registry: *this carries tmp's former (value, ind, num_tab), and tmp --
     // whose teardown still goes through the registry -- carries ours. All
     // build modes, bool included (its num_tab is per-array too).
-    self().sync_registry_mirror();
+    self.sync_registry_mirror();
     tmp.sync_registry_mirror();
 }
 

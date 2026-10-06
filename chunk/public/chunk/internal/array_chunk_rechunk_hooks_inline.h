@@ -34,7 +34,7 @@ namespace shrink_array
 {
 
 template <typename Derived>
-void RechunkHooks<Derived, true>::rechunk_drop_candidates()
+void RechunkHooks<Derived, true>::rechunk_drop_candidates(this Derived& self)
 {
     // COMPRESS them first -- see RechunkHooks2A: a candidate dropped here
     // would stay materialised through the rebuild and never be re-queued.
@@ -43,9 +43,9 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
     {
         // Bypasses CompressionManager::start(): see check_no_flush_outside_start.
         check_no_flush_outside_start<proxy_type>("RechunkHooks::rechunk_drop_candidates");
-        const int num_tab = proxy_type::share_info_array.get_num_tab(self().registry_key());
+        const int num_tab = proxy_type::share_info_array.get_num_tab(self.registry_key());
         const int thr     = get_thr_rank_fast();
-        shrink_array::set_thread_chunk_size(self().size_policy_.size());
+        shrink_array::set_thread_chunk_size(self.size_policy_.size());
         const auto compress_list = [&](auto& list)
         {
             for (auto& tup : list)
@@ -72,19 +72,19 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates()
 }
 
 template <typename Derived>
-void RechunkHooks<Derived, true>::rechunk_drain_reuse_list(unsigned int new_size)
+void RechunkHooks<Derived, true>::rechunk_drain_reuse_list(this Derived& /*self*/, unsigned int new_size)
 {
     manager_type::drain_reuse_list_for_size(new_size);
 }
 
 template <typename Derived>
-bool RechunkHooks<Derived, true>::rechunk_swap_identity(Derived& tmp)
+bool RechunkHooks<Derived, true>::rechunk_swap_identity(this Derived& self, Derived& tmp)
 {
-    // v1 sets num_tab in pre_create_hook and reads it in create()/rebuild_storage,
+    // v1 sets num_tab in pre_create_hook and reads it in create()/rebuild_storage(),
     // so swap the member (kept consistent with the registry swap_keys below).
     using std::swap;
-    swap(self().num_tab, tmp.num_tab);
-    return proxy_type::share_info_array.swap_keys(self().registry_key(), tmp.registry_key());
+    swap(self.num_tab, tmp.num_tab);
+    return proxy_type::share_info_array.swap_keys(self.registry_key(), tmp.registry_key());
 }
 
 } // namespace shrink_array

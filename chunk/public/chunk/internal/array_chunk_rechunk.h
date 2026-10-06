@@ -112,7 +112,7 @@ class RechunkSupport<Derived, true>
      *          this on the user's behalf, so a proxy must not be held across an
      *          advisor tick either.
      */
-    void rechunk_to(unsigned int new_size);
+    void rechunk_to(this Derived& self, unsigned int new_size);
 
     /**
      * @brief Refill @p tmp from *this across a geometry change.
@@ -144,45 +144,37 @@ class RechunkSupport<Derived, true>
      *       need no arming, and the 2A install commits what a type-2 compression
      *       does, with no buffer to arm.
      */
-    void rechunk_refill(Derived& tmp, int old_size, int new_size);
+    void rechunk_refill(this Derived& self, Derived& tmp, int old_size, int new_size);
 
     /**
      * @name Re-chunk hooks (base defaults)
      *
      * Base defaults for the rechunk_* hooks: no-ops that suit a variant with no
      * deferred candidates / no second_value / no registry. Each ArrayChunk*
-     * overrides the ones it needs (they are hidden, not virtual — resolved via
-     * CRTP self()/derived()). Kept here so a variant only defines what differs.
+     * overrides the ones it needs (they are hidden, not virtual — resolved on
+     * the concrete array through self). Kept here so a variant only defines what differs.
      * @{
      */
     /** @brief Forget this array's compression candidates before the swap (default: none to drop). */
-    void rechunk_drop_candidates() {}
+    void rechunk_drop_candidates(this Derived&) {}
     /** @brief Release this array's parked buffers held at the old geometry (default: none parked). */
-    void rechunk_drain_reuse_list(unsigned int /*new_size*/) {}
+    void rechunk_drain_reuse_list(this Derived&, unsigned int /*new_size*/) {}
     /** @brief Capture the variant state to carry across a re-chunk (default: none). */
-    [[nodiscard]] T rechunk_capture_state() const
+    [[nodiscard]] T rechunk_capture_state(this const Derived&)
     {
         return T{};
     }
     /** @brief Apply the captured state to the fresh array (default: no-op). */
-    void rechunk_seed_fresh(in_t<T> /*state*/) {}
+    void rechunk_seed_fresh(this Derived&, in_t<T> /*state*/) {}
     /** @brief Post-swap fixup so the dying temporary does not take state with it (default: no-op). */
-    void rechunk_reown_after_swap(Derived& /*tmp*/, in_t<T> /*state*/) {}
+    void rechunk_reown_after_swap(this Derived&, Derived& /*tmp*/, in_t<T> /*state*/) {}
     /** @brief Swap registry identity with the temporary (default: nothing to swap, succeeds). */
-    bool rechunk_swap_identity(Derived& /*tmp*/)
+    bool rechunk_swap_identity(this Derived&, Derived& /*tmp*/)
     {
         return true;
     }
 
     /** @} */
-
-    /** @brief CRTP down-cast: the concrete array this mixin is a base of,
-     *         const on a const object (one member for both: deducing this). */
-    template <typename Self>
-    [[nodiscard]] auto& self(this Self&& obj) noexcept
-    {
-        return static_cast<crtp_cast_t<Self, Derived>&>(obj);
-    }
 
     /**
      * @brief Re-chunk EVERY live array of this variant to @p new_size (quiescent point only).
@@ -267,14 +259,6 @@ class RechunkSupport<Derived, false>
     }
 
     /** @} */
-
-    /** @brief CRTP down-cast: the concrete array this mixin is a base of,
-     *         const on a const object (one member for both: deducing this). */
-    template <typename Self>
-    [[nodiscard]] auto& self(this Self&& obj) noexcept
-    {
-        return static_cast<crtp_cast_t<Self, Derived>&>(obj);
-    }
 
     /** @brief No-op: the geometry is fixed at compile time. */
     static void rechunk_all_to(unsigned int /*new_size*/) noexcept {}

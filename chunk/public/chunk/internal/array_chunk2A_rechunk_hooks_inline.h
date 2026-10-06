@@ -33,7 +33,7 @@ namespace shrink_array
 {
 
 template <typename Derived>
-void RechunkHooks2A<Derived, true>::rechunk_drop_candidates()
+void RechunkHooks2A<Derived, true>::rechunk_drop_candidates(this Derived& self)
 {
     // 2A uses the num_tab MEMBER (set in create_common/pre_create_hook) as the
     // key for its candidate store. See RechunkSupport::rechunk_to for why the
@@ -46,9 +46,9 @@ void RechunkHooks2A<Derived, true>::rechunk_drop_candidates()
     // current one, and each entry carries its own element count.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const int num_tab = self().num_tab;
+        const int num_tab = self.num_tab;
         const int thr     = get_thr_rank_fast();
-        shrink_array::set_thread_chunk_size(self().size_policy_.size());
+        shrink_array::set_thread_chunk_size(self.size_policy_.size());
         const auto compress_list = [&](auto& list)
         {
             for (auto& tup : list)
@@ -70,24 +70,24 @@ void RechunkHooks2A<Derived, true>::rechunk_drop_candidates()
         {
             compress_list(manager_type::chunk2A_to_compress_potentially);
         }
-        manager_type::remove_from_compress_list_chunk2a_by_num_tab(self().num_tab);
+        manager_type::remove_from_compress_list_chunk2a_by_num_tab(self.num_tab);
     }
 }
 
 template <typename Derived>
-void RechunkHooks2A<Derived, true>::rechunk_drain_reuse_list(unsigned int new_size)
+void RechunkHooks2A<Derived, true>::rechunk_drain_reuse_list(this Derived& /*self*/, unsigned int new_size)
 {
     manager_type::drain_reuse_list_for_size(new_size);
 }
 
 template <typename Derived>
-bool RechunkHooks2A<Derived, true>::rechunk_swap_identity(Derived& tmp)
+bool RechunkHooks2A<Derived, true>::rechunk_swap_identity(this Derived& self, Derived& tmp)
 {
     // 2A stores num_tab as a member and indexes its metadata by it, so swap the
     // member AND make the registry agree (get_num_tab(registry_key()) -> S' row).
     using std::swap;
-    swap(self().num_tab, tmp.num_tab);
-    const bool ok = proxy_type::share_info_array.swap_keys(self().registry_key(), tmp.registry_key());
+    swap(self.num_tab, tmp.num_tab);
+    const bool ok = proxy_type::share_info_array.swap_keys(self.registry_key(), tmp.registry_key());
     return ok;
 }
 

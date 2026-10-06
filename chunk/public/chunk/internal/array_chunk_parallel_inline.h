@@ -30,7 +30,7 @@ namespace shrink_array
 {
 
 template <typename Derived>
-void FastBlockSupport<Derived, true>::make_block_compression()
+void FastBlockSupport<Derived, true>::make_block_compression(this Derived& self)
 {
     // bug in run time openmp llvm
 
@@ -38,7 +38,7 @@ void FastBlockSupport<Derived, true>::make_block_compression()
     {
         // The compressibility scan reads the active size; make it THIS array's
         // size regardless of whatever size the calling thread last operated on.
-        shrink_array::set_thread_chunk_size(self().chunk_size());
+        shrink_array::set_thread_chunk_size(self.chunk_size());
     }
 
     if (!CHUNK_PMP_IN_PARALLEL_REGION)

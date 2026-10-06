@@ -72,30 +72,30 @@ class RechunkHooks2<Derived, true>
     using manager_type = Traits::manager_type;      ///< Per-type manager owning the candidate store.
 
     /// @brief Drop this array's queued compression candidates before teardown.
-    void rechunk_drop_candidates();
+    void rechunk_drop_candidates(this Derived& self);
 
     /**
      * @brief Release this array's parked buffers held at the old geometry.
      * @param new_size geometry the array is moving to
      */
-    void rechunk_drain_reuse_list(unsigned int new_size);
+    void rechunk_drain_reuse_list(this Derived& self, unsigned int new_size);
 
     /// @brief Capture the array-level state that must survive the rechunk.
     /// @return this array's second value
-    value_type rechunk_capture_state() const;
+    value_type rechunk_capture_state(this const Derived& self);
 
     /**
      * @brief Re-declare the captured state on the freshly built array.
      * @param state value returned by rechunk_capture_state()
      */
-    void rechunk_seed_fresh(in_t<value_type> state);
+    void rechunk_seed_fresh(this Derived& self, in_t<value_type> state);
 
     /**
      * @brief Exchange identity with the scratch array built at the new geometry.
      * @param tmp freshly built array whose storage this array takes over
      * @return true if the registry entries were exchanged
      */
-    bool rechunk_swap_identity(Derived& tmp);
+    bool rechunk_swap_identity(this Derived& self, Derived& tmp);
 
     /**
      * @brief Re-own the map_inf_array entry after the identity swap.
@@ -105,16 +105,8 @@ class RechunkHooks2<Derived, true>
      *          that tmp's destructor does not erase an entry the survivor still
      *          needs -- see ArrayChunk2's destructor, second warning.
      */
-    void rechunk_reown_after_swap(Derived& tmp, in_t<value_type> state);
+    void rechunk_reown_after_swap(this Derived& self, Derived& tmp, in_t<value_type> state);
 
-  protected:
-    /** @brief CRTP down-cast: the concrete array this mixin is a base of,
-     *         const on a const object (one member for both: deducing this). */
-    template <typename Self>
-    [[nodiscard]] auto& self(this Self&& obj) noexcept
-    {
-        return static_cast<crtp_cast_t<Self, Derived>&>(obj);
-    }
 };
 
 // ── Static-geometry build: nothing to hook ───────────────────────────────────

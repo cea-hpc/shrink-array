@@ -108,16 +108,8 @@ class FastBlockSupport<Derived, true>
      * @details Drains the calling thread's candidate list, or every thread's
      *          when called from outside a parallel region.
      */
-    void make_block_compression();
+    void make_block_compression(this Derived& self);
 
-  protected:
-    /** @brief CRTP down-cast: the concrete array this mixin is a base of,
-     *         const on a const object (one member for both: deducing this). */
-    template <typename Self>
-    [[nodiscard]] auto& self(this Self&& obj) noexcept
-    {
-        return static_cast<crtp_cast_t<Self, Derived>&>(obj);
-    }
 };
 
 // ── Any other mode: no candidate queue to drain ──────────────────────────────

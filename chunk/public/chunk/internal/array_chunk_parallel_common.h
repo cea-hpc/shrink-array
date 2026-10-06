@@ -81,15 +81,6 @@ class ParallelSupportCommon
      *       that mode queues deferred ops at all.
      */
     void flush_pending_deferred_ops(bool force = false);
-
-  protected:
-    /** @brief CRTP down-cast: the concrete array this mixin is a base of,
-     *         const on a const object (one member for both: deducing this). */
-    template <typename Self>
-    [[nodiscard]] auto& self(this Self&& obj) noexcept
-    {
-        return static_cast<crtp_cast_t<Self, Derived>&>(obj);
-    }
 };
 
 /**

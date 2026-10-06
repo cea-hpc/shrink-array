@@ -18,7 +18,7 @@
 
 // Out-of-line bodies of the CHUNK_DYNAMIC re-chunk algorithm
 // (RechunkSupport<Derived, true>). Included at the end of array_chunk_base.h,
-// after the class, so the CRTP self() down-cast sees a complete Derived and so
+// after the class, so the explicit object parameter sees a complete Derived and so
 // the heavy includes below (compression manager, stats) stay out of the
 // container declaration itself.
 
@@ -37,8 +37,7 @@
 #include <vector>      // the refill buffers
 
 #include "chunk/internal/in_t.h"                // in_t<T>: the element snapshots
-#include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase: self().set_chunk_size, invalidate_proxies
-#include "chunk/internal/array_chunk_core.h"    // alloc_affinity_detail::RechunkStorageScope
+#include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase: self.set_chunk_size, invalidate_proxies#include "chunk/internal/array_chunk_core.h"    // alloc_affinity_detail::RechunkStorageScope
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport, the class these bodies belong to
 #include "chunk/array_chunk_range_ops.h"        // copy_range -- the public bulk fill
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_rechunk* (CHUNK_STATS)
@@ -158,13 +157,13 @@ namespace shrink_array
 {
 
 template <typename Derived>
-void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
+void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int new_size)
 {
-    const unsigned int old_size = self().size_policy_.size();
+    const unsigned int old_size = self.size_policy_.size();
     // Captured before the swap below hands `self` tmp's key: the allocator set
     // holding the OLD geometry's blocks is (old_key, old_size), and it is the
     // one whose slabs must empty for the re-chunk to give memory back.
-    const unsigned int old_key = self().alloc_key();
+    const unsigned int old_key = self.alloc_key();
     if (new_size == old_size || new_size == 0)
     {
         return;
@@ -204,10 +203,10 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // set_chunk_size) routes each allocation to the right element size, so the
     // old and new geometries coexist safely for the duration of the refill.
 
-    const ind_type total = self().m_size;
+    const ind_type total = self.m_size;
     if (total <= 0)
     {
-        self().set_chunk_size(new_size); // legal on an empty array
+        self.set_chunk_size(new_size); // legal on an empty array
         return;
     }
 
@@ -246,7 +245,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     long       r_swap     = -1;
     long       r_teardown = -1;
 
-    self().flush_pending_deferred_ops();
+    self.flush_pending_deferred_ops();
     r_flush = rss_now();
 
     // Remove THIS array's pending compression CANDIDATES at the OLD
@@ -256,14 +255,14 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // otherwise scan these OLD-size chunks at the NEW size -> over-scan on
     // shrink (heap-overflow) / under-scan on grow (mis-compression).
     // Content-neutral: the snapshot below reads materialised values.
-    self().rechunk_drop_candidates();
+    self.rechunk_drop_candidates();
 
     // No dense O(n) snapshot: the refill below streams old -> new chunk by
     // chunk, so the compressed store is never materialised whole.
 
     // Variant state captured BEFORE the geometry switch (Chunk2's
     // array-level second_value; T{} / ignored for Chunk & Chunk2A).
-    const in_t<T> state = self().rechunk_capture_state();
+    const in_t<T> state = self.rechunk_capture_state();
 
     // 2) build the fresh array at S'. Set the active geometry around its
     //    construction + refill only, then restore.
@@ -282,7 +281,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 
     // Drain the S' reuse free-list BEFORE anything allocates at S' (a
     // buffer of a different geometry parked here would overflow init).
-    self().rechunk_drain_reuse_list(new_size);
+    self.rechunk_drain_reuse_list(new_size);
 
     {
         t1_out    = t_now();
@@ -306,7 +305,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // (counted inside rebuild_one below).
         increm_chunk_rechunk<chunk_type>();
         t2_out = t_now();
-        self().rechunk_refill(tmp, old_size, new_size);
+        self.rechunk_refill(tmp, old_size, new_size);
         t3_out   = t_now();
         r_refill = rss_now();
 
@@ -346,26 +345,26 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // them behind to be replayed later against a recycled, wrong-size chunk
         // -- the coexistence heap-buffer-overflow. Flush every chunk while the
         // old geometry is still in place and the replay is correct.
-        self().flush_pending_deferred_ops(/*force=*/true);
+        self.flush_pending_deferred_ops(/*force=*/true);
 
         // 4) SWAP the common storage. nb_tab is static and NOT swapped.
         //    num_tab + registry (+ any variant members) go through the
         //    identity hook: Chunk / Chunk2A swap the num_tab member, Chunk2
         //    resolves num_tab from the registry and must NOT swap it.
         using std::swap;
-        swap(self().chunk_list, tmp.chunk_list);
+        swap(self.chunk_list, tmp.chunk_list);
         // The new storage was built under tmp's own affinity key (its slabs);
         // the key travels with the storage. self keeps tmp's key from here on,
         // tmp takes the old one and dies with it: its clear_core() drains that
         // key's lists and the old slabs empty.
-        swap(self().alloc_key_, tmp.alloc_key_);
-        self().swap_dirty_bitset(tmp);
-        swap(self().m_size, tmp.m_size);
-        swap(self().nb_chunk, tmp.nb_chunk);
-        swap(self().size_policy_, tmp.size_policy_);
-        self().invalidate_proxies();
+        swap(self.alloc_key_, tmp.alloc_key_);
+        self.swap_dirty_bitset(tmp);
+        swap(self.m_size, tmp.m_size);
+        swap(self.nb_chunk, tmp.nb_chunk);
+        swap(self.size_policy_, tmp.size_policy_);
+        self.invalidate_proxies();
 
-        const bool ok = self().rechunk_swap_identity(tmp);
+        const bool ok = self.rechunk_swap_identity(tmp);
         if constexpr (build_config::any_check)
         {
             if (!ok)
@@ -379,7 +378,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 
         // Variant finalisation after the swap (Chunk2 re-owns its
         // map_inf_array entry so it does not dangle when tmp dies).
-        self().rechunk_reown_after_swap(tmp, state);
+        self.rechunk_reown_after_swap(tmp, state);
 
         // Restore the active geometry BEFORE tmp is destroyed, so tmp (now
         // OLD geometry) frees its blocks into the OLD-size pool.
@@ -415,7 +414,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // to the OS under std-alloc (under fast alloc, the slab sweep below does);
     // also removes stale-geometry buffers so a later pop can never grab a
     // wrong-size block.
-    self().rechunk_drain_reuse_list(old_size);
+    self.rechunk_drain_reuse_list(old_size);
     const auto t5b = t_now(); // reuse-list drain done; the empty-slab sweep follows
     // The array has left (old_key, old_size) for good: once the drain above
     // has run its slabs there hold nothing, but manage_full_empty() only
@@ -529,7 +528,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 }
 
 template <typename Derived>
-void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, int new_size)
+void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& tmp, int old_size, int new_size)
 {
     // Level-2 chunk-level rebuild, for each of the three chunk variants: every
     // non-cst1 new chunk is ARMED by a real proxy write (the write path's
@@ -546,7 +545,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
     // every variant.
     if constexpr (chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a)
     {
-        const ind_type total = self().m_size;
+        const ind_type total = self.m_size;
         const int      n_new = tmp.nb_chunk;
         // Geometry is per-array (this.size_=old, tmp.size_=new), so operator[]
         // maps correctly without the global. Only alloc_chunk_count()
@@ -588,7 +587,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             {
                 if constexpr (Derived::is_not_bool)
                 {
-                    return self().get_ind_second_value();
+                    return self.get_ind_second_value();
                 }
                 else
                 {
@@ -626,7 +625,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         {
             if (old_size > new_size)
             {
-                old_done = std::vector<std::atomic<int>>(static_cast<std::size_t>(self().nb_chunk));
+                old_done = std::vector<std::atomic<int>>(static_cast<std::size_t>(self.nb_chunk));
             }
         }
         // Per-thread fold counters: ++ on the shared atomics above, per chunk and
@@ -665,7 +664,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             [[maybe_unused]] const T* cst2_src     = nullptr;
             for (int oc = old_first; oc <= old_last; ++oc)
             {
-                const auto& och = self().chunk_list[static_cast<std::size_t>(oc)];
+                const auto& och = self.chunk_list[static_cast<std::size_t>(oc)];
                 if constexpr (chunk_config::use_chunk2a)
                 {
                     if (och.is_cst_val1())
@@ -739,7 +738,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     // auto: SecondValueRef is not declared in every TU that
                     // instantiates this file (array_chunk2.cpp), and the name
                     // would be looked up even in a discarded branch.
-                    const T    v   = static_cast<T>(std::as_const(self())[base]);
+                    const T    v   = static_cast<T>(std::as_const(self)[base]);
                     auto&      nch = tmp.chunk_list[static_cast<std::size_t>(new_chunk)];
                     const auto psv = Proxy2A<T>::BaseSpec::get_tab_second_value(tmp.num_tab, new_chunk);
                     char*      ptc = &Proxy2A<T>::tab_type_cst_val[tmp.num_tab][new_chunk];
@@ -780,7 +779,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 std::size_t k = 0;
                 for (int oc = old_first; oc <= old_last; ++oc)
                 {
-                    const auto&    och     = self().chunk_list[static_cast<std::size_t>(oc)];
+                    const auto&    och     = self.chunk_list[static_cast<std::size_t>(oc)];
                     const ind_type oc_base = static_cast<ind_type>(oc) * static_cast<ind_type>(old_size);
                     const ind_type lo      = base > oc_base ? base : oc_base;
                     const ind_type oc_end  = oc_base + static_cast<ind_type>(old_size);
@@ -817,7 +816,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     }
                     const auto check_at = [&](ind_type j)
                     {
-                        const T ref = static_cast<T>(std::as_const(self())[base + j]);
+                        const T ref = static_cast<T>(std::as_const(self)[base + j]);
                         if (std::memcmp(&ref, &buf[static_cast<std::size_t>(j)], sizeof(T)) != 0) [[unlikely]]
                         {
                             INVARIANT_FAILED("rechunk refill bulk read: new chunk {} element {} (global {}) differs "
@@ -837,7 +836,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             {
                 for (ind_type k = 0; k < len; ++k)
                 {
-                    buf[static_cast<std::size_t>(k)] = static_cast<T>(std::as_const(self())[base + k]);
+                    buf[static_cast<std::size_t>(k)] = static_cast<T>(std::as_const(self)[base + k]);
                 }
             }
 
@@ -894,7 +893,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                             continue; // still needed by the next new chunk
                         }
                     }
-                    auto& och = self().chunk_list[static_cast<std::size_t>(oc)];
+                    auto& och = self.chunk_list[static_cast<std::size_t>(oc)];
                     // release_st, not clear_st: a release once copied, not a
                     // compression (CHUNK_STATS counted every rebuilt chunk as one).
                     if (!och.is_cst_val1())
@@ -1045,9 +1044,9 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             n_slices = std::min(n_slices, std::max(1, n_new / 4096));
         }
         // The affinity key of the set being emptied. `tmp` carries the new one;
-        // rechunk_to() swaps them only after this call returns, so self()'s key
+        // rechunk_to() swaps them only after this call returns, so self's key
         // is still the old geometry's here.
-        const unsigned int old_key_refill = self().alloc_key();
+        const unsigned int old_key_refill = self.alloc_key();
 
         // Slice boundaries run INSIDE the slice's region (see the loop): the
         // team drain's scratch lives across them, and so do the trace timers.
@@ -1245,7 +1244,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
     {
         // bool chunks (bit-packed) and anything not covered above: tiled
         // element transcription through the proxy (no raw-fill).
-        const ind_type     total = self().m_size;
+        const ind_type     total = self.m_size;
         constexpr ind_type TILE  = ind_type{1} << 20;
         const ind_type     bsz   = total < TILE ? total : TILE;
         std::vector<T>     buf(static_cast<std::size_t>(bsz));
@@ -1256,7 +1255,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             set_thread_chunk_size(old_size);
             for (ind_type k = 0; k < len; ++k)
             {
-                buf[static_cast<std::size_t>(k)] = static_cast<T>(self()[base + k]);
+                buf[static_cast<std::size_t>(k)] = static_cast<T>(self[base + k]);
             }
             set_active_chunk_size(new_size);
             set_thread_chunk_size(new_size);

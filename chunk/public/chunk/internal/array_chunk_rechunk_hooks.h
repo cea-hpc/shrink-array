@@ -80,14 +80,14 @@ class RechunkHooks<Derived, true>
      * @details Must happen at the OWNING geometry: a candidate scanned later at
      *          another chunk size would walk past the end of its buffer.
      */
-    void rechunk_drop_candidates();
+    void rechunk_drop_candidates(this Derived& self);
 
     /**
      * @brief Drain the reuse free-list of the target geometry.
      * @param new_size the chunk size the array is moving to
      * @details The buffers parked there were sized for an older geometry.
      */
-    void rechunk_drain_reuse_list(unsigned int new_size);
+    void rechunk_drain_reuse_list(this Derived& self, unsigned int new_size);
 
     /**
      * @brief Swap registry identity with the fresh array built at the new geometry.
@@ -97,16 +97,8 @@ class RechunkHooks<Derived, true>
      *          create()/rebuild_storage(), so the member is swapped as well as
      *          the registry entry, keeping the two consistent.
      */
-    bool rechunk_swap_identity(Derived& tmp);
+    bool rechunk_swap_identity(this Derived& self, Derived& tmp);
 
-  protected:
-    /** @brief CRTP down-cast: the concrete array this mixin is a base of,
-     *         const on a const object (one member for both: deducing this). */
-    template <typename Self>
-    [[nodiscard]] auto& self(this Self&& obj) noexcept
-    {
-        return static_cast<crtp_cast_t<Self, Derived>&>(obj);
-    }
 };
 
 // ── Static-geometry build: nothing to hook ───────────────────────────────────

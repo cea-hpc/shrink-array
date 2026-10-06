@@ -31,7 +31,7 @@ namespace shrink_array
 {
 
 template <typename Derived>
-void FastBlockSupport2<Derived, true>::make_block_compression()
+void FastBlockSupport2<Derived, true>::make_block_compression(this Derived& self)
 {
     // bug in run time openmp llvm
 
@@ -39,20 +39,20 @@ void FastBlockSupport2<Derived, true>::make_block_compression()
     {
         // The compressibility scan reads the active size; make it THIS array's
         // size regardless of whatever size the calling thread last operated on.
-        shrink_array::set_thread_chunk_size(self().chunk_size());
+        shrink_array::set_thread_chunk_size(self.chunk_size());
     }
 
     // bool has its own pass and no second value: the (thr, inf_array, proxy)
     // overload static_asserts for it, so ArrayChunk2<bool>::resize() did not
     // compile with fast-block compression.
-    // [&], not [this]: `this` is used by the non-bool branch only, and an
-    // explicit capture unused in the bool instantiation is a clang warning
-    // (-Wunused-lambda-capture). [&] captures it where it is used.
+    // [&] captures self where the non-bool branch uses it; an explicit capture
+    // unused in the bool instantiation would be a clang warning
+    // (-Wunused-lambda-capture).
     const auto pass_on_rank = [&](int thr)
     {
         if constexpr (Derived::is_not_bool)
         {
-            chunk_type::make_block_compression(thr, self().get_info_second_value(), nullptr);
+            chunk_type::make_block_compression(thr, self.get_info_second_value(), nullptr);
         }
         else
         {

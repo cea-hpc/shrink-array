@@ -63,13 +63,13 @@ class RechunkHooks2A<Derived, true>
     using manager_type = Traits::manager_type;      ///< Per-type manager owning the candidate store.
 
     /// @brief Drop this array's queued compression candidates before teardown.
-    void rechunk_drop_candidates();
+    void rechunk_drop_candidates(this Derived& self);
 
     /**
      * @brief Release this array's parked buffers held at the old geometry.
      * @param new_size geometry the array is moving to
      */
-    void rechunk_drain_reuse_list(unsigned int new_size);
+    void rechunk_drain_reuse_list(this Derived& self, unsigned int new_size);
 
     /**
      * @brief Exchange identity with the scratch array built at the new geometry.
@@ -78,16 +78,8 @@ class RechunkHooks2A<Derived, true>
      * @note Unlike swap(), this DOES move num_tab, updating the registry so each
      *       address keeps pointing at its own metadata.
      */
-    bool rechunk_swap_identity(Derived& tmp);
+    bool rechunk_swap_identity(this Derived& self, Derived& tmp);
 
-  protected:
-    /** @brief CRTP down-cast: the concrete array this mixin is a base of,
-     *         const on a const object (one member for both: deducing this). */
-    template <typename Self>
-    [[nodiscard]] auto& self(this Self&& obj) noexcept
-    {
-        return static_cast<crtp_cast_t<Self, Derived>&>(obj);
-    }
 };
 
 // ── Static-geometry build: nothing to hook ───────────────────────────────────
