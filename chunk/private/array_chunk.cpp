@@ -14,12 +14,9 @@
  * limitations under the License.
  */
 
-// Template method bodies now live in chunk/array_chunk_inline.h, included
-// transitively via chunk/array_chunk.h.
-//
-// STEP 1 of the "remove static type list" refactor: bodies moved to the inline
-// header (consumer TUs can auto-instantiate ArrayChunk<T>); the explicit
-// instantiations have been removed (Stage 5b): each ArrayChunk<T> the
-// consumer uses auto-instantiates at its use site (weak-symbol dedup).
+// Template method bodies live in chunk/array_chunk_inline.h, included
+// transitively via chunk/array_chunk.h. No explicit instantiations: each
+// ArrayChunk<T> the consumer uses is instantiated at its use site (weak-symbol
+// dedup).
 
 #include "chunk/array_chunk.h" // its own header: ArrayChunk<T>, bodies in array_chunk_inline.h

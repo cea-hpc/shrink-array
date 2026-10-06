@@ -411,7 +411,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /// @note Relaxed: the flag is thread-local and every store to it is the
     ///       owner's own (mark_thread_has_ops from its enqueue, clear_ from
     ///       its own drains), so program order is all the ordering there is.
-    ///       Read after every fast-path write (the P3 backlog check): keep it
+    ///       Read after every fast-path write (the backlog check): keep it
     ///       relaxed, an acquire load there is a measurable cost on AArch64.
     [[nodiscard]] static bool thread_may_have_ops_own() noexcept
     {
@@ -433,7 +433,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /// @param thr_rank rank to query
     /// @return that rank's count, or 0 before init_deferred_queues()
     /// @note A single acquire load -- cheaper than any_pending_ops(), which sums
-    ///       every shard. Used by the P3 threshold check.
+    ///       every shard. Used by the backlog threshold check.
     [[nodiscard]] static int64_t pending_ops_rank(int thr_rank) noexcept
     {
         if (pending_ops_shard.empty())

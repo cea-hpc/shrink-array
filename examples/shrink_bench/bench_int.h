@@ -18,19 +18,15 @@
  * @file bench_int.h
  * @brief The bench's index and size type, in one place: `Int` / `UInt`.
  *
- * @details The bench used to compute every size, index and loop bound in
- *          `int`, and so did the library underneath it (`ind_type = int`, see
- *          chunk_traits.h). That caps a run at INT_MAX elements -- and
- *          `--mode perf` already sits at 1e9, so `--multiply 2` was refused by
- *          check_size_limits() for want of 64-bit indices, which is the whole
- *          reason this header exists.
+ * @details `int` indices cap a run at INT_MAX elements -- and `--mode perf`
+ *          already sits at 1e9, so `--multiply 2` needs 64-bit indices
+ *          (check_size_limits() refuses it otherwise).
  *
- *          Every size/index/count in the bench is spelled `Int` (or `UInt`)
- *          instead. It is `int` by default -- the 32-bit bench is bit-for-bit
- *          what it was -- and `long` when the build defines BENCH_INT64, which
- *          is what a "big multiply" run wants. `Array<T>` passes `Int` to the
- *          library as its `ind_type`, so the two move together: there is no
- *          build where the bench indexes in 64 bits and the array in 32.
+ *          Every size/index/count in the bench is spelled `Int` (or `UInt`):
+ *          `int` by default, `long` when the build defines BENCH_INT64 (a "big
+ *          multiply" run). `Array<T>` passes `Int` to the library as its
+ *          `ind_type`, so the two move together: there is no build where the
+ *          bench indexes in 64 bits and the array in 32.
  *
  * @note ELEMENT types are NOT affected. `Array<int> tab_int` stays an array of
  *       `int` in both builds: it is one of the element types the bench covers

@@ -155,17 +155,12 @@ void ParamChunk::init_indexes(bool big_chunk_block)
     //
     // g_active_chunk_size is initialised statically to __chunk_size
     // (chunk_size_policy.h), so the size every array is born with never goes
-    // through set_active_chunk_size() and never reaches the per-size free-list
-    // map. Only re-chunking registered anything -- which means a run that never
-    // re-chunks has an EMPTY map, get_list_block_free_thr_for_size() falls back
-    // to the geometry-blind legacy store for every buffer, and
-    // drain_reuse_list_for_size() -- which only walks the map -- can never reach
-    // them again.
-    //
-    // Measured on v1 dyn at 64 threads with no re-chunk at all: 29952 MB parked,
-    // 100% of it in the legacy store, out of a 51 GB footprint. The same run on
-    // chunk2a, where a forced re-chunk had registered the size, showed properly
-    // keyed "size 64" lists that the drain emptied on demand.
+    // through set_active_chunk_size() and would never reach the per-size
+    // free-list map: a run that never re-chunks would have an EMPTY map,
+    // get_list_block_free_thr_for_size() would fall back to the geometry-blind
+    // legacy store for every buffer, and drain_reuse_list_for_size() -- which
+    // only walks the map -- could never reach them again (v1 dyn, 64 threads:
+    // 30 GB parked there, out of a 51 GB footprint).
     //
     // Idempotent and sequential; the size is already in g_active_chunk_size.
     if constexpr (build_config::chunk_dynamic)
@@ -434,7 +429,7 @@ void ParamChunk::ChunkStats()
         // chunks ARE at the constant when each array is destroyed, whatever the
         // reason (born that way, or genuinely compressed). The two can differ by
         // orders of magnitude on a run with few writes -- that is expected, not a
-        // counting bug (this took a full debugging session to pin down).
+        // counting bug.
         std::println("  compress (during exec) = {}", stats.compress);
         if (stats.bytes_freed != 0)
         {
@@ -566,8 +561,8 @@ void ParamChunk::ChunkStats() {}
 template <typename AllT>
 void ParamChunkDynInterface<true, AllT>::register_chunk_size([[maybe_unused]] unsigned int size)
 {
-    // Must run in BOTH OMP and non-OMP dynamic builds: an OpenMP-only version
-    // left non-OMP dynamic builds without a per-size reuse
+    // Must run in BOTH OMP and non-OMP dynamic builds: without it a non-OMP
+    // dynamic build has no per-size reuse
     // free-list slot -> SIGSEGV in drain_reuse_list_for_size at the first
     // re-chunk. The manager's register_chunk_size is compiled for every dynamic
     // build (guarded by if constexpr internally), so this is safe non-OMP.
@@ -595,10 +590,9 @@ template struct ParamChunkDynInterface<build_config::chunk_dynamic, AllTypeChunk
  * @details Defined in EVERY build so an `if constexpr (chunk_dynamic)` call
  *          site links either way, and unconditional inside: in a static build
  *          ParamChunk inherits ParamChunkDynInterface<false, AllTypeChunk>,
- *          whose register_chunk_size is a no-op. That is what removed the
- *          `#ifdef CHUNK_DYNAMIC` this body used to carry -- and it is also why
- *          the call is no longer rejected at compile time in a static build;
- *          see the warning on that specialisation.
+ *          whose register_chunk_size is a no-op -- so no `#ifdef
+ *          CHUNK_DYNAMIC` here, and also no compile-time rejection of the call
+ *          in a static build; see the warning on that specialisation.
  */
 void register_runtime_chunk_size(unsigned int size)
 {

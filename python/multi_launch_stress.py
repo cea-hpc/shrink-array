@@ -3,10 +3,6 @@
 multi_launch_stress.py -- stress runner: the check binaries, over and over,
 each run at a random thread count.
 
-(Was multi_launch_no_compress_inter.py: it used to set NO_COMPRESS=1, which
-stopped meaning anything when compression became opt-in in shrink_bench
-(--compress / COMPRESS=1, Sept '26). What it does is the stress loop.)
-
 Two ways to name the binaries:
 
   * historical: run it INSIDE a build directory, the binaries are
@@ -511,8 +507,7 @@ for i in range(n):
             returncode = result.returncode
 
             # error_*.txt only for a FAILED run: a successful one may still
-            # write to stderr (the stats builds' [RECHUNK-DECIDE] trace), which
-            # used to leave an "error" file behind with return code 0.
+            # write to stderr (the stats builds' [RECHUNK-DECIDE] trace).
             if not no_io and os.path.isfile(stderr_file):
                 if os.stat(stderr_file).st_size == 0:
                     os.remove(stderr_file)

@@ -264,7 +264,7 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
 
         // --- the copy is deep -------------------------------------------------
         // Copy constructor and copy-assignment: the copy reads back the source,
-        // a write in the copy leaves the source alone (it used to alias the
+        // a write in the copy leaves the source alone (no aliasing of the
         // chunks), and a destination that held data is overwritten whole.
         {
             Array<double> c(v);
@@ -351,18 +351,14 @@ void run_stl_self_checks([[maybe_unused]] bool test_stl)
     }
 
     // === read-idempotence self-checks (--test_stl) ==========================
-    // openmp: this targets the sync_on_read read path, which is only active in
-    // OpenMP builds (build_config::sync_on_read is gated on use_openmp). A const
-    // read must have NO observable side effect: two consecutive reads of the same
-    // index must return the same value, and the proxy comparison operators
-    // (operator!=, operator==) must agree with operator T() (which routes through
-    // read_pure()). Under sync_on_read the proxy's ctor-time values[] snapshot can
-    // go stale after a chunk materialises or moves; a read op that reads that
-    // snapshot directly (instead of read_pure()) then returns a stale value, so
-    // "arr[i] != x" disagrees with "T v = arr[i]". That was the chunk2 stale-read
-    // bug (fixed by routing the compare/arith proxy ops through read_pure). This
-    // check pins the contract so it cannot regress. It runs in both modes: without
-    // OpenMP the reads are already pure, so it trivially holds.
+    // A const read must have NO observable side effect: two consecutive reads
+    // of the same index return the same value, and the proxy comparison
+    // operators (operator!=, operator==) agree with operator T() (read_pure()).
+    // Under OpenMP the proxy's ctor-time values[] snapshot can go stale after a
+    // chunk materialises or moves; a read op using that snapshot directly
+    // instead of read_pure() would make "arr[i] != x" disagree with
+    // "T v = arr[i]". Without OpenMP the reads are already pure, so it
+    // trivially holds.
     if (test_stl)
     {
         std::print("{}{}\n=== read-idempotence self-checks ===\n{}", tc.BOLD, tc.CYAN, tc.RESET);

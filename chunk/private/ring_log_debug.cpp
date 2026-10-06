@@ -106,7 +106,7 @@ void ring_log(uint32_t tid, EventCode ev, uint32_t info)
     ring_buf[idx].addr = 0;
 }
 
-// SEGV hunt: record an op-lifecycle event with the op's full address.
+// Record an op-lifecycle event with the op's full address.
 void ring_log_op(uint32_t tid, EventCode ev, uint32_t num, const void* addr)
 {
     const uint32_t idx = ring_head.fetch_add(1, std::memory_order_relaxed) & (RING_SIZE - 1);
@@ -233,11 +233,11 @@ void dump_ring()
     std::cout << "\033[1m---- end ring ----\033[0m\n";
 }
 
-// SEGV hunt: dump events for the faulting op. Two passes:
-//  (1) EXACT address match — the true lifecycle of THIS op (offset in slab).
-//  (2) block-masked context — other ops sharing the 64 KiB slab, for context.
-// The block mask alone was too coarse (it merged all ops of the slab); the exact
-// pass isolates the culprit op's own alloc/flush/free ordering.
+// Dump the events of one op address. Two passes:
+//  (1) EXACT address match -- the lifecycle of THIS op (offset in slab).
+//  (2) block-masked -- other ops sharing the 64 KiB slab, for context.
+// The exact pass isolates the op's own alloc/flush/free ordering, which the
+// block mask alone would merge with the slab's other ops.
 void dump_ring_for_addr(const void* target)
 {
     const uint64_t target_addr = reinterpret_cast<uint64_t>(target);
@@ -277,7 +277,7 @@ void dump_ring_for_addr(const void* target)
                   << " addr=0x" << std::hex << entry.addr << std::dec << " ts=" << entry.ts << "\n";
     }
     std::cout << "\033[1m---- end ring for addr ----\033[0m\n";
-    std::cout.flush(); // SEGV hunt: abort() does NOT flush cout — force it now
+    std::cout.flush(); // abort() does NOT flush cout -- force it now
     std::fflush(stdout);
 }
 
@@ -735,16 +735,12 @@ bool analyze_ring_sweep()
                   << (civ.start - min_start) << " - " << std::setw(8) << (civ.end - min_start) << "]\n";
     }
     #endif
-    // Long fast-path detection has been REMOVED as a serious-signal
-    // criterion. Empirically, durations of 1-2 ms on HPC machines are
-    // dominated by cold-path costs (page faults on first-touch of fresh
-    // chunk allocations, NUMA migration, allocator pool contention).
-    // None of these indicate a correctness bug in the chunk library.
-    //
-    // The only remaining criterion that genuinely violates an invariant
-    // is "same-thread fast-path AND compression overlap", which would
-    // mean a thread observed itself in two states it cannot legally be
-    // in simultaneously.
+    // Long fast-path durations are NOT a serious signal: 1-2 ms on HPC
+    // machines is dominated by cold-path costs (first-touch page faults,
+    // NUMA migration, allocator pool contention), none of them a
+    // correctness bug. The only criterion that genuinely violates an
+    // invariant is "same-thread fast-path AND compression overlap": a
+    // thread observed in two states it cannot legally be in at once.
 
     size_t n_same_thread = 0;
     for (const auto& o : overlaps)

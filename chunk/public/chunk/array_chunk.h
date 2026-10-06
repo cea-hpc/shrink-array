@@ -161,8 +161,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
 
     // ── The copy family: deep, element by element ────────────────────────────
     //
-    // Copy-assignment used to alias: chunk_list copied, so two arrays over the
-    // same buffers with no contract for it. A copy is a copy now, built on
+    // A copy is a copy, never an alias of the source's buffers: built on
     // ArrayChunkBase::copy_from (sized to the source, every element read
     // through the source's gate and written through this array's proxy);
     // the (first, last) and initializer-list constructors are the same loop
@@ -222,11 +221,10 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
      * @brief Move-assign: this array's own contents are released (clear()),
      *        then it takes @p other's -- chunks, geometry and identity, by the
      *        same exchange as swap(); @p other is left empty and valid.
-     * @details It used to steal @p other's chunk list and nothing else: this
-     *          array's old chunks were destroyed with their buffers still
-     *          queued as compression candidates, the moved chunks kept
-     *          @p other's metadata rows (num_tab), and @p other kept its
-     *          nb_chunk over an empty list. Sequential context, as clear().
+     * @details Not just a steal of @p other's chunk list: this array's old
+     *          chunks are released first (their candidates purged), the moved
+     *          chunks keep their metadata rows (num_tab) with them, and
+     *          @p other is left with nb_chunk 0. Sequential context, as clear().
      * @note noexcept, as the move constructor: a failure here terminates.
      */
     ArrayChunk& operator=(ArrayChunk&& other) noexcept

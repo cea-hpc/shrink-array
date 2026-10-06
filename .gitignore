@@ -12,9 +12,9 @@ build*/
 # --- What the binaries leave behind when they are run from the source tree ---
 # The bench and its harnesses write these relative to their CWD: memory_mo.txt
 # (bench_utils.cpp), seed<iter_max>.txt (the pinned RNG seed, shrink_bench.cpp),
-# data_tab* (the reference oracle), print.txt / info.txt (ad-hoc dumps). Runs
-# launched from python/ or from the repository root used to fill `git status`
-# with them. bench_and_test.py's --output-dir and
+# data_tab* (the reference oracle), print.txt / info.txt (ad-hoc dumps), which
+# runs launched from python/ or from the repository root would leave in
+# `git status`. bench_and_test.py's --output-dir and
 # multi_launch_stress.py's --run-dir put them elsewhere; this is the
 # safety net for a binary started by hand.
 memory_mo.txt

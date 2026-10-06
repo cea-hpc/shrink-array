@@ -131,8 +131,8 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
             VectorChecksum vec_mask_ch(tab_mask);
 
             // One calculate_checksum_0 call per array, not a variadic fold over
-            // them: the fold helper (removed) took its VectorChecksum arguments by
-            // value, so the per-thread sums went into copies and were lost.
+            // them: a fold helper taking its VectorChecksum arguments by value
+            // would sum into copies and lose the per-thread sums.
 
             std::println("");
 

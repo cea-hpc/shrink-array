@@ -59,10 +59,10 @@ namespace shrink_array
  * @details Every per-rank structure of the library -- the chunk allocators,
  *          the compression-candidate lists, the deferred-op maps, the writer
  *          and flush flags -- is indexed by the OpenMP thread rank and sized
- *          ONCE, when it is first built. It used to be sized by
- *          omp_get_max_threads() at that moment, so an omp_set_num_threads()
- *          raising the team after the arrays were created indexed past the
- *          end, silently. The capacity is fixed at the first call:
+ *          ONCE, when it is first built -- so sizing by
+ *          omp_get_max_threads() at that moment would let an
+ *          omp_set_num_threads() raising the team later index past the end,
+ *          silently. The capacity is fixed at the first call:
  *          max(omp_get_max_threads(), omp_get_num_procs()), raised by
  *          CHUNK_THREAD_CAPACITY if set. A rank at or past it stops the program
  *          with an invariant failure (chunk_pmp_checked_rank) instead of an

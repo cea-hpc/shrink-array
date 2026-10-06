@@ -125,11 +125,11 @@ void check_sizes()
     expect(aligned, "alloc_tab: aligned to fast_alloc::alignment");
 }
 
-/// @brief Sizes past INT_MAX and UINT_MAX, where the front end used to narrow
-///        before routing: free_block() sent [2 GiB, 4 GiB) to the ladder,
-///        alloc_block() served 4 GiB + 64 from the 64-byte bucket, alloc_tab()
-///        kept an int header. Opt-in (BLK_HUGE=1): it touches gigabytes.
-///        Before the fix this crashes rather than reporting FAIL.
+/// @brief Sizes past INT_MAX and UINT_MAX, where the front end must not
+///        narrow before routing (free_block() sending [2 GiB, 4 GiB) to the
+///        ladder, alloc_block() serving 4 GiB + 64 from the 64-byte bucket,
+///        an int header in alloc_tab()). Opt-in (BLK_HUGE=1): it touches
+///        gigabytes. A regression crashes rather than reporting FAIL.
 void check_huge()
 {
     if (sizeof(std::size_t) < 8 || std::getenv("BLK_HUGE") == nullptr)

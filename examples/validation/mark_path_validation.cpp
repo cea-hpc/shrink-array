@@ -22,21 +22,19 @@
 //      everywhere. The chunk was materialised by a value that is NEITHER
 //      constant (nor uniform: chunk2a would take a uniform run as its
 //      second value), and no write ever moved it from one constant to the other.
-//      Until Sept '26 the fast-block pre-check accepted only that
-//      constant-to-constant transition, and this chunk stayed materialised
-//      for the run: 100 out of 100 in the probe that found it.
+//      A pre-check accepting only the constant-to-constant transition
+//      leaves this chunk materialised for the run.
 //
 //   B  the second constant everywhere (a fresh chunk goes cst1 -> cst2:
-//      the transition the old pre-check did accept), then a plain value,
+//      a constant-to-constant transition), then a plain value,
 //      then the second constant again -- the case A for the second
 //      constant -- then the first.
 //
 //   C  an array that has declared NO second value, after another array
 //      declared 7.0: a plain value, then 0; then 7.0 -- the OTHER array's
 //      second value, which must not compress here on chunk2 -- then 0, and a
-//      read-back of every element. Until Sept '26 the first 0 written over
-//      a materialised chunk of such an array aborted: its candidate list did
-//      not exist.
+//      read-back of every element. The first 0 written over a materialised
+//      chunk of such an array must find its candidate list.
 //
 //   What is expected depends on the variant: chunk (v1) has no second
 //   constant, so its runs of 1.0 or 7.0 stay materialised; chunk2a picks a
@@ -157,8 +155,8 @@ static int materialised(const Array<double>& arr)
 /// pass itself there: it consumes the candidate lists, so a chunk the write
 /// path failed to queue still shows as materialised, which is the property
 /// here. Every OpenMP build compresses at finalize_parallel_phase(), chunk2a
-/// included since Sept '26 (Chunk2A::compress_chunk_to_compress runs the
-/// writers' pass rank by rank when no OMPT callback does it).
+/// included (Chunk2A::compress_chunk_to_compress runs the writers' pass rank
+/// by rank when no OMPT callback does it).
 template <typename Fn>
 static void phase(Array<double>& arr, int N, Fn&& body)
 {

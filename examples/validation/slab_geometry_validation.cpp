@@ -26,17 +26,17 @@
 // the same size whatever the chunk size: after a re-chunk, a buffer of the old
 // size is freed while the ambient size may already be the new one.
 //
-// TCCAllocator::slab_bytes_for() used to shrink a slab whose capacity exceeded
-// what the unsigned-short free list can index. For small elements (a chunk of
-// bools is a few bytes) that made the geometry depend on the element size: 8-
-// and 16-byte elements in one 2 MiB budget got 256 KiB and 512 KiB slabs, and
-// slab_of() from the other size masked the pointer at the wrong boundary and
-// read a "slab" pointer out of the middle of a block.
+// TCCAllocator::slab_bytes_for() must not shrink a slab whose capacity exceeds
+// what the unsigned-short free list can index: for small elements (a chunk of
+// bools is a few bytes) that would make the geometry depend on the element
+// size (8- and 16-byte elements in one 2 MiB budget getting 256 KiB and
+// 512 KiB slabs), and slab_of() from the other size would mask the pointer at
+// the wrong boundary.
 //
 // Checks, for pairs of element sizes sharing one budget: the slab found for a
 // block through the OTHER allocator is the block's own slab, owned by the
 // allocator that handed it out. Pointers are only compared, never followed, so
-// the old geometry fails the check instead of crashing on it.
+// a wrong geometry fails the check instead of crashing on it.
 //
 // Exit 0 = every check holds.
 

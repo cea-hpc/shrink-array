@@ -11,7 +11,7 @@
 #include <vector>   // std::vector
 
 #include "fast_allocators/tc_allocator.h"             // the declarations these bodies belong to
-#include "fast_allocators/slab_arena.h"               // FIX: disjoint op/value slab arenas
+#include "fast_allocators/slab_arena.h"               // disjoint op/ctx/value slab arenas
 #include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2
 
 template <FreeLinks Links>
@@ -34,12 +34,10 @@ inline void TCSlab<Links>::alloc_block()
         tab_firstFree.resize(static_cast<std::size_t>(BlockSize));
     }
 
-    // FIX (op/value slab aliasing): the block comes from the slab's own arena,
-    // never the glibc. Arena addresses are never returned to the OS and the
-    // op, ctx and value arenas are disjoint, so a freed op slab's address can
-    // never be reobtained by the value pool (the proven crash path: OP_ALLOC
-    // then VALUE_ALLOC at the same address on different tids). Recycled within
-    // that arena's own free-list in destroy().
+    // The block comes from the slab's own arena, never from glibc. Arena
+    // addresses are never returned to the OS and the op, ctx and value arenas
+    // are disjoint, so a freed op slab's address can never be reobtained by the
+    // value pool. Recycled within that arena's own free-list in destroy().
     data = static_cast<char*>(fast_alloc::arena_for(arena_kind).allocate(BlockAllocator, BlockAllocator));
 
     if (data == nullptr) [[unlikely]]
@@ -73,8 +71,8 @@ inline void TCSlab<Links>::destroy()
         // (not `= {}`: that is operator=(initializer_list), which keeps the capacity)
     }
 
-    // FIX (op/value slab aliasing): back to the slab's own arena's free-list,
-    // never to the glibc: the address stays inside that arena.
+    // Back to the slab's own arena's free-list, never to glibc: the address
+    // stays inside that arena.
     fast_alloc::arena_for(arena_kind).deallocate(static_cast<void*>(data), BlockAllocator);
 }
 

@@ -160,7 +160,8 @@ template <typename T>
 /**
  * @brief The number in environment variable @p name, or @p fallback.
  * @return @p fallback when the variable is unset or empty, and when its value
- *         is not a number of type T (with a warning, see env_optional).
+ *         is not a number of type T (with a warning on stderr: a typo such as
+ *         CHUNK_RECHUNK_SLICES=1o does not pass unnoticed).
  */
 template <typename T>
 [[nodiscard]] T env_number(const char* name, T fallback) noexcept

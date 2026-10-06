@@ -15,12 +15,9 @@ from ..term import cyan, green, red
 def stl_exe_for(check_exes, config):
     """A chunk2a (else chunk) check binary of `config`, whatever its size.
 
-    FIX: this used to be `check_exes.get((config, "chunk2a"))`, with a BARE
-    variant name. check_exes is keyed by the EXPANDED variant -- "chunk2a@dyn",
-    "chunk@256" -- ever since the size declinations arrived, so the lookup
-    never matched, `reps` came out empty, the fallback below used the same
-    bare keys and missed too, and the run reported "0 STL" while silently
-    skipping the phase. The check is functional and size-agnostic, so any
+    check_exes is keyed by the EXPANDED variant -- "chunk2a@dyn", "chunk@256"
+    -- so a lookup by BARE variant name never matches (and the phase would
+    silently report "0 STL"). The check is functional and size-agnostic, so any
     declination will do; chunk2a first because it exercises the widest surface.
     """
     for base in ("chunk2a", "chunk"):

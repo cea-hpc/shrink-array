@@ -153,10 +153,9 @@ void Chunk<T>::compress_sweep_rank(int thr)
     // reuse list of the AMBIENT size, and a thread's ambient size after a
     // re-chunk is that array's new one (the rebuild region sets it and
     // never restores the workers'): compressing a 64-chunk of another
-    // array from a rank left at 128 parked its 64-buffer in the 128 list,
-    // which handed it out as a 128-buffer later -- a re-chunk right before
-    // a zeroing phase gave non-reproducible results two iterations on, at
-    // 2-3 threads (shrink_bench chunk_dyn, forced advisor, Sept '26).
+    // array from a rank left at 128 would park its 64-buffer in the 128 list,
+    // which hands it out as a 128-buffer later (non-reproducible results after
+    // a re-chunk, at 2-3 threads).
     // Chunk2 and Chunk2A pin the same way (compress_chunk_to_compress_in_par_impl,
     // make_block_compression_impl).
     [[maybe_unused]] const unsigned int saved_sz = thread_chunk_size();
@@ -231,11 +230,9 @@ bool ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int max_th
  * @param vals buffer of shrink_array::alloc_chunk_count() elements
  * @details svcalloc_align already returns zeroed memory, so the fill is only
  *          needed for the pooled allocator, whose blocks carry whatever the
- *          previous owner left. Skipping it under the std allocator used to be
- *          alloc_values(false), which mapped to plain malloc and left garbage
- *          (subnormal doubles, say) in cells not written before the next read
- *          -- a wrong-value/checksum failure the fast allocator happened to
- *          hide because its pooled blocks are usually already zero.
+ *          previous owner left. The std path must stay on a zeroing allocator:
+ *          plain malloc leaves garbage (subnormal doubles, say) in cells not
+ *          written before the next read.
  */
 template <typename T, typename Derived, bool Enabled>
 void ChunkOmpPolicy<T, Derived, Enabled>::zero_fill_fresh(T* vals) noexcept
@@ -250,15 +247,9 @@ template <typename T, typename Derived, bool Enabled>
 void ChunkOmpPolicy<T, Derived, Enabled>::create_value(int thr_rank) noexcept
 {
     // Two sources: the manager's per-thread reuse pool, then a fresh allocation.
-    // Both now live in ChunkAllocPolicy::allocate_chunk_internal, shared with
-    // v2/v2A -- v1 used to keep its own copy, which is how it missed the
-    // bounds-checked size lookup (get_list_block_free_thr() ends in an
-    // unchecked operator[] on a store that is not guaranteed to be sized here)
-    // until that fix had to be applied twice.
-    //
-    // A third source used to come first -- a free-list of buffers released BY a
-    // compression pass -- but its producer went away with clear_reversible, so
-    // the list was permanently empty and the branch always fell through.
+    // Both live in ChunkAllocPolicy::allocate_chunk_internal, shared with
+    // v2/v2A, so a fix there (e.g. the bounds-checked size lookup) reaches every
+    // variant at once.
     //
     // The two initialisers are the one thing v1 does NOT share: a v1 chunk is
     // compressed only when it is all-zero, so a buffer coming back from the
@@ -274,8 +265,8 @@ void ChunkOmpPolicy<T, Derived, Enabled>::create_value(int thr_rank) noexcept
         Base::recup_value(values_loc, thr_rank);
     }
 
-    // ← FIX: fence release so that the stores following in the caller
-    //   cannot be reordered before the CAS by the ARM hardware
+    // Release fence so that the stores following in the caller cannot be
+    // reordered before the CAS (AArch64).
 
     std::atomic_thread_fence(std::memory_order_release);
 }
@@ -394,10 +385,9 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
     // chunk is pinned to its own n_elems right before its clear, as Chunk2's
     // make_block_compression_impl and Chunk2A's do. Pinned once to the
     // triggering array's size (FastBlockSupport::make_block_compression),
-    // a 64-chunk of another array cleared from a pass at 128 parked its
-    // buffer in the 128 list, which handed it out as a 128-buffer later:
-    // non-reproducible results two iterations after a re-chunk, at 2-3
-    // threads (shrink_bench chunk_dyn, forced advisor, Sept '26).
+    // a 64-chunk of another array cleared from a pass at 128 would park its
+    // buffer in the 128 list, which hands it out as a 128-buffer later:
+    // non-reproducible results after a re-chunk, at 2-3 threads.
     [[maybe_unused]] const unsigned int saved_sz = shrink_array::thread_chunk_size();
     for (const auto& tup : ll_compt)
     {

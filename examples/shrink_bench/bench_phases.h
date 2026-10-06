@@ -18,11 +18,10 @@
  * @file bench_phases.h
  * @brief The OMPT phase-transition wrappers, and the bench phases themselves.
  *
- * The wrappers lived in shrink_bench.cpp until the workload's parallel regions
- * moved to their own translation units -- every one of them opens with
- * begin_parallel_phase_g() and closes with the matching finalize, so they had
- * to become shared. Bodies are verbatim; only the anonymous namespace is gone,
- * `inline` giving the same "no library header change" property across TUs.
+ * Shared by the workload's parallel regions, each in its own translation
+ * unit: every one opens with begin_parallel_phase_g() and closes with the
+ * matching finalize. `inline` (no anonymous namespace) keeps the "no library
+ * header change" property across TUs.
  */
 
 #pragma once
@@ -237,14 +236,14 @@ void bench_phase_range_d(BenchArrays& bench_arr, Int beg, Int seg_end);
 /**
  * @brief Compress all thirteen arrays, one `omp single nowait` each.
  *
- * @note Brackets itself with the OMPT phase update, which used to sit in a
- *       one-line lambda in main(): a caller cannot forget what it need not write.
- * @details Moved out of main() unchanged except for the thirteen compress calls,
- *          which now go through the compress_one(auto&) template so the body no
- *          longer needs an #ifdef. `single nowait` per array rather than a loop:
- *          the arrays have thirteen DIFFERENT types, so there is nothing to loop
- *          over -- the region hands one array to whichever thread arrives, and
- *          nowait lets the next start immediately.
+ * @note Brackets itself with the OMPT phase update: a caller cannot forget
+ *       what it need not write.
+ * @details The thirteen compress calls go through the compress_one(auto&)
+ *          template, so the body needs no #ifdef. `single nowait` per array
+ *          rather than a loop: the arrays have thirteen DIFFERENT types, so
+ *          there is nothing to loop over -- the region hands one array to
+ *          whichever thread arrives, and nowait lets the next start
+ *          immediately.
  * @note Does strictly nothing in the std::vector baseline build.
  */
 void bench_phase_compress_all(BenchArrays& bench_arr);

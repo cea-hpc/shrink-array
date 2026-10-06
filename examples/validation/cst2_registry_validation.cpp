@@ -175,8 +175,8 @@ static int run_id_limit_child()
 }
 
 /// @brief Re-run this executable with --id-limit under a lowered identifier
-///        limit: it must stop, and say why. Past the limit, alloc_chunk()
-///        used to write value_by_id[] out of bounds instead.
+///        limit: it must stop, and say why -- alloc_chunk() must not write
+///        value_by_id[] out of bounds.
 static void check_id_limit(const char* self)
 {
     const std::string log = "/tmp/cst2_id_limit_" + std::to_string(getpid()) + ".log";

@@ -85,12 +85,8 @@ struct ParallelSupport2<Derived, false> : public ParallelSupportCommonSerial<Der
  * @tparam Enabled defaulted to chunk_config::use_fast_block_compression; never
  *         pass it explicitly outside of tests.
  *
- * @details Used to be a virtual override of ArrayChunk2Int, the type-erased
- *          handle that let a global pass drive every live array through one
- *          virtual call. That pass was never written — the registry of live
- *          arrays was filled and emptied but never walked — so the virtual was
- *          removed along with it, and the only real call site
- *          (ArrayChunk2Base::resize_common) has always gone through CRTP.
+ * @details Not virtual: the only call site (ArrayChunk2Base::resize_common)
+ *          goes through CRTP, and no type-erased pass drives live arrays.
  */
 template <typename Derived, bool Enabled = chunk_config::use_fast_block_compression>
 class FastBlockSupport2;

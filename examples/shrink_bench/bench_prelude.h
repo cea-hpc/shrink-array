@@ -200,10 +200,9 @@ inline BenchSched bench_sched_for(Int start, Int end) noexcept
     return {std::max<Int>(1, (end - start + t - 1) / t), start}; // contiguous slices
 }
 
-// No longer gated on CHECK: there is no CHECK macro any more, the mode is a
-// runtime flag (--mode, see bench_config.h). A debug build therefore always
-// carries the compression verification code; a --mode perf run simply does not
-// execute it, which costs nothing it did not already cost.
+// Not gated on any mode macro: the mode is a runtime flag (--mode, see
+// bench_config.h). A debug build always carries the compression verification
+// code; a --mode perf run simply does not execute it.
 #if defined SHRINK_ARRAY && defined DEBUG
     #define CHECK_COMPRESSION
 #endif

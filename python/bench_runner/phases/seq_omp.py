@@ -46,10 +46,9 @@ def run_seq_omp_compare_phase(args, extra_ldpath, errors):
     # The compare reads `still compressed (at exit)` out of the CHUNK_STATS
     # block, which ONLY a -DCHUNK_STATS=ON build prints. Whether a pair is a
     # stats build is knowable from its name (is_stats_config), so drop the
-    # others here -- the loop below used to find out the expensive way, by
-    # running a full sequential bench per pair whose only possible outcome was
-    # "no CHUNK_STATS block in the sequential output -- not a stats build".
-    # That cost one pointless multi-minute run per non-stats pair, every time.
+    # others here rather than run a full sequential bench per pair whose only
+    # possible outcome is "no CHUNK_STATS block in the sequential output -- not
+    # a stats build" (one pointless multi-minute run per non-stats pair).
     non_stats = [(o, q) for o, q in pairs
                  if not (is_stats_config(o) and is_stats_config(q))]
     pairs = [(o, q) for o, q in pairs

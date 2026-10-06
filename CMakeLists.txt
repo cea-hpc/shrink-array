@@ -33,10 +33,9 @@ option(CHUNK_FORCE_LEDGER "Keep the pool ledger active under OpenMP (off by defa
 # refill in a loop; "strace -c -e trace=madvise" gives the call count directly.
 #
 # ON is the headers' own default (alloc_config.h, config.h), so ON defines
-# nothing and only OFF does, as CHUNK_NO_RECLAIM_EMPTY_SLABS. It used to be the
-# other way round -- ON defined CHUNK_RECLAIM_EMPTY_SLABS over headers that said
-# false without it -- and a project using the installed package, which never
-# sees this add_definitions, compiled the inline allocator code with the
+# nothing and only OFF does, as CHUNK_NO_RECLAIM_EMPTY_SLABS. Not the other
+# way round: a project using the installed package never sees this
+# add_definitions, and would compile the inline allocator code with the
 # opposite value from the library it linked.
 option(CHUNK_RECLAIM_EMPTY_SLABS "Release an emptied slab's pages with madvise instead of keeping them resident" ON)
 if(NOT CHUNK_RECLAIM_EMPTY_SLABS)
@@ -192,12 +191,11 @@ endif()
 
 # Apply the sanitizer flags for EVERY build type.
 #
-# They used to be injected only into CMAKE_CXX_FLAGS_DEBUG below, which CMake
-# reads only when CMAKE_BUILD_TYPE=Debug. A RelWithDebInfo build with
-# -DSANITIZER=address therefore configured cleanly, printed "Address Sanitizer
-# enabled", and produced an UNinstrumented binary -- `nm -C <exe> | grep -c
-# __asan` returned 1 instead of thousands. Three "the sanitizer reports
-# nothing" conclusions came from binaries that had never been instrumented.
+# Not only into CMAKE_CXX_FLAGS_DEBUG below, which CMake reads only when
+# CMAKE_BUILD_TYPE=Debug: a RelWithDebInfo build with -DSANITIZER=address would
+# then configure cleanly, print "Address Sanitizer enabled", and produce an
+# UNinstrumented binary (`nm -C <exe> | grep -c __asan` returns 1 instead of
+# thousands).
 # Compile AND link flags are set here, together: TSan's linker flags were
 # commented out, so a thread build could compile instrumented yet miss its
 # runtime.

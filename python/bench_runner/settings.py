@@ -58,7 +58,7 @@ DEFAULT_VARIANTS       = ["vector", "chunk", "chunk2", "chunk2a", "std_alloc"]
 # is non-zero OR the output contains a sanitizer report (ASan can continue past
 # an error with exit 0 depending on options).
 SANITIZER_CONFIGS = [
-    "cmake-build-omp-llvm-debug-std-alloc-address-sanitizer",  # ASan + std-alloc (would have caught fw14)
+    "cmake-build-omp-llvm-debug-std-alloc-address-sanitizer",  # ASan + std-alloc (sees what the arenas hide)
     "cmake-build-omp-llvm-debug-thread-sanitizer",             # TSan (ARM race net)
 ]
 SANITIZER_THREADS = 8
@@ -217,10 +217,8 @@ INT64_CHECK_VARIANTS = ["chunk@1024", "chunk2@1024", "chunk2a@dyn"]
 # perf sweep is exactly the one that would otherwise miss a scaling
 # regression. --skip-scaling is the way out.
 #   fast   : compromise — 64/128 only, few reps on 64, no PERF on the serial
-#            configs. About 1h30 on the full aarch64 matrix, not the ~10 min
-#            this line used to claim: 1129 runs over 8 configs is not a
-#            ten-minute job, and pretending otherwise made the mode look
-#            broken rather than slow.
+#            configs. About 1h30 on the full aarch64 matrix (1129 runs over 8
+#            configs), not ten minutes.
 #   normal : the standard defaults above.
 #   full   : the complete thread distribution with many reps on 64 and 128.
 MODE_PRESETS = {

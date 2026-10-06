@@ -388,9 +388,9 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
     {
         const auto& tup       = vec_tuple_to_compress[k];
         const int   num_chunk = std::get<1>(tup);
-        // Formerly `num_chunk != -1`: nothing sets -1 any more (purged entries
-        // are erased from the lists), so a negative num_chunk is a corrupt entry
-        // -- reported in check builds, skipped otherwise.
+        // Nothing sets num_chunk to -1 (purged entries are erased from the
+        // lists), so a negative num_chunk is a corrupt entry -- reported in
+        // check builds, skipped otherwise.
         if constexpr (build_config::any_check)
         {
             if (num_chunk < 0) [[unlikely]]
@@ -745,9 +745,9 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
             const int num_chunk = std::get<1>(tup);
             const int num_tab   = std::get<2>(tup);
 
-            // Per-entry geometry, exactly like the OpenMP branch above — the
-            // former call relied on the (now removed) `= __chunk_size` default,
-            // which under-scanned dynamic chunks (see chunk2A_std.h).
+            // Per-entry geometry, exactly like the OpenMP branch above -- a
+            // default chunk size would under-scan dynamic chunks (see
+            // chunk2A_std.h).
             std::get<0>(tup)->compress(0, num_chunk, num_tab, apply, std::get<3>(tup));
             Proxy2A<T>::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
         }

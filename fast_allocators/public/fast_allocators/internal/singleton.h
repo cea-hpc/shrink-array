@@ -67,10 +67,10 @@ class Singleton
     /// @return Never null.
     static T* getInstance()
     {
-        // Fast path: one acquire load, no lock. Every call used to take the
-        // mutex, and this is reached once per thread per barrier (64 threads
-        // serialised on it at each one). The acquire pairs with the release
-        // store below: seeing the pointer implies seeing the constructed T.
+        // Fast path: one acquire load, no lock: this is reached once per thread
+        // per barrier, and a mutex here would serialise 64 threads at each one.
+        // The acquire pairs with the release store below: seeing the pointer
+        // implies seeing the constructed T.
         if (T* instance = unique_instance.load(std::memory_order_acquire)) [[likely]]
         {
             return instance;

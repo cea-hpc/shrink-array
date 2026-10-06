@@ -27,7 +27,7 @@
 #include "bench_prelude.h"            // Int, build_config::, CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
-// PRINT_MEM is enabled by default to preserve historical behaviour.
+// PRINT_MEM is enabled by default.
 #ifndef PRINT_MEM
     #define PRINT_MEM
 #endif
@@ -132,20 +132,12 @@ inline constexpr bool have_bzip2 = false;
 // size decision (4 again), and platform or compiler detection (__GLIBC__,
 // __GNUC__, __NVCOMPILER, aarch64) -- there is nothing to mirror there.
 
-// CONSTEXPR is now always empty, and that is the whole of the check/perf fusion.
-//
-// It used to be `constexpr` unless INPUT_DATA was defined, and the bench mode
-// was two compile-time booleans fed by the CHECK / PERF macros. That forced TWO
-// executables per (variant, geometry) -- the same 2400-line translation unit
-// compiled twice, 21 s and 2.2 GB each -- for a difference of a few integers:
-// the io mode, two workload sizes, an iteration stop, two frequencies and two
-// booleans. Everything below is now an ordinary runtime function, the mode is
-// chosen by --mode, and CMake builds ONE target per (variant, geometry).
+// CONSTEXPR is always empty: the bench mode is a runtime choice (--mode), so
+// ONE target is built per (variant, geometry) instead of two (check / perf).
 //
 // Kept as a macro rather than deleted: it marks, at each of its call sites in
-// shrink_bench.cpp, the values that USED to be compile-time constants. Reading
-// `CONSTEXPR const bool stats = have_stats();` still says "this is fixed for the whole
-// run, decided once at startup", which is exactly the contract.
+// shrink_bench.cpp, values fixed for the whole run, decided once at startup.
+// Reading `CONSTEXPR const bool stats = have_stats();` still says exactly that.
 #define CONSTEXPR
 
 /// @brief The bench mode, fixed at startup by --mode and constant thereafter.
@@ -165,9 +157,8 @@ inline bool mode_perf  = false; ///< g_bench_mode == perf
 /**
  * @brief Select the bench mode. Call once, from argument parsing.
  * @param m the mode --mode asked for.
- * @warning Must run BEFORE the first get_ or have_ accessor call: those used to be
- *          compile-time constants and their callers still treat them as fixed
- *          for the whole run.
+ * @warning Must run BEFORE the first get_ or have_ accessor call: their callers
+ *          treat them as fixed for the whole run.
  */
 inline void set_bench_mode(BenchMode m)
 {

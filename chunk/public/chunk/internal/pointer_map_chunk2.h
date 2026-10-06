@@ -238,19 +238,17 @@ class PointerMapChunk2
     using InfArrayPolicy = PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>;
 
     // The storage (a std::deque, NOT a std::vector) and the traversal operations
-    // now live in PointerMapLinear. The container is a template parameter there
+    // live in PointerMapLinear; the container is a template parameter there
     // precisely to preserve what follows.
     //
-    // FIX (share_info concurrent-realloc race): emplace_back on a vector
-    // REALLOCATES as it grows, which frees the old buffer. A reader walking the
-    // container in parallel (get_info_second_value, reached from a deferred
-    // compression's write_body on another thread) was then reading freed memory
-    // -- intermittent "Key not found" and vtable-pointer corruption (data bytes
-    // seen in an op's vptr) on aarch64 in release. std::deque::emplace_back
-    // never relocates existing elements and never invalidates references, so a
-    // concurrent reader keeps seeing valid data. (Only ITERATORS can be
-    // invalidated, not references to elements -- and the traversals below
-    // capture size() first, then index stable slots.)
+    // A vector's emplace_back REALLOCATES as it grows, freeing the old buffer
+    // under a reader walking the container in parallel (get_info_second_value,
+    // reached from a deferred compression's write_body on another thread):
+    // reads of freed memory ("Key not found", corrupted vptrs). std::deque's
+    // emplace_back never relocates existing elements and never invalidates
+    // references, so a concurrent reader keeps seeing valid data. (Only
+    // ITERATORS can be invalidated -- the traversals below capture size()
+    // first, then index stable slots.)
     using MapType  = ValueToIntMapHelper<T>::type;
     using MapType0 = ValueToInfTupleMapHelper<T>::type;
 

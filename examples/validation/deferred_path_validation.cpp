@@ -7,7 +7,7 @@
 // in the writer's rank queue (to_be_queued_for_deferred_processing) lands in
 // program order with every other write and read of the same element -- the
 // direct writes before and after it, the read-modify-writes that need its
-// value, the reads from another array, the replays at the P3 drain, at the
+// value, the reads from another array, the replays at the backlog drain, at the
 // read gate (reader_sync), at the end of the region, and the WAW guard that
 // retires a superseded op before a direct store.
 //
@@ -56,14 +56,14 @@
 //   region take the same gate, so the hook defers them too, and no region end
 //   drains them), then a growth, a shrink and a growth, each straight after
 //   writes, with no explicit flush. resize() must drain the queue itself
-//   before it reallocates chunk_list -- ArrayChunk (v1) did not until Oct '26:
-//   a queued op then referenced a freed chunk.
+//   before it reallocates chunk_list (otherwise a queued op references a
+//   freed chunk).
 //
 // WHAT IT DOES NOT COVER
 //
-//   Re-chunking (a sequential quiescent point: it drains first),
-//   the array copy-assignment (a shallow alias of the chunks, no concurrent
-//   contract), geometry sweeps. One geometry per executable.
+//   Re-chunking (a sequential quiescent point: it drains first), array
+//   copies (sequential, no concurrent contract), geometry sweeps. One
+//   geometry per executable.
 //
 // Exit 0 = every element matches the reference after every region, and, in a
 // CHUNK_STATS build with the knob on, at least one write really was deferred.
@@ -169,10 +169,9 @@ static T waw_value(long k)
 // ── The compound operators' return contract ─────────────────────────────────
 // `y = (a[i] op= x)` must yield the value now stored. A discarded result keeps
 // the operation deferrable; a converted one synchronises the element and reads
-// the result. On the deferred path the operators used to return the operand,
-// or an unspecified value, while storing the right one: the arrays' contents
-// were correct and only a caller USING the result was wrong -- which a check of
-// the contents never sees.
+// the result. On the deferred path the result must be the value stored, not
+// the operand: a wrong result leaves the arrays' contents correct and only a
+// caller USING it wrong -- which a check of the contents never sees.
 
 /// @brief Bit-wise equality: a NaN (x /= 0-ish, inf - inf) never compares equal
 ///        to itself, and the question is "same value", not "==".
@@ -528,7 +527,7 @@ static int run(const char* label, long N, const Scenario<T>& sc)
     // Region 4: one region, three loops, two plain barriers and NO phase
     // bracket around them. Loop A leaves ops pending in every rank's queue;
     // loop B, under another schedule, reads elements loop A wrote from OTHER
-    // threads (the foreign-pending read gate, P1); loop C, same remapped
+    // threads (the foreign-pending read gate); loop C, same remapped
     // schedule, writes over elements whose loop-A ops sit in another rank's
     // queue (the cross-rank WAW drain before a direct write). The reference
     // runs the three loops in sequence, which is what the barriers promise.

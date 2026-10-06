@@ -21,7 +21,7 @@
 //
 //     shrink_array::ParamChunk::init_indexes<MyChunkTypes>(true);
 //
-// The library itself no longer carries a hard-coded list of "supported" T;
+// The library itself carries no hard-coded list of "supported" T;
 // each consumer is responsible for declaring the types it uses. Grouping the
 // list here avoids duplicating (and forgetting to keep in sync) the tuple in
 // every example .cpp. Individual examples that only need a subset are

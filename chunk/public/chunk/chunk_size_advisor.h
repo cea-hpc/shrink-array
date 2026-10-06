@@ -251,13 +251,10 @@ struct ChunkSizeAdvisor
         // (classify() is pure-read -- const accessors, a pointer compare against
         // stable sentinels -- so concurrent reads are race-free; analyze() is
         // called at a quiescent serial point, so spawning a region here is safe).
-        // Until Sept '26 the classification was stored in
-        //     std::vector<std::uint8_t> kindv(nc); std::vector<const void*> keyv(nc);
-        // so that the fold and the selection would not classify twice: 9 bytes
-        // per chunk, 140 MB for a 15.6-million-chunk array, zeroed by the calling
-        // thread and faulted in page by page at EVERY call. On the 64-thread
-        // chunk2a_dyn bench the analyses cost 1-2 s of a 6.5 s run that way;
-        // classifying twice costs a fraction of that.
+        // Storing the classification instead (9 bytes per chunk: 140 MB for a
+        // 15.6-million-chunk array, zeroed and faulted in at EVERY call) cost
+        // 1-2 s of a 6.5 s run on the 64-thread chunk2a_dyn bench; classifying
+        // twice costs a fraction of that.
         //
         // Work unit: a PART, a contiguous run of whole super-blocks of 2^L chunks.
         //  - the coarser fold: every level-l block (l <= L) lies inside one

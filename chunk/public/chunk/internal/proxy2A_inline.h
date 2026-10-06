@@ -490,7 +490,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::ensure_writable_stor
     const bool is_val2 = proxy.is_cst_val2();
 
     // Route the materialisation to THIS array's chunk-size pool -- the async twin
-    // of the fix in the sync ensure_writable_storage above. Without it, create_value
+    // of the sync ensure_writable_storage above. Without it, create_value
     // allocates at the STALE per-thread thread_chunk_size while operator[]/num use
     // size_policy_ -> heap-buffer-overflow after a re-chunk (read_value OOB: i >=
     // alloc_chunk_count). proxy.chunk_size() is the live geometry here (frozen only
@@ -772,15 +772,11 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                         // Check-build guard: catch a CULPRIT op whose index is out of range
                         // BEFORE it writes out of bounds (same guard as the v2 path).
                         //
-                        // fw16 (dyn guard): compare against proxy.chunk_size(), the
-                        // per-op geometry frozen at enqueue by fw14, NOT the static
-                        // compile-time __chunk_size. In a dynamic build the real
-                        // chunk width is runtime (size_policy_.size()); __chunk_size
-                        // is only the static default (e.g. 64), so this guard fired
-                        // a false OUT OF RANGE whenever the dynamic geometry differed
-                        // from that default — every other write here already uses
-                        // proxy.chunk_size(). Static builds are unaffected: there
-                        // proxy.chunk_size() == __chunk_size.
+                        // Compare against proxy.chunk_size(), the per-op geometry
+                        // frozen at enqueue, NOT the static __chunk_size: in a dynamic
+                        // build the real chunk width is runtime (size_policy_.size())
+                        // and __chunk_size only the static default, so the guard would
+                        // fire a false OUT OF RANGE. In static builds the two agree.
                         const unsigned int csz_guard = proxy.chunk_size();
                         if (std::cmp_greater_equal(num, csz_guard))
                         {
@@ -1347,7 +1343,7 @@ void Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v, bool /*check_first_v
     // arms them anyway (write_with_optional_lock_info's lbd_info). Arming
     // here too recomputed every pointer twice per *=, /=, %=.
 
-    // Cross-rank RMW materialisation (CHUNK_SYNC_ON_READ): see arithmetic_assign.
+    // Cross-rank RMW materialisation: see arithmetic_assign.
     // Pull any foreign deferred write to this offset to applied state before we
     // read v_old, so the RMW cannot clobber it. Precise gate, outside begin_write.
     chunk.reader_sync(num);

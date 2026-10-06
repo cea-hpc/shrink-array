@@ -21,27 +21,20 @@
  * Shared with the chunk library, which includes it from here: a std-alloc
  * build, which has no fast_allocators library, still has fast_allocators'
  * headers on chunk's include path for this one and singleton.h (see
- * chunk/CMakeLists.txt). There used to be a copy in chunk/internal, kept
- * identical by hand.
+ * chunk/CMakeLists.txt).
  *
- * Functions, not the macros they were (`svalloc(var, type, n)` wrote into
- * `var`; `var = svalloc<type>(n)` now). Each allocation asserts a non-zero
- * count (debug builds). An allocation that fails -- or whose byte count would
- * overflow size_t -- prints what was asked and aborts, in EVERY build: the
- * policy of the rest of the library (SlabArena, the mmap of tc_allocator.h,
- * TCAllocatorEB, TCSlab::alloc_block). Callers never see null. A release
- * build used to return null here, and no caller tested it: BlkAllocator's
- * alloc_tab() wrote its header through it, the std-alloc chunk path
- * initialised it -- a bare SIGSEGV under memory pressure, with nothing saying
- * an allocation had failed. And an overflowing n * sizeof(T) handed malloc a
- * small size, which succeeded.
+ * Functions, not macros (`var = svalloc<type>(n)`). Each allocation asserts a
+ * non-zero count (debug builds). An allocation that fails -- or whose byte
+ * count would overflow size_t -- prints what was asked and aborts, in EVERY
+ * build: the policy of the rest of the library (SlabArena, the mmap of
+ * tc_allocator.h, TCAllocatorEB, TCSlab::alloc_block). Callers never see
+ * null, and none of them tests for it.
  *
- * posix_memalign writes into a real `void*` here. The macros used to pass it
- * `(void**)&var` with `var` a `type*`: storing a `void*` into an object of type
- * `type*` breaks strict aliasing, and under -O2 gcc was entitled not to reload
- * `var` -- an uninitialised pointer, which matched every observation of the
- * std-alloc dynamic crash ("corrupted double-linked list" at teardown, gone
- * with -fno-strict-aliasing or -Og, never under clang, invisible to ASan/TSan).
+ * posix_memalign writes into a real `void*` here. Passing it `(void**)&var`
+ * with `var` a `type*` would store a `void*` into an object of type `type*`,
+ * which breaks strict aliasing: under -O2 gcc may then use a stale `var`
+ * ("corrupted double-linked list" at teardown, gone with -fno-strict-aliasing
+ * or -Og, invisible to ASan/TSan).
  */
 #pragma once
 

@@ -61,7 +61,7 @@
 /*---------------------------------------------------------------------------*/
 
 #include "fast_allocators/internal/alloc_config.h"    // constexpr mirrors of STD_ALLOC / DEBUG / _OPENMP
-#include "fast_allocators/slab_arena.h"               // FIX: ArenaKind for op/ctx/value slab routing
+#include "fast_allocators/slab_arena.h"               // ArenaKind for op/ctx/value slab routing
 #include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2, for slab_of()'s effective slab geometry
 
 /**
@@ -324,11 +324,11 @@ class alignas(64) TCSlab
     void  operator delete(void* ptr); ///< Counterpart of the above.
 #endif
 
-    // FIX (op/ctx/value slab aliasing): which disjoint arena this slab draws
-    // from. Op and ctx pools share a slab class but MUST NOT share an address
-    // space (a freed ctx slab reobtained by the op pool overwrote a live op's
-    // vtable with ctx layout). Set by the owning pool before init(); the
-    // default is the value arena for side links (value slabs only), op otherwise.
+    // Which disjoint arena this slab draws from. Op and ctx pools share a slab
+    // class but MUST NOT share an address space (a freed ctx slab reobtained by
+    // the op pool would overwrite a live op's vtable with ctx layout). Set by
+    // the owning pool before init(); the default is the value arena for side
+    // links (value slabs only), op otherwise.
     fast_alloc::ArenaKind arena_kind = side_links ? fast_alloc::ArenaKind::Value : fast_alloc::ArenaKind::Op;
 
     char* data = nullptr; ///< The block itself, aligned on #BlockAllocator.
@@ -601,16 +601,14 @@ void sl_manage_full_empty(Node*&  block,
 
     if (slab->is_empty()) [[unlikely]]
     {
-        // nb_max_block_empty < 0  ==  never munmap (op/value aliasing fix).
+        // nb_max_block_empty < 0  ==  never munmap (op/value slab aliasing).
         if (nb_max_block_empty < 0)
         {
             on_kept(slab); // value: MADV_DONTNEED the slab; op/ctx: no-op
             return;
         }
-        // Plain comparison: every family now declares nb_block_empty as int,
-        // matching nb_max_block_empty. It used to need a static_cast because
-        // TCTypeCAllocator declared it unsigned -- the same signedness slip that
-        // nb_max_block_empty itself had to be corrected for, so that -1 works.
+        // Plain comparison: every family declares nb_block_empty as int,
+        // matching nb_max_block_empty, so that -1 works.
         if (nb_block_empty < nb_max_block_empty)
         {
             block_empty[nb_block_empty++] = slab;
@@ -770,7 +768,7 @@ class TCSlabPool
                 insert(block, new_slab());
             }
 
-            // FIX (op/value slab aliasing): nb_max_block_empty < 0 means "never
+            // nb_max_block_empty < 0 means "never
             // munmap" -- nothing is ever stored into block_empty, so don't
             // allocate it (and avoid a vector of -1 elements).
             if (nb_max_block_empty > 0)
@@ -1013,7 +1011,7 @@ class TCSlabPool
     Slab* new_slab()
     {
         auto* slab       = new Slab;
-        slab->arena_kind = arena_kind; // FIX: route slab to its op/ctx/value arena
+        slab->arena_kind = arena_kind; // route slab to its op/ctx/value arena
         slab->owner      = self();
         slab->owner_rank = rank_;
         slab->owner_key  = key_;
@@ -1111,8 +1109,8 @@ class TCSlabPool
         sl_insert(list, node);
     }
 
-    // FIX (op/ctx/value slab aliasing): which arena the slabs created by this
-    // pool draw from, propagated to every slab it news up. See set_arena().
+    // Which arena the slabs created by this pool draw from, propagated to
+    // every slab it news up. See set_arena().
     fast_alloc::ArenaKind arena_kind;
 
     size_t    ElementSize    = 0;  ///< Bytes per allocation; a COUNT when bypassing.

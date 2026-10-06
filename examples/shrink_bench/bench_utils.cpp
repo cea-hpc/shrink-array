@@ -33,12 +33,9 @@
 // -----------------------------------------------------------------------------
 bool __debug_flag = false;
 
-// FIX: "--test_stl" was missing here while main() has always had a branch to
-// parse it. The filter below (ranges::find over valid_args) runs FIRST, so the
-// flag was rejected as unknown and that branch could never fire: the
-// STL-interface and read-idempotence self-checks had NEVER run. Worse, the
-// binary exited 0 after printing "Unknown argument", so bench_and_test.py's STL
-// phase went green without executing anything.
+// "--test_stl" must be listed here: the filter below (ranges::find over
+// valid_args) runs FIRST and rejects an unknown flag, so a flag missing from
+// this list never reaches main()'s branch for it.
 const std::vector<std::string> valid_args = {
     "--no_io", "--compress", "--write_trace",   "--read_trace", "--multiply", "--divisor",    "--iter_max",
     "--mode",  "--test_stl", "--test_prealloc", "--no_struct",  "--no_mask",  "--mask_scale", "--help"};
@@ -100,10 +97,8 @@ double convert_memory(double memoryValue)
     constexpr double BYTE_TO_KB = 1.0 / 1024;
     constexpr double KB_TO_MB   = 1.0 / 1024;
 
-    // A conversion, nothing else. It used to rewrite memory_mo.txt on every
-    // call -- 2-4 file creations per memory line, inside --mode perf's timed
-    // loop, and the file kept the LAST value converted (materialised or
-    // parked), not the peak. memory_consumption("end") writes it now.
+    // A conversion, nothing else: no file I/O inside --mode perf's timed
+    // loop. memory_consumption("end") writes memory_mo.txt, with the peak.
     const double kilobytes = memoryValue * BYTE_TO_KB;
     return kilobytes * KB_TO_MB;
 }

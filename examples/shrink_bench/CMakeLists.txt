@@ -264,7 +264,7 @@ if (CHUNK_STD_ALLOC)
   endif()
 endif ()
 
-# rechunk_validation and dyn_geometry_validation moved to examples/validation:
+# rechunk_validation and dyn_geometry_validation live in examples/validation:
 # they depend on the library alone, not on the bench sources here.
 
 if (CHUNK_BUILD_DYN)
@@ -275,8 +275,8 @@ if (CHUNK_BUILD_DYN)
   # every test here shares (this build dir). So:
   #  - vector_check is the SETUP of fixture shrink_bench_oracle and every check
   #    REQUIRES it: ctest runs it first, also under -R / -j, and marks the
-  #    checks "Not Run" if it fails (they used to fail on a fresh build, the
-  #    reference not written yet, and pass later only by ctest's cost order);
+  #    checks "Not Run" if it fails (without the fixture they would fail on a
+  #    fresh build, the reference not written yet);
   #  - all of them hold RESOURCE_LOCK shrink_bench_oracle_files: they share the
   #    files, and a check may rewrite one (it decompresses a reference whose
   #    checksum misses), so they never overlap, even under -j.

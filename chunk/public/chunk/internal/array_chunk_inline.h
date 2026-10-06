@@ -241,7 +241,7 @@ void ArrayChunk<T, ind_type>::clear_core()
     // And recompute what derives from the total, as rebuild_storage() does
     // after its increment: a re-chunk creates the new storage while the old
     // one still counts, then destroys the old one here -- without this the
-    // compression threshold stayed sized for the geometry it just left (v1
+    // compression threshold stays sized for the geometry it just left (v1
     // doubles 64 -> 1024: ~3400 candidates where ~900 is right; 1.5x less
     // throughput for the rest of the 64-thread chunk_dyn bench).
     manager_chunk::compute_size_buffer_reuse();
@@ -300,26 +300,19 @@ void ArrayChunk<T, ind_type>::clear_core()
                     lbf.push_back(values_loc);
 
                     // Neutralise the chunk NOW that its buffer is parked.
-                    // Without this the chunk stays materialised -- values still
+                    // Otherwise the chunk stays materialised -- values still
                     // points at the buffer that now belongs to the reuse list --
                     // so a residual compression candidate, one that slipped the
                     // removal above or the terminal sweep, would
                     // free_block_to_pool the SAME buffer a second time. Under
-                    // std-alloc free_block_to_pool svfrees immediately, so the
-                    // block is freed there AND again by clear_list_block_free_thr:
-                    // "corrupted double-linked list" / "corrupted size vs.
-                    // prev_size" at teardown, reproducible single-threaded and
-                    // only after a re-chunk. fast-alloc parks instead of
-                    // svfreeing, which is why it never bites there -- matching
-                    // the std-alloc-only crash.
+                    // std-alloc that frees it twice (glibc "corrupted
+                    // double-linked list" at teardown, after a re-chunk);
+                    // fast-alloc parks instead of svfreeing, which hides it.
                     //
                     // init_values_cst_val() only assigns values = cst_val1: it
                     // frees nothing, and written() then reports false, so every
-                    // compress path short-circuits.
-                    //
-                    // Mirrors ArrayChunk2::clear_core (84f34e5f) and
-                    // ArrayChunk2A::clear_core (8506fb5a); v1 was the one
-                    // variant that never got this.
+                    // compress path short-circuits. Same as
+                    // ArrayChunk2::clear_core and ArrayChunk2A::clear_core.
                     ll_chunk_loc[k]->init_values_cst_val();
                 }
             }
@@ -353,8 +346,8 @@ void ArrayChunk<T, ind_type>::clear_core()
     // array's key) goes home to its allocator set, whose slabs hold nothing
     // else and so empty -- and reclaim_empty_slabs madvises them away.
     // Sequential point (destructor / rechunk_to); the drain opens its own
-    // region. Key 0 (shared pool) keeps the old behaviour: nothing to give
-    // back per array. Same hook as ArrayChunk2 / ArrayChunk2A.
+    // region. Key 0 (shared pool): nothing to give back per array. Same hook
+    // as ArrayChunk2 / ArrayChunk2A.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
     {
         ManagerChunk<Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
@@ -526,8 +519,8 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
 
     // std::vector semantics for the regrown range [old_size, newsz): it reads
     // T{}. The chunks added above are fresh, but the one holding the OLD end
-    // keeps its tail -- after a shrink, the values written there before came
-    // back on the next growth (deferred_path_validation, resize-grow-again).
+    // keeps its tail -- after a shrink, the values written there before would
+    // come back on the next growth (deferred_path_validation, resize-grow-again).
     // Reset that tail: at most one chunk, through the normal write path, after
     // the reallocations. `omp for` like the init loop above.
     if (newsz > old_size)

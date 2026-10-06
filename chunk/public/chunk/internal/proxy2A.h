@@ -425,8 +425,8 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
     static void clear([[maybe_unused]] int num_tab)
     {
         // The array's per-chunk second-value slots, released, not just emptied
-        // (a re-chunk destroys the old storage under its own num_tab: this row
-        // leaked 4 bytes per old chunk at every re-chunk until Sept '26).
+        // (a re-chunk destroys the old storage under its own num_tab, so a row
+        // left allocated leaks 4 bytes per old chunk at every re-chunk).
         // Swapped with an empty row: `= {}` would keep the capacity.
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_second_value.size())
         {
@@ -762,9 +762,9 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     static void clear_tab_is_int(int num_tab)
     {
         BaseSpec::clear(num_tab);
-        // released, not just emptied: clear() kept the capacity, so every
+        // Released, not just emptied: clear() keeps the capacity, and every
         // re-chunk (new storage under a new num_tab, the old one destroyed)
-        // left one byte per old chunk behind.
+        // would leave one byte per old chunk behind.
         std::vector<char>().swap(tab_type_cst_val[num_tab]);
         // And the candidate flags (one byte per chunk), which leaked the same way.
         Base::release_tab_is_int(num_tab);
@@ -907,16 +907,16 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      *          the chunk may be turning uniform at a third value W, which
      *          the pass compresses (fill_list_to_compress scans against
      *          values[0] and registers what it finds). Without that clause a
-     *          chunk compressed to V once and uniformly W later was never
+     *          chunk compressed to V once and uniformly W later would never be
      *          queued again, hence never compressed until it passed through
-     *          first_value: 100 out of 100 in the Sept '26 probe.
+     *          first_value.
      */
     ///
-    /// Both Chunk2A clauses also require may_become_uniform(new_value): they
-    /// used to fire on ANY such write, so a materialised chunk of varied data
-    /// was queued, scanned, found not uniform, reset -- and re-queued by the
-    /// next write; the writer then drove make_block_compression on the slow
-    /// path again and again (~3 us per write on chunk2a_256, 64 threads).
+    /// Both Chunk2A clauses also require may_become_uniform(new_value): without
+    /// it a materialised chunk of varied data is queued, scanned, found not
+    /// uniform, reset -- and re-queued by the next write, and the writer drives
+    /// make_block_compression on the slow path again and again (~3 us per write
+    /// on chunk2a_256, 64 threads).
     /// Non-static: the filter reads the chunk.
     [[nodiscard]] bool should_mark_for_compression(in_t<T> old_value,
                                                    in_t<T> new_value,
@@ -1078,12 +1078,9 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      *          ops are not replayed first, and nothing orders it against
      *          other threads. The reference dangles as soon as the chunk is
      *          recompressed or freed. Prefer the proxy's own operators.
-     * @note FIX (as getVal()): it called `create_value(Base::is_cst_val())`,
-     *       two compile errors at the first instantiation, latent because it
-     *       has no caller: a bool passed to create_value(SecondValueRef<T>),
-     *       and is_cst_val() looked up in ProxyBase instead of Proxy2Base
-     *       (Base2). It materialises as the write path (set_value) does,
-     *       gated on Base2::is_cst_val().
+     * @note Materialises as the write path (set_value) does, gated on
+     *       Base2::is_cst_val() (Proxy2Base's, not ProxyBase's). It has no
+     *       caller, so only an instantiation would catch a compile error here.
      * @return Reference to this element's live value.
      */
     [[nodiscard]] T& unsafe_ref() noexcept

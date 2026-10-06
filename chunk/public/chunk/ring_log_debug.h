@@ -40,27 +40,27 @@ enum EventCode : uint8_t
     EV_COMPRESS_STARTED,
     EV_COMPRESS_ABORTED,
     EV_COMPRESS_FINISHED,
-    // ─── new events for cst_val corruption tracking ─────────────────
-    EV_CAS_VALUES_TO_CST,    // info = chunk_idx, sub-value = which cst (1 or 2)
-    EV_CAS_VALUES_FROM_CST,  // info = chunk_idx (create_value success)
-    EV_CAS_VALUES_FAIL,      // info = chunk_idx (create_value failed = recup)
-    EV_FLUSH_BEGIN,          // info = chunk_idx
-    EV_FLUSH_END,            // info = chunk_idx
-    EV_LAMBDA_ASYNC_ASSIGN,  // info = chunk_idx (in lambda exec)
-    EV_LAMBDA_ASYNC_ARITH,   // info = chunk_idx
-    EV_VALUES_LOAD_IS_CST,   // info = chunk_idx (RACE DETECTOR if observed in lambda)
-    EV_STORE_VALUE,          // info = (chunk_idx << 8) | num
-    EV_POLICY_BEGIN_WRITE,   // info = thr_rank (entered begin_write)
-    EV_POLICY_END_WRITE,     // info = thr_rank (entered end_write) // ─── new events for thread-ops bitmap tracking
-                             // ──────────────────
+    // ─── cst_val transitions ────────────────────────────────────────
+    EV_CAS_VALUES_TO_CST,   // info = chunk_idx, sub-value = which cst (1 or 2)
+    EV_CAS_VALUES_FROM_CST, // info = chunk_idx (create_value success)
+    EV_CAS_VALUES_FAIL,     // info = chunk_idx (create_value failed = recup)
+    EV_FLUSH_BEGIN,         // info = chunk_idx
+    EV_FLUSH_END,           // info = chunk_idx
+    EV_LAMBDA_ASYNC_ASSIGN, // info = chunk_idx (in lambda exec)
+    EV_LAMBDA_ASYNC_ARITH,  // info = chunk_idx
+    EV_VALUES_LOAD_IS_CST,  // info = chunk_idx (RACE DETECTOR if observed in lambda)
+    EV_STORE_VALUE,         // info = (chunk_idx << 8) | num
+    EV_POLICY_BEGIN_WRITE,  // info = thr_rank (entered begin_write)
+    EV_POLICY_END_WRITE,    // info = thr_rank (entered end_write)
+    // ─── thread-ops bitmap tracking ──────────────────────────────────
     EV_MARK_THREAD_HAS_OPS,  // info = thr_rank
     EV_CLEAR_THREAD_HAS_OPS, // info = thr_rank
-    // ─── SEGV hunt: op lifecycle (use-after-free via op_map) ─────────
+    // ─── op lifecycle (use-after-free via op_map) ────────────────────
     EV_OP_ALLOC,     // info = num ; track op storage alloc
     EV_OP_ENQUEUE,   // info = (chunk_idx << 8) | num ; put in op_map
     EV_OP_FREE,      // info = num ; op block recycled (free_op)
     EV_OP_FLUSH_ONE, // info = num ; about to write_body this op
-    // ─── SEGV hunt: chunk VALUE storage (to prove op/value address aliasing) ──
+    // ─── chunk VALUE storage (op/value address aliasing) ─────────────
     EV_VALUE_ALLOC, // a chunk values buffer was allocated at addr
     EV_VALUE_FREE,  // a chunk values buffer was freed at addr
 };
@@ -74,7 +74,7 @@ struct RingEntry
     uint32_t  tid;
     EventCode ev;
     uint32_t  info;
-    uint64_t  addr; // SEGV hunt: op address for EV_OP_* events (0 otherwise)
+    uint64_t  addr; // op address for EV_OP_* events (0 otherwise)
 };
 
 /// @brief Record a begin event, timestamped with the serialising start counter read.
@@ -95,8 +95,8 @@ extern void ring_log_end(uint32_t tid, EventCode ev, uint32_t info = 0);
 /// @param info Payload.
 extern void ring_log(uint32_t tid, EventCode ev, uint32_t info = 0);
 
-// SEGV hunt: log an op-lifecycle event with its full address (48-bit) so we can
-// correlate alloc/enqueue/free/flush of the SAME op block across threads.
+// Log an op-lifecycle event with its full address (48-bit), to correlate
+// alloc/enqueue/free/flush of the SAME op block across threads.
 extern void ring_log_op(uint32_t tid, EventCode ev, uint32_t num, const void* addr);
 
 /// @brief Id recorded for the calling thread: its OpenMP team rank, or a 32-bit hash of std::thread::id
@@ -143,10 +143,8 @@ inline void dump_ring() {}
 /// @brief Ring log disabled: no-op.
 inline void dump_ring_for_addr(const void*) {}
 
-// These two used to have no no-op counterpart, which made them the only names of
-// this header a caller could not spell without an #ifdef of its own. With the
-// stubs, `if constexpr (chunk_config::ring_log_debug)` compiles and links in
-// every build, and shrink_bench.cpp no longer needs the directive.
+// No-op counterparts too, so `if constexpr (chunk_config::ring_log_debug)`
+// compiles and links in every build without an #ifdef at the call site.
 inline void ring_init() {}
 
 /// @brief Ring log disabled: always false.
@@ -188,7 +186,7 @@ class ScopedRingLog
         {
             if constexpr (!Manual)
             {
-                ring_log_end(tid, END_EVENT, payload); // ← fix bug 1: end, not start
+                ring_log_end(tid, END_EVENT, payload); // end, not start
             }
             else
             {

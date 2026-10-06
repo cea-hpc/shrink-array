@@ -37,7 +37,7 @@
 #include <print>     // std::println, std::print
 
 #include "bench_utils.h"          // is_vector
-#include "chunk/ring_log_debug.h" // SEGV hunt: analyze_ring_sweep / dump_ring decls
+#include "chunk/ring_log_debug.h" // analyze_ring_sweep / dump_ring decls
 
 // -----------------------------------------------------------------------------
 // BZip2 compress/decompress helpers, defined in bench_io.cpp when BZIP2 is on.
@@ -522,9 +522,8 @@ void read_check_binary_file(Int                ind,
     std::ifstream trace_file_read;
 
     // Open the write-trace file once, up front, so both the bool and
-    // non-bool branches below share the same guarded write path.
-    // Previously the bool branch never opened it, silently discarding
-    // trace output for tab_bool errors under --write_trace.
+    // non-bool branches below share the same guarded write path (tab_bool
+    // errors included under --write_trace).
     if (write_trace)
     {
         trace_file_write.open("trace_err.txt");
@@ -761,11 +760,10 @@ void read_check_binary_file(Int                ind,
                     log_message(std::string("")); // Same as above
                 }
 
-                // FIX: unsigned char goes through operator<< as a CHARACTER, so a
-                // mismatch on tab_char printed a control byte instead of the number
-                // -- unreadable exactly when the message matters most. Promote the
-                // narrow types to a wide integer for display only; every other T
-                // prints as before.
+                // unsigned char goes through operator<< as a CHARACTER: a mismatch
+                // on tab_char would print a control byte instead of the number.
+                // Promote the narrow types to a wide integer for display only;
+                // every other T prints as is.
                 const auto printable = [](const auto& v)
                 {
                     using V = std::remove_cvref_t<decltype(v)>;

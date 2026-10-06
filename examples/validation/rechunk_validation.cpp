@@ -74,17 +74,12 @@ namespace
 // otherwise the application must, which is what shrink_bench.cpp does around
 // each of its parallel phases.
 //
-// This file opens no parallel region and used to call neither, so under OpenMP
-// the backlog was never drained: every all-zero chunk stayed materialised, and
+// This file opens no parallel region, so under OpenMP it must drain the
+// backlog itself: otherwise every all-zero chunk stays materialised, and
 // compress_int() -- which in embedded-compression mode only DIAGNOSES, it does
-// not compress -- reported them round after round:
-//
-//   Should not have compress (0) values
-//   Number of compress block : 494
-//
-// ~500 of the 1563 chunks, i.e. exactly the generator's zero runs. Values were
-// always correct; the memory was simply never reclaimed, so the test was not
-// exercising compression at all past the first round. No-op in serial builds
+// not compress -- reports them round after round ("Should not have compress
+// (0) values"); values stay correct, but no compression is exercised past the
+// first round. No-op in serial builds
 // (finalize_parallel_phase is `if constexpr (use_openmp)`) and skipped under
 // OMPT, which already drains.
 void drain_compression_backlog()

@@ -216,10 +216,10 @@ void ompt_finalize(ompt_data_t*)
  * `ompt_scope_begin` endpoint seeds the thread-local rank cache via
  * shrink_array::begin_parallel_phase(). The `ompt_scope_end` endpoint, and a
  * begin while the callbacks are suspended, clear it (-1): the next
- * get_thr_rank_fast() recomputes it. It used to be left as it was, so a
- * thread coming back from a nested (serialised) region kept the inner rank
- * 0, and a region run while suspended kept the previous region's rank --
- * sharing another rank's candidate list and deferred-op queue.
+ * get_thr_rank_fast() recomputes it. Otherwise a thread coming back from a
+ * nested (serialised) region would keep the inner rank 0, and a region run
+ * while suspended the previous region's rank -- sharing another rank's
+ * candidate list and deferred-op queue.
  *
  * @param endpoint Which side of the implicit task is being reported.
  */
@@ -292,8 +292,8 @@ void parallel_end_chunk_work()
     // boundary gets re-materialised at the OLD geometry, dropping every element
     // past old_size (they read back first_value). rechunk_to compresses/drops the
     // new chunks itself, afterwards, at the correct new geometry. (Buffer reclaim
-    // that this used to do during the rebuild is handled by rechunk_drain_reuse_
-    // list on the swapped-out storage — a separate, quiescent path.)
+    // during the rebuild is handled by rechunk_drain_reuse_list on the
+    // swapped-out storage -- a separate, quiescent path.)
     if (in_rebuild)
     {
         return;
@@ -362,9 +362,8 @@ void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, 
  * Suppressed during a rechunk rebuild for the same reason as on_parallel_end().
  */
 //
-// The signature is the runtime's ompt_callback_sync_region_t. It used to be
-// declared with a different parameter list (and cast at registration); it read
-// none of them, so behaviour is unchanged -- but note what the runtime does:
+// The signature is the runtime's ompt_callback_sync_region_t; none of the
+// parameters is read. Note what the runtime does:
 // it calls this at BOTH the begin and the end of EVERY sync region, whatever
 // its kind (barriers, taskwait, taskgroup, reductions). CHUNK_OMPT_STATS
 // counts them.

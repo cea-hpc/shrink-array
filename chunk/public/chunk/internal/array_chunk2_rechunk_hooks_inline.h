@@ -39,8 +39,8 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates()
     // member. See RechunkSupport::rechunk_to for why the drop must happen at the
     // owning geometry.
     //
-    // COMPRESS them first (Sept '26) -- see RechunkHooks2A: a candidate dropped
-    // here stayed materialised through the rebuild and was never re-queued.
+    // COMPRESS them first -- see RechunkHooks2A: a candidate dropped here
+    // would stay materialised through the rebuild and never be re-queued.
     // Chunk2's compress() takes the array's (second_value, ind, num_tab) tuple;
     // bool has no second value and is left to the drop.
     if constexpr (chunk_config::use_fast_block_compression)

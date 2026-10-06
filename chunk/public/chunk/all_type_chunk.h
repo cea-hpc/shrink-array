@@ -288,9 +288,8 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      *        the between-region passes want; false: the lists are walked,
      *        their flags reset and (chunk2) emptied, and NOTHING is
      *        compressed -- the terminal sweep of a dying array uses it to
-     *        purge its chunks from the lists. It used to be called
-     *        is_inside_ompt, and compress_int passed false believing it
-     *        drained: its "misses" were the candidates it had just un-queued.
+     *        purge its chunks from the lists. false does NOT drain: a
+     *        caller counting "misses" after it sees only what it un-queued.
      */
     void compress_chunk_to_compress_potentially(bool apply) const;
 
@@ -428,9 +427,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     /// manager registered after them.
     std::vector<unsigned int> registered_sizes_;
 
-    // load_balance_list_block_free(), need_load_balance_list_block_free(),
-    // clear_list_block_free_thr() and delete_list_block_chunk_free_itself()
-    // moved to
+    // The block-free-list verbs (load_balance_list_block_free() & co.) live in
     // AllTypeChunkParallelInterface: they forward to manager virtuals that only
     // ManagerChunkParallelInterface<true> declares.
 };

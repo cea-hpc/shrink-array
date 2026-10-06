@@ -37,11 +37,9 @@ def run_rechunk_phase(args, extra_ldpath, errors):
                                    the correctness phase in output_dir), so it
                                    runs THERE, read-only, and is skipped with a
                                    notice when the oracle is absent (--skip-check,
-                                   or a failed baseline). It used to run in a
-                                   directory of its own, empty: the binary
-                                   aborted on the first missing file and the
-                                   phase reported FAIL (code -6) on every
-                                   chunk-family variant.
+                                   or a failed baseline). Not a directory of
+                                   its own: there the binary would abort on the
+                                   first missing file.
       * perf stage               : its own cwd (nothing read, nothing kept);
                                    --divisor/--iter_max shrink the huge perf data
                                    so the feature test stays quick (it validates

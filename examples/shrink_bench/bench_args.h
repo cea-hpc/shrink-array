@@ -62,7 +62,7 @@ struct BenchArgs
     double multiply_factor = 1.0; ///< --multiply (a real factor)
     Int    divisor_factor  = 1;   ///< --divisor
 
-    /// --iter_max. 2000 by default, kept from the historical behaviour.
+    /// --iter_max. 2000 by default.
     Int iter_max_arg = 2000;
 };
 

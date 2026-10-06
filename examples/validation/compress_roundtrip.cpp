@@ -23,7 +23,7 @@
 //   A second double array never declares a second value (chunk2's
 //   set_second_value): its second constant then coincides with the first, the
 //   corner every two-hypothesis scan has to handle (a run of 0 must be filed
-//   as first-constant ONLY -- compress_int used to clear it twice).
+//   as first-constant ONLY, never cleared twice).
 //
 //   The teardown at the end is the library's own (reuse-list release, allocator
 //   destruction), so a buffer freed twice or a chunk left pointing at a parked

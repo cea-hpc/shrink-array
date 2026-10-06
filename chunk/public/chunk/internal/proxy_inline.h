@@ -398,8 +398,8 @@ T Proxy<T>::assign_impl(in_t<U> v) noexcept
         // stealers); a concurrent WRITER can, but only once and one way --
         // constant -> materialised -- so a materialised capture is stable and a
         // constant one is reloaded once, by perform_core_assignment(), after
-        // create_value(). The body used to reload it five times (old value,
-        // is_cst_val, store, the race check of the marking), each an acquire.
+        // create_value() -- one acquire instead of five (old value, is_cst_val,
+        // store, the race check of the marking).
         T* vals = chunk.values_load();
 
         // The value there BEFORE the write. Two distinct traps sit here:
@@ -800,12 +800,11 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression() const noexc
     if (Base::should_trigger_compression(sz_before, szm))
     {
         // Drain this rank's deferred ops first -- they must be applied before
-        // their chunks are compressed -- as Proxy2 / Proxy2A do. This used to
-        // RETURN when the rank had any (have_deferred_queue()), before the
-        // flag below was cleared: the rank stayed dangerous, every write took
-        // run_slow_path(), which skips the P3 backlog drain, so the ops never
-        // drained and the next pass returned again -- the slow path fed itself
-        // until the between-phase drain.
+        // their chunks are compressed -- as Proxy2 / Proxy2A do. Do not RETURN
+        // when the rank has any (have_deferred_queue()) before the flag below is
+        // cleared: the rank would stay dangerous, every write would take
+        // run_slow_path(), which skips the backlog drain, so the ops would never
+        // drain -- the slow path feeding itself until the between-phase drain.
         static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));
 
         std::atomic_thread_fence(std::memory_order_seq_cst);

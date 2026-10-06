@@ -614,10 +614,9 @@ void ArrayChunk2<T, ind_type>::clear_core()
     // destructor call or rechunk_to()'s teardown of tmp -- every clear_st()
     // call below would free through the WRONG size pool, producing
     // sl_contains(list, node) assertion failures / SIGSEGVs (fast-alloc
-    // only: std-alloc's svfree() doesn't route by ambient at all). Same
-    // mechanism as the fix in Proxy2::manage_full_first_value() and
-    // manage_full_second_value() -- this covers the array-wide sweep entry
-    // point those two don't.
+    // only: std-alloc's svfree() doesn't route by ambient at all). Same rule
+    // as Proxy2::manage_full_first_value() and manage_full_second_value() --
+    // this covers the array-wide sweep entry point those two don't.
     if constexpr (build_config::chunk_dynamic)
     {
         shrink_array::set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
@@ -630,12 +629,10 @@ void ArrayChunk2<T, ind_type>::clear_core()
     // point, so the dirty-bit scan stays in bounds.
     this->flush_pending_deferred_ops();
 
-    // Per-array compression stats. Moved here (after the flush, before the
-    // rest of the teardown drain below) -- same rationale and fix as
-    // ArrayChunk2A::clear_core(): reading before the flush left a large
-    // volume of async compression work potentially still in flight,
-    // producing a thread-count-dependent snapshot (still@exit disagreed
-    // between sequential and OpenMP with the same seed).
+    // Per-array compression stats, read here: after the flush, before the
+    // rest of the teardown drain below -- as in ArrayChunk2A::clear_core().
+    // Read before the flush, async compression work may still be in flight
+    // and the snapshot depends on the thread count.
     if (this->exit_census_)
     {
         print_compression_stats();
@@ -997,12 +994,10 @@ void ArrayChunk2<T, ind_type>::compress_int()
     // are dropped, so the message fires only on genuine misses. if constexpr picks
     // written(ind) (non-bool) vs written() (bool) -- both have a runtime type guard.
     // What the reclaim DID compress is reported too. After a drain each of those
-    // is a chunk the write path left constant and unmarked -- a miss the
-    // self-heal hid until the counter bug of Sept '26 (a first value written
-    // over a cst_val2 chunk was not counted) surfaced on bool alone. Inside a
-    // parallel region (the bench compresses one array per `omp single`) the
-    // drain is skipped and a queued compression looks the same, so the report
-    // says which case it is.
+    // is a chunk the write path left constant and unmarked -- a marking miss
+    // the self-heal would otherwise hide. Inside a parallel region (the bench
+    // compresses one array per `omp single`) the drain is skipped and a queued
+    // compression looks the same, so the report says which case it is.
     {
         const auto scanned1      = tab_nb1.size();
         const auto scanned2      = tab_nb2.size();

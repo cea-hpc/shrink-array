@@ -15,13 +15,10 @@
 //   The initialisation splits on a threshold (500 chunks) and on whether a
 //   parallel region is open, and nothing in the library calls it: the arrays
 //   hold a std::vector<chunk_type> and initialise it with their own loops, so
-//   a fault here would surface in no other test. Two it would have caught in
-//   v1's form, both found in Sept '26 by a throwaway program (chunk2 and
-//   chunk2a had no array-new at all then):
+//   a fault here would surface in no other test. Two hazards:
 //
-//     - the sizes tested below bracket the threshold. The form before that
-//       date read `if (n < 500) ... else if (n > 500)`, and at exactly 500
-//       NOTHING was initialised;
+//     - the sizes tested below bracket the threshold, where an off-by-one
+//       (`if (n < 500) ... else if (n > 500)`) initialises NOTHING at 500;
 //     - the "region" cases call the operator from an `omp single`, which is
 //       what an allocation inside a parallel region looks like. Sharing the
 //       initialisation with an orphaned `omp for` HANGS there (the caller

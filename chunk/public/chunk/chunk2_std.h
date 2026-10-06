@@ -770,10 +770,9 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      */
     static void make_block_compression(int thr_rank);
 
-    // --- queue-driven compression, moved here from Chunk2<T> --------------
-    // Same axis as this policy (chunk_config::use_fast_block_compression ==
-    // the former HAVE_EMBEDDED_FAST_BLOCK_COMPRESSION fence); the false
-    // specialisation below has no queue and so declares none of it.
+    // --- queue-driven compression ------------------------------------------
+    // Same axis as this policy (chunk_config::use_fast_block_compression); the
+    // false specialisation below has no queue and so declares none of it.
 
     /*!
      * \brief Drain the compression-candidate queue for the given second

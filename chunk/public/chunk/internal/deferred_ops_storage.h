@@ -40,16 +40,13 @@ class DeferredOpsStorage
     /**
      * @brief Allocates the per-thread map array (idempotent, thread-safe).
      *
-     * Double-checked locking on arr_raw. The previous implementation used
-     * std::call_once with a std::unique_ptr<std::once_flag>; because that
-     * unique_ptr had a DYNAMIC default-member-initializer (make_unique) on a
-     * static-storage singleton (global_instance), a static-initialization-order
-     * fiasco was possible: if allocate() ran before global_instance's dynamic
-     * init constructed `flag`, `*flag` dereferenced a null unique_ptr (observed as
-     * a SIGABRT <tt>unique_ptr\<once_flag\>\::operator\* Assertion get()!=pointer()</tt>
-     * under nvc++). std::mutex has a constexpr constructor, so alloc_mutex is
-     * CONSTANT-initialized — global_instance no longer needs any dynamic init,
-     * removing the ordering hazard on every compiler.
+     * Double-checked locking on arr_raw, under alloc_mutex. NOT std::call_once
+     * with a unique_ptr<once_flag> member: a DYNAMIC default-member-initializer
+     * (make_unique) on a static-storage singleton (global_instance) is a
+     * static-initialization-order hazard -- allocate() running before that init
+     * dereferences a null unique_ptr (SIGABRT under nvc++). std::mutex has a
+     * constexpr constructor, so alloc_mutex is CONSTANT-initialized and
+     * global_instance needs no dynamic init at all.
      */
     void allocate()
     {

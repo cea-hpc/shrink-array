@@ -36,16 +36,15 @@ message(STATUS "CHUNK_STATIC_SIZES = ${CHUNK_STATIC_SIZES}; CHUNK_BUILD_DYN = ${
 # --- Aggressive vs release compression scheduling ------------------------
 option(HAVE_AGRESSIVE_COMPRESSION "Enable aggressive-compression scheduling mode." OFF)
 if (HAVE_AGRESSIVE_COMPRESSION)
-  message(STATUS "HAVE_AGRESSIVE_COMPRESSION=ON → aggressive scheduling (historical behavior)")
+  message(STATUS "HAVE_AGRESSIVE_COMPRESSION=ON → aggressive scheduling (stresses concurrent compression)")
 endif()
 
-# --- Read-side deferred-op sync (A/B experiment) -------------------------
-# OFF (default) is byte-identical to the historical build: the non-const proxy
-# operator[] flushes pending ops before every write. ON moves that toll to the
-# read entry points (see build_config::sync_on_read in config.h). This is now the
-# permanent behaviour — always on, no toggle. The bool is hard-coded in config.h;
-# there is nothing to define here for it.
-# P3 backlog bound. Empty = use the header default (4096).
+# --- Read-side deferred-op sync -----------------------------------------
+# Permanent: pending ops are synchronised at the read entry points, not
+# flushed by the write operators (see the read-side visibility note in
+# config.h). Nothing to define here for it.
+#
+# Backlog bound. Empty = use the header default (4096).
 set(CHUNK_DEFERRED_DRAIN_THRESHOLD "" CACHE STRING
     "Own-rank deferred-backlog drain threshold (empty = header default 4096).")
 if (NOT "${CHUNK_DEFERRED_DRAIN_THRESHOLD}" STREQUAL "")
@@ -53,8 +52,9 @@ if (NOT "${CHUNK_DEFERRED_DRAIN_THRESHOLD}" STREQUAL "")
 endif()
 
 # Test knob: force one write in N down the deferred path (enqueue / replay /
-# P3 / read gate) with no compressor in flight; 0 = off. A build with, say, 7
-# must pass the shrink_bench file cross-check bit for bit. See config.h.
+# backlog drain / read gate) with no compressor in flight; 0 = off. A build
+# with, say, 7 must pass the shrink_bench file cross-check bit for bit. See
+# config.h.
 set(CHUNK_FORCE_DEFER_EVERY "0" CACHE STRING
     "Force one write in N onto the deferred path (test knob, 0 = off).")
 if (NOT "${CHUNK_FORCE_DEFER_EVERY}" STREQUAL "0")
@@ -325,9 +325,6 @@ set(CHUNK_SOURCES
 )
 # Optimisation: the library's .cpp files inherit the project's
 # CMAKE_CXX_FLAGS_RELEASE / _RELWITHDEBINFO (-O3 -g), like every other target.
-# (Until Sept '26 an icpx 2026.0 ICE workaround stripped -O3 here and re-added
-# it per source under names that matched no source file -- leaving every
-# chunk/private/*.cpp at -O0 in optimised builds, on every compiler.)
 # If the icpx EmitCtorList ICE comes back, CHUNK_ICPX_O0_WORKAROUND=ON builds
 # only the three TUs it hit at -O0, under icpx only.
 option(CHUNK_ICPX_O0_WORKAROUND "icpx only: compile array_chunk2A.cpp, array_chunk2.cpp and manager_chunk.cpp at -O0 (EmitCtorList ICE)" OFF)
