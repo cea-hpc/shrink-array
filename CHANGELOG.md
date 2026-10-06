@@ -62,7 +62,12 @@ the tag's checksum to the recipe.
 - `docs/synchronisation_dekker.md`: the Dekker handshake, symmetric and asymmetric
   (`membarrier`), and its three uses in the library.
 - `scripts/check_docs.py` (ctest `check_docs`): links, code names cited in the documents,
-  French/English document pairs, history markers in source comments.
+  French/English document pairs, history markers in the comments of the sources, scripts
+  and CMake files, and the files those comments cite.
+- `docs/api.md`: the API by task, on one page; `docs/contributing.md` and `CONTRIBUTING.md`:
+  build, tests, code rules, measurements, docs (both with a French version).
+- `scripts/check_doxygen.py` (ctest `check_doxygen`, when Doxygen is found): the
+  documentation builds with no warning. The HTML draws the mermaid diagrams.
 - `compile_all.sh` / `compile_all_gnu.sh`: `--with-ledger`.
 
 ### Changed
@@ -81,6 +86,12 @@ the tag's checksum to the recipe.
   are kept. Comments that contradicted the code are fixed.
 - `docs/`: refreshed; the variables, options and build-script options that were missing are
   documented.
+
+### Fixed
+
+- `scripts/check_includes.py` works outside a git checkout (a source archive, a Spack
+  build) and checks files not yet added to git.
+- Comments naming headers that moved to `internal/`, or a script that no longer exists.
 
 ### Deprecated
 

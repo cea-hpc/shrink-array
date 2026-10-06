@@ -143,7 +143,7 @@ static_assert(sizeof(IsolatedCounter) == 128, "IsolatedCounter must fill its ali
 ///        only empty if blocks actually reach the allocator, so when
 ///        "emptied-slab calls" is 0 these say whether any free ever happened:
 ///        parked blocks are retained by design, freed ones are not. Bumped
-///        through CHUNK_FREEPATH_INC (chunk/freepath_counters.h).
+///        through CHUNK_FREEPATH_INC (chunk/internal/freepath_counters.h).
 ///@{
 inline std::atomic<std::size_t>& freepath_freed() noexcept
 {

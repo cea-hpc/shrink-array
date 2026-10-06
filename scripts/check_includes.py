@@ -15,6 +15,7 @@ Two rules, over chunk/, fast_allocators/ and examples/:
 Usage: scripts/check_includes.py [repo root] [--list]   (exit 1 on a violation)
 """
 
+import os
 import pathlib
 import re
 import subprocess
@@ -23,12 +24,25 @@ import sys
 INCLUDE = re.compile(r'^\s*#\s*include\s*([<"])')
 
 
+DIRS = ("chunk", "fast_allocators", "examples")
+SUFFIXES = (".h", ".hpp", ".cpp")
+
+
 def files(root: pathlib.Path):
-    out = subprocess.run(
-        ["git", "ls-files", "chunk/*.h", "chunk/*.cpp", "fast_allocators/*.h", "fast_allocators/*.cpp",
-         "examples/*.h", "examples/*.cpp", "examples/*.hpp"],
-        cwd=root, capture_output=True, text=True, check=True).stdout.split()
-    return [root / f for f in out]
+    """The C++ files of DIRS: git's list (tracked and new, ignored ones
+    excluded) when there is one, else a walk that skips the build trees."""
+    try:
+        out = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", *DIRS],
+                             cwd=root, capture_output=True, text=True, check=True).stdout
+        found = [root / f for f in out.split("\n") if f]
+    except (OSError, subprocess.CalledProcessError):
+        found = []
+        for d in DIRS:
+            for top, dirs, names in os.walk(root / d):
+                dirs[:] = [x for x in dirs if not x.startswith(".") and not x.startswith("cmake-build")
+                           and x != "build"]
+                found += [pathlib.Path(top) / n for n in names]
+    return sorted(f for f in found if f.suffix in SUFFIXES and f.is_file())
 
 
 def check(path: pathlib.Path, root: pathlib.Path):

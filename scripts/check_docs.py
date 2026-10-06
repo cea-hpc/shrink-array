@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """The documentation still matches the code, and the two languages each other.
 
-Four checks, over README.md, CHANGELOG.md and docs/*.md:
+Five checks, over README.md, CHANGELOG.md and docs/*.md, and over the
+comments of the sources:
 
 1. Links: every relative link to a file ([text](path), path without a scheme)
    points to a file or directory that exists.
@@ -17,9 +18,14 @@ Four checks, over README.md, CHANGELOG.md and docs/*.md:
    pairs below) have the same skeleton: the same number of headings at each
    level, of table rows and of code fences. A section, a table row or an
    example added in one language only shows up here.
-4. History: no development-history marker in a comment of the C++ sources
-   (fwNN, "SEGV hunt", "BUG FIX", "FIX (", a dated "Sept '26"): comments state
-   the rule a fix taught, not the story of the fix.
+4. History: no development-history marker in a comment of the C++ sources,
+   the scripts or the CMake files (fwNN, "SEGV hunt", "BUG FIX", "FIX (", a
+   date such as "Sept '26" or 2026-09-14): comments state the rule a fix
+   taught, not the story of the fix.
+5. Paths: a file of the tree cited in such a comment (chunk/..., scripts/...,
+   docs/...) exists, from the repository root or from an include directory.
+   A file moved or removed leaves its mentions behind; this is how they are
+   found.
 
 Usage: scripts/check_docs.py [repo root] [--names-verbose]   (exit 1 on a failure)
 """
@@ -83,7 +89,9 @@ CODE_SPAN = re.compile(r"`([^`\n]+)`")
 LINK = re.compile(r"\]\(([^)\s]+)\)")
 NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(::[A-Za-z_~][A-Za-z0-9_]*)*(\(\))?$")
 FILE_NAME = re.compile(r"^[A-Za-z0-9_./-]+\.(h|hpp|cpp|py|sh|md|txt|in|cmake|supp)$")
-HISTORY = re.compile(r"\bfw\d+[a-z]?\b|SEGV hunt|BUG FIX|\bFIX \(|(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\.? '\d\d\b")
+HISTORY = re.compile(r"\bfw\d+[a-z]?\b|SEGV hunt|BUG FIX|\bFIX \(|(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\.? '\d\d\b|\b20\d\d-\d\d-\d\d\b")
+CITED_PATH = re.compile(r"(?<![\w/.-])((?:chunk|fast_allocators|examples|scripts|python|docs|cmake)/"
+                        r"[A-Za-z0-9_./-]*[A-Za-z0-9_]\.(?:h|hpp|cpp|py|sh|md|txt|cmake))\b")
 
 
 def tracked(root: pathlib.Path):
@@ -219,15 +227,39 @@ def check_pairs(root):
     return bad
 
 
-def check_history(root, files):
-    bad = []
+COMMENT_DIRS = ("chunk", "fast_allocators", "examples", "scripts")
+INCLUDE_DIRS = ("", "chunk/public", "fast_allocators/public")
+
+
+def comment_lines(root, files):
+    """(path, line number, line) for the comment lines of the C++ sources, the
+    scripts and the CMake files of COMMENT_DIRS and of the root CMakeLists.txt."""
     for f in files:
         rel = f.relative_to(root)
-        if rel.parts[0] not in ("chunk", "fast_allocators", "examples") or f.suffix not in (".h", ".hpp", ".cpp"):
+        if rel.parts[0] not in COMMENT_DIRS and rel.name != "CMakeLists.txt":
+            continue
+        if f.suffix in (".h", ".hpp", ".cpp"):
+            is_comment = lambda line: "//" in line or line.lstrip().startswith("*")
+        elif f.suffix in (".sh", ".py", ".cmake") or f.name == "CMakeLists.txt":
+            is_comment = lambda line: line.lstrip().startswith("#") and not line.startswith("#!")
+        else:
             continue
         for n, line in enumerate(f.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            if ("//" in line or line.lstrip().startswith("*")) and HISTORY.search(line):
-                bad.append("%s:%d: history marker in a comment: %s" % (rel, n, line.strip()[:100]))
+            if is_comment(line):
+                yield f, n, line
+
+
+def check_history(root, lines):
+    return ["%s:%d: history marker in a comment: %s" % (f.relative_to(root), n, line.strip()[:100])
+            for f, n, line in lines if HISTORY.search(line)]
+
+
+def check_cited_paths(root, lines):
+    bad = []
+    for f, n, line in lines:
+        for path in CITED_PATH.findall(line):
+            if not any((root / d / path).exists() for d in INCLUDE_DIRS) and not (f.parent / path).exists():
+                bad.append("%s:%d: no file %s" % (f.relative_to(root), n, path))
     return bad
 
 
@@ -238,11 +270,13 @@ def main() -> int:
     files = tracked(root)
     md_files = docs(root, files)
     words, names = source_words(root, files)
+    comments = list(comment_lines(root, files))
     sections = [
         ("links", check_links(root, md_files)),
         ("names", check_names(root, md_files, words, names, verbose)),
         ("French / English pairs", check_pairs(root)),
-        ("history markers", check_history(root, files)),
+        ("history markers", check_history(root, comments)),
+        ("paths in comments", check_cited_paths(root, comments)),
     ]
     failed = 0
     for title, bad in sections:

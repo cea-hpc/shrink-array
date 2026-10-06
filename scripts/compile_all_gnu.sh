@@ -309,11 +309,10 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-addr
   "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=ON -DSANITIZER=address -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu relwithdebinfo openmp std-alloc address sanitizer"
 
-# Optimised TSan build with the switches of the binary that diverged on
-# 2026-09-14 (shrink_bench_chunk2a_256 --mode check, libgomp, 2283 cycles): fast
-# allocator (default), HAVE_AGGRESSIVE_COMPRESSION, CHECK_OPTIM as in every
-# *_check_* target, RelWithDebInfo so inlining and scheduling are the failing
-# ones. GNU-specific caveat: libgomp is not TSan-instrumented, so TSan does not
+# Optimised TSan build with the switches of the *_check_* benchmark binaries:
+# fast allocator (default), HAVE_AGGRESSIVE_COMPRESSION, CHECK_OPTIM,
+# RelWithDebInfo so inlining and scheduling are the production ones (a race
+# that needs them does not show in a Debug build). GNU-specific caveat: libgomp is not TSan-instrumented, so TSan does not
 # see its barriers and reports a race at every parallel-region boundary (the
 # "destroy_after_flush vs flush_deferred" report is one). Read this build's
 # output next to the LLVM+libomp twin in compile_all.sh, whose runtime carries

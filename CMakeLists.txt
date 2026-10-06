@@ -464,7 +464,7 @@ function(chunk_require_cxx20 target scope)
   endif()
 endfunction()
 
-# Compile-time chunk geometry (see chunk/public/chunk/chunk_size_config.h).
+# Compile-time chunk geometry (see chunk/public/chunk/internal/chunk_size_config.h).
 # Global so every TU sees the same value (chunk_size_config.h is inline → ODR).
 if(DEFINED CHUNK_SIZE)
     add_compile_definitions(CHUNK_SIZE=${CHUNK_SIZE})
@@ -626,9 +626,9 @@ endif()
 # SHRINK_ARM_LIBM is OFF by default: measured on Grace (clang 22, 64 threads,
 # same seed, RHEL 9.6 glibc vs armpl 25.07), chunk2a_dyn 8.30 -> 8.12 s,
 # chunk2a_256 6.20 -> 6.23 s, chunk2_256 5.76 -> 5.75 s -- noise; RHEL 9's
-# aarch64 libm is on par with ArmPL's for these calls. Kept for re-measuring
-# (scripts/test_armpl_libm.sh): -DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir of
-# libamath.so>; the executables then carry an rpath and run without the module.
+# aarch64 libm is on par with ArmPL's for these calls. Kept for re-measuring:
+# -DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir of libamath.so>; the executables
+# then carry an rpath and run without the module.
 option(SHRINK_ARM_LIBM "aarch64, GNU/Clang: link the executables with ArmPL's libamath when found (default OFF: no measured gain on Grace)" OFF)
 set(ARMPL_LIBM_DIR "" CACHE PATH "Directory holding libamath.so (default: from the armpl module, $ARMPL_DIR/lib)")
 if(SHRINK_ARM_LIBM AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64|ARM64"
