@@ -171,11 +171,10 @@ class DeferredReadGate; // primary left undefined: only the 3 specializations ex
 //                       counter (e.g. wait_for_availability's own-rank fast
 //                       stage) be `if constexpr`-selected.
 //
-// Storage note (PERF): the counter member itself stays declared in ChunkBase
-// (under its historical #if) so the object layout — cache-line placement of
-// `values` — is bit-for-bit unchanged. The policy owns the ACCESS, not the
-// storage. Every verb is a one-liner around the exact same atomic op and
-// memory order as the code it replaced: codegen-identical by construction.
+// Storage: the counter member itself stays declared in ChunkBase (under the
+// same #if as its readers), so the object layout -- the cache-line placement
+// of `values` -- does not depend on this policy. The policy owns the ACCESS,
+// not the storage.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Serial build: the deferred-op machinery does not exist, nothing is ever
@@ -233,8 +232,8 @@ class DeferredReadGate<Derived, DeferReadGate::Coarse>
     static constexpr bool precise = false;
 
     // No counter in this build: publish/retire are no-ops and pending_any() is
-    // constant false — call sites that gate counter-only logic on it fold to
-    // nothing, exactly as when those sites were #if'd out.
+    // constant false -- call sites that gate counter-only logic on it fold to
+    // nothing.
     /// @brief No-op: this build has no per-chunk pending counter.
     /// @param thr Calling thread's rank; unused.
     void pending_publish([[maybe_unused]] int thr) noexcept {}
@@ -251,9 +250,9 @@ class DeferredReadGate<Derived, DeferReadGate::Coarse>
         return false;
     }
 
-    // No counter, no owner: be CONSERVATIVE — any pending element makes the
-    // direct write drain first. Correct but slow; SMALL_CHUNK + sync_on_read
-    // is a documented perf anti-combination.
+    // No counter, no owner: be CONSERVATIVE -- any pending element makes the
+    // direct write drain first. Correct but slow: SHRINK_SMALL_CHUNK is a perf
+    // anti-combination with the read-side sync.
     /// @brief Conservative direct-write guard predicate.
     /// @param thr Calling thread's rank; unused (no owner tracking in this mode).
     /// @param i Element offset being written; unused -- the check is per-chunk.
@@ -294,9 +293,9 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
     static constexpr bool precise = true;
 
     /// @brief Publish a newly-enqueued deferred op: increment the per-chunk
-    ///        pending count (and, under sync_on_read, record this thread as
-    ///        the owner). See the class comment above for the dual OFF/ON
-    ///        encoding.
+    ///        pending count and record this thread as the owner (kOwnerMulti
+    ///        once a second rank publishes). Encoding: see the pending-word
+    ///        note in the private section.
     /// @param thr Calling (publishing) thread's rank.
     void pending_publish([[maybe_unused]] int thr) noexcept
     {
@@ -307,13 +306,11 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
             auto cur = static_cast<uint32_t>(pending.load(std::memory_order_acquire));
             for (;;)
             {
-                // count = SIGNED 20-bit (two's complement), reproducing the
-                // proven historical fetch_add/fetch_sub semantics exactly: a
-                // transient over-retire goes NEGATIVE (pending_any false) and
-                // self-heals at the next publish — it is never clamped, so no
-                // debt accumulates and the gates never stick (the fw6 clamp
-                // left the count permanently inflated after an over-retire:
-                // poison-lite, hyperactive drains, the ~1/80 ON class).
+                // count = SIGNED 20-bit (two's complement): a transient
+                // over-retire goes NEGATIVE (pending_any() false) and
+                // self-heals at the next publish. Never clamp it: a clamp
+                // leaves the count inflated after an over-retire, so the gates
+                // stick and the drains run hyperactive.
                 const int32_t  cnt      = sign_extend_count(cur);
                 const uint32_t own      = cur >> kCountBits;
                 const uint32_t nown     = (cnt <= 0) ? me : (own == me ? own : kOwnerMulti);
@@ -379,8 +376,6 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
         return sign_extend_count(static_cast<uint32_t>(raw)) > 0;
     }
 
-    // Direct-write guard predicate — only meaningful under sync_on_read (the
-    // owner field only exists there); OFF returns false (and is never called).
     /// @brief Is a FOREIGN thread's op pending on this chunk right now?
     /// @param thr Calling (writing) thread's rank.
     /// @param i Element offset being written; unused (the check is per-chunk).
@@ -393,26 +388,13 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
             return sign_extend_count(w) > 0 && (w >> kCountBits) != static_cast<uint32_t>(thr) + 1u;
         }
     }
-    // ── fw13 (gatefix): the read gates MUST decode the word ────────────────
-    // These two predicates used a RAW SIGNED compare on the whole 32-bit word
-    // (`pending_ops_.load() > 0`). Under sync_on_read the word is encoded
-    // [owner:12|count:20]; when a SECOND rank publishes on the same chunk while
-    // count>0, pending_publish() sets owner := kOwnerMulti (0xFFF). Bit 11 of
-    // the owner field is bit 31 of the word, so the raw int32 goes NEGATIVE
-    // (e.g. 0xFFF00002 = two pending ops, two owners) and the raw `> 0` gate
-    // silently OPENS: read_pure/reader_sync and sync_chunk/read_gate_should_wait
-    // both skip wait_for_availability while ops are genuinely pending — the
-    // reader consumes the stale pre-op value. This is exactly the fw8b-MINIMAL
-    // residual (read hooks only, still ~1/58-147): the read hook itself was the
-    // hole. It also explains the llvm/gnu asymmetry: OMPT per-barrier drains
-    // keep pendings short-lived under llvm, so the multi-owner overlap window
-    // barely exists there; libgomp leaves pendings alive across whole phases.
-    // pending_any() is the single decode-correct predicate (sign-extended
-    // 20-bit count under ON, verbatim signed compare under OFF — codegen
-    // byte-identical to the old raw load in OFF builds).
     /// @brief Read-side gate check: does a reader need to wait/drain before
-    ///        reading element `i`? See the fw13 note above for why this
-    ///        must go through pending_any() rather than a raw sign compare.
+    ///        reading element `i`?
+    /// @details Through pending_any(), never a raw `pending_ops_.load() > 0`:
+    ///          once a second rank publishes, the owner field is kOwnerMulti
+    ///          (0xFFF), bit 31 of the word is set, the raw int32 is NEGATIVE,
+    ///          and a raw `> 0` gate opens while ops are pending -- the reader
+    ///          then consumes the stale pre-op value.
     /// @return pending_any(). (`i` unused: the check is per-chunk, not per-offset.)
     [[nodiscard]] bool read_gate_should_wait(int /*i*/) const noexcept
     {
@@ -430,23 +412,13 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
     }
 
   private:
-    // ── Pending word, dual mode ─────────────────────────────────────────────
-    // OFF (sync_on_read=false): the counter is EXACTLY the historical signed
-    // int32 with fetch_add(release)/fetch_sub(release)/load(acquire)>0 — byte-
-    // identical to the pre-owner-tagging behaviour. Rationale (hard-won): the
-    // owner-encoded unsigned word changed the OVER-RETIRE failure mode. The
-    // old signed counter absorbed a transient over-retire by going negative
-    // (pending_any()==false, self-healing at the next publish); the unsigned
-    // [owner:12|count:20] word wraps into a HUGE count with a clobbered owner
-    // — gates poisoned permanently, drain paths hyperactive, and the gnu OFF
-    // battery corrupted at ~1/355 (bisection: b601 clean at 7774 runs,
-    // 4505ad27 failing at 107/674). OFF never reads `owner`, so it gets the
-    // proven semantics back verbatim.
-    // ON (sync_on_read=true): the encoded word [owner:12|count:20] is required
-    // by foreign_pending(); the CAS verbs now MASK and SATURATE so an
-    // over-retire clamps count to 0 (self-healing, like the signed counter)
-    // instead of wrapping, and publish saturates instead of overflowing into
-    // the owner field.
+    // ── Pending word ────────────────────────────────────────────────────────
+    // [owner:12|count:20]. owner = publishing rank + 1, kOwnerMulti once a
+    // second rank publishes while count > 0, cleared when count drops to <= 0;
+    // foreign_pending() reads it. count is two's complement in 20 bits, read
+    // through sign_extend_count(): an over-retire goes negative and self-heals
+    // at the next publish, as a plain signed counter would. Never let it wrap
+    // as an unsigned count: the gates would stay poisoned for good.
     static constexpr uint32_t kCountBits  = 20;
     static constexpr uint32_t kCountMask  = (uint32_t{1} << kCountBits) - 1;
     static constexpr uint32_t kOwnerMulti = 0xFFFu;
@@ -501,24 +473,12 @@ struct ChunkAllocPolicy<T, Derived, true>
         const auto& self       = static_cast<const Derived&>(*this);
         T*          values_loc = nullptr;
 
-        // The per-thread reuse list is only indexable once
-        // resize_all_list_block_free_thr() has sized it to max_thr, and that is NOT
-        // guaranteed here: in fast-alloc builds nothing ever parks buffers in
-        // the legacy store, so it can still be empty when the first chunk is
-        // allocated, and in dynamic builds a geometry born from a re-chunk has
-        // no per-size list at all. Indexing it anyway is silent UB in a normal
-        // build and aborts under _GLIBCXX_ASSERTIONS with
-        // "Assertion '__n < this->size()' failed" -- which is how this first
-        // showed up, from here, on nvhpc.
-        //
-        // Both geometries go through the same call now:
-        // find_list_block_free_thr() is bounds-checked at the source (see
-        // ManagerChunk), so a slot that was never sized answers nullptr instead
-        // of indexing out of bounds. The earlier version guarded only the static
-        // case, on the assumption that in dynamic builds the by-size map always
-        // owns the list -- but a geometry born from a re-chunk is never
-        // registered, so the lookup falls back to the very legacy store the
-        // guard was protecting. Same hole, one branch further along.
+        // The per-thread reuse list is not always sized here: fast-alloc
+        // builds never park buffers in the legacy store, and a geometry born
+        // from a re-chunk has no per-size list at all. Indexing it anyway is
+        // UB (an abort under _GLIBCXX_ASSERTIONS), so the lookup below,
+        // find_list_block_free_thr(), is bounds-checked at the source and
+        // answers nullptr for a slot never sized -- static and dynamic alike.
         //
         // Try to reuse from thread-local free list.
         // The reuse list of THIS array on this rank (thread_alloc_key(), primed by
@@ -529,9 +489,7 @@ struct ChunkAllocPolicy<T, Derived, true>
         // Churn measurement (churn_counters.h): one materialisation of the
         // array this key names -- rank-local, dynamic builds only.
         churn::note_materialisation<T>(thr_rank, alloc_key);
-        // One resolution of the list serves both the emptiness test and the pop
-        // (formerly get_list_block_free_thr_size() then get_list_block_free_thr(),
-        // i.e. the same std::map walked twice on every materialisation).
+        // One lookup serves both the emptiness test and the pop.
         if (auto* const free_list = self.get_manager().find_list_block_free_thr(thr_rank, alloc_key);
             free_list != nullptr && !free_list->empty())
         {
@@ -569,13 +527,6 @@ struct ChunkAllocPolicy<T, Derived, true>
             }
             else
             {
-                // The svcalloc branch used to sit inside an
-                //   if constexpr (std::is_same_v<decltype(init_func(...)), void>)
-                // which left values_loc uninitialized -- and the chunk
-                // unallocated -- for any initialiser that returned a value.
-                // Every caller's initialiser returns void, so the guard was
-                // always true; it only stood in the way of ever writing one
-                // that did not.
                 values_loc = svcalloc_align<T>(Derived::storage_units(alloc_chunk_count()));
                 CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.svcalloc");
                 CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.svcalloc");
@@ -587,9 +538,8 @@ struct ChunkAllocPolicy<T, Derived, true>
             increm_chunk_create<Derived>();
         }
 
-        // SEGV hunt: record the actual chunk-value buffer address (fast path,
-        // both freelist-reuse and fresh-alloc). If one lands on/near a live op's
-        // address, dump_ring_for_addr will show it (op/value pool aliasing).
+        // Debug ring log: the value buffer's address, so dump_ring_for_addr()
+        // can tell an op block from a value block at the same address.
         if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
         {
             ring_log_op(get_tid(), EV_VALUE_ALLOC, 0, static_cast<const void*>(values_loc));
@@ -643,10 +593,7 @@ struct ChunkAllocPolicy<T, Derived, false>
         {
             values_loc = self.get_chunk_allocator(0).alloc();
             CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.fast_serial");
-            // Ledger: FREE -> LIVE. The non-OMP path previously skipped this,
-            // leaving every serially-allocated chunk UNTRACKED, so free_values
-            // later tripped a spurious b_release-of-UNTRACKED. Matches the OMP
-            // variant above.
+            // Ledger: FREE -> LIVE, as in the OpenMP variant.
             CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.fast_serial");
             init_fresh(values_loc);
         }
@@ -706,9 +653,7 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
         ankerl::unordered_dense::map<int, std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>>;
     // per-thread map type: maps Derived* (chunk pointer) -> unique_ptr<map<num, op>>
     using per_thread_map = ska::flat_hash_map<Derived*, std::unique_ptr<unordered_map_deferred_operations>>;
-    // ---------- Global static storage (one per CompressionManager instantiation) ----------
-    // These statics are declared here for convenience; you can also move them into CompressionManager
-    // if you prefer centralizing them there. They must be visible to both ChunkBase and CompressionManager.
+    // Global static storage (one per CompressionManager instantiation).
     using global_map_type = ankerl::unordered_dense::map<int, per_thread_map>;
 
     /// @brief Atomic CAS of values from expected constant pointer to a new buffer.
@@ -805,11 +750,7 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
 
   private:
     // ── Deferred-op enqueue / flush / read gate ────────────────────────────
-    /// @brief Ensure that the global deferred array is initialized exactly once.
-    /// @details This replaces std::call_once with a CAS-based mechanism that can be reset.
-    ///          - The first thread that flips deferred_initializing from false→true performs init.
-    ///          - Other threads spin until deferred_initialized becomes true.
-    ///          - This mechanism is fully resettable by clearing deferred_initialized.
+    /// @brief Allocate the global deferred-op array on first use.
     void ensure_deferred_array_initialized() const
     {
         if (get_deferred_ops() != nullptr) [[likely]]
@@ -841,14 +782,10 @@ class ChunkDeferredOpsPolicy<T, Derived, false>
 // ============================================================================
 // ChunkDynamicAllocPolicy: the CHUNK_DYNAMIC-only per-size allocator pools
 // (allocator_pool_/allocator_pool_serial_) and their registration methods.
-// Static members, so unlike `values`/`pending_ops_` there is no object-layout
-// concern moving them off ChunkBase -- a static member costs nothing per
-// instance either way. Selected by build_config::chunk_dynamic (see config.h's
-// own comment on that constant, which states the same declaration-vs-statement
-// distinction this file's other policies are built around).
-// get_chunk_allocator() (on ChunkBase) still reads these pools directly, via
-// Derived::allocator_pool_/allocator_pool_serial_ -- restructuring that
-// routing itself is a separate, later step.
+// Static members, so moving them off ChunkBase has no object-layout cost.
+// Selected by build_config::chunk_dynamic. get_chunk_allocator() (on
+// ChunkBase) reaches them through route_omp_dynamic_alloc() /
+// route_serial_dynamic_alloc().
 // ----------------------------------------------------------------------------
 template <typename T, typename Derived, bool IsDynamic = build_config::chunk_dynamic>
 class ChunkDynamicAllocPolicy; // primary left undefined: only the 2 specializations exist
@@ -890,8 +827,7 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
     ///          init(element_count, block_size, -1), where the first arg is
     ///          the chunk's element count (= size in a dynamic build, cf.
     ///          alloc_chunk_count()) and -1 = never munmap a value slab
-    ///          (op/value slab aliasing fix, same as
-    ///          init_allocator/init_allocator_thr).
+    ///          (as init_allocator/init_allocator_thr).
     /// @param size Chunk element count this allocator serves.
     /// @param block_size Slab byte budget.
     static void register_chunk_size_serial(unsigned int size, int block_size)
@@ -901,14 +837,9 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
             return; // already registered
         }
         auto allocator = std::make_unique<TCTypeAllocator<T>>();
-        // FIX (op/value slab aliasing, non-OMP dynamic): tag this pool's slabs as
-        // Value so they draw from value_arena() instead of silently defaulting to
-        // arena_kind::Op (TCAllocator's default) -- which put value-chunk slabs and
-        // the deferred-op pool's slabs in the SAME arena, letting a freed op slab's
-        // address be reobtained here (or vice versa) and corrupting either pool's
-        // block/block_full linked list with the other's slab header (observed:
-        // sl_remove SIGSEGV on a node whose arena_kind read back as Op, with
-        // ElementSize/BlockSize matching op-pool geometry, not this T's).
+        // Value arena, explicitly: TCAllocator defaults to the Op arena, and a
+        // value pool sharing it with the deferred-op pool lets a freed slab of
+        // one be reobtained by the other, corrupting both pools' slab lists.
         allocator->set_arena(fast_alloc::ArenaKind::Value);
         allocator->init(static_cast<size_t>(Derived::storage_units(size)), static_cast<uintptr_t>(block_size), -1);
         allocator_pool_serial_.emplace(size, std::move(allocator));
@@ -997,9 +928,8 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
     // chunk size, WITHOUT the per-thread dimension (serial builds have a single
     // rank). TCTypeAllocator is polymorphic and non-movable (raw slab pointers +
     // a user destructor), so it is held by unique_ptr, not by value. Populated by
-    // register_chunk_size_serial() from the sequential set_chunk_size path;
-    // get_chunk_allocator() will route serial fast-alloc lookups here by the
-    // active size (wired in a later step). This is what enables runtime re-chunk
+    // register_chunk_size_serial() from the sequential set_chunk_size path and
+    // read by route_serial_dynamic_alloc(). It is what allows a runtime re-chunk
     // in non-OMP fast-alloc builds: old and new sizes coexist during
     // rechunk_refill (read *this at old, write tmp at new), so a per-size pool
     // is required rather than a re-init of the single allocator_data.
@@ -1196,8 +1126,8 @@ class ChunkBase : public CRTPSupport<Derived>,
      *          application reads (see read_value_scan).
      *
      *          This is THE constant test of the library: the compression
-     *          candidates, the end-of-run audits and the size predictor all
-     *          used to carry their own copy of this loop.
+     *          candidates, the end-of-run audits and the size predictor all go
+     *          through it.
      *
      * @param first_v  first hypothesis, usually first_value
      * @param second_v second hypothesis
@@ -1209,13 +1139,11 @@ class ChunkBase : public CRTPSupport<Derived>,
     [[nodiscard]] ConstantScan scan_constants(in_t<T> first_v, in_t<T> second_v, unsigned int count) const noexcept
     {
         // Block-wise, branch-free inside a block: an early exit per element
-        // kept the compiler from vectorising the walk, and on the perf bench
-        // 98.7% of the scans run to the end anyway (the chunk IS constant --
-        // 4.4 G scanned elements per reference run, all of them compared
-        // twice, one at a time). Inside a block the two verdicts are OR
-        // reductions of comparisons, which vectorise (AVX2 / NEON); the early
-        // exit survives between blocks, so a chunk disproved at its first
-        // element still costs one block, not the whole chunk.
+        // keeps the compiler from vectorising the walk, and most scans run to
+        // the end anyway (the chunk IS constant). Inside a block the two
+        // verdicts are OR reductions of comparisons, which vectorise (AVX2 /
+        // NEON); the early exit survives between blocks, so a chunk disproved
+        // at its first element still costs one block, not the whole chunk.
         const T* vals = values_load();
         if constexpr (is_packed)
         {
@@ -1353,9 +1281,9 @@ class ChunkBase : public CRTPSupport<Derived>,
         return element_at(i);
     }
 
-    // reader_sync(i) — the read-side visibility gate used by the pure-read proxy
-    // entry points under build_config::sync_on_read — is inherited from
-    // DeferredReadGate<Derived> above (None/Coarse/Precise per build).
+    // reader_sync(i) -- the read-side visibility gate of the pure-read proxy
+    // entry points -- is inherited from DeferredReadGate<Derived> above
+    // (None/Coarse/Precise per build).
 
     // ========================================================================
     // Read-only operator[]
@@ -1455,7 +1383,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         {
             increm_chunk_read<Derived>();
         }
-        // Contract, now executable: this hands out a mutable reference into
+        // Contract: this hands out a mutable reference into
         // the buffer and is documented as "bypasses the write proxy: valid
         // only where the chunk is known to be materialised". On a compressed
         // chunk the reference points into a shared constant (Chunk/Chunk2) or
@@ -1486,19 +1414,6 @@ class ChunkBase : public CRTPSupport<Derived>,
     }
 
     // ========================================================================
-    // Compare and Swap (OpenMP only)
-    // ========================================================================
-
-    // per_thread_map_type_id/compare_and_swap_gen/compare_and_swap1/recup_value
-    // moved to ChunkDeferredOpsPolicy<T, Derived, true> above.
-    // alloc_values(bool, int) lived here: v1's private allocation path, a
-    // second copy of what ChunkAllocPolicy::allocate_chunk_internal already
-    // did. Keeping the two in step never worked -- the bounds-checked reuse
-    // lookup had to be fixed in each of them separately -- so create_value()
-    // now goes through allocate_chunk_internal like v2/v2A, and this went with
-    // it. Its `init == false` mode (svalloc_align, uninitialized) had no caller
-    // left at all.
-    // ========================================================================
     // Chunk allocation with free block cache management
     // ========================================================================
 
@@ -1510,21 +1425,14 @@ class ChunkBase : public CRTPSupport<Derived>,
     ///                 fast-alloc/OMP builds; ignored otherwise).
     void free_values(T* ptr, [[maybe_unused]] int thr_rank = 0)
     {
-        // SEGV hunt: record value-buffer frees (aliasing investigation).
+        // Debug ring log: value-buffer frees.
         if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
         {
             ring_log_op(get_tid(), EV_VALUE_FREE, 0, static_cast<const void*>(ptr));
         }
-        // fw15 (ledger balance): free_values returns the block for real (no park
-        // into a freelist), so notify the ledger LIVE -> FREE. Without this the
-        // POOL_LEDGER (any_check builds) tracked the alloc but not this free: in
-        // std-alloc, svfree() hands the page back to malloc, which may hand the
-        // SAME address to a later allocate_chunk_internal -> on_block_alloc sees
-        // it still LIVE -> spurious INVARIANT_FAILED. (fast-alloc never surfaced
-        // it: freed blocks stay in the immortal arena, never re-entering via
-        // on_block_alloc on a LIVE state.) Must precede the actual free, while
-        // the pointer is still ours. This is instrumentation-only; production
-        // (no any_check) compiles it out.
+        // Ledger: LIVE -> FREE, before the actual free, while the pointer is
+        // still ours. Without it, std-alloc's malloc may hand the same address
+        // to a later allocation that the ledger still sees as LIVE.
         CHUNK_LEDGER_RELEASE(static_cast<const void*>(ptr), "free_values");
         if constexpr (build_config::use_fast_alloc)
         {
@@ -1543,21 +1451,6 @@ class ChunkBase : public CRTPSupport<Derived>,
         T* ptr = values_load();
         free_values(ptr, thr_rank);
     }
-
-    // allocate_chunk_internal (both OMP and serial bodies) lives on
-    // ChunkAllocPolicy<T, Derived, UseOpenMP> above -- ChunkBase inherits it,
-    // selected by build_config::use_openmp. Every call site uses
-    // Base::allocate_chunk_internal(...) (Base = ChunkBase<T,Derived> or a
-    // class inheriting it), which resolves through inheritance identically
-    // to a member declared directly here.
-
-    // allocator_pool_/allocator_pool_serial_/register_chunk_size/
-    // register_chunk_size_serial moved to ChunkDynamicAllocPolicy<T, Derived,
-    // true> above (empty in the false specialization -- static builds have no
-    // per-size pool).
-
-    // ChunkDeferredOpsPolicy<T, Derived, true> above; ChunkBase now inherits
-    // them (empty in the false specialization -- nothing exists in serial).
 
     /// @brief Get the allocator to use for the current thread and active
     ///        chunk size.
@@ -1778,11 +1671,6 @@ class ChunkBase : public CRTPSupport<Derived>,
         static_cast<ChunkBase*>(self)->free_block_to_pool(thr_rank, static_cast<T*>(val));
     }
 
-    // ensure_deferred_array_initialized/get_deferred_ops/
-    // to_be_queued_for_deferred_processing/wait_for_availability/
-    // is_not_available moved to ChunkDeferredOpsPolicy<T, Derived, true>
-    // above (bodies of the last 3 still out-of-line, in chunk_base_inline.h).
-
     // ========================================================================
     // Member variables
     // ========================================================================
@@ -1793,40 +1681,31 @@ class ChunkBase : public CRTPSupport<Derived>,
   public:
 #if !defined(SHRINK_SMALL_CHUNK) && defined(_OPENMP)
     /// Per-chunk count of deferred ops currently pending (enqueued but not yet
-    /// drained). Present only when the deferred-op machinery exists, i.e. NOT
-    /// under -DSHRINK_SMALL_CHUNK (which trades it away for 16-byte chunks) and
-    /// only in OpenMP builds — the deferred-op enqueue/flush paths are all
-    /// OpenMP-only, so in a serial build this counter is pure dead weight (8
-    /// bytes with alignment). +1 (release) in enqueue BEFORE the map insert so
-    /// pending_ops_>0 spans a pending op's whole lifetime (closes a reader
-    /// stale-read window); -flushed (release) in flush_deferred /
-    /// flush_chunk_all_ranks. The read path (sync_chunk) acquire-loads it: 0
-    /// means this chunk has nothing pending -> skip wait_for_availability.
+    /// drained), plus its owner tag: see DeferredReadGate<Derived, Precise>.
+    /// Present only where the deferred-op machinery exists: OpenMP builds, and
+    /// not under -DSHRINK_SMALL_CHUNK (which trades it away for 16-byte
+    /// chunks). Published (release) BEFORE the map insert, so a pending op is
+    /// visible for its whole lifetime; retired (release) after the drain; the
+    /// read gates acquire-load it.
     ///
-    /// IMPORTANT: the member guard and its ONLY reader (ArrayChunkBase::
-    /// sync_chunk's precise gate) share this exact \#if condition, so both appear
-    /// or vanish together textually. Guarding the member alone while the reader
-    /// stays under `if constexpr` fails: gcc still phase-1-looks-up
-    /// chunk_t.pending_ops_ in the discarded branch and errors on the missing
-    /// member. In non-OpenMP the reader falls back to the coarse is_not_available
-    /// gate, which has no cost in a serial build (no concurrent flush).
+    /// A #if, not `if constexpr`: gcc still phase-1-looks-up a member named in
+    /// a discarded branch. Its readers live in DeferredReadGate<Precise>, which
+    /// is selected under the same condition (use_openmp &&
+    /// use_precise_pending_gate).
     std::atomic<int32_t> pending_ops_{0};
 
   private:
     /// @brief "A compressor is about to scan and may steal this chunk's
     ///        buffer": the per-chunk half of the write/compress handshake.
     ///
-    /// Set (relaxed) by a compressor on every chunk of its candidate list
-    /// BEFORE its start() -- start()'s heavy barrier is what publishes the
-    /// marks to the writers, exactly as it publishes hard_inflight_ -- and
-    /// cleared (release) per chunk as the pass goes: right after the scan
-    /// for a chunk that stays materialised, right after the CAS-steal for
-    /// one that is compressed. A writer reads it (relaxed, after its own
-    /// announce_write) on the line it loads `values` from anyway: it waits,
-    /// then defers, ONLY when its chunk is marked. Every other writer goes on
-    /// writing while the compressor scans -- the scan used to be a global
-    /// exclusion window, ~1 ms per pass, paid by every other thread (63 of
-    /// them on the 64-thread AArch64 node: +1.2 s on the init phases).
+    /// Set (release) by a compressor on every chunk of its candidate list
+    /// BEFORE its start(), and cleared (release) per chunk as the pass goes:
+    /// right after the scan for a chunk that stays materialised, right after
+    /// the CAS-steal for one that is compressed. A writer reads it (acquire,
+    /// after its own announce_write) on the line it loads `values` from
+    /// anyway: it waits, then defers, ONLY when its chunk is marked. Every
+    /// other writer goes on writing while the compressor scans, instead of the
+    /// whole team paying a global exclusion window per pass.
     ///
     /// Lives in the 4 bytes of padding after pending_ops_ (ChunkBase is
     /// 8-byte aligned on `values`), so it costs nothing: sizeof(Chunk2A<double>)
@@ -1838,19 +1717,14 @@ class ChunkBase : public CRTPSupport<Derived>,
   public:
     /// @brief Is a compressor's pass in flight on this chunk?
     ///
-    /// @details ACQUIRE, not relaxed. The old comment justified relaxed with
-    ///          "the ordering against the compressor is the heavy barrier of
-    ///          start()", which holds in one direction only: start()'s
-    ///          membarrier() stands in for the fence the writers no longer
-    ///          execute, so it publishes the WRITERS' announces to the
-    ///          compressor. The mark travels the other way -- compressor to
-    ///          writer -- and a membarrier() run by the compressor does not
-    ///          push its own store into a writer already in flight. A writer
-    ///          could read the mark clear after it was set, take the fast path
-    ///          and write while the scan read: TSan, 8 threads,
-    ///          store_value() against read_value_scan().
+    /// @details ACQUIRE, not relaxed. start()'s heavy barrier publishes the
+    ///          WRITERS' announces to the compressor; it does not push the
+    ///          compressor's own mark store into a writer already in flight.
+    ///          The mark travels compressor -> writer and needs its own
+    ///          release/acquire pair, or a writer can read it clear after it
+    ///          was set and write while the scan reads (TSan-confirmed).
     ///
-    ///          Read once per write, so this is an ldar in place of an ldr.
+    ///          Read once per write: an ldar in place of an ldr on AArch64.
     [[nodiscard]] bool steal_marked() const noexcept
     {
         return steal_mark_.load(std::memory_order_acquire) != 0;
@@ -1977,31 +1851,23 @@ class ChunkBase : public CRTPSupport<Derived>,
     {
         // The one branch identifiers cost: a compressed-to-second-constant
         // chunk points into a region that was never written, so the
-        // constant comes from the value table instead. The test is a
-        // pointer range test and it is very well predicted -- 83% of reads
-        // on the reference run go to materialised chunks.
+        // constant comes from the value table instead. A pointer range test,
+        // very well predicted (most reads go to materialised chunks).
         //
-        // ONE load. Asking derived().is_cst_val2() and then dereferencing
-        // values_load() loads the pointer twice, and a compressor claiming
-        // the chunk in between swaps it for a region identifier: the second
-        // load then indexes that identifier as a buffer, in a page that was
-        // never mapped. SIGSEGV at 24 threads, in element_at, on a valid
-        // index. Same defect, same fix as read_values().
-        // Through the CRTP hooks, so chunk_base keeps knowing nothing of
-        // the registry -- but taking the pointer, so the test and the read
-        // are about the same load.
+        // ONE load of `values`, tested through the CRTP hooks so chunk_base
+        // knows nothing of the registry. Testing derived().is_cst_val2() and
+        // then dereferencing values_load() loads the pointer twice: a
+        // compressor claiming the chunk in between swaps it for a region
+        // identifier, and the second load indexes an unmapped page. Same rule
+        // as read_values().
         //
-        // Gated on the variant, NOT on a `requires` probe for the hooks. A
-        // probe fails OPEN: where it evaluates false the code falls through
-        // to values_load()[i], which on a compressed chunk reads the
-        // unwritten region and returns 0 -- a wrong number, not a build
-        // error. That happened twice: once with the hooks genuinely
-        // missing, and once under nvhpc, whose concept evaluation on the
-        // still-incomplete CRTP Derived did not see them while gcc and
-        // clang did. std::is_same_v against the forward-declared Chunk2A
-        // (chunk_traits.h) is a plain type comparison: no concepts, no
-        // member lookup, nothing a compiler can decide differently. It also
-        // works for the variants that have no such member at all.
+        // Gated on the variant with std::is_same_v, NOT on a `requires` probe
+        // for the hooks: a probe fails OPEN (where it evaluates false, the read
+        // falls through to values_load()[i] and returns 0 from the unwritten
+        // region -- a wrong number, not a build error), and nvhpc evaluates it
+        // differently on the still-incomplete CRTP Derived. A plain type
+        // comparison against the forward-declared Chunk2A (chunk_traits.h)
+        // cannot be decided differently by any compiler.
         if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
         {
             static_assert(
@@ -2068,10 +1934,9 @@ class ChunkBase : public CRTPSupport<Derived>,
     ///          ours, unranked (serial pools), or when no region is open; a
     ///          foreign block inside a region is parked on OUR list under ITS
     ///          affinity key, where this rank may reuse it for that array and
-    ///          the next drain routes it home. Before the owner fields existed
-    ///          this freed into get_chunk_allocator(thr_rank) -- the caller's
-    ///          instance -- which for a foreign block mutated another rank's
-    ///          chains from the wrong thread.
+    ///          the next drain routes it home. Never free through the caller's
+    ///          instance (get_chunk_allocator(thr_rank)): for a foreign block
+    ///          that mutates another rank's chains from the wrong thread.
     /// @pre fast-alloc build.
     void release_to_owner(int thr_rank, T* ptr)
     {
