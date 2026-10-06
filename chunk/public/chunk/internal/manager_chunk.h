@@ -1545,6 +1545,22 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     }
 
     static inline TChunk2CompMap<CHUNK_T, T>  map_chunk2_to_compress_potentially_thr;
+
+    /**
+     * @brief Rank @p thr's candidate list for second value @p key, or null
+     *        when the key has none (OpenMP builds: the per-rank store).
+     * @details A lookup, never operator[]: on a miss that inserts a null entry
+     *          -- from the write path, into a map other ranks read
+     *          (have_chunk_to_compress, the rank-0 emptiness probe) -- and the
+     *          callers that dereferenced the result read through null.
+     */
+    template <typename Key>
+    [[nodiscard]] static auto* compress_candidates(int thr, const Key& key) noexcept
+    {
+        auto&      by_value = map_chunk2_to_compress_potentially_thr[thr];
+        const auto it       = by_value.find(key);
+        return it != by_value.end() ? it->second.get() : nullptr;
+    }
     static inline TChunk2CompThr<CHUNK_T, T>  chunk2_to_compress_potentially_thr;
     static inline TChunk2ACompThr<CHUNK_T, T> chunk2A_to_compress_potentially_thr;
 

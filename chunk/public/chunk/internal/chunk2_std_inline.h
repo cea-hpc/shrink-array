@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <cassert>  // assert (the candidate-list lookups)
 #include <cstddef>  // std::size_t
 #include <cstdlib>  // std::abort
 #include <optional> // std::nullopt (the clears)
@@ -458,7 +459,13 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
         return;
     }
 
-    auto& vec_tuple = *manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][key];
+    auto* const vec_tuple_p = manager_chunk2::compress_candidates(thr_rank, key);
+    assert(vec_tuple_p != nullptr && "key registered for every rank by add_second_value()");
+    if (vec_tuple_p == nullptr) [[unlikely]]
+    {
+        return;
+    }
+    auto& vec_tuple = *vec_tuple_p;
 
     // Geometry: this list mixes chunks of every array sharing `key` -- e.g. an
     // array and the tmp rechunk_to() builds from it, at two chunk sizes. The
@@ -551,7 +558,13 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_p
                                                                                         in_t<T>  key,
                                                                                         ScanFn&& scan_one)
 {
-    const auto& vec_tuple = *manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][key];
+    const auto* const vec_tuple_p = manager_chunk2::compress_candidates(thr_rank, key);
+    assert(vec_tuple_p != nullptr && "key registered for every rank by add_second_value()");
+    if (vec_tuple_p == nullptr) [[unlikely]]
+    {
+        return;
+    }
+    const auto& vec_tuple = *vec_tuple_p;
 
     const int nn = vec_tuple.size();
 
