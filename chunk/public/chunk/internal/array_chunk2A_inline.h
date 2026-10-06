@@ -357,8 +357,8 @@ void ArrayChunk2A<T, ind_type>::clear_core()
         // clear_int_st calls are compiled out here, so compress_chunk_to_compress
         // only scans every chunk's values without compressing or clearing the
         // potentially-list — which is why it dominates the profile. Gating it on
-        // !have_agressive_compression removes that waste in aggressive builds.
-        if constexpr (!chunk_config::have_agressive_compression)
+        // !have_aggressive_compression removes that waste in aggressive builds.
+        if constexpr (!chunk_config::have_aggressive_compression)
         {
             const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
 
@@ -394,7 +394,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
         // structurally cannot). Non-fatal. Runs once, at array teardown -- the
         // O(nb_chunk * chunk_size) cost is check-only and compiled out in
         // production (any_check false).
-        if constexpr (build_config::any_check && !chunk_config::have_agressive_compression)
+        if constexpr (build_config::any_check && !chunk_config::have_aggressive_compression)
         {
             const auto  csz           = static_cast<unsigned int>(this->size_policy_.size());
             const auto& inside        = Proxy2A<T>::get_tab_is_inside_list_to_compress(num_tab);

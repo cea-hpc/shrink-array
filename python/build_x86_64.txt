@@ -9,12 +9,12 @@
 # what this runner is for.
 # The runs cycle through this list, in this order.
 omp-gnu
-omp-gnu-have-agressive-compression
+omp-gnu-have-aggressive-compression
 omp-gnu-std-alloc
 omp-gnu-stats
 omp-gnu-check
 omp-llvm
-omp-llvm-have-agressive-compression
+omp-llvm-have-aggressive-compression
 omp-llvm-std-alloc
 omp-llvm-stats
 omp-llvm-check

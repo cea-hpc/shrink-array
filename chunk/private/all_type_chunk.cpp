@@ -79,17 +79,17 @@ struct SerialFlushOwnership
 } // namespace
 
 // Aggressive-compression scheduling is a constexpr build mode driven by the
-// CMake option HAVE_AGRESSIVE_COMPRESSION (-> chunk_config::have_agressive_compression).
+// CMake option HAVE_AGGRESSIVE_COMPRESSION (-> chunk_config::have_aggressive_compression).
 //
-//   have_agressive_compression == false (default, "release"):
+//   have_aggressive_compression == false (default, "release"):
 //       the deferred sweep is triggered explicitly at end-of-parallel-phase
 //       boundaries via compress_chunk_to_compress_potentially(true) below.
-//   have_agressive_compression == true ("aggressive"):
+//   have_aggressive_compression == true ("aggressive"):
 //       the between-phase sweep is skipped; all compression falls on the
 //       opportunistic in-loop path (heavier MT stress, better bug detection).
 //
 // The two if constexpr guards below select the between-phase sweep only in the
-// release mode, i.e. when !have_agressive_compression.
+// release mode, i.e. when !have_aggressive_compression.
 
 void begin_parallel_phase()
 {
@@ -145,7 +145,7 @@ void finalize_parallel_phase_after_flush()
         ens_type_chunk.destroy_after_flush(false);
 
         reset_all();
-        if constexpr (!chunk_config::have_agressive_compression)
+        if constexpr (!chunk_config::have_aggressive_compression)
         {
             if (ens_type_chunk.have_chunk_to_compress_potentially())
             {
@@ -174,7 +174,7 @@ void finalize_parallel_phase()
 
         reset_all();
 
-        if constexpr (!chunk_config::have_agressive_compression)
+        if constexpr (!chunk_config::have_aggressive_compression)
         {
             // Drain the deferred-compression backlog here, between parallel
             // phases, where it runs parallel and with no concurrent writers

@@ -78,7 +78,7 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
         // drain (it would nest a parallel region), so a candidate still queued
         // by the serial writes of the iteration (fill_range / copy_range) was
         // reported as a miss its self-heal had to compress.
-        if constexpr (build_config::use_openmp && !chunk_config::have_agressive_compression)
+        if constexpr (build_config::use_openmp && !chunk_config::have_aggressive_compression)
         {
             auto& ens = shrink_array::SingletonChk<shrink_array::AllTypeChunk>::getRef();
             if (ens.have_chunk_to_compress_potentially())

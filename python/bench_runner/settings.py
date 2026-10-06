@@ -9,7 +9,7 @@ import os
 # scheduling internals) and leave the vector binary byte-for-byte identical to
 # the base config. On such configs we skip the compression-insensitive variants
 # (see COMPRESSION_INSENSITIVE_VARIANTS) to avoid re-timing identical binaries.
-COMPRESSION_ONLY_CONFIG_MARKERS = ["have-agressive-compression"]
+COMPRESSION_ONLY_CONFIG_MARKERS = ["have-aggressive-compression"]
 
 # Variants whose binary does not depend on the aggressive-compression knob, so
 # they never need to be run on a COMPRESSION_ONLY config. vector is a plain
@@ -19,10 +19,10 @@ COMPRESSION_INSENSITIVE_VARIANTS = ["vector"]
 
 DEFAULT_CONFIGS = [
     "cmake-build-omp-gnu",                             # release GNU (baseline)
-    "cmake-build-omp-gnu-have-agressive-compression",  # aggressive scheduling
+    "cmake-build-omp-gnu-have-aggressive-compression",  # aggressive scheduling
     "cmake-build-omp-gnu-std-alloc",                   # std allocator
     "cmake-build-omp-llvm",                            # release LLVM
-    "cmake-build-omp-llvm-have-agressive-compression",
+    "cmake-build-omp-llvm-have-aggressive-compression",
     "cmake-build-omp-llvm-std-alloc",
     # x86-64 only: the other two OpenMP compilers compile_all.sh builds there
     # (both OMPT builds). On ARM their directories do not exist and the

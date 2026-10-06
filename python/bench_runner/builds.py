@@ -197,7 +197,7 @@ def skip_variant_on_config(var, config):
     """Whether to skip (var, config) entirely.
 
     - Compression-insensitive variants (vector) on a compression-only config
-      (-have-agressive-compression): identical binary to the base config, so
+      (-have-aggressive-compression): identical binary to the base config, so
       re-timing it is wasted work.
     - The std_alloc variant anywhere except a -std-alloc config: it is only
       built there now (gated on CHUNK_STD_ALLOC in CMake), so looking for it
@@ -253,7 +253,7 @@ def find_llvm_seq_omp_pairs(build_root, configs):
     Returns a list of (omp_config, seq_config) pairs. An OMP config without a
     present sequential counterpart is skipped with a single note, not an
     error -- most build trees only have the plain pair, not a sequential
-    build of every OMP variant (-std-alloc, -have-agressive-compression).
+    build of every OMP variant (-std-alloc, -have-aggressive-compression).
     (Used to be LLVM-only, from when only the LLVM pair existed; the compare
     reads `still compressed (at exit)`, which any CHUNK_STATS pair prints --
     the name is kept for its callers.)"""
