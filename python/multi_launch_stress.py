@@ -28,8 +28,10 @@ Two ways to name the binaries:
     them. A build's binaries execute in THEIR directory, where the reference
     files (data_tab_*, the oracle a check run reads) live, as in the
     historical mode; the outputs, the CSV and the log go to a directory of
-    their own under the build root, multi_launch_runs/<date_time>, one per
+    their own under the build root, multi_launch_runs/<arch>_<date_time>, one per
     session (--run-dir names another).
+    <arch> is the machine (aarch64, x86_64): the build root is shared by
+    both, so are the session directories.
 
   --regen-ref regenerates the reference before the runs, with the vector
   (std::vector) check binary: in the current directory in the historical
@@ -63,6 +65,7 @@ except ImportError:
 
 import atexit
 import datetime
+import platform
 
 
 class _Tee:
@@ -139,7 +142,7 @@ parser.add_argument("--run-dir", default=None, metavar="DIR",
                     help="Where the output_*/error_* files, the CSV and the log go. Default: "
                          "the current directory in the historical mode (the binaries run there "
                          "too and read the oracle data_tab* there); under --builds a directory "
-                         "of its own, <build-root>/multi_launch_runs/<date_time>, and each "
+                         "of its own, <build-root>/multi_launch_runs/<arch>_<date_time>, and each "
                          "build's binaries run in their own directory, with their own oracle.")
 parser.add_argument("--regen-ref", action="store_true",
                     help="Regenerate the reference files (data_tab_*) with the vector check "
@@ -215,8 +218,11 @@ if args.run_dir is None:
         # on the cluster): nothing lands in python/, nothing overwrites the
         # previous campaign's files.
         _root = args.build_root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # The architecture first: the build root is shared by the ARM and x86
+        # machines, and their campaigns must not be told apart by date only.
         args.run_dir = os.path.join(_root, "multi_launch_runs",
-                                    datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"))
+                                    f"{platform.machine()}_"
+                                    + datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S"))
     else:
         args.run_dir = "."
 os.makedirs(args.run_dir, exist_ok=True)
