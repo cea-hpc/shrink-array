@@ -47,8 +47,8 @@
 #include "bench_args.h" // parse_bench_args, BenchArgs
 
 
-#include "chunk/ring_log_debug.h"     // SEGV hunt: ring_init/analyze_ring_sweep decls
-#include "chunk/rechunk_decider.h"    // phase-3A: re-chunk decisions (acts in dyn builds only)
+#include "chunk/ring_log_debug.h"     // ring_init/analyze_ring_sweep decls
+#include "chunk/rechunk_decider.h"    // re-chunk decisions (acts in dyn builds only)
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
 
 using namespace shrink_array;
@@ -232,7 +232,7 @@ int main(int argc, char* argv[])
     // TSan tip: unbuffer stderr with setvbuf(stderr, nullptr, _IONBF, 0) so its
     // reports interleave correctly with ours.
 
-    // Command-line parsing: moved to bench_args.cpp.
+    // Command-line parsing: bench_args.cpp.
     const BenchArgs bench_args      = parse_bench_args(argc, argv);
     const bool      no_io_v         = bench_args.no_io_v;
     const bool      compress_v      = bench_args.compress_v;
@@ -283,8 +283,8 @@ int main(int argc, char* argv[])
     Int io_res = input_data ? 0 : get_io_mode();
 
     const char* no_io = no_io_v ? "1" : std::getenv("NO_IO");
-    // Compression is opt-in (--compress or COMPRESS=1): the I/O layer keeps its
-    // historical no_compress flag, so the default is the non-null value.
+    // Compression is opt-in (--compress or COMPRESS=1): the I/O layer takes a
+    // no_compress flag, so the default is the non-null value.
     const char* no_compress = (compress_v || std::getenv("COMPRESS")) ? nullptr : "1";
 
     if constexpr (input_data)
@@ -321,7 +321,7 @@ int main(int argc, char* argv[])
         }
     }
 
-    // Geometry validation and library start-up: moved to bench_init.cpp.
+    // Geometry validation and library start-up: bench_init.cpp.
     bench_init_library();
 
     const Int iter_max = iter_max_arg;
@@ -584,14 +584,13 @@ int main(int argc, char* argv[])
         run_prealloc_checks(sz);
     }
 
-    // Initial fill: a 200-line omp parallel region, moved to
-    // bench_phase_fill.cpp (see bench_phases.h).
+    // Initial fill: bench_phase_fill.cpp (see bench_phases.h).
     bench_phase_fill(bench_arrays, start, end, elapsed_seconds);
     bench_phase_struct_fill(bench_arrays);
     bench_phase_mask_fill(bench_arrays);
 
     // Verification pass (writing or reading back the reference files):
-    // lbd_check and lbd_check_all moved to bench_checks.cpp.
+    // lbd_check and lbd_check_all, in bench_checks.cpp.
     const BenchIoFlags bench_io_flags{no_io, no_compress, io_res, read_trace, write_trace};
 
     bench_check_all(bench_arrays, -1, bench_io_flags);
@@ -664,10 +663,10 @@ int main(int argc, char* argv[])
     double         v_real       = 0;
     double         v_im         = 0;
 
-    // Checksums: moved to bench_stats.cpp.
+    // Checksums: bench_stats.cpp.
 
     // Value census and filling rates: lbd_fill_values, lbd_fill_chunk and
-    // lbd_stats moved to bench_stats.cpp.
+    // lbd_stats, in bench_stats.cpp.
 
     // Start iteration loop
     // #define TEST_CAPTUR_BUG
@@ -751,10 +750,9 @@ int main(int argc, char* argv[])
             }
             // Every other array too, advised by default: a dynamic run then
             // starts like the static S=64 build and ends below the static S=256
-            // one (chunk2a, 64 threads: 6.57 GB against 7.26 GB). Until Sept '26
-            // only the five arrays above were, and the other ten stayed at the
-            // starting S=64 for the whole run (~12.5 GB at the end).
-            // SHRINK_BENCH_ADVISE_ALL=0 goes back to the five, for runs that
+            // one (chunk2a, 64 threads: 6.57 GB against 7.26 GB; with only the
+            // five arrays above advised, the other ten stay at S=64, ~12.5 GB).
+            // SHRINK_BENCH_ADVISE_ALL=0 advises only the five, for runs that
             // must compare with earlier campaigns. tab_bool and tab_bool_bits
             // excepted: both stay at their birth geometry, so the two bool
             // containers are compared as they are, not after a re-chunk.
@@ -864,8 +862,7 @@ int main(int argc, char* argv[])
         }
         else
         {
-            // Compute loop: a 392-line omp parallel region, moved to
-            // bench_phase_compute.cpp (see bench_phases.h).
+            // Compute loop: bench_phase_compute.cpp (see bench_phases.h).
             bench_phase_compute(bench_arrays, k, start0, end0, tab_nba1, tab_nba2, val_sum, long_val_sum, v_real, v_im);
             // The struct arrays' window, its own region (bench_phase_struct.cpp).
             bench_phase_struct_compute(bench_arrays, k, start0, end0, tab_nba1, tab_nba2, point_sum);
@@ -1084,8 +1081,7 @@ int main(int argc, char* argv[])
             {
                 // Chunk and Chunk2 always; Chunk2A only with fast block
                 // compression (normally useless for 2 and 2A, whose writes
-                // compress as they go). The three branches used to carry the
-                // same body under three headings.
+                // compress as they go).
                 // Periodic, plus the last iteration so no end-of-run miss escapes.
                 // A persisting miss stays visible at the next audit: a
                 // materialised constant chunk stays so until it is written.
@@ -1156,7 +1152,7 @@ int main(int argc, char* argv[])
         std::cout << tc.BOLD << "Re-chunks performed: " << tc.RESET << g_rechunk_count << "\n\n";
     }
 
-    // Self-checks, array release, final report and library shutdown: moved to
+    // Self-checks, array release, final report and library shutdown:
     // bench_teardown.cpp. The ORDER in there carries meaning, hence the single
     // block.
     bench_teardown(bench_arrays, test_stl);

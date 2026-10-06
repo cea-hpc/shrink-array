@@ -130,7 +130,7 @@ uint64_t calculate_checksum(const V& vec)
 
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);
 
-    // Return the bitwise complement (matches historical behaviour).
+    // Return the bitwise complement.
     return ~checksum;
 }
 

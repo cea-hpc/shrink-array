@@ -33,10 +33,10 @@
 //   mixed         `<double, int>` and `<double, long>` arrays alive in one
 //                 process, written in parallel, compressed, read back. The
 //                 per-T machinery (proxies, registries, per-num_tab tables,
-//                 allocator keys) is shared by the two index types; it used to
-//                 cast every array to `<T, int>` (so a `long` array was read
-//                 four bytes off) and to number the arrays of each index type
-//                 separately (so two arrays shared one num_tab). Under
+//                 allocator keys) is shared by the two index types; it must
+//                 neither cast every array to `<T, int>` (a `long` array read
+//                 four bytes off) nor number the arrays of each index type
+//                 separately (two arrays sharing one num_tab). Under
 //                 CHUNK_DYNAMIC, rechunk_all_to() is then run over the mixed
 //                 registry: every array, of either index type, must come out
 //                 at the new geometry with its values.

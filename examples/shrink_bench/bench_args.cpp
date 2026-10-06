@@ -88,17 +88,15 @@ BenchArgs parse_bench_args(int argc, char* argv[])
     double multiply_factor = 1.0;
     Int    divisor_factor  = 1;
 
-    // Default iter_max (kept at 2000 to preserve historical behaviour);
-    // can be overridden at runtime via --iter_max <N>.
+    // Default iter_max (2000), overridable at runtime via --iter_max <N>.
     Int iter_max_arg = 2000;
 
     for (Int i = 1; i < argc; ++i)
     {
         const std::string arg = argv[i];
 
-        // The value after a value-taking flag, or exit(1) naming the flag. A
-        // flag given last used to be skipped silently and the run went on with
-        // the default ("--mode" alone ran the default mode and exited 0).
+        // The value after a value-taking flag, or exit(1) naming the flag -- a
+        // flag given last is an error, not a silent fallback to the default.
         const auto next_value = [&]() -> const char*
         {
             if (i + 1 >= argc)
@@ -145,8 +143,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
             }
             else if (arg == "--mode")
             {
-                // check / perf: what used to be two separate binaries, built
-                // with -DCHECK or -DPERF, is one binary and this flag.
+                // check / perf: one binary, the mode chosen here.
                 const std::string m = next_value();
                 if (m == "perf")
                 {

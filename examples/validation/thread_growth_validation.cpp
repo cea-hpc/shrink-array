@@ -7,12 +7,11 @@
 //
 // Every per-rank structure of the library (chunk allocators, compression-
 // candidate lists, deferred-op maps, writer and flush flags) is indexed by the
-// thread rank and sized once. It used to be sized by omp_get_max_threads() at
-// that moment, so an omp_set_num_threads() raising the team afterwards indexed
-// past the end: a silent out-of-bounds access, or a writer the compressor did
-// not wait for. They are now sized for the thread capacity
+// thread rank and sized once, for the thread capacity
 // (shrink_array::chunk_thread_capacity(): max(omp_get_max_threads(),
-// omp_get_num_procs()), or CHUNK_THREAD_CAPACITY), and a rank past it is an
+// omp_get_num_procs()), or CHUNK_THREAD_CAPACITY): sized by
+// omp_get_max_threads() at that moment, an omp_set_num_threads() raising the
+// team afterwards would index past the end. A rank past the capacity is an
 // invariant failure.
 //
 // What it does:

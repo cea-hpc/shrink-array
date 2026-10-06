@@ -7,14 +7,12 @@
 // nested parallel region.
 //
 // The library indexes its per-thread structures (candidate lists, deferred-op
-// queues) with a rank cached in thread-local storage (__fast_omp_rank). That
-// cache used to be set at the start of every implicit task and never cleared,
-// and to hold omp_get_thread_num() -- the rank in the INNERMOST team. A thread
-// of the outer team that entered a nested region, even a serialised one (a
-// team of one), came back with rank 0 and shared rank 0's structures with the
-// real rank 0, unprotected. The rank is now the thread's rank in the active
-// team (omp_get_ancestor_thread_num when nested), the cache is cleared at the
-// end of each implicit task, and two ACTIVE levels are an invariant failure.
+// queues) with a rank cached in thread-local storage (__fast_omp_rank): the
+// thread's rank in the active team (omp_get_ancestor_thread_num when nested),
+// cleared at the end of each implicit task. Caching omp_get_thread_num() --
+// the rank in the INNERMOST team -- would bring a thread of the outer team
+// back from a nested region, even a serialised one, with rank 0, sharing rank
+// 0's structures unprotected. Two ACTIVE levels are an invariant failure.
 //
 // What it does:
 //   A. max-active-levels 1: an outer team of 4 writes the arrays; every thread

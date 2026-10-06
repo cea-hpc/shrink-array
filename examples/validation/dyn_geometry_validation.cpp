@@ -22,11 +22,9 @@
 //   read past that width returns a neighbouring chunk's data. Nothing asserts,
 //   nothing crashes — the values are simply wrong.
 //
-//   This is exactly what rechunk_validation hit before its own fix: it moved the
-//   active size without registering it, and every scenario at a size other than
-//   the already-primed default read back corrupted data. The failure looked like
-//   a re-chunk bug because that was the only harness exercising several
-//   geometries; it was neither about re-chunk nor about any one variant.
+//   The failure looks like a re-chunk bug when the only harness exercising
+//   several geometries is rechunk_validation; it is about neither re-chunk
+//   nor any one variant.
 //
 // WHAT IT DOES NOT COVER
 //

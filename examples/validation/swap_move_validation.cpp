@@ -24,10 +24,10 @@
 // by per-array state kept elsewhere: the proxies' tables indexed by num_tab
 // (constant types, Chunk2A's per-chunk second value, compression candidates)
 // and the registry mapping the array's address to num_tab (Chunk2: to its
-// second-value tuple). They used to move the chunks alone, so each array read
-// the other's metadata -- a Chunk2A chunk folded to its second value came back
-// as the OTHER array's second value -- and the move left the source with
-// nb_chunk over an empty list.
+// second-value tuple). Moving the chunks alone would make each array read the
+// other's metadata -- a Chunk2A chunk folded to its second value coming back
+// as the OTHER array's second value -- and leave the source with nb_chunk over
+// an empty list.
 //
 // Two arrays with different second values, filled by whole chunks (first
 // constant, second value, data), compressed, then:
@@ -35,8 +35,8 @@
 //            pass and a rewrite;
 //   move  -- the target reads the source's values; the source is empty and
 //            takes a resize, writes and a compression pass;
-//   move-construct -- the same through the move constructor, which did not
-//            exist (the copy constructor ran instead, element by element);
+//   move-construct -- the same through the move constructor (not the copy
+//            constructor, element by element);
 //   vector   -- a std::vector of arrays reallocating: the moves are noexcept,
 //            so the arrays are moved (their chunk lists kept), not copied.
 //

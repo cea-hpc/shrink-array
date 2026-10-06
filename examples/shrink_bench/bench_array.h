@@ -18,9 +18,8 @@
  * @file bench_array.h
  * @brief The array type this build benches, as one alias.
  *
- * Lived in shrink_bench.cpp until its self-check sections moved to their own
- * translation unit: both need the same alias, so it had to become shared.
- * Nothing else changed -- ActiveArray and Array are verbatim what they were.
+ * Shared by shrink_bench.cpp and the self-check translation unit, which both
+ * need the same alias.
  */
 
 #pragma once
@@ -78,12 +77,11 @@ using Array = shrink_array::ActiveArray<T>;
 // ---------------------------------------------------------------------------
 // The workload's arrays and the values it fills them with.
 //
-// Both used to be locals of main(). They are shared state now because the bench
-// phases live in their own translation units: a phase that writes tab1..tab_ulong
-// has to be handed them, and handing them over as a struct of REFERENCES keeps
-// the extracted phases ORDINARY FUNCTIONS -- which is the whole point. A
-// template over the array types would be re-instantiated in every caller and buy
-// nothing; that is what limited the first extraction attempt.
+// Shared state because the bench phases live in their own translation units:
+// a phase that writes tab1..tab_ulong has to be handed them, and handing them
+// over as a struct of REFERENCES keeps the extracted phases ORDINARY FUNCTIONS.
+// A template over the array types would be re-instantiated in every caller and
+// buy nothing.
 // ---------------------------------------------------------------------------
 
 /// @name The second values the workload writes
