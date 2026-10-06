@@ -35,6 +35,7 @@
 #include <cstddef>   // std::size_t
 #include <cstdio>    // std::printf
 #include <random>    // std::mt19937_64, std::uniform_int_distribution
+#include <ranges>    // std::views::enumerate
 #include <thread>    // std::thread
 #include <utility>   // std::pair
 #include <vector>    // std::vector
@@ -90,16 +91,16 @@ void against_vector(std::size_t n, std::mt19937_64& rng)
         ref[i] = v;
     }
     bool same = true;
-    for (std::size_t i = 0; i < n; ++i)
+    for (const auto& [i, r] : std::views::enumerate(ref))
     {
-        same = same && bits::get_bit(w.data(), i) == ref[i] && bits::get_bit_relaxed(w.data(), i) == ref[i];
+        same = same && bits::get_bit(w.data(), i) == r && bits::get_bit_relaxed(w.data(), i) == r;
     }
     check(same, "get_bit after random writes", n);
 
     std::size_t ones = 0;
-    for (std::size_t i = 0; i < n; ++i)
+    for (const bool r : ref)
     {
-        ones += ref[i] ? 1 : 0;
+        ones += r ? 1 : 0;
     }
     check(bits::count_ones(w.data(), n) == ones, "count_ones", n);
     check(w.back() == guard, "no write past the last word", n);

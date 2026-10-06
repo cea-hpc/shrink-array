@@ -41,6 +41,7 @@
 #include <cstdint> // std::uintptr_t
 #include <cstdio>  // std::printf
 #include <cstdlib> // std::getenv (BLK_HUGE)
+#include <ranges>  // std::views::enumerate
 #include <vector>  // std::vector
 
 #include "fast_allocators/internal/static_const_array.h" // BlkAllocator, StaticConstArray
@@ -96,9 +97,8 @@ void check_sizes()
     bool ok_blk  = true;
     bool ok_tab  = true;
     bool aligned = true;
-    for (std::size_t i = 0; i < std::size(kSizes); ++i)
+    for (const auto& [i, n] : std::views::enumerate(kSizes))
     {
-        const std::size_t n = kSizes[i];
         void*             p = BlkAllocator::alloc_block(n);
         if (p == nullptr)
         {
