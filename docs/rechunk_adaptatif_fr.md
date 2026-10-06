@@ -1,12 +1,14 @@
 # Géométrie dynamique et rechunk adaptatif
 
-*État : fin septembre 2026, pour les trois variantes (Chunk, Chunk2, Chunk2A). Les chiffres
-viennent de `shrink_bench` sur Grace (64 threads, `OMP_PROC_BIND=close`,
-`OMP_PLACES=cores`), avec la mémoire mesurée exactement et les temps comparés sur un même
-binaire : voir [`mesures_performance_fr.md`](mesures_performance_fr.md). En cas de doute,
-c'est le code qui fait foi.*
+> English version: [adaptive_rechunk.md](adaptive_rechunk.md).
 
----
+> État : fin septembre 2026, pour les trois variantes (Chunk, Chunk2, Chunk2A). Les chiffres
+> viennent de `shrink_bench` sur Grace (64 threads, `OMP_PROC_BIND=close`,
+> `OMP_PLACES=cores`), avec la mémoire mesurée exactement et les temps comparés sur un même
+> binaire : voir [mesures_performance_fr.md](mesures_performance_fr.md). En cas de doute,
+> c'est le code qui fait foi.
+
+***
 
 ## 1. Le principe
 

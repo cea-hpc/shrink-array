@@ -23,11 +23,11 @@ An array is cut into **chunks** of `S` consecutive elements, `S` a power of two:
 
 Compression happens **while the program runs**: a write that turns an element into one of the constants queues its chunk as a candidate, and compression passes give the buffers of the chunks found uniform back to per-thread reuse lists. `compress()` and `shrink_to_fit()` run a full pass on demand.
 
-Under OpenMP the write path takes **no lock**. Writers and compressors exclude each other with an asymmetric Dekker handshake: a writer announces itself with a plain store, and the rare compressor pays a `membarrier()` system call instead. A write that meets a compressor on its chunk is deferred and replayed later, never lost. See [docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) (in French).
+Under OpenMP the write path takes **no lock**. Writers and compressors exclude each other with an asymmetric Dekker handshake: a writer announces itself with a plain store, and the rare compressor pays a `membarrier()` system call instead. A write that meets a compressor on its chunk is deferred and replayed later, never lost. See [docs/synchronisation_dekker.md](docs/synchronisation_dekker.md).
 
 Chunk buffers come from the bundled `fast_allocators` (per-thread slab arenas and reuse lists), which reduce memory consumption and allocation cost compared with the C library allocator. `-DCHUNK_STD_ALLOC=ON` switches back to the standard allocator (useful under AddressSanitizer).
 
-The design documents, in French, are indexed in [docs/README.md](docs/README.md).
+The design documents, in English and French, are indexed in [docs/README.md](docs/README.md).
 
 ## Element types and initialisation
 
@@ -80,6 +80,8 @@ cmake --build build_dir
 ```
 
 See [compile_all.sh](./scripts/compile_all.sh) for more details.
+
+To install the library and use it from your own CMake project, start with [docs/getting_started.md](docs/getting_started.md) (in French: [docs/getting_started_fr.md](docs/getting_started_fr.md)). What changed from one version to the next, and the versioning policy, are in [CHANGELOG.md](CHANGELOG.md). The API on one page: [docs/api.md](docs/api.md); to contribute: [CONTRIBUTING.md](CONTRIBUTING.md).
 The library and examples require C++23. They build with g++ (14 or later), LLVM clang (18 or later) and Intel oneAPI (icpx). nvhpc and AOCC 5 have no usable C++23 and are no longer built by default (`compile_all.sh --with-nvhpc` / `--with-aocc`).
 
 ## Examples

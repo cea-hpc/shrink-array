@@ -1,0 +1,201 @@
+# Dynamic geometry and adaptive rechunk
+
+> French version: [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
+
+> Status: end of September 2026, for the three variants (Chunk, Chunk2, Chunk2A). The figures
+> come from `shrink_bench` on Grace (64 threads, `OMP_PROC_BIND=close`,
+> `OMP_PLACES=cores`), with memory measured exactly and times compared on the same
+> binary: see [performance_measurement.md](performance_measurement.md). When in doubt,
+> the code is the reference.
+
+***
+
+## 1. The principle
+
+In **static geometry** (`-DCHUNK_SIZE=…`, or the `_64`, `_256`, `_1024` targets of the benchmark),
+the chunk size is a compile-time constant. In **dynamic geometry**
+(`-DCHUNK_DYNAMIC`, `_dyn` targets), each array has its own size, which it can change
+during the run through a **rechunk**: the complete rebuild of its storage at another
+size.
+
+The point: start from **small chunks** (64 elements in the benchmark, `SHRINK_BENCH_DYN_SIZE`),
+which compress finely, then **grow** when the metadata outweighs what the
+fine granularity gains. The goals, reached for Chunk2 and Chunk2A:
+
+- **at the start**, use as much memory as the static build at the same size;
+- **at the end**, use less than the best static build.
+
+Three actors: the **advisor** estimates the array's memory at each size, the **decider**
+chooses whether to change and to which size, and `rechunk_to()` does the rebuild.
+
+## 2. The advisor: estimating memory at each size
+
+<tt>ChunkSizeAdvisor\<T\>\::analyze(arr)</tt> (`chunk_size_advisor.h`) produces a table: for each
+candidate size, the number of chunks, the number of materialised chunks, and the estimated
+memory (metadata + materialised data).
+
+- **Larger sizes** (4 levels, up to ×16): an **exact folding** of the actual state
+  of the chunks. A chunk of size 2S is compressible if its two sub-chunks are compressed
+  to the same constant; otherwise it is materialised.
+- **Finer sizes** (2 levels, down to ÷4): a **sampling** of the data of the
+  materialised chunks (65,536 at most), which counts the uniform sub-blocks. For Chunk and
+  Chunk2, a sub-block is only counted as compressible if it holds a representable value
+  (first or second value). For **Chunk2A**, any uniform value is, since each
+  chunk records its own second value.
+
+Chunk classification is done on the fly, with no work array: until
+September 2026, each analysis allocated one byte and one pointer per chunk (140 MB for an
+array of 15.6 million chunks), and the analyses cost 1 to 2 s on a 6.5 s run.
+They now cost ~0.7 s on an 8.4 s Chunk2 run.
+
+`CHUNK_ADVISOR_TABLE=1` (or `=array_name`) prints the full table at each tick.
+
+## 3. The decider: when and where to
+
+`RechunkDecider::consider()` (`rechunk_decider.h`, `internal/rechunk_decider_inline.h`) is
+called at each **tick**: every `CHUNK_ADVISOR_PERIOD` iterations in the benchmark
+(by default `max(10, iter_max / 20)`, i.e. 100 for 2,000 iterations; 0 disables it). It
+takes the best size from the table, then applies the policy (`RechunkPolicy`):
+
+| setting | default | role |
+|---|---|---|
+| `stability_ticks` | 3 | the best size must stay the same for 3 ticks |
+| `cooldown_ticks` | 5 | at least 5 ticks between two rechunks of the same array |
+| `anti_reversal_ticks` | 30 | no return to a size left less than 30 ticks ago |
+| `max_coarsen_factor` | **4** | a coarsening multiplies the size by 4 at most (`CHUNK_RECHUNK_MAX_COARSEN`) |
+| `min_gain_bytes`, `min_gain_frac` | 8 MB, 15% | data-side gain thresholds (`CHUNK_ADVISOR_MIN_GAIN_MB`) |
+| `coarsen_gain_multiple` | 3 | a coarsening judged on data must gain 3 times the threshold |
+| `coarsen_min_meta_gain_bytes` | 1 MB | minimum metadata-side gain (`CHUNK_COARSEN_MIN_META_MB`) |
+| `coarsen_min_meta_rate` | 250 MB/s | metadata gain per second of estimated rebuild time (`CHUNK_COARSEN_MIN_META_RATE`) |
+| `coarsen_trust_ratio` | 0.5 | learning: a coarsening that returned less than half of its forecast forbids the following ones |
+| `dry_run` | `true` | apply nothing (the benchmark sets it to `false`; `CHUNK_RECHUNK_DRY_RUN=1` forces it) |
+
+A coarsening is accepted if **either** of two branches passes: the
+**metadata** branch (metadata gain above its floor, and enough throughput given
+the cost estimated by `rechunk_cost_ms()`), or the **data** branch (total gain above the
+multiplied threshold). Since this "gain per cost" criterion, `CHUNK_ADVISOR_MIN_GAIN_MB` is no longer
+enough to block coarsenings: to measure the cost of the analyses alone, use
+`CHUNK_RECHUNK_DRY_RUN=1`.
+
+Learning measures the gain of a coarsening **at unchanged data**: at the next
+tick, the row of the old size in the table (finer rows) gives the memory
+the array would have had without the rechunk, on its current data. Simply comparing
+before and after mixed the rechunk with the evolution of the data over a period.
+
+**Why a factor of 4.** Measured on Chunk2A with all arrays handed to the decider:
+
+| factor | rechunks | end memory | gain at unchanged data / forecast |
+|---|---|---|---|
+| 2 | 44 | 6,729-6,737 MB | 3,655 / 3,693 MB (99%) |
+| **4** | **33** | **6,539-6,542 MB** | 3,885 / 3,934 MB (98.8%) |
+| 8 | 20 | 6,721-6,724 MB | (not measurable: the old size drops out of the table) |
+
+The limit of 2 dated from two bad large jumps measured before the
+September 2026 fixes (skewed `VmRSS` measurement, leak of Chunk2A rows, folding by copy).
+At 4, the old size stays within the two finer levels of the table, which keeps the
+measurement at unchanged data and the ability to go back.
+
+## 4. The rebuild: `rechunk_to()`
+
+`internal/array_chunk_rechunk_inline.h`. The steps, with their name in the
+`CHUNK_RECHUNK_TRACE=1` trace:
+
+1. **prologue**: at the old geometry, flush the array's deferred writes, then
+   compress its pending candidates before removing them from the lists;
+2. **tmp create**: build the new storage, at the new size;
+3. **refill**: fill it in parallel (`CHUNK_RECHUNK_SCHEDULE`, `guided,16` by default).
+   A new chunk whose sources are all at the first value is skipped. A new
+   chunk whose sources were all compressed is **folded** right away. For
+   **Chunk2A**, if all its sources are at the **same** second constant, that constant is
+   **installed directly**, with no buffer and no copy (copying followed by folding left
+   up to 640 MB of touched pages per array);
+4. **flush+swap**: swap identities between the old and the new storage;
+5. **tmp teardown**: destroy the old storage;
+6. **old-pool drain**: drain the pools of the old size and return the
+   slabs that have become empty to the system.
+
+**Chunk (v1)** rebuilds **in slices** (16 by default, `CHUNK_RECHUNK_SLICES`) and frees
+each old chunk as soon as it has been copied. Between two slices, the pools of the old
+size are drained and the emptied slabs returned to the system, including in the **shared
+pool** when the old storage lives there: without this, the memory of the old storage
+stayed held until the end of the rebuild (on `rechunk_validation`, rebuild peak
+78 → 22 MB). Measured on v1 at 64 threads: peak of +6.9 GB in one pass,
++1.7 GB with 16 slices.
+
+## 5. Per-array allocators (affinity)
+
+An array whose metadata exceeds 16 MiB (`CHUNK_ALLOC_AFFINITY_MIN_BYTES`) can
+have its **own set of allocators** (an affinity key), per rank and per size. Its
+buffers then share no slab with any other array: when it is rebuilt or
+destroyed, its slabs empty completely and are returned to the system.
+
+The price: one partly used slab per (rank, array, size) triple. With 1 MiB slabs (16 pages
+of 64 KiB, so as to retain only one page per returned slab), this is ~780 MiB over the 16 arrays of the
+benchmark at 64 threads.
+
+Hence two modes, whose default depends on the variant:
+
+| mode | when an array gets its key | default for | why |
+|---|---|---|---|
+| **lazy** | at its first rechunk | Chunk2, Chunk2A | they are mostly made of metadata: a start without per-array sets uses exactly as much as the static build (Chunk2A: 11,590 MB after initialisation, against 12,435 MB in eager mode) |
+| **eager** | at its creation | Chunk (v1) | v1 is mostly made of data, and its slice-by-slice rebuild only returns memory progressively if the old storage has its own slabs. In lazy mode, the first rechunk starts from shared slabs, which mix the blocks of several arrays and do not empty: +6.0 GB on 39.3 GB. v1 peak: 41.2 GB in eager mode, 45.6 GB in lazy mode, for the same end memory |
+
+`CHUNK_ALLOC_AFFINITY_EAGER=0` or `=1` forces one of the modes.
+
+## 6. What must disappear with the old storage
+
+A rechunk builds the new storage under a **new array identifier**
+(`num_tab`) and destroys the old one. Everything indexed by the old identifier must be
+**freed**, not just emptied. Two leaks of this kind were fixed in September 2026:
+
+- **Chunk2A**: the per-chunk metadata rows (constant type, 1 byte; second
+  value, `sizeof(T)` bytes by default) were emptied by `clear()`, which keeps the capacity. On the
+  benchmark with the 15 rechunked arrays: 10,276 → 6,730 MB at the end of the run;
+- **all three variants**: the "in compression list" indicator (1 byte per chunk)
+  was never freed. Chunk2A −0.52 GB, v1 −0.75 GB.
+
+In addition, the **compression pass trigger threshold** and the **pool
+budget**, computed from the total number of chunks, are now also recomputed when
+a storage is destroyed, and no longer only when it is created. No measurable effect on time, but the thresholds
+match the actual geometry again.
+
+## 7. Results
+
+Memory (GB) on `shrink_bench`, 64 threads, all arrays handed to the decider (the
+benchmark default; `SHRINK_BENCH_ADVISE_ALL=0` goes back to the five historical arrays):
+
+| variant | static 64 (end) | dynamic without advisor (end) | **dynamic with advisor (end)** | static 256 (end) |
+|---|---|---|---|---|
+| Chunk2A | 12.7 | 12.7 | **6.0** | 7.3 |
+| Chunk2 | 21.4 | 21.4 | **16.3** | 17.3 |
+| Chunk (v1) | 43.6 | 44.6 | **40.3** | 40.2 |
+
+Time cost of the advisor, measured on **the same binary** (averages over 3 rounds):
+
+| dynamic Chunk2 | time | cost |
+|---|---|---|
+| without advisor (`CHUNK_ADVISOR_PERIOD=0`) | 8.38 s | — |
+| analyses only (`CHUNK_RECHUNK_DRY_RUN=1`) | 9.07 s | +0.69 s |
+| analyses and rechunks (30) | 11.43 s | +2.36 s |
+
+For Chunk2A, the cost of the rechunks (33) ranges from 1 to 3.5 s depending on the measurement series. For
+Chunk2, the intervals that follow the rechunks are as fast as those before: the cost
+is limited to the rebuilds.
+
+## 8. Known limitations
+
+- **v1 slows down after its rechunk.** After switching to 1,024, dynamic v1 runs 1.5 to
+  2 times slower per iteration than static 1,024 (about 40 busy cores at an IPC of
+  3.65, against 52 cores at 4.24). A dynamic build **started** at 1,024 runs as fast as the
+  static one, and Chunk2 does not slow down after its rechunks: the state left by the
+  v1 rebuild is to blame. Neither the scheduling of the rebuild nor the
+  compression thresholds explain the gap. Cause still unknown.
+- **The model is static.** The advisor judges on the present state of the chunks, not on
+  future writes. On this benchmark, the transient materialisations measured do not matter
+  (`CHUNK_RECHUNK_CHURN=1`), but a workload that writes a lot into constant regions
+  could make a coarsening regrettable: this is the role of learning
+  (`coarsen_trust_ratio`) and of the anti-reversal rule.
+- **Rechunking boolean arrays** has no validation harness: the benchmark does not hand
+  `tab_bool` to the decider.
+- **The peak remains the starting one**: a dynamic run that starts from 64 first reaches the
+  memory of static 64, then goes down.

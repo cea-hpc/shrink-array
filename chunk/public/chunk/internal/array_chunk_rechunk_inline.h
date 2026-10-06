@@ -73,6 +73,28 @@ inline double g_slice_drain_ms   = 0.0;
 inline double g_slice_collect_ms = 0.0;
 inline double g_slice_madvise_ms = 0.0;
 
+/// CHUNK_RECHUNK_TRACE: where the v1 refill's slice regions spend their wall
+/// time, summed over the slices of the re-chunk in progress (ms), reset by
+/// rechunk_to() and printed on its "slices" line. Instants on steady_clock
+/// (one system-wide counter), relative to the master just before the region:
+///   fork      the LAST thread's entry into the region
+///   loop      the last end of a thread's rebuild loop, minus fork
+///   barrier   the master past the closing barrier, minus the last loop end
+///   boundary  the slice-boundary drain + sweep (~ drain + collect + madvise)
+///   join      the master out of the region, minus the end of the boundary
+/// work max / avg: one thread's rebuild loop, max and mean over the team
+/// (their gap is the imbalance); setup max: guard + buffer before the loop.
+/// Written by the master outside the regions only.
+inline int    g_slice_count        = 0;
+inline double g_slice_fork_ms      = 0.0;
+inline double g_slice_loop_ms      = 0.0;
+inline double g_slice_barrier_ms   = 0.0;
+inline double g_slice_boundary_ms  = 0.0;
+inline double g_slice_join_ms      = 0.0;
+inline double g_slice_work_max_ms  = 0.0;
+inline double g_slice_work_avg_ms  = 0.0;
+inline double g_slice_setup_max_ms = 0.0;
+
 /// @brief Resident set size of this process in MiB, or -1 if unreadable.
 /// @details EXACT (smaps_rollup, see exact_rss.h): statm lags by gigabytes at
 ///          64 threads. Only the CHUNK_RECHUNK_TRACE paths read it (per phase
@@ -227,6 +249,15 @@ void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int 
     internal::g_slice_drain_ms   = 0.0; // filled by rechunk_refill's slice boundaries
     internal::g_slice_collect_ms = 0.0;
     internal::g_slice_madvise_ms = 0.0;
+    internal::g_slice_count        = 0; // filled by rechunk_refill's slice regions
+    internal::g_slice_fork_ms      = 0.0;
+    internal::g_slice_loop_ms      = 0.0;
+    internal::g_slice_barrier_ms   = 0.0;
+    internal::g_slice_boundary_ms  = 0.0;
+    internal::g_slice_join_ms      = 0.0;
+    internal::g_slice_work_max_ms  = 0.0;
+    internal::g_slice_work_avg_ms  = 0.0;
+    internal::g_slice_setup_max_ms = 0.0;
     std::chrono::steady_clock::time_point t1_out;
     std::chrono::steady_clock::time_point t2_out;
     std::chrono::steady_clock::time_point t3_out;
@@ -515,6 +546,16 @@ void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int 
                      old_size, new_size, t_ms(t0, t1_out), t_ms(t1_out, t2_out), t_ms(t2_out, t3_out),
                      internal::g_slice_drain_ms, internal::g_slice_collect_ms, internal::g_slice_madvise_ms,
                      t_ms(t3_out, t4_out), t_ms(t4_out, t5), t_ms(t5, t5b), t_ms(t5b, t6), t_ms(t0, t6));
+        if (internal::g_slice_count > 0)
+        {
+            std::fprintf(stderr,
+                         "[RECHUNK] %u -> %u slices %d (ms): fork %.1f | loop %.1f | work max %.1f | "
+                         "work avg %.1f | setup max %.1f | barrier %.1f | boundary %.1f | join %.1f\n",
+                         old_size, new_size, internal::g_slice_count, internal::g_slice_fork_ms,
+                         internal::g_slice_loop_ms, internal::g_slice_work_max_ms, internal::g_slice_work_avg_ms,
+                         internal::g_slice_setup_max_ms, internal::g_slice_barrier_ms, internal::g_slice_boundary_ms,
+                         internal::g_slice_join_ms);
+        }
     }
     if (internal::g_rechunk_trace_mem)
     {
@@ -1087,12 +1128,51 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         {
             std::fprintf(stderr, "[RECHUNK-SLICE] 0/%d start       rss=%ld MB\n", n_slices, rss_start);
         }
+        // CHUNK_RECHUNK_TRACE: the slice regions' wall time, split (see
+        // internal::g_slice_fork_ms). Shared by the team; ns since sp_a.
+        const bool sp_on = internal::g_rechunk_trace;
+        struct SliceProbe
+        {
+            std::atomic<long long> entry_max{0};
+            std::atomic<long long> loop_end_max{0};
+            std::atomic<long long> work_max{0};
+            std::atomic<long long> work_sum{0};
+            std::atomic<long long> setup_max{0};
+            std::atomic<int>       n{0};
+        } sp;
+        const auto sp_ns = [](slice_clock::time_point a, slice_clock::time_point b) noexcept -> long long
+        { return std::chrono::duration_cast<std::chrono::nanoseconds>(b - a).count(); };
+        const auto sp_max = [](std::atomic<long long>& a, long long v) noexcept
+        {
+            long long cur = a.load(std::memory_order_relaxed);
+            while (v > cur && !a.compare_exchange_weak(cur, v, std::memory_order_relaxed))
+            {
+            }
+        };
+        slice_clock::time_point sp_a{};
+        slice_clock::time_point sp_b{}; // master, past the closing barrier
+        slice_clock::time_point sp_d{}; // master, past the boundary
+        if (sp_on)
+        {
+            internal::g_slice_count = n_slices;
+        }
         for (int sl = 0; sl < n_slices; ++sl)
         {
             const int c0 = static_cast<int>((static_cast<long>(n_new) * sl) / n_slices);
             const int c1 = static_cast<int>((static_cast<long>(n_new) * (sl + 1)) / n_slices);
+            if (sp_on)
+            {
+                sp.entry_max.store(0, std::memory_order_relaxed);
+                sp.loop_end_max.store(0, std::memory_order_relaxed);
+                sp.work_max.store(0, std::memory_order_relaxed);
+                sp.work_sum.store(0, std::memory_order_relaxed);
+                sp.setup_max.store(0, std::memory_order_relaxed);
+                sp.n.store(0, std::memory_order_relaxed);
+                sp_a = slice_clock::now();
+            }
 #pragma omp parallel
             {
+                const slice_clock::time_point sp_e = sp_on ? slice_clock::now() : slice_clock::time_point{};
                 // Apply the rebuild's arming writes DIRECTLY, never via the
                 // deferred path: a chunk reads cst1 until it is materialised,
                 // so deferred arming writes would fill tmp's op map, and a
@@ -1108,15 +1188,36 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                 RebuildTally   tally; // this thread's fold counts for this slice
                                       // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
                                       // (internal::rebuild_schedule).
-#pragma omp for schedule(runtime)
+                const slice_clock::time_point sp_w0 = sp_on ? slice_clock::now() : slice_clock::time_point{};
+                // nowait + the explicit barrier below: the same closing barrier,
+                // with each thread's loop end observable (CHUNK_RECHUNK_TRACE).
+#pragma omp for schedule(runtime) nowait
                 for (int c = c0; c < c1; ++c)
                 {
                     rebuild_one(c, buf, tally);
+                }
+                if (sp_on)
+                {
+                    const auto sp_w1 = slice_clock::now();
+                    sp_max(sp.entry_max, sp_ns(sp_a, sp_e));
+                    sp_max(sp.loop_end_max, sp_ns(sp_a, sp_w1));
+                    sp_max(sp.work_max, sp_ns(sp_w0, sp_w1));
+                    sp_max(sp.setup_max, sp_ns(sp_e, sp_w0));
+                    sp.work_sum.fetch_add(sp_ns(sp_w0, sp_w1), std::memory_order_relaxed);
+                    sp.n.fetch_add(1, std::memory_order_relaxed);
                 }
                 // One RMW per thread and slice, not one per folded chunk.
                 n_folded.fetch_add(tally.folded, std::memory_order_relaxed);
                 n_refused.fetch_add(tally.refused, std::memory_order_relaxed);
                 n_installed.fetch_add(tally.installed, std::memory_order_relaxed);
+#pragma omp barrier
+#pragma omp master
+                {
+                    if (sp_on)
+                    {
+                        sp_b = slice_clock::now();
+                    }
+                }
 
                 // Slice boundary, INSIDE the region (the omp for's barrier has
                 // closed the slice): send this slice's parked old-geometry
@@ -1174,6 +1275,30 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                         } // implicit barrier: the next slice starts on emptied slabs
                     }
                 }
+#pragma omp master
+                {
+                    if (sp_on)
+                    {
+                        sp_d = slice_clock::now();
+                    }
+                }
+            }
+            if (sp_on)
+            {
+                const auto   sp_post = slice_clock::now();
+                const double e_ms    = static_cast<double>(sp.entry_max.load(std::memory_order_relaxed)) * 1e-6;
+                const double l_ms    = static_cast<double>(sp.loop_end_max.load(std::memory_order_relaxed)) * 1e-6;
+                const int    n_thr   = std::max(1, sp.n.load(std::memory_order_relaxed));
+                internal::g_slice_fork_ms += e_ms;
+                internal::g_slice_loop_ms += l_ms - e_ms;
+                internal::g_slice_barrier_ms += slice_ms(sp_a, sp_b) - l_ms;
+                internal::g_slice_boundary_ms += slice_ms(sp_b, sp_d);
+                internal::g_slice_join_ms += slice_ms(sp_d, sp_post);
+                internal::g_slice_work_max_ms += static_cast<double>(sp.work_max.load(std::memory_order_relaxed)) * 1e-6;
+                internal::g_slice_work_avg_ms +=
+                    static_cast<double>(sp.work_sum.load(std::memory_order_relaxed)) * 1e-6 / n_thr;
+                internal::g_slice_setup_max_ms +=
+                    static_cast<double>(sp.setup_max.load(std::memory_order_relaxed)) * 1e-6;
             }
             if (sl + 1 < n_slices)
             {

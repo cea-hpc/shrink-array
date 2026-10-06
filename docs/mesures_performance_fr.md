@@ -1,10 +1,12 @@
 # Mesurer la mémoire et le temps sans se tromper
 
-*État : fin septembre 2026. Ce document rassemble ce que les campagnes de septembre 2026 sur
-Grace (aarch64, pages de 64 Kio, RHEL 9.6, 64 threads) ont appris, souvent à nos dépens :
-plusieurs conclusions ont dû être retirées parce que l'instrument de mesure mentait.*
+> English version: [performance_measurement.md](performance_measurement.md).
 
----
+> État : fin septembre 2026. Ce document rassemble ce que les campagnes de septembre 2026 sur
+> Grace (aarch64, pages de 64 Kio, RHEL 9.6, 64 threads) ont appris, souvent à nos dépens :
+> plusieurs conclusions ont dû être retirées parce que l'instrument de mesure mentait.
+
+***
 
 ## 1. La mémoire
 
@@ -96,7 +98,7 @@ dans des répertoires neufs avec la même configuration, alterner, et se méfier
 | taille maximale d'un pas de grossissement | `CHUNK_RECHUNK_MAX_COARSEN=<n>` |
 | ordonnancement de la reconstruction | `CHUNK_RECHUNK_SCHEDULE=…` |
 
-La liste complète est dans [`variables_environnement_fr.md`](variables_environnement_fr.md).
+La liste complète est dans [variables_environnement_fr.md](variables_environnement_fr.md).
 Attention : `CHUNK_ADVISOR_MIN_GAIN_MB=1000000` ne bloque plus les grossissements depuis le
 critère « gain par coût » ; utiliser `CHUNK_RECHUNK_DRY_RUN=1`.
 

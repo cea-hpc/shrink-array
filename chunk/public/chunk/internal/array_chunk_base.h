@@ -254,12 +254,12 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     class const_iterator
     {
       public:
-        using iterator_category = std::random_access_iterator_tag; // what std::lower_bound/distance dispatch on
-        using iterator_concept  = std::random_access_iterator_tag; // C++20 concepts (std::ranges)
-        using value_type        = T;
-        using difference_type   = std::ptrdiff_t;
-        using reference         = T;    // value, not T& (see class comment)
-        using pointer           = void; // no addressable element; arrow unsupported
+        using iterator_category = std::random_access_iterator_tag; ///< what std::lower_bound/distance dispatch on
+        using iterator_concept  = std::random_access_iterator_tag; ///< C++20 concepts (std::ranges)
+        using value_type        = T;                               ///< the element type
+        using difference_type   = std::ptrdiff_t;                  ///< distance between two iterators
+        using reference         = T;    ///< value, not T& (see class comment)
+        using pointer           = void; ///< no addressable element; arrow unsupported
 
         /** @brief Two iterators are equal when they sit on the same absolute index. */
         [[nodiscard]] friend bool operator==(const const_iterator& lhs, const const_iterator& rhs) noexcept
@@ -1251,7 +1251,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     ///        geometry: its census is not an exit, and its state depends on the
     ///        build (an OpenMP re-chunk releases the source chunks during the
     ///        copy, a serial one leaves them materialised), so counting it
-    ///        would make still@exit differ between sequential and OpenMP runs.
+    ///        would make still-at-exit differ between sequential and OpenMP runs.
     bool exit_census_ = true;
 
   private:

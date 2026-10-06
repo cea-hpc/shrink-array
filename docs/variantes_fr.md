@@ -1,11 +1,13 @@
 # Les trois variantes : Chunk, Chunk2, Chunk2A
 
-*État : fin septembre 2026. Les chiffres viennent de `shrink_bench` sur Grace (64 threads,
-`OMP_PROC_BIND=close`, `OMP_PLACES=cores`), mémoire mesurée exactement (voir
-[`mesures_performance_fr.md`](mesures_performance_fr.md)). En cas de doute, c'est le code qui
-fait foi.*
+> English version: [variants.md](variants.md).
 
----
+> État : fin septembre 2026. Les chiffres viennent de `shrink_bench` sur Grace (64 threads,
+> `OMP_PROC_BIND=close`, `OMP_PLACES=cores`), mémoire mesurée exactement (voir
+> [mesures_performance_fr.md](mesures_performance_fr.md)). En cas de doute, c'est le code qui
+> fait foi.
+
+***
 
 ## 1. Le principe commun
 
@@ -66,15 +68,15 @@ de run :
 
 La géométrie dynamique fait gagner nettement Chunk2 et Chunk2A. Pour v1, dont la mémoire est
 surtout faite de données, elle fait jeu égal avec le statique 256 : voir les limites connues
-dans [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md).
+dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
 ## 5. Où lire la suite
 
 | sujet | document |
 |---|---|
-| lecture, écriture, parallélisme, compression en vol, opérations sur plages | [`algo_chunk2_fr.md`](algo_chunk2_fr.md) : décrit Chunk2, mais la machinerie de ses §5 à §8 et §10 est commune aux trois variantes |
-| ce que Chunk (v1) et Chunk2A font autrement | [`algo_chunk_fr.md`](algo_chunk_fr.md), [`algo_chunk2a_fr.md`](algo_chunk2a_fr.md) |
-| géométrie dynamique et rechunk, pour les trois variantes | [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md) |
-| synchronisation sans verrou (Dekker asymétrique) | [`synchronisation_dekker_fr.md`](synchronisation_dekker_fr.md) |
-| réglages | [`variables_environnement_fr.md`](variables_environnement_fr.md) |
-| index de la documentation | [`README.md`](README.md) |
+| lecture, écriture, parallélisme, compression en vol, opérations sur plages | [algo_chunk2_fr.md](algo_chunk2_fr.md) : décrit Chunk2, mais la machinerie de ses §5 à §8 et §10 est commune aux trois variantes |
+| ce que Chunk (v1) et Chunk2A font autrement | [algo_chunk_fr.md](algo_chunk_fr.md), [algo_chunk2a_fr.md](algo_chunk2a_fr.md) |
+| géométrie dynamique et rechunk, pour les trois variantes | [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) |
+| synchronisation sans verrou (Dekker asymétrique) | [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
+| réglages | [variables_environnement_fr.md](variables_environnement_fr.md) |
+| index de la documentation | [README.md](README.md) |

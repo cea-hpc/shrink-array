@@ -1,0 +1,99 @@
+# Contribuer à shrink-array
+
+> English version: [contributing.md](contributing.md).
+
+> Octobre 2026. Comment construire, tester, mesurer et documenter une modification. Lire d'abord
+> [algo_chunk2_fr.md](algo_chunk2_fr.md) : l'essentiel de la bibliothèque est la mécanique qu'il décrit.
+
+***
+
+## 1. Build
+
+Un build de développement d'une seule configuration :
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DOMP=ON -DCHUNK_STATIC_SIZES=256
+cmake --build build
+```
+
+`-DCHUNK_STATIC_SIZES=256` construit une seule taille statique au lieu de deux, ce qui économise une bonne part du temps
+de build. Un build Debug, `-DCHECK_OPTIM=ON` ou un sanitizer construit aussi les harnais de validation
+(`examples/validation`).
+
+La matrice complète (GNU, LLVM, oneAPI, AOCC, NVHPC, sanitizers, statistiques, std-alloc...) est
+`scripts/compile_all.sh`. Ses options sont dans [variables_environnement_fr.md](variables_environnement_fr.md)
+§8. Celles qu'on utilise tous les jours :
+
+| option | usage |
+|---|---|
+| `--target=<glob>` | ne construire que certaines configurations (un motif du shell, entre apostrophes) |
+| `--exec=<glob>` | ne construire que certains exécutables dans chaque configuration |
+| `--fresh-cache` | après une modification d'un `CMakeLists.txt` ou d'une option, pour qu'aucune valeur périmée du cache ne soit utilisée |
+| `--jobs=<n>` | moins de configurations à la fois quand le nœud manque de mémoire (`CHUNK_MEM_PER_JOB_MB` fixe la mémoire par compilateur) |
+| `--with-ledger` | ajoute le build Debug avec le registre des blocs (ledger) (`CHUNK_FORCE_LEDGER=ON`), pour le travail sur les allocateurs |
+
+## 2. Tests
+
+`ctest` dans un répertoire de build lance les harnais et les vérifications des sources ; `ctest -L validation`
+seulement les premiers. `python/bench_and_test.py` les lance sur un ensemble de builds, avec le banc en
+mode check et le balayage de performance (voir `docs/example_bench_test.txt`).
+
+Les défauts de cette bibliothèque sont surtout des **courses rares**. Une modification d'un chemin concurrent n'est pas
+testée tant qu'elle n'a pas tourné sous ThreadSanitizer, à plusieurs nombres de threads, et de nombreuses fois : utiliser
+`python/multi_launch_stress.py` (voir `docs/example_multi_launch_stress.txt`).
+
+Que lancer, selon ce que touche la modification :
+
+| modification | lancer au moins |
+|---|---|
+| moteur d'écriture, poignée de main de Dekker, gestionnaire de compression, écritures différées | `deferred_path_validation`, `read_reclaim_validation` (aussi avec `CHUNK_TEST_READ_DELAY_EVERY`, et sous ASan dans un build std-alloc), les builds TSan, `multi_launch_stress.py` |
+| marquage pour la compression, les passes | `mark_path_validation`, `compress_roundtrip`, le banc en mode check |
+| allocateurs, listes de réutilisation, slabs | `pool_accounting`, `slab_geometry_validation`, `blk_allocator_validation`, le build avec registre des blocs (ledger) (`--with-ledger`), ASan dans un build std-alloc |
+| rechunk, géométrie dynamique | `rechunk_validation`, `dyn_geometry_validation`, le banc avec `CHUNK_FORCE_RECHUNK_TOGGLE=1` |
+| opérations sur des plages | `fill_range_mt_validation`, `fill_range_mt_v1v2_validation`, `range_counters_validation` |
+| rangs des threads, régions | `thread_growth_validation`, `nested_region_validation` |
+| interface du conteneur | `iterator_validation`, `swap_move_validation`, `stale_proxy_validation`, `open_types_validation`, `index64_validation` |
+| documentation | `check_docs` |
+
+Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
+
+| test | règle |
+|---|---|
+| `check_includes` | chaque `#include` dit pourquoi il est là ; les en-têtes système et ceux du projet ne sont pas mélangés dans un même bloc |
+| `check_raw_reads` | chaque lecture brute d'un tampon de chunk dans la bibliothèque dit pourquoi elle est sûre |
+| `check_docs` | liens, noms de code cités dans les documents, paires anglais/français, pas de marqueurs d'historique dans les commentaires |
+
+## 3. Règles de code
+
+- **C++20.** La branche `cpp23` porte le même code avec C++23 obligatoire.
+- **Anglais** pour le code, les commentaires et les messages de commit.
+- **clang-format** avec le `.clang-format` du dépôt, sur les lignes que vous touchez.
+- **Pas de préprocesseur là où `if constexpr` suffit.** Les règles qui décident quels `#ifdef` peuvent disparaître,
+  et ceux qui doivent rester, sont écrites en tête de `examples/shrink_bench/bench_config.h`.
+- **Les commentaires énoncent la règle, pas l'histoire.** Écrire pourquoi le code est tel qu'il est, et ce qui
+  casse s'il change. Ne pas écrire comment le bug a été trouvé, quelle version l'avait, les nombres d'exécutions,
+  les dates ou les noms de tickets : cela va dans le message de commit. `check_docs` rejette les
+  marqueurs habituels (`fwNN`, `SEGV hunt`, `BUG FIX`, `FIX (`, une date comme `Sept '26`).
+- **Doxygen** (`@brief`, `@param`, `@return`, `@warning`) sur tout ce qu'un utilisateur appelle : les
+  classes et fonctions de [api_fr.md](api_fr.md). `cmake --build build --target doc` doit rester
+  sans avertissement (`ctest -R check_doxygen` quand Doxygen est installé).
+- **Code sans verrou** : suivre les règles de [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md)
+  §6, et écrire l'argument d'ordonnancement à côté de chaque atomique qui en a besoin.
+
+## 4. Affirmations de performance
+
+Une modification faite pour la vitesse ou la mémoire s'accompagne d'une mesure prise comme le décrit
+[mesures_performance_fr.md](mesures_performance_fr.md) : la mémoire avec le compteur
+exact, le temps sur le même binaire, les modes alternés, au moins trois tours, et seul un écart
+bien au-dessus du bruit (10 % sur les bancs dynamiques à 64 threads) constitue un résultat.
+
+## 5. Documentation et changelog
+
+- Une modification visible par l'utilisateur met à jour les documents qu'elle touche, **dans les deux langues**. L'anglais est
+  la référence ; la version française suit. `check_docs` échoue quand les deux divergent en
+  structure.
+- Ajouter une entrée sous _Unreleased_ dans `CHANGELOG.md` (Added, Changed, Deprecated, Removed,
+  Fixed). La politique de versionnage en tête de ce fichier dit quel numéro la prochaine version
+  incrémente.
+- Une nouvelle variable d'environnement, macro ou option CMake va dans
+  [variables_environnement_fr.md](variables_environnement_fr.md).

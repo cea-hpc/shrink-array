@@ -1,12 +1,14 @@
-# L'algorithme de `ArrayChunk2A` (Chunk2A)
+# L'algorithme de ArrayChunk2A (Chunk2A)
 
-*État : fin septembre 2026. Ce document décrit ce que Chunk2A fait **autrement** que Chunk2 ;
-la machinerie commune (proxys, écritures différées, barrière de lecture, compression en vol,
-opérations sur plages) est décrite dans [`algo_chunk2_fr.md`](algo_chunk2_fr.md), et la
-géométrie dynamique dans [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md). En cas de
-doute, c'est le code qui fait foi.*
+> English version: [algo_chunk2a.md](algo_chunk2a.md).
 
----
+> État : fin septembre 2026. Ce document décrit ce que Chunk2A fait **autrement** que Chunk2 ;
+> la machinerie commune (proxys, écritures différées, barrière de lecture, compression en vol,
+> opérations sur plages) est décrite dans [algo_chunk2_fr.md](algo_chunk2_fr.md), et la
+> géométrie dynamique dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md). En cas de
+> doute, c'est le code qui fait foi.
+
+***
 
 ## 1. Ce que Chunk2A compresse
 
@@ -47,7 +49,7 @@ par la mémoire plutôt que par le débit d'écriture.
 
 Ces lignes font de Chunk2A la variante la plus chère en métadonnées par chunk (16 octets
 d'objet, plus 2 octets et `sizeof(T)`), et donc celle qui gagne le plus à grossir ses chunks :
-voir [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md).
+voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
 Quand un stockage est détruit (fin de vie du tableau, ou ancien stockage d'un rechunk), ses
 trois lignes sont **libérées** (`Proxy2A::clear_tab_is_int`), pas seulement vidées. Jusqu'en
@@ -114,7 +116,7 @@ compression par défaut, `CHUNK2A_COMPRESS_LEVEL=0`, dans `chunk2A_def.h`).
 
 ## 6. L'écriture
 
-Le chemin d'écriture est celui de Chunk2 (§6 de [`algo_chunk2_fr.md`](algo_chunk2_fr.md)), à
+Le chemin d'écriture est celui de Chunk2 (§6 de [algo_chunk2_fr.md](algo_chunk2_fr.md)), à
 une différence près : la seconde valeur à comparer est celle **du chunk**, lue dans sa ligne
 de métadonnées, et non celle du tableau. Écrire dans un chunk compressé une valeur différente
 de sa constante le matérialise, pré-rempli avec **cette constante**.
@@ -126,7 +128,7 @@ l'invariant de resynchronisation qu'elle imposait à chaque réallocation des li
 
 ## 7. Ce que Chunk2A fait autrement pendant un rechunk
 
-Le déroulé général est celui de [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md) §4, avec
+Le déroulé général est celui de [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §4, avec
 trois particularités :
 
 - **l'advisor compte comme compressible** tout sous-bloc uniforme, à n'importe quelle valeur,

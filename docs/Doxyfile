@@ -399,7 +399,7 @@ IDL_PROPERTY_SUPPORT   = YES
 # all members of a group must be documented explicitly.
 # The default value is: NO.
 
-DISTRIBUTE_GROUP_DOC   = NO
+DISTRIBUTE_GROUP_DOC   = YES
 
 # If one adds a struct or class to a group and this option is enabled, then also
 # any nested class or struct is added to the same group. By default this option
@@ -837,6 +837,8 @@ WARN_LOGFILE           = doxygen-warnings.log
 # Note: If this tag is empty the current directory is searched.
 
 INPUT                  = ../README.md \
+                         ../CHANGELOG.md \
+                         ../CONTRIBUTING.md \
                          ../chunk/public \
                          ../fast_allocators/public \
                          .
@@ -1156,7 +1158,7 @@ HTML_HEADER            =
 # that doxygen normally uses.
 # This tag requires that the tag GENERATE_HTML is set to YES.
 
-HTML_FOOTER            =
+HTML_FOOTER            = mermaid_footer.html
 
 # The HTML_STYLESHEET tag can be used to specify a user-defined cascading style
 # sheet that is used by each HTML page. It can be used to fine-tune the look of

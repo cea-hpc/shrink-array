@@ -1,0 +1,45 @@
+<!-- HTML footer for doxygen 1.9.8-->
+<!-- start footer part -->
+<!--BEGIN GENERATE_TREEVIEW-->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    $navpath
+    <li class="footer">$generatedby <a href="https://www.doxygen.org/index.html"><img class="footer" src="$relpath^doxygen.svg" width="104" height="31" alt="doxygen"/></a> $doxygenversion </li>
+  </ul>
+</div>
+<!--END GENERATE_TREEVIEW-->
+<!--BEGIN !GENERATE_TREEVIEW-->
+<hr class="footer"/><address class="footer"><small>
+$generatedby&#160;<a href="https://www.doxygen.org/index.html"><img class="footer" src="$relpath^doxygen.svg" width="104" height="31" alt="doxygen"/></a> $doxygenversion
+</small></address>
+<!--END !GENERATE_TREEVIEW-->
+</body>
+<!-- shrink-array: draw the ```mermaid blocks of the Markdown pages. Doxygen
+     prints them as code fragments; the ones that start with a Mermaid diagram
+     keyword are handed to mermaid.js, loaded from a CDN. Offline, they stay
+     readable as text. Regenerate the part above with `doxygen -w html` after a
+     Doxygen upgrade, keeping this script. -->
+<script type="module">
+const kinds = /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram|gantt|pie)\b/;
+const blocks = [];
+for (const frag of document.querySelectorAll('div.fragment')) {
+  const lines = Array.from(frag.querySelectorAll('div.line'), (l) => l.textContent);
+  if (lines.length && kinds.test(lines[0].trim())) {
+    const pre = document.createElement('pre');
+    pre.className = 'mermaid';
+    pre.textContent = lines.join('\n');
+    frag.replaceWith(pre);
+    blocks.push(pre);
+  }
+}
+if (blocks.length) {
+  import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs')
+    .then(({ default: mermaid }) => {
+      mermaid.initialize({ startOnLoad: false });
+      return mermaid.run({ nodes: blocks });
+    })
+    .catch(() => {});
+}
+</script>
+</body>
+</html>

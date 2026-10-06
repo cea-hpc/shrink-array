@@ -487,6 +487,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief store_value() through a pointer the caller has already loaded.
     /// @param vals The chunk's values pointer, loaded inside the write session
     ///        (after the materialisation, if there was one); saves a reload.
+    /// @param v The value to store.
     /// @pre As store_value().
     void store_value_at(T* const vals, in_t<T> v) const noexcept
     {
@@ -842,12 +843,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     // ========================================================================
     // Common metadata management
     // ========================================================================
-
-    /**
-     * @brief Store pointer-to-array and chunk index for subsequent operations.
-     * @param array_ptr pointer to the array
-     * @param num_chunk_ chunk index
-     */
 
     /// @brief Check builds: arm the stale-proxy check with the array's storage
     ///        generation (see check_not_stale). Nothing in other builds.

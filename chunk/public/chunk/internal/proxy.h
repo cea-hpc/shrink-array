@@ -343,6 +343,8 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      *        materialisation if there was one -- no compressor can change it
      *        until the session ends, and no writer either once it is not the
      *        constant (see Proxy::assign_impl).
+     * @param old_value Value before the write.
+     * @param new_value Value after the write.
      */
     void mark_for_compression_if_needed_with_value(this const Derived& self,
                                                    in_t<T>             old_value,
