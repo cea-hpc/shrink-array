@@ -18,12 +18,13 @@
 
 /**
  * @file tab_cst_val2_holder.h
- * @brief The registry of shared arrays behind "second constant value" compression.
+ * @brief The registry of second-value slots behind "second constant value" compression.
  *
  * A Chunk2A compressed to a constant other than zero does not own a buffer: it
- * points at a shared, read-only array filled with that value. One array exists
- * per DISTINCT second value, for the whole process and for the life of the run,
- * so a thousand chunks holding the same constant cost one array between them.
+ * points at an identifier slot in a per-type region, one slot per DISTINCT
+ * second value for the whole process. Nothing is stored at the slot -- the
+ * value comes from GlobalVecHolder::value_by_id[] -- so a thousand chunks
+ * holding the same constant cost one slot and one table entry between them.
  *
  * Three pieces:
  *  - Segment is a block of 64 slots. The registry is a chain of them rather
@@ -41,16 +42,13 @@
  * GlobalVecHolder::insert_mutex, under which the whole find-or-append is
  * plain sequential code.
  *
- * @warning One ordering is load-bearing and not checked at run time: an
- *          array must be filled before its pointer is published
- *          (index_publish's release store). A chunk adopts an array by
- *          storing it as its own values pointer, nothing else -- there is no
- *          per-chunk cache to keep in step since the region test
- *          (GlobalVecHolder::region_contains) replaced it.
+ * @warning One ordering is load-bearing and not checked at run time:
+ *          value_by_id[] must be written before the slot pointer is published
+ *          (index_publish's release store). A chunk adopts a slot by storing it
+ *          as its own values pointer, nothing else.
  *
  * @warning Tearing the registry down requires that NO thread is scanning it.
- *          @see GlobalVecHolder::clear_if_last, which tells the story of the
- *          missing barrier that made this a SIGSEGV.
+ *          @see GlobalVecHolder::clear_if_last for the contract.
  */
 
 #include <sys/mman.h>  // mmap, mprotect, madvise
@@ -63,10 +61,8 @@
 #include <mutex>       // std::mutex, std::scoped_lock
 #include <type_traits> // std::conditional_t
 #include <vector>      // index_generations
-// <iostream> is included directly: it used to come through param_chunk.h,
-// whose include created a heavy circular dependency (ParamChunk ->
-// AllTypeChunk -> ... -> this header) while nothing here uses a ParamChunk
-// symbol.
+// <iostream> directly, not through param_chunk.h: that include made a heavy
+// circular dependency (ParamChunk -> AllTypeChunk -> ... -> this header).
 #include <iostream> // std::cerr, std::cout
 
 #include "chunk/internal/chunk_size_policy.h" // cst_buffer_size
@@ -114,7 +110,7 @@ struct Segment
 {
     static constexpr int SIZE = 64; ///< Slots per segment.
 
-    std::array<T*, SIZE> slots{};        ///< The shared arrays, one per registered value.
+    std::array<T*, SIZE> slots{};        ///< The slots, one per registered value.
     int                  used = 0;       ///< How many leading slots are occupied.
     Segment*             next = nullptr; ///< Next block, or null at the tail.
 };
@@ -129,23 +125,19 @@ class TabCstVal2Holder;
  * @brief How a chunk's second value is stored in the per-chunk table.
  *
  * @details For an element type wider than 4 bytes the slot holds the
- *          IDENTIFIER of the shared array registered for the value (its
- *          index in the type's region, 1-based; 0 = no second value) rather
- *          than the value: 4 bytes per chunk instead of 8 (double, long) or
- *          16 (complex<double>) -- ~150 MB on the 50 M-chunk reference run.
- *          Reading it back is one load of the array's first element, which
- *          is the value (the arrays are filled with it), at a fixed stride
- *          from the region base. Narrower types keep the value itself: an
- *          identifier would not be smaller, and bool has no registry.
+ *          IDENTIFIER registered for the value (its index in the type's
+ *          region, 1-based; 0 = no second value) rather than the value: 4
+ *          bytes per chunk instead of 8 (double, long) or 16 (complex<double>).
+ *          Reading it back is one load of GlobalVecHolder::value_by_id[id].
+ *          Narrower types keep the value itself: an identifier would not be
+ *          smaller, and bool has no registry.
  */
 //
 // OPT-IN (-DCHUNK_SECOND_VALUE_INDEXED, CMake option of the same name). The
 // identifier is read back through a dictionary on every write of a
-// materialised chunk, and that one extra dependent load is +3% CPU on the
-// perf bench at 6 x86 cores (handle_no_bool_assignment, mark_for_compression)
-// for -2% RSS there, -3.8% on the 50 M-chunk reference run. The default
-// keeps the value in the slot; the switch is for a use that is bound by
-// memory rather than by write throughput.
+// materialised chunk: one extra dependent load, ~+3% CPU on the perf bench
+// for a few % less RSS. The default keeps the value in the slot; the switch
+// is for a use bound by memory rather than by write throughput.
 template <typename T>
 struct SecondValueTraits
 {
@@ -156,11 +148,9 @@ struct SecondValueTraits
 /**
  * @brief Handle on one chunk's second-value slot.
  *
- * @details Replaces the `T*` into the per-chunk table that the proxies, the
- *          compressor and the clear paths used to pass around: one pointer,
- *          but a get() / set() surface, so the slot can be an identifier
- *          (SecondValueTraits). A default-constructed handle is "none", as
- *          the null pointer was.
+ * @details A pointer into the per-chunk table behind a get() / set()
+ *          surface, so the slot can be an identifier (SecondValueTraits). A
+ *          default-constructed handle is "none".
  */
 template <typename T>
 struct SecondValueRef
@@ -180,7 +170,7 @@ struct SecondValueRef
         }
     }
     /// @brief Record @p v as the chunk's second value. For an indexed type this
-    ///        registers the value's shared array if it is new (find_or_set).
+    ///        registers the value's slot if it is new (find_or_set).
     void set(T v) const
     {
         if constexpr (SecondValueTraits<T>::indexed)
@@ -192,7 +182,7 @@ struct SecondValueRef
             *slot = v;
         }
     }
-    /// @brief Record the value of a shared array the caller already has.
+    /// @brief Record the value of a slot the caller already has.
     void set_from_array(const T* src) const noexcept
     {
         if constexpr (SecondValueTraits<T>::indexed)
@@ -201,7 +191,7 @@ struct SecondValueRef
         }
         else
         {
-            // NOT *p: the shared array of a second value is never written, so
+            // NOT *p: the slot of a second value is never written, so
             // this read would record 0 and the chunk would be
             // marked constant at the wrong value -- silently, since everything
             // downstream then agrees with the slot.
@@ -252,38 +242,25 @@ template <typename T>
 class GlobalVecHolder
 {
   private:
-    // ── The region every shared array of this type is carved from ─────────
+    // ── The region every second-value slot of this type is carved from ─────
     //
-    // One contiguous reservation per T (virtual address space, MAP_NORESERVE:
-    // pages are backed as arrays are carved, the rest costs nothing). Its
-    // point is what it makes of "is this chunk compressed to a second
+    // One contiguous reservation per T (virtual address space, MAP_NORESERVE).
+    // Its point is what it makes of "is this chunk compressed to a second
     // constant": a range test on the chunk's values pointer, and nothing
-    // else. Before it, every Chunk2A<T> carried an 8-byte cached_ptr -- the
-    // array it read from -- for `values == cached_ptr`; that was the
-    // difference between a 16- and a 24-byte chunk header, 400 MB on the
-    // 50 M-chunk reference run, and a store-ordering subtlety (the cache had
-    // to be published after values, and a reader in between saw a constant
-    // chunk as materialised). The registry is append-only between clears, so
-    // a bump pointer is the whole allocator: nothing is freed per slot, and
-    // region_reset() gives the pages back at the last clear.
+    // else -- no per-chunk cached pointer (8 bytes on every chunk header, and
+    // a store-ordering subtlety between it and `values`). The registry is
+    // append-only between clears, so a bump pointer is the whole allocator:
+    // nothing is freed per slot, and region_reset() gives the pages back at
+    // the last clear.
     //
     // Nothing is ever STORED in the region: a slot is an identifier, not an
     // array. A chunk compressed to a second constant points at its slot,
     // is_cst_val2() is a range test on that pointer and id_of_ptr() is
     // arithmetic -- neither dereferences it -- and the value itself comes from
     // value_by_id[]. The read path pays one well-predicted range test
-    // (ChunkBase::element_at) and a value costs 8 bytes.
-    //
-    // The representation this replaced gave each distinct value a shared
-    // array FILLED with it, so `values[i]` returned the constant with no test
-    // at all. It cost 32 KiB per value in dyn -- the 2 GiB region held 65 536
-    // of them and a quantised field exhausted it and aborted -- and a fill of
-    // cst_buffer_size elements per registration, with the page faults behind
-    // it. Measured against it (chunk2a static 256, 2000 iterations, 64
-    // threads, one seed): 17 503 G instructions against 18 990 G, -7.8%, IPC
-    // 5.75 against 5.61, system time 199 s against 233 s. The filled arrays
-    // were removed in Oct '26; compare against an earlier commit if a
-    // regression is ever suspected there.
+    // (ChunkBase::element_at) and a value costs 8 bytes. Shared arrays FILLED
+    // with the value (read with no test at all) cost 32 KiB per value in dyn,
+    // a fill per registration, and ~8% more instructions on the bench.
     //
     // WARNING: the failure mode of this code is a WRONG VALUE, not a crash: a
     // site that reads a value out of the slot, or loads `values` twice around
@@ -294,10 +271,8 @@ class GlobalVecHolder
     // kMaxIds x kIdStride) -- one cache line per identifier, kMaxIds capped
     // by CHUNK_CST_VAL2_MAX_IDS, which sizes value_by_id. The reservation,
     // the range test (region_end) and region_alloc()'s abort all use it.
-    // Until Oct '26 the abort used the region's 33 M while value_by_id held
-    // 4 M: every identifier in between was written past the table. Running
-    // out aborts with the count, it is not a silent fallback -- a fallback
-    // array would break the range test.
+    // Running out aborts with the count, it is not a silent fallback -- a
+    // fallback array would break the range test.
 #ifndef CHUNK_CST_VAL2_REGION_BYTES
     #define CHUNK_CST_VAL2_REGION_BYTES (std::size_t{2} << 30U)
 #endif
@@ -307,34 +282,22 @@ class GlobalVecHolder
 
   public:
     // ── Value->pointer index (lock-free readers, single writer under lock) ──
-    // Flat open-addressing table turning the O(N) dedup search in
-    // find_or_set_ind_cst_val2 into an O(1) probe. Publications happen ONLY
-    // under insert_mutex (single writer): the former "advisory, racy
-    // last-wins" semantics are gone. A lookup hit is still revalidated
-    // (p[0] == v) — required regardless of concurrency, because open
-    // addressing probes across hash collisions. A miss (capacity / probe
-    // budget) falls back to the authoritative under-lock scan. Entries hold
-    // the same pointers as the list slots; must be cleared wherever those
-    // arrays are freed (single-threaded clear paths) so a lookup never
-    // dereferences a freed array.
 
     /**
-     * @brief One generation of the open-addressed value -> shared array table.
+     * @brief One generation of the open-addressed value -> slot table.
      *
-     * @details Turns what used to be an O(N) scan of the chain on EVERY
-     *          registration -- which serialised the whole compression phase as
-     *          the append-only registry grew -- into an O(1) probe. Entries
+     * @details Turns a registration into an O(1) probe instead of an O(N) scan
+     *          of the chain, which serialised the whole compression phase as
+     *          the registry grew. A lookup hit is revalidated (value_of_ptr(p)
+     *          == v): open addressing probes across hash collisions. A miss
+     *          (capacity / probe budget) falls back to the cold path. Entries
      *          hold the same pointers as the segment slots, so they MUST be
-     *          cleared wherever those arrays are freed, or a lookup returns a
-     *          dangling pointer. @see index_clear
+     *          cleared wherever the registry is freed. @see index_clear
      *
-     *          The table used to be a fixed 2^18 array sized for ~30k values.
-     *          shrink_bench's unsigned long array reached 214 300 distinct
-     *          values (82% load): linear probing at that load exhausts the
-     *          64-probe budget constantly, index_degraded flipped, and every
-     *          new value fell back to the O(N) segment scan under the mutex --
-     *          29 s at 2000 iterations, 113 s at 4000. The table now doubles
-     *          under insert_mutex past 50% load (@see index_grow).
+     *          The table doubles under insert_mutex past 50% load (@see
+     *          index_grow): a fixed table at 80% load exhausted the probe
+     *          budget constantly and sent every new value back to the O(N)
+     *          scan under the mutex.
      *
      * @note `used` is maintained by the single writer only; readers never
      *       touch it.
@@ -353,9 +316,7 @@ class GlobalVecHolder
     ///
     /// @details Same stride as the carve in region_init(): an identifier is one
     ///          cache line, so the region holds 33 M of them whatever the
-    ///          geometry -- against 65 536 in dyn when each was charged the
-    ///          32 KiB of a filled array, which is the wall that aborted a run
-    ///          and started this work.
+    ///          geometry.
     ///
     ///          Capped by CHUNK_CST_VAL2_MAX_IDS, because the binding cost is
     ///          then value_by_id[kMaxIds + 1]: at 33 M identifiers that is
@@ -363,8 +324,8 @@ class GlobalVecHolder
     ///          pages are touched only for identifiers actually handed out, so
     ///          the resident cost follows use -- but reserving a quarter of a
     ///          gigabyte per type to serve a few thousand values is the wrong
-    ///          shape. The default leaves four thousand times the headroom a
-    ///          real workload was measured to need.
+    ///          shape. The default leaves ample headroom over what real
+    ///          workloads were measured to need.
 #ifndef CHUNK_CST_VAL2_MAX_IDS
     #define CHUNK_CST_VAL2_MAX_IDS (std::size_t{4} << 20U)
 #endif
@@ -395,7 +356,7 @@ class GlobalVecHolder
         return count;
     }
 
-    /// @brief Is @p ptr the start of a shared array of this type?
+    /// @brief Is @p ptr a second-value slot of this type?
     /// @note THE constant-2 test of Chunk2A: `is_cst_val2()` is
     ///       `region_contains(values)`. Relaxed load of a pointer that is
     ///       written once, before any chunk exists.
@@ -411,18 +372,12 @@ class GlobalVecHolder
     static char* region_alloc(std::size_t bytes)
     {
         const std::size_t off = region_used.fetch_add(bytes, std::memory_order_relaxed);
-        // Warn once on the way up. The capacity is not a design limit, it is a
-        // division: kRegionBytes / stride. In dyn the stride is sized for
-        // chunk_dyn_max_size rather than the geometry in use -- 32 KiB per
-        // value for a double -- so the region holds 65 536 values, and a
-        // quantised field can reach that without anyone intending it. A run
-        // that is going to die deserves to say so while there is still room to
-        // raise CHUNK_CST_VAL2_REGION_BYTES.
+        // Warn once at half the capacity: a run that is going to die deserves
+        // to say so while there is still room to raise the bound.
         // ONE capacity: the identifiers value_by_id can hold (kRegionUsable,
         // lowered by CHUNK_CST_VAL2_ID_LIMIT). alloc_chunk() writes
         // value_by_id[id] for every slot carved here, so a slot past it would
-        // be a write past the table -- the bound used to be the region's
-        // 33 M identifiers against value_by_id's 4 M.
+        // be a write past the table.
         const std::size_t cap_bytes =
             (bytes != 0 && id_limit * bytes < kRegionUsable) ? id_limit * bytes : kRegionUsable;
         const char* limiting =
@@ -456,16 +411,14 @@ class GlobalVecHolder
     }
 
     /**
-     * @brief The value the shared array @p ptr stands for.
+     * @brief The value the slot @p ptr stands for.
      *
-     * @details The registry recovers a value from an array in five places --
-     *          the two probe revalidations, the rehash, and the two degraded
-     *          segment scans -- and each did it with `p[0]`. There is nothing
-     *          at p[0]: the region is never written, so without MM_PROTECT it
-     *          reads a zero page and
-     *          every comparison against a non-zero value silently fails. No
-     *          value is ever found again, every registration takes the lock,
-     *          and the run stalls in find_or_register.
+     * @details The one way to recover a value from a slot: the probe
+     *          revalidations, the rehash and the degraded chain scans all go
+     *          through it. Never `p[0]`: nothing is stored at a slot, so that
+     *          reads a zero page (without MM_PROTECT), every comparison
+     *          against a non-zero value fails, no value is ever found again
+     *          and every registration takes the lock.
      *
      * @note Not a dereference: id_of_ptr() is arithmetic on the
      *       region base and stride, and value_by_id[] is written by
@@ -480,11 +433,11 @@ class GlobalVecHolder
 
     /**
      * @brief Look @p v up in the index, lock-free. This is the hot path.
-     * @return Its shared array, or null -- meaning "not found HERE", never
+     * @return Its slot, or null -- meaning "not found HERE", never
      *         "not registered". The caller must fall back.
-     * @details A hit is revalidated with `p[0] == v` whatever the concurrency:
-     *          open addressing probes across collisions, so the slot reached
-     *          may belong to another value.
+     * @details A hit is revalidated (value_of_ptr(p) == v) whatever the
+     *          concurrency: open addressing probes across collisions, so the
+     *          slot reached may belong to another value.
      */
     static T* index_lookup(in_t<T> v) noexcept
     {
@@ -514,17 +467,12 @@ class GlobalVecHolder
         return nullptr; // probe budget exhausted => treat as miss
     }
 
-    // Publish (v -> p). No-op if already present or probe budget exhausted.
-    // Called ONLY under insert_mutex (single writer): a plain release store
-    // suffices — it pairs with the acquire load in index_lookup so a lock-free
-    // reader that sees the pointer also sees the value_by_id[] entry written
-    // before publication.
     /**
      * @brief Record that @p v is served by @p ptr. No-op if already present.
      * @pre Called under #insert_mutex -- this is the single writer.
      * @details A plain release store suffices: it pairs with the acquire load
      *          in index_lookup(), so a lock-free reader that sees the pointer
-     *          also sees the fill that populated the array before publication.
+     *          also sees the value_by_id[] entry written before publication.
      * @note Giving up after #INDEX_MAX_PROBE sets #index_degraded rather than
      *       failing: the value IS registered in the chain, just not indexed.
      */
@@ -532,8 +480,7 @@ class GlobalVecHolder
     {
         IndexTable* table = index_tab.load(std::memory_order_relaxed);
         // Grow before the table passes half full: linear probing degrades
-        // sharply beyond that, and this is where the old fixed table went
-        // from O(1) to "every new value rescans the chain".
+        // sharply beyond that.
         if (table == nullptr || (table->used + 1) * 2 > table->cap)
         {
             table = index_grow();
@@ -590,10 +537,9 @@ class GlobalVecHolder
      * @details Idempotent: the first segment is installed once, by whichever
      *          caller wins the CAS. Also what arranges teardown, through the
      *          function-local Sentinel. Split from init() so that
-     *          clear_if_last() can reinstall an empty chain without the
-     *          phantom reference that init() used to leave behind: #ref_count
-     *          went 0 -> 1 with no array alive, the next last-one-out found 1
-     *          left, and the registry was never freed again before exit.
+     *          clear_if_last() can reinstall an empty chain without registering
+     *          a user: a reference taken with no array alive would keep
+     *          #ref_count above 0, and the registry would never be freed again.
      */
     static void install_head()
     {
@@ -643,10 +589,8 @@ class GlobalVecHolder
      *          find_or_set_ind_cst_val2(), reached from make_block_compression
      *          on the write slow path. Call it serially, or from an
      *          `omp single` PRECEDED BY A BARRIER that ends every concurrent
-     *          scan. At the call site in array_chunk2A_inline.h the preceding
-     *          `for` was `nowait`, so a late writer's scan raced this teardown
-     *          and dereferenced a freed Segment -- a SIGSEGV that only appeared
-     *          at large CHUNK_SIZE.
+     *          scan (a `nowait` loop before the single lets a late writer's
+     *          scan dereference a freed Segment).
      *
      * @note No assertion guards this: there is no reliable OpenMP predicate for
      *       "I am the lone thread of a single". omp_in_parallel() is the wrong
@@ -654,28 +598,15 @@ class GlobalVecHolder
      */
     static void clear_if_last(int& nb_val2)
     {
-        // CONTRACT: this tears down the shared segment list (head.exchange(nullptr)
-        // + delete of every Segment). No thread may be SCANNING the list
-        // (find_or_set_ind_cst_val2, reached from make_block_compression on the
-        // write slow path) while this runs. Callers must therefore invoke it
-        // either serially OR from an `#pragma omp single` that is preceded by a
-        // barrier ending every concurrent scan — see the call site in
-        // array_chunk2A_inline.h, where a missing barrier before the single
-        // (the preceding `for` is `nowait`) let a late writer's scan race this
-        // teardown and dereference a freed Segment -> SIGSEGV at large
-        // CHUNK_SIZE. (No assert here: there is no reliable OpenMP predicate for
-        // "I am the lone thread of a single"; omp_in_parallel() is wrong because
-        // the single legitimately runs inside a parallel region.)
         const int remaining = ref_count.fetch_sub(1, std::memory_order_acq_rel) - 1;
         if (remaining > 0)
         {
             return; // Other ArrayChunk2A<T> instances still alive — do not free
         }
 
-        // Last instance: free the segments and count what they held, so we can
-        // emit ONE summary line (replaces the per-append spam that used to print
-        // inside find_or_set_ind_cst_val2). The slots themselves are region
-        // memory: region_reset() below gives them back all at once.
+        // Last instance: free the segments and count what they held, for ONE
+        // summary line. The slots themselves are region memory:
+        // region_reset() below gives them back all at once.
         int         nb_segs = 0;
         Segment<T>* seg     = head.exchange(nullptr, std::memory_order_acq_rel);
         while (seg != nullptr)
@@ -700,14 +631,13 @@ class GlobalVecHolder
                       << "), index_degraded=" << index_degraded.load(std::memory_order_relaxed) << "\n";
         }
 
-        // Arrays are gone: drop the advisory index so no stale pointer survives.
+        // Registry gone: drop the index so no stale pointer survives.
         index_clear();
         region_reset(); // the arrays' pages, all at once
 
         // Reinstall an empty segment for any later pass. NOT init(): that
-        // takes a reference, and one taken here, with no array alive, kept
-        // #ref_count above 0 for the rest of the run -- after the first
-        // extinction nothing was ever freed again.
+        // takes a reference, and one taken here, with no array alive, would
+        // keep #ref_count above 0 for good.
         install_head();
     }
 
@@ -741,14 +671,6 @@ class GlobalVecHolder
     // nullptr by index_clear so the next append re-seeds it from head.
     static inline Segment<T>* tail{nullptr};
 
-    // ── Insert lock ──────────────────────────────────────────────────────
-    // Serializes the COLD path only: inserting a genuinely new second value
-    // (or servicing an index probe-budget miss). Every mutation of the segment
-    // list and every index publication happens under this mutex. The HOT path
-    // — find_or_set on a value already indexed, i.e. every type-2 chunk after
-    // the first one per value — stays lock-free through index_lookup below.
-    // A std::mutex (not a spinlock): the critical section may mmap/mprotect
-    // in alloc_chunk under MM_PROTECT builds.
     /**
      * @brief Serialises the COLD path only: registering a genuinely new value.
      * @details Every mutation of the chain and every index publication happens
@@ -759,11 +681,6 @@ class GlobalVecHolder
      */
     static inline std::mutex insert_mutex;
 
-    // Set true the first (and only) time index_publish exhausts its probe budget,
-    // i.e. a registered value could become unfindable by index_lookup. While it
-    // stays false (the expected regime: N in the thousands, index at <1% load),
-    // the cold path can trust index_lookup as authoritative and skip the O(N)
-    // segment re-scan entirely. Only flipped under insert_mutex; read relaxed.
     /**
      * @brief Set once if index_publish() ever exhausts its probe budget.
      * @details While it is false -- the expected regime, a few thousand values
@@ -780,12 +697,10 @@ class GlobalVecHolder
 
     /// @brief The value registered under each identifier, contiguous: what
     ///        a chunk's second value is read through on every write of a
-    ///        wide type (SecondValueRef::get). Reading the arrays' first
-    ///        elements instead cost a scattered cache line per distinct
-    ///        value (+3.6% CPU on the perf bench); this is 8 bytes per value,
-    ///        L1-resident for the values a run actually uses. Zero-initialised
-    ///        static storage: the pages of identifiers never handed out are
-    ///        never touched. Index 0 is "no second value" and stays T{}.
+    ///        wide type (SecondValueRef::get). 8 bytes per value, L1-resident
+    ///        for the values a run actually uses. Zero-initialised static
+    ///        storage: the pages of identifiers never handed out are never
+    ///        touched. Index 0 is "no second value" and stays T{}.
     static inline std::array<T, kMaxIds + 1> value_by_id{};
 
   private:
@@ -899,8 +814,7 @@ class GlobalVecHolder
      * @details Built completely, then published with one release store, so a
      *          reader sees either the old generation (complete as of its
      *          publication) or the new one (a superset). Rehashing reads each
-     *          array's first element, which is its value; the arrays outlive
-     *          the index by the same contract that lets the index hold them.
+     *          slot's value through value_of_ptr().
      * @return The new live table.
      */
     static IndexTable* index_grow() noexcept
@@ -980,17 +894,15 @@ class GlobalVecHolder
  *
  * @details Stateless: everything is static and delegates to
  *          GlobalVecHolder. This type is the surface the compression path
- *          talks to, and the place the allocation strategy lives. It used to
- *          carry one pointer per chunk (the array the chunk read from, for
- *          `values == cached_ptr`); the arrays now live in one region per T
- *          and "compressed to a second constant" is a range test on the
- *          chunk's values pointer -- 8 bytes off every chunk header.
+ *          talks to, and the place the allocation strategy lives.
+ *          "Compressed to a second constant" is a range test on the
+ *          chunk's values pointer: no per-chunk state.
  *
  * @par Invariants the rest of the code relies on
  *  - GlobalVecHolder::head is never null after create() or clear(): clear()
  *    reinstalls an empty segment, so a later compression pass finds a valid
  *    head without testing.
- *  - Every array handed out by find_or_set_ind_cst_val2() lies in the region,
+ *  - Every slot handed out by find_or_set_ind_cst_val2() lies in the region,
  *    and nothing else does: is_cst_val2_ptr() is exact.
  *
  * @see TabCstVal2Holder<bool>, which has none of this machinery.
@@ -1001,28 +913,26 @@ class TabCstVal2Holder
   public:
     using global_vec_holder = GlobalVecHolder<T>;
 
-    // No instance part: the holder is stateless. Whether a chunk reads from
-    // a shared array is a range test on its values pointer
-    // (is_cst_val2_ptr), and the array for a given second value is found in
-    // the registry (find_cst_val2_ptr) -- see GlobalVecHolder::region_*.
+    // No instance part: the holder is stateless. Whether a chunk reads a
+    // second value is a range test on its values pointer (is_cst_val2_ptr),
+    // and the slot for a given second value is found in the registry
+    // (find_cst_val2_ptr) -- see GlobalVecHolder::region_*.
 
     /**
-     * @brief The shared array for @p second_v, registering it if new.
+     * @brief The slot for @p second_v, registering it if new.
      *
      * @param second_v The constant to compress to.
      * @param ptr_second_value Out-parameter: the caller's own copy of the value,
      *        written before anything else.
      * @return The value's slot (an identifier, never dereferenced). Never null.
      *
-     * @note The chunk adopts the array by storing it as its values pointer
+     * @note The chunk adopts the slot by storing it as its values pointer
      *       (the compressor's CAS); nothing else is recorded per chunk.
      *
      * @details Hot path -- @p second_v already registered, which is every type-2
      *          chunk after the first one per value -- is a lock-free index
      *          probe and nothing else. Cold path takes
-     *          GlobalVecHolder::insert_mutex and is then plain sequential code:
-     *          no speculative allocate-then-discard, no slot CAS, no
-     *          segment-append CAS, no recursive retry with a resume index.
+     *          GlobalVecHolder::insert_mutex and is then plain sequential code.
      *
      * @note The O(N) chain scan survives only behind
      *       GlobalVecHolder::index_degraded, i.e. the case where the index can
@@ -1035,7 +945,7 @@ class TabCstVal2Holder
         return buf;
     }
 
-    /// @brief Is @p ptr one of this type's shared second-value arrays?
+    /// @brief Is @p ptr one of this type's second-value slots?
     /// @note `is_cst_val2()` of Chunk2A: one relaxed load of the region base
     ///       and two compares, no per-chunk state.
     [[nodiscard]] static bool is_cst_val2_ptr(const T* ptr) noexcept
@@ -1043,7 +953,7 @@ class TabCstVal2Holder
         return GlobalVecHolder<T>::region_contains(ptr);
     }
 
-    /// @brief The shared array registered for @p second_v, or null if none.
+    /// @brief The slot registered for @p second_v, or null if none.
     /// @details Lock-free index first; if the index has ever overflowed its
     ///          probe budget (index_degraded) a registered value may be
     ///          unindexed, and the authoritative slot scan runs under the
@@ -1086,13 +996,12 @@ class TabCstVal2Holder
         global_vec_holder::init();
     }
 
-    // ── Identifiers: an array's index in the region, 1-based; 0 = none ────
+    // ── Identifiers: a slot's index in the region, 1-based; 0 = none ──────
     // The per-chunk second-value table of a wide type holds these instead of
-    // values (SecondValueTraits). Both directions are arithmetic on the
-    // region base and stride; value_of_id() reads the array's first element,
-    // which is the value the array was filled with.
+    // values (SecondValueTraits). id_of_ptr() is arithmetic on the region
+    // base and stride; value_of_id() reads value_by_id[].
 
-    /// @brief Identifier of the shared array @p ptr (must lie in the region).
+    /// @brief Identifier of the slot @p ptr (must lie in the region).
     [[nodiscard]] static std::uint32_t id_of_ptr(const T* ptr) noexcept
     {
         const char* base = global_vec_holder::region_begin.load(std::memory_order_relaxed);
@@ -1106,9 +1015,9 @@ class TabCstVal2Holder
      * @details Same conversion, but returns T{} rather than indexing out of
      *          bounds if @p ptr is not where the caller thought. A pointer that
      *          passes is_cst_val2_ptr() can only yield an id in [1, kMaxIds],
-     *          so this never fires in a correct call -- it is here because the
-     *          write path reached it once with a pointer that had not been
-     *          range-tested, and a compare is cheaper than the crash.
+     *          so this never fires in a correct call -- it guards a pointer
+     *          that was not range-tested, where a compare is cheaper than a
+     *          crash.
      */
     [[nodiscard]] static T value_of_ptr_checked(const T* ptr) noexcept
     {
@@ -1134,8 +1043,7 @@ class TabCstVal2Holder
      * @brief Drop this user of the registry; the last one frees it.
      * @param nb_val2 Incremented by the number of arrays freed.
      * @warning Single thread only, and with no concurrent scan in flight.
-     *          @see GlobalVecHolder::clear_if_last for the full contract and
-     *          the bug that established it.
+     *          @see GlobalVecHolder::clear_if_last for the full contract.
      */
     static void clear(int& nb_val2)
     { // Delegate to GlobalVecHolder which tracks how many instances
@@ -1192,19 +1100,17 @@ class TabCstVal2Holder
         const std::scoped_lock lk(global_vec_holder::insert_mutex);
 
         // Double-check, O(1): another thread may have inserted second_v between
-        // our lock-free miss and acquiring the lock. Publications are single-writer
-        // under this lock, so the index is authoritative — this replaces the old
-        // O(N) segment slot-scan that ran on EVERY registration and serialised the
-        // whole compression phase as the append-only registry grew.
+        // our lock-free miss and acquiring the lock. Publications are
+        // single-writer under this lock, so the index is authoritative.
         if (T* hit = global_vec_holder::index_lookup(second_v)) [[likely]]
         {
             return hit;
         }
 
-        // Walk is now O(1): the cached tail points at the last segment. Only when
-        // the index has ever overflowed its probe budget (index_degraded) can a
-        // registered value be unindexed — in that (unexpected) case, and only
-        // then, pay the authoritative O(N) slot-scan to avoid a duplicate.
+        // The cached tail makes the append O(1). Only when the index has ever
+        // overflowed its probe budget (index_degraded) can a registered value
+        // be unindexed -- in that (unexpected) case, and only then, pay the
+        // authoritative O(N) slot-scan to avoid a duplicate.
         const bool degraded = global_vec_holder::index_degraded.load(std::memory_order_relaxed);
 
         segment_t* last_seg = global_vec_holder::tail;
