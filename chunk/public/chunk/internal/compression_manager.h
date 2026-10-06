@@ -54,12 +54,9 @@ namespace shrink_array
  *          still consults it from execute_operation(). Keyed by (T, ChunkType)
  *          like the policy, so each manager has its own flag.
  *
- * @warning Without this, a replayed op hitting a quasi-permanently-true gate
- *          RE-ENQUEUED itself: pending_ops_ never drained, every written
- *          element re-triggered a flush, and the flush machinery recycled ops
- *          forever -- the residual x86 collapse, with TotalView showing
- *          wait_for_availability -> write_body -> to_be_queued ->
- *          inc_pending_ops stacks.
+ * @warning Without it, a replayed op hitting the gate would re-enqueue itself:
+ *          the queue never drains and every written element re-triggers a
+ *          flush.
  *
  * @tparam T         Element type
  * @tparam ChunkType Chunk variant the manager coordinates
@@ -230,24 +227,15 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
             }
 
             // ── Per-op geometry pin ───────────────────────────────────────
-            // The replay can run long after the enqueue, on a thread whose
-            // ambient geometry meanwhile moved to another array's (any write
-            // path sets t_active_chunk_size from the array it is serving).
-            // The replayed body allocates through create_value(), and
-            // allocate_chunk_internal() takes its element count from
-            // alloc_chunk_count() -- the AMBIENT size. Replaying under the wrong ambient therefore
-            // hands a chunk a buffer of the wrong width, and the `values[num]`
-            // right after runs off it: ASan heap-buffer-overflow, 0 bytes after
-            // a 512-byte region (64 doubles) reached at an offset valid for the
-            // array's real 128-wide geometry. Silent under the fast allocator,
-            // which absorbs it in the slab; a crash under std-alloc.
-            //
-            // ctx->chunk_size_frozen is that enqueue-time geometry -- the same
-            // value make_proxy_with_info() uses to arm the proxy's
-            // chunk_size_frozen_, which already protects chunk_size() on this
-            // path (fw14). The allocation was never covered. Same per-entry pin
-            // as Chunk2A's compression sweep, and restored exactly, including
-            // the "unset, use global" 0.
+            // The replay may run long after the enqueue, on a thread whose
+            // ambient geometry (t_active_chunk_size) now belongs to another
+            // array. The replayed body allocates through create_value(), which
+            // sizes the buffer from that ambient value: a buffer of the wrong
+            // width, then `values[num]` runs off it (silent under the fast
+            // allocator, a crash under std-alloc). Pin the enqueue-time
+            // geometry (ctx->chunk_size_frozen, the value the proxy's
+            // chunk_size_frozen_ also uses) and alloc key for the replay, and
+            // restore both exactly, including the "unset, use global" 0.
             if constexpr (build_config::chunk_dynamic)
             {
                 const unsigned int saved     = t_active_chunk_size;
@@ -275,9 +263,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
          */
         void destroy() noexcept override
         {
-            // FIX (ctx double-recycle): run teardown exactly once even if two
-            // flush paths call destroy() on the same op concurrently. The first
-            // caller wins; the rest return without touching ctx/this again.
+            // Teardown exactly once, even if two flush paths call destroy() on
+            // the same op concurrently: the first caller wins.
             if (destroyed.exchange(true, std::memory_order_acq_rel))
             {
                 return;
@@ -322,15 +309,11 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         /// Guards destroy() so its teardown runs exactly once: the first caller
         /// wins the exchange, the rest return immediately.
         ///
-        /// @warning Not cosmetic. Two flush paths -- own-rank flush_deferred()
-        ///          and cross-rank flush_chunk_all_ranks() -- can hold an op_ptr
-        ///          to the SAME op and both call destroy(). The previous
-        ///          `if (ctx)` gate is not atomic, so both saw ctx != nullptr and
-        ///          both free_ctx()'d it: the ctx block landed on the free-list
-        ///          twice, allocate_raw() handed the same live ctx to two owners
-        ///          (POOL_LEDGER reported ctx_alloc DOUBLE-alloc / SLABS_SAME),
-        ///          and their overwrite corrupted ptr_on_array -- surfacing as
-        ///          "Key not found" and, before the arena, vtable corruption.
+        /// @warning Not cosmetic. The own-rank flush_deferred() and the
+        ///          cross-rank flush_chunk_all_ranks() can both hold the SAME op
+        ///          and both call destroy(). A non-atomic `if (ctx)` gate lets
+        ///          both free the ctx: the block lands on the free list twice
+        ///          and is later handed to two owners.
         std::atomic<bool> destroyed{false};
     };
 
@@ -406,8 +389,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @brief Enqueue-side bracket around the deferred-map insert.
      * @param thr_rank rank whose map is being inserted into
      * @details Takes the same per-rank, owner-recursive shard lock the drains
-     *          use. This pairwise exclusion REPLACES the former global Dekker
-     *          back-off on num_thread_flushing, which produced the x86 convoy.
+     *          use: a pairwise exclusion per rank. A global back-off here
+     *          convoys every enqueuer.
      * @note Public on purpose, so to_be_queued() can bracket its insert; the raw
      *       acquire/release stay private to the drain paths.
      */
@@ -428,9 +411,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /// @note Relaxed: the flag is thread-local and every store to it is the
     ///       owner's own (mark_thread_has_ops from its enqueue, clear_ from
     ///       its own drains), so program order is all the ordering there is.
-    ///       Read after every fast-path write (the P3 backlog check): the
-    ///       acquire form was an `ldaprb` on AArch64, and the loads behind it
-    ///       carried most of write_with_optional_lock_impl's samples.
+    ///       Read after every fast-path write (the P3 backlog check): keep it
+    ///       relaxed, an acquire load there is a measurable cost on AArch64.
     [[nodiscard]] static bool thread_may_have_ops_own() noexcept
     {
         return get_thread_ops_flag_tls().v.load(std::memory_order_relaxed);
@@ -490,22 +472,15 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      */
     static void record_enqueue_deferred(int thr_rank, ChunkType& chunk) noexcept
     {
-        // Record the chunk pointer UNDER rank thr_rank's shard lock. The
-        // cross-rank flush (flush_chunk_all_ranks) erases from this same set
-        // while holding rank r's lock (rank_flush_acquire(r) -> ...
-        // deferred_chunk_per_thread[r].erase). Without taking the SAME lock
-        // here, that erase races this insert on the ankerl table's internal
-        // storage (empty()/emplace_back on its vector) -> corrupted table ->
-        // a later free of a mangled Chunk2A* ("corrupted double-linked list").
-        // TSan-confirmed data race (erase T_flush vs emplace T_owner). The lock
-        // is the same owner-recursive shard lock to_be_queued already uses for
-        // the op-map insert, so bracketing the chunk-set insert with it closes
-        // the last unsynchronised access to deferred_chunk_per_thread.
+        // Insert UNDER rank thr_rank's shard lock: flush_chunk_all_ranks()
+        // erases from this same set while holding that lock, and an unlocked
+        // insert races the erase on the table's storage (TSan-confirmed). It
+        // is the lock to_be_queued() already holds for the op-map insert.
+        //
         // A flush replay applies its writes directly (FlushReplayGuard): an
         // enqueue from inside one means a write path that ignores
-        // in_flush_replay. flush_deferred() now survives it (it walks a
-        // snapshot and keeps the chunk), but the replay was meant to empty the
-        // queue, not refill it.
+        // in_flush_replay. flush_deferred() survives it (it walks a snapshot),
+        // but the replay is meant to empty the queue, not refill it.
         if constexpr (build_config::any_check)
         {
             if (FlushReplayState<T, ChunkType>::in_flush_replay) [[unlikely]]
@@ -590,17 +565,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      */
     [[nodiscard]] static bool have_deferred_queue() noexcept
     {
-        // Was: !deferred_chunk_per_thread[thr].empty() -- an UNLOCKED read of the
-        // ankerl table's internal size. flush_chunk_all_ranks erases from
-        // shard[thr] under rank_flush_acquire(thr); this unlocked .empty() raced
-        // its do_erase (TSan-confirmed: .empty() read vs do_erase write on the
-        // deferred table). Use the lock-free per-thread ops flag instead: set on
-        // enqueue, cleared when the rank drains, so it has no false negatives
-        // (never misses a real deferred op). It may lag a cross-thread drain
-        // (stay true briefly after), which only defers a compression, never skips
-        // a needed flush. Both call sites pass the caller's own rank, matching the
-        // flag's TLS/self-rank nature -- and this stays off the shard lock on the
-        // hot write path.
+        // Both call sites pass the caller's own rank, which is what this
+        // thread-local flag describes.
         return thread_may_have_ops();
     }
 
@@ -610,17 +576,17 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @return with the per-chunk marks, true if a compressor's pass has this
      *         chunk marked; without them, if any hard compression is in
      *         flight, parked or stealing
-     * @note With the marks: one relaxed load on the chunk's header line --
+     * @note With the marks: one acquire load on the chunk's header line --
      *       the line `values` was just loaded from -- and nothing global.
      *       The compressor's window waits only for the writers whose flag
      *       points to a marked chunk (any_thread_writing_on_marked), so the
-     *       others need no steering. The load carries no ordering: the
-     *       compressor's heavy barrier sits between its mark stores and its
-     *       loads of the writer flags, and the writer's announce_write()
-     *       precedes this load -- one side always sees the other (see
-     *       announce_write()). The seq_cst the global load had cost an
-     *       `ldar` on AArch64, stalled behind the preceding barrier: ~70% of
-     *       write_with_optional_lock_impl in the profile.
+     *       others need no steering. The handshake needs no stronger order
+     *       from this load: the compressor's heavy barrier sits between its
+     *       mark stores and its loads of the writer flags, and the writer's
+     *       announce_write() precedes this load -- one side always sees the
+     *       other (see announce_write()). Never seq_cst: on AArch64 that load
+     *       stalls behind the preceding barrier and dominated the write
+     *       engine's profile.
      * @note "In flight" means per (variant, T): these statics are per template
      *       instantiation, so a compression on double does not gate writes on
      *       int. The rank's own "dangerous" flag is not a gate: it decides,
@@ -633,8 +599,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         {
             // Acquire, paired with steal_mark()'s release: a writer that sees
             // the mark clear here is ordered before the claim, and one that
-            // sees it set takes the slow path. The relaxed pair this replaced
-            // let a writer miss a mark that had already been set.
+            // sees it set takes the slow path. A relaxed pair would let a
+            // writer miss a mark already set.
             return chunk.steal_marked();
         }
         else
@@ -651,47 +617,26 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @details Brackets @p fn with driver_inflight_. The counter lives here, not
      *          in WriteCompressSyncPolicy, because it is compression-lifecycle
      *          state rather than write/flush-handshake state.
-     * @note seq_cst supersedes the former acq_rel: this is the cold path, so the
-     *       cost is irrelevant.
+     * @note seq_cst: this is the cold path, the cost is irrelevant.
      */
     static void run_slow_path(F&& fn)
     {
         increm_chunk_gate_driver<ChunkType>();
         driver_inflight_.fetch_add(1, std::memory_order_seq_cst);
-        // NO heavy barrier here. driver_inflight_ is accounting; the exclusion
-        // a driver needs is established by start(), inside f, with its own
-        // announce. (When it still steered the other writers this was also
-        // not rare: a dangerous rank sent every write through here, 483 000/s
-        // at 4 threads on the perf bench, and a membarrier() per call made
-        // the bench 60-100% slower.)
+        // NO heavy barrier here: driver_inflight_ is accounting only. The
+        // exclusion a driver needs comes from start(), inside fn, with its own
+        // announce.
         std::forward<F>(fn)();
         driver_inflight_.fetch_sub(1, std::memory_order_seq_cst);
     }
 
-    // True ONLY while an actual compression is in flight: make_block_compression
-    // has called start() (hard_count += 1) and not yet finished — the exact
-    // window in which a chunk's `values` may be CAS-stolen and freed by the
-    // compressor.
-    //
-    // Deliberately consults hard_inflight_ and NOT driver_inflight_ (unlike
-    // the former is_compression_active(), which counted both and is gone). A
-    // slow-path thread that is merely draining
-    // flush_deferred contributes to driver_count with hard_count == 0: it is
-    // not stealing anything. Waiting on it re-creates the flush-vs-compression
-    // priority inversion that start() already resolves (start() yields to any
-    // in-progress flush by decrementing the hard count and returning false),
-    // and it DEADLOCKS: the flush-draining thread is blocked on xflush_lock
-    // while the waiter (running inside a flush's write_body, or holding
-    // begin_write) transitively holds what that thread needs. See
-    // create_value() and the deadlock invariant above.
-    // The predicate create_value and the flush drains spin on: compressors
-    // ACTUALLY STEALING (past the writer gate) — never the driver count
-    // (July invariant) and never parked compressors (Parked-vs-Stealing
-    // split above). The name is kept so the three wait sites are untouched.
     /// @brief Is a compressor inside the CAS-stealing window?
-    /// @return true while hard_inflight_ is positive
-    /// @warning Consults hard_inflight_ only, never driver_inflight_ -- see the
-    ///          deadlock invariant on hard_inflight_.
+    /// @return true while stealing_inflight_ is positive: a compressor past the
+    ///         writer gate, which may CAS-steal and free a chunk's `values`
+    /// @details The predicate create_value() and the flush drains spin on.
+    ///          Never driver_inflight_ (a driver may only be draining a flush),
+    ///          never hard_inflight_ (a parked compressor): see the deadlock
+    ///          invariant on hard_inflight_ and stealing_inflight_.
     [[nodiscard]] static bool is_hard_compression_inflight() noexcept
     {
         return stealing_inflight_.load(std::memory_order_seq_cst) > 0;
@@ -702,17 +647,11 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *        its next write, once applied, drives perform_compression().
      * @param thr_rank rank whose list becomes dangerous
      *
-     * @details A FLAG, not a counter. It was a counter: +1 from
-     *          trigger_compression_if_needed() on EVERY write while the list
-     *          was above the threshold, -1 once per compression that ran
-     *          (perform_compression, finish). Thousands of increments per
-     *          decrement, so a rank stayed "dangerous" long after its list had
-     *          been drained -- by the between-phase region, mostly -- and every
-     *          write of that rank went through run_slow_path() for a
-     *          perform_compression() that found nothing to do: 463 000
-     *          slow-path writes per second at 64 threads on the perf bench
-     *          (the CHUNK_STATS gate driver counter), with the flush and
-     *          start() attempts each of them makes on the way.
+     * @details A FLAG, not a counter: incremented on every write above the
+     *          threshold and decremented once per compression, a counter keeps
+     *          the rank "dangerous" long after its list was drained, and sends
+     *          every one of its writes through run_slow_path() for a
+     *          perform_compression() that finds nothing to do.
      *
      *          Own-rank state: set by the owning thread's trigger, read by its
      *          own write engine, cleared by its own perform_compression() (and
@@ -760,13 +699,12 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * one of them) or, with the marks, the compressor's pass reaching this
      * chunk (it unmarks each chunk as it goes, a chunk at the end of a long
      * list waits the longest). Without the marks it is the whole pass, scan
-     * included: ~300 us at 6 threads on x86, ~1 ms at 64 on AArch64.
+     * included: a few hundred microseconds to a millisecond.
      *
      * Why wait rather than defer: a deferred write is an enqueue plus a
-     * replay (~200 ns each, plus the op's memory until the flush); once
-     * compressions actually ran, deferring every write behind them meant
-     * 16 M deferred writes per run at 8 threads (3.6% of the writes), +6%
-     * wall time and +16% peak RSS.
+     * replay, plus the op's memory until the flush. Deferring every write
+     * behind a running compression cost a few % of wall time and more peak
+     * RSS.
      *
      * @note Spin discipline of the library: CPU_PAUSE, a yield every 1000,
      *       CHUNK_WRITE_WAIT_MAX_YIELDS yields at most (-D tunable).
@@ -800,9 +738,9 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *          erasing from arr[r] -- erase rehashes and would race across
      *          shards -- letting arr[r] grow to O(distinct chunks) and blowing
      *          up memory. Per-rank keeps the erase and bounds memory.
-     * @note Replaces a single global flag that serialized ALL cross-thread
-     *       flushes for this type; since flush_chunk_all_ranks() is hot on the
-     *       read path, that was the 128-thread scalability collapse.
+     * @note Per rank, not one lock per type: flush_chunk_all_ranks() is hot on
+     *       the read path, and a single lock serialises every cross-thread
+     *       flush (a scalability collapse at 128 threads).
      */
     struct alignas(128) PaddedFlushLock
     {
@@ -818,10 +756,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     };
 
     /// @brief "This thread may hold deferred ops" hint.
-    /// @note Not padded: it is a thread_local touched by its owner only (see
-    ///       thread_may_have_ops_own), so no other thread shares its line. The
-    ///       alignas(128) it had dates from a rank-indexed array; on a
-    ///       thread_local it only spread the TLS block, one line per type.
+    /// @note Not padded: a thread_local touched by its owner only (see
+    ///       thread_may_have_ops_own), so no other thread shares its line.
     struct ThreadOpsFlag
     {
         std::atomic<bool> v{false};
@@ -834,11 +770,10 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /// @brief Release rank @p rank's flush lock, or drop one nesting level.
     static void rank_flush_release(int rank) noexcept;
 
-    // Returns the number of hard compressors still in flight after this one
-    // left (finish() reports on the last one out, remaining == 0).
     /// @brief Decrement hard_inflight_ and return the new value.
-    /// @return remaining hard-inflight count; may transiently be negative
-    ///         (see hard_inflight_'s signed-counter contract)
+    /// @return remaining hard-inflight count (finish() reports on the last one
+    ///         out, at 0); may transiently be negative (see hard_inflight_'s
+    ///         signed-counter contract)
     static int decrement_inflight() noexcept
     {
         return hard_inflight_.fetch_sub(1, std::memory_order_seq_cst) - 1;
@@ -943,28 +878,24 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
 
     // ─── Unified compression state ───────────────────────────────────────
 
-    /// Threads between start() and finish(): the exact window in which a
-    /// chunk's `values` may be CAS-stolen and freed by the compressor.
+    /// Compressors between start() and finish(), parked ones included. The
+    /// write-path gate reads it (must_defer_write, without the per-chunk
+    /// marks): a parked compressor steers new writers away, which is what
+    /// opens its "no writer" window.
     ///
-    /// @warning DEADLOCK INVARIANT (July '26). Waiters that must let a
-    ///          flush-draining slow path proceed wait on THIS counter ONLY. A
-    ///          thread contributing to driver_inflight_ while hard_inflight_ is
-    ///          zero is merely draining flush_deferred() and steals nothing;
-    ///          waiting on it while it blocks on an xflush lock held
-    ///          transitively by the waiter deadlocks. The flush drain loops and
-    ///          is_hard_compression_inflight() therefore consult hard_inflight_
-    ///          and MUST NEVER consult driver_inflight_.
+    /// @warning DEADLOCK INVARIANT. Code that must let a flush-draining slow
+    ///          path proceed (create_value(), the flush drain loops) waits on
+    ///          stealing_inflight_ ONLY, through is_hard_compression_inflight().
+    ///          Never on driver_inflight_: a driver may be merely draining
+    ///          flush_deferred(), blocked on an xflush lock the waiter holds
+    ///          transitively. Never on this counter: see stealing_inflight_.
     ///
-    /// @warning SIGNED on purpose -- part of the contract, do not "clean up" to
-    ///          unsigned again. Some give-up interleavings decrement twice
-    ///          (start()'s yield-to-flush and bounded-wait paths, plus
-    ///          finish(), which has an explicit `remaining < 0` handler
-    ///          precisely because this is a known, tolerated state). With int, a
-    ///          transient -1 keeps the drain predicate (load > 0) false and
-    ///          everything proceeds. With uint32_t the same double-decrement
-    ///          wrapped to about 4e9, is_hard_compression_inflight() stayed true
-    ///          forever, and EVERY flush drain deadlocked in its spin -- all 64
-    ///          threads parked in stage-1 flush_chunk_all_ranks(), Aug '26.
+    /// @warning SIGNED on purpose -- part of the contract, do not make it
+    ///          unsigned. Some give-up interleavings decrement twice (start()'s
+    ///          yield-to-flush and bounded-wait paths, plus finish(), which
+    ///          handles `remaining < 0` explicitly). A transient -1 keeps the
+    ///          gate predicate (load > 0) false; unsigned, it wraps to ~4e9 and
+    ///          the gate never opens again.
     ///
     /// @note Every access is seq_cst: required by the Dekker pairing with
     ///       WriteCompressSyncPolicy's flushing/writing flags in start() and in
@@ -975,45 +906,36 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /// (run_slow_path{perform_compression}) -- a superset of the hard window on
     /// the proxy path.
     ///
-    /// @note Accounting only since Sept '26: the write-path gate reads
-    ///       hard_inflight_ alone (must_defer_write). This counter started
-    ///       life as global_slow_path_inflight (Feb '26), when the slow path
-    ///       took a lock and every writer had to queue behind it; once the
-    ///       slow path became "defer the write", steering the other writers
-    ///       for the driver's whole run only manufactured deferred ops -- and
-    ///       the flushes, and the yielded start()s, that came with them. It
-    ///       feeds the CHUNK_STATS gate driver counter and nothing else.
+    /// @note Accounting only: the write-path gate reads hard_inflight_ alone
+    ///       (must_defer_write), and this feeds the CHUNK_STATS gate driver
+    ///       counter and nothing else. Steering writers on it only
+    ///       manufactured deferred ops, and the flushes and yielded start()s
+    ///       that come with them.
     /// @warning Never wait on this counter; see hard_inflight_'s deadlock
     ///          invariant.
-    /// @warning LAYOUT (x86 2-socket regression, Aug '26). This counter and
-    ///          hard_inflight_ were briefly PACKED into one 64-bit word.
-    ///          Semantically identical, but it concentrated 4 seq_cst RMW per
-    ///          compression -- driver enter/exit plus hard enter/exit -- onto
-    ///          the single cache line every write-path gate reads. Cross-socket
-    ///          ping-pong collapsed the x86 init phase (93 s at 128 threads vs
-    ///          32 s at 64; single-socket ARM was unaffected). They must stay on
-    ///          TWO dedicated cache lines.
+    /// @warning LAYOUT: keep this counter and hard_inflight_ on TWO dedicated
+    ///          cache lines. Packed into one word, they put 4 seq_cst RMW per
+    ///          compression on the line every write-path gate reads; the
+    ///          cross-socket ping-pong collapsed the x86 2-socket init phase.
     alignas(128) static inline std::atomic<std::int32_t> driver_inflight_{0};
 
     /// Compressors PAST the writer gate: Dekker established, allowed to
     /// CAS-steal `values`. A stealer depends on no writer flag, so waiters on
     /// this counter always drain.
     ///
-    /// @details Parked vs stealing, two states, two counters (Aug '26).
-    ///          hard_inflight_ counts every compressor between start() and
-    ///          finish(), INCLUDING one parked in start()'s bounded
-    ///          any_thread_writing() wait. The write-path gate must see parked
-    ///          compressors -- that is what opens the "no writer" window and
-    ///          gives compressors priority -- but create_value() and the flush
-    ///          drains must NOT wait on them.
+    /// @details Parked vs stealing, two states, two counters. hard_inflight_
+    ///          counts every compressor between start() and finish(),
+    ///          INCLUDING one parked in start()'s bounded any_thread_writing()
+    ///          wait. The write-path gate must see parked compressors -- that
+    ///          opens the "no writer" window and gives compressors priority --
+    ///          but create_value() and the flush drains must NOT wait on them.
     ///
-    /// @warning Both ways of collapsing this into one counter have already
-    ///          failed. Waiting on hard_inflight_ from under a writer flag
-    ///          closes a livelock triangle: N parked holders, writers stuck in
-    ///          create_value() holding per_thread_writing, flush drains stuck on
-    ///          hard > 0. Conversely, releasing hard while parked removed
-    ///          compressor priority entirely: compression starved, memory
-    ///          doubled (23.8 GB vs 11.9) and the driver spun at 40%.
+    /// @warning Keep the two counters; both ways of merging them fail.
+    ///          Waiting on hard_inflight_ from under a writer flag livelocks
+    ///          (parked compressors wait for the writers, the writers in
+    ///          create_value() wait for them, the drains wait on both).
+    ///          Releasing hard while parked removes compressor priority:
+    ///          compression starves and memory doubles.
     alignas(128) static inline std::atomic<std::int32_t> stealing_inflight_{0};
 
     /// One lock per rank; sized at init_deferred_queues() with max_thr entries.
@@ -1052,12 +974,8 @@ class CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState
      *          where the guard reads
      *          `v_old != zero || CompressionManagerType::have_deferred_queue()`.
      *          That call sits in a plain `else`, not a discarded `if constexpr`
-     *          branch, so the name must exist in EVERY configuration.
-     *
-     *          gcc happened to accept its absence here; clang/icpx resolve the
-     *          non-dependent name at phase 1 and reject it, which is why only
-     *          the oneapi and llvm non-OpenMP flavours failed with
-     *          "no member named 'have_deferred_queue'".
+     *          branch, so the name must exist in EVERY configuration: clang and
+     *          icpx resolve this non-dependent name at phase 1 (gcc does not).
      *
      * @return always false: nothing is ever deferred without OpenMP.
      */
