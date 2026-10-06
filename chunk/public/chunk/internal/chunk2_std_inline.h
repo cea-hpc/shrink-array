@@ -1160,7 +1160,7 @@ void Chunk2OmpPolicy<T, Derived, false>::create_value_bool(this Derived& self, b
 template <typename T, typename Derived, bool Enabled>
 void Chunk2OmpPolicy<T, Derived, Enabled>::clear(int ind, int thr_rank)
 {
-    Base::clear_impl(ind, thr_rank);
+    derived().Base::clear_impl(ind, thr_rank);
 }
 
 /**
@@ -1199,7 +1199,7 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::block_clear(int num_compress_value, i
     // plain-chunk sweep, so chunk2/chunk2a always reported 0).
     increm_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
-    Base::block_clear_common(num_compress_value, ind, thr_rank);
+    derived().Base::block_clear_common(num_compress_value, ind, thr_rank);
 }
 
 /// Serial build: frees the buffer outright instead of parking it in a rank
@@ -1232,7 +1232,7 @@ void Chunk2OmpPolicy<T, Derived, false>::block_clear(this Derived& self, int num
 template <typename T, typename Derived, bool Enabled>
 void Chunk2OmpPolicy<T, Derived, Enabled>::clear_int_st(int num_compress_value, int ind, int thr_rank)
 {
-    Base::check_not_constant_before_clear(num_compress_value, ind);
+    derived().Base::check_not_constant_before_clear(num_compress_value, ind);
     block_clear(num_compress_value, ind, thr_rank);
 }
 
@@ -1244,7 +1244,7 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::clear_int_st_bool(int num_compress_va
 {
     if constexpr (is_bool)
     {
-        Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
+        derived().Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
         block_clear(num_compress_value, 0, thr_rank);
     }
 }

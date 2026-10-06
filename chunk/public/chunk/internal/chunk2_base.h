@@ -103,7 +103,8 @@ class Chunk2Base : public ChunkBase<T, Derived>
     /// @param cst2_ptr The shared array to install for a type-2 compression
     ///        (Chunk2A only; the chunk keeps no copy of it)
     template <typename IndexType>
-    void block_clear_common(int                  num_compress_value,
+    void block_clear_common(this Derived&        self,
+                            int                  num_compress_value,
                             IndexType            index_opt,
                             [[maybe_unused]] int thr_rank,
                             char*                ptr_type_cst     = nullptr,
@@ -145,19 +146,21 @@ class Chunk2Base : public ChunkBase<T, Derived>
     /// @param num_compress_value Index reported in the failure message.
     /// @param ind_opt Chunk2's second-value slot index; empty for Chunk2A and
     ///        bool, whose second value is not table-indexed.
-    void check_not_constant_before_clear(int num_compress_value, std::optional<int> ind_opt) const noexcept
+    void check_not_constant_before_clear(this const Derived& self,
+                                         int                  num_compress_value,
+                                         std::optional<int>   ind_opt) noexcept
     {
         if constexpr (!build_config::any_check)
         {
             return;
         }
 
-        const void* chunk_ptr  = static_cast<const void*>(this);
-        const void* values_ptr = static_cast<const void*>(derived().values_load());
+        const void* chunk_ptr  = static_cast<const void*>(&self);
+        const void* values_ptr = static_cast<const void*>(self.values_load());
         const int   thr        = get_thr_rank_fast();
 
         // --- 1. Check primary constant (cst_val1) ---
-        if (derived().Base::is_cst_val1())
+        if (self.Base::is_cst_val1())
         {
             invariant_failed(std::source_location::current(),
                              "Critical State Violation: Attempted to free 'cst_val1' inside clear. "
@@ -178,12 +181,12 @@ class Chunk2Base : public ChunkBase<T, Derived>
                 const int ind = *ind_opt;
                 if constexpr (is_bool)
                 {
-                    is_violating = derived().is_cst_val2();
+                    is_violating = self.is_cst_val2();
                     cst2_ptr     = static_cast<const void*>(Derived::BaseSpec::get_cst_val2());
                 }
                 else
                 {
-                    is_violating = derived().is_cst_val2(ind);
+                    is_violating = self.is_cst_val2(ind);
                     cst2_ptr     = static_cast<const void*>(Derived::BaseSpec::get_cst_val2(ind));
                 }
             }
@@ -193,14 +196,14 @@ class Chunk2Base : public ChunkBase<T, Derived>
             // Path for Chunk2A or Bool (Non-indexed)
             if constexpr (is_bool || is_chunk2A_derived)
             {
-                is_violating = derived().is_cst_val2();
+                is_violating = self.is_cst_val2();
                 if constexpr (is_chunk2A_derived)
                 {
                     // A chunk compressed to a second constant reads from it
                     // through its values pointer; there is no other handle.
                     if (is_violating)
                     {
-                        cst2_ptr = static_cast<const void*>(derived().values_load());
+                        cst2_ptr = static_cast<const void*>(self.values_load());
                     }
                 }
                 else
@@ -230,10 +233,11 @@ class Chunk2Base : public ChunkBase<T, Derived>
     /// @param ptr_type_cst Constant type pointer (Chunk2A only)
     /// @param ptr_second_value Second value pointer (Chunk2A only)
     template <typename IndexType>
-    void clear_impl(IndexType         index_opt,
-                    int               thr_rank,
-                    char*             ptr_type_cst     = nullptr,
-                    SecondValueRef<T> ptr_second_value = {});
+    void clear_impl(this Derived&       self,
+                    IndexType           index_opt,
+                    int                 thr_rank,
+                    char*               ptr_type_cst     = nullptr,
+                    SecondValueRef<T>   ptr_second_value = {});
 
     /**
      * @brief Ensures the provided pointer does not target shared constant memory.

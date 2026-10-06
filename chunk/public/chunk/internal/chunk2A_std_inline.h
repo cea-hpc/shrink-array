@@ -1034,7 +1034,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::create_value_bool(bool need_set_second
 template <typename T, typename Derived, bool Enabled>
 void Chunk2AOmpPolicy<T, Derived, Enabled>::clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank)
 {
-    Base::clear_impl(std::nullopt, thr_rank, ptr_type_cst, ptr_second_value);
+    derived().Base::clear_impl(std::nullopt, thr_rank, ptr_type_cst, ptr_second_value);
 }
 
 /**
@@ -1108,7 +1108,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(int                  num
     // Bytes released, as Chunk2 counts them: with bytes_alloc and bytes_reused
     // this gives the buffers still materialised at any point of a run.
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
-    Base::block_clear_common(num_compress_value, 0, thr_rank, ptr_type_cst, ptr_second_value, cst2_ptr);
+    derived().Base::block_clear_common(num_compress_value, 0, thr_rank, ptr_type_cst, ptr_second_value, cst2_ptr);
 }
 
 /**
@@ -1125,7 +1125,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(int               num_c
                                                          int               thr_rank,
                                                          T*                new_cst_val2_ptr)
 {
-    Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
+    derived().Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
 
     // The array to install for a type-2 compression: the caller's, or the one
     // registered for the chunk's second value (the bool path, which passes
