@@ -669,7 +669,7 @@ void ArrayChunk2<T, ind_type>::clear_core()
     // See ArrayChunk2A::clear(): skip in aggressive mode; in the GNU build this
     // sweep scans without compressing (compress()'s clear paths are compiled
     // out), so it is wasted work that dominates the profile.
-    if constexpr (chunk_config::not_use_compression_with_ompt && !chunk_config::have_agressive_compression)
+    if constexpr (chunk_config::not_use_compression_with_ompt && !chunk_config::have_aggressive_compression)
     {
         const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
 
@@ -870,7 +870,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
     // reported them as never marked. `drained` qualifies that report: without
     // the drain, a chunk it compresses may only have been queued.
     bool drained = false;
-    if constexpr (chunk_config::not_use_compression_with_ompt && !chunk_config::have_agressive_compression)
+    if constexpr (chunk_config::not_use_compression_with_ompt && !chunk_config::have_aggressive_compression)
     {
         if (!CHUNK_PMP_IN_PARALLEL_REGION)
         {

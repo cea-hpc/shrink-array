@@ -75,4 +75,6 @@ dans [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md).
 | lecture, écriture, parallélisme, compression en vol, opérations sur plages | [`algo_chunk2_fr.md`](algo_chunk2_fr.md) : décrit Chunk2, mais la machinerie de ses §5 à §8 et §10 est commune aux trois variantes |
 | ce que Chunk (v1) et Chunk2A font autrement | [`algo_chunk_fr.md`](algo_chunk_fr.md), [`algo_chunk2a_fr.md`](algo_chunk2a_fr.md) |
 | géométrie dynamique et rechunk, pour les trois variantes | [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md) |
+| synchronisation sans verrou (Dekker asymétrique) | [`synchronisation_dekker_fr.md`](synchronisation_dekker_fr.md) |
 | réglages | [`variables_environnement_fr.md`](variables_environnement_fr.md) |
+| index de la documentation | [`README.md`](README.md) |

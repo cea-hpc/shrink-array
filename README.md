@@ -13,14 +13,21 @@ However, the implementation of `operator[]` overload is not the same:
 
 ## Implementation
 
-The implementation of this library requires that the number of contiguous zeros be a power of two.
-In the [examples](./examples), we use the value of 64, e.g. if there are 64 contiguous zeros, the 64 memory boxes will be transformed into a single one.
+An array is cut into **chunks** of `S` consecutive elements, `S` a power of two: a compile-time constant (`CHUNK_STATIC_SIZES`, 256 and 1024 by default), or, in the dynamic-geometry libraries (`_dyn`), a per-array size that can change at run time (`rechunk_to`, or the adaptive `RechunkDecider`). A chunk whose elements all hold the same constant is **compressed**: it keeps no buffer of its own and points to a shared constant one. Three variants differ in what they can compress:
 
-There is a `compress` method that scans all elements of the array and transforms contiguous areas from zero (64 in the examples) into a single memory box.
+| variant | a chunk is compressed when it is uniform at… |
+|---|---|
+| `ArrayChunk` (v1) | `T{}` |
+| `ArrayChunk2` | `T{}`, or one second value per array (`set_second_value`) |
+| `ArrayChunk2A` | `T{}`, or any value, chosen chunk by chunk |
 
-This library supports OpenMP multi-threading. In this case, inserting (writing) elements uses `compare and swap atomic` operations to ensure correctness, which can also be expansive in some cases.
+Compression happens **while the program runs**: a write that turns an element into one of the constants queues its chunk as a candidate, and compression passes give the buffers of the chunks found uniform back to per-thread reuse lists. `compress()` and `shrink_to_fit()` run a full pass on demand.
 
-This library is associated with a library allocation a priori a little faster than the standard type allocators of libc. You can activate this libray with the cmake variable CHUNK_STD_ALLOC. Using this library reduces memory consumption, on the example test1 we decrease it by about 15%
+Under OpenMP the write path takes **no lock**. Writers and compressors exclude each other with an asymmetric Dekker handshake: a writer announces itself with a plain store, and the rare compressor pays a `membarrier()` system call instead. A write that meets a compressor on its chunk is deferred and replayed later, never lost. See [docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) (in French).
+
+Chunk buffers come from the bundled `fast_allocators` (per-thread slab arenas and reuse lists), which reduce memory consumption and allocation cost compared with the C library allocator. `-DCHUNK_STD_ALLOC=ON` switches back to the standard allocator (useful under AddressSanitizer).
+
+The design documents, in French, are indexed in [docs/README.md](docs/README.md).
 
 ## Element types and initialisation
 
@@ -79,12 +86,19 @@ The library and examples require C++23. They build with g++ (14 or later), LLVM 
 
 In the [examples](./examples) directory we have a CMakeList.txt file that shows how to consume the library (chunk).
 
-Two examples are proposed:
+Two examples show how to use the library:
  - The [first](examples/simple_array) allows to compare an implementation with classical `std::vector` and one with compress arrays (ArrayChunk).
     We can compare the execution speed and memory consumption between the two modes.
 
  - The [second](examples/multi-mat) is more advanced: it shows the use of this compression on multidimensional arrays. Each material is stored either in compressed arrays or in `std::vector`s: the program asks for the split at start-up (`Option`: 1 all compressed, 2 all `std::vector`, 3 a random draw, 4 a random draw at a given rate; see [InputData.cpp](examples/multi-mat/InputData.cpp)).
    We also show a vectorization technique on these data structures: every loop is written once against a loop policy, scalar for the compressed arrays and `omp simd` for the `std::vector` ones -- see [Loops.h](examples/multi-mat/Loops.h) and [ComputeLoops.h](examples/multi-mat/ComputeLoops.h).
+
+The other directories are tools for developing the library:
+ - [shrink_bench](examples/shrink_bench): the reference benchmark, thirteen arrays of different element types under a compute loop, with a `--mode check` that compares every value against `std::vector` reference files and a `--mode perf` for timing;
+ - [validation](examples/validation): one harness per property (compression round trip, deferred writes, re-chunk, read/reclaim, nested regions, thread growth...), registered with `ctest`;
+ - [advisor_demo](examples/advisor_demo) and [variant_compare](examples/variant_compare): the chunk-size advisor's predictions against real sizes, and Chunk2 against Chunk2A on the same workload.
+
+`python/bench_and_test.py` runs the test and performance campaigns over a set of builds.
 
 
 ## License

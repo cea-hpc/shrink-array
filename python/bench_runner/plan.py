@@ -101,7 +101,7 @@ def reduce_matrix(args):
     # Only trims work the user did not pin explicitly on the command line.
     perf_excluded = set(PERF_EXCLUDED_CONFIGS)
     if args.mode == "fast":
-        # 1. Drop -have-agressive-compression configs: benchmarks confirm they
+        # 1. Drop -have-aggressive-compression configs: benchmarks confirm they
         #    are within noise of the release configs on this workload, so running
         #    them doubles the matrix for no signal. (Skipped only if the user did
         #    not name configs explicitly.)
@@ -208,7 +208,7 @@ def discover_binaries(args, perf_excluded):
                 baseline_check_exe_of[cfg] = _bp
         for var in args.variants:
             if skip_variant_on_config(var, cfg):
-                # e.g. vector on -have-agressive-compression: identical binary
+                # e.g. vector on -have-aggressive-compression: identical binary
                 # to the base config, not re-run. Don't resolve or flag missing.
                 continue
             if cfg in perf_excluded:

@@ -578,13 +578,13 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
         // Potentially() still reports work, the compression pass (OMPT hook or
         // its GNU _g equivalent) let some blocks slip through. Debug/check-only
         // (any_check), and only meaningful outside aggressive mode: under
-        // have_agressive_compression the set is legitimately churning (permanent
+        // have_aggressive_compression the set is legitimately churning (permanent
         // compression) and the check would false-positive. Non-fatal by design —
         // this is an observability probe, not a correctness gate: a few
         // stragglers are tolerable (opportunistic in-loop compression can lag),
         // a persistent residual across runs means the pass structurally skips
         // blocks. We report presence; the caller can escalate if it recurs.
-        if constexpr (build_config::any_check && !chunk_config::have_agressive_compression)
+        if constexpr (build_config::any_check && !chunk_config::have_aggressive_compression)
         {
             if (self.have_chunk_to_compress_potentially(CHUNK_PMP_RANK_BOUND))
             {

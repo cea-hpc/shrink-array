@@ -124,6 +124,7 @@ enable_llvm=true
 enable_sanitizers=true   # the llvm debug thread/address-sanitizer builds
 llvm_cs_size=""          # on-demand llvm build with a custom CHUNK_SIZE (e.g. 1024); empty = off
 NO_HARDENING=false       # --no-hardening: skip CHUNK_GLIBCXX_ASSERTIONS / CHUNK_UBSAN on Debug+sanitizer builds
+WITH_LEDGER=false        # --with-ledger: also build the gnu debug ledger config (forwarded)
 
 # Parse command-line arguments
 usage() {
@@ -165,6 +166,10 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
   --with-aocc      Also build aocc, off by default (AOCC 5 cannot compile
                    libstdc++ 15 in C++23 mode).
   --no-sanitizers  Skip the llvm thread/address-sanitizer builds.
+  --with-ledger    Also build cmake-build-omp-gnu-debug-ledger (Debug OpenMP
+                   with CHUNK_FORCE_LEDGER=ON), off by default. Forwarded to
+                   compile_all_gnu.sh. A --target glob that selects it builds
+                   it too.
   --jobs=N         Build at most N configurations at once (default 4). The core
                    budget is split across them, so this bounds the total number
                    of compiler processes instead of multiplying it. Use 1 to
@@ -203,6 +208,7 @@ for arg in "$@"; do
         --no-aocc)       enable_aocc=false;       shift ;;
         --no-sanitizers) enable_sanitizers=false; shift ;;
         --no-hardening)  NO_HARDENING=true;       shift ;;
+        --with-ledger)   WITH_LEDGER=true;        shift ;;
         --jobs=*)
             # How many build DIRS may compile at once (see functions_for_compile.sh).
             export CHUNK_MAX_JOBS="${arg#*=}"
@@ -382,6 +388,7 @@ gnu_args=""
 [ "$BUILD_ONLY" = true ] && gnu_args="$gnu_args --build"
 [ "$DEBUG_ONLY" = true ] && gnu_args="$gnu_args --debug-only"
 [ "$NO_HARDENING" = true ] && gnu_args="$gnu_args --no-hardening"
+[ "$WITH_LEDGER" = true ] && gnu_args="$gnu_args --with-ledger"
 [ -n "${CHUNK_MAX_JOBS:-}" ] && gnu_args="$gnu_args --jobs=$CHUNK_MAX_JOBS"
 # CHUNK_SLOT_DIR is exported by __slot_dir(): passing it down makes the gnu
 # script share THIS run's slot pool instead of opening a second one, which is
@@ -619,35 +626,35 @@ else
    launch_build "$build_rep/cmake-build-omp-llvm-std-alloc/$arch"
 fi
 
-set_build_header 'Compiling llvm openmp have_agressive_compression:'
+set_build_header 'Compiling llvm openmp have_aggressive_compression:'
 if skip_release; then
-   echo "[debug-only] skipping llvm have_agressive_compression (release) build"
+   echo "[debug-only] skipping llvm have_aggressive_compression (release) build"
 else
    if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-have-agressive-compression/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DHAVE_AGRESSIVE_COMPRESSION:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-have-aggressive-compression/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
    fi
-   launch_build "$build_rep/cmake-build-omp-llvm-have-agressive-compression/$arch"
+   launch_build "$build_rep/cmake-build-omp-llvm-have-aggressive-compression/$arch"
 fi
 
 # Optimised thread-sanitizer build, same switches as the target that diverged
 # (shrink_bench_chunk2a_256 --mode check after 2283 cycles, 2026-09-14): RelWithDebInfo
 # so the scheduling and the inlining are the production ones, not the Debug
 # ones -- the Debug TSan build above found nothing on that run --,
-# HAVE_AGRESSIVE_COMPRESSION and CHECK_OPTIM as in the *_check_* binaries. LLVM
+# HAVE_AGGRESSIVE_COMPRESSION and CHECK_OPTIM as in the *_check_* binaries. LLVM
 # libomp carries the TSan annotations for barriers / omp for / tasks (Archer),
 # which is what makes the reports meaningful across region boundaries; the same
 # build with libgomp reports a race at every region end. Hardening
 # (CHUNK_GLIBCXX_ASSERTIONS) is added by default as for every -DSANITIZER build;
 # --no-hardening removes it if it perturbs the timing too much.
 if [ "$enable_sanitizers" = true ]; then
-set_build_header 'Compiling llvm relwithdebinfo openmp have_agressive_compression thread sanitizer:'
+set_build_header 'Compiling llvm relwithdebinfo openmp have_aggressive_compression thread sanitizer:'
 if skip_release; then
-   echo "[debug-only] skipping llvm relwithdebinfo have_agressive_compression thread-sanitizer build"
+   echo "[debug-only] skipping llvm relwithdebinfo have_aggressive_compression thread-sanitizer build"
 else
    if [ "$BUILD_ONLY" = false ]; then
-      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-relwithdebinfo-have-agressive-compression-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DHAVE_AGRESSIVE_COMPRESSION:BOOL=ON -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=thread"
+      run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-relwithdebinfo-have-aggressive-compression-thread-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DCHECK_OPTIM=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=thread"
    fi
-   launch_build "$build_rep/cmake-build-omp-llvm-relwithdebinfo-have-agressive-compression-thread-sanitizer/$arch"
+   launch_build "$build_rep/cmake-build-omp-llvm-relwithdebinfo-have-aggressive-compression-thread-sanitizer/$arch"
 fi
 fi
 

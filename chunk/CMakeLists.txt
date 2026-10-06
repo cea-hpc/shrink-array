@@ -34,9 +34,17 @@ option(CHUNK_BUILD_DYN "Also build a CHUNK_DYNAMIC (runtime size) lib per varian
 message(STATUS "CHUNK_STATIC_SIZES = ${CHUNK_STATIC_SIZES}; CHUNK_BUILD_DYN = ${CHUNK_BUILD_DYN}")
 
 # --- Aggressive vs release compression scheduling ------------------------
-option(HAVE_AGRESSIVE_COMPRESSION "Enable aggressive-compression scheduling mode." OFF)
-if (HAVE_AGRESSIVE_COMPRESSION)
-  message(STATUS "HAVE_AGRESSIVE_COMPRESSION=ON → aggressive scheduling (stresses concurrent compression)")
+# Old, misspelt name HAVE_AGRESSIVE_COMPRESSION: still accepted, so existing
+# build directories and scripts keep working; its value moves to the new name
+# and the old cache entry is dropped.
+if (DEFINED HAVE_AGRESSIVE_COMPRESSION)
+  message(DEPRECATION "HAVE_AGRESSIVE_COMPRESSION is deprecated: use HAVE_AGGRESSIVE_COMPRESSION")
+  set(HAVE_AGGRESSIVE_COMPRESSION "${HAVE_AGRESSIVE_COMPRESSION}" CACHE BOOL "Enable aggressive-compression scheduling mode." FORCE)
+  unset(HAVE_AGRESSIVE_COMPRESSION CACHE)
+endif()
+option(HAVE_AGGRESSIVE_COMPRESSION "Enable aggressive-compression scheduling mode." OFF)
+if (HAVE_AGGRESSIVE_COMPRESSION)
+  message(STATUS "HAVE_AGGRESSIVE_COMPRESSION=ON → aggressive scheduling (stresses concurrent compression)")
 endif()
 
 # --- Read-side deferred-op sync -----------------------------------------
@@ -385,7 +393,7 @@ function(chunk_add_variant target_name variant_define size is_dyn)
           $<$<BOOL:${CHECK_OPTIM}>:CHECK_OPTIM>
           $<$<BOOL:${CHUNK_POOL_NO_REUSE}>:CHUNK_POOL_NO_REUSE>
           $<$<BOOL:${CHUNK_ALIGN_CHECK}>:CHUNK_ALIGN_CHECK>
-          $<$<BOOL:${HAVE_AGRESSIVE_COMPRESSION}>:HAVE_AGRESSIVE_COMPRESSION>
+          $<$<BOOL:${HAVE_AGGRESSIVE_COMPRESSION}>:HAVE_AGGRESSIVE_COMPRESSION>
           $<$<BOOL:${CHUNK_STATS}>:CHUNK_STATS>
           $<$<BOOL:${CHUNK_FORCE_LEDGER}>:CHUNK_FORCE_LEDGER>
   )

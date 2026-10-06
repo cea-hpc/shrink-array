@@ -303,17 +303,17 @@ inline constexpr int no_second_value_index = -1;
  * predictable compression events → faster in production, but exercises
  * fewer concurrent code paths.
  *
- * true ("have_agressive_compression" mode): the sweep is left to run at
+ * true ("have_aggressive_compression" mode): the sweep is left to run at
  * scattered, unpredictable points during the parallel section. Slower, but
  * stresses the concurrent compression
  * code paths → better MT-bug detection.
  *
- * Set via -DHAVE_AGRESSIVE_COMPRESSION=ON at CMake configure time.
+ * Set via -DHAVE_AGGRESSIVE_COMPRESSION=ON at CMake configure time.
  */
-#ifdef HAVE_AGRESSIVE_COMPRESSION
-inline constexpr bool have_agressive_compression = true;
+#ifdef HAVE_AGGRESSIVE_COMPRESSION
+inline constexpr bool have_aggressive_compression = true;
 #else
-inline constexpr bool have_agressive_compression = false;
+inline constexpr bool have_aggressive_compression = false;
 #endif
 
 /**

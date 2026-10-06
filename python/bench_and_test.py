@@ -8,7 +8,7 @@ Supported layout (the CEA cluster one):
 Example:
     $CCCWORKDIR/shrink-array/
       ├── cmake-build-omp-gnu/RHEL_9__aarch64/examples/shrink_bench/shrink_bench_chunk2_dyn
-      ├── cmake-build-omp-gnu-have-agressive-compression/.../shrink_bench_chunk2_dyn
+      ├── cmake-build-omp-gnu-have-aggressive-compression/.../shrink_bench_chunk2_dyn
       ├── cmake-build-omp-gnu-std-alloc/...
       ├── cmake-build-omp-llvm/...
       └── ...
@@ -17,7 +17,7 @@ Typical usage — perf comparison release vs aggressive:
     python3 bench_and_test.py --skip-check \\
         --build-root $CCCWORKDIR/shrink-array \\
         --configs cmake-build-omp-gnu \\
-                  cmake-build-omp-gnu-have-agressive-compression \\
+                  cmake-build-omp-gnu-have-aggressive-compression \\
                   cmake-build-omp-gnu-std-alloc
 
 Or more simply, if you are already INSIDE $build_root:

@@ -17,7 +17,7 @@ def run_perf_phase(args, plan, counter, errors, results):
     for cfg in args.configs:
         # Baseline per (variant, tc): time of the baseline_variant for
         # this tc, on this config. A compression-only config (e.g.
-        # -have-agressive-compression) does NOT re-run vector — its
+        # -have-aggressive-compression) does NOT re-run vector — its
         # binary is identical to the base config — so it inherits the
         # baseline captured on the preceding base config instead of
         # resetting it.

@@ -1,10 +1,10 @@
 # L'algorithme d'`ArrayChunk2`
 
-*État du code : fin septembre 2026 (opérations sur plages ouvertes à Chunk2, compression des
-candidats avant un rechunk, fin de phase sans OMPT allégée). La géométrie dynamique est détaillée dans
-[`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md), la méthode de mesure dans
-[`mesures_performance_fr.md`](mesures_performance_fr.md), et l'index de la documentation dans
-[`README.md`](README.md). Ce document remplace l'ancienne présentation, qui décrivait
+*État du code : début octobre 2026. La géométrie dynamique est détaillée dans
+[`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md), la synchronisation sans verrou entre
+écrivains, compresseurs et lecteurs dans [`synchronisation_dekker_fr.md`](synchronisation_dekker_fr.md),
+la méthode de mesure dans [`mesures_performance_fr.md`](mesures_performance_fr.md), et l'index
+de la documentation dans [`README.md`](README.md). Ce document remplace l'ancienne présentation, qui décrivait
 une version antérieure (verrous par élément, `__decalage_chunk` global, taille de chunk fixée
 à 64, parallélisation « sans solution satisfaisante »). Les noms de fonctions et de fichiers
 cités sont ceux de l'arbre actuel ; en cas de doute, c'est le code qui fait foi.*
@@ -242,19 +242,25 @@ le chemin d'écriture courant** : elle repose sur trois mécanismes.
 
 Toutes les écritures passent par `ProxyBase::write_with_optional_lock_impl`
 (`proxy_base_inline.h`). Le danger à éviter : un thread écrit dans le tampon d'un chunk
-pendant qu'un compresseur le libère. Le moteur applique une poignée de main de type
-**Dekker** entre écrivains et compresseurs (`WriteCompressSyncPolicy`) :
+pendant qu'un compresseur le vole et le rend à la liste de réutilisation. Le moteur applique
+une poignée de main de type **Dekker** entre écrivains et compresseurs
+(`WriteCompressSyncPolicy`), sans aucun verrou :
 
-- **côté écrivain (fréquent, léger)** : le thread publie « j'écris dans ce chunk »
-  (`announce_write`, une écriture relâchée suivie d'une simple barrière de compilateur),
-  **revérifie** qu'aucun compresseur n'est en cours sur ce chunk, écrit, puis se retire
-  (`end_write`) ;
-- **côté compresseur (rare, lourd)** : il se déclare, force la visibilité de toutes les
-  annonces des écrivains avec l'appel système `membarrier` (c'est ce qui rend la version
-  asymétrique possible), puis attend les écrivains annoncés sur ses chunks.
+- **côté écrivain (fréquent, léger)** : le thread publie l'adresse du chunk qu'il écrit dans
+  son drapeau (`announce_write` : une écriture relâchée suivie d'une simple barrière de
+  compilateur), **revérifie** que le chunk n'est pas réservé par une passe (sa marque
+  `steal_mark_`, lue en *acquire*), écrit, puis baisse son drapeau (`end_write`). Si le chunk
+  est réservé, l'écriture est différée (7.3) ;
+- **côté compresseur (rare, lourd)** : il marque ses candidats, se déclare (`hard_inflight_`),
+  appelle `membarrier`, qui fait exécuter une barrière complète à chaque cœur du processus et
+  rend visibles toutes les annonces des écrivains, puis attend, de façon bornée, les seuls
+  écrivains dont le drapeau désigne un chunk marqué. S'il attend trop, il renonce à sa passe.
 
-Des deux côtés, exactement un seul peut passer. Sans `membarrier` (noyau trop ancien, TSan),
-la version symétrique utilise des barrières `seq_cst` des deux côtés.
+L'un des deux côtés voit toujours l'autre : jamais les deux ne passent ensemble. Sans
+`membarrier` (noyau trop ancien, seccomp, build TSan), la forme symétrique met une barrière
+`seq_cst` des deux côtés. L'algorithme, la preuve des deux formes, les compteurs « garé » et
+« voleur » du compresseur et les deux autres usages de la même brique (vidages et lecteurs)
+sont détaillés dans [`synchronisation_dekker_fr.md`](synchronisation_dekker_fr.md).
 
 ### 7.2 Le déroulé d'une écriture dans le moteur
 
@@ -563,7 +569,8 @@ Options CMake liées aux performances des bancs :
 | le chunk, matérialisation, compression | `chunk2_std.h`, `internal/chunk2_std_inline.h`, `internal/chunk_base.h` |
 | le proxy d'écriture | `internal/proxy2.h`, `internal/proxy2_inline.h`, `internal/proxy2_base.h` |
 | le moteur d'écriture | `internal/proxy_base.h`, `internal/proxy_base_inline.h` |
-| Dekker, écrivains / compresseurs | `internal/write_compress_sync_policy.h` |
+| Dekker, écrivains / compresseurs | `internal/write_compress_sync_policy.h` (expliqué dans [`synchronisation_dekker_fr.md`](synchronisation_dekker_fr.md)) |
+| lecteurs et récupération des tampons | `internal/read_reclaim.h` |
 | compresseur, écritures différées | `internal/compression_manager.h` |
 | géométrie | `internal/chunk_size_policy.h` |
 | rechunk, décideur | `internal/array_chunk_rechunk_inline.h`, `chunk_size_advisor.h` |

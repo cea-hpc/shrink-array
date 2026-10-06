@@ -67,7 +67,7 @@ extern void begin_parallel_phase();
  * Flushes the deferred write queues of all threads (parallel flush, no
  * enclosing barrier needed since the region is already joined), resets the
  * deferred-op pools, then drains the deferred-compression backlog. That drain
- * is skipped in aggressive mode (`chunk_config::have_agressive_compression`),
+ * is skipped in aggressive mode (`chunk_config::have_aggressive_compression`),
  * where compression is left entirely to the opportunistic in-loop path.
  *
  * This is the "all-in-one" variant; use the
@@ -95,7 +95,7 @@ extern void finalize_parallel_phase_only_flush();
  * Runs the post-flush cleanup that cannot happen inside the region: destroys
  * the buffers released by the flush, resets the deferred-op pools and drains
  * the deferred-compression backlog (again, unless
- * `chunk_config::have_agressive_compression`).
+ * `chunk_config::have_aggressive_compression`).
  *
  * @pre finalize_parallel_phase_only_flush() has run inside the region that
  *      just ended.

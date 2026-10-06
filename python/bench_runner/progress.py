@@ -7,7 +7,7 @@ from .term import _hms, dim, green
 
 # Fixed field widths so every progress line aligns regardless of config/variant
 # name length. CONFIG_W fits the longest short label
-# ("llvm-have-agressive-compression" = 31) with one space of slack, so nothing
+# ("llvm-have-aggressive-compression" = 31) with one space of slack, so nothing
 # is truncated (the old [:30] chopped the trailing 'n' off "...compression").
 CONFIG_W = 32
 VARIANT_W = 14  # longest label is "std_alloc@1024" (14); avoids truncating "chunk2a@256"

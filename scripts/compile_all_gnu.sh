@@ -27,6 +27,7 @@ DEBUG_ONLY=false
 FRESH_CACHE=false   # --fresh-cache: rm each build dir's CMakeCache.txt before configuring
 NO_IPA_ICF=false
 NO_HARDENING=false # --no-hardening: skip CHUNK_GLIBCXX_ASSERTIONS / CHUNK_UBSAN on Debug+sanitizer builds
+WITH_LEDGER=false  # --with-ledger: also build cmake-build-omp-gnu-debug-ledger (off by default)
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -48,6 +49,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-ipa-icf)
             NO_IPA_ICF=true
+            shift
+            ;;
+        --with-ledger)
+            WITH_LEDGER=true
             shift
             ;;
         --jobs=*)
@@ -82,7 +87,7 @@ while [[ $# -gt 0 ]]; do
         *)
             # Previously swallowed silently — a --debug_only (underscore) went
             # unnoticed and the intended flag was never applied.
-            echo "ERROR: unknown argument '$1' (expected --dryrun|--build|--debug-only|--fresh-cache|--no-ipa-icf|--no-hardening|--jobs=<N>|--target=<glob>|--exec=<ninja-target>)" >&2
+            echo "ERROR: unknown argument '$1' (expected --dryrun|--build|--debug-only|--fresh-cache|--no-ipa-icf|--no-hardening|--with-ledger|--jobs=<N>|--target=<glob>|--exec=<ninja-target>)" >&2
             exit 2
             ;;
     esac
@@ -185,11 +190,11 @@ else
 fi
 
 if skip_release; then
-    echo "[debug-only] skipping gnu openmp have_agressive_compression"
+    echo "[debug-only] skipping gnu openmp have_aggressive_compression"
 else
-    compile_with_cmake "$build_rep/cmake-build-omp-gnu-have-agressive-compression${ICF_SUFFIX}/$arch" \
-      "-DHAVE_AGRESSIVE_COMPRESSION:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
-      "gnu openmp have_agressive_compression"
+    compile_with_cmake "$build_rep/cmake-build-omp-gnu-have-aggressive-compression${ICF_SUFFIX}/$arch" \
+      "-DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
+      "gnu openmp have_aggressive_compression"
 fi
 
 if skip_release; then
@@ -246,9 +251,14 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug${ICF_SUFFIX}/$arch" \
 # would blow up the matrix for no added coverage.
 # NB: passed as a CMake option, NOT via -DCMAKE_CXX_FLAGS -- $ARCH_FLAGS already
 # sets CMAKE_CXX_FLAGS (-mcpu=native on ARM) and the second one would win.
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-ledger${ICF_SUFFIX}/$arch" \
-  "-DCHUNK_FORCE_LEDGER:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT $SYNC_CMAKE_OPT" \
-  "gnu debug openmp with ledger"
+# Opt-in: built with --with-ledger, or when a --target glob selects it.
+if [ "$WITH_LEDGER" = true ] || { [ -n "${CHUNK_BUILD_TARGET:-}" ] && __target_wants "omp-gnu-debug-ledger${ICF_SUFFIX}"; }; then
+    compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-ledger${ICF_SUFFIX}/$arch" \
+      "-DCHUNK_FORCE_LEDGER:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT $SYNC_CMAKE_OPT" \
+      "gnu debug openmp with ledger"
+else
+    echo "[default] skipping gnu debug openmp with ledger (--with-ledger builds it)"
+fi
 
 # Debug + std allocator + OpenMP, WITHOUT a sanitizer. The two std-alloc debug
 # flavours below only exist in thread/address-sanitizer form, so a plain debug
@@ -301,7 +311,7 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-addr
 
 # Optimised TSan build with the switches of the binary that diverged on
 # 2026-09-14 (shrink_bench_chunk2a_256 --mode check, libgomp, 2283 cycles): fast
-# allocator (default), HAVE_AGRESSIVE_COMPRESSION, CHECK_OPTIM as in every
+# allocator (default), HAVE_AGGRESSIVE_COMPRESSION, CHECK_OPTIM as in every
 # *_check_* target, RelWithDebInfo so inlining and scheduling are the failing
 # ones. GNU-specific caveat: libgomp is not TSan-instrumented, so TSan does not
 # see its barriers and reports a race at every parallel-region boundary (the
@@ -309,13 +319,13 @@ compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-std-alloc-addr
 # output next to the LLVM+libomp twin in compile_all.sh, whose runtime carries
 # the barrier annotations; a report that only the GNU build shows is a
 # barrier the tool did not see, a report both show is a bug.
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-thread-sanitizer-have-agressive-compression${ICF_SUFFIX}/$arch" \
-  "-DHAVE_AGRESSIVE_COMPRESSION:BOOL=ON -DCHECK_OPTIM=ON -DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
-  "gnu relwithdebinfo openmp thread sanitizer have_agressive_compression"
+compile_with_cmake "$build_rep/cmake-build-omp-gnu-relwithdebinfo-thread-sanitizer-have-aggressive-compression${ICF_SUFFIX}/$arch" \
+  "-DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DCHECK_OPTIM=ON -DOMP:BOOL=ON -DSANITIZER=thread -DCMAKE_BUILD_TYPE=RelWithDebInfo $ARCH_FLAGS $ICF_CMAKE_OPT" \
+  "gnu relwithdebinfo openmp thread sanitizer have_aggressive_compression"
 
-compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-have-agressive-compression${ICF_SUFFIX}/$arch" \
-  "-DHAVE_AGRESSIVE_COMPRESSION:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
-  "gnu debug openmp have_agressive_compression"
+compile_with_cmake "$build_rep/cmake-build-omp-gnu-debug-have-aggressive-compression${ICF_SUFFIX}/$arch" \
+  "-DHAVE_AGGRESSIVE_COMPRESSION:BOOL=ON -DOMP:BOOL=ON -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
+  "gnu debug openmp have_aggressive_compression"
 
 compile_with_cmake "$build_rep/cmake-build-gnu-debug${ICF_SUFFIX}/$arch" \
   "-DOMP:BOOL=OFF -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
