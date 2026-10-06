@@ -234,12 +234,13 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_impl(this 
  */
 template <typename T, typename Derived, bool Enabled>
 template <typename SecondValueFunc, typename ClearFunc>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(bool            apply,
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(this Derived&  self,
+                                                              bool            apply,
                                                               unsigned int    n_elems,
                                                               SecondValueFunc get_second_value,
                                                               ClearFunc&&     clear_one)
 {
-    if (Base::is_not_cst_val1())
+    if (self.Base::is_not_cst_val1())
     {
         // CHUNK_STATS: this is a SECOND compression-candidate scan, independent of
         // fill_list_to_compress (it scans values[] itself, just below, then calls
@@ -257,7 +258,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(bool            ap
         // first_value: skipping the scan would leave BOTH verdicts at their
         // initial `true` and clear the chunk twice without looking at it.
         // scan_constants reports such a run as `first` only.
-        const auto scan = Base::scan_constants(first_value, get_second_value(), n_elems);
+        const auto scan = self.Base::scan_constants(first_value, get_second_value(), n_elems);
 
         if (apply)
         {

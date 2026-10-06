@@ -923,7 +923,11 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      * \tparam ClearFunc callable (int num_compress_value).
      */
     template <typename SecondValueFunc, typename ClearFunc>
-    void compress_impl(bool apply, unsigned int n_elems, SecondValueFunc get_second_value, ClearFunc&& clear_one);
+    void compress_impl(this Derived&  self,
+                       bool            apply,
+                       unsigned int    n_elems,
+                       SecondValueFunc get_second_value,
+                       ClearFunc&&     clear_one);
 
     /**
      * \brief Shared body of the two fill_list_chunk_to_compress_in_par entry
