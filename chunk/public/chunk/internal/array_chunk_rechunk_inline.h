@@ -60,6 +60,13 @@ namespace shrink_array::internal
 /// each of the sites below.
 inline const bool g_rechunk_trace = std::getenv("CHUNK_RECHUNK_TRACE") != nullptr;
 
+/// CHUNK_RECHUNK_TRACE_MEM (read once, set = on): the MEMORY side of the trace --
+/// [RECHUNK-RSS] (exact RSS, a page-table walk per read), the new geometry's
+/// occupancy, the allocator census. Kept apart from CHUNK_RECHUNK_TRACE so the
+/// phase times are not measured with these probes inside them (they cost
+/// seconds per run at tens of GB and 128 threads).
+inline const bool g_rechunk_trace_mem = std::getenv("CHUNK_RECHUNK_TRACE_MEM") != nullptr;
+
 /// @brief Resident set size of this process in MiB, or -1 if unreadable.
 /// @details EXACT (smaps_rollup, see exact_rss.h): statm lags by gigabytes at
 ///          64 threads. Only the CHUNK_RECHUNK_TRACE paths read it (per phase
@@ -219,7 +226,9 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // wall times. The slice trace inside rechunk_refill brackets the refill;
     // this brackets everything around it, where the remaining part of the
     // peak was measured to sit.
-    const auto rss_now    = [&] { return trace_phases ? internal::rss_mib_now() : -1L; };
+    // Exact RSS only under CHUNK_RECHUNK_TRACE_MEM: each read walks the page
+    // tables, and they sit inside the timed phases.
+    const auto rss_now    = [&] { return internal::g_rechunk_trace_mem ? internal::rss_mib_now() : -1L; };
     const long r_entry    = rss_now();
     long       r_flush    = -1;
     long       r_pre_tmp  = -1;
@@ -397,6 +406,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // also removes stale-geometry buffers so a later pop can never grab a
     // wrong-size block.
     self().rechunk_drain_reuse_list(old_size);
+    const auto t5b = t_now(); // reuse-list drain done; the empty-slab sweep follows
     // The array has left (old_key, old_size) for good: once the drain above
     // has run its slabs there hold nothing, but manage_full_empty() only
     // inspects a slab at the instant a block is freed, so slabs that became
@@ -429,7 +439,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         sweep.flush();
         set_thread_chunk_size(saved_sz);
     }
-    if (internal::g_rechunk_trace)
+    if (internal::g_rechunk_trace_mem) // a census: memory side of the trace
     {
         // Occupancy of the allocator set the array just left. Its slabs hold
         // nothing but this array's old-geometry blocks, so once the drain has
@@ -491,9 +501,12 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         const auto t6 = t_now();
         std::fprintf(stderr,
                      "[RECHUNK] %u -> %u phases (ms): prologue %.0f | tmp create %.0f | refill %.0f | "
-                     "flush+swap %.0f | tmp teardown %.0f | old-pool drain %.0f | total %.0f\n",
+                     "flush+swap %.0f | tmp teardown %.0f | old-pool drain %.0f | slab sweep %.0f | total %.0f\n",
                      old_size, new_size, t_ms(t0, t1_out), t_ms(t1_out, t2_out), t_ms(t2_out, t3_out),
-                     t_ms(t3_out, t4_out), t_ms(t4_out, t5), t_ms(t5, t6), t_ms(t0, t6));
+                     t_ms(t3_out, t4_out), t_ms(t4_out, t5), t_ms(t5, t5b), t_ms(t5b, t6), t_ms(t0, t6));
+    }
+    if (internal::g_rechunk_trace_mem)
+    {
         const long r_end = rss_now();
         std::fprintf(stderr,
                      "[RECHUNK-RSS] %u -> %u (MB): entry %ld | after flush %ld | before tmp %ld | after refill %ld | "
@@ -1127,7 +1140,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         }
         g_in_rechunk_rebuild.store(false, std::memory_order_release);
         chunk_pmp_set_schedule(caller_schedule); // the caller's, untouched
-        if (internal::g_rechunk_trace)
+        if (internal::g_rechunk_trace_mem) // a serial count inside the refill phase
         {
             // What the new geometry actually HOLDS, counted on tmp before the
             // swap. "folded" says how many spans the rebuild could fold; this
