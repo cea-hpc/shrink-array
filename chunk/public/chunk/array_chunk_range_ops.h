@@ -10,15 +10,13 @@
  *          num_chunk, runs the compression-candidacy bookkeeping and only then
  *          stores. That is the right price for an isolated write. For a bulk
  *          fill it is paid chunk_size times over for a decision that is the
- *          same across the whole chunk -- and it shows: rechunk_refill() grew a
- *          hand-written raw-fill precisely to escape it, with a measured
- *          108s -> 8s.
+ *          same across the whole chunk -- and it shows: a bulk copy through
+ *          these functions is ~13x faster than through the proxy (the re-chunk
+ *          refill goes through them).
  *
- *          That raw-fill was a private fast path bypassing the proxy's
- *          invariants, and a fair share of this month's re-chunk debugging went
- *          into code that walked around it. These functions are the same idea
- *          made public and made correct: arm the chunk once, write straight
- *          into its buffer, then restore the invariants the bulk write bypassed.
+ *          The idea: arm the chunk once with real proxy writes, write straight
+ *          into its buffer, then restore the invariants the bulk write
+ *          bypassed.
  *
  *          NOT MEMBER FUNCTIONS, on purpose. ArrayChunk deliberately does not
  *          promise std::vector's interface (no data(), no stable element
@@ -79,24 +77,18 @@ namespace internal
  *        proxy?
  *
  * @details bool only: its chunks are bit-packed. Chunk2 takes the raw paths
- *          since three fixes (Sept '26):
- *           - the materialised test must ask written(ind2), with the array's
+ *          under three conditions:
+ *           - the materialised test asks written(ind2), with the array's
  *             second-value index: the index-less written() is bool-only and
  *             false for every other T (materialised(a, ch, ind2));
- *           - queue_for_compression() must load the second value before
- *             queueing (set_info_on_chunk): Chunk2's candidate lists are keyed
- *             by it, and the Proxy2A-style arming it used put the chunks in the
- *             list of T{} -- a list no pass drains, whose entries then crashed
- *             the teardown of a rechunk's temporary array;
- *           - in counter mode (the serial builds) a raw store must recount
- *             Chunk2's two per-chunk counters (resync_counters), as it did v1's
- *             zero count. Without it rechunk_validation_chunk2_dyn lost runs of
- *             the second value to chunks compressed to the first one (POST-FAIL
- *             34819 / 1e6) and shrink_bench chunk2 --mode check read "is_cst_val2
- *             should be not". That was taken for a concurrency failure on Grace
- *             and Chunk2 was put back on the element path (5bc3ed1f); it fails
- *             identically on one core, serial build -- the configs it failed in
- *             were the serial ones, where the counters exist.
+ *           - queue_for_compression() loads the second value before queueing
+ *             (set_info_on_chunk): Chunk2's candidate lists are keyed by it,
+ *             and an entry queued in the list of T{} is drained by no pass and
+ *             crashes the teardown of a rechunk's temporary array;
+ *           - in counter mode (the serial builds) a raw store recounts Chunk2's
+ *             two per-chunk counters (resync_counters), as it does v1's zero
+ *             count -- otherwise runs of the second value are lost to chunks
+ *             compressed to the first one.
  */
 template <typename T>
 inline constexpr bool raw_fillable_v = !is_bool_like_v<T>;
@@ -151,13 +143,8 @@ inline constexpr bool track_chunk2_counts_v = is_v2_v<Arr> && chunk_config::use_
  *          compare to chunk_size() exactly, so the chunk compresses the moment
  *          a count happens to land there -- a chunk that is NOT all constant,
  *          after which every read returns the constant. Recount, don't adjust
- *          (rechunk_refill documents the same trap).
- *
- *          Chunk2 used to be left out: its raw paths opened with v1's recount
- *          only, and rechunk_validation_chunk2_dyn (serial builds, the
- *          rebuild's copy_range) lost whole runs of the second value to
- *          chunks compressed to the first one (34819 of 1e6 elements).
- *          The second-value count is taken against the array's second value,
+ *          (rechunk_refill documents the same trap). Chunk2 included: the
+ *          second-value count is taken against the array's second value,
  *          exactly as Proxy2 counts it.
  */
 template <typename Arr, typename Chunk, typename T>
@@ -200,10 +187,9 @@ void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, uns
  * @brief Does this chunk own a buffer the bulk store may write into?
  *
  * @details NOT `!is_cst_val1()`. A Chunk2A parked on its SECOND constant is
- *          not cst_val1 either, and its values pointer is the block shared by
- *          every chunk at that value: storing through it corrupted that block
- *          for all of them (shrink_bench, tab3 read as 0 where its second
- *          value 1 was expected, "[Debug] is_cst_val2 should be not!").
+ *          not cst_val1 either, and its values pointer is a second-value slot,
+ *          not a buffer: stores through it are lost, and the chunk keeps
+ *          reading its constant.
  *          written() is each variant's own "materialised" test -- v1: not
  *          cst_val1; Chunk2A: neither constant.
  */
@@ -319,8 +305,7 @@ template <typename Arr, typename Chunk>
  *          materialised chunk's buffer, past the write path and its marking:
  *          a chunk they leave constant (a fill of the constant over the whole
  *          chunk, a copy of a mostly-constant source) was never queued and
- *          stayed materialised for the run -- 56 of tab1's 360 chunks at the
- *          end of a chunk2a dyn check, all from its fill_range. This does what
+ *          would stay materialised for the run. This does what
  *          the last write of the span would have done: the flag's CAS and, on
  *          the first time, one entry in the caller's candidate list; the pass
  *          scans the chunk once and drops it if it is not constant. Fast-block
@@ -472,18 +457,11 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
         last = size;
     }
 
-    // Drain this array's pending deferred writes FIRST.
-    //
-    // The bulk stores below go straight into the chunk buffer, bypassing the
-    // deferred machinery. An op still queued on one of these chunks would be
-    // replayed AFTER them and silently restore the old value -- measured: a
-    // fill of 7 followed by a copy of 0 left 7 at index 320, on the chunk whose
-    // op had not been flushed, while the neighbouring chunk was correct.
-    // rechunk_refill() never hit this because rechunk_to() flushes before it
-    // runs; a public bulk API has to do it itself.
-    //
+    // Drain this array's pending deferred writes FIRST: the bulk stores below
+    // bypass the deferred machinery, and an op still queued on one of these
+    // chunks would be replayed AFTER them and silently restore the old value.
     // Forced: the pending-ops counter has been seen to read 0 while ops were
-    // still queued, so the usual gate cannot be trusted here either.
+    // still queued, so the usual gate cannot be trusted here.
     if (drain)
     {
         arr.flush_pending_deferred_ops(/*force=*/true);
@@ -658,18 +636,11 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
         last = size;
     }
 
-    // Drain this array's pending deferred writes FIRST.
-    //
-    // The bulk stores below go straight into the chunk buffer, bypassing the
-    // deferred machinery. An op still queued on one of these chunks would be
-    // replayed AFTER them and silently restore the old value -- measured: a
-    // fill of 7 followed by a copy of 0 left 7 at index 320, on the chunk whose
-    // op had not been flushed, while the neighbouring chunk was correct.
-    // rechunk_refill() never hit this because rechunk_to() flushes before it
-    // runs; a public bulk API has to do it itself.
-    //
+    // Drain this array's pending deferred writes FIRST: the bulk stores below
+    // bypass the deferred machinery, and an op still queued on one of these
+    // chunks would be replayed AFTER them and silently restore the old value.
     // Forced: the pending-ops counter has been seen to read 0 while ops were
-    // still queued, so the usual gate cannot be trusted here either.
+    // still queued, so the usual gate cannot be trusted here.
     if (drain)
     {
         arr.flush_pending_deferred_ops(/*force=*/true);

@@ -44,15 +44,14 @@ namespace shrink_array
  *          the end of the run. A typical program calls exactly two of these:
  *          ParamChunk::init_indexes() at startup and ParamChunk::ChunkStats() at exit.
  *
- *          The geometry accessors are historical. The chunk size used to be three
- *          runtime globals set once through set_chunk_size(); it is now a
+ *          The geometry accessors are compatibility shims: the chunk size is a
  *          compile-time constant (see chunk_size_config.h) so that `i >>
  *          __decalage_chunk` and `i & __modulo_chunk` fold into immediate
- *          shifts/masks on the hot path. The setters are therefore kept only as
- *          compatibility shims — they no longer change anything — while the
- *          getters return the constants. Dynamic builds (CHUNK_DYNAMIC) add a
- *          separate, per-array runtime geometry on top; see ParamChunk::register_chunk_size()
- *          and shrink_array::active_chunk_size().
+ *          shifts/masks on the hot path. The setters change nothing (they warn
+ *          on a mismatch); the getters return the constants. Dynamic builds
+ *          (CHUNK_DYNAMIC) add a separate, per-array runtime geometry on top;
+ *          see ParamChunk::register_chunk_size() and
+ *          shrink_array::active_chunk_size().
  *
  * @note Everything here is a sequential-context operation: call it before the
  *       arrays it configures are used in parallel.
@@ -81,8 +80,7 @@ namespace shrink_array
  *       what keeps the two bodies TEMPLATES, so only the one this build selects
  *       is ever instantiated -- param_chunk.cpp instantiates exactly
  *       ParamChunkParallelInterface<build_config::use_openmp, AllTypeChunk> and
- *       the other body is never compiled. That is what replaced the \#ifdef
- *       _OPENMP these bodies used to sit under.
+ *       the other body is never compiled.
  *
  *       A plain `template <>` full specialisation would NOT do: its members are
  *       ordinary functions, compiled eagerly, and the two bodies cannot both
@@ -108,12 +106,9 @@ struct ParamChunkParallelInterface<true, AllT>
     /**
      * @brief What init_indexes() prints about the thread model (OpenMP build).
      *
-     * @details The per-rank structures and allocators of a type used to be
-     *          sized and primed here, for every registered type, from inside
-     *          a <tt>\#pragma omp parallel</tt> region. A type is now set up when its
-     *          first array registers its manager (AllTypeChunk::init_manager,
-     *          sequential, rank by rank), so nothing per type is left at this
-     *          point; the allocator banner remains.
+     * @details A type is set up when its first array registers its manager
+     *          (AllTypeChunk::init_manager, sequential, rank by rank), so
+     *          nothing per type is done here: only the allocator banner.
      */
     static void init_thread_structures();
 };
@@ -143,8 +138,8 @@ struct ParamChunkParallelInterface<false, AllT>
  *       full specialisation would be compiled eagerly and fail there. And the
  *       call must stay DEPENDENT on AllT (SingletonChk<AllT>, never
  *       SingletonChk<AllTypeChunk>), or phase-1 lookup resolves it against the
- *       concrete type at definition time and we are back to needing the
- *       \#ifdef CHUNK_DYNAMIC this replaced.
+ *       concrete type at definition time and the static build fails to
+ *       compile.
  */
 template <bool Enabled = build_config::chunk_dynamic, typename AllT = AllTypeChunk>
 struct ParamChunkDynInterface; // primary left undefined: only the 2 specializations exist
@@ -190,13 +185,13 @@ struct ParamChunkDynInterface<false, AllT>
      *          to declare.
      *
      * @warning The trade-off is deliberate and worth knowing: calling
-     *          ParamChunk::register_chunk_size() in a static build USED TO BE a
-     *          compile error, and is now accepted and ignored. A caller who
-     *          expects a size to be honoured will not be told by the compiler
-     *          that this build cannot honour it. Guard on
-     *          build_config::chunk_dynamic where that distinction matters --
-     *          and see dyn_geometry_validation, which catches at run time an
-     *          array built at a size no one registered.
+     *          ParamChunk::register_chunk_size() in a static build is accepted
+     *          and ignored, not a compile error. A caller who expects a size to
+     *          be honoured will not be told by the compiler that this build
+     *          cannot honour it. Guard on build_config::chunk_dynamic where
+     *          that distinction matters -- and see dyn_geometry_validation,
+     *          which catches at run time an array built at a size no one
+     *          registered.
      */
     static void register_chunk_size(unsigned int /*size*/) {}
 };
@@ -227,9 +222,6 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *          The real hard limit is the per-chunk counter capacity (unsigned
      *          short), enforced by a static_assert in conditional_counter.h, hence
      *          65535.
-     *
-     * @warning Was 256 (then 128), a stale value predating the constexpr-geometry
-     *          refactor, which wrongly rejected CHUNK_SIZE=512.
      */
     static constexpr int size_max = 65535;
 
@@ -348,10 +340,10 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *
      * @tparam T the element type concerned
      * @param second_value the additional value to store as a constant
-     * @warning Not implemented: deleted, so a use fails at compile time (it
-     *          used to be declared only, and failed at link time). A placeholder
-     *          for the second-constant support that ArrayChunk2 offers per array
-     *          (ArrayChunk2::set_second_value) and chunk2A per chunk.
+     * @warning Not implemented: deleted, so a use fails at compile time. A
+     *          placeholder for the second-constant support that ArrayChunk2
+     *          offers per array (ArrayChunk2::set_second_value) and chunk2A per
+     *          chunk.
      */
     template <typename T>
     static void set_second_value(T second_value) = delete;

@@ -230,9 +230,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_impl(this 
  *
  * @warning The clear only runs when @p apply is true. Called with false,
  *          this scans the whole chunk and discards the verdict -- it
- *          compresses nothing (the flag was named is_inside_ompt, and
- *          compress_int's drain passed false for a year believing it
- *          compressed).
+ *          compresses nothing.
  */
 template <typename T, typename Derived, bool Enabled>
 template <typename SecondValueFunc, typename ClearFunc>
@@ -253,13 +251,12 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(bool            ap
         // n_elems is THIS chunk's own geometry, captured at enqueue (tuple
         // field <3>), not alloc_chunk_count() -- the consuming thread's
         // ambient size, which after a rechunk overflows a buffer allocated
-        // at a different geometry. Same fix as Chunk v1 and Chunk2A.
+        // at a different geometry. Same rule as Chunk v1 and Chunk2A.
         //
-        // Always scanned. The scan used to be skipped when the array's second
-        // value equalled first_value, which left BOTH verdicts at their initial
-        // `true` and, from an OMPT callback, cleared the chunk twice without
-        // having looked at it. scan_constants reports such a run as `first`
-        // only.
+        // Always scanned, even when the array's second value equals
+        // first_value: skipping the scan would leave BOTH verdicts at their
+        // initial `true` and clear the chunk twice without looking at it.
+        // scan_constants reports such a run as `first` only.
         const auto scan = Base::scan_constants(first_value, get_second_value(), n_elems);
 
         if (apply)
@@ -286,11 +283,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress(this Derived&        se
     // Only a MATERIALISED chunk can be compressed. A queued entry can outlive
     // the chunk's materialisation: make_block_compression (or a previous
     // drain) compresses it, and the OMPT end-of-region drain then replays
-    // the stale entry. compress_impl only refuses cst_val1; a chunk already
-    // at cst_val2 passed, its scan read the SHARED second-value block, found
-    // it constant, and cleared it a second time -- freeing that shared block
-    // in release builds (rechunk_validation on clang/OMPT: values wrong
-    // before any re-chunk). fill_list_to_compress_impl always tested both.
+    // the stale entry. compress_impl only refuses cst_val1; a chunk already at
+    // cst_val2 would pass, scan the SHARED second-value block, find it
+    // constant and clear it a second time -- freeing that shared block.
     if (!self.written(std::get<1>(inf_array)))
     {
         return;
@@ -356,11 +351,8 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress(const
         // rank-local -- map_chunk2_to_compress_potentially_thr[thr_rank], the
         // freed buffer goes to thr_rank's pool (clear_int_st), and the
         // candidate flag reset is an atomic store -- so the ranks are
-        // independent. This used to be a serial loop over CHUNK_PMP_MAX_THREADS
-        // on the calling thread; after a re-chunk on the full bench (64
-        // threads, 15.6M chunks, most of them queued by the refill) that loop
-        // was where the "re-chunk iteration" spent its time, one rank at a
-        // time while 63 waited.
+        // independent. A serial loop over the ranks made a re-chunk wait on
+        // one thread while the rest of the team idled.
         int team = 0;
 #pragma omp parallel
         {
@@ -442,13 +434,11 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_bool(
  * concurrent write loses the CAS, and re-queueing only becomes possible once
  * the chunk has reached its final state.
  *
- * The two entry points used to disagree on this (the bool twin compressed
- * first, the other reset first). Today the drain always runs at a point with no
- * concurrent writers -- on_parallel_end() puts an `omp barrier` in front of it,
- * and the ArrayChunk2 call sites are gated on !CHUNK_PMP_IN_PARALLEL_REGION --
- * so both orders happen to produce the same result. This is the one that stays
- * correct if that precondition ever slips, and the one Chunk2A settled on after
- * the double-clear was diagnosed there.
+ * Today the drain always runs at a point with no concurrent writers --
+ * on_parallel_end() puts an `omp barrier` in front of it, and the ArrayChunk2
+ * call sites are gated on !CHUNK_PMP_IN_PARALLEL_REGION -- so either order
+ * would give the same result. This is the one that stays correct if that
+ * precondition ever slips, as on Chunk2A.
  *
  * @tparam CompressFn callable `(chunk_type*, unsigned int n_elems)`.
  * @param thr_rank     Rank whose list is drained.
@@ -464,8 +454,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
     // The store is a per-rank VECTOR of maps, sized by resize_all_list_block_free_thr();
     // until that has run, [thr_rank] is out of bounds -- silent UB in a normal
     // build, an _GLIBCXX_ASSERTIONS abort otherwise. Same guard as the reuse-list
-    // lookups (ed84ebf4). It was on the bool path only, although both paths index
-    // the same store. Probing rank 0 is enough: a second value is registered for
+    // lookups. Probing rank 0 is enough: a second value is registered for
     // every rank in one loop (ArrayChunk2::add_second_value), so an empty map at
     // rank 0 means no key exists at any rank.
     if (is_vec_tuple_to_compress_potentially_empty_thr())
@@ -480,10 +469,9 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
     // scan below reads n_elems explicitly, but the clear it triggers reaches
     // free_block_to_pool(), which routes by the ambient thread_chunk_size()
     // (reuse list AND allocator). Pin each chunk to its own size, restore
-    // afterwards so the OMPT drain leaves the thread as it found it. Without
-    // this, the 4096-wide blocks of a rechunked "all-same" array were parked
-    // in the @512 list on the master thread and the next 512-array popped
-    // them (rechunk_validation PRE-FAIL on clang/OMPT). Same pin as
+    // afterwards so the OMPT drain leaves the thread as it found it: otherwise
+    // a rechunked array's wide blocks are parked in a narrower list, and the
+    // next array of that size pops them. Same pin as
     // make_block_compression_impl() and Chunk2A<T>::make_block_compression().
     [[maybe_unused]] const unsigned int saved_sz = thread_chunk_size();
 
@@ -654,10 +642,8 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_bool
 // reaches free_block_to_pool(), which routes by the ambient thread_chunk_size()
 // (reuse list AND allocator), so each chunk is pinned to its own n_elems right
 // before its clear, exactly as Chunk2A<T>::make_block_compression() does. A
-// single pin on the triggering proxy's size (kept, for the handshake) parked
-// the other array's buffers under the wrong key: under OMPT, the 4096-wide
-// blocks of a rechunked "all-same" array landed in the @512 list and the next
-// 512-array read a foreign block (rechunk_validation PRE-FAIL).
+// single pin on the triggering proxy's size (kept, for the handshake) would
+// park the other array's buffers under the wrong size.
 template <typename T, typename Derived, bool Enabled>
 template <typename FillFunc, typename ClearFunc>
 void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int         thr_rank,
@@ -666,19 +652,17 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
                                                                             FillFunc&&  fill_func,
                                                                             ClearFunc&& clear_func)
 {
-    // FIX (SIGABRT on a new array): find, NOT operator[]. The table is a
-    // map<T, shared_ptr<...>> per rank; operator[] on a missing key inserts a
-    // NULL shared_ptr there, which the next dereference blew up on --
-    // __shared_ptr_deref assertion, or SIGSEGV in release.
+    // find, NOT operator[]: the table is a map<T, shared_ptr<...>> per rank,
+    // and operator[] on a missing key inserts a NULL shared_ptr that the next
+    // dereference blows up on.
     //
     // A missing key is not an anomaly: it means nobody declared this second
-    // value on this rank, so there is no candidate to compress. That is
-    // exactly the `sz == 0` case handled just below, and the exit is the same.
-    // An ArrayChunk2 built without a prior add_second_value -- what the
-    // --test_stl self-tests do -- fell into it right at construction, through
-    // resize_common -> make_block_compression.
+    // value on this rank, so there is no candidate to compress -- the
+    // `sz == 0` case handled just below, with the same exit. An ArrayChunk2
+    // built without a prior add_second_value reaches it at construction,
+    // through resize_common -> make_block_compression.
     //
-    // is_vec_tuple_to_compress_potentially_empty_thr() was not enough here: it
+    // is_vec_tuple_to_compress_potentially_empty_thr() is not enough here: it
     // only tests "no key anywhere", not "this key on this rank".
     auto&      map_thr = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank];
     const auto it      = map_thr.find(second_value);
@@ -831,10 +815,10 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
         // Re-queue the writer's chunk only into the list of ITS array's second
         // value. Proxy2::perform_compression runs the pass of every key of the
         // rank with the same writer: queued under another array's key, the
-        // chunk was compressed by that key's next pass to the OTHER array's
-        // constant whenever it was constant at that value -- and its own
-        // array, which only recognises its own constant, then wrote into that
-        // shared array, changing every chunk compressed to it
+        // chunk would be compressed to the OTHER array's constant whenever it
+        // was constant at that value -- and its own array, which only
+        // recognises its own constant, would then write into that shared
+        // array, changing every chunk compressed to it
         // (chunk2_foreign_key_validation).
         if (proxy2->is_not_cst_val() && proxy2->second_value == second_value)
         {
@@ -928,9 +912,8 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr_r
                 // arrays that declared this one may all be gone (cleared:
                 // clear_core drops their candidates by num_tab, not the slot).
                 // No array, no info tuple -- and nothing of that value left
-                // to fold: skip it. Dereferenced unguarded, this was a SIGSEGV
-                // in force_compression() / shrink_to_fit() after the clear of
-                // a chunk2 array with a second value.
+                // to fold: skip it (unguarded, force_compression() /
+                // shrink_to_fit() after such a clear dereferences null).
                 const auto* inf = Proxy2<T>::share_info_array.find_inf_array(second_val);
                 if (inf == nullptr)
                 {
@@ -990,9 +973,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr_r
  *          the call site does NOT work, generic or not: once Chunk2<T> is
  *          instantiated FastCompPolicy is a concrete type, so the qualified
  *          name is looked up eagerly and the serial build fails to compile.
- *          That mistake was made here once; the manual-compression build that
- *          originally caught it is gone, so the serial configurations are what
- *          guard it now.
+ *          The serial configurations are what catch that mistake.
  */
 template <typename T, typename Derived, bool Enabled>
 template <bool IsBoolCas, typename InitFn>
@@ -1297,15 +1278,9 @@ void Chunk2OmpPolicy<T, Derived, false>::clear_int_st(this Derived& self, int nu
 
     // CHUNK_STATS: this is the non-OMP twin of block_clear -- reached from
     // compress_int's sweep via clear_st(num_compress_value, ind), which
-    // bypasses block_clear entirely. Without this, compress stayed at 0 in
-    // sequential builds even though the sweep was actively compressing chunks.
-    // No if constexpr(chunk_config::stats) needed: both functions already
-    // resolve to a no-op overload when CHUNK_STATS is off (selected at their
-    // definition, in chunk_stats.h) -- matching the OMP
-    // twin of block_clear above, which calls them unconditionally too. An
-    // earlier version of this guard had its braces missing, silently
-    // dropping the second call out of the (redundant, and therefore
-    // harmless) if constexpr; removed rather than re-braced, for consistency.
+    // bypasses block_clear entirely, so it counts here. No if constexpr
+    // needed: both functions resolve to a no-op overload when CHUNK_STATS is
+    // off (chunk_stats.h), as in the OMP twin of block_clear above.
     increm_chunk_compress<Derived>();
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(alloc_chunk_count()));
 

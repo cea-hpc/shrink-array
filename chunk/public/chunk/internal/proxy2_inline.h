@@ -584,7 +584,7 @@ template <typename T>
 void Proxy2<T>::ensure_writable_storage()
 {
     // Route this materialisation to THIS array's chunk-size pool -- the sync
-    // twin of the fix in Proxy2AFastCompPolicy::ensure_writable_storage_async.
+    // twin of Proxy2AFastCompPolicy::ensure_writable_storage_async.
     // Without it, chunk.create_value() below allocates at whatever the STALE
     // per-thread thread_chunk_size happens to be (left behind by an unrelated
     // array's create_value()/rechunk_to(), neither of which restores it --
@@ -598,9 +598,8 @@ void Proxy2<T>::ensure_writable_storage()
         shrink_array::set_thread_alloc_key(this->alloc_key());
     }
 
-    // Verbatim extraction of the materialisation sequence previously inlined at
-    // the top of execute_simple_operation (see header note). Any behaviour
-    // change here is a regression by definition.
+    // The materialisation sequence at the top of execute_simple_operation (see
+    // header note). Any behaviour change here is a regression.
     if constexpr (chunk_config::use_compression_with_counter && requires { this->set_info_second_value_ind(); })
     {
         this->set_info_second_value_ind();
@@ -749,7 +748,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_arithmetic_co
                                                                                                  const U&      operand,
                                                                                                  LAMBDA operation)
 {
-    // Same fix as ensure_writable_storage(): this function may call
+    // Same rule as ensure_writable_storage(): this function may call
     // chunk.create_value() below (via the will_be_not_second_value branch)
     // without going through Proxy2<T>::create_value()'s self-correcting
     // wrapper -- pin the ambient size to THIS array's own geometry first.
@@ -829,7 +828,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_comp
                                                                                                const U&      operand,
                                                                                                LAMBDA        operation)
 {
-    // Same fix as ensure_writable_storage(): see that function's comment.
+    // Same rule as ensure_writable_storage(): see that function's comment.
     if constexpr (build_config::chunk_dynamic)
     {
         shrink_array::set_thread_chunk_size(self.chunk_size());
@@ -843,8 +842,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, false>::execute_arithmetic_comp
     if (was_not_written)
     {
         const CalcType intermediate = op(static_cast<CalcType>(self.raw_elem()), static_cast<CalcType>(operand));
-        // Built where it is used (was a default-constructed `T res` at function
-        // scope, then assigned: two writes of a struct for one value).
+        // Built where it is used: one write of a struct for one value.
         const auto res = static_cast<T>(intermediate);
 
         const bool will_be_not_second_value = (res != self.second_value) && self.is_cst_val2();
@@ -880,7 +878,7 @@ template <typename T>
 template <typename LAMBDA>
 void Proxy2<T>::execute_inplace_operation(LAMBDA operation)
 {
-    // Same fix as ensure_writable_storage(): see that function's comment.
+    // Same rule as ensure_writable_storage(): see that function's comment.
     if constexpr (build_config::chunk_dynamic)
     {
         shrink_array::set_thread_chunk_size(this->chunk_size());
@@ -1023,7 +1021,7 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
                                          [[maybe_unused]] bool check_first_value_result) noexcept
 {
     this->check_not_stale();
-    // Cross-rank RMW materialisation (CHUNK_SYNC_ON_READ): pull any foreign
+    // Cross-rank RMW materialisation: pull any foreign
     // deferred write to this offset to applied state before reading v_old, so the
     // RMW cannot clobber it. Precise gate, outside begin_write. See
     // ProxyBase::arithmetic_assign for the full rationale.

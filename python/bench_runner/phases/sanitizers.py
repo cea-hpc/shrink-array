@@ -4,8 +4,8 @@ import sys
 from ..builds import _variant_base, config_dir_present, resolve_exe, skip_variant_on_config
 from ..progress import _prog, get_progress_bar
 from ..runs import _append_error_now, effective_timeout, run_cmd
-from ..settings import SANITIZER_CONFIGS, SANITIZER_REPS, sanitizer_env_for
-from ..term import cyan, green, red
+from ..settings import SANITIZER_CONFIGS, SANITIZER_REPS, sanitizer_env_for, sanitizer_skip_reason
+from ..term import cyan, green, red, yellow
 
 
 def run_sanitizer_phase(args, plan, counter, errors):
@@ -17,6 +17,10 @@ def run_sanitizer_phase(args, plan, counter, errors):
     #     detects the latter and flips success to False).
     for cfg in SANITIZER_CONFIGS:
         if not config_dir_present(args.build_root, cfg):
+            continue
+        why = sanitizer_skip_reason(cfg)
+        if why:
+            print(yellow(f"⚠️  {cfg} skipped: {why}."))
             continue
         san_env = sanitizer_env_for(cfg)
         for var in args.variants:

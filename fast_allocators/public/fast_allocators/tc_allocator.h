@@ -68,10 +68,9 @@
  * @brief Must this call hand out plain `new[]` memory instead of slab memory?
  *
  * @details Under STD_ALLOC, for the whole run; never otherwise. A constant: an
- *          allocator's mode cannot change after init(). (A run-time global
- *          was read here until Sept. '26; flipped after init() it made
- *          ElementSize wrong for the other mode -- see below -- and
- *          STD_ALLOC already gives a memory checker individual objects.)
+ *          allocator's mode cannot change after init() -- a run-time switch
+ *          flipped after init() would make ElementSize wrong for the other
+ *          mode (see below).
  *
  * @warning The two arms disagree on what ElementSize means: bypass mode counts
  *          ELEMENTS (it feeds `new ElementType[ElementSize]`), slab mode counts
@@ -299,13 +298,11 @@ class alignas(64) TCSlab
     ///          size selects (ChunkBase::release_to_owner), which after a
     ///          re-chunk need not be the size that allocated it; that only
     ///          finds the right slab if every allocator of one element type
-    ///          cuts its slabs at the same size. This used to shrink a slab
-    ///          whose capacity exceeded what the `unsigned short` side array
-    ///          indexes -- for small elements (8 and 16 bytes in a 2 MiB budget:
-    ///          256 and 512 KiB slabs) the geometry then depended on the element
-    ///          size, and slab_of() read a "slab" pointer out of the middle of a
-    ///          block (slab_geometry_validation). The capacity is capped in
-    ///          alloc_block() instead; the unused tail is never touched.
+    ///          cuts its slabs at the same size. So the side-link index width
+    ///          caps the CAPACITY (in alloc_block(); the unused tail is never
+    ///          touched), never the slab size: a slab size that depends on the
+    ///          element size makes slab_of() read a "slab" pointer out of the
+    ///          middle of a block (slab_geometry_validation).
     [[nodiscard]] static uintptr_t slab_bytes_for(uintptr_t block_bytes) noexcept
     {
         return NextPowerOf2(block_bytes);
@@ -452,10 +449,9 @@ void TCSlab<FreeLinks::InPayload>::operator delete(void* ptr);
     } while (0)
 
 // ---------------------------------------------------------------------------
-// Intrusive doubly-linked slab-list primitives, single-sourced. The three slab
-// families (TCTypeAllocator / TCTypeCAllocator / TCTypeAllocatorEBC) used to
-// carry byte-identical copies of these; they now delegate to these templates so
-// a fix lands in one place. Node must expose `Node* next; Node* prev;`.
+// Intrusive doubly-linked slab-list primitives, shared by the three slab
+// families (TCTypeAllocator / TCTypeCAllocator / TCTypeAllocatorEBC) so a fix
+// lands in one place. Node must expose `Node* next; Node* prev;`.
 // ---------------------------------------------------------------------------
 /**
  * @brief Is @p node in the list headed by @p list?
@@ -579,8 +575,7 @@ void sl_insert(Node*& list, Node* node) noexcept
  *          moves back to @p block, and a slab that reached is_empty() leaves the
  *          lists for the reserve, @p on_kept or @p on_evict.
  *
- * @note This is the single copy for every slab family -- they used to carry
- *       byte-identical versions. The two callables are the only real divergence.
+ * @note Shared by every slab family; the two callables are the only divergence.
  *
  * @warning A slab that empties is not thereby reclaimed. With
  *          @p nb_max_block_empty negative -- which is what the chunk layer
@@ -766,14 +761,12 @@ class TCSlabPool
 
             if constexpr (Derived::eager_first_slab)
             {
-                // Stamped like every slab alloc_slow() creates. This first one
-                // was not: a free of one of its blocks found no owner and fell
-                // back to the CALLER's allocator -- in a dynamic build, whichever
-                // chunk size the thread last served -- which then unlinked the
-                // slab from lists it was never on (sl_remove assertion; silent
-                // list corruption without DBG_ASSERT). With the owner set, the
-                // free goes home whatever the ambient size
-                // (ChunkBase::release_to_owner).
+                // Stamped like every slab alloc_slow() creates: an unstamped
+                // slab has no owner, so a free of one of its blocks falls back to
+                // the CALLER's allocator -- in a dynamic build, whichever chunk
+                // size the thread last served -- which unlinks the slab from
+                // lists it was never on. With the owner set, the free goes home
+                // whatever the ambient size (ChunkBase::release_to_owner).
                 insert(block, new_slab());
             }
 
@@ -1066,11 +1059,8 @@ class TCSlabPool
                 // mis-accounted block (the same buffer parked or released twice,
                 // or two threads touching one slab's counter) falsifies -- and
                 // MADV_DONTNEED turns the falsehood into destroyed data: the
-                // live block's page is dropped and reads back as zeros.
-                // Observed: shrink_bench chunk2a dyn, 32 threads, tab_ulong
-                // chunk 35342 materialised, non-constant, its whole buffer read
-                // as 0 against the reference file. Before this flag the same
-                // accounting error left the slab mapped and intact.
+                // live block's page is dropped and reads back as zeros. Left
+                // mapped, the same accounting error is harmless.
                 //
                 // Pages are given back only by
                 // TCTypeCAllocator::reclaim_empty_slabs_now(), which is called
@@ -1229,11 +1219,10 @@ class TCTypeAllocator final : public VTCTypeAllocator, public TCSlabPool<TCTypeA
  *          ::VTCTypeAllocator report registry; under STD_ALLOC it zero-fills
  *          what it hands out.
  *
- *          alignas(64): it lives in per-rank arrays (one per thread), and at
- *          96 bytes two neighbouring ranks shared a cache line -- one rank's
- *          slab list heads (block_full, block: offsets 0 and 8) with the
- *          previous rank's reserve (block_empty, nb_block_empty). Each now
- *          starts its own line (128 bytes a rank).
+ *          alignas(64): it lives in per-rank arrays (one per thread); at 96
+ *          bytes one rank's slab list heads (block_full, block) would share a
+ *          cache line with the previous rank's reserve (block_empty,
+ *          nb_block_empty). Each starts its own line (128 bytes a rank).
  *
  * @tparam ElemT Element type; an allocation is an ARRAY of these.
  */
@@ -1258,12 +1247,11 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
     ///        holds no block, and report how many were advised.
     /// @details manage_full_empty() only looks at a slab at the instant one of
     ///          its blocks is freed, so a slab that ends up empty without that
-    ///          transition being seen stays resident for good. Measured after a
-    ///          re-chunk at 64 threads: the abandoned (key, size) set held
-    ///          23 362 slabs, 0 live blocks, 23 362 empty -- and not one
-    ///          madvise. This is the sweep that closes that gap; call it at the
-    ///          points where a whole set is known to have been released (the
-    ///          re-chunk drain, an array's teardown), not on the hot path.
+    ///          transition being seen stays resident for good (after a re-chunk,
+    ///          a whole abandoned (key, size) set of empty slabs, never advised).
+    ///          This is the sweep that closes that gap; call it at the points
+    ///          where a whole set is known to have been released (the re-chunk
+    ///          drain, an array's teardown), not on the hot path.
     std::size_t reclaim_empty_slabs_now() noexcept
     {
         empty_slab_sweep sweep;

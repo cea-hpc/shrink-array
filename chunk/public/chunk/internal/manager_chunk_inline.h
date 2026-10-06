@@ -79,8 +79,7 @@ void load_balance_list_block_free_thr();
  *          the predicate and the action of the same decision: if the predicate
  *          reports "nothing to compress" for a variant the action would have
  *          handled, the between-phase pass never runs for it and all of its
- *          compression falls on the opportunistic in-loop path. The inline
- *          comment on the predicate records the GNU build where that happened.
+ *          compression falls on the opportunistic in-loop path.
  *
  * @see manager_chunk.h for ManagerChunkInt, the type-erased interface, and for
  *      the free-list containers these bodies manipulate.
@@ -137,8 +136,7 @@ void ManagerChunk<CHUNK_T, T>::force_chunk_to_compress() const
  * Which containers exist depends on the variant (see the file header): a plain
  * per-rank list for Chunk and Chunk2A, plus the per-second-value map for
  * Chunk2. A list keeps its capacity across the passes' clear(), so nothing
- * pre-reserves it (the per-rank "last size" history that once did, at every
- * parallel-begin under OMPT, was a no-op and is gone).
+ * pre-reserves it.
  */
 template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunk<CHUNK_T, T>::resize_chunk_to_compress_potentially() const
@@ -181,8 +179,7 @@ void ManagerChunk<CHUNK_T, T>::resize_chunk_to_compress_potentially() const
  * @return True as soon as one list holds a candidate.
  *
  * @warning This predicate and compress_chunk_to_compress_potentially() must agree
- *          branch for branch — see the @warning in the file header, and the
- *          inline comment below, which records what a disagreement cost.
+ *          branch for branch — see the @warning in the file header.
  */
 template <template <typename> typename CHUNK_T, typename T>
 bool ManagerChunk<CHUNK_T, T>::have_chunk_to_compress_potentially(int n_thr) const
@@ -353,9 +350,9 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::resize_all_list_block_free_thr(
  *
  * @note It first walks the maps for ops that were enqueued but never drained,
  *       in EVERY build. It does not abort on them: it reports (stderr, the
- *       first 16 times), then applies and clears them. Release builds used to
- *       skip the walk and destroy the maps with the ops in them: a leftover op
- *       was a write lost without a word, and its block was never recycled.
+ *       first 16 times), then applies and clears them. Skipping the walk would
+ *       destroy the maps with the ops in them: a write lost without a word,
+ *       its block never recycled.
  *       The walk is one empty() test per rank when nothing is left.
  */
 template <template <typename> typename CHUNK_T, typename T>
@@ -439,8 +436,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
             // block above is compiled out; (b) any index not covered by the
             // team when team_size < max_thr. Indices already drained above are
             // now empty → skipped. Here the calling thread runs any remaining
-            // foreign ops, so recycle() may drop foreign blocks exactly as
-            // before — the same bounded, safe fallback as the original code.
+            // foreign ops, so recycle() may drop foreign blocks: a bounded,
+            // safe fallback.
             for (int t = 0; t < max_thr; ++t)
             {
                 drain_index(t);
@@ -515,8 +512,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
         // only after an op is drained or erased; ops are always enqueued on
         // the writer's rank. So a zero read HERE, by rank r's thread, cannot hide an op this
         // thread queued. A stale non-zero (a concurrent cross-rank drain) only
-        // takes the locked path below. 6.3 M flush attempts at 64 threads,
-        // none of which applied an op, is what this skips.
+        // takes the locked path below. This skips millions of flush attempts
+        // that would apply nothing.
         if (CompressionManager<T, CHUNK_T<T>>::pending_ops_rank(thr_rank) != 0)
         {
             have_flushed |= CompressionManager<T, CHUNK_T<T>>::flush_deferred(thr_rank);
@@ -526,7 +523,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
     {
         bool local_flushed = false;
 
-        // FIX (deferred use-after-free at reset): drain until ALL op_maps are
+        // Drain until ALL op_maps are
         // empty BEFORE storage.destroy(). A single flush_deferred pass does one
         // swap-drain and leaves reentrant re-enqueues (a write_body can enqueue a
         // new compression op) in op_map. If we destroy the storage now, those
@@ -544,9 +541,9 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
             // visible to this acquire sum; and every op in a map is counted
             // (one insertion site, increment per new entry; decrements only
             // after removal). A skipped pass would only have dropped chunk-set
-            // keys and a "may hold ops" hint. Was: one fork/join of the whole
-            // team per type and per pass regardless -- 92% of the run's
-            // parallel regions at 64 threads.
+            // keys and a "may hold ops" hint -- at the price of one fork/join
+            // of the whole team per type and per pass, most of a run's
+            // parallel regions.
             if (!CompressionManager<T, CHUNK_T<T>>::any_pending_ops())
             {
                 break;
@@ -648,9 +645,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::alloc_chunk_allocator_thr()
  * @note Fast-alloc builds only. Sequential, from whichever thread registers
  *       the manager: an allocator is a slot indexed by rank, not a thread
  *       local, and init() only records the geometry -- the slab is taken at
- *       the rank's first allocation. This used to run inside a parallel
- *       region, one call per rank, at ParamChunk::init_indexes(); a type is
- *       now registered by its first array, from any context.
+ *       the rank's first allocation. A type is registered by its first
+ *       array, from any context.
  */
 template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunkParallelImpl<CHUNK_T, T, true>::init_allocators([[maybe_unused]] int block_size) const
@@ -672,10 +668,10 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::init_allocators([[maybe_unused]
 
         for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
         {
-            // FIX (op/value slab aliasing): -1 = never munmap a value slab. A freed
-            // value slab's address could be reobtained by the op pool's
-            // fast_alloc::map_anonymous() and overwrite a live op (or vice-versa). Value slabs
-            // are long-lived (data), so few become empty and retained memory is modest.
+            // -1 = never munmap a value slab: a freed value slab's address could
+            // be reobtained by the op pool's fast_alloc::map_anonymous() and
+            // overwrite a live op (or vice-versa). Value slabs are long-lived
+            // (data), so few become empty and retained memory is modest.
             auto& allocator = CHUNK_T<T>::get_chunk_allocator(thr_rank);
             allocator.set_rank(thr_rank); // stamped into every slab as owner_rank
             allocator.init(CHUNK_T<T>::storage_units(shrink_array::alloc_chunk_count()), block_size / v, -1);
@@ -692,11 +688,10 @@ template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunkParallelImpl<CHUNK_T, T, false>::init_allocator(int block_size) const
 {
     // std-alloc: allocator_data is NullValueAllocator, init()/set_arena() are no-ops.
-    // FIX (op/value slab aliasing): -1 = never munmap. See OpenMP variant above.
-    // FIX (op/value slab aliasing, arena routing): tag this pool Value so it draws
-    // from value_arena(), not the Op-arena default -- see register_chunk_size_serial
-    // in chunk_base.h for the full rationale (same bug, this is the static/
-    // non-CHUNK_DYNAMIC and unregistered-size-fallback allocator).
+    // -1 = never munmap a value slab, and the Value arena rather than the Op
+    // default, so a value pool never shares slabs with the deferred-op pool
+    // (see register_chunk_size_serial in chunk_base.h; this is the static /
+    // unregistered-size fallback allocator).
     CHUNK_T<T>::allocator_data.set_arena(fast_alloc::ArenaKind::Value);
     CHUNK_T<T>::allocator_data.init(CHUNK_T<T>::storage_units(shrink_array::alloc_chunk_count()), block_size, -1);
 }
@@ -708,11 +703,6 @@ void ManagerChunkParallelImpl<CHUNK_T, T, false>::init_allocator(int block_size)
  * for that element count, and the manager gets a per-size reuse free-list slot.
  * The second is why this is called even in std-alloc builds, where there is no
  * allocator to create.
- *
- * Declared once (manager_chunk.h, under CHUNK_DYNAMIC), so it is defined once
- * too: the OpenMP and serial builds used to carry a copy each, differing only
- * in which allocator call they make, with the shared free-list rationale
- * written out twice in different words.
  *
  * @param size       Chunk size, in elements, being registered.
  * @param block_size Number of chunks per allocation block for that size.
@@ -807,15 +797,13 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::load_balance_list_block_free()
 //            that slice and record the repeats ACROSS buckets.
 //   free     one bucket per call: release everything not recorded as a repeat.
 //
-// Why the repeats matter (double-free hunt): a block parked in BOTH the legacy
-// list and a per-size list (clear_core() switches destination once
+// Why the repeats matter: a block parked in BOTH the legacy list and a
+// per-size list (clear_core() switches destination once
 // register_runtime_chunk_size has created a per-size list for that geometry,
 // so a buffer can be filed on either side across a rechunk) is freed twice:
 // glibc aborts with "corrupted double-linked list" in _int_free. The sort and
 // dedup phases catch every such repeat -- same rank or not -- BEFORE the first
-// free, report each one, and free it once. This used to be a single
-// unordered_set fed sequentially by one thread; sorting per bucket and merging
-// per address slice does the same job with every thread busy.
+// free, report each one, and free it once, with every thread busy.
 // Compile with -DCHUNK_NO_FREE_GUARD to skip the sort and dedup phases.
 namespace internal
 {
@@ -922,8 +910,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_screen(in
     // size_policy_.size(). drain_reuse_list_for_size releases a given size at
     // each rechunk, but at PROGRAM END no rechunk runs, so the FINAL
     // geometry's buffers sit in this map unfreed -> ASan direct-leak of one
-    // array's worth of chunks. Applies to v1 as much as to chunk2/2A -- v1
-    // once lacked it and leaked its final geometry on every re-chunked dyn run.
+    // array's worth of chunks. Applies to v1 as much as to chunk2/2A.
     if constexpr (build_config::chunk_dynamic)
     {
         for (auto& size_kv : mgr::list_block_free_thr_by_size_)
@@ -1140,9 +1127,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_dedup([[m
  * @details Inside the region, one bucket per call, by the thread whose rank it
  *          is when the team is large enough. That is the point of the split,
  *          not just the sharing: glibc gives each thread its own arena and a
- *          block is cheapest to release through the one it came from. Teardown
- *          on this workload put __lll_lock_wake_private high in the profile --
- *          64 ranks releasing through a single arena.
+ *          block is cheapest to release through the one it came from (64
+ *          ranks releasing through a single arena contend on its lock).
  *
  *          Skips the pointers the dedup phase recorded against this bucket.
  *          That list is empty on any sane run, so the set is built only when
@@ -1320,32 +1306,14 @@ void ManagerChunk<CHUNK_T, T>::compute_size_max_number_of_chunk_to_check_compres
 {
     auto& global_stats = SingletonChk<GlobalStatsChunkList>::getRef();
 
-    // Take the tuning constants from THIS manager's own variant.
-    //
-    // Both were spelled Chunk2Def:: in a function templated on CHUNK_T, so every
-    // variant was tuned with Chunk2's numbers. At the levels this tree is
-    // configured with they differ a great deal:
-    //
-    //     variant    floor   divisor
-    //     Chunk        100        25
-    //     Chunk2      2000        20
-    //     Chunk2A      500        50
-    //
-    // A v1 manager therefore used a floor of 2000 instead of 100 -- twenty times
-    // too high -- and Chunk2A 2000 instead of 500. The floor is not a detail: the
-    // computed value is divided by the thread count, so at 64 threads it
-    // collapses onto the floor and the floor IS the threshold. A rank's candidate
-    // list had to reach 2000 entries before trigger_compression_if_needed() would
-    // flag it, so compression almost never ran during execution, almost no buffer
-    // was ever returned to the reuse pools, and every materialisation allocated
-    // afresh.
-    //
-    // Measured on v1 dyn, 64 threads, before this fix: 66844665 fresh
-    // allocations against 788282 compressions -- 85 to 1 -- and 33 GB resident
-    // with the pools empty throughout the run and filled only at teardown.
-    //
-    // The `if constexpr (IsChunk2<...>)` left commented out just below says
-    // someone had already seen this.
+    // Take the tuning constants from THIS manager's own variant: they differ
+    // a great deal (floor 100 / 2000 / 500 for Chunk / Chunk2 / Chunk2A).
+    // The floor is not a detail: the computed value is divided by the thread
+    // count, so at 64 threads it collapses onto the floor and the floor IS the
+    // threshold. Another variant's, higher floor means a rank's candidate list
+    // almost never reaches it: compression almost never runs during
+    // execution, no buffer returns to the reuse pools, and every
+    // materialisation allocates afresh.
     using VariantDef = std::conditional_t<IsChunk2A<CHUNK_T, T>, Chunk2ADef,
                                           std::conditional_t<IsChunk2<CHUNK_T, T>, Chunk2Def, ChunkDef>>;
 

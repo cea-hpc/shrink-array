@@ -61,9 +61,9 @@ namespace shrink_array::internal
 inline const bool g_rechunk_trace = std::getenv("CHUNK_RECHUNK_TRACE") != nullptr;
 
 /// @brief Resident set size of this process in MiB, or -1 if unreadable.
-/// @details EXACT (smaps_rollup, see exact_rss.h): statm, used until Sept '26,
-///          lags by gigabytes at 64 threads. Only the CHUNK_RECHUNK_TRACE
-///          paths read it (per phase of a re-chunk, per slice).
+/// @details EXACT (smaps_rollup, see exact_rss.h): statm lags by gigabytes at
+///          64 threads. Only the CHUNK_RECHUNK_TRACE paths read it (per phase
+///          of a re-chunk, per slice).
 inline long rss_mib_now() noexcept
 {
     const long kib = shrink_array::exact_rss_kib();
@@ -72,11 +72,10 @@ inline long rss_mib_now() noexcept
 
 /// @brief The rebuild loop's schedule: CHUNK_RECHUNK_SCHEDULE="kind[,chunk]"
 ///        (static|dynamic|guided|auto, chunk >= 1 or omitted), read once;
-///        guided,16 when unset or malformed. Measured at 64 threads
-///        (shrink_bench_chunk2_dyn --mode perf): whole bench -3.8% vs the
-///        historical dynamic,64 (34.68 -> 33.37 s), rebuild phases -7%
-///        (median); dynamic,256/1024 were 2-3x slower on small rechunks.
-///        CHUNK_RECHUNK_SCHEDULE=dynamic,64 restores the old schedule.
+///        guided,16 when unset or malformed: a few % faster than dynamic,64 on
+///        the 64-thread bench, where dynamic,256/1024 were 2-3x slower on
+///        small re-chunks. CHUNK_RECHUNK_SCHEDULE=dynamic,64 restores the old
+///        schedule.
 ///        Serial builds parse it too; chunk_pmp_set_schedule() is then a no-op.
 struct RebuildSchedule
 {
@@ -161,9 +160,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // two (48: shift 5, mask 47) sends two elements to one slot, and the
     // refill below -- which assumes one geometry tiles the other exactly --
     // frees a buffer still in use. Refused, with a message in EVERY build:
-    // a caller bug, on a cold path (the cst_buffer_size refusal below is
-    // silent outside check builds, and a test once failed on it with no
-    // explanation).
+    // a caller bug, on a cold path.
     if (!is_valid_chunk_size(new_size))
     {
         std::fprintf(stderr, "[RECHUNK] rechunk_to(%u) refused: a chunk size must be a power of two\n", new_size);
@@ -188,7 +185,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         return;
     }
 
-    // Serial fast-alloc re-chunk is now supported: the per-size allocator pool
+    // Serial fast-alloc builds re-chunk too: the per-size allocator pool
     // (allocator_pool_serial_, populated by register_chunk_size_serial via
     // set_chunk_size) routes each allocation to the right element size, so the
     // old and new geometries coexist safely for the duration of the refill.
@@ -201,8 +198,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     }
 
     // A real geometry change is now committed: every no-op / refusal exit
-    // (same size, size 0, serial fast-alloc, empty array) is above this
-    // point, and nothing below aborts. Count it for the run's stats.
+    // (same size, size 0, invalid or too wide a size, empty array) is above
+    // this point, and nothing below aborts. Count it for the run's stats.
     ++shrink_array::g_rechunk_count;
 
     // Drain THIS array's deferred WRITE ops at the OLD geometry, before
@@ -242,10 +239,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     // Content-neutral: the snapshot below reads materialised values.
     self().rechunk_drop_candidates();
 
-    // (No dense O(n) snapshot: the refill below streams old->new in
-    // bounded tiles — see step 3 — instead of materialising the whole
-    // logical array, which cost O(n*sizeof(T)) RAM and defeated the
-    // compressed store.)
+    // No dense O(n) snapshot: the refill below streams old -> new chunk by
+    // chunk, so the compressed store is never materialised whole.
 
     // Variant state captured BEFORE the geometry switch (Chunk2's
     // array-level second_value; T{} / ignored for Chunk & Chunk2A).
@@ -298,24 +293,17 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
 
         tmp.flush_pending_deferred_ops(); // materialise tmp's deferred writes
 
-        // tmp's refill CANDIDATES are deliberately KEPT.
+        // tmp's refill CANDIDATES are deliberately KEPT. Dropped, every rebuilt
+        // chunk holding a constant stays materialised until teardown -- a
+        // Chunk2/2A chunk only re-enters the candidate list on a write that
+        // transitions it to a constant, which never happens to a chunk that
+        // already holds one -- hundreds of MB to ~1 GB per re-chunk on the
+        // bench.
         //
-        // They used to be dropped here (tmp.rechunk_drop_candidates(), same
-        // geometry-mismatch rationale as the OLD-geometry removal above), which
-        // "leaves *this's blocks materialised but correct". Measured cost of
-        // that on shrink_bench chunk2 dyn (--divisor 20, 4 re-chunks 64->128):
-        // 781 456 queued candidates never scanned, every new chunk rebuilt from
-        // an all-cst2 span left materialised until teardown -- a Chunk2/2A chunk
-        // only re-enters the candidate list on a write that transitions it to a
-        // constant, which never happens to a chunk that already holds one --
-        // and the run ended at 2 176 MB against 1 623 MB without re-chunking.
-        // On the full bench (64 threads, 10^9 elements) one re-chunk of
-        // tab_short cost +985 MB in steady state, chunk2a.
-        //
-        // The geometry-mismatch hazard the drop guarded against no longer
-        // exists: every candidate tuple carries the chunk's own geometry
-        // (field <3>, captured at enqueue) and all three variants scan and
-        // compress at that size, not at the ambient alloc_chunk_count().
+        // No geometry-mismatch hazard: every candidate tuple carries the
+        // chunk's own geometry (field <3>, captured at enqueue) and all three
+        // variants scan and compress at that size, not at the ambient
+        // alloc_chunk_count().
         //
         // What makes keeping them correct across the swap below:
         //  - the tuples point into tmp.chunk_list's storage, which the
@@ -325,8 +313,9 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         //    Chunk2), so the sweep's reset_tab_inside_list_to_compress(num_tab,
         //    num_chunk) lands on the row allocated for tmp at new_size;
         //  - tmp's own destruction removes candidates by ITS post-swap num_tab
-        //    (= *this's old identity, already emptied at line ~94) and, for 2A,
-        //    by the OLD chunk_list's pointer range -- neither touches these.
+        //    (= *this's old identity, already emptied by rechunk_drop_candidates()
+        //    above) and, for 2A, by the OLD chunk_list's pointer range --
+        //    neither touches these.
         // The next end-of-phase sweep then scans them with the variant's own
         // compression logic and folds the constant ones back. Nothing is
         // synthesised here.
@@ -376,22 +365,16 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // Restore the active geometry BEFORE tmp is destroyed, so tmp (now
         // OLD geometry) frees its blocks into the OLD-size pool.
         //
-        // t_active is restored to old_size, NOT the saved_t_active captured
-        // at entry: t_active is a thread-local that every write path now
-        // self-corrects to ITS OWN array's chunk_size() right before
-        // materialising (see Proxy2::ensure_writable_storage() and its
-        // siblings), so by the time this rechunk_to() call ran, it could
-        // already reflect whatever UNRELATED array was written last --
-        // with no guaranteed relationship to old_size. Restoring to that
-        // stale, effectively-arbitrary value routes free_elt_pow2() below
-        // (via get_chunk_allocator(), which keys on the ambient) to the
-        // WRONG size pool -- same failure family as sl_contains(list,
-        // node) assertions / SIGSEGVs, just triggered from the free side.
-        // old_size is reliable: captured once, from this array's own
-        // self().size_policy_, before anything below could have disturbed it.
-        // g_active is unaffected by this: only rechunk_to() ever touches
-        // it (via set_active_chunk_size()), never a per-write self-
-        // correction, so saved_g_active stays a trustworthy baseline.
+        // t_active is restored to old_size, NOT to a value saved at entry:
+        // every write path re-sets t_active to ITS OWN array's chunk_size()
+        // right before materialising (see Proxy2::ensure_writable_storage()
+        // and its siblings), so a value saved at entry may belong to an
+        // unrelated array. Restoring it would route free_elt_pow2() below
+        // (through get_chunk_allocator(), which keys on the ambient) to the
+        // WRONG size pool. old_size is reliable: captured once, from this
+        // array's own size_policy_. g_active is touched only by rechunk_to()
+        // (set_active_chunk_size()), so saved_g_active is a trustworthy
+        // baseline.
         set_active_chunk_size(saved_g_active);
         set_thread_chunk_size(old_size);
 
@@ -406,37 +389,27 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     r_teardown    = rss_now();
 
     // Free the OLD-geometry blocks tmp just parked into the old-size reuse
-    // list. Nothing pops them again — this array (and, in a global
-    // re-chunk, every array) has moved off old_size — so without this they
+    // list. Nothing pops them again -- this array (and, in a global
+    // re-chunk, every array) has moved off old_size -- so without this they
     // accumulate as pure RETENTION across successive re-chunks: memory
-    // grows by ~one array's worth of buffers per geometry change (observed
-    // 20 GB after repeated re-chunks). Returns them to the OS under
-    // std-alloc; also removes stale-geometry buffers so a later pop can
-    // never grab a wrong-size block. NOTE: with an immortal-arena fast
-    // allocator these pages cannot be returned — retention is inherent
-    // there until the allocator gains per-size recycling.
+    // grows by ~one array's worth of buffers per geometry change. Returns them
+    // to the OS under std-alloc (under fast alloc, the slab sweep below does);
+    // also removes stale-geometry buffers so a later pop can never grab a
+    // wrong-size block.
     self().rechunk_drain_reuse_list(old_size);
-    // The array has left (old_key, old_size) for good: its slabs there hold
-    // nothing any more once the drain above has run, but manage_full_empty()
-    // only inspects a slab at the instant a block is freed, so the ones that
-    // became empty without that being observed stay resident. Sweep them now.
-    // Measured at 64 threads: 23 362 / 18 300 / 8 600 / 18 261 empty slabs with
-    // zero live blocks after the four re-chunks of iteration 1000, and no
-    // madvise at all before this.
-    // Key 0 is swept too. It is the shared per-type pool every array below
-    // CHUNK_ALLOC_AFFINITY_MIN_BYTES falls back to, it was never visited, and
-    // it is where the memory was: measured at 64 threads, iteration 1000, after
-    // the four re-chunks -- double 2106 empty slabs, complex 1480, short 192,
-    // all with zero live blocks and all still resident. That is the bulk of the
-    // 2.4 GB the process kept while the chunk-level accounting balanced.
+    // The array has left (old_key, old_size) for good: once the drain above
+    // has run its slabs there hold nothing, but manage_full_empty() only
+    // inspects a slab at the instant a block is freed, so slabs that became
+    // empty unobserved stay resident. Sweep them now -- key 0 too: the shared
+    // per-type pool every array below CHUNK_ALLOC_AFFINITY_MIN_BYTES falls
+    // back to, where most of that residue sat (GBs at 64 threads).
     //
-    // Sweeping a SHARED pool means trusting nn_ref again, which is what the
-    // hot path lost the right to do. The difference is the context, not the
-    // counter: manage_full_empty() fired on every free, concurrently, where a
-    // transient zero is a real possibility; this runs at the serial, quiescent
-    // point at the end of a re-chunk, with no concurrent free in flight, so an
-    // empty slab is empty. Emptiness is also the whole claim -- a key-0 slab
-    // mixes several arrays' blocks and we make no assumption about ownership.
+    // Sweeping a SHARED pool means trusting nn_ref, which the hot path may
+    // not do: manage_full_empty() fires on every free, concurrently, where a
+    // transient zero is possible. This runs at the serial, quiescent end of a
+    // re-chunk, with no concurrent free in flight, so an empty slab is empty.
+    // Emptiness is the whole claim -- a key-0 slab mixes several arrays'
+    // blocks and no ownership is assumed.
     if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
     {
         const unsigned int saved_sz = thread_chunk_size();
@@ -466,11 +439,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // memory never comes back.
         // Reported for the array's OWN key and, separately, for key 0 -- the
         // shared per-type pool every array falls back to below the affinity
-        // threshold. The drain and the slab sweep only ever visit the array's
-        // own key, so anything of the old geometry that lives in key 0 is
-        // never routed home and never gives its pages back. A slab there
-        // mixes several arrays' blocks and cannot empty on one array's
-        // re-chunk, by construction.
+        // threshold. A key-0 slab mixes several arrays' blocks and cannot
+        // empty on one array's re-chunk, by construction.
         const auto scan = [&](unsigned int key, std::size_t& slabs, std::size_t& live, std::size_t& empty)
         {
             if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
@@ -541,9 +511,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
     // compression bookkeeping -- set_ptr_is_inside_chunk_list_to_compress
     // etc.) and the rest RAW-filled, which copy_range() does (bool, bit-packed,
     // element by element); cst1 spans are skipped. ~13x faster than the tiled
-    // transcription (108s -> 8s), validated correct at 1/8/64 threads + real
-    // runs. The tiled transcription (else branch) remains for a build that
-    // selects no chunk variant.
+    // transcription (else branch), which remains for a build that selects no
+    // chunk variant.
     // Materialisation is tracked with is_cst_val1() (values == the cst1
     // sentinel), which is universal and index-free -- unlike
     // written()/is_cst_val() on chunk2, which need the second_value index. While
@@ -574,7 +543,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // Chunk2's cst2 predicate and its compress() both need the array's
         // second-value registry entry, and both run per chunk. The lookup goes
         // through the shared info registry, so it is hoisted here: once per
-        // re-chunk instead of 15.6 M times. `ind_old2` selects the SOURCE
+        // re-chunk instead of once per chunk. `ind_old2` selects the SOURCE
         // array's second value (the scan below reads *this), `inf_new2` the
         // fresh array's (the fold writes tmp) -- rechunk_seed_fresh() has
         // already re-declared it on tmp, above.
@@ -732,12 +701,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // 2A: all sources are the same second constant -> install it.
             // Copying it into a fresh buffer, scanning it back and releasing
             // the buffer (the fold below) gives the same state, but the pages
-            // those allocations touch stay with the process: 130-640 MB per
-            // 128 -> 256 re-chunk on the 64-thread bench, which turned the
-            // forecast gains into losses. This is what a type-2 compression
-            // commits (find_or_set on the chunk's second-value slot, type
-            // table, values pointer), minus the buffer; tmp's chunk is
-            // reachable by no other thread until the swap, so no CAS.
+            // those allocations touch stay with the process (hundreds of MB per
+            // re-chunk on the 64-thread bench). This is what a type-2
+            // compression commits (find_or_set on the chunk's second-value
+            // slot, type table, values pointer), minus the buffer; tmp's chunk
+            // is reachable by no other thread until the swap, so no CAS.
             if constexpr (chunk_config::use_chunk2a && !std::is_same_v<T, bool>)
             {
                 if (all_folded && same_cst2 && !any_cst1_src && cst2_src != nullptr)
@@ -854,8 +822,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // rechunk_to() builds tmp at S' while *this still holds every chunk
             // at S, so the two coexist until the swap and the peak is close to
             // the sum -- which is what makes @dyn cost roughly twice its static
-            // counterpart in the bench (chunk2a: 6984 MB @256 vs 17028 MB @dyn
-            // at 64 threads), even though the steady state barely moves.
+            // counterpart in the bench, even though the steady state barely
+            // moves.
             //
             // A source chunk is done for good once every element of it has been
             // transcribed. Sizes are powers of two, so the boundaries align
@@ -863,14 +831,10 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // [old_first, old_last] whole, and releases them. When fining,
             // old_size / new_size new chunks read the same old one, on
             // whichever threads the schedule gives them: the LAST to finish
-            // releases it, counted per old chunk (old_done). The release used
-            // to be the job of the last new chunk BY INDEX, "exactly one c, no
-            // coordination" -- which freed the source while the thread holding
-            // the previous index was still reading it. Any schedule whose block
-            // boundary can fall between c and c+1 hit it: guided,16 (the
-            // default since Sept '26), guided,64 and static gave 952 to 1560
-            // wrong elements on rechunk_validation's 512 -> 256; dynamic,64,
-            // dynamic,16 and static,16 keep the pair on one thread and hid it.
+            // releases it, counted per old chunk (old_done). Never "the last
+            // new chunk BY INDEX": a schedule block boundary can fall between
+            // c and c+1, and the source is then freed while the thread holding
+            // the previous index still reads it.
             //
             // Released while the TLS is still old_size, deliberately:
             // free_block_to_pool() routes by the AMBIENT geometry, so freeing a
@@ -915,16 +879,12 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 }
             }
 
-            // Fill tmp's new chunk c through the public bulk API.
-            //
-            // This used to be a hand-written arm + raw-fill, kept here because
-            // the per-element proxy path costs 13x more (108s -> 8s measured).
-            // copy_range() IS that fast path, made public and tested: it takes
-            // one decision per chunk, arms with real proxy writes, stores the
-            // rest straight into the buffer, and restores the zero counter the
-            // bulk store bypasses. It also carries the same variant split --
-            // bool (bit-packed) goes per element -- which no longer has to be
-            // restated here.
+            // Fill tmp's new chunk c through the public bulk API. copy_range()
+            // is the fast path (the per-element proxy path costs ~13x more): it
+            // takes one decision per chunk, arms with real proxy writes, stores
+            // the rest straight into the buffer, and restores the zero counter
+            // the bulk store bypasses -- with the same variant split, bool
+            // (bit-packed) going per element.
             //
             // assume_drained: rechunk_to() has already flushed this array's
             // deferred ops, and this lambda runs inside the parallel loop below,
@@ -938,11 +898,9 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // copy_range materialises the new chunk whatever its content. When
             // every source chunk was a compressed constant (all_folded), the
             // buffer just written holds nothing but constants, and leaving it
-            // for the next end-of-phase sweep means the WHOLE array's cst2 share
-            // sits materialised until then: measured on the full bench (64
-            // threads, 10^9 elements, chunk2a), the four 64->128 re-chunks of
-            // iteration 1000 took the process from 10.2 GB to 21.6 GB before
-            // the sweep -- tab1 alone is 72% cst2, 5.7 GB of transient buffers.
+            // for the next end-of-phase sweep keeps the WHOLE array's cst2 share
+            // materialised until then (it doubled the process RSS on the full
+            // bench).
             //
             // So run the variant's own compress() on the chunk right here, on
             // this thread's rank, while the TLS is still new_size (clear_int_st
@@ -960,10 +918,6 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             // 2A locates the chunk by (num_chunk, num_tab), Chunk2 takes the
             // array's inf_array tuple -- but the fold is the same: re-scan and
             // clear_int_st with the variant's own state, nothing synthesised.
-            // Without it Chunk2 left its whole cst2 share materialised until
-            // the next end-of-phase sweep: 72.6% of tab1's chunks, measured at
-            // +10.1 GB after the four re-chunks of iteration 1000 (64 threads,
-            // 10^9 elements) where 2A, already folding, GAINED 674 MB.
             // bool registers no second value (get_ind_second_value aborts) and
             // is bit-packed; it never takes this path.
             if constexpr (chunk_config::use_chunk2a)
@@ -985,15 +939,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             }
             // No v1 branch. v1 has one compressible constant, zero, and the
             // spans whose sources were all cst1 already took the early return
-            // above; every other rebuilt chunk holds the writes the prologue's
-            // flush just materialised. A branch that scanned each of them and
-            // folded the uniformly-zero ones was measured at 64 threads,
-            // iteration 1000: 0 folded on tab1 / tab_short / tab_complex, 1392
-            // on tab2 -- 0.02% -- for a full buffer scan on 6 M chunks. The
-            // end-of-phase sweep does the same work later, on the chunks that
-            // have actually become zero by then. What that branch DID leave
-            // behind is the guard in Chunk<T>::compress(): a second visit to a
-            // cst1 chunk must not park the zero sentinel, and that guard is
+            // above; scanning every other rebuilt chunk for zeros folded almost
+            // none of them (~0.02%) for a full buffer scan each. The
+            // end-of-phase sweep does that work later, on the chunks that have
+            // actually become zero. Chunk<T>::compress() keeps the guard that a
+            // second visit to a cst1 chunk must not park the zero sentinel --
             // load-bearing for the sweep regardless of this loop.
             else if constexpr (chunk_config::use_chunk2)
             {
@@ -1004,11 +954,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 // compress() lives in Chunk2FastCompPolicy<T, Derived, Enabled>,
                 // which Chunk2 inherits as
                 // Chunk2FastCompPolicy<..., chunk_config::use_fast_block_compression>.
-                // That constant IS use_openmp, so in a SERIAL build the overload
-                // does not exist and this branch failed to compile -- chunk2 +
-                // serial + dyn, the one combination of {chunk, chunk2, chunk2a} x
-                // {serial, OpenMP} nobody had built. A serial run has no deferred
-                // compression to fold anyway.
+                // That constant IS use_openmp: in a SERIAL build the overload
+                // does not exist (and there is no deferred compression to fold).
                 if constexpr (chunk_config::use_fast_block_compression && Derived::is_not_bool)
                 {
                     if (all_folded)
@@ -1027,23 +974,24 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         };
 
         // Parallel rebuild: each thread takes disjoint new chunks and drives the
-        // write path on its own rank; dynamic schedule balances cst1-skip (cheap)
-        // vs materialise (costly). Geometry is per-array so no global race; only
+        // write path on its own rank; the schedule (runtime, see
+        // internal::rebuild_schedule()) balances cst1-skip (cheap) vs
+        // materialise (costly). Geometry is per-array so no global race; only
         // per-thread TLS + per-rank allocator/compression state are touched.
         //
-        // Suppress the OMPT parallel-end finalize: this region's end must NOT
-        // flush/compress the half-written array (it corrupts grow regions that
-        // span several old chunks). rechunk_to flushes at a quiescent point
-        // after refill. Set on the encountering thread, around the region only.
+        // The OMPT parallel-end finalize is suppressed (g_in_rechunk_rebuild,
+        // below): this region's end must NOT flush/compress the half-written
+        // array (it corrupts grow regions that span several old chunks).
+        // rechunk_to flushes at a quiescent point after the refill.
+        //
         // SLICED rebuild. Inside one region v1 releases each source chunk as
-        // soon as it is transcribed (clear_st in rebuild_one), but a block
+        // soon as it is transcribed (release_st in rebuild_one), but a block
         // freed by a rank that does not own its slab is only PARKED in that
         // rank's reuse list -- walking the owner's slab chains from inside a
-        // parallel region is exactly what the owner-routed drain exists to
-        // avoid. So no slab empties and no page comes back until the drain that
-        // follows the WHOLE rebuild, while the new geometry is materialised in
-        // full: peak = old + new. Measured +6.4 GB at iteration 1000 of the
-        // 64-thread bench, the two storages of tab1 coexisting.
+        // parallel region is what the owner-routed drain exists to avoid. So no
+        // slab empties and no page comes back until the drain that follows the
+        // WHOLE rebuild, while the new geometry is materialised in full:
+        // peak = old + new.
         //
         // Draining at each slice boundary -- a serial point, the region has
         // closed -- routes that slice's parked blocks home, empties the old
@@ -1052,35 +1000,20 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // rebuild_one folds each new chunk back to a constant when it can, so
         // a drained slice leaves little behind.
         //
-        // CHUNK_RECHUNK_SLICES sets the count (default 8; 1 = one pass, the
-        // previous behaviour). v1 + fast alloc + OpenMP only: Chunk2/Chunk2A do
-        // not release their source chunks during the copy (their clear_st
-        // carries compression state this loop has no business synthesising), so
-        // they have nothing to give back between slices and the extra regions
-        // would be pure cost.
+        // CHUNK_RECHUNK_SLICES sets the count (default 16; 1 = one pass). v1 +
+        // fast alloc + OpenMP only: Chunk2/Chunk2A do not release their source
+        // chunks during the copy (their clear_st carries compression state this
+        // loop has no business synthesising), so they have nothing to give back
+        // between slices and the extra regions would be pure cost.
         int n_slices = 1;
         if constexpr (chunk_config::use_chunk && build_config::use_fast_alloc && build_config::use_openmp)
         {
-            // A/B at 64 threads, peak above the pre-re-chunk level:
-            //   1 slice  +6918 MB
-            //   16       +1703 MB   highest slice boundary 32435, intra-slice term 834 MB
-            //   32       +1335 MB   highest slice boundary 32526, intra-slice term 359 MB
-            // Doubling halves the intra-slice term, as 1/n predicts, but the
-            // boundary maximum does not move: ~755 MB of accumulated
-            // coexistence is insensitive to slicing by construction -- it comes
-            // from blocks of one slab being scattered across the index, not
-            // from slice size. 16 is where both curves are still clearly
-            // favourable; 32 traded 368 MB of peak for what looked like 266 MB
-            // of steady state on a single run.
-            // Reordering the rebuild by slab was measured and ruled out.
-            // [RECHUNK-LOCALITY], since retired, sampled every 64th new chunk on
-            // all four arrays: a new chunk's two source buffers share a slab
-            // 98.2-99.8% of the time, and one slice of 32 touches 4.2-6.2% of
-            // the slabs where a perfectly slab-local order would touch 3.1%.
-            // Index order is therefore already local to within a factor of
-            // 1.4-2, so rebuilding in slab order could not recover the ~755 MB
-            // floor: that floor is the two geometries coexisting at slab
-            // granularity, not blocks scattered across the index.
+            // 16: at 64 threads it cuts the peak above the pre-re-chunk level
+            // from ~6.9 GB (1 slice) to ~1.7 GB; 32 gains little more. What
+            // remains (~750 MB) is the two geometries coexisting at slab
+            // granularity, insensitive to slicing by construction. Rebuilding
+            // in slab order was measured and ruled out: index order is already
+            // slab-local to within a factor of 1.4-2.
             n_slices = 16;
             n_slices = std::max(1, shrink_array::env_number<int>("CHUNK_RECHUNK_SLICES", n_slices));
             // Not worth slicing an array too small to empty a slab per slice.
@@ -1111,13 +1044,10 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             }
         }
         g_in_rechunk_rebuild.store(true, std::memory_order_release);
-        // Its own knob: one statm read per slice is nothing, but 18 to 34 lines
-        // per array bury the summary that CHUNK_RECHUNK_TRACE is asked for.
-        // This is the only view of the peak's SHAPE -- saw-tooth means the
-        // drains return memory and the coexistence is inside a slice, a
-        // monotonic climb would mean they return nothing -- and it will be
-        // wanted again if Chunk2/2A ever release their sources during the copy
-        // and become sliceable.
+        // Its own knob: the per-slice lines would bury the summary that
+        // CHUNK_RECHUNK_TRACE is asked for. The only view of the peak's SHAPE:
+        // a saw-tooth means the drains return memory and the coexistence is
+        // inside a slice, a monotonic climb that they return nothing.
         const bool slice_trace = std::getenv("CHUNK_RECHUNK_TRACE_SLICES") != nullptr;
         const long rss_start   = slice_trace ? internal::rss_mib_now() : -1;
         if (slice_trace)
@@ -1130,19 +1060,16 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             const int c1 = static_cast<int>((static_cast<long>(n_new) * (sl + 1)) / n_slices);
 #pragma omp parallel
             {
-                // Apply the rebuild's arming writes DIRECTLY, never via the deferred
-                // path. Without this, tmp[base+kw]=... enqueues a deferred op into tmp's
-                // per-chunk op_map; the arming loop below writes EVERY element while the
-                // chunk still reads cst1 (a deferred write never materialises in place),
-                // so the op_map fills and a rehash (increase_size) frees its old bucket
-                // storage while an already-enqueued op still targets it -> heap-use-after-
-                // free when that op is later flushed (ASan: WRITE in assign_impl's deferred
-                // body, freed by unordered_dense increase_size, all under rechunk_refill).
-                // in_flush_replay routes each write straight through write_body
-                // (materialise + store, no enqueue): the first arming write materialises,
-                // the while-loop exits, and the raw-fill does the rest. Safe here -- each
-                // thread rebuilds DISJOINT new chunks, so the bypassed Dekker/gate guard
-                // nothing. Per-thread (thread_local), so it lives inside the region.
+                // Apply the rebuild's arming writes DIRECTLY, never via the
+                // deferred path: a chunk reads cst1 until it is materialised,
+                // so deferred arming writes would fill tmp's op map, and a
+                // rehash frees bucket storage an enqueued op still targets
+                // (heap-use-after-free at the flush). Under in_flush_replay each
+                // write goes straight through write_body (materialise + store,
+                // no enqueue): the first arming write materialises, the raw
+                // fill does the rest. Safe here -- each thread rebuilds
+                // DISJOINT new chunks, so the bypassed gate guards nothing.
+                // Per-thread (thread_local), so it lives inside the region.
                 const typename CompressionManager<T, chunk_type>::FlushReplayGuard rechunk_replay_guard;
                 std::vector<T> buf(static_cast<std::size_t>(new_size));
                 RebuildTally   tally; // this thread's fold counts for this slice
@@ -1162,19 +1089,18 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             {
                 // Serial point: send this slice's parked old-geometry blocks
                 // home, then give back the slabs they just emptied. Only blocks
-                // already released by clear_st are touched -- the source chunks
+                // already released by release_st are touched -- the source chunks
                 // the remaining slices still have to read are untouched.
                 set_thread_chunk_size(static_cast<unsigned int>(old_size));
                 self().rechunk_drain_reuse_list(static_cast<unsigned int>(old_size));
                 if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
                 {
-                    // The old storage's allocator set -- the shared pool (key 0) too
-                    // when it lives there, which is every first re-chunk under
-                    // lazy affinity: skipping it held every released block's slab
-                    // until the final sweep (+4.7 GB during one 64 -> 256 rebuild of
-                    // the 64-thread chunk_dyn bench, 7.3 GB given back only at the
-                    // end). Safe for the final sweep's reason: a serial, quiescent
-                    // point, so a slab found empty is empty.
+                    // The old storage's allocator set -- the shared pool (key 0)
+                    // too when it lives there, which is every first re-chunk
+                    // under lazy affinity: skipping it held every released
+                    // block's slab (GBs) until the final sweep. Safe for the
+                    // final sweep's reason: a serial, quiescent point, so a slab
+                    // found empty is empty.
                     // One sweep across ranks: one madvise per contiguous run.
                     typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(0, 0u))>::empty_slab_sweep
                         sweep;
@@ -1214,7 +1140,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             //    neighbours carrying DIFFERENT constants make a chunk that no
             //    single-constant representation can hold, and it must stay
             //    materialised. That cost is real and belongs in the decider's
-            //    data term, which today predicts a couple of MB.
+            //    data term.
             //  - many folded, few materialised -> the residue is not in the
             //    chunks; look at the pools (CHUNK_ARENA_REPORT=1).
             long n_mat = 0;

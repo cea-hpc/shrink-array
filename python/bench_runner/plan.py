@@ -13,7 +13,7 @@ from .phases.fuzz import FUZZ_THREADS
 from .phases.stl import stl_representative_exes
 from .settings import (
     DEFAULT_CONFIGS, DEFAULT_SEQ_OMP_THREADS, DEFAULT_THREADS_CHECK, MODE_PRESETS,
-    PERF_EXCLUDED_CONFIGS, REFERENCE_THREADS, SANITIZER_CONFIGS, SANITIZER_REPS,
+    PERF_EXCLUDED_CONFIGS, REFERENCE_THREADS, SANITIZER_CONFIGS, SANITIZER_REPS, sanitizer_skip_reason,
     SANITIZER_THREADS, fit_threads, is_stats_config, machine_cpus,
 )
 from .term import bold, cyan, dim, red, yellow
@@ -485,6 +485,8 @@ class Plan:
         if not args.skip_check and not args.skip_sanitizers:
             for cfg in SANITIZER_CONFIGS:
                 if not config_dir_present(args.build_root, cfg):
+                    continue
+                if sanitizer_skip_reason(cfg):
                     continue
                 for var in args.variants:
                     if skip_variant_on_config(var, cfg):

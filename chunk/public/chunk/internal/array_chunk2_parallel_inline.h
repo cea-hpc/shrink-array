@@ -45,7 +45,10 @@ void FastBlockSupport2<Derived, true>::make_block_compression()
     // bool has its own pass and no second value: the (thr, inf_array, proxy)
     // overload static_asserts for it, so ArrayChunk2<bool>::resize() did not
     // compile with fast-block compression.
-    const auto pass_on_rank = [this](int thr)
+    // [&], not [this]: `this` is used by the non-bool branch only, and an
+    // explicit capture unused in the bool instantiation is a clang warning
+    // (-Wunused-lambda-capture). [&] captures it where it is used.
+    const auto pass_on_rank = [&](int thr)
     {
         if constexpr (Derived::is_not_bool)
         {

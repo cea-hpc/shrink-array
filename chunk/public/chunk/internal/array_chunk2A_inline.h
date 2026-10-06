@@ -135,8 +135,6 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
 template <ArrayChunkElement T>
 void print_type_name(int nb_val2)
 {
-    // type_name<T>() already demangles; this used to carry its own copy of
-    // the abi::__cxa_demangle dance.
     std::println("{:<30} → Number of compression values : {}", "Type: " + type_name<T>(), nb_val2);
 }
 
@@ -273,7 +271,7 @@ template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2A<T, ind_type>::clear_core()
 {
     // Pin the ambient size to THIS array's own geometry before the sweep
-    // below. Same fix and rationale as ArrayChunk2::clear_core() -- see that
+    // below. Same rule as ArrayChunk2::clear_core() -- see that
     // function's comment.
     if constexpr (build_config::chunk_dynamic)
     {
@@ -302,17 +300,13 @@ void ArrayChunk2A<T, ind_type>::clear_core()
     // events against plain Chunk's ~3M, see below).
     this->flush_pending_deferred_ops(/*force=*/true);
 
-    // Per-array compression stats. Moved here (after the flush, before the
-    // rest of the teardown drain below) because the OLD placement -- before
-    // flush_pending_deferred_ops -- read written()/compressed state while a
-    // large volume of async compression work could still be in flight for
-    // this variant (mark ~73M events vs plain Chunk's ~3M), making the
-    // snapshot noisy and thread-count-dependent (measured: sequential vs
-    // OMP-16t disagreed on still-compressed-at-exit by ~10%, growing with
-    // thread count -- a timing artifact, not data corruption). written() is a
-    // live state test (unlike the old tab_type_cst_val read), so it is safe to
-    // read here, past the flush but before the terminal compression/release
-    // sweep further down still mutates state.
+    // Per-array compression stats, read here: after the flush, before the
+    // rest of the teardown drain below. Before the flush, written()/compressed
+    // state can still move under in-flight async compression work, making the
+    // snapshot noisy and thread-count-dependent (a timing artifact, not data
+    // corruption). written() is a live state test, so it is safe to read here,
+    // past the flush but before the terminal compression/release sweep further
+    // down still mutates state.
     if (this->exit_census_)
     {
         print_compression_stats();
@@ -390,11 +384,9 @@ void ArrayChunk2A<T, ind_type>::clear_core()
         //           value until the chunk passes through first_value (the clear
         //           to cst1 resets it), so a chunk compressed to V once and
         //           uniformly W later is not compressible as it stands -- not by
-        //           the write path, not by compress(). Probed Sept '26: 100
-        //           chunks at 1.0, then all 3.0 -> 100 materialised, then all 0
-        //           then all 3.0 -> 0. This count is the memory that design
-        //           choice costs on this array; it used to be reported as a
-        //           marking miss, which sent the search the wrong way.
+        //           the write path, not by compress(). This count is the
+        //           memory that design choice costs on this array -- not a
+        //           marking miss.
         //
         // Scans the chunks directly rather than the candidate list, so it sees
         // blocks that were never enqueued (which the empty-list check
@@ -600,8 +592,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
     // array's key) goes home to its allocator set, whose slabs hold nothing
     // else and so empty -- and reclaim_empty_slabs madvises them away.
     // Sequential point (destructor / rechunk_to); the drain opens its own
-    // region. Key 0 (shared pool) keeps the old behaviour: nothing to give
-    // back per array.
+    // region. Key 0 (shared pool): nothing to give back per array.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
     {
         ManagerChunk<Chunk2A, T>::drain_reuse_list_for_size(this->size_policy_.size());
@@ -685,10 +676,8 @@ void ArrayChunk2A<T, ind_type>::compress_int()
             std::cerr << "ArrayChunk2A type: ArrayChunk2A<" << type_name<T>() << ", " << type_name<ind_type>() << ">"
                       << std::endl;
 
-            // Cap the dump at 10 ENTRIES. This used to break on `ind > 10`, the
-            // chunk INDEX, so any array whose residual starts past chunk 10
-            // printed exactly one line -- the listing was unusable on the arrays
-            // that most needed it.
+            // Cap the dump at 10 ENTRIES (not at chunk index 10: an array whose
+            // residual starts past chunk 10 would print a single line).
             int shown = 0;
             for (const int ind : tab_nb1)
             {

@@ -187,12 +187,12 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     /**
      * @brief Release one array's candidate flags (its teardown).
      * @details Called once the array's candidates are purged and its chunks
-     *          freed. Until Sept '26 nothing did: an entry was only replaced
-     *          when its num_tab was reused, and a re-chunk builds the new
-     *          storage under a NEW num_tab -- one byte per old chunk leaked
-     *          at every re-chunk. Swapped with an empty row, which frees a
-     *          vector's capacity as well as a unique_ptr's array. A later
-     *          resize_tab_is_int() reallocates.
+     *          freed. Without it an entry is only replaced when its num_tab is
+     *          reused, and a re-chunk builds the new storage under a NEW
+     *          num_tab: one byte per old chunk leaked at every re-chunk.
+     *          Swapped with an empty row, which frees a vector's capacity as
+     *          well as a unique_ptr's array. A later resize_tab_is_int()
+     *          reallocates.
      * @param num_tab The dying array's index.
      */
     static void release_tab_is_int(int num_tab) noexcept
@@ -299,14 +299,13 @@ namespace internal
  *        every read is load(ACQUIRE).
  *
  * @details The pointer publishes a buffer -- filled, then values_store(release)
- *          -- so a reader needs acquire, as ChunkBase::values_load() does. It
- *          used to be a plain std::atomic<T*>&, and every use (values[num],
- *          casts, `T* v = values`) went through its implicit conversion:
- *          seq_cst, which no ordering here needs -- the Dekker handshake has
- *          its own fences on the writer flags. On AArch64 with RCpc (Grace)
- *          acquire is LDAPR instead of LDAR: it does not wait for the earlier
- *          STLR stores. NOT relaxed: nothing else orders a writer with another
- *          thread's materialisation of the buffer.
+ *          -- so a reader needs acquire, as ChunkBase::values_load() does. NOT
+ *          seq_cst (what a plain std::atomic<T*>& converts with): no ordering
+ *          here needs it -- the Dekker handshake has its own fences on the
+ *          writer flags -- and on AArch64 with RCpc (Grace) acquire is LDAPR
+ *          instead of LDAR: it does not wait for the earlier STLR stores. NOT
+ *          relaxed: nothing else orders a writer with another thread's
+ *          materialisation of the buffer.
  *
  *          Implicitly built from the chunk's atomic, implicitly converted to
  *          T*: every existing spelling (subscript, +, ==, casts, T* arguments)
@@ -462,7 +461,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     //
 
     /// @brief This element, read raw: `values[num]`, or its bit for Bit
-    ///        (element_access.h). No sync, no check -- the old spelling.
+    ///        (element_access.h). No sync, no check.
     [[nodiscard]] T raw_elem() const noexcept
     {
         // Only the serial counter mode reads through this: no pass runs
@@ -475,7 +474,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /// @brief This element, written raw: `values[num] = v`, or an atomic RMW
-    ///        of its word for Bit. No sync, no check -- the old spelling.
+    ///        of its word for Bit. No sync, no check.
     void raw_elem_set(in_t<T> v) const noexcept
     {
         elem_set(static_cast<T*>(values), static_cast<std::size_t>(num), static_cast<T>(v));
@@ -535,11 +534,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         // syncing here re-flushes from inside a write (begin_write held) and, when
         // pending_ops_>0, wait_for_availability's replay reallocates `values`
         // under the in-flight writer -> SIGSEGV. Same-offset visibility on the
-        // write path is handled by the P2 WAW erase before the write body; pure
-        // reads use read_pure() below. Kept raw in BOTH sync_on_read states --
-        // but not raw for a Chunk2A second constant, see internal::element_of(): the
-        // compression decision downstream would otherwise be taken against 0
-        // instead of the chunk's constant. One load of the pointer.
+        // write path is handled by the WAW erase before the write body; pure
+        // reads use read_pure() below. Raw -- but not for a Chunk2A second
+        // constant, see internal::element_of(): the compression decision
+        // downstream would otherwise be taken against 0 instead of the chunk's
+        // constant. One load of the pointer.
         return read_values_at(values);
     }
     /// @brief read_values() through a pointer the caller has already loaded.
@@ -653,8 +652,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *
      * The single definition of the "list became dangerous" threshold, shared by
      * the trigger_compression_if_needed() of Proxy, Proxy2 and Proxy2A. Keep it
-     * that way: the three used to spell the comparison out individually, so a
-     * change to the rule reached only whichever variant was being edited.
+     * that way: three copies of the comparison drift apart.
      *
      * @param sz  Current candidate count for the thread.
      * @param szm Maximum tolerated before the list is flagged dangerous.
@@ -681,7 +679,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     mutable int         num_chunk;    ///< Index of the chunk within that array.
     mutable int         num_tab = -1; ///< Index of the array in the registry; -1 until armed.
 
-    // fw14 (dyn UAF fix): frozen chunk geometry for the deferred-replay path.
+    // Frozen chunk geometry for the deferred-replay path.
     // 0 means "not armed" -> chunk_size() falls back to the live ptr_on_array
     // read (the direct write path, array alive). make_proxy_with_info arms this
     // from ctx->chunk_size_frozen on replay, so chunk_size() there returns the
@@ -836,10 +834,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief Queue this chunk as a compression candidate in @p vec_tuple.
     void add_to_compression_list([[maybe_unused]] auto& vec_tuple) const;
 
-    // PURE-READ entry (operator T(), the *=1 / /=1 early-outs). Under
-    // sync_on_read this pulls the offset to applied state then reads LIVE; the
-    // ctor-time `values` snapshot may be stale after materialisation. This is the
-    // ONLY place the read-side toll lives — never on the write path.
     /// @brief The ordinary read: synchronise this offset, then read it live.
     /// @details The only place the read-side synchronisation cost is paid, and
     ///          the entry point behind `operator T()`.
@@ -1354,9 +1348,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * which case it runs perform_compression() as the fast path would have
      * after its store: the flush of the rank's own deferred ops, then a
      * start() that waits for the in-flight compressor rather than yielding
-     * to a flush of its own making. The other ranks used to run the pass too,
-     * and each one flushed -- and announced -- the single op it had just
-     * enqueued.
+     * to a flush of its own making. The other ranks just leave: a pass of
+     * theirs would flush -- and announce -- the single op it had just enqueued.
      *
      * @param thr Calling thread's rank.
      */
@@ -1368,7 +1361,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         }
     }
 
-    // fw14: arm the frozen chunk size on the replay-reconstructed proxy.
     /// @brief Pin the chunk geometry a deferred write must be replayed with.
     /// @param sz Element count per chunk at enqueue time; 0 means "not armed",
     ///        and chunk_size() then reads the live geometry instead.
@@ -1420,8 +1412,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *       path the result does not exist yet on return, so nothing here
      *       could report it.
      * @note Thread-safe via write_with_optional_lock_info()
-     * @note Increments CHUNK_STATS statistics if enabled -- formerly only the
-     *       &= engine did, so |= ^= <<= >>= went uncounted
+     * @note Increments CHUNK_STATS statistics if enabled, for every operator
      * @note Requires T and U to be integral types
      */
     template <typename U, typename Op>

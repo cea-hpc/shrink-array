@@ -83,24 +83,18 @@ inline constexpr bool use_openmp = false;
 // Derived — not_use_openmp kept for call-site readability
 inline constexpr bool not_use_openmp = !use_openmp;
 
-// ── sync_on_read (permanent) ────────────────────────────────────────────────
+// ── Read-side visibility ────────────────────────────────────────────────────
 // The deferred-op visibility toll lives at the READ entry points, not the WRITE
-// operators: writes no longer flush (P1); the pure-read proxy entries pull
+// operators: writes do not flush; the pure-read proxy entries pull
 // materialisation on demand (ChunkBase::reader_sync); a WAW guard discards a
 // superseded same-offset op still queued on the writer's own rank before a
-// direct write (P2); and a writer drains its OWN rank once that rank's backlog
-// crosses deferred_drain_threshold (P3). This is now the permanent behaviour;
-// the historical write-side-flush mode (the old OFF default) has been retired.
-// sync_on_read is now the permanent behaviour (read-side visibility toll: P1/P2/P3).
-// The historical write-side-flush mode has been retired; this is always ON. The
-// 16 `if constexpr (build_config::sync_on_read)` sites therefore always take the
-// ON branch (the OFF branches are dead and elided by the compiler; a later pass
-// collapses them).
+// direct write; and a writer drains its OWN rank once that rank's backlog
+// crosses deferred_drain_threshold.
 inline constexpr bool sync_on_read = true;
 
-// P3 backlog bound: a writer drains its own rank when that rank's pending-op
-// count crosses this threshold (only under sync_on_read). Too small re-creates
-// the per-write toll; too big lets the backlog grow memory. -D tunable.
+// Backlog bound: a writer drains its own rank when that rank's pending-op
+// count crosses this threshold. Too small re-creates the per-write toll; too
+// big lets the backlog grow memory. -D tunable.
 #ifndef CHUNK_DEFERRED_DRAIN_THRESHOLD
     #define CHUNK_DEFERRED_DRAIN_THRESHOLD 4096
 #endif
@@ -108,7 +102,7 @@ inline constexpr std::int64_t deferred_drain_threshold = CHUNK_DEFERRED_DRAIN_TH
 
 // TEST KNOB -- force the deferred-write path. With the per-chunk marks and
 // the bounded wait, a bench or a fuzz replay defers next to nothing (gate
-// deferred = 0 in the stats): the enqueue, the P3 drain, the read gate, the
+// deferred = 0 in the stats): the enqueue, the backlog drain, the read gate, the
 // WAW guard and the cross-rank replays run only when a compressor happens to
 // be holding the chunk at the very instant of a write. N > 0 sends one write
 // in N of every thread down that path with no compressor in sight (from the
@@ -172,14 +166,10 @@ inline constexpr bool do_check = false;
 
 // Single source of the deferred op / ctx pool slab size, in bytes
 // (deferred_op_pool.h; CHUNK_DEFERRED_POOL_KB overrides it at run time).
-// 64 KiB, measured. The pools used to be handed an object count where
-// TCSlabPool::init expects bytes, so their 48-80 B ops and contexts lived in
-// 32-64 KiB slabs while 2 MiB was written here. With the units fixed, 2 MiB
-// was slower for the same peak RSS -- Milan, shrink_bench_chunk_dyn --mode
-// perf, 64 / 128 threads: 26.13 / 31.11 s at 64 KiB, 26.68 / 32.33 s at
-// 256 KiB, 27.11 / 32.93 s at 2 MiB, ~46.7 GB peak RSS in every run.
-// 64uz (a std::size_t), not 64: the product in size_t, not in int then
-// widened (bugprone-implicit-widening-of-multiplication-result).
+// 64 KiB, measured: 2 MiB slabs were slower for the same peak RSS
+// (shrink_bench_chunk_dyn --mode perf, 64 / 128 threads, 2-4%).
+// 64uz (a std::size_t): the product in size_t, not in int then widened
+// (bugprone-implicit-widening-of-multiplication-result).
 inline constexpr std::size_t deferred_pool_granularity = 64uz * 1024;
 
 inline constexpr bool verbose = false;
@@ -295,9 +285,7 @@ inline constexpr bool use_chunk2or2a    = use_chunk2 || use_chunk2a;            
  *          keeps it until set_second_value(). Every consumer of the index
  *          answers "no second constant" for it: get_cst_val2() is nullptr,
  *          is_cst_val2() false, written() reduces to "not cst_val1", and the
- *          compression pass compresses only the runs of first_value. Before
- *          Sept '26 that array carried index 0 -- the slot of whichever value
- *          another array had registered first -- and nothing said so.
+ *          compression pass compresses only the runs of first_value.
  */
 inline constexpr int no_second_value_index = -1;
 
@@ -316,8 +304,8 @@ inline constexpr int no_second_value_index = -1;
  * fewer concurrent code paths.
  *
  * true ("have_agressive_compression" mode): the sweep is left to run at
- * scattered, unpredictable points during the parallel section (its
- * historical behavior). Slower, but stresses the concurrent compression
+ * scattered, unpredictable points during the parallel section. Slower, but
+ * stresses the concurrent compression
  * code paths → better MT-bug detection.
  *
  * Set via -DHAVE_AGRESSIVE_COMPRESSION=ON at CMake configure time.
@@ -381,13 +369,13 @@ inline constexpr bool use_chunk_steal_mark = build_config::use_openmp && use_pre
 
 /// SHRINK_LEVEL (1, 2 or 3, default 3) as a constexpr; selects Chunk2Def's thresholds.
 inline constexpr int tuning_level = SHRINK_LEVEL;
-// SEGV hunt: two independent switches.
+// Debug ring log: two independent switches.
 //   RING_LOG_DEBUG  -> ALL events, including hot-path (FLUSH/COMPRESS/STORE_VALUE).
-//                      Very heavy: masks the heisenbug. Leave OFF for the hunt.
+//                      Very heavy: can mask timing-dependent bugs.
 //   RING_LOG_OP     -> ONLY the 4 op-lifecycle events (ALLOC/ENQUEUE/FREE/FLUSH_ONE).
 //                      Light: a handful of events per compression, does not mask.
 //#define RING_LOG_DEBUG
-//#define RING_LOG_OP      // SEGV hunt: op-lifecycle tracing only (light)
+//#define RING_LOG_OP      // op-lifecycle tracing only (light)
 
 // The ring buffer + dump_ring_for_addr + ring_log_op must exist if EITHER flag
 // is on. RING_LOG_ANY drives the buffer compilation in ring_log_debug.cpp/.h.
@@ -459,32 +447,21 @@ inline constexpr bool tsan_build = false;
  *            FlushProcessWriteBuffers rely on; see announce_write() for the
  *            argument and heavy_barrier() for the call.
  *
- *          THE SHAPE OF EVERY BUILD THAT CAN (no macro, no CMake option)
- *          since Sept '26. It was opt-in for a while, because the
- *          "rare" side was not rare: a rank whose candidate list was flagged
- *          dangerous sent every write through the slow path, each of which
- *          deferred the write, flushed it back at once (an announce) and
- *          tried to compress (an announce, yielded 98% of the time to one of
- *          those flushes). At 8 threads that was 14 000 announces/s with
- *          fences and, with membarriers, a feedback loop at 1 000 000
- *          announces/s: shrink_bench chunk2a_256 went from 4.7 s to 76 s.
- *          The write engine no longer does that (write_with_optional_lock_impl:
- *          the dangerous rank writes, then drives; a writer waits a compressor
- *          out instead of deferring), and the rare side is a few hundred
- *          announces per second. Measured then, same bench, 6 threads pinned
- *          to x86 P-cores, three interleaved runs each:
- *            before the engine change            3.18 - 3.27 s
- *            new engine, symmetric               3.40 - 3.55 s  (+7%)
- *            new engine, asymmetric              2.96 - 3.15 s  (-7%)
- *          The symmetric shape pays the writers' bounded wait during a
- *          compression's scan with nothing in return; the asymmetric one
- *          removes the fence from every write and covers it. Linux only (the
- *          syscall), never under ThreadSanitizer (it does not model membarrier
- *          and would report races that are not there): those two are the
- *          only symmetric builds left. An asymmetric build still falls back
- *          to the symmetric shape AT RUN TIME if membarrier registration
- *          fails (kernel < 4.14, seccomp); print_chunk_stats() says which
- *          one ran.
+ *          The asymmetric shape is THE shape of every build that can (no
+ *          macro, no CMake option). Measured on shrink_bench chunk2a_256, 6
+ *          x86 threads: symmetric +7%, asymmetric -7% against the previous
+ *          write engine -- the symmetric shape pays the writers' bounded wait
+ *          during a compression's scan with nothing in return; the asymmetric
+ *          one removes the fence from every write. It relies on the rare side
+ *          being rare: an engine that sends every write of a "dangerous" rank
+ *          through the slow path (defer, flush, try to compress -- one
+ *          announce each) turns membarriers into a feedback loop (4.7 s ->
+ *          76 s on that bench). Linux only (the syscall), never under
+ *          ThreadSanitizer (it does not model membarrier and would report
+ *          races that are not there): those two are the only symmetric builds
+ *          left. An asymmetric build still falls back to the symmetric shape
+ *          AT RUN TIME if membarrier registration fails (kernel < 4.14,
+ *          seccomp); print_chunk_stats() says which one ran.
  */
 #if defined(__linux__) && !defined(CHUNK_TSAN_BUILD)
 inline constexpr bool asymmetric_dekker = true;

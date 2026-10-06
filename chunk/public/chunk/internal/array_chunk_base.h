@@ -59,13 +59,9 @@ namespace shrink_array
  *          index); ArrayChunk and ArrayChunk2A do not, and is_written_at()
  *          asks the chunk directly for them.
  *
- *          This used to detect `written(int)` instead -- an overload every
- *          variant has, but which takes an ELEMENT index. is_written_at(j)
- *          fed it a chunk index, so get_nb_chunk_written() tested elements
- *          0..nb_chunk-1 (almost all in chunk 0) and reported every chunk
- *          written whenever the first few were; stats_seq() and the
- *          "compression percentage" rested on that. pool_accounting caught
- *          it: a never-written spare chunk counted as written.
+ *          Not `written(int)`: every variant has that overload, but it takes an
+ *          ELEMENT index -- fed a chunk index, it tests elements of chunk 0 and
+ *          reports chunks written that are not.
  *
  *          NOTE: deliberately NOT written inline as
  *          @code if constexpr (requires { derived().chunk_written(j); }) @endcode
@@ -155,8 +151,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * the deliberate divergences from std::vector, forced by the compressed,
      * gate-driven storage (see operator[] and front/back below):
      *  - reference is proxy_type, NOT T&: a non-const positional access returns
-     *    the write proxy that drives deferred compression / the P1-P2 gate. A
-     *    raw T& would bypass the gate (the exact hole fw13 closed).
+     *    the write proxy that drives deferred compression and the write gate. A
+     *    raw T& would bypass the gate.
      *  - const_reference is T (a value), NOT const T&: a const access returns the
      *    materialised value after sync_chunk; there is no stable address to
      *    reference (a chunk may be cst / compressed / recycled).
@@ -384,15 +380,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         /** @brief Advance one element, entering (and syncing) the next chunk on overflow. */
         const_iterator& operator++() noexcept
         {
-            // FIX: lin_ is the ONLY thing operator==/!= compare, so it has to
-            // track the cursor. It used to be set by the constructor and never
-            // touched again: begin() kept lin_ == 0 while end() held m_size, the
-            // comparison was permanently unequal, and every range-for /
-            // accumulate / find ran past the logical end -- reading whatever the
-            // allocated chunks held, then dereferencing the null chunk_ that
-            // enter_chunk() installs past the last chunk (SIGSEGV in
-            // ChunkBase::values_load with this == 0x8). Never caught because
-            // --test_stl, the only caller, was rejected by the argument filter.
+            // lin_ is the ONLY thing operator==/!= compare: it must track the
+            // cursor, or range-for runs past the logical end.
             ++lin_;
             ++num_;
             if (num_ > modulo_) [[unlikely]] // crossed a chunk boundary
@@ -955,9 +944,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @brief assign(count, val): std::vector semantics.
      *
      * @details Drop current contents, size to @p count, fill with @p val. Built on
-     *          the existing resize + operator[]; no new storage logic. Left serial
-     *          (positional writes go through the proxy gate); callers that want
-     *          the parallel fill path use the existing bulk init.
+     *          resize + operator[]. Serial (positional writes go through the
+     *          proxy gate); callers that want a parallel fill use the bulk init.
      *
      * @param count new element count
      * @param val value written to every position
@@ -982,11 +970,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          registries map the array's address to it -- so the identity is
      *          exchanged too, as rechunk_to() does, and the metadata travel
      *          with their chunks. So do the slab-affinity key (the buffers were
-     *          drawn under it) and the dirty bitset. It used to exchange the
-     *          chunks alone: each array then read the other's metadata rows
-     *          (Chunk2A: a chunk folded to its second value read the other
-     *          array's), and "swap(nb_tab, other.nb_tab)" swapped the static
-     *          counter with itself.
+     *          drawn under it) and the dirty bitset. Exchanging the chunks
+     *          alone would leave each array reading the other's metadata rows.
      *
      *          Sequential context: the deferred writes of both arrays are
      *          drained first, since they carry the array they were queued on.
@@ -1026,7 +1011,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
         self.sync_chunk(chunk_t, num_chunk, num);
 
-        // 2. Direct read from chunk
+        // Direct read from the chunk
         return chunk_t.read_value(num);
     }
 
@@ -1044,10 +1029,10 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         const int num       = self.offset_in_chunk(i);
         auto&     chunk_t   = self.chunk_list[num_chunk];
 
-        // 2. Concurrency check
+        // Read gate
         self.sync_chunk(chunk_t, num_chunk, num);
 
-        // 3. Return reference to physical storage
+        // Reference to the physical storage
         return chunk_t(num);
     }
 
@@ -1112,10 +1097,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         const proxy_type& val       = chunk_t[num];
 
         // Arm ptr_on_array / num_chunk in ALL modes, not only under fast block
-        // compression. In non-OpenMP builds use_fast_block_compression is false,
-        // but set_num_tab()/get_info_second_value() still look ptr_on_array up in
-        // share_info_array; leaving it unset caused "[share_info get] key NOT
-        // FOUND" aborts in Proxy2/Proxy2A check builds.
+        // compression: in non-OpenMP builds too, set_num_tab() and
+        // get_info_second_value() look ptr_on_array up in share_info_array.
         val.set_this_and_num_chunk(self.registry_key(), num_chunk, self.num_tab);
         val.arm_storage_generation(&self.storage_generation_); // check builds only
 
@@ -1130,14 +1113,11 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             val.arm_inf_array(self.registry_mirror());
         }
 
-        // P1 (CHUNK_SYNC_ON_READ): this is the ONLY non-const proxy operator[] —
-        // the write entry. Under sync_on_read it no longer flushes; visibility is
-        // pulled by the read entries (proxy operator T()/read_values ->
-        // ChunkBase::reader_sync) and same-offset WAW is handled on the direct
-        // write path (P2). The const operator[]/operator() and the raw-reference
-        // T& operator() keep sync_chunk. Flag OFF -> byte-identical.
-        //
-        // sync_on_read (permanent): no sync_chunk on this read path.
+        // The write entry does not sync: visibility is pulled by the read
+        // entries (proxy operator T()/read_values -> ChunkBase::reader_sync),
+        // and a same-offset WAW is handled on the direct write path. The const
+        // operator[]/operator() and the raw-reference T& operator() keep
+        // sync_chunk.
 
         chunk_config::CheckNaN<chunk_config::do_check>::maybe(val, static_cast<long>(i));
 
@@ -1145,9 +1125,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     }
 
   protected:
-    // The core's members, named here so this class and the derived arrays
-    // keep using them unqualified-through-this as before (the core is a
-    // dependent base).
+    // The core's members, named here so this class and the derived arrays use
+    // them unqualified (the core is a dependent base).
     using Core::alloc_key_;
     using Core::assign_alloc_key;
     using Core::chunk_list;
@@ -1272,12 +1251,10 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /// @brief clear() takes the end-of-life census (print_compression_stats():
     ///        the per-array line and the "still compressed (at exit)" counter).
     ///        False on a re-chunk's tmp, which dies mid-run holding the OLD
-    ///        geometry: its census is not an exit, and it is not even the same
-    ///        state from one build to the next -- an OpenMP re-chunk releases
-    ///        the source chunks during the copy (tmp then reads 100%
-    ///        compressed), a serial one leaves them materialised. Counted, it
-    ///        made still@exit of a dyn run differ between the sequential and
-    ///        the OpenMP build on identical data (seq/omp compare).
+    ///        geometry: its census is not an exit, and its state depends on the
+    ///        build (an OpenMP re-chunk releases the source chunks during the
+    ///        copy, a serial one leaves them materialised), so counting it
+    ///        would make still@exit differ between sequential and OpenMP runs.
     bool exit_census_ = true;
 
   private:
@@ -1349,7 +1326,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             // write reach is_not_available(). This is what keeps the hot read
             // path cheap: without it, every read of every chunk would run
             // any_pending_ops() and (whenever anything is pending anywhere)
-            // trigger flush_chunk_all_ranks, which was the 52% hotspot.
+            // trigger flush_chunk_all_ranks.
             //
             // Note: the bit is sticky (mark_chunk_safe has no callers), so a
             // chunk stays "dirty" for the rest of the phase after its first

@@ -90,6 +90,32 @@ SANITIZER_HIT_MARKERS = (
 def is_sanitizer_config(config):
     return "sanitizer" in config
 
+
+def _legacy_va_layout():
+    """True when the node forces the legacy (bottom-up, 0x2aaa...) mmap layout:
+    vm.legacy_va_layout = 1. Unreadable or absent counts as False."""
+    try:
+        with open("/proc/sys/vm/legacy_va_layout") as fh:
+            return fh.read().strip() not in ("", "0")
+    except OSError:
+        return False
+
+
+def sanitizer_skip_reason(config):
+    """Why `config` cannot run on this node, or None when it can.
+
+    TSan needs the standard top-down layout to place its shadow memory. With
+    vm.legacy_va_layout = 1 it stops at startup ("memory layout is
+    incompatible, even though ASLR is disabled") whatever the stack limit,
+    and a user can neither change the sysctl nor the process personality
+    (setarch is refused). Every run would be a FAIL that says nothing about
+    the code."""
+    if "thread-sanitizer" in config and _legacy_va_layout():
+        return ("vm.legacy_va_layout = 1 on this node: ThreadSanitizer cannot "
+                "start here (memory layout is incompatible) -- run TSan on "
+                "another node")
+    return None
+
 # Configs to DROP from the PERF phase (kept in CHECK). llvm-std-alloc perf is
 # redundant with gnu-std-alloc (near-identical numbers) and gnu is the perf/
 # correctness judge; cutting it reclaims cluster time. Sanitizer configs are

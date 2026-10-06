@@ -66,12 +66,10 @@ class ChunkSpec2
   public:
     // The registered second-constant arrays. A chunk compressed to one stores
     // its ADDRESS as `values`, so the container must never move them: a
-    // std::deque grown at the end keeps every element where it is. It was a
-    // std::vector, whose resize() past capacity moved every array and freed
-    // the old storage -- every chunk of every other array compressed to its
-    // second value then read freed memory (wrong values, a heap-use-after-free
-    // under ASan), and the next pass took that pointer for a materialised
-    // buffer and released it to the allocator (SIGSEGV in slab_from).
+    // std::deque grown at the end keeps every element where it is. A
+    // std::vector's resize() past capacity would move every array and free the
+    // old storage -- every chunk compressed to a second value would read freed
+    // memory, and the next pass would release that pointer to the allocator.
     // chunk2_registry_growth_validation guards it. MM_PROTECT holds pointers
     // to its own mappings, which never move.
     using vec_array_chunk_size_max =
@@ -124,10 +122,6 @@ class ChunkSpec2
         return values == get_cst_val2(ind);
     }
 
-    // is_cst_val2_async / is_not_cst_val2_async removed: dead code, zero
-    // callers anywhere in the tree (the bool one had a latent bug -- it called
-    // is_cst_val2(ctx) instead of is_cst_val2_async(ctx), a type mismatch never
-    // caught because the template body was never instantiated).
 
     /*!
      * \brief Fill a freshly materialised buffer with the second value
@@ -694,14 +688,10 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
     static bool have_chunk_to_compress_bool(int max_thr)
     {
         // bool's second value is always `true`, so this IS the general lookup at
-        // that key -- the body used to be duplicated verbatim with `true`
-        // hard-coded in place of the parameter.
+        // that key.
         return have_chunk_to_compress(static_cast<T>(true), max_thr);
     }
 
-    // Removed: get_vec_tuple_to_compress_potentially_bool_thr(thr). It was
-    // get_vec_tuple_to_compress_potentially_thr(thr, true) written out again, and
-    // it had no caller anywhere in the tree.
 
 
     /**
@@ -1140,21 +1130,17 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
 
     /// @brief Get reference to the chunk manager (static access)
     /// @return Reference to the manager_chunk2 static instance
-    /// @details On the class, not on the OpenMP policy (where it used to sit,
-    ///          unlike Chunk / Chunk2A): ChunkBase::release_to_owner() names
-    ///          derived().get_manager() in every build -- its foreign-block
-    ///          park is unreachable serially but must still compile
-    ///          (gnu-debug chunk2 dyn: "Chunk2<double> has no member named
-    ///          get_manager").
+    /// @details On the class, not on the OpenMP policy: ChunkBase::
+    ///          release_to_owner() names derived().get_manager() in every
+    ///          build -- its foreign-block park is unreachable serially but
+    ///          must still compile.
     ///
-    ///          NOTE: was a function-local `static manager_chunk2 s_manager;`
-    ///          (lazy Meyers singleton). Chunk2<T> is a class template compiled
-    ///          across several TUs / library targets; the lazy guard's first
-    ///          init happened from compress() inside an OpenMP region,
-    ///          deadlocking threads on __cxa_guard_acquire. An `inline static`
-    ///          member has one definition across TUs (C++17) and is built
-    ///          during static init, before main() / any thread -- no guard, no
-    ///          race. The manager ctor is trivial (sets max_thr only).
+    ///          An `inline static` member, NOT a function-local static: the
+    ///          lazy guard's first init can happen from compress() inside an
+    ///          OpenMP region, deadlocking threads on __cxa_guard_acquire. An
+    ///          inline static has one definition across TUs and is built during
+    ///          static init, before main() / any thread. The manager ctor is
+    ///          trivial (sets max_thr only).
     static auto& get_manager() noexcept
     {
         return s_manager_;
@@ -1171,8 +1157,8 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      *          move ctor, every std::vector<Chunk2> reallocation goes through
      *          here. The counter then under-counts by the elements already
      *          equal to the value and can no longer reach `size`: compression
-     *          of the chunk is delayed or missed for good. Same defect as the
-     *          one fixed in Chunk v1 (chunk_std.h). `values` is atomic, so it
+     *          of the chunk is delayed or missed for good. Same rule as Chunk v1
+     *          (chunk_std.h). `values` is atomic, so it
      *          cannot come through a base copy and is copied by hand below.
      */
     Chunk2(const Chunk2& other) : Chunk2CounterPolicy<chunk_config::use_compression_with_counter>(other)
@@ -1433,8 +1419,8 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     {
         if (is_cst_val(std::get<1>(inf_array)))
         {
-            // bool has its own materialiser: the bool branch used to call the
-            // non-bool create_value -- a no-op in release (see its static_assert).
+            // bool has its own materialiser: the non-bool create_value is a
+            // no-op in release for it (see its static_assert).
             if constexpr (is_not_bool)
             {
                 create_value(false, inf_array);
@@ -1493,7 +1479,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
             typename Chunk2FastCompPolicy<T, Chunk2<T>, chunk_config::use_fast_block_compression>::inf_array_t>,
         "Chunk2::inf_array_t must be the policies' inf_array_t");
 
-    // --- what used to follow here, and where it went ---------------------
+    // --- where the rest of Chunk2 lives ----------------------------------
     // The OpenMP surface (the create_value family, clear(),
     // block_clear(), the clear_int_st family, clear_st()) sits on
     // Chunk2OmpPolicy<T, Chunk2, build_config::use_openmp>, one specialisation

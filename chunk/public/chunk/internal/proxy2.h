@@ -129,10 +129,10 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
     /// @details Called by ArrayChunkBase::operator[] / set_value. A proxy that
     ///          is NOT armed -- a deferred-replay reconstruction, a *_from_key
     ///          path -- keeps resolving the tuple through share_info_array.
-    /// @note The registry scan ran on EVERY write (assign_impl and
-    ///       set_info_on_chunk): deque::size(), then per entry a divide and a
-    ///       double dereference, then the tuple copy -- a third of a 64-thread
-    ///       chunk2 run. The array already knows the answer.
+    /// @note Without it, every write scans the registry (deque::size(), then
+    ///       per entry a divide and a double dereference, then the tuple copy)
+    ///       -- a third of a 64-thread chunk2 run. The array already knows the
+    ///       answer.
     void arm_inf_array(const inf_array_t* src) const noexcept
     {
         inf_array_src_ = src;
@@ -208,10 +208,10 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
     /// @details Called by ArrayChunkBase::operator[] / set_value. A proxy that
     ///          is NOT armed -- a deferred-replay reconstruction, a *_from_key
     ///          path -- keeps resolving the tuple through share_info_array.
-    /// @note The registry scan ran on EVERY write (assign_impl and
-    ///       set_info_on_chunk): deque::size(), then per entry a divide and a
-    ///       double dereference, then the tuple copy -- a third of a 64-thread
-    ///       chunk2 run. The array already knows the answer.
+    /// @note Without it, every write scans the registry (deque::size(), then
+    ///       per entry a divide and a double dereference, then the tuple copy)
+    ///       -- a third of a 64-thread chunk2 run. The array already knows the
+    ///       answer.
     void arm_inf_array(const inf_array_t* src) const noexcept
     {
         inf_array_src_ = src;
@@ -222,14 +222,11 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
     void set_info_on_chunk(this Derived& self);
 
     // NOT a no-op. bool's second_value (true) and ind (0) are fixed, but num_tab
-    // is PER-ARRAY. Leaving inf_array at its default (num_tab 0) was correct only
-    // while a single bool array existed; a rechunk creates a SECOND bool array
-    // (rechunk_to's tmp), whose writes then used array 0's num_tab — indexing the
-    // wrong compression flag array (heap overflow) and enqueuing candidates under
-    // num_tab 0 that rechunk_drop_candidates(tmp) (which drops by tmp's real
-    // num_tab) could not remove, so they were compressed at the wrong active size
-    // when tmp was destroyed. Resolve the real per-array tuple like the non-bool
-    // path; only num_tab is consumed (second_value/ind stay their constexpr).
+    // is PER-ARRAY: with a second bool array (a rechunk's tmp), a default
+    // num_tab 0 indexes the wrong compression flag array (heap overflow) and
+    // queues candidates rechunk_drop_candidates(tmp) cannot remove. Resolve the
+    // real per-array tuple like the non-bool path; only num_tab is consumed
+    // (second_value/ind stay their constexpr).
     /**
      * @brief Resolve this proxy's real per-array num_tab from the global
      *        metadata map (second_value/ind stay their constexpr values).
@@ -467,18 +464,11 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     // ------------------------------------------------------------------
 
     /**
-     * @brief Currently a no-op (called at array teardown, before this
-     *        array's num_tab is dropped from the compression-candidate
-     *        queues). The commented-out body attempted
-     *        tab_is_inside_chunk_list_to_compress[num_tab].clear() --
-     *        not a valid call (the slot holds a
-     *        unique_ptr<atomic<char>[]>, which has no clear()) -- and was
-     *        left disabled rather than fixed. Left as-is: the slot's old
-     *        unique_ptr is naturally released whenever resize_tab_is_int()
-     *        later reassigns this same num_tab to a new array, but if that
-     *        slot is never reused, its buffer stays allocated until
-     *        program exit rather than being freed at this array's own
-     *        teardown.
+     * @brief No-op (called at array teardown, before this array's num_tab is
+     *        dropped from the compression-candidate queues). The slot's
+     *        unique_ptr is released when resize_tab_is_int() reassigns this
+     *        num_tab to a new array; a slot never reused keeps its buffer until
+     *        program exit.
      * @param num_tab Tab index being torn down.
      */
     static void clear_is_int([[maybe_unused]] int num_tab)
@@ -633,18 +623,11 @@ class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, 
         // (clear_st -> clear_int_st -> ChunkBase::free_values ->
         // get_chunk_allocator(thr_rank).free_elt_pow2()). get_chunk_allocator()
         // ROUTES by the ambient thread_chunk_size(), it does not derive it from
-        // the buffer being freed -- unlike addr_to_block() deeper inside
-        // free_elt_pow2(), which correctly resolves the buffer's TRUE owning
-        // slab regardless of ambient. If the ambient is stale here (left behind
-        // by an unrelated array's own write/alloc elsewhere -- the free path
-        // was never covered by the create_value-side fix in
-        // ensure_writable_storage() and siblings), get_chunk_allocator()
-        // returns the WRONG pool object, and free_elt_pow2() then tries to
-        // sl_remove() the (correctly-resolved) node from that WRONG pool's
-        // block/block_full lists -- producing exactly the
-        // sl_contains(list, node) assertion failures / SIGSEGVs seen here,
-        // confirmed fast-alloc-only (std-alloc's svfree() doesn't route by
-        // ambient at all, so it never showed this).
+        // the buffer being freed (addr_to_block(), deeper inside, does). A stale
+        // ambient -- left by an unrelated array's write elsewhere -- returns the
+        // WRONG pool object, and free_elt_pow2() then sl_remove()s the node from
+        // that pool's lists (sl_contains assertion / SIGSEGV). Fast-alloc only:
+        // std-alloc's svfree() does not route by ambient.
         if constexpr (build_config::chunk_dynamic)
         {
             shrink_array::set_thread_chunk_size(this->chunk_size());
@@ -777,9 +760,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *          list, filled by the same call). Such writes are rejected HERE,
      *          before add_to_compression_list() CASes the chunk's "queued" flag
      *          -- giving up after the CAS would leave the chunk flagged for
-     *          good. Before the widened pre-check (Sept '26) these arrays were
-     *          never queued either; the widening now applies to every array
-     *          that has a second value.
+     *          good.
      * @param new_value The new value to check.
      * @param first_value The first constant value to compare against.
      * @param second_val The second constant value to compare against.
@@ -839,11 +820,10 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     /// @brief Materialise the chunk if it is stored in a compressed (cst_val1 /
     ///        cst_val2) form, so `values` points at writable heap storage.
     ///
-    /// Extracted verbatim from execute_simple_operation (structural twin of
-    /// Proxy2A::ensure_writable_storage): runs set_info_second_value_ind when
-    /// the counter policy provides it, decompresses the second-value form first,
-    /// then the first-value form, seeding the nb_val_eq_* counters to "full"
-    /// exactly as inline code did. Bool and non-bool are both handled (the
+    /// Structural twin of Proxy2A::ensure_writable_storage: runs
+    /// set_info_second_value_ind when the counter policy provides it,
+    /// decompresses the second-value form first, then the first-value form,
+    /// seeding the nb_val_eq_* counters to "full". Bool and non-bool are both handled (the
     /// non-bool test goes through BaseSpec::ind, which is what the no-argument
     /// is_cst_val2() does too). Note the deliberate re-test of is_cst_val1()
     /// AFTER the possible cst_val2 decompression: the two states are mutually
@@ -933,13 +913,8 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *          ops are not replayed first, and nothing orders it against
      *          other threads. The reference dangles as soon as the chunk is
      *          recompressed or freed. Prefer the proxy's own operators.
-     * @note FIX (as getVal()): it called `create_value(Base::is_cst_val())`
-     *       under `if constexpr (is_not_bool)`: create_value(bool) does not
-     *       exist for Proxy2<T>, a latent compile error (no caller, so never
-     *       instantiated), and the bool branch skipped materialisation. It
-     *       calls the no-arg create_value(), gated on Base2::is_cst_val()
-     *       (the first fix still read Base::is_cst_val(), which ProxyBase
-     *       does not have: still a compile error, as in Proxy2A).
+     * @note Materialises through the no-arg create_value(), gated on
+     *       Base2::is_cst_val(), for bool and non-bool alike.
      * @return Reference to this element's live value.
      */
     [[nodiscard]] T& unsafe_ref() noexcept

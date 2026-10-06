@@ -42,9 +42,9 @@
  * A Chunk2A block is in one of three states, and every function here either
  * moves it between them or decides that it should move:
  *  - **cst_val1**: `values` points at the shared all-`first_value` block;
- *  - **cst_val2**: `values` points at the shared block of THIS chunk's own
- *    second value (Chunk2A's distinguishing feature — Chunk2 has one second
- *    value per array, Chunk2A one per chunk);
+ *  - **cst_val2**: `values` points at the identifier slot of THIS chunk's own
+ *    second value (tab_cst_val2_holder.h; Chunk2A's distinguishing feature —
+ *    Chunk2 has one second value per array, Chunk2A one per chunk);
  *  - **materialised**: `values` points at a private heap buffer.
  *
  * The two directions:
@@ -156,17 +156,11 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
 {
     if (Base::is_not_cst_val1())
     {
-        // The chunk about to be scanned must be claimed. make_block_compression()
-        // marks every entry of vec_tuple_to_compress before start(), whose
-        // barrier publishes the marks to the writers -- but that list holds the
-        // candidates already known, and scanning is how new ones are found. A
-        // chunk reached that way was never marked, and no writer has a reason to
-        // stay off it: TSan reports scan_constants() reading a chunk that
-        // another thread's store_value() is writing, at 2 threads as at 8.
-        //
-        // Asserting rather than assuming: if this fires, the hole is where it
-        // looks. If it never fires, the race comes from start()'s window
-        // instead -- a writer already past the filter when the marks went out.
+        // The chunk about to be scanned must be claimed:
+        // make_block_compression() marks every entry of vec_tuple_to_compress
+        // before start(), whose barrier publishes the marks to the writers.
+        // Asserted rather than assumed (TSan once reported scan_constants()
+        // reading a chunk another thread's store_value() was writing).
         if constexpr (build_config::any_check && chunk_config::use_chunk_steal_mark)
         {
             // Only where a claim was made. The resize entry point
@@ -174,12 +168,6 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
             // make_block_compression(thr, nullptr)) runs outside any parallel
             // region and skips the claim loop by design: no writer can be in
             // flight, so no mark is needed and its absence proves nothing.
-            //
-            // On the claimed path it proves a lot: the claim covers
-            // vec_tuple_to_compress, the candidates already known, while
-            // scanning is how new ones are DISCOVERED -- and a chunk reached
-            // that way was never marked, which is what TSan reports as
-            // scan_constants() reading a chunk another thread is writing.
             if (claimed && !Base::steal_marked()) [[unlikely]]
             {
                 INVARIANT_FAILED("fill_list_to_compress on an unclaimed chunk (num_chunk=%d num_tab=%d)", num_chunk,
@@ -193,17 +181,10 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
 
         // Already compressed to its second value: nothing to scan, and
         // nothing that may be scanned. A candidate can be in that state when
-        // the single-chunk compress() (compress_int, sequential build) ran
-        // over it while it was still queued: its flag is set, its entry is
-        // still in vec_tuple_to_compress, and it comes back through here at
-        // the next pass. The branch that used to scan it read through
-        // `values` -- a second-value slot, a region that was never
-        // written, so every element read as 0 == first_value, the chunk
-        // went on ll_compt1 and block_clear() freed the region pointer as a
-        // buffer (SIGSEGV in free_elt_pow2 on aarch64, the invariant check
-        // "Attempted to free 'cst_val2'" in a debug build). With the arrays
-        // filled (before Oct '26) it was merely useless: the re-scan sent the chunk to
-        // ll_compt2, and the OpenMP CAS refused the clear.
+        // the single-chunk compress() ran over it while it was still queued.
+        // Never scan through `values` here: it is a second-value slot that was
+        // never written, every element reads 0 == first_value, the chunk goes
+        // on ll_compt1 and block_clear() frees the slot as a buffer.
         if (this->is_cst_val2())
         {
             return;
@@ -251,22 +232,15 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
 template <typename T>
 void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
 {
-    // NOTE: an earlier version of this fix pinned the ambient size ONCE here,
-    // to proxy2A->chunk_size(). That was insufficient: this function
-    // processes vec_tuple_to_compress, a list that can hold candidates from
-    // MORE THAN ONE array (proxy2A is only "whichever write triggered this
-    // pass", not necessarily the owner of every chunk below) -- confirmed via
-    // a live repro that kept crashing after that fix, from this exact
-    // function, with the ambient still wrong for some later chunk in the
-    // list. Each ll_compt1/ll_compt2 entry instead carries its OWN owning
-    // array's geometry (a ChunkElems, captured by push_to_compress_list() at
-    // the original write that queued it) -- pin PER-CHUNK from that, inside
-    // each loop below, right before the clear_int_st() call that eventually
-    // reaches ChunkBase::free_values() (which routes by the ambient
-    // thread_chunk_size(), not by the buffer being freed -- see
-    // Proxy2::manage_full_first_value()'s comment in proxy2.h for the full
-    // free-routing rationale). proxy2A itself is only used for the
-    // compression_mgr start/finish handshake below, not for sizing.
+    // Geometry is pinned PER CHUNK, never once here: vec_tuple_to_compress can
+    // hold candidates from MORE THAN ONE array (proxy2A is only "whichever
+    // write triggered this pass"). Each ll_compt1/ll_compt2 entry carries its
+    // OWN array's geometry (a ChunkElems captured by push_to_compress_list()),
+    // and each loop below pins it right before the clear_int_st() call that
+    // reaches ChunkBase::free_values(), which routes by the ambient
+    // thread_chunk_size(), not by the buffer being freed (see
+    // Proxy2::manage_full_first_value() in proxy2.h). proxy2A itself is only
+    // used for the compression_mgr start/finish handshake below.
     auto& vec_tuple_to_compress = manager_chunk2A::get_chunk2A_to_compress_potentially(thr);
 
     const auto sz = static_cast<int>(vec_tuple_to_compress.size());
@@ -494,8 +468,6 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
  * @note In an OpenMP build without OMPT the between-region pass is
  *       make_block_compression() (compress_chunk_to_compress); this is what
  *       the rechunk fold calls on a chunk of its own, with apply = true.
- *       Until Sept '26 it returned at once there whatever the flag, and a
- *       GNU build's fold counted every merged constant span as refused.
  */
 template <typename T>
 void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
@@ -504,20 +476,14 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
                           [[maybe_unused]] bool apply,
                           ChunkElems            size)
 {
-    // In the GNU/GOMP build (use_openmp && no OMPT) NEITHER clear_int_st branch
-    // at the bottom of this function is compiled in:
-    //   - the `if constexpr (!use_openmp)` block is dead (use_openmp == true),
-    //   - the `if constexpr (use_compression_with_ompt)` block is dead (no OMPT).
-    // So the whole body would only SCAN every value (O(chunk_size) per chunk)
-    // and call find_or_set_ind_cst_val2 to register a cst_val2 — a registration
-    // that make_block_compression redoes itself (it is fully self-contained:
-    // scan via fill_list_to_compress, its own find_or_set, then clear_int_st).
-    // find_or_set is idempotent, so that registration is redundant and the
-    // discarded new_cst_val2_ptr is only used by the OMPT clear. This scan was
-    // ~40% of the aarch64 profile with zero compression effect: the lists'
-    // purge walks (apply = false) skip it entirely. With apply = true -- the
-    // rechunk fold, on a chunk no writer can reach -- the scan and the clear
-    // run here as in every other build.
+    // In an OpenMP build without OMPT neither clear_int_st branch at the
+    // bottom is compiled in, so with apply = false the body would only SCAN
+    // every value and register a cst_val2 that make_block_compression redoes
+    // itself (find_or_set is idempotent) -- a scan with zero compression
+    // effect that measured ~40% of an aarch64 profile: the lists' purge walks
+    // (apply = false) skip it. With apply = true -- the rechunk fold, on a
+    // chunk no writer can reach -- the scan and the clear run here as in
+    // every other build.
     if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
     {
         if (!apply)
@@ -548,8 +514,8 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
             // second value the chunk has registered: a chunk uniform at a
             // value other than its current one is compressed to THAT value,
             // which find_or_set registers and the clear commits. Scanning
-            // against the registered value alone (until Sept '26) left such a
-            // chunk materialised for good, until it passed through first_value.
+            // against the registered value alone would leave such a chunk
+            // materialised until it passed through first_value.
             const SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
             const in_t<T>           second_v         = Base::read_value_scan(0);
             const auto              scan             = Base::scan_constants(first_value, second_v, size.count());
@@ -574,14 +540,8 @@ void Chunk2A<T>::compress([[maybe_unused]] int  thr_rank,
         // Serial: clears here, outside any callback. OMPT: clears only from the
         // callback. Both go through the long clear_int_st(): the type-2 clear
         // MUST commit new_cst_val2_ptr first, or init_values_cst_val() points
-        // the chunk at a second-value slot that was never installed (nullptr)
-        // -- the serial path used the short two-argument form and the first
-        // read of such a chunk after a rechunk_to() dereferenced null
-        // (rechunk_validation_chunk2a_dyn, scale-64-to-tgt, serial build).
-        // The serial build used to clear on !apply (the flag was named
-        // is_inside_ompt and the serial callers passed false), and the
-        // OpenMP build without OMPT never: every caller now says what it
-        // wants, so every build reads it the same way.
+        // the chunk at a second-value slot that was never installed (nullptr),
+        // dereferenced at the first read after a rechunk_to().
         if (apply)
         {
             const SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
@@ -616,18 +576,15 @@ void Chunk2A<T>::compress_sweep_rank(int thr, bool apply)
 {
     if constexpr (build_config::use_openmp && chunk_config::not_use_compression_with_ompt)
     {
-        // An OpenMP build without OMPT had no between-region compressor for
-        // chunk2a until Sept '26: compress() returns at once there, so a
-        // candidate waited until its rank's list reached the in-loop
-        // threshold, and what the last phases of a run left constant was
-        // never compressed (chunk2a_1024 --mode perf, 6 threads: 1 GB of
-        // buffers more returned to the pool with this pass, -3 % RSS, time
-        // within noise). Between two regions no writer is live, so the
-        // writers' pass runs without its handshake (nullptr proxy), each
-        // rank on its own list -- the lists are per rank, the second-value
-        // registry takes its mutex, the in-loop passes already run
-        // concurrently -- and the ranks beyond the team's size serially
-        // (compress_sweep_mops_up), as Chunk2's pass does.
+        // An OpenMP build without OMPT has no other between-region compressor
+        // for chunk2a: compress() returns at once there, so without this pass
+        // what the last phases of a run left constant would never be
+        // compressed. Between two regions no writer is live, so the writers'
+        // pass runs without its handshake (nullptr proxy), each rank on its own
+        // list -- the lists are per rank, the second-value registry takes its
+        // mutex, the in-loop passes already run concurrently -- and the ranks
+        // beyond the team's size serially (compress_sweep_mops_up), as Chunk2's
+        // pass does.
         if (apply)
         {
             make_block_compression(thr, nullptr);
@@ -744,9 +701,8 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
         // mixes chunks of every array this rank wrote -- an array and the tmp
         // rechunk_to() builds from it, at two sizes -- so pin each chunk to its
         // own csize and restore afterwards, exactly as make_block_compression()
-        // does. Same defect as Chunk2FastCompPolicy::
-        // compress_chunk_to_compress_in_par_impl (rechunk_validation PRE-FAIL
-        // on clang/OMPT: wrong-width blocks popped from the reuse list).
+        // does (same rule as Chunk2FastCompPolicy::
+        // compress_chunk_to_compress_in_par_impl).
         [[maybe_unused]] const unsigned int saved_sz = shrink_array::thread_chunk_size();
 
         for (const auto& tup : vec_tup)
@@ -764,16 +720,12 @@ void Chunk2A<T>::compress_chunk_to_compress_in_par([[maybe_unused]] int thr, boo
                 }
 
                 chunk_t->compress(thr, num_chunk, num_tab, apply, csize);
-                // DEDUP FLAG / LIST must be reset TOGETHER. The is_inside flag is
-                // the CAS gate in add_to_compression_list (0->1 admits a chunk).
-                // Resetting it to 0 here while leaving the entry physically in
-                // vec_tup (which happens when vec_tup.clear() below is compiled
-                // out — i.e. in every non-OMPT build) desyncs the two: a later
-                // write CAS-flips 0->1 and appends the SAME chunk a second time,
-                // and make_block_compression then double-clears it (2nd
-                // clear_int_st hits an already-cst_val1 chunk ->
-                // check_not_constant_before_clear fires: Values == Cst1).
-                // So gate the flag reset on the SAME condition as the list clear.
+                // Flag reset and list clear TOGETHER (see the @warning above):
+                // the flag gates add_to_compression_list's CAS, and resetting it
+                // while the entry stays in vec_tup lets a later write append the
+                // same chunk twice -- make_block_compression then double-clears
+                // it. So the flag reset is gated on the SAME condition as the
+                // list clear.
                 if constexpr (chunk_config::use_compression_with_ompt)
                 {
                     Proxy2A<T>::set_tab_is_inside_chunk_list_to_compress(num_tab, num_chunk, 0);
@@ -865,24 +817,20 @@ void Chunk2A<T>::fill_list_chunk_to_compress_in_par([[maybe_unused]] int      th
  *
  * make_block_compression() CAS-steals a chunk's `values` and
  * free_block_to_pool()s it; allocating and filling a block for that chunk
- * while that is in flight raced the free on the same recycled block (TSan,
- * July '26, fatal on the dense slab). The wait used to be on the narrow
- * GLOBAL condition, is_hard_compression_inflight() -- not
- * is_compression_active(), which also counts slow-path threads merely
- * draining flush_deferred and deadlocks from a flusher's write body -- and
- * that was invisible while in-loop compressions yielded 98% of the time.
- * Once they ran, every materialisation that fell in a pass spun for the
- * whole scan: 72% of perform_core_assignment<double> on the load of
- * stealing_inflight_, 10% of the perf bench at 6 threads on x86.
+ * while that is in flight races the free on the same recycled block.
  *
  * With the per-chunk marks the compressor only ever steals a chunk it has
  * MARKED, and it holds the mark from before its start() to after the CAS: so
- * this chunk's own mark is the exact condition. A writer on the fast path
- * never reaches here with the chunk marked (the gate stopped it), a flush
- * replay never overlaps a stealer (flush_deferred waits stealing_inflight_
- * out and blocks start() while it replays), so the wait is a no-op in
- * practice and the load is on the header line, not on the compressors'
- * shared counter. Builds without the marks keep the global condition.
+ * this chunk's own mark is the exact condition. (The global condition,
+ * is_hard_compression_inflight(), made every materialisation that fell in a
+ * pass spin for the whole scan.) A writer on the fast path never reaches here
+ * with the chunk marked (the gate stopped it), a flush replay never overlaps
+ * a stealer (flush_deferred waits stealing_inflight_ out and blocks start()
+ * while it replays), so the wait is a no-op in practice and the load is on
+ * the header line, not on the compressors' shared counter. Builds without the
+ * marks keep the global condition -- never a broad "compression active",
+ * which would also count flush-draining slow paths and deadlock from a
+ * flusher's write body.
  *
  * @param chunk The chunk about to be materialised.
  */
@@ -914,11 +862,10 @@ void wait_before_materialise(const ChunkT& chunk) noexcept
  * or the finished buffer, never a partially built one. Losing the CAS means
  * another thread materialised first; apply_cas_or_recup() recycles our buffer.
  *
- * @warning Spins until no HARD compression is in flight. The wait is on that
- *          narrow condition on purpose: waiting on the broad
- *          "compression active" deadlocks, because this can run from a
- *          flusher's write body while a slow-path thread waits on the lock that
- *          flusher holds.
+ * @warning Waits first until no compressor may steal THIS chunk
+ *          (wait_before_materialise()). Never on a broad "compression
+ *          active": this can run from a flusher's write body while a slow-path
+ *          thread waits on the lock that flusher holds -- a deadlock.
  */
 template <typename T, typename Derived, bool Enabled>
 void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(this Derived&     self,
@@ -928,15 +875,11 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value(this Derived&     self,
 {
     if constexpr (is_not_bool)
     {
-        // Piste 1 — exclude create_value from a concurrent compression.
+        // Exclude create_value from a concurrent compression:
         // make_block_compression() (another thread) CAS-steals this chunk's
-        // `values` and free_block_to_pool()s it; if we allocate+memset a block
-        // now we race that free on the same recycled block (TSan:
-        // chunk_base_inline.h:78 <-> chunk_base.h:369, fatal on the dense slab).
-        // Mirror the write path: wait until no compression may steal THIS
-        // chunk -- see wait_before_materialise() for the condition, and why
-        // the broad "any driver or hard compression" predicate would deadlock
-        // here.
+        // `values` and free_block_to_pool()s it; allocating + filling a block
+        // now would race that free on the same recycled block. See
+        // wait_before_materialise() for the condition.
         wait_before_materialise<T>(self);
 
         // Lambda to select the right initialization function
@@ -1074,10 +1017,9 @@ template <typename T, typename Derived>
 void Chunk2AOmpPolicy<T, Derived, false>::create_value_bool(bool need_set_second_value)
 {
     // bool's second value is always `true`, so this IS create_value() at that
-    // value. The body used to be written out again with the fill hand-rolled:
-    // its "init to false" loop is what Base::init_block() does (a memset for any
-    // arithmetic T, bool included), and its "init to true" loop is the
-    // second-value fill with ptr_second_value.get() == true.
+    // value: Base::init_block() is the `false` fill (a memset for any
+    // arithmetic T, bool included), and the second-value fill with
+    // ptr_second_value.get() == true is the `true` one.
     static T k_second_value = static_cast<T>(true); // a slot the handle can point at; never written
     create_value(need_set_second_value, SecondValueRef<T>{&k_second_value});
 }
@@ -1201,7 +1143,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(int               num_c
 /// @param num_compress_value 0 for the first constant, otherwise the second.
 /// @param ptr_type_cst       Slot of the per-chunk type table to update.
 /// @param ptr_second_value   The chunk's second-value slot.
-/// @param cst2_ptr           Shared array of the second constant (type 2).
+/// @param cst2_ptr           Second-value slot of the constant (type 2).
 /// @note The rank argument is unused: there is no rank pool serially.
 template <typename T, typename Derived>
 void Chunk2AOmpPolicy<T, Derived, false>::block_clear(this Derived&     self,
