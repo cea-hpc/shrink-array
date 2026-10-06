@@ -57,9 +57,9 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
      * @brief Allocates storage for a specific chunk if it's currently constant.
      * Uses the metadata provided by the derived class.
      */
-    void alloc_chunk(ind_type i)
+    void alloc_chunk(this Derived& self, ind_type i)
     {
-        const int num_chunk = this->chunk_index_of(i);
+        const int num_chunk = self.chunk_index_of(i);
 
         // Deliberately NO dirty-marking here. The dirty bit exists for the
         // DEFERRED path only, and that path marks at enqueue with the CHUNK
@@ -69,17 +69,17 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         // -- a behaviour change a preallocation must not smuggle in (ArrayChunk
         // v1's alloc_chunk does not mark either). Exercised by shrink_bench
         // --test_prealloc.
-        chunk_list[num_chunk].alloc_chunk(derived().get_metadata(i));
+        self.chunk_list[num_chunk].alloc_chunk(self.get_metadata(i));
     }
 
     /**
      * @brief Thread-aware allocation for a specific chunk.
      */
-    void alloc_chunk(ind_type i, int thr_rank)
+    void alloc_chunk(this Derived& self, ind_type i, int thr_rank)
     {
-        const int num_chunk = this->chunk_index_of(i);
+        const int num_chunk = self.chunk_index_of(i);
         // See alloc_chunk(i) above: deliberately no dirty-marking.
-        chunk_list[num_chunk].alloc_chunk(derived().get_metadata(i), thr_rank);
+        self.chunk_list[num_chunk].alloc_chunk(self.get_metadata(i), thr_rank);
     }
 
     // ── Drain deferred writes still targeting this array's chunks ──────────
@@ -105,19 +105,19 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
 
     /// @brief Compress every compressible chunk now, by every thread of the
     ///        region compress_int() runs in (opened here when called outside one).
-    void compress()
+    void compress(this Derived& self)
     {
         if (CHUNK_PMP_IN_PARALLEL_REGION)
         {
             // Inside the caller's region: other threads may be reading, so
             // the buffers released wait for a grace period (read_reclaim.h).
             const read_reclaim::PassScope pass_scope;
-            derived().compress_int();
+            self.compress_int();
         }
         else
         {
 #pragma omp parallel
-            derived().compress_int();
+            self.compress_int();
         }
     }
 
@@ -129,7 +129,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     ///        pending candidates, drain the deferred ops, then grow or shrink
     ///        chunk_list (with its dirty bitset and the manager's counters).
     ///        The variant's resize() materialises or seeds the new chunks.
-    void resize_common(ind_type newsz)
+    void resize_common(this Derived& self, ind_type newsz)
     {
         // Drain pending deferred ops on the CURRENT chunks BEFORE nb_chunk,
         // chunk_list and the dirty bitset are grown below. Called here — while
@@ -145,7 +145,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         // entry would outlive it: chunk_list.resize() leaves it dangling, and
         // resize_tab_is_int() clears its flag, letting the same chunk be
         // queued a second time.
-        derived().flush_pending_deferred_ops();
+        self.flush_pending_deferred_ops();
 
         // Compress the pending list BEFORE chunk_list is reallocated below.
         // vec_to_compress_potantially holds &chunk_list[j] pointers; a growth
@@ -162,46 +162,46 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         if constexpr (chunk_config::use_fast_block_compression ||
                       (build_config::not_use_openmp && std::is_same_v<Derived, ArrayChunk2A<T, ind_type>>))
         {
-            derived().make_block_compression();
+            self.make_block_compression();
         }
 
-        const int old_nb_chunk = nb_chunk;
-        m_size                 = newsz;
-        nb_chunk               = this->chunks_for(newsz);
+        const int old_nb_chunk = self.nb_chunk;
+        self.m_size            = newsz;
+        self.nb_chunk          = self.chunks_for(newsz);
 
-        if (nb_chunk <= old_nb_chunk)
+        if (self.nb_chunk <= old_nb_chunk)
         {
             return; // Only handling growth here
         }
 
-        chunk_list.resize(nb_chunk);
-        Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk);
+        self.chunk_list.resize(self.nb_chunk);
+        self.Base::reallocate_dirty_bitset(old_nb_chunk, self.nb_chunk);
 
-        manager_type::increm_somme_chunk_create(nb_chunk - old_nb_chunk);
+        manager_type::increm_somme_chunk_create(self.nb_chunk - old_nb_chunk);
         manager_type::compute_size_buffer_reuse();
         manager_type::compute_size_max_number_of_chunk_to_check_compress();
         // An array built empty (the default) only becomes worth its own slabs
         // here; idempotent for one that already has a key.
-        this->assign_alloc_key();
+        self.assign_alloc_key();
     }
 
     /// @brief resize(), then @p val written to the NEW elements only
     ///        ([old size, newsz) -- std::vector's semantics; assign() fills all).
-    void resize(ind_type newsz, in_t<T> val)
+    void resize(this Derived& self, ind_type newsz, in_t<T> val)
     {
-        const ind_type old_size = m_size;
-        derived().resize(newsz); // calls derived resize(sz)
+        const ind_type old_size = self.m_size;
+        self.resize(newsz); // calls derived resize(sz)
 
-        const auto lbd = [this, old_size, newsz, val]
+        const auto lbd = [&self, old_size, newsz, val]
         {
 #pragma omp for schedule(static) nowait
             for (ind_type i = old_size; i < newsz; ++i)
             {
-                derived()[i] = val;
+                self[i] = val;
             }
         };
 
-        if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
+        if (!CHUNK_PMP_IN_PARALLEL_REGION && self.nb_chunk > 500)
         {
 #pragma omp parallel
             lbd();
