@@ -1,14 +1,13 @@
 #pragma once
 
 // ============================================================================
-// Re-chunk decider (phase 3, morceau A — DRY-RUN, no mutation)
+// Re-chunk decider (phase 3 of adaptive chunk sizing)
 // ============================================================================
 //
 // Consumes a ChunkSizeReport (advisor: predicted best size + memory gain) and a
-// rechunk cost estimate, and decides whether a re-chunk would be worthwhile —
-// WITHOUT performing it. It only logs its verdict. This lets us watch the
-// decisions (cadence, stability, whether hysteresis behaves) before the real
-// re-chunk operation exists.
+// rechunk cost estimate, and decides whether a re-chunk is worthwhile;
+// consider() then performs it (rechunk_to) unless Policy::dry_run or
+// CHUNK_RECHUNK_DRY_RUN asks it only to log its verdict.
 //
 // State is per-array and persists across advisor ticks, keyed by a stable
 // identifier the caller provides (the array's address is a good key: stable for
@@ -23,9 +22,9 @@
 //     with the damping reset in most cases but a cheap last-resort guard; set to
 //     0 to disable.
 //
-// All thresholds are fields on Policy — tune from observation. Because measured
-// re-chunk cost is sub-millisecond, hysteresis here is about avoiding
-// OSCILLATION, not about protecting from an expensive operation.
+// All thresholds are fields on Policy -- tune from observation. The rebuild's
+// cost is weighed in the gain gates (rechunk_cost_model.h); hysteresis here is
+// about avoiding OSCILLATION.
 
 #include <cstddef>       // std::size_t
 #include <cstdio>        // std::FILE, stdout
@@ -57,20 +56,12 @@ struct RechunkPolicy
                                             ///< cur_size per rechunk; 1 disables (fining
                                             ///< is never capped). CHUNK_RECHUNK_MAX_COARSEN
                                             ///< overrides it at run time.
-                                            ///< 4 since Sept '26 (was 2). Grace, 64
-                                            ///< threads, chunk2a_dyn with all 15 arrays
-                                            ///< advised: factor 2 -> 44 re-chunks, end
-                                            ///< 6.73 GB, 99% of the forecast gain met;
-                                            ///< factor 4 -> 33 re-chunks, end 6.54 GB,
-                                            ///< 98.8% met; factor 8 -> 20 re-chunks,
-                                            ///< fastest, but ends at 6.72 GB. The two
-                                            ///< bad jumps that had set 2 (64->1024:
-                                            ///< -91 MB forecast, +40 MB measured;
-                                            ///< 512->4096 on a 35.8 MB forecast, no
-                                            ///< gain) predate the fixes to the RSS
-                                            ///< measurement, Chunk2A's leaked rows and
-                                            ///< the folds through a buffer. Kept at 4,
-                                            ///< not higher: a re-chunk's old size stays
+                                            ///< Measured (Grace, 64 threads,
+                                            ///< chunk2a_dyn, all 15 arrays advised):
+                                            ///< factor 2 -> 44 re-chunks, end
+                                            ///< 6.73 GB; 4 -> 33, 6.54 GB; 8 -> 20,
+                                            ///< fastest, but 6.72 GB. Not higher
+                                            ///< than 4: a re-chunk's old size stays
                                             ///< within the advisor's two finer levels,
                                             ///< so the next tick still measures the move
                                             ///< at unchanged data, and a bad step can be
@@ -81,12 +72,11 @@ struct RechunkPolicy
     ///< below it the gain is not measurable.
     ///< Whether it is worth a rebuild is
     ///< coarsen_min_meta_rate's question.
-    ///< 24 MB until Sept '26, which made the
-    ///< decision depend on scale: the same
-    ///< arrays re-chunked at full size (64 ->
-    ///< 256, 211 MB each) and never at a
-    ///< tenth of it (21 MB, -18% at the end
-    ///< of the run refused). 0 disables.
+    ///< Small on purpose: a larger floor
+    ///< makes the decision depend on scale
+    ///< (at 24 MB the same arrays re-chunked
+    ///< at full size, 211 MB each, and never
+    ///< at a tenth of it). 0 disables.
     double coarsen_min_meta_rate = 250.;
     ///< ... and at least this many MB of
     ///< metadata per second of rebuild, as
@@ -128,7 +118,7 @@ struct RechunkPolicy
                                         ///< barred for it from then on. Fining
                                         ///< stays available. 0 disables the
                                         ///< feedback.
-    bool dry_run = true;                ///< phase-3A: never mutate, only log
+    bool dry_run = true;                ///< never mutate, only log the verdict
 };
 
 /// @brief Decides, per array, whether a re-chunk is worthwhile from ChunkSizeReport ticks and a RechunkPolicy.

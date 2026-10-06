@@ -19,10 +19,9 @@
 //   data_bytes   : mat_old * S_old * elem_bytes, the materialised chunks'
 //                  bytes (elem_bytes is 1/8 for packed bits).
 //
-// Compressed chunks carry no buffer, but they are not free: the first model
-// counted the materialised data alone and said 5 ms for rebuilds measured at
-// 85 ms on sparse arrays (tab_long, 7% of the chunks materialised), 10 to 20
-// times short, and 0-19 ms for 370-1070 ms in a Debug build.
+// Compressed chunks carry no buffer, but they are not free: counting the
+// materialised data alone underestimates sparse arrays 10 to 20 times (5 ms
+// for rebuilds measured at 85 ms on tab_long, 7% of the chunks materialised).
 //
 // The constants were fitted (least squares) on 61 rebuilds measured with
 // CHUNK_RECHUNK_TRACE: shrink_bench_chunk2_dyn, Release, ARM, 64 threads,

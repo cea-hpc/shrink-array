@@ -61,20 +61,14 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     {
         const int num_chunk = this->chunk_index_of(i);
 
-        // Deliberately NO dirty-marking here. Historical note: this used to
-        // call mark_chunk_dirty(i) with the ELEMENT index — an out-of-bounds
-        // bitset write (word_idx = i>>6 vs bitset sized (nb_chunk+63)/64,
-        // PaddedDirtyWord is 128 B: up to chunk_size x past the end) that no
-        // reader could ever observe (is_chunk_dirty reads at num_chunk>>6).
-        // Removing it is observationally identical minus the UB. The dirty
-        // bit exists for the DEFERRED path only, and that path marks
-        // correctly at enqueue (proxy_base_inline: mark_chunk_dirty(
-        // ctx->num_chunk)); the visibility protocol itself lives in
-        // DeferredReadGate (chunk_base.h). Marking num_chunk here instead
-        // would ENABLE the read gate for freshly-allocated chunks — a
-        // behaviour change a preallocation must not smuggle in (and the
-        // matching ArrayChunk v1 alloc_chunk never marked either).
-        // Exercised by shrink_bench --test_prealloc.
+        // Deliberately NO dirty-marking here. The dirty bit exists for the
+        // DEFERRED path only, and that path marks at enqueue with the CHUNK
+        // index (proxy_base_inline: mark_chunk_dirty(ctx->num_chunk)); the
+        // visibility protocol itself lives in DeferredReadGate (chunk_base.h).
+        // Marking here would ENABLE the read gate for freshly-allocated chunks
+        // -- a behaviour change a preallocation must not smuggle in (ArrayChunk
+        // v1's alloc_chunk does not mark either). Exercised by shrink_bench
+        // --test_prealloc.
         chunk_list[num_chunk].alloc_chunk(derived().get_metadata(i));
     }
 
@@ -84,8 +78,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     void alloc_chunk(ind_type i, int thr_rank)
     {
         const int num_chunk = this->chunk_index_of(i);
-        // See alloc_chunk(i) above: deliberately no dirty-marking (the old
-        // element-index mark was an unobservable OOB write).
+        // See alloc_chunk(i) above: deliberately no dirty-marking.
         chunk_list[num_chunk].alloc_chunk(derived().get_metadata(i), thr_rank);
     }
 
@@ -96,7 +89,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     // maps) are global and keyed by chunk pointer, so they outlive this array
     // and survive chunk_list reallocation. Invalidating chunk storage without
     // draining leaves DANGLING chunk references that a later flush_deferred —
-    // triggered by compression on ANY array — dereferences (observed: SEGV in
+    // triggered by compression on ANY array — dereferences (SEGV in
     // values_load() from a stale deferred op after a resize()/reassignment).
     //
     // Defined here in the CRTP base so BOTH ArrayChunk2 and ArrayChunk2A get it
@@ -104,13 +97,11 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     // flush_chunk_all_ranks() drains a chunk across all ranks AND erases it
     // from deferred_chunk_per_thread. The dirty bit is reliable for the
     // deferred path (it marks with the CHUNK index via mark_chunk_dirty(
-    // ctx->num_chunk); the OOB caveat in alloc_chunk concerns the element-index
-    // alloc path only). Serial-context only.
+    // ctx->num_chunk)). Serial-context only.
     // flush_pending_deferred_ops() lives in ParallelSupportCommon / ...Serial
-    // (array_chunk_parallel_common.h), which the concrete arrays mix in. It used
-    // to be duplicated here AND in ParallelSupport for ArrayChunk v1 -- the two
-    // bodies were identical. Reach it through derived(): it is a sibling base of
-    // this one, so `this->` cannot see it.
+    // (array_chunk_parallel_common.h), which the concrete arrays mix in. Reach
+    // it through derived(): it is a sibling base of this one, so `this->`
+    // cannot see it.
 
     /// @brief Compress every compressible chunk now, by every thread of the
     ///        region compress_int() runs in (opened here when called outside one).
@@ -131,9 +122,7 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     }
 
     // mark_chunk_dirty / is_chunk_dirty are inherited from ArrayChunkBase —
-    // the single owner of the dirty-bit verbs (this class used to carry a
-    // byte-identical duplicate of mark_chunk_dirty plus a caller-less
-    // mark_chunk_safe; both removed, one owner per protocol).
+    // the single owner of the dirty-bit verbs.
 
   protected:
     /// @brief The part of resize() both chunk2 variants share: compress the
@@ -146,15 +135,15 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         // chunk_list and the dirty bitset are grown below. Called here — while
         // nb_chunk still holds the OLD count and chunk_list / chunk_dirty_bitset
         // are still the OLD size — so is_chunk_dirty(j) and &chunk_list[j] stay
-        // in bounds. (Calling it after nb_chunk grew but before the reallocs
-        // read past the old bitset → heap-buffer-overflow.)
+        // in bounds. (Called after nb_chunk grew but before the reallocs, it
+        // would read past the old bitset → heap-buffer-overflow.)
         //
         // And BEFORE the compression pass below, not after: a replayed write
         // goes through mark_for_compression -> add_to_compression_list (the
         // replay proxy is wired to the dedup flag), so it can queue a chunk
         // again -- flag 1, &chunk_list[j] pushed. Flushed after the pass, that
-        // entry outlived it: chunk_list.resize() left it dangling, and
-        // resize_tab_is_int() cleared its flag, letting the same chunk be
+        // entry would outlive it: chunk_list.resize() leaves it dangling, and
+        // resize_tab_is_int() clears its flag, letting the same chunk be
         // queued a second time.
         derived().flush_pending_deferred_ops();
 

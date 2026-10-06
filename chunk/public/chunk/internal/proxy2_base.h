@@ -116,8 +116,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         {
             // Early-out: multiplying by 1 changes nothing, so there is nothing to
             // write. Nothing to read either: the proxy is returned, and reading
-            // it goes through operator T() -> read_pure(), which honours the
-            // read-side gate under CHUNK_SYNC_ON_READ.
+            // it goes through operator T() -> read_pure() and its read-side gate.
             // base_t<U> extracts the arithmetic type (e.g., double) even if U is a Proxy.
             if (v == static_cast<base_t<U>>(1))
             {
@@ -234,18 +233,14 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *          the element (old != new), so a chunk is queued at most once per
      *          pass, on its first write of a constant over something else.
      *
-     *          Until Sept '26 this accepted only a chunk ALREADY at one
-     *          constant being written the other, on the reasoning that
-     *          should_mark only fired on that transition. It does not: a chunk
-     *          materialised by a plain value (2.5 over cst_val1) and then
-     *          written back to a constant element by element was never
-     *          queued, and stayed materialised for the run in a perf build --
-     *          the check builds' compress_int self-heal was compressing 100
-     *          out of 100 such chunks. The cost of the widening is paid only
-     *          by writes of a constant: an old-value read and a compare, and,
-     *          on the first such write per pass, the flag's CAS. The
-     *          candidate list then also holds chunks that will not be constant
-     *          at the pass, scanned at chunk_size each.
+     *          Not only a chunk ALREADY at one constant being written the
+     *          other: a chunk materialised by a plain value (2.5 over cst_val1)
+     *          and then written back to a constant element by element must be
+     *          queued too, or it stays materialised for the run. The cost is
+     *          paid only by writes of a constant: an old-value read and a
+     *          compare, and, on the first such write per pass, the flag's CAS.
+     *          The candidate list then also holds chunks that will not be
+     *          constant at the pass, scanned at chunk_size each.
      * @param new_value The new value to check.
      * @param first_value The first constant value to compare against.
      * @param second_val The second constant value to compare against.
@@ -294,8 +289,8 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *          value. The helper above expects the new one -- right for a
      *          caller that has already stored (memory then differs only if a
      *          race changed it), but before the store memory still holds the
-     *          old value, so its check fired on every write that changes the
-     *          value and queued the chunk whatever should_mark said.
+     *          old value, so its check would fire on every write that changes
+     *          the value and queue the chunk whatever should_mark said.
      */
     void mark_for_compression_before_store(in_t<T> second_val, in_t<T> new_value, in_t<T> first_value) const
     {
@@ -390,20 +385,11 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *        new_value is precisely the OTHER one -- i.e. a direct
      *        constant-to-constant transition (cst1 -> second_val, or
      *        cst2 -> first_value).
-     * @note BUG FIX: this used to be
-     *       `((new_value == first_value && is_cst_val2()) || is_not_cst_val2()) ||
-     *        ((new_value == second_val && is_cst_val1()) || is_not_cst_val1())`.
-     *       Since is_not_cst_val2() == !is_cst_val2() and is_not_cst_val1() ==
-     *       !is_cst_val1(), each `(A && B) || !B` term reduces to `A || !B`,
-     *       and a chunk can only ever be non-cst_val1 XOR non-cst_val2 XOR
-     *       materialised -- so at least one of the two `!B` terms was always
-     *       true, making the whole expression a tautology (always true, in
-     *       all three reachable chunk states, verified exhaustively). The
-     *       caller (mark_for_compression_if_needed) passes this as `isv`, a
-     *       fast pre-check meant to guard the more expensive
-     *       should_mark_for_compression() / load_value() check "for
-     *       performance" (see mark_for_compression_core) -- with the old
-     *       expression, that guard never filtered anything.
+     * @note Keep the terms conjunctive. `(A && is_cst_val2()) || is_not_cst_val2()`
+     *       reduces to `A || !is_cst_val2()`, and since a chunk is at most one
+     *       of cst_val1 / cst_val2, one of the two `!B` terms is always true:
+     *       the pre-check (`isv` of mark_for_compression_core) would then
+     *       filter nothing.
      * @param new_value The new value to check.
      * @param first_value The first constant value to compare against.
      * @param second_val The second constant value to compare against.

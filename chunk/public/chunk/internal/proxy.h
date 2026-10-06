@@ -332,10 +332,8 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      */
     void mark_for_compression_if_needed_with_value(in_t<T> old_value, in_t<T> new_value) const
     {
-        // BUG FIX: same accidental double-guard as mark_for_compression_impl
-        // above -- was a complete no-op without CHUNK_STATS, and skipped the
-        // race-check/slow-path fallback for non-zero-transition writes even
-        // with it on. Call unconditionally.
+        // Unconditional: mark_for_compression_impl carries the race check and
+        // the slow-path fallback, which must run on every write.
         mark_for_compression_impl(old_value, new_value);
     }
 
@@ -451,16 +449,11 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      */
     void mark_for_compression_impl(in_t<T> old_value, in_t<T> new_value) const
     {
-        // BUG FIX: this used to be gated behind
-        // `if constexpr (chunk_config::stats) if (new_value==zero && old_value!=zero)`
-        // without braces, which (a) made this a no-op entirely in builds
-        // without -DCHUNK_STATS, and (b) even with stats on, skipped
-        // mark_for_compression_core for every write that isn't itself a
-        // zero-transition -- silently disabling its data-race check
-        // (read_values() != expected_in_memory) and its pathological
-        // slow-path fallback (is_slow_path_active()) for the vast majority
-        // of writes, in every build. mark_for_compression_core must run on
-        // EVERY write; it already tests should_mark_for_compression itself.
+        // Unconditional, in every build, on EVERY write -- not only under
+        // CHUNK_STATS, nor only on zero-transitions: mark_for_compression_core
+        // carries the data-race check (read_values() != expected_in_memory) and
+        // the slow-path fallback (is_slow_path_active()), and already tests
+        // should_mark_for_compression itself.
         mark_for_compression_core(old_value, new_value, new_value);
     }
 
@@ -963,16 +956,13 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Implicit read conversion: returns the element's current value.
      *
      * @details This is one of the read entries the non-const
-     *          ArrayChunkBase::operator[] delegates visibility to: under
-     *          sync_on_read the write entry no longer flushes, so a read must
-     *          pull any deferred write queued for this offset before looking at
-     *          the buffer. It used to return values[num] straight, with no gate
-     *          at all, and so could hand back the value a SUPERSEDED round left
-     *          there while the current round's write was still queued -- silent
-     *          stale reads on every `arr[i]` taken on a non-const array, which
-     *          is what rechunk_validation reads through. Proxy2 / Proxy2A never
-     *          had the hole: they inherit ProxyBase::operator T(), which is
-     *          read_pure().
+     *          ArrayChunkBase::operator[] delegates visibility to: the write
+     *          entry does not flush, so a read must pull any deferred write
+     *          queued for this offset before looking at the buffer. A plain
+     *          values[num] could hand back the value a SUPERSEDED round left
+     *          there while the current round's write is still queued -- stale
+     *          reads on every `arr[i]` taken on a non-const array. Proxy2 /
+     *          Proxy2A inherit ProxyBase::operator T(), which is read_pure().
      *
      *          The gate is behind the SAME pre-filter as
      *          ArrayChunkBase::sync_chunk(): the per-chunk dirty bit is set by
@@ -993,8 +983,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         if constexpr (build_config::use_openmp)
         {
             // chunk_size_frozen_ != 0 marks a proxy rebuilt from a replay
-            // context, whose ptr_on_array may already be dangling (see the
-            // fw14 note on chunk_size()): never dereference the array there.
+            // context, whose ptr_on_array may already be dangling (see
+            // ProxyBase::chunk_size_frozen_): never dereference the array there.
             // Such a proxy is only ever used from inside a flush, where the
             // ops are being applied rather than waited on, so go straight to
             // the gated read.
