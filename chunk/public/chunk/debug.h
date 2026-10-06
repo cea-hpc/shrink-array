@@ -17,18 +17,35 @@
 
 #pragma once
 
-#include <array>      // std::array
-#include <execinfo.h> // backtrace, backtrace_symbols
-#include <cxxabi.h>   // abi::__cxa_demangle
-#include <cstdlib>    // std::free (demangled name)
-#include <iostream>   // std::cerr
+#include <iostream> // std::cerr
+
+// CHUNK_HAVE_STACKTRACE: set by chunk/CMakeLists.txt when the standard library
+// has std::stacktrace (and linked with the archive that holds it).
+#ifdef CHUNK_HAVE_STACKTRACE
+    #include <stacktrace> // std::stacktrace
+#else
+    #include <array>      // std::array
+    #include <cstdlib>    // std::free (demangled name)
+    #include <cxxabi.h>   // abi::__cxa_demangle
+    #include <execinfo.h> // backtrace, backtrace_symbols
+#endif
 
 #define DEBUG_TRACE(x) std::cerr << " ... " #x " = " << (x) << "\n";
 
-/// @brief Print the calling thread's backtrace (up to 100 frames) to std::cerr, demangling names when possible.
+/**
+ * @brief Print the calling thread's backtrace (up to 100 frames) to std::cerr.
+ * @details With std::stacktrace: demangled names, and file:line when the
+ *          binary has debug info. No frame is skipped: this function is
+ *          inline, and when it is inlined the first frame is its caller's.
+ *          Otherwise <execinfo.h>: module+offset, names demangled when the
+ *          symbol is exported (-rdynamic).
+ */
 inline void print_backtrace()
 {
-    constexpr int                 max_frames = 100;
+    constexpr int max_frames = 100;
+#ifdef CHUNK_HAVE_STACKTRACE
+    std::cerr << std::stacktrace::current(0, max_frames) << '\n';
+#else
     std::array<void*, max_frames> buffer{};
     const int                     nptrs   = backtrace(buffer.data(), max_frames);
     char**                        symbols = backtrace_symbols(buffer.data(), nptrs);
@@ -85,4 +102,5 @@ inline void print_backtrace()
     }
 
     std::free(static_cast<void*>(symbols));
+#endif
 }

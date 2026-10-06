@@ -30,7 +30,7 @@ namespace shrink_array
 
 namespace
 {
-constexpr size_t RING_SIZE = size_t{1} << 24U;
+constexpr size_t RING_SIZE = 1uz << 24U;
 
 std::vector<RingEntry> ring_buf(RING_SIZE);
 

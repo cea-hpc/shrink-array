@@ -239,7 +239,7 @@ inline std::size_t reclaim_page_size() noexcept
     static const std::size_t page = []
     {
         const long ps = ::sysconf(_SC_PAGESIZE);
-        return ps > 0 ? static_cast<std::size_t>(ps) : std::size_t{0};
+        return ps > 0 ? static_cast<std::size_t>(ps) : 0uz;
     }();
     return page;
 }

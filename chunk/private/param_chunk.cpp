@@ -531,7 +531,7 @@ void ParamChunk::ChunkStats()
         const auto&       etc  = SingletonChk<AllTypeChunk>::getRef();
         const std::size_t pool = etc.reuse_pool_bytes();
         std::println("\n----- CHUNK_RETENTION -----");
-        std::println("  reuse pools    = {} MB parked at exit", pool / (std::size_t{1024} * 1024));
+        std::println("  reuse pools    = {} MB parked at exit", pool / (1024uz * 1024));
     }
 }
 

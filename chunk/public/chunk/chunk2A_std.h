@@ -237,7 +237,7 @@ class Chunk2AStateQueries
     ///          loads `values` a second time, and a compressor claiming it in
     ///          between swaps that pointer for a region identifier, which the
     ///          read then indexes as a buffer.
-    [[nodiscard]] bool is_cst_val2_ptr_of(this const Derived& self, const T* ptr) noexcept
+    [[nodiscard]] static bool is_cst_val2_ptr_of(const T* ptr) noexcept
     {
         if constexpr (is_not_bool)
         {
@@ -261,7 +261,7 @@ class Chunk2AStateQueries
      *          value_of_id() is one load of the value table -- the same table
      *          a write of a wide type already reads.
      */
-    [[nodiscard]] T second_value_from_ptr(this const Derived& self, const T* ptr) noexcept
+    [[nodiscard]] static T second_value_from_ptr(const T* ptr) noexcept
     {
         if constexpr (is_not_bool)
         {

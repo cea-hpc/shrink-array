@@ -98,8 +98,8 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     // ctx->num_chunk)). Serial-context only.
     // flush_pending_deferred_ops() lives in ParallelSupportCommon / ...Serial
     // (array_chunk_parallel_common.h), which the concrete arrays mix in. Reach
-    // it through derived(): it is a sibling base of this one, so `this->`
-    // cannot see it.
+    // it through `self` (deducing this): it is a sibling base of this one, so
+    // `this->` cannot see it.
 
     /// @brief Compress every compressible chunk now, by every thread of the
     ///        region compress_int() runs in (opened here when called outside one).

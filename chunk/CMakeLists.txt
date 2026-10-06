@@ -201,6 +201,60 @@ if (CHUNK_WARNINGS)
 endif()
 install(TARGETS chunk_warnings EXPORT chunk-targets)
 
+# --- std::stacktrace (print_backtrace) -----------------------------------
+# print_backtrace() (chunk/debug.h, called on a failed invariant) prints a
+# std::stacktrace where the standard library has one: demangled, and with
+# file:line when the binary has debug info. libstdc++ ships it in a separate
+# archive -- stdc++exp since GCC 14, stdc++_libbacktrace in 12-13 -- so the
+# check tries no library, then those two. libc++ has none (the omp-clang23
+# preset): the check fails and print_backtrace() keeps <execinfo.h>.
+# One INTERFACE target, linked PUBLIC by every variant: debug.h is a header,
+# the define and the library must reach every consumer TU that includes it.
+add_library(chunk_stacktrace INTERFACE)
+if (NOT DEFINED CHUNK_STACKTRACE_LIB)
+  include(CheckCXXSourceCompiles)
+  set(_saved_flags "${CMAKE_REQUIRED_FLAGS}")
+  set(_saved_libs "${CMAKE_REQUIRED_LIBRARIES}")
+  if (CHUNK_CXX_STD_FLAG)
+    set(CMAKE_REQUIRED_FLAGS "${CHUNK_CXX_STD_FLAG}")
+  else()
+    set(CMAKE_REQUIRED_FLAGS "${CMAKE_CXX23_STANDARD_COMPILE_OPTION}")
+  endif()
+  set(_found "NOTFOUND")
+  foreach (_lib "" stdc++exp stdc++_libbacktrace)
+    set(CMAKE_REQUIRED_LIBRARIES ${_lib})
+    unset(_chunk_stacktrace_links CACHE)
+    check_cxx_source_compiles([=[
+#include <stacktrace>
+#include <string>
+int main() { return static_cast<int>(std::to_string(std::stacktrace::current()).size() == 0); }
+]=] _chunk_stacktrace_links)
+    if (_chunk_stacktrace_links)
+      set(_found "${_lib}")
+      break()
+    endif()
+  endforeach()
+  unset(_chunk_stacktrace_links CACHE)
+  set(CMAKE_REQUIRED_FLAGS "${_saved_flags}")
+  set(CMAKE_REQUIRED_LIBRARIES "${_saved_libs}")
+  # "" = in the standard library itself, NOTFOUND = none.
+  set(CHUNK_STACKTRACE_LIB "${_found}" CACHE INTERNAL "library holding std::stacktrace")
+endif()
+if (CHUNK_STACKTRACE_LIB STREQUAL "NOTFOUND")
+  message(STATUS "print_backtrace: no std::stacktrace in this standard library, <execinfo.h> fallback")
+else()
+  target_compile_definitions(chunk_stacktrace INTERFACE CHUNK_HAVE_STACKTRACE)
+  if (CHUNK_STACKTRACE_LIB)
+    target_link_libraries(chunk_stacktrace INTERFACE ${CHUNK_STACKTRACE_LIB})
+  endif()
+  if (CHUNK_STACKTRACE_LIB)
+    message(STATUS "print_backtrace: std::stacktrace, from lib${CHUNK_STACKTRACE_LIB}")
+  else()
+    message(STATUS "print_backtrace: std::stacktrace")
+  endif()
+endif()
+install(TARGETS chunk_stacktrace EXPORT chunk-targets)
+
 # --- Shared file lists ---------------------------------------------------
 set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/TChunk.h
@@ -448,10 +502,11 @@ function(chunk_add_variant target_name variant_define size is_dyn)
     target_compile_options(${target_name} PUBLIC -fno-ipa-icf)
   endif()
 
-  # Hardening (libstdc++ assertions, UBSan) and Debug warnings: PUBLIC so
-  # consumers compile and link with the same flags as the library -- see the
-  # HARDENING / WARNINGS toggles above.
-  target_link_libraries(${target_name} PUBLIC chunk_hardening chunk_warnings)
+  # Hardening (libstdc++ assertions, UBSan), Debug warnings and the
+  # std::stacktrace library: PUBLIC so consumers compile and link with the
+  # same flags as the library -- see the HARDENING / WARNINGS / std::stacktrace
+  # sections above.
+  target_link_libraries(${target_name} PUBLIC chunk_hardening chunk_warnings chunk_stacktrace)
   
   # PUBLIC: the headers are C++23; a consumer gets the standard it needs by
   # linking the library.

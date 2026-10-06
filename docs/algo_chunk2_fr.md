@@ -171,13 +171,13 @@ le tampon : **à n'utiliser que sur un chunk matérialisé**, puisqu'il contourn
 ### 6.1 L'`operator[]` d'écriture : un proxy armé
 
 ```cpp
-proxy_type operator[](ind_type i) noexcept
+proxy_type operator[](this Derived& self, ind_type i) noexcept
 {
-    const int num_chunk = i >> size_policy_.decalage();
-    const int num       = i & size_policy_.modulo();
-    const proxy_type& val = chunk_list[num_chunk][num];
-    val.set_this_and_num_chunk(&derived(), num_chunk, num_tab);   // tableau, chunk, num_tab
-    val.arm_inf_array(derived().registry_mirror());                // Chunk2 : le miroir
+    const int num_chunk = self.chunk_index_of(i);
+    const int num       = self.offset_in_chunk(i);
+    const proxy_type& val = self.chunk_list[num_chunk][num];
+    val.set_this_and_num_chunk(self.registry_key(), num_chunk, self.num_tab); // tableau, chunk, num_tab
+    val.arm_inf_array(self.registry_mirror());                                 // Chunk2 : le miroir
     return val;
 }
 ```

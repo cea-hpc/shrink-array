@@ -171,13 +171,13 @@ the buffer: **use it only on a materialised chunk**, since it bypasses the proxy
 ### 6.1 The write `operator[]`: an armed proxy
 
 ```cpp
-proxy_type operator[](ind_type i) noexcept
+proxy_type operator[](this Derived& self, ind_type i) noexcept
 {
-    const int num_chunk = i >> size_policy_.decalage();
-    const int num       = i & size_policy_.modulo();
-    const proxy_type& val = chunk_list[num_chunk][num];
-    val.set_this_and_num_chunk(&derived(), num_chunk, num_tab);   // array, chunk, num_tab
-    val.arm_inf_array(derived().registry_mirror());                // Chunk2: the mirror
+    const int num_chunk = self.chunk_index_of(i);
+    const int num       = self.offset_in_chunk(i);
+    const proxy_type& val = self.chunk_list[num_chunk][num];
+    val.set_this_and_num_chunk(self.registry_key(), num_chunk, self.num_tab); // array, chunk, num_tab
+    val.arm_inf_array(self.registry_mirror());                                 // Chunk2: the mirror
     return val;
 }
 ```

@@ -51,7 +51,7 @@ namespace
 {
 
 constexpr std::size_t kSizes[] = {1,   3,   4,    5,    8,    16,    24,    63,    64,    65,     100,
-                                  512, 513, 1000, 4096, 4097, 32768, 65535, 65536, 65537, 100000, std::size_t{1} << 20};
+                                  512, 513, 1000, 4096, 4097, 32768, 65535, 65536, 65537, 100000, 1uz << 20};
 
 unsigned char pattern(std::size_t id, std::size_t k)
 {
@@ -137,7 +137,7 @@ void check_huge()
         std::printf("  [skip] sizes past 2 GiB / 4 GiB (set BLK_HUGE=1)\n");
         return;
     }
-    constexpr std::size_t kGiB    = std::size_t{1} << 30;
+    constexpr std::size_t kGiB    = 1uz << 30;
     constexpr std::size_t kWin    = 4096; // bytes checked at each end
     const std::size_t     sizes[] = {2 * kGiB - 64, 2 * kGiB + 64, 4 * kGiB + 64};
 

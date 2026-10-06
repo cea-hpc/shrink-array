@@ -131,7 +131,7 @@ void scans(std::size_t n)
 
     // One differing bit, first and last element (n >= 2: with one element,
     // flipping it gives the other constant, not a mixed chunk).
-    for (const std::size_t i : {std::size_t{0}, n - 1})
+    for (const std::size_t i : {0uz, n - 1})
     {
         if (n < 2)
         {

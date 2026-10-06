@@ -1855,7 +1855,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
         // very well predicted (most reads go to materialised chunks).
         //
         // ONE load of `values`, tested through the CRTP hooks so chunk_base
-        // knows nothing of the registry. Testing derived().is_cst_val2() and
+        // knows nothing of the registry. Testing self.is_cst_val2() and
         // then dereferencing values_load() loads the pointer twice: a
         // compressor claiming the chunk in between swaps it for a region
         // identifier, and the second load indexes an unmapped page. Same rule

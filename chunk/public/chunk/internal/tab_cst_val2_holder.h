@@ -716,7 +716,7 @@ class GlobalVecHolder
     static constexpr int chunk_cst_val2_index_loc = CHUNK_CST_VAL2_INDEX_LOG2;
 #endif
 
-    static constexpr size_t INDEX_CAP       = size_t{1} << chunk_cst_val2_index_loc; ///< Initial capacity.
+    static constexpr size_t INDEX_CAP       = 1uz << chunk_cst_val2_index_loc; ///< Initial capacity.
     static constexpr int    INDEX_MAX_PROBE = 64; ///< Bounded; giving up means fallback.
 
     /// @brief Reserve the region. Idempotent; called by init().
