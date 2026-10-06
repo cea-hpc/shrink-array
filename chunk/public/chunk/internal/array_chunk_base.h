@@ -115,8 +115,7 @@ inline constexpr bool has_chunk_written_v = requires(const D& obj, int j) { obj.
  * @see ArrayChunkTraits
  */
 template <typename Derived>
-class ArrayChunkBase : public CRTPSupport<Derived>,
-                       public RegistryKeyCanaryBase,
+class ArrayChunkBase : public RegistryKeyCanaryBase,
                        public ArrayChunkCore<typename ArrayChunkTraits<Derived>::chunk_type>,
                        public RechunkSupport<Derived>
 {
@@ -167,7 +166,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     using const_reference = T;          // const positional access (value)
 
     /** @} */
-    using CRTPSupport<Derived>::derived;
 
     // Re-export the mixin verbs so the container's own surface is unchanged for
     // callers (and for the derived arrays, which use them unqualified).

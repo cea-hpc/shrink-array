@@ -69,7 +69,6 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
   public:
     using ChunkType = Chunk2<T>;
     using Base      = Proxy2Base<Derived, T, Chunk2<T>>;
-    using Base::derived;
     using values_type_ref = Proxy2Base<Derived, T, ChunkType>::values_type_ref;
     using inf_array_t     = std::tuple<T, int, int>;
 
@@ -194,7 +193,6 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
 {
   public:
     using Base = Proxy2Base<Derived, T, Chunk2<T>>;
-    using Base::derived;
     using inf_array_t = std::tuple<T, int, int>;
 
     using ChunkType = Chunk2<T>;
@@ -306,9 +304,6 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
     using ProxySpec2<T, Derived>::second_value;
 
     using manager_chunk2 = ManagerChunk<Chunk2, T>;
-
-    using CRTPSupport<Derived>::derived;
-    using CRTPSupport<Derived>::self;
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
@@ -584,7 +579,6 @@ class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, 
     using values_type_ref = Proxy2Base<Derived, T, ChunkType>::values_type_ref;
     using Base            = ProxyBase<Derived, T, Chunk2<T>>;
     using Base::chunk;
-    using CRTPSupport<Derived>::derived;
     using ProxySpec2<T, Derived>::second_value;
     using ProxySpec2<T, Derived>::inf_array;
 

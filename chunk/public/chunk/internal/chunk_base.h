@@ -974,8 +974,7 @@ class ChunkDynamicAllocPolicy<T, Derived, false>
 /// @tparam T       Element type.
 /// @tparam Derived The chunk type.
 template <typename T, typename Derived>
-class ChunkBase : public CRTPSupport<Derived>,
-                  public DeferredReadGate<Derived>,
+class ChunkBase : public DeferredReadGate<Derived>,
                   public ChunkAllocPolicy<T, Derived>,
                   public ChunkDeferredOpsPolicy<T, Derived>,
                   public ChunkDynamicAllocPolicy<T, Derived>
@@ -989,9 +988,6 @@ class ChunkBase : public CRTPSupport<Derived>,
     using atomic_ptr_t = std::conditional_t<build_config::use_openmp, std::atomic<T*>, T*>;
 
     using ProxyType = ProxyTypeTrait<Derived>::Type;
-
-    using CRTPSupport<Derived>::derived;
-    using CRTPSupport<Derived>::self;
 
     // std-alloc placeholder for `allocator_data`. It satisfies the fast
     // allocator's call interface with no-op stubs so that manager code shared

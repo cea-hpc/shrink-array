@@ -559,8 +559,6 @@ class Proxy2AFastCompPolicy : public ProxySpec2A<T, Derived>
   public:
     using BaseSpec = ProxySpec2A<T, Derived>;
 
-    using CRTPSupport<Derived>::derived;
-
     using values_type_ref = BaseSpec::values_type_ref;
 
     using Base  = ProxyBase<Derived, T, ChunkType>;

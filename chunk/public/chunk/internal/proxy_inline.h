@@ -784,7 +784,7 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::trigger_compression_if_needed(int
     }
 }
 template <typename Derived, typename T, bool Enabled>
-void ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression() const noexcept
+void ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression(this const Derived& self) noexcept
 {
     // Runs inside a region, next to pure readers: the buffers this pass
     // releases wait for one grace period (read_reclaim.h).
@@ -809,7 +809,8 @@ void ProxyFastCompPolicy<Derived, T, Enabled>::perform_compression() const noexc
 
         std::atomic_thread_fence(std::memory_order_seq_cst);
 
-        Chunk<T>::make_block_compression(thr_rank, this->self());
+        // std::addressof: the proxies delete operator&.
+        Chunk<T>::make_block_compression(thr_rank, std::addressof(self));
     }
     // Looked at, whether or not there was work: clear the flag the trigger
     // raised (it only ever came down through finish(), once per completed

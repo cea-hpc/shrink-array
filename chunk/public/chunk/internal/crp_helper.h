@@ -18,13 +18,13 @@
  */
 #pragma once
 
-// --- C++23 "deducing this" in CRTP methods ------------------------------------
-// The library requires C++23: a CRTP method body may take an explicit object
-// parameter (this auto& self) instead of calling derived(). The class keeps its
-// Derived parameter and the CRTPSupport base, so a conversion stays local to the
-// method bodies converted.
+// --- C++23 "deducing this" ----------------------------------------------------
+// The library requires C++23: CRTP method bodies take an explicit object
+// parameter (this Derived& self, or this auto& self for a final class). The
+// derived()/self() helper mixin this header once provided is gone -- no call
+// site survived the migration; only crtp_cast_t remains, for the local cast
+// helpers of the array-level hook classes still converting through it.
 
-#include <memory>      // std::addressof
 #include <type_traits> // std::conditional_t, std::is_const_v
 
 namespace shrink_array
@@ -38,27 +38,5 @@ namespace shrink_array
  */
 template <typename Self, typename Derived>
 using crtp_cast_t = std::conditional_t<std::is_const_v<std::remove_reference_t<Self>>, const Derived, Derived>;
-
-/**
- * @brief Simple mixin to provide derived() and self() cast helpers for CRTP.
- */
-template <typename Derived>
-class CRTPSupport
-{
-  protected:
-    /// @brief `*this` as the derived class, const on a const object.
-    template <typename Self>
-    [[nodiscard]] auto& derived(this Self&& self) noexcept
-    {
-        return static_cast<crtp_cast_t<Self, Derived>&>(self);
-    }
-
-    /// @brief derived()'s address. std::addressof: the proxies delete operator&.
-    template <typename Self>
-    [[nodiscard]] auto* self(this Self&& obj) noexcept
-    {
-        return std::addressof(static_cast<crtp_cast_t<Self, Derived>&>(obj));
-    }
-};
 
 } // namespace shrink_array

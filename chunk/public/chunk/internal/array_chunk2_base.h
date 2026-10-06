@@ -44,8 +44,6 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     using ind_type     = Base::ind_type;
     using proxy_type   = Base::proxy_type;
 
-    using Base::derived;
-
     using Base::chunk_list;
     using Base::m_size;
     using Base::nb_chunk;

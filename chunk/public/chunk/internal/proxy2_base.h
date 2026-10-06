@@ -54,7 +54,6 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
 
     using Base::add_to_compression_list;
     using Base::chunk;
-    using Base::derived;
     using Base::is_cst_val1;
     using Base::is_not_cst_val1;
     using Base::num;

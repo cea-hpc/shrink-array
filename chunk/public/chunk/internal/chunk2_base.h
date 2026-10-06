@@ -73,7 +73,6 @@ class Chunk2Base : public ChunkBase<T, Derived>
 {
   public:
     using Base = ChunkBase<T, Derived>;
-    using Base::derived;
     using Base::first_value;
     using Base::is_bool;
     using Base::is_cst_val1;

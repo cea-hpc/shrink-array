@@ -405,7 +405,6 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
     using manager_chunk2 = ManagerChunk<Chunk2, T>;
     using inf_array_t    = std::tuple<T, int, int>;
 
-    using Base::derived;
     using Base::first_value;
     using Base::is_bool;
     using Base::is_not_bool;
@@ -565,7 +564,6 @@ class Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
     using BaseSpec    = ChunkSpec2<T>;
     using inf_array_t = std::tuple<T, int, int>;
 
-    using Base::derived;
     using Base::first_value;
     using Base::is_bool;
     using Base::is_not_bool;
@@ -645,7 +643,6 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
     using Base           = Chunk2Base<T, Derived>;
     using BaseSpec       = ChunkSpec2<T>;
 
-    using Base::derived;
     using Base::first_value;
     using Base::values;
 

@@ -123,11 +123,9 @@ template <typename T>
  *       out of scope. @see make_proxy_with_info
  */
 template <typename Derived, typename T, typename ChunkType, bool Enabled>
-class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
+class ProxyBaseFastCompPolicy
 {
   public:
-    using CRTPSupport<Derived>::derived;
-
     /// @brief set_ptr_is_inside_chunk_list_to_compress() for the replay path,
     ///        taking the tab/chunk indices from @p ctx.
     void set_ptr_is_inside_chunk_list_to_compress_async(auto* ctx);
@@ -265,7 +263,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
  *          the caller, not a case to handle.
  */
 template <typename Derived, typename T, typename ChunkType>
-class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSupport<Derived>
+class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false>
 {
   public:
     /// @brief No candidate flags in this configuration; nothing to size.
@@ -731,7 +729,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     using FastCompPolicy = ProxyBaseFastCompPolicy<Derived, T, ChunkType, chunk_config::use_fast_block_compression>;
 
     using FastCompPolicy::compression_mgr;
-    using FastCompPolicy::derived;
     using FastCompPolicy::ptr_is_inside_chunk_list_to_compress;
 
     /**

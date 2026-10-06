@@ -239,10 +239,8 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
     using ChunkType     = Derived;
     using manager_chunk = ManagerChunk<Chunk, T>;
 
-    using Base::derived;
     using Base::init_block;
     using Base::is_cst_val1;
-    using Base::self;
     using Base::values;
 
     /// @brief Array-new for chunks: allocates and points every chunk at the
@@ -352,7 +350,6 @@ class ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
 {
   public:
     using Base = ChunkBase<T, Derived>;
-    using Base::derived;
     using Base::values;
 
     /// @brief Materialise this chunk's storage.
@@ -397,9 +394,6 @@ class ChunkFastCompPolicy : public ChunkOmpPolicy<T, Derived>
 
     using manager_chunk = ManagerChunk<Chunk, T>;
     using Base          = ChunkBase<T, Derived>;
-
-    using Base::derived;
-    using Base::self;
 
     /**
      * @brief Compress every chunk @p thr has queued, in one batch.
@@ -526,9 +520,6 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     using Base::values_store;
 
     using Base::free_values;
-
-    using FastCompPolicy::derived;
-    using FastCompPolicy::self;
 
     // Statistics variant tag (CHUNK_STATS): 0 = chunk.
     static constexpr int stat_variant = 0;

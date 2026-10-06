@@ -35,7 +35,6 @@
 #include "chunk/internal/chunk_size_policy.h"   // ChunkElems
 #include "chunk/internal/chunk2_base.h"         // Chunk2Base
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_write
-#include "chunk/internal/crp_helper.h"          // crtp_cast_t
 
 #include "chunk/internal/TChunk.h" // TChunk2AComp, VectorTuple4ChunkInt2
 
@@ -380,7 +379,6 @@ class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrent
     using manager_chunk2A        = ManagerChunk<Chunk2A, T>;
     using CompressionManagerType = CompressionManager<T, Derived>;
 
-    using Base::derived;
     using Base::is_bool;
     using Base::is_not_bool;
     using Base::values;
@@ -493,7 +491,6 @@ class Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
     using Base            = Chunk2Base<T, Derived>;
     using manager_chunk2A = ManagerChunk<Chunk2A, T>;
 
-    using Base::derived;
     using Base::is_bool;
     using Base::is_not_bool;
     using Base::values;

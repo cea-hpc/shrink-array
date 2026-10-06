@@ -252,8 +252,6 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
 
-    using Base::derived;
-
     using values_type_ref = Base::atomic_ptr_ref_t;
 
     // --- fast-block-compression surface: this policy's Enabled is that axis
@@ -295,7 +293,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      *          path (when running multi-threaded) and calls
      *          Chunk<T>::make_block_compression() directly.
      */
-    void perform_compression() const noexcept;
+    void perform_compression(this const Derived& self) noexcept;
 
     /**
      * @brief Async-context counterpart of execute_arithmetic_compound_operation().
