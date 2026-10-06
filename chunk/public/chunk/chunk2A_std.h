@@ -165,7 +165,9 @@ class Chunk2AConcurrentOps
             expected = expected_is_cst_val2 ? Holder::m_ptr.data() : Base::get_cst_val1();
         }
 
-        const bool failed = self.Base::compare_and_swap_gen(values_loc, expected);
+        // Spelled out, not self.Base::: name lookup in `self` finds Chunk2A's own
+        // private Base alias first (clang rejects it).
+        const bool failed = self.Chunk2Base<T, Derived>::compare_and_swap_gen(values_loc, expected);
 
         if constexpr (build_config::any_check)
         {

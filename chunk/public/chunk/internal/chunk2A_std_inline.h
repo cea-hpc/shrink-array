@@ -1008,7 +1008,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::create_value(this Derived&     self,
         }
     };
 
-    self.values = self.Base::allocate_chunk_internal(0, init_func);
+    self.values = self.Chunk2Base<T, Derived>::allocate_chunk_internal(0, init_func);
 }
 
 /**
