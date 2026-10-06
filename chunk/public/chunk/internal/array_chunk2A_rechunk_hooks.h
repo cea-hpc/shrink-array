@@ -65,8 +65,9 @@ class RechunkHooks2A<Derived, true>
     void rechunk_drop_candidates();
 
     /**
-     * @brief Release this array's parked buffers held at the old geometry.
-     * @param new_size geometry the array is moving to
+     * @brief Drain the reuse free-list of the target geometry.
+     * @param new_size the chunk size the array is moving to
+     * @details The buffers parked there were sized for an older geometry.
      */
     void rechunk_drain_reuse_list(unsigned int new_size);
 
@@ -101,9 +102,8 @@ class RechunkHooks2A<Derived, true>
  *          same using-declarations in both modes.
  */
 template <typename Derived>
-class RechunkHooks2A<Derived, false>
+struct RechunkHooks2A<Derived, false>
 {
-  public:
     /** @brief No-op: the geometry is fixed at compile time. */
     void rechunk_drop_candidates() noexcept {}
     /** @brief No-op: the geometry is fixed at compile time. */

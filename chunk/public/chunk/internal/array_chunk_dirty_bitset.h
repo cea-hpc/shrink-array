@@ -118,7 +118,7 @@ class DirtyBitsetSupport<Derived, true>
         const int      word_idx = chunk_idx >> kWordShift;
         const uint64_t bit_mask = 1ULL << (chunk_idx & kBitInWordMask);
 
-        // Use acquire to synchronize with previous mark_chunk_safe/dirty calls
+        // Acquire: pairs with the acq_rel fetch_or of mark_chunk_dirty()
         return (bitset_[word_idx].word.load(std::memory_order_acquire) & bit_mask) != 0;
     }
 
@@ -263,7 +263,7 @@ class DirtyBitsetSupport<Derived, true>
 
     /// One bit per chunk, one cache line per 64 chunks, then the flag word.
     /// mutable: the words are atomics, marked and read through const paths
-    /// (any_marked_word) as they were through the unique_ptr it replaces.
+    /// (any_marked_word).
     mutable std::vector<PaddedDirtyWord> bitset_;
     int nb_words_{0}; ///< Words of bits in @ref bitset_ (its size - 1), so clearing needs no chunk count.
 

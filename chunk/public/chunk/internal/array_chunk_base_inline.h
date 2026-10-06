@@ -21,13 +21,11 @@
 // sees the definitions. Kept separate to keep array_chunk_base.h to declarations.
 #include <cstdio>    // std::fprintf (set_chunk_size refusal)
 #include <iterator>  // std::forward_iterator, std::distance (assign)
-#include <limits>    // std::numeric_limits (max_size)
 #include <stdexcept> // std::out_of_range (at())
 
 #include "chunk/internal/array_chunk_base.h"  // ArrayChunkBase, the class these bodies belong to
 #include "chunk/config.h"                     // build_config::chunk_dynamic, chunk_config::CheckNaN
 #include "chunk/internal/chunk_size_policy.h" // register_runtime_chunk_size / set_thread_chunk_size
-#include "chunk/internal/in_t.h"              // in_t<T>
 #include "chunk/internal/process_verbs.h"     // compress_now_and_trim_pools -- shrink_to_fit()
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_IN_PARALLEL_REGION
 
@@ -70,41 +68,6 @@ bool ArrayChunkBase<Derived>::is_written_at(int j) const noexcept
         // ArrayChunk and ArrayChunk2A: the chunk knows by itself.
         return chunk_list[j].written();
     }
-}
-
-template <typename Derived>
-void ArrayChunkBase<Derived>::set_value(ind_type i, in_t<T> v)
-{
-    const int num_chunk = chunk_index_of(i);
-    const int num       = offset_in_chunk(i);
-
-    auto& chunk_t = chunk_list[num_chunk];
-
-    // COMPLEX CASES (ArrayChunk2 / ArrayChunk2A):
-    // We use the Proxy because it handles decompression,
-    // compression lists, and asynchronous operations.
-    proxy_type proxy = chunk_t[num];
-
-    // Arm ptr_on_array / num_chunk in ALL modes (see operator[] comment):
-    // set_num_tab()/get_info_second_value() need ptr_on_array set even in
-    // non-OpenMP builds, otherwise share_info lookups abort with
-    // "key NOT FOUND".
-    proxy.set_this_and_num_chunk(this->registry_key(), num_chunk, num_tab);
-
-    // Chunk2 only: arm the proxy with the address of this array's registry
-    // mirror, so the write path copies the (second_value, ind, num_tab)
-    // tuple instead of scanning share_info_array for it. Discriminated on
-    // the DECLARED proxy type (chunk_traits.h), not on a `requires`: a
-    // renamed member must fail to compile, not silently fall back to the
-    // registry.
-    if constexpr (std::is_same_v<proxy_type, Proxy2<T>>)
-    {
-        proxy.arm_inf_array(derived().registry_mirror());
-    }
-
-    // Assignment triggers Proxy::operator= which handles everything internally,
-    // including calling derived().get_metadata(i) if needed
-    proxy = v;
 }
 
 template <typename Derived>
@@ -234,14 +197,6 @@ void ArrayChunkBase<Derived>::shrink_to_fit()
 {
     invalidate_proxies();
     compress_now_and_trim_pools();
-}
-
-template <typename Derived>
-ArrayChunkBase<Derived>::size_type ArrayChunkBase<Derived>::max_size() const noexcept
-{
-    // Addressable element count is bounded by the (signed) index type, not by
-    // size_type: i >> decalage and i & modulo run on ind_type internally.
-    return static_cast<size_type>(std::numeric_limits<ind_type>::max());
 }
 
 template <typename Derived>

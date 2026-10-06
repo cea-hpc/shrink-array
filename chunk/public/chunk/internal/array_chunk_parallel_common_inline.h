@@ -39,12 +39,12 @@ void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
         // private on Chunk2A. Both name the same type; this form avoids the
         // access check on the alias.
         using CM = CompressionManager<value_type, chunk_type>;
-        // force: flush every chunk regardless of the pending counter and dirty
-        // bits. Used by rechunk_to() before it swaps chunk_list out -- an op
-        // left on an old-geometry chunk would otherwise outlive its chunk and be
-        // replayed against a recycled address of the wrong size. The counter has
-        // been seen to read 0 while ops were still queued, so it cannot gate
-        // this path.
+        // force: drain every rank regardless of the pending counter. Used by
+        // rechunk_to() before it swaps chunk_list out -- an op left on an
+        // old-geometry chunk would otherwise outlive its chunk and be replayed
+        // against a recycled address of the wrong size. The counter has been
+        // seen to read 0 while ops were still queued, so it cannot gate this
+        // path.
         //
         // ONE drain per rank, not one per chunk. flush_chunk_all_ranks() pays
         // its fixed cost -- announce_flush() (counter + seq_cst fence), the

@@ -33,9 +33,6 @@
  *          which is STRICTER than use_openmp (it also needs embedded -- i.e. not
  *          manual -- compression).
  *
- *          The mixin also held clear_in_par(), an in-parallel teardown nothing
- *          called, with its per-thread "async reset" registries; both are gone.
- *
  * @see array_chunk2_parallel_inline.h for the body
  * @see array_chunk_parallel.h for v1's version of the same split
  */
@@ -131,9 +128,8 @@ class FastBlockSupport2<Derived, true>
  *          declared member in every mode.
  */
 template <typename Derived>
-class FastBlockSupport2<Derived, false>
+struct FastBlockSupport2<Derived, false>
 {
-  public:
     /** @brief No-op: this mode has no deferred candidate list. */
     void make_block_compression() noexcept {}
 };

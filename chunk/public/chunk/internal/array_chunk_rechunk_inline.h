@@ -64,7 +64,7 @@ inline const bool g_rechunk_trace = std::getenv("CHUNK_RECHUNK_TRACE") != nullpt
 /// boundaries, hand the slabs the old geometry has just emptied to the value
 /// arena for the next slice (TCSlabPool::recycle_empty_slabs), instead of
 /// madvise'ing them. Off = the sweep of before, for comparison.
-inline const bool g_rechunk_recycle = []
+inline const bool g_rechunk_recycle = []() noexcept
 {
     const char* env = std::getenv("CHUNK_RECHUNK_RECYCLE");
     return env == nullptr || env[0] == '\0' || env[0] != '0';
@@ -256,10 +256,10 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
     const auto t_now        = [] { return std::chrono::steady_clock::now(); };
     const auto t_ms         = [](auto start, auto stop)
     { return std::chrono::duration<double, std::milli>(stop - start).count(); };
-    const auto                            t0 = t_now();
-    internal::g_slice_drain_ms   = 0.0; // filled by rechunk_refill's slice boundaries
-    internal::g_slice_collect_ms = 0.0;
-    internal::g_slice_madvise_ms = 0.0;
+    const auto t0                  = t_now();
+    internal::g_slice_drain_ms     = 0.0; // filled by rechunk_refill's slice boundaries
+    internal::g_slice_collect_ms   = 0.0;
+    internal::g_slice_madvise_ms   = 0.0;
     internal::g_slice_count        = 0; // filled by rechunk_refill's slice regions
     internal::g_slice_fork_ms      = 0.0;
     internal::g_slice_loop_ms      = 0.0;
@@ -1102,7 +1102,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
 
         // Slice boundaries run INSIDE the slice's region (see the loop): the
         // team drain's scratch lives across them, and so do the trace timers.
-        using manager_t = typename Traits::manager_type;
+        using manager_t = Traits::manager_type;
         typename manager_t::TeamDrainScratch team_drain;
         // Slab recycling at the slice boundaries (internal::g_rechunk_recycle):
         // the ranks the team holds (each recycles its own slabs, one thread
@@ -1110,7 +1110,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // first boundary.
         std::vector<unsigned char>      recycle_held;
         std::vector<std::vector<void*>> recycle_scratch;
-        using slice_clock = std::chrono::steady_clock;
+        using slice_clock   = std::chrono::steady_clock;
         const auto slice_ms = [](slice_clock::time_point a, slice_clock::time_point b)
         { return std::chrono::duration<double, std::milli>(b - a).count(); };
         slice_clock::time_point slice_t0{}; // written by the master, read after barriers
@@ -1202,10 +1202,10 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 // DISJOINT new chunks, so the bypassed gate guards nothing.
                 // Per-thread (thread_local), so it lives inside the region.
                 const typename CompressionManager<T, chunk_type>::FlushReplayGuard rechunk_replay_guard;
-                std::vector<T> buf(static_cast<std::size_t>(new_size));
-                RebuildTally   tally; // this thread's fold counts for this slice
-                                      // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
-                                      // (internal::rebuild_schedule).
+                std::vector<T>                buf(static_cast<std::size_t>(new_size));
+                RebuildTally                  tally; // this thread's fold counts for this slice
+                                                     // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
+                                                     // (internal::rebuild_schedule).
                 const slice_clock::time_point sp_w0 = sp_on ? slice_clock::now() : slice_clock::time_point{};
                 // nowait + the explicit barrier below: the same closing barrier,
                 // with each thread's loop end observable (CHUNK_RECHUNK_TRACE).
@@ -1310,7 +1310,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                 if (me >= 0 && static_cast<std::size_t>(me) < recycle_held.size())
                                 {
                                     recycle_held[static_cast<std::size_t>(me)] = 1;
-                                    const unsigned int saved_sz = thread_chunk_size(); // this thread's, as the slice left it
+                                    const unsigned int saved_sz =
+                                        thread_chunk_size(); // this thread's, as the slice left it
                                     set_thread_chunk_size(static_cast<unsigned int>(old_size));
                                     chunk_type::get_chunk_allocator(me, old_key_refill)
                                         .recycle_empty_slabs(recycle_scratch[static_cast<std::size_t>(me)]);
@@ -1396,20 +1397,18 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 internal::g_slice_barrier_ms += slice_ms(sp_a, sp_b) - l_ms;
                 internal::g_slice_boundary_ms += slice_ms(sp_b, sp_d);
                 internal::g_slice_join_ms += slice_ms(sp_d, sp_post);
-                internal::g_slice_work_max_ms += static_cast<double>(sp.work_max.load(std::memory_order_relaxed)) * 1e-6;
+                internal::g_slice_work_max_ms +=
+                    static_cast<double>(sp.work_max.load(std::memory_order_relaxed)) * 1e-6;
                 internal::g_slice_work_avg_ms +=
                     static_cast<double>(sp.work_sum.load(std::memory_order_relaxed)) * 1e-6 / n_thr;
                 internal::g_slice_setup_max_ms +=
                     static_cast<double>(sp.setup_max.load(std::memory_order_relaxed)) * 1e-6;
             }
-            if (sl + 1 < n_slices)
+            if (slice_trace && sl + 1 < n_slices)
             {
-                if (slice_trace)
-                {
-                    const long rss_mib = internal::rss_mib_now();
-                    std::fprintf(stderr, "[RECHUNK-SLICE] %d/%d after-drain rss=%ld MB  (%+ld since start)\n", sl + 1,
-                                 n_slices, rss_mib, rss_mib - rss_start);
-                }
+                const long rss_mib = internal::rss_mib_now();
+                std::fprintf(stderr, "[RECHUNK-SLICE] %d/%d after-drain rss=%ld MB  (%+ld since start)\n", sl + 1,
+                             n_slices, rss_mib, rss_mib - rss_start);
             }
         }
         if (slice_trace)
@@ -1436,7 +1435,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         }
         g_in_rechunk_rebuild.store(false, std::memory_order_release);
         chunk_pmp_set_schedule(caller_schedule); // the caller's, untouched
-        if (internal::g_rechunk_trace_mem) // a serial count inside the refill phase
+        if (internal::g_rechunk_trace_mem)       // a serial count inside the refill phase
         {
             // What the new geometry actually HOLDS, counted on tmp before the
             // swap. "folded" says how many spans the rebuild could fold; this

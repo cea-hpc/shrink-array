@@ -21,13 +21,14 @@
  * @brief CRTP base shared by every chunked array variant (ArrayChunk,
  *        ArrayChunk2, ArrayChunk2A).
  *
- * @details It owns everything the three variants have in common: the chunk
- *          geometry policy, the chunk list, the per-chunk dirty bitset used to
- *          pre-filter the OpenMP read gate, the STL-like surface (size/empty,
- *          at/front/back, assign/swap, const_iterator) and the generic
- *          re-chunking algorithm. Anything variant-specific is reached through
- *          derived() (CRTP) or through the `rechunk_*` hooks, whose no-op
- *          defaults live at the bottom of the class.
+ * @details It gathers everything the three variants have in common: the
+ *          index-independent core (ArrayChunkCore: geometry policy, chunk list,
+ *          the dirty bitset that pre-filters the OpenMP read gate, identity),
+ *          the STL-like surface (size/empty, at/front/back, assign/swap,
+ *          const_iterator) and, through RechunkSupport, the generic re-chunking
+ *          algorithm. Anything variant-specific is reached through derived()
+ *          (CRTP) or through the `rechunk_*` hooks, whose no-op defaults live in
+ *          RechunkSupport (array_chunk_rechunk.h).
  *
  *          Declarations only: the out-of-line template bodies are in
  *          array_chunk_base_inline.h, included at the end of this file.
@@ -249,8 +250,8 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         using iterator_concept  = std::random_access_iterator_tag; ///< C++20 concepts (std::ranges)
         using value_type        = T;                               ///< the element type
         using difference_type   = std::ptrdiff_t;                  ///< distance between two iterators
-        using reference         = T;    ///< value, not T& (see class comment)
-        using pointer           = void; ///< no addressable element; arrow unsupported
+        using reference         = T;                               ///< value, not T& (see class comment)
+        using pointer           = void;                            ///< no addressable element; arrow unsupported
 
         /** @brief Two iterators are equal when they sit on the same absolute index. */
         [[nodiscard]] friend bool operator==(const const_iterator& lhs, const const_iterator& rhs) noexcept
@@ -359,7 +360,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
          */
         [[nodiscard]] reference operator*() const noexcept
         {
-            // chunk_ already sync'd on entry (see seek_to / advance across chunks);
+            // chunk_ already sync'd on entry (see enter_chunk(), reached by seek() and ++);
             // this is the raw per-element read, identical to chunk_t[num].
             check_no_write_since_entry();
             return (*chunk_)[num_];
@@ -804,65 +805,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     }
     /** @} */
 
-  private:
-    /// @brief Elements per read section in the bulk reads (8 to 64 measure
-    ///        alike; the larger, the fewer sections on long ranges).
-    static constexpr int kBulkBlock = 64;
-    /// @brief Bulk reads by block only where per-element stats and NaN checks
-    ///        do not rely on every element going through operator[].
-    static constexpr bool kBulkFast = !chunk_config::stats && !chunk_config::do_check;
-
-    /// @brief Call @p fn(chunk, num_chunk, lo, hi) for each chunk the range
-    ///        [first, last) touches -- offsets [lo, hi) in it -- after one
-    ///        sync_chunk, as the iterator does on chunk entry.
-    template <typename Fn>
-    void for_each_chunk_span(ind_type first, ind_type last, Fn&& fn) const
-    {
-        if (first < 0)
-        {
-            first = 0;
-        }
-        if (last > m_size)
-        {
-            last = m_size;
-        }
-        if (first >= last)
-        {
-            return;
-        }
-        const unsigned int dec     = size_policy_.decalage();
-        const auto         mod     = static_cast<ind_type>(size_policy_.modulo());
-        const int          c_first = static_cast<int>(first >> dec);
-        const int          c_last  = static_cast<int>((last - 1) >> dec);
-        for (int c = c_first; c <= c_last; ++c)
-        {
-            const int         lo = c == c_first ? static_cast<int>(first & mod) : 0;
-            const int         hi = c == c_last ? static_cast<int>((last - 1) & mod) + 1 : static_cast<int>(mod) + 1;
-            const chunk_type& ch = chunk_list[static_cast<std::size_t>(c)];
-            sync_chunk(ch, c, lo);
-            fn(ch, c, lo, hi);
-        }
-    }
-
-    /// @brief Check builds, precise read gate: nothing was deferred onto
-    ///        the chunk since its sync -- the iterator's check, per block.
-    void check_no_write_during_bulk_read([[maybe_unused]] const chunk_type& ch,
-                                         [[maybe_unused]] int               num_chunk,
-                                         [[maybe_unused]] int               offset) const noexcept
-    {
-        if constexpr (build_config::any_check && chunk_type::precise)
-        {
-            if (ch.read_gate_should_wait(offset)) [[unlikely]]
-            {
-                INVARIANT_FAILED("ArrayChunkBase bulk read: a write was deferred onto chunk {} of array {} "
-                                 "during the read (offset {}); it would not be seen -- no other thread may "
-                                 "write an array that is being read in bulk",
-                                 num_chunk, static_cast<const void*>(this), offset);
-            }
-        }
-    }
-
-  public:
     /**
      * @brief Drop the last element, if any.
      * @note Unlike std::vector, calling it on an empty container is harmless
@@ -1008,7 +950,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @param i global element index (unchecked)
      * @return a reference to the physical storage of the element
      * @warning Bypasses the write proxy: valid only where the chunk is known to
-     *          be materialised. Prefer operator[] or set_value() otherwise.
+     *          be materialised. Prefer operator[] otherwise.
      */
     SA_FLATTEN FORCE_INLINE T& operator()(ind_type i) noexcept
     {
@@ -1244,16 +1186,74 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     ///        would make still-at-exit differ between sequential and OpenMP runs.
     bool exit_census_ = true;
 
-  private:
     /**
-     * @brief Debug helper: physical address backing element @p i, if any.
+     * @brief Read the element at @p i.
      * @param i global element index (unchecked)
-     * @return pointer into the chunk's storage; meaningless for a folded /
-     *         compressed chunk, hence debug-only.
+     * @return the element value
+     * @note Protected, not private: ArrayChunk2A::operator== reads both of its
+     *       operands through it.
      */
-    [[nodiscard]] T* print_adr(ind_type i) const noexcept
+    T read_value(ind_type i) const noexcept
     {
-        return chunk_list[chunk_index_of(i)].print_adr(offset_in_chunk(i));
+        return (*this)(i);
+    }
+
+  private:
+    /// @brief Elements per read section in the bulk reads (8 to 64 measure
+    ///        alike; the larger, the fewer sections on long ranges).
+    static constexpr int kBulkBlock = 64;
+    /// @brief Bulk reads by block only where per-element stats and NaN checks
+    ///        do not rely on every element going through operator[].
+    static constexpr bool kBulkFast = !chunk_config::stats && !chunk_config::do_check;
+
+    /// @brief Call @p fn(chunk, num_chunk, lo, hi) for each chunk the range
+    ///        [first, last) touches -- offsets [lo, hi) in it -- after one
+    ///        sync_chunk, as the iterator does on chunk entry.
+    template <typename Fn>
+    void for_each_chunk_span(ind_type first, ind_type last, Fn&& fn) const
+    {
+        if (first < 0)
+        {
+            first = 0;
+        }
+        if (last > m_size)
+        {
+            last = m_size;
+        }
+        if (first >= last)
+        {
+            return;
+        }
+        const unsigned int dec     = size_policy_.decalage();
+        const auto         mod     = static_cast<ind_type>(size_policy_.modulo());
+        const int          c_first = static_cast<int>(first >> dec);
+        const int          c_last  = static_cast<int>((last - 1) >> dec);
+        for (int c = c_first; c <= c_last; ++c)
+        {
+            const int         lo = c == c_first ? static_cast<int>(first & mod) : 0;
+            const int         hi = c == c_last ? static_cast<int>((last - 1) & mod) + 1 : static_cast<int>(mod) + 1;
+            const chunk_type& ch = chunk_list[static_cast<std::size_t>(c)];
+            sync_chunk(ch, c, lo);
+            fn(ch, c, lo, hi);
+        }
+    }
+
+    /// @brief Check builds, precise read gate: nothing was deferred onto
+    ///        the chunk since its sync -- the iterator's check, per block.
+    void check_no_write_during_bulk_read([[maybe_unused]] const chunk_type& ch,
+                                         [[maybe_unused]] int               num_chunk,
+                                         [[maybe_unused]] int               offset) const noexcept
+    {
+        if constexpr (build_config::any_check && chunk_type::precise)
+        {
+            if (ch.read_gate_should_wait(offset)) [[unlikely]]
+            {
+                INVARIANT_FAILED("ArrayChunkBase bulk read: a write was deferred onto chunk {} of array {} "
+                                 "during the read (offset {}); it would not be seen -- no other thread may "
+                                 "write an array that is being read in bulk",
+                                 num_chunk, static_cast<const void*>(this), offset);
+            }
+        }
     }
 
     /**
@@ -1272,26 +1272,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * @return Total number of non-constant chunks, counted on one thread.
      */
     [[nodiscard]] int get_nb_chunk_written_seq() const;
-
-    // ── STL-vector-like positional access (safe/bounds-checked family) ────────
-    /**
-     * @name Safe positional access (bounds-checked)
-     *
-     * These mirror operator[]'s asymmetric return contract exactly (const -> T
-     * value after sync_chunk; non-const -> write proxy), and add the checks that
-     * std::vector's at()/front()/back() imply. operator[]/operator() stay the
-     * fast, unchecked hot path (the caller guarantees the index); this family is
-     * the safe entry (bounds/emptiness checked). No core path is touched: every
-     * one of these delegates to the existing operator[].
-     * @{
-     */
-
-    /**
-     * @brief Largest index the container can address.
-     * @return max of the (signed) index type — the addressable range is bounded
-     *         by ind_type, not by size_type, since the index split runs on ind_type.
-     */
-    [[nodiscard]] size_type max_size() const noexcept;
 
     /**
      * @brief Centralized synchronization logic.
@@ -1314,7 +1294,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
             // any_pending_ops() and (whenever anything is pending anywhere)
             // trigger flush_chunk_all_ranks.
             //
-            // Note: the bit is sticky (mark_chunk_safe has no callers), so a
+            // Note: the bit is sticky (only clear_dirty_bitset() resets it), so a
             // chunk stays "dirty" for the rest of the phase after its first
             // deferred op. That is acceptable: it is only a coarse pre-filter.
             // The precise, authoritative gate below is the chunk's OWN pending
@@ -1332,28 +1312,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
                 }
             }
         }
-    }
-
-    /**
-     * @brief Write @p v at index @p i through the proxy (full gate semantics).
-     *
-     * @details Goes through the write proxy rather than touching storage: the
-     *          proxy handles decompression, the compression candidate lists and
-     *          the asynchronous operations of the 2 / 2A variants.
-     *
-     * @param i global element index (unchecked)
-     * @param v value to store
-     */
-    void set_value(ind_type i, in_t<T> v);
-
-    /**
-     * @brief Read the element at @p i.
-     * @param i global element index (unchecked)
-     * @return the element value
-     */
-    T read_value(ind_type i) const noexcept
-    {
-        return (*this)(i);
     }
 
     /// @brief The core's rechunk_fn_: casts @p core back to Derived and calls rechunk_to(@p new_size).

@@ -974,7 +974,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
         else if constexpr (build_config::use_openmp)
         {
             // bool compresses via clear_int_st_bool (not clear_int_st); no clear_st
-            // wrapper exists. In non-OMP, bool uses the counter path (manage_full
+            // wrapper exists. In non-OMP, bool uses the counter path (manage_full_*
             // compresses inline) so there is nothing to reclaim -> empty else.
             for (const int jj : tab_nb1)
             {

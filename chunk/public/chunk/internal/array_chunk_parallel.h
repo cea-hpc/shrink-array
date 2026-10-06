@@ -31,9 +31,6 @@
  *          use_fast_block_compression> carries the fast-block compression pass,
  *          whose gate is stricter than use_openmp.
  *
- *          The mixin also held clear_in_par(), an in-parallel teardown nothing
- *          called, with its per-thread "async reset" registries; both are gone.
- *
  * @see array_chunk_parallel_inline.h for the body
  * @see array_chunk_parallel_common.h for the shared part
  */
@@ -127,9 +124,8 @@ class FastBlockSupport<Derived, true>
  * @brief Inert specialisation: nothing queues block-compression candidates.
  */
 template <typename Derived>
-class FastBlockSupport<Derived, false>
+struct FastBlockSupport<Derived, false>
 {
-  public:
     /** @brief No-op: this mode has no deferred candidate list. */
     void make_block_compression() noexcept {}
 };

@@ -25,14 +25,11 @@
  *          S'. That is only meaningful when the geometry is a runtime value
  *          (DynamicChunkSize / -DCHUNK_DYNAMIC): with the compile-time geometry
  *          the size is baked into every shift and mask, so there is nothing to
- *          change. The algorithm nevertheless lived in ArrayChunkBase, opening
- *          with an `if constexpr (!chunk_dynamic) return;` — some 200 lines of
- *          machinery every static build had to read, and that every reader of
- *          the container had to skip past.
+ *          change.
  *
  *          RechunkSupport<Derived, chunk_dynamic> splits it in two: the dynamic
- *          specialisation carries the real algorithm (unchanged), the static one
- *          keeps the same signatures as no-ops. Both keep the @c rechunk_* hooks
+ *          specialisation carries the real algorithm, the static one keeps the
+ *          same signatures as no-ops. Both keep the @c rechunk_* hooks
  *          with their base defaults, because the derived arrays override them
  *          unconditionally.
  *
@@ -66,11 +63,11 @@ template <typename Derived>
 class RechunkSupport<Derived, true>
 {
   public:
-    using Traits     = ArrayChunkTraits<Derived>;
-    using T          = Traits::value_type;
-    using ind_type   = Traits::index_type;
-    using chunk_type = Traits::chunk_type;
-    using proxy_type = Traits::proxy_type;
+    using Traits     = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using T          = Traits::value_type;        ///< Stored element type.
+    using ind_type   = Traits::index_type;        ///< Signed global index type.
+    using chunk_type = Traits::chunk_type;        ///< Chunk type held in the array's chunk_list.
+    using proxy_type = Traits::proxy_type;        ///< Proxy type owning the per-type array registry.
 
   protected:
     // ---- Re-chunk to a new geometry S' (SEQUENTIAL / quiescent point) --------
@@ -94,6 +91,7 @@ class RechunkSupport<Derived, true>
      *          - rechunk_drop_candidates() — remove this array's queued
      *            compression candidates by num_tab
      *          - rechunk_drain_reuse_list(new_size) — drain the S' reuse free-list
+     *            (its buffers were sized for an older geometry)
      *          - rechunk_capture_state() -> T — variant state to carry across
      *            (e.g. Chunk2's array-level second_value)
      *          - rechunk_seed_fresh(state) — apply that state to the fresh array
@@ -156,7 +154,7 @@ class RechunkSupport<Derived, true>
      */
     /** @brief Forget this array's compression candidates before the swap (default: none to drop). */
     void rechunk_drop_candidates() {}
-    /** @brief Release this array's parked buffers held at the old geometry (default: none parked). */
+    /** @brief Drain the reuse free-list of the target geometry (default: nothing to drain). */
     void rechunk_drain_reuse_list(unsigned int /*new_size*/) {}
     /** @brief Capture the variant state to carry across a re-chunk (default: none). */
     [[nodiscard]] T rechunk_capture_state() const
@@ -235,9 +233,9 @@ template <typename Derived>
 class RechunkSupport<Derived, false>
 {
   public:
-    using Traits     = ArrayChunkTraits<Derived>;
-    using T          = Traits::value_type;
-    using chunk_type = Traits::chunk_type;
+    using Traits     = ArrayChunkTraits<Derived>; ///< Traits specialisation of the concrete array.
+    using T          = Traits::value_type;        ///< Stored element type.
+    using chunk_type = Traits::chunk_type;        ///< Chunk type held in the array's chunk_list.
 
   protected:
     /** @brief No-op: the geometry is fixed at compile time. */
@@ -251,7 +249,7 @@ class RechunkSupport<Derived, false>
      */
     /** @brief Nothing to drop. */
     void rechunk_drop_candidates() {}
-    /** @brief Nothing pooled by geometry. */
+    /** @brief Nothing to drain. */
     void rechunk_drain_reuse_list(unsigned int /*new_size*/) {}
     /** @brief No state to carry. */
     [[nodiscard]] T rechunk_capture_state() const
