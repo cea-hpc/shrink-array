@@ -726,6 +726,30 @@ static int run_body(int argc, char** argv)
                  "val2-shrink", N, 256, [](long i) -> double { return double((i / 1000) % 2); },
                  /*sv_value=*/1.0);
          }},
+        // The v1 refill's SLICED path (fast-alloc OpenMP builds): it slices
+        // only from 8192 new chunks on (n_new / 4096 slices, up to 16), which
+        // no case above reaches. Every slice boundary drains the old geometry's
+        // parked blocks and recycles the slabs they empty into the next slice's
+        // allocations (CHUNK_RECHUNK_RECYCLE): stale buffers that must come
+        // back zero-filled where the data is zero, and exact elsewhere. Mostly
+        // distinct values (no constant chunk to fold) with zero spans; grown
+        // (4 slices) and shrunk (8 slices), then rewritten and recompressed.
+        {"sliced-grow", 64,
+         []
+         {
+             return check_invariance<double>(
+                 "sliced-grow-64-to-256", 4L << 20, 256,
+                 [](long i) -> double { return (i / 3000) % 4 == 0 ? 0.0 : double(i % 977) + 0.5; },
+                 /*sv_value=*/0.5, /*post_rounds=*/2);
+         }},
+        {"sliced-shrink", 512,
+         []
+         {
+             return check_invariance<double>(
+                 "sliced-shrink-512-to-64", 2L << 20, 64,
+                 [](long i) -> double { return (i / 5000) % 3 == 0 ? 0.0 : double(i % 613) + 0.25; },
+                 /*sv_value=*/0.25, /*post_rounds=*/2);
+         }},
     };
 
     if (list)

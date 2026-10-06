@@ -910,6 +910,81 @@ class TCSlabPool
     }
 
     /**
+     * @brief Hand every slab of this instance that holds no block to its
+     *        arena's recycled list for this instance's rank
+     *        (fast_alloc::SlabArena::recycle_batch): the slab leaves this
+     *        instance, its header is deleted, its block KEEPS its pages.
+     * @param scratch Reused buffer of block addresses; cleared here.
+     * @return Number of slabs handed over.
+     * @details The re-chunk's slice boundary, in place of madvise'ing the slabs
+     *          an abandoned (key, size) set has just emptied: the next slice
+     *          allocates about as many at the new chunk size -- the same slab
+     *          size, slab_bytes_for() ignores the element size -- and takes
+     *          these back resident, with no page fault.
+     * @pre Stronger than an EmptySlabSweep's: every slab found empty IS empty
+     *      (a set abandoned by construction, at a quiescent point), because a
+     *      recycled slab is reused by another instance -- a block wrongly
+     *      counted out would be overwritten, where a sweep zeroes it. And no
+     *      other thread uses this instance meanwhile: its own rank does this,
+     *      or any thread while that rank is idle.
+     */
+    std::size_t recycle_empty_slabs(std::vector<void*>& scratch) noexcept
+    {
+        scratch.clear();
+        if constexpr (!alloc_config::use_slabs)
+        {
+            return 0;
+        }
+        else
+        {
+            if (bypass_slabs() || slab_bytes_ == 0)
+            {
+                return 0;
+            }
+            for (Slab** head : {&block, &block_full})
+            {
+                for (Slab* p = *head; p != nullptr;)
+                {
+                    Slab* const next = p->next;
+                    if (p->nn_ref == 0)
+                    {
+                        try
+                        {
+                            scratch.push_back(p->data);
+                        }
+                        catch (...)
+                        {
+                            break; // no room to record it: it stays, as it was
+                        }
+                        DBG_ASSERT(p->owner == self());
+                        remove(*head, p);
+                        p->data = nullptr; // the block goes back in the batch below, not through ~Slab
+                        delete p;
+                    }
+                    p = next;
+                }
+            }
+            fast_alloc::arena_for(arena_kind).recycle_batch(scratch.data(), scratch.size(), slab_bytes_, rank_);
+            return scratch.size();
+        }
+    }
+
+    /// @brief Give back the pages of the recycled slabs nobody took, in this
+    ///        instance's arena (fast_alloc::SlabArena::advise_recycled).
+    /// @return Number of slabs advised.
+    std::size_t advise_recycled_slabs() const noexcept
+    {
+        if constexpr (!alloc_config::use_slabs)
+        {
+            return 0;
+        }
+        else
+        {
+            return fast_alloc::arena_for(arena_kind).advise_recycled();
+        }
+    }
+
+    /**
      * @brief Choose which arena this pool's slabs are drawn from.
      * @param k Op, Ctx or Value.
      * @warning Must be set BEFORE the first slab is taken; it is copied into

@@ -603,6 +603,9 @@ class SlabArena
      * @param fresh If not null, set to whether the slab is fresh from mmap
      *        (never handed out, so still all zeros) or recycled from the free
      *        list (holds its previous occupant's bytes).
+     * @param rank Rank asking (TCSlab::owner_rank), -1 if none: a slab a
+     *        re-chunk recycled (recycle_batch) is taken first from this rank's
+     *        list, then from the others', before the free list and the cursor.
      * @return Never null: a failed mmap aborts.
      * @details Prefers an exactly-@p size slab from the free list, falls back to
      *          bumping the cursor, and grows the reservation if that does not
@@ -613,12 +616,31 @@ class SlabArena
      *          check is unconditional and fatal on purpose: it is cheap here,
      *          and silent recovery would hide exactly the bug worth finding.
      */
-    void* allocate(std::size_t size, std::size_t align, bool* fresh = nullptr)
+    void* allocate(std::size_t size, std::size_t align, bool* fresh = nullptr, int rank = -1)
     {
         const std::scoped_lock lk(mtx_);
         if (fresh != nullptr)
         {
             *fresh = false;
+        }
+
+        // A slab a re-chunk gave back (recycle_batch), this rank's first: its
+        // pages are resident, and were first touched by this rank.
+        if (void* block = pop_recycled(size, rank); block != nullptr)
+        {
+            if (live_.contains(reinterpret_cast<std::uintptr_t>(block)))
+            {
+                std::fprintf(stderr,
+                             "[ARENA %s] DOUBLE-ALLOC recycled slab %p (size=%zu): handed out while still live\n",
+                             name_, block, size);
+                std::fflush(stderr);
+                std::abort();
+            }
+            live_.insert(reinterpret_cast<std::uintptr_t>(block));
+            bytes_live_ += size;
+            bytes_high_ = std::max(bytes_high_, bytes_live_);
+            ++alloc_calls_;
+            return block;
         }
 
         // Reuse a same-size slab from this arena's free-list if available.
@@ -696,6 +718,149 @@ class SlabArena
         ++dealloc_calls_;
         dealloc_bytes_ += size;
         free_lists_[size].push_back(block);
+    }
+
+    /**
+     * @brief Take back @p n slabs a re-chunk has just emptied, for the next
+     *        allocate() of rank @p rank. One lock for the whole batch.
+     * @param blocks The slabs, as returned by allocate(); their headers are
+     *        gone (TCSlabPool::recycle_empty_slabs). Null entries are skipped.
+     * @param size Their allocation size: the key allocate() looks them up by.
+     * @param rank The rank that held them (-1 counts as 0): allocate(size, ..,
+     *        rank) takes them back first, their pages having been first
+     *        touched there.
+     * @details Unlike deallocate(), the slabs KEEP their pages. The re-chunk's
+     *          next slice allocates about as much as the last one released, at
+     *          another chunk size but the same slab size, and a recycled slab
+     *          is resident memory: no page fault, no kernel zeroing -- a
+     *          madvise'd slab costs both, plus the madvise. What the next slice
+     *          does not take is given back by advise_recycled().
+     * @note An unknown or already-freed slab warns and is dropped, as in
+     *       deallocate().
+     */
+    void recycle_batch(void* const* blocks, std::size_t n, std::size_t size, int rank) noexcept
+    {
+        if (n == 0)
+        {
+            return;
+        }
+        const std::scoped_lock lk(mtx_);
+        auto&                  lists = recycled_[size];
+        const auto             r     = static_cast<std::size_t>(rank < 0 ? 0 : rank);
+        if (lists.by_rank.size() <= r)
+        {
+            lists.by_rank.resize(r + 1);
+        }
+        auto& mine = lists.by_rank[r];
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            void* const block = blocks[i];
+            if (block == nullptr)
+            {
+                continue;
+            }
+            if (live_.erase(reinterpret_cast<std::uintptr_t>(block)) == 0)
+            {
+                std::fprintf(stderr, "[ARENA %s] recycle of an unknown/free slab %p (size=%zu) -- ignored\n", name_,
+                             block, size);
+                std::fflush(stderr);
+                continue;
+            }
+            bytes_live_ -= size;
+            ++dealloc_calls_;
+            dealloc_bytes_ += size;
+            mine.push_back(Recycled{block, false});
+            ++lists.count;
+            ++recycled_in_;
+        }
+    }
+
+    /**
+     * @brief Give back the pages of every recycled slab nobody took and that
+     *        was not advised yet: one madvise per run of adjacent slabs.
+     * @return Number of slabs advised.
+     * @details The slabs stay on their rank's list, without pages: a later
+     *          allocate() still takes them first, and its first touch faults
+     *          zero pages back in, as for any madvise'd slab. Each slab is
+     *          advised once. Done under the lock, so that no allocate() can
+     *          take a slab while its pages are being dropped. Whole slabs,
+     *          last page included: nothing of a free slab is read before its
+     *          next owner rewrites it (TCSlab::alloc_block writes the
+     *          back-pointer).
+     * @pre Meant for a quiescent point (the re-chunk calls it between slices,
+     *      for the previous boundary's surplus, and after the last one).
+     */
+    std::size_t advise_recycled() noexcept
+    {
+        const std::scoped_lock lk(mtx_);
+        const std::size_t      page = detail::reclaim_page_size();
+        if (page == 0)
+        {
+            return 0;
+        }
+        struct Span
+        {
+            std::uintptr_t begin;
+            std::size_t    len;
+        };
+        std::vector<Span> spans;
+        std::size_t       slabs = 0;
+        for (auto& [size, lists] : recycled_)
+        {
+            const std::size_t adv = (size / page) * page;
+            for (auto& v : lists.by_rank)
+            {
+                for (Recycled& e : v)
+                {
+                    if (e.advised)
+                    {
+                        continue;
+                    }
+                    const auto b = reinterpret_cast<std::uintptr_t>(e.block);
+                    if (adv == 0 || b % page != 0)
+                    {
+                        e.advised = true; // never advisable: do not look again
+                        continue;
+                    }
+                    try
+                    {
+                        spans.push_back(Span{b, adv});
+                    }
+                    catch (...)
+                    {
+                        ::madvise(e.block, adv, MADV_DONTNEED); // no room for the batch: now
+                        reclaim_syscalls().fetch_add(1, std::memory_order_relaxed);
+                        reclaim_bytes().fetch_add(adv, std::memory_order_relaxed);
+                    }
+                    e.advised = true;
+                    ++slabs;
+                }
+            }
+        }
+        std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) { return a.begin < b.begin; });
+        const bool  coalesce = detail::reclaim_coalesce();
+        std::size_t runs     = 0;
+        std::size_t bytes    = 0;
+        for (std::size_t first = 0; first < spans.size();)
+        {
+            std::size_t last = first;
+            while (coalesce && last + 1 < spans.size() &&
+                   spans[last].begin + spans[last].len == spans[last + 1].begin)
+            {
+                ++last;
+            }
+            const std::uintptr_t begin = spans[first].begin;
+            const std::size_t    len   = spans[last].begin + spans[last].len - begin;
+            ::madvise(reinterpret_cast<void*>(begin), len, MADV_DONTNEED);
+            ++runs;
+            bytes += len;
+            first = last + 1;
+        }
+        reclaim_calls().fetch_add(slabs, std::memory_order_relaxed);
+        reclaim_syscalls().fetch_add(runs, std::memory_order_relaxed);
+        reclaim_bytes().fetch_add(bytes, std::memory_order_relaxed);
+        recycled_advised_ += slabs;
+        return slabs;
     }
 
     /**
@@ -779,11 +944,18 @@ class SlabArena
         {
             freelist += kv.first * kv.second.size();
         }
+        std::size_t recycled = 0;
+        for (const auto& kv : recycled_)
+        {
+            recycled += kv.first * kv.second.count;
+        }
         std::fprintf(stderr,
                      "[ARENA %-6s] %-16s mapped=%8zu KiB  live=%8zu KiB  high=%8zu KiB  "
-                     "freelist=%8zu KiB  regions=%zu  allocs=%zu  deallocs=%zu  deallocMiB=%zu\n",
+                     "freelist=%8zu KiB  regions=%zu  allocs=%zu  deallocs=%zu  deallocMiB=%zu  "
+                     "recycled=%zu KiB (in=%zu out=%zu foreign=%zu advised=%zu)\n",
                      name_, when, mapped >> 10U, bytes_live_ >> 10U, bytes_high_ >> 10U, freelist >> 10U,
-                     regions_.size(), alloc_calls_, dealloc_calls_, dealloc_bytes_ >> 20U);
+                     regions_.size(), alloc_calls_, dealloc_calls_, dealloc_bytes_ >> 20U, recycled >> 10U,
+                     recycled_in_, recycled_out_, recycled_foreign_, recycled_advised_);
         std::fflush(stderr);
     }
 
@@ -795,6 +967,40 @@ class SlabArena
         std::uintptr_t begin; ///< First address of the mapping.
         std::uintptr_t end;   ///< One past its last address.
     };
+
+    /// @brief A slab of @p size from the recycled lists (recycle_batch), or
+    ///        null: rank @p rank's list first, then the following ranks' in
+    ///        turn (neighbouring ranks, usually the same socket).
+    /// @pre The lock is held.
+    void* pop_recycled(std::size_t size, int rank) noexcept
+    {
+        const auto it = recycled_.find(size);
+        if (it == recycled_.end() || it->second.count == 0)
+        {
+            return nullptr;
+        }
+        auto&             lists = it->second.by_rank;
+        const std::size_t n     = lists.size();
+        const bool        known = rank >= 0 && static_cast<std::size_t>(rank) < n;
+        const std::size_t start = known ? static_cast<std::size_t>(rank) : 0;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            auto& v = lists[(start + i) % n];
+            if (!v.empty())
+            {
+                void* const block = v.back().block;
+                v.pop_back();
+                --it->second.count;
+                ++recycled_out_;
+                if (i != 0 || !known)
+                {
+                    ++recycled_foreign_;
+                }
+                return block;
+            }
+        }
+        return nullptr;
+    }
 
     /// @brief Map a fresh reservation and restart the bump cursor in it.
     /// @param min_bytes Lower bound for the new region; larger than
@@ -844,6 +1050,27 @@ class SlabArena
     /// @brief Slabs currently handed out. Exists so allocate() can refuse to
     ///        recycle one that is still live -- the corruption check.
     std::unordered_set<std::uintptr_t> live_;
+
+    /// @brief A slab given back by recycle_batch(); advised = its pages were
+    ///        dropped since (advise_recycled()).
+    struct Recycled
+    {
+        void* block;
+        bool  advised;
+    };
+    /// @brief One size's recycled slabs, a list per rank that gave them back.
+    struct RecycledLists
+    {
+        std::vector<std::vector<Recycled>> by_rank;
+        std::size_t                        count = 0; ///< Over every rank.
+    };
+    /// @brief Recycled slabs, keyed by their exact allocation size. Taken by
+    ///        allocate() before #free_lists_. Never holds a live slab.
+    std::unordered_map<std::size_t, RecycledLists> recycled_;
+    std::size_t recycled_in_      = 0; ///< Slabs ever given to recycle_batch().
+    std::size_t recycled_out_     = 0; ///< ... and taken back by allocate().
+    std::size_t recycled_foreign_ = 0; ///< ... by another rank than the giver.
+    std::size_t recycled_advised_ = 0; ///< ... advised before being taken.
 
     std::size_t        bytes_live_    = 0; ///< Bytes currently handed out.
     std::size_t        bytes_high_    = 0; ///< High-water mark of #bytes_live_.

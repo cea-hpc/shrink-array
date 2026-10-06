@@ -38,7 +38,10 @@ inline void TCSlab<Links>::alloc_block()
     // addresses are never returned to the OS and the op, ctx and value arenas
     // are disjoint, so a freed op slab's address can never be reobtained by the
     // value pool. Recycled within that arena's own free-list in destroy().
-    data = static_cast<char*>(fast_alloc::arena_for(arena_kind).allocate(BlockAllocator, BlockAllocator));
+    // owner_rank (set by the pool before init()): a slab the rank recycled at a
+    // re-chunk's slice boundary comes back to it first (SlabArena::allocate).
+    data = static_cast<char*>(
+        fast_alloc::arena_for(arena_kind).allocate(BlockAllocator, BlockAllocator, nullptr, owner_rank));
 
     if (data == nullptr) [[unlikely]]
     {
