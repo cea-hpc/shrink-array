@@ -343,7 +343,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
     // begin_flush(self_rank) blocks any future compressor start(); we then
     // drain inflight compressors. Once inflight == 0 and we hold the flush
     // flag, no compressor is mutating any chunk.
-    Policy::announce_flush(); // counter + seq_cst fence, one Dekker verb
+    Policy::announce_flush(); // counter + heavy barrier, one Dekker verb
     increm_chunk_gate_flush<ChunkType>();
 
     {

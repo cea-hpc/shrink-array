@@ -346,36 +346,37 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     CompressionManagerOmpPolicy& operator=(CompressionManagerOmpPolicy&&) = delete;
 
     /**
-     * @brief Starts a compression session
+     * @brief Open a compression window: the compressor's side of the Dekker
+     *        handshake against writers and flushers.
      *
-     * @details
-     * Performs the following operations:
-     * 1. Acquires the global compression lock
-     * 2. Switches the epoch to invalidate old counters
-     * 3. Waits for all threads to exit the fast-path
-     * 4. Activates slow-path for new operations
-     *
-     * Every 100th attempt forces a full wait to guarantee progress.
+     * @details In order: enter hard_inflight_ (the compressor is PARKED, which
+     *          steers writers away from its marked chunks); give up at once if a
+     *          flush is in progress; dekker::heavy_barrier(); wait, bounded by
+     *          CHUNK_COMPRESS_MAX_YIELDS, until no writer flag points to a
+     *          marked chunk (any writer at all without the per-chunk marks);
+     *          enter stealing_inflight_ (the compressor may now CAS-steal
+     *          buffers); look at the flushers again and back off if one
+     *          announced itself meanwhile -- the look that pairs with
+     *          announce_flush(). Every give-up undoes its counters and returns
+     *          false: the candidates stay queued, nothing is lost.
+     *          docs/synchronisation_dekker_fr.md §5.3 explains each step.
      *
      * @tparam ProxyType proxy whose WriteCompressSyncPolicy is consulted for the
      *                   Dekker handshake against writers and flushers
-     * @return true if compression can start immediately
-     * @return false if threads are still active in fast-path
+     * @return true if the caller may scan and steal its marked chunks, and must
+     *         then call finish(); false if it gave up
      *
-     * @pre OpenMP must be enabled
-     * @post Slow-path is activated if returns true
-     *
-     * @note Thread-safe, but only one thread should call this
+     * @pre OpenMP build; the caller has marked its candidates (steal_mark())
      */
     template <typename ProxyType>
     bool start();
 
     /**
-     * @brief Finishes a compression session
+     * @brief Close the window opened by a start() that returned true.
      *
-     * @details
-     * Decrements the in-flight counter and deactivates slow-path
-     * if no other compressions are active.
+     * @details Leaves stealing_inflight_ first (waiters on it may go on), then
+     *          hard_inflight_; the last compressor out marks its rank's
+     *          candidate list safe again.
      *
      * @tparam ProxyType same proxy type the matching start() was called with
      * @param log Enable logging of the event

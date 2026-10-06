@@ -1,6 +1,6 @@
 # Variables d'environnement, macros et options de compilation
 
-*État : fin septembre 2026. La liste a été relevée dans le code ; une variable qui n'est pas
+*État : début octobre 2026. La liste a été relevée dans le code ; une variable qui n'est pas
 lue est ignorée sans message, donc en cas de doute, vérifier avec
 `grep -rn '"NOM"' chunk fast_allocators examples`. Sauf mention contraire, une variable est
 lue une seule fois, et `0` ou une valeur vide équivaut à son absence.*
@@ -22,6 +22,8 @@ lue une seule fois, et `0` ou une valeur vide équivaut à son absence.*
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | un balayage ne rend les slabs vides au système que s'il y en a au moins autant |
 | `CHUNK_THP` | 0 | expérimental : `1` demande des huge pages transparentes (`MADV_HUGEPAGE`) sur les arènes de slabs et la région cst2. Ignoré, avec un message, quand la huge page dépasse 2 Mio (noyau à pages de 64 Kio : 512 Mio). Coût : un slab entamé devient résident en entier |
 | `CHUNK_THREAD_CAPACITY` | nombre de cœurs | nombre de rangs pour lequel les structures par thread sont dimensionnées (à augmenter en cas de sursouscription) |
+| `CHUNK_DEFERRED_POOL_KB` | 64 | taille des slabs des pools d'écritures différées, en Kio (les slabs d'opérations ne sont jamais rendus : plus gros, moins d'appels à l'allocateur mais plus de mémoire résidente) |
+| `CHUNK_REQUIRE_OMPT` | — | builds OMPT : `1` arrête le programme si l'outil OMPT n'a pas été chargé par le runtime (sinon, un message sur stderr), puisque les fins de phase n'auraient alors jamais lieu |
 
 ## 2. Interrupteurs de comparaison
 
@@ -68,6 +70,7 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 | `SHRINK_BENCH_AUDIT_FREQ` | période de l'audit de compression (builds de vérification) |
 | `CHUNK_BENCH_ULONG_BANDS` | nombre de secondes valeurs distinctes du tableau `unsigned long` (4 096 ; 0 = sans limite) |
 | `CHUNK_MALLOC_ARENAS` | nombre d'arènes `malloc` de la glibc (0 = inchangé) |
+| `SHRINK_BENCH_MALLOC_TRIM` | `1` : `malloc_trim` à chaque ligne de mémoire, et pas seulement aux points de contrôle (« after init », « end ») ; déforme la courbe et coûte dans la boucle chronométrée |
 | `BENCH_SCHED_BLOCK` | taille des blocs d'ordonnancement des phases du banc (64 ; 0 = tranches contiguës) |
 | `NO_IO`, `COMPRESS` | équivalents de `--no_io` et `--compress` |
 | `--no_mask`, `--mask_scale <x>` | sans `tab_mask` ; ou sa taille, `x × sz` (défaut 1/32) |
@@ -87,6 +90,16 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 | `CHECK_OPTIM` | vérifications d'invariants en build optimisé |
 | `MM_PROTECT` | Chunk, Chunk2 : tampons partagés des valeurs constantes en lecture seule (`mprotect`) ; une écriture parasite dans un chunk compressé fait une erreur de segmentation au lieu de corrompre la valeur (option CMake `CHUNK_MM_PROTECT`) |
 | `CHUNK_FORCE_DEFER_EVERY=<N>` | une écriture sur N passe par le chemin différé, dans tout l'arbre (validation ; 32 threads au plus) |
+| `HAVE_AGGRESSIVE_COMPRESSION` | compression « agressive » : la passe entre deux phases est sautée, et toute la compression se fait pendant les régions parallèles, à des instants imprévisibles. Plus lent, mais sollicite les chemins concurrents (option CMake du même nom ; l'ancienne orthographe `HAVE_AGRESSIVE_COMPRESSION` est encore acceptée par CMake, avec un avertissement) |
+| `CHUNK_FORCE_LEDGER` | garde le registre des blocs (`pool_ledger.h`) actif sous OpenMP, où il est éteint par défaut : son mutex global sérialise chaque allocation et libération. Détecte double libération et remise illégale en réserve (option CMake du même nom) |
+| `CHUNK_COMPRESS_MAX_YIELDS=<n>` | attente d'un compresseur garé avant de renoncer à sa passe (10 000 *yields* ; 0 : renoncer au premier écrivain vu). Voir [`synchronisation_dekker_fr.md`](synchronisation_dekker_fr.md) |
+| `CHUNK_WRITE_WAIT_MAX_YIELDS=<n>` | attente d'un écrivain devant un compresseur avant de différer son écriture (64 *yields*) |
+| `CHUNK_DEFERRED_DRAIN_THRESHOLD=<n>` | nombre d'écritures différées d'un rang au-delà duquel il vide sa propre file (4 096 ; option CMake du même nom) |
+| `CHUNK_READ_RECLAIM_SLOTS=<n>` | nombre de threads lecteurs suivis individuellement par la récupération des tampons (1 024) |
+| `CHUNK_STATS_MAX_THR=<n>` | nombre de rangs des compteurs `CHUNK_STATS` (1 024) |
+| `CHUNK_STD_ALLOC` | tampons de chunks alloués par l'allocateur standard au lieu de `fast_allocators` (option CMake du même nom) |
+| `CHUNK_TEST_READ_DELAY_EVERY=<n>`, `CHUNK_TEST_READ_DELAY_US=<µs>` | crochet de test : une lecture sur N d'un thread qui l'a demandé attend (50 µs), pour élargir la fenêtre lecteur / récupération (`read_reclaim_validation`) |
+| `CHUNK_TEST_PASS_DELAY_EVERY=<n>`, `CHUNK_TEST_PASS_DELAY_US=<µs>` | crochet de test : délai (200 µs) dans une passe de compression sur N |
 | `CHUNK_TEST_HOOKS` | compile les crochets de test des harnesses (`chunk/internal/test_hooks.h` : écritures différées forcées, délais de lecture et de passe), éteints à l'exécution tant qu'un harness ne les allume pas ; défini pour tout l'arbre là où les harnesses sont compilés (`CHUNK_BUILD_VALIDATION`), jamais dans les builds de performance |
 
 ## 7. Options CMake
@@ -108,6 +121,24 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 | `CHUNK_RECLAIM_EMPTY_SLABS` | `ON` | rendre au système (`madvise`) les slabs vidés aux balayages explicites (rechunk, destruction) ; `OFF` définit `CHUNK_NO_RECLAIM_EMPTY_SLABS` |
 | `FAST_ALLOC_CHECK_LISTS` | `OFF` | niveau de debug renforcé des listes de slabs : en Debug, vérification complète de la liste à chaque insertion et retrait (lent) ; un Debug ordinaire garde les vérifications légères |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | Chunk2A : l'emplacement de seconde valeur contient un identifiant de 4 octets au lieu de la valeur (moins de mémoire, +3 % de temps d'écriture) |
+| `CHUNK_STD_ALLOC` | `OFF` | allocateur standard pour les tampons de chunks au lieu de `fast_allocators` (utile sous ASan : chaque tampon est un vrai `malloc`) |
+| `CHUNK_BUILD_DYN` | `ON` | construire aussi une bibliothèque à géométrie dynamique (`_dyn`) par variante |
+| `CHUNK_STATS` | `OFF` | compteurs d'instrumentation et rapport `print_chunk_stats()` |
+| `CHECK_OPTIM` | `OFF` | vérifications d'invariants en build optimisé |
+| `HAVE_AGGRESSIVE_COMPRESSION` | `OFF` | compression agressive (voir §6) |
+| `CHUNK_FORCE_LEDGER` | `OFF` | registre des blocs actif sous OpenMP (voir §6) |
+| `CHUNK_DEFERRED_DRAIN_THRESHOLD` | vide (4 096) | seuil de vidage de sa propre file par un rang |
+| `CHUNK_FORCE_DEFER_EVERY` | 0 | une écriture sur N par le chemin différé (validation) |
+| `SANITIZER` | `none` | `thread`, `address` ou `token` (AllocToken, Clang ≥ 22), pour tous les types de build |
+| `CHUNK_GLIBCXX_ASSERTIONS` | `OFF` | assertions de la libstdc++ (`_GLIBCXX_ASSERTIONS`) dans la bibliothèque et ses consommateurs |
+| `CHUNK_UBSAN` | `OFF` | UndefinedBehaviorSanitizer (à associer à ASan, pas à TSan) |
+| `CHUNK_ALIGN_CHECK` | `OFF` | arrêt si un bloc de slab est mal aligné pour son type |
+| `CHUNK_NO_IPA_ICF` | `OFF` | désactive `-fipa-icf` (GCC fusionne sinon des fonctions identiques, ce qui brouille les piles d'appels) |
+| `CHUNK_WARNINGS`, `CHUNK_WERROR` | `ON`, `OFF` | `-Wall -Wextra` sur tous les builds ; avertissements en erreurs en Debug |
+| `CHUNK_HEAVY_JOB_POOL` | vide | pool de jobs Ninja pour les exécutables compilés en une unité (limite la mémoire de compilation) |
+| `USE_LIBCXX` | `ON` | builds Clang : libc++ au lieu de la libstdc++ |
+| `USE_GPERF`, `ENABLE_IWYU` | `OFF` | profilage gperftools ; include-what-you-use pendant la compilation |
+| `ONEAPI_XHOST`, `ONEAPI_NO_INTEL_LIBS`, `ONEAPI_FAST_FP` | `OFF` | icpx : binaire réservé à Intel (`-xHost`) ; aucune bibliothèque d'exécution Intel ; garder `-fp-model=fast` |
 
 Et une macro propre à Chunk2A : `CHUNK2A_COMPRESS_LEVEL=<0|1|2|3>` (0 par défaut) choisit le
 jeu de seuils de déclenchement des passes de compression (`chunk2A_def.h`).
@@ -115,3 +146,29 @@ jeu de seuils de déclenchement des passes de compression (`chunk2A_def.h`).
 Pour les builds clang sur x86-64, `CHUNK_LIBMVEC_LINKS` (dans le cache, calculée à la
 configuration) indique si la bibliothèque vectorielle de la glibc fournit les fonctions
 mathématiques des bancs ; sinon, leurs boucles restent scalaires (glibc < 2.35).
+
+## 8. Les scripts de compilation
+
+`scripts/compile_all.sh` configure et construit toute la matrice (GNU, LLVM, oneAPI, AOCC,
+NVHPC, sanitizers) ; il délègue les builds GNU à `scripts/compile_all_gnu.sh`, en lui
+transmettant les options communes. `--help` donne la liste complète.
+
+| option | effet |
+|---|---|
+| `--dryrun` | afficher les commandes sans les exécuter |
+| `--build` | sans reconfigurer (reconstruction seule) |
+| `--fresh-cache` | supprimer le `CMakeCache.txt` de chaque build sélectionné avant de configurer |
+| `--debug-only` | seulement les builds Debug |
+| `--only=<c>`, `--no-<c>` | un seul compilateur, ou sans lui (`gnu`, `oneapi`, `nvhpc`, `llvm`, `aocc`) |
+| `--with-nvhpc` | ajouter NVHPC, désactivé par défaut (environ 1 h 30 par build sur x86, sans gain) |
+| `--no-sanitizers` | sans les builds LLVM sous sanitizer |
+| `--with-ledger` | ajouter `cmake-build-omp-gnu-debug-ledger` (Debug OpenMP avec `CHUNK_FORCE_LEDGER=ON`), désactivé par défaut ; un `--target` qui le sélectionne le construit aussi |
+| `--target=<glob>` | seulement les configurations dont le nom correspond (`omp-llvm`, `'*sanitizer*'`…) ; un motif qui ne correspond à rien est une erreur |
+| `--exec=<glob>` | seulement les cibles Ninja correspondantes dans chaque build (`shrink_bench_chunk_64`, `'*_dyn'`…) |
+| `--jobs=<n>` | nombre de configurations compilées en même temps (4 par défaut) ; le budget de cœurs est partagé entre elles |
+| `--no-hardening` | sans `CHUNK_GLIBCXX_ASSERTIONS` ni `CHUNK_UBSAN` sur les builds Debug et sanitizer |
+| `--llvm-cs=<n>` | ajouter un build LLVM avec `CHUNK_SIZE=n` |
+
+`compile_all_gnu.sh` accepte en plus `--no-ipa-icf` (`CHUNK_NO_IPA_ICF=ON`). La mémoire de
+compilation par job se règle par `CHUNK_MEM_PER_JOB_MB` (3 072 Mo par défaut, le double pour
+les builds sous sanitizer).

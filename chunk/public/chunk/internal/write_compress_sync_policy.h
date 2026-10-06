@@ -169,12 +169,16 @@ inline void heavy_barrier() noexcept
  *          - the flusher announces itself (announce_flush()) and then checks
  *            whether any writer is active (any_thread_writing()).
  *
- *          Each announce is a seq_cst store followed by a seq_cst FENCE. The
- *          fence is what makes the protocol correct on weakly-ordered targets
- *          (AArch64, POWER): plain store plus acquire-load would let both sides
- *          miss each other and proceed together. announce_write() and
- *          announce_flush() exist precisely so that no call site can announce
- *          without the fence -- see announce_write() for the ordering proof.
+ *          A Dekker needs a full barrier between each side's announce and its
+ *          look at the other side: a plain store plus an acquire load lets both
+ *          sides miss each other and proceed together, even on x86. Where that
+ *          barrier sits is the protocol's shape (chunk_config::asymmetric_dekker):
+ *          symmetric, a seq_cst fence on both sides; asymmetric, nothing but a
+ *          compiler barrier on the writer side and a membarrier() on the rare
+ *          side, which runs the barrier on every CPU of the process.
+ *          announce_write() and announce_flush() exist precisely so that no call
+ *          site can announce without its ordering -- see announce_write() for
+ *          both proofs, and docs/synchronisation_dekker_fr.md.
  *
  *          This class owns ONLY the write/flush handshake state. The slow-path
  *          driver counter now lives in CompressionManager::state_, packed with
@@ -273,8 +277,8 @@ class WriteCompressSyncPolicy
      *          every asymmetric Dekker in production (HotSpot safepoints,
      *          .NET FlushProcessWriteBuffers, Folly asymmetricHeavyBarrier).
      *
-     *          SYMMETRIC (the default; also the fallback without a Linux
-     *          membarrier and under TSan): seq_cst store + seq_cst fence, the
+     *          SYMMETRIC (non-Linux and TSan builds, and the run-time fallback
+     *          when membarrier registration fails): seq_cst store + seq_cst fence, the
      *          opponent likewise; the caller's load may then be relaxed. By
      *          [atomics.order]: with A our store, X our fence, Y the opponent's
      *          fence and B the opponent's acquire-load of our flag, if X
