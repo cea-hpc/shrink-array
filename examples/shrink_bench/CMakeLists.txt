@@ -279,13 +279,23 @@ if (CHUNK_BUILD_DYN)
   #    fresh build, the reference not written yet);
   #  - all of them hold RESOURCE_LOCK shrink_bench_oracle_files: they share the
   #    files, and a check may rewrite one (it decompresses a reference whose
-  #    checksum misses), so they never overlap, even under -j.
+  #    checksum misses), so they never overlap, even under -j;
+  #  - shrink_bench_oracle_cleanup is the fixture's CLEANUP: ctest runs it once
+  #    the last check is done and deletes the files (about 22 GB at the default
+  #    sizes), which otherwise stayed in the build dir after every run. A
+  #    manual `--mode check` run afterwards needs vector_check run again.
   # bench_and_test.py does not run these (no `validation` label): it keeps its
   # own oracles per configuration.
   add_test(NAME shrink_bench_vector_check COMMAND shrink_bench_vector_check)
   set_tests_properties(shrink_bench_vector_check PROPERTIES
                        ENVIRONMENT OMP_NUM_THREADS=8
                        FIXTURES_SETUP shrink_bench_oracle
+                       RESOURCE_LOCK shrink_bench_oracle_files)
+  add_test(NAME shrink_bench_oracle_cleanup
+           COMMAND ${CMAKE_COMMAND} -DORACLE_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                   -P ${CMAKE_CURRENT_SOURCE_DIR}/remove_oracle_files.cmake)
+  set_tests_properties(shrink_bench_oracle_cleanup PROPERTIES
+                       FIXTURES_CLEANUP shrink_bench_oracle
                        RESOURCE_LOCK shrink_bench_oracle_files)
 
   foreach(_vname chunk chunk2 chunk2a)
