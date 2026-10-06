@@ -1094,61 +1094,12 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                             static_cast<std::size_t>(n_thr),
                             std::vector<std::vector<T*>>(static_cast<std::size_t>(n_thr)));
 
+                        // The two passes are shared with drain_reuse_list_for_size_team()
+                        // (drain_sort_rank / drain_free_rank, below).
                         const auto sort_own_list = [&](int rank) noexcept
-                        {
-                            if (rank < 0 || rank >= n_thr)
-                            {
-                                return;
-                            }
-                            auto& lst = per_thr[rank].list;
-                            if (lst.empty())
-                            {
-                                return;
-                            }
-                            auto&       row  = bucket[static_cast<std::size_t>(rank)];
-                            std::size_t kept = 0;
-                            for (std::size_t i = 0; i < lst.size(); ++i)
-                            {
-                                T*          block = lst[i];
-                                const auto* slab  = geometry->slab_of(block);
-                                if (slab && slab->owner && slab->owner_rank >= 0 && slab->owner_rank < n_thr)
-                                {
-                                    row[static_cast<std::size_t>(slab->owner_rank)].push_back(block);
-                                }
-                                else
-                                {
-                                    lst[kept++] = block; // no owner claims it: stays parked
-                                }
-                            }
-                            lst.resize(kept);
-                        };
+                        { drain_sort_rank(per_thr, n_thr, rank, geometry, bucket); };
                         const auto free_own_buckets = [&](int rank) noexcept
-                        {
-                            if (rank < 0 || rank >= n_thr)
-                            {
-                                return;
-                            }
-                            // Route to the `size` allocator: get_chunk_allocator keys on
-                            // the per-thread active size. Freeing a size-`size` block
-                            // through the wrong-size allocator corrupts that slab's
-                            // free-list -> SIGSEGV walking it at teardown.
-                            // Every block in bucket[*][r] belongs to an instance of
-                            // rank r (its slab said so); free it through THAT instance.
-                            for (int q = 0; q < n_thr; ++q)
-                            {
-                                auto& cell = bucket[static_cast<std::size_t>(q)][static_cast<std::size_t>(rank)];
-                                for (T* b : cell)
-                                {
-                                    CHUNK_FREEPATH_INC(freed);
-                                    CHUNK_LEDGER_DISCARD(b, "rechunk_to.drain_reuse.owner");
-                                    auto* slab  = geometry->slab_of(b);
-                                    auto* owner = static_cast<alloc_t*>(const_cast<void*>(slab->owner));
-                                    owner->free_elt_pow2(b, slab);
-                                }
-                                cell.clear();
-                                cell.shrink_to_fit();
-                            }
-                        };
+                        { drain_free_rank(n_thr, rank, geometry, bucket, /*release_cells=*/true); };
 
                         if constexpr (chunk_config::not_use_compression_with_ompt)
                         {
@@ -1190,6 +1141,179 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 {
                     drain_one(kv.second);
                 }
+            }
+        }
+    }
+
+    /// @brief Owner buckets of a drain: [sorting rank][owning rank].
+    using DrainBuckets = std::vector<std::vector<std::vector<T*>>>;
+
+    /**
+     * @brief Drain pass 1 for one rank: sort rank @p rank's parked blocks into
+     *        row @p rank of @p bucket by owning rank; blocks no slab claims stay
+     *        parked. Touches rank @p rank's list and row only.
+     */
+    template <typename Alloc>
+    static void drain_sort_rank(std::vector<PerThreadFreeList>& per_thr, int n_thr, int rank, Alloc* geometry,
+                                DrainBuckets& bucket) noexcept
+    {
+        if (rank < 0 || rank >= n_thr)
+        {
+            return;
+        }
+        auto& lst = per_thr[rank].list;
+        if (lst.empty())
+        {
+            return;
+        }
+        auto&       row  = bucket[static_cast<std::size_t>(rank)];
+        std::size_t kept = 0;
+        for (std::size_t i = 0; i < lst.size(); ++i)
+        {
+            T*          block = lst[i];
+            const auto* slab  = geometry->slab_of(block);
+            if (slab && slab->owner && slab->owner_rank >= 0 && slab->owner_rank < n_thr)
+            {
+                row[static_cast<std::size_t>(slab->owner_rank)].push_back(block);
+            }
+            else
+            {
+                lst[kept++] = block; // no owner claims it: stays parked
+            }
+        }
+        lst.resize(kept);
+    }
+
+    /**
+     * @brief Drain pass 2 for one rank: free column @p rank of @p bucket into
+     *        rank @p rank's own allocator instances -- the only mutation of a
+     *        slab chain, always by the rank that owns it.
+     * @param release_cells give the cells' capacity back (a one-off drain) or
+     *        keep it (drain_reuse_list_for_size_team(), reused per slice).
+     */
+    template <typename Alloc>
+    static void drain_free_rank(int n_thr, int rank, Alloc* geometry, DrainBuckets& bucket, bool release_cells) noexcept
+    {
+        if (rank < 0 || rank >= n_thr)
+        {
+            return;
+        }
+        // Route through the block's OWNING instance (its slab names it), never
+        // get_chunk_allocator(): that keys on the per-thread active size, and a
+        // size-`size` block freed through another size's allocator corrupts that
+        // slab's free-list -> SIGSEGV walking it at teardown.
+        for (int q = 0; q < n_thr; ++q)
+        {
+            auto& cell = bucket[static_cast<std::size_t>(q)][static_cast<std::size_t>(rank)];
+            if (cell.empty())
+            {
+                continue;
+            }
+            for (T* b : cell)
+            {
+                CHUNK_FREEPATH_INC(freed);
+                CHUNK_LEDGER_DISCARD(b, "rechunk_to.drain_reuse.owner");
+                auto* slab  = geometry->slab_of(b);
+                auto* owner = static_cast<Alloc*>(const_cast<void*>(slab->owner));
+                owner->free_elt_pow2(b, slab);
+            }
+            cell.clear();
+            if (release_cells)
+            {
+                cell.shrink_to_fit();
+            }
+        }
+    }
+
+    /// @brief What drain_reuse_list_for_size_team() keeps from one slice
+    ///        boundary to the next: the owner buckets (grown once, then reused
+    ///        with their capacity) and the list sets found for the size.
+    struct TeamDrainScratch
+    {
+        DrainBuckets                                 bucket;
+        std::vector<std::vector<PerThreadFreeList>*> sets;
+        void*                                        geometry = nullptr;
+    };
+
+    /**
+     * @brief drain_reuse_list_for_size() run by the WHOLE team of the enclosing
+     *        parallel region: every thread of the team must call it, at the
+     *        same point (it contains worksharing constructs and barriers).
+     *
+     * @details Same owner-routed drain, same ownership discipline -- each rank
+     *          sorts ITS list into ITS row, then frees the blocks it owns into
+     *          ITS allocator -- but inside the caller's region: no region of its
+     *          own (the serial drain opens two per list set, and under OMPT runs
+     *          entirely on one thread), and the bucket matrix is allocated once
+     *          per re-chunk instead of once per list set and boundary. For the
+     *          v1 refill's slice boundaries (rechunk_refill): 15 per re-chunk,
+     *          5 to 9 ms each at 64/128 threads on Grace with the serial drain.
+     *          Ranks no team member holds are swept by one thread, as the
+     *          serial drain does after its regions.
+     * @pre A quiescent point for the lists of @p size: no thread parks into
+     *      them or pops from them meanwhile (the refill's slice barrier).
+     *      Fast-alloc OpenMP dynamic builds; a no-op otherwise.
+     */
+    static void drain_reuse_list_for_size_team([[maybe_unused]] unsigned int      size,
+                                               [[maybe_unused]] TeamDrainScratch& s) noexcept
+    {
+        if constexpr (chunk_config::chunk_dynamic && chunk_config::use_fast_alloc && build_config::use_openmp)
+        {
+            using alloc_t = std::remove_reference_t<decltype(CHUNK_T<T>::get_chunk_allocator(0))>;
+#pragma omp single
+            {
+                s.sets.clear();
+                if (const auto it = list_block_free_thr_by_size_.find(size); it != list_block_free_thr_by_size_.end())
+                {
+                    s.sets.push_back(&it->second);
+                }
+                for (auto& kv : list_block_free_thr_keyed_)
+                {
+                    if (static_cast<unsigned int>(kv.first & 0xffffffffu) == size)
+                    {
+                        s.sets.push_back(&kv.second);
+                    }
+                }
+                std::size_t n = 0;
+                for (const auto* set : s.sets)
+                {
+                    n = std::max(n, set->size());
+                }
+                if (s.bucket.size() < n)
+                {
+                    s.bucket.assign(n, std::vector<std::vector<T*>>(n));
+                }
+                const unsigned int saved_sz = shrink_array::thread_chunk_size();
+                shrink_array::set_thread_chunk_size(size);
+                s.geometry = &CHUNK_T<T>::get_chunk_allocator(0, 0u);
+                shrink_array::set_thread_chunk_size(saved_sz);
+            } // implicit barrier: s is complete for every thread
+            auto* const geometry = static_cast<alloc_t*>(s.geometry);
+            const int   me       = CHUNK_PMP_THREAD_RANK;
+            for (auto* set : s.sets)
+            {
+                auto&     per_thr = *set;
+                const int n_thr   = static_cast<int>(per_thr.size());
+                drain_sort_rank(per_thr, n_thr, me, geometry, s.bucket);
+#pragma omp barrier
+#pragma omp single
+                {
+                    // Ranks no team member holds (a smaller team than the
+                    // capacity); cheap for the lists just emptied.
+                    for (int q = 0; q < n_thr; ++q)
+                    {
+                        drain_sort_rank(per_thr, n_thr, q, geometry, s.bucket);
+                    }
+                } // implicit barrier: every row is sorted
+                drain_free_rank(n_thr, me, geometry, s.bucket, /*release_cells=*/false);
+#pragma omp barrier
+#pragma omp single
+                {
+                    for (int r = 0; r < n_thr; ++r)
+                    {
+                        drain_free_rank(n_thr, r, geometry, s.bucket, /*release_cells=*/false);
+                    }
+                } // implicit barrier: this set is drained
             }
         }
     }

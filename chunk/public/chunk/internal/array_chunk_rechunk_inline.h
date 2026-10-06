@@ -1049,6 +1049,15 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
         // is still the old geometry's here.
         const unsigned int old_key_refill = self().alloc_key();
 
+        // Slice boundaries run INSIDE the slice's region (see the loop): the
+        // team drain's scratch lives across them, and so do the trace timers.
+        using manager_t = typename Traits::manager_type;
+        typename manager_t::TeamDrainScratch team_drain;
+        using slice_clock = std::chrono::steady_clock;
+        const auto slice_ms = [](slice_clock::time_point a, slice_clock::time_point b)
+        { return std::chrono::duration<double, std::milli>(b - a).count(); };
+        slice_clock::time_point slice_t0{}; // written by the master, read after barriers
+
         // Held across the WHOLE sliced loop, drains included. The flag also
         // suppresses the OMPT parallel-end finalize, which must not flush or
         // compress a half-rebuilt array -- and a slice boundary is precisely
@@ -1109,24 +1118,39 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 n_folded.fetch_add(tally.folded, std::memory_order_relaxed);
                 n_refused.fetch_add(tally.refused, std::memory_order_relaxed);
                 n_installed.fetch_add(tally.installed, std::memory_order_relaxed);
-            }
-            if (sl + 1 < n_slices)
-            {
-                // Serial point: send this slice's parked old-geometry blocks
-                // home, then give back the slabs they just emptied. Only blocks
-                // already released by release_st are touched -- the source chunks
-                // the remaining slices still have to read are untouched.
-                set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                // CHUNK_RECHUNK_TRACE: drain / collect / madvise, timed apart.
-                using slice_clock = std::chrono::steady_clock;
-                const auto slice_ms = [](slice_clock::time_point a, slice_clock::time_point b)
-                { return std::chrono::duration<double, std::milli>(b - a).count(); };
-                const auto sd0 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
-                self().rechunk_drain_reuse_list(static_cast<unsigned int>(old_size));
-                if (internal::g_rechunk_trace)
-                    internal::g_slice_drain_ms += slice_ms(sd0, slice_clock::now());
+
+                // Slice boundary, INSIDE the region (the omp for's barrier has
+                // closed the slice): send this slice's parked old-geometry
+                // blocks home, then give back the slabs they just emptied. Only
+                // blocks already released by release_st are touched -- the
+                // source chunks the remaining slices still have to read are
+                // untouched. It used to run between two regions, on the master
+                // alone, around a drain that opened two regions of its own per
+                // list set (and ran serially under OMPT): 5 ms per boundary at
+                // 64 threads, 7 at 128 on Grace, 15 boundaries per re-chunk.
+                // Now the whole team drains (each rank its own list and its own
+                // slabs, as before) and one thread sweeps. n_slices > 1 only in
+                // these builds (see above).
                 if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
                 {
+                    if (sl + 1 < n_slices)
+                    {
+#pragma omp master
+                        {
+                            if (internal::g_rechunk_trace)
+                            {
+                                slice_t0 = slice_clock::now();
+                            }
+                        }
+                        manager_t::drain_reuse_list_for_size_team(static_cast<unsigned int>(old_size), team_drain);
+#pragma omp single
+                        {
+                            const auto sc0 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
+                            if (internal::g_rechunk_trace)
+                            {
+                                internal::g_slice_drain_ms += slice_ms(slice_t0, sc0);
+                            }
+                            set_thread_chunk_size(static_cast<unsigned int>(old_size));
                     // The old storage's allocator set -- the shared pool (key 0)
                     // too when it lives there, which is every first re-chunk
                     // under lazy affinity: skipping it held every released
@@ -1134,22 +1158,26 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     // final sweep's reason: a serial, quiescent point, so a slab
                     // found empty is empty.
                     // One sweep across ranks: one madvise per contiguous run.
-                    typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(0, 0u))>::empty_slab_sweep
-                        sweep;
-                    const auto sc0 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
-                    for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
-                    {
-                        chunk_type::get_chunk_allocator(r, old_key_refill).collect_empty_slabs(sweep);
-                    }
-                    const auto sc1 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
-                    sweep.flush();
-                    if (internal::g_rechunk_trace)
-                    {
-                        internal::g_slice_collect_ms += slice_ms(sc0, sc1);
-                        internal::g_slice_madvise_ms += slice_ms(sc1, slice_clock::now());
+                            typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(0, 0u))>::empty_slab_sweep
+                                sweep;
+                            for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
+                            {
+                                chunk_type::get_chunk_allocator(r, old_key_refill).collect_empty_slabs(sweep);
+                            }
+                            const auto sc1 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
+                            sweep.flush();
+                            if (internal::g_rechunk_trace)
+                            {
+                                internal::g_slice_collect_ms += slice_ms(sc0, sc1);
+                                internal::g_slice_madvise_ms += slice_ms(sc1, slice_clock::now());
+                            }
+                            set_thread_chunk_size(static_cast<unsigned int>(new_size));
+                        } // implicit barrier: the next slice starts on emptied slabs
                     }
                 }
-                set_thread_chunk_size(static_cast<unsigned int>(new_size));
+            }
+            if (sl + 1 < n_slices)
+            {
                 if (slice_trace)
                 {
                     const long rss_mib = internal::rss_mib_now();
