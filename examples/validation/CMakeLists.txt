@@ -33,7 +33,7 @@
 #                           rewrite like an array of double -- the element
 #                           type contract: trivially copyable, ==, T{}.
 #   deferred_path_validation a write parked in a rank queue (the deferred
-#                           path: enqueue, replay, P3 drain, read gate, WAW
+#                           path: enqueue, replay, backlog drain, read gate, WAW
 #                           guard) lands in program order with every other
 #                           write and read of the element. The bench and the
 #                           fuzz replays no longer reach that path (a
@@ -74,8 +74,8 @@
 #                           (chunk_v1v2): an ArrayChunk and an ArrayChunk2 side
 #                           by side, fill_range_mt of each compressible value.
 #                           The ops must dispatch on the array's type, not on
-#                           the build flags -- an ArrayChunk2 filled with its
-#                           second value used to stay materialised there.
+#                           the build flags -- otherwise an ArrayChunk2
+#                           filled with its second value stays materialised.
 #                           The one harness that is not variant-agnostic.
 #   cst2_registry_validation  Chunk2A's second-value registry is freed by the
 #                           last array of every generation, not only the

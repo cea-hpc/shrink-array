@@ -438,9 +438,9 @@ def run_with_rebuild_retry(build_root, config, var, stage, exe, env_vars,
     and retry up to rebuild_retries times. Returns
     (ok, dur, code, err_tail, mem_mo, exe_used)."""
     for attempt in range(rebuild_retries + 1):
-        # --mode carries what the binary name used to: one executable, the stage
-        # chosen at run time. Harmless on the vector targets, which still come in
-        # two flavours and simply get told the mode they were built for.
+        # --mode selects the stage at run time (one executable per variant).
+        # Harmless on the vector targets, which still come in two flavours and
+        # simply get told the mode they were built for.
         ok, dur, code, err_tail, mem_mo = run_cmd(
             [exe, "--mode", stage], env_vars, timeout, extra_ld_library_path=extra_ld_library_path,
             cwd=cwd

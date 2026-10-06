@@ -169,11 +169,9 @@ target_filter_summary() {
 }
 
 # ─── Typo guard for --target / --exec ────────────────────────────────────────
-# A --target or --exec that matched nothing used to build nothing and exit 0:
-# "0 of 27 configurations match" scrolled by, and the typo went unnoticed until
-# the missing binary did. Both are now checked, and a miss is an error naming
-# the closest known argument(s) -- Levenshtein distance, as suggest_closest does
-# for the bench's flags.
+# A --target or --exec that matches nothing is an error naming the closest
+# known argument(s) -- Levenshtein distance, as suggest_closest does for the
+# bench's flags -- not a silent "0 of 27 configurations match" and exit 0.
 #
 #   --target  is checked BEFORE anything runs, against the cmake-build-<name>
 #             names written in the scripts themselves (known_build_names): the
@@ -595,8 +593,7 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
     # NOT accept globs). ${x:+...} expands to nothing when unset, so the default
     # (build everything) is byte-identical.
     # Resolved BEFORE the slot is taken: a dir that turns out to build nothing
-    # returns from here, and used to walk off with the slot it had just waited
-    # for.
+    # returns from here without holding a slot.
     local _exec_target=()
     if [ -n "${CHUNK_BUILD_EXEC:-}" ]; then
         # The dir's real targets, when it is configured (else we cannot check
@@ -682,8 +679,8 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
 }
 
 # ^C: async jobs start with SIGINT ignored (POSIX behavior of non-interactive
-# shells) — a Ctrl-C used to kill the script but left every ninja running, now
-# silently since their output goes to the logs. cancel_all kills each build
+# shells), so a Ctrl-C alone would kill the script and leave every ninja
+# running, silently since their output goes to the logs. cancel_all kills each build
 # group (setsid session) then exits. Installed at source time: applies to
 # compile_all.sh AND compile_all_gnu.sh (each kills its own jobs, both receive
 # the terminal's INT).
@@ -860,9 +857,9 @@ __slot_dir() {
     printf '%s' "$CHUNK_SLOT_DIR"
 }
 
-# The pool dir used to outlive every run (.build-slots.<pid>/ piling up in
-# build_rep, one with a target-matched left by an interrupted run). Only the
-# process that opened it removes it -- the one that found no CHUNK_SLOT_DIR in
+# The pool dir must not outlive the run (.build-slots.<pid>/ would pile up in
+# build_rep, one per interrupted run). Only the process that opened it removes
+# it -- the one that found no CHUNK_SLOT_DIR in
 # its environment; compile_all_gnu.sh under compile_all.sh inherits it and
 # leaves it alone. On EXIT, so ^C (cancel_all exits) and early exits clean up
 # too. The path is recomputed: __slot_dir mostly runs in $(...), so the
@@ -916,12 +913,12 @@ __slots_held() {
 # race -- two processes both see "room left" and both succeed, which measured
 # cap+1 builds in flight.
 #
-# Deliberately NOT a function that echoes its result: it used to be called as
-# JOB_SLOT_PENDING="$(__slot_acquire)", which ran the whole wait loop in a
-# SUBSHELL. The progress display it drew went into the captured string instead
-# of the terminal (and corrupted the token path), and __reap_one could not
-# update the parent's job table -- so nothing was reaped and the [RUN ] lines
-# froze. Setting a global from the current shell avoids both.
+# Deliberately NOT a function that echoes its result: called as
+# JOB_SLOT_PENDING="$(__slot_acquire)", the whole wait loop would run in a
+# SUBSHELL -- the progress display would go into the captured string instead of
+# the terminal (corrupting the token path), and __reap_one could not update the
+# parent's job table, so nothing would be reaped and the [RUN ] lines would
+# freeze. Setting a global from the current shell avoids both.
 __slot_try() {
     local d tok k
     d="$(__slot_dir)"

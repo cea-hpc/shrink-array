@@ -1,10 +1,9 @@
 #!/bin/bash
 
-# BUILD_FLAGS used to force "-- -j 8" onto every cmake --build. That overrode
-# CMAKE_BUILD_PARALLEL_LEVEL and produced "ninja-build -j 32 -j 8": ninja keeps
-# the last one, so the whole run was pinned at 8 jobs per build whatever the
-# node. Left empty; the per-build job count now comes from
-# CMAKE_BUILD_PARALLEL_LEVEL, derived in functions_for_compile.sh.
+# BUILD_FLAGS stays empty: the per-build job count comes from
+# CMAKE_BUILD_PARALLEL_LEVEL, derived in functions_for_compile.sh. Forcing
+# "-- -j 8" here would override it ("ninja-build -j 32 -j 8": ninja keeps the
+# last one) and pin every build at 8 jobs whatever the node.
 BUILD_FLAGS=""
 
 # NOTE: CMAKE_BUILD_PARALLEL_LEVEL is no longer hard-coded here. It is derived
@@ -98,12 +97,12 @@ load_mold() {
 }
 load_mold
 
-# oneAPI (icpx) builds, x86-only. They compile again (Sept '26). The icpx
-# 2026.0 ICE in clang CodeGen (EmitCtorList -> getPointerBitCastOrAddrSpaceCast
-# on a null Constant, emitting global_ctors for the explicit ManagerChunk
-# instantiations; Intel priority-support ticket) has its fallback in
-# chunk/CMakeLists.txt: -DCHUNK_ICPX_O0_WORKAROUND=ON compiles the three TUs it
-# hit at -O0 under icpx. Set to false to skip oneAPI.
+# oneAPI (icpx) builds, x86-only. The icpx 2026.0 ICE in clang CodeGen
+# (EmitCtorList -> getPointerBitCastOrAddrSpaceCast on a null Constant, emitting
+# global_ctors for the explicit ManagerChunk instantiations; Intel
+# priority-support ticket) has its fallback in chunk/CMakeLists.txt:
+# -DCHUNK_ICPX_O0_WORKAROUND=ON compiles the three TUs it hit at -O0 under icpx.
+# Set to false to skip oneAPI.
 enable_oneapi=true
 
 # AOCC (AMD Optimizing C/C++ Compiler, clang-based) — x86-only, like oneapi.
@@ -262,8 +261,8 @@ skip_release() { [ "$DEBUG_ONLY" = true ]; }
 #
 # The module environment is process-global, and the families are configured one
 # after another in THIS shell, so whatever one leaves loaded the next inherits.
-# Each family used to unload only what it knew about by name -- gcc, llvm, cuda,
-# inteloneapi -- and nothing unloaded the TRANSITIVE dependencies. That is a real
+# Unloading only what a family knows about by name -- gcc, llvm, cuda,
+# inteloneapi -- leaves the TRANSITIVE dependencies loaded. That is a real
 # failure, not a tidiness issue: compile_all_gnu.sh loads binutils/2.43 for
 # gcc/16.1.0 on aarch64, nvhpc then needs binutils/2.42, and the load fails in
 # cascade:
@@ -350,11 +349,9 @@ else
         run_cmd "CXX=icpx cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-oneapi/$arch $ONEAPI_STDLIB_OPT -DOMP:BOOL=ON $INT64_OPT -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
     fi
     launch_build "$build_rep/cmake-build-omp-oneapi/$arch" $BUILD_FLAGS
-    # The three -manual-compression twins that used to follow each oneapi
-    # build are gone: -DHAVE_MANUAL_COMPRESSION is read by no CMakeLists and
-    # by no source any more (the manual mode left when compression became the
-    # embedded, incremental one), so they compiled the very same code a second
-    # time -- three oneapi builds' worth of wall time for nothing.
+    # No -manual-compression twins: -DHAVE_MANUAL_COMPRESSION is read by no
+    # CMakeLists and no source (compression is embedded and incremental), so
+    # they would compile the very same code a second time.
 
     set_build_header 'Compiling oneapi:'
     if [ "$BUILD_ONLY" = false ]; then
@@ -502,8 +499,8 @@ if [ -z "$clangxx" ]; then
     # Dry-run (module load only echoed) or clang++ not yet in PATH: keep the
     # bare name. CMake resolves it in PATH at configure time, and the echoed
     # dry-run command stays copy-pastable into a shell with modules loaded —
-    # the empty expansion used to bake CXX='' -DCMAKE_CXX_COMPILER= into the
-    # output, which then failed with "No CMAKE_CXX_COMPILER could be found".
+    # an empty expansion would bake CXX='' -DCMAKE_CXX_COMPILER= into the
+    # output, which then fails with "No CMAKE_CXX_COMPILER could be found".
     clangxx="clang++"
 fi
 LLVM_CXX_OPT="-DCMAKE_CXX_COMPILER=$clangxx"
@@ -586,10 +583,10 @@ if [ "$BUILD_ONLY" = false ]; then
 fi
 launch_build "$build_rep/cmake-build-omp-llvm-debug-thread-sanitizer/$arch"
 
-# (fast-allocator ASan build dropped, Sept '26: with the fast allocator the
-# chunk buffers live inside the library's slab arenas, which ASan sees as a few
-# large blocks -- an overflow or use-after-free inside a slab goes unreported.
-# ASan runs on the std-alloc builds, where every buffer is a real malloc.)
+# (No fast-allocator ASan build: with the fast allocator the chunk buffers
+# live inside the library's slab arenas, which ASan sees as a few large blocks
+# -- an overflow or use-after-free inside a slab goes unreported. ASan runs on
+# the std-alloc builds, where every buffer is a real malloc.)
 
 set_build_header 'Compiling llvm debug openmp std_alloc thread sanitizer:'
 if [ "$BUILD_ONLY" = false ]; then
@@ -673,7 +670,7 @@ fi
 
 set_build_header 'Compiling llvm debug:'
 if [ "$BUILD_ONLY" = false ]; then
-   # FIX: -DOMP:BOOL=OFF instead of -DOMP:OFF
+   # -DOMP:BOOL=OFF (the -D syntax is NAME:TYPE=VALUE).
    run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-llvm-debug/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja"
 fi
 launch_build "$build_rep/cmake-build-llvm-debug/$arch"

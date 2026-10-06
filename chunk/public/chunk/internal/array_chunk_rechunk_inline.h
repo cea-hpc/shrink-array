@@ -500,7 +500,7 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         const std::size_t blk = static_cast<std::size_t>(old_size) * sizeof(T);
         std::fprintf(stderr,
                      "[RECHUNK-POOL] S=%u key=%u after drain: slabs=%zu  live_blocks=%zu (%zu MB)  "
-                     "empty_slabs=%zu | key=0 (shared, never swept): slabs=%zu  live_blocks=%zu (%zu MB)  "
+                     "empty_slabs=%zu | key=0 (shared pool): slabs=%zu  live_blocks=%zu (%zu MB)  "
                      "empty_slabs=%zu\n",
                      old_size, old_key, slabs, live_blocks, (live_blocks * blk) >> 20U, empty_slabs, s0, l0,
                      (l0 * blk) >> 20U, e0);

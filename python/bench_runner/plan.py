@@ -113,17 +113,13 @@ def reduce_matrix(args):
                           f"({', '.join(dropped)}) — ≈ release on this workload"))
             args.configs = kept
         args.light_variants = sorted(set(args.light_variants) | {"std_alloc"})
-        # There used to be a rule here demoting chunk/chunk2/chunk2a on a
-        # -std-alloc config to a light smoke run, "since only the allocator
-        # differs". Removed, for two reasons. It never ran: it compared bare
-        # names against `var`, which carries its @<size> declination since the
-        # expansion above, so "chunk@256" never matched "chunk" (the same
-        # bare-key bug that once reported 0 STL runs; _variant_base() is what
-        # such a test needs). And it should not run: the allocator moves the
-        # numbers well outside smoke-test territory -- on aarch64, chunk@1024 at
-        # 64 threads is 14.53 s under gnu and 12.60 s under gnu-std-alloc (+15%),
-        # and chunk@dyn 56.4 s vs 40.3 s (+40%). Those are results, not
-        # duplicates.
+        # No rule demoting chunk/chunk2/chunk2a on a -std-alloc config to a
+        # light smoke run: the allocator moves the numbers well outside
+        # smoke-test territory -- on aarch64, chunk@1024 at 64 threads is
+        # 14.53 s under gnu and 12.60 s under gnu-std-alloc (+15%), and
+        # chunk@dyn 56.4 s vs 40.3 s (+40%). Those are results, not duplicates.
+        # (Any such test must compare _variant_base(var): `var` carries its
+        # @<size> declination.)
         #
         # 2. Drop the PERF phase of every serial (non-OpenMP) config. They stay
         #    in CHECK, in the validation harnesses and in the seq/omp compare --
@@ -320,8 +316,8 @@ def prepare_oracles(args, check_exes, baseline_check_exe_of):
                 pass
         return n
 
-    # A single oracle from before Sept '26 sits in output_dir itself; nothing
-    # reads it any more, say so once rather than silently keeping it around.
+    # A legacy single oracle (data_tab*) in output_dir itself is read by
+    # nothing; say so once rather than silently keeping it around.
     if not args.skip_check and os.path.isfile(os.path.join(args.output_dir, ORACLE_MARKER)):
         print(f"ℹ️  A legacy single oracle sits in {args.output_dir} (data_tab*): it is no "
               f"longer used -- each config now has its own under oracle/<config>/. "

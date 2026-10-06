@@ -93,10 +93,10 @@ chunk_module_load_first() {
 
 # chunk_newest <tool>: the highest versioned <tool>-N on PATH (g++-16,
 # clang++-22), else <tool> itself -- what a workstation without modules has.
-# A version N.0.0 (no point release yet: clang 23.0.0 in Sept. '26) is
+# A version N.0.0 (no point release yet, e.g. clang 23.0.0) is
 # skipped by default: the calculators do not have it yet, and the CLion
 # `clang` toolchain points at the newest N.x.y (clang-22). So is a GCC
-# snapshot, "(experimental)" (the toolchain PPA's g++-16 16.0.1 of March '26).
+# snapshot, "(experimental)" (e.g. the toolchain PPA's g++-16 16.0.1).
 # CHUNK_CLANGXX / CHUNK_GXX pick another one explicitly.
 chunk_newest() {
     local tool=$1 cand
