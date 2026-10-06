@@ -80,9 +80,9 @@ class Chunk2AConcurrentOps
     /// @param num_compress_value 0 for the first constant, 1 for the second.
     /// @param cst2_ptr The shared array to install when @p num_compress_value
     ///        is 1 (find_or_set_ind_cst_val2's result); ignored for 0.
-    [[nodiscard]] T* try_mark_cst_and_get_old(int num_compress_value, T* cst2_ptr) noexcept
+    [[nodiscard]] T* try_mark_cst_and_get_old(this Derived& self, int num_compress_value, T* cst2_ptr) noexcept
     {
-        T* old = base()->values_load();
+        T* old = self.values_load();
         if (old == Base::get_cst_val1() || Holder::is_cst_val2_ptr(old))
         {
             return nullptr;
@@ -93,20 +93,20 @@ class Chunk2AConcurrentOps
 
         if constexpr (chunk_config::ring_log_debug)
         {
-            const uint32_t chunk_id = ring_chunk_id();
+            const uint32_t chunk_id = self.ring_chunk_id();
             const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
             ring_log(get_tid(), EV_COMPRESS_ATTEMPT, info);
         }
 
-        if (!self()->values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel,
-                                                    std::memory_order_acquire))
+        if (!self.values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel,
+                                                 std::memory_order_acquire))
         {
             return nullptr;
         }
 
         if constexpr (build_config::any_check)
         {
-            T* observed = base()->values_load();
+            T* observed = self.values_load();
             if (observed != new_ptr && observed != Base::get_cst_val1() && !Holder::is_cst_val2_ptr(observed))
             {
                 invariant_failed(std::source_location::current(),
@@ -119,7 +119,7 @@ class Chunk2AConcurrentOps
 
         if constexpr (chunk_config::ring_log_debug)
         {
-            const uint32_t chunk_id = ring_chunk_id();
+            const uint32_t chunk_id = self.ring_chunk_id();
             const uint32_t info     = (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(num_compress_value + 1) << 24U);
             ring_log(get_tid(), EV_CAS_VALUES_TO_CST, info);
         }
@@ -133,7 +133,7 @@ class Chunk2AConcurrentOps
     /// @return true when the swap FAILED (someone else materialised the chunk
     ///         first; the caller recycles @p values_loc), the convention of
     ///         ChunkBase::compare_and_swap_gen().
-    [[nodiscard]] bool compare_and_swap(T* values_loc, bool expected_is_cst_val2) noexcept
+    [[nodiscard]] bool compare_and_swap(this Derived& self, T* values_loc, bool expected_is_cst_val2) noexcept
     {
         // The array a chunk compressed to a second constant reads from IS its
         // values pointer (there is no per-chunk copy of it any more). The CAS
@@ -150,7 +150,7 @@ class Chunk2AConcurrentOps
         {
             if (expected_is_cst_val2)
             {
-                expected = base()->values_load();
+                expected = self.values_load();
                 if (!Holder::is_cst_val2_ptr(expected))
                 {
                     return true; // failed: someone else materialised it first
@@ -166,13 +166,13 @@ class Chunk2AConcurrentOps
             expected = expected_is_cst_val2 ? Holder::m_ptr.data() : Base::get_cst_val1();
         }
 
-        const bool failed = base()->compare_and_swap_gen(values_loc, expected);
+        const bool failed = self.Base::compare_and_swap_gen(values_loc, expected);
 
         if constexpr (build_config::any_check)
         {
             if (!failed)
             {
-                T* current = base()->values_load();
+                T* current = self.values_load();
                 if (current != values_loc && current != Base::get_cst_val1() && !Holder::is_cst_val2_ptr(current))
                 {
                     invariant_failed(std::source_location::current(),
@@ -185,7 +185,7 @@ class Chunk2AConcurrentOps
         }
         if constexpr (chunk_config::ring_log_debug)
         {
-            const uint32_t chunk_id = ring_chunk_id();
+            const uint32_t chunk_id = self.ring_chunk_id();
             const uint32_t info =
                 (chunk_id & 0x00FFFFFFu) | (static_cast<uint32_t>(expected_is_cst_val2 ? 2 : 1) << 24U);
             ring_log(get_tid(), failed ? EV_CAS_VALUES_FAIL : EV_CAS_VALUES_FROM_CST, info);
@@ -196,31 +196,12 @@ class Chunk2AConcurrentOps
   private:
     static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
 
-    /// @brief The chunk, const on a const object (deducing this: one member).
-    template <typename Self>
-    [[nodiscard]] auto* self(this Self&& obj) noexcept
-    {
-        return &static_cast<crtp_cast_t<Self, Derived>&>(obj);
-    }
-    /// @brief The chunk's Chunk2Base / TabCstVal2Holder, const on a const
-    ///        object (deducing this, as self()).
-    template <typename Self>
-    [[nodiscard]] auto* base(this Self&& obj) noexcept
-    {
-        return static_cast<crtp_cast_t<Self, Base>*>(obj.self());
-    }
-    template <typename Self>
-    [[nodiscard]] auto* holder(this Self&& obj) noexcept
-    {
-        return static_cast<crtp_cast_t<Self, Holder>*>(obj.self());
-    }
-
     /// @brief Compact identity of this chunk for the ring log: its address past
     ///        the alignment bits. Callers mask it to 24 bits and pack a tag into
     ///        the top byte. Was written out identically at three sites.
-    [[nodiscard]] uint32_t ring_chunk_id() const noexcept
+    [[nodiscard]] uint32_t ring_chunk_id(this const auto& obj) noexcept
     {
-        return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(self()) >> 4U);
+        return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&obj) >> 4U);
     }
 };
 
@@ -239,9 +220,9 @@ class Chunk2AStateQueries
 
     /// @brief Is the chunk compressed to a second value (its values pointer
     ///        lies in the second-value region; for bool, IS the flag block)?
-    [[nodiscard]] bool is_cst_val2() const noexcept
+    [[nodiscard]] bool is_cst_val2(this const Derived& self) noexcept
     {
-        const T* current_value = base()->values_load();
+        const T* current_value = self.values_load();
         if constexpr (is_not_bool)
         {
             return Holder::is_cst_val2_ptr(current_value); // a range test on the region
@@ -257,7 +238,7 @@ class Chunk2AStateQueries
     ///          loads `values` a second time, and a compressor claiming it in
     ///          between swaps that pointer for a region identifier, which the
     ///          read then indexes as a buffer.
-    [[nodiscard]] bool is_cst_val2_ptr_of(const T* ptr) const noexcept
+    [[nodiscard]] bool is_cst_val2_ptr_of(this const Derived& self, const T* ptr) noexcept
     {
         if constexpr (is_not_bool)
         {
@@ -281,7 +262,7 @@ class Chunk2AStateQueries
      *          value_of_id() is one load of the value table -- the same table
      *          a write of a wide type already reads.
      */
-    [[nodiscard]] T second_value_from_ptr(const T* ptr) const noexcept
+    [[nodiscard]] T second_value_from_ptr(this const Derived& self, const T* ptr) noexcept
     {
         if constexpr (is_not_bool)
         {
@@ -303,11 +284,11 @@ class Chunk2AStateQueries
      *          library, so this is a diagnostic path and the chunk losing its
      *          compressed state costs nothing that matters.
      */
-    void materialise_for_address() noexcept
+    void materialise_for_address(this Derived& self) noexcept
     {
-        if (is_cst_val2())
+        if (self.is_cst_val2())
         {
-            base()->create_value(second_value_of_chunk());
+            self.Base::create_value(self.second_value_of_chunk());
         }
     }
 
@@ -331,62 +312,42 @@ class Chunk2AStateQueries
     }
 
     /// @brief Materialised (owns a buffer, i.e. compressed to neither constant)?
-    [[nodiscard]] bool written() const noexcept
+    [[nodiscard]] bool written(this const Derived& self) noexcept
     {
-        return base()->values_load() != Base::get_cst_val1() && is_not_cst_val2();
+        return self.values_load() != Base::get_cst_val1() && self.is_not_cst_val2();
     }
 
     /// @brief written() reading the values member directly, without the
     ///        atomic load: for a sequential point (the array's stats), where no
     ///        writer or compressor can be publishing.
-    [[nodiscard]] bool written_test() const noexcept
+    [[nodiscard]] bool written_test(this const Derived& self) noexcept
     {
-        return self()->values != Base::get_cst_val1() && is_not_cst_val2();
+        return self.values != Base::get_cst_val1() && self.is_not_cst_val2();
     }
 
   protected:
     /// @brief Compressed to either constant?
-    [[nodiscard]] bool is_cst_val() const noexcept
+    [[nodiscard]] bool is_cst_val(this const Derived& self) noexcept
     {
-        return base()->is_cst_val1() || is_cst_val2();
+        return self.Base::is_cst_val1() || self.is_cst_val2();
     }
 
   private:
     static constexpr bool is_not_bool = !std::is_same_v<T, bool>;
 
-    /// @brief The chunk, const on a const object (deducing this, as in
-    ///        Chunk2AConcurrentOps; every query below is const).
-    template <typename Self>
-    [[nodiscard]] auto* self(this Self&& obj) noexcept
-    {
-        return &static_cast<crtp_cast_t<Self, Derived>&>(obj);
-    }
-    /// @brief The chunk's Chunk2Base / TabCstVal2Holder, const on a const
-    ///        object (deducing this, as self()).
-    template <typename Self>
-    [[nodiscard]] auto* base(this Self&& obj) noexcept
-    {
-        return static_cast<crtp_cast_t<Self, Base>*>(obj.self());
-    }
-    template <typename Self>
-    [[nodiscard]] auto* holder(this Self&& obj) noexcept
-    {
-        return static_cast<crtp_cast_t<Self, Holder>*>(obj.self());
-    }
-
     /// @brief Complement of is_cst_val2().
-    [[nodiscard]] bool is_not_cst_val2() const noexcept
+    [[nodiscard]] bool is_not_cst_val2(this const Derived& self) noexcept
     {
-        return !is_cst_val2();
+        return !self.is_cst_val2();
     }
 
     /// @brief second_value_from_ptr() on this chunk's own values pointer.
     /// @pre is_cst_val2().
-    [[nodiscard]] T second_value_of_chunk() const noexcept
+    [[nodiscard]] T second_value_of_chunk(this const Derived& self) noexcept
     {
         if constexpr (is_not_bool)
         {
-            return Holder::value_of_id(Holder::id_of_ptr(base()->values_load()));
+            return Holder::value_of_id(Holder::id_of_ptr(self.values_load()));
         }
         else
         {

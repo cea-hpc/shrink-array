@@ -703,7 +703,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      *                             second constant (vs the first).
      * @return true on failure (caller owns values_loc), false on success.
      */
-    [[nodiscard]] bool compare_and_swap(T* values_loc, int ind, bool expected_is_cst_val2) noexcept
+    [[nodiscard]] bool compare_and_swap(this Derived& self, T* values_loc, int ind, bool expected_is_cst_val2) noexcept
     {
         if constexpr (is_not_bool)
         {
@@ -712,7 +712,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
             // succeed on the wrong side after a cst_val1 <-> cst_val2 race,
             // installing a buffer whose init does not match the observed state.
             T* expected = expected_is_cst_val2 ? BaseSpec::get_cst_val2(ind) : Base::get_cst_val1();
-            return Base::compare_and_swap_gen(values_loc, expected);
+            return self.Base::compare_and_swap_gen(values_loc, expected);
         }
         else
         {
@@ -730,12 +730,12 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
      *                             second constant (vs the first).
      * @return true on failure (caller owns values_loc), false on success.
      */
-    [[nodiscard]] bool compare_and_swap_bool(T* values_loc, bool expected_is_cst_val2) noexcept
+    [[nodiscard]] bool compare_and_swap_bool(this Derived& self, T* values_loc, bool expected_is_cst_val2) noexcept
     {
         if constexpr (is_bool)
         {
             T* expected = expected_is_cst_val2 ? BaseSpec::get_cst_val2() : Base::get_cst_val1();
-            return Base::compare_and_swap_gen(values_loc, expected);
+            return self.Base::compare_and_swap_gen(values_loc, expected);
         }
         else
         {
@@ -1524,10 +1524,10 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      *         won the race (caller must not free anything); otherwise the
      *         old pointer, which the caller now owns and must free/recycle.
      */
-    T* try_mark_cst_and_get_old(int num_compress_value, int ind)
+    T* try_mark_cst_and_get_old(this auto& self, int num_compress_value, int ind)
     {
         // Load the current pointer (may point to allocated data or to a constant block)
-        T* old = Base::values_load();
+        T* old = self.Base::values_load();
         if constexpr (is_bool)
         {
             // If already compressed, nothing to do
@@ -1538,7 +1538,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
         else
         {
-            if (old == Base::get_cst_val1() || BaseSpec::is_cst_val2(old, ind)) [[unlikely]]
+            if (old == Base::get_cst_val1() || self.BaseSpec::is_cst_val2(old, ind)) [[unlikely]]
             {
                 return nullptr;
             }
@@ -1582,8 +1582,9 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         // Atomic compare-and-swap:
         // Only the thread that successfully replaces 'old' by 'new_ptr'
         // is allowed to free/recycle the old block.
-        CHUNK_CHECK_VALUES_PTR_C(new_ptr, "try_mark.new_ptr", this);
-        if (!values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
+        CHUNK_CHECK_VALUES_PTR_C(new_ptr, "try_mark.new_ptr", &self);
+        if (!self.values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel,
+                                                 std::memory_order_acquire))
             [[unlikely]]
         {
             // Another thread changed 'values' in the meantime.
