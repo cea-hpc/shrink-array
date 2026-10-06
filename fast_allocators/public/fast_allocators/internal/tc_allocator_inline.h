@@ -60,7 +60,7 @@ inline void TCSlab<Links>::alloc_block()
     // after the re-chunk or teardown that gave it back. Left alone, its pages
     // become resident as the elements are handed out.
 
-    *reinterpret_cast<TCSlab**>(data + BlockAllocator - sizeof(void*)) = this;
+    *fast_alloc::start_lifetime_as<TCSlab*>(data + BlockAllocator - sizeof(void*)) = this;
 
     firstFree = free_list_end;
 }
@@ -123,8 +123,8 @@ inline void* TCSlab<Links>::alloc() noexcept
         // needed.
         if (backptr_dropped) [[unlikely]]
         {
-            *reinterpret_cast<TCSlab**>(data + BlockAllocator - sizeof(void*)) = this;
-            backptr_dropped                                                    = false;
+            *fast_alloc::start_lifetime_as<TCSlab*>(data + BlockAllocator - sizeof(void*)) = this;
+            backptr_dropped                                                                 = false;
         }
     }
 

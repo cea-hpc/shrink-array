@@ -61,6 +61,7 @@
 /*---------------------------------------------------------------------------*/
 
 #include "fast_allocators/internal/alloc_config.h"    // constexpr mirrors of STD_ALLOC / DEBUG / _OPENMP
+#include "fast_allocators/internal/lifetime.h"        // fast_alloc::start_lifetime_as(_array)
 #include "fast_allocators/slab_arena.h"               // ArenaKind for op/ctx/value slab routing
 #include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2, for slab_of()'s effective slab geometry
 
@@ -313,7 +314,7 @@ class alignas(64) TCSlab
     [[nodiscard]] static TCSlab* slab_from(const void* ptr, uintptr_t slab_bytes) noexcept
     {
         const char* base = reinterpret_cast<const char*>(reinterpret_cast<uintptr_t>(ptr) & (~(slab_bytes - 1)));
-        return *reinterpret_cast<TCSlab* const*>(base + slab_bytes - sizeof(void*));
+        return *fast_alloc::start_lifetime_as<TCSlab*>(base + slab_bytes - sizeof(void*));
     }
 
 // Declaration-level switch, so it stays a directive: serial builds route slab
@@ -389,8 +390,9 @@ class alignas(64) TCSlab
         }
         else
         {
-            // store the index in the first bytes of the element
-            return *reinterpret_cast<int*>(data + (static_cast<std::ptrdiff_t>(i) * ElementSize));
+            // store the index in the first bytes of the element: a freed
+            // element becomes its link, until alloc() hands it out again
+            return *fast_alloc::start_lifetime_as<index_type>(data + (static_cast<std::ptrdiff_t>(i) * ElementSize));
         }
     }
 
@@ -811,7 +813,7 @@ class TCSlabPool
 
         auto* current_block = block;
 
-        auto* ptr = static_cast<ElementType*>(current_block->alloc());
+        auto* ptr = hand_out(current_block->alloc());
 
         if (current_block->is_full()) [[unlikely]]
         {
@@ -1107,14 +1109,22 @@ class TCSlabPool
 
             slab->reset();
 
-            return static_cast<ElementType*>(slab->alloc());
+            return hand_out(slab->alloc());
         }
 
         auto* slab = new_slab();
 
         insert(block, slab);
 
-        return static_cast<ElementType*>(slab->alloc());
+        return hand_out(slab->alloc());
+    }
+
+    /// @brief An element of a slab, as the ElementSize / sizeof(ElementType)
+    ///        objects the caller gets: their lifetime starts here, bytes kept
+    ///        (the storage is a slab's, or last held a free-list link).
+    [[nodiscard]] ElementType* hand_out(void* raw) const noexcept
+    {
+        return fast_alloc::start_lifetime_as_array<ElementType>(raw, ElementSize / sizeof(ElementType));
     }
 
     /// @brief Re-file @p slab after a free. @see sl_manage_full_empty
@@ -1475,7 +1485,7 @@ class TCAllocatorEB
         if (firstFree != -1)
         {
             elemPtr   = data + (firstFree * ElementSize);
-            firstFree = *(T*)elemPtr;
+            firstFree = *fast_alloc::start_lifetime_as<T>(elemPtr);
         }
         else
         {
@@ -1507,13 +1517,13 @@ class TCAllocatorEB
     {
         if (i == (UsedSize - 1))
         {
-            *(T*)(data + (i * ElementSize)) = -1;
+            *fast_alloc::start_lifetime_as<T>(data + (i * ElementSize)) = -1;
             --UsedSize;
         }
         else
         {
-            *(T*)(data + (i * ElementSize)) = firstFree;
-            firstFree                       = i;
+            *fast_alloc::start_lifetime_as<T>(data + (i * ElementSize)) = static_cast<T>(firstFree);
+            firstFree                                                   = i;
         }
         --nn_ref;
     }
@@ -1545,7 +1555,7 @@ class TCAllocatorEB
     static TCAllocatorEB* addr_to_block(const void* ptr) noexcept
     {
         // this pointer stored at the end of the block
-        return *reinterpret_cast<TCAllocatorEB**>(
+        return *fast_alloc::start_lifetime_as<TCAllocatorEB*>(
             reinterpret_cast<char*>(reinterpret_cast<uintptr_t>(ptr) & size_t(BlockAddrMask)) + UsedBlockSize);
     }
 
@@ -1620,7 +1630,7 @@ class TCAllocatorEB
             data = static_cast<char*>(datal);
         }
 
-        *reinterpret_cast<TCAllocatorEB**>(data + UsedBlockSize) = this;
+        *fast_alloc::start_lifetime_as<TCAllocatorEB*>(data + UsedBlockSize) = this;
 
         firstFree = -1;
 
