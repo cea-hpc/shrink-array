@@ -80,6 +80,8 @@ cmake --build build_dir
 ```
 
 See [compile_all.sh](./scripts/compile_all.sh) for more details.
+
+To install the library and use it from your own CMake project, start with [docs/getting_started.md](docs/getting_started.md) (in French: [docs/getting_started_fr.md](docs/getting_started_fr.md)).
 The library and examples can be compiled with different C++ compilers: g++, OneAPI, aocc, nvhpc, llvm. The compiler must support C++20, which the CMakeLists.txt requires. The `cpp23` branch carries the same library with C++23 required.
 
 ## Examples

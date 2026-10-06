@@ -382,6 +382,19 @@ function(chunk_add_variant target_name variant_define size is_dyn)
     target_compile_definitions(${target_name} PUBLIC ${variant_define})
   endif()
 
+  # HAVE_OMPT changes what the headers do (the phase brackets become no-ops,
+  # the OMPT tool runs them): a consumer must see the same value as the
+  # library. The top-level add_definitions() covers this tree; PUBLIC carries
+  # it to an installed consumer.
+  if (CHUNK_HAVE_OMPT)
+    target_compile_definitions(${target_name} PUBLIC HAVE_OMPT)
+    # The OpenMP runtime finds the tool with dlsym("ompt_start_tool") in the
+    # EXECUTABLE: its symbols must be in the dynamic symbol table, which an
+    # executable does not export by default. Without this the runtime silently
+    # runs without the tool (manage_ompt.h's warning says so at start-up).
+    target_link_options(${target_name} INTERFACE -rdynamic)
+  endif()
+
   # Per-declination geometry: dynamic (runtime size) vs fixed compile-time size.
   if (is_dyn)
     target_compile_definitions(${target_name} PUBLIC CHUNK_DYNAMIC)
@@ -441,9 +454,13 @@ function(chunk_add_variant target_name variant_define size is_dyn)
   # HARDENING / WARNINGS toggles above.
   target_link_libraries(${target_name} PUBLIC chunk_hardening chunk_warnings)
   
-  chunk_require_cxx20(${target_name} PRIVATE)
+  # PUBLIC: the headers are C++20; a consumer gets the standard it needs by
+  # linking the library.
+  chunk_require_cxx20(${target_name} PUBLIC)
+  # PUBLIC: the headers branch on _OPENMP (build_config::use_openmp), so a
+  # consumer must be compiled with OpenMP exactly when the library was.
   if (CHUNK_OMP)
-    target_link_libraries(${target_name} PRIVATE OpenMP::OpenMP_CXX)
+    target_link_libraries(${target_name} PUBLIC OpenMP::OpenMP_CXX)
   endif ()
   # The library and its headers use threads (std::thread, std::call_once:
   # exact_rss.h's RSS sampler, the flush waits, the ring log), OpenMP or not.
@@ -526,8 +543,22 @@ chunk_add_variant(chunk_v1v2_${CHUNK_DEFAULT_SIZE} "CHUNK=1;CHUNK2=1" ${CHUNK_DE
 # Default library: no variant define, default compile-time size (__chunk_size=64), static.
 chunk_add_variant(chunk "" "" FALSE)
 
-# --- Install (vector variant only, as the canonical installed copy) -----
+# --- Install: every variant library, under the chunk:: namespace ---------
+# chunk::chunk_v2a_256, chunk::chunk_v2a_dyn, ..., the bare chunk::chunk_v1 /
+# chunk::chunk_v2 / chunk::chunk_v2a (default static size), chunk::chunk_vector
+# (std::vector mode) and chunk::chunk. Not chunk_v1v2_*: built for
+# examples/multi-mat, without the OMPT tool.
 include(GNUInstallDirs)
+set(_chunk_install_targets chunk chunk_vector)
+foreach(_vname IN LISTS _chunk_variant_names)
+  foreach(_sz IN LISTS CHUNK_STATIC_SIZES)
+    list(APPEND _chunk_install_targets ${_vname}_${_sz})
+  endforeach()
+  if (CHUNK_BUILD_DYN)
+    list(APPEND _chunk_install_targets ${_vname}_dyn)
+  endif()
+  list(APPEND _chunk_install_targets ${_vname})
+endforeach()
 
 # The fast_allocators version chunk-config.cmake asks for (find_dependency).
 # fast_allocators/CMakeLists.txt, configured after this file, checks it against
@@ -535,7 +566,7 @@ include(GNUInstallDirs)
 set(CHUNK_FAST_ALLOCATORS_VERSION 2.1.8)
 set_property(GLOBAL PROPERTY CHUNK_FAST_ALLOCATORS_VERSION ${CHUNK_FAST_ALLOCATORS_VERSION})
 
-install(TARGETS chunk
+install(TARGETS ${_chunk_install_targets}
         EXPORT chunk-targets
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         COMPONENT chunk-runtime

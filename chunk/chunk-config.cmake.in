@@ -1,9 +1,27 @@
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+if(@CHUNK_OMP@)
+  find_dependency(OpenMP)
+endif()
 if(NOT @CHUNK_STD_ALLOC@)
-  include(CMakeFindDependencyMacro)
   find_dependency(fast_allocators @CHUNK_FAST_ALLOCATORS_VERSION@)
 endif()
 
 @PACKAGE_INIT@
+
+# What this installation holds, for a consumer that wants to choose:
+#   chunk_STATIC_SIZES  the compile-time sizes built (chunk::chunk_v2a_<size>)
+#   chunk_DEFAULT_SIZE  the size of the bare chunk::chunk_v1 / _v2 / _v2a
+#   chunk_HAS_DYN       chunk::chunk_v<x>_dyn exist (runtime chunk size)
+#   chunk_OPENMP        built with OpenMP (consumers are compiled with it too)
+#   chunk_OMPT          built with the OMPT tool (no phase brackets needed)
+#   chunk_STD_ALLOC     chunk buffers from the standard allocator
+set(chunk_STATIC_SIZES "@CHUNK_STATIC_SIZES@")
+set(chunk_DEFAULT_SIZE "@CHUNK_DEFAULT_SIZE@")
+set(chunk_HAS_DYN "@CHUNK_BUILD_DYN@")
+set(chunk_OPENMP "@CHUNK_OMP@")
+set(chunk_OMPT "@CHUNK_HAVE_OMPT@")
+set(chunk_STD_ALLOC "@CHUNK_STD_ALLOC@")
 
 include("${CMAKE_CURRENT_LIST_DIR}/chunk-targets.cmake")
 

@@ -95,6 +95,9 @@ int main()
     target_link_libraries(${target} PRIVATE m)
 endfunction()
 
+# The program of docs/getting_started.md (also builds against an install)
+add_subdirectory(getting_started)
+
 # Simple example
 add_subdirectory(simple_array)
 
