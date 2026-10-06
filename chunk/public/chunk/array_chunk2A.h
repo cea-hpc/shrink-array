@@ -132,8 +132,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
 
     // ── The copy family: deep, element by element ────────────────────────────
     //
-    // Copy-assignment used to alias: chunk_list copied, so two arrays over the
-    // same buffers with no contract for it. A copy is a copy now, built on
+    // A copy is a copy, never an alias of the source's buffers: built on
     // ArrayChunkBase::copy_from (sized to the source, every element read
     // through the source's gate and written through this array's proxy);
     // the (first, last) and initializer-list constructors are the same loop
@@ -198,11 +197,10 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @brief Move-assign: this array's own contents are released (clear()),
      *        then it takes @p other's -- chunks, geometry and identity, by the
      *        same exchange as swap(); @p other is left empty and valid.
-     * @details It used to steal @p other's chunk list and nothing else: this
-     *          array's old chunks were destroyed with their buffers still
-     *          queued as compression candidates, the moved chunks kept
-     *          @p other's metadata rows (num_tab), and @p other kept its
-     *          nb_chunk over an empty list. Sequential context, as clear().
+     * @details Not just a steal of @p other's chunk list: this array's old
+     *          chunks are released first (their candidates purged), the moved
+     *          chunks keep their metadata rows (num_tab) with them, and
+     *          @p other is left with nb_chunk 0. Sequential context, as clear().
      * @note noexcept, as the move constructor: a failure here terminates.
      */
     ArrayChunk2A& operator=(ArrayChunk2A&& other) noexcept
@@ -247,14 +245,10 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      * @param count new element count
      * @param val   value every element takes
      *
-     * @note FIX: deleguait a Base2::resize(count, val), qui a la semantique de
-     *       std::vector::resize -- il ne remplit que les elements NOUVEAUX,
-     *       [old_size, count). assign doit remplir [0, count). Un
-     *       `ArrayChunk2A<double> a(5); a.assign(1000, 2.5);` laissait donc
-     *       a[0..4] a zero. Jamais vu parce que le seul test de cette surface,
-     *       --test_stl, etait rejete par le filtre d'arguments du bench.
-     *       ArrayChunkBase::assign fait resize(count) puis remplit tout ; chunk
-     *       et chunk2 l'utilisent deja et passent le test.
+     * @note Fills [0, count), not only the new elements: Base2::resize(count,
+     *       val) has std::vector::resize semantics ([old_size, count) only),
+     *       so this goes through ArrayChunkBase::assign -- resize(count), then
+     *       fill everything -- as chunk and chunk2 do. Covered by --test_stl.
      */
     void assign(ind_type count, T val) // T, not in_t<T>: see ArrayChunkBase::assign
     {
@@ -392,15 +386,11 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      *        as it has chunks.
      * @details The registry is shared by every ArrayChunk2A<T> and counted:
      *          create() registers a user, clear() drops one and frees
-     *          everything with the last. The reference used to be taken in
-     *          rebuild_storage() when the size was not 0, and dropped by every
-     *          clear_core(). So an array built empty and grown by resize()
-     *          took none -- its first compression pass found no registry
-     *          (SIGSEGV in find_or_register) unless another array of the same
-     *          T had been built with a size -- and an empty array's teardown
-     *          dropped a reference it never took, freeing the registry under
-     *          the arrays still alive. One reference per array, taken here and
-     *          given back in clear_core() only if taken.
+     *          everything with the last. One reference per array, taken here
+     *          as soon as it has chunks and given back in clear_core() only if
+     *          taken: an array built empty and grown by resize() needs one too
+     *          (its first compression pass looks the registry up), and an empty
+     *          array's teardown must not drop one it never took.
      */
     void acquire_cst2_registry()
     {

@@ -700,7 +700,7 @@ class Proxy2FastCompPolicy<Derived, T, ChunkType, false> : public ProxySpec2<T, 
      */
     void manage_full_second_value() const
     {
-        // Same fix as manage_full_first_value(): see that function's comment.
+        // Same rule as manage_full_first_value(): see that function's comment.
         if constexpr (build_config::chunk_dynamic)
         {
             shrink_array::set_thread_chunk_size(this->chunk_size());

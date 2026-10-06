@@ -88,12 +88,11 @@ inline ankerl::unordered_dense::map<void*, Rec>& op_live()
 // Standalone rank probe — no PMP_CHUNK dependency to keep include order clean.
 inline int current_rank() noexcept
 {
-    // No directive. The note that used to sit here was right about the problem
-    // -- this is not a template, so an `if constexpr` branch is still compiled
-    // in a serial build where omp_in_parallel() does not exist -- but the
-    // answer is not a directive, it is PMP_CHUNK.h: the shims ARE the serial
-    // build's declarations (false and 0), so the expression compiles either way
-    // and still yields -1 outside a parallel region.
+    // No directive: this is not a template, so an `if constexpr` branch is
+    // still compiled in a serial build where omp_in_parallel() does not exist
+    // -- but PMP_CHUNK.h's shims ARE the serial build's declarations (false
+    // and 0), so the expression compiles either way and still yields -1
+    // outside a parallel region.
     return CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_THREAD_RANK : -1;
 }
 
@@ -231,13 +230,13 @@ inline void on_op_free(void* ptr) noexcept
 }
 
 // ============================================================================
-// BLOCK LEDGER — value-block lifecycle (SEGV hunt on Chunk2 / Chunk2A)
+// BLOCK LEDGER — value-block lifecycle (check builds, Chunk2 / Chunk2A)
 // ----------------------------------------------------------------------------
 // Distinct from the ctx/op ledger above: this one tracks the heap chunk-blocks
 // that flow through allocate_chunk_internal / recup_value / free_block_to_pool.
-// It is the deterministic replacement for the TSan "init_block (memset) <->
-// free_block_to_pool (svfree) on the same address" race: instead of sampling a
-// race, we trip at the FIRST illegal transition with the address and BOTH ranks.
+// It catches deterministically what TSan only samples (an "init_block (memset)
+// <-> free_block_to_pool (svfree) on the same address" race): it trips at the
+// FIRST illegal transition, with the address and BOTH ranks.
 //
 // State per block, with legal transitions (op : from -> to):
 //   b_alloc   : FREE   -> LIVE     fresh block from allocator/svcalloc

@@ -63,15 +63,10 @@ inline constexpr std::size_t kParallelInitMinChunks = 500;
  *            `omp single`, a `master`, a branch), the caller blocks on the
  *            loop's barrier and the others on theirs: measured, it hangs at
  *            4 threads;
- *          - a nested `omp parallel` is worse. The `omp parallel
- *            num_threads(max/2)` v1 used to carry here was serialised by every
- *            default runtime (max_active_levels 1), so it ran on ONE thread
- *            anyway, and with nesting enabled it would have opened N x N/2
- *            threads from an allocation.
- *
- *          v1's form also had a hole at exactly n == 500 (`if (n < 500) ...
- *          else if (n > 500)`), where nothing was initialised at all; one
- *          comparison against one threshold is what replaced it.
+ *          - a nested `omp parallel` is worse: every default runtime
+ *            serialises it (max_active_levels 1), so it runs on ONE thread
+ *            anyway, and with nesting enabled it would open N x N/2 threads
+ *            from an allocation.
  *
  * @tparam C    chunk type
  * @tparam Init callable `void(C&)`

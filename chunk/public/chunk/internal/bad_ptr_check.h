@@ -106,9 +106,8 @@ template <typename T>
 } // namespace shrink_array::bad_ptr
 
 // ─── Call-site macros ────────────────────────────────────────────────────────
-// Kept as macros purely for grep-ability: `grep -rl CHUNK_CHECK_VALUES_PTR
-// chunk/` lists every instrumentation site when the bug is fixed and the
-// scaffolding must be removed.
+// Kept as macros for grep-ability: `grep -rl CHUNK_CHECK_VALUES_PTR chunk/`
+// lists every instrumentation site.
 
 #define CHUNK_CHECK_VALUES_PTR(p, site) ::shrink_array::bad_ptr::check((p), (site))
 #define CHUNK_CHECK_VALUES_PTR_C(p, site, chunk_ptr) ::shrink_array::bad_ptr::check((p), (site), (chunk_ptr))

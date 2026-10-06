@@ -332,8 +332,8 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      */
     void mark_for_compression_if_needed_with_value(in_t<T> old_value, in_t<T> new_value) const
     {
-        // Unconditional: mark_for_compression_impl carries the race check and
-        // the slow-path fallback, which must run on every write.
+        // Unconditional: mark_for_compression_impl carries the race check, which
+        // must run on every write.
         mark_for_compression_impl(old_value, new_value);
     }
 
@@ -452,8 +452,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
         // Unconditional, in every build, on EVERY write -- not only under
         // CHUNK_STATS, nor only on zero-transitions: mark_for_compression_core
         // carries the data-race check (read_values() != expected_in_memory) and
-        // the slow-path fallback (is_slow_path_active()), and already tests
-        // should_mark_for_compression itself.
+        // already tests should_mark_for_compression itself.
         mark_for_compression_core(old_value, new_value, new_value);
     }
 

@@ -45,13 +45,12 @@ using VectorTuple4bChunkCharP = std::vector<std::tuple<TCHUNK<T>*, char*, char*,
 template <template <typename> class TCHUNK, typename T>
 struct ValueToChunk2PMapHelper
 {
-    // 4-element tuple (was 3): the 4th is the chunk's OWN geometry, captured at
-    // enqueue by push_to_compress_list -- same fix as Chunk v1 and Chunk2A (see
-    // TChunkComp / TChunk2AComp below). Chunk2's compress() and
-    // fill_list_to_compress_impl() scanned with alloc_chunk_count() (the
-    // CONSUMING thread's ambient size); after a rechunk that overflows a buffer
-    // allocated at another geometry -- ASan heap-buffer-overflow reading 4 bytes
-    // past a 256-byte / 64-int block, from finalize_parallel_phase_after_flush.
+    // 4-element tuple: the 4th is the chunk's OWN geometry, captured at
+    // enqueue by push_to_compress_list (as for Chunk v1 and Chunk2A, see
+    // TChunkComp / TChunk2AComp below). compress() and
+    // fill_list_to_compress_impl() scan with it, not with alloc_chunk_count()
+    // (the CONSUMING thread's ambient size), which after a rechunk overflows a
+    // buffer allocated at another geometry.
     // Keyed by the second value, ordered by ValueLess (value_less.h).
     using type = std::map<T, std::shared_ptr<VectorTuple4ChunkInt2<TCHUNK, T>>, ValueLess<T>>;
 };
@@ -74,10 +73,9 @@ using TChunk2AComp = VectorTuple4ChunkInt2<TCHUNK, T>;
 
 template <template <typename> class TCHUNK, typename T>
 // 4-element: the 4th is the chunk's OWN geometry, captured at enqueue by
-// push_to_compress_list. Chunk v1's compress() used to scan with
+// push_to_compress_list. compress() scans with it, not with
 // alloc_chunk_count() (the CONSUMING thread's ambient size), which overflows a
-// buffer allocated at a different geometry -- ASan heap-buffer-overflow at
-// 512 bytes / 64 doubles under a live rechunk.
+// buffer allocated at a different geometry under a live rechunk.
 using TChunkComp = VectorTuple4ChunkInt2<TCHUNK, T>;
 
 /**

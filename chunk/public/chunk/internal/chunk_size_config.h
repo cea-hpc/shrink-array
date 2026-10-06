@@ -5,13 +5,8 @@
  * Licensed under the Apache License, Version 2.0.
  */
 
-// Compile-time chunk geometry. Formerly three runtime globals
-// (extern unsigned int __chunk_size/__decalage_chunk/__modulo_chunk defined in
-// chunk_std.cpp and set once via ParamChunk::set_chunk_size). All consumers only
-// ever set them to a compile-time constant (constexpr chunk_size = 64 in every
-// example), so making them constexpr removes the extern/.cpp, folds `i >>
-// __decalage_chunk` and `i & __modulo_chunk` into immediate shifts/masks on the
-// hot path, and keeps a single shared value.
+// Compile-time chunk geometry: constexpr, so `i >> __decalage_chunk` and
+// `i & __modulo_chunk` fold into immediate shifts/masks on the hot path.
 //
 // Override at build time:  cmake -DCHUNK_SIZE=128  (must be a power of two).
 

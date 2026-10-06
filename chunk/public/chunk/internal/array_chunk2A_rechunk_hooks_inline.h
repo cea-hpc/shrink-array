@@ -39,9 +39,9 @@ void RechunkHooks2A<Derived, true>::rechunk_drop_candidates()
     // key for its candidate store. See RechunkSupport::rechunk_to for why the
     // drop must happen at the owning geometry.
     //
-    // COMPRESS them first (Sept '26): a chunk queued by the write that made it
-    // uniform, dropped here, stayed materialised through the rebuild (copied,
-    // not folded) and was never re-queued. compress() is the variant's own,
+    // COMPRESS them first: a chunk queued by the write that made it uniform,
+    // dropped here, would stay materialised through the rebuild (copied, not
+    // folded) and never be re-queued. compress() is the variant's own,
     // guarded against an already-compressed chunk; the geometry is the array's
     // current one, and each entry carries its own element count.
     if constexpr (chunk_config::use_fast_block_compression)

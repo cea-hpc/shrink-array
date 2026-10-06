@@ -44,14 +44,6 @@ void Proxy2Base<Derived, T, ChunkType>::mark_for_compression_core(in_t<T> old_va
     {
         add_to_compression_list();
     }
-
-    // NOTE: a dead check was removed here. It consulted
-    // WriteCompressSyncPolicy<Derived>::is_slow_path_active() — but
-    // active_slow_path is only ever set by the Chunk v1 proxy
-    // (proxy_inline.h, activate_slow_path before make_block_compression), and
-    // these Policy statics are per template instantiation: the v2/v2A
-    // instantiations reaching this code NEVER activate it, so the predicate
-    // was constant-false and cost one atomic load + branch on every write.
 }
 
 } // namespace shrink_array

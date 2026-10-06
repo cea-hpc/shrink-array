@@ -128,7 +128,7 @@ inline std::size_t reclaim_min_empty_slabs() noexcept
         // The whole value must be a non-negative integer (std::from_chars:
         // a '-', trailing text or an overflow is refused, with a warning, and
         // 0 kept) -- the rule of chunk/internal/env_parse.h, which this
-        // library cannot include. strtol's result used to be clamped silently.
+        // library cannot include.
         const char* env = std::getenv("CHUNK_RECLAIM_MIN_SLABS");
         if (env == nullptr || env[0] == '\0')
         {

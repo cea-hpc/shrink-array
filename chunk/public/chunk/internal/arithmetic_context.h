@@ -99,17 +99,15 @@ class BaseArithmeticContext
     int         num_tab;
     const void* ptr_on_array;
 
-    // fw14 (dyn UAF fix): chunk geometry resolved AT ENQUEUE, while the source
-    // array is guaranteed alive. Under DynamicChunkSize the proxy's chunk_size()
-    // dereferences ptr_on_array (the ArrayChunk); but a deferred op can be
+    // Chunk geometry resolved AT ENQUEUE, while the source array is
+    // guaranteed alive. Under DynamicChunkSize the proxy's chunk_size()
+    // dereferences ptr_on_array (the ArrayChunk), but a deferred op can be
     // replayed (erase_own_rank_op / flush -> write_body) AFTER that array has
-    // been destroyed, so the late chunk_size() was a use-after-free — a SIGSEGV
-    // under std-alloc (page actually freed) that fast-alloc masked (immortal
-    // arenas keep the page mapped) and static builds masked (size folds to a
-    // compile-time constant, ptr not really loaded). Freezing the value here and
-    // reading it back on the replay path removes the late dereference entirely.
-    // Geometry is immutable after array construction, so the frozen value is
-    // exactly what a live re-read would have returned.
+    // been destroyed: a late chunk_size() would be a use-after-free (SIGSEGV
+    // under std-alloc; masked by fast-alloc's immortal arenas and by static
+    // builds, where the size is a constant). Geometry is immutable after array
+    // construction, so the frozen value is exactly what a live re-read would
+    // return.
     unsigned int chunk_size_frozen = 0;
     /// @brief The array's slab-affinity key, frozen with the geometry and for the
     ///        same reason; replayed into the thread's allocation key.

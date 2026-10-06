@@ -255,14 +255,14 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
 
         log.end();
 
-        // Preserve concurrent re-enqueues: same fix as flush_chunk_all_ranks.
+        // Preserve concurrent re-enqueues, as flush_chunk_all_ranks does.
         // The batch was swapped out; ops enqueued into *op_map after the swap
         // are un-replayed pending writes. clear()+erase would drop them
         // (lost write + counter drift). Erase the entry only when empty;
         // otherwise keep it AND put the chunk back into the live set: the set
         // is the only thing flush_deferred walks, so a chunk left out of it
-        // was never flushed again, and flush_all_deferred's storage.destroy()
-        // discarded its ops.
+        // would never be flushed again, and flush_all_deferred's
+        // storage.destroy() would discard its ops.
         if (op_map->empty())
         {
             (void)thread_map.erase(it_chunk);

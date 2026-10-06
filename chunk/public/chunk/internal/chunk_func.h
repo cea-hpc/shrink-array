@@ -27,13 +27,10 @@
 // list access is a dependent name.
 //
 // They are defined `inline` HERE, and that is what every caller instantiates
-// from. chunk_std.cpp used to carry seven explicit instantiations of
-// load_balance_list_block_free_thr<T> to hand out the symbol; they were dead
-// weight (the list did not even cover float or unsigned char, which the library
-// supports) and have been removed. If a caller ever sees only the forward
-// declaration in manager_chunk_inline.h and not this definition, the fix is to
-// make this header visible there -- not to re-add an instantiation list that
-// has to be kept in step with the element types by hand.
+// from -- no explicit instantiation list. If a caller ever sees only the
+// forward declaration in manager_chunk_inline.h and not this definition, the
+// fix is to make this header visible there -- not to add an instantiation list
+// that has to be kept in step with the element types by hand.
 
 namespace shrink_array
 {

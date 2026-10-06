@@ -104,10 +104,8 @@ void ChunkPoolParallelInterface<false, AllT>::release_chunk_pools()
 template struct ChunkPoolParallelInterface<build_config::use_openmp, AllTypeChunk>;
 
 // --- Build-agnostic free functions over the policy -----------------------
-// Thin forwarders, defined in EVERY build. Previously delete_chunk_allocator()
-// and need_load_balance_list_block_free() were declared in chunk_std.h for both
-// models but defined for one only; calling either from the other build was an
-// undefined reference. Now every one of them exists everywhere, doing nothing
+// Thin forwarders, defined in EVERY build, so delete_chunk_allocator() and
+// need_load_balance_list_block_free() link in both models -- doing nothing
 // where there is nothing to do.
 
 using chunk_pools = ChunkPoolParallelInterface<>;

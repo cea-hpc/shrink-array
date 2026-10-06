@@ -24,8 +24,8 @@ namespace shrink_array
  * @details `static_assert(false)` in such a branch is ill-formed before C++23
  *          (P2593); `static_assert(dependent_false_v<T>, "...")` fires only
  *          when the branch is instantiated -- a member meant for bool called on
- *          a Chunk2<double>, say -- turning a call that used to be a silent
- *          no-op in release (an abort in debug only) into a compile error.
+ *          a Chunk2<double>, say -- turning what would be a silent no-op in
+ *          release (an abort in debug only) into a compile error.
  */
 template <typename...>
 inline constexpr bool dependent_false_v = false;

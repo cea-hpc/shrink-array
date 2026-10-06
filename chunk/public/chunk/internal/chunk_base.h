@@ -42,7 +42,7 @@
 #include "fast_allocators/internal/svalloc.h"           // svcalloc_align, svfree
 #include "chunk/config.h"                               // build_config::use_openmp, chunk_config::stats
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_IN_PARALLEL_REGION
-#include "chunk/ring_log_debug.h"                       // SEGV hunt: EV_VALUE_ALLOC/FREE to prove aliasing
+#include "chunk/ring_log_debug.h"                       // EV_VALUE_ALLOC/FREE (debug ring log)
 #include "chunk/internal/global_check.h"                // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
 #include "chunk/internal/invariant_check.h"             // INVARIANT_FAILED
 #include "chunk/internal/deferred_op_pool.h"            // DeferredOperationBase, DeferredOpDeleter

@@ -17,8 +17,8 @@
 #pragma once
 
 /// @file singleton.h
-/// @brief The chunk library's name for fast_allocators' ::Singleton. One
-///        implementation for both: it used to be a copy, kept in step by hand.
+/// @brief The chunk library's name for fast_allocators' ::Singleton: one
+///        implementation for both.
 
 #include "fast_allocators/internal/singleton.h" // Singleton
 

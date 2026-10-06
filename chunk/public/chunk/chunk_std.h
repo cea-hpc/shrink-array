@@ -68,8 +68,7 @@ class AllTypeChunk;
  *                 true> declares clear_list_block_free_thr() and
  *                 delete_list_block_chunk_free_itself(), <Derived, false>
  *                 declares delete_chunk_allocator(), and neither declares the
- *                 other's. That asymmetry is what the \#ifdef _OPENMP in
- *                 chunk_std.cpp used to paper over.
+ *                 other's.
  *
  * @note EVERY verb exists in BOTH specialisations, so a caller needs no build
  *       guard of its own. The ones with nothing to do in a given model are
@@ -129,10 +128,8 @@ struct ChunkPoolParallelInterface<false, AllT>
 extern void destroy_block_chunk();
 
 // Build-agnostic free functions over the policy above. Declared -- and defined,
-// in chunk_std.cpp -- in EVERY build, which is the point: delete_chunk_allocator()
-// and need_load_balance_list_block_free() used to be declared here
-// unconditionally but defined in one model only, so calling either from the
-// other build was a link error waiting to happen.
+// in chunk_std.cpp -- in EVERY build, which is the point: calling any of them
+// links in both models.
 extern void delete_chunk_allocator();
 /// @brief ChunkPoolParallelInterface<>::clear_all_list_block_free_thr() of this build.
 extern void clear_all_list_block_free_thr();
@@ -147,11 +144,11 @@ extern bool need_load_balance_list_block_free();
 /**
  * @brief Let go of the chunk reuse pools, whichever thread model this build is.
  *
- * @details The teardown halves are not the same verb in the two models, so a
- *          caller used to have to know which it was in: OpenMP releases the
- *          per-rank lists (clear_all_list_block_free_thr() then
- *          delete_list_block_chunk_free_itself()), a serial build deletes its
- *          single allocator (delete_chunk_allocator()). This does the right one.
+ * @details The teardown halves are not the same verb in the two models:
+ *          OpenMP releases the per-rank lists (clear_all_list_block_free_thr()
+ *          then delete_list_block_chunk_free_itself()), a serial build deletes
+ *          its single allocator (delete_chunk_allocator()). This does the right
+ *          one, so the caller need not know which.
  * @note Pair it with destroy_block_chunk(), which is build-agnostic already.
  */
 extern void release_chunk_pools();
@@ -222,11 +219,10 @@ class ChunkCounterPolicy
  * @details A serial build has no thread ranks, no CAS-stealing window and no
  *          per-thread free-lists, so the members below have no meaning there.
  *          Splitting them onto the build_config::use_openmp axis -- the same
- *          technique used by ChunkDeferredOpsPolicy and
- *          CompressionManagerOmpPolicy -- replaces the preprocessor blocks that
- *          used to fence them off, and lets each mode declare exactly the
- *          clearing verb it actually has: clear_st(int) here, clear_st() in the
- *          serial specialisation.
+ *          technique as ChunkDeferredOpsPolicy and CompressionManagerOmpPolicy
+ *          -- needs no preprocessor fence and lets each mode declare exactly
+ *          the clearing verb it actually has: clear_st(int) here, clear_st() in
+ *          the serial specialisation.
  *
  *          Sits between ChunkFastCompPolicy and ChunkBase in the inheritance
  *          chain, so Chunk inherits both policies through one path.
@@ -659,9 +655,6 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     // the queue consumer's per-chunk step (compress_chunk_to_compress above)
     // and needs a thread rank, so it belongs on the OpenMP surface with
     // clear_st(int, unsigned) rather than behind a preprocessor guard here.
-    // An OMPT-flavoured overload compress(int, bool, unsigned) used to sit
-    // next to it; nothing called it and its fast-comp branch ended in
-    // std::abort(), so it is gone.
     constexpr static T zero{};
 
     /**

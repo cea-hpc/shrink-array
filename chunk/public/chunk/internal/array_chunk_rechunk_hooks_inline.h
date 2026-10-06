@@ -36,8 +36,8 @@ namespace shrink_array
 template <typename Derived>
 void RechunkHooks<Derived, true>::rechunk_drop_candidates()
 {
-    // COMPRESS them first (Sept '26) -- see RechunkHooks2A: a candidate dropped
-    // here stayed materialised through the rebuild and was never re-queued.
+    // COMPRESS them first -- see RechunkHooks2A: a candidate dropped here
+    // would stay materialised through the rebuild and never be re-queued.
     // v1's compress() guards the already-compressed chunk (the zero sentinel).
     if constexpr (chunk_config::use_fast_block_compression)
     {

@@ -191,11 +191,6 @@ template <typename PROX, bool Enabled = build_config::use_openmp>
 class WriteCompressSyncPolicy
 {
   public:
-    // The v1 "slow-path latch" (active_slow_path / is_slow_path_active /
-    // activate_slow_path) was removed: it was raised on the Proxy<T>
-    // instantiation and tested on the Chunk<T> one -- two statics, the read one
-    // never written -- so its null-sentinel branch was unreachable.
-
     /// @brief One writer flag, padded to its own cache line: the chunk the
     ///        rank is writing, or nullptr.
     /// @details Per-thread rather than a shared counter: an
@@ -204,12 +199,12 @@ class WriteCompressSyncPolicy
     ///          for its own line. The scan cost is pushed to the rare reader,
     ///          any_thread_writing().
     ///
-    ///          A pointer rather than a bool (Sept '26), same store, same line:
-    ///          it lets the compressor's writer window be "no writer on a chunk
-    ///          I MARKED" (any_thread_writing_on_marked) instead of "no writer
-    ///          anywhere" -- the latter needed every writer steered away for the
-    ///          window to open at 64 threads, and that steering was 350 000
-    ///          waits of ~40 yields per reference run. "Non-null" keeps the
+    ///          A pointer rather than a bool, same store, same line: it lets
+    ///          the compressor's writer window be "no writer on a chunk I
+    ///          MARKED" (any_thread_writing_on_marked) instead of "no writer
+    ///          anywhere" -- the latter needs every writer steered away for the
+    ///          window to open at 64 threads (350 000 waits of ~40 yields per
+    ///          reference run). "Non-null" keeps the
     ///          flag's other meaning, an enqueue in progress on this rank, for
     ///          the flushers (is_thread_writing).
     struct alignas(128) WritingFlag

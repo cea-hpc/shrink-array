@@ -29,13 +29,11 @@
  *          compiles to nothing and the flush loops are behind
  *          `if constexpr (build_config::use_openmp)`.
  *
- *          The bitset used to live in ArrayChunkBase, allocated unconditionally:
- *          a serial array still paid one heap allocation plus 128 bytes per 64
- *          chunks that nothing ever read. Splitting it into
- *          DirtyBitsetSupport<Derived, use_openmp> keeps the OpenMP version
- *          byte-for-byte identical and makes the serial version an empty class
- *          (no member, no allocation, zero bytes via the empty-base
- *          optimisation) whose verbs are no-ops the optimiser deletes.
+ *          Splitting it into DirtyBitsetSupport<Derived, use_openmp> makes the
+ *          serial version an empty class (no member, no allocation, zero bytes
+ *          via the empty-base optimisation) whose verbs are no-ops the
+ *          optimiser deletes -- a serial array would otherwise pay one heap
+ *          allocation plus 128 bytes per 64 chunks that nothing ever reads.
  *
  * @see ArrayChunkBase::sync_chunk — the sole hot-path reader of the bits
  */

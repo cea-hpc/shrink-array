@@ -356,11 +356,9 @@ static_assert(std::is_same_v<std::tuple_element_t<1, StaticConstArray::Ladder>, 
 /// @brief The 8-byte bucket, the most common size, by name.
 /// @details IS the ladder's bucket 1 (sizes 5..8), not a pool of its own:
 ///          ::FixedSizeAllocator reaches it directly, skipping the size
-///          comparisons of the ladder walk. It used to be a separate global --
-///          a second 8-byte pool priming a second 1 MiB slab, and an ordinary
-///          static destroyed at exit in an unspecified order although it backs
-///          the same TypeAllocator allocations the ladder is kept immortal for.
-///          Immortal now, with the ladder. Same lock either way
+///          comparisons of the ladder walk. One pool, not a second 8-byte
+///          global (with its own 1 MiB slab and an unspecified destruction
+///          order): immortal, with the ladder. Same lock either way
 ///          (critical(fast_alloc_ladder)).
 /// @note Inline, defined after StaticConstArray in this header, which every
 ///       user includes: partially-ordered initialisation sets up `buckets`
@@ -390,9 +388,7 @@ inline TCTypeAllocatorEBC<24, SIZE_BLOCK>& Allocator24 = *(new TCTypeAllocatorEB
  *          StaticConstArray::clearInfoFreeElt() runs at a quiescent point.
  *
  *          Nothing in shrink-array calls it: it is fast_allocators' entry point
- *          for code outside the library. Until Oct '26 every member was
- *          private -- it could not be called at all, and nothing noticed.
- *          blk_allocator_validation is what runs it now.
+ *          for code outside the library, exercised by blk_allocator_validation.
  */
 struct BlkAllocator : public StaticConstArray
 {
@@ -406,7 +402,7 @@ struct BlkAllocator : public StaticConstArray
         else
         {
             // Compared in size_t BEFORE narrowing: getBlockAlloc() takes an
-            // unsigned int, and 4 GiB + 64 used to reach it as 64 -- a 64-byte
+            // unsigned int, and 4 GiB + 64 would reach it as 64 -- a 64-byte
             // block for a 4 GiB request.
             void* ptr = size <= MAX_CONST_BLOCK_SIZE ? getBlockAlloc(static_cast<unsigned int>(size)) : nullptr;
 
