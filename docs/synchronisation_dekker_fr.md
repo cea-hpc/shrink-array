@@ -1,15 +1,15 @@
 # Synchronisation sans verrou : le protocole de Dekker dans shrink-array
 
-*English version: [`synchronisation_dekker.md`](synchronisation_dekker.md).*
+> English version: [synchronisation_dekker.md](synchronisation_dekker.md).
 
-*État : début octobre 2026. Ce document explique comment les écrivains, les compresseurs,
-les vidages d'écritures différées et les lecteurs s'excluent mutuellement **sans verrou sur le
-chemin d'écriture**. La machinerie d'ensemble (proxys, écritures différées, compression en
-vol) est décrite dans [`algo_chunk2_fr.md`](algo_chunk2_fr.md) §7 et §8. Les noms cités sont
-ceux de l'arbre actuel ; en cas de doute, c'est le code qui fait foi, et en particulier les
-commentaires de `internal/write_compress_sync_policy.h`, qui portent la preuve d'ordonnancement.*
+> État : début octobre 2026. Ce document explique comment les écrivains, les compresseurs,
+> les vidages d'écritures différées et les lecteurs s'excluent mutuellement **sans verrou sur le
+> chemin d'écriture**. La machinerie d'ensemble (proxys, écritures différées, compression en
+> vol) est décrite dans [algo_chunk2_fr.md](algo_chunk2_fr.md) §7 et §8. Les noms cités sont
+> ceux de l'arbre actuel ; en cas de doute, c'est le code qui fait foi, et en particulier les
+> commentaires de `internal/write_compress_sync_policy.h`, qui portent la preuve d'ordonnancement.
 
----
+***
 
 ## 1. Le problème à résoudre
 

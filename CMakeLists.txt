@@ -730,4 +730,12 @@ if(BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_docs
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_docs.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_docs PROPERTY LABELS "validation;docs")
+    # The Doxygen documentation builds without a warning (scripts/check_doxygen.py),
+    # when Doxygen is installed: find_package(Doxygen) above, for the doc target.
+    if (DOXYGEN_FOUND)
+        add_test(NAME check_doxygen
+                 COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_doxygen.py
+                         ${PROJECT_SOURCE_DIR} ${DOXYGEN_EXECUTABLE})
+        set_property(TEST check_doxygen PROPERTY LABELS docs)
+    endif()
 endif()

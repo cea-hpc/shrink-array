@@ -1,14 +1,14 @@
-# The `ArrayChunk2A` algorithm (Chunk2A)
+# The ArrayChunk2A algorithm (Chunk2A)
 
-*French version: [`algo_chunk2a_fr.md`](algo_chunk2a_fr.md).*
+> French version: [algo_chunk2a_fr.md](algo_chunk2a_fr.md).
 
-*Status: end of September 2026. This document describes what Chunk2A does **differently** from Chunk2;
-the common machinery (proxies, deferred writes, read barrier, in-flight compression,
-range operations) is described in [`algo_chunk2.md`](algo_chunk2.md), and the
-dynamic geometry in [`adaptive_rechunk.md`](adaptive_rechunk.md). When in
-doubt, the code is the reference.*
+> Status: end of September 2026. This document describes what Chunk2A does **differently** from Chunk2;
+> the common machinery (proxies, deferred writes, read barrier, in-flight compression,
+> range operations) is described in [algo_chunk2.md](algo_chunk2.md), and the
+> dynamic geometry in [adaptive_rechunk.md](adaptive_rechunk.md). When in
+> doubt, the code is the reference.
 
----
+***
 
 ## 1. What Chunk2A compresses
 
@@ -49,7 +49,7 @@ by memory rather than by write throughput.
 
 These rows make Chunk2A the variant with the most expensive metadata per chunk (16 bytes
 of object, plus 2 bytes and `sizeof(T)`), and therefore the one that gains the most from growing its chunks:
-see [`adaptive_rechunk.md`](adaptive_rechunk.md).
+see [adaptive_rechunk.md](adaptive_rechunk.md).
 
 When a storage is destroyed (end of life of the array, or old storage of a rechunk), its
 three rows are **freed** (`Proxy2A::clear_tab_is_int`), not just emptied. Until
@@ -116,7 +116,7 @@ compression level, `CHUNK2A_COMPRESS_LEVEL=0`, in `chunk2A_def.h`).
 
 ## 6. The write
 
-The write path is the one of Chunk2 (§6 of [`algo_chunk2.md`](algo_chunk2.md)), with
+The write path is the one of Chunk2 (§6 of [algo_chunk2.md](algo_chunk2.md)), with
 one difference: the second value to compare against is **the chunk's**, read from its metadata
 row, and not the array's. Writing into a compressed chunk a value different
 from its constant materialises it, pre-filled with **this constant**.
@@ -128,7 +128,7 @@ the resynchronisation invariant it imposed on each reallocation of the rows.
 
 ## 7. What Chunk2A does differently during a rechunk
 
-The general sequence is the one in [`adaptive_rechunk.md`](adaptive_rechunk.md) §4, with
+The general sequence is the one in [adaptive_rechunk.md](adaptive_rechunk.md) §4, with
 three specifics:
 
 - **the advisor counts as compressible** any uniform sub-block, at any value,

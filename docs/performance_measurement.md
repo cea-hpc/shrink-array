@@ -1,12 +1,12 @@
 # Measuring memory and time without fooling yourself
 
-*French version: [`mesures_performance_fr.md`](mesures_performance_fr.md).*
+> French version: [mesures_performance_fr.md](mesures_performance_fr.md).
 
-*Status: end of September 2026. This document gathers what the September 2026 campaigns on
-Grace (aarch64, 64 KiB pages, RHEL 9.6, 64 threads) taught us, often the hard way:
-several conclusions had to be withdrawn because the measuring instrument was lying.*
+> Status: end of September 2026. This document gathers what the September 2026 campaigns on
+> Grace (aarch64, 64 KiB pages, RHEL 9.6, 64 threads) taught us, often the hard way:
+> several conclusions had to be withdrawn because the measuring instrument was lying.
 
----
+***
 
 ## 1. Memory
 
@@ -98,7 +98,7 @@ in fresh directories with the same configuration, alternate, and be wary.
 | maximum size of a coarsening step | `CHUNK_RECHUNK_MAX_COARSEN=<n>` |
 | scheduling of the rebuild | `CHUNK_RECHUNK_SCHEDULE=…` |
 
-The full list is in [`environment_variables.md`](environment_variables.md).
+The full list is in [environment_variables.md](environment_variables.md).
 Beware: `CHUNK_ADVISOR_MIN_GAIN_MB=1000000` no longer blocks coarsenings since the
 "gain per cost" criterion; use `CHUNK_RECHUNK_DRY_RUN=1`.
 

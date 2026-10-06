@@ -1,14 +1,14 @@
 # Dynamic geometry and adaptive rechunk
 
-*French version: [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md).*
+> French version: [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
-*Status: end of September 2026, for the three variants (Chunk, Chunk2, Chunk2A). The figures
-come from `shrink_bench` on Grace (64 threads, `OMP_PROC_BIND=close`,
-`OMP_PLACES=cores`), with memory measured exactly and times compared on the same
-binary: see [`performance_measurement.md`](performance_measurement.md). When in doubt,
-the code is the reference.*
+> Status: end of September 2026, for the three variants (Chunk, Chunk2, Chunk2A). The figures
+> come from `shrink_bench` on Grace (64 threads, `OMP_PROC_BIND=close`,
+> `OMP_PLACES=cores`), with memory measured exactly and times compared on the same
+> binary: see [performance_measurement.md](performance_measurement.md). When in doubt,
+> the code is the reference.
 
----
+***
 
 ## 1. The principle
 

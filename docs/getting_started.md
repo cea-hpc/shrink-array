@@ -1,10 +1,10 @@
 # Getting started with shrink-array
 
-*October 2026. This guide is about **using** the library. How it works inside is described
-in the design documents, indexed in [`README.md`](README.md). A French version of
-this guide is [`getting_started_fr.md`](getting_started_fr.md).*
+> October 2026. This guide is about **using** the library. How it works inside is described
+> in the design documents, indexed in [README.md](README.md). A French version of
+> this guide is [getting_started_fr.md](getting_started_fr.md).
 
----
+***
 
 ## 1. What it is
 
@@ -31,7 +31,7 @@ Three variants, chosen when you link:
 
 Chunk2A compresses the most and is the one to try first. Chunk2 has lighter metadata when
 the data has a single dominant non-zero value, and Chunk (v1) is the simplest when only zeros
-matter. [`variants.md`](variants.md) compares them on a real workload.
+matter. [variants.md](variants.md) compares them on a real workload.
 
 ## 2. Install
 
@@ -227,15 +227,15 @@ of cores)` threads. A program that runs more threads than cores sets
 - **Chunk2 compresses only to its declared second value.** Without `set_second_value()`, a
   Chunk2 array compresses to zero only.
 - **Measure memory with the right tool.** `VmRSS` lags behind on many threads; see
-  [`performance_measurement.md`](performance_measurement.md).
+  [performance_measurement.md](performance_measurement.md).
 
 ## 7. Going further
 
 | for… | read |
 |---|---|
-| the full container interface | the main [`README.md`](../README.md), and the Doxygen documentation (`cmake --build build --target doc`) |
-| choosing a variant on your data | [`variants.md`](variants.md), and `examples/variant_compare` |
-| letting the chunk size adapt at run time | [`adaptive_rechunk.md`](adaptive_rechunk.md) (`_dyn` libraries) |
-| every tuning variable and build option | [`environment_variables.md`](environment_variables.md) |
-| how it works inside | [`algo_chunk2.md`](algo_chunk2.md), [`synchronisation_dekker.md`](synchronisation_dekker.md) |
+| the full container interface | the main [README.md](../README.md), and the Doxygen documentation (`cmake --build build --target doc`) |
+| choosing a variant on your data | [variants.md](variants.md), and `examples/variant_compare` |
+| letting the chunk size adapt at run time | [adaptive_rechunk.md](adaptive_rechunk.md) (`_dyn` libraries) |
+| every tuning variable and build option | [environment_variables.md](environment_variables.md) |
+| how it works inside | [algo_chunk2.md](algo_chunk2.md), [synchronisation_dekker.md](synchronisation_dekker.md) |
 | a larger example: multi-material fields, loops written once for both containers | `examples/multi-mat` |

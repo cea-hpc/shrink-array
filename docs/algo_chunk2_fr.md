@@ -1,17 +1,17 @@
-# L'algorithme d'`ArrayChunk2`
+# L'algorithme d'ArrayChunk2
 
-*English version: [`algo_chunk2.md`](algo_chunk2.md).*
+> English version: [algo_chunk2.md](algo_chunk2.md).
 
-*État du code : début octobre 2026. La géométrie dynamique est détaillée dans
-[`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md), la synchronisation sans verrou entre
-écrivains, compresseurs et lecteurs dans [`synchronisation_dekker_fr.md`](synchronisation_dekker_fr.md),
-la méthode de mesure dans [`mesures_performance_fr.md`](mesures_performance_fr.md), et l'index
-de la documentation dans [`README.md`](README.md). Ce document remplace l'ancienne présentation, qui décrivait
-une version antérieure (verrous par élément, `__decalage_chunk` global, taille de chunk fixée
-à 64, parallélisation « sans solution satisfaisante »). Les noms de fonctions et de fichiers
-cités sont ceux de l'arbre actuel ; en cas de doute, c'est le code qui fait foi.*
+> État du code : début octobre 2026. La géométrie dynamique est détaillée dans
+> [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md), la synchronisation sans verrou entre
+> écrivains, compresseurs et lecteurs dans [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md),
+> la méthode de mesure dans [mesures_performance_fr.md](mesures_performance_fr.md), et l'index
+> de la documentation dans [README.md](README.md). Ce document remplace l'ancienne présentation, qui décrivait
+> une version antérieure (verrous par élément, `__decalage_chunk` global, taille de chunk fixée
+> à 64, parallélisation « sans solution satisfaisante »). Les noms de fonctions et de fichiers
+> cités sont ceux de l'arbre actuel ; en cas de doute, c'est le code qui fait foi.
 
----
+***
 
 ## 1. Objectif
 
@@ -262,7 +262,7 @@ L'un des deux côtés voit toujours l'autre : jamais les deux ne passent ensembl
 `membarrier` (noyau trop ancien, seccomp, build TSan), la forme symétrique met une barrière
 `seq_cst` des deux côtés. L'algorithme, la preuve des deux formes, les compteurs « garé » et
 « voleur » du compresseur et les deux autres usages de la même brique (vidages et lecteurs)
-sont détaillés dans [`synchronisation_dekker_fr.md`](synchronisation_dekker_fr.md).
+sont détaillés dans [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md).
 
 ### 7.2 Le déroulé d'une écriture dans le moteur
 
@@ -428,7 +428,7 @@ chaque jeu coûte un slab entamé par rang et par taille, soit ~780 Mio sur les 
 `shrink_bench` à 64 threads, et un tableau jamais reconstruit n'en tire aucun bénéfice. Un
 run dynamique consomme ainsi, au départ, exactement comme le statique à la même taille
 (Chunk2 : 19 999 contre 20 009 Mo après l'initialisation). `CHUNK_ALLOC_AFFINITY_EAGER=1`
-crée le jeu dès la création. Détails et mesures : [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md) §5.
+crée le jeu dès la création. Détails et mesures : [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §5.
 
 ### 9.2 Le rechunk (géométrie dynamique)
 
@@ -463,7 +463,7 @@ les indicateurs « en liste de compression » (un octet par chunk), libérés à
 `clear_core()`, après la purge des candidats. Le seuil de déclenchement des passes de
 compression et le budget des réserves, qui dépendent du nombre total de chunks, sont
 recalculés à la destruction comme à la création. Le décideur, ses critères et les résultats
-mesurés sont décrits dans [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md).
+mesurés sont décrits dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md).
 
 `CHUNK_RECHUNK_TRACE=1` affiche le temps de chaque phase et les compteurs de repliement.
 
@@ -535,7 +535,7 @@ types sans atomique sans verrou, et pour Chunk et Chunk2, ce sont des lectures o
 ## 11. Variables d'environnement utiles
 
 La liste complète, avec les macros et les options CMake, est dans
-[`variables_environnement_fr.md`](variables_environnement_fr.md). Celles qui concernent le plus
+[variables_environnement_fr.md](variables_environnement_fr.md). Celles qui concernent le plus
 Chunk2 :
 
 | variable | effet |
@@ -571,7 +571,7 @@ Options CMake liées aux performances des bancs :
 | le chunk, matérialisation, compression | `chunk2_std.h`, `internal/chunk2_std_inline.h`, `internal/chunk_base.h` |
 | le proxy d'écriture | `internal/proxy2.h`, `internal/proxy2_inline.h`, `internal/proxy2_base.h` |
 | le moteur d'écriture | `internal/proxy_base.h`, `internal/proxy_base_inline.h` |
-| Dekker, écrivains / compresseurs | `internal/write_compress_sync_policy.h` (expliqué dans [`synchronisation_dekker_fr.md`](synchronisation_dekker_fr.md)) |
+| Dekker, écrivains / compresseurs | `internal/write_compress_sync_policy.h` (expliqué dans [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md)) |
 | lecteurs et récupération des tampons | `internal/read_reclaim.h` |
 | compresseur, écritures différées | `internal/compression_manager.h` |
 | géométrie | `internal/chunk_size_policy.h` |

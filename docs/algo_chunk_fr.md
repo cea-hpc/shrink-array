@@ -1,14 +1,14 @@
-# L'algorithme de `ArrayChunk` (Chunk, v1)
+# L'algorithme de ArrayChunk (Chunk, v1)
 
-*English version: [`algo_chunk.md`](algo_chunk.md).*
+> English version: [algo_chunk.md](algo_chunk.md).
 
-*État : fin septembre 2026. Ce document décrit ce que v1 fait **autrement** que Chunk2 ; la
-machinerie commune (proxys, écritures différées, barrière de lecture, compression en vol,
-opérations sur plages) est décrite dans [`algo_chunk2_fr.md`](algo_chunk2_fr.md), et la
-géométrie dynamique dans [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md). En cas de
-doute, c'est le code qui fait foi.*
+> État : fin septembre 2026. Ce document décrit ce que v1 fait **autrement** que Chunk2 ; la
+> machinerie commune (proxys, écritures différées, barrière de lecture, compression en vol,
+> opérations sur plages) est décrite dans [algo_chunk2_fr.md](algo_chunk2_fr.md), et la
+> géométrie dynamique dans [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md). En cas de
+> doute, c'est le code qui fait foi.
 
----
+***
 
 ## 1. Ce que v1 compresse
 
@@ -40,7 +40,7 @@ environ 38 Go de ses 40 Go sont des données.
 
 ## 3. Lecture et écriture
 
-La lecture est celle de Chunk2 (§5 de [`algo_chunk2_fr.md`](algo_chunk2_fr.md)) : une valeur,
+La lecture est celle de Chunk2 (§5 de [algo_chunk2_fr.md](algo_chunk2_fr.md)) : une valeur,
 lue dans le tampon du chunk ou dans `cst_val1`, après la barrière de lecture.
 
 L'écriture passe par le proxy `Proxy<T>` :
@@ -102,7 +102,7 @@ fréquence des passes.
 
 ## 7. Ce que v1 fait autrement pendant un rechunk
 
-Le déroulé général est celui de [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md) §4. Deux
+Le déroulé général est celui de [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §4. Deux
 particularités viennent du volume de données de v1 :
 
 - **la reconstruction par tranches** (16 par défaut, `CHUNK_RECHUNK_SLICES`) : chaque tranche

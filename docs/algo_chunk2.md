@@ -1,17 +1,17 @@
-# The `ArrayChunk2` algorithm
+# The ArrayChunk2 algorithm
 
-*French version: [`algo_chunk2_fr.md`](algo_chunk2_fr.md).*
+> French version: [algo_chunk2_fr.md](algo_chunk2_fr.md).
 
-*Code status: early October 2026. Dynamic geometry is detailed in
-[`adaptive_rechunk.md`](adaptive_rechunk.md), lock-free synchronisation between
-writers, compressors and readers in [`synchronisation_dekker.md`](synchronisation_dekker.md),
-the measurement method in [`performance_measurement.md`](performance_measurement.md), and the
-documentation index in [`README.md`](README.md). This document replaces the old presentation, which described
-an earlier version (per-element locks, global `__decalage_chunk`, chunk size fixed
-at 64, parallelisation "without a satisfactory solution"). The function and file names
-cited are those of the current tree; when in doubt, the code is the reference.*
+> Code status: early October 2026. Dynamic geometry is detailed in
+> [adaptive_rechunk.md](adaptive_rechunk.md), lock-free synchronisation between
+> writers, compressors and readers in [synchronisation_dekker.md](synchronisation_dekker.md),
+> the measurement method in [performance_measurement.md](performance_measurement.md), and the
+> documentation index in [README.md](README.md). This document replaces the old presentation, which described
+> an earlier version (per-element locks, global `__decalage_chunk`, chunk size fixed
+> at 64, parallelisation "without a satisfactory solution"). The function and file names
+> cited are those of the current tree; when in doubt, the code is the reference.
 
----
+***
 
 ## 1. Goal
 
@@ -262,7 +262,7 @@ One of the two sides always sees the other: the two never go through together. W
 `membarrier` (kernel too old, seccomp, TSan build), the symmetric form puts a
 `seq_cst` barrier on both sides. The algorithm, the proof of both forms, the compressor's "parked" and
 "stealing" counters and the two other uses of the same building block (flushes and readers)
-are detailed in [`synchronisation_dekker.md`](synchronisation_dekker.md).
+are detailed in [synchronisation_dekker.md](synchronisation_dekker.md).
 
 ### 7.2 The course of a write in the engine
 
@@ -428,7 +428,7 @@ each set costs one started slab per rank and per size, i.e. ~780 MiB over the 16
 `shrink_bench` at 64 threads, and an array that is never rebuilt gets no benefit from it. A
 dynamic run thus consumes, at the start, exactly like the static one at the same size
 (Chunk2: 19,999 vs 20,009 MB after initialisation). `CHUNK_ALLOC_AFFINITY_EAGER=1`
-creates the set at creation. Details and measurements: [`adaptive_rechunk.md`](adaptive_rechunk.md) §5.
+creates the set at creation. Details and measurements: [adaptive_rechunk.md](adaptive_rechunk.md) §5.
 
 ### 9.2 Rechunk (dynamic geometry)
 
@@ -463,7 +463,7 @@ the "in compression list" indicators (one byte per chunk), freed at the end of
 `clear_core()`, after the candidates are purged. The threshold that triggers compression
 passes and the pool budget, which depend on the total number of chunks, are
 recomputed on destruction as on creation. The decider, its criteria and the measured
-results are described in [`adaptive_rechunk.md`](adaptive_rechunk.md).
+results are described in [adaptive_rechunk.md](adaptive_rechunk.md).
 
 `CHUNK_RECHUNK_TRACE=1` prints the time of each phase and the folding counters.
 
@@ -535,7 +535,7 @@ types without lock-free atomics, and for Chunk and Chunk2, these are plain reads
 ## 11. Useful environment variables
 
 The full list, with the macros and the CMake options, is in
-[`environment_variables.md`](environment_variables.md). Those most relevant to
+[environment_variables.md](environment_variables.md). Those most relevant to
 Chunk2:
 
 | variable | effect |
@@ -571,7 +571,7 @@ CMake options related to benchmark performance:
 | the chunk, materialisation, compression | `chunk2_std.h`, `internal/chunk2_std_inline.h`, `internal/chunk_base.h` |
 | the write proxy | `internal/proxy2.h`, `internal/proxy2_inline.h`, `internal/proxy2_base.h` |
 | the write engine | `internal/proxy_base.h`, `internal/proxy_base_inline.h` |
-| Dekker, writers / compressors | `internal/write_compress_sync_policy.h` (explained in [`synchronisation_dekker.md`](synchronisation_dekker.md)) |
+| Dekker, writers / compressors | `internal/write_compress_sync_policy.h` (explained in [synchronisation_dekker.md](synchronisation_dekker.md)) |
 | readers and buffer reclamation | `internal/read_reclaim.h` |
 | compressor, deferred writes | `internal/compression_manager.h` |
 | geometry | `internal/chunk_size_policy.h` |

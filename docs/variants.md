@@ -1,13 +1,13 @@
 # The three variants: Chunk, Chunk2, Chunk2A
 
-*French version: [`variantes_fr.md`](variantes_fr.md).*
+> French version: [variantes_fr.md](variantes_fr.md).
 
-*Status: end of September 2026. The figures come from `shrink_bench` on Grace (64 threads,
-`OMP_PROC_BIND=close`, `OMP_PLACES=cores`), with memory measured exactly (see
-[`performance_measurement.md`](performance_measurement.md)). When in doubt, the code is the
-reference.*
+> Status: end of September 2026. The figures come from `shrink_bench` on Grace (64 threads,
+> `OMP_PROC_BIND=close`, `OMP_PLACES=cores`), with memory measured exactly (see
+> [performance_measurement.md](performance_measurement.md)). When in doubt, the code is the
+> reference.
 
----
+***
 
 ## 1. The common principle
 
@@ -68,15 +68,15 @@ of the run:
 
 The dynamic geometry gives a clear gain for Chunk2 and Chunk2A. For v1, whose memory is
 mostly data, it breaks even with static 256: see the known limits
-in [`adaptive_rechunk.md`](adaptive_rechunk.md).
+in [adaptive_rechunk.md](adaptive_rechunk.md).
 
 ## 5. Where to read next
 
 | topic | document |
 |---|---|
-| read, write, parallelism, in-flight compression, range operations | [`algo_chunk2.md`](algo_chunk2.md): describes Chunk2, but the machinery of its §5 to §8 and §10 is common to all three variants |
-| what Chunk (v1) and Chunk2A do differently | [`algo_chunk.md`](algo_chunk.md), [`algo_chunk2a.md`](algo_chunk2a.md) |
-| dynamic geometry and rechunk, for all three variants | [`adaptive_rechunk.md`](adaptive_rechunk.md) |
-| lock-free synchronisation (asymmetric Dekker) | [`synchronisation_dekker.md`](synchronisation_dekker.md) |
-| settings | [`environment_variables.md`](environment_variables.md) |
-| documentation index | [`README.md`](README.md) |
+| read, write, parallelism, in-flight compression, range operations | [algo_chunk2.md](algo_chunk2.md): describes Chunk2, but the machinery of its §5 to §8 and §10 is common to all three variants |
+| what Chunk (v1) and Chunk2A do differently | [algo_chunk.md](algo_chunk.md), [algo_chunk2a.md](algo_chunk2a.md) |
+| dynamic geometry and rechunk, for all three variants | [adaptive_rechunk.md](adaptive_rechunk.md) |
+| lock-free synchronisation (asymmetric Dekker) | [synchronisation_dekker.md](synchronisation_dekker.md) |
+| settings | [environment_variables.md](environment_variables.md) |
+| documentation index | [README.md](README.md) |

@@ -1688,7 +1688,7 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// visible for its whole lifetime; retired (release) after the drain; the
     /// read gates acquire-load it.
     ///
-    /// A #if, not `if constexpr`: gcc still phase-1-looks-up a member named in
+    /// A `#if`, not `if constexpr`: gcc still phase-1-looks-up a member named in
     /// a discarded branch. Its readers live in DeferredReadGate<Precise>, which
     /// is selected under the same condition (use_openmp &&
     /// use_precise_pending_gate).

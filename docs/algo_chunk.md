@@ -1,14 +1,14 @@
-# The `ArrayChunk` algorithm (Chunk, v1)
+# The ArrayChunk algorithm (Chunk, v1)
 
-*French version: [`algo_chunk_fr.md`](algo_chunk_fr.md).*
+> French version: [algo_chunk_fr.md](algo_chunk_fr.md).
 
-*Status: end of September 2026. This document describes what v1 does **differently** from Chunk2; the
-common machinery (proxies, deferred writes, read barrier, in-flight compression,
-range operations) is described in [`algo_chunk2.md`](algo_chunk2.md), and the
-dynamic geometry in [`adaptive_rechunk.md`](adaptive_rechunk.md). When in
-doubt, the code is the reference.*
+> Status: end of September 2026. This document describes what v1 does **differently** from Chunk2; the
+> common machinery (proxies, deferred writes, read barrier, in-flight compression,
+> range operations) is described in [algo_chunk2.md](algo_chunk2.md), and the
+> dynamic geometry in [adaptive_rechunk.md](adaptive_rechunk.md). When in
+> doubt, the code is the reference.
 
----
+***
 
 ## 1. What v1 compresses
 
@@ -40,7 +40,7 @@ about 38 GB of its 40 GB is data.
 
 ## 3. Read and write
 
-The read is the same as in Chunk2 (§5 of [`algo_chunk2.md`](algo_chunk2.md)): one value,
+The read is the same as in Chunk2 (§5 of [algo_chunk2.md](algo_chunk2.md)): one value,
 read from the chunk's buffer or from `cst_val1`, after the read barrier.
 
 The write goes through the `Proxy<T>` proxy:
@@ -102,7 +102,7 @@ frequency of the passes.
 
 ## 7. What v1 does differently during a rechunk
 
-The general sequence is the one in [`adaptive_rechunk.md`](adaptive_rechunk.md) §4. Two
+The general sequence is the one in [adaptive_rechunk.md](adaptive_rechunk.md) §4. Two
 specifics come from the volume of data in v1:
 
 - **the rebuild in slices** (16 by default, `CHUNK_RECHUNK_SLICES`): each slice

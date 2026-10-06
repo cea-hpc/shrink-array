@@ -1772,7 +1772,7 @@ class TCTypeAllocatorEBC
 };
 
 /// @brief Default slab size (1 MiB).
-/// @details constexpr rather than #define so it carries a type and scope; used
+/// @details constexpr rather than a macro so it carries a type and scope; used
 ///          as a non-type template argument below and in StaticConstArray,
 ///          where an unsigned int constant expression is required.
 inline constexpr unsigned int SIZE_BLOCK = 1u << 20u; // 1048576

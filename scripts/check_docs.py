@@ -112,7 +112,7 @@ def check_links(root, md_files):
     bad = []
     for f in md_files:
         for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
-            for target in LINK.findall(line):
+            for target in LINK.findall(CODE_SPAN.sub("", line)):
                 if re.match(r"^[a-z]+:", target) or target.startswith("#"):
                     continue
                 path = target.split("#", 1)[0]

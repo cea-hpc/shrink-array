@@ -1,15 +1,15 @@
 # Lock-free synchronisation: the Dekker protocol in shrink-array
 
-*French version: [`synchronisation_dekker_fr.md`](synchronisation_dekker_fr.md).*
+> French version: [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md).
 
-*Status: early October 2026. This document explains how writers, compressors,
-deferred-write flushes and readers exclude each other **without a lock on the
-write path**. The overall machinery (proxies, deferred writes, in-flight
-compression) is described in [`algo_chunk2.md`](algo_chunk2.md) §7 and §8. The names used
-are those of the current tree; when in doubt, the code is the reference, in particular the
-comments in `internal/write_compress_sync_policy.h`, which carry the ordering proof.*
+> Status: early October 2026. This document explains how writers, compressors,
+> deferred-write flushes and readers exclude each other **without a lock on the
+> write path**. The overall machinery (proxies, deferred writes, in-flight
+> compression) is described in [algo_chunk2.md](algo_chunk2.md) §7 and §8. The names used
+> are those of the current tree; when in doubt, the code is the reference, in particular the
+> comments in `internal/write_compress_sync_policy.h`, which carry the ordering proof.
 
----
+***
 
 ## 1. The problem to solve
 

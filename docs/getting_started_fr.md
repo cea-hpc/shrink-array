@@ -1,12 +1,12 @@
 # Premiers pas avec shrink-array
 
-*English version: [`getting_started.md`](getting_started.md).*
+> English version: [getting_started.md](getting_started.md).
 
-*Octobre 2026. Ce guide explique comment **utiliser** la bibliothèque. Son fonctionnement
-interne est décrit dans les documents de conception, indexés dans [`README.md`](README.md). La
-version anglaise de ce guide est [`getting_started.md`](getting_started.md).*
+> Octobre 2026. Ce guide explique comment **utiliser** la bibliothèque. Son fonctionnement
+> interne est décrit dans les documents de conception, indexés dans [README.md](README.md). La
+> version anglaise de ce guide est [getting_started.md](getting_started.md).
 
----
+***
 
 ## 1. Ce que c'est
 
@@ -33,7 +33,7 @@ Trois variantes, choisies au moment de l'édition de liens :
 
 Chunk2A compresse le plus et c'est celle à essayer d'abord. Chunk2 a des métadonnées plus
 légères quand les données ont une seule valeur non nulle dominante, et Chunk (v1) est la plus
-simple quand seuls les zéros comptent. [`variantes_fr.md`](variantes_fr.md) les compare sur un
+simple quand seuls les zéros comptent. [variantes_fr.md](variantes_fr.md) les compare sur un
 cas réel.
 
 ## 2. Installer
@@ -234,15 +234,15 @@ programme avec un message.
 - **Chunk2 ne compresse qu'à sa seconde valeur déclarée.** Sans `set_second_value()`, un
   tableau Chunk2 ne compresse qu'à zéro.
 - **Mesurer la mémoire avec le bon outil.** `VmRSS` est en retard à plusieurs threads : voir
-  [`mesures_performance_fr.md`](mesures_performance_fr.md).
+  [mesures_performance_fr.md](mesures_performance_fr.md).
 
 ## 7. Pour aller plus loin
 
 | pour… | lire |
 |---|---|
-| toute l'interface du conteneur | le [`README.md`](../README.md) principal, et la documentation Doxygen (`cmake --build build --target doc`) |
-| choisir une variante pour ses données | [`variantes_fr.md`](variantes_fr.md), et `examples/variant_compare` |
-| laisser la taille des chunks s'adapter à l'exécution | [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md) (bibliothèques `_dyn`) |
-| toutes les variables de réglage et options de compilation | [`variables_environnement_fr.md`](variables_environnement_fr.md) |
-| le fonctionnement interne | [`algo_chunk2_fr.md`](algo_chunk2_fr.md), [`synchronisation_dekker_fr.md`](synchronisation_dekker_fr.md) |
+| toute l'interface du conteneur | le [README.md](../README.md) principal, et la documentation Doxygen (`cmake --build build --target doc`) |
+| choisir une variante pour ses données | [variantes_fr.md](variantes_fr.md), et `examples/variant_compare` |
+| laisser la taille des chunks s'adapter à l'exécution | [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) (bibliothèques `_dyn`) |
+| toutes les variables de réglage et options de compilation | [variables_environnement_fr.md](variables_environnement_fr.md) |
+| le fonctionnement interne | [algo_chunk2_fr.md](algo_chunk2_fr.md), [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
 | un exemple plus complet : champs multi-matériaux, boucles écrites une fois pour les deux conteneurs | `examples/multi-mat` |

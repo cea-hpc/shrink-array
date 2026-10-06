@@ -1,19 +1,19 @@
 # Variables d'environnement, macros et options de compilation
 
-*English version: [`environment_variables.md`](environment_variables.md).*
+> English version: [environment_variables.md](environment_variables.md).
 
-*État : début octobre 2026. La liste a été relevée dans le code ; une variable qui n'est pas
-lue est ignorée sans message, donc en cas de doute, vérifier avec
-`grep -rn '"NOM"' chunk fast_allocators examples`. Sauf mention contraire, une variable est
-lue une seule fois, et `0` ou une valeur vide équivaut à son absence.*
+> État : début octobre 2026. La liste a été relevée dans le code ; une variable qui n'est pas
+> lue est ignorée sans message, donc en cas de doute, vérifier avec
+> `grep -rn '"NOM"' chunk fast_allocators examples`. Sauf mention contraire, une variable est
+> lue une seule fois, et `0` ou une valeur vide équivaut à son absence.
 
----
+***
 
 ## 1. Réglages de la bibliothèque
 
 | variable | défaut | effet |
 |---|---|---|
-| `CHUNK_ALLOC_AFFINITY_EAGER` | selon la variante | `1` : chaque gros tableau a son jeu d'allocateurs dès sa création (défaut de Chunk, v1) ; `0` : seulement au premier rechunk (défaut de Chunk2 et Chunk2A). Voir [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md) §5 |
+| `CHUNK_ALLOC_AFFINITY_EAGER` | selon la variante | `1` : chaque gros tableau a son jeu d'allocateurs dès sa création (défaut de Chunk, v1) ; `0` : seulement au premier rechunk (défaut de Chunk2 et Chunk2A). Voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §5 |
 | `CHUNK_RECHUNK_MAX_COARSEN` | 4 | facteur maximal d'un grossissement (1 = sans limite) |
 | `CHUNK_ADVISOR_MIN_GAIN_MB` | 8 | seuil absolu de gain côté données, en Mo (0 le supprime) |
 | `CHUNK_COARSEN_MIN_META_MB` | 1 | gain minimal de métadonnées d'un grossissement, en Mo |
@@ -31,7 +31,7 @@ lue une seule fois, et `0` ou une valeur vide équivaut à son absence.*
 
 Il n'en reste plus : ceux qui permettaient de rétablir un ancien comportement ont été
 retirés une fois le nouveau validé. Les réglages utiles pour comparer deux exécutions sont
-dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.md) §2.
+dans la section 1 et dans [mesures_performance_fr.md](mesures_performance_fr.md) §2.
 
 ## 3. Traces et diagnostics
 
@@ -94,7 +94,7 @@ dans la section 1 et dans [`mesures_performance_fr.md`](mesures_performance_fr.m
 | `CHUNK_FORCE_DEFER_EVERY=<N>` | une écriture sur N passe par le chemin différé, dans tout l'arbre (validation ; 32 threads au plus) |
 | `HAVE_AGGRESSIVE_COMPRESSION` | compression « agressive » : la passe entre deux phases est sautée, et toute la compression se fait pendant les régions parallèles, à des instants imprévisibles. Plus lent, mais sollicite les chemins concurrents (option CMake du même nom ; l'ancienne orthographe `HAVE_AGRESSIVE_COMPRESSION` est encore acceptée par CMake, avec un avertissement) |
 | `CHUNK_FORCE_LEDGER` | garde le registre des blocs (`pool_ledger.h`) actif sous OpenMP, où il est éteint par défaut : son mutex global sérialise chaque allocation et libération. Détecte double libération et remise illégale en réserve (option CMake du même nom) |
-| `CHUNK_COMPRESS_MAX_YIELDS=<n>` | attente d'un compresseur garé avant de renoncer à sa passe (10 000 *yields* ; 0 : renoncer au premier écrivain vu). Voir [`synchronisation_dekker_fr.md`](synchronisation_dekker_fr.md) |
+| `CHUNK_COMPRESS_MAX_YIELDS=<n>` | attente d'un compresseur garé avant de renoncer à sa passe (10 000 *yields* ; 0 : renoncer au premier écrivain vu). Voir [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
 | `CHUNK_WRITE_WAIT_MAX_YIELDS=<n>` | attente d'un écrivain devant un compresseur avant de différer son écriture (64 *yields*) |
 | `CHUNK_DEFERRED_DRAIN_THRESHOLD=<n>` | nombre d'écritures différées d'un rang au-delà duquel il vide sa propre file (4 096 ; option CMake du même nom) |
 | `CHUNK_READ_RECLAIM_SLOTS=<n>` | nombre de threads lecteurs suivis individuellement par la récupération des tampons (1 024) |
@@ -165,8 +165,8 @@ transmettant les options communes. `--help` donne la liste complète.
 | `--with-nvhpc` | ajouter NVHPC, désactivé par défaut (environ 1 h 30 par build sur x86, sans gain) |
 | `--no-sanitizers` | sans les builds LLVM sous sanitizer |
 | `--with-ledger` | ajouter `cmake-build-omp-gnu-debug-ledger` (Debug OpenMP avec `CHUNK_FORCE_LEDGER=ON`), désactivé par défaut ; un `--target` qui le sélectionne le construit aussi |
-| `--target=<glob>` | seulement les configurations dont le nom correspond (`omp-llvm`, `'*sanitizer*'`…) ; un motif qui ne correspond à rien est une erreur |
-| `--exec=<glob>` | seulement les cibles Ninja correspondantes dans chaque build (`shrink_bench_chunk_64`, `'*_dyn'`…) |
+| `--target=<glob>` | seulement les configurations dont le nom correspond (`omp-llvm`, ou un motif du shell entre apostrophes) ; un motif qui ne correspond à rien est une erreur |
+| `--exec=<glob>` | seulement les cibles Ninja correspondantes dans chaque build (`shrink_bench_chunk_64`, ou un motif du shell entre apostrophes) |
 | `--jobs=<n>` | nombre de configurations compilées en même temps (4 par défaut) ; le budget de cœurs est partagé entre elles |
 | `--no-hardening` | sans `CHUNK_GLIBCXX_ASSERTIONS` ni `CHUNK_UBSAN` sur les builds Debug et sanitizer |
 | `--llvm-cs=<n>` | ajouter un build LLVM avec `CHUNK_SIZE=n` |
