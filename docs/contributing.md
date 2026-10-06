@@ -61,7 +61,7 @@ The source checks run with the others (`ctest -R check_`):
 |---|---|
 | `check_includes` | every `#include` says why it is there; system and project headers are not mixed in one block |
 | `check_raw_reads` | every raw read of a chunk buffer in the library says why it is safe |
-| `check_docs` | links, code names cited in the documents, English/French pairs, no history markers in comments |
+| `check_docs` | links, code names cited in the documents, English/French pairs, no history markers in comments, the files cited in comments exist |
 
 ## 3. Code rules
 
@@ -73,7 +73,8 @@ The source checks run with the others (`ctest -R check_`):
 - **Comments state the rule, not the story.** Write why the code is the way it is, and what
   breaks if it changes. Do not write how the bug was found, which version had it, run counts,
   dates or ticket names: that belongs in the commit message. `check_docs` rejects the usual
-  markers (`fwNN`, `SEGV hunt`, `BUG FIX`, `FIX (`, a date like `Sept '26`).
+  markers (`fwNN`, `SEGV hunt`, `BUG FIX`, `FIX (`, a date like `Sept '26` or `2026-09-14`), in
+  the C++ sources, the scripts and the CMake files.
 - **Doxygen** (`@brief`, `@param`, `@return`, `@warning`) on everything a user calls: the
   classes and functions of [api.md](api.md). `cmake --build build --target doc` must stay
   free of warnings (`ctest -R check_doxygen` when Doxygen is installed).

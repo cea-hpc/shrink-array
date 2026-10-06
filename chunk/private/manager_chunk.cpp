@@ -25,11 +25,11 @@ namespace shrink_array
 
 std::atomic<bool> __global_need_flush_deferred{true};
 
-// Template method bodies now live in chunk/manager_chunk_inline.h (included
-// transitively via chunk/manager_chunk.h). This TU keeps only the non-template
-// global state; the explicit instantiations are gone (Stage 5b): every
-// ManagerChunk<CHUNK_T, T> auto-instantiates at its use site in the consumer TU
-// (initialize<Types>()), linker-dedup'd.
+// Template method bodies live in chunk/internal/manager_chunk_inline.h
+// (included through chunk/internal/manager_chunk.h). This TU holds only the
+// non-template global state; there is no explicit instantiation: each
+// ManagerChunk<CHUNK_T, T> is instantiated at its use site in the consumer TU
+// (initialize<Types>()), and the linker keeps one copy.
 
 
 } // namespace shrink_array

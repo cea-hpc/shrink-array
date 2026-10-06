@@ -61,7 +61,7 @@ inline constexpr std::size_t alloc_affinity_min_bytes =
 ///        sees the same value). On by default, as the original.
 ///
 /// Duplicated deliberately. The original lives in
-/// fast_allocators/alloc_config.h, a header a std-alloc build never pulls in,
+/// fast_allocators/internal/alloc_config.h, a header a std-alloc build never pulls in,
 /// so naming alloc_config:: outside a fast-alloc TU does not compile -- and
 /// `if constexpr (build_config::use_fast_alloc)` does NOT rescue it: the name
 /// is not dependent on the enclosing template's parameters, so it is looked up

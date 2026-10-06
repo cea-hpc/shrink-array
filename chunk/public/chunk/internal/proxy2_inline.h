@@ -207,7 +207,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::trigger_compression_i
         self.second_value = self.make_second_value();
     }
 
-    const auto* vec_tuple_p = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][self.second_value].get();
+    const auto* vec_tuple_p = manager_chunk2::compress_candidates(thr_rank, self.second_value);
 
     if (!vec_tuple_p)
     {
@@ -244,13 +244,12 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression(t
 
     if constexpr (is_not_bool)
     {
-        for (auto& elm : ml)
+        for (const auto& elm : ml)
         {
             // in_t: the map key, by reference when T is large (a struct), by
             // value when it is a scalar. The map is not touched in the loop.
             const in_t<T> second_val = elm.first;
-            const auto*   vec_tuple_p =
-                manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][second_val].get();
+            const auto*   vec_tuple_p = elm.second.get();
             if (vec_tuple_p)
             {
                 const int sz_before = static_cast<int>(vec_tuple_p->size());
@@ -269,7 +268,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression(t
     }
     else
     {
-        const auto* vec_tuple_p = manager_chunk2::map_chunk2_to_compress_potentially_thr[thr_rank][true].get();
+        const auto* vec_tuple_p = manager_chunk2::compress_candidates(thr_rank, true);
         if (vec_tuple_p)
         {
             const int sz_before = static_cast<int>(vec_tuple_p->size());

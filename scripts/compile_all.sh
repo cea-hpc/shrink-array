@@ -636,11 +636,11 @@ else
    launch_build "$build_rep/cmake-build-omp-llvm-have-aggressive-compression/$arch"
 fi
 
-# Optimised thread-sanitizer build, same switches as the target that diverged
-# (shrink_bench_chunk2a_256 --mode check after 2283 cycles, 2026-09-14): RelWithDebInfo
-# so the scheduling and the inlining are the production ones, not the Debug
-# ones -- the Debug TSan build above found nothing on that run --,
-# HAVE_AGGRESSIVE_COMPRESSION and CHECK_OPTIM as in the *_check_* binaries. LLVM
+# Optimised thread-sanitizer build, with the switches of the *_check_* benchmark
+# binaries: RelWithDebInfo so the scheduling and the inlining are the
+# production ones -- a race that needs them does not show in the Debug TSan
+# build above --, HAVE_AGGRESSIVE_COMPRESSION and CHECK_OPTIM as in those
+# binaries. LLVM
 # libomp carries the TSan annotations for barriers / omp for / tasks (Archer),
 # which is what makes the reports meaningful across region boundaries; the same
 # build with libgomp reports a race at every region end. Hardening

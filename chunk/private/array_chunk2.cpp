@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// Template method bodies live in chunk/array_chunk2_inline.h, included
+// Template method bodies live in chunk/internal/array_chunk2_inline.h, included
 // transitively via chunk/array_chunk2.h. No explicit instantiations: each
 // ArrayChunk2<T> the consumer uses is instantiated at its use site (weak-symbol
 // dedup).

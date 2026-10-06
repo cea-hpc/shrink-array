@@ -59,6 +59,16 @@ namespace shrink_array::internal
 /// each of the sites below.
 inline const bool g_rechunk_trace = std::getenv("CHUNK_RECHUNK_TRACE") != nullptr;
 
+/// CHUNK_RECHUNK_RECYCLE (default on; 0 = off): at the v1 refill's slice
+/// boundaries, hand the slabs the old geometry has just emptied to the value
+/// arena for the next slice (TCSlabPool::recycle_empty_slabs), instead of
+/// madvise'ing them. Off = the sweep of before, for comparison.
+inline const bool g_rechunk_recycle = []
+{
+    const char* env = std::getenv("CHUNK_RECHUNK_RECYCLE");
+    return env == nullptr || env[0] == '\0' || env[0] != '0';
+}();
+
 /// CHUNK_RECHUNK_TRACE_MEM (read once, set = on): the MEMORY side of the trace --
 /// [RECHUNK-RSS] (exact RSS, a page-table walk per read), the new geometry's
 /// occupancy, the allocator census. Kept apart from CHUNK_RECHUNK_TRACE so the
@@ -1093,10 +1103,17 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
         // team drain's scratch lives across them, and so do the trace timers.
         using manager_t = typename Traits::manager_type;
         typename manager_t::TeamDrainScratch team_drain;
+        // Slab recycling at the slice boundaries (internal::g_rechunk_recycle):
+        // the ranks the team holds (each recycles its own slabs, one thread
+        // the others'), and an address buffer per rank, reused. Sized at the
+        // first boundary.
+        std::vector<unsigned char>      recycle_held;
+        std::vector<std::vector<void*>> recycle_scratch;
         using slice_clock = std::chrono::steady_clock;
         const auto slice_ms = [](slice_clock::time_point a, slice_clock::time_point b)
         { return std::chrono::duration<double, std::milli>(b - a).count(); };
         slice_clock::time_point slice_t0{}; // written by the master, read after barriers
+        slice_clock::time_point slice_t1{}; // written in a single, read after its barrier
 
         // Held across the WHOLE sliced loop, drains included. The flag also
         // suppresses the OMPT parallel-end finalize, which must not flush or
@@ -1243,36 +1260,120 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                             }
                         }
                         manager_t::drain_reuse_list_for_size_team(static_cast<unsigned int>(old_size), team_drain);
-#pragma omp single
+                        if (internal::g_rechunk_recycle)
                         {
-                            const auto sc0 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
-                            if (internal::g_rechunk_trace)
+                            // The slabs this drain emptied go to the value
+                            // arena for the next slice, which allocates about
+                            // as much at the new size (same slab size): their
+                            // resident pages are reused, where a madvise gave
+                            // them to the kernel and the next slice faulted
+                            // fresh zero pages back (madvise alone: ~2 s of a
+                            // 128-thread run on Grace). Each rank recycles its
+                            // own slabs -- the drain's owner discipline -- and
+                            // the arena hands a rank its own back first (NUMA).
+                            // The set and the safety argument are the sweep's
+                            // (the else branch): the old storage's set, a
+                            // quiescent point, a slab found empty is empty.
+                            // The trace books the recycling as "collect" and
+                            // the leftovers' madvise as "madvise".
+#pragma omp single
                             {
-                                internal::g_slice_drain_ms += slice_ms(slice_t0, sc0);
-                            }
-                            set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                    // The old storage's allocator set -- the shared pool (key 0)
-                    // too when it lives there, which is every first re-chunk
-                    // under lazy affinity: skipping it held every released
-                    // block's slab (GBs) until the final sweep. Safe for the
-                    // final sweep's reason: a serial, quiescent point, so a slab
-                    // found empty is empty.
-                    // One sweep across ranks: one madvise per contiguous run.
-                            typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(0, 0u))>::empty_slab_sweep
-                                sweep;
-                            for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
+                                const auto sc0 =
+                                    internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
+                                if (internal::g_rechunk_trace)
+                                {
+                                    internal::g_slice_drain_ms += slice_ms(slice_t0, sc0);
+                                }
+                                const auto n_ranks = static_cast<std::size_t>(CHUNK_PMP_RANK_BOUND);
+                                if (recycle_held.size() != n_ranks)
+                                {
+                                    recycle_held.assign(n_ranks, 0);
+                                    recycle_scratch.resize(n_ranks);
+                                }
+                                std::fill(recycle_held.begin(), recycle_held.end(), static_cast<unsigned char>(0));
+                                // The previous boundary's slabs this slice did
+                                // not take go back to the kernel now: a
+                                // shrinking re-chunk, which frees more than it
+                                // allocates, holds one slice's surplus at most.
+                                set_thread_chunk_size(static_cast<unsigned int>(old_size));
+                                chunk_type::get_chunk_allocator(0, old_key_refill).advise_recycled_slabs();
+                                set_thread_chunk_size(static_cast<unsigned int>(new_size));
+                                if (internal::g_rechunk_trace)
+                                {
+                                    slice_t1 = slice_clock::now();
+                                    internal::g_slice_madvise_ms += slice_ms(sc0, slice_t1);
+                                }
+                            } // implicit barrier: recycle_held is clear
                             {
-                                chunk_type::get_chunk_allocator(r, old_key_refill).collect_empty_slabs(sweep);
+                                const int me = CHUNK_PMP_THREAD_RANK;
+                                if (me >= 0 && static_cast<std::size_t>(me) < recycle_held.size())
+                                {
+                                    recycle_held[static_cast<std::size_t>(me)] = 1;
+                                    const unsigned int saved_sz = thread_chunk_size(); // this thread's, as the slice left it
+                                    set_thread_chunk_size(static_cast<unsigned int>(old_size));
+                                    chunk_type::get_chunk_allocator(me, old_key_refill)
+                                        .recycle_empty_slabs(recycle_scratch[static_cast<std::size_t>(me)]);
+                                    set_thread_chunk_size(saved_sz);
+                                }
                             }
-                            const auto sc1 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
-                            sweep.flush();
-                            if (internal::g_rechunk_trace)
+#pragma omp barrier
+#pragma omp single
                             {
-                                internal::g_slice_collect_ms += slice_ms(sc0, sc1);
-                                internal::g_slice_madvise_ms += slice_ms(sc1, slice_clock::now());
-                            }
-                            set_thread_chunk_size(static_cast<unsigned int>(new_size));
-                        } // implicit barrier: the next slice starts on emptied slabs
+                                // Ranks no team member holds (a smaller team
+                                // than the rank bound).
+                                set_thread_chunk_size(static_cast<unsigned int>(old_size));
+                                for (std::size_t r = 0; r < recycle_held.size(); ++r)
+                                {
+                                    if (recycle_held[r] == 0)
+                                    {
+                                        chunk_type::get_chunk_allocator(static_cast<int>(r), old_key_refill)
+                                            .recycle_empty_slabs(recycle_scratch[r]);
+                                    }
+                                }
+                                set_thread_chunk_size(static_cast<unsigned int>(new_size));
+                                if (internal::g_rechunk_trace)
+                                {
+                                    internal::g_slice_collect_ms += slice_ms(slice_t1, slice_clock::now());
+                                }
+                            } // implicit barrier: the next slice allocates from the recycled slabs
+                        }
+                        else
+                        {
+#pragma omp single
+                            {
+                                const auto sc0 =
+                                    internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
+                                if (internal::g_rechunk_trace)
+                                {
+                                    internal::g_slice_drain_ms += slice_ms(slice_t0, sc0);
+                                }
+                                set_thread_chunk_size(static_cast<unsigned int>(old_size));
+                                // The old storage's allocator set -- the shared
+                                // pool (key 0) too when it lives there, which is
+                                // every first re-chunk under lazy affinity:
+                                // skipping it held every released block's slab
+                                // (GBs) until the final sweep. Safe for the
+                                // final sweep's reason: a serial, quiescent
+                                // point, so a slab found empty is empty.
+                                // One sweep across ranks: one madvise per
+                                // contiguous run.
+                                typename std::remove_reference_t<decltype(chunk_type::get_chunk_allocator(
+                                    0, 0u))>::empty_slab_sweep sweep;
+                                for (int r = 0; r < CHUNK_PMP_RANK_BOUND; ++r)
+                                {
+                                    chunk_type::get_chunk_allocator(r, old_key_refill).collect_empty_slabs(sweep);
+                                }
+                                const auto sc1 =
+                                    internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
+                                sweep.flush();
+                                if (internal::g_rechunk_trace)
+                                {
+                                    internal::g_slice_collect_ms += slice_ms(sc0, sc1);
+                                    internal::g_slice_madvise_ms += slice_ms(sc1, slice_clock::now());
+                                }
+                                set_thread_chunk_size(static_cast<unsigned int>(new_size));
+                            } // implicit barrier: the next slice starts on emptied slabs
+                        }
                     }
                 }
 #pragma omp master
@@ -1315,6 +1416,22 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             const long rss_mib = internal::rss_mib_now();
             std::fprintf(stderr, "[RECHUNK-SLICE] %d/%d end         rss=%ld MB  (%+ld since start)\n", n_slices,
                          n_slices, rss_mib, rss_mib - rss_start);
+        }
+        if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
+        {
+            // The last boundary's recycled slabs the last slice did not take:
+            // back to the kernel, as the sweep would have done.
+            if (internal::g_rechunk_recycle && n_slices > 1)
+            {
+                const auto a0 = internal::g_rechunk_trace ? slice_clock::now() : slice_clock::time_point{};
+                set_thread_chunk_size(static_cast<unsigned int>(old_size));
+                chunk_type::get_chunk_allocator(0, old_key_refill).advise_recycled_slabs();
+                set_thread_chunk_size(static_cast<unsigned int>(new_size));
+                if (internal::g_rechunk_trace)
+                {
+                    internal::g_slice_madvise_ms += slice_ms(a0, slice_clock::now());
+                }
+            }
         }
         g_in_rechunk_rebuild.store(false, std::memory_order_release);
         chunk_pmp_set_schedule(caller_schedule); // the caller's, untouched

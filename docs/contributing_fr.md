@@ -61,7 +61,7 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
 |---|---|
 | `check_includes` | chaque `#include` dit pourquoi il est là ; les en-têtes système et ceux du projet ne sont pas mélangés dans un même bloc |
 | `check_raw_reads` | chaque lecture brute d'un tampon de chunk dans la bibliothèque dit pourquoi elle est sûre |
-| `check_docs` | liens, noms de code cités dans les documents, paires anglais/français, pas de marqueurs d'historique dans les commentaires |
+| `check_docs` | liens, noms de code cités dans les documents, paires anglais/français, pas de marqueurs d'historique dans les commentaires, les fichiers cités dans les commentaires existent |
 
 ## 3. Règles de code
 
@@ -73,7 +73,8 @@ Les vérifications des sources tournent avec les autres (`ctest -R check_`) :
 - **Les commentaires énoncent la règle, pas l'histoire.** Écrire pourquoi le code est tel qu'il est, et ce qui
   casse s'il change. Ne pas écrire comment le bug a été trouvé, quelle version l'avait, les nombres d'exécutions,
   les dates ou les noms de tickets : cela va dans le message de commit. `check_docs` rejette les
-  marqueurs habituels (`fwNN`, `SEGV hunt`, `BUG FIX`, `FIX (`, une date comme `Sept '26`).
+  marqueurs habituels (`fwNN`, `SEGV hunt`, `BUG FIX`, `FIX (`, une date comme `Sept '26` ou
+  `2026-09-14`), dans les sources C++, les scripts et les fichiers CMake.
 - **Doxygen** (`@brief`, `@param`, `@return`, `@warning`) sur tout ce qu'un utilisateur appelle : les
   classes et fonctions de [api_fr.md](api_fr.md). `cmake --build build --target doc` doit rester
   sans avertissement (`ctest -R check_doxygen` quand Doxygen est installé).

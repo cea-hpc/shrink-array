@@ -212,7 +212,7 @@ bool finalize_barrier_phase()
 }
 
 // pushManagerChunk<CHUNK_T, T> and fillManagerChunk<CHUNK_T, Types>() are
-// defined in chunk/all_type_chunk_inline.h (template definitions belong in a
+// defined in chunk/internal/all_type_chunk_inline.h (template definitions belong in a
 // header); registration is driven by the consumer's type tuple.
 
 void AllTypeChunk::resize_chunk_to_compress_potentially() const
