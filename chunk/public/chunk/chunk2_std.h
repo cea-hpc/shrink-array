@@ -1134,7 +1134,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     /// @brief Get reference to the chunk manager (static access)
     /// @return Reference to the manager_chunk2 static instance
     /// @details On the class, not on the OpenMP policy: ChunkBase::
-    ///          release_to_owner() names derived().get_manager() in every
+    ///          release_to_owner() names self.get_manager() in every
     ///          build -- its foreign-block park is unreachable serially but
     ///          must still compile.
     ///

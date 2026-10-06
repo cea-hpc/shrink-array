@@ -35,13 +35,13 @@ namespace shrink_array
 {
 
 template <typename T, typename Derived>
-void ChunkBase<T, Derived>::free_block_to_pool([[maybe_unused]] int thr_rank, T* val)
+void ChunkBase<T, Derived>::free_block_to_pool(this Derived& self, [[maybe_unused]] int thr_rank, T* val)
 {
     // A pass that may run while other threads read (read_reclaim::PassScope:
     // perform_compression, compress() inside a region) collects the buffer
     // instead: a reader may still hold it between its `values` load and its
     // element load. The pass releases it here, after one grace period.
-    if (read_reclaim::defer_release(&ChunkBase::release_deferred_block, this, thr_rank, val))
+    if (read_reclaim::defer_release(&ChunkBase::release_deferred_block, &self, thr_rank, val))
     {
         return;
     }
@@ -51,8 +51,8 @@ void ChunkBase<T, Derived>::free_block_to_pool([[maybe_unused]] int thr_rank, T*
         // The block's slab says which array it belongs to (owner_key): the
         // reuse list is that array's, on this rank, and so is the budget. Key
         // 0 -- the shared pool -- is the list and budget everything used before.
-        const auto&    mgr               = derived().get_manager();
-        auto&          allocator         = derived().get_chunk_allocator(thr_rank);
+        const auto&    mgr               = self.get_manager();
+        auto&          allocator         = self.get_chunk_allocator(thr_rank);
         auto*          slab              = allocator.slab_of(val); // resolved ONCE; every route below reuses it
         const unsigned key               = slab ? slab->owner_key : 0u;
         auto&          ll_block_free_thr = mgr.get_list_block_free_thr(thr_rank, key);
