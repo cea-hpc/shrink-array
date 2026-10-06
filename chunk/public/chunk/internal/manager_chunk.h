@@ -435,18 +435,11 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *          - everything under the LEGACY store: the buffers were parked
      *            through a path that does not key on geometry, and
      *            drain_reuse_list_for_size() -- which only walks the by-size map
-     *            -- can never reach them. This is what happened on v1 before
-     *            set_active_chunk_size() started registering the starting
-     *            geometry.
+     *            -- can never reach them.
      *          - concentrated on the OLD size: the drain did not run, or ran
      *            against the wrong key.
      *          - spread across every size: the drain runs but frees only part of
      *            what it should -- e.g. one thread rank out of max_thr.
-     *
-     *          Measured on chunk2a at 64 threads with a forced re-chunk to 256:
-     *          19677 MB parked out of a 31100 MB footprint, against 16730 MB
-     *          total with no re-chunk at all. The re-chunk ADDS 14 GB, and this
-     *          is the breakdown that says which of the three it is.
      *
      * @param label prefix for the printed lines
      */
@@ -507,11 +500,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *          split into data, chunk metadata and retention.
      *
      *          A re-chunk should leave the array at the memory of an array that
-     *          was BORN at the new geometry. Measured on shrink_bench: 64
-     *          everywhere = 128.0 MB, 256 everywhere = 122.9 MB, but 64 followed
-     *          by a re-chunk to 256 = 169.2 MB. malloc_trim() does not move it,
-     *          so the 46 MB gap is live memory the library still owns -- and the
-     *          reuse pools are where old-geometry buffers go. This counts them.
+     *          was BORN at the new geometry; old-geometry buffers left in the
+     *          reuse pools are the usual gap (malloc_trim() does not move it),
+     *          and this counts them.
      */
     [[nodiscard]] static std::size_t reuse_pool_bytes() noexcept
     {
@@ -544,11 +535,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *
      * @details The pools never shrink on their own. A buffer a chunk releases is
      *          parked for reuse, and the list grows to the high-water mark of
-     *          simultaneously-free buffers and stays there. Measured on v1 dyn at
-     *          64 threads, once the starting geometry was registered so the
-     *          buffers were keyed at all: 29953 MB parked out of a 38523 MB
-     *          footprint -- 78% of the process. 35 million double blocks at one
-     *          geometry is not reuse, it is accumulation.
+     *          simultaneously-free buffers and stays there -- measured up to 78%
+     *          of the process footprint on v1 dyn at 64 threads. That is
+     *          accumulation, not reuse.
      *
      *          So: keep what the next materialisations plausibly need, hand the
      *          rest back. @p keep_per_thread is that working margin, per thread
@@ -559,10 +548,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      * @return bytes returned to the allocator
      *
      * @warning std-alloc only, and a no-op otherwise. With the fast allocator a
-     *          freed value slab is never munmap'd (see the op/value aliasing FIX
-     *          in manager_chunk_inline.h), so handing buffers back there just
-     *          moves them between the arena's own lists without releasing a
-     *          page. Doing nothing is honest; doing it anyway would be pure cost.
+     *          freed value slab is never munmap'd (the -1 given at allocator
+     *          init), so handing buffers back there just moves them between the
+     *          arena's own lists without releasing a page.
      *
      * @warning Timing is the caller's business, and it matters: trim too eagerly
      *          and the next materialisation re-allocates what was just freed.
@@ -632,10 +620,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *
      * @details The one place that knows a candidate tuple names its owning array
      *          in field <2>. The three remove_from_compress_list_*_by_num_tab
-     *          below spelled this erase-remove out individually; only their
-     *          TRAVERSAL genuinely differs (a flat per-rank vector for Chunk and
-     *          Chunk2A, a per-rank map of second-value buckets for Chunk2), so
-     *          that is all they keep.
+     *          below differ only in their TRAVERSAL (a flat per-rank vector for
+     *          Chunk and Chunk2A, a per-rank map of second-value buckets for
+     *          Chunk2).
      *
      * @tparam Vec any sequence of candidate tuples.
      * @param v       the sequence to filter, modified in place.
@@ -921,20 +908,14 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     /// @brief Number of buffers currently parked for @p thr_rank at the ambient geometry.
     [[nodiscard]] static size_t get_list_block_free_thr_size(int thr_rank) noexcept
     {
-        // Bounds-checked on purpose: every reuse container is only indexable
-        // once resize_all_list_block_free_thr() has sized it to max_thr, and that is
-        // NOT guaranteed at every call site. In fast-alloc builds nothing ever
-        // parks in the legacy store, so it can still be empty when the first
-        // chunk is allocated; in dynamic builds a geometry born from a re-chunk
-        // has no per-size list, so get_list_block_free_thr() falls back to that
-        // same (possibly empty) legacy store.
-        //
-        // Reading the size through operator[] on an empty vector is silent UB
-        // in a normal build and aborts under _GLIBCXX_ASSERTIONS with
-        // "Assertion '__n < this->size()' failed" -- which is exactly how this
-        // surfaced from ChunkAllocPolicy::allocate_chunk_internal. Answering 0
-        // for a slot that does not exist is both correct (no buffer is
-        // reusable) and what every caller already handles.
+        // Bounds-checked on purpose: a reuse container is only indexable once
+        // resize_all_list_block_free_thr() has sized it to max_thr, which is
+        // NOT guaranteed at every call site (fast-alloc builds never park in
+        // the legacy store, so it can still be empty at the first allocation;
+        // a geometry born from a re-chunk has no per-size list and falls back
+        // to it). Indexing anyway is UB (an abort under _GLIBCXX_ASSERTIONS).
+        // Answering 0 for a slot that does not exist is both correct (no buffer
+        // is reusable) and what every caller already handles.
         if (static_cast<size_t>(thr_rank) >= list_block_free_thr.size())
         {
             if constexpr (chunk_config::chunk_dynamic)
@@ -1042,14 +1023,10 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         // their pools regardless.
         if constexpr (chunk_config::chunk_dynamic)
         {
-            // Drain ONLY the per-size reuse list for `size`, looked up directly. If it
-            // was never registered (e.g. the array's INITIAL geometry, set at
-            // construction without going through set_chunk_size/register_runtime_chunk_size),
-            // nothing was ever parked in a per-size list for it -> return. Do NOT fall
-            // back to the unsized legacy list via get_list_block_free_thr_for_size:
-            // in a non-OMP build that list is not resized, so list_block_free_thr[thr]
-            // is an out-of-bounds operator[] -> SIGSEGV/assert at the first re-chunk.
-            // Teardown's clear_list_block_free_thr drains the legacy list separately.
+            // Drain ONLY the per-size reuse list for `size`, looked up directly --
+            // never the unsized legacy list (see the @warning above). Never
+            // registered (e.g. the array's initial geometry, set at
+            // construction) means nothing was ever parked there.
             // One routine per list set: the shared per-size list, then every
             // keyed list (per-array affinity) at that same size -- a re-chunk
             // or a destruction leaves its old-geometry blocks in the array's
@@ -1076,18 +1053,12 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 {
                     // fast-alloc: free each block through its OWNING thread's slab
                     // (free_elt_pow2 is only safe on an owned block). Owner-routed
-                    // drain, in three passes.
-                    //
-                    // The previous shape -- a parallel pass where rank T offered its
-                    // own list to its own allocator, then a SERIAL owner-routing
-                    // sweep offering every leftover block to every rank in turn --
-                    // was calibrated on 7553 orphans (3.9 MB). It is quadratic:
-                    // is_free_able_elt() walks the allocator's slab chains (linear in
-                    // slabs), the sweep repeats it for every rank, and after a v1
-                    // re-chunk of a 10^9-double array most of the 11M parked blocks
-                    // are orphans (clear_st parks in the FREEING thread's list, the
-                    // refill reads spans owned by other ranks). perf at 64 threads:
-                    // 39% in the OpenMP barrier, the drain on one thread underneath.
+                    // drain, in three passes -- not "offer every leftover block to
+                    // every rank in turn", which is quadratic (is_free_able_elt()
+                    // walks the slab chains) and, after a v1 re-chunk where most
+                    // parked blocks are orphans (clear_st parks in the FREEING
+                    // thread's list), kept the team waiting in a barrier on one
+                    // thread's drain.
                     //
                     // Ownership is not ambiguous, only expensive to ask the allocator
                     // for: every slab is reachable from exactly one rank's chains,
@@ -1375,16 +1346,11 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
     /// @brief Drop every queued Chunk (v1) candidate of array @p num_tab
     ///        (ArrayChunk::clear_core and rechunk_to).
-    // Plain-Chunk (v1) analogue: remove every queued Chunk candidate belonging to
-    // `num_tab` from chunk_to_compress_potentially_thr (a flat per-thread vector
-    // of (Chunk*, num_chunk, num_tab) tuples — v1 has no second_value keying).
-    // Used by ArrayChunk::clear_core and rechunk_to. fill_list_to_compress scans
-    // at the AMBIENT geometry (alloc_chunk_count()), so a candidate left in the
-    // list across a geometry change is later scanned at the wrong size
-    // (over-scan on shrink -> heap-overflow, under-scan on grow -> mis-compress);
-    // removing by num_tab avoids that without forcing compression. No sweep runs
-    // in v1's clear(), but a mid-refill make_block_compression can, hence the
-    // rechunk removals. Filtering by num_tab keeps other live arrays intact.
+    /// @details chunk_to_compress_potentially_thr is a flat per-thread vector of
+    ///          (Chunk*, num_chunk, num_tab, ...) tuples -- v1 has no
+    ///          second-value keying. Filtering by num_tab removes this array's
+    ///          candidates without forcing a compression and keeps other live
+    ///          arrays' intact.
     static void remove_from_compress_list_chunk_by_num_tab(int num_tab) noexcept
     {
         if constexpr (build_config::use_openmp)

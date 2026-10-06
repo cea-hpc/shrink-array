@@ -184,13 +184,13 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list([[maybe_unused]] 
                                  static_cast<const void*>(&chunk), num, num_chunk, num_tab);
             }
         }
-        // Test, then test-and-set. The flag is 1 for 99.7% of the calls on
-        // the perf bench (the chunk is already queued, and stays so until the
-        // pass resets it), and a compare_exchange takes the line exclusively
-        // whether it succeeds or not -- one char per chunk, 64 chunks per
-        // line, neighbouring chunks written by different ranks: 5.4 G locked
-        // RMWs and their line ping-pong per reference run for nothing. The
-        // relaxed probe decides nothing by itself: the CAS below still does.
+        // Test, then test-and-set. The flag is almost always 1 (the chunk is
+        // already queued, and stays so until the pass resets it), and a
+        // compare_exchange takes the line exclusively whether it succeeds or
+        // not -- one char per chunk, 64 chunks per line, neighbouring chunks
+        // written by different ranks: billions of locked RMWs and their line
+        // ping-pong per run, for nothing. The relaxed probe decides nothing by
+        // itself: the CAS below still does.
         char expected = 0;
         if (ptr_is_inside_chunk_list_to_compress->load(std::memory_order_relaxed) == 0 &&
             ptr_is_inside_chunk_list_to_compress->compare_exchange_strong(expected, 1, std::memory_order_acq_rel,
@@ -348,7 +348,7 @@ ProxyType ProxyBaseFastCompPolicy<Derived, T, ChunkType, Enabled>::make_proxy_wi
 
     proxy.set_num_chunk(ctx->num_chunk);
 
-    // fw14: carry the enqueue-time geometry onto the replay proxy so its
+    // Carry the enqueue-time geometry onto the replay proxy so its
     // chunk_size() does not dereference a possibly-dead ptr_on_array.
     proxy.set_chunk_size_frozen(ctx->chunk_size_frozen, ctx->alloc_key_frozen);
 
@@ -548,32 +548,30 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
             return false;
         }
 
-        // ─── Cross-rank direct-write guard (CHUNK_SYNC_ON_READ) ─────────────
+        // ─── Cross-rank direct-write guard ──────────────────────────────────
         // A pending op enqueued by ANOTHER rank at this offset would replay
         // AFTER our write and clobber it (parallel regions remap thread->rank,
         // so the same element can legally be written by different ranks in
         // successive regions; only a barrier orders them). Own-rank pending is
-        // safe (same-offset own op erased by P2 below; other offsets replay
-        // elsewhere) and keeps the bulk-init fast path: one acquire load when
-        // nothing is pending, one extra load + TLS read when own ops are. The
-        // drain runs HERE, before begin_write, so it is never re-entrant. This
-        // also covers the deferred-ENQUEUE path decided below: two same-offset
-        // ops on different ranks replay in arbitrary order, so the foreign one
-        // must be materialised before we enqueue ours.
+        // safe (a same-offset own op is erased by the WAW guard below; other
+        // offsets replay elsewhere) and keeps the bulk-init fast path: one
+        // acquire load when nothing is pending, one extra load + TLS read when
+        // own ops are. The drain runs HERE, before begin_write, so it is never
+        // re-entrant. This also covers the deferred-ENQUEUE path decided below:
+        // two same-offset ops on different ranks replay in arbitrary order, so
+        // the foreign one must be materialised before we enqueue ours.
         //
-        // ─── Own-pending replay exclusion (fw5) ─────────────────────────────
-        // The gnu battery bisection (fw4a) proved the residual corruption needs
-        // the OFF-mode structural guarantee: no replay may be IN FLIGHT on a
-        // chunk while a thread direct-writes it. Foreign ops are drained above;
-        // OUR own pending ops (other offsets of this chunk) can still be
-        // replayed CONCURRENTLY by another thread's gate/stage-2 walk — and a
-        // replay bypasses the Dekker (in_flush_replay), so the two writers are
-        // mutually invisible. Every replayer of rank r's ops holds
-        // xflush_lock[r]; holding OUR OWN rank lock for the duration of the
-        // write therefore excludes any concurrent replay of our ops WITHOUT
-        // draining anything: the bulk-init deferral regime keeps its ops
-        // queued (owner-recursive lock, uncontended there — the enqueue path
-        // below takes the same lock anyway).
+        // ─── Own-pending replay exclusion ───────────────────────────────────
+        // No replay may be IN FLIGHT on a chunk while a thread direct-writes
+        // it. Foreign ops are drained above; OUR own pending ops (other offsets
+        // of this chunk) can still be replayed CONCURRENTLY by another thread's
+        // gate/stage-2 walk -- and a replay bypasses the Dekker
+        // (in_flush_replay), so the two writers are mutually invisible. Every
+        // replayer of rank r's ops holds xflush_lock[r]; holding OUR OWN rank
+        // lock for the duration of the write therefore excludes any concurrent
+        // replay of our ops WITHOUT draining anything: the bulk-init deferral
+        // regime keeps its ops queued (owner-recursive lock, uncontended there
+        // -- the enqueue path below takes the same lock anyway).
         [[maybe_unused]] int own_replay_excl_rank = -1;
         if constexpr (build_config::use_openmp)
         {
@@ -617,20 +615,17 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
         // The gate is a parked compressor (its writer window is being
         // opened, microseconds) or a compressor's pass having THIS chunk
         // marked (ChunkBase::steal_mark_); without the marks, any hard
-        // compression in flight. It used to be "a slow-path driver
-        // is running, or a compressor, or MY list is dangerous": the first
-        // sent every writer down the deferred path for the whole of someone
-        // else's flush-and-try, the last sent the dangerous rank's own write
-        // there -- to be enqueued, then replayed by the flush_deferred() its
-        // perform_compression() ran an instant later, under a flush announce
-        // that made every other rank's start() yield. That was the circular
-        // regime: 390 000 deferred writes and 17 000 flushes per second at 8
-        // threads, 98% of the start() calls yielding, nothing compressed
-        // until the between-phase region. Now a dangerous rank WRITES, under
-        // the same handshake as everyone, and drives its compression pass
-        // after end_write (below); only a compressor in flight defers a write
-        // -- and even then only after a bounded wait for it: no flag is held
-        // here, so waiting shuts no window, and a window is a few hundred
+        // compression in flight. NOT "a slow-path driver is running", nor
+        // "MY list is dangerous": the first sends every writer down the
+        // deferred path for someone else's whole flush-and-try; the second
+        // defers the dangerous rank's own write only for its own
+        // perform_compression() to replay it an instant later, under a flush
+        // announce that makes every other start() yield -- a circular regime
+        // in which nothing compresses. A dangerous rank WRITES, under the
+        // same handshake as everyone, and drives its compression pass after
+        // end_write (below); only a compressor in flight defers a write --
+        // and only after a bounded wait for it: no flag is held here, so
+        // waiting shuts no window, and a window is a few hundred
         // microseconds against an enqueue and a replay per write (see
         // wait_out_compressor).
         if (compression_mgr.must_defer_write(chunk)) [[unlikely]]
@@ -696,14 +691,13 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
                     }
                 }
 
-                // ─── WAW guard (CHUNK_SYNC_ON_READ, P2) ──────────────────────
-                // Writes no longer flush (P1), so an OLDER deferred op for THIS
-                // offset may still sit on our own rank. Discard it before the
-                // direct store below, else a later replay would clobber the fresh
-                // value. Only fires when this chunk actually has pendings.
+                // ─── WAW guard ───────────────────────────────────────────────
+                // Writes do not flush, so an OLDER deferred op for THIS offset
+                // may still sit on our own rank. Discard it before the direct
+                // store below, else a later replay would clobber the fresh
+                // value. Only fires when this chunk actually has pendings;
                 // pending_any() is constant-false in counterless builds, so the
-                // erase call folds away there — same effect as the old #if, but
-                // selected by the policy. use_openmp in the constexpr condition
+                // erase folds away there. use_openmp in the constexpr condition
                 // keeps the branch un-instantiated in serial builds (the erase
                 // body names OpenMP-only machinery).
                 if constexpr (build_config::use_openmp)
@@ -736,7 +730,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
                 // perform_compression() once its own store is done and its
                 // writer flag released. The pass starts with the rank's
                 // flush_deferred(), which announces nothing when the rank has
-                // no deferred op (the usual case now), then start(), whose
+                // no deferred op (the usual case), then start(), whose
                 // parked hard_inflight_ is what steers the other writers away
                 // for the "no writer" window. One driver per threshold
                 // crossing, not one per write.
@@ -746,7 +740,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
                 }
                 else
                 {
-                    // ─── P3 backlog drain, fast-path side ───────────────────
+                    // ─── Backlog drain, fast-path side ──────────────────────
                     // The ops this rank deferred while a compressor was in
                     // flight are drained once the backlog crosses the
                     // threshold -- from here, a direct write with no
@@ -852,11 +846,10 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
 template <typename Derived, typename T, typename ChunkType>
 unsigned int ProxyBase<Derived, T, ChunkType>::chunk_size() const noexcept
 {
-    // fw14: on the deferred-replay path chunk_size_frozen_ is armed (non-zero)
-    // from the enqueue-time geometry, so we must NOT dereference ptr_on_array —
-    // it may point at an already-destroyed ArrayChunk (use-after-free, SIGSEGV
-    // under std-alloc + DynamicChunkSize). On the direct write path the array is
-    // alive and the value was never frozen (0), so we read it live as before.
+    // On the deferred-replay path chunk_size_frozen_ is armed (non-zero) from
+    // the enqueue-time geometry: do NOT dereference ptr_on_array, which may
+    // point at an already-destroyed array. On the direct write path the array
+    // is alive and the value was never frozen (0), so it is read live.
     // Geometry is immutable post-construction, so both paths agree.
     if (chunk_size_frozen_ != 0U) [[unlikely]]
     {
@@ -1164,16 +1157,14 @@ void ProxyBase<Derived, T, ChunkType>::arithmetic_assign(in_t<U> v, Op operation
         increm_chunk_write<ChunkType>(v);
     }
 
-    // ── Cross-rank RMW materialisation (CHUNK_SYNC_ON_READ) ───────────────────
-    // A read-modify-write needs a fresh v_old. Under sync_on_read the write path
-    // no longer flushes (P1), so a deferred write to THIS offset enqueued on
-    // ANOTHER rank may be unmaterialised — load_value() would then read a stale
-    // v_old and the RMW would clobber that foreign write (the ~1/41-run
-    // "read 1 != 2" lost-write corruption). Materialise cross-rank HERE, at the
-    // RMW entry, BEFORE begin_write, so the drain is not re-entrant (that was the
-    // earlier SIGSEGV). reader_sync is a precise gate: no pending -> no-op, so a
-    // plain-write phase keeps the P1 fast path. Plain assignment reads no v_old
-    // and never reaches this engine.
+    // ── Cross-rank RMW materialisation ──────────────────────────────────────
+    // A read-modify-write needs a fresh v_old. The write path does not flush,
+    // so a deferred write to THIS offset enqueued on ANOTHER rank may be
+    // unmaterialised: load_value() would read a stale v_old and the RMW would
+    // clobber that foreign write. Materialise cross-rank HERE, at the RMW
+    // entry, BEFORE begin_write, so the drain is not re-entrant. reader_sync
+    // is a precise gate: no pending -> no-op, so a plain-write phase keeps the
+    // fast path. Plain assignment reads no v_old and never reaches this engine.
     chunk.reader_sync(num);
 
     using CalcType = std::common_type_t<T, base_t<U>>;
@@ -1314,16 +1305,14 @@ void ProxyBase<Derived, T, ChunkType>::bitwise_assign(in_t<U> v, Op operation) n
         increm_chunk_write<ChunkType>(v);
     }
 
-    // Cross-rank RMW materialisation (CHUNK_SYNC_ON_READ): the same gate as
-    // arithmetic_assign / apply_inplace_operation / Proxy2A::apply_compound_
-    // operation. This engine reads val[num] in place; a deferred write to THIS
-    // offset still queued on another rank (or the plain `= v` that preceded
-    // this op and was refused) has not reached the buffer yet, so the RMW
-    // would compute from a stale cell and the two writes would resolve in the
-    // wrong order. Precise gate: no pending -> no-op. The bitwise engines were
-    // the only RMW paths without it (shrink_bench chunk2a dyn, 32-56 threads:
-    // tab_long with += *= -- passes, tab_ulong with |= &= on the same indices
-    // in the same loop loses whole per-thread slices).
+    // Cross-rank RMW materialisation: the same gate as arithmetic_assign /
+    // apply_inplace_operation / Proxy2A::apply_compound_operation. This
+    // engine reads val[num] in place; a deferred write to THIS offset still
+    // queued on another rank (or the plain `= v` that preceded this op and
+    // was refused) has not reached the buffer yet, so the RMW would compute
+    // from a stale cell and the two writes would resolve in the wrong order
+    // (whole per-thread slices lost with |= &=). Precise gate: no pending ->
+    // no-op.
 
     chunk.reader_sync(num);
 
@@ -1346,9 +1335,8 @@ void ProxyBase<Derived, T, ChunkType>::bitwise_assign(in_t<U> v, Op operation) n
             // The replay body outlives this call (enqueue_async_arithmetic
             // stores it): it must not capture anything of this frame. The
             // operation is read from the context, which holds its own copy --
-            // as arithmetic_assign does. It used to capture `operation` by
-            // reference through [&], dangling at replay; only stateless
-            // functors (std::bit_or<> ...) made that harmless.
+            // as arithmetic_assign does; capturing `operation` by reference
+            // ([&]) would dangle at replay.
             enqueue_async_arithmetic(v, operation,
                                      [](auto* ctx, auto& proxy)
                                      {
@@ -1381,7 +1369,7 @@ void ProxyBase<Derived, T, ChunkType>::apply_inplace_operation(SyncOp           
                                                                [[maybe_unused]] AsyncOp async_op) noexcept
 {
     check_not_stale();
-    // Cross-rank RMW materialisation (CHUNK_SYNC_ON_READ): ++/-- and other
+    // Cross-rank RMW materialisation: ++/-- and other
     // in-place ops read val[num] directly; pull any foreign deferred write to
     // this offset to applied state first, outside begin_write. See
     // arithmetic_assign for the rationale. No-op when nothing is pending.
