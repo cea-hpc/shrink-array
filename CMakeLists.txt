@@ -725,4 +725,9 @@ if(BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_includes
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_includes.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_includes PROPERTY LABELS validation)
+    # The documentation matches the code, and the English and French versions
+    # each other (scripts/check_docs.py).
+    add_test(NAME check_docs
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_docs.py ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_docs PROPERTY LABELS "validation;docs")
 endif()

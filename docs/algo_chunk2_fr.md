@@ -294,7 +294,7 @@ contient la position et l'opérande) et placée dans la file du thread. Elle ser
 plus tard :
 
 - par une **lecture** du chunk (barrière de lecture, section 5) ;
-- aux **barrières** OpenMP : chaque rang vide sa propre file (`on_barrier`) ;
+- aux **barrières** OpenMP : chaque rang vide sa propre file (`on_barrier_end`) ;
 - en **fin de région parallèle** (`on_parallel_end` / `finalize_parallel_phase`), par un
   vidage en série qui n'ouvre une région que s'il reste des opérations ;
 - dans le chemin d'écriture lui-même, quand la file d'un thread dépasse un seuil.
@@ -312,7 +312,7 @@ de phase : ~21 s d'un run de ~30 s sur AMD Milan (GNU, 64 threads).
 ### 7.4 Les rappels OMPT
 
 Avec OMPT, la bibliothèque s'accroche au runtime OpenMP : `on_implicit_task` (cache du rang
-du thread), `on_barrier` et `on_parallel_end` (rejeu des opérations différées et passes de
+du thread), `on_barrier_end` et `on_parallel_end` (rejeu des opérations différées et passes de
 compression). Sans OMPT (libgomp), le code appelant encadre ses régions par
 `begin_parallel_phase()` / `finalize_parallel_phase()`, et le travail de fin de région est fait
 par le **maître**, après la région : c'est là qu'une étape séquentielle coûteuse se voit
@@ -558,7 +558,7 @@ Options CMake liées aux performances des bancs :
 | option | effet |
 |---|---|
 | `SHRINK_INTEL_LIBM` (ON) | x86-64, hors icpx : lie les exécutables à la libm d'Intel (`libimf`) si elle est trouvée (`INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, ou à côté d'`icpx`). AMD Milan, GNU : 15,7 s → 12,4 s sur `shrink_bench_chunk2a_256` |
-| `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang : lie `libamath` d'ArmPL (`ARMPL_LIBM_DIR`). Aucun gain mesuré sur Grace (RHEL 9.6) ; conservée pour refaire la mesure (`scripts/test_armpl_libm.sh`) |
+| `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang : lie `libamath` d'ArmPL (`ARMPL_LIBM_DIR`). Aucun gain mesuré sur Grace (RHEL 9.6) ; conservée pour refaire la mesure (`-DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir>`) |
 
 ---
 

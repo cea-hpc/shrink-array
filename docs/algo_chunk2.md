@@ -294,7 +294,7 @@ holds the position and the operand) and placed in the thread's queue. It will be
 later:
 
 - by a **read** of the chunk (read barrier, section 5);
-- at OpenMP **barriers**: each rank flushes its own queue (`on_barrier`);
+- at OpenMP **barriers**: each rank flushes its own queue (`on_barrier_end`);
 - at the **end of the parallel region** (`on_parallel_end` / `finalize_parallel_phase`), by a
   serial flush that only opens a region if operations remain;
 - in the write path itself, when a thread's queue exceeds a threshold.
@@ -312,7 +312,7 @@ of phase: ~21 s of a ~30 s run on AMD Milan (GNU, 64 threads).
 ### 7.4 OMPT callbacks
 
 With OMPT, the library hooks into the OpenMP runtime: `on_implicit_task` (caches the thread's
-rank), `on_barrier` and `on_parallel_end` (replay of deferred operations and compression
+rank), `on_barrier_end` and `on_parallel_end` (replay of deferred operations and compression
 passes). Without OMPT (libgomp), the calling code wraps its regions with
 `begin_parallel_phase()` / `finalize_parallel_phase()`, and the end-of-region work is done
 by the **master**, after the region: this is where a costly sequential step shows up
@@ -558,7 +558,7 @@ CMake options related to benchmark performance:
 | option | effect |
 |---|---|
 | `SHRINK_INTEL_LIBM` (ON) | x86-64, not icpx: links the executables against Intel's libm (`libimf`) if it is found (`INTEL_LIBM_DIR`, `$CMPLR_ROOT/lib`, or next to `icpx`). AMD Milan, GNU: 15.7 s → 12.4 s on `shrink_bench_chunk2a_256` |
-| `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang: links ArmPL's `libamath` (`ARMPL_LIBM_DIR`). No gain measured on Grace (RHEL 9.6); kept to redo the measurement (`scripts/test_armpl_libm.sh`) |
+| `SHRINK_ARM_LIBM` (OFF) | aarch64, GNU/Clang: links ArmPL's `libamath` (`ARMPL_LIBM_DIR`). No gain measured on Grace (RHEL 9.6); kept to redo the measurement (`-DSHRINK_ARM_LIBM=ON -DARMPL_LIBM_DIR=<dir>`) |
 
 ---
 
