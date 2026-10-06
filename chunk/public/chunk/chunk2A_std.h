@@ -464,7 +464,7 @@ class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrent
      * \param ptr_second_value The chunk's second-value slot.
      * \param thr_rank         Rank whose pool receives the released buffer.
      */
-    void clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank);
+    void clear(this Derived& self, char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank);
 
     /*!
      * \brief Release this chunk's buffer and point it back at a constant --
@@ -475,7 +475,8 @@ class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrent
      * \param thr_rank           Rank whose pool receives the released buffer.
      * \param cst2_ptr           Shared array of the second constant (type 2).
      */
-    void block_clear(int               num_compress_value,
+    void block_clear(this Derived&     self,
+                     int               num_compress_value,
                      char*             ptr_type_cst,
                      SecondValueRef<T> ptr_second_value,
                      int               thr_rank,
@@ -490,7 +491,8 @@ class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrent
      * \param new_cst_val2_ptr   Pointer returned by find_or_set_ind_cst_val2();
      *                           required when @p num_compress_value is 1.
      */
-    void clear_int_st(int               num_compress_value,
+    void clear_int_st(this Derived&     self,
+                      int               num_compress_value,
                       char*             ptr_type_cst,
                       SecondValueRef<T> ptr_second_value,
                       int               thr_rank,
@@ -502,9 +504,9 @@ class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrent
      * \param ptr_type_cst       Slot of the per-chunk type table to update.
      * \param ptr_second_value   The chunk's second-value slot.
      */
-    void clear_st(int num_compress_value, char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
+    void clear_st(this Derived& self, int num_compress_value, char* ptr_type_cst, SecondValueRef<T> ptr_second_value)
     {
-        clear_int_st(num_compress_value, ptr_type_cst, ptr_second_value, CHUNK_PMP_THREAD_RANK);
+        self.clear_int_st(num_compress_value, ptr_type_cst, ptr_second_value, CHUNK_PMP_THREAD_RANK);
     }
 
   private:
@@ -546,10 +548,10 @@ class Chunk2AOmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
      * \param need_set_second_value True to pre-fill with the second value, false for first_value.
      * \param ptr_second_value      The chunk's second value; read only when the flag is set.
      */
-    void create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value);
+    void create_value(this Derived& self, bool need_set_second_value, SecondValueRef<T> ptr_second_value);
 
     /// @brief Bool specialization of create_value().
-    void create_value_bool(bool need_set_second_value);
+    void create_value_bool(this Derived& self, bool need_set_second_value);
 
     /*!
      * \brief The full type-2 clear (find_or_set path), so the sequential

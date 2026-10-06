@@ -988,7 +988,9 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::create_value_bool(this Derived& self
  * assigned to `values`.
  */
 template <typename T, typename Derived>
-void Chunk2AOmpPolicy<T, Derived, false>::create_value(bool need_set_second_value, SecondValueRef<T> ptr_second_value)
+void Chunk2AOmpPolicy<T, Derived, false>::create_value(this Derived&     self,
+                                                       bool              need_set_second_value,
+                                                       SecondValueRef<T> ptr_second_value)
 {
     // Lambda to select the right initialization function
     const auto init_func = [need_set_second_value, ptr_second_value](T* ptr)
@@ -1006,7 +1008,7 @@ void Chunk2AOmpPolicy<T, Derived, false>::create_value(bool need_set_second_valu
         }
     };
 
-    values = Base::allocate_chunk_internal(0, init_func);
+    self.values = self.Base::allocate_chunk_internal(0, init_func);
 }
 
 /**
@@ -1014,14 +1016,14 @@ void Chunk2AOmpPolicy<T, Derived, false>::create_value(bool need_set_second_valu
  * @param need_set_second_value Fill value — true for the second constant, false for the first.
  */
 template <typename T, typename Derived>
-void Chunk2AOmpPolicy<T, Derived, false>::create_value_bool(bool need_set_second_value)
+void Chunk2AOmpPolicy<T, Derived, false>::create_value_bool(this Derived& self, bool need_set_second_value)
 {
     // bool's second value is always `true`, so this IS create_value() at that
     // value: Base::init_block() is the `false` fill (a memset for any
     // arithmetic T, bool included), and the second-value fill with
     // ptr_second_value.get() == true is the `true` one.
     static T k_second_value = static_cast<T>(true); // a slot the handle can point at; never written
-    create_value(need_set_second_value, SecondValueRef<T>{&k_second_value});
+    self.create_value(need_set_second_value, SecondValueRef<T>{&k_second_value});
 }
 
 /**
@@ -1032,9 +1034,12 @@ void Chunk2AOmpPolicy<T, Derived, false>::create_value_bool(bool need_set_second
  * @param thr_rank         Rank whose pool receives the released buffer.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2AOmpPolicy<T, Derived, Enabled>::clear(char* ptr_type_cst, SecondValueRef<T> ptr_second_value, int thr_rank)
+void Chunk2AOmpPolicy<T, Derived, Enabled>::clear(this Derived&     self,
+                                                  char*             ptr_type_cst,
+                                                  SecondValueRef<T> ptr_second_value,
+                                                  int               thr_rank)
 {
-    derived().Base::clear_impl(std::nullopt, thr_rank, ptr_type_cst, ptr_second_value);
+    self.Chunk2Base<T, Derived>::clear_impl(std::nullopt, thr_rank, ptr_type_cst, ptr_second_value);
 }
 
 /**
@@ -1094,11 +1099,12 @@ void Chunk2AOmpPolicy<T, Derived, false>::clear_st(this Derived&     self,
  * counted here and nowhere else.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(int                  num_compress_value,
-                                                        char*                ptr_type_cst,
-                                                        SecondValueRef<T>    ptr_second_value,
+void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(this Derived&     self,
+                                                        int               num_compress_value,
+                                                        char*             ptr_type_cst,
+                                                        SecondValueRef<T> ptr_second_value,
                                                         [[maybe_unused]] int thr_rank,
-                                                        T*                   cst2_ptr)
+                                                        T*                cst2_ptr)
 {
     // CHUNK_STATS: one materialised block released by a successful compression.
     // Counted here because block_clear is the single point every variant and
@@ -1108,7 +1114,8 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(int                  num
     // Bytes released, as Chunk2 counts them: with bytes_alloc and bytes_reused
     // this gives the buffers still materialised at any point of a run.
     add_chunk_bytes_freed<Derived>(static_cast<long>(sizeof(T)) * static_cast<long>(shrink_array::alloc_chunk_count()));
-    derived().Base::block_clear_common(num_compress_value, 0, thr_rank, ptr_type_cst, ptr_second_value, cst2_ptr);
+    self.Chunk2Base<T, Derived>::block_clear_common(num_compress_value, 0, thr_rank, ptr_type_cst, ptr_second_value,
+                                                    cst2_ptr);
 }
 
 /**
@@ -1119,13 +1126,14 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(int                  num
  * reads that pointer while doing so, and would otherwise pick up a stale one.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(int               num_compress_value,
+void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(this Derived&     self,
+                                                         int               num_compress_value,
                                                          char*             ptr_type_cst,
                                                          SecondValueRef<T> ptr_second_value,
                                                          int               thr_rank,
                                                          T*                new_cst_val2_ptr)
 {
-    derived().Base::check_not_constant_before_clear(num_compress_value, std::nullopt);
+    self.Chunk2Base<T, Derived>::check_not_constant_before_clear(num_compress_value, std::nullopt);
 
     // The array to install for a type-2 compression: the caller's, or the one
     // registered for the chunk's second value (the bool path, which passes
@@ -1135,7 +1143,7 @@ void Chunk2AOmpPolicy<T, Derived, Enabled>::clear_int_st(int               num_c
         new_cst_val2_ptr = Derived::tab_cst_val2_holder::find_cst_val2_ptr(ptr_second_value.get());
     }
 
-    block_clear(num_compress_value, ptr_type_cst, ptr_second_value, thr_rank, new_cst_val2_ptr);
+    self.block_clear(num_compress_value, ptr_type_cst, ptr_second_value, thr_rank, new_cst_val2_ptr);
 }
 
 /// @brief Serial block_clear(): frees the buffer outright instead of parking it

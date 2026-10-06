@@ -484,7 +484,7 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \param ind Index of the second constant (unused when num_compress_value == 0).
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-    void block_clear(int num_compress_value, int ind, int thr_rank);
+    void block_clear(this Derived& self, int num_compress_value, int ind, int thr_rank);
 
     /*!
      * \brief Compress this chunk to a constant, for a specific thread.
@@ -496,7 +496,7 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      *            num_compress_value == 0).
      * \param thr_rank Calling thread's rank (selects the allocator pool).
      */
-    void clear_int_st(int num_compress_value, int ind, int thr_rank);
+    void clear_int_st(this Derived& self, int num_compress_value, int ind, int thr_rank);
 
     /*!
      * \brief Bool specialization of the 3-arg clear_int_st(), for a
@@ -505,7 +505,7 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      *                            (single, shared) second constant.
      * \param thr_rank Calling thread's rank.
      */
-    void clear_int_st_bool(int num_compress_value, int thr_rank);
+    void clear_int_st_bool(this Derived& self, int num_compress_value, int thr_rank);
 
     /*!
      * \brief Compress this chunk to a constant (no thread dimension): the
@@ -515,9 +515,9 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \param ind Index of the second constant (unused when
      *            num_compress_value == 0).
      */
-    void clear_st(int num_compress_value, int ind)
+    void clear_st(this Derived& self, int num_compress_value, int ind)
     {
-        clear_int_st(num_compress_value, ind, CHUNK_PMP_THREAD_RANK);
+        self.clear_int_st(num_compress_value, ind, CHUNK_PMP_THREAD_RANK);
     }
 
   private:
@@ -549,7 +549,7 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
      * \param ind Index of the second constant to compress to.
      * \param thr_rank Calling thread's rank.
      */
-    void clear(int ind, int thr_rank);
+    void clear(this Derived& self, int ind, int thr_rank);
 };
 
 /**
