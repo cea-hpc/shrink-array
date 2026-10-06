@@ -1454,10 +1454,10 @@ class ChunkBase : public CRTPSupport<Derived>,
 
     /// @brief Free this chunk's current values buffer.
     /// @param thr_rank Calling thread's rank; forwarded to free_values(T*, int).
-    void free_values([[maybe_unused]] int thr_rank = 0)
+    void free_values(this Derived& self, [[maybe_unused]] int thr_rank = 0)
     {
-        T* ptr = values_load();
-        free_values(ptr, thr_rank);
+        T* ptr = self.values_load();
+        self.free_values(ptr, thr_rank);
     }
 
     /// @brief Get the allocator to use for the current thread and active

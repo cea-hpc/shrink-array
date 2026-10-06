@@ -261,15 +261,15 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
      * @brief Materialise this chunk's storage from @p thr_rank's free-list.
      * @param thr_rank calling thread's rank, selecting its allocator pool
      */
-    void create_value(int thr_rank) noexcept;
+    void create_value(this Derived& self, int thr_rank) noexcept;
 
     /// @brief Materialise storage for the calling thread.
     /// @details Delegates to the rank-aware overload using this thread's rank.
-    void create_value() noexcept;
+    void create_value(this Derived& self) noexcept;
 
     /// @brief Compress: release this chunk's buffer to @p thr_rank's reuse
     ///        list and count it as a compression (CHUNK_STATS).
-    void clear_st(int thr_rank, unsigned int n_elems);
+    void clear_st(this Derived& self, int thr_rank, unsigned int n_elems);
     /// @brief Release this chunk's buffer to @p thr_rank's reuse list WITHOUT
     ///        counting a compression -- the re-chunk rebuild releasing an old
     ///        chunk once copied (clear_st = count + release_st).
@@ -277,9 +277,9 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
     /// @param n_elems       element count of this chunk (its array's geometry)
     /// @param count_release count it as a release (CHUNK_STATS `released`);
     ///        clear_st passes false, having counted a compression instead
-    void release_st(int thr_rank, unsigned int n_elems, bool count_release = true);
+    void release_st(this Derived& self, int thr_rank, unsigned int n_elems, bool count_release = true);
     /// @brief Release the buffer outright, without parking it for reuse.
-    void clear_int_st(int thr_rank);
+    void clear_int_st(this Derived& self, int thr_rank);
 
     /**
      * @brief Compress this chunk if all @p n_elems elements are zero.
@@ -295,9 +295,9 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
     /// @brief CAS this chunk's values pointer into place.
     /// @param values_loc buffer to publish
     /// @return true if this thread won the exchange
-    bool compare_and_swap(T* values_loc) noexcept
+    bool compare_and_swap(this Derived& self, T* values_loc) noexcept
     {
-        return Base::compare_and_swap1(values_loc);
+        return self.Base::compare_and_swap1(values_loc);
     }
 
     /**
@@ -307,9 +307,9 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
      * @note This is the CAS-steal that makes a compressor's window dangerous to
      *       concurrent writers -- see CompressionManager's hard_inflight_.
      */
-    T* try_mark_cst_and_get_old()
+    T* try_mark_cst_and_get_old(this Derived& self)
     {
-        T* old = Base::values_load();
+        T* old = self.Base::values_load();
         if (old == Base::get_cst_val1()) [[unlikely]]
         {
             return nullptr;
@@ -318,7 +318,7 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
         T* expected = old;
         T* new_ptr  = Base::get_cst_val1();
 
-        if (!values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
+        if (!self.values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
             [[unlikely]]
         {
             return nullptr;
@@ -357,16 +357,16 @@ class ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
 
     /// @brief Materialise this chunk's storage.
     /// @details Allocates directly: there is no per-thread free-list to consult.
-    void create_value() noexcept;
+    void create_value(this Derived& self) noexcept;
 
     /// @brief Compress: release this chunk's buffer and count it as a
     ///        compression (CHUNK_STATS).
-    void clear_st();
+    void clear_st(this Derived& self);
     /// @brief Release this chunk's buffer WITHOUT counting a compression --
     ///        the teardown, counted as teardown_clear (clear_st = count +
     ///        release_st).
     /// @param count_release as in the OpenMP policy's release_st
-    void release_st(bool count_release = true);
+    void release_st(this Derived& self, bool count_release = true);
 };
 
 /**
@@ -585,32 +585,32 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     }
 
     /// @brief Point this chunk at the shared zero constant (compressed state).
-    void init_values_cst_val()
+    void init_values_cst_val(this auto& self)
     {
-        values = Base::get_cst_val1();
+        self.values = Base::get_cst_val1();
     }
 
     /// @brief Does this chunk hold a real buffer?
     /// @return false while it is compressed to cst_val1
-    [[nodiscard]] bool written() const noexcept
+    [[nodiscard]] bool written(this const auto& self) noexcept
     {
-        return values != Base::get_cst_val1();
+        return self.values != Base::get_cst_val1();
     }
 
     /// @brief Materialise storage if the chunk is still compressed.
-    void alloc_chunk()
+    void alloc_chunk(this auto& self)
     {
-        if (is_cst_val1())
+        if (self.is_cst_val1())
         {
-            this->create_value();
+            self.create_value();
         }
     }
 
     /// @brief Materialise storage if still compressed, from @p thr_rank's pool.
     /// @param thr_rank calling thread's rank; ignored in serial builds
-    void alloc_chunk([[maybe_unused]] int thr_rank)
+    void alloc_chunk(this auto& self, [[maybe_unused]] int thr_rank)
     {
-        if (is_cst_val1())
+        if (self.is_cst_val1())
         {
             if constexpr (chunk_config::stats)
             {
@@ -619,11 +619,11 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
 
             if constexpr (build_config::use_openmp)
             {
-                this->create_value(thr_rank);
+                self.create_value(thr_rank);
             }
             else
             {
-                this->create_value();
+                self.create_value();
             }
         }
     }
@@ -667,7 +667,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
      * @note The release counter differs by mode (pool vs free) -- see the
      *       definition's comment.
      */
-    void block_clear(int thr_rank);
+    void block_clear(this auto& self, int thr_rank);
 
     inline static manager_chunk s_manager_{};
 };

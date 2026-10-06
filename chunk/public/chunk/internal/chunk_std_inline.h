@@ -244,7 +244,7 @@ void ChunkOmpPolicy<T, Derived, Enabled>::zero_fill_fresh(T* vals) noexcept
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::create_value(int thr_rank) noexcept
+void ChunkOmpPolicy<T, Derived, Enabled>::create_value(this Derived& self, int thr_rank) noexcept
 {
     // Two sources: the manager's per-thread reuse pool, then a fresh allocation.
     // Both live in ChunkAllocPolicy::allocate_chunk_internal, shared with
@@ -256,13 +256,13 @@ void ChunkOmpPolicy<T, Derived, Enabled>::create_value(int thr_rank) noexcept
     // reuse pool is already zero and re-filling it would memset the hot path
     // for nothing. v2/v2A compress to an arbitrary constant and so hand the
     // same initialiser to both branches.
-    T* values_loc = Base::allocate_chunk_internal(
+    T* values_loc = self.Base::allocate_chunk_internal(
         thr_rank, [](T*) noexcept { /* recycled: already zero, see above */ },
         [](T* vals) noexcept { zero_fill_fresh(vals); });
 
-    if (compare_and_swap(values_loc))
+    if (self.compare_and_swap(values_loc))
     {
-        Base::recup_value(values_loc, thr_rank);
+        self.Base::recup_value(values_loc, thr_rank);
     }
 
     // Release fence so that the stores following in the caller cannot be
@@ -277,18 +277,18 @@ void ChunkOmpPolicy<T, Derived, Enabled>::create_value(int thr_rank) noexcept
 // the delegating call: create_value(int) lives in the dependent base
 // ChunkOmpPolicy, which unqualified lookup does not search.
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::create_value() noexcept
+void ChunkOmpPolicy<T, Derived, Enabled>::create_value(this Derived& self) noexcept
 {
-    create_value(get_thr_rank_fast());
+    self.create_value(get_thr_rank_fast());
 }
 
 template <typename T, typename Derived>
-void ChunkOmpPolicy<T, Derived, false>::create_value() noexcept
+void ChunkOmpPolicy<T, Derived, false>::create_value(this Derived& self) noexcept
 {
     // Same shared path as the OpenMP overload above; serially there is no reuse
     // list, so the first initialiser is never reached (see the serial
     // ChunkAllocPolicy specialisation, which accepts and ignores it).
-    values = Base::allocate_chunk_internal(
+    self.values = self.Base::allocate_chunk_internal(
         0, [](T*) noexcept {},
         [](T* vals) noexcept
         {
@@ -458,7 +458,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
 // directly and releases the block itself, so the counter lives there; adding
 // one here too would double-count if this entry point is ever wired up.
 template <typename T>
-void Chunk<T>::block_clear([[maybe_unused]] int thr_rank)
+void Chunk<T>::block_clear(this auto& self, [[maybe_unused]] int thr_rank)
 {
     if constexpr (chunk_config::stats)
     {
@@ -477,19 +477,19 @@ void Chunk<T>::block_clear([[maybe_unused]] int thr_rank)
 
     if constexpr (build_config::use_openmp)
     {
-        Base::free_block_to_pool(thr_rank, values);
+        self.Base::free_block_to_pool(thr_rank, self.values);
     }
     else
     {
-        Base::free_values();
-        init_values_cst_val();
+        self.Base::free_values();
+        self.init_values_cst_val();
     }
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(int thr_rank)
+void ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(this Derived& self, int thr_rank)
 {
-    T* old = try_mark_cst_and_get_old();
+    T* old = self.try_mark_cst_and_get_old();
     if (old)
     {
         if constexpr (chunk_config::stats)
@@ -499,13 +499,13 @@ void ChunkOmpPolicy<T, Derived, Enabled>::clear_int_st(int thr_rank)
                                             static_cast<long>(shrink_array::alloc_chunk_count()));
             increm_chunk_release_pool<Chunk<T>>();
         }
-        Base::free_block_to_pool(thr_rank, old);
+        self.Base::free_block_to_pool(thr_rank, old);
     }
 }
 
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::clear_st(int thr_rank, unsigned int n_elems)
+void ChunkOmpPolicy<T, Derived, Enabled>::clear_st(this Derived& self, int thr_rank, unsigned int n_elems)
 {
     // CHUNK_STATS: a compression completing -- the buffer is parked and the chunk
     // returns to the constant. Counted here rather than in init_values_cst_val:
@@ -520,11 +520,14 @@ void ChunkOmpPolicy<T, Derived, Enabled>::clear_st(int thr_rank, unsigned int n_
         add_chunk_bytes_freed<Chunk<T>>(static_cast<long>(sizeof(T)) * static_cast<long>(n_elems));
         increm_chunk_release_park<Chunk<T>>();
     }
-    release_st(thr_rank, n_elems, /*count_release=*/false);
+    self.release_st(thr_rank, n_elems, /*count_release=*/false);
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigned int n_elems, bool count_release)
+void ChunkOmpPolicy<T, Derived, Enabled>::release_st(this Derived&      self,
+                                                     int                thr_rank,
+                                                     unsigned int       n_elems,
+                                                     bool               count_release)
 {
     // CHUNK_STATS: a release that is not a compression (the re-chunk rebuild's
     // old chunks) -- its bytes leave the live figure all the same.
@@ -538,10 +541,10 @@ void ChunkOmpPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigned int 
 
     if constexpr (build_config::any_check)
     {
-        if (!derived().written())
+        if (!self.written())
         {
             invariant_failed(std::source_location::current(), "trying to clear a chunk that is not written (chunk={})",
-                             static_cast<const void*>(this));
+                             static_cast<const void*>(&self));
         }
     }
 
@@ -559,15 +562,15 @@ void ChunkOmpPolicy<T, Derived, Enabled>::release_st(int thr_rank, unsigned int 
     // free path, not just alloc"), fixed for Chunk2 and never for v1.
     auto& ll_block_free_thr = manager_chunk::get_list_block_free_thr_for_size(thr_rank, n_elems);
 
-    Base::init_block(values.load(), n_elems);
-    CHUNK_LEDGER_PARK(values.load(), "clear_st.park"); // LIVE -> PARKED before it re-enters the pool
-    ll_block_free_thr.push_back(values);
+    Base::init_block(self.values.load(), n_elems);
+    CHUNK_LEDGER_PARK(self.values.load(), "clear_st.park"); // LIVE -> PARKED before it re-enters the pool
+    ll_block_free_thr.push_back(self.values);
 
-    derived().init_values_cst_val();
+    self.init_values_cst_val();
 }
 
 template <typename T, typename Derived>
-void ChunkOmpPolicy<T, Derived, false>::clear_st()
+void ChunkOmpPolicy<T, Derived, false>::clear_st(this Derived& self)
 {
     // CHUNK_STATS: serial twin of the OpenMP clear_st above -- count the
     // compression, then release.
@@ -578,11 +581,11 @@ void ChunkOmpPolicy<T, Derived, false>::clear_st()
                                         static_cast<long>(shrink_array::alloc_chunk_count()));
         increm_chunk_release_free<Chunk<T>>();
     }
-    release_st(/*count_release=*/false);
+    self.release_st(/*count_release=*/false);
 }
 
 template <typename T, typename Derived>
-void ChunkOmpPolicy<T, Derived, false>::release_st(bool count_release)
+void ChunkOmpPolicy<T, Derived, false>::release_st(this Derived& self, bool count_release)
 {
     if constexpr (chunk_config::stats)
     {
@@ -595,16 +598,16 @@ void ChunkOmpPolicy<T, Derived, false>::release_st(bool count_release)
 
     if constexpr (build_config::is_debug)
     {
-        if (!derived().written())
+        if (!self.written())
         {
             std::cerr << "Error: trying to clear a chunk that is not written\n";
             return;
         }
     }
 
-    Base::free_values();
+    self.Base::free_values();
 
-    derived().init_values_cst_val();
+    self.init_values_cst_val();
 }
 
 } // namespace shrink_array
