@@ -10,9 +10,8 @@
 #include <iostream> // std::cerr on an arena failure
 #include <vector>   // std::vector
 
-#include "fast_allocators/tc_allocator.h"             // the declarations these bodies belong to
-#include "fast_allocators/slab_arena.h"               // disjoint op/ctx/value slab arenas
-#include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2
+#include "fast_allocators/tc_allocator.h" // the declarations these bodies belong to
+#include "fast_allocators/slab_arena.h"   // disjoint op/ctx/value slab arenas
 
 template <FreeLinks Links>
 inline void TCSlab<Links>::alloc_block()
@@ -40,8 +39,7 @@ inline void TCSlab<Links>::alloc_block()
     // value pool. Recycled within that arena's own free-list in destroy().
     // owner_rank (set by the pool before init()): a slab the rank recycled at a
     // re-chunk's slice boundary comes back to it first (SlabArena::allocate).
-    data = static_cast<char*>(
-        fast_alloc::arena_for(arena_kind).allocate(BlockAllocator, BlockAllocator, nullptr, owner_rank));
+    data = static_cast<char*>(fast_alloc::arena_for(arena_kind).allocate(BlockAllocator, BlockAllocator, owner_rank));
 
     if (data == nullptr) [[unlikely]]
     {
@@ -104,7 +102,7 @@ inline void TCSlab<Links>::init(int ElementSize_, uintptr_t BlockAllocator_)
     ElementSize    = ElementSize_;
     BlockAllocator = BlockAllocator_;
 
-    Log2ElementSize = static_cast<int>(std::bit_width(static_cast<unsigned int>(ElementSize))) - 1;
+    Log2ElementSize = std::bit_width(static_cast<unsigned int>(ElementSize)) - 1;
 
     alloc_block();
 }

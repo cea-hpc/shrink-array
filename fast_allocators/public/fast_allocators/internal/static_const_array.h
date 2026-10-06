@@ -27,15 +27,12 @@
  * falls back to plain malloc. That two-step is why the free path returns a
  * bool -- "the ladder took it" or "it was never mine".
  *
- * There are two parallel ladders. The plain one serves any size; the aligned
- * one skips the buckets narrower than `fast_alloc::alignment`, since a 4-byte bucket
- * cannot satisfy a 32-byte alignment.
- *
  * @par Who uses it
- * Only ::TypeAllocator, and through it TCAllocator's own `operator new` -- so
- * what this file allocates is the slab HEADER objects of the other allocators,
- * not the payloads they hand out. That path exists in serial builds only; see
- * the note on TCAllocator::operator new.
+ * ::TypeAllocator, and through it TCAllocator's own `operator new` -- so what
+ * the library allocates here is the slab HEADER objects of the other
+ * allocators, not the payloads they hand out; that path exists in serial
+ * builds only (tc_allocator.cpp). And ::BlkAllocator, the entry point for code
+ * outside the library.
  *
  * @par Threading
  * A bucket is not thread-safe, so every ladder access from inside a parallel
@@ -64,12 +61,11 @@
 #include <cstddef>     // std::size_t
 #include <tuple>       // std::tuple, std::get, std::apply (the ladder)
 #include <type_traits> // std::is_same_v (Allocator8 alias check)
-#include <utility>     // std::index_sequence (with_bucket)
 
 #include "fast_allocators/internal/svalloc.h"   // fast_alloc::alignment
 #include "fast_allocators/internal/pmp_alloc.h" // PMP_MAX_THREADS / PMP_THREAD_RANK / PMP_IN_PARALLEL_REGION
 
-#include "fast_allocators/internal/int_alloc.h"                 // int_alloc, int_free
+#include "fast_allocators/internal/int_alloc.h"                 // int_alloc, int_free, int_alloc_align, int_free_align
 #include "fast_allocators/internal/alloc_config.h"              // constexpr mirror of STD_ALLOC
 #include "fast_allocators/internal/static_const_array_define.h" // MAX_CONST_BLOCK_SIZE (BlkAllocator routing)
 #include "fast_allocators/tc_allocator.h"                       // TCTypeAllocatorEBC
@@ -82,9 +78,7 @@
  *          only records the block here, and the whole batch is handed back at
  *          once when it fills -- one critical section instead of one per free.
  *
- * @note Two instances exist, StaticConstArray::tab_info_free_elt for the plain
- *       ladder and StaticConstArray::tab_info_free_elt_align for the aligned
- *       one, because the two have different free routines.
+ * @note One instance exists, StaticConstArray::tab_info_free_elt.
  *
  * @warning A batch that is still filling holds blocks that are free but not
  *          reusable: they belong to no bucket's free list until the flush.
@@ -92,8 +86,8 @@
  * @warning The per-rank arrays are sized ONCE, by PMP_MAX_THREADS when the
  *          static instances are built (before main): #nb_thr ranks. Every
  *          method indexes by rank unchecked, so callers must bound it:
- *          freeBlock() / freeBlockAlign() do not batch a rank >= #nb_thr
- *          (a team grown later) and free its blocks at once instead.
+ *          freeBlock() does not batch a rank >= #nb_thr (a team grown later)
+ *          and frees its blocks at once instead.
  */
 class InfoFreeElt
 {
@@ -186,15 +180,15 @@ class StaticConstArray
 {
   public:
     // Per-thread batching of freed blocks. Only the OpenMP free path uses it
-    // (freeBlock / freeBlockAlign, under alloc_config::use_openmp); the
-    // declarations exist in every build so those bodies type-check serially.
+    // (freeBlock, under alloc_config::use_openmp); the declarations exist in
+    // every build so that body type-checks serially.
 
-    /// @brief Return thread @p thr_rank's batched blocks to the plain ladder.
+    /// @brief Return thread @p thr_rank's batched blocks to the ladder.
     /// @warning Does NOT reset the batch; the caller must call
     ///          InfoFreeElt::reset() or the same blocks are freed twice.
     static void clearInfoFreeElt(int thr_rank);
 
-    /// @brief Flush every thread's batch, both ladders, and reset them.
+    /// @brief Flush every thread's batch and reset it.
     /// @warning Quiescent point only: no rank may be freeing meanwhile, since
     ///          this runs without the overflow path's `omp critical`. Called
     ///          by the chunk library's OMPT parallel_end callback, outside any
@@ -202,33 +196,6 @@ class StaticConstArray
     ///          it.
     static void clearInfoFreeElt();
 
-    /**
-     * @brief The ladder: one bucket per size class, 4 bytes up to 65536.
-     *
-     * @details Block size grows with element size so a bucket always holds a
-     *          useful number of elements -- 1 MiB up to the 512-byte class,
-     *          then doubling, to 32 MiB for the 65536-byte one.
-     *
-     * @warning IMMORTAL, and the leak is deliberate. See the note below.
-     */
-    // IMMORTAL: bound to a heap-allocated, never-deleted object, exactly like
-    // op_arena()/ctx_arena()/value_arena() in slab_arena.h (see that file's
-    // comment for the full rationale). These buckets back TCAllocator's own
-    // custom operator new/delete (TypeAllocator<TCAllocator>::alloc/free) --
-    // i.e. they allocate the TCAllocator HEADER objects themselves, not just
-    // chunk payloads. A directly-embedded static (the previous form) is
-    // destroyed at program exit in an order that is UNSPECIFIED relative to
-    // other translation units' static inline members -- including
-    // ChunkBase<T,Derived>::allocator_pool_serial_ for a variant (e.g.
-    // Chunk2A<double> in a CHUNK2-only build) that is never actively used and
-    // so never explicitly cleared during main(): if the relevant bucket here
-    // is destroyed first, that map's own destructor later reads
-    // already-unmapped memory walking its block/block_full lists --
-    // observed as SIGSEGV / "Cannot access memory" in
-    // TCTypeAllocator<T>::destroy_int() at static teardown, well after
-    // main() returns cleanly with every in-run integrity check passing.
-    // A reference has no destructor of its own to run, so leaking the
-    // pointee here is intentional and harmless, matching the arena.
     /// @brief The ladder's buckets, smallest first: element sizes 4 << i bytes.
     using Ladder = std::tuple<TCTypeAllocatorEBC<4, SIZE_BLOCK>,
                               TCTypeAllocatorEBC<8, SIZE_BLOCK>,
@@ -249,7 +216,34 @@ class StaticConstArray
     /// @brief How many buckets the ladder has.
     static constexpr std::size_t n_buckets = std::tuple_size_v<Ladder>;
 
-    static inline Ladder& buckets = *(new Ladder()); ///< The ladder; immortal, see above.
+    /**
+     * @brief The ladder: one bucket per size class, 4 bytes up to 65536.
+     *
+     * @details Block size grows with element size so a bucket always holds a
+     *          useful number of elements -- 1 MiB up to the 512-byte class,
+     *          then doubling, to 32 MiB for the 65536-byte one.
+     *
+     * @warning IMMORTAL, and the leak is deliberate: see the comment below.
+     */
+    // IMMORTAL: bound to a heap-allocated, never-deleted object, exactly like
+    // op_arena()/ctx_arena()/value_arena() in slab_arena.h (see that file's
+    // comment for the full rationale). These buckets back TCAllocator's own
+    // custom operator new/delete (TypeAllocator<TCAllocator>::alloc/free) --
+    // i.e. they allocate the TCAllocator HEADER objects themselves, not just
+    // chunk payloads. A directly-embedded static (the previous form) is
+    // destroyed at program exit in an order that is UNSPECIFIED relative to
+    // other translation units' static inline members -- including
+    // ChunkBase<T,Derived>::allocator_pool_serial_ for a variant (e.g.
+    // Chunk2A<double> in a CHUNK2-only build) that is never actively used and
+    // so never explicitly cleared during main(): if the relevant bucket here
+    // is destroyed first, that map's own destructor later reads
+    // already-unmapped memory walking its block/block_full lists --
+    // observed as SIGSEGV / "Cannot access memory" in
+    // TCTypeAllocator<T>::destroy_int() at static teardown, well after
+    // main() returns cleanly with every in-run integrity check passing.
+    // A reference has no destructor of its own to run, so leaking the
+    // pointee here is intentional and harmless, matching the arena.
+    static inline Ladder& buckets = *(new Ladder());
 
     /// @brief The bucket getBlockAllocInt() / freeBlockWithInt() use for
     ///        @p sz bytes: the smallest that holds it, the top one past 32768.
@@ -262,32 +256,6 @@ class StaticConstArray
         // (2^(k-1), 2^k] -> bucket k - 2, the one of 2^k bytes.
         const auto k = static_cast<std::size_t>(std::bit_width(sz - 1));
         return k - 2 < n_buckets ? k - 2 : n_buckets - 1;
-    }
-
-    /**
-     * @brief The bucket of the aligned ladder for @p sz bytes.
-     * @details bucket_index() with the bottom of the ladder cut off where
-     *          `fast_alloc::alignment` says: 16 starts at the 16-byte bucket and then
-     *          goes straight to the 64-byte one; 32 or more starts at the
-     *          32-byte bucket; anything else at the 64-byte one. (The rules are
-     *          the ones the comparison trees had; aligned_bucket_index is
-     *          checked against them.)
-     */
-    [[nodiscard]] static constexpr std::size_t aligned_bucket_index(unsigned int sz) noexcept
-    {
-        const std::size_t i = bucket_index(sz);
-        if constexpr (fast_alloc::alignment == 16)
-        {
-            return i <= 2 ? 2 : (i == 3 ? 4 : i);
-        }
-        else if constexpr (fast_alloc::alignment >= 32)
-        {
-            return i <= 3 ? 3 : i;
-        }
-        else
-        {
-            return i <= 4 ? 4 : i;
-        }
     }
 
   protected:
@@ -313,9 +281,6 @@ class StaticConstArray
     static bool freeBlock(int sz, void* ptr);
 
   private:
-    /// @brief clearInfoFreeElt() for the aligned ladder. Same warning.
-    static void clearInfoFreeEltAlign(int thr_rank);
-
     /// @brief Bare ladder lookup: smallest bucket that fits @p sz.
     /// @return Null if @p sz is past the top bucket. Not locked, not bounded.
     static void* getBlockAllocInt(unsigned int sz);
@@ -324,30 +289,12 @@ class StaticConstArray
     /// @pre @p ptr came from the bucket that @p sz selects.
     static void freeBlockWithInt(int sz, void* ptr);
 
-    /// @brief getBlockAllocInt() over the aligned ladder.
-    /// @details Skips the buckets narrower than `fast_alloc::alignment`.
-    static void* getBlockAllocAlignInt(int sz);
-
-    /// @brief freeBlockWithInt() over the aligned ladder.
-    static void freeBlockWithAlignInt(int sz, void* ptr);
-
-    /// @brief getBlockAlloc() over the aligned ladder. Same null convention.
-    static void* getBlockAllocAlign(int sz);
-
-    /// @brief freeBlock() over the aligned ladder. Same bool convention.
-    static bool freeBlockAlign(int sz, void* ptr);
-
     /// @brief Run @p f on bucket @p i of the ladder; its result, if any.
     /// @pre @p i < n_buckets.
     template <class F>
     static decltype(auto) with_bucket(std::size_t i, F&& f);
 
-    /// @brief The largest size the ladder serves.
-    /// @warning Asserts in a STD_ALLOC build, where there is no ladder to size.
-    static int computeBlockSize();
-
-    static InfoFreeElt tab_info_free_elt;       ///< Batches for the plain ladder.
-    static InfoFreeElt tab_info_free_elt_align; ///< Batches for the aligned one.
+    static InfoFreeElt tab_info_free_elt; ///< The per-thread batches.
 };
 
 static_assert(std::is_same_v<std::tuple_element_t<1, StaticConstArray::Ladder>, TCTypeAllocatorEBC<8, SIZE_BLOCK>>,
@@ -410,7 +357,7 @@ struct BlkAllocator : public StaticConstArray
             // that is not a failure, it is "too big for the ladder".
             if (!ptr)
             {
-                int_alloc((char*&)ptr, size);
+                ptr = int_alloc(size);
             }
 
             return ptr;
@@ -471,11 +418,7 @@ struct BlkAllocator : public StaticConstArray
 
         ptr[0] = size;
 
-        char* user_ptr = (char*)ptr;
-
-        user_ptr += fast_alloc::alignment;
-
-        return user_ptr;
+        return reinterpret_cast<char*>(ptr) + fast_alloc::alignment;
     }
 
     /// @brief Give back an alloc_tab() block, reading its size from its header.
@@ -491,7 +434,7 @@ struct BlkAllocator : public StaticConstArray
         const std::size_t total = m_ptr[0] + fast_alloc::alignment;
 
         // Same routing as alloc_tab(), decided in size_t.
-        if (!(total <= MAX_CONST_BLOCK_SIZE && freeBlock(static_cast<int>(total), m_ptr)))
+        if (total > MAX_CONST_BLOCK_SIZE || !freeBlock(static_cast<int>(total), m_ptr))
         {
             int_free_align(m_ptr);
         }
@@ -653,9 +596,9 @@ class FixedSizeAllocator : private StaticConstArray
  * @tparam T The object type. It selects the ::FixedSizeAllocator instantiation;
  *         the size actually comes from the argument.
  *
- * @details Declared in tc_allocator.h and defined here, which is what lets
- *          TCAllocator::operator new allocate slab headers out of the ladder
- *          without tc_allocator.h knowing the ladder exists.
+ * @details What lets TCAllocator::operator new (tc_allocator.cpp, serial
+ *          builds) allocate slab headers out of the ladder without
+ *          tc_allocator.h knowing the ladder exists.
  */
 template <typename T>
 struct TypeAllocator
