@@ -1,5 +1,7 @@
 # Mesurer la mémoire et le temps sans se tromper
 
+*English version: [`performance_measurement.md`](performance_measurement.md).*
+
 *État : fin septembre 2026. Ce document rassemble ce que les campagnes de septembre 2026 sur
 Grace (aarch64, pages de 64 Kio, RHEL 9.6, 64 threads) ont appris, souvent à nos dépens :
 plusieurs conclusions ont dû être retirées parce que l'instrument de mesure mentait.*

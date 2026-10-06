@@ -23,11 +23,11 @@ An array is cut into **chunks** of `S` consecutive elements, `S` a power of two:
 
 Compression happens **while the program runs**: a write that turns an element into one of the constants queues its chunk as a candidate, and compression passes give the buffers of the chunks found uniform back to per-thread reuse lists. `compress()` and `shrink_to_fit()` run a full pass on demand.
 
-Under OpenMP the write path takes **no lock**. Writers and compressors exclude each other with an asymmetric Dekker handshake: a writer announces itself with a plain store, and the rare compressor pays a `membarrier()` system call instead. A write that meets a compressor on its chunk is deferred and replayed later, never lost. See [docs/synchronisation_dekker_fr.md](docs/synchronisation_dekker_fr.md) (in French).
+Under OpenMP the write path takes **no lock**. Writers and compressors exclude each other with an asymmetric Dekker handshake: a writer announces itself with a plain store, and the rare compressor pays a `membarrier()` system call instead. A write that meets a compressor on its chunk is deferred and replayed later, never lost. See [docs/synchronisation_dekker.md](docs/synchronisation_dekker.md).
 
 Chunk buffers come from the bundled `fast_allocators` (per-thread slab arenas and reuse lists), which reduce memory consumption and allocation cost compared with the C library allocator. `-DCHUNK_STD_ALLOC=ON` switches back to the standard allocator (useful under AddressSanitizer).
 
-The design documents, in French, are indexed in [docs/README.md](docs/README.md).
+The design documents, in English and French, are indexed in [docs/README.md](docs/README.md).
 
 ## Element types and initialisation
 

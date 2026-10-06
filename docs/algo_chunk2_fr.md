@@ -1,5 +1,7 @@
 # L'algorithme d'`ArrayChunk2`
 
+*English version: [`algo_chunk2.md`](algo_chunk2.md).*
+
 *État du code : début octobre 2026. La géométrie dynamique est détaillée dans
 [`rechunk_adaptatif_fr.md`](rechunk_adaptatif_fr.md), la synchronisation sans verrou entre
 écrivains, compresseurs et lecteurs dans [`synchronisation_dekker_fr.md`](synchronisation_dekker_fr.md),

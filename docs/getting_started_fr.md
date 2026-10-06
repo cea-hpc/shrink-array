@@ -1,5 +1,7 @@
 # Premiers pas avec shrink-array
 
+*English version: [`getting_started.md`](getting_started.md).*
+
 *Octobre 2026. Ce guide explique comment **utiliser** la bibliothèque. Son fonctionnement
 interne est décrit dans les documents de conception, indexés dans [`README.md`](README.md). La
 version anglaise de ce guide est [`getting_started.md`](getting_started.md).*

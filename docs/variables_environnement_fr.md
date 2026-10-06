@@ -1,5 +1,7 @@
 # Variables d'environnement, macros et options de compilation
 
+*English version: [`environment_variables.md`](environment_variables.md).*
+
 *État : début octobre 2026. La liste a été relevée dans le code ; une variable qui n'est pas
 lue est ignorée sans message, donc en cas de doute, vérifier avec
 `grep -rn '"NOM"' chunk fast_allocators examples`. Sauf mention contraire, une variable est

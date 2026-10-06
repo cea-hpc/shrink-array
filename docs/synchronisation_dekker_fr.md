@@ -1,5 +1,7 @@
 # Synchronisation sans verrou : le protocole de Dekker dans shrink-array
 
+*English version: [`synchronisation_dekker.md`](synchronisation_dekker.md).*
+
 *État : début octobre 2026. Ce document explique comment les écrivains, les compresseurs,
 les vidages d'écritures différées et les lecteurs s'excluent mutuellement **sans verrou sur le
 chemin d'écriture**. La machinerie d'ensemble (proxys, écritures différées, compression en

@@ -1,5 +1,7 @@
 # Les trois variantes : Chunk, Chunk2, Chunk2A
 
+*English version: [`variants.md`](variants.md).*
+
 *État : fin septembre 2026. Les chiffres viennent de `shrink_bench` sur Grace (64 threads,
 `OMP_PROC_BIND=close`, `OMP_PLACES=cores`), mémoire mesurée exactement (voir
 [`mesures_performance_fr.md`](mesures_performance_fr.md)). En cas de doute, c'est le code qui

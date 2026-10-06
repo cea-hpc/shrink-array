@@ -1,5 +1,7 @@
 # L'algorithme de `ArrayChunk` (Chunk, v1)
 
+*English version: [`algo_chunk.md`](algo_chunk.md).*
+
 *État : fin septembre 2026. Ce document décrit ce que v1 fait **autrement** que Chunk2 ; la
 machinerie commune (proxys, écritures différées, barrière de lecture, compression en vol,
 opérations sur plages) est décrite dans [`algo_chunk2_fr.md`](algo_chunk2_fr.md), et la
