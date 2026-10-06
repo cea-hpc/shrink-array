@@ -183,7 +183,7 @@ struct DeferredFreeListSlot
     DeferredFreeListSlot(DeferredFreeListSlot&&)                 = delete;
     DeferredFreeListSlot& operator=(DeferredFreeListSlot&&)      = delete;
 
-    // fw15c (std-alloc leak): in std-alloc, allocate_raw() hands out blocks via
+    // In std-alloc, allocate_raw() hands out blocks via
     // ::operator new and recycle() parks them here in `fl` for reuse. Nothing
     // else owns them, so when this thread_local slot dies the vector is
     // destroyed but the pointed-to blocks are not — a real (if bounded, one-shot)
@@ -306,7 +306,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
      * push a foreign block into THIS thread's free_list, it survives here after
      * the owning thread's thread_local TCTypeAllocator is destroyed and munmap()s
      * its slabs — a later allocate_raw() then hands out a pointer into an
-     * unmapped page (the observed SEGV, caught by [ALLOC_PROBE freelist]).
+     * unmapped page.
      *
      * Guard: only recycle blocks that belong to THIS thread's slab (checked via
      * TCTypeAllocator::is_free_able_elt, which resolves the block header from the
@@ -396,12 +396,11 @@ class FastAllocatorConcrete : public FastAllocatorBase
 
         if (!slot.initialized)
         {
-            // FIX (op/ctx/value slab aliasing): route this pool's slabs to its own
-            // arena. Op and ctx pools use the same TCTypeAllocator<byte> but MUST
-            // draw from disjoint arenas — a freed ctx slab reobtained by the op
-            // pool overwrote a live op's vtable with ctx layout (observed dump:
-            // vptr=0x38 with ctx-shaped fields). Arena is a template param so op
-            // and ctx get genuinely separate never-unmapped arenas.
+            // Route this pool's slabs to its own arena. Op and ctx pools use the
+            // same TCTypeAllocator<byte> but MUST draw from disjoint arenas -- a
+            // freed ctx slab reobtained by the op pool overwrites a live op's
+            // vtable with ctx layout. Arena is a template param so op and ctx
+            // get genuinely separate never-unmapped arenas.
             slot.alloc.set_arena(Arena);
 
             constexpr size_t element_size = sizeof(T);
@@ -411,23 +410,17 @@ class FastAllocatorConcrete : public FastAllocatorBase
             static_assert(element_size >= sizeof(int) && element_size % alignof(int) == 0,
                           "deferred-op pool: an object must hold TCAllocator's free-list index");
 
-            // Slab size in BYTES -- what TCSlabPool::init's second parameter is.
-            // It used to be given an OBJECT count (granularity / sizeof(T)):
-            // 48-80 B ops and contexts got 32-64 KiB slabs instead of the
-            // granularity of the time (2 MiB), and an object above ~2 KiB would have got a
-            // slab smaller than itself. Never fewer than 64 objects per slab.
+            // Slab size in BYTES -- what TCSlabPool::init's second parameter is
+            // (an OBJECT count there would give an object above a few KiB a
+            // slab smaller than itself). Never fewer than 64 objects per slab.
             const uintptr_t slab_request =
                 std::max<uintptr_t>(deferred_pool_slab_granularity(), uintptr_t{64} * element_size);
 
-            // FIX (op/value slab aliasing): last arg = nb_max_block_empty = -1
-            // → the op allocator NEVER munmaps an empty slab. Previously it was 1
-            // (retain one empty slab, munmap the rest), so a freed op slab's
-            // address could be reobtained by fast_alloc::map_anonymous() from the chunk
-            // VALUE pool on another thread and overwrite a still-live op (proven
-            // via ring log: OP_ALLOC then VALUE_ALLOC at the same address on a
-            // different tid). Keeping op slabs mapped for the program's lifetime
-            // removes the address reuse. Op slabs are small and bounded, so the
-            // retained memory is modest.
+            // Last arg = nb_max_block_empty = -1 -> the op allocator NEVER
+            // munmaps an empty slab: a freed op slab's address could be
+            // reobtained by fast_alloc::map_anonymous() for the chunk VALUE pool
+            // on another thread and overwrite a still-live op. Op slabs are small
+            // and bounded, so the retained memory is modest.
             slot.alloc.init(element_size, slab_request, -1);
             slot.initialized = true;
         }
@@ -446,17 +439,15 @@ class FastAllocatorConcrete : public FastAllocatorBase
         return slot.fl;
     }
 
-    // Check-build guard — validate a pointer just before allocate_raw hands
-    // it to construct_at. The observed crash is a wild address (e.g.
-    // 0xffff63ff0000, mapped in NO region) written by the ctx constructor.
+    // Check-build guard -- validate a pointer just before allocate_raw hands
+    // it to construct_at (wild addresses, mapped in NO region, have been seen).
     //
-    // IMPORTANT: we must NOT discriminate on the address range. fast_alloc::map_anonymous() uses
-    // mmap(nullptr, …) so the kernel is free to place a perfectly valid slab high
-    // in the 0xffff… band (same band as thread stacks). An earlier version keyed
-    // on bits[47:32]==0xffff and false-positived on such legitimate high slabs.
-    // Instead we ask the kernel directly whether the page is mapped, via msync():
-    // it returns ENOMEM for an unmapped address and never faults. Only genuinely
-    // unmapped / misaligned / null pointers trip the probe.
+    // Do NOT discriminate on the address range: fast_alloc::map_anonymous()
+    // uses mmap(nullptr, ...), so the kernel may place a valid slab high in the
+    // 0xffff... band (same band as thread stacks). Ask the kernel whether the
+    // page is mapped, via msync(): it returns ENOMEM for an unmapped address
+    // and never faults. Only genuinely unmapped / misaligned / null pointers
+    // trip the probe.
     /// @brief Check-only: fail the invariant if @p ptr, returned by @p path,
     ///        is null, misaligned or not a mapped page.
     static void probe_returned_block(const void* ptr, const char* path) noexcept
@@ -510,8 +501,8 @@ struct CtxTag
 {
 };
 
-// FIX (op/ctx/value slab aliasing): map each registry tag to its arena so op and
-// ctx pools allocate slabs from disjoint address spaces.
+// Map each registry tag to its arena so op and ctx pools allocate slabs from
+// disjoint address spaces.
 template <typename Tag>
 struct arena_of_tag;
 template <>
@@ -606,13 +597,12 @@ template <typename T, typename... Args>
     void*              mem   = alloc->allocate_raw();
     assert(mem && "OpRegistry allocator returned null");
     chunk_align_probe<T>("op", mem);
-    // SEGV hunt: make this op block accessible to ASan (it was poisoned at the
-    // previous free_op). Do it BEFORE construct_at.
+    // ASan: unpoison this op block (poisoned at the previous free_op), BEFORE
+    // construct_at.
     pool_ledger::on_op_alloc(mem, sizeof(T), alloc->slab_addr());
     T* constructed = std::construct_at(static_cast<T*>(mem), std::forward<Args>(args)...);
-    // SEGV hunt: log AFTER construct_at so OP_ALLOC marks a fully-built op (vptr
-    // written). If the crash op's last event is this OP_ALLOC yet its vptr reads
-    // as data, the corruption happens AFTER construction, not a half-built read.
+    // Debug ring log AFTER construct_at, so OP_ALLOC marks a fully-built op
+    // (vptr written).
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
     {
         ring_log_op(get_tid(), EV_OP_ALLOC, 0, mem);
@@ -641,9 +631,8 @@ template <typename T, typename... Args>
 template <typename T>
 void free_op(T* op)
 {
-    // SEGV hunt: record which thread recycles this op block, with its address,
-    // so dump_ring_for_addr can show if a free happened while the op was still
-    // referenced by op_map (the use-after-free we're chasing).
+    // Debug ring log: which thread recycles this op block, so dump_ring_for_addr
+    // can show a free while the op was still referenced by op_map.
     if constexpr (chunk_config::ring_log_debug || chunk_config::ring_log_op_only)
     {
         ring_log_op(get_tid(), EV_OP_FREE, 0, static_cast<const void*>(op));
@@ -651,11 +640,9 @@ void free_op(T* op)
     pool_ledger::on_op_free(static_cast<void*>(op));
     FastAllocatorBase* alloc = OpRegistry::get_or_create<T>();
     alloc->recycle(static_cast<void*>(op));
-    // SEGV hunt: poison the freed op block. Any read/write of it before the next
-    // pool_new_op unpoisons it (e.g. the stray write that overwrites the vptr
-    // with data bytes, or a flush of an already-freed op) is now reported by
-    // ASan AT THE WRITE, with the culprit's stack — which plain ASan can't see
-    // because the block lives inside a mmap-managed pool.
+    // ASan: poison the freed op block. Any read/write of it before the next
+    // pool_new_op unpoisons it is reported AT THE ACCESS, with the culprit's
+    // stack -- which plain ASan cannot see inside a mmap-managed pool.
 }
 
 /// @brief Record the release in the pool ledger and recycle @p context into its CtxRegistry allocator.

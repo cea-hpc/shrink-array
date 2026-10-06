@@ -93,15 +93,14 @@ void ChunkBase<T, Derived>::free_block_to_pool([[maybe_unused]] int thr_rank, T*
                 }
                 else
                 {
-                    // FIX (cross-thread block migration, chunk pool -- analogous
-                    // to the recycle() fix on the ctx/op pool side): do NOT push
-                    // a foreign block onto ANOTHER thread's free-list. This
-                    // unsynchronized push (a) races with the owning thread's own
-                    // pop/push on ITS free-list (std::vector corruption), and
-                    // (b) makes a later free_elt_pow2 route the block to the
-                    // wrong allocator's manage_full_empty -> remove/insert on
-                    // inconsistent linked lists + delete/munmap of a block that
-                    // is still alive (the SEGV observed in manage_full_empty).
+                    // Do NOT push a foreign block onto ANOTHER thread's
+                    // free-list: the unsynchronized push (a) races with the
+                    // owning thread's own pop/push on ITS free-list (std::vector
+                    // corruption), and (b) makes a later free_elt_pow2 route the
+                    // block to the wrong allocator's manage_full_empty ->
+                    // remove/insert on inconsistent linked lists and a delete /
+                    // munmap of a block still alive. (Same rule as recycle() on
+                    // the op/ctx pool side.)
                     //
                     // Keep the block on the LOCAL free-list instead. It doesn't
                     // belong to the local slab, so it will never be passed to
@@ -119,13 +118,13 @@ void ChunkBase<T, Derived>::free_block_to_pool([[maybe_unused]] int thr_rank, T*
     }
     else
     {
-        // fw15b (ledger balance): std-alloc path returns the block to the system
-        // via svfree without notifying the ledger. Same hole as free_values: the
-        // page goes back to malloc, gets re-handed to a later allocate_chunk_-
-        // internal, and on_block_alloc sees it still LIVE -> spurious
-        // INVARIANT_FAILED. This is the OpenMP recycle path (block_clear ->
-        // free_block_to_pool), the actual culprit behind the check+ASan abort.
-        // LIVE -> FREE, before the free, while the pointer is still ours.
+        // Ledger: the std-alloc path returns the block to the system via
+        // svfree; without this notification the page goes back to malloc, is
+        // re-handed to a later allocate_chunk_internal, and on_block_alloc
+        // sees it still LIVE -> spurious INVARIANT_FAILED. This is the OpenMP
+        // recycle path (block_clear -> free_block_to_pool); free_values is the
+        // other one. LIVE -> FREE, before the free, while the pointer is still
+        // ours.
         CHUNK_LEDGER_RELEASE(val, "free_block_to_pool.svfree");
         svfree(val);
     }
@@ -199,14 +198,14 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
 
         // ── Same-offset re-enqueue: REPLACE, do not double-count ──────────────
         // A second deferred write to the SAME offset on the SAME rank supersedes
-        // the queued one. The old blind `map[num] = op` replaced the entry while
-        // pending_publish/inc_pending_ops had been counted for BOTH: the counters
-        // drifted up one per replacement and NEVER returned to zero for the chunk
-        // (stuck owner word, perpetual spurious drains/gates, any_pending_ops
-        // pinned), and the replaced op was never destroy()ed (no-op deleter ->
-        // leaked pool slot). Publish/inc only for genuinely NEW entries; for a
-        // replacement the count is already right (still one op at this offset)
-        // and the reader window is already closed by the existing op's publish.
+        // the queued one. A blind `map[num] = op` would replace the entry
+        // while pending_publish/inc_pending_ops count BOTH: the counters drift
+        // up one per replacement and never return to zero for the chunk (stuck
+        // owner word, perpetual spurious drains/gates, any_pending_ops pinned),
+        // and the replaced op is never destroy()ed (leaked pool slot).
+        // Publish/inc only for genuinely NEW entries; for a replacement the
+        // count is already right (still one op at this offset) and the reader
+        // window is already closed by the existing op's publish.
         const auto it_existing = ops_map_ptr->find(num);
         if (it_existing != ops_map_ptr->end())
         {
@@ -235,20 +234,19 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
     Policy::end_write(thr_rank);
     CompressionManager<T, Derived>::enqueue_unlock(thr_rank);
 
-    // ── P3: bounded backlog drain (CHUNK_SYNC_ON_READ) ────────────────────────
-    // Writes no longer flush (P1), so a write-only phase could let this rank's
+    // ── Bounded backlog drain ─────────────────────────────────────────────────
+    // Writes do not flush, so a write-only phase could let this rank's
     // deferred backlog grow without bound (memory + long tail on the eventual
-    // read). Once it crosses the threshold, drain OUR OWN rank here — AFTER
+    // read). Once it crosses the threshold, drain OUR OWN rank here -- AFTER
     // end_write and enqueue_unlock, so no writer flag or shard lock is held while
-    // flushing — and never while replaying a flush (flush_deferred sets
+    // flushing -- and never while replaying a flush (flush_deferred sets
     // in_flush_replay and itself re-enters this function via write_body).
     //
     // Not while a compressor is stealing, though. A write is deferred BECAUSE
     // a compressor is in the way (must_defer_write), and flush_deferred() waits
-    // the stealers out before it replays: draining from here parked the writer in sched_yield
-    // for the whole compression -- 7% of the perf bench at 8 threads once the
-    // deferred path stopped flushing every op on the spot. The threshold is
-    // then honoured by the fast path, on the rank's next direct write
+    // the stealers out before it replays: draining from here would park the
+    // writer in sched_yield for the whole compression. The threshold is then
+    // honoured by the fast path, on the rank's next direct write
     // (write_with_optional_lock_impl), when no compressor is in the way.
     {
         using CM = CompressionManager<T, Derived>;
@@ -263,22 +261,15 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
 template <typename T, typename Derived>
 void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unused]] int num) const
 {
-    // HOTSPOT NOTE (x86, Aug '26): this function used to open with a naked
-    // 2-instruction spin — `while (is_compression_active()) {}` — no
-    // CPU_PAUSE, no bound, and on the WRONG predicate: is_compression_active
-    // includes the DRIVER count, which under load is quasi-permanently
-    // nonzero (any thread anywhere in the slow path). At 64-128 threads on
-    // dual-socket x86, every reader piled into that spin (89% of all cycles;
-    // init phase 93s @128T vs 1.4s on single-socket ARM), and the spinners'
-    // seq_cst loads slowed the compressors' RMWs on the same line — a
-    // feedback loop. Waiting on the driver count is also the July-'26
-    // deadlock anti-pattern.
-    //
-    // The spin was REDUNDANT: flush_chunk_all_ranks() below already
-    // establishes the only ordering that matters — begin_flush(self_rank)
-    // blocks any future compressor start(), then a well-behaved drain
-    // (CPU_PAUSE + yield, HARD count only) waits out in-flight compressors.
-    // Driver-only threads steal nothing. So: no pre-wait, go flush.
+    // No pre-wait for compressors here, and never on a predicate that counts
+    // DRIVERS: under load it is quasi-permanently non-zero, every reader piles
+    // into the spin (89% of cycles on dual-socket x86 at 128 threads), and
+    // waiting on the driver count is the deadlock anti-pattern documented on
+    // hard_inflight_. flush_chunk_all_ranks() below already establishes the
+    // only ordering that matters -- begin_flush(self_rank) blocks any future
+    // compressor start(), then a well-behaved drain (CPU_PAUSE + yield,
+    // stealers only) waits out in-flight compressors. Driver-only threads
+    // steal nothing.
 
     // CHUNK_STATS: we are on the SLOW sync path. This is the hotspot the notes
     // above describe (it once burned 89% of cycles on dual-socket x86), and it
@@ -310,12 +301,11 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unu
         }
     }
 
-    // ── Stage 2: cross-thread flush (option 4) ────────────────────────────
+    // ── Stage 2: cross-thread flush ────────────────────────────────────────────
     // Foreign ops remain (or no per-chunk counter in this build): flush every
-    // pending op for this chunk across ALL ranks under the per-rank locks.
-    // This subsumes the old own-rank-only flush_deferred(thr_rank) call,
-    // which missed ops enqueued by other ranks — the root cause of the
-    // lost-write corruption.
+    // pending op for this chunk across ALL ranks under the per-rank locks --
+    // an own-rank-only flush would miss ops enqueued by other ranks (lost
+    // writes).
     // CHUNK_STATS: stage 1 did not settle it, so we take the expensive cross-rank
     // walk (every rank's lock). read_sync_cross / read_sync tells how often the
     // cheap self-rank drain was enough.
@@ -329,7 +319,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unu
 template <typename T, typename Derived>
 bool ChunkDeferredOpsPolicy<T, Derived, true>::is_not_available() const
 {
-    // Cheap global cross-thread filter (option 4): if NO rank has any
+    // Cheap global cross-thread filter: if NO rank has any
     // pending op, this slot is available regardless of who wrote what.
     // A single sharded-sum acquire load — dominant early-out on the hot
     // read path.
@@ -337,8 +327,7 @@ bool ChunkDeferredOpsPolicy<T, Derived, true>::is_not_available() const
     // IMPORTANT: we deliberately do NOT scan other ranks' maps here.
     // Reading arr[r] for r != self_rank races with a concurrent insert on
     // rank r that can rehash ankerl's backing vector, turning our find()
-    // into a use-after-free (observed: SIGSEGV in table::end with this=0x54
-    // at 64 threads; ASan hides it by perturbing timing). Instead, any
+    // into a use-after-free (ASan hides it by perturbing timing). Instead, any
     // pending op anywhere makes us return true, and wait_for_availability()
     // performs the authoritative per-chunk scan under the Dekker flush lock,
     // where all other ranks are quiescent and the scan is race-free.

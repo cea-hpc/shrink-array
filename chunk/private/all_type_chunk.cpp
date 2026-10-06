@@ -78,14 +78,13 @@ struct SerialFlushOwnership
 };
 } // namespace
 
-// Aggressive-compression scheduling is now a constexpr build mode driven by the
-// CMake option HAVE_AGRESSIVE_COMPRESSION (-> chunk_config::have_agressive_compression),
-// replacing the old raw DEBUG_AGRESSIVE_COMPRESSION macro.
+// Aggressive-compression scheduling is a constexpr build mode driven by the
+// CMake option HAVE_AGRESSIVE_COMPRESSION (-> chunk_config::have_agressive_compression).
 //
 //   have_agressive_compression == false (default, "release"):
 //       the deferred sweep is triggered explicitly at end-of-parallel-phase
 //       boundaries via compress_chunk_to_compress_potentially(true) below.
-//   have_agressive_compression == true ("aggressive", historical behaviour):
+//   have_agressive_compression == true ("aggressive"):
 //       the between-phase sweep is skipped; all compression falls on the
 //       opportunistic in-loop path (heavier MT stress, better bug detection).
 //
@@ -127,9 +126,9 @@ void finalize_parallel_phase_only_flush()
         auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
         ens_type_chunk.flush_all_deferred(true);
 
-        // Restored: empirically load-bearing (a checksum corruption reappeared
-        // when this was removed). Do NOT remove — the enclosing OpenMP barrier
-        // does not, in practice, subsume the ordering this fence provides here.
+        // Empirically load-bearing (a checksum corruption appears without it).
+        // Do NOT remove -- the enclosing OpenMP barrier does not, in practice,
+        // subsume the ordering this fence provides here.
         std::atomic_thread_fence(std::memory_order_seq_cst);
     }
 }
@@ -140,8 +139,6 @@ void finalize_parallel_phase_after_flush()
     {
         phase_guard::next_phase();
     }
-    // (Historical breadcrumb: the is_shrink=0 CMake-variant bug was diagnosed at
-    //  this entry point; fixed by the per-variant chunk_v1/v2/v2a targets.)
     if constexpr (build_config::use_openmp && chunk_config::is_shrink_enabled)
     {
         auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
@@ -155,7 +152,7 @@ void finalize_parallel_phase_after_flush()
                 ens_type_chunk.compress_chunk_to_compress_potentially(true);
             }
         }
-        // Restored: empirically load-bearing (see the checksum regression note in
+        // Empirically load-bearing (see the note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
         std::atomic_thread_fence(std::memory_order_seq_cst);
 #ifndef CHUNK_STD_ALLOC
@@ -189,7 +186,7 @@ void finalize_parallel_phase()
                 ens_type_chunk.compress_chunk_to_compress_potentially(true);
             }
         }
-        // Restored: empirically load-bearing (see the checksum regression note in
+        // Empirically load-bearing (see the note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
         std::atomic_thread_fence(std::memory_order_seq_cst);
 #ifndef CHUNK_STD_ALLOC
@@ -206,7 +203,7 @@ bool finalize_barrier_phase()
         auto&      ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
         const bool flushed        = ens_type_chunk.flush_all_deferred(true);
 
-        // Restored: empirically load-bearing (see the checksum regression note in
+        // Empirically load-bearing (see the note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
         std::atomic_thread_fence(std::memory_order_seq_cst);
         return flushed;
@@ -214,12 +211,9 @@ bool finalize_barrier_phase()
     return false;
 }
 
-// pushManagerChunk<CHUNK_T, T> is now defined in chunk/all_type_chunk_inline.h
-// (template definition belongs in a header; the .cpp keeps only the non-template
-// fillManagerChunk<CHUNK_T>() and the runtime dispatch methods).
-// The hard-coded fillManagerChunk<CHUNK_T>() list was removed in Stage 5b;
-// registration is now fillManagerChunk<CHUNK_T, Types>() in
-// all_type_chunk_inline.h, driven by the consumer's type tuple.
+// pushManagerChunk<CHUNK_T, T> and fillManagerChunk<CHUNK_T, Types>() are
+// defined in chunk/all_type_chunk_inline.h (template definitions belong in a
+// header); registration is driven by the consumer's type tuple.
 
 void AllTypeChunk::resize_chunk_to_compress_potentially() const
 {
@@ -399,8 +393,7 @@ void AllTypeChunkParallelInterface<Derived, true>::resize_all_list_block_free_th
 template <typename Derived>
 void AllTypeChunkParallelInterface<Derived, true>::init_manager(ManagerChunkInt& manager, int block_size) const
 {
-    // The sequence ParamChunk::init_indexes() used to run over the whole
-    // registry, for one manager, at its registration. Everything here is a
+    // Per-manager setup, at its registration. Everything here is a
     // slot indexed by rank; nothing needs the rank's own thread. Reached
     // through Derived's alias so that the calls stay dependent: the other
     // thread model's interface does not declare them.
@@ -478,10 +471,9 @@ void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr()
     //   dedup   repeats across buckets, by address slice  (per slice = thread)
     //   free    release bucket r                          (per bucket)
     //
-    // The screening used to run sequentially before the region (before that,
-    // under an `omp single` inside it): one unordered_set had to see every
-    // pointer of every rank before the first free. Sorting per bucket and
-    // merging per address slice keeps that guarantee with every thread busy.
+    // No sequential pre-pass: sorting per bucket and merging per address
+    // slice keeps the "every pointer seen before the first free" guarantee
+    // with every thread busy.
     //
     // Per-bucket phases stride the buckets over the team: a team smaller than
     // the bucket count still covers every bucket, and with a full team the
@@ -572,9 +564,8 @@ void AllTypeChunkParallelInterface<Derived, false>::delete_chunk_allocator() con
     }
 }
 
-// One definition for both threading modes. The two used to be spelled out
-// separately, character for character, in the days when the split was made with
-// the preprocessor; the interface is now specialised on a bool instead.
+// One definition for both threading modes: the interface is specialised on a
+// bool.
 template <typename Derived>
 void AllTypeChunkDynInterface<Derived, true>::register_chunk_size(unsigned int size, int block_size)
 {

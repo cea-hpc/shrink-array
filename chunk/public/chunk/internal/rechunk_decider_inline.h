@@ -48,8 +48,7 @@ namespace shrink_array
 // the table index to act on -- rep.best when no cap applies.
 /// @brief CHUNK_RECHUNK_DRY_RUN=1 (read once): analyse and log, never apply a
 ///        move, whatever the policy says -- the way to measure the analyses'
-///        cost on the same binary (a huge CHUNK_ADVISOR_MIN_GAIN_MB no longer
-///        blocks moves since the gain-per-cost gate).
+///        cost on the same binary.
 inline bool rechunk_env_dry_run() noexcept
 {
     static const bool v = []
@@ -63,10 +62,9 @@ inline bool rechunk_env_dry_run() noexcept
 inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool banned) const
 {
     // CHUNK_RECHUNK_MAX_COARSEN=<n> overrides the policy's factor (1 = no
-    // cap), read once. The cap of 2 came from two bad big jumps measured
-    // before Sept '26's fixes (lagging VmRSS, Chunk2A's leaked metadata rows,
-    // folds through a buffer); this measures whether larger steps are safe
-    // now, without a rebuild.
+    // cap), read once. The cap of 2 came from two bad big jumps measured on an
+    // older model; the knob tests whether larger steps are safe, without a
+    // rebuild.
     static const unsigned env_factor = []() -> unsigned
     {
         const char* env = std::getenv("CHUNK_RECHUNK_MAX_COARSEN");
@@ -161,14 +159,11 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     // a chunk that is now several times larger materialised).
     //
     // Applying the coarsening margin and the relative deadband to the SUM
-    // made a certain gain pay for an uncertain one: measured on
-    // shrink_bench (chunk2 dyn, 64 threads, 10^9-element arrays), the
-    // 64 -> 128 move carried a ~200 MB metadata gain identical across
-    // double, short and complex arrays (so: not data), and was refused
-    // "gain below deadband" at every one of 16 ticks, because 45% of a
-    // multi-GB array's current memory is out of reach for any structural
-    // gain. Zero re-chunks in 2000 iterations; the dyn build stayed at its
-    // deliberately sub-optimal start size and paid ~4-5 GB over static 256.
+    // makes a certain gain pay for an uncertain one: on shrink_bench (chunk2
+    // dyn, 64 threads) a ~200 MB exact metadata gain was refused at every
+    // tick, because 45% of a multi-GB array's memory is out of reach for any
+    // structural gain -- and the dyn build stayed at its sub-optimal start
+    // size.
     const bool coarsening = best_sz > cur_size;
     // What the cost model expects the rebuild to take: gates a coarsening
     // (coarsen_min_meta_rate), and is logged with the chunk and
@@ -188,12 +183,9 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     // moves on multi-GB arrays). Coarsening faces a higher bar than fining,
     // for the model-optimism reason above.
     // CHUNK_ADVISOR_MIN_GAIN_MB overrides the absolute deadband, in MB; 0
-    // disables it. Read once, like the floor below. Without it the feature
-    // test of bench_and_test.py could not fire a move: it shrinks its arrays
-    // with --divisor, the metadata gain of 64 -> 128 is then under a MB, and
-    // the 8 MB policy value still gated the coarsening branch after
-    // CHUNK_COARSEN_MIN_META_MB=0 had cleared the floor -- "gain below
-    // deadband" at every tick, on every chunk-family variant.
+    // disables it. Read once, like the floor below. The feature test
+    // (bench_and_test.py) needs it: it shrinks its arrays with --divisor, so
+    // the metadata gain of 64 -> 128 falls under the 8 MB default.
     static const std::size_t env_min_gain = []()
     {
         const char* env = std::getenv("CHUNK_ADVISOR_MIN_GAIN_MB");
@@ -222,7 +214,7 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     //   - the exact metadata term alone exceeds the absolute deadband, with
     //     the forecast data term not eating it back (gain_b >= deadband);
     //   - or the forecast data term clears its own, larger, gate.
-    // Fining keeps the old rule unchanged: there gain_meta <= 0 and the data
+    // Fining keeps the single-sum rule: there gain_meta <= 0 and the data
     // forecast is exact, so the sum is the right thing to gate.
     bool clears_gate;
     if (coarsening)
@@ -233,8 +225,8 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         // still a bad move -- and it is the step where the data forecast
         // starts missing badly, so refusing it also keeps the decision inside
         // the range where the model is sound. Both are relative to nothing
-        // but the move itself: an absolute floor (24 MB until Sept '26) let
-        // the same arrays re-chunk at full size and never at a tenth of it.
+        // but the move itself: an absolute floor would let the same arrays
+        // re-chunk at full size and never at a tenth of it.
         // CHUNK_COARSEN_MIN_META_MB overrides the floor, in MB, and
         // CHUNK_COARSEN_MIN_META_RATE the rate, in MB per second of estimated
         // rebuild; 0 disables either. Read once, here, which runs once per
@@ -566,7 +558,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
                 {
                     const double predicted = ev.mem_before - ev.mem_pred;
                     // Drift-free when the table had the old size, else the
-                    // before/after difference, as before.
+                    // before/after difference.
                     const double measured =
                         ev.mem_after_old >= 0. ? ev.mem_after_old - ev.mem_after : ev.mem_before - ev.mem_after;
                     if (predicted > 0. && measured < pol_.coarsen_trust_ratio * predicted)

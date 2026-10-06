@@ -42,8 +42,8 @@ namespace shrink_array
 // empty <..., false> specialisation and never reaches any of this.
 
 // ── Per-rank flush lock (sharded xflush_lock) ─────────────────────────────
-// Spin-acquire the flush lock for rank r. Same spin discipline as the old
-// global lock (CPU_PAUSE, yield after 1000 spins). Guards the per-rank op-map
+// Spin-acquire the flush lock for rank r. The library's spin discipline
+// (CPU_PAUSE, yield after 1000 spins). Guards the per-rank op-map
 // container arr[r] against concurrent structural mutation by another flusher.
 template <typename T, typename ChunkType, bool Enabled>
 void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::rank_flush_acquire(int rank) noexcept
@@ -140,18 +140,14 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
     // wait for any INFLIGHT compressor to drain -- they cannot be aborted,
     // but they finish in bounded time (finite chunk list). Once no
     // compressor is stealing, none can start while our flushing count is
-    // held, so every chunk below is replayed under the same exclusion the
-    // per-chunk announce used to re-establish each time.
+    // held, so every chunk below is replayed under one exclusion.
     //
-    // Per chunk it was, and that is what the asymmetric handshake could not
-    // afford: announce_flush() is now a membarrier() (an IPI to every CPU
-    // running one of our threads), and the bulk-init phases flush tens of
-    // thousands of chunks per second per rank -- 39 000 announces/s at 8
-    // threads here, and the 64-thread cluster run went from seconds to
-    // minutes in "init zero loops". A flush_deferred call is what a flush
-    // costs now; holding the flag across the loop only defers compressors
-    // a little longer, which they already tolerate (start() yields to a
-    // flush 96% of the time on this bench).
+    // Not one announce per chunk: announce_flush() is a membarrier() (an
+    // IPI to every CPU running one of our threads), and the bulk-init phases
+    // flush tens of thousands of chunks per second per rank -- per-chunk
+    // announces turned seconds into minutes at 64 threads. Holding the flag
+    // across the loop only defers compressors a little longer, which they
+    // already tolerate (start() yields to a flush).
     //
     // No livelock: bounded inflight drain x no new admissions.
     Policy::announce_flush(); // counter + heavy barrier, one Dekker verb
@@ -261,7 +257,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr,
 
         // Preserve concurrent re-enqueues: same fix as flush_chunk_all_ranks.
         // The batch was swapped out; ops enqueued into *op_map after the swap
-        // are un-replayed pending writes. clear()+erase used to drop them
+        // are un-replayed pending writes. clear()+erase would drop them
         // (lost write + counter drift). Erase the entry only when empty;
         // otherwise keep it AND put the chunk back into the live set: the set
         // is the only thing flush_deferred walks, so a chunk left out of it
@@ -481,17 +477,14 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
         // ── Preserve concurrent re-enqueues ──────────────────────────────────
         // We drained a SWAPPED-OUT batch; any op enqueued into *op_map AFTER the
         // swap (a writer still active on rank r during this reader-triggered
-        // flush) is a genuine pending write that has NOT been replayed. The old
-        // `op_map->clear(); thread_map.erase()` destroyed exactly those ops
+        // flush) is a genuine pending write that has NOT been replayed. A
+        // `op_map->clear(); thread_map.erase()` would destroy exactly those ops
         // without applying them AND without decrementing pending_ops for them
-        // (dec only counted the batch) — a lost published write plus a counter
-        // that no longer matches reality. This was the residual sync_on_read
-        // corruption (reader flush racing an enqueue; invisible OFF where no
-        // reader flush fires, and on llvm where reads see no pending). Never
-        // clear() the live map: erase the chunk entry ONLY when nothing was
-        // re-enqueued; otherwise leave it (and the dangerous-list membership)
-        // for the next flush to pick up, exactly as the batch-swap comment
-        // promises.
+        // (dec only counts the batch) -- a lost published write plus a counter
+        // that no longer matches reality. Never clear() the live map: erase the
+        // chunk entry ONLY when nothing was re-enqueued; otherwise leave it (and
+        // the dangerous-list membership) for the next flush to pick up, exactly
+        // as the batch-swap comment promises.
         if (op_map->empty())
         {
             // ankerl's erase throws on a key it finds changed (a corrupted
@@ -527,7 +520,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
     return flushed_any;
 }
 
-// ── WAW guard: discard a superseded same-offset op on the own rank (P2) ──────
+// ── WAW guard: discard a superseded same-offset op on the own rank ───────────
 template <typename T, typename ChunkType, bool Enabled>
 void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int thr, ChunkType* chunk, int num) noexcept
 {
@@ -639,8 +632,8 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
 
     const int max_thr = CHUNK_PMP_RANK_BOUND;
 
-    // ─── Yield to flush_deferred (priority inversion fix) ─────────────
-    // After incrementing compression_active and the seq_cst fence, check
+    // ─── Yield to flush_deferred ──────────────────────────────────────
+    // After incrementing hard_inflight_ and the seq_cst fence, check
     // whether any thread has already claimed a flush. If so, undo our
     // increment and return false — the caller (make_block_compression_impl)
     // already handles this by skipping compression. This implements
@@ -792,8 +785,8 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
 // the wait is a parked compressor's window (microseconds) or the pass
 // reaching this chunk; without them it is the whole pass, scan included
 // (~300 us at 6 threads on x86, ~1 ms at 64 on AArch64). Past the budget the
-// write is deferred, which is what every write behind a compressor used to
-// be, so a bigger budget only buys fewer deferrals when a pass is unusually
+// write is deferred, as it would be without the wait, so a bigger budget
+// only buys fewer deferrals when a pass is unusually
 // long. A yield is ~1 us; the 1000 pauses before it are ~50 us on x86 and
 // under 1 us on AArch64 (`yield` is a hint there), so the budget in time is
 // mostly the yields.
