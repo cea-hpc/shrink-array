@@ -26,7 +26,7 @@
 
 #include "fast_allocators/internal/static_const_array.h"        // the declarations these bodies belong to
 #include "fast_allocators/internal/int_alloc.h"                 // int_alloc, int_free
-#include "fast_allocators/internal/alloc_config.h"              // constexpr mirrors of STD_ALLOC / _OPENMP
+#include "fast_allocators/internal/alloc_config.h"              // alloc_config::use_std_alloc / use_openmp
 #include "fast_allocators/internal/pmp_alloc.h"                 // PMP_IN_PARALLEL_REGION / PMP_THREAD_RANK
 #include "fast_allocators/internal/static_const_array_define.h" // MAX_CONST_BLOCK_SIZE
 

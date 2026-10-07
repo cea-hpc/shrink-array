@@ -80,29 +80,27 @@ in section 1 and in [performance_measurement.md](performance_measurement.md) §2
 
 ## 6. Compilation macros
 
+The options shared by every library of a build (§7) are not macros: CMake records them in the
+generated `chunk/build_options.h` and `fast_allocators/build_options.h`, installed with the
+libraries, and the headers read them there, whatever a program defines itself. A file compiled
+with OpenMP against a library built without it, or the reverse, does not compile. The macros
+below are those a library target carries (the variant, the geometry) and the tuning values the
+headers give a default; a program compiles with the library's. A program spelling the variant or
+the geometry differently from the library it links does not link: the undefined symbol
+(`shrink_array::link_check::variant_...`) names the settings it was compiled with.
+
 | macro | effect |
 |---|---|
-| `CHUNK=1`, `CHUNK2=1`, `CHUNK2A=1` | the variant |
+| `CHUNK_VARIANT_V1=1`, `CHUNK_VARIANT_V2=1`, `CHUNK_VARIANT_V2A=1` | the variant |
 | `CHUNK_DYNAMIC`, `DYN_CHUNK_SIZE=<n>` | dynamic geometry, and starting size |
 | `CHUNK_DYN_MAX_SIZE=<n>` | dynamic geometry: largest chunk size a rechunk can reach, a power of two (4096); sizes the shared buffers of the constant values, `cst_buffer_size × sizeof(T)` per distinct second value |
 | `CHUNK_ALLOC_AFFINITY_MIN_BYTES=<bytes>` | metadata threshold above which an array can have its own allocators (16 MiB; 0 = never) |
-| `FAST_ALLOC_CHECK_LISTS` | Debug build: each insertion into or removal from a slab list checks the whole list (linear cost per operation; defined by the CMake option of the same name) |
-| `CHUNK_NO_RECLAIM_EMPTY_SLABS` | keep emptied slabs resident, instead of giving them back to the system during explicit sweeps (defined by the CMake option `CHUNK_RECLAIM_EMPTY_SLABS=OFF`) |
-| `CHUNK_STATS` | instrumentation counters (stats build) |
-| `CHECK_OPTIM` | invariant checks in an optimised build |
-| `MM_PROTECT` | Chunk, Chunk2: shared buffers of the constant values made read-only (`mprotect`); a stray write into a compressed chunk causes a segmentation fault instead of corrupting the value (CMake option `CHUNK_MM_PROTECT`) |
-| `CHUNK_FORCE_DEFER_EVERY=<N>` | one write in N goes through the deferred path, across the whole tree (validation; 32 threads at most) |
-| `HAVE_AGGRESSIVE_COMPRESSION` | "aggressive" compression: the pass between two phases is skipped, and all compression happens during the parallel regions, at unpredictable times. Slower, but it exercises the concurrent paths (CMake option of the same name; the old spelling `HAVE_AGRESSIVE_COMPRESSION` is still accepted by CMake, with a warning) |
-| `CHUNK_FORCE_LEDGER` | keeps the block registry (`pool_ledger.h`) active under OpenMP, where it is off by default: its global mutex serialises every allocation and free. Detects double frees and illegal returns to the reserve (CMake option of the same name) |
 | `CHUNK_COMPRESS_MAX_YIELDS=<n>` | wait of a parked compressor before giving up its pass (10,000 *yields*; 0: give up at the first writer seen). See [synchronisation_dekker.md](synchronisation_dekker.md) |
 | `CHUNK_WRITE_WAIT_MAX_YIELDS=<n>` | wait of a writer facing a compressor before deferring its write (64 *yields*) |
-| `CHUNK_DEFERRED_DRAIN_THRESHOLD=<n>` | number of deferred writes of a rank above which it flushes its own queue (4,096; CMake option of the same name) |
 | `CHUNK_READ_RECLAIM_SLOTS=<n>` | number of reader threads tracked individually by the buffer reclamation (1,024) |
 | `CHUNK_STATS_MAX_THR=<n>` | number of ranks of the `CHUNK_STATS` counters (1,024) |
-| `CHUNK_STD_ALLOC` | chunk buffers allocated by the standard allocator instead of `fast_allocators` (CMake option of the same name) |
 | `CHUNK_TEST_READ_DELAY_EVERY=<n>`, `CHUNK_TEST_READ_DELAY_US=<µs>` | test hook: one read in N by a thread that requested it waits (50 µs), to widen the reader / reclamation window (`read_reclaim_validation`) |
 | `CHUNK_TEST_PASS_DELAY_EVERY=<n>`, `CHUNK_TEST_PASS_DELAY_US=<µs>` | test hook: a delay (200 µs) in one compression pass in N |
-| `CHUNK_TEST_HOOKS` | compiles the test hooks of the harnesses (`chunk/internal/test_hooks.h`: forced deferred writes, read and pass delays), off at run time until a harness turns them on; defined for the whole tree where the harnesses are compiled (`CHUNK_BUILD_VALIDATION`), never in performance builds |
 
 ## 7. CMake options
 
@@ -115,22 +113,27 @@ in section 1 and in [performance_measurement.md](performance_measurement.md) §2
 | `SHRINK_INTEL_LIBM` | `ON` | x86-64: link Intel's libm if it is found |
 | `SHRINK_ARM_LIBM` | `OFF` | aarch64: link ArmPL's `libamath` (no gain measured on Grace) |
 | `CHUNK_ICPX_O0_WORKAROUND` | `OFF` | workaround for an icpx internal error on three files |
-| `CHUNK_MM_PROTECT` | `OFF` | defines `MM_PROTECT` (debugging build; `compile_all.sh` builds it so that its branches keep compiling) |
+| `CHUNK_MM_PROTECT` | `OFF` | Chunk, Chunk2: shared buffers of the constant values made read-only (`mprotect`); a stray write into a compressed chunk causes a segmentation fault instead of corrupting the value (debugging build; `compile_all.sh` builds it so that its branches keep compiling) |
 | `CHUNK_LIB_UNITY` | `ON` | each variant archive (`chunk_v2a_256`, ...) compiled as a single unit (unity build, 4 to 6 times less compilation); a file that has its own compile options stays separate |
 | `SHRINK_BENCH_UNITY` | `ON` | each `shrink_bench` executable compiled as a single unit (unity build, 3.5 to 4 times less compilation); `OFF` to compare timings with earlier campaigns, since inlining across benchmark files can change them; `SHRINK_BENCH_UNITY_BATCH` files per unit (0 = all) |
 | `CHUNK_VALIDATION_UNITY` | `ON` | the validation harnesses grouped into one executable per variant and geometry (unity build); `OFF`: one executable per harness |
 | `CHUNK_BUILD_VALIDATION` | depends on the build | compile the harnesses of `examples/validation`, and with them the test hooks (`CHUNK_TEST_HOOKS`); by default `ON` in Debug, with `CHECK_OPTIM` or a sanitizer, `OFF` elsewhere (not cached: follows the current configuration) |
-| `CHUNK_RECLAIM_EMPTY_SLABS` | `ON` | give emptied slabs back to the system (`madvise`) during explicit sweeps (rechunk, destruction); `OFF` defines `CHUNK_NO_RECLAIM_EMPTY_SLABS` |
+| `CHUNK_RECLAIM_EMPTY_SLABS` | `ON` | give emptied slabs back to the system (`madvise`) during explicit sweeps (rechunk, destruction); `OFF` keeps them resident |
 | `FAST_ALLOC_CHECK_LISTS` | `OFF` | stronger debug level for the slab lists: in Debug, full check of the list at each insertion and removal (slow); an ordinary Debug build keeps the light checks |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | Chunk2A: the second-value slot holds a 4-byte identifier instead of the value (less memory, +3% write time) |
 | `CHUNK_STD_ALLOC` | `OFF` | standard allocator for chunk buffers instead of `fast_allocators` (useful under ASan: each buffer is a real `malloc`) |
 | `CHUNK_BUILD_DYN` | `ON` | also build a dynamic-geometry library (`_dyn`) per variant |
 | `CHUNK_STATS` | `OFF` | instrumentation counters and the `print_chunk_stats()` report |
 | `CHECK_OPTIM` | `OFF` | invariant checks in an optimised build |
-| `HAVE_AGGRESSIVE_COMPRESSION` | `OFF` | aggressive compression (see §6) |
-| `CHUNK_FORCE_LEDGER` | `OFF` | block registry active under OpenMP (see §6) |
+| `HAVE_AGGRESSIVE_COMPRESSION` | `OFF` | "aggressive" compression: the pass between two phases is skipped, and all compression happens during the parallel regions, at unpredictable times. Slower, but it exercises the concurrent paths (the old spelling `HAVE_AGRESSIVE_COMPRESSION` is still accepted, with a warning) |
+| `CHUNK_FORCE_LEDGER` | `OFF` | keeps the block registry (`pool_ledger.h`) active under OpenMP, where it is off by default: its global mutex serialises every allocation and free. Detects double frees and illegal returns to the reserve |
 | `CHUNK_DEFERRED_DRAIN_THRESHOLD` | empty (4,096) | threshold at which a rank flushes its own queue |
-| `CHUNK_FORCE_DEFER_EVERY` | 0 | one write in N through the deferred path (validation) |
+| `CHUNK_FORCE_DEFER_EVERY` | 0 | one write in N through the deferred path, across the whole tree (validation; 32 threads at most) |
+| `CHUNK_DEBUG` | depends on the build | the library's debug checks; `ON` with `CMAKE_BUILD_TYPE=Debug` (not cached: follows the current configuration) |
+| `CHUNK_POOL_NO_REUSE` | `OFF` | deferred-op pools without free list: every block a real `new` / `delete` (ASan, TSan) |
+| `CHUNK_PERF`, `CHUNK_DO_CHECK` | `OFF` | Chunk2 skips its diagnostic scan of missed compressions; every written value checked for NaN |
+| `CHUNK_DEBUG_SET_SIZE`, `CHUNK_RECHUNK_LEDGERTRACE` | `OFF` | print the compression thresholds and the lists' memory estimate; trace every block-registry transition |
+| `CHUNK_RING_LOG_DEBUG`, `CHUNK_RING_LOG_OP` | `OFF` | debug ring log of every event (heavy); of the op-lifecycle events only (light) |
 | `SANITIZER` | `none` | `thread`, `address` or `token` (AllocToken, Clang ≥ 22), for all build types |
 | `CHUNK_GLIBCXX_ASSERTIONS` | `OFF` | libstdc++ assertions (`_GLIBCXX_ASSERTIONS`) in the library and its consumers |
 | `CHUNK_UBSAN` | `OFF` | UndefinedBehaviorSanitizer (to pair with ASan, not with TSan) |

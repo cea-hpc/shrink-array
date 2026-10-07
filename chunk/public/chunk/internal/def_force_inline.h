@@ -16,16 +16,17 @@
 
 #pragma once
 
-#ifdef __INTEL_COMPILER
+#include "chunk/build_options.h" // CHUNK_OPT_DEBUG
 
-    #ifdef DEBUG
+#ifdef __INTEL_COMPILER
+    #if CHUNK_OPT_DEBUG
         #define FORCE_INLINE inline
     #else
         #define FORCE_INLINE __forceinline
     #endif
 
 #elif defined(__GNUC__) || defined(__clang__)
-    #ifdef DEBUG
+    #if CHUNK_OPT_DEBUG
         #define FORCE_INLINE inline
     #else
         // `inline` included, as in the DEBUG branch (and as __forceinline

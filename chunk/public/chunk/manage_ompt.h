@@ -29,7 +29,7 @@
  *
  * The functions below are those points. They come in two flavours, selected at
  * build time:
- *  - `HAVE_EMBEDDED_COMPRESSION_WITH_OMPT`: manage_ompt.cpp registers an OMPT
+ *  - `CHUNK_OPT_OMPT` (an OMPT build): manage_ompt.cpp registers an OMPT
  *    tool and calls them from the runtime callbacks; the application code has
  *    nothing to do (see `build_config::has_ompt`);
  *  - otherwise the application calls them explicitly around its parallel
@@ -118,7 +118,7 @@ extern bool finalize_barrier_phase();
  * @brief Once per process: warn if this build relies on the OMPT tool and the
  *        OpenMP runtime did not load it.
  *
- * In a HAVE_OMPT build the phase boundaries (deferred-write flush, compression
+ * In an OMPT build (CHUNK_OPT_OMPT) the phase boundaries (deferred-write flush, compression
  * between parallel regions) are run by the OMPT callbacks only. If the runtime
  * did not load the tool -- OMP_TOOL=disabled, another tool found first through
  * OMP_TOOL_LIBRARIES, ompt_start_tool not found in the executable -- they never
@@ -127,7 +127,7 @@ extern bool finalize_barrier_phase();
  * is not active; with CHUNK_REQUIRE_OMPT=1 in the environment it aborts.
  *
  * Called by the AllTypeChunk constructor (first array, or init_indexes). A
- * no-op in every build without HAVE_OMPT.
+ * no-op in every build without the OMPT tool.
  *
  * Weak: a library built NO_OMPT_TOOL (the program ships its own tool, e.g.
  * examples/multi-mat/manage_ompt.cpp) has no definition, and the constructor

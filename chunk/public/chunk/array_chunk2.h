@@ -379,7 +379,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      *          yet fully first_value or second_value. Those are compressed on
      *          the spot (a self-heal), and only the ones that survive that are
      *          reported on stderr as genuine misses.
-     * @note Compiled to an immediate return under `PERF`: this is a
+     * @note Compiled to an immediate return under `CHUNK_PERF`: this is a
      *       check/debug-build diagnostic, not part of the compression engine.
      *       The engine proper is driven from the write path and from the
      *       phase transitions of manage_ompt.h.
@@ -388,7 +388,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
     /**
      * @brief Public entry point for the audit pass.
-     * @see compress_int, which this forwards to — including its `PERF` no-op.
+     * @see compress_int, which this forwards to — including its `CHUNK_PERF` no-op.
      */
     void compress();
 

@@ -1,11 +1,13 @@
 # Copyright 2024-2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 # ---------------------------------------------------------------------------
-# The `chunk` library must be compiled with one of CHUNK / CHUNK2 / CHUNK2A
-# defined (or none, for the vector-mode build). These macros drive
+# A variant library is compiled with one of CHUNK_VARIANT_V1 / _V2 / _V2A
+# defined (or none, for the vector-mode build), PUBLIC: the macros drive
 # `chunk_config::is_shrink_enabled` and friends in public/chunk/config.h, and
 # they are read *inside* library-side .cpp files (AllTypeChunk.cpp,
-# manage_ompt.cpp today; potentially others tomorrow).
+# manage_ompt.cpp today; potentially others tomorrow). The options that are the
+# same for every library of the build are not definitions: they are recorded
+# in the generated chunk/build_options.h (below).
 # ---------------------------------------------------------------------------
 
 # The version is set once, in the top-level project(shrink_array VERSION ...).
@@ -83,6 +85,59 @@ option(CHUNK_ALIGN_CHECK "Abort if a slab block is misaligned for its type" OFF)
 if (CHUNK_ALIGN_CHECK)
   message(STATUS "CHUNK_ALIGN_CHECK=ON → aborting on misaligned slab block")
 endif()
+
+# Diagnostic switches (they were bare -D macros: PERF, DO_CHECK, ...).
+option(CHUNK_PERF "Perf build: ArrayChunk2 skips its diagnostic scan of missed compressions" OFF)
+option(CHUNK_DO_CHECK "Check every written value for NaN (global_check_nan)" OFF)
+option(CHUNK_DEBUG_SET_SIZE "Print the compression thresholds and the lists' memory estimate" OFF)
+option(CHUNK_RECHUNK_LEDGERTRACE "Trace every pool-ledger state transition on stderr" OFF)
+option(CHUNK_RING_LOG_DEBUG "Ring-log every event, hot path included (heavy)" OFF)
+option(CHUNK_RING_LOG_OP "Ring-log the op-lifecycle events only (light)" OFF)
+
+# --- chunk/build_options.h ------------------------------------------------
+# The options every library of this build shares, generated into the build
+# tree and installed: the headers read them from there, not from the command
+# line, so an installed consumer compiles them exactly as the library was.
+macro(_chunk_opt name value)
+  if (${value})
+    set(${name} 1)
+  else()
+    set(${name} 0)
+  endif()
+endmacro()
+_chunk_opt(CHUNK_OPT_OPENMP CHUNK_OMP)
+_chunk_opt(CHUNK_OPT_STD_ALLOC CHUNK_STD_ALLOC)
+if (CHUNK_OPT_STD_ALLOC)
+  set(CHUNK_OPT_FAST_ALLOC 0)
+else()
+  set(CHUNK_OPT_FAST_ALLOC 1)
+endif()
+_chunk_opt(CHUNK_OPT_OMPT CHUNK_HAVE_OMPT)
+_chunk_opt(CHUNK_OPT_DEBUG CHUNK_DEBUG)
+_chunk_opt(CHUNK_OPT_CHECK_OPTIM CHECK_OPTIM)
+_chunk_opt(CHUNK_OPT_STATS CHUNK_STATS)
+_chunk_opt(CHUNK_OPT_MM_PROTECT CHUNK_MM_PROTECT)
+_chunk_opt(CHUNK_OPT_SECOND_VALUE_INDEXED CHUNK_SECOND_VALUE_INDEXED)
+_chunk_opt(CHUNK_OPT_RECLAIM_EMPTY_SLABS CHUNK_RECLAIM_EMPTY_SLABS)
+_chunk_opt(CHUNK_OPT_AGGRESSIVE_COMPRESSION HAVE_AGGRESSIVE_COMPRESSION)
+_chunk_opt(CHUNK_OPT_POOL_NO_REUSE CHUNK_POOL_NO_REUSE)
+_chunk_opt(CHUNK_OPT_ALIGN_CHECK CHUNK_ALIGN_CHECK)
+_chunk_opt(CHUNK_OPT_FORCE_LEDGER CHUNK_FORCE_LEDGER)
+_chunk_opt(CHUNK_OPT_TEST_HOOKS CHUNK_TEST_HOOKS)
+_chunk_opt(CHUNK_OPT_PERF CHUNK_PERF)
+_chunk_opt(CHUNK_OPT_DO_CHECK CHUNK_DO_CHECK)
+_chunk_opt(CHUNK_OPT_DEBUG_SET_SIZE CHUNK_DEBUG_SET_SIZE)
+_chunk_opt(CHUNK_OPT_RECHUNK_LEDGERTRACE CHUNK_RECHUNK_LEDGERTRACE)
+_chunk_opt(CHUNK_OPT_RING_LOG_DEBUG CHUNK_RING_LOG_DEBUG)
+_chunk_opt(CHUNK_OPT_RING_LOG_OP CHUNK_RING_LOG_OP)
+if ("${CHUNK_DEFERRED_DRAIN_THRESHOLD}" STREQUAL "")
+  set(CHUNK_OPT_DEFERRED_DRAIN_THRESHOLD 4096)
+else()
+  set(CHUNK_OPT_DEFERRED_DRAIN_THRESHOLD ${CHUNK_DEFERRED_DRAIN_THRESHOLD})
+endif()
+set(CHUNK_OPT_FORCE_DEFER_EVERY ${CHUNK_FORCE_DEFER_EVERY})
+set(CHUNK_GENERATED_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+configure_file(public/chunk/build_options.h.in ${CHUNK_GENERATED_INCLUDE_DIR}/chunk/build_options.h @ONLY)
 
 option(CHUNK_NO_IPA_ICF "Disable -fipa-icf (deferred pool aliasing diagnosis)" OFF)
 if (CHUNK_NO_IPA_ICF AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -264,7 +319,6 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/deferred_lifecycle_check.h
         public/chunk/internal/deferred_op_pool.h
         public/chunk/internal/deferred_ops_storage.h
-        public/chunk/internal/define_mm_protect.h
         public/chunk/internal/for_each_type.h
         public/chunk/internal/freepath_counters.h
         public/chunk/internal/func_p2.h
@@ -272,6 +326,7 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/immortal.h
         public/chunk/internal/in_t.h
         public/chunk/internal/invariant_check.h
+        public/chunk/internal/link_check.h
         public/chunk/internal/live_arrays.h
         public/chunk/internal/manager_chunk.h
         public/chunk/internal/manager_chunk_inline.h
@@ -310,7 +365,6 @@ set(CHUNK_PUBLIC_HEADERS
         public/chunk/chunk2_def.h
         public/chunk/chunk2_std.h
         public/chunk/chunk_def.h
-        public/chunk/chunk_define.h
         public/chunk/chunk_size_advisor.h
         public/chunk/chunk_std.h
         public/chunk/chunk_traits.h
@@ -337,6 +391,7 @@ set(CHUNK_SOURCES
         private/chunk_std.cpp
         private/manage_ompt.cpp
         private/ring_log_debug.cpp
+        private/link_check.cpp
 )
 # Optimisation: the library's .cpp files inherit the project's
 # CMAKE_CXX_FLAGS_RELEASE / _RELWITHDEBINFO (-O3 -g), like every other target.
@@ -389,12 +444,8 @@ function(chunk_add_variant target_name variant_define size is_dyn)
     target_compile_definitions(${target_name} PUBLIC ${variant_define})
   endif()
 
-  # HAVE_OMPT changes what the headers do (the phase brackets become no-ops,
-  # the OMPT tool runs them): a consumer must see the same value as the
-  # library. The top-level add_definitions() covers this tree; PUBLIC carries
-  # it to an installed consumer.
+  # The OMPT tool (chunk/build_options.h, CHUNK_OPT_OMPT).
   if (CHUNK_HAVE_OMPT)
-    target_compile_definitions(${target_name} PUBLIC HAVE_OMPT)
     # The OpenMP runtime finds the tool with dlsym("ompt_start_tool") in the
     # EXECUTABLE: its symbols must be in the dynamic symbol table, which an
     # executable does not export by default. Without this the runtime silently
@@ -409,27 +460,11 @@ function(chunk_add_variant target_name variant_define size is_dyn)
     target_compile_definitions(${target_name} PUBLIC CHUNK_SIZE=${size})
   endif()
 
-  target_compile_definitions(${target_name} PUBLIC
-          $<$<BOOL:${CHECK_OPTIM}>:CHECK_OPTIM>
-          $<$<BOOL:${CHUNK_POOL_NO_REUSE}>:CHUNK_POOL_NO_REUSE>
-          $<$<BOOL:${CHUNK_ALIGN_CHECK}>:CHUNK_ALIGN_CHECK>
-          $<$<BOOL:${HAVE_AGGRESSIVE_COMPRESSION}>:HAVE_AGGRESSIVE_COMPRESSION>
-          $<$<BOOL:${CHUNK_STATS}>:CHUNK_STATS>
-          $<$<BOOL:${CHUNK_FORCE_LEDGER}>:CHUNK_FORCE_LEDGER>
-  )
-
-  # Read-side sync backlog threshold (only when explicitly set).
-  if (NOT "${CHUNK_DEFERRED_DRAIN_THRESHOLD}" STREQUAL "")
-    target_compile_definitions(${target_name} PUBLIC
-            CHUNK_DEFERRED_DRAIN_THRESHOLD=${CHUNK_DEFERRED_DRAIN_THRESHOLD})
-  endif()
-  if (NOT "${CHUNK_FORCE_DEFER_EVERY}" STREQUAL "0")
-    target_compile_definitions(${target_name} PUBLIC
-            CHUNK_FORCE_DEFER_EVERY=${CHUNK_FORCE_DEFER_EVERY})
-  endif()
+  # CHECK_OPTIM, CHUNK_STATS, CHUNK_STD_ALLOC and the other options shared by
+  # every library of the build are not definitions any more: they are in the
+  # generated chunk/build_options.h, on the include path below.
 
   if (CHUNK_STD_ALLOC)
-    target_compile_definitions(${target_name} PUBLIC CHUNK_STD_ALLOC)
     # No fast_allocators library here, but two of its headers -- svalloc.h and
     # singleton.h, standard library only -- are chunk's too (one copy, see
     # them): their directory stays on the include path. Installed below.
@@ -478,6 +513,7 @@ function(chunk_add_variant target_name variant_define size is_dyn)
 
   target_include_directories(${target_name}
           PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/public>
+          $<BUILD_INTERFACE:${CHUNK_GENERATED_INCLUDE_DIR}>
           $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/third_party>
           $<INSTALL_INTERFACE:include>)
 
@@ -495,7 +531,7 @@ chunk_add_variant(chunk_vector "" "" FALSE)
 # The three shrink variants, each in every static size + an optional dyn lib.
 # Naming: chunk_v1_64, chunk_v1_256, ..., chunk_v2a_dyn.
 set(_chunk_variant_names   chunk_v1 chunk_v2 chunk_v2a)
-set(_chunk_variant_defines "CHUNK=1" "CHUNK2=1" "CHUNK2A=1")
+set(_chunk_variant_defines "CHUNK_VARIANT_V1=1" "CHUNK_VARIANT_V2=1" "CHUNK_VARIANT_V2A=1")
 
 list(LENGTH _chunk_variant_names _nvar)
 math(EXPR _nvar_last "${_nvar} - 1")
@@ -544,7 +580,7 @@ endforeach()
 # "nothing forbids a build from selecting more than one"); what the second
 # define costs v1 is the raw fill of its range ops (raw_fillable_v). Without
 # the OMPT tool: the example carries its own (examples/multi-mat/manage_ompt.cpp).
-chunk_add_variant(chunk_v1v2_${CHUNK_DEFAULT_SIZE} "CHUNK=1;CHUNK2=1" ${CHUNK_DEFAULT_SIZE} FALSE NO_OMPT_TOOL)
+chunk_add_variant(chunk_v1v2_${CHUNK_DEFAULT_SIZE} "CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1" ${CHUNK_DEFAULT_SIZE} FALSE NO_OMPT_TOOL)
 
 # VRAIE LIBRAIRIE PAR DÉFAUT (au lieu d'un simple ALIAS) pour éviter la perte des includes dans les sous-exécutables
 # Default library: no variant define, default compile-time size (__chunk_size=64), static.
@@ -599,6 +635,9 @@ install(DIRECTORY public/chunk
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         COMPONENT chunk-devel
         FILES_MATCHING PATTERN "*.h")
+install(FILES ${CHUNK_GENERATED_INCLUDE_DIR}/chunk/build_options.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/chunk
+        COMPONENT chunk-devel)
 
 # A std-alloc build installs no fast_allocators, yet chunk's headers include
 # its svalloc.h and singleton.h: install those two with chunk then.

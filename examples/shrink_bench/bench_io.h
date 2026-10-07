@@ -28,7 +28,7 @@
 // values of a 512-wide chunk.
 
 
-#include "bench_prelude.h" // Int, UInt, chunk_config::, build_config::has_bzip2
+#include "bench_prelude.h" // Int, UInt, chunk_config::
 
 #include <algorithm> // std::max
 #include <cstddef>   // size_t
@@ -42,13 +42,14 @@
 #include <format>    // std::format
 #include <vector>    // std::vector
 
+#include "bench_config.h"         // have_bzip2
 #include "bench_utils.h"          // is_vector
 #include "chunk/ring_log_debug.h" // analyze_ring_sweep / dump_ring decls
 
 // -----------------------------------------------------------------------------
 // BZip2 compress/decompress helpers, defined in bench_io.cpp when BZIP2 is on.
 // The write_binary_file() template below dispatches to compress_file()
-// through the `build_config::has_bzip2` compile-time flag, so declaring
+// through the `have_bzip2` compile-time flag (bench_config.h), so declaring
 // them unconditionally is harmless (unused declarations don't link).
 // -----------------------------------------------------------------------------
 void compress_file(const std::string& source_file, const std::string& dest_file);
@@ -194,7 +195,7 @@ void write_binary_file(const std::string& filename,
         return;
     }
 
-    if constexpr (build_config::has_bzip2)
+    if constexpr (have_bzip2)
     {
         compress_file(filename, filename_gz);
 #pragma omp critical
@@ -280,7 +281,7 @@ void read_check_binary_file(Int                ind,
     // would destroy the oracle's only instance for every later run.
     bool bin_is_temp = false;
 
-    if constexpr (build_config::has_bzip2)
+    if constexpr (have_bzip2)
     {
         // Regime-agnostic read: prefer the .bz2 when it exists (compressed
         // oracle, .bin was unlinked at write time); otherwise fall back to a

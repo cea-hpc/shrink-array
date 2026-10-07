@@ -66,7 +66,7 @@
 #include "fast_allocators/internal/pmp_alloc.h" // PMP_MAX_THREADS / PMP_THREAD_RANK / PMP_IN_PARALLEL_REGION
 
 #include "fast_allocators/internal/int_alloc.h"                 // int_alloc, int_free, int_alloc_align, int_free_align
-#include "fast_allocators/internal/alloc_config.h"              // constexpr mirror of STD_ALLOC
+#include "fast_allocators/internal/alloc_config.h"              // alloc_config::use_std_alloc
 #include "fast_allocators/internal/static_const_array_define.h" // MAX_CONST_BLOCK_SIZE (BlkAllocator routing)
 #include "fast_allocators/tc_allocator.h"                       // TCTypeAllocatorEBC
 

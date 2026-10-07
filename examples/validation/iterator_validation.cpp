@@ -16,7 +16,7 @@
 
 // ============================================================================
 // const_iterator harness. Variant-agnostic: chunk / chunk2 / chunk2a follow the
-// compile-time macro (CHUNK / CHUNK2 / CHUNK2A), like the other harnesses here.
+// compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like the other harnesses here.
 // ============================================================================
 //
 // Guards the random-access contract of the read-only iterator, against a
@@ -85,7 +85,7 @@ namespace
 {
 
 static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a,
-              "iterator_validation must be built with CHUNK, CHUNK2 or CHUNK2A");
+              "iterator_validation must be built with CHUNK_VARIANT_V1, _V2 or _V2A");
 
 template <typename T>
 using Array = std::conditional_t<chunk_config::use_chunk2a,

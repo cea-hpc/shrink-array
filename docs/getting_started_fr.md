@@ -83,8 +83,10 @@ target_link_libraries(mon_appli PRIVATE chunk::chunk_v2a)
 
 La bibliothèque liée **choisit la variante et la taille de chunk**. Les en-têtes sont les mêmes
 pour toutes, et la bibliothèque apporte les définitions de compilation qui sélectionnent la
-sienne (`CHUNK2A=1`, `CHUNK_SIZE=256` ou `CHUNK_DYNAMIC`, `HAVE_OMPT`), ainsi que le C++20,
-`-fopenmp` si elle a été construite avec OpenMP, et ses dépendances :
+sienne (`CHUNK_VARIANT_V2A=1`, `CHUNK_SIZE=256` ou `CHUNK_DYNAMIC`), ainsi que le C++20,
+`-fopenmp` si elle a été construite avec OpenMP, et ses dépendances. Les autres options de sa
+construction sont dans `chunk/build_options.h`, installé, que lisent les en-têtes : un
+programme les compile comme la bibliothèque.
 
 | cible | variante | taille de chunk |
 |---|---|---|

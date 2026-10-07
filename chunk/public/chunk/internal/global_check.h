@@ -16,7 +16,9 @@
 
 #pragma once
 
-#ifdef DO_CHECK
+#include "chunk/build_options.h" // CHUNK_OPT_DO_CHECK
+
+#if CHUNK_OPT_DO_CHECK
 
     #include <cmath>    // std::isnan
     #include <complex>  // std::complex

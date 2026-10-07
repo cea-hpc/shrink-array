@@ -45,8 +45,9 @@
  * TCSlab::free_list_end - 1 elements. ::FreeLinks names the choice.
  *
  * @par Configuration
- * The macros are read in alloc_config.h and nowhere else, so the bodies here
- * branch with `if constexpr`. Both arms must compile in every configuration --
+ * The options are read in alloc_config.h, from the generated build_options.h,
+ * and nowhere else (DBG_ASSERT aside), so the bodies here branch with
+ * `if constexpr`. Both arms must compile in every configuration --
  * that is the point. See ::bypass_slabs.
  *
  * @warning A slab's own address is recovered from any interior pointer by
@@ -75,14 +76,14 @@
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 
-#include "fast_allocators/internal/alloc_config.h"    // constexpr mirrors of STD_ALLOC / DEBUG / _OPENMP
+#include "fast_allocators/internal/alloc_config.h"    // alloc_config::use_std_alloc / is_debug / use_openmp
 #include "fast_allocators/slab_arena.h"               // ArenaKind for op/ctx/value slab routing
 #include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2, for slab_of()'s effective slab geometry
 
 /**
  * @brief Must this call hand out plain `new[]` memory instead of slab memory?
  *
- * @details Under STD_ALLOC, for the whole run; never otherwise. A constant: an
+ * @details Under FAST_ALLOC_STD_ALLOC, for the whole run; never otherwise. A constant: an
  *          allocator's mode cannot change after init() -- a run-time switch
  *          flipped after init() would make ElementSize wrong for the other
  *          mode (see below).
@@ -122,11 +123,12 @@ namespace fast_alloc
  */
 inline void* map_anonymous(size_t size)
 {
-#if defined(BSD)
-    void* const tmp = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-#else
     // MAP_ANONYMOUS: not backed by any file; the contents are zero (mmap(2)).
+    // MAP_ANON, its older BSD spelling, where it is the only one.
+#if defined(MAP_ANONYMOUS)
     void* const tmp = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+#else
+    void* const tmp = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
 #endif
 
     if (tmp == MAP_FAILED)
@@ -144,8 +146,8 @@ inline void* map_anonymous(size_t size)
 
 } // namespace fast_alloc
 
-/// @brief assert() in a DEBUG build; expands to nothing otherwise.
-#ifdef DEBUG
+/// @brief assert() in a debug build (alloc_config::is_debug); nothing otherwise.
+#if FAST_ALLOC_OPT_DEBUG
     #define DBG_ASSERT(x) assert(x)
 #else
     #define DBG_ASSERT(x)
@@ -714,7 +716,7 @@ void remove_TCTypeAllocator_inst(VTCTypeAllocator*);
  *
  * @tparam Derived The pool (CRTP). It provides, as `static constexpr`:
  *         `eager_first_slab` (init() creates the first slab), `zero_std_alloc`
- *         (under STD_ALLOC, alloc() zero-fills what it hands out) and
+ *         (under FAST_ALLOC_STD_ALLOC, alloc() zero-fills what it hands out) and
  *         `pool_name` (for the [MUNMAP] trace).
  * @tparam ElemT Element type. What is handed out is an ARRAY of these --
  *         init() takes a count, and alloc() returns a pointer to the first.
@@ -807,7 +809,7 @@ class TCSlabPool
     /**
      * @brief Hand out room for #ElementSize elements.
      * @return Memory with unspecified contents; the caller initialises it (see
-     *         TCSlab's @warning). Zero-filled under STD_ALLOC when the pool asks
+     *         TCSlab's @warning). Zero-filled under FAST_ALLOC_STD_ALLOC when the pool asks
      *         for it (`Derived::zero_std_alloc`).
      * @details Draws from the current slab; failing that, revives one from the
      *          reserve; failing that, creates a new slab. A slab that fills up
@@ -1114,7 +1116,7 @@ class TCSlabPool
      */
     void destroy_int()
     {
-        // Nothing to walk when the slabs were never built: under STD_ALLOC there
+        // Nothing to walk when the slabs were never built: under FAST_ALLOC_STD_ALLOC there
         // are no slabs at all, each element was an independent new[] that
         // free_elt_pow2() has already deleted.
         if constexpr (alloc_config::use_slabs)
@@ -1285,7 +1287,7 @@ class TCTypeAllocator final : public VTCTypeAllocator, public TCSlabPool<TCTypeA
     ///        page of its back-pointer, not the whole slab: alloc_block() does
     ///        not clear it.
     static constexpr bool eager_first_slab = true;
-    /// @brief STD_ALLOC hands out new[] as is.
+    /// @brief FAST_ALLOC_STD_ALLOC hands out new[] as is.
     static constexpr bool zero_std_alloc = false;
     /// @brief For the [MUNMAP] trace.
     static constexpr const char* pool_name = "TCTypeAllocator";
@@ -1350,7 +1352,7 @@ class TCTypeAllocator final : public VTCTypeAllocator, public TCSlabPool<TCTypeA
  *          list outside the payload, so an emptied slab can be madvised away
  *          (collect_empty_slabs(), its own part). Its slabs draw from the
  *          value arena; init() creates none; it does not enrol in the
- *          ::VTCTypeAllocator report registry; under STD_ALLOC it zero-fills
+ *          ::VTCTypeAllocator report registry; under FAST_ALLOC_STD_ALLOC it zero-fills
  *          what it hands out.
  *
  *          alignas(64): it lives in per-rank arrays (one per thread); at 96
@@ -1366,7 +1368,7 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
   public:
     /// @brief No slab at init(): the first alloc() makes one. See TCSlabPool::init.
     static constexpr bool eager_first_slab = false;
-    /// @brief STD_ALLOC zero-fills, as the value pools always did.
+    /// @brief FAST_ALLOC_STD_ALLOC zero-fills, as the value pools always did.
     static constexpr bool zero_std_alloc = true;
     /// @brief For the [MUNMAP] trace.
     static constexpr const char* pool_name = "TCCAllocator";

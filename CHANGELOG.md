@@ -84,10 +84,10 @@ the tag's checksum to the recipe.
   project is `shrink_array`, and carries the version (`project(shrink_array VERSION ...)`),
   from which the chunk library takes its own. Consumed by another project, the build no
   longer writes the build type or the per-configuration flags into that project's cache.
-- The variant libraries carry C++20, OpenMP (when built with it) and `HAVE_OMPT` to their
-  consumers (PUBLIC). An OMPT build links its consumers with `-rdynamic`, so the OpenMP runtime
+- The variant libraries carry C++20 and OpenMP (when built with it) to their consumers
+  (PUBLIC). An OMPT build links its consumers with `-rdynamic`, so the OpenMP runtime
   finds the library's OMPT tool in the executable.
-- `HAVE_AGRESSIVE_COMPRESSION` is renamed `HAVE_AGGRESSIVE_COMPRESSION` (option, macro,
+- `HAVE_AGRESSIVE_COMPRESSION` is renamed `HAVE_AGGRESSIVE_COMPRESSION` (option,
   `chunk_config::have_aggressive_compression`, build directory names). CMake still accepts the
   old option name, with a deprecation message.
 - The `cmake-build-omp-gnu-debug-ledger` build is no longer part of the default
@@ -120,6 +120,32 @@ the tag's checksum to the recipe.
   to read it before its dynamic initialisation and after its destruction.
 - No limit on the number of (chunk template, element type) pairs: the manager registry grows
   (it aborted past 256). Registering a manager no longer uses RTTI (`dynamic_cast`).
+- **The build options are recorded, not passed as macros.** CMake generates
+  `chunk/build_options.h` and `fast_allocators/build_options.h` (`CHUNK_OPT_*`,
+  `FAST_ALLOC_OPT_*`), installed with the libraries; the headers read them there, never from the
+  command line of the file that includes them. An installed consumer used to compile the headers
+  with its own value of every option the targets did not carry (MM_PROTECT,
+  `CHUNK_SECOND_VALUE_INDEXED`, CHUNK_NO_RECLAIM_EMPTY_SLABS, DEBUG, the test hooks...): two
+  definitions of the same templates in one program, silently. A file compiled with OpenMP
+  against a library built without it, or the reverse, is refused with an `#error`. The
+  libraries no longer export HAVE_OMPT, `CHECK_OPTIM`, `CHUNK_STATS`, `CHUNK_STD_ALLOC`,
+  `CHUNK_POOL_NO_REUSE`, `CHUNK_ALIGN_CHECK`, `HAVE_AGGRESSIVE_COMPRESSION`, `CHUNK_FORCE_LEDGER`,
+  `CHUNK_DEFERRED_DRAIN_THRESHOLD`, `CHUNK_FORCE_DEFER_EVERY` as definitions.
+- **A program compiled with other per-library settings than the library it links does not link.**
+  The variant, `CHUNK_SIZE` and `CHUNK_DYNAMIC` are spelled into the name of one function each
+  variant library defines (`chunk/internal/link_check.h`); the undefined symbol names the
+  settings the program was compiled with.
+- Renamed, without the old names: the variant macros CHUNK, CHUNK2, CHUNK2A are
+  `CHUNK_VARIANT_V1`, `CHUNK_VARIANT_V2`, `CHUNK_VARIANT_V2A`. The bare `-D` switches DEBUG,
+  PERF, DO_CHECK, DEBUG_SET_SIZE, RECHUNK_LEDGERTRACE, RING_LOG_DEBUG, RING_LOG_OP are
+  CMake options `CHUNK_DEBUG` (on with a Debug build), `CHUNK_PERF`, `CHUNK_DO_CHECK`,
+  `CHUNK_DEBUG_SET_SIZE`, `CHUNK_RECHUNK_LEDGERTRACE`, `CHUNK_RING_LOG_DEBUG`,
+  `CHUNK_RING_LOG_OP`; MM_PROTECT is the option `CHUNK_MM_PROTECT` alone. fast_allocators:
+  STD_ALLOC and ALLOC_ALIGN are `FAST_ALLOC_STD_ALLOC` and `FAST_ALLOC_ALIGN`; the platform
+  macros MIC, KNL, ARM, ATOS_7, BSD are gone (no build defined them; `MAP_ANON` is used
+  where `MAP_ANONYMOUS` is missing). chunk/chunk_define.h and
+  chunk/internal/define_mm_protect.h are removed, and build_config::has_bzip2 moved to the
+  benchmark (`have_bzip2`).
 
 ### Fixed
 

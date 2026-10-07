@@ -26,8 +26,9 @@ endif()
 
 add_executable(getting_started getting_started.cpp)
 # Linking the variant library is all it takes: it carries its compile
-# definitions (CHUNK2A=1, CHUNK_SIZE or CHUNK_DYNAMIC, HAVE_OMPT), its include
-# directories and -fopenmp when it was built with OpenMP.
+# definitions (CHUNK_VARIANT_V2A=1, CHUNK_SIZE or CHUNK_DYNAMIC), its include
+# directories (with the generated chunk/build_options.h, the options it was
+# built with) and -fopenmp when it was built with OpenMP.
 target_link_libraries(getting_started PRIVATE ${GETTING_STARTED_LIB})
 
 if (NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)

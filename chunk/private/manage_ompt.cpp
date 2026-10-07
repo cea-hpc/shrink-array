@@ -18,7 +18,7 @@
  * @file manage_ompt.cpp
  * @brief OMPT tool wiring the chunk library into the OpenMP runtime.
  *
- * Compiled as a real tool only under `HAVE_EMBEDDED_COMPRESSION_WITH_OMPT`.
+ * Compiled as a real tool only under `CHUNK_OPT_OMPT`.
  * The runtime discovers it through ompt_start_tool(), which registers three
  * callbacks; each of them maps a point of the OpenMP lifecycle onto one of the
  * phase transitions declared in chunk/manage_ompt.h, so an application built
@@ -48,19 +48,19 @@
 #include "chunk/all_type_chunk.h"          // AllTypeChunk
 #include "chunk/internal/churn_counters.h" // churn::note_phase_end
 
-#ifdef HAVE_OMPT
+#if CHUNK_OPT_OMPT
     #include <omp-tools.h> // ompt_set_callback, ompt_start_tool_result_t
 #endif
 
 // Stays a directive: it gates the WHOLE translation unit -- the global switch
 // below and every callback -- so there is no statement for an `if constexpr` to
 // sit in. A build without OMPT compiles only the stand-ins of the #else branch.
-#if defined HAVE_EMBEDDED_COMPRESSION_WITH_OMPT
+#if CHUNK_OPT_OMPT
 
     #include <omp.h> // omp_in_parallel: the allocator flush runs outside any active region
     // Directive, like all_type_chunk.cpp's: a std-alloc build does not put
     // fast_allocators/public on the include path at all.
-    #ifndef CHUNK_STD_ALLOC
+    #if !CHUNK_OPT_STD_ALLOC
         #include "fast_allocators/internal/static_const_array.h" // StaticConstArray::clearInfoFreeElt
     #endif
 
@@ -323,7 +323,7 @@ void parallel_end_chunk_work()
  */
 void flush_allocator_free_batches()
 {
-    #ifndef CHUNK_STD_ALLOC
+    #if !CHUNK_OPT_STD_ALLOC
     if (omp_in_parallel() == 0)
     {
         StaticConstArray::clearInfoFreeElt();
@@ -525,7 +525,7 @@ void shrink_array::check_ompt_tool_loaded()
         if (state == 0)
         {
             std::fprintf(stderr,
-                         "[OMPT] %s: this build (HAVE_OMPT) runs its phase boundaries -- deferred-write flush, "
+                         "[OMPT] %s: this build (OMPT tool) runs its phase boundaries -- deferred-write flush, "
                          "compression between parallel regions -- from an OMPT tool, and the OpenMP runtime did "
                          "not load it. Usual causes: OMP_TOOL=disabled; another tool found first through "
                          "OMP_TOOL_LIBRARIES; ompt_start_tool not found in the executable. "

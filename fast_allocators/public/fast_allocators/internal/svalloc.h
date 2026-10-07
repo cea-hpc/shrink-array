@@ -49,17 +49,7 @@
 #include <stdlib.h> // posix_memalign (POSIX: <cstdlib> need not declare it)
 
 #ifndef SIMD_SZ
-
-    #if defined MIC || defined KNL
-        #define SIMD_SZ 64u
-    #elif ARM
-        #define SIMD_SZ 16u
-    #elif ATOS_7
-        #define SIMD_SZ 32u
-    #else
-        #define SIMD_SZ 32u
-    #endif
-
+    #define SIMD_SZ 32u
 #endif
 
 namespace fast_alloc

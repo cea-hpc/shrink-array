@@ -67,7 +67,7 @@ namespace shrink_array::test_hooks
 {
 
 /// @brief The hooks are compiled in: CHUNK_TEST_HOOKS (the harnesses' builds).
-#ifdef CHUNK_TEST_HOOKS
+#if CHUNK_OPT_TEST_HOOKS
 inline constexpr bool compiled = true;
 #else
 inline constexpr bool compiled = false;

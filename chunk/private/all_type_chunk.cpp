@@ -38,7 +38,7 @@
 // fast_allocators/public on the include path at all, so the header is not merely
 // unused there -- it is unreachable. The two report_all_arenas() calls below are
 // guarded the same way for the same reason.
-#ifndef CHUNK_STD_ALLOC
+#if !CHUNK_OPT_STD_ALLOC
     #include "fast_allocators/slab_arena.h" // step-1 arena RSS instrumentation
 #endif
 
@@ -198,7 +198,7 @@ void finalize_parallel_phase_after_flush()
         // Empirically load-bearing (see the note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
         std::atomic_thread_fence(std::memory_order_seq_cst);
-#ifndef CHUNK_STD_ALLOC
+#if !CHUNK_OPT_STD_ALLOC
         fast_alloc::report_all_arenas("after_flush");
 #endif
     }
@@ -232,7 +232,7 @@ void finalize_parallel_phase()
         // Empirically load-bearing (see the note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
         std::atomic_thread_fence(std::memory_order_seq_cst);
-#ifndef CHUNK_STD_ALLOC
+#if !CHUNK_OPT_STD_ALLOC
         fast_alloc::report_all_arenas("finalize_phase");
 #endif
     }

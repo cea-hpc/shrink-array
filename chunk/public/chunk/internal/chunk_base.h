@@ -56,7 +56,7 @@
 #include "chunk/internal/test_hooks.h"        // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (element_at)
 #include "chunk/internal/read_reclaim.h"      // ReadSection (element_at), defer_release (free_block_to_pool)
 
-#ifdef FAST_ALLOC
+#if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/slab_arena.h"   // the slab header slab_of() returns (owner, owner_key)
     #include "fast_allocators/tc_allocator.h" // TCTypeAllocator, TCTypeCAllocator
 #else

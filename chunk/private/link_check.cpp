@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2026 CEA (www.cea.fr)
+ * Copyright 2026 CEA (www.cea.fr)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,6 +14,12 @@
  * limitations under the License.
  */
 
-#pragma once
+// The one function whose name spells this library's variant, chunk size and
+// geometry mode: see chunk/internal/link_check.h.
 
-//#define MM_PROTECT
+#include "chunk/internal/link_check.h" // CHUNK_LINK_CHECK, the declaration defined here
+
+namespace shrink_array::link_check
+{
+void CHUNK_LINK_CHECK() noexcept {}
+} // namespace shrink_array::link_check

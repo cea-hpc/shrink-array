@@ -16,7 +16,7 @@
 
 // ============================================================================
 // Read / reclaim harness. Variant-agnostic: chunk / chunk2 / chunk2a follow the
-// compile-time macro (CHUNK / CHUNK2 / CHUNK2A), like the other harnesses here.
+// compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like the other harnesses here.
 // OpenMP builds only: the property is about two threads.
 // ============================================================================
 //

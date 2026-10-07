@@ -532,7 +532,7 @@ int main(int argc, char* argv[])
 
     // Array<bool> in a shrink build, std::vector<short> in the baseline
     // (bench_array.h says why): one alias, where four declarations under
-    // #if defined CHUNK / CHUNK2 / CHUNK2A stood.
+    // #if defined CHUNK_VARIANT_V1 / _V2 / _V2A stood.
     BenchBoolArray tab_bool(sz);
     // tab_bool's twin, written with the same values at the same places:
     // ArrayChunkBits (8 bools per byte) in a chunk2 build, tab_bool's own type
@@ -1146,7 +1146,7 @@ int main(int argc, char* argv[])
     if constexpr (has_advisor)
     {
         // Full re-chunk report: the advisor/decider runs in every dynamic-chunked
-        // build (CHUNK / CHUNK2 / CHUNK2A), so rechunk_decider (and its per-event
+        // build (CHUNK_VARIANT_V1 / _V2 / _V2A), so rechunk_decider (and its per-event
         // log) exists here for all of them.
         std::cout << tc.BOLD;
         rechunk_decider.print_rechunk_log(stdout);

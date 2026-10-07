@@ -80,29 +80,28 @@ dans la section 1 et dans [mesures_performance_fr.md](mesures_performance_fr.md)
 
 ## 6. Macros de compilation
 
+Les options communes à toutes les bibliothèques d'un build (§7) ne sont pas des macros : CMake les
+consigne dans les en-têtes générés `chunk/build_options.h` et `fast_allocators/build_options.h`,
+installés avec les bibliothèques, et les en-têtes les lisent là, quoi que définisse le programme.
+Un fichier compilé avec OpenMP contre une bibliothèque construite sans, ou l'inverse, ne compile
+pas. Les macros ci-dessous sont celles que porte la cible d'une bibliothèque (la variante, la
+géométrie) et les valeurs de réglage auxquelles les en-têtes donnent un défaut ; un programme
+compile avec celles de la bibliothèque. Un programme qui écrit la variante ou la géométrie
+autrement que la bibliothèque qu'il lie ne se lie pas : le symbole indéfini
+(`shrink_array::link_check::variant_...`) nomme les réglages avec lesquels il a été compilé.
+
 | macro | effet |
 |---|---|
-| `CHUNK=1`, `CHUNK2=1`, `CHUNK2A=1` | la variante |
+| `CHUNK_VARIANT_V1=1`, `CHUNK_VARIANT_V2=1`, `CHUNK_VARIANT_V2A=1` | la variante |
 | `CHUNK_DYNAMIC`, `DYN_CHUNK_SIZE=<n>` | géométrie dynamique, et taille de départ |
 | `CHUNK_DYN_MAX_SIZE=<n>` | géométrie dynamique : plus grande taille de chunk qu'un rechunk peut atteindre, puissance de deux (4096) ; dimensionne les tampons partagés des valeurs constantes, `cst_buffer_size × sizeof(T)` par seconde valeur distincte |
 | `CHUNK_ALLOC_AFFINITY_MIN_BYTES=<octets>` | seuil de métadonnées au-delà duquel un tableau peut avoir ses propres allocateurs (16 Mio ; 0 = jamais) |
-| `FAST_ALLOC_CHECK_LISTS` | build Debug : chaque insertion ou retrait dans une liste de slabs vérifie la liste entière (coût linéaire par opération ; défini par l'option CMake du même nom) |
-| `CHUNK_NO_RECLAIM_EMPTY_SLABS` | garder résidents les slabs vidés, au lieu de les rendre au système aux balayages explicites (défini par l'option CMake `CHUNK_RECLAIM_EMPTY_SLABS=OFF`) |
-| `CHUNK_STATS` | compteurs d'instrumentation (build stats) |
-| `CHECK_OPTIM` | vérifications d'invariants en build optimisé |
-| `MM_PROTECT` | Chunk, Chunk2 : tampons partagés des valeurs constantes en lecture seule (`mprotect`) ; une écriture parasite dans un chunk compressé fait une erreur de segmentation au lieu de corrompre la valeur (option CMake `CHUNK_MM_PROTECT`) |
-| `CHUNK_FORCE_DEFER_EVERY=<N>` | une écriture sur N passe par le chemin différé, dans tout l'arbre (validation ; 32 threads au plus) |
-| `HAVE_AGGRESSIVE_COMPRESSION` | compression « agressive » : la passe entre deux phases est sautée, et toute la compression se fait pendant les régions parallèles, à des instants imprévisibles. Plus lent, mais sollicite les chemins concurrents (option CMake du même nom ; l'ancienne orthographe `HAVE_AGRESSIVE_COMPRESSION` est encore acceptée par CMake, avec un avertissement) |
-| `CHUNK_FORCE_LEDGER` | garde le registre des blocs (`pool_ledger.h`) actif sous OpenMP, où il est éteint par défaut : son mutex global sérialise chaque allocation et libération. Détecte double libération et remise illégale en réserve (option CMake du même nom) |
 | `CHUNK_COMPRESS_MAX_YIELDS=<n>` | attente d'un compresseur garé avant de renoncer à sa passe (10 000 *yields* ; 0 : renoncer au premier écrivain vu). Voir [synchronisation_dekker_fr.md](synchronisation_dekker_fr.md) |
 | `CHUNK_WRITE_WAIT_MAX_YIELDS=<n>` | attente d'un écrivain devant un compresseur avant de différer son écriture (64 *yields*) |
-| `CHUNK_DEFERRED_DRAIN_THRESHOLD=<n>` | nombre d'écritures différées d'un rang au-delà duquel il vide sa propre file (4 096 ; option CMake du même nom) |
 | `CHUNK_READ_RECLAIM_SLOTS=<n>` | nombre de threads lecteurs suivis individuellement par la récupération des tampons (1 024) |
 | `CHUNK_STATS_MAX_THR=<n>` | nombre de rangs des compteurs `CHUNK_STATS` (1 024) |
-| `CHUNK_STD_ALLOC` | tampons de chunks alloués par l'allocateur standard au lieu de `fast_allocators` (option CMake du même nom) |
 | `CHUNK_TEST_READ_DELAY_EVERY=<n>`, `CHUNK_TEST_READ_DELAY_US=<µs>` | crochet de test : une lecture sur N d'un thread qui l'a demandé attend (50 µs), pour élargir la fenêtre lecteur / récupération (`read_reclaim_validation`) |
 | `CHUNK_TEST_PASS_DELAY_EVERY=<n>`, `CHUNK_TEST_PASS_DELAY_US=<µs>` | crochet de test : délai (200 µs) dans une passe de compression sur N |
-| `CHUNK_TEST_HOOKS` | compile les crochets de test des harnesses (`chunk/internal/test_hooks.h` : écritures différées forcées, délais de lecture et de passe), éteints à l'exécution tant qu'un harness ne les allume pas ; défini pour tout l'arbre là où les harnesses sont compilés (`CHUNK_BUILD_VALIDATION`), jamais dans les builds de performance |
 
 ## 7. Options CMake
 
@@ -115,22 +114,27 @@ dans la section 1 et dans [mesures_performance_fr.md](mesures_performance_fr.md)
 | `SHRINK_INTEL_LIBM` | `ON` | x86-64 : lier la libm d'Intel si elle est trouvée |
 | `SHRINK_ARM_LIBM` | `OFF` | aarch64 : lier `libamath` d'ArmPL (aucun gain mesuré sur Grace) |
 | `CHUNK_ICPX_O0_WORKAROUND` | `OFF` | contournement d'une erreur interne d'icpx sur trois fichiers |
-| `CHUNK_MM_PROTECT` | `OFF` | définit `MM_PROTECT` (build de mise au point ; `compile_all.sh` le construit pour que ses branches continuent de compiler) |
+| `CHUNK_MM_PROTECT` | `OFF` | Chunk, Chunk2 : tampons partagés des valeurs constantes en lecture seule (`mprotect`) ; une écriture parasite dans un chunk compressé fait une erreur de segmentation au lieu de corrompre la valeur (build de mise au point ; `compile_all.sh` le construit pour que ses branches continuent de compiler) |
 | `CHUNK_LIB_UNITY` | `ON` | chaque archive de variante (`chunk_v2a_256`, ...) compilée en une seule unité (unity build, 4 à 6 fois moins de compilation) ; un fichier qui a ses propres options de compilation reste à part |
 | `SHRINK_BENCH_UNITY` | `ON` | chaque exécutable `shrink_bench` compilé en une seule unité (unity build, 3,5 à 4 fois moins de compilation) ; `OFF` pour comparer des temps avec des campagnes antérieures, l'inlining entre fichiers du banc pouvant les changer ; `SHRINK_BENCH_UNITY_BATCH` fichiers par unité (0 = tous) |
 | `CHUNK_VALIDATION_UNITY` | `ON` | les harnesses de validation regroupés en un exécutable par variante et géométrie (unity build) ; `OFF` : un exécutable par harness |
 | `CHUNK_BUILD_VALIDATION` | selon le build | compiler les harnesses de `examples/validation`, et avec eux les crochets de test (`CHUNK_TEST_HOOKS`) ; par défaut `ON` en Debug, avec `CHECK_OPTIM` ou un sanitizer, `OFF` ailleurs (non mis en cache : suit la configuration courante) |
-| `CHUNK_RECLAIM_EMPTY_SLABS` | `ON` | rendre au système (`madvise`) les slabs vidés aux balayages explicites (rechunk, destruction) ; `OFF` définit `CHUNK_NO_RECLAIM_EMPTY_SLABS` |
+| `CHUNK_RECLAIM_EMPTY_SLABS` | `ON` | rendre au système (`madvise`) les slabs vidés aux balayages explicites (rechunk, destruction) ; `OFF` les garde résidents |
 | `FAST_ALLOC_CHECK_LISTS` | `OFF` | niveau de debug renforcé des listes de slabs : en Debug, vérification complète de la liste à chaque insertion et retrait (lent) ; un Debug ordinaire garde les vérifications légères |
 | `CHUNK_SECOND_VALUE_INDEXED` | `OFF` | Chunk2A : l'emplacement de seconde valeur contient un identifiant de 4 octets au lieu de la valeur (moins de mémoire, +3 % de temps d'écriture) |
 | `CHUNK_STD_ALLOC` | `OFF` | allocateur standard pour les tampons de chunks au lieu de `fast_allocators` (utile sous ASan : chaque tampon est un vrai `malloc`) |
 | `CHUNK_BUILD_DYN` | `ON` | construire aussi une bibliothèque à géométrie dynamique (`_dyn`) par variante |
 | `CHUNK_STATS` | `OFF` | compteurs d'instrumentation et rapport `print_chunk_stats()` |
 | `CHECK_OPTIM` | `OFF` | vérifications d'invariants en build optimisé |
-| `HAVE_AGGRESSIVE_COMPRESSION` | `OFF` | compression agressive (voir §6) |
-| `CHUNK_FORCE_LEDGER` | `OFF` | registre des blocs actif sous OpenMP (voir §6) |
+| `HAVE_AGGRESSIVE_COMPRESSION` | `OFF` | compression « agressive » : la passe entre deux phases est sautée, et toute la compression se fait pendant les régions parallèles, à des instants imprévisibles. Plus lent, mais sollicite les chemins concurrents (l'ancienne orthographe `HAVE_AGRESSIVE_COMPRESSION` est encore acceptée, avec un avertissement) |
+| `CHUNK_FORCE_LEDGER` | `OFF` | garde le registre des blocs (`pool_ledger.h`) actif sous OpenMP, où il est éteint par défaut : son mutex global sérialise chaque allocation et libération. Détecte double libération et remise illégale en réserve |
 | `CHUNK_DEFERRED_DRAIN_THRESHOLD` | vide (4 096) | seuil de vidage de sa propre file par un rang |
-| `CHUNK_FORCE_DEFER_EVERY` | 0 | une écriture sur N par le chemin différé (validation) |
+| `CHUNK_FORCE_DEFER_EVERY` | 0 | une écriture sur N par le chemin différé, dans tout l'arbre (validation ; 32 threads au plus) |
+| `CHUNK_DEBUG` | selon le build | les vérifications de mise au point de la bibliothèque ; `ON` avec `CMAKE_BUILD_TYPE=Debug` (non mis en cache : suit la configuration courante) |
+| `CHUNK_POOL_NO_REUSE` | `OFF` | pools d'opérations différées sans liste libre : chaque bloc un vrai `new` / `delete` (ASan, TSan) |
+| `CHUNK_PERF`, `CHUNK_DO_CHECK` | `OFF` | Chunk2 saute son analyse de diagnostic des compressions manquées ; chaque valeur écrite vérifiée contre NaN |
+| `CHUNK_DEBUG_SET_SIZE`, `CHUNK_RECHUNK_LEDGERTRACE` | `OFF` | afficher les seuils de compression et l'estimation mémoire des listes ; tracer chaque transition du registre des blocs |
+| `CHUNK_RING_LOG_DEBUG`, `CHUNK_RING_LOG_OP` | `OFF` | journal circulaire de mise au point de tous les événements (lourd) ; des seuls événements du cycle de vie des opérations (léger) |
 | `SANITIZER` | `none` | `thread`, `address` ou `token` (AllocToken, Clang ≥ 22), pour tous les types de build |
 | `CHUNK_GLIBCXX_ASSERTIONS` | `OFF` | assertions de la libstdc++ (`_GLIBCXX_ASSERTIONS`) dans la bibliothèque et ses consommateurs |
 | `CHUNK_UBSAN` | `OFF` | UndefinedBehaviorSanitizer (à associer à ASan, pas à TSan) |

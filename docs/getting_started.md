@@ -79,8 +79,10 @@ target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
 
 The library you link **chooses the variant and the chunk size**. The headers are the same
 for all of them, and the library brings the compile definitions that select its own
-(`CHUNK2A=1`, `CHUNK_SIZE=256` or `CHUNK_DYNAMIC`, `HAVE_OMPT`), together with C++20,
-`-fopenmp` when it was built with OpenMP, and its dependencies:
+(`CHUNK_VARIANT_V2A=1`, `CHUNK_SIZE=256` or `CHUNK_DYNAMIC`), together with C++20,
+`-fopenmp` when it was built with OpenMP, and its dependencies. The other options it was built
+with are in the installed `chunk/build_options.h`, which the headers read: a program compiles them
+as the library did.
 
 | target | variant | chunk size |
 |---|---|---|

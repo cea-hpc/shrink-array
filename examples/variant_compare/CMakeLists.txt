@@ -31,7 +31,7 @@ foreach(_vi RANGE ${_vc_nvar_last})
 
   set(_tgt variant_compare_${_vname}_${CHUNK_DEFAULT_SIZE})
   add_executable(${_tgt} variant_compare.cpp)
-  target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE}) # CHUNK2/CHUNK2A, CHUNK_SIZE: PUBLIC
+  target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_V2 / _V2A, CHUNK_SIZE: PUBLIC
   if (OMP)
     target_link_libraries(${_tgt} PUBLIC OpenMP::OpenMP_CXX)
   endif ()

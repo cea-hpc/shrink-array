@@ -2,15 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # CMakeLists.txt for the shrink_bench bench component.
 #
-# NOTE: each executable now links against its matching chunk variant target
+# NOTE: each executable links against its matching chunk variant target
 # (chunk_v1 / chunk_v2 / chunk_v2a / chunk_vector). The variant target sets
-# CHUNK / CHUNK2 / CHUNK2A as PUBLIC, so:
+# CHUNK_VARIANT_V1 / _V2 / _V2A as PUBLIC, so:
 #   - it's baked into libchunk_v<x> itself (fixing is_shrink=0 in
 #     AllTypeChunk.cpp / manage_ompt.cpp)
 #   - it propagates to the executable's own TUs
-# This makes the executable-side -DCHUNK2=1 / -DCHUNK2A=1 defines below
-# technically redundant, but we keep them for now to make each executable
-# self-explanatory in compile_commands.json.
 
 # chunk_enable_fast_math() and ARMPL_ROOT live in examples/CMakeLists.txt now:
 # multi-mat uses them too.
@@ -254,14 +251,13 @@ if (CHUNK_STD_ALLOC)
     set(_tgt shrink_bench_std_alloc_${_sz})
     add_executable(${_tgt} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
     target_link_libraries(${_tgt} PRIVATE chunk_v2a_${_sz})
-    target_compile_definitions(${_tgt} PRIVATE STD_ALLOC=1)
     sa2_setup_target(${_tgt})
   endforeach()
   if (CHUNK_BUILD_DYN)
     set(_tgt shrink_bench_std_alloc_dyn)
     add_executable(${_tgt} ${SHRINK_BENCH_SOURCES} ${SHRINK_BENCH_HEADERS})
     target_link_libraries(${_tgt} PRIVATE chunk_v2a_dyn)
-    target_compile_definitions(${_tgt} PRIVATE STD_ALLOC=1 DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
+    target_compile_definitions(${_tgt} PRIVATE DYN_CHUNK_SIZE=${SHRINK_BENCH_DYN_SIZE})
     sa2_setup_target(${_tgt})
   endif()
 endif ()

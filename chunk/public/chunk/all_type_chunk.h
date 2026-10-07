@@ -245,7 +245,7 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      * `SingletonChk<AllTypeChunk>`, which is a friend.
      *
      * @note Out of line (all_type_chunk.cpp): it checks, once per process,
-     *       that the OMPT tool of a HAVE_OMPT build is loaded
+     *       that the OMPT tool of an OMPT build is loaded
      *       (check_ompt_tool_loaded, manage_ompt.h).
      */
     AllTypeChunk();

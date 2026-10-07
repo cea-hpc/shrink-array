@@ -63,7 +63,7 @@ inline constexpr bool input_data = false;
 #endif
 
 // CHECK_COMPRESSION / NEED_COMPRESSION, both computed in bench_prelude.h:
-// CHECK_COMPRESSION == SHRINK_ARRAY && DEBUG, and NEED_COMPRESSION is currently
+// CHECK_COMPRESSION == SHRINK_ARRAY && CHUNK_OPT_DEBUG, and NEED_COMPRESSION is currently
 // its exact synonym. They are mirrored separately anyway -- bench_prelude.h is
 // free to make them diverge again, and the call sites say which one they mean.
 #ifdef CHECK_COMPRESSION
@@ -78,9 +78,8 @@ inline constexpr bool need_compression = true;
 inline constexpr bool need_compression = false;
 #endif
 
-// BZIP2 (bench_prelude.h: on unless -DNO_BZIP2). Distinct from
-// build_config::has_bzip2, which mirrors the same macro but is the LIBRARY's
-// view of it; keep the bench sites on this one.
+// BZIP2 (bench_prelude.h: on unless -DNO_BZIP2): the bench's own switch, the
+// library has no part in it.
 #ifdef BZIP2
 inline constexpr bool have_bzip2 = true;
 #else
@@ -90,11 +89,11 @@ inline constexpr bool have_bzip2 = false;
 // NOT mirrored here, on purpose -- chunk/config.h already exposes them, and a
 // second spelling would be one more thing to keep in step:
 //   SHRINK_ARRAY    -> chunk_config::is_shrink_enabled
-//   CHUNK/2/2A      -> chunk_config::use_chunk / use_chunk2 / use_chunk2a
-//   RING_LOG_DEBUG  -> chunk_config::ring_log_debug
-//   CHUNK_DYNAMIC   -> build_config::chunk_dynamic
-//   _OPENMP         -> build_config::use_openmp (and CHUNK_PMP_MAX_THREADS)
-//   HAVE_OMPT       -> build_config::has_ompt
+//   CHUNK_VARIANT_V1/_V2/_V2A -> chunk_config::use_chunk / use_chunk2 / use_chunk2a
+//   CHUNK_OPT_RING_LOG_DEBUG  -> chunk_config::ring_log_debug
+//   CHUNK_DYNAMIC             -> build_config::chunk_dynamic
+//   CHUNK_OPT_OPENMP          -> build_config::use_openmp (and CHUNK_PMP_MAX_THREADS)
+//   CHUNK_OPT_OMPT            -> build_config::has_ompt
 //
 // What a mirror can and cannot buy -- the rules that decided every guard in
 // this directory, and the ones in chunk/ that were left alone:

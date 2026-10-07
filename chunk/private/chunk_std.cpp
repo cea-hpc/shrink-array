@@ -28,7 +28,7 @@
 namespace shrink_array
 {
 
-#ifdef CHUNK_STATS
+#if CHUNK_OPT_STATS
 // Per-variant (chunk/chunk2/chunk2a) x per-thread counter table. Each thread
 // bumps its own cache-line-aligned slot on the hot path (no atomics); the
 // end-of-run report reduces over threads. See chunk_stats.h.

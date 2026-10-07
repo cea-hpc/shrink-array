@@ -31,6 +31,7 @@
 #include "chunk/internal/manager_chunk.h" // ManagerChunk<CHUNK_T, T>
 #include "chunk/singleton.h"              // SingletonChk<AllTypeChunk>, for ensure_manager
 #include "chunk/chunk_traits.h"           // the Chunk / Chunk2 / Chunk2A declarations initialize<Types> names
+#include "chunk/internal/link_check.h"    // CHUNK_LINK_CHECK: the program's settings, the library's
 // Not the chunk definitions: a ManagerChunk<CHUNK_T, T> is only built at the
 // instantiation of register_manager<>, in the TU that constructs the array (and
 // so has the chunk), and including them here from the arrays' own headers
@@ -88,7 +89,8 @@ void AllTypeChunk::ensure_manager()
     // the same type wait on the initialisation, as the language requires.
     [[maybe_unused]] static const bool registered = []
     {
-        ensure_ready(); // init_indexes(true) if the program has not run it
+        link_check::CHUNK_LINK_CHECK(); // links only against a library built with this TU's settings
+        ensure_ready();                 // init_indexes(true) if the program has not run it
         SingletonChk<AllTypeChunk>::getRef().register_manager<ManagerT>();
         return true;
     }();

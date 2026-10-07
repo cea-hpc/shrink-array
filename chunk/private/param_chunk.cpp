@@ -178,7 +178,7 @@ void ParamChunk::force_compression()
     }
 }
 
-#ifdef CHUNK_STATS
+#if CHUNK_OPT_STATS
 
 /**
  * @copydoc ParamChunk::ChunkStats

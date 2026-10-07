@@ -32,9 +32,9 @@
  */
 #pragma once
 
-#include "chunk/chunk_define.h" // FAST_ALLOC
+#include "chunk/build_options.h" // CHUNK_OPT_FAST_ALLOC
 
-#ifdef FAST_ALLOC
+#if CHUNK_OPT_FAST_ALLOC
     #include <atomic> // std::memory_order_relaxed
 
     #include "fast_allocators/slab_arena.h" // fast_alloc::arena_report_enabled, fast_alloc::freepath_*

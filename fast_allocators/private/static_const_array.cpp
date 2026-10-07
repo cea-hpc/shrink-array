@@ -20,7 +20,7 @@
 
 #include "fast_allocators/internal/singleton.h"          // Singleton
 #include "fast_allocators/tc_allocator.h"                // VTCTypeAllocator, TCTypeAllocatorEBC
-#include "fast_allocators/internal/alloc_config.h"       // constexpr mirror of STD_ALLOC
+#include "fast_allocators/internal/alloc_config.h"       // alloc_config::use_std_alloc
 #include "fast_allocators/internal/static_const_array.h" // the declarations defined here
 #include "fast_allocators/internal/pmp_alloc.h"          // PMP_MAX_THREADS
 #include "fast_allocators/internal/svalloc.h"            // svalloc, svcalloc, svfree
@@ -182,7 +182,7 @@ void compute_sum_allocated_size_TCAlloc(size_t& sum_UsedSize, size_t& sum_nn_ref
     alloc_sz     = 0;
 
     // The ladder exists as a set of objects whatever the build, but under
-    // STD_ALLOC nothing was ever allocated from it, so there is nothing to add.
+    // FAST_ALLOC_STD_ALLOC nothing was ever allocated from it, so there is nothing to add.
     if constexpr (alloc_config::use_slabs)
     {
         std::apply([&](const auto&... bucket) { (bucket.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz), ...); },

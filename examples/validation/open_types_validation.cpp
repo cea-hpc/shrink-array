@@ -16,7 +16,7 @@
 
 // ============================================================================
 // Open element types harness. Variant-agnostic: chunk / chunk2 / chunk2a by
-// the compile-time macro (CHUNK / CHUNK2 / CHUNK2A), like the other harnesses.
+// the compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like the other harnesses.
 // ============================================================================
 //
 // Guards ONE property: an array of a type the library never heard of -- a

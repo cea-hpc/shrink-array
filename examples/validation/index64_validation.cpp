@@ -16,7 +16,7 @@
 
 // ============================================================================
 // 64-bit index harness. Variant-agnostic: tests chunk / chunk2 / chunk2a
-// depending on the compile-time macro (CHUNK / CHUNK2 / CHUNK2A), like the
+// depending on the compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like the
 // other harnesses here.
 // ============================================================================
 //
@@ -71,7 +71,7 @@ namespace
 {
 
 static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a,
-              "index64_validation must be built with CHUNK, CHUNK2 or CHUNK2A");
+              "index64_validation must be built with CHUNK_VARIANT_V1, _V2 or _V2A");
 
 template <typename T, typename I>
 using Array = std::conditional_t<chunk_config::use_chunk2a,

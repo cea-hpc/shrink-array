@@ -10,7 +10,7 @@
 #                       manage_ompt.cpp (this directory) drives the
 #                       compression from the runtime's callbacks. Clang and
 #                       IntelLLVM only: gcc's libgomp has no OMPT, and the
-#                       sources refuse to compile without HAVE_OMPT. On such a
+#                       sources refuse to compile without the OMPT tool. On such a
 #                       compiler the target still exists, out of `all` and
 #                       without its test, so building it by name gives that
 #                       error rather than a binary that loses its deferred

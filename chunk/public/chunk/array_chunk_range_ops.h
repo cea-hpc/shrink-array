@@ -115,7 +115,7 @@ inline constexpr bool raw_fillable_v = !is_bool_like_v<T>;
  * @details Dispatch on the TYPE, never on chunk_config::use_chunk /
  *          use_chunk2 / use_chunk2a: those say which variants the BUILD
  *          contains, and a build may contain several (chunk_v1v2:
- *          CHUNK=1;CHUNK2=1). Testing the flags there sent an ArrayChunk2 down
+ *          CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1). Testing the flags there sent an ArrayChunk2 down
  *          v1's paths (a fill_range_mt of its second value never queued) and
  *          an ArrayChunk down Chunk2's (get_ind_second_value(), written(ind2):
  *          no compile). In a single-variant build both forms fold to the same

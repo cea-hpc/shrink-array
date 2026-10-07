@@ -70,7 +70,7 @@
 #include "chunk/internal/in_t.h"              // in_t<T>: the value parameters
 #include "chunk/config.h"                     // build_config::use_mm_protect
 #include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
-#ifdef FAST_ALLOC
+#if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/internal/alloc_config.h" // alloc_config::thp_advise (CHUNK_THP)
 #endif
 
@@ -87,7 +87,7 @@ namespace shrink_array
 /// reclaim_empty_slabs mirror in config.h).
 inline bool cst2_thp_advise() noexcept
 {
-#ifdef FAST_ALLOC
+#if CHUNK_OPT_FAST_ALLOC
     return alloc_config::thp_advise();
 #else
     return false;

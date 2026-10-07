@@ -34,7 +34,7 @@
 #include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
 #include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, EV_OP_ALLOC / EV_OP_FREE
 
-#ifdef FAST_ALLOC
+#if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/slab_arena.h"   // fast_alloc::ArenaKind
     #include "fast_allocators/tc_allocator.h" // TCTypeAllocator<std::byte>
 #else

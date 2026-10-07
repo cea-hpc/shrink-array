@@ -38,12 +38,15 @@
 
 #include <sys/mman.h> // madvise, MADV_HUGEPAGE / MADV_NOHUGEPAGE (advise_thp_region)
 
+#include "fast_allocators/build_options.h" // FAST_ALLOC_OPT_*: the options the library was built with
+
 namespace alloc_config
 {
 
-/// @brief Built against `new[]`/`delete[]` rather than the slab allocator.
+/// @brief Built against `new[]`/`delete[]` rather than the slab allocator
+///        (-DFAST_ALLOC_STD_ALLOC: a header-only use without the library).
 inline constexpr bool use_std_alloc =
-#ifdef STD_ALLOC
+#ifdef FAST_ALLOC_STD_ALLOC
     true;
 #else
     false;
@@ -52,49 +55,28 @@ inline constexpr bool use_std_alloc =
 /// @brief Built with the slab machinery. The complement of #use_std_alloc.
 inline constexpr bool use_slabs = !use_std_alloc;
 
-/// @brief Compiled with OpenMP.
-inline constexpr bool use_openmp =
-#ifdef _OPENMP
-    true;
-#else
-    false;
-#endif
+/// @brief Built with OpenMP (build_options.h refuses a file compiled otherwise).
+inline constexpr bool use_openmp = FAST_ALLOC_OPT_OPENMP != 0;
 
-/// @brief Debug build.
-inline constexpr bool is_debug =
-#ifdef DEBUG
-    true;
-#else
-    false;
-#endif
+/// @brief Debug build (CMake: CHUNK_DEBUG, on with CMAKE_BUILD_TYPE=Debug).
+inline constexpr bool is_debug = FAST_ALLOC_OPT_DEBUG != 0;
 
-/// @brief The reinforced debug level of the slab lists: a DEBUG build with
+/// @brief The reinforced debug level of the slab lists: a debug build with
 ///        FAST_ALLOC_CHECK_LISTS (CMake option of the same name) walks a whole
 ///        list on every insert and remove (SL_LIST_CHECK in tc_allocator.h).
 ///        Linear per operation: a plain Debug build does not.
-inline constexpr bool check_slab_lists =
-#if defined(DEBUG) && defined(FAST_ALLOC_CHECK_LISTS)
-    true;
-#else
-    false;
-#endif
+inline constexpr bool check_slab_lists = FAST_ALLOC_OPT_DEBUG != 0 && FAST_ALLOC_OPT_CHECK_LISTS != 0;
 
 /**
  * @brief An emptied slab gets MADV_DONTNEED instead of staying resident.
- * @details On by default; `-DCHUNK_NO_RECLAIM_EMPTY_SLABS` (CMake option
- *          `CHUNK_RECLAIM_EMPTY_SLABS=OFF`) turns it off. The default lives
- *          here, not in CMake, so a project that includes the installed
- *          headers without our definitions gets the value the library was
- *          built with. Only worth anything once slabs actually reach
+ * @details On by default; the CMake option `CHUNK_RECLAIM_EMPTY_SLABS=OFF`
+ *          turns it off. Recorded in the generated build_options.h, so a
+ *          project that includes the installed headers gets the value the
+ *          library was built with. Only worth anything once slabs actually reach
  *          nn_ref == 0 -- see ManagerChunk::drain_reuse_list_for_size, which
  *          is what empties the old geometry's slabs after a re-chunk.
  */
-inline constexpr bool reclaim_empty_slabs =
-#if defined(CHUNK_NO_RECLAIM_EMPTY_SLABS)
-    false;
-#else
-    true;
-#endif
+inline constexpr bool reclaim_empty_slabs = FAST_ALLOC_OPT_RECLAIM_EMPTY_SLABS != 0;
 
 /**
  * @brief Fewest distinct empty slabs an EmptySlabSweep must hold for its
@@ -263,9 +245,9 @@ inline void advise_thp_region([[maybe_unused]] void* base, [[maybe_unused]] std:
 #endif
 }
 
-/// @brief int_alloc / int_free go through the aligned allocation (ALLOC_ALIGN).
+/// @brief int_alloc / int_free go through the aligned allocation (-DFAST_ALLOC_ALIGN).
 inline constexpr bool alloc_align =
-#ifdef ALLOC_ALIGN
+#ifdef FAST_ALLOC_ALIGN
     true;
 #else
     false;
