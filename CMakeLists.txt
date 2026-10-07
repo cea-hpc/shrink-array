@@ -725,6 +725,11 @@ if(BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_includes
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_includes.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_includes PROPERTY LABELS validation)
+    # Every C++ file opens with the license header, years up to date, and
+    # carries no IDE stamp (scripts/check_headers.py; --fix repairs).
+    add_test(NAME check_headers
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_headers.py ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_headers PROPERTY LABELS validation)
     # The documentation matches the code, and the English and French versions
     # each other (scripts/check_docs.py).
     add_test(NAME check_docs

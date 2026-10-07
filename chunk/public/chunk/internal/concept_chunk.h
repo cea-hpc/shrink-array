@@ -1,8 +1,3 @@
-
-#pragma once
-
-#include <type_traits> // std::is_same_v
-
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -19,6 +14,9 @@
  * limitations under the License.
  */
 
+#pragma once
+
+#include <type_traits> // std::is_same_v
 
 namespace shrink_array
 {

@@ -1,5 +1,3 @@
-
-#pragma once
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -15,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#pragma once
 
 #include "chunk/internal/array_chunk_base.h" // ArrayChunkBase
 #include "chunk/config.h"                    // build_config::not_use_openmp, chunk_config::use_fast_block_compression

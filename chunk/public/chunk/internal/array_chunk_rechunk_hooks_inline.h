@@ -1,5 +1,3 @@
-#pragma once
-
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -15,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#pragma once
 
 // Out-of-line bodies of v1's re-chunk hooks (RechunkHooks<Derived, true>).
 // Included at the end of array_chunk.h, after the class, so the CRTP self()

@@ -1,5 +1,3 @@
-#pragma once
-
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -15,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#pragma once
 
 // Out-of-line bodies of RechunkDecider (declared in rechunk_decider.h, which
 // includes this file after the class). Only the one-liners stay in the class.

@@ -1,7 +1,3 @@
-//
-// Created by ballereaup on 03/05/24.
-//
-
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *

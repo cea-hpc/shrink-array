@@ -1,6 +1,3 @@
-//
-// Created by ballereaup on 27/04/2026.
-//
 /*
  * Copyright 2026 CEA (www.cea.fr)
  *
@@ -16,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 #pragma once
 
 #include <version> // __cpp_explicit_this_parameter

@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 
-//
-// Created by ballereaup on 20/11/24.
-//
-
 #pragma once
 
 #include <iostream> // std::cout: print_compression_stats' default stream

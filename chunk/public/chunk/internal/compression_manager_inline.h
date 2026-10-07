@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *

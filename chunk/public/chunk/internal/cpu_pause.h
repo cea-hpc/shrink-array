@@ -1,9 +1,5 @@
-#pragma once
-
-#include <thread> // std::this_thread::yield (the ARM and fallback CPU_PAUSE)
-
 /*
- * Copyright 2024-2025 CEA (www.cea.fr)
+ * Copyright 2024-2026 CEA (www.cea.fr)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#pragma once
+
+#include <thread> // std::this_thread::yield (the ARM and fallback CPU_PAUSE)
+
 // CPU_PAUSE(): the spin-wait hint of the library's wait loops (rank flush
 // locks, start()'s writer wait, the flush drains), which yield to the OS only
 // after 1000 of them. The std::this_thread::yield() fallback is a

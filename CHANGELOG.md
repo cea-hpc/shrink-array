@@ -69,6 +69,8 @@ the tag's checksum to the recipe.
 - `scripts/check_doxygen.py` (ctest `check_doxygen`, when Doxygen is found): the
   documentation builds with no warning. The HTML draws the mermaid diagrams.
 - `compile_all.sh` / `compile_all_gnu.sh`: `--with-ledger`.
+- `scripts/check_headers.py` (ctest `check_headers`): every C++ file opens with the Apache
+  license header, its years up to date, and carries no IDE `Created by` stamp; `--fix` repairs.
 
 ### Changed
 
@@ -92,6 +94,8 @@ the tag's checksum to the recipe.
 - `scripts/check_includes.py` works outside a git checkout (a source archive, a Spack
   build) and checks files not yet added to git.
 - Comments naming headers that moved to `internal/`, or a script that no longer exists.
+- License headers: 29 files had none, others had it truncated, below `#pragma once` or with
+  stale years; the IDE `Created by` stamps are gone.
 
 ### Deprecated
 

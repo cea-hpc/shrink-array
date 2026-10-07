@@ -1,6 +1,3 @@
-
-#pragma once
-
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -16,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#pragma once
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PointerMapChunk2 — per-array registry of Chunk2's SECOND constant
