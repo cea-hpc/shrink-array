@@ -9,7 +9,7 @@ Two version numbers, both `MAJOR.MINOR.PATCH`:
 
 | component | where it is set | installed as |
 |---|---|---|
-| the chunk library | `chunk/CMakeLists.txt` (`CHUNK_MAJOR_VERSION`, `CHUNK_MINOR_VERSION`, `CHUNK_PATCH_VERSION`) | the `chunk` CMake package (`find_package(chunk X.Y)`) |
+| the chunk library | the top-level `CMakeLists.txt` (`project(shrink_array VERSION X.Y.Z)`) | the `chunk` CMake package (`find_package(chunk X.Y)`) |
 | fast_allocators | `fast_allocators/CMakeLists.txt` (`ALLOCATORS_*_VERSION`) | the `fast_allocators` package |
 
 The **public interface** that the version describes is:
@@ -47,6 +47,10 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- Usable as a subproject (`add_subdirectory`, `FetchContent`): `SHRINK_ARRAY_BUILD_EXAMPLES`
+  and `SHRINK_ARRAY_BUILD_TESTS`, ON at the top level and OFF otherwise, so a consuming
+  project builds the libraries only; the `chunk::` names exist in the build tree too
+  (ALIAS targets), as after an install.
 - Every variant library is installed and exported under `chunk::`: `chunk::chunk_v1_<size>`,
   `chunk::chunk_v2_<size>`, `chunk::chunk_v2a_<size>`, the `_dyn` ones, the bare
   `chunk::chunk_v1` / `chunk::chunk_v2` / `chunk::chunk_v2a` (default size) and
@@ -74,6 +78,10 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- CMake 3.20 is required (the documented minimum; the files said 3.12). The top-level
+  project is `shrink_array`, and carries the version (`project(shrink_array VERSION ...)`),
+  from which the chunk library takes its own. Consumed by another project, the build no
+  longer writes the build type or the per-configuration flags into that project's cache.
 - The variant libraries carry C++20, OpenMP (when built with it) and `HAVE_OMPT` to their
   consumers (PUBLIC). An OMPT build links its consumers with `-rdynamic`, so the OpenMP runtime
   finds the library's OMPT tool in the executable.

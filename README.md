@@ -1,10 +1,10 @@
-# Chunk: Compressing Sparse Arrays
+# shrink-array: compressed arrays for C++
 
 ## Goals
 
-This c++ library allows you to compress arrays in memory when they contain a significant proportion of zero.
+This C++ library compresses arrays in memory when large parts of them hold the same value -- zero, or a few repeated values.
 
-These compressed arrays can used the same way as `std::vector`. Compression management is done by overloading `operator[]`.
+These compressed arrays are used the same way as a `std::vector`. Compression management is done by overloading `operator[]`.
 
 The syntax for reading and writing data in these arrays is identical, using `[]`.
 However, the implementation of `operator[]` overload is not the same:
@@ -28,6 +28,72 @@ Under OpenMP the write path takes **no lock**. Writers and compressors exclude e
 Chunk buffers come from the bundled `fast_allocators` (per-thread slab arenas and reuse lists), which reduce memory consumption and allocation cost compared with the C library allocator. `-DCHUNK_STD_ALLOC=ON` switches back to the standard allocator (useful under AddressSanitizer).
 
 The design documents, in English and French, are indexed in [docs/README.md](docs/README.md).
+
+## Requirements
+
+- **Linux**, x86-64 or aarch64. The library relies on Linux system calls (`membarrier`, `madvise`, `mincore`) and on `/proc`.
+- A **C++20** compiler: GCC 13 or 14 and Clang 18 are tested; the build also covers oneAPI (`icpx`), AOCC and NVHPC. With Clang the build links libc++ by default (`-DUSE_LIBCXX=OFF` for libstdc++).
+- **CMake 3.20** or later.
+- **OpenMP**, optional (`-DOMP=ON`): a program that uses the arrays from OpenMP regions needs a library built with it. The thread identity is the OpenMP rank: use the arrays from OpenMP threads, not from `std::thread`. Set `OMP_NUM_THREADS` (or `CHUNK_THREAD_CAPACITY`) to the largest team before the first array.
+- **OMPT**: with Clang or oneAPI the OpenMP runtime has the OMPT interface, and the library hooks the start and end of the parallel regions itself. GCC's `libgomp` has no OMPT: the program then marks its regions, `begin_parallel_phase()` by every thread at the top of a region and `finalize_parallel_phase()` once after it (see the program below).
+- Python 3, for the source checks run by `ctest` (optional).
+
+## A first program
+
+```cpp
+#include <cstdio>
+#include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
+#include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
+#include "chunk/config.h"          // build_config::has_not_ompt
+#include "chunk/manage_ompt.h"     // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/param_chunk.h"     // ParamChunk::init_indexes
+
+namespace sa = shrink_array;
+
+int main()
+{
+    sa::ParamChunk::init_indexes(true);       // once, before the first array
+    {
+        const int                n = 1 << 24;
+        sa::ArrayChunk2A<double> a(n);        // every element 0.0, no buffer yet
+
+#pragma omp parallel
+        {
+            if constexpr (build_config::has_not_ompt) sa::begin_parallel_phase();
+#pragma omp for
+            for (int i = 0; i < n / 2; ++i)
+                a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;   // the 3.5 run compresses
+        }
+        if constexpr (build_config::has_not_ompt) sa::finalize_parallel_phase();
+
+        a.shrink_to_fit();                    // fold the chunks that became constant
+        std::printf("chunks holding a buffer: %.1f %%\n", a.stats());
+    }                                         // the array releases its chunks here
+    sa::release_chunk_pools();                // at the end, once every array is gone
+    sa::destroy_block_chunk();
+}
+```
+
+The complete version, which also checks what it reads back, is [examples/getting_started](examples/getting_started/getting_started.cpp); [docs/getting_started.md](docs/getting_started.md) walks through it.
+
+## Using it from CMake
+
+The library you link chooses the variant (`chunk_v1`, `chunk_v2`, `chunk_v2a`) and the chunk size (`_256`, `_1024`, `_dyn` for a size chosen at run time; the bare name is the first static size).
+
+After an install (`cmake --install`):
+
+```cmake
+find_package(chunk 2.2 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
+target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
+```
+
+Or from the sources, as part of your build -- only the libraries are built then, no examples and no tests:
+
+```cmake
+add_subdirectory(shrink-array)              # or FetchContent_Declare(shrink_array GIT_REPOSITORY <url> GIT_TAG <tag>)
+                                            #    FetchContent_MakeAvailable(shrink_array)
+target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
+```
 
 ## Element types and initialisation
 
@@ -72,24 +138,34 @@ Under OpenMP the contract is `std::vector`'s, element by element:
 
 ## Compilation
 
-The compilation is done via `CMake`:
-
 ```shell
-cmake -S . -B build_dir
+cmake -S . -B build_dir -DCMAKE_BUILD_TYPE=Release -DOMP=ON
 cmake --build build_dir
+ctest --test-dir build_dir          # after the build
 ```
 
-See [compile_all.sh](./scripts/compile_all.sh) for more details.
+The options a user may want:
+
+| option | default | effect |
+|---|---|---|
+| `OMP` | `OFF` | build with OpenMP |
+| `CHUNK_STATIC_SIZES` | `256;1024` | the compile-time chunk sizes built, one library per size and variant |
+| `CHUNK_BUILD_DYN` | `ON` | also build the libraries whose chunk size is chosen at run time (`_dyn`) |
+| `CHUNK_STD_ALLOC` | `OFF` | the standard allocator for the chunk buffers instead of the bundled `fast_allocators` |
+| `SHRINK_ARRAY_BUILD_EXAMPLES` | `ON` at the top level | the examples, benchmarks and validation harnesses (the harnesses in Debug, `CHECK_OPTIM` or sanitizer builds, or with `-DCHUNK_BUILD_VALIDATION=ON`) |
+| `SHRINK_ARRAY_BUILD_TESTS` | `ON` at the top level | register the tests with `ctest` |
+
+[scripts/compile_all.sh](./scripts/compile_all.sh) builds the whole set of configurations used during development.
 
 To install the library and use it from your own CMake project, start with [docs/getting_started.md](docs/getting_started.md) (in French: [docs/getting_started_fr.md](docs/getting_started_fr.md)). What changed from one version to the next, and the versioning policy, are in [CHANGELOG.md](CHANGELOG.md). The API on one page: [docs/api.md](docs/api.md); to contribute: [CONTRIBUTING.md](CONTRIBUTING.md).
 The library and examples can be compiled with different C++ compilers: g++, OneAPI, aocc, nvhpc, llvm. The compiler must support C++20, which the CMakeLists.txt requires. The `cpp23` branch carries the same library with C++23 required.
 
 ## Examples
 
-In the [examples](./examples) directory we have a CMakeList.txt file that shows how to consume the library (chunk).
+The [examples](./examples) directory has a `CMakeLists.txt` that shows how to consume the library.
 
 Two examples show how to use the library:
- - The [first](examples/simple_array) allows to compare an implementation with classical `std::vector` and one with compress arrays (ArrayChunk).
+ - The [first](examples/simple_array) compares an implementation with a plain `std::vector` and one with compressed arrays (`ArrayChunk`).
     We can compare the execution speed and memory consumption between the two modes.
 
  - The [second](examples/multi-mat) is more advanced: it shows the use of this compression on multidimensional arrays. Each material is stored either in compressed arrays or in `std::vector`s: the program asks for the split at start-up (`Option`: 1 all compressed, 2 all `std::vector`, 3 a random draw, 4 a random draw at a given rate; see [InputData.cpp](examples/multi-mat/InputData.cpp)).

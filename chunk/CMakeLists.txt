@@ -6,9 +6,12 @@
 # manage_ompt.cpp today; potentially others tomorrow).
 # ---------------------------------------------------------------------------
 
-set(CHUNK_MAJOR_VERSION 2)  # inc. when incompatible change (reset to 0 others)
-set(CHUNK_MINOR_VERSION 2)  # inc. when compatible change (also reset patch vers.)
-set(CHUNK_PATCH_VERSION 8)  # inc. when just fixing bug
+# The version is set once, in the top-level project(shrink_array VERSION ...).
+# MAJOR: incompatible change; MINOR: compatible change; PATCH: fixes only
+# (CHANGELOG.md, "Versioning policy").
+set(CHUNK_MAJOR_VERSION ${shrink_array_VERSION_MAJOR})
+set(CHUNK_MINOR_VERSION ${shrink_array_VERSION_MINOR})
+set(CHUNK_PATCH_VERSION ${shrink_array_VERSION_PATCH})
 
 set(CHUNK_VERSION
         ${CHUNK_MAJOR_VERSION}.${CHUNK_MINOR_VERSION}.${CHUNK_PATCH_VERSION})
@@ -558,6 +561,15 @@ foreach(_vname IN LISTS _chunk_variant_names)
     list(APPEND _chunk_install_targets ${_vname}_dyn)
   endif()
   list(APPEND _chunk_install_targets ${_vname})
+endforeach()
+
+# The installed names in the build tree too: a project that takes this one
+# through add_subdirectory() or FetchContent links chunk::chunk_v2a, as it
+# would after find_package(chunk).
+foreach(_t IN LISTS _chunk_install_targets)
+  if (NOT TARGET chunk::${_t})
+    add_library(chunk::${_t} ALIAS ${_t})
+  endif()
 endforeach()
 
 # The fast_allocators version chunk-config.cmake asks for (find_dependency).

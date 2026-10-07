@@ -58,8 +58,9 @@ The options that matter to a user:
 | `CHUNK_STD_ALLOC` | `OFF` | allocate the chunk buffers with the standard allocator instead of the bundled `fast_allocators` (useful under AddressSanitizer) |
 
 The first build compiles the examples and the benchmark too, which takes a while. To build
-only the libraries, give `cmake --build` their targets (`--target chunk_v2a_256 ...`) before
-`cmake --install`.
+only the libraries, configure with `-DSHRINK_ARRAY_BUILD_EXAMPLES=OFF`, or give
+`cmake --build` their targets (`--target chunk_v2a_256 ...`) before `cmake --install`. Taken
+into another project with `add_subdirectory` or `FetchContent`, the libraries alone are built.
 
 With Clang or oneAPI, an OpenMP build also uses the runtime's **OMPT** interface, which spares
 your program the phase calls of §5.

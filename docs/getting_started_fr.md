@@ -61,8 +61,10 @@ Les options qui comptent pour un utilisateur :
 | `CHUNK_STD_ALLOC` | `OFF` | allouer les tampons des chunks avec l'allocateur standard plutôt qu'avec `fast_allocators`, fourni avec la bibliothèque (utile sous AddressSanitizer) |
 
 La première compilation construit aussi les exemples et le banc, ce qui prend un moment. Pour
-ne construire que les bibliothèques, donner leurs cibles à `cmake --build`
-(`--target chunk_v2a_256 ...`) avant `cmake --install`.
+ne construire que les bibliothèques, configurer avec `-DSHRINK_ARRAY_BUILD_EXAMPLES=OFF`, ou
+donner leurs cibles à `cmake --build` (`--target chunk_v2a_256 ...`) avant `cmake --install`.
+Intégré à un autre projet par `add_subdirectory` ou `FetchContent`, seules les bibliothèques
+sont construites.
 
 Avec Clang ou oneAPI, un build OpenMP utilise aussi l'interface **OMPT** du runtime, ce qui
 dispense le programme des appels de phase du §5.
