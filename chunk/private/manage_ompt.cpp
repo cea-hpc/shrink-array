@@ -234,7 +234,7 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
     {
         return;
     }
-    if (endpoint != ompt_scope_begin || g_ompt_suspended.load(std::memory_order_relaxed) != 0)
+    if (endpoint != ompt_scope_begin || shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0)
     {
         shrink_array::g_fast_omp_rank = -1; // recomputed on the next get_thr_rank_fast()
         return;
@@ -263,7 +263,7 @@ void parallel_end_chunk_work()
 {
     shrink_array::churn::note_phase_end(); // one compression phase (churn_counters.h)
     // Vector-mode build: chunk lib is inactive, nothing to finalize.
-    if constexpr (!chunk_config::is_shrink_enabled)
+    if constexpr (!shrink_array::chunk_config::is_shrink_enabled)
     {
         return;
     }
@@ -341,7 +341,7 @@ void flush_allocator_free_batches()
  */
 void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, const void*)
 {
-    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
+    if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0)
     {
         return;
     }
@@ -370,7 +370,7 @@ void on_barrier_end(ompt_sync_region_t    kind,
                     ompt_data_t*,
                     const void*)
 {
-    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
+    if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0)
     {
         return;
     }
