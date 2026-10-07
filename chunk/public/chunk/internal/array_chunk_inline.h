@@ -205,7 +205,11 @@ void ArrayChunk<T, ind_type>::clear_core()
     }
 
     // Drain deferred writes on this array's chunks before chunk_list is freed.
-    this->flush_pending_deferred_ops();
+    // force: the pending-op counter has been seen to read 0 while ops were
+    // still queued (array_chunk_parallel_common_inline.h); a sequential point
+    // that reallocates or frees chunks cannot trust it -- as rechunk, swap and
+    // ArrayChunk2A::clear_core() already do.
+    this->flush_pending_deferred_ops(/*force=*/true);
 
     // Remove this array's queued compression candidates by num_tab before its
     // chunks are freed. v1's clear() runs no terminal sweep, but candidates left
@@ -452,6 +456,59 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
 // make_block_compression() is FastBlockSupport<ArrayChunk, true>'s
 // (array_chunk_parallel_inline.h); the false specialisation is a no-op.
 template <ArrayChunkElement T, typename ind_type>
+void ArrayChunk<T, ind_type>::release_chunk_range(int first, int last)
+{
+    if (first >= last)
+    {
+        return;
+    }
+    // The release routes by the ambient geometry: pin it to this array's.
+    if constexpr (build_config::chunk_dynamic)
+    {
+        set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
+    }
+
+    if constexpr (build_config::use_openmp)
+    {
+        const int          thr_rank = CHUNK_PMP_THREAD_RANK;
+        const unsigned int my_sz    = this->size_policy_.size();
+        auto&              lbf      = Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(thr_rank, my_sz);
+        for (int j = first; j < last; ++j)
+        {
+            if (chunk_list[j].written())
+            {
+                if constexpr (chunk_config::stats)
+                {
+                    increm_chunk_teardown_clear<Chunk<T>>();
+                    add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
+                }
+                // As clear_core(): v1's reuse lists hold zeroed buffers.
+                T*          values_loc = chunk_list[j].values;
+                constexpr T zero{};
+                std::uninitialized_fill_n(values_loc, my_sz, zero);
+                CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
+                lbf.push_back(values_loc);
+                chunk_list[j].init_values_cst_val();
+            }
+        }
+    }
+    else
+    {
+        for (int j = first; j < last; ++j)
+        {
+            if (chunk_list[j].written())
+            {
+                if constexpr (chunk_config::stats)
+                {
+                    increm_chunk_teardown_clear<Chunk<T>>();
+                }
+                chunk_list[j].release_st();
+            }
+        }
+    }
+}
+
+template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk<T, ind_type>::resize(ind_type newsz)
 {
     this->invalidate_proxies();
@@ -467,7 +524,11 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
     // again (flag 1, &chunk_list[j] pushed). The pass that follows empties
     // the lists and clears the flags, which is what the realloc and
     // Proxy<T>::resize_tab_is_int() below rely on.
-    this->flush_pending_deferred_ops();
+    // force: the pending-op counter has been seen to read 0 while ops were
+    // still queued (array_chunk_parallel_common_inline.h); a sequential point
+    // that reallocates or frees chunks cannot trust it -- as rechunk, swap and
+    // ArrayChunk2A::clear_core() already do.
+    this->flush_pending_deferred_ops(/*force=*/true);
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
@@ -485,6 +546,14 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
     const int old_nb_chunk = nb_chunk;
 
     nb_chunk = this->chunks_for(newsz);
+
+    // Shrink: chunk_list.resize() destroys the chunks past the new end, and
+    // ~Chunk() releases nothing -- their buffers leaked. Release them first,
+    // as clear_core() does; the pass above emptied the candidate lists.
+    if (nb_chunk < old_nb_chunk)
+    {
+        release_chunk_range(nb_chunk, old_nb_chunk);
+    }
 
     chunk_list.resize(nb_chunk);
     Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk);
@@ -526,7 +595,12 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
     if (newsz > old_size)
     {
         const auto     csz       = static_cast<ind_type>(this->chunk_size());
-        const ind_type old_cover = ((old_size + csz - 1) / csz) * csz;
+        // Up to the end of the OLD chunk count: chunks_for() keeps a chunk past
+        // the last element, so when old_size fell on a chunk boundary that
+        // spare chunk kept its stale values too (pool_accounting, grow back).
+        // In long long: old_nb_chunk * csz may pass ind_type's range near its top.
+        const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
+        const ind_type  old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<ind_type>(cover_ll) : newsz;
         const ind_type stale_end = newsz < old_cover ? newsz : old_cover;
 #pragma omp for
         for (ind_type i = old_size; i < stale_end; ++i)

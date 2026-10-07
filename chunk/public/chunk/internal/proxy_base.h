@@ -279,8 +279,22 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSupport
     static void resize_tab_is_int([[maybe_unused]] int nb_tab) noexcept {}
     /// @brief No candidate flags in this configuration; nothing to size.
     static void resize_tab_is_int([[maybe_unused]] int num_tab, [[maybe_unused]] int nb_chunk) noexcept {}
-    /// @brief No candidate flags in this configuration; nothing to release.
-    static void release_tab_is_int([[maybe_unused]] int num_tab) noexcept {}
+    /// @brief Release one array's candidate flags, as the enabled policy does.
+    /// @details NOT a no-op: Chunk2A's serial build has candidate lists and
+    ///          sizes these rows itself (Proxy2A::resize_tab_is_int). Empty
+    ///          here, a cleared array's row kept its flags -- stuck at 1 with
+    ///          no list entry behind them, and one byte per chunk leaked -- and
+    ///          the next resize_tab_is_int() on that tab stopped on its
+    ///          "still queued" check (swap_move_validation, serial chunk2a).
+    ///          v1 and Chunk2 never fill a row here: the guard makes it free.
+    static void release_tab_is_int(int num_tab) noexcept
+    {
+        using row_t = decltype(tab_is_inside_chunk_list_to_compress)::value_type;
+        if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
+        {
+            row_t{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
+        }
+    }
 
   protected:
     /// @brief Never callable in this configuration. Aborts.

@@ -21,6 +21,8 @@
 // its own inline file, so the CRTP self() down-cast sees a complete Derived and
 // so the compression manager stays out of the container declaration itself.
 
+#include <tuple> // std::get on the candidate tuples (sweep of the other second-value keys)
+
 #include "chunk/internal/array_chunk2_parallel.h"              // FastBlockSupport2, the class these bodies belong to
 #include "chunk/internal/array_chunk_parallel_common_inline.h" // flush_pending_deferred_ops
 #include "chunk/PMP_CHUNK.h"                                   // CHUNK_PMP_* (make_block_compression)
@@ -66,6 +68,50 @@ void FastBlockSupport2<Derived, true>::make_block_compression()
         for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)
         {
             pass_on_rank(thr);
+        }
+
+        // The passes above drain the key of this array's CURRENT second value
+        // only. Writes queued before a set_second_value() -- or a
+        // copy-assignment, which calls it -- sit under the EARLIER key, and
+        // nothing moved them: resize() then reallocated chunk_list under them
+        // (&chunk_list[j] dangling) and resize_tab_is_int() cleared their
+        // flags. Sweep every rank and every key for this array's leftovers:
+        // compress each against the current value (what the chunk holds is
+        // what counts now), clear its flag, then drop them by num_tab -- the
+        // other arrays' candidates are untouched. Same walk as
+        // rechunk_drop_candidates(). Sequential point: outside a region only.
+        if constexpr (Derived::is_not_bool)
+        {
+            using proxy_t   = typename Traits::proxy_type;
+            using manager_t = typename Traits::manager_type;
+
+            const int  num_tab  = proxy_t::share_info_array.get_num_tab(self().registry_key());
+            const auto inf      = self().get_info_second_value();
+            const int  thr_self = get_thr_rank_fast();
+            bool       found    = false;
+            for (const auto& per_rank : manager_t::map_chunk2_to_compress_potentially_thr)
+            {
+                for (const auto& kv : per_rank)
+                {
+                    if (!kv.second)
+                    {
+                        continue;
+                    }
+                    for (auto& tup : *kv.second)
+                    {
+                        if (std::get<2>(tup) == num_tab)
+                        {
+                            std::get<0>(tup)->compress(thr_self, inf, /*apply=*/true, std::get<3>(tup).count());
+                            proxy_t::reset_tab_inside_list_to_compress(num_tab, std::get<1>(tup));
+                            found = true;
+                        }
+                    }
+                }
+            }
+            if (found)
+            {
+                manager_t::remove_from_compress_list_chunk2_by_num_tab(num_tab);
+            }
         }
     }
     else

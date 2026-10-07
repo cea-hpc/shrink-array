@@ -131,7 +131,11 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         // entry would outlive it: chunk_list.resize() leaves it dangling, and
         // resize_tab_is_int() clears its flag, letting the same chunk be
         // queued a second time.
-        derived().flush_pending_deferred_ops();
+        // force: the pending-op counter has been seen to read 0 while ops were
+        // still queued (array_chunk_parallel_common_inline.h); a sequential point
+        // that reallocates or frees chunks cannot trust it -- as rechunk, swap and
+        // ArrayChunk2A::clear_core() already do.
+        derived().flush_pending_deferred_ops(/*force=*/true);
 
         // Compress the pending list BEFORE chunk_list is reallocated below.
         // vec_to_compress_potantially holds &chunk_list[j] pointers; a growth
@@ -155,9 +159,28 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         m_size                 = newsz;
         nb_chunk               = this->chunks_for(newsz);
 
-        if (nb_chunk <= old_nb_chunk)
+        if (nb_chunk < old_nb_chunk)
         {
-            return; // Only handling growth here
+            // Shrink: release the chunks past the new end NOW. Returning early
+            // here kept them, buffers included, in chunk_list: a later growth
+            // re-initialised (or the vector truncated) them without a release,
+            // and the teardown loops stop at nb_chunk -- every buffer past the
+            // end leaked. The pass above emptied the candidate lists, so none
+            // of them is still referenced. Same release as clear_core().
+            derived().release_chunk_range(nb_chunk, old_nb_chunk);
+            chunk_list.resize(static_cast<std::size_t>(nb_chunk));
+            Base::reallocate_dirty_bitset(old_nb_chunk, nb_chunk);
+
+            // Chunks alive went down: so does the count the compression
+            // threshold and the reuse budget derive from (as v1's resize).
+            manager_type::increm_somme_chunk_create(nb_chunk - old_nb_chunk);
+            manager_type::compute_size_buffer_reuse();
+            manager_type::compute_size_max_number_of_chunk_to_check_compress();
+            return;
+        }
+        if (nb_chunk == old_nb_chunk)
+        {
+            return;
         }
 
         chunk_list.resize(nb_chunk);

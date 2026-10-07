@@ -738,6 +738,62 @@ void ArrayChunk2A<T, ind_type>::make_block_compression()
 }
 
 template <ArrayChunkElement T, typename ind_type>
+void ArrayChunk2A<T, ind_type>::release_chunk_range(int first, int last)
+{
+    if (first >= last)
+    {
+        return;
+    }
+    // The release routes by the ambient geometry: pin it to this array's.
+    if constexpr (build_config::chunk_dynamic)
+    {
+        shrink_array::set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
+    }
+
+    if constexpr (build_config::not_use_openmp)
+    {
+        // Before Proxy2A::resize_tab_is_int() truncates the per-chunk type
+        // table: clear_st() reads tab_type_cst_val[num_tab][j].
+        const int num_tab = Proxy2A<T>::share_info_array.get_num_tab(this->registry_key());
+        for (int j = first; j < last; ++j)
+        {
+            if (chunk_list[j].written())
+            {
+                if constexpr (chunk_config::stats)
+                {
+                    increm_chunk_teardown_clear<Chunk2A<T>>();
+                }
+                chunk_list[j].clear_st(&Proxy2A<T>::tab_type_cst_val[num_tab][j],
+                                       Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, j));
+            }
+        }
+    }
+    else
+    {
+        const int          thr_rank = CHUNK_PMP_THREAD_RANK;
+        const unsigned int my_sz    = this->size_policy_.size();
+        auto&              lbf      = manager_chunk2A::get_list_block_free_thr_for_size(thr_rank, my_sz);
+        for (int j = first; j < last; ++j)
+        {
+            if (chunk_list[j].written_test())
+            {
+                if constexpr (chunk_config::stats)
+                {
+                    increm_chunk_teardown_clear<Chunk2A<T>>();
+                    add_chunk_released<Chunk2A<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
+                }
+                T* values_loc = chunk_list[j].values;
+                CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
+                lbf.push_back(values_loc);
+                // Neutralise, as clear_core(): the buffer belongs to the reuse
+                // list now.
+                chunk_list[j].values_store(ChunkBase<T, Chunk2A<T>>::get_cst_val1());
+            }
+        }
+    }
+}
+
+template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
 {
     this->invalidate_proxies();
@@ -788,7 +844,12 @@ void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
     if (newsz > old_size)
     {
         const auto     csz       = static_cast<ind_type>(this->chunk_size());
-        const ind_type old_cover = ((old_size + csz - 1) / csz) * csz;
+        // Up to the end of the OLD chunk count: chunks_for() keeps a chunk past
+        // the last element, so when old_size fell on a chunk boundary that
+        // spare chunk kept its stale values too (pool_accounting, grow back).
+        // In long long: old_nb_chunk * csz may pass ind_type's range near its top.
+        const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
+        const ind_type  old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<ind_type>(cover_ll) : newsz;
         const ind_type stale_end = newsz < old_cover ? newsz : old_cover;
 #pragma omp for
         for (ind_type i = old_size; i < stale_end; ++i)

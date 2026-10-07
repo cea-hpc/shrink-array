@@ -627,7 +627,11 @@ void ArrayChunk2<T, ind_type>::clear_core()
     // for the full rationale (dangling chunk refs in the global deferred maps).
     // Safe here: nb_chunk / chunk_list / the dirty bitset are unchanged at this
     // point, so the dirty-bit scan stays in bounds.
-    this->flush_pending_deferred_ops();
+    // force: the pending-op counter has been seen to read 0 while ops were
+    // still queued (array_chunk_parallel_common_inline.h); a sequential point
+    // that reallocates or frees chunks cannot trust it -- as rechunk, swap and
+    // ArrayChunk2A::clear_core() already do.
+    this->flush_pending_deferred_ops(/*force=*/true);
 
     // Per-array compression stats, read here: after the flush, before the
     // rest of the teardown drain below -- as in ArrayChunk2A::clear_core().
@@ -693,7 +697,12 @@ void ArrayChunk2<T, ind_type>::clear_core()
 
             for (int j = 0; j < nb_chunk; ++j)
             {
-                if (chunk_list[j].written(ind))
+                // owns_live_buffer(), not written(ind): written() tests the
+                // CURRENT second value's index only, so a chunk compressed to
+                // the cst2 block of an earlier value passed as written and
+                // clear_st() freed a pointer into the cst2 deque. The OpenMP
+                // branch below already tests this way.
+                if (chunk_list[j].owns_live_buffer())
                 {
                     if constexpr (chunk_config::stats)
                     {
@@ -1193,6 +1202,72 @@ void ArrayChunk2<T, ind_type>::compress()
 // resize_common() returns early and nb_chunk <= old_nb_chunk, which leaves that
 // loop empty -- the array reports the smaller size but keeps its storage.
 template <ArrayChunkElement T, typename ind_type>
+void ArrayChunk2<T, ind_type>::release_chunk_range(int first, int last)
+{
+    if (first >= last)
+    {
+        return;
+    }
+    // The release routes by the ambient geometry: pin it to this array's.
+    if constexpr (build_config::chunk_dynamic)
+    {
+        shrink_array::set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
+    }
+
+    if constexpr (build_config::not_use_openmp)
+    {
+        for (int j = first; j < last; ++j)
+        {
+            if (chunk_list[j].owns_live_buffer())
+            {
+                if constexpr (chunk_config::stats)
+                {
+                    increm_chunk_teardown_clear<Chunk2<T>>();
+                }
+                if constexpr (is_not_bool)
+                {
+                    chunk_list[j].clear_st(0, get_ind_second_value());
+                }
+                else
+                {
+                    chunk_list[j].clear_st(0, 0);
+                }
+            }
+        }
+    }
+    else
+    {
+        const int          thr_rank = CHUNK_PMP_THREAD_RANK;
+        const unsigned int my_sz    = this->size_policy_.size();
+        auto&              lbf      = manager_chunk2::get_list_block_free_thr_for_size(thr_rank, my_sz);
+        for (int j = first; j < last; ++j)
+        {
+            if (chunk_list[j].owns_live_buffer())
+            {
+                if constexpr (chunk_config::stats)
+                {
+                    increm_chunk_teardown_clear<Chunk2<T>>();
+                    add_chunk_released<Chunk2<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
+                }
+                T* values_loc = chunk_list[j].values;
+                CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
+                lbf.push_back(values_loc);
+                // Neutralise, as clear_core(): the buffer belongs to the reuse
+                // list now.
+                if constexpr (is_not_bool)
+                {
+                    chunk_list[j].init_values_cst_val1();
+                }
+                else
+                {
+                    chunk_list[j].init_values_cst_val_bool(0);
+                }
+            }
+        }
+    }
+}
+
+template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2<T, ind_type>::resize(ind_type newsz)
 {
     this->invalidate_proxies();
@@ -1235,7 +1310,12 @@ void ArrayChunk2<T, ind_type>::resize(ind_type newsz)
     if (newsz > old_size)
     {
         const auto     csz       = static_cast<ind_type>(this->chunk_size());
-        const ind_type old_cover = ((old_size + csz - 1) / csz) * csz;
+        // Up to the end of the OLD chunk count: chunks_for() keeps a chunk past
+        // the last element, so when old_size fell on a chunk boundary that
+        // spare chunk kept its stale values too (pool_accounting, grow back).
+        // In long long: old_nb_chunk * csz may pass ind_type's range near its top.
+        const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
+        const ind_type  old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<ind_type>(cover_ll) : newsz;
         const ind_type stale_end = newsz < old_cover ? newsz : old_cover;
 #pragma omp for
         for (ind_type i = old_size; i < stale_end; ++i)

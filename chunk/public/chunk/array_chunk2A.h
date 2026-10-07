@@ -235,6 +235,15 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      */
     void resize(ind_type newsz);
 
+  private:
+    /// @brief Release the buffers of chunks [@p first, @p last) -- the chunks
+    ///        a shrinking resize() drops. Same release as clear_core(): freed
+    ///        in place serially; under OpenMP parked in this array's geometry's
+    ///        reuse list and the chunk neutralised to cst_val1. Sequential
+    ///        point; the candidate lists must hold none of them.
+    void release_chunk_range(int first, int last);
+
+  public:
     /**
      * @brief Resize to @p count elements, all set to @p val.
      * @param count new element count
