@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# Copyright 2026 CEA (www.cea.fr)
-# SPDX-License-Identifier: Apache-2.0
 """shrink_gui.py -- prototype: submit and follow the shrink-array runs on inti
 from the laptop.
 
@@ -1129,8 +1127,17 @@ class Main(QMainWindow):
 
         # chart tab: seconds per run against threads (multi_launch_stress.py)
         self.pt_data = None
+        self.pt_data_b = None
         self.pt_build = QComboBox()
         self.pt_build.currentIndexChanged.connect(self.draw_points)
+        self.pt_variant = QComboBox()
+        self.pt_variant.addItems(["toutes", "chunk", "chunk2", "chunk2a"])
+        self.pt_variant.currentIndexChanged.connect(self.draw_points)
+        self.pt_cmp = QComboBox()
+        self.pt_cmp.setMinimumContentsLength(24)
+        self.pt_cmp.setToolTip("Superpose un autre run de multi_launch_stress.py : "
+                               "même build et même variante de part et d'autre")
+        self.pt_cmp.currentIndexChanged.connect(self.load_points)
         self.pt_color = QComboBox()
         self.pt_color.addItems(COLOR_BY)
         self.pt_color.currentIndexChanged.connect(self.draw_points)
@@ -1146,19 +1153,25 @@ class Main(QMainWindow):
         prow2 = QHBoxLayout()
         prow2.addWidget(QLabel("Build"))
         prow2.addWidget(self.pt_build)
+        prow2.addWidget(QLabel("Variante"))
+        prow2.addWidget(self.pt_variant)
         prow2.addWidget(QLabel("Couleur"))
         prow2.addWidget(self.pt_color)
-        prow2.addWidget(self.pt_log)
-        prow2.addWidget(self.pt_median)
-        prow2.addWidget(self.pt_ok_only)
-        prow2.addStretch(1)
+        prow2.addWidget(QLabel("Comparer avec"))
+        prow2.addWidget(self.pt_cmp, 1)
         prow2.addWidget(bpts)
+        prow3 = QHBoxLayout()
+        prow3.addWidget(self.pt_log)
+        prow3.addWidget(self.pt_median)
+        prow3.addWidget(self.pt_ok_only)
+        prow3.addStretch(1)
         self.pt_note = QLabel("")
         self.pt_view = ScatterView()
         ptw = QWidget()
         ptl = QVBoxLayout(ptw)
         ptl.setContentsMargins(0, 0, 0, 0)
         ptl.addLayout(prow2)
+        ptl.addLayout(prow3)
         ptl.addWidget(self.pt_note)
         ptl.addWidget(self.pt_view, 1)
 
@@ -1412,6 +1425,7 @@ class Main(QMainWindow):
                 return
             self.runs = r["runs"]
             self.notify_changes()
+            self.fill_compare()
             cur = next((x for x in self.runs if x["id"] == self.current), None)
             if cur and cur["status"] in self.ACTIVE:
                 if self.tabs.currentIndex() == 1:
@@ -1459,6 +1473,7 @@ class Main(QMainWindow):
             self.log.clear()
             self.poll_tail()
             self.pt_data = None
+            self.fill_compare()
             self.tab_changed(self.tabs.currentIndex())
 
     def poll_tail(self):
@@ -1594,70 +1609,119 @@ class Main(QMainWindow):
         elif i == 2:
             self.load_points()
 
-    def load_points(self):
+    def fill_compare(self):
+        """The runs the current one can be compared with: the other
+        multi_launch_stress.py runs, newest first."""
+        if not hasattr(self, "pt_cmp"):
+            return
+        keep = self.pt_cmp.currentData()
+        self.pt_cmp.blockSignals(True)
+        self.pt_cmp.clear()
+        self.pt_cmp.addItem("(aucun)", None)
+        for r in self.runs:
+            if r["id"] != self.current and r["meta"].get("summary") == "multi_launch":
+                self.pt_cmp.addItem(f"{r['id']}  [{r['status']}]", r["id"])
+        i = self.pt_cmp.findData(keep) if keep else 0
+        self.pt_cmp.setCurrentIndex(max(0, i))
+        self.pt_cmp.blockSignals(False)
+
+    def load_points(self, *_):
         rid = self.current
         if not rid:
             return
+        rid_b = self.pt_cmp.currentData()
+        pending = {"a": None, "b": None}
+        need = {"a", "b"} if rid_b else {"a"}
 
-        def done(r):
-            if r is None or rid != self.current:
+        def finish():
+            if rid != self.current or rid_b != self.pt_cmp.currentData():
                 return
+            if any(pending[k] is None for k in need):
+                return
+            r = pending["a"]
             if "rows" not in r:
                 self.pt_data = None
                 self.pt_note.setText(r.get("note", ""))
                 self.pt_view.setChart(QChart())
                 self.pt_view.points = []
                 return
+            rb = pending["b"] if rid_b and "rows" in pending["b"] else None
+            if rid_b and rb is None:
+                self.error(f"{rid_b} : {pending['b'].get('note', 'pas de données')}")
+            r["id"] = rid
+            if rb:
+                rb["id"] = rid_b
             first = self.pt_data is None
-            self.pt_data = r
+            self.pt_data, self.pt_data_b = r, rb
+            builds = list(dict.fromkeys(r["builds"] + (rb["builds"] if rb else [])))
             keep = self.pt_build.currentText()
             self.pt_build.blockSignals(True)
             self.pt_build.clear()
             self.pt_build.addItem("tous")
-            self.pt_build.addItems(r["builds"])
-            if not first and keep in r["builds"]:
+            self.pt_build.addItems(builds)
+            if not first and keep in builds:
                 self.pt_build.setCurrentText(keep)
             self.pt_build.blockSignals(False)
             self.draw_points()
 
-        self.remote.helper("points", [self.runs_dir.text().strip(), rid], done)
+        def got(key):
+            def done(r):
+                pending[key] = r if r is not None else {"note": "erreur de lecture"}
+                finish()
+            return done
+
+        self.remote.helper("points", [self.runs_dir.text().strip(), rid], got("a"))
+        if rid_b:
+            self.remote.helper("points", [self.runs_dir.text().strip(), rid_b], got("b"))
+
+    def _select(self, r, log_y):
+        """(ok, failed) points of one dataset after the Build / Variante
+        filters; a point is (threads, seconds, tooltip, exe)."""
+        build_sel = self.pt_build.currentText()
+        var_sel = self.pt_variant.currentText()
+        ok, fails = [], []
+        label = f"<br><i>{html.escape(r['id'])}</i>" if self.pt_data_b else ""
+        for run, b, e, th, sec, rc in r["rows"]:
+            build, exe = r["builds"][b], r["exes"][e]
+            if build_sel != "tous" and build != build_sel:
+                continue
+            if var_sel != "toutes" and exe_parts(exe)[0] != var_sel:
+                continue
+            if log_y and sec <= 0:
+                continue
+            tip = (f"<b>{sec:.3f} s</b> · {th} threads<br>"
+                   f"{html.escape(build)} · {html.escape(exe)}<br>"
+                   f"run {run}" + (f" · <b>code {rc}</b>" if rc else "") + label)
+            (fails if rc else ok).append((th, sec, tip, exe))
+        return ok, fails
+
+    @staticmethod
+    def _bins(pts, lo, width):
+        """{bin: median seconds} of the bins holding at least 3 runs."""
+        import statistics
+        bins = {}
+        for p in pts:
+            bins.setdefault(int((p[0] - lo) // width), []).append(p[1])
+        return {k: statistics.median(v) for k, v in bins.items() if len(v) >= 3}
 
     def draw_points(self, *_):
         r = self.pt_data
         if not r:
             return
+        rb = self.pt_data_b
         dark = self.palette().window().color().lightness() < 128
         V = VIZ["dark" if dark else "light"]
-        key_of, slots = COLOR_BY[self.pt_color.currentText()]
-        build_sel = self.pt_build.currentText()
-        bi = r["builds"].index(build_sel) if build_sel in r["builds"] else None
         log_y = self.pt_log.isChecked()
-
-        groups = {}            # category -> [(threads, seconds, tip)]
-        fails, ok_pts = [], []
-        for run, b, e, th, sec, rc in r["rows"]:
-            if bi is not None and b != bi:
-                continue
-            if log_y and sec <= 0:
-                continue
-            exe, build = r["exes"][e], r["builds"][b]
-            tip = (f"<b>{sec:.3f} s</b> · {th} threads<br>"
-                   f"{html.escape(build)} · {html.escape(exe)}<br>"
-                   f"run {run}" + (f" · <b>code {rc}</b>" if rc else ""))
-            p = (th, sec, tip)
-            if rc != 0:
-                fails.append(p)
-                continue
-            ok_pts.append(p)
-            cat = key_of(exe)
-            groups.setdefault(cat if cat in slots else "autres", []).append(p)
+        show_fail = not self.pt_ok_only.isChecked()
 
         chart = QChart()
         chart.setBackgroundBrush(QBrush(QColor(V["surface"])))
         chart.setBackgroundRoundness(0)
-        chart.setMargins(chart.margins())
-        title = "Temps par run selon le nombre de threads — " + (build_sel if bi is not None else "tous les builds")
-        chart.setTitle(title)
+        what = self.pt_build.currentText()
+        what = "tous les builds" if what == "tous" else what
+        if self.pt_variant.currentText() != "toutes":
+            what += " · " + self.pt_variant.currentText()
+        chart.setTitle(("Comparaison — " if rb else "") + "temps par run selon le nombre de threads — " + what)
         chart.setTitleBrush(QBrush(QColor(V["ink"])))
         chart.legend().setLabelColor(QColor(V["ink2"]))
         chart.legend().setAlignment(Qt.AlignTop)
@@ -1675,41 +1739,86 @@ class Main(QMainWindow):
             sr.setPen(QPen(QColor(V["surface"]) if ring else c, 1))
             sr.append([QPointF(p[0], p[1]) for p in pts])
             chart.addSeries(sr)
-            return sr
 
-        drawn = []
-        for i, cat in enumerate(slots):
-            if groups.get(cat):
-                scatter(f"{cat} ({len(groups[cat])})", groups[cat],
-                        V["series"][i], 7, QScatterSeries.MarkerShapeCircle)
-                drawn += groups[cat]
-        if groups.get("autres"):
-            scatter(f"autres ({len(groups['autres'])})", groups["autres"],
-                    V["muted"], 7, QScatterSeries.MarkerShapeCircle)
-            drawn += groups["autres"]
-        if fails and not self.pt_ok_only.isChecked():
-            # Failures: a shape in ink, named in the legend -- not a status red,
-            # which the colour-vision checks cannot tell from the orange slot.
-            scatter(f"échec ({len(fails)})", fails, V["ink"], 12,
+        def median_line(name, med, lo, width, color):
+            pts = [QPointF(lo + (k + 0.5) * width, med[k]) for k in sorted(med)]
+            if len(pts) < 2:
+                return
+            # A surface-coloured halo under the line: it stays readable on top
+            # of a dense cloud of its own colour. The halo has no legend entry.
+            halo = QLineSeries()
+            halo.setPen(QPen(QColor(V["surface"]), 6))
+            halo.append(pts)
+            chart.addSeries(halo)
+            for m in chart.legend().markers(halo):
+                m.setVisible(False)
+            ln = QLineSeries()
+            ln.setName(name)
+            ln.setPen(QPen(QColor(color), 2.5))
+            ln.append(pts)
+            chart.addSeries(ln)
+
+        ok_a, fail_a = self._select(r, log_y)
+        drawn, note_extra = [], ""
+        if rb is None:
+            key_of, slots = COLOR_BY[self.pt_color.currentText()]
+            groups = {}
+            for p in ok_a:
+                cat = key_of(p[3])
+                groups.setdefault(cat if cat in slots else "autres", []).append(p)
+            for i, cat in enumerate(slots):
+                if groups.get(cat):
+                    scatter(f"{cat} ({len(groups[cat])})", groups[cat], V["series"][i], 7,
+                            QScatterSeries.MarkerShapeCircle)
+                    drawn += groups[cat]
+            if groups.get("autres"):
+                scatter(f"autres ({len(groups['autres'])})", groups["autres"], V["muted"], 7,
+                        QScatterSeries.MarkerShapeCircle)
+                drawn += groups["autres"]
+            fail_pts = fail_a if show_fail else []
+            if self.pt_median.isChecked() and len(ok_a) >= 5:
+                lo = min(p[0] for p in ok_a)
+                hi = max(p[0] for p in ok_a)
+                width = max(1, round((hi - lo) / 15)) if hi > lo else 1
+                median_line("médiane", self._bins(ok_a, lo, width), lo, width, V["ink2"])
+        else:
+            # Two runs: colour = the run (slots 1 and 2), each with its median.
+            ok_b, fail_b = self._select(rb, log_y)
+            short = lambda rid: rid[:15]
+            for (ok, fails, rid), col in zip(((ok_a, fail_a, r["id"]), (ok_b, fail_b, rb["id"])),
+                                             V["series"][:2]):
+                if ok:
+                    scatter(f"{short(rid)} ({len(ok)})", ok, col, 7, QScatterSeries.MarkerShapeCircle)
+                    drawn += ok
+            fail_pts = (fail_a + fail_b) if show_fail else []
+            if len(ok_a) >= 5 and len(ok_b) >= 5:
+                both = ok_a + ok_b
+                lo = min(p[0] for p in both)
+                hi = max(p[0] for p in both)
+                width = max(1, round((hi - lo) / 15)) if hi > lo else 1
+                med_a, med_b = self._bins(ok_a, lo, width), self._bins(ok_b, lo, width)
+                if self.pt_median.isChecked():
+                    median_line(f"médiane {short(r['id'])}", med_a, lo, width, V["series"][0])
+                    median_line(f"médiane {short(rb['id'])}", med_b, lo, width, V["series"][1])
+                common = [k for k in med_a if k in med_b and med_a[k] > 0]
+                if common:
+                    import math
+                    g = math.exp(sum(math.log(med_b[k] / med_a[k]) for k in common) / len(common))
+                    pct = (g - 1) * 100
+                    sens = "plus lent" if pct > 0 else "plus rapide"
+                    note_extra = (f"  —  {short(rb['id'])} / {short(r['id'])} : ×{g:.3f} "
+                                  f"({abs(pct):.1f} % {sens}), moyenne géométrique des médianes "
+                                  f"sur {len(common)} tranche(s) de {width} thread(s) communes")
+                else:
+                    note_extra = "  —  aucune tranche de threads commune aux deux runs"
+
+        if fail_pts:
+            # Failures last, on top of everything: a shape in ink, named in the
+            # legend -- not a status red, which the colour-vision checks cannot
+            # tell from the orange slot.
+            scatter(f"échec ({len(fail_pts)})", fail_pts, V["ink"], 12,
                     QScatterSeries.MarkerShapeTriangle, alpha=255, ring=False)
-            drawn += fails
-
-        if self.pt_median.isChecked() and len(ok_pts) >= 5:
-            import statistics
-            lo = min(p[0] for p in ok_pts)
-            hi = max(p[0] for p in ok_pts)
-            width = max(1, round((hi - lo) / 15)) if hi > lo else 1
-            bins = {}
-            for th, sec, _t in ok_pts:
-                bins.setdefault((th - lo) // width, []).append(sec)
-            med = QLineSeries()
-            med.setName("médiane")
-            med.setPen(QPen(QColor(V["ink2"]), 2))
-            for k in sorted(bins):
-                if len(bins[k]) >= 3:
-                    med.append(lo + (k + 0.5) * width, statistics.median(bins[k]))
-            if med.count() >= 2:
-                chart.addSeries(med)
+            drawn += fail_pts
 
         ax = QValueAxis()
         ax.setTitleText("threads")
@@ -1719,12 +1828,12 @@ class Main(QMainWindow):
         ay.setLabelFormat("%.3g" if log_y else "%.1f")
         if log_y:
             ay.setMinorTickCount(-1)
-        for a in (ax, ay):
-            a.setLabelsColor(QColor(V["muted"]))
-            a.setTitleBrush(QBrush(QColor(V["ink2"])))
-            a.setGridLineColor(QColor(V["grid"]))
-            a.setLinePenColor(QColor(V["axis"]))
-            a.setMinorGridLineVisible(False)
+        for axis in (ax, ay):
+            axis.setLabelsColor(QColor(V["muted"]))
+            axis.setTitleBrush(QBrush(QColor(V["ink2"])))
+            axis.setGridLineColor(QColor(V["grid"]))
+            axis.setLinePenColor(QColor(V["axis"]))
+            axis.setMinorGridLineVisible(False)
         chart.addAxis(ax, Qt.AlignBottom)
         chart.addAxis(ay, Qt.AlignLeft)
         for sr in chart.series():
@@ -1746,12 +1855,13 @@ class Main(QMainWindow):
                 ay.applyNiceNumbers()
             ax.applyNiceNumbers()
         self.pt_view.setChart(chart)
-        self.pt_view.points = drawn
+        self.pt_view.points = [p[:3] for p in drawn]
         self.pt_view.log_y = log_y
-        shown = len(drawn)
-        more = (f" (les {len(r['rows'])} derniers sur {r['total']})" if r["total"] > len(r["rows"]) else "")
-        self.pt_note.setText(f"{shown} run(s) affiché(s){more}. Survolez un point pour le détail ; "
-                             "le tableau est dans l'onglet Résumé.")
+        more = ""
+        for d in (r, rb):
+            if d and d["total"] > len(d["rows"]):
+                more = " (les 30000 derniers runs de chaque fichier)"
+        self.pt_note.setText(f"{len(drawn)} run(s) affiché(s){more}{note_extra}")
 
     def delete(self):
         run = self.selected_run()

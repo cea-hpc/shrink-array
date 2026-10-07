@@ -164,13 +164,13 @@ def config_dir_present(build_root, config):
 def short_config_label(config):
     """Compact label for display / CSV."""
     if config.startswith("cmake-build-omp-"):
-        return config.removeprefix("cmake-build-omp-")
+        return config[len("cmake-build-omp-"):]  # not removeprefix: Python >= 3.9 only
     if config.startswith("cmake-build-"):
         # non-OMP build dirs (cmake-build-gnu, cmake-build-llvm) would otherwise
         # collapse onto the OMP label ("gnu"/"llvm") and look like a duplicate,
         # single-threaded run in the perf output. Tag them so they stay distinct
         # in the progress bar and the CSV.
-        return config.removeprefix("cmake-build-") + "-noomp"
+        return config[len("cmake-build-"):] + "-noomp"
     return config
 
 
