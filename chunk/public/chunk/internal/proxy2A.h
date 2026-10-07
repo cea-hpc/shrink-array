@@ -29,7 +29,7 @@
     #include <concepts> // std::assignable_from
 #endif
 
-#include <ankerl/unordered_dense.h> // PointerMapChunk2A::big
+#include "chunk/vendor/ankerl/unordered_dense.h" // PointerMapChunk2A::big
 
 #include "chunk/config.h"                     // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, set_thread_alloc_key

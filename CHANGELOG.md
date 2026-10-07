@@ -88,6 +88,14 @@ the tag's checksum to the recipe.
   are kept. Comments that contradicted the code are fixed.
 - `docs/`: refreshed; the variables, options and build-script options that were missing are
   documented.
+- The vendored hash tables install under `include/chunk/vendor/` instead of the root of
+  `include/`, where they overwrote, or were shadowed by, a user's own copy of the same
+  library. In the tree they moved to `third_party/chunk/vendor/` (for instance
+  `third_party/chunk/vendor/ankerl/unordered_dense.h`), and chunk's headers include them as
+  `"chunk/vendor/..."`.
+- `NOTICE` (new) lists the third-party code and its licenses; it is installed with `LICENSE` and
+  the license texts under `share/doc/chunk/`. `third_party/README.md` gives each vendored
+  file's upstream, version and local patches.
 
 ### Fixed
 

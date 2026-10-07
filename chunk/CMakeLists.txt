@@ -593,13 +593,24 @@ if (CHUNK_STD_ALLOC)
           COMPONENT chunk-devel)
 endif()
 
-# And the vendored third-party headers those include (ankerl/unordered_dense.h
-# from pool_ledger.h and four others): they are on the build-tree include path
-# only, so the installed tree was missing them.
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/third_party/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+# And the vendored third-party headers those include as "chunk/vendor/..."
+# (ankerl's unordered_dense.h, skarupke's flat_hash_map.hpp): under
+# include/chunk/vendor/, never at the root of include/, where they would
+# overwrite, or be shadowed by, a user's own copy of the same library.
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/third_party/chunk/vendor
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/chunk
         COMPONENT chunk-devel
         FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
+
+# The licenses: the library's, the NOTICE listing the third-party code, and
+# that code's license texts (third_party/README.md). With the runtime, which
+# carries code compiled from those headers.
+install(FILES ${PROJECT_SOURCE_DIR}/LICENSE ${PROJECT_SOURCE_DIR}/NOTICE
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/chunk
+        COMPONENT chunk-runtime)
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/third_party/licenses/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/chunk/third_party
+        COMPONENT chunk-runtime)
 
 include(CMakePackageConfigHelpers)
 

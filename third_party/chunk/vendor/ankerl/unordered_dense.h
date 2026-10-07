@@ -1,3 +1,12 @@
+// shrink-array vendored copy -- not the pristine upstream file.
+//   upstream: https://github.com/martinus/unordered_dense
+//   version : v5.0.1 (commit 1c8636e810d7e4a485d17bb9cbd6dccb5fe4e284)
+//   changes : 2 local patches, each marked "Local patch (shrink-array)"
+//   license : MIT (below; third_party/licenses/unordered_dense-MIT.txt)
+// The mentions further down of CLAUDE.md, notes/ and issue numbers are
+// upstream's repository and issues, not shrink-array's. Provenance, patches
+// and update procedure: third_party/README.md in the shrink-array repository.
+
 ///////////////////////// ankerl::unordered_dense::{map, set} /////////////////////////
 
 // A fast & densely stored hashmap and hashset.

@@ -67,8 +67,16 @@ template <typename T>
 class TCTypeAllocator;
 #endif
 
-#include "flat_hash_map.hpp"        // ska::flat_hash_map
-#include "ankerl/unordered_dense.h" // ankerl::unordered_dense::map
+#include "chunk/vendor/flat_hash_map.hpp"        // ska::flat_hash_map
+#include "chunk/vendor/ankerl/unordered_dense.h" // ankerl::unordered_dense::map
+
+// The vendored unordered_dense.h keeps upstream's include guard: in a
+// translation unit that includes a user's own copy first, that copy is the
+// one compiled here. Any 5.x has what chunk uses; another major is refused
+// here, by name, rather than deep inside a template.
+static_assert(ANKERL_UNORDERED_DENSE_VERSION_MAJOR == 5,
+              "chunk needs ankerl::unordered_dense 5.x: another major version of "
+              "ankerl/unordered_dense.h was included before chunk's headers");
 
 // deferred_ops_storage.h has no internal dependency on _OPENMP (just
 // <memory>/<mutex>/<atomic>/PMP_CHUNK.h), so it is always included: nothing

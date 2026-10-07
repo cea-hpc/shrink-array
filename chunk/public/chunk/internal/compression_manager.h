@@ -24,7 +24,7 @@
 #include <atomic>    // std::atomic, std::memory_order
 #include <memory>    // std::destroy_at
 
-#include "ankerl/unordered_dense.h" // ankerl::unordered_dense::set
+#include "chunk/vendor/ankerl/unordered_dense.h" // ankerl::unordered_dense::set
 
 #include "chunk/config.h"                            // build_config::any_check, chunk_config::ring_log_debug
 #include "chunk/PMP_CHUNK.h"                         // get_thr_rank_fast

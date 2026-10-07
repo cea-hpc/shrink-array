@@ -51,7 +51,7 @@
 #include "chunk/debug.h"                    // print_backtrace
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 
-#include "ankerl/unordered_dense.h" // the live maps
+#include "chunk/vendor/ankerl/unordered_dense.h" // the live maps
 
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_IN_PARALLEL_REGION / _THREAD_RANK, and <omp.h> with it
 

@@ -228,7 +228,8 @@ def check_pairs(root):
 
 
 COMMENT_DIRS = ("chunk", "fast_allocators", "examples", "scripts")
-INCLUDE_DIRS = ("", "chunk/public", "fast_allocators/public")
+# third_party/: the vendored headers, included as "chunk/vendor/...".
+INCLUDE_DIRS = ("", "chunk/public", "fast_allocators/public", "third_party")
 
 
 def comment_lines(root, files):

@@ -107,4 +107,9 @@ The other directories are tools for developing the library:
 
 This library is under the Apache 2.0 license. See [LICENSE](./LICENSE) for more details.
 
+It includes two header-only hash tables from other projects, under their own licenses:
+[ankerl::unordered_dense](https://github.com/martinus/unordered_dense) (MIT) and
+[ska::flat_hash_map](https://github.com/skarupke/flat_hash_map) (Boost Software License 1.0).
+See [NOTICE](./NOTICE) and [third_party/README.md](./third_party/README.md).
+
 Copyright CEA
