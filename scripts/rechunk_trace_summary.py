@@ -48,6 +48,8 @@ def main() -> int:
         print(f"== {os.path.basename(path)}: {n} rechunk(s)  |  " + "  ;  ".join(elapsed))
         if totals:
             print("   " + "  ".join(f"{k}={v / 1000:.2f}s" for k, v in totals.items()))
+        elif n == 0:
+            print("   (no re-chunk in this run)")
         else:
             print("   (no [RECHUNK] phase line: not run with CHUNK_RECHUNK_TRACE=1?)")
     return 0

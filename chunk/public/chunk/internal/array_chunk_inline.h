@@ -75,7 +75,7 @@ void ArrayChunk<T, ind_type>::rebuild_storage(ind_type sz)
 
         if (nb_chunk)
         {
-            chunk_list.resize(nb_chunk);
+            this->acquire_chunk_list(static_cast<std::size_t>(nb_chunk));
             this->alloc_dirty_bitset(nb_chunk);
             this->assign_alloc_key(); // own slabs if large enough (see alloc_key_)
 
@@ -343,7 +343,7 @@ void ArrayChunk<T, ind_type>::clear_core()
     }
     m_size = 0;
 
-    chunk_list.clear(); // Mandatory with the new allocator
+    this->release_chunk_list(); // Mandatory with the new allocator (a re-chunk keeps the buffer)
 
     nb_chunk = 0;
 

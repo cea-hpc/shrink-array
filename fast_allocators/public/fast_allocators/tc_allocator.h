@@ -138,6 +138,8 @@ inline void* map_anonymous(size_t size)
         std::abort();
     }
 
+    alloc_config::advise_thp_region(tmp, size); // CHUNK_THP, as the slab arenas
+
     return tmp;
 }
 
@@ -771,6 +773,12 @@ class TCSlabPool
         {
             // A slab is carved in bytes.
             ElementSize = ElementSize_ * sizeof(ElementType);
+            // new_slab() hands it to TCSlab::init() as an int.
+            if (ElementSize > static_cast<size_t>(std::numeric_limits<int>::max())) [[unlikely]]
+            {
+                std::cerr << "[TCAllocator] element size " << ElementSize << " bytes is past INT_MAX\n";
+                std::abort();
+            }
 
             BlockAllocator = BlockAllocator_;
             slab_bytes_    = Slab::slab_bytes_for(BlockAllocator_);
@@ -948,6 +956,26 @@ class TCSlabPool
      */
     std::size_t recycle_empty_slabs(std::vector<void*>& scratch) noexcept
     {
+        const std::size_t n = detach_empty_slabs(scratch);
+        recycle_detached(scratch);
+        return n;
+    }
+
+    /**
+     * @brief The first half of recycle_empty_slabs(): unlink every empty slab
+     *        and delete its header, recording its block in @p scratch, WITHOUT
+     *        touching the arena (no lock).
+     * @param scratch Reused buffer of block addresses; cleared here.
+     * @return Number of slabs detached.
+     * @details For a team: each thread detaches its own rank's slabs in
+     *          parallel, then one thread hands every rank's batch to the arena
+     *          (recycle_detached()), instead of every thread queueing on the
+     *          arena's mutex at once. Same preconditions as
+     *          recycle_empty_slabs(). The blocks belong to nobody until
+     *          recycle_detached() runs: call it before anything allocates.
+     */
+    std::size_t detach_empty_slabs(std::vector<void*>& scratch) noexcept
+    {
         scratch.clear();
         if constexpr (!alloc_config::use_slabs)
         {
@@ -982,8 +1010,19 @@ class TCSlabPool
                     p = next;
                 }
             }
-            fast_alloc::arena_for(arena_kind).recycle_batch(scratch.data(), scratch.size(), slab_bytes_, rank_);
             return scratch.size();
+        }
+    }
+
+    /// @brief The second half of recycle_empty_slabs(): hand the blocks
+    ///        detach_empty_slabs() recorded to this instance's arena, under
+    ///        this instance's rank (fast_alloc::SlabArena::recycle_batch).
+    /// @param scratch The blocks, as detach_empty_slabs() left them.
+    void recycle_detached(const std::vector<void*>& scratch) const noexcept
+    {
+        if constexpr (alloc_config::use_slabs)
+        {
+            fast_alloc::arena_for(arena_kind).recycle_batch(scratch.data(), scratch.size(), slab_bytes_, rank_);
         }
     }
 
@@ -1115,14 +1154,30 @@ class TCSlabPool
 
             slab->reset();
 
-            return hand_out(slab->alloc());
+            return alloc_and_file(slab);
         }
 
         auto* slab = new_slab();
 
         insert(block, slab);
 
-        return hand_out(slab->alloc());
+        return alloc_and_file(slab);
+    }
+
+    /// @brief alloc() on a slab just put in #block, then file it as the fast
+    ///        path does: a slab this allocation filled -- one element per slab
+    ///        for an element over half the slab -- moves to #block_full.
+    ///        Returned as is, it stayed in #block and the next alloc() ran
+    ///        past its end.
+    ElementType* alloc_and_file(Slab* slab)
+    {
+        auto* ptr = hand_out(slab->alloc());
+        if (slab->is_full()) [[unlikely]]
+        {
+            remove(block, slab);
+            insert(block_full, slab);
+        }
+        return ptr;
     }
 
     /// @brief An element of a slab, as the ElementSize / sizeof(ElementType)
