@@ -550,7 +550,7 @@ void AllTypeChunkParallelInterface<Derived, false>::init_manager(ManagerChunkInt
 {
     // std-alloc: the manager's init_allocator() is a no-op. Through Derived's
     // alias so that the call stays dependent (see the OpenMP body).
-    typename Derived::manager_int_t& mm = manager;
+    const typename Derived::manager_int_t& mm = manager;
     mm.init_allocator(block_size);
 }
 

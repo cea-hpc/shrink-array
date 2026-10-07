@@ -65,8 +65,9 @@ class RechunkHooks2A<Derived, true>
     void rechunk_drop_candidates(this Derived& self);
 
     /**
-     * @brief Release this array's parked buffers held at the old geometry.
-     * @param new_size geometry the array is moving to
+     * @brief Drain the reuse free-list of the target geometry.
+     * @param new_size the chunk size the array is moving to
+     * @details The buffers parked there were sized for an older geometry.
      */
     void rechunk_drain_reuse_list(this Derived& self, unsigned int new_size);
 

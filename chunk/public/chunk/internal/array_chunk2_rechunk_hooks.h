@@ -31,7 +31,7 @@
  *
  *          RechunkHooks2<Derived, chunk_dynamic> splits them the same way as the
  *          algorithm they serve: the dynamic specialisation carries the real
- *          bodies (unchanged), the static one keeps the signatures as no-ops so
+ *          bodies, the static one keeps the signatures as no-ops so
  *          ArrayChunk2's using-declarations stay valid in both modes.
  *
  * @see array_chunk_rechunk.h for the algorithm that calls these
@@ -74,8 +74,9 @@ class RechunkHooks2<Derived, true>
     void rechunk_drop_candidates(this Derived& self);
 
     /**
-     * @brief Release this array's parked buffers held at the old geometry.
-     * @param new_size geometry the array is moving to
+     * @brief Drain the reuse free-list of the target geometry.
+     * @param new_size the chunk size the array is moving to
+     * @details The buffers parked there were sized for an older geometry.
      */
     void rechunk_drain_reuse_list(this Derived& self, unsigned int new_size);
 

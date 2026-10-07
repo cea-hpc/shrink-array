@@ -22,17 +22,15 @@
 #include "fast_allocators/tc_allocator.h"                // VTCTypeAllocator, TCTypeAllocatorEBC
 #include "fast_allocators/internal/alloc_config.h"       // constexpr mirror of STD_ALLOC
 #include "fast_allocators/internal/static_const_array.h" // the declarations defined here
-#include "fast_allocators/internal/pmp_alloc.h"          // PMP_MAX_THREADS (was in static_const_array_inline.h)
+#include "fast_allocators/internal/pmp_alloc.h"          // PMP_MAX_THREADS
 #include "fast_allocators/internal/svalloc.h"            // svalloc, svcalloc, svfree
 
 InfoFreeElt StaticConstArray::tab_info_free_elt;
-InfoFreeElt StaticConstArray::tab_info_free_elt_align;
 
 /// @copydoc InfoFreeElt::InfoFreeElt
 /// @note Sized by PMP_MAX_THREADS at construction (before main). A rank past
-///       it -- a team raised later -- is not batched: freeBlock() and
-///       freeBlockAlign() free its blocks at once rather than index past
-///       these arrays.
+///       it -- a team raised later -- is not batched: freeBlock() frees its
+///       blocks at once rather than index past these arrays.
 InfoFreeElt::InfoFreeElt()
 {
     // Serially there is no batching (freeBlock never enters the batching
@@ -64,6 +62,7 @@ InfoFreeElt::~InfoFreeElt()
     svfree(compt);
     svfree(somme_sz);
 }
+
 /// @copydoc StaticConstArray::clearInfoFreeElt(int)
 void StaticConstArray::clearInfoFreeElt(int thr_rank)
 {
@@ -72,17 +71,6 @@ void StaticConstArray::clearInfoFreeElt(int thr_rank)
         const int szl  = tab_info_free_elt.tab_sz[thr_rank][k];
         void*     ptrl = tab_info_free_elt.tab_ptr[thr_rank][k];
         freeBlockWithInt(szl, ptrl);
-    }
-}
-
-/// @copydoc StaticConstArray::clearInfoFreeEltAlign
-void StaticConstArray::clearInfoFreeEltAlign(int thr_rank)
-{
-    for (int k = 0; k < tab_info_free_elt_align.compt[thr_rank]; ++k)
-    {
-        const int szl  = tab_info_free_elt_align.tab_sz[thr_rank][k];
-        void*     ptrl = tab_info_free_elt_align.tab_ptr[thr_rank][k];
-        freeBlockWithAlignInt(szl, ptrl);
     }
 }
 
@@ -97,11 +85,6 @@ void StaticConstArray::clearInfoFreeElt()
     {
         clearInfoFreeElt(thr_rank);
         tab_info_free_elt.reset(thr_rank);
-    }
-    for (int thr_rank = 0; thr_rank < tab_info_free_elt_align.nb_thr; ++thr_rank)
-    {
-        clearInfoFreeEltAlign(thr_rank);
-        tab_info_free_elt_align.reset(thr_rank);
     }
 }
 

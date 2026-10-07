@@ -718,23 +718,6 @@ bool analyze_ring_sweep()
     std::cout << "⚠️ Detected overlaps: " << overlaps.size() << "\n";
     std::cout << "Timestamps relative to min_start = " << min_start << "\n";
 
-    #if 0
-    for (const auto& o : overlaps)
-    {
-        if (o.fast_idx >= fast_intervals[o.fast_tid].size() || o.comp_idx >= compress_intervals[o.comp_tid].size())
-        {
-            std::cerr << "❌ Invalid overlap index for TID " << o.fast_tid << " or " << o.comp_tid << "\n";
-            continue;
-        }
-        const Interval& fiv = fast_intervals[o.fast_tid][o.fast_idx];
-        const Interval& civ = compress_intervals[o.comp_tid][o.comp_idx];
-
-        std::cout << "FastPath TID " << std::setw(4) << o.fast_tid << " [" << std::setw(8) << (fiv.start - min_start)
-                  << " - " << std::setw(8) << (fiv.end - min_start) << "]"
-                  << "  intersects with Compression TID " << std::setw(4) << o.comp_tid << " [" << std::setw(8)
-                  << (civ.start - min_start) << " - " << std::setw(8) << (civ.end - min_start) << "]\n";
-    }
-    #endif
     // Long fast-path durations are NOT a serious signal: 1-2 ms on HPC
     // machines is dominated by cold-path costs (first-touch page faults,
     // NUMA migration, allocator pool contention), none of them a

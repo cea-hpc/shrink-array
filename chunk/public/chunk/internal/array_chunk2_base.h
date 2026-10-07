@@ -37,12 +37,12 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     using Base = ArrayChunkBase<Derived>;
 
   public:
-    using Traits       = Base::Traits;
-    using chunk_type   = Base::chunk_type;
-    using manager_type = Base::manager_type;
-    using T            = Base::T;
-    using ind_type     = Base::ind_type;
-    using proxy_type   = Base::proxy_type;
+    using Traits       = Base::Traits;       ///< Traits specialisation of the concrete array.
+    using chunk_type   = Base::chunk_type;   ///< Chunk type held in chunk_list.
+    using manager_type = Base::manager_type; ///< Per-type manager owning the compression machinery.
+    using T            = Base::T;            ///< Stored element type.
+    using ind_type     = Base::ind_type;     ///< Signed global index type.
+    using proxy_type   = Base::proxy_type;   ///< Write proxy returned by the non-const accessors.
 
     using Base::chunk_list;
     using Base::m_size;
@@ -80,23 +80,9 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         self.chunk_list[num_chunk].alloc_chunk(self.get_metadata(i), thr_rank);
     }
 
-    // ── Drain deferred writes still targeting this array's chunks ──────────
-    // MUST be called before ANY operation that frees, moves, or reallocates
-    // chunk_list (clear, resize growth, move/copy assignment). The deferred
-    // maps (CompressionManager::deferred_chunk_per_thread + the per-thread op
-    // maps) are global and keyed by chunk pointer, so they outlive this array
-    // and survive chunk_list reallocation. Invalidating chunk storage without
-    // draining leaves DANGLING chunk references that a later flush_deferred —
-    // triggered by compression on ANY array — dereferences (SEGV in
-    // values_load() from a stale deferred op after a resize()/reassignment).
-    //
-    // Defined here in the CRTP base so BOTH ArrayChunk2 and ArrayChunk2A get it
-    // (each resolves chunk_type::CompressionManagerType to its own manager).
-    // flush_chunk_all_ranks() drains a chunk across all ranks AND erases it
-    // from deferred_chunk_per_thread. The dirty bit is reliable for the
-    // deferred path (it marks with the CHUNK index via mark_chunk_dirty(
-    // ctx->num_chunk)). Serial-context only.
-    // flush_pending_deferred_ops() lives in ParallelSupportCommon / ...Serial
+    // flush_pending_deferred_ops() -- the drain of the deferred writes queued
+    // on this array's chunks, due before anything frees, moves or reallocates
+    // chunk_list -- lives in ParallelSupportCommon / ...Serial
     // (array_chunk_parallel_common.h), which the concrete arrays mix in. Reach
     // it through `self` (deducing this): it is a sibling base of this one, so
     // `this->` cannot see it.
@@ -208,13 +194,6 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         {
             lbd();
         }
-    }
-
-  private:
-    /// @brief Is the chunk holding element @p i compressed to the first value?
-    [[nodiscard]] bool is_cst_val1(ind_type i) const noexcept
-    {
-        return chunk_list[this->chunk_index_of(i)].is_cst_val1();
     }
 };
 

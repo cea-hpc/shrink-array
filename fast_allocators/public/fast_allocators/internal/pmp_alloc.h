@@ -10,10 +10,10 @@
  *     http://www.apache.org/licenses/LICENSE-2.0
  */
 
-// Portable thread-count / rank / parallel-region macros for the fast allocator.
-// Extracted from static_const_array_inline.h so they are available to any TU that
-// needs them (e.g. static_const_array.cpp's InfoFreeElt ctor) independently of the
-// inline-header include order. Mirrors chunk's public/chunk/PMP_CHUNK.h.
+// Portable thread-count / rank / parallel-region macros for the fast allocator:
+// the StaticConstArray ladder (static_const_array.h, its _inline.h, and
+// InfoFreeElt's constructor in static_const_array.cpp). Mirrors chunk's
+// public/chunk/PMP_CHUNK.h.
 
 #ifdef _OPENMP
     #include <omp.h> // omp_get_max_threads, omp_get_thread_num, omp_in_parallel

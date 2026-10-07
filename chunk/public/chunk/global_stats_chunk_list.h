@@ -103,7 +103,7 @@ class GlobalStatsChunkList
     }
 
   private:
-    /// @brief @p bytes as a human-readable string (KiB / MiB / GiB).
+    /// @brief @p bytes as a human-readable string (Ko / Mo / Go, powers of 1024).
     static std::string format_memory(long double bytes)
     {
         const long double kib = bytes / 1024.0L;

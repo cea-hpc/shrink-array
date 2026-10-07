@@ -423,7 +423,8 @@ class alignas(64) TCSlab
 using TCAllocator = TCSlab<FreeLinks::InPayload>;
 
 /// @brief Slab with its free list in a side array: the value pools of OpenMP
-///        builds, whose emptied slabs reclaim_empty_slabs_now() madvises away.
+///        builds, whose emptied slabs an EmptySlabSweep can madvise away
+///        (TCTypeCAllocator::collect_empty_slabs).
 using TCCAllocator = TCSlab<FreeLinks::SideArray>;
 
 #ifndef _OPENMP
@@ -801,7 +802,7 @@ class TCSlabPool
             auto* elements = new ElementType[ElementSize]; // ElementSize is a COUNT here
             if constexpr (Derived::zero_std_alloc)
             {
-                memset(elements, 0, ElementSize * sizeof(ElementType));
+                std::memset(elements, 0, ElementSize * sizeof(ElementType));
             }
             return elements;
         }
@@ -1000,27 +1001,17 @@ class TCSlabPool
         arena_kind = k;
     }
 
-    /// @brief Rank (thread) this instance serves; stamped into every slab it
-    ///        creates (TCSlab::owner_rank). -1 = unranked (serial pools).
-    [[nodiscard]] int rank() const noexcept
-    {
-        return rank_;
-    }
-
-    /// @brief Set rank(); before the first slab is created.
+    /// @brief Set the rank (thread) this instance serves, stamped into every
+    ///        slab it creates (TCSlab::owner_rank); before the first slab.
+    ///        -1, the default, means unranked (serial pools).
     void set_rank(int rank) noexcept
     {
         rank_ = rank;
     }
 
-    /// @brief Affinity key this instance serves (0 = shared pool of the rank);
-    ///        stamped into its slabs as owner_key.
-    [[nodiscard]] unsigned key() const noexcept
-    {
-        return key_;
-    }
-
-    /// @brief Set key(); before the first slab is created.
+    /// @brief Set the affinity key this instance serves (0, the default, is
+    ///        the rank's shared pool), stamped into its slabs as owner_key;
+    ///        before the first slab.
     void set_key(unsigned k) noexcept
     {
         key_ = k;
@@ -1145,14 +1136,14 @@ class TCSlabPool
                 // live block's page is dropped and reads back as zeros. Left
                 // mapped, the same accounting error is harmless.
                 //
-                // Pages are given back only by
-                // TCTypeCAllocator::reclaim_empty_slabs_now(), which is called
-                // on a set the caller KNOWS abandoned by construction (the
-                // (key, size) set a re-chunked array just left, an array's
-                // teardown) -- a slab with nn_ref == 0 there is empty because no
-                // block of that set can be live any more, not because a counter
-                // says so. The emptied-slab case is unchanged otherwise: the
-                // slab stays in `block`, still allocatable.
+                // Pages are given back only through
+                // TCTypeCAllocator::collect_empty_slabs() and its sweep, run on
+                // a set the caller KNOWS abandoned by construction (the
+                // (key, size) set a re-chunked array just left) -- a slab with
+                // nn_ref == 0 there is empty because no block of that set can
+                // be live any more, not because a counter says so. The
+                // emptied-slab case is unchanged otherwise: the slab stays in
+                // `block`, still allocatable.
                 (void)kept;
             },
             [this](Slab* evicted) noexcept { evict_slab(evicted); });
@@ -1297,7 +1288,7 @@ class TCTypeAllocator final : public VTCTypeAllocator, public TCSlabPool<TCTypeA
  *
  * @details The OpenMP value pools: ::TCSlabPool over slabs that keep their free
  *          list outside the payload, so an emptied slab can be madvised away
- *          (reclaim_empty_slabs_now(), its own part). Its slabs draw from the
+ *          (collect_empty_slabs(), its own part). Its slabs draw from the
  *          value arena; init() creates none; it does not enrol in the
  *          ::VTCTypeAllocator report registry; under STD_ALLOC it zero-fills
  *          what it hands out.
@@ -1319,36 +1310,25 @@ class alignas(64) TCTypeCAllocator : public TCSlabPool<TCTypeCAllocator<ElemT>, 
     static constexpr bool zero_std_alloc = true;
     /// @brief For the [MUNMAP] trace.
     static constexpr const char* pool_name = "TCCAllocator";
-    /// @brief The batch that reclaim_empty_slabs_now() and the re-chunk sweeps
-    ///        feed: one madvise per run of adjacent empty slabs.
+    /// @brief The batch collect_empty_slabs() feeds: one madvise per run of
+    ///        adjacent empty slabs.
     using empty_slab_sweep = fast_alloc::EmptySlabSweep<TCCAllocator>;
 
     /// @brief Empty and unusable until init(); its slabs draw from the value arena.
     TCTypeCAllocator() : TCSlabPool<TCTypeCAllocator<ElemT>, ElemT, TCCAllocator>(fast_alloc::ArenaKind::Value) {}
 
-    /// @brief Give back the pages of every slab of this instance that currently
-    ///        holds no block, and report how many were advised.
-    /// @details manage_full_empty() only looks at a slab at the instant one of
-    ///          its blocks is freed, so a slab that ends up empty without that
-    ///          transition being seen stays resident for good (after a re-chunk,
-    ///          a whole abandoned (key, size) set of empty slabs, never advised).
-    ///          This is the sweep that closes that gap; call it at the points
-    ///          where a whole set is known to have been released (the re-chunk
-    ///          drain, an array's teardown), not on the hot path.
-    std::size_t reclaim_empty_slabs_now() noexcept
-    {
-        empty_slab_sweep sweep;
-        collect_empty_slabs(sweep);
-        return sweep.flush();
-    }
-
-
     /// @brief Hand every slab of this instance that currently holds no block to
     ///        @p sweep, which advises them away at its flush().
-    /// @details Lets a caller gather several instances (every rank, several
-    ///          keys) into ONE sweep, so runs of adjacent slabs merge across
-    ///          instances. Same preconditions as reclaim_empty_slabs_now(),
-    ///          held until the sweep is flushed.
+    /// @details manage_full_empty() only looks at a slab at the instant one of
+    ///          its blocks is freed, and never madvises it, so a slab that ends
+    ///          up empty stays resident (after a re-chunk, a whole abandoned
+    ///          (key, size) set of empty slabs). This is the sweep that closes
+    ///          that gap; call it where a whole set is known to have been
+    ///          released (the re-chunk drain), not on the hot path. A caller
+    ///          may gather several instances (every rank, several keys) into
+    ///          ONE sweep, so runs of adjacent slabs merge across instances.
+    ///          The preconditions are EmptySlabSweep's, held until the sweep is
+    ///          flushed.
     /// @return Number of slabs handed over. The CHUNK_RECLAIM_MIN_SLABS floor
     ///         is applied by the sweep, to all instances together.
     std::size_t collect_empty_slabs([[maybe_unused]] empty_slab_sweep& sweep) noexcept
@@ -1393,10 +1373,6 @@ template <unsigned int bytes>
 using free_index_t = std::conditional_t<bytes == 1, signed char, std::conditional_t<bytes == 2, short, int>>;
 
 
-/// @brief Maps an element type to the allocator that serves it. Specialised elsewhere.
-template <typename V>
-struct TypeAllocator;
-
 /**
  * @brief One slab whose element and block sizes are template parameters.
  *
@@ -1418,7 +1394,7 @@ class TCAllocatorEB
     enum
     {
         ElementSize     = ElementBytes,
-        Log2ElementSize = static_cast<int>(std::bit_width(ElementBytes)) - 1,
+        Log2ElementSize = std::bit_width(ElementBytes) - 1,
         BlockSize       = BlockBytes,
         BlockSizePOT    = static_cast<int>(std::bit_ceil(BlockBytes)), // int: the mask below must sign-extend
         BlockAddrMask   = ~(BlockSizePOT - 1),
@@ -1651,7 +1627,6 @@ class TCAllocatorEB
  *
  * @tparam ElementSize Element size in bytes.
  * @tparam BlockSize Block size in bytes.
- * @tparam T Unused; kept so the template signature stays stable.
  *
  * @note This is what StaticConstArray's size ladder is built from -- one
  *       instance per small block size (4, 8, 24, ... bytes).
@@ -1660,7 +1635,7 @@ class TCAllocatorEB
  *       alloc() makes one. Seeding all of StaticConstArray's buckets eagerly
  *       reserved ~104 MiB of address space before any of them was needed.
  */
-template <unsigned int ElementSize, unsigned int BlockSize, typename T = int>
+template <unsigned int ElementSize, unsigned int BlockSize>
 class TCTypeAllocatorEBC
 {
   public:
@@ -1668,7 +1643,7 @@ class TCTypeAllocatorEBC
     using TCAllocatorEBT = TCAllocatorEB<ElementSize, BlockSize>;
 
     /// @brief No slab yet; the first alloc() creates one. No init() to call.
-    TCTypeAllocatorEBC() : block_full(nullptr), block(nullptr) {}
+    TCTypeAllocatorEBC() = default;
 
     /// @brief Deletes every slab, the reserve included.
     ~TCTypeAllocatorEBC()
@@ -1803,12 +1778,11 @@ class TCTypeAllocatorEBC
     /**
      * @brief Re-file @p slab after a free, EBC's own way.
      *
-     * @details Deliberately NOT ::sl_manage_full_empty. Three differences, kept
-     *          so the concurrent cst_val2 path behaves exactly as it did:
-     *          a slab that comes back from full returns immediately instead of
-     *          also being tested for emptiness; there is no never-release branch
-     *          and no MADV_DONTNEED, the reserve being a fixed static array; and
-     *          a slab past the reserve is always deleted outright.
+     * @details Deliberately NOT ::sl_manage_full_empty. Three differences: a
+     *          slab that comes back from full returns immediately instead of
+     *          also being tested for emptiness; there is no never-release
+     *          branch, the reserve being a fixed inline array; and a slab past
+     *          the reserve is always deleted outright.
      */
     void manage_full_empty(TCAllocatorEBT* slab) noexcept
     {
@@ -1849,8 +1823,10 @@ class TCTypeAllocatorEBC
         sl_insert(list, node);
     }
 
-    TCAllocatorEBT* block_full; ///< Slabs with no room left.
-    TCAllocatorEBT* block; ///< Slabs with room. Null until the first alloc(), and again whenever the last one fills.
+    TCAllocatorEBT* block_full{nullptr}; ///< Slabs with no room left.
+    /// @brief Slabs with room. Null until the first alloc(), and again whenever
+    ///        the last one fills.
+    TCAllocatorEBT* block{nullptr};
 
     int                                             nb_block_empty{0}; ///< Reserve occupancy.
     std::array<TCAllocatorEBT*, nb_max_block_empty> block_empty{};     ///< The reserve, inline.

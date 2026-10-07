@@ -18,14 +18,11 @@
 
 #include "chunk/config.h" // chunk_config::tuning_level
 /**
- * @class Chunk2Def
- * @brief Configuration constants for buffer sizing and compression thresholds.
- * Thresholds are adjusted based on the chunk_config::tuning_level.
+ * @brief Compile-time settings of Chunk2: the compression-list thresholds,
+ *        adjusted by chunk_config::tuning_level.
  */
-
-class Chunk2Def
+struct Chunk2Def
 {
-  public:
     // --- Compression List Settings ---
     // Level 1: Trigger compression every 2 modified chunks (Extreme stress)
     // Level 3: Chunk2A's floor (500, was 2000). At 64 threads the floor IS the
@@ -43,25 +40,4 @@ class Chunk2Def
                                                             : (chunk_config::tuning_level == 3)
                                                                 ? 50 // Chunk2A's (was 20)
                                                                 : 100;
-
-  private:
-    // Upper bound on CHUNK_SIZE. This is NOT the chunk geometry (use
-    // shrink_array::__chunk_size for that); it is only a sanity bound for the
-    // example/config validation. The real hard limit is the per-chunk counter
-    // capacity (unsigned short) enforced by static_assert in
-    // conditional_counter.h, so 65535 is the true maximum. (Was 256/128, a
-    // stale value that predates the constexpr-geometry refactor and wrongly
-    // rejected CHUNK_SIZE=512.)
-    constexpr static int size_max = 65535;
-
-    // --- Buffer Reuse Settings (Free lists) ---
-    // Level 1: Keep only 4 blocks in cache to force real alloc/free cycles
-    constexpr static int size_min_buffer_reuse = (chunk_config::tuning_level == 1)   ? 4
-                                                 : (chunk_config::tuning_level == 3) ? 10000
-                                                                                     : 500;
-
-    // Level 1: Minimal recycling factor
-    constexpr static int factor_div_nb_chunk_for_buffer_reuse = (chunk_config::tuning_level == 1)   ? 2000
-                                                                : (chunk_config::tuning_level == 3) ? 20
-                                                                                                    : 100;
 };

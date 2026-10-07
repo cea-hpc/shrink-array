@@ -67,20 +67,15 @@ class ManagerChunk;
  * @tparam T        stored element type
  * @tparam ind_type index type used for sizes and element positions
  */
-
 template <ArrayChunkElement T, typename ind_type>
 class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
                     public ParallelSupport2<ArrayChunk2<T, ind_type>>,
                     public FastBlockSupport2<ArrayChunk2<T, ind_type>>,
                     public RechunkHooks2<ArrayChunk2<T, ind_type>>
 {
-  private:
-    static constexpr bool is_bool = is_bool_like_v<T>; // bool and Bit (bit.h)
-
   public:
     using Base2      = ArrayChunk2Base<ArrayChunk2>;   ///< Chunk2/2A common base (dirty bitset, second-value plumbing).
     using Base       = ArrayChunkBase<ArrayChunk2>;    ///< Base shared by every variant.
-    using Parallel2  = ParallelSupport2<ArrayChunk2>;  ///< OpenMP-only members (deferred-op flush).
     using FastBlock2 = FastBlockSupport2<ArrayChunk2>; ///< Fast-block compression pass.
     using Hooks2     = RechunkHooks2<ArrayChunk2>;     ///< Re-chunk hooks (dynamic geometry).
 
@@ -130,7 +125,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     using Hooks2::rechunk_seed_fresh;
     using Hooks2::rechunk_swap_identity;
 
-    static constexpr bool is_not_bool = !is_bool; ///< T is neither bool nor Bit: it has a second value.
+    static constexpr bool is_not_bool = !is_bool_like_v<T>; ///< T is neither bool nor Bit: it has a second value.
 
     /**
      * @brief Build an array of @p sz elements.
@@ -398,6 +393,8 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     }
 
   private:
+    static constexpr bool is_bool = is_bool_like_v<T>; // bool and Bit (bit.h)
+
     /**
      * @brief Register the array and allocate its storage.
      * @param sz element count

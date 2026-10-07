@@ -17,9 +17,8 @@
 
 #pragma once
 
-#include <cstdio>   // stderr
-#include <iostream> // std::cerr (DEBUG_TRACE streams an expression of any type)
-#include <print>    // std::println
+#include <cstdio> // stderr
+#include <print>  // std::println
 
 // CHUNK_HAVE_STACKTRACE: set by chunk/CMakeLists.txt when the standard library
 // has std::stacktrace (and linked with the archive that holds it).
@@ -31,8 +30,6 @@
     #include <cxxabi.h>   // abi::__cxa_demangle
     #include <execinfo.h> // backtrace, backtrace_symbols
 #endif
-
-#define DEBUG_TRACE(x) std::cerr << " ... " #x " = " << (x) << "\n";
 
 /**
  * @brief Print the calling thread's backtrace (up to 100 frames) to stderr.

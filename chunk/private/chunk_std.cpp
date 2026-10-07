@@ -88,7 +88,7 @@ void ChunkPoolParallelInterface<false, AllT>::delete_chunk_allocator()
 {
     if constexpr (build_config::use_fast_alloc)
     {
-        auto& ens_type_chunk = SingletonChk<AllT>::getRef();
+        const auto& ens_type_chunk = SingletonChk<AllT>::getRef();
         ens_type_chunk.delete_chunk_allocator();
     }
 }

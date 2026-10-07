@@ -130,6 +130,7 @@ extern void destroy_block_chunk();
 // Build-agnostic free functions over the policy above. Declared -- and defined,
 // in chunk_std.cpp -- in EVERY build, which is the point: calling any of them
 // links in both models.
+/// @brief ChunkPoolParallelInterface<>::delete_chunk_allocator() of this build.
 extern void delete_chunk_allocator();
 /// @brief ChunkPoolParallelInterface<>::clear_all_list_block_free_thr() of this build.
 extern void clear_all_list_block_free_thr();
@@ -171,7 +172,6 @@ extern void release_chunk_pools();
  *          see their comments; a desynchronised counter compresses a chunk that
  *          is not actually all-zero, and later reads return the constant.
  */
-
 template <bool EnableCounter>
 class ChunkCounterPolicy
 {
@@ -346,9 +346,8 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
  * @tparam Derived CRTP derived chunk type (Chunk<T>)
  */
 template <typename T, typename Derived>
-class ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
+struct ChunkOmpPolicy<T, Derived, false> : public ChunkBase<T, Derived>
 {
-  public:
     using Base = ChunkBase<T, Derived>;
     using Base::values;
 
@@ -492,7 +491,6 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived>
  *       buffer with the wrong count is the failure mode the candidate lists
  *       guard against by carrying it -- see TChunk.h.
  */
-
 template <typename T>
 class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_counter>,
               public ChunkFastCompPolicy<T, Chunk<T>, chunk_config::use_fast_block_compression>

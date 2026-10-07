@@ -43,8 +43,10 @@
 #include <cstddef> // std::size_t
 #include <cstdint> // SIZE_MAX
 #include <cstdio>  // std::fprintf, std::fflush
-#include <cstdlib> // posix_memalign, std::malloc, std::calloc, std::free, std::abort
+#include <cstdlib> // std::malloc, std::calloc, std::free, std::abort
 #include <cstring> // std::memset, std::strerror
+
+#include <stdlib.h> // posix_memalign (POSIX: <cstdlib> need not declare it)
 
 #ifndef SIMD_SZ
 
@@ -100,18 +102,6 @@ out_of_memory(const char* what, std::size_t n, std::size_t elem, int err) noexce
         out_of_memory(what, n, elem, 0);
     }
     return n * elem;
-}
-
-/// @brief @p bytes bytes aligned on #alignment, or null. The raw primitive:
-///        the sv*_align functions below call aligned_or_die(), which aborts.
-[[nodiscard]] inline void* aligned_bytes(std::size_t bytes) noexcept
-{
-    void* p = nullptr; // the only object posix_memalign may legally write
-    if (posix_memalign(&p, alignment, bytes) != 0)
-    {
-        p = nullptr;
-    }
-    return p;
 }
 
 namespace detail

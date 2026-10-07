@@ -51,6 +51,7 @@
 #endif
 #include <unordered_map> // std::unordered_map
 #include <unordered_set> // std::unordered_set
+#include <system_error>  // std::errc (std::from_chars)
 
 #include "fast_allocators/internal/alloc_config.h" // thp_advise (CHUNK_THP), reclaim_min_empty_slabs
 
@@ -330,8 +331,8 @@ bool advise_one_slab(Slab* slab) noexcept
  *          value family keeps links in a side array, the op/ctx family threads
  *          them through the freed elements and would be destroyed by this.
  *
- *          The last page holds the self back-pointer addr_to_block() reads on
- *          every free, and it is advised too. Kept resident, it is 6% of a
+ *          The last page holds the self back-pointer TCSlab::slab_from() reads
+ *          on every free, and it is advised too. Kept resident, it is 6% of a
  *          1 MiB slab, and at scale the whole residue: 17 205 slabs emptied by
  *          the four re-chunks of one iteration (64 threads, 10^9 elements, v1)
  *          kept 1 075 MB that way -- all of what the re-chunk then failed to
@@ -438,6 +439,8 @@ class EmptySlabSweep
             SweepTimer()                                = default;
             SweepTimer(const SweepTimer&)               = delete;
             SweepTimer& operator=(const SweepTimer&)    = delete;
+            SweepTimer(SweepTimer&&)                    = delete;
+            SweepTimer& operator=(SweepTimer&&)         = delete;
             ~SweepTimer()
             {
                 const auto dt = std::chrono::steady_clock::now() - start;
@@ -514,12 +517,6 @@ class EmptySlabSweep
         items_.clear();
         runs_.clear();
         return slabs;
-    }
-
-    /// @brief Slabs collected and not yet flushed.
-    [[nodiscard]] std::size_t pending() const noexcept
-    {
-        return items_.size();
     }
 
   private:
@@ -600,9 +597,6 @@ class SlabArena
      * @brief Hand out @p size bytes aligned to @p align.
      * @param size  Slab size in bytes; also the free-list key it is recycled under.
      * @param align Required alignment of the slab.
-     * @param fresh If not null, set to whether the slab is fresh from mmap
-     *        (never handed out, so still all zeros) or recycled from the free
-     *        list (holds its previous occupant's bytes).
      * @param rank Rank asking (TCSlab::owner_rank), -1 if none: a slab a
      *        re-chunk recycled (recycle_batch) is taken first from this rank's
      *        list, then from the others', before the free list and the cursor.
@@ -616,13 +610,9 @@ class SlabArena
      *          check is unconditional and fatal on purpose: it is cheap here,
      *          and silent recovery would hide exactly the bug worth finding.
      */
-    void* allocate(std::size_t size, std::size_t align, bool* fresh = nullptr, int rank = -1)
+    void* allocate(std::size_t size, std::size_t align, int rank = -1)
     {
         const std::scoped_lock lk(mtx_);
-        if (fresh != nullptr)
-        {
-            *fresh = false;
-        }
 
         // A slab a re-chunk gave back (recycle_batch), this rank's first: its
         // pages are resident, and were first touched by this rank.
@@ -676,10 +666,6 @@ class SlabArena
             aligned = align_up(cursor_, align);
         }
         cursor_ = aligned + size;
-        if (fresh != nullptr)
-        {
-            *fresh = true; // below the cursor was never handed out: mmap's zeros
-        }
         live_.insert(aligned);
         bytes_live_ += size;
         bytes_high_ = std::max(bytes_high_, bytes_live_);
@@ -844,8 +830,7 @@ class SlabArena
         for (std::size_t first = 0; first < spans.size();)
         {
             std::size_t last = first;
-            while (coalesce && last + 1 < spans.size() &&
-                   spans[last].begin + spans[last].len == spans[last + 1].begin)
+            while (coalesce && last + 1 < spans.size() && spans[last].begin + spans[last].len == spans[last + 1].begin)
             {
                 ++last;
             }
@@ -1067,10 +1052,10 @@ class SlabArena
     /// @brief Recycled slabs, keyed by their exact allocation size. Taken by
     ///        allocate() before #free_lists_. Never holds a live slab.
     std::unordered_map<std::size_t, RecycledLists> recycled_;
-    std::size_t recycled_in_      = 0; ///< Slabs ever given to recycle_batch().
-    std::size_t recycled_out_     = 0; ///< ... and taken back by allocate().
-    std::size_t recycled_foreign_ = 0; ///< ... by another rank than the giver.
-    std::size_t recycled_advised_ = 0; ///< ... advised before being taken.
+    std::size_t                                    recycled_in_      = 0; ///< Slabs ever given to recycle_batch().
+    std::size_t                                    recycled_out_     = 0; ///< ... and taken back by allocate().
+    std::size_t                                    recycled_foreign_ = 0; ///< ... by another rank than the giver.
+    std::size_t                                    recycled_advised_ = 0; ///< ... advised before being taken.
 
     std::size_t        bytes_live_    = 0; ///< Bytes currently handed out.
     std::size_t        bytes_high_    = 0; ///< High-water mark of #bytes_live_.
@@ -1124,7 +1109,7 @@ inline SlabArena& value_arena()
  *          one shared one.
  *
  * @warning The default is Op. A pool that holds values or contexts has to say
- *          so before its first slab -- @see TCTypeAllocator::set_arena.
+ *          so before its first slab -- @see TCSlabPool::set_arena.
  */
 enum class ArenaKind : std::uint8_t
 {

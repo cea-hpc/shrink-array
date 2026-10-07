@@ -728,14 +728,8 @@ void ArrayChunk2A<T, ind_type>::compress_int()
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2A<T, ind_type>::make_block_compression()
 {
-    //     if (!CHUNK_PMP_IN_PARALLEL_REGION)
-    //     {
-    // #pragma omp parallel
-    //         Chunk2A<T>::make_block_compression(CHUNK_PMP_THREAD_RANK, nullptr);
-    //     }
-    //     else
-    //     {
-    // we can do in // because tab_m_ptr_cst_val2 is not by thread
+    // Every rank's list, drained serially by the caller (no region opened
+    // here, no writer handshake: nullptr proxy).
     for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)
     {
         Chunk2A<T>::make_block_compression(thr, nullptr);
@@ -777,7 +771,6 @@ void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
         }
     }
 
-    //#pragma omp parallel for if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
     for (int i = old_nb_chunk; i < nb_chunk; ++i)
     {
         Proxy2A<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab, i, 0);
@@ -802,16 +795,6 @@ void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
             (*this)[i] = T{};
         }
     }
-    //     else
-    //     {
-    // #pragma omp for
-    //         for (int i = old_nb_chunk; i < nb_chunk; ++i)
-    //         {
-    //             Proxy2A<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab, i, 0);
-    //             Proxy2A<T>::tab_type_cst_val[num_tab][i] = is_val1;
-    //             Proxy2A<T>::BaseSpec::set(num_tab, i, 0);
-    //         }
-    //     }
 }
 
 } // namespace shrink_array

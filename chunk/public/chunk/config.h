@@ -90,7 +90,6 @@ inline constexpr bool not_use_openmp = !use_openmp;
 // superseded same-offset op still queued on the writer's own rank before a
 // direct write; and a writer drains its OWN rank once that rank's backlog
 // crosses deferred_drain_threshold.
-inline constexpr bool sync_on_read = true;
 
 // Backlog bound: a writer drains its own rank when that rank's pending-op
 // count crosses this threshold. Too small re-creates the per-write toll; too
@@ -398,7 +397,7 @@ inline constexpr bool ring_log_op_only = false;
 #endif
 
 /**
- * @brief Equivalent to HAVE_EMBEDDED_FAST_BLOCK_COMPRESSION.
+ * @brief Block compression with deferred writes.
  * True under OpenMP, the only mode where block-level deferred writes
  * are needed.
  * This is the primary compression-mode flag from which the two
@@ -471,16 +470,13 @@ inline constexpr bool asymmetric_dekker = false;
 
 /**
  * @brief Alias for use_fast_block_compression.
- * Equivalent to HAVE_EMBEDDED_FAST_BLOCK_COMPRESSION.
- * Both macros are always set/cleared together by the _OPENMP block
- * in chunk_define.h, so they are interchangeable. The name is kept
- * for clarity at call sites that reason about the counter mechanism.
+ * The name is kept for clarity at call sites that reason about the counter
+ * mechanism.
  */
 inline constexpr bool use_compression_without_counter = use_fast_block_compression;
 
 /**
  * @brief Complement of use_fast_block_compression.
- * Equivalent to HAVE_EMBEDDED_COMPRESSION_WITH_COUNTER.
  * Active in serial builds only.
  */
 inline constexpr bool use_compression_with_counter = !use_fast_block_compression;
@@ -505,30 +501,16 @@ inline constexpr bool stats = false;
 ///        drivers turn it off around their own passes (has_ompt builds; this
 ///        primary is the always-off stand-in for the others).
 template <bool Enabled>
-class OMPTcc
+struct OMPTcc
 {
-  public:
     /// @brief No switch to move.
     static void update([[maybe_unused]] bool state) noexcept {}
-
-  private:
-    /// @brief Always off.
-    static bool is_enabled() noexcept
-    {
-        return false;
-    }
-    /// @brief Complement of is_enabled().
-    static bool is_not_enabled() noexcept
-    {
-        return !is_enabled();
-    }
 };
 
 /// @brief The real switch, behind the process-wide ::g_ompt_suspended.
 template <>
-class OMPTcc<true>
+struct OMPTcc<true>
 {
-  public:
     /// @brief Set the switch.
     /// @details update(false) suspends the callbacks, update(true) resumes
     ///          them; they stay suspended while ANY thread holds a suspension.
@@ -547,37 +529,17 @@ class OMPTcc<true>
         {
         }
     }
-
-  private:
-    /// @brief Read the switch.
-    static bool is_enabled() noexcept
-    {
-        return ::g_ompt_suspended.load(std::memory_order_relaxed) == 0;
-    }
-    /// @brief Complement of is_enabled().
-    static bool is_not_enabled() noexcept
-    {
-        return !is_enabled();
-    }
 };
 
 /// @brief Run-time switch of the NaN check on written values (do_check
 ///        builds; this primary is the always-off stand-in for the others).
 template <bool Enabled>
-class CheckNaN
+struct CheckNaN
 {
-  public:
     /// @brief No switch to move.
     static void update([[maybe_unused]] bool state) noexcept {}
     /// @brief No check.
     static void maybe([[maybe_unused]] auto val, [[maybe_unused]] long i) noexcept {}
-
-  private:
-    /// @brief Always off.
-    static constexpr bool is_enabled() noexcept
-    {
-        return false;
-    }
 };
 
 /// @brief The real switch: maybe() checks while it is on.
@@ -600,12 +562,6 @@ class CheckNaN<true>
     }
 
   private:
-    /// @brief Compiled in (the switch may still be off at run time).
-    static constexpr bool is_enabled() noexcept
-    {
-        return true;
-    }
-
     static inline bool check_nan{true}; ///< the switch, on by default
 };
 

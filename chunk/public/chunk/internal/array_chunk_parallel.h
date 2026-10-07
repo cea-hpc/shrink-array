@@ -31,9 +31,6 @@
  *          use_fast_block_compression> carries the fast-block compression pass,
  *          whose gate is stricter than use_openmp.
  *
- *          The mixin also held clear_in_par(), an in-parallel teardown nothing
- *          called, with its per-thread "async reset" registries; both are gone.
- *
  * @see array_chunk_parallel_inline.h for the body
  * @see array_chunk_parallel_common.h for the shared part
  */

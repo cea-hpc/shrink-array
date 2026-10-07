@@ -27,8 +27,6 @@
 namespace shrink_array
 {
 
-//#define RING_LOG_DEBUG
-
 // ----------------------------- Simple ring log for debugging (lock-free-ish) -----------------------------
 enum EventCode : uint8_t
 {

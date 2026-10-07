@@ -63,7 +63,7 @@
 namespace shrink_array
 {
 
-/// @brief Chunks per allocation block, computed once by init_indexes().
+/// @brief Allocation block (slab) size in bytes, computed once by init_indexes().
 int ParamChunk::block_size;
 // No #ifdef _OPENMP around these two bodies, and the reason is the AllT
 // parameter of ParamChunkParallelInterface (see param_chunk.h, which carries

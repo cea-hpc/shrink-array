@@ -28,11 +28,6 @@
  *          (array_chunk_parallel.h, array_chunk2_parallel.h,
  *          array_chunk2A_parallel.h). The serial counterpart is a no-op.
  *
- *          This file also held the shared body of clear_in_par(), an in-parallel
- *          teardown with a deferred "async reset" of the chunk list. Nothing
- *          called it; it went, with its per-thread registries and the manager
- *          code that sized them.
- *
  * @see array_chunk_parallel_common_inline.h for the body
  */
 
@@ -62,12 +57,13 @@ class ParallelSupportCommon
      * @details Must run before anything frees or re-points chunk storage
      *          (clear(), resize(), rechunk_to(), swap()): a deferred op
      *          replayed later would dereference a chunk this array no longer
-     *          owns. The dirty bitset is the coarse pre-filter -- only marked
-     *          chunks are visited. Serial-context only (no concurrent writer or
-     *          compressor).
+     *          owns. One drain per rank (flush_deferred), not per chunk: it
+     *          also applies the ops queued on the other arrays of the same
+     *          (T, chunk type), still in order. Serial-context only (no
+     *          concurrent writer or compressor).
      *
-     * @param force When true, bypass the any_pending_ops() / dirty-bit gates
-     *              and flush EVERY chunk. Required before rechunk_to() swaps
+     * @param force When true, bypass the any_pending_ops() gate and drain
+     *              every rank regardless. Required before rechunk_to() swaps
      *              chunk_list away: an op queued on an old-geometry chunk is
      *              keyed by that chunk's address, so once the old vector is
      *              destroyed the op survives with a dangling key, gets a

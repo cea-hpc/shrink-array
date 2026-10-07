@@ -26,12 +26,11 @@
  *          rechunk_* hooks; v1 provides three of them and inherits the base
  *          defaults for the other three. Those three only ever run under
  *          RechunkSupport<Derived, true>::rechunk_to(), which does not exist in
- *          a static-geometry build — they were dead weight in the class for
- *          every reader of ArrayChunk.
+ *          a static-geometry build.
  *
  *          RechunkHooks<Derived, chunk_dynamic> splits them the same way as the
  *          algorithm they serve: the dynamic specialisation carries the real
- *          bodies (unchanged), the static one keeps the signatures as no-ops so
+ *          bodies, the static one keeps the signatures as no-ops so
  *          ArrayChunk's using-declarations stay valid in both modes.
  *
  * @note CRTP-shaped for consistency with the rest of the family, but the bodies

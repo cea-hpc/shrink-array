@@ -114,9 +114,9 @@ template <typename ChunkType>
 class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
 {
   public:
-    using chunk_type   = ChunkType;
-    using proxy_type   = ChunkTraits<ChunkType>::proxy_type;
-    using manager_type = ChunkTraits<ChunkType>::manager_type;
+    using chunk_type   = ChunkType;                            ///< Chunk type held in chunk_list.
+    using proxy_type   = ChunkTraits<ChunkType>::proxy_type;   ///< Proxy type owning the per-T registry.
+    using manager_type = ChunkTraits<ChunkType>::manager_type; ///< Per-T manager owning the allocators.
 
     /// @brief The chunk geometry: elements per chunk.
     [[nodiscard]] unsigned int chunk_size() const noexcept
@@ -271,6 +271,7 @@ class RegistryKeyCanary
 struct NoRegistryKeyCanary
 {
 };
+/// @brief ArrayChunkBase's canary base: RegistryKeyCanary in check builds, else the empty stand-in.
 using RegistryKeyCanaryBase = std::conditional_t<build_config::any_check, RegistryKeyCanary, NoRegistryKeyCanary>;
 
 } // namespace shrink_array

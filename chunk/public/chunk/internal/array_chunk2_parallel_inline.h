@@ -33,8 +33,6 @@ namespace shrink_array
 template <typename Derived>
 void FastBlockSupport2<Derived, true>::make_block_compression(this Derived& self)
 {
-    // bug in run time openmp llvm
-
     if constexpr (build_config::chunk_dynamic)
     {
         // The compressibility scan reads the active size; make it THIS array's
@@ -60,6 +58,9 @@ void FastBlockSupport2<Derived, true>::make_block_compression(this Derived& self
         }
     };
 
+    // No region opened here (the `omp parallel` form hit an LLVM OpenMP
+    // runtime bug): outside a region the caller drains every rank's list
+    // serially, inside one each thread drains its own.
     if (!CHUNK_PMP_IN_PARALLEL_REGION)
     {
         for (int thr = 0; thr < CHUNK_PMP_RANK_BOUND; ++thr)

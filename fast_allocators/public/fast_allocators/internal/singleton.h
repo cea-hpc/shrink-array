@@ -45,7 +45,23 @@ class Singleton
         return *getInstance();
     }
 
-  protected:
+    /**
+     * @brief Destroy the instance, if any; the next getInstance() recreates it.
+     * @warning Only once NO thread can touch the instance any more -- that
+     *          includes thread_local destructors, which run at thread or
+     *          process exit and may still reach it. Never from an atexit
+     *          handler or a static destructor: the instance is immortal by
+     *          design precisely because exit-time destruction raced those TLS
+     *          destructors. A pointer returned by an earlier getInstance() is
+     *          dangling afterwards.
+     */
+    static void deleteInstance()
+    {
+        const std::scoped_lock lock(unique_instance_mutex);
+        delete unique_instance.exchange(nullptr, std::memory_order_acq_rel);
+    }
+
+  private:
     /// IMMORTAL raw pointer (was std::unique_ptr<T>): created once with `new`
     /// under the mutex and NEVER deleted. A global unique_ptr's exit-time
     /// destructor races worker-thread TLS destructors that still touch the
@@ -62,7 +78,6 @@ class Singleton
     /// bookkeeping, every thread), so its steady state must not lock.
     static inline std::mutex unique_instance_mutex;
 
-  private:
     /// @brief The instance, created on first use (double-checked locking).
     /// @return Never null.
     static T* getInstance()
@@ -85,21 +100,5 @@ class Singleton
             unique_instance.store(instance, std::memory_order_release);
         }
         return instance;
-    }
-
-    /**
-     * @brief Destroy the instance, if any; the next getInstance() recreates it.
-     * @warning Only once NO thread can touch the instance any more -- that
-     *          includes thread_local destructors, which run at thread or
-     *          process exit and may still reach it. Never from an atexit
-     *          handler or a static destructor: the instance is immortal by
-     *          design precisely because exit-time destruction raced those TLS
-     *          destructors. A pointer returned by an earlier getInstance() is
-     *          dangling afterwards.
-     */
-    static void deleteInstance()
-    {
-        const std::scoped_lock lock(unique_instance_mutex);
-        delete unique_instance.exchange(nullptr, std::memory_order_acq_rel);
     }
 };

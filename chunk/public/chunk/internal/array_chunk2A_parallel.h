@@ -27,9 +27,6 @@
  *          flush_pending_deferred_ops() (ParallelSupportCommon, shared by the
  *          three variants), a no-op in the serial specialisation.
  *
- *          The mixin also held clear_in_par(), an in-parallel teardown nothing
- *          called, with its per-thread "async reset" registries; both are gone.
- *
  * @see array_chunk_parallel.h, array_chunk2_parallel.h for the other two variants
  */
 
