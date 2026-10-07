@@ -1185,6 +1185,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      * @brief Drain pass 1 for one rank: sort rank @p rank's parked blocks into
      *        row @p rank of @p bucket by owning rank; blocks no slab claims stay
      *        parked. Touches rank @p rank's list and row only.
+     * @param per_thr the per-rank lists of parked blocks; rank @p rank's is
+     *        sorted, and keeps only the blocks no slab claims.
+     * @param n_thr team size: owning ranks outside [0, n_thr) are not sorted.
+     * @param rank the sorting rank; out of [0, @p n_thr) does nothing.
+     * @param geometry the allocator whose slab_of() finds each block's slab
+     *        and owner.
+     * @param bucket the drain's [sorting rank][owning rank] buckets.
      * @param col_dirty when given (the team drain), flag o is raised for every
      *        owning rank o that receives a block: column o needs a free pass.
      */
@@ -1233,6 +1240,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      * @brief Drain pass 2 for one rank: free column @p rank of @p bucket into
      *        rank @p rank's own allocator instances -- the only mutation of a
      *        slab chain, always by the rank that owns it.
+     * @param n_thr team size: the rows of @p bucket read.
+     * @param rank the owning rank, whose column is freed; out of [0, @p n_thr)
+     *        does nothing.
+     * @param geometry the allocator whose slab_of() finds each block's slab;
+     *        the block is freed into the instance that slab names as owner.
+     * @param bucket the drain's [sorting rank][owning rank] buckets, filled by
+     *        drain_sort_rank().
      * @param release_cells give the cells' capacity back (a one-off drain) or
      *        keep it (drain_reuse_list_for_size_team(), reused per slice).
      */

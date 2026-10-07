@@ -727,6 +727,7 @@ class SlabArena
      *        allocate() of rank @p rank. One lock for the whole batch.
      * @param blocks The slabs, as returned by allocate(); their headers are
      *        gone (TCSlabPool::recycle_empty_slabs). Null entries are skipped.
+     * @param n Number of entries in @p blocks.
      * @param size Their allocation size: the key allocate() looks them up by.
      * @param rank The rank that held them (-1 counts as 0): allocate(size, ..,
      *        rank) takes them back first, their pages having been first
