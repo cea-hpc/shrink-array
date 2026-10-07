@@ -382,7 +382,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief Check builds: the array's storage generation, and its value when
     ///        operator[] built this proxy (ArrayChunkBase::storage_generation_).
     ///        Empty elsewhere. gen stays null on the proxies the library builds
-    ///        for itself (set_value, deferred replays): those are never stale.
+    ///        for itself (deferred replays): those are never stale.
     struct StaleGuardOn
     {
         const unsigned int* gen  = nullptr;
@@ -607,10 +607,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     {
         return chunk.read_value(num);
     }
-
-    // Public API used by writers (your Proxy2::operator= / manage_core_op_eq)
-    // Use this to perform a write on (num_tab,num_chunk). The write_fn is the actual write body.
-    // internal generic function: executes write_body() on fast- or slow-path
 
     /**
      * @brief Run @p write_body on the fast path, or defer it.
@@ -856,6 +852,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         }
     }
 
+    /// @brief Arm the proxy with its array and chunk index; the table number
+    ///        is left unresolved (set_num_tab() looks it up).
+    /// @param array_ptr The owning array (its registry key).
+    /// @param num_chunk_ Chunk index within that array.
     void set_this_and_num_chunk(const void* array_ptr, int num_chunk_) const noexcept
     {
         ptr_on_array = array_ptr;
@@ -1176,6 +1176,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return derived();
     }
 
+    /// @brief Bitwise complement of the element's value (read through read_pure()).
     [[nodiscard]] T operator~() const noexcept
         requires std::is_integral_v<T>
     {
@@ -1288,9 +1289,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /**
-     * @brief Initialize per-chunk pointers except second value.
+     * @brief Set the candidate-list flag of chunk @p num_chunkl of array @p num_tabl.
+     * @param num_tabl Array (table) number.
+     * @param num_chunkl Chunk index within that array.
+     * @param v New flag value (0: not queued).
      */
-
     static void set_tab_is_inside_chunk_list_to_compress(int num_tabl, int num_chunkl, char v) noexcept
     {
         FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tabl][num_chunkl] = v;

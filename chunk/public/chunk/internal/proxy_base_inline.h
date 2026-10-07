@@ -64,6 +64,7 @@
 #include "chunk/internal/def_force_inline.h"             // FORCE_INLINE
 #include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h"   // WriteCompressSyncPolicy
+#include "chunk/internal/test_hooks.h"                   // TEST KNOB: test_hooks::forced_deferral
 
 namespace shrink_array
 {
@@ -567,7 +568,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
         // of this chunk) can still be replayed CONCURRENTLY by another thread's
         // gate/stage-2 walk -- and a replay bypasses the Dekker
         // (in_flush_replay), so the two writers are mutually invisible. Every
-        // replayer of rank r's ops holds xflush_lock[r]; holding OUR OWN rank
+        // replayer of rank r's ops holds xflush_lock_rank[r]; holding OUR OWN rank
         // lock for the duration of the write therefore excludes any concurrent
         // replay of our ops WITHOUT draining anything: the bulk-init deferral
         // regime keeps its ops queued (owner-recursive lock, uncontended there

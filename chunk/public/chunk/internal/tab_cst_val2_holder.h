@@ -32,8 +32,8 @@
  *    pointer another thread is holding.
  *  - GlobalVecHolder owns that chain, one instance per element type, plus the
  *    hash index that makes a lookup O(1) and the lock that serialises appends.
- *  - TabCstVal2Holder is the per-array handle: it caches the pointer its
- *    chunks currently use and owns the allocation strategy.
+ *  - TabCstVal2Holder is the surface the chunks talk to: stateless, it owns
+ *    the allocation strategy.
  *
  * @par Two paths, and only one of them takes a lock
  * Registering a value that is ALREADY known -- every type-2 chunk after the
@@ -221,22 +221,29 @@ struct SecondValueRef
 template <typename T>
 struct Sentinel
 {
+    Sentinel() = default;
     /// @brief Call GlobalVecHolder<T>::cleanup_all().
     ~Sentinel()
     {
         GlobalVecHolder<T>::cleanup_all();
     }
+    // One per type, a function-local static: neither copied nor moved.
+    Sentinel(const Sentinel&)            = delete;
+    Sentinel& operator=(const Sentinel&) = delete;
+    Sentinel(Sentinel&&)                 = delete;
+    Sentinel& operator=(Sentinel&&)      = delete;
 };
 
 /**
- * @brief The process-wide registry of second-constant arrays for one type.
+ * @brief The process-wide registry of second-value slots for one type.
  *
  * @tparam T Element type. One instance per type, all members static.
  *
  * @details Owns the Segment chain, the hash index over it, and the lock that
- *          serialises appends. Lives for the whole run: arrays registered here
- *          are shared by every Chunk2A that compressed to that value, so they
- *          cannot be freed while any of them is alive. #ref_count tracks that.
+ *          serialises appends. Lives for the whole run: a slot registered here
+ *          is shared by every Chunk2A compressed to that value, so the
+ *          registry cannot be freed while any array of the type is alive.
+ *          #ref_count tracks that.
  */
 template <typename T>
 class GlobalVecHolder
@@ -576,11 +583,11 @@ class GlobalVecHolder
     /**
      * @brief Drop one user; free the whole registry when it was the last.
      *
-     * @param nb_val2 Incremented by the number of arrays actually freed.
+     * @param nb_val2 Incremented by the number of registered values freed.
      *
      * @details Decrements #ref_count and returns immediately while other
      *          ArrayChunk2A<T> instances are alive. The last one out frees every
-     *          array and every segment, clears the index, then calls
+     *          segment, clears the index, gives the region back, then calls
      *          install_head() so #head is valid again for any later pass --
      *          without registering a user: #ref_count stays at 0, and the
      *          next generation of arrays is freed by its own last one out.
@@ -633,7 +640,7 @@ class GlobalVecHolder
 
         // Registry gone: drop the index so no stale pointer survives.
         index_clear();
-        region_reset(); // the arrays' pages, all at once
+        region_reset(); // the slots' pages, all at once
 
         // Reinstall an empty segment for any later pass. NOT init(): that
         // takes a reference, and one taken here, with no array alive, would
@@ -649,11 +656,11 @@ class GlobalVecHolder
      */
     static void cleanup_all()
     {
-        Segment<T>* seg = head.exchange(nullptr, std::memory_order_relaxed);
+        const Segment<T>* seg = head.exchange(nullptr, std::memory_order_relaxed);
         while (seg != nullptr)
         {
             // The slots are region memory, freed by region_reset() below.
-            Segment<T>* next = seg->next;
+            const Segment<T>* next = seg->next;
             delete seg;
             seg = next;
         }
@@ -693,7 +700,7 @@ class GlobalVecHolder
     static inline std::atomic<bool> index_degraded{false};
 
     static inline std::atomic<char*> region_begin{nullptr}; ///< Reservation start; null before init().
-    static inline std::size_t        region_stride = 0; ///< Bytes per array: every array is carved at a multiple of it.
+    static inline std::size_t        region_stride = 0; ///< Bytes per slot: every slot is carved at a multiple of it.
 
     /// @brief The value registered under each identifier, contiguous: what
     ///        a chunk's second value is read through on every write of a
@@ -736,9 +743,8 @@ class GlobalVecHolder
             std::cerr << "[cst_val2] cannot reserve the second-value region (" << (kRegionUsable >> 20U) << " MiB)\n";
             std::abort();
         }
-        // CHUNK_THP (experimental, off by default): read by every thread that
-        // writes a second value. Not under MM_PROTECT, whose per-array
-        // mprotect splits huge pages anyway. Advice only.
+        // CHUNK_THP (experimental, off by default): advice only. Not under
+        // MM_PROTECT, where the region stays PROT_NONE.
         if constexpr (!build_config::use_mm_protect)
         {
             if (cst2_thp_advise())
@@ -850,7 +856,7 @@ class GlobalVecHolder
     /**
      * @brief Empty the index and drop the cached tail.
      * @warning Single-threaded clear paths only, and at the very point the
-     *          backing arrays are freed -- an entry outliving its array is a
+     *          slots are given back -- an entry outliving its slot is a
      *          dangling pointer a lock-free reader will follow.
      */
     static void index_clear() noexcept
@@ -888,7 +894,7 @@ class GlobalVecHolder
 };
 
 /**
- * @brief The shared second-value arrays, as a chunk sees them.
+ * @brief The shared second-value slots, as a chunk sees them.
  *
  * @tparam T Element type.
  *
@@ -1041,18 +1047,18 @@ class TabCstVal2Holder
 
     /**
      * @brief Drop this user of the registry; the last one frees it.
-     * @param nb_val2 Incremented by the number of arrays freed.
+     * @param nb_val2 Incremented by the number of registered values freed.
      * @warning Single thread only, and with no concurrent scan in flight.
      *          @see GlobalVecHolder::clear_if_last for the full contract.
      */
     static void clear(int& nb_val2)
-    { // Delegate to GlobalVecHolder which tracks how many instances
-        // are still alive and frees the shared segment list only when
+    {
+        // GlobalVecHolder counts the users and frees the registry only when
         // the last one calls clear().
         global_vec_holder::clear_if_last(nb_val2);
     }
 
-    /// @brief The identifier for @p v, registering its array if it is new;
+    /// @brief The identifier for @p v, registering its slot if it is new;
     ///        0 for T{} (the "no second value" the value table wrote as 0).
     [[nodiscard]] static std::uint32_t id_for_value(in_t<T> v)
     {
@@ -1077,7 +1083,7 @@ class TabCstVal2Holder
     static T* alloc_chunk(T val)
     {
         T* buf = reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
-        // The dictionary entry, before the array can be published: a reader
+        // The dictionary entry, before the slot can be published: a reader
         // that obtains the identifier obtains it from a slot written after
         // this returns.
         global_vec_holder::value_by_id[id_of_ptr(buf)] = val;

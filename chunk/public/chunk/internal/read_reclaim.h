@@ -44,8 +44,8 @@
  *    executes a full barrier), then each reader slot is read: a reader seen
  *    even either finished before, or loads `values` after the barrier and sees
  *    the constant; a reader seen odd may hold an old pointer, and the
- *    reclaimer waits until its sequence moves. Then the buffers are released,
- *    exactly as before -- to the reuse list, at once.
+ *    reclaimer waits until its sequence moves. Then the buffers are released
+ *    as an unscoped pass releases them -- to the reuse list, at once.
  *
  *    One membarrier per PASS, not per chunk; the reuse is as immediate as it
  *    was (deferring it to the end of the region would make every
@@ -81,24 +81,26 @@
 namespace shrink_array::read_reclaim
 {
 
+/// @brief The protocol is compiled in: OpenMP builds only.
 inline constexpr bool enabled = build_config::use_openmp;
 
 /// @brief Reader slots: one per thread that has ever read, a cache line each.
 inline constexpr int kSlots = CHUNK_READ_RECLAIM_SLOTS;
 
+/// @brief One reader's sequence number, on a cache line of its own.
 struct alignas(64) ReaderSlot
 {
     std::atomic<std::uint64_t> seq{0}; ///< Odd while a read is in flight.
 };
 
-inline ReaderSlot       g_slots[kSlots];
-inline std::atomic<int> g_nslots{0};
+inline ReaderSlot       g_slots[kSlots]; ///< The reader slots, claimed in order.
+inline std::atomic<int> g_nslots{0};     ///< Slots claimed so far (may exceed kSlots).
 /// @brief Readers past kSlots: counted in one shared RMW (seq_cst), slow but
 ///        correct. A program with more reader threads than kSlots raises
 ///        CHUNK_READ_RECLAIM_SLOTS.
 inline std::atomic<long>        g_overflow_readers{0};
-inline thread_local ReaderSlot* t_slot     = nullptr;
-inline thread_local bool        t_overflow = false;
+inline thread_local ReaderSlot* t_slot     = nullptr; ///< This thread's slot, once claimed.
+inline thread_local bool        t_overflow = false;   ///< This thread found no slot left.
 
 /// @brief First read of this thread: claim a slot (or join the overflow).
 inline ReaderSlot* claim_slot() noexcept
@@ -137,6 +139,7 @@ inline void light_fence() noexcept
 class ReadSection
 {
   public:
+    /// @brief Enter: the slot's sequence goes odd, then the light fence.
     ReadSection() noexcept
     {
         if constexpr (enabled)
@@ -159,6 +162,7 @@ class ReadSection
             }
         }
     }
+    /// @brief Leave: the sequence goes even, released after the element load.
     ~ReadSection()
     {
         if constexpr (enabled)
@@ -173,8 +177,11 @@ class ReadSection
             }
         }
     }
+    // A scope: neither copied nor moved.
     ReadSection(const ReadSection&)            = delete;
     ReadSection& operator=(const ReadSection&) = delete;
+    ReadSection(ReadSection&&)                 = delete;
+    ReadSection& operator=(ReadSection&&)      = delete;
 
   private:
     ReaderSlot*   slot_ = nullptr;
@@ -229,12 +236,12 @@ inline void wait_for_readers() noexcept
 ///        by them).
 struct Deferred
 {
-    void (*release)(void* chunk, int thr, void* block) noexcept;
-    void*        chunk;
-    void*        block;
-    int          thr;
-    unsigned int chunk_size; ///< raw t_active_chunk_size (0 = unset)
-    unsigned int alloc_key;
+    void (*release)(void* chunk, int thr, void* block) noexcept; ///< The chunk type's release.
+    void*        chunk;                                          ///< The chunk the buffer belonged to.
+    void*        block;                                          ///< The buffer.
+    int          thr;                                            ///< The releasing rank.
+    unsigned int chunk_size;                                     ///< raw t_active_chunk_size (0 = unset)
+    unsigned int alloc_key;                                      ///< t_alloc_key at the release
 };
 
 /// @brief Non-null while a scoped pass runs on this thread: free_block_to_pool
@@ -250,6 +257,7 @@ inline thread_local std::vector<Deferred>* t_batch = nullptr;
 class PassScope
 {
   public:
+    /// @brief Open the batch, unless an enclosing scope already did.
     PassScope() noexcept
     {
         if constexpr (enabled)
@@ -262,6 +270,7 @@ class PassScope
             }
         }
     }
+    /// @brief The outermost scope: wait for the readers, then release the batch.
     ~PassScope()
     {
         if constexpr (enabled)
@@ -290,8 +299,11 @@ class PassScope
             batch.clear();
         }
     }
+    // A scope: neither copied nor moved.
     PassScope(const PassScope&)            = delete;
     PassScope& operator=(const PassScope&) = delete;
+    PassScope(PassScope&&)                 = delete;
+    PassScope& operator=(PassScope&&)      = delete;
 
   private:
     /// @brief Per-thread, reused: a pass does not allocate its batch afresh.

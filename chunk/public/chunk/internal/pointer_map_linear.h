@@ -23,10 +23,9 @@
  * @details PointerMapChunk (proxy.h) and PointerMapChunk2 (pointer_map_chunk2.h)
  *          both map an array's address to that array's metadata, and both do it
  *          by walking a flat sequence of (key, payload) pairs. Their erase(),
- *          exists(), size(), for_each_key() and swap were the same code twice —
- *          erase() and exists() byte for byte. Only the payload differs: a table
- *          number for the first, a (second_value, ind, num_tab) tuple for the
- *          second.
+ *          exists(), size(), for_each_key() and swap_entries() are the same
+ *          code. Only the payload differs: a table number for the first, a
+ *          (second_value, ind, num_tab) tuple for the second.
  *
  *          Everything that is a plain scan lives here once. Each registry keeps
  *          what is specific to it: v1 its table-number accessors, v2 its whole
@@ -37,11 +36,10 @@
  *       because a std::vector reallocates as it grows, and a reader walking the
  *       registry concurrently (get_info_second_value, reached from a deferred
  *       compression body on another thread) would then read freed memory. That
- *       showed up as intermittent "Key not found" throws and vtable corruption
- *       on aarch64 in release builds. See the note on PointerMapChunk2::vec for
- *       the full account. PointerMapChunk still uses a std::vector, so the two
- *       are kept as they were rather than aligned on either side by this
- *       refactor.
+ *       showed up as intermittent "Key not found" failures and vtable
+ *       corruption on aarch64 in release builds. See the note on
+ *       PointerMapChunk2's storage for the full account. PointerMapChunk uses
+ *       a std::vector.
  *
  * @note NOT used by PointerMapChunk2A (proxy2A.h): it stores in a small vector
  *       that switches to a hash map past a threshold, so its lookups are not
@@ -100,7 +98,8 @@ class PointerMapLinear
      *
      * @param key_a the first array address.
      * @param key_b the second array address.
-     * @return false unless BOTH keys are present, in which case nothing changed.
+     * @return true when both keys were present and their payloads swapped;
+     *         false, with nothing changed, when either is missing.
      */
     bool swap_entries(const void* key_a, const void* key_b) noexcept
     {
@@ -161,19 +160,6 @@ class PointerMapLinear
      *          destroyed array would otherwise shadow a live one that reused its
      *          address, which is exactly what erase() exists to prevent.
      */
-    [[nodiscard]] Payload* find_payload(const void* key) noexcept
-    {
-        for (auto& item : vec)
-        {
-            if (item.first == key)
-            {
-                return &item.second;
-            }
-        }
-        return nullptr;
-    }
-
-    /// @copydoc find_payload
     [[nodiscard]] const Payload* find_payload(const void* key) const noexcept
     {
         for (const auto& item : vec)

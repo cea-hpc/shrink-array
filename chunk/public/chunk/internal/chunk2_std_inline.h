@@ -31,6 +31,8 @@
 #include "chunk/internal/proxy2.h"              // Proxy2<T>
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/dependent_false.h"     // dependent_false_v (wrong-type branches)
+#include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED
+#include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
 
 /**
  * @file chunk2_std_inline.h

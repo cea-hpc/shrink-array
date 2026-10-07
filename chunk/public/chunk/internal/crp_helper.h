@@ -60,7 +60,7 @@ class CRTPSupport
     {
         return static_cast<Derived*>(this);
     }
-
+    /// @copydoc self()
     [[nodiscard]] const Derived* self() const noexcept
     {
         return static_cast<const Derived*>(this);

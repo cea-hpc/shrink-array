@@ -25,7 +25,7 @@
 
 /// @brief Report element @p i as NaN on std::cerr and abort.
 /// @param i Index of the element.
-static void global_check_nan(long i) noexcept
+inline void global_check_nan(long i) noexcept
 {
     std::cerr << " ** FATAL: Element : " << i << " of the array is nan\n\n";
     std::abort();
@@ -34,7 +34,7 @@ static void global_check_nan(long i) noexcept
 /// @brief Abort when @p val is NaN.
 /// @param val Value to check.
 /// @param i Index of the element, reported on failure.
-static void global_check_nan(const double& val, long i) noexcept
+inline void global_check_nan(const double& val, long i) noexcept
 {
     if (std::isnan(val))
     {
@@ -45,7 +45,7 @@ static void global_check_nan(const double& val, long i) noexcept
 /// @brief Abort when @p val is NaN.
 /// @param val Value to check.
 /// @param i Index of the element, reported on failure.
-static void global_check_nan(const float& val, long i) noexcept
+inline void global_check_nan(const float& val, long i) noexcept
 {
     if (std::isnan(val))
     {
@@ -56,7 +56,7 @@ static void global_check_nan(const float& val, long i) noexcept
 /// @brief Abort when both the real and imaginary parts of @p val are NaN.
 /// @param val Value to check.
 /// @param i Index of the element, reported on failure.
-static void global_check_nan(const std::complex<double>& val, long i) noexcept
+inline void global_check_nan(const std::complex<double>& val, long i) noexcept
 {
     if (std::isnan(val.real()) && std::isnan(val.imag()))
     {

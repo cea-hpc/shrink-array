@@ -35,6 +35,7 @@
 #include "chunk/internal/manager_chunk.h" // manager_chunk2A:: (dependent calls the include tools cannot attribute)
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
 #include "chunk/internal/tab_cst_val2_holder.h" // SecondValueRef
+#include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
 
 /**
  * @file chunk2A_std_inline.h
@@ -63,9 +64,11 @@
  *
  * Two things to keep in mind when reading:
  *
- *  - **Almost every function exists twice**, under `_OPENMP` and without. The
- *    serial twin is not just the parallel one minus the locking: it often takes
- *    a different, shorter path (no CAS, no rank, no compression handshake).
+ *  - **The materialise / clear functions exist twice**, on the two
+ *    specialisations of Chunk2AOmpPolicy (build_config::use_openmp); the
+ *    compression passes branch with `if constexpr` instead. The serial twin is
+ *    not just the parallel one minus the locking: it often takes a different,
+ *    shorter path (no CAS, no rank, no compression handshake).
  *  - **Geometry is pinned per chunk, never inherited.** The candidate list can
  *    hold chunks from several arrays at once, so a single pin at the top of a
  *    pass is wrong; each entry carries its owning array's ChunkElems and the
@@ -305,9 +308,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
         }
     }
 
-    // Now we're inside the compression phase. Log scope from here to the end.
-    //  ScopedRingLog<EV_BLOCK_COMPRESS_BEGIN, EV_BLOCK_COMPRESS_END> block_log{static_cast<uint32_t>(sz) &
-    //                                                                         0x00FFFFFFu};
+    // Now we're inside the compression phase.
     vec_tuple_chunkA2p_int2  ll_compt1;
     vec_tuple_chunkA2p_Tint2 ll_compt2;
 

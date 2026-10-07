@@ -53,7 +53,7 @@ inline long exact_rss_kib() noexcept
                 break;
             }
         }
-        std::fclose(f);
+        (void)std::fclose(f); // read-only: nothing to flush, nothing to report
         if (kib >= 0)
         {
             return kib;
@@ -64,7 +64,7 @@ inline long exact_rss_kib() noexcept
         long      size = 0;
         long      res  = 0;
         const int n    = std::fscanf(f, "%ld %ld", &size, &res);
-        std::fclose(f);
+        (void)std::fclose(f);
         const long ps = ::sysconf(_SC_PAGESIZE);
         if (n == 2 && ps > 0)
         {

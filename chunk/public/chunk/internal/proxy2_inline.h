@@ -30,6 +30,7 @@
 #include "chunk/internal/concept_is_clean_assignement.h" // base_t
 #include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
+#include "chunk/internal/test_hooks.h"   // TEST KNOB: test_hooks::maybe_read_delay
 
 namespace shrink_array
 {
@@ -262,7 +263,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression()
         {
             // in_t: the map key, by reference when T is large (a struct), by
             // value when it is a scalar. The map is not touched in the loop.
-            const in_t<T> second_val = elm.first;
+            const in_t<T> second_val  = elm.first;
             const auto*   vec_tuple_p = elm.second.get();
             if (vec_tuple_p)
             {
@@ -396,7 +397,7 @@ void Proxy2<T>::perform_core_assignment(in_t<T> v) const noexcept
                 chunk.set_nb_val_eq_second_value(this->chunk_size() - 1);
                 // The write that leaves cst_val2 skipped the first-value block
                 // at the top (it only counts on a materialised chunk), and
-                // create_value's crossed reset just zeroed nb_first_value: a
+                // create_value's crossed reset just zeroed nb_val_eq_first_value: a
                 // first_value written here is the one this chunk holds, count
                 // it. Without it a chunk that went all-second then all-first
                 // stopped at size - 1 and never compressed back (serial builds:

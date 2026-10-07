@@ -46,6 +46,7 @@ namespace shrink_array
  *        return before marking anything.
  * @tparam ProxyType the proxy whose WriteCompressSyncPolicy start() consults
  * @tparam ChunkType the chunk type the gate counters are kept for
+ * @param max_thr rank bound passed on to any_thread_flushing()
  */
 template <typename ProxyType, typename ChunkType>
 [[nodiscard]] inline bool block_pass_yields_to_flush([[maybe_unused]] int max_thr) noexcept

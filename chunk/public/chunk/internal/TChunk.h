@@ -16,66 +16,57 @@
  * limitations under the License.
  */
 
-#include <vector>      // std::vector
-#include <map>         // std::map
-#include <tuple>       // std::tuple
-#include <memory>      // std::shared_ptr
-#include <type_traits> // std::conditional_t (TChunk2CompMap)
+#include <vector> // std::vector
+#include <map>    // std::map
+#include <tuple>  // std::tuple
+#include <memory> // std::shared_ptr
 
 #include "chunk/internal/value_less.h"        // ValueLess
-#include "chunk/config.h"                     // build_config::use_openmp (TChunk2CompMap)
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems (VectorTuple4ChunkInt2)
 
 namespace shrink_array
 {
+/// @brief A list of queued compression candidates: (chunk, num_chunk,
+///        num_tab, the chunk's element count).
+/// @details The 4th field is the queued chunk's element count, carried as the
+///          ChunkElems strong type (chunk_size_policy.h) end to end -- the SAME
+///          alias must be used by producers (push_to_compress_list) and
+///          consumers (Chunk2A drain paths); this file is its single
+///          definition.
 template <template <typename> class TCHUNK, typename T>
-using VectorTuple3ChunkInt2 = std::vector<std::tuple<TCHUNK<T>*, int, int>>;
-
-template <template <typename> class TCHUNK, typename T>
-// Field <3> is the queued chunk's element count, carried as the ChunkElems
-// strong type (chunk_size_policy.h) end to end — the SAME alias must be used
-// by producers (push_to_compress_list) and consumers (Chunk2A drain paths);
-// this file is its single definition.
 using VectorTuple4ChunkInt2 = std::vector<std::tuple<TCHUNK<T>*, int, int, ChunkElems>>;
 
+/// @brief Map from a second value to the shared list of queued chunks
+///        (4-element tuples) holding it.
+/// @details The 4th tuple element is the chunk's OWN geometry, captured at
+///          enqueue by push_to_compress_list (as for Chunk v1 and Chunk2A, see
+///          TChunkComp / TChunk2AComp below). compress() and
+///          fill_list_to_compress_impl() scan with it, not with
+///          alloc_chunk_count() (the CONSUMING thread's ambient size), which
+///          after a rechunk overflows a buffer allocated at another geometry.
+///          Keyed by the second value, ordered by ValueLess (value_less.h).
 template <template <typename> class TCHUNK, typename T>
-using VectorTuple4bChunkCharP = std::vector<std::tuple<TCHUNK<T>*, char*, char*, T*>>;
+using MapTypeChunk2P = std::map<T, std::shared_ptr<VectorTuple4ChunkInt2<TCHUNK, T>>, ValueLess<T>>;
 
-/// @brief Names the map from a second value to the shared list of queued chunks (4-element tuples) holding it.
+/// @brief Chunk2's candidate lists, one per second value.
+/// @details 4-element tuples: this backing store is copied into the shared_ptr
+///          held by map_chunk2_to_compress_potentially_thr (see
+///          ArrayChunk2::set_second_value), so both must carry the chunk
+///          geometry -- see MapTypeChunk2P above for why.
 template <template <typename> class TCHUNK, typename T>
-struct ValueToChunk2PMapHelper
-{
-    // 4-element tuple: the 4th is the chunk's OWN geometry, captured at
-    // enqueue by push_to_compress_list (as for Chunk v1 and Chunk2A, see
-    // TChunkComp / TChunk2AComp below). compress() and
-    // fill_list_to_compress_impl() scan with it, not with alloc_chunk_count()
-    // (the CONSUMING thread's ambient size), which after a rechunk overflows a
-    // buffer allocated at another geometry.
-    // Keyed by the second value, ordered by ValueLess (value_less.h).
-    using type = std::map<T, std::shared_ptr<VectorTuple4ChunkInt2<TCHUNK, T>>, ValueLess<T>>;
-};
-
-template <template <typename> class TCHUNK, typename T>
-using ValueToChunk2Map_t = ValueToChunk2PMapHelper<TCHUNK, T>::type;
-
-template <template <typename> class TCHUNK, typename T>
-using MapTypeChunk2P = ValueToChunk2PMapHelper<TCHUNK, T>::type;
-
-template <template <typename> class TCHUNK, typename T>
-// 4-element tuple (was 3): this backing store is copied into the shared_ptr
-// held by map_chunk2_to_compress_potentially_thr (see
-// ArrayChunk2::set_second_value), so both must carry the chunk geometry --
-// see ValueToChunk2PMapHelper above for why.
 using TChunk2Comp = std::vector<VectorTuple4ChunkInt2<TCHUNK, T>>;
 
+/// @brief Chunk2A's candidate list.
 template <template <typename> class TCHUNK, typename T>
 using TChunk2AComp = VectorTuple4ChunkInt2<TCHUNK, T>;
 
+/// @brief Chunk's candidate list.
+/// @details 4-element: the 4th is the chunk's OWN geometry, captured at enqueue
+///          by push_to_compress_list. compress() scans with it, not with
+///          alloc_chunk_count() (the CONSUMING thread's ambient size), which
+///          overflows a buffer allocated at a different geometry under a live
+///          rechunk.
 template <template <typename> class TCHUNK, typename T>
-// 4-element: the 4th is the chunk's OWN geometry, captured at enqueue by
-// push_to_compress_list. compress() scans with it, not with
-// alloc_chunk_count() (the CONSUMING thread's ambient size), which overflows a
-// buffer allocated at a different geometry under a live rechunk.
 using TChunkComp = VectorTuple4ChunkInt2<TCHUNK, T>;
 
 /**
@@ -101,21 +92,22 @@ struct alignas(128) PerThreadSlot : public Container
     using Container::Container;
 };
 
+/// @brief Chunk2A's candidate lists, one slot per thread.
 template <template <typename> class TCHUNK, typename T>
 using TChunk2ACompThr = std::vector<PerThreadSlot<TChunk2AComp<TCHUNK, T>>>;
 
+/// @brief Chunk2's candidate lists, one slot per thread.
 template <template <typename> class TCHUNK, typename T>
 using TChunk2CompThr = std::vector<PerThreadSlot<TChunk2Comp<TCHUNK, T>>>;
 
+/// @brief Chunk's candidate lists, one slot per thread.
 template <template <typename> class TCHUNK, typename T>
 using TChunkCompThr = std::vector<PerThreadSlot<VectorTuple4ChunkInt2<TCHUNK, T>>>;
 
-// Chunk2's candidate store: per-thread maps keyed by second value under
-// OpenMP, one plain map serially. Both shapes are well-formed in both modes;
-// only the selection depends on the build.
+/// @brief Chunk2's candidate store: one map keyed by second value per thread.
+/// @details Only the OpenMP fast-block code reaches it; a serial build keeps
+///          it empty.
 template <template <typename> class TCHUNK, typename T>
-using TChunk2CompMap = std::conditional_t<build_config::use_openmp,
-                                          std::vector<PerThreadSlot<MapTypeChunk2P<TCHUNK, T>>>,
-                                          std::map<T, std::vector<TCHUNK<T>*>, ValueLess<T>>>;
+using TChunk2CompMap = std::vector<PerThreadSlot<MapTypeChunk2P<TCHUNK, T>>>;
 
 } // namespace shrink_array

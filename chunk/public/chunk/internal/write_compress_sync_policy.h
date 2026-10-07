@@ -62,11 +62,11 @@ namespace shrink_array
  *          any parallel write. A failed registration (kernel < 4.14, seccomp,
  *          not Linux) leaves membarrier_ready false and every announce below
  *          keeps its symmetric shape, so the protocol is never weaker than
- *          before, only faster when it can be.
+ *          the symmetric one, only faster when it can be.
  */
 namespace dekker
 {
-/// True once membarrier() is registered and heavy_barrier() may rely on it.
+/// @brief True once membarrier() is registered and heavy_barrier() may rely on it.
 /// Written once, before the parallel regions, by register_membarrier();
 /// atomic so the readers need no other ordering (a relaxed load is a plain
 /// load on every target).
@@ -181,7 +181,7 @@ inline void heavy_barrier() noexcept
  *          both proofs, and docs/synchronisation_dekker_fr.md.
  *
  *          This class owns ONLY the write/flush handshake state. The slow-path
- *          driver counter now lives in CompressionManager::state_, packed with
+ *          driver counter lives in CompressionManager::state_, packed with
  *          its hard `inflight` count.
  *
  *          The whole policy is OpenMP-only; the serial build gets the empty
@@ -213,14 +213,16 @@ class WriteCompressSyncPolicy
     ///          the flushers (is_thread_writing).
     struct alignas(128) WritingFlag
     {
-        std::atomic<const void*> v{nullptr};
+        std::atomic<const void*> v{nullptr}; ///< The chunk being written, or nullptr.
     };
 
     WriteCompressSyncPolicy() noexcept = default;
 
-    // Non-copyable
+    // The state is static: an instance is a handle, neither copied nor moved.
     WriteCompressSyncPolicy(const WriteCompressSyncPolicy&)            = delete;
     WriteCompressSyncPolicy& operator=(const WriteCompressSyncPolicy&) = delete;
+    WriteCompressSyncPolicy(WriteCompressSyncPolicy&&)                 = delete;
+    WriteCompressSyncPolicy& operator=(WriteCompressSyncPolicy&&)      = delete;
 
     ~WriteCompressSyncPolicy() = default;
 
@@ -400,9 +402,6 @@ class WriteCompressSyncPolicy
      */
     static void end_flush() noexcept
     {
-        // release: publish "this flush critical section is done" (matches the
-        // old store(false, release)); atomic RMW so concurrent begin/end from
-        // different threads never lose an update.
         num_thread_flushing.fetch_sub(1, std::memory_order_release);
     }
 
@@ -416,10 +415,6 @@ class WriteCompressSyncPolicy
      */
     static bool any_thread_flushing([[maybe_unused]] int max_thr) noexcept
     {
-        // O(1) counter load, replacing the O(max_thr) flag scan. seq_cst so it
-        // participates in the Dekker total order with begin_flush's seq_cst
-        // increment (the writer already does a seq_cst store + fence before
-        // calling this).
         return num_thread_flushing.load(std::memory_order_seq_cst) > 0;
     }
 
@@ -465,9 +460,8 @@ class WriteCompressSyncPolicy
      * @brief Enter a flush critical section.
      * @details While any flush is in progress, compressors calling start() back
      *          off and return false, giving the flush exclusive write access.
-     *          The seq_cst increment carries the same total-order weight the
-     *          previous per-thread seq_cst flag store did, which the Dekker
-     *          pattern in start() depends on.
+     *          The increment is seq_cst: it is the flush side's place in the
+     *          Dekker total order that start() depends on.
      * @post Must be paired with end_flush().
      * @warning Like begin_write(), this is not an announce: use announce_flush()
      *          when the caller then inspects the writer flags.
@@ -475,18 +469,15 @@ class WriteCompressSyncPolicy
     static void begin_flush() noexcept
     {
         // seq_cst: Dekker handshake with the deferred-enqueue path
-        // (to_be_queued_for_deferred_processing) and start(). Was a per-thread
-        // seq_cst flag store; the counter carries the same total-order weight.
+        // (to_be_queued_for_deferred_processing) and start().
         num_thread_flushing.fetch_add(1, std::memory_order_seq_cst);
     }
 
-    //  alignas(128) static inline std::atomic<int> active_writer_count{0}; --> very bad perf
-
-    /// One writer flag per thread rank, sized by ensure_initialized().
+    /// @brief One writer flag per thread rank, sized by ensure_initialized().
     static inline std::vector<WritingFlag> per_thread_writing;
 
-    /// Number of threads currently inside a flush critical section
-    /// (begin_flush()/end_flush()).
+    /// @brief Number of threads currently inside a flush critical section
+    ///        (begin_flush()/end_flush()).
     /// @details A counter, not a per-thread flag array, because the only query
     ///          is the aggregate "is ANY thread flushing?" -- never a per-rank
     ///          one. The asymmetry with per_thread_writing is deliberate: this

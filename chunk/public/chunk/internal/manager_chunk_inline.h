@@ -2,9 +2,7 @@
 
 // Template method definitions for ManagerChunk<CHUNK_T, T>. Kept in a dedicated
 // inline header (included at the end of chunk/internal/manager_chunk.h) so that every
-// (CHUNK_T, T) the consumer uses auto-instantiates at its use site. Bodies are
-// the CURRENT branch versions (with the kMaxDrainPasses drain and the defensive
-// destroy_after_flush drain) — NOT the older gen-dev-27 versions.
+// (CHUNK_T, T) the consumer uses auto-instantiates at its use site.
 
 #include <atomic>        // std::atomic, std::memory_order
 #include <cstdio>        // std::fprintf, std::fflush
@@ -89,8 +87,9 @@ void load_balance_list_block_free_thr();
 namespace shrink_array
 {
 
-// Defined (once) in ManagerChunk.cpp. Declared here because flush_all_deferred's
-// body now lives in this header and is compiled in TUs that lack the definition.
+/// @brief Re-entrancy guard of the deferred flush (see flush_all_deferred).
+// Defined (once) in manager_chunk.cpp; flush_all_deferred's body lives in this
+// header, so every TU that instantiates it needs the declaration.
 extern std::atomic<bool> __global_need_flush_deferred;
 /**
  * @brief Compress every compressible chunk of this type, ignoring the candidate lists.
@@ -105,29 +104,22 @@ extern std::atomic<bool> __global_need_flush_deferred;
 template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunk<CHUNK_T, T>::force_chunk_to_compress() const
 {
-    const auto lbd = [&]
+    // The calling thread's rank, in or out of a region: no region is opened.
+    const int thr = CHUNK_PMP_THREAD_RANK;
+
+    if constexpr (chunk_config::use_fast_block_compression && IsChunk<CHUNK_T, T>)
     {
-        const int thr = CHUNK_PMP_THREAD_RANK;
+        CHUNK_T<T>::make_block_compression(thr, nullptr);
+    }
 
-        if constexpr (chunk_config::use_fast_block_compression && IsChunk<CHUNK_T, T>)
-        {
-            CHUNK_T<T>::make_block_compression(thr, nullptr);
-        }
-
-        if constexpr (IsChunk2A<CHUNK_T, T>)
-        {
-            CHUNK_T<T>::make_block_compression(thr, nullptr);
-        }
-
-        else if constexpr (chunk_config::use_fast_block_compression && IsChunk2<CHUNK_T, T>)
-        {
-            CHUNK_T<T>::make_block_compression(thr);
-        }
-    };
-
-    lbd();
-    // (A CHUNK_PMP_IN_PARALLEL_REGION-conditional dispatch was tried here but hit
-    //  an llvm OpenMP runtime bug; the plain lbd() above is used instead.)
+    if constexpr (IsChunk2A<CHUNK_T, T>)
+    {
+        CHUNK_T<T>::make_block_compression(thr, nullptr);
+    }
+    else if constexpr (chunk_config::use_fast_block_compression && IsChunk2<CHUNK_T, T>)
+    {
+        CHUNK_T<T>::make_block_compression(thr);
+    }
 }
 
 /**
@@ -198,14 +190,8 @@ bool ManagerChunk<CHUNK_T, T>::have_chunk_to_compress_potentially(int n_thr) con
             {
                 const auto& sh_inf           = Proxy2<T>::share_info_array;
                 const auto& v_all_second_val = sh_inf.get_all_second_value();
-                for (const auto& second_value : v_all_second_val)
-                {
-                    if (CHUNK_T<T>::have_chunk_to_compress(second_value, n_thr))
-                    {
-                        return true;
-                    }
-                }
-                return false;
+                return std::ranges::any_of(v_all_second_val, [n_thr](const auto& second_value)
+                                           { return CHUNK_T<T>::have_chunk_to_compress(second_value, n_thr); });
             }
             else
             {
@@ -283,7 +269,7 @@ void ManagerChunk<CHUNK_T, T>::sweep_rank([[maybe_unused]] int thr, [[maybe_unus
         {
             if constexpr (is_not_bool)
             {
-                for (auto* inf_array : sweep_inf_arrays_)
+                for (const auto* inf_array : sweep_inf_arrays_)
                 {
                     CHUNK_T<T>::compress_sweep_rank(thr, *inf_array, apply);
                 }
@@ -450,7 +436,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::destroy_after_flush(bool in_par
 
     if (in_parallel)
     {
-#pragma omp single // nowait // useless risk ?
+#pragma omp single
         {
             storage.destroy();
 
@@ -639,9 +625,9 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::alloc_chunk_allocator_thr()
 /**
  * @brief Set every rank's chunk allocator geometry.
  *
- * @param block_size Number of chunks per allocation block, scaled down for wide
- *        element types so a block stays a comparable number of BYTES rather
- *        than of elements.
+ * @param block_size Slab size in bytes (ParamChunk::block_size), divided by
+ *        8 / sizeof(T) for element types narrower than 8 bytes, so that a
+ *        slab holds about as many elements whatever the type.
  * @note Fast-alloc builds only. Sequential, from whichever thread registers
  *       the manager: an allocator is a slot indexed by rank, not a thread
  *       local, and init() only records the geometry -- the slab is taken at
@@ -681,7 +667,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::init_allocators([[maybe_unused]
 
 /**
  * @brief Initialise this type's single chunk allocator (serial build).
- * @param block_size Number of chunks per allocation block.
+ * @param block_size Slab size in bytes (ParamChunk::block_size).
  * @note The OpenMP counterpart is init_allocators(), one allocator per rank.
  */
 template <template <typename> typename CHUNK_T, typename T>
@@ -705,7 +691,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, false>::init_allocator(int block_size)
  * allocator to create.
  *
  * @param size       Chunk size, in elements, being registered.
- * @param block_size Number of chunks per allocation block for that size.
+ * @param block_size Slab size in bytes of that size's allocators.
  *
  * @warning An array built at a size never registered here reports that size
  *          from chunk_size() but draws its buffers from whatever pool WAS
@@ -1166,7 +1152,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_thr(int b
     // CHUNK_LEDGER_REPORT output that masked any real leak.
     if (skip.empty())
     {
-        for (auto* elm : blocks)
+        for (const auto* elm : blocks)
         {
             CHUNK_LEDGER_DISCARD(elm, "clear_list_block_free_thr.drain");
             svfree(elm);
@@ -1216,9 +1202,6 @@ bool ManagerChunkParallelImpl<CHUNK_T, T, true>::need_load_balance_list_block_fr
     return need_load_balance_list_block_free_thr<T>();
 }
 
-// compute_size_buffer_reuse (documented in manager_chunk.h): derives the reuse
-// budget from the number of chunks created so far, so a program that allocates
-// more keeps proportionally more buffers parked for reuse.
 template <template <typename> typename CHUNK_T, typename T>
 bool ManagerChunk<CHUNK_T, T>::register_alloc_key([[maybe_unused]] unsigned int key,
                                                   [[maybe_unused]] unsigned int size,
@@ -1256,10 +1239,14 @@ bool ManagerChunk<CHUNK_T, T>::register_alloc_key([[maybe_unused]] unsigned int 
         return false;
     }
 }
+
+// compute_size_buffer_reuse (documented in manager_chunk.h): derives the reuse
+// budget from the number of chunks created so far, so a program that allocates
+// more keeps proportionally more buffers parked for reuse.
 template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunk<CHUNK_T, T>::compute_size_buffer_reuse()
 {
-    // to change Chunk2ADef...
+    // Chunk2ADef's reuse constants serve every variant (chunk2A_def.h).
     size_buffer_reuse =
         static_cast<int>(somme_chunk_create /
                          (static_cast<long>(Chunk2ADef::factor_div_somme_chunk_buffer_resuse) * CHUNK_PMP_MAX_THREADS));
@@ -1357,7 +1344,7 @@ void ManagerChunk<CHUNK_T, T>::compute_size_max_number_of_chunk_to_check_compres
 
                 print_mem_estimate("chunk_to_compress_potentially_thr (per thread)", max_chunks,
                                    sizeof(typename ChunkCont::value_type));
-            };
+            }
         }
     }
     const size_t element_size = sizeof(std::tuple<CHUNK_T<T>*, int, int>);
