@@ -78,10 +78,36 @@ EN = {
         "ccc_msub: batch job, independent of this window and of the login node (recommended).",
     "ccc_mprun détaché : lancé depuis le nœud de login ; il dépend de ce nœud tant qu'il tourne.":
         "ccc_mprun, detached: started from the login node; it depends on that node while it runs.",
-    "Durée maximale du job (-T), en secondes. Au-delà, le job est tué par le "
-    "gestionnaire et finit « terminé sans code ».":
-        "Maximum job time (-T), in seconds. Beyond it the batch system kills the job, which "
-        "ends \"ended without a code\".",
+    "Durée maximale du job (-T). Au-delà, le job est tué par le gestionnaire et finit "
+    "« terminé sans code ». Se tape « 1 h 30 », « 90 min », « 2 j » ou « 1-00:00:00 ».\n\n"
+    "Mémorisée par programme : compile_all.sh court, bench_and_test.py quelques heures, "
+    "multi_launch_stress.py long.":
+        "Maximum job time (-T). Beyond it the batch system kills the job, which ends \"ended "
+        "without a code\". Type \"1 h 30\", \"90 min\", \"2 d\" or \"1-00:00:00\".\n\n"
+        "Remembered per program: compile_all.sh short, bench_and_test.py a few hours, "
+        "multi_launch_stress.py long.",
+    "La QoS du job (-Q), dont dépend la durée maximale (ccc_mqinfo) : test (prioritaire, "
+    "court, 2 jobs soumis au plus), normal (1 jour), long (3 jours, pas sur milan-bxi), "
+    "xlong (pas sur gh200-bxi).\n\n« auto » prend la plus prioritaire qui accepte la durée, "
+    "puis la plus courte. Un -Q écrit dans les directives l'emporte.\n\nLes limites sont "
+    "relues sur inti à chaque vérification de la connexion.":
+        "The job's QoS (-Q), which sets the maximum time (ccc_mqinfo): test (higher priority, "
+        "short, 2 submitted jobs at most), normal (1 day), long (3 days, not on milan-bxi), "
+        "xlong (not on gh200-bxi).\n\n\"auto\" takes the highest priority one that accepts the "
+        "duration, then the shortest. A -Q written in the directives wins.\n\nThe limits are "
+        "read again on inti at each connection check.",
+    "Choisir…": "Choose…", "filtrer…": "filter…", "En plus :": "Also:", "Tout décocher": "Clear all",
+    "OK": "OK", "Annuler": "Cancel",
+    "Choisir dans la liste de ce que compile_all.sh sait construire (lue sur inti, sans rien compiler).":
+        "Choose from what compile_all.sh can build (read on inti, nothing is compiled).",
+    "noms ou motifs tapés à la main, séparés par des virgules": "names or patterns typed by hand, comma-separated",
+    "un nom ou un motif tapé à la main": "one name or pattern typed by hand",
+    "Ce compile_all.sh n'accepte qu'un motif à la fois : appliquez compile_lists.py pour en cocher plusieurs.":
+        "This compile_all.sh takes one pattern at a time: apply compile_lists.py to tick several.",
+    "--target : configurations": "--target: configurations", "--exec : exécutables": "--exec: executables",
+    "dossier sans build.ninja": "directory without build.ninja",
+    "auto (selon la durée)": "auto (from the duration)", "QoS (-Q)": "QoS (-Q)",
+    "prioritaire": "higher priority", " (fixée dans les directives)": " (set in the directives)",
     "Lignes #MSUB du script batch (ou options ccc_mprun en mode détaché). Propres à "
     "la partition, mémorisées.\n\n-T, -r, -o et -e sont ajoutés d'après le formulaire.":
         "#MSUB lines of the batch script (or ccc_mprun options in detached mode). Per "
@@ -221,6 +247,31 @@ EN_RE = [(re.compile(a), b) for a, b in (
      r"passe les options telles quelles\.",
      "Fix it, then click \"Read options\". Meanwhile the \"extra arguments\" field passes options as they are."),
     (r"\(pas d'aide dans le script\)", "(no help in the script)"),
+    (r"^la QoS (\S+) n'est pas ouverte sur (\S+)$", r"QoS \1 is not open on \2"),
+    (r"^(.+) dépasse le maximum de la QoS (\S+) sur (\S+) \((.+)\)$", r"\1 exceeds the maximum of QoS \2 on \3 (\4)"),
+    (r"^(\d+) cœurs dépassent le maximum de la QoS (\S+) sur (\S+) \((\d+)\)$",
+     r"\1 cores exceed the maximum of QoS \2 on \3 (\4)"),
+    (r"^aucune QoS n'accepte (.+?) sur (\S+)", r"no QoS accepts \1 on \2"), (r" \(au plus (.+)\)$", r" (\1 at most)"),
+    (r"^(\d+) job\(s\) soumis au plus$", r"at most \1 submitted job(s)"),
+    (r"(\d+) j (\d\d) h", r"\1 d \2 h"),
+    (r"^configurée, (\d+) exécutable\(s\), ", r"configured, \1 executable(s), "),
+    (r"^motif : (\d+) configurations$", r"pattern: \1 configurations"),
+    (r"^motif : (\d+) exécutables$", r"pattern: \1 executables"),
+    (r"^dans (\d+)/(\d+) build\(s\)$", r"in \1/\2 build(s)"),
+    (r"^lecture des builds de (\S+) sur inti…$", r"reading the \1 builds on inti…"),
+    (r"^(\d+) configurations, (\d+) build\(s\) (\S+) dans (\S+)$", r"\1 configurations, \2 \3 build(s) in \4"),
+    (r"^Configurations de compile_all\.sh \(cmake-build-<nom>\)\. « configurée » : son build existe déjà "
+     r"pour (\S+) dans (\S+)\.$",
+     r'compile_all.sh configurations (cmake-build-<name>). "configured": its build already exists for \1 in \2.'),
+    (r"^Exécutables des (\d+) build\(s\) (\S+) configurés( retenus par --target=\S+)?\. Ninja construit aussi "
+     r"leurs dépendances \(bibliothèques chunk\), pas les autres exécutables\.$",
+     lambda m: f"Executables of the {m.group(1)} configured {m.group(2)} build(s)"
+               + (m.group(3).replace(" retenus par", " kept by") if m.group(3) else "")
+               + ". Ninja also builds their dependencies (the chunk libraries), not the other executables."),
+    (r"^Aucun build (\S+) configuré( pour --target=\S+)? dans (\S+) : rien à lister\. Lancez d'abord "
+     r"compile_all\.sh sans --exec \(ou tapez le nom à la main\)\.$",
+     lambda m: f"No configured {m.group(1)} build" + (m.group(2).replace(" pour", " for") if m.group(2) else "")
+               + f" in {m.group(3)}: nothing to list. Run compile_all.sh without --exec first (or type the name)."),
     (r"(\d+) cœurs", r"\1 cores"),
     (r"\noption : ", "\noption: "), (r"\ndéfaut du script : ", "\nscript default: "),
     (r"^défaut : ", "default: "), (r"\nlanceur : ", "\nlauncher: "),

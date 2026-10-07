@@ -141,3 +141,76 @@ def test_compile_all_is_batch_only(gui, site):
     pump(lambda: False, 1)
     assert len(w.runs) == n and "ccc_msub" in w.statusBar().currentMessage()
     assert not site.runs.exists() or not any(site.runs.iterdir())
+
+
+def test_qos_follows_the_duration(gui, site):
+    w, pump = gui
+    assert pump(lambda: qos_max(w, "test", "gh200-bxi") == 3 * 3600, 10)   # read from the fake ccc_mqinfo
+    w.program.setCurrentText("compile_all.sh")
+    assert w.time_s.value() == 5400 and "test" in w.qos_note.text()
+    w.program.setCurrentText("multi_launch_stress.py")
+    assert w.time_s.value() == 2 * 86400 and "<b>long</b>" in w.qos_note.text()
+    w.time_s.setValue(4 * 86400)
+    assert "aucune QoS" in w.qos_note.text()
+    w.preset.setCurrentIndex(w.preset.findData("milan-bxi"))
+    assert "<b>xlong</b>" in w.qos_note.text()
+    w.time_s.setValue(2 * 86400)
+    w.program.setCurrentText("compile_all.sh")
+    w.program.setCurrentText("multi_launch_stress.py")
+    assert w.time_s.value() == 2 * 86400                                     # remembered per program
+    w.qos.setCurrentIndex(w.qos.findData("long"))
+    assert "n'est pas ouverte" in w.qos_note.text()
+
+
+def test_submit_adds_qos(gui, site):
+    w, pump = gui
+    _choose_fake(w, pump)
+    w.time_s.setValue(2 * 86400)
+    rid = _submit(w, pump, {"runs": "2"}, 0)
+    assert "#MSUB -Q long" in (site.runs / rid / "job.sh").read_text()
+    w.time_s.setValue(5 * 86400)
+    n = len(w.runs)
+    w.launch()
+    pump(lambda: False, 1)
+    assert len(w.runs) == n and "aucune QoS" in w.statusBar().currentMessage()
+
+
+def qos_max(w, name, part):
+    from shrink_gui import qos
+    row = qos.limits(w.qos_rows, name, part)
+    return row and row["max_time"]
+
+
+def test_target_and_exec_pickers(gui, site, monkeypatch):
+    from PySide6.QtCore import Qt
+    from shrink_gui import app as app_mod
+    from test_remote_helper import _fake_build_rep
+    _fake_build_rep(site)
+    monkeypatch.setattr(app_mod, "BUILD_REP", "~/br")
+    w, pump = gui
+    w.program.setCurrentText("compile_all.sh")
+    assert pump(lambda: w.form.schema is not None and "exec" in w.form.widgets)
+    assert w.findChild(type(w.findChildren(app_mod.QPushButton)[0]), "pick_exec") is not None
+    seen = {}
+
+    def fake_exec(dlg, ticks):
+        items = {dlg.list.item(i).data(Qt.UserRole): dlg.list.item(i) for i in range(dlg.list.count())}
+        seen[dlg.windowTitle()] = items
+        for t in ticks:
+            items[t].setCheckState(Qt.Checked)
+        return 1
+
+    monkeypatch.setattr(app_mod.PickerDialog, "exec", lambda dlg: fake_exec(dlg, ["omp-llvm", "omp-gnu-debug"]))
+    w.pick("target")
+    assert pump(lambda: w.form.widgets["target"][1].text() != "", 20)
+    multi = "comma" in w.form.widgets["target"][0]["help"].lower()
+    got = w.form.widgets["target"][1].text().split(",")
+    assert sorted(got) == (["omp-gnu-debug", "omp-llvm"] if multi else ["omp-gnu-debug"])   # one glob: the last ticked
+    w.form.widgets["target"][1].setText("omp-llvm")
+    monkeypatch.setattr(app_mod.PickerDialog, "exec",
+                        lambda dlg: fake_exec(dlg, ["shrink_bench_chunk_64", "shrink_bench_chunk_dyn"]))
+    w.pick("exec")
+    exes = seen["--exec : exécutables"]
+    assert set(exes) >= {"shrink_bench_chunk_64", "shrink_bench_chunk_dyn"}
+    assert "shrink_bench_chunk_256" not in exes                     # x86_64 build: not on gh200
+    assert ("--exec=" + w.form.widgets["exec"][1].text()) in w.preview.toPlainText().replace("'", "")

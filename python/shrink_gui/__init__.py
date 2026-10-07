@@ -51,4 +51,4 @@ Modules:
   app.py            the window
 """
 
-__version__ = "0.10"
+__version__ = "0.11"

@@ -167,3 +167,52 @@ def test_run_sh_is_valid_bash():
     sh = make_run_sh("~/shrink-array", "python", "python3 x.py --a 1")
     assert "CHUNK_BENCH_EVENTS" in sh and "git_start" in sh
     subprocess.run(["bash", "-n"], input=sh.encode(), check=True)
+
+
+def test_check_reads_mqinfo(site):
+    from shrink_gui import qos
+    rows = qos.parse_mqinfo(site.helper("check", "~/shrink-array")["mqinfo"])
+    assert qos.limits(rows, "test", "gh200-bxi")["max_time"] == 3 * 3600    # the fake's
+
+
+def test_msub_qos_directive(site):
+    spec = _spec("python3 fake_stress.py --runs 1")
+    spec["qos"] = "long"
+    blob = base64.b64encode(json.dumps(spec).encode()).decode()
+    site.helper("launch", "~/shrink_runs", "q1", blob)
+    assert "#MSUB -Q long\n" in (site.runs / "q1" / "job.sh").read_text()
+    site.wait(lambda: _status(site, "q1")["status"] == "fini")
+
+
+def _fake_build_rep(site):
+    br = site.home / "br"
+    for name, arch, exes in (("omp-llvm", "RHEL_9.4__aarch64", ["shrink_bench_chunk_64", "shrink_bench_chunk_dyn"]),
+                             ("omp-gnu-debug", "RHEL_9.4__aarch64", ["shrink_bench_chunk_64"]),
+                             ("omp-llvm", "RHEL_8.10__x86_64", ["shrink_bench_chunk_256"])):
+        d = br / f"cmake-build-{name}" / arch
+        d.mkdir(parents=True)
+        rules = "".join(f"build bin/{e}: CXX_EXECUTABLE_LINKER__{e}_Release obj.o\n" for e in exes)
+        (d / "build.ninja").write_text(rules + "build lib.a: CXX_STATIC_LIBRARY_LINKER__chunk_Release x.o\n")
+    (br / "cmake-build-omp-aocc" / "RHEL_9.4__aarch64").mkdir(parents=True)      # never configured
+    return br
+
+
+def test_build_targets(site):
+    _fake_build_rep(site)
+    r = site.helper("build_targets", "~/shrink-array", "~/br", "aarch64")
+    if (REPO / "scripts/compile_all.sh").exists():
+        assert "omp-llvm" in r["configs"] and not any("$" in c for c in r["configs"])
+    dirs = {d["name"]: d for d in r["dirs"]}
+    assert set(dirs) == {"omp-llvm", "omp-gnu-debug", "omp-aocc"}            # x86_64 left out
+    assert dirs["omp-llvm"]["execs"] == ["shrink_bench_chunk_64", "shrink_bench_chunk_dyn"]
+    assert dirs["omp-aocc"]["configured"] is False
+
+
+def test_helper_reads_utf8_in_c_locale(site):
+    # The login shell may be in the C locale: Python 3.6 then reads ASCII.
+    sh = site.home / "u.sh"
+    sh.write_text("#!/bin/bash\n# ── é →\nusage() {\n    cat <<EOF\n  --fast   Go → fast.\nEOF\n}\n")
+    env = dict(site.env, LC_ALL="C", LANG="C", PYTHONUTF8="0", PYTHONCOERCECLOCALE="0")
+    out = subprocess.run([str(site.bin / "ssh"), "inti", "python3 - options ~ u.sh help bash"],
+                         input=HELPER.encode(), env=env, capture_output=True, timeout=60)
+    assert json.loads(out.stdout)["actions"][0]["flags"] == ["--fast"], out.stderr

@@ -1,7 +1,8 @@
 """Test fixtures: a fake inti on this machine.
 
 `site` builds, in a temporary directory:
-  - bin/  the fakes of ssh, ccc_msub, squeue, ccc_mdel, ccc_mprun (tests/fakes);
+  - bin/  the fakes of ssh, ccc_msub, squeue, ccc_mdel, ccc_mprun, ccc_mqinfo
+          (tests/fakes);
   - home/ the home directory "on inti", whose shrink-array is a link to THIS
     repository: the option reading runs the real scripts;
   - settings/ where QSettings writes, so the tests never touch yours.
@@ -56,7 +57,8 @@ class Site:
         (self.home / "shrink-array").symlink_to(REPO, target_is_directory=True)
         self.runs = self.home / "shrink_runs"
         self.env = dict(os.environ, PATH=f"{self.bin}{os.pathsep}{os.environ['PATH']}",
-                        FAKE_HOME=str(self.home), FAKE_Q=str(self.queue))
+                        FAKE_HOME=str(self.home), FAKE_Q=str(self.queue),
+                        SHRINK_GUI_PYDIR=str(PYDIR))
 
     def helper(self, action, *args, binary=False):
         """Run remote_helper.py as the GUI does (through the fake ssh)."""
@@ -84,7 +86,7 @@ def _q(a):
 @pytest.fixture
 def site(tmp_path, monkeypatch):
     s = Site(tmp_path)
-    for k in ("PATH", "FAKE_HOME", "FAKE_Q"):
+    for k in ("PATH", "FAKE_HOME", "FAKE_Q", "SHRINK_GUI_PYDIR"):
         monkeypatch.setenv(k, s.env[k])
     yield s
     # leave no fake job behind

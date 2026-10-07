@@ -5,10 +5,13 @@ import shlex
 
 from PySide6.QtCharts import QChartView
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QPainter, QTextCursor
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QLabel, QLineEdit, QMessageBox,
-                               QPlainTextEdit, QTableWidgetItem, QToolTip, QWidget)
+from PySide6.QtGui import QFont, QPainter, QTextCursor, QValidator
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
+                               QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
+                               QPlainTextEdit, QPushButton, QSpinBox, QTableWidgetItem, QToolTip,
+                               QVBoxLayout, QWidget)
 
+from shrink_gui import i18n, qos
 from shrink_gui.i18n import T, tip
 from shrink_gui.runscripts import shq
 
@@ -20,6 +23,51 @@ BOOL_KINDS = {"_StoreTrueAction", "_StoreFalseAction", "_StoreConstAction",
 def ask(parent, title, text):
     """QMessageBox.question in the interface language."""
     return QMessageBox.question(parent, T(title), T(text))
+
+DUR_RE = re.compile(r"(\d+)\s*(j|d|h|min|mn|m|s)?", re.I)
+DUR_UNIT = {"j": 86400, "d": 86400, "h": 3600, "min": 60, "mn": 60, "m": 60, "s": 1}
+
+def parse_duration(text):
+    """"1 h 30", "90 min", "2j", "2 d 12 h", "1-00:00:00", "5400" -> seconds
+    (None if it is none of these). A bare number after hours counts as
+    minutes ("1 h 30"), after days as hours ("2 j 12"); alone, as seconds."""
+    text = text.strip()
+    if not text:
+        return None
+    if ":" in text:
+        return qos.parse_time(text)
+    pos, total, prev = 0, 0, None
+    for m in DUR_RE.finditer(text):
+        if text[pos:m.start()].strip():
+            return None
+        unit = (m.group(2) or "").lower()
+        if not unit:
+            unit = {"h": "min", "j": "h", "d": "h"}.get(prev, "s")
+        total += int(m.group(1)) * DUR_UNIT[unit]
+        prev, pos = unit, m.end()
+    return total if pos and not text[pos:].strip() else None
+
+class DurationBox(QSpinBox):
+    """A duration in seconds, shown and typed as "1 h 30", "2 j 00 h",
+    "90 min" or "1-00:00:00"; the arrows step by half an hour."""
+
+    def __init__(self):
+        super().__init__()
+        self.setRange(60, 365 * 86400)
+        self.setSingleStep(1800)
+        self.setAccelerated(True)
+
+    def textFromValue(self, v):
+        return qos.fmt(v, i18n.LANG)
+
+    def valueFromText(self, text):
+        v = parse_duration(text)
+        return self.value() if v is None else v
+
+    def validate(self, text, pos):
+        v = parse_duration(text)
+        ok = v is not None and self.minimum() <= v <= self.maximum()
+        return (QValidator.Acceptable if ok else QValidator.Intermediate), text, pos
 
 class LogView(QPlainTextEdit):
     """Appends ssh output and honours \\r (a progress line rewritten in place)."""
@@ -61,6 +109,7 @@ class OptionsForm(QWidget):
     default applies."""
 
     changed = None  # callback, set by the owner
+    pickers = {}    # dest -> callback(dest): a "Choisir…" button beside that field
 
     def __init__(self):
         super().__init__()
@@ -107,7 +156,19 @@ class OptionsForm(QWidget):
             w.setToolTip(tip(help_txt))
             lab = QLabel(flag)
             lab.setToolTip(tip(help_txt))
-            self.lay.addRow(lab, w)
+            field = w
+            if ac["dest"] in self.pickers and isinstance(w, QLineEdit):
+                field = QWidget()
+                row = QHBoxLayout(field)
+                row.setContentsMargins(0, 0, 0, 0)
+                row.addWidget(w, 1)
+                b = QPushButton(T("Choisir…"))
+                b.setObjectName(f"pick_{ac['dest']}")
+                b.setToolTip(tip("Choisir dans la liste de ce que compile_all.sh sait construire "
+                                 "(lue sur inti, sans rien compiler)."))
+                b.clicked.connect(lambda _=False, d=ac["dest"]: self.pickers[d](d))
+                row.addWidget(b)
+            self.lay.addRow(lab, field)
             self.widgets[ac["dest"]] = (ac, w, lab)
 
     def filter(self, text):
@@ -115,7 +176,7 @@ class OptionsForm(QWidget):
         t = text.strip().lower()
         for ac, w, lab in self.widgets.values():
             hay = (" ".join(ac["flags"]) + " " + ac["dest"] + " " + ac["help"]).lower()
-            self.lay.setRowVisible(w, not t or t in hay)
+            self.lay.setRowVisible(lab, not t or t in hay)
 
     def _mark(self):
         """The options that differ from the script default, in bold."""
@@ -194,6 +255,129 @@ class OptionsForm(QWidget):
             else:
                 opts += [long_flag, shq(v)]
         return opts + pos
+
+def split_list(value):
+    """"a, b,,c" -> ["a", "b", "c"]."""
+    return [x.strip() for x in (value or "").split(",") if x.strip()]
+
+def families(names, sep):
+    """Globs naming at least two of @p names, from their last and first
+    @p sep-separated component: shrink_bench_chunk_64, shrink_bench_chunk2_64
+    -> "*_64"; omp-llvm, omp-llvm-debug -> "omp-llvm*". {glob: count}."""
+    out = {}
+    for n in names:
+        if sep in n:
+            head, tail = n.rsplit(sep, 1)
+            out.setdefault(f"*{sep}{tail}", set()).add(n)
+            out.setdefault(f"{head}{sep}*", set()).add(n)
+        out.setdefault(f"{n}*", set()).add(n)
+    import fnmatch
+    res = {}
+    for g in out:
+        hits = [n for n in names if fnmatch.fnmatchcase(n, g)]
+        if 2 <= len(hits) < len(names):
+            res[g] = len(hits)
+    return dict(sorted(res.items(), key=lambda kv: (-kv[1], kv[0])))
+
+def unique_globs(pairs, names):
+    """[(glob, count)] without the globs that select the same names as one
+    kept before them ("*-sanitizer" after "*sanitizer*")."""
+    import fnmatch
+    seen, out = set(), []
+    for g, c in pairs:
+        key = frozenset(n for n in names if fnmatch.fnmatchcase(n, g))
+        if key not in seen:
+            seen.add(key)
+            out.append((g, c))
+    return out
+
+class PickerDialog(QDialog):
+    """Pick names (and family globs) for a comma-separated option value:
+    --target / --exec of compile_all.sh. @p items: [(name, note)], @p
+    patterns: [(glob, note)]. @p multi False (the script takes one glob):
+    checking one unchecks the others. What the value holds that is in
+    neither list stays in "en plus", untouched."""
+
+    def __init__(self, parent, title, intro, items, patterns, value, multi=True):
+        super().__init__(parent)
+        self.setWindowTitle(T(title))
+        self.multi = multi
+        self.resize(560, 620)
+        lay = QVBoxLayout(self)
+        lab = QLabel(T(intro))
+        lab.setTextFormat(Qt.PlainText)
+        lab.setWordWrap(True)
+        lay.addWidget(lab)
+        self.filt = QLineEdit()
+        self.filt.setPlaceholderText(T("filtrer…"))
+        self.filt.setClearButtonEnabled(True)
+        self.filt.textChanged.connect(self._filter)
+        lay.addWidget(self.filt)
+        self.list = QListWidget()
+        lay.addWidget(self.list, 1)
+        chosen = split_list(value)
+        known = {n for n, _ in items} | {g for g, _ in patterns}
+        italic = QFont()
+        italic.setItalic(True)
+        for name, note, is_glob in ([(g, n, True) for g, n in patterns] + [(n, t, False) for n, t in items]):
+            it = QListWidgetItem(f"{name}    — {T(note)}" if note else name)
+            it.setData(Qt.UserRole, name)
+            it.setFlags(it.flags() | Qt.ItemIsUserCheckable)
+            it.setCheckState(Qt.Checked if name in chosen else Qt.Unchecked)
+            if is_glob:
+                it.setFont(italic)
+            self.list.addItem(it)
+        self.list.itemChanged.connect(self._changed)
+        row = QHBoxLayout()
+        row.addWidget(QLabel(T("En plus :")))
+        self.extra = QLineEdit(", ".join(c for c in chosen if c not in known))
+        self.extra.setPlaceholderText(T("noms ou motifs tapés à la main, séparés par des virgules")
+                                      if multi else T("un nom ou un motif tapé à la main"))
+        row.addWidget(self.extra, 1)
+        lay.addLayout(row)
+        if not multi:
+            note = QLabel(T("Ce compile_all.sh n'accepte qu'un motif à la fois : appliquez compile_lists.py "
+                            "pour en cocher plusieurs."))
+            note.setWordWrap(True)
+            note.setStyleSheet("color: #8a6d00;")
+            lay.addWidget(note)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.Reset)
+        bb.button(QDialogButtonBox.Reset).setText(T("Tout décocher"))
+        bb.button(QDialogButtonBox.Reset).clicked.connect(self._clear)
+        bb.button(QDialogButtonBox.Ok).setText(T("OK"))
+        bb.button(QDialogButtonBox.Cancel).setText(T("Annuler"))
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        lay.addWidget(bb)
+
+    def _items(self):
+        return [self.list.item(i) for i in range(self.list.count())]
+
+    def _filter(self, text):
+        t = text.strip().lower()
+        for it in self._items():
+            it.setHidden(bool(t) and t not in it.text().lower())
+
+    def _changed(self, item):
+        if not self.multi and item.checkState() == Qt.Checked:
+            self.list.blockSignals(True)
+            for it in self._items():
+                if it is not item:
+                    it.setCheckState(Qt.Unchecked)
+            self.list.blockSignals(False)
+            self.extra.clear()
+
+    def _clear(self):
+        self.list.blockSignals(True)
+        for it in self._items():
+            it.setCheckState(Qt.Unchecked)
+        self.list.blockSignals(False)
+        self.extra.clear()
+
+    def value(self):
+        picked = [it.data(Qt.UserRole) for it in self._items() if it.checkState() == Qt.Checked]
+        picked += [x for x in split_list(self.extra.text()) if x not in picked]
+        return ",".join(picked if self.multi else picked[:1])
 
 class ScatterView(QChartView):
     """Seconds per run against threads. The nearest point within 24 px gets

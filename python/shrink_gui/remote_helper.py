@@ -12,15 +12,21 @@ def rdir(base, rid=None):
     return os.path.join(d, rid) if rid else d
 
 def read(p, default=None):
+    """The file as text, UTF-8 whatever the locale: a login shell in the C
+    locale gives Python 3.6 an ASCII default, and the scripts are UTF-8."""
     try:
-        with open(p) as f:
-            return f.read()
+        with open(p, "rb") as f:
+            return f.read().decode("utf-8", "replace")
     except (IOError, OSError):
         return default
 
 def write(p, text):
-    with open(p, "w") as f:
-        f.write(text)
+    with open(p, "wb") as f:
+        f.write(text.encode("utf-8"))
+
+def text_open(p):
+    """open() for reading text, UTF-8 whatever the locale (see read)."""
+    return io.open(p, encoding="utf-8", errors="replace", newline="")
 
 def alive(pid):
     try:
@@ -110,7 +116,8 @@ def git_info(repo):
 
 def act_check(a):
     r = {"host": socket.gethostname(), "python": sys.version.split()[0],
-         "msub": cmd_out(["which", "ccc_msub"]) is not None}
+         "msub": cmd_out(["which", "ccc_msub"]) is not None,
+         "mqinfo": cmd_out(["ccc_mqinfo"])}       # the QoS limits (parsed by the GUI)
     if a:
         r["git"] = git_info(a[0])
     print(json.dumps(r))
@@ -127,10 +134,9 @@ def scan_help(path, interp):
     The text is READ from the script's usage() here-document, never obtained
     by running it: this runs on the login node, and compile_all.sh loads its
     modules before it looks at --help. No usage() block: an error, not a run."""
-    try:
-        source = open(path).read()
-    except (IOError, OSError) as e:
-        print(json.dumps({"error": "%s : %s" % (path, e)}))
+    source = read(path)
+    if source is None:
+        print(json.dumps({"error": "%s : illisible" % path}))
         return
     m = USAGE_RE.search(source)
     if not m:
@@ -236,6 +242,7 @@ def act_launch(a):
         job = ("#!/bin/bash\n" + spec["msub"].rstrip("\n") + "\n"
                + "#MSUB -r %s\n#MSUB -T %d\n#MSUB -o %s\n#MSUB -e %s\n"
                % (spec["name"], spec["time_s"], log, log)
+               + ("#MSUB -Q %s\n" % spec["qos"] if spec.get("qos") else "")
                + 'D=%s\n' % shlex.quote(d)
                + ('echo "[gui] launcher: %s"\n' % spec["launcher"] if spec.get("launcher") else "")
                + '%sbash "$D/run.sh"\ncode=$?\necho "$code" > "$D/exit_code"\n'
@@ -281,7 +288,7 @@ def read_events(d):
     p = os.path.join(d, "events.jsonl")
     out = []
     try:
-        with open(p) as f:
+        with text_open(p) as f:
             for ln in f:
                 try:
                     out.append(json.loads(ln))
@@ -439,7 +446,7 @@ def act_summary(a):
         else:
             print(json.dumps({"note": "pas encore de %s" % name}))
         return
-    with open(path) as f:
+    with text_open(path) as f:
         rows = list(csv.reader(f))
     if not rows:
         print(json.dumps({"note": "%s est vide" % name}))
@@ -527,7 +534,7 @@ def act_points(a):
         print(json.dumps({"note": "pas encore de %s" % meta["summary_file"]}))
         return
     builds, exes, rows = {}, {}, []
-    with open(path) as f:
+    with text_open(path) as f:
         rd = csv.reader(f)
         head = next(rd, [])
         col = {h: i for i, h in enumerate(head)}
@@ -557,7 +564,49 @@ def act_delete(a):
     shutil.rmtree(d)
     print(json.dumps({"ok": True}))
 
-ACTIONS = {"check": act_check, "options": act_options, "launch": act_launch, "list": act_list,
+BUILD_NAME_RE = re.compile(r'cmake-build-([^/"\s]*)')
+EXE_RULE_RE = re.compile(rb"CXX_EXECUTABLE_LINKER__(\w+)")
+CONFIG_SUFFIX_RE = re.compile(r"_(Debug|Release|RelWithDebInfo|MinSizeRel)?$")
+
+def act_build_targets(a):
+    """What compile_all.sh can build, for the --target / --exec pickers --
+    read, never built nor configured here:
+      configs  the cmake-build-<name> names written in compile_all.sh and
+               compile_all_gnu.sh (as known_build_names does);
+      dirs     the configured build dirs <build_rep>/cmake-build-<name>/<arch>
+               whose <arch> ends with the one asked (aarch64, x86_64), with
+               the executables of their build.ninja (the rules
+               CXX_EXECUTABLE_LINKER__<target>_<Config>, as
+               __ninja_target_names reads them through ninja)."""
+    repo = os.path.expanduser(a[0])
+    build_rep = os.path.expanduser(os.path.expandvars(a[1])) if len(a) > 1 and a[1] else repo
+    arch = a[2] if len(a) > 2 else ""
+    configs = set()
+    for f in ("scripts/compile_all.sh", "scripts/compile_all_gnu.sh"):
+        text = read(os.path.join(repo, f), "")
+        for name in BUILD_NAME_RE.findall(text):
+            name = name.replace("${ICF_SUFFIX}", "")
+            if "$" not in name and name:
+                configs.add(name)
+    dirs = []
+    for d in sorted(glob.glob(os.path.join(build_rep, "cmake-build-*", "*"))):
+        sub = os.path.basename(d)
+        if not os.path.isdir(d) or (arch and not sub.endswith(arch)):
+            continue
+        ninja = os.path.join(d, "build.ninja")
+        execs = set()
+        try:
+            with open(ninja, "rb") as f:
+                for m in EXE_RULE_RE.finditer(f.read()):
+                    execs.add(CONFIG_SUFFIX_RE.sub("", m.group(1).decode()))
+            mtime = os.path.getmtime(ninja)
+        except (IOError, OSError):
+            mtime = None
+        dirs.append({"name": os.path.basename(os.path.dirname(d))[len("cmake-build-"):], "arch": sub,
+                     "configured": mtime is not None, "mtime": mtime, "execs": sorted(execs)})
+    print(json.dumps({"configs": sorted(configs), "dirs": dirs, "build_rep": build_rep}))
+
+ACTIONS = {"build_targets": act_build_targets, "check": act_check, "options": act_options, "launch": act_launch, "list": act_list,
            "tail": act_tail, "stop": act_stop, "pack": act_pack, "summary": act_summary,
            "points": act_points, "delete": act_delete}
 if __name__ == "__main__":

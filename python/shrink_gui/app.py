@@ -14,15 +14,17 @@ from PySide6.QtCore import QPointF, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QKeySequence, QPen, QTextCursor
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
-                               QPushButton, QScrollArea, QSpinBox, QSplitter, QStyle, QSystemTrayIcon,
+                               QPushButton, QScrollArea, QSplitter, QStyle, QSystemTrayIcon,
                                QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
-from shrink_gui import i18n
-from shrink_gui.config import (APP, ARCH_DEFAULTS, COLOR_BY, DEFAULTS, PRESETS, PROGRAMS, VIZ, exe_parts)
+from shrink_gui import i18n, qos
+from shrink_gui.config import (APP, ARCH_DEFAULTS, BUILD_REP, COLOR_BY, DEFAULTS, PRESETS, PROGRAMS, VIZ,
+                               exe_parts)
 from shrink_gui.i18n import T, status_text, tip
 from shrink_gui.remote import Remote
 from shrink_gui.runscripts import make_launch_sh, make_run_sh
-from shrink_gui.widgets import LogView, NumItem, OptionsForm, ScatterView, TLabel, ask
+from shrink_gui.widgets import (DurationBox, LogView, NumItem, OptionsForm, PickerDialog, ScatterView, TLabel,
+                                ask, families, split_list, unique_globs)
 
 
 class Main(QMainWindow):
@@ -41,6 +43,7 @@ class Main(QMainWindow):
         self.tail_busy = False
         self.list_busy = False
         self.prev_status = None  # id -> status at the previous refresh (notifications)
+        self.build_info = {}     # arch suffix -> act_build_targets (the "Choisir…" lists)
 
         # --- connection
         self.host = QLineEdit(self._get("host"))
@@ -69,11 +72,18 @@ class Main(QMainWindow):
         self.mode.addItem("ccc_msub (batch)", "msub")
         self.mode.addItem("ccc_mprun détaché", "mprun")
         self.mode.setCurrentIndex(max(0, self.mode.findData(self._get("mode"))))
-        self.time_s = QSpinBox()
-        self.time_s.setRange(60, 86400 * 3)
-        self.time_s.setSingleStep(600)
-        self.time_s.setSuffix(" s")
+        self.time_s = DurationBox()
         self.time_s.setValue(int(self._get("time_s")))
+        # QoS: the limits of ccc_mqinfo (read by the connection check, else
+        # those of qos.FALLBACK), "auto" picks one from the duration
+        self.qos_rows = qos.parse_mqinfo(self.settings.value("mqinfo", "")) or qos.parse_mqinfo(qos.FALLBACK)
+        self.qos = QComboBox()
+        self.fill_qos(self.settings.value("qos", "auto"))
+        self.qos_note = TLabel("")
+        self.qos_note.setWordWrap(True)
+        qrow = QHBoxLayout()
+        qrow.addWidget(self.qos)
+        qrow.addWidget(self.qos_note, 1)
         self.directives = QPlainTextEdit()
         self.directives.setFont(QFont("Monospace", 9))
         self.directives.setFixedHeight(92)
@@ -87,6 +97,7 @@ class Main(QMainWindow):
         where.addRow("Partition", self.preset)
         where.addRow("Soumission", self.mode)
         where.addRow("Durée max (-T)", self.time_s)
+        where.addRow("QoS (-Q)", qrow)
         where.addRow("Directives", self.directives)
         self.launcher = QLineEdit()
         self.launcher.setPlaceholderText("vide : la commande tourne directement dans le job")
@@ -331,6 +342,10 @@ class Main(QMainWindow):
         self.program.currentTextChanged.connect(self.program_changed)
         self.preset_changed()
         self.program_changed()
+        self.time_s.valueChanged.connect(self.time_changed)
+        self.qos.currentIndexChanged.connect(self.update_qos)
+        self.directives.textChanged.connect(self.update_qos)
+        self.update_qos()
 
         # --- polling: run list every 15 s, the shown log every 2 s
         self.t_list = QTimer(self)
@@ -386,8 +401,15 @@ class Main(QMainWindow):
         "mode": "ccc_msub : job batch, indépendant de cette fenêtre et du nœud de login "
                 "(recommandé).\n\nccc_mprun détaché : lancé depuis le nœud de login ; il dépend de ce "
                 "nœud tant qu'il tourne.",
-        "time_s": "Durée maximale du job (-T), en secondes. Au-delà, le job est tué par le "
-                  "gestionnaire et finit « terminé sans code ».",
+        "time_s": "Durée maximale du job (-T). Au-delà, le job est tué par le gestionnaire et finit "
+                  "« terminé sans code ». Se tape « 1 h 30 », « 90 min », « 2 j » ou « 1-00:00:00 ».\n\n"
+                  "Mémorisée par programme : compile_all.sh court, bench_and_test.py quelques heures, "
+                  "multi_launch_stress.py long.",
+        "qos": "La QoS du job (-Q), dont dépend la durée maximale (ccc_mqinfo) : test (prioritaire, "
+               "court, 2 jobs soumis au plus), normal (1 jour), long (3 jours, pas sur milan-bxi), "
+               "xlong (pas sur gh200-bxi).\n\n« auto » prend la plus prioritaire qui accepte la durée, "
+               "puis la plus courte. Un -Q écrit dans les directives l'emporte.\n\nLes limites sont "
+               "relues sur inti à chaque vérification de la connexion.",
         "directives": "Lignes #MSUB du script batch (ou options ccc_mprun en mode détaché). Propres à "
                       "la partition, mémorisées.\n\n-T, -r, -o et -e sont ajoutés d'après le formulaire.",
         "repo": "Le dépôt shrink-array SUR INTI. Les options sont lues dans ces scripts-là, et c'est "
@@ -500,7 +522,8 @@ class Main(QMainWindow):
         for key, w in (("host", self.host), ("repo", self.repo), ("runs_dir", self.runs_dir),
                        ("local_dir", self.local_dir), ("local_repo", self.local_repo)):
             self.settings.setValue(key, w.text())
-        self.settings.setValue("time_s", self.time_s.value())
+        self.settings.setValue(f"time_s/{self.program.currentText()}", self.time_s.value())
+        self.settings.setValue("qos", self.qos.currentData())
         self.settings.setValue("preset", self.preset.currentData())
         self.settings.setValue("mode", self.mode.currentData())
         self.settings.setValue("program", self.program.currentText())
@@ -546,9 +569,15 @@ class Main(QMainWindow):
         self.launcher.setVisible(is_msub)
         self.launcher_row_label.setVisible(is_msub)
         self.apply_arch_defaults()
+        if hasattr(self, "qos_note"):
+            self.update_qos()
 
     def program_changed(self, *_):
+        prog = self.program.currentText()
+        self.time_s.setValue(int(self.settings.value(f"time_s/{prog}",
+                                                     PROGRAMS[prog].get("time_s", DEFAULTS["time_s"]))))
         cached = self.settings.value(f"schema/{self.program.currentText()}")
+        self.form.pickers = {d: self.pick for d in PROGRAMS[prog].get("pickers", {})}
         self.form.build(json.loads(cached) if cached else None)
         self.form.filter(self.opt_filter.text())
         self.apply_arch_defaults()
@@ -557,6 +586,7 @@ class Main(QMainWindow):
 
     def scan(self):
         prog = self.program.currentText()
+        self.build_info.clear()      # re-read too, with the options
         self.info(f"lecture des options de {prog}…")
         self.last_error = None
 
@@ -606,6 +636,125 @@ class Main(QMainWindow):
         if hasattr(self, "preview"):
             self.preview.setPlainText(self.command())
 
+    # ---------------------------------------------- --target / --exec pickers
+    def arch_suffix(self):
+        """The <arch> component of compile_all.sh's build dirs ends with uname -m."""
+        return "aarch64" if self.arch() == "arm" else "x86_64"
+
+    def pick(self, dest):
+        """"Choisir…" of --target / --exec: what compile_all.sh can build on
+        this partition's architecture, read on inti (cached until "Lire les
+        options")."""
+        sfx = self.arch_suffix()
+        info = self.build_info.get(sfx)
+        if info is None:
+            self.info(f"lecture des builds de {sfx} sur inti…")
+
+            def done(r):
+                if r is not None:
+                    self.build_info[sfx] = r
+                    self.info(f"{len(r['configs'])} configurations, {len(r['dirs'])} build(s) {sfx} "
+                              f"dans {r['build_rep']}")
+                    self.pick(dest)
+            self.remote.helper("build_targets", [self.repo.text().strip(), BUILD_REP, sfx], done)
+            return
+        ac, w, _lab = self.form.widgets[dest]
+        multi = "comma" in (ac.get("help") or "").lower()
+        kind = PROGRAMS[self.program.currentText()]["pickers"][dest]
+        dlg = (self.target_dialog if kind == "configs" else self.exec_dialog)(info, w.text(), multi, sfx)
+        if dlg.exec():
+            w.setText(dlg.value())
+
+    def target_dialog(self, info, value, multi, sfx):
+        dirs = {d["name"]: d for d in info["dirs"]}
+        names = sorted(set(info["configs"]) | set(dirs))
+        items = []
+        for n in names:
+            d = dirs.get(n)
+            if d and d["configured"]:
+                when = time.strftime("%Y-%m-%d", time.localtime(d["mtime"]))
+                note = f"configurée, {len(d['execs'])} exécutable(s), {when}"
+            elif d:
+                note = "dossier sans build.ninja"
+            else:
+                note = ""
+            items.append((n, note))
+        pats = {g: c for g, c in families(names, "-").items()}
+        for kw in ("sanitizer", "debug", "check", "stats", "ledger", "cs"):
+            hits = [n for n in names if kw in n]
+            if 2 <= len(hits) < len(names):
+                pats[f"*{kw}*"] = len(hits)
+        order = sorted(pats.items(), key=lambda kv: (not (kv[0].startswith("*") and kv[0].endswith("*")),
+                                                     -kv[1], kv[0]))
+        patterns = [(g, f"motif : {c} configurations") for g, c in unique_globs(order, names)[:24]]
+        intro = (f"Configurations de compile_all.sh (cmake-build-<nom>). « configurée » : son build "
+                 f"existe déjà pour {sfx} dans {info['build_rep']}.")
+        return PickerDialog(self, "--target : configurations", intro, items, patterns, value, multi)
+
+    def exec_dialog(self, info, value, multi, sfx):
+        target = self.form.widgets["target"][1].text() if "target" in self.form.widgets else ""
+        import fnmatch
+        dirs = [d for d in info["dirs"] if d["configured"]
+                and (not split_list(target) or any(fnmatch.fnmatchcase(d["name"], g) for g in split_list(target)))]
+        count = {}
+        for d in dirs:
+            for e in d["execs"]:
+                count[e] = count.get(e, 0) + 1
+        items = [(e, f"dans {c}/{len(dirs)} build(s)") for e, c in sorted(count.items())]
+        patterns = [(g, f"motif : {c} exécutables")
+                    for g, c in unique_globs(families(sorted(count), "_").items(), sorted(count))[:24]]
+        if dirs:
+            scope = f"des {len(dirs)} build(s) {sfx} configurés" + (f" retenus par --target={target}" if target else "")
+            intro = (f"Exécutables {scope}. Ninja construit aussi leurs dépendances (bibliothèques chunk), "
+                     f"pas les autres exécutables.")
+        else:
+            intro = (f"Aucun build {sfx} configuré" + (f" pour --target={target}" if target else "")
+                     + f" dans {info['build_rep']} : rien à lister. Lancez d'abord compile_all.sh sans "
+                       "--exec (ou tapez le nom à la main).")
+        return PickerDialog(self, "--exec : exécutables", intro, items, patterns, value, multi)
+
+    # ------------------------------------------------------------------ QoS
+    def fill_qos(self, keep):
+        self.qos.blockSignals(True)
+        self.qos.clear()
+        self.qos.addItem(T("auto (selon la durée)"), "auto")
+        for name in qos.names(self.qos_rows):
+            self.qos.addItem(name, name)
+        self.qos.setCurrentIndex(max(0, self.qos.findData(keep)))
+        self.qos.blockSignals(False)
+
+    def time_changed(self, v):
+        """The duration is remembered per program (compile_all.sh is short,
+        multi_launch_stress.py long)."""
+        self.settings.setValue(f"time_s/{self.program.currentText()}", v)
+        self.update_qos()
+
+    def qos_choice(self):
+        """(qos to add with -Q or None, its row, error or None). A -Q already in
+        the directives wins over the list: it is only checked."""
+        directives = self.directives.toPlainText()
+        fixed = qos.explicit_qos(directives)
+        wanted = fixed or self.qos.currentData() or "auto"
+        name, row, err = qos.choose(self.qos_rows, self.preset.currentData(), qos.job_cpus(directives),
+                                    self.time_s.value(), wanted)
+        return (None if fixed else name), row, err
+
+    def update_qos(self, *_):
+        name, row, err = self.qos_choice()
+        if err:
+            self.qos_note.setText(f"<span style='color:#c0392b'>{html.escape(T(err), quote=False)}</span>")
+            return
+        name = name or qos.explicit_qos(self.directives.toPlainText())
+        bits = [T(f"max {qos.fmt(row['max_time'], i18n.LANG)}")]
+        if row["priority"] > min(r["priority"] for r in self.qos_rows):
+            bits.append(T("prioritaire"))
+        if row["max_sub"] and row["max_sub"] <= 10:     # test: 2; normal/long: 100, not worth a word
+            bits.append(T(f"{row['max_sub']} job(s) soumis au plus"))
+        fixed = T(" (fixée dans les directives)") if qos.explicit_qos(self.directives.toPlainText()) else ""
+        self.qos_note.setText(f"→ <b>{html.escape(name)}</b>{fixed} : " + ", ".join(bits)
+                              if i18n.LANG == "fr" else
+                              f"→ <b>{html.escape(name)}</b>{fixed}: " + ", ".join(bits))
+
     # ----------------------------------------------------------- connection
     def check(self):
         host = self.host.text().strip()
@@ -624,6 +773,12 @@ class Main(QMainWindow):
                                   "distant en échec (voir la barre d'état)</span>")
                 return
             warn = "" if r.get("msub") else " — <b>ccc_msub introuvable</b>"
+            rows = qos.parse_mqinfo(r.get("mqinfo") or "")
+            if rows:
+                self.settings.setValue("mqinfo", r["mqinfo"])
+                self.qos_rows = rows
+                self.fill_qos(self.qos.currentData())
+                self.update_qos()
             self.inti_git = r.get("git")
             self.conn.setText(f"<span style='color:#1e8449'>connecté — {r['host']}, "
                               f"python {r['python']}</span>{warn}{self.git_line()}")
@@ -648,6 +803,10 @@ class Main(QMainWindow):
             self.error(f"{prog} se soumet par ccc_msub seulement (il ne doit pas tourner depuis le nœud "
                        "de login) : choisissez « ccc_msub (batch) »")
             return
+        qname, _row, qerr = self.qos_choice()
+        if qerr:
+            self.error(qerr)
+            return
         busy = [r["id"] for r in self.runs
                 if r["status"] in ("en cours", "en attente", "démarrage")
                 and r["meta"].get("partition") == pkey and r["meta"].get("program") == prog]
@@ -665,13 +824,17 @@ class Main(QMainWindow):
             "msub": self.directives.toPlainText() if mode == "msub" else "",
             "launcher": self.launcher.text().strip() if mode == "msub" else "",
             "launch.sh": make_launch_sh(f"{' '.join(self.directives.toPlainText().split())} "
-                                        f"-T{self.time_s.value()}") if mode == "mprun" else "",
+                                        f"-T{self.time_s.value()}" + (f" -Q {qname}" if qname else ""))
+                         if mode == "mprun" else "",
+            "qos": qname or "",
             "name": re.sub(r"[^A-Za-z0-9_.-]", "_", f"{prog.split('.')[0]}_{pkey}")[:40],
             "time_s": self.time_s.value(),
             "meta": {"program": prog, "partition": pkey, "arch": self.arch(), "mode": mode,
                      "launcher": self.launcher.text().strip() if mode == "msub" else "",
                      "command": cmd, "values": self.form.values(), "extra": self.extra.text(),
                      "repo": self.repo.text().strip(), "time_s": self.time_s.value(),
+                     "qos": qname or qos.explicit_qos(self.directives.toPlainText()) or "",
+                     "qos_wanted": self.qos.currentData(),
                      "created": time.strftime("%F %T"),
                      **{k: PROGRAMS[prog][k] for k in ("out_re", "out_files", "progress_re",
                                                        "eta_re", "summary", "summary_file")}},
@@ -791,6 +954,8 @@ class Main(QMainWindow):
             self.mode.setCurrentIndex(i)
         if m.get("time_s"):
             self.time_s.setValue(int(m["time_s"]))
+        if m.get("qos_wanted"):
+            self.qos.setCurrentIndex(max(0, self.qos.findData(m["qos_wanted"])))
         self.form.set_values(m.get("values", {}))
         self.extra.setText(m.get("extra", ""))
         self.info(f"options de {run['id']} reprises")

@@ -32,12 +32,13 @@ PRESETS = {
 }
 
 # Programs: script and working directory relative to the repository, how the
-# options are read, "msub_only" (refused in the detached ccc_mprun mode), how the
+# options are read, "time_s" (default job duration), "msub_only" (refused in the detached ccc_mprun mode), how the
 # options are read ("argparse" or "help"), what the log says about progress,
 # and what "Récupérer" / the Résumé tab take from the output directory the
 # program announces in its log (out_re).
 PROGRAMS = {
     "multi_launch_stress.py": {
+        "time_s": 172800,  # default -T (long runs: 2 days); then remembered per program
         "script": "python/multi_launch_stress.py", "cwd": "python",
         "interp": "python3", "scan": "argparse",
         "out_re": r"Outputs, CSV and log in (\S+)",
@@ -47,6 +48,7 @@ PROGRAMS = {
         "summary": "multi_launch", "summary_file": "timings_summary.csv",
     },
     "bench_and_test.py": {
+        "time_s": 21600,  # default -T (a few hours); then remembered per program
         "script": "python/bench_and_test.py", "cwd": "python",
         "interp": "python3", "scan": "argparse",
         "out_re": r"Run outputs \S+ (\S+)",
@@ -55,10 +57,14 @@ PROGRAMS = {
         "summary": "csv", "summary_file": "bench_summary.csv",
     },
     "compile_all.sh": {
+        "time_s": 5400,  # default -T (short); then remembered per program
         "script": "scripts/compile_all.sh", "cwd": "scripts",
         "interp": "bash", "scan": "help",
         # Never on the login node: only as a batch job (ccc_msub).
         "msub_only": True,
+        # "Choisir…" beside these fields: the configurations / executables
+        # compile_all.sh can build, read on inti (see BUILD_REP).
+        "pickers": {"target": "configs", "exec": "execs"},
         "out_re": None, "out_files": [],
         "progress_re": None, "eta_re": None,
         "summary": None, "summary_file": None,
@@ -82,6 +88,11 @@ ARCH_DEFAULTS = {
     ("bench_and_test.py", "arm"): {"build_root": _BUILD_ROOT, "output_dir": _BUILD_ROOT + "/bench_results"},
     ("bench_and_test.py", "x86"): {"build_root": _BUILD_ROOT, "output_dir": _BUILD_ROOT + "/bench_results"},
 }
+
+# Where compile_all.sh puts its cmake-build-<name>/<arch> trees on inti
+# (CHUNK_BUILD_REP, default of scripts/site_env.sh there): the "Choisir…" of
+# --exec lists the executables of the build dirs found there.
+BUILD_REP = _BUILD_ROOT
 
 DEFAULTS = {
     "host": "inti",
