@@ -654,11 +654,300 @@ echo "[gui] end $(date '+%F %T')  exit code $code"
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
+# --------------------------------------------------------------------------
+# Language. The interface is written in French; T() gives the English text
+# when LANG == "en": an exact entry of EN, else the EN_RE substitutions (the
+# messages built on the fly, those sent back by inti included). The run
+# statuses stay French internally -- the code compares them -- and are only
+# translated where they are shown.
+# --------------------------------------------------------------------------
+LANG = "fr"
+
+EN = {
+    # window, groups, form rows
+    "shrink-array — runs sur inti (prototype)": "shrink-array — runs on inti (prototype)",
+    "Calculateur :": "Machine:", "Vérifier la connexion": "Check connection",
+    "Où et comment": "Where and how", "Quoi": "What", "Partition": "Partition",
+    "Soumission": "Submission", "Durée max (-T)": "Max time (-T)", "Directives": "Directives",
+    "Lanceur (job)": "Launcher (job)", "Dépôt (inti)": "Repository (inti)",
+    "Runs (inti)": "Runs (inti)", "Résultats (local)": "Results (local)",
+    "Langue": "Language",
+    "gh200-bxi — ARM, 288 cœurs": "gh200-bxi — ARM, 288 cores",
+    "milan-bxi — x86, 64 cœurs": "milan-bxi — x86, 64 cores",
+    "ccc_msub (batch)": "ccc_msub (batch)", "ccc_mprun détaché": "ccc_mprun, detached",
+    "vide : la commande tourne directement dans le job": "empty: the command runs directly in the job",
+    "Lire les options": "Read options", "filtrer les options (nom ou aide)…": "filter the options (name or help)…",
+    "Défauts de l'architecture": "Architecture defaults", "Enregistrer comme défauts": "Save as defaults",
+    "arguments en plus, tels quels (facultatif)": "extra arguments, as they are (optional)",
+    "Commande :": "Command:", "Soumettre": "Submit",
+    # runs
+    "Run": "Run", "Programme": "Program", "Job": "Job", "Statut": "Status",
+    "Avancement": "Progress", "Dernière ligne": "Last line",
+    "Rafraîchir": "Refresh", "Arrêter": "Stop", "Récupérer les résultats": "Fetch results",
+    "Reprendre ses options": "Reuse its options", "Supprimer": "Delete",
+    "Log": "Log", "Résumé": "Summary", "Graphique": "Chart",
+    "rechercher dans le log (Entrée : suivant)": "search the log (Enter: next)",
+    "Suivre la fin": "Follow the end", "Rafraîchir le résumé": "Refresh the summary",
+    # chart controls
+    "Build": "Build", "Variante": "Variant", "Taille": "Size", "Aucune": "None", "Couleur": "Colour",
+    "Comparer avec": "Compare with", "(aucun)": "(none)", "tous": "all", "toutes": "all",
+    "Temps en échelle log": "Log time scale", "Médiane par tranche de threads": "Median per thread bin",
+    "Masquer les échecs": "Hide failures",
+    "threads": "threads", "temps par run (s)": "time per run (s)", "médiane": "median",
+    "tous les builds": "all builds", "autres": "others",
+    # statuses (internal values stay French)
+    "en cours": "running", "en attente": "pending", "démarrage": "starting", "suspendu": "suspended",
+    "fini": "done", "arrêté": "stopped", "interrompu": "interrupted", "inconnu": "unknown",
+    "inconnu (pas de squeue)": "unknown (no squeue)",
+    "terminé sans code (limite de temps ? voir le log)": "ended without a code (time limit? see the log)",
+    # summary columns
+    "échecs": "failures", "moyenne s": "mean s", "médiane s": "median s",
+    # misc
+    "vérification…": "checking…", "?": "?",
+    "Options non lues : « Lire les options » (connexion requise).":
+        "Options not read: \"Read options\" (needs the connection).",
+    "(pas d'aide dans le script)": "(no help in the script)",
+    "erreur inconnue (voir la barre d'état)": "unknown error (see the status bar)",
+    "arrêtez d'abord ce run (il est encore actif)": "stop this run first (it is still active)",
+    "pas de données": "no data",
+    "Options non lues": "Options not read", "Run déjà actif": "Run already active",
+    # tooltips: controls
+    "Nom d'hôte ssh du calculateur (tel qu'il figure dans ~/.ssh/config).\n\n"
+    "Tout passe par la connexion maître que vous ouvrez vous-même : ssh -fNM inti.":
+        "ssh host name of the machine (as in ~/.ssh/config).\n\n"
+        "Everything goes through the master connection you open yourself: ssh -fNM inti.",
+    "La partition où le run est soumis. Elle fixe aussi l'architecture (ARM ou x86), "
+    "donc les valeurs par défaut des options.":
+        "The partition the run is submitted to. It also sets the architecture (ARM or x86), "
+        "hence the options' default values.",
+    "ccc_msub : job batch, indépendant de cette fenêtre et du nœud de login "
+    "(recommandé).\n\nccc_mprun détaché : lancé depuis le nœud de login ; il dépend de ce "
+    "nœud tant qu'il tourne.":
+        "ccc_msub: batch job, independent of this window and of the login node "
+        "(recommended).\n\nccc_mprun, detached: started from the login node; it depends on that "
+        "node while it runs.",
+    "ccc_msub : job batch, indépendant de cette fenêtre et du nœud de login (recommandé).":
+        "ccc_msub: batch job, independent of this window and of the login node (recommended).",
+    "ccc_mprun détaché : lancé depuis le nœud de login ; il dépend de ce nœud tant qu'il tourne.":
+        "ccc_mprun, detached: started from the login node; it depends on that node while it runs.",
+    "Durée maximale du job (-T), en secondes. Au-delà, le job est tué par le "
+    "gestionnaire et finit « terminé sans code ».":
+        "Maximum job time (-T), in seconds. Beyond it the batch system kills the job, which "
+        "ends \"ended without a code\".",
+    "Lignes #MSUB du script batch (ou options ccc_mprun en mode détaché). Propres à "
+    "la partition, mémorisées.\n\n-T, -r, -o et -e sont ajoutés d'après le formulaire.":
+        "#MSUB lines of the batch script (or ccc_mprun options in detached mode). Per "
+        "partition, remembered.\n\n-T, -r, -o and -e are added from the form.",
+    "Le dépôt shrink-array SUR INTI. Les options sont lues dans ces scripts-là, et c'est "
+    "là que le job s'exécute.":
+        "The shrink-array repository ON INTI. The options are read from those scripts, and the "
+        "job runs there.",
+    "Où l'interface range ses runs sur inti : un dossier par run (log, scripts, "
+    "code de retour, numéro de job).":
+        "Where the interface keeps its runs on inti: one directory per run (log, scripts, "
+        "exit code, job id).",
+    "Où « Récupérer les résultats » copie les fichiers sur ce portable.":
+        "Where \"Fetch results\" copies the files on this laptop.",
+    "Le script à lancer. Ses options sont lues dans le script lui-même sur inti.":
+        "The script to run. Its options are read from the script itself on inti.",
+    "Ne montre que les options dont le nom ou l'aide contient ce texte.":
+        "Shows only the options whose name or help contains this text.",
+    "Arguments ajoutés tels quels à la fin de la commande : pour une option que le "
+    "formulaire ne connaît pas (--no-gnu de compile_all.sh, par exemple).":
+        "Arguments appended as they are to the command: for an option the form does not "
+        "know (compile_all.sh's --no-gnu, for instance).",
+    "La commande exacte qui sera exécutée sur le nœud. Seules les options modifiées "
+    "(en gras) y figurent : les autres gardent le défaut du script.":
+        "The exact command run on the node. Only the changed options (in bold) are in it: "
+        "the others keep the script's default.",
+    "Les runs du dossier « Runs (inti) », du plus récent au plus ancien. Cliquez sur un "
+    "run pour voir son log, son résumé et son graphique.\n\nRafraîchi toutes les 15 s.":
+        "The runs of the \"Runs (inti)\" directory, newest first. Click a run to see its log, "
+        "summary and chart.\n\nRefreshed every 15 s.",
+    "Recherche dans le log (Ctrl+F). Entrée : occurrence suivante, avec retour au début.":
+        "Search the log (Ctrl+F). Enter: next match, wrapping to the start.",
+    "Fait défiler le log jusqu'à la fin à chaque nouvelle ligne. Décochée, le log "
+    "reste où vous êtes.":
+        "Scrolls the log to the end on every new line. Unchecked, the log stays where you are.",
+    "Ne montre que les runs de ce build.": "Shows only the runs of this build.",
+    "Ne montre que les runs de cette variante (chunk, chunk2, chunk2a).":
+        "Shows only the runs of this variant (chunk, chunk2, chunk2a).",
+    "Ce que la couleur distingue : la variante, la taille de chunk, ou rien. Trois "
+    "couleurs au plus ; le reste est groupé en gris « autres ».":
+        "What the colour tells apart: the variant, the chunk size, or nothing. Three colours "
+        "at most; the rest is grouped in grey as \"others\".",
+    "Axe du temps en échelle logarithmique : utile quand les temps s'étalent sur "
+    "plusieurs ordres de grandeur.":
+        "Logarithmic time axis: useful when the times span several orders of magnitude.",
+    "Médiane du temps par tranche de threads (au moins 3 runs par tranche) : la "
+    "tendance malgré la dispersion.":
+        "Median time per thread bin (at least 3 runs per bin): the trend despite the spread.",
+    "Retire les runs en échec (triangles) du graphique.": "Removes the failed runs (triangles) from the chart.",
+    # tooltips: buttons
+    "Vérifie la connexion maître ssh et le python3 d'inti, puis rafraîchit la liste des runs.":
+        "Checks the ssh master connection and inti's python3, then refreshes the run list.",
+    "Relit les options du script sur inti : à faire après avoir modifié ou mis à jour le script.":
+        "Reads the script's options again on inti: do it after changing or updating the script.",
+    "Relit les options du script sur inti (après une modification du script)":
+        "Reads the script's options again on inti (after a change to the script)",
+    "Remet les options aux valeurs par défaut de l'architecture de la partition (ARM ou x86).":
+        "Resets the options to the defaults of the partition's architecture (ARM or x86).",
+    "Enregistre les options actuelles comme valeurs par défaut de ce programme sur cette architecture.":
+        "Saves the current options as this program's defaults on this architecture.",
+    "Crée le dossier du run sur inti et soumet le job.": "Creates the run directory on inti and submits the job.",
+    "Relit maintenant (sinon automatique).": "Reads again now (otherwise automatic).",
+    "Annule le job du run sélectionné (ccc_mdel), ou arrête ccc_mprun en mode détaché.":
+        "Cancels the selected run's job (ccc_mdel), or stops ccc_mprun in detached mode.",
+    "Copie sur ce portable le dossier du run et les fichiers de résultats du programme "
+    "(CSV, log, erreurs ; jamais les output_*).":
+        "Copies the run directory and the program's result files (CSV, log, errors; never the "
+        "output_*) to this laptop.",
+    "Remet dans le formulaire le programme, la partition et les options du run sélectionné, "
+    "pour le relancer ou le modifier.":
+        "Puts the selected run's program, partition and options back in the form, to run it "
+        "again or change it.",
+    "Remet dans le formulaire le programme, la partition et les options de ce run":
+        "Puts this run's program, partition and options back in the form",
+    "Supprime le dossier du run sur inti (pas les sorties du programme). "
+    "Seulement pour un run terminé.":
+        "Deletes the run directory on inti (not the program's outputs). Finished runs only.",
+    "Supprime le dossier du run sur inti (pas les sorties du programme)":
+        "Deletes the run directory on inti (not the program's outputs)",
+    "Relit le fichier résumé du run sélectionné.": "Reads the selected run's summary file again.",
+    "ccc_msub : ce qui lance run.sh sur le nœud réservé, par exemple "
+    "« ccc_mprun -C ccc-rhel9 -n 1 -c 288 » (environnement RHEL 9 du gh200).\n"
+    "Mémorisé par partition.":
+        "ccc_msub: what starts run.sh on the reserved node, for instance "
+        "\"ccc_mprun -C ccc-rhel9 -n 1 -c 288\" (the gh200's RHEL 9 environment).\n"
+        "Remembered per partition.",
+    "Superpose un autre run de multi_launch_stress.py : même build et même variante de "
+    "part et d'autre":
+        "Overlays another multi_launch_stress.py run: same build and same variant on both sides",
+    # tooltips: lists, tabs
+    "Stress : les binaires de check, en boucle, à un nombre de threads tiré au hasard. "
+    "Résumé et graphique disponibles.":
+        "Stress: the check binaries, over and over, at a random thread count. Summary and "
+        "chart available.",
+    "Bench et tests : validations ctest, checks, sanitizers, comparaison seq/omp et "
+    "mesures de performance.":
+        "Bench and tests: ctest validations, checks, sanitizers, seq/omp compare and "
+        "performance measurements.",
+    "Compilation de toutes les configurations (options lues dans son --help).":
+        "Builds every configuration (options read from its --help).",
+    "Le log du run sélectionné, suivi en direct.": "The selected run's log, followed live.",
+    "Le résumé du run : par build pour multi_launch_stress.py (runs, échecs, temps), "
+    "le CSV tel quel pour bench_and_test.py.":
+        "The run's summary: per build for multi_launch_stress.py (runs, failures, times), "
+        "the CSV as it is for bench_and_test.py.",
+    "Temps de chaque run selon le nombre de threads (multi_launch_stress.py). Survolez "
+    "un point pour le détail ; « Comparer avec » superpose un autre run.":
+        "Time of each run against the thread count (multi_launch_stress.py). Hover a point "
+        "for details; \"Compare with\" overlays another run.",
+    "Choix de la langue de l'interface (changement immédiat).":
+        "Interface language (applied at once).",
+}
+
+# Messages built on the fly (and those inti sends back): regex on the French,
+# English replacement. Applied in order, on the whole text.
+EN_RE = [(re.compile(a), b) for a, b in (
+    (r"réponse illisible de (\S+) :", r"unreadable answer from \1:"),
+    (r"<b>Options non lues\.</b>", "<b>Options not read.</b>"),
+    (r"Corrigez puis cliquez sur « Lire les options »\. En attendant, le champ « arguments en plus » "
+     r"passe les options telles quelles\.",
+     "Fix it, then click \"Read options\". Meanwhile the \"extra arguments\" field passes options as they are."),
+    (r"\(pas d'aide dans le script\)", "(no help in the script)"),
+    (r"(\d+) cœurs", r"\1 cores"),
+    (r"\noption : ", "\noption: "), (r"\ndéfaut du script : ", "\nscript default: "),
+    (r"^défaut : ", "default: "), (r"\nlanceur : ", "\nlauncher: "),
+    (r"^lecture des options de (.*)…$", r"reading the options of \1…"),
+    (r"^(\S+) : (\d+) options lues \(python (\S+) sur inti\)$", r"\1: \2 options read (python \3 on inti)"),
+    (r"^(\S+) : (\d+) options lues$", r"\1: \2 options read"),
+    (r"^défauts enregistrés pour (\S+) sur (\S+)$", r"defaults saved for \1 on \2"),
+    (r"pas de connexion maître : lancez (<b>ssh -fNM \S+</b>) dans un terminal",
+     r"no master connection: run \1 in a terminal"),
+    (r"connexion maître OK, mais python3 distant en échec \(voir la barre d'état\)",
+     "master connection OK, but the remote python3 failed (see the status bar)"),
+    (r"connecté — ", "connected — "), (r"<b>ccc_msub introuvable</b>", "<b>ccc_msub not found</b>"),
+    (r"Les options du script n'ont pas été lues : seuls les arguments en plus seront passés\.\n\n"
+     r"Soumettre quand même \?",
+     "The script's options were not read: only the extra arguments will be passed.\n\nSubmit anyway?"),
+    (r"^(\S+) a déjà un run actif sur (\S+) \((.*)\)\.\nDeux runs simultanés de même architecture "
+     r"peuvent écrire le même répertoire \(oracles, résumé\)\.\n\nSoumettre quand même \?$",
+     r"\1 already has an active run on \2 (\3).\nTwo simultaneous runs of one architecture may write "
+     r"the same directory (oracles, summary).\n\nSubmit anyway?"),
+    (r"^soumis : job (\S+)$", r"submitted: job \1"), (r"^lancé : (.*)$", r"started: \1"),
+    (r"^options de (\S+) reprises$", r"options of \1 reused"),
+    (r"\ble job (\S+) \(ccc_mdel\)", r"job \1 (ccc_mdel)"),
+    (r"^Arrêter le run (\S+) \?\n", r"Stop run \1?\n"),
+    (r"^(\S+) : arrêt demandé$", r"\1: stop requested"),
+    (r" · reste ~(\d+) h (\d+)", r" · ~\1 h \2 left"), (r" · reste ~(\d+) min", r" · ~\1 min left"),
+    (r" · reste < 1 min", " · < 1 min left"),
+    (r"^« (.*) » absent du log$", r'"\1" not in the log'),
+    (r"^Comparaison — temps par run selon le nombre de threads — ",
+     "Comparison — time per run against the thread count — "),
+    (r"^temps par run selon le nombre de threads — ", "time per run against the thread count — "),
+    (r"tous les builds", "all builds"),
+    (r"^médiane (\S+)$", r"median \1"), (r"^échec \((\d+)\)$", r"failure (\1)"),
+    (r"^autres \((\d+)\)$", r"others (\1)"),
+    (r"(\d+) run\(s\) affiché\(s\)", r"\1 run(s) shown"),
+    (r" \(les 30000 derniers runs de chaque fichier\)", " (the last 30000 runs of each file)"),
+    (r"\(([\d.]+) % plus lent\), moyenne géométrique des médianes sur (\d+) tranche\(s\) de (\d+) "
+     r"thread\(s\) communes", r"(\1 % slower), geometric mean of the medians over \2 common bin(s) of \3 thread(s)"),
+    (r"\(([\d.]+) % plus rapide\), moyenne géométrique des médianes sur (\d+) tranche\(s\) de (\d+) "
+     r"thread\(s\) communes", r"(\1 % faster), geometric mean of the medians over \2 common bin(s) of \3 thread(s)"),
+    (r"aucune tranche de threads commune aux deux runs", "no thread bin common to both runs"),
+    (r"^Supprimer le dossier du run (\S+) sur inti \?\n\(log, scripts, code de retour ; les sorties du "
+     r"programme restent en place\)$",
+     r"Delete the directory of run \1 on inti?\n(log, scripts, exit code; the program's outputs stay)"),
+    (r"^(\S+) supprimé$", r"\1 deleted"),
+    (r"^récupération de (\S+)…$", r"fetching \1…"), (r"^récupération : ", "fetch: "),
+    (r"^(\d+) fichier\(s\) → ", r"\1 file(s) → "),
+    (r" sur (\S+) : ", r" on \1: "),
+    (r"^(\S+) : (fini|arrêté|interrompu)", r"\1: \2"),
+    (r"\bfini \(code (-?\d+)\)", r"done (code \1)"),
+    (r"en cours \? \(lancé depuis (\S+)\)", r"running? (started from \1)"),
+    # sent back by inti
+    (r"ne lit pas ses options avec argparse", "does not read its options with argparse"),
+    (r"\(à ([^)]+)\), avec python", r"(at \1), with python"),
+    (r"aucune option reconnue dans (\S+) --help", r"no option recognised in \1 --help"),
+    (r"^pas encore de (\S+)$", r"no \1 yet"), (r"(\S+) est vide", r"\1 is empty"),
+    (r"pas de résumé pour ce programme", "no summary for this program"),
+    (r"graphique disponible pour multi_launch_stress\.py seulement", "chart available for multi_launch_stress.py only"),
+    (r"— (\d+) ligne\(s\), les 1000 dernières", r"— \1 row(s), the last 1000"),
+    (r"— (\d+) ligne\(s\)", r"— \1 row(s)"),
+    (r"nom de run invalide", "invalid run name"), (r"n'est pas un run", "is not a run"),
+    (r"ni ccc_mdel ni scancel n'ont pu annuler le job", "neither ccc_mdel nor scancel could cancel job"),
+    (r"lancé depuis (\S+), ce master arrive sur (\S+)", r"started from \1, this master lands on \2"),
+    (r"arrêt impossible", "cannot stop"),
+)]
+
+
+def T(text):
+    """The text in the interface language (see EN, EN_RE)."""
+    if LANG != "en" or not text:
+        return text
+    if text in EN:
+        return EN[text]
+    for rx, en in EN_RE:
+        text = rx.sub(en, text)
+    return text
+
+
+def status_text(run):
+    """A run's status as shown: translated, with the exit code when done."""
+    st = T(run["status"])
+    return st + (f" (code {run['code']})" if run["status"] == "fini" else "")
+
+
+def ask(parent, title, text):
+    """QMessageBox.question in the interface language."""
+    return QMessageBox.question(parent, T(title), T(text))
+
 
 def tip(text):
     """A tooltip that wraps: Qt only wraps rich text, plain text stays one line
     as wide as the screen (the long argparse helps did)."""
-    paras = [html.escape(p).replace("\n", "<br>") for p in str(text).split("\n\n")]
+    paras = [html.escape(p).replace("\n", "<br>") for p in T(str(text)).split("\n\n")]
     return "<qt>" + "".join(f"<p>{p}</p>" for p in paras) + "</qt>"
 BOOL_KINDS = {"_StoreTrueAction", "_StoreFalseAction", "_StoreConstAction",
               "_AppendConstAction", "BooleanOptionalAction"}
@@ -756,6 +1045,13 @@ class LogView(QPlainTextEdit):
             bar.setValue(bar.maximum())
 
 
+class TLabel(QLabel):
+    """A QLabel whose setText() translates (status lines set at run time)."""
+
+    def setText(self, text):
+        super().setText(T(text))
+
+
 class OptionsForm(QWidget):
     """The form of one script's argparse options. An empty field / a flag in
     its default state is not put on the command line: the script's own
@@ -776,7 +1072,8 @@ class OptionsForm(QWidget):
         self.widgets.clear()
         self.schema = schema
         if not schema:
-            lab = QLabel(f"<b>Options non lues.</b><br>{html.escape(error)}<br><br>"
+            lab = TLabel()
+            lab.setText(f"<b>Options non lues.</b><br>{html.escape(error)}<br><br>"
                          "Corrigez puis cliquez sur « Lire les options ». En attendant, le champ "
                          "« arguments en plus » passe les options telles quelles."
                          if error else "Options non lues : « Lire les options » (connexion requise).")
@@ -801,7 +1098,7 @@ class OptionsForm(QWidget):
                 w.currentTextChanged.connect(self._emit)
             else:
                 w = QLineEdit()
-                w.setPlaceholderText(f"défaut : {ac['default']}" if ac["default"] is not None else
+                w.setPlaceholderText(T(f"défaut : {ac['default']}") if ac["default"] is not None else
                                      (ac["metavar"] or ""))
                 w.textChanged.connect(self._emit)
             w.setToolTip(tip(help_txt))
@@ -1008,7 +1305,7 @@ class Main(QMainWindow):
 
         # --- connection
         self.host = QLineEdit(self._get("host"))
-        self.conn = QLabel("?")
+        self.conn = TLabel("?")
         bcheck = QPushButton("Vérifier la connexion")
         bcheck.clicked.connect(self.check)
         top = QHBoxLayout()
@@ -1016,6 +1313,13 @@ class Main(QMainWindow):
         top.addWidget(self.host)
         top.addWidget(bcheck)
         top.addWidget(self.conn, 1)
+        self.lang = QComboBox()
+        self.lang.addItem("Français", "fr")
+        self.lang.addItem("English", "en")
+        self.lang.setCurrentIndex(max(0, self.lang.findData(LANG)))
+        self.lang.setToolTip(tip("Choix de la langue de l'interface (changement immédiat)."))
+        self.lang.currentIndexChanged.connect(self.change_language)
+        top.addWidget(self.lang)
 
         # --- where / how
         self.preset = QComboBox()
@@ -1114,7 +1418,7 @@ class Main(QMainWindow):
 
         # --- runs table + actions
         self.table = QTableWidget(0, len(self.COLS))
-        self.table.setHorizontalHeaderLabels(self.COLS)
+        self.table.setHorizontalHeaderLabels([T(c) for c in self.COLS])
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.SingleSelection)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -1165,7 +1469,7 @@ class Main(QMainWindow):
         self.addAction(find_act)
 
         # summary tab
-        self.sum_note = QLabel("")
+        self.sum_note = TLabel("")
         self.sum_table = QTableWidget(0, 0)
         self.sum_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.sum_table.verticalHeader().setVisible(False)
@@ -1187,7 +1491,8 @@ class Main(QMainWindow):
         self.pt_build = QComboBox()
         self.pt_build.currentIndexChanged.connect(self.draw_points)
         self.pt_variant = QComboBox()
-        self.pt_variant.addItems(["toutes", "chunk", "chunk2", "chunk2a"])
+        for v in ("toutes", "chunk", "chunk2", "chunk2a"):
+            self.pt_variant.addItem(T(v), v)
         self.pt_variant.currentIndexChanged.connect(self.draw_points)
         self.pt_cmp = QComboBox()
         self.pt_cmp.setMinimumContentsLength(24)
@@ -1195,7 +1500,8 @@ class Main(QMainWindow):
                                "même build et même variante de part et d'autre")
         self.pt_cmp.currentIndexChanged.connect(self.load_points)
         self.pt_color = QComboBox()
-        self.pt_color.addItems(COLOR_BY)
+        for k in COLOR_BY:
+            self.pt_color.addItem(T(k), k)
         self.pt_color.currentIndexChanged.connect(self.draw_points)
         self.pt_log = QCheckBox("Temps en échelle log")
         self.pt_log.toggled.connect(self.draw_points)
@@ -1221,7 +1527,7 @@ class Main(QMainWindow):
         prow3.addWidget(self.pt_median)
         prow3.addWidget(self.pt_ok_only)
         prow3.addStretch(1)
-        self.pt_note = QLabel("")
+        self.pt_note = TLabel("")
         self.pt_view = ScatterView()
         ptw = QWidget()
         ptl = QVBoxLayout(ptw)
@@ -1287,7 +1593,43 @@ class Main(QMainWindow):
         self.t_tail.timeout.connect(self.poll_tail)
         self.t_tail.start(2000)
         self.set_tooltips()
+        self.translate_widgets()
         QTimer.singleShot(0, self.check)
+
+    def change_language(self, *_):
+        """Rebuild the window in the other language; the runs on inti do not
+        care, and every field is read back from the settings."""
+        global LANG
+        self.save()
+        LANG = self.lang.currentData()
+        self.settings.setValue("lang", LANG)
+        w = Main()
+        w.setGeometry(self.geometry())
+        w.show()
+        QApplication.instance().main_window = w
+        self.close()
+
+    def translate_widgets(self):
+        """Static texts of the window, once built (labels, buttons, boxes,
+        placeholders, tabs). Lists whose text is a key carry it as data."""
+        if LANG == "fr":
+            return
+        self.setWindowTitle(T(self.windowTitle()))
+        for w in self.findChildren(QLabel):
+            if not isinstance(w, TLabel) and w.text():
+                w.setText(T(w.text()))
+        for w in self.findChildren(QPushButton) + self.findChildren(QCheckBox):
+            w.setText(T(w.text()))
+        for w in self.findChildren(QGroupBox):
+            w.setTitle(T(w.title()))
+        for w in self.findChildren(QLineEdit):
+            if w.placeholderText():
+                w.setPlaceholderText(T(w.placeholderText()))
+        for i in range(self.tabs.count()):
+            self.tabs.setTabText(i, T(self.tabs.tabText(i)))
+        for c in (self.preset, self.mode):
+            for i in range(c.count()):
+                c.setItemText(i, T(c.itemText(i)))
 
     # ------------------------------------------------------------- tooltips
     TIPS = {
@@ -1429,12 +1771,13 @@ class Main(QMainWindow):
         super().closeEvent(ev)
 
     def error(self, msg):
+        msg = T(msg)
         self.last_error = msg
         self.statusBar().showMessage(msg.splitlines()[0] if msg else "", 20000)
         print(msg, file=sys.stderr)
 
     def info(self, msg):
-        self.statusBar().showMessage(msg, 10000)
+        self.statusBar().showMessage(T(msg), 10000)
 
     # ------------------------------------------------- partition / program
     def preset_changed(self, *_):
@@ -1541,7 +1884,7 @@ class Main(QMainWindow):
     def launch(self):
         self.save()
         prog = self.program.currentText()
-        if not self.form.schema and QMessageBox.question(
+        if not self.form.schema and ask(
                 self, "Options non lues",
                 "Les options du script n'ont pas été lues : seuls les arguments en plus seront "
                 "passés.\n\nSoumettre quand même ?") != QMessageBox.Yes:
@@ -1551,7 +1894,7 @@ class Main(QMainWindow):
         busy = [r["id"] for r in self.runs
                 if r["status"] in ("en cours", "en attente", "démarrage")
                 and r["meta"].get("partition") == pkey and r["meta"].get("program") == prog]
-        if busy and QMessageBox.question(
+        if busy and ask(
                 self, "Run déjà actif",
                 f"{prog} a déjà un run actif sur {pkey} ({', '.join(busy)}).\n"
                 "Deux runs simultanés de même architecture peuvent écrire le même répertoire "
@@ -1611,9 +1954,8 @@ class Main(QMainWindow):
             self.table.blockSignals(True)
             self.table.setRowCount(len(self.runs))
             for i, run in enumerate(self.runs):
-                st = run["status"] + (f" (code {run['code']})" if run["status"] == "fini" else "")
                 vals = [run["id"], run["meta"].get("program", ""), run["meta"].get("partition", ""),
-                        run.get("jobid", ""), st, self.progress_text(run), run["last"]]
+                        run.get("jobid", ""), status_text(run), T(self.progress_text(run)), run["last"]]
                 for j, v in enumerate(vals):
                     it = QTableWidgetItem(str(v))
                     if j == 4:
@@ -1695,7 +2037,7 @@ class Main(QMainWindow):
         if not run:
             return
         what = f"le job {run['jobid']} (ccc_mdel)" if run.get("jobid") else "ccc_mprun (SIGTERM)"
-        if QMessageBox.question(self, "Arrêter", f"Arrêter le run {run['id']} ?\n{what}") != QMessageBox.Yes:
+        if ask(self, "Arrêter", f"Arrêter le run {run['id']} ?\n{what}") != QMessageBox.Yes:
             return
 
         def done(r):
@@ -1725,9 +2067,9 @@ class Main(QMainWindow):
             for r in self.runs:
                 before = self.prev_status.get(r["id"])
                 if before in self.ACTIVE and r["status"] not in self.ACTIVE:
-                    st = r["status"] + (f" (code {r['code']})" if r["status"] == "fini" else "")
-                    msg = f"{r['meta'].get('program', '')} sur {r['meta'].get('partition', '')} : {st}"
-                    self.info(f"{r['id']} : {st}")
+                    st = status_text(r)
+                    msg = T(f"{r['meta'].get('program', '')} sur {r['meta'].get('partition', '')} : ") + st
+                    self.statusBar().showMessage(f"{r['id']} : {st}" if LANG == "fr" else f"{r['id']}: {st}", 10000)
                     if self.tray:
                         icon = (QSystemTrayIcon.Information if r["status"] == "fini" and r["code"] == 0
                                 else QSystemTrayIcon.Warning)
@@ -1760,7 +2102,7 @@ class Main(QMainWindow):
             self.sum_table.setSortingEnabled(False)
             self.sum_table.clear()
             self.sum_table.setColumnCount(len(cols))
-            self.sum_table.setHorizontalHeaderLabels(cols)
+            self.sum_table.setHorizontalHeaderLabels([T(c) for c in cols])
             self.sum_table.setRowCount(len(rows))
             fails = set(r.get("fail_rows", []))
             for i, row in enumerate(rows):
@@ -1792,10 +2134,10 @@ class Main(QMainWindow):
         keep = self.pt_cmp.currentData()
         self.pt_cmp.blockSignals(True)
         self.pt_cmp.clear()
-        self.pt_cmp.addItem("(aucun)", None)
+        self.pt_cmp.addItem(T("(aucun)"), None)
         for r in self.runs:
             if r["id"] != self.current and r["meta"].get("summary") == "multi_launch":
-                self.pt_cmp.addItem(f"{r['id']}  [{r['status']}]", r["id"])
+                self.pt_cmp.addItem(f"{r['id']}  [{T(r['status'])}]", r["id"])
         i = self.pt_cmp.findData(keep) if keep else 0
         self.pt_cmp.setCurrentIndex(max(0, i))
         self.pt_cmp.blockSignals(False)
@@ -1829,13 +2171,14 @@ class Main(QMainWindow):
             first = self.pt_data is None
             self.pt_data, self.pt_data_b = r, rb
             builds = list(dict.fromkeys(r["builds"] + (rb["builds"] if rb else [])))
-            keep = self.pt_build.currentText()
+            keep = self.pt_build.currentData()
             self.pt_build.blockSignals(True)
             self.pt_build.clear()
-            self.pt_build.addItem("tous")
-            self.pt_build.addItems(builds)
+            self.pt_build.addItem(T("tous"), "tous")
+            for b in builds:
+                self.pt_build.addItem(b, b)
             if not first and keep in builds:
-                self.pt_build.setCurrentText(keep)
+                self.pt_build.setCurrentIndex(self.pt_build.findData(keep))
             self.pt_build.blockSignals(False)
             self.draw_points()
 
@@ -1852,8 +2195,8 @@ class Main(QMainWindow):
     def _select(self, r, log_y):
         """(ok, failed) points of one dataset after the Build / Variante
         filters; a point is (threads, seconds, tooltip, exe)."""
-        build_sel = self.pt_build.currentText()
-        var_sel = self.pt_variant.currentText()
+        build_sel = self.pt_build.currentData()
+        var_sel = self.pt_variant.currentData()
         ok, fails = [], []
         label = f"<br><i>{html.escape(r['id'])}</i>" if self.pt_data_b else ""
         for run, b, e, th, sec, rc in r["rows"]:
@@ -1892,10 +2235,10 @@ class Main(QMainWindow):
         chart = QChart()
         chart.setBackgroundBrush(QBrush(QColor(V["surface"])))
         chart.setBackgroundRoundness(0)
-        what = self.pt_build.currentText()
-        what = "tous les builds" if what == "tous" else what
-        if self.pt_variant.currentText() != "toutes":
-            what += " · " + self.pt_variant.currentText()
+        what = self.pt_build.currentData()
+        what = "tous les builds" if what in ("tous", None) else what
+        if self.pt_variant.currentData() != "toutes":
+            what += " · " + self.pt_variant.currentData()
         chart.setTitle(("Comparaison — " if rb else "") + "temps par run selon le nombre de threads — " + what)
         chart.setTitleBrush(QBrush(QColor(V["ink"])))
         chart.legend().setLabelColor(QColor(V["ink2"]))
@@ -1936,7 +2279,7 @@ class Main(QMainWindow):
         ok_a, fail_a = self._select(r, log_y)
         drawn, note_extra = [], ""
         if rb is None:
-            key_of, slots = COLOR_BY[self.pt_color.currentText()]
+            key_of, slots = COLOR_BY[self.pt_color.currentData()]
             groups = {}
             for p in ok_a:
                 cat = key_of(p[3])
@@ -2029,6 +2372,12 @@ class Main(QMainWindow):
                 ay.setRange(0, max(ys) * 1.08)
                 ay.applyNiceNumbers()
             ax.applyNiceNumbers()
+        chart.setTitle(T(chart.title()))
+        for sr in chart.series():
+            if sr.name():
+                sr.setName(T(sr.name()))
+        for a_ in chart.axes():
+            a_.setTitleText(T(a_.titleText()))
         self.pt_view.setChart(chart)
         self.pt_view.points = [p[:3] for p in drawn]
         self.pt_view.log_y = log_y
@@ -2045,7 +2394,7 @@ class Main(QMainWindow):
         if run["status"] in self.ACTIVE:
             self.error("arrêtez d'abord ce run (il est encore actif)")
             return
-        if QMessageBox.question(
+        if ask(
                 self, "Supprimer",
                 f"Supprimer le dossier du run {run['id']} sur inti ?\n"
                 "(log, scripts, code de retour ; les sorties du programme restent en place)"
@@ -2092,9 +2441,13 @@ class Main(QMainWindow):
 
 
 def main():
+    global LANG
     app = QApplication(sys.argv)
     app.setApplicationName(APP)
+    from PySide6.QtCore import QLocale
+    LANG = QSettings(APP, APP).value("lang", "fr" if QLocale.system().name().startswith("fr") else "en")
     w = Main()
+    app.main_window = w
     w.show()
     sys.exit(app.exec())
 
