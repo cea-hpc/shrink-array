@@ -323,6 +323,76 @@ run_cmd "echo $build_rep"
 
 run_cmd "create_build_rep"
 
+# The gnu family runs FIRST: nothing of ours is in flight yet, so the drain
+# below waits for nothing, and the builds it leaves running are handed over to
+# us (adopt_handoff) instead of being waited for. Before, the gnu delegation
+# came after oneapi and blocked until its LAST build ended: no other family
+# could start meanwhile, whatever the free slots.
+# Delegate to the GNU builds
+gnu_args=""
+[ "$DRYRUN" = true ]     && gnu_args="$gnu_args --dryrun"
+[ "$BUILD_ONLY" = true ] && gnu_args="$gnu_args --build"
+[ "$DEBUG_ONLY" = true ] && gnu_args="$gnu_args --debug-only"
+[ "$NO_HARDENING" = true ] && gnu_args="$gnu_args --no-hardening"
+[ "$WITH_LEDGER" = true ] && gnu_args="$gnu_args --with-ledger"
+[ -n "${CHUNK_MAX_JOBS:-}" ] && gnu_args="$gnu_args --jobs=$CHUNK_MAX_JOBS"
+# CHUNK_SLOT_DIR is exported by __slot_dir(): passing it down makes the gnu
+# script share THIS run's slot pool instead of opening a second one, which is
+# what let 9 ninjas run under two independent caps of 4.
+__slot_dir >/dev/null   # create it now: with no build of our own it would not exist yet
+export CHUNK_SLOT_DIR
+[ -n "${CHUNK_BUILD_EXEC:-}" ] && gnu_args="$gnu_args --exec=$CHUNK_BUILD_EXEC"
+[ "$FRESH_CACHE" = true ] && gnu_args="$gnu_args --fresh-cache"
+if [ "$enable_gnu" = true ]; then
+    # Drain OUR OWN builds before handing over.
+    #
+    # The oneapi/llvm builds started above run in the background, and
+    # compile_all_gnu.sh is a separate process with its own job table and its own
+    # [RUN ] block. Delegating while ours are still compiling meant two families
+    # sharing the node with neither aware of the other, and only the gnu
+    # progress on screen -- clang++ processes churning invisibly in top while
+    # the display showed four gnu builds. Waiting here keeps one family, one
+    # display, one load at a time.
+    #
+    # The slot semaphore already bounds the TOTAL, so this is about legibility
+    # and node pressure rather than correctness; --no-gnu / --only= still let a
+    # family be run on its own.
+    if [ "${#JOB_NAME[@]}" -gt 0 ]; then
+        target_filter_summary
+echo -e '\n─── Waiting for the builds started here before delegating to gnu ───\n'
+        wait_all
+    fi
+
+    # The gnu script returns the failure count of the builds it saw end (the
+    # others it hands over, see below); aggregate it into the final summary.
+    #
+    # Run it directly, NOT through run_cmd. In --dryrun, run_cmd echoes its
+    # argument instead of executing it, so the delegation itself was printed and
+    # the child never started -- and since --only=gnu skips everything this
+    # script builds on its own, `--only=gnu --dryrun` printed one line and
+    # nothing else. The child gets --dryrun in $gnu_args, so it prints ITS cmake
+    # commands, which is the point of asking for a dry run.
+    # CHUNK_ARGS_CHECKED_BY_PARENT: --target was validated above and the
+    # --exec verdict is given once, by our check_arg_epilogue, over the markers
+    # both processes leave in the slot dir.
+    # CHUNK_HANDOFF_FILE: the child does not wait for its last builds; it hands
+    # them over (handoff_jobs), and adopt_handoff below makes them ours.
+    CHUNK_HANDOFF_FILE="$(__slot_dir)/gnu-handoff"
+    rm -f "$CHUNK_HANDOFF_FILE"
+    CHUNK_ARGS_CHECKED_BY_PARENT=1 CHUNK_HANDOFF_FILE="$CHUNK_HANDOFF_FILE" CHUNK_HANDOFF_PARENT=$$ \
+        "$CHUNK_SCRIPT_DIR/compile_all_gnu.sh"$gnu_args
+    gnu_rc=$?
+    # Its builds still running are ours now: tracked, displayed and waited for
+    # with our own, while the families below start as slots free up.
+    adopt_handoff "$CHUNK_HANDOFF_FILE"
+    if [ "$gnu_rc" -ne 0 ]; then
+        echo "[WARN] compile_all_gnu.sh: $gnu_rc failed gnu build(s)"
+        N_FAILED=$(( N_FAILED + gnu_rc ))
+    fi
+else
+    echo "[SKIP] gnu builds disabled (enable_gnu=$enable_gnu)"
+fi
+
 # Without modules, icpx comes from PATH or from oneAPI's setvars.sh. Neither:
 # oneAPI is not installed here, and its three configures could only fail.
 if [ "$enable_oneapi" = true ] && [ "$CHUNK_HAVE_MODULES" = false ] \
@@ -376,62 +446,6 @@ else
     echo "[SKIP] oneapi builds disabled (enable_oneapi=$enable_oneapi, is_arm=$is_arm)"
 fi  # end of "if enable_oneapi && !is_arm"
 
-# Delegate to the GNU builds
-gnu_args=""
-[ "$DRYRUN" = true ]     && gnu_args="$gnu_args --dryrun"
-[ "$BUILD_ONLY" = true ] && gnu_args="$gnu_args --build"
-[ "$DEBUG_ONLY" = true ] && gnu_args="$gnu_args --debug-only"
-[ "$NO_HARDENING" = true ] && gnu_args="$gnu_args --no-hardening"
-[ "$WITH_LEDGER" = true ] && gnu_args="$gnu_args --with-ledger"
-[ -n "${CHUNK_MAX_JOBS:-}" ] && gnu_args="$gnu_args --jobs=$CHUNK_MAX_JOBS"
-# CHUNK_SLOT_DIR is exported by __slot_dir(): passing it down makes the gnu
-# script share THIS run's slot pool instead of opening a second one, which is
-# what let 9 ninjas run under two independent caps of 4.
-__slot_dir >/dev/null   # create it now: with no build of our own it would not exist yet
-export CHUNK_SLOT_DIR
-[ -n "${CHUNK_BUILD_EXEC:-}" ] && gnu_args="$gnu_args --exec=$CHUNK_BUILD_EXEC"
-[ "$FRESH_CACHE" = true ] && gnu_args="$gnu_args --fresh-cache"
-if [ "$enable_gnu" = true ]; then
-    # Drain OUR OWN builds before handing over.
-    #
-    # The oneapi/llvm builds started above run in the background, and
-    # compile_all_gnu.sh is a separate process with its own job table and its own
-    # [RUN ] block. Delegating while ours are still compiling meant two families
-    # sharing the node with neither aware of the other, and only the gnu
-    # progress on screen -- clang++ processes churning invisibly in top while
-    # the display showed four gnu builds. Waiting here keeps one family, one
-    # display, one load at a time.
-    #
-    # The slot semaphore already bounds the TOTAL, so this is about legibility
-    # and node pressure rather than correctness; --no-gnu / --only= still let a
-    # family be run on its own.
-    if [ "${#JOB_NAME[@]}" -gt 0 ]; then
-        target_filter_summary
-echo -e '\n─── Waiting for the builds started here before delegating to gnu ───\n'
-        wait_all
-    fi
-
-    # The gnu script waits for its own builds and returns its failure count;
-    # aggregate it into the final summary.
-    #
-    # Run it directly, NOT through run_cmd. In --dryrun, run_cmd echoes its
-    # argument instead of executing it, so the delegation itself was printed and
-    # the child never started -- and since --only=gnu skips everything this
-    # script builds on its own, `--only=gnu --dryrun` printed one line and
-    # nothing else. The child gets --dryrun in $gnu_args, so it prints ITS cmake
-    # commands, which is the point of asking for a dry run.
-    # CHUNK_ARGS_CHECKED_BY_PARENT: --target was validated above and the
-    # --exec verdict is given once, by our check_arg_epilogue, over the markers
-    # both processes leave in the slot dir.
-    CHUNK_ARGS_CHECKED_BY_PARENT=1 "$CHUNK_SCRIPT_DIR/compile_all_gnu.sh"$gnu_args
-    gnu_rc=$?
-    if [ "$gnu_rc" -ne 0 ]; then
-        echo "[WARN] compile_all_gnu.sh: $gnu_rc failed gnu build(s)"
-        N_FAILED=$(( N_FAILED + gnu_rc ))
-    fi
-else
-    echo "[SKIP] gnu builds disabled (enable_gnu=$enable_gnu)"
-fi
 
 # NVHPC Section
 if [ "$enable_nvhpc" = true ]; then

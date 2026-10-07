@@ -290,6 +290,10 @@ check_arg_epilogue() {
 }
 
 declare -A JOB_NAME JOB_LOG JOB_T0 JOB_SLOT
+# JOB_ADOPTED[pid]=1: a build started by compile_all_gnu.sh and handed over to
+# this process (adopt_handoff). Not our child: `wait` cannot see it, so its end
+# is read from <log>.rc, which launch_build's wrapper writes as the build exits.
+declare -A JOB_ADOPTED
 JOB_SLOT_PENDING=""
 LOG_DIR=""
 N_FAILED=0
@@ -664,10 +668,16 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
     case "$name" in
         *sanitizer*) _par=${CHUNK_SAN_PARALLEL_LEVEL:-$CMAKE_BUILD_PARALLEL_LEVEL} ;;
     esac
+    # The wrapper writes the build's exit status to <log>.rc as it exits: what
+    # lets a process that is not the build's parent -- compile_all.sh adopting
+    # the gnu builds still running (adopt_handoff) -- know when it ended and how.
+    rm -f "$log.rc"
+    local _run=(bash -c '__rc_file=$1; shift; "$@"; __rc=$?; printf "%s\n" "$__rc" > "$__rc_file"; exit "$__rc"'
+                chunk-build "$log.rc" cmake --build "$dir" "${_exec_target[@]}" "$@")
     if command -v setsid >/dev/null 2>&1; then
-        CMAKE_BUILD_PARALLEL_LEVEL=$_par setsid cmake --build "$dir" "${_exec_target[@]}" "$@" >"$log" 2>&1 &
+        CMAKE_BUILD_PARALLEL_LEVEL=$_par setsid "${_run[@]}" >"$log" 2>&1 &
     else
-        CMAKE_BUILD_PARALLEL_LEVEL=$_par cmake --build "$dir" "${_exec_target[@]}" "$@" >"$log" 2>&1 &
+        CMAKE_BUILD_PARALLEL_LEVEL=$_par "${_run[@]}" >"$log" 2>&1 &
     fi
     local pid=$!
     JOB_NAME[$pid]=$name
@@ -808,7 +818,7 @@ __report_job() {  # <pid> <rc> — print the status and remove the job from the 
         fi
     fi
     __slot_release "${JOB_SLOT[$pid]:-}"
-    unset "JOB_NAME[$pid]" "JOB_LOG[$pid]" "JOB_T0[$pid]" "JOB_SLOT[$pid]"
+    unset "JOB_NAME[$pid]" "JOB_LOG[$pid]" "JOB_T0[$pid]" "JOB_SLOT[$pid]" "JOB_ADOPTED[$pid]"
 }
 
 # Reap exactly ONE finished tracked job and report it. Returns 0 if a job was
@@ -819,9 +829,7 @@ __reap_one() {
     local rc reaped pid alive
     wait -n; rc=$?
     reaped=""
-    for pid in "${!JOB_NAME[@]}"; do
-        if ! kill -0 "$pid" 2>/dev/null; then reaped=$pid; break; fi
-    done
+    if __find_ended "$rc"; then reaped=$__ENDED_PID; rc=$__ENDED_RC; fi
     if [ -z "$reaped" ]; then
         if [ "$rc" -eq 127 ]; then
             alive=false
@@ -979,6 +987,92 @@ __wait_for_slot() {
     __clear_status
 }
 
+# ─── Ended jobs, and handing jobs over between processes ─────────────────────
+# Which tracked job has ended? Sets __ENDED_PID / __ENDED_RC and returns 0, or
+# returns 1. $1 is the status `wait -n` just returned. A child of ours that
+# ended is reaped by that wait -n and stops answering kill -0 (until then a
+# zombie still does). An ADOPTED job is not our child: it has ended when its
+# <log>.rc is written -- or, killed before writing it, when its pid is gone.
+# The status comes from <log>.rc whenever it exists (exact for every job; the
+# wait -n status is only the fallback of a build killed by a signal).
+__find_ended() {  # <wait -n status>
+    local pid f
+    __ENDED_PID=""
+    for pid in "${!JOB_NAME[@]}"; do
+        if [ -n "${JOB_ADOPTED[$pid]:-}" ]; then
+            if [ -s "${JOB_LOG[$pid]}.rc" ] || ! kill -0 "$pid" 2>/dev/null; then __ENDED_PID=$pid; break; fi
+        elif ! kill -0 "$pid" 2>/dev/null; then
+            __ENDED_PID=$pid; break
+        fi
+    done
+    [ -n "$__ENDED_PID" ] || return 1
+    f="${JOB_LOG[$__ENDED_PID]}.rc"
+    __ENDED_RC=$1
+    if [ -s "$f" ]; then
+        __ENDED_RC=$(cat "$f")
+    elif [ -n "${JOB_ADOPTED[$__ENDED_PID]:-}" ]; then
+        __ENDED_RC=1   # gone without a status: killed (SIGKILL, OOM killer...)
+    fi
+    return 0
+}
+
+# compile_all_gnu.sh under compile_all.sh (CHUNK_HANDOFF_FILE set): instead of
+# waiting for its last builds -- which kept compile_all.sh from starting a
+# single nvhpc/llvm/aocc build while one long gnu build finished and the other
+# slots sat idle -- report those already finished, and hand the others over:
+# one line each in CHUNK_HANDOFF_FILE (pid, start epoch, slot, log, name).
+# Their slots are given to the parent (CHUNK_HANDOFF_PARENT) right away, so the
+# __slots_gc of either process cannot reclaim them once we exit. The builds keep
+# running: each is in its own session (setsid). Returns the failures reported.
+handoff_jobs() {
+    if [ -z "${CHUNK_HANDOFF_FILE:-}" ] || [ "$DRYRUN" = true ]; then
+        wait_all
+        return
+    fi
+    local pid rc now tmp="$CHUNK_HANDOFF_FILE.tmp"
+    for pid in "${!JOB_NAME[@]}"; do
+        if [ -s "${JOB_LOG[$pid]}.rc" ]; then
+            wait "$pid" 2>/dev/null; rc=$?
+            rc=$(cat "${JOB_LOG[$pid]}.rc" 2>/dev/null || echo "$rc")
+            __report_job "$pid" "$rc"
+        fi
+    done
+    __clear_status
+    : > "$tmp"
+    now=$(date +%s)
+    for pid in "${!JOB_NAME[@]}"; do
+        printf '%s\t%s\t%s\t%s\t%s\n' "$pid" "$(( now - (SECONDS - JOB_T0[$pid]) ))" "${JOB_SLOT[$pid]:-}" \
+               "${JOB_LOG[$pid]}" "${JOB_NAME[$pid]}" >> "$tmp"
+        if [ -n "${JOB_SLOT[$pid]:-}" ] && [ -n "${CHUNK_HANDOFF_PARENT:-}" ]; then
+            printf '%s' "$CHUNK_HANDOFF_PARENT" > "${JOB_SLOT[$pid]}/owner" 2>/dev/null
+        fi
+        printf '[HANDOFF] %-50s (pid %d) -> compile_all.sh\n' "${JOB_NAME[$pid]}" "$pid"
+        unset "JOB_NAME[$pid]" "JOB_LOG[$pid]" "JOB_T0[$pid]" "JOB_SLOT[$pid]" "JOB_ADOPTED[$pid]"
+    done
+    mv -f "$tmp" "$CHUNK_HANDOFF_FILE"
+    return "$N_FAILED"
+}
+
+# compile_all.sh: take over the builds compile_all_gnu.sh handed over
+# (handoff_jobs). They are tracked, displayed and reported like ours, and
+# waited for by the final wait_all; their slots become ours.
+adopt_handoff() {  # <hand-off file>
+    local f=$1 pid t0 slot log name now
+    [ -s "$f" ] || { rm -f "$f"; return 0; }
+    now=$(date +%s)
+    while IFS=$'\t' read -r pid t0 slot log name; do
+        [ -n "$pid" ] || continue
+        JOB_NAME[$pid]=$name
+        JOB_LOG[$pid]=$log
+        JOB_T0[$pid]=$(( SECONDS - (now - t0) ))
+        JOB_SLOT[$pid]=$slot
+        JOB_ADOPTED[$pid]=1
+        [ -n "$slot" ] && [ -d "$slot" ] && printf '%s' "$$" > "$slot/owner" 2>/dev/null
+        printf '[ADOPT] %-50s (pid %d, started by compile_all_gnu.sh)\n' "$name" "$pid"
+    done < "$f"
+    rm -f "$f"
+}
+
 wait_all() {
     [ "$DRYRUN" = true ] && return 0
     local pid rc reaped alive
@@ -993,7 +1087,13 @@ wait_all() {
         # bash < 4.3: no wait -n — statuses are correct but reported in
         # launch order, not completion order.
         for pid in "${!JOB_NAME[@]}"; do
-            wait "$pid"; rc=$?
+            if [ -n "${JOB_ADOPTED[$pid]:-}" ]; then
+                # Not our child: poll its status file (or its disappearance).
+                while [ ! -s "${JOB_LOG[$pid]}.rc" ] && kill -0 "$pid" 2>/dev/null; do sleep 2; done
+                rc=$(cat "${JOB_LOG[$pid]}.rc" 2>/dev/null); rc=${rc:-1}
+            else
+                wait "$pid"; rc=$?
+            fi
             __report_job "$pid" "$rc"
         done
         return "$N_FAILED"
@@ -1016,9 +1116,7 @@ wait_all() {
         fi
         wait -n; rc=$?
         reaped=""
-        for pid in "${!JOB_NAME[@]}"; do
-            if ! kill -0 "$pid" 2>/dev/null; then reaped=$pid; break; fi
-        done
+        if __find_ended "$rc"; then reaped=$__ENDED_PID; rc=$__ENDED_RC; fi
         if [ -z "$reaped" ]; then
             # None of our pids vanished. rc=127 is ambiguous: "no children
             # left" OR an UNtracked child (subshell, module) that exited with
