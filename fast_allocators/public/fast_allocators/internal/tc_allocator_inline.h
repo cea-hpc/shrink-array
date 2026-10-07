@@ -47,8 +47,8 @@ inline void TCSlab<Links>::alloc_block()
     // overwrite it. Nothing to round to -- refuse, with the sizes.
     if (BlockSize < 1) [[unlikely]]
     {
-        std::cerr << "[TCAllocator] element of " << ElementSize << " bytes does not fit in a slab of "
-                  << BlockAllocator << " bytes (back-pointer included)\n";
+        std::println(stderr, "[TCAllocator] element of {} bytes does not fit in a slab of {} bytes (back-pointer included)",
+                     ElementSize, BlockAllocator);
         std::abort();
     }
 

@@ -778,7 +778,7 @@ class TCSlabPool
             // new_slab() hands it to TCSlab::init() as an int.
             if (ElementSize > static_cast<size_t>(std::numeric_limits<int>::max())) [[unlikely]]
             {
-                std::cerr << "[TCAllocator] element size " << ElementSize << " bytes is past INT_MAX\n";
+                std::println(stderr, "[TCAllocator] element size {} bytes is past INT_MAX", ElementSize);
                 std::abort();
             }
 
