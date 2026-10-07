@@ -137,6 +137,8 @@ inline void* map_anonymous(size_t size)
         std::abort();
     }
 
+    alloc_config::advise_thp_region(tmp, size); // CHUNK_THP, as the slab arenas
+
     return tmp;
 }
 
@@ -769,6 +771,12 @@ class TCSlabPool
         {
             // A slab is carved in bytes.
             ElementSize = ElementSize_ * sizeof(ElementType);
+            // new_slab() hands it to TCSlab::init() as an int.
+            if (ElementSize > static_cast<size_t>(std::numeric_limits<int>::max())) [[unlikely]]
+            {
+                std::cerr << "[TCAllocator] element size " << ElementSize << " bytes is past INT_MAX\n";
+                std::abort();
+            }
 
             BlockAllocator = BlockAllocator_;
             slab_bytes_    = Slab::slab_bytes_for(BlockAllocator_);
@@ -1113,14 +1121,30 @@ class TCSlabPool
 
             slab->reset();
 
-            return static_cast<ElementType*>(slab->alloc());
+            return alloc_and_file(slab);
         }
 
         auto* slab = new_slab();
 
         insert(block, slab);
 
-        return static_cast<ElementType*>(slab->alloc());
+        return alloc_and_file(slab);
+    }
+
+    /// @brief alloc() on a slab just put in #block, then file it as the fast
+    ///        path does: a slab this allocation filled -- one element per slab
+    ///        for an element over half the slab -- moves to #block_full.
+    ///        Returned as is, it stayed in #block and the next alloc() ran
+    ///        past its end.
+    ElementType* alloc_and_file(Slab* slab)
+    {
+        auto* ptr = static_cast<ElementType*>(slab->alloc());
+        if (slab->is_full()) [[unlikely]]
+        {
+            remove(block, slab);
+            insert(block_full, slab);
+        }
+        return ptr;
     }
 
     /// @brief Re-file @p slab after a free. @see sl_manage_full_empty

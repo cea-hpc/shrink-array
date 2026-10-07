@@ -39,6 +39,15 @@ inline void TCSlab<Links>::alloc_block()
 
     BlockSize = static_cast<int>((BlockAllocator - sizeof(void*)) / ElementSize);
 
+    // Not even one element fits next to the back-pointer: the first one would
+    // overwrite it. Nothing to round to -- refuse, with the sizes.
+    if (BlockSize < 1) [[unlikely]]
+    {
+        std::cerr << "[TCAllocator] element of " << ElementSize << " bytes does not fit in a slab of "
+                  << BlockAllocator << " bytes (back-pointer included)\n";
+        std::abort();
+    }
+
     if constexpr (side_links)
     {
         if (BlockSize > free_list_end - 1)

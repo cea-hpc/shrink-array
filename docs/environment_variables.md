@@ -22,7 +22,7 @@
 | `CHUNK_RECHUNK_SCHEDULE` | `guided,16` | OpenMP schedule of the rebuild (`kind[,chunk]`) |
 | `CHUNK_RECHUNK_SLICES` | 16 | number of slices in the v1 rebuild |
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | a sweep gives empty slabs back to the system only if there are at least this many |
-| `CHUNK_THP` | 0 | experimental: `1` requests transparent huge pages (`MADV_HUGEPAGE`) on the slab arenas and the cst2 region. Ignored, with a message, when the huge page is larger than 2 MiB (kernel with 64 KiB pages: 512 MiB). Cost: a slab that has been started becomes fully resident |
+| `CHUNK_THP` | 0 | unset: the kernel's THP mode decides. `never`: no transparent huge pages on the slab arenas (`MADV_NOHUGEPAGE`) -- under the mode `always` a slab otherwise becomes resident whole at its first touch; compare the two with the RSS and AnonHugePages of `smaps_rollup`. Experimental: `1` requests them (`MADV_HUGEPAGE`) on the slab arenas and the cst2 region. Ignored, with a message, when the huge page is larger than 2 MiB (kernel with 64 KiB pages: 512 MiB). Cost: a slab that has been started becomes fully resident |
 | `CHUNK_THREAD_CAPACITY` | number of cores | number of ranks the per-thread structures are sized for (increase it in case of oversubscription) |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | slab size of the deferred-write pools, in KiB (the operation slabs are never given back: larger means fewer allocator calls but more resident memory) |
 | `CHUNK_REQUIRE_OMPT` | — | OMPT builds: `1` aborts the program if the OMPT tool was not loaded by the runtime (otherwise, a message on stderr), since the end-of-phase events would then never happen |

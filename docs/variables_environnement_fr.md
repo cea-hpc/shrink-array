@@ -22,7 +22,7 @@
 | `CHUNK_RECHUNK_SCHEDULE` | `guided,16` | ordonnancement OpenMP de la reconstruction (`kind[,chunk]`) |
 | `CHUNK_RECHUNK_SLICES` | 16 | nombre de tranches de la reconstruction de v1 |
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | un balayage ne rend les slabs vides au système que s'il y en a au moins autant |
-| `CHUNK_THP` | 0 | expérimental : `1` demande des huge pages transparentes (`MADV_HUGEPAGE`) sur les arènes de slabs et la région cst2. Ignoré, avec un message, quand la huge page dépasse 2 Mio (noyau à pages de 64 Kio : 512 Mio). Coût : un slab entamé devient résident en entier |
+| `CHUNK_THP` | 0 | non défini : le mode THP du noyau décide. `never` : pas de huge pages transparentes sur les arènes de slabs (`MADV_NOHUGEPAGE`) -- en mode `always`, un slab devient sinon résident en entier dès qu'il est touché ; comparer les deux avec le RSS et AnonHugePages de `smaps_rollup`. Expérimental : `1` les demande (`MADV_HUGEPAGE`) sur les arènes de slabs et la région cst2. Ignoré, avec un message, quand la huge page dépasse 2 Mio (noyau à pages de 64 Kio : 512 Mio). Coût : un slab entamé devient résident en entier |
 | `CHUNK_THREAD_CAPACITY` | nombre de cœurs | nombre de rangs pour lequel les structures par thread sont dimensionnées (à augmenter en cas de sursouscription) |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | taille des slabs des pools d'écritures différées, en Kio (les slabs d'opérations ne sont jamais rendus : plus gros, moins d'appels à l'allocateur mais plus de mémoire résidente) |
 | `CHUNK_REQUIRE_OMPT` | — | builds OMPT : `1` arrête le programme si l'outil OMPT n'a pas été chargé par le runtime (sinon, un message sur stderr), puisque les fins de phase n'auraient alors jamais lieu |

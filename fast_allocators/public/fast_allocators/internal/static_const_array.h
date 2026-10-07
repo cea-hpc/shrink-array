@@ -333,6 +333,10 @@ inline TCTypeAllocatorEBC<24, SIZE_BLOCK>& Allocator24 = *(new TCTypeAllocatorEB
  *          Thread-safe: inside an OpenMP region the ladder takes its critical
  *          section and frees are batched per thread until
  *          StaticConstArray::clearInfoFreeElt() runs at a quiescent point.
+ *          Within ONE OpenMP team, no nesting, no other threads: a thread is
+ *          its omp_get_thread_num() (two teams, or a nested one, share ranks
+ *          and so batches), and outside a region no lock is taken (a
+ *          std::thread allocating then races a team under its critical).
  *
  *          Nothing in shrink-array calls it: it is fast_allocators' entry point
  *          for code outside the library, exercised by blk_allocator_validation.
@@ -406,6 +410,12 @@ struct BlkAllocator : public StaticConstArray
         // size_t header: an int one silently wrapped past INT_MAX, and
         // free_tab() then routed the block by a garbage size.
         static_assert(fast_alloc::alignment >= sizeof(std::size_t), "alloc_tab: the header must hold a size_t");
+        // size + header must not wrap: near SIZE_MAX it would route to a small
+        // ladder block that the caller then writes past.
+        if (size > static_cast<std::size_t>(-1) - fast_alloc::alignment) [[unlikely]]
+        {
+            fast_alloc::out_of_memory("alloc_tab", size, 1, 0);
+        }
         const std::size_t total = size + fast_alloc::alignment;
 
         auto* ptr = static_cast<std::size_t*>(

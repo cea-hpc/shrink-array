@@ -61,6 +61,18 @@ InfoFreeElt::~InfoFreeElt()
 
     svfree(compt);
     svfree(somme_sz);
+
+    // An ordinary global, unlike the ladder and the arenas, which are never
+    // destroyed: a ladder free in a region, or a parallel_end flush, may still
+    // come after this destructor (another library's static or TLS destructor,
+    // the OpenMP runtime's shutdown). Leave an empty batch set behind, not
+    // dangling pointers: with nb_thr 0, freeBlock() frees at once and
+    // clearInfoFreeElt() has nothing to walk.
+    tab_ptr  = nullptr;
+    tab_sz   = nullptr;
+    compt    = nullptr;
+    somme_sz = nullptr;
+    nb_thr   = 0;
 }
 
 /// @copydoc StaticConstArray::clearInfoFreeElt(int)

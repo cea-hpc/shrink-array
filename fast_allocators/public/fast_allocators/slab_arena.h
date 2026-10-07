@@ -1022,12 +1022,10 @@ class SlabArena
             std::fprintf(stderr, "SlabArena(%s): mmap of %zu bytes failed\n", name_, want);
             std::abort();
         }
-        // CHUNK_THP (experimental, off by default): the slabs are 2 MiB and
-        // aligned on it, a huge page each. Advice only: a failure is ignored.
-        if (alloc_config::thp_advise())
-        {
-            (void)::madvise(base, want, MADV_HUGEPAGE);
-        }
+        // CHUNK_THP: `1` advises huge pages (the slabs are 2 MiB and aligned
+        // on it, a huge page each), `never` forbids them, unset leaves the
+        // kernel's mode. Advice only: a failure is ignored.
+        alloc_config::advise_thp_region(base, want);
         auto region_begin = reinterpret_cast<std::uintptr_t>(base);
         regions_.push_back(Region{.begin = region_begin, .end = region_begin + want});
         cursor_     = region_begin;
