@@ -62,20 +62,25 @@ APP = "shrink_gui"
 # Site knowledge -- edit here.
 # --------------------------------------------------------------------------
 # Partitions. "msub": the #MSUB lines of the batch script (-T, -r, -o and -e
-# are added from the form); editable in the window and remembered per
-# partition. "mprun": the ccc_mprun options of the detached mode (no -s, no -T).
+# are added from the form). "launcher": how the batch job starts the command
+# on its node -- empty runs it directly in the job's shell; gh200 goes through
+# `ccc_mprun -C ccc-rhel9` as the interactive commands do (a Slurm
+# --constraint=ccc-rhel9 is rejected: "Invalid feature specification").
+# "mprun": the ccc_mprun options of the detached mode (no -s, no -T). All three
+# are editable in the window and remembered per partition.
 PRESETS = {
     "gh200-bxi": {
         "label": "gh200-bxi — ARM, 288 cœurs",
         "arch": "arm",
-        "msub": "#MSUB -q gh200-bxi\n#MSUB -N 1\n#MSUB -n 1\n#MSUB -c 288\n"
-                "#MSUB -E \"--constraint=ccc-rhel9\"\n",
+        "msub": "#MSUB -q gh200-bxi\n#MSUB -N 1\n#MSUB -n 1\n#MSUB -c 288\n",
+        "launcher": "ccc_mprun -C ccc-rhel9 -n 1 -c 288",
         "mprun": "-N1 -c 288 -p gh200-bxi -C ccc-rhel9 -Xfirst",
     },
     "milan-bxi": {
         "label": "milan-bxi — x86, 64 cœurs",
         "arch": "x86",
         "msub": "#MSUB -q milan-bxi\n#MSUB -N 1\n#MSUB -n 1\n#MSUB -c 64\n",
+        "launcher": "",
         "mprun": "-N1 -c 64 -p milan-bxi -Xfirst",
     },
 }
@@ -124,8 +129,8 @@ ARCH_DEFAULTS = {
         "min_threads": "8", "max_threads": "64", "regen_ref": True, "all_exec": True,
         "build_root": _BUILD_ROOT, "builds": "build_x86_64.txt",
     },
-    ("bench_and_test.py", "arm"): {"build_root": _BUILD_ROOT},
-    ("bench_and_test.py", "x86"): {"build_root": _BUILD_ROOT},
+    ("bench_and_test.py", "arm"): {"build_root": _BUILD_ROOT, "output_dir": _BUILD_ROOT + "/bench_results"},
+    ("bench_and_test.py", "x86"): {"build_root": _BUILD_ROOT, "output_dir": _BUILD_ROOT + "/bench_results"},
 }
 
 DEFAULTS = {
@@ -138,6 +143,12 @@ DEFAULTS = {
     "program": "multi_launch_stress.py",
     "mode": "msub",
 }
+
+# The newest python3 of the remote PATH, as a shell expression. A login node's
+# system python3 can be old (3.6 on RHEL 8) while the scripts want more:
+# bench_and_test.py needed 3.9 just to build its argument parser.
+NEWEST_PY = ("$(command -v python3.13 || command -v python3.12 || command -v python3.11 || "
+             "command -v python3.10 || command -v python3.9 || command -v python3)")
 
 # The ssh binary; SHRINK_GUI_SSH overrides it (tests, or a wrapper).
 SSH = os.environ.get("SHRINK_GUI_SSH", "ssh")
@@ -307,7 +318,8 @@ def act_options(a):
                          "nargs": plain(ac.nargs), "help": h, "required": bool(ac.required),
                          "metavar": ac.metavar if isinstance(ac.metavar, str) else None})
         sys.stdout = real_stdout
-        print(json.dumps({"description": self.description or "", "actions": acts}))
+        print(json.dumps({"description": self.description or "", "actions": acts,
+                          "python": sys.version.split()[0]}))
         raise Done()
 
     argparse.ArgumentParser.parse_known_args = dump
@@ -315,12 +327,23 @@ def act_options(a):
     os.chdir(os.path.dirname(path))
     sys.path.insert(0, os.path.dirname(path))
     sys.argv = [path]
+    pyv = "python %s (%s)" % (sys.version.split()[0], sys.executable)
     try:
         runpy.run_path(path, run_name="__main__")
     except Done:
         return
+    except SystemExit:
+        pass
+    except BaseException as e:
+        import traceback
+        tb = traceback.extract_tb(sys.exc_info()[2])
+        where = "%s:%d" % (os.path.basename(tb[-1].filename), tb[-1].lineno) if tb else "?"
+        sys.stdout = real_stdout
+        print(json.dumps({"error": "%s : %s: %s (à %s), avec %s"
+                          % (a[1], type(e).__name__, e, where, pyv)}))
+        return
     sys.stdout = real_stdout
-    print(json.dumps({"error": "%s ne lit pas ses options avec argparse" % a[1]}))
+    print(json.dumps({"error": "%s ne lit pas ses options avec argparse (%s)" % (a[1], pyv)}))
 
 def act_launch(a):
     base, rid, spec = a[0], a[1], json.loads(base64.b64decode(a[2]).decode())
@@ -334,7 +357,9 @@ def act_launch(a):
                + "#MSUB -r %s\n#MSUB -T %d\n#MSUB -o %s\n#MSUB -e %s\n"
                % (spec["name"], spec["time_s"], log, log)
                + 'D=%s\n' % shlex.quote(d)
-               + 'bash "$D/run.sh"\ncode=$?\necho "$code" > "$D/exit_code"\n'
+               + ('echo "[gui] launcher: %s"\n' % spec["launcher"] if spec.get("launcher") else "")
+               + '%sbash "$D/run.sh"\ncode=$?\necho "$code" > "$D/exit_code"\n'
+               % (spec["launcher"] + " " if spec.get("launcher") else "")
                + 'echo "[gui] end $(date \'+%F %T\')  exit code $code"\n')
         write(os.path.join(d, "job.sh"), job)
         try:
@@ -597,6 +622,13 @@ export CHUNK_BUILD_ROOT="${{CHUNK_BUILD_ROOT:-${{CHUNK_BUILD_REP:-.}}}}"
 # Python writes to a file here, not a terminal: unbuffered, or the log only
 # shows up by 8 KiB blocks.
 export PYTHONUNBUFFERED=1
+# The newest python3 of the PATH, under the name the command uses: the
+# system one can be too old for the scripts (bench_and_test.py wants 3.9).
+PY={NEWEST_PY}
+if [ -n "$PY" ] && [ "$PY" != "$(command -v python3)" ]; then
+    python3() {{ "$PY" "$@"; }}
+fi
+echo "[gui] $(python3 --version 2>&1) ($PY)"
 cd {shlex.quote(cwd)} || exit 97
 echo "[gui] cwd $PWD"
 echo "[gui] command: "{shlex.quote(command)}
@@ -621,6 +653,13 @@ echo "[gui] end $(date '+%F %T')  exit code $code"
 
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def tip(text):
+    """A tooltip that wraps: Qt only wraps rich text, plain text stays one line
+    as wide as the screen (the long argparse helps did)."""
+    paras = [html.escape(p).replace("\n", "<br>") for p in str(text).split("\n\n")]
+    return "<qt>" + "".join(f"<p>{p}</p>" for p in paras) + "</qt>"
 BOOL_KINDS = {"_StoreTrueAction", "_StoreFalseAction", "_StoreConstAction",
               "_AppendConstAction", "BooleanOptionalAction"}
 
@@ -663,7 +702,8 @@ class Remote:
         self._run(["-O", "check", self.host_fn()], None, lambda o: done(o is not None))
 
     def helper(self, action, args, done, binary=False):
-        remote_cmd = "python3 - " + " ".join(shlex.quote(str(a)) for a in [action, *args])
+        py = f'"{NEWEST_PY}"' if action == "options" else "python3"
+        remote_cmd = f"{py} - " + " ".join(shlex.quote(str(a)) for a in [action, *args])
 
         def parse(out):
             if out is None:
@@ -730,17 +770,26 @@ class OptionsForm(QWidget):
         self.widgets = {}   # dest -> (action, widget, label)
         self.schema = None
 
-    def build(self, schema):
+    def build(self, schema, error=None):
         while self.lay.rowCount():
             self.lay.removeRow(0)
         self.widgets.clear()
         self.schema = schema
         if not schema:
-            self.lay.addRow(QLabel("Options non lues : « Lire les options » (connexion requise)."))
+            lab = QLabel(f"<b>Options non lues.</b><br>{html.escape(error)}<br><br>"
+                         "Corrigez puis cliquez sur « Lire les options ». En attendant, le champ "
+                         "« arguments en plus » passe les options telles quelles."
+                         if error else "Options non lues : « Lire les options » (connexion requise).")
+            lab.setWordWrap(True)
+            lab.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            if error:
+                lab.setStyleSheet("color: #c0392b;")
+            self.lay.addRow(lab)
             return
         for ac in schema["actions"]:
             flag = (max(ac["flags"], key=len) if ac["flags"] else ac["dest"])
-            tip = ac["help"] + (f"\n\ndéfaut du script : {ac['default']}" if ac["default"] not in (None, False) else "")
+            help_txt = ((ac["help"] or "(pas d'aide dans le script)") + f"\n\noption : {flag}"
+                        + (f"\ndéfaut du script : {ac['default']}" if ac["default"] not in (None, False) else ""))
             if ac["kind"] in BOOL_KINDS:
                 w = QCheckBox()
                 w.setChecked(self._bool_default(ac))
@@ -755,9 +804,9 @@ class OptionsForm(QWidget):
                 w.setPlaceholderText(f"défaut : {ac['default']}" if ac["default"] is not None else
                                      (ac["metavar"] or ""))
                 w.textChanged.connect(self._emit)
-            w.setToolTip(tip)
+            w.setToolTip(tip(help_txt))
             lab = QLabel(flag)
-            lab.setToolTip(tip)
+            lab.setToolTip(tip(help_txt))
             self.lay.addRow(lab, w)
             self.widgets[ac["dest"]] = (ac, w, lab)
 
@@ -996,6 +1045,13 @@ class Main(QMainWindow):
         where.addRow("Soumission", self.mode)
         where.addRow("Durée max (-T)", self.time_s)
         where.addRow("Directives", self.directives)
+        self.launcher = QLineEdit()
+        self.launcher.setPlaceholderText("vide : la commande tourne directement dans le job")
+        self.launcher.setToolTip("ccc_msub : ce qui lance run.sh sur le nœud réservé, par exemple "
+                                 "« ccc_mprun -C ccc-rhel9 -n 1 -c 288 » (environnement RHEL 9 du gh200).\n"
+                                 "Mémorisé par partition.")
+        self.launcher_row_label = QLabel("Lanceur (job)")
+        where.addRow(self.launcher_row_label, self.launcher)
         where.addRow("Dépôt (inti)", self.repo)
         where.addRow("Runs (inti)", self.runs_dir)
         where.addRow("Résultats (local)", self.local_dir)
@@ -1216,6 +1272,7 @@ class Main(QMainWindow):
         self.addAction(quit_act)
 
         self._preset_key = None
+        self._launcher_key = None
         self.preset.currentIndexChanged.connect(self.preset_changed)
         self.mode.currentIndexChanged.connect(self.preset_changed)
         self.program.currentTextChanged.connect(self.program_changed)
@@ -1229,7 +1286,111 @@ class Main(QMainWindow):
         self.t_tail = QTimer(self)
         self.t_tail.timeout.connect(self.poll_tail)
         self.t_tail.start(2000)
+        self.set_tooltips()
         QTimer.singleShot(0, self.check)
+
+    # ------------------------------------------------------------- tooltips
+    TIPS = {
+        "host": "Nom d'hôte ssh du calculateur (tel qu'il figure dans ~/.ssh/config).\n\n"
+                "Tout passe par la connexion maître que vous ouvrez vous-même : ssh -fNM inti.",
+        "preset": "La partition où le run est soumis. Elle fixe aussi l'architecture (ARM ou x86), "
+                  "donc les valeurs par défaut des options.",
+        "mode": "ccc_msub : job batch, indépendant de cette fenêtre et du nœud de login "
+                "(recommandé).\n\nccc_mprun détaché : lancé depuis le nœud de login ; il dépend de ce "
+                "nœud tant qu'il tourne.",
+        "time_s": "Durée maximale du job (-T), en secondes. Au-delà, le job est tué par le "
+                  "gestionnaire et finit « terminé sans code ».",
+        "directives": "Lignes #MSUB du script batch (ou options ccc_mprun en mode détaché). Propres à "
+                      "la partition, mémorisées.\n\n-T, -r, -o et -e sont ajoutés d'après le formulaire.",
+        "repo": "Le dépôt shrink-array SUR INTI. Les options sont lues dans ces scripts-là, et c'est "
+                "là que le job s'exécute.",
+        "runs_dir": "Où l'interface range ses runs sur inti : un dossier par run (log, scripts, "
+                    "code de retour, numéro de job).",
+        "local_dir": "Où « Récupérer les résultats » copie les fichiers sur ce portable.",
+        "program": "Le script à lancer. Ses options sont lues dans le script lui-même sur inti.",
+        "opt_filter": "Ne montre que les options dont le nom ou l'aide contient ce texte.",
+        "extra": "Arguments ajoutés tels quels à la fin de la commande : pour une option que le "
+                 "formulaire ne connaît pas (--no-gnu de compile_all.sh, par exemple).",
+        "preview": "La commande exacte qui sera exécutée sur le nœud. Seules les options modifiées "
+                   "(en gras) y figurent : les autres gardent le défaut du script.",
+        "table": "Les runs du dossier « Runs (inti) », du plus récent au plus ancien. Cliquez sur un "
+                 "run pour voir son log, son résumé et son graphique.\n\nRafraîchi toutes les 15 s.",
+        "find": "Recherche dans le log (Ctrl+F). Entrée : occurrence suivante, avec retour au début.",
+        "follow": "Fait défiler le log jusqu'à la fin à chaque nouvelle ligne. Décochée, le log "
+                  "reste où vous êtes.",
+        "pt_build": "Ne montre que les runs de ce build.",
+        "pt_variant": "Ne montre que les runs de cette variante (chunk, chunk2, chunk2a).",
+        "pt_color": "Ce que la couleur distingue : la variante, la taille de chunk, ou rien. Trois "
+                    "couleurs au plus ; le reste est groupé en gris « autres ».",
+        "pt_log": "Axe du temps en échelle logarithmique : utile quand les temps s'étalent sur "
+                  "plusieurs ordres de grandeur.",
+        "pt_median": "Médiane du temps par tranche de threads (au moins 3 runs par tranche) : la "
+                     "tendance malgré la dispersion.",
+        "pt_ok_only": "Retire les runs en échec (triangles) du graphique.",
+    }
+    BUTTON_TIPS = {
+        "Vérifier la connexion": "Vérifie la connexion maître ssh et le python3 d'inti, puis "
+                                 "rafraîchit la liste des runs.",
+        "Lire les options": "Relit les options du script sur inti : à faire après avoir modifié ou "
+                            "mis à jour le script.",
+        "Défauts de l'architecture": "Remet les options aux valeurs par défaut de l'architecture "
+                                     "de la partition (ARM ou x86).",
+        "Enregistrer comme défauts": "Enregistre les options actuelles comme valeurs par défaut "
+                                     "de ce programme sur cette architecture.",
+        "Soumettre": "Crée le dossier du run sur inti et soumet le job.",
+        "Rafraîchir": "Relit maintenant (sinon automatique).",
+        "Arrêter": "Annule le job du run sélectionné (ccc_mdel), ou arrête ccc_mprun en mode détaché.",
+        "Récupérer les résultats": "Copie sur ce portable le dossier du run et les fichiers de "
+                                   "résultats du programme (CSV, log, erreurs ; jamais les output_*).",
+        "Reprendre ses options": "Remet dans le formulaire le programme, la partition et les options "
+                                 "du run sélectionné, pour le relancer ou le modifier.",
+        "Supprimer": "Supprime le dossier du run sur inti (pas les sorties du programme). "
+                     "Seulement pour un run terminé.",
+        "Rafraîchir le résumé": "Relit le fichier résumé du run sélectionné.",
+    }
+
+    def set_tooltips(self):
+        for name, text in self.TIPS.items():
+            w = getattr(self, name, None)
+            if w is not None:
+                w.setToolTip(tip(text))
+        for b in self.findChildren(QPushButton):
+            if b.text() in self.BUTTON_TIPS and not b.toolTip():
+                b.setToolTip(tip(self.BUTTON_TIPS[b.text()]))
+            elif b.toolTip() and not b.toolTip().startswith("<qt>"):
+                b.setToolTip(tip(b.toolTip()))
+        if self.launcher.toolTip() and not self.launcher.toolTip().startswith("<qt>"):
+            self.launcher.setToolTip(tip(self.launcher.toolTip()))
+        if self.pt_cmp.toolTip() and not self.pt_cmp.toolTip().startswith("<qt>"):
+            self.pt_cmp.setToolTip(tip(self.pt_cmp.toolTip()))
+        # the entries of the drop-down lists
+        for i in range(self.preset.count()):
+            p = PRESETS[self.preset.itemData(i)]
+            self.preset.setItemData(i, tip(f"{p['label']}\n\n" + p["msub"].strip()
+                                           + (f"\nlanceur : {p['launcher']}" if p.get("launcher") else "")),
+                                    Qt.ToolTipRole)
+        prog_tips = {
+            "multi_launch_stress.py": "Stress : les binaires de check, en boucle, à un nombre de "
+                                      "threads tiré au hasard. Résumé et graphique disponibles.",
+            "bench_and_test.py": "Bench et tests : validations ctest, checks, sanitizers, comparaison "
+                                 "seq/omp et mesures de performance.",
+            "compile_all.sh": "Compilation de toutes les configurations (options lues dans son --help).",
+        }
+        for i in range(self.program.count()):
+            t = prog_tips.get(self.program.itemText(i))
+            if t:
+                self.program.setItemData(i, tip(t), Qt.ToolTipRole)
+        mode_tips = {"msub": self.TIPS["mode"].split("\n\n")[0],
+                     "mprun": self.TIPS["mode"].split("\n\n")[1]}
+        for i in range(self.mode.count()):
+            self.mode.setItemData(i, tip(mode_tips[self.mode.itemData(i)]), Qt.ToolTipRole)
+        tab_tips = ["Le log du run sélectionné, suivi en direct.",
+                    "Le résumé du run : par build pour multi_launch_stress.py (runs, échecs, temps), "
+                    "le CSV tel quel pour bench_and_test.py.",
+                    "Temps de chaque run selon le nombre de threads (multi_launch_stress.py). "
+                    "Survolez un point pour le détail ; « Comparer avec » superpose un autre run."]
+        for i, t in enumerate(tab_tips):
+            self.tabs.setTabToolTip(i, tip(t))
 
     # ---------------------------------------------------------------- utils
     def _get(self, key):
@@ -1239,7 +1400,7 @@ class Main(QMainWindow):
         return PRESETS[self.preset.currentData()]["arch"]
 
     def _directives_key(self, preset=None, mode=None):
-        return f"directives/{preset or self.preset.currentData()}/{mode or self.mode.currentData()}"
+        return f"directives2/{preset or self.preset.currentData()}/{mode or self.mode.currentData()}"
 
     def save(self):
         for key, w in (("host", self.host), ("repo", self.repo), ("runs_dir", self.runs_dir),
@@ -1251,6 +1412,7 @@ class Main(QMainWindow):
         self.settings.setValue("program", self.program.currentText())
         if self._preset_key:
             self.settings.setValue(self._preset_key, self.directives.toPlainText())
+            self.settings.setValue(self._launcher_key, self.launcher.text())
 
     def closeEvent(self, ev):
         self.save()
@@ -1267,6 +1429,7 @@ class Main(QMainWindow):
         super().closeEvent(ev)
 
     def error(self, msg):
+        self.last_error = msg
         self.statusBar().showMessage(msg.splitlines()[0] if msg else "", 20000)
         print(msg, file=sys.stderr)
 
@@ -1277,10 +1440,16 @@ class Main(QMainWindow):
     def preset_changed(self, *_):
         if self._preset_key:   # keep what was typed for the previous one
             self.settings.setValue(self._preset_key, self.directives.toPlainText())
+            self.settings.setValue(self._launcher_key, self.launcher.text())
         p = PRESETS[self.preset.currentData()]
         builtin = p["msub"] if self.mode.currentData() == "msub" else p["mprun"]
         self._preset_key = self._directives_key()
         self.directives.setPlainText(self.settings.value(self._preset_key, builtin))
+        self._launcher_key = f"launcher/{self.preset.currentData()}"
+        self.launcher.setText(self.settings.value(self._launcher_key, p.get("launcher", "")))
+        is_msub = self.mode.currentData() == "msub"
+        self.launcher.setVisible(is_msub)
+        self.launcher_row_label.setVisible(is_msub)
         self.apply_arch_defaults()
 
     def program_changed(self, *_):
@@ -1294,9 +1463,12 @@ class Main(QMainWindow):
     def scan(self):
         prog = self.program.currentText()
         self.info(f"lecture des options de {prog}…")
+        self.last_error = None
 
         def done(r):
             if r is None:
+                if prog == self.program.currentText() and not self.form.schema:
+                    self.form.build(None, self.last_error or "erreur inconnue (voir la barre d'état)")
                 return
             keep = self.form.values() if self.form.schema else None
             self.settings.setValue(f"schema/{prog}", json.dumps(r))
@@ -1307,7 +1479,8 @@ class Main(QMainWindow):
                 else:
                     self.apply_arch_defaults()
             self.form.filter(self.opt_filter.text())
-            self.info(f"{prog} : {len(r['actions'])} options lues")
+            via = f" (python {r['python']} sur inti)" if r.get("python") else ""
+            self.info(f"{prog} : {len(r['actions'])} options lues{via}")
 
         spec = PROGRAMS[prog]
         self.remote.helper("options", [self.repo.text().strip(), spec["script"], spec["scan"],
@@ -1390,11 +1563,13 @@ class Main(QMainWindow):
             "mode": mode,
             "run.sh": make_run_sh(self.repo.text().strip(), PROGRAMS[prog]["cwd"], cmd),
             "msub": self.directives.toPlainText() if mode == "msub" else "",
+            "launcher": self.launcher.text().strip() if mode == "msub" else "",
             "launch.sh": make_launch_sh(f"{' '.join(self.directives.toPlainText().split())} "
                                         f"-T{self.time_s.value()}") if mode == "mprun" else "",
             "name": re.sub(r"[^A-Za-z0-9_.-]", "_", f"{prog.split('.')[0]}_{pkey}")[:40],
             "time_s": self.time_s.value(),
             "meta": {"program": prog, "partition": pkey, "arch": self.arch(), "mode": mode,
+                     "launcher": self.launcher.text().strip() if mode == "msub" else "",
                      "command": cmd, "values": self.form.values(), "extra": self.extra.text(),
                      "repo": self.repo.text().strip(), "time_s": self.time_s.value(),
                      "created": time.strftime("%F %T"),
