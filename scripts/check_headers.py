@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Every C++ file opens with the project's license header, and only that.
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+"""Every source file carries its license: the full Apache block for C++,
+SPDX lines for the scripts and build files, the upstream license for the
+vendored headers.
 
-Over chunk/, fast_allocators/ and examples/ (third_party/ keeps its own):
+C++ files of chunk/, fast_allocators/ and examples/:
 
 1. Line 1 starts the Apache 2.0 block below, word for word, followed by a
    single blank line, with the years as
@@ -11,12 +15,27 @@ Over chunk/, fast_allocators/ and examples/ (third_party/ keeps its own):
 2. That block appears once, and no IDE stamp (`// Created by <user> on <date>`)
    is left in the file.
 
+Scripts and build files (*.py, *.sh, *.cmake, *.cmake.in, CMakeLists.txt,
+outside third_party/):
+
+3. Right after the `#!` line and a `coding:` line, if any, the two lines
+       
+       # SPDX-License-Identifier: Apache-2.0
+   with the years as in rule 1, and no other CEA copyright in the file.
+
+Vendored headers (third_party/chunk/vendor/, installed with chunk):
+
+4. Line 1 is `// SPDX-License-Identifier: <id>`, <id> the upstream license
+   their provenance comment names (MIT, BSL-1.0) -- never Apache-2.0.
+
 --fix rewrites the files that break a rule: the block goes to line 1, its text
 is the canonical one, the stamps and any other form of the license (truncated,
 `//` comments, SPDX line) are removed. The first year is the oldest of the old
 copyright and the stamp, else the year of the file's first commit; the last is
 the current year. Whatever stood above the old license (`#pragma once`, an
-include) moves just below the new one.
+include) moves just below the new one. For the scripts, the two lines replace
+any older CEA license comment; for the vendored headers, the SPDX line goes on
+top.
 
 Usage: scripts/check_headers.py [repo root] [--list] [--fix]   (exit 1 on a violation)
 """
@@ -56,22 +75,66 @@ OLD_SPDX = re.compile(r"// Copyright[^\n]*CEA[^\n]*\n// SPDX-License-Identifier:
 STAMP = re.compile(r"(?://[ \t]*\n)?// Created by \S+ on \d+/\d+/(\d+)\.?[ \t]*\n(?://[ \t]*\n)?")
 YEAR = re.compile(r"Copyright (\d{4})")
 
+SCRIPT_NAMES = ("CMakeLists.txt",)
+SCRIPT_SUFFIXES = (".py", ".sh", ".cmake")
+SCRIPT_PROLOGUE = re.compile(r"(#![^\n]*\n)?(#[^\n]*coding[:=][^\n]*\n)?")
+SCRIPT_HEADER = re.compile(r"# Copyright (\d{4})(?:-(\d{4}))? CEA \(www\.cea\.fr\)\n"
+                           r"# SPDX-License-Identifier: Apache-2\.0\n")
+# Older CEA license comments in a script, for --fix: the full Apache text as
+# # lines, or a copyright line on its own.
+SCRIPT_OLD = re.compile(r"^# Copyright[^\n]*CEA[^\n]*\n(?:#[^\n]*\n)*?# limitations under the License\.\n"
+                        r"|^# Copyright[^\n]*CEA[^\n]*\n(?:# SPDX-License-Identifier:[^\n]*\n)?", re.M)
+# A CEA license comment line, anywhere in a script (rule 3: only the header's).
+SCRIPT_LICENSE_LINE = re.compile(r"^# (?:Copyright[^\n]*CEA|Licensed under the Apache)", re.M)
 
-def files(root: pathlib.Path):
-    """The C++ files of DIRS: git's list (tracked and new, ignored ones
+VENDOR_DIR = "third_party/chunk/vendor"
+# The provenance comment's "license :" line -> its SPDX identifier.
+VENDOR_LICENSES = {"MIT": "MIT", "Boost Software License 1.0": "BSL-1.0"}
+VENDOR_LICENSE_LINE = re.compile(r"^//\s+license\s*:\s*(.+?)\s*(?:\(|$)", re.M)
+
+
+def all_files(root: pathlib.Path):
+    """Every file of the repository: git's list (tracked and new, ignored ones
     excluded) when there is one, else a walk that skips the build trees."""
     try:
-        out = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", *DIRS],
+        out = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard"],
                              cwd=root, capture_output=True, text=True, check=True).stdout
         found = [root / f for f in out.split("\n") if f]
     except (OSError, subprocess.CalledProcessError):
         found = []
-        for d in DIRS:
-            for top, dirs, names in os.walk(root / d):
-                dirs[:] = [x for x in dirs if not x.startswith(".") and not x.startswith("cmake-build")
-                           and x != "build"]
-                found += [pathlib.Path(top) / n for n in names]
-    return sorted(f for f in found if f.suffix in SUFFIXES and f.is_file())
+        for top, dirs, names in os.walk(root):
+            dirs[:] = [x for x in dirs if not x.startswith(".") and not x.startswith("cmake-build")
+                       and x != "build"]
+            found += [pathlib.Path(top) / n for n in names]
+    return sorted(f for f in found if f.is_file())
+
+
+def families(root: pathlib.Path):
+    """(C++ files, scripts and build files, vendored headers)."""
+    cpp, scripts, vendor = [], [], []
+    for f in all_files(root):
+        rel = f.relative_to(root).as_posix()
+        if rel.startswith(VENDOR_DIR + "/"):
+            if f.suffix in SUFFIXES:
+                vendor.append(f)
+        elif rel.startswith("third_party/"):
+            continue
+        elif f.suffix in SUFFIXES:
+            if rel.split("/", 1)[0] in DIRS:
+                cpp.append(f)
+        elif f.name in SCRIPT_NAMES or f.suffix in SCRIPT_SUFFIXES or f.name.endswith(".cmake.in"):
+            scripts.append(f)
+    return cpp, scripts, vendor
+
+
+def years_reason(first: int, last, last_commit):
+    """Why a `Copyright first[-last]` is wrong, or None."""
+    end = int(last or first)
+    if not first <= end <= THIS_YEAR or (last and first == end):
+        return f"bad copyright years {first}{'-' + last if last else ''}"
+    if last_commit and end < last_commit:
+        return f"copyright ends in {end}, file last committed in {last_commit}"
+    return None
 
 
 def check(text: str, last_commit=None):
@@ -82,16 +145,46 @@ def check(text: str, last_commit=None):
         bad.append("does not open with the license header" if "Licensed under the Apache" in text
                    or YEAR.search(text[:4000]) else "no license header")
     else:
-        first, last = int(m.group(1)), int(m.group(2) or m.group(1))
-        if not first <= last <= THIS_YEAR or (m.group(2) and first == last):
-            bad.append(f"bad copyright years {m.group(1)}{'-' + m.group(2) if m.group(2) else ''}")
-        elif last_commit and last < last_commit:
-            bad.append(f"copyright ends in {last}, file last committed in {last_commit}")
+        why = years_reason(int(m.group(1)), m.group(2), last_commit)
+        if why:
+            bad.append(why)
     if text.count("Licensed under the Apache") > 1:
         bad.append("license present more than once")
     if STAMP.search(text):
         bad.append("IDE 'Created by' stamp")
     return bad
+
+
+def check_script(text: str, last_commit=None):
+    """The rules a script or build file breaks (rule 3)."""
+    pro = SCRIPT_PROLOGUE.match(text).end()
+    m = SCRIPT_HEADER.match(text, pro)
+    if not m:
+        return ["no SPDX header (# Copyright ... CEA / # SPDX-License-Identifier: Apache-2.0)"
+                + (" where expected" if "SPDX-License-Identifier" in text or YEAR.search(text) else "")]
+    bad = []
+    why = years_reason(int(m.group(1)), m.group(2), last_commit)
+    if why:
+        bad.append(why)
+    if len(SCRIPT_LICENSE_LINE.findall(text)) > 1:
+        bad.append("another CEA license comment besides the SPDX header")
+    return bad
+
+
+def vendor_spdx(text: str):
+    """The SPDX identifier the provenance comment's license line calls for, or None."""
+    m = VENDOR_LICENSE_LINE.search(text[:2000])
+    return VENDOR_LICENSES.get(m.group(1)) if m else None
+
+
+def check_vendor(text: str, last_commit=None):
+    """The rules a vendored header breaks (rule 4)."""
+    want = vendor_spdx(text)
+    if want is None:
+        return ["provenance comment names no known license (see VENDOR_LICENSES)"]
+    if not text.startswith(f"// SPDX-License-Identifier: {want}\n"):
+        return [f"line 1 is not '// SPDX-License-Identifier: {want}'"]
+    return []
 
 
 def cut(text: str, a: int, b: int):
@@ -105,7 +198,7 @@ def cut(text: str, a: int, b: int):
 def commit_years(root: pathlib.Path):
     """{relative path: year of its last commit}, from one git log (empty outside git)."""
     try:
-        out = subprocess.run(["git", "log", "--format=@%ad", "--date=format:%Y", "--name-only", "--", *DIRS],
+        out = subprocess.run(["git", "log", "--format=@%ad", "--date=format:%Y", "--name-only"],
                              cwd=root, capture_output=True, text=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError):
         return {}
@@ -125,6 +218,31 @@ def first_commit_year(path: pathlib.Path, root: pathlib.Path):
         return int(out[-1]) if out else THIS_YEAR
     except (OSError, subprocess.CalledProcessError):
         return THIS_YEAR
+
+
+def fixed_script(text: str, path: pathlib.Path, root: pathlib.Path):
+    pro = SCRIPT_PROLOGUE.match(text).end()
+    head, body = text[:pro], text[pro:]
+    years = []
+    while True:  # every older CEA license comment
+        mm = SCRIPT_OLD.search(body[:6000])
+        if not mm:
+            break
+        ym = YEAR.search(mm.group(0))
+        if ym:
+            years.append(int(ym.group(1)))
+        body = cut(body, mm.start(), mm.end())
+    first = min(years) if years else first_commit_year(path, root)
+    span = str(THIS_YEAR) if first >= THIS_YEAR else f"{first}-{THIS_YEAR}"
+    return f"{head}# Copyright {span} CEA (www.cea.fr)\n# SPDX-License-Identifier: Apache-2.0\n{body}"
+
+
+def fixed_vendor(text: str, path: pathlib.Path, root: pathlib.Path):
+    want = vendor_spdx(text)
+    if want is None:
+        return text  # nothing safe to write: the check keeps reporting it
+    text = re.sub(r"\A// SPDX-License-Identifier:[^\n]*\n", "", text)
+    return f"// SPDX-License-Identifier: {want}\n{text}"
 
 
 def fixed(text: str, path: pathlib.Path, root: pathlib.Path):
@@ -156,15 +274,20 @@ def main() -> int:
     bad = []
     n_fixed = 0
     last_commit = commit_years(root)
-    for f in files(root):
-        text = f.read_text(encoding="utf-8")
-        last = last_commit.get(f.relative_to(root).as_posix())
-        reasons = check(text, last)
-        if reasons and "--fix" in sys.argv:
-            f.write_text(fixed(text, f, root), encoding="utf-8")
-            n_fixed += 1
-            reasons = check(f.read_text(encoding="utf-8"), last)
-        bad += [f"{f.relative_to(root)}: {r}" for r in reasons]
+    cpp, scripts, vendor = families(root)
+    for group, check_fn, fix_fn in ((cpp, check, fixed), (scripts, check_script, fixed_script),
+                                    (vendor, check_vendor, fixed_vendor)):
+        for f in group:
+            text = f.read_text(encoding="utf-8")
+            last = last_commit.get(f.relative_to(root).as_posix())
+            reasons = check_fn(text, last)
+            if reasons and "--fix" in sys.argv:
+                new = fix_fn(text, f, root)
+                if new != text:
+                    f.write_text(new, encoding="utf-8")
+                    n_fixed += 1
+                    reasons = check_fn(new, last)
+            bad += [f"{f.relative_to(root)}: {r}" for r in reasons]
     if n_fixed:
         print(f"check_headers: {n_fixed} file(s) rewritten")
     if bad:
@@ -174,7 +297,8 @@ def main() -> int:
         if len(bad) > 40 and "--list" not in sys.argv:
             print(f"  ... ({len(bad) - 40} more, --list for all)")
         return 1
-    print("check_headers: OK, every file opens with the license header and carries no IDE stamp")
+    print(f"check_headers: OK, {len(cpp)} C++ files with the license header, {len(scripts)} scripts and "
+          f"build files with SPDX lines, {len(vendor)} vendored headers with their upstream SPDX line")
     return 0
 
 

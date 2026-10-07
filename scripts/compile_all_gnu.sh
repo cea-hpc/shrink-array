@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright 2025-2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 
 # NOTE: CMAKE_BUILD_PARALLEL_LEVEL is no longer hard-coded here. It is derived
 # in functions_for_compile.sh from the core count divided by CHUNK_MAX_JOBS,

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2024-2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 
 import subprocess
 

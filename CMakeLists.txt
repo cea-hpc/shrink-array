@@ -1,3 +1,5 @@
+# Copyright 2024-2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 cmake_minimum_required(VERSION 3.20)
 project(shrink_array VERSION 2.2.8 LANGUAGES CXX)
 
@@ -754,8 +756,9 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_includes
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_includes.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_includes PROPERTY LABELS validation)
-    # Every C++ file opens with the license header, years up to date, and
-    # carries no IDE stamp (scripts/check_headers.py; --fix repairs).
+    # Every source file carries its license: the Apache block for C++, SPDX
+    # lines for scripts and build files, the upstream SPDX line for the vendored
+    # headers (scripts/check_headers.py; --fix repairs).
     add_test(NAME check_headers
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_headers.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_headers PROPERTY LABELS validation)

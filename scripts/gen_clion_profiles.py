@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """
 gen_clion_profiles.py -- give CLion the build configurations of the scripts,
 under the scripts' names.

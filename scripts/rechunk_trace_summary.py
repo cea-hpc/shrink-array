@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Sum the CHUNK_RECHUNK_TRACE phase times of shrink_bench logs, one line per log.
 
 For each log: the number of re-chunks, the bench's "Elapsed time" lines, then

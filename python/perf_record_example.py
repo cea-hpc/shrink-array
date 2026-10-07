@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Measure one configuration N times and file the result in the perf database.
 
 Standalone on purpose: bench_and_test.py already knows how to build the matrix

@@ -74,7 +74,9 @@ the tag's checksum to the recipe.
   documentation builds with no warning. The HTML draws the mermaid diagrams.
 - `compile_all.sh` / `compile_all_gnu.sh`: `--with-ledger`.
 - `scripts/check_headers.py` (ctest `check_headers`): every C++ file opens with the Apache
-  license header, its years up to date, and carries no IDE `Created by` stamp; `--fix` repairs.
+  license header, its years up to date, and carries no IDE `Created by` stamp; the scripts and
+  build files carry `# Copyright ... CEA` / `# SPDX-License-Identifier: Apache-2.0`, the vendored
+  headers the SPDX line of their upstream license; `--fix` repairs.
 
 ### Changed
 
@@ -114,7 +116,9 @@ the tag's checksum to the recipe.
   build) and checks files not yet added to git.
 - Comments naming headers that moved to `internal/`, or a script that no longer exists.
 - License headers: 29 files had none, others had it truncated, below `#pragma once` or with
-  stale years; the IDE `Created by` stamps are gone.
+  stale years; the IDE `Created by` stamps are gone. The 61 scripts and build files without a
+  license (`.py`, `.sh`, `.cmake`, the CMake config templates, `CMakeLists.txt`) carry SPDX lines; the three
+  vendored headers, installed with chunk, the SPDX line of their own license (MIT, BSL-1.0).
 
 ### Deprecated
 

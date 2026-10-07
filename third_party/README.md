@@ -12,7 +12,8 @@ the root of `include/`: a user's own copy of either library is left alone, and a
 | `chunk/vendor/ankerl/stl.h` | martinus/unordered_dense | v5.3.1 (commit `c164976d`) | MIT | none |
 | `chunk/vendor/flat_hash_map.hpp` | [skarupke/flat_hash_map](https://github.com/skarupke/flat_hash_map) | master, commit `2c468743` (2018-07-15, the last one: unmaintained) | Boost Software License 1.0, [licenses/flat_hash_map-BSL-1.0.txt](licenses/flat_hash_map-BSL-1.0.txt) | 1 |
 
-Each file opens with a banner stating the above. Each local patch is marked
+Each file opens with the SPDX line of its upstream license (`// SPDX-License-Identifier: MIT`,
+`BSL-1.0`; ctest `check_headers` checks it), then a banner stating the above. Each local patch is marked
 `Local patch (shrink-array)` in the file:
 
     grep -rn "Local patch (shrink-array)" third_party
@@ -54,7 +55,7 @@ installed under `share/doc/chunk/`.
    `git show vX.Y.Z:include/ankerl/unordered_dense.h`.
 2. Re-apply the local patches (drop one that upstream made unnecessary), each still marked
    `Local patch (shrink-array)`.
-3. Update the banner at the top of the file, the table above and, if upstream's changed, the
+3. Keep the SPDX line on top, update the banner below it, the table above and, if upstream's changed, the
    license text in `licenses/`.
 4. Build with gcc, clang and nvc++ (the patches exist for nvc++), on x86-64 and aarch64 (the
    NEON patch), run the check builds and compare the benchmark with the previous version.

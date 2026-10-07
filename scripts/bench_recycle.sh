@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 # shrink_bench int64 binaries (chunk@dyn by default), the scaling guard's workload,
 # with/without slab recycling and numactl --interleave.
 # Usage: bench_recycle.sh <build_root> [reps] [dir containing numa_launch.py]

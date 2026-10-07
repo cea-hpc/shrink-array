@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 # ============================================================================
 # Script mode (cmake -P), run by the build: writes the build stamp.
 #   -DSRC=<source dir> -DLIST=<files.txt, one relative path per line>

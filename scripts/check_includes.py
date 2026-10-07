@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Every #include says why it is there, and system and project headers are not mixed.
 
 Two rules, over chunk/, fast_allocators/ and examples/:

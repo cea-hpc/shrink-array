@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Terminal output: colours (only on a tty, never with NO_COLOR), the log tee, the clock."""
 import os
 import sys

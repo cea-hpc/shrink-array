@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Phase 0b: the validation harnesses (ctest -L validation) of every build dir."""
 import subprocess
 import sys

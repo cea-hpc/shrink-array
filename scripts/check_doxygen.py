@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """The Doxygen documentation builds without a warning.
 
 Runs Doxygen on docs/Doxyfile, as `cmake --build <build> --target doc` does,

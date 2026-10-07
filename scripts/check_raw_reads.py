@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Every raw read of a chunk's buffer must say why it is safe.
 
 A chunk's `values` pointer names a buffer that a compression pass may release

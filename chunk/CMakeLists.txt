@@ -1,3 +1,5 @@
+# Copyright 2024-2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 # ---------------------------------------------------------------------------
 # The `chunk` library must be compiled with one of CHUNK / CHUNK2 / CHUNK2A
 # defined (or none, for the vector-mode build). These macros drive

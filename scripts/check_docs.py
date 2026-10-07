@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """The documentation still matches the code, and the two languages each other.
 
 Five checks, over README.md, CHANGELOG.md and docs/*.md, and over the

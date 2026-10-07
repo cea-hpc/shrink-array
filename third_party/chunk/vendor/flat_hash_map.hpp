@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: BSL-1.0
 // shrink-array vendored copy -- not the pristine upstream file.
 //   upstream: https://github.com/skarupke/flat_hash_map (unmaintained)
 //   version : master, commit 2c4687431f978f02a3780e24b8b701d22aa32d9c

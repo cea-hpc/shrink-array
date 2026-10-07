@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright 2025-2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 # --fresh-cache: drop a build dir's CMakeCache.txt before it is (re)configured,
 # so cached variables (SHRINK_BENCH_DYN_SIZE, toolchain, generator, stale option()s) are
 # re-read from the -D flags / CMakeLists defaults instead of sticking at their

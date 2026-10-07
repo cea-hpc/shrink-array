@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """End-of-run summary: CSV, error log, memory guards."""
 import csv
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // shrink-array vendored copy -- not the pristine upstream file.
 //   upstream: https://github.com/martinus/unordered_dense
 //   version : v5.3.1 (commit c164976d1426d623d87b98833ff60c7263fde4e1)

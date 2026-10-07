@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright 2024-2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 
 # BUILD_FLAGS stays empty: the per-build job count comes from
 # CMAKE_BUILD_PARALLEL_LEVEL, derived in functions_for_compile.sh. Forcing
