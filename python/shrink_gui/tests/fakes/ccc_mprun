@@ -1,0 +1,6 @@
+#!/bin/bash
+# Fake ccc_mprun [options] <command...>: drops the options, runs the command.
+echo "[fake ccc_mprun] options: ${*%% bash *}"
+while [ $# -gt 0 ] && [ "$1" != bash ]; do shift; done
+trap 'kill $child 2>/dev/null; exit 143' TERM
+"$@" & child=$!; wait $child

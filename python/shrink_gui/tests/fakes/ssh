@@ -1,0 +1,8 @@
+#!/bin/bash
+# Fake ssh for the tests: "-O check <host>" succeeds; "[-o opt]... <host> <cmd>"
+# runs <cmd> HERE, with HOME=$FAKE_HOME standing for the home directory on inti.
+if [ "$1" = "-O" ]; then echo "Master running" >&2; exit 0; fi
+while [ "$1" = "-o" ]; do shift 2; done
+shift   # the host
+export HOME="$FAKE_HOME"
+exec bash -c "$*"

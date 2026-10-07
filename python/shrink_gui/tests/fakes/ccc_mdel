@@ -1,0 +1,3 @@
+#!/bin/bash
+# Fake ccc_mdel <id>: SIGTERM to the job's process group.
+kill -TERM -- -"$1" && echo "job $1 cancelled"

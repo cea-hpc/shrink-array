@@ -1,0 +1,265 @@
+"""Widgets: the log, the options form, the chart, table cells."""
+import html
+import re
+import shlex
+
+from PySide6.QtCharts import QChartView
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont, QPainter, QTextCursor
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QLabel, QLineEdit, QMessageBox,
+                               QPlainTextEdit, QTableWidgetItem, QToolTip, QWidget)
+
+from shrink_gui.i18n import T, tip
+from shrink_gui.runscripts import shq
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+BOOL_KINDS = {"_StoreTrueAction", "_StoreFalseAction", "_StoreConstAction",
+              "_AppendConstAction", "BooleanOptionalAction"}
+
+def ask(parent, title, text):
+    """QMessageBox.question in the interface language."""
+    return QMessageBox.question(parent, T(title), T(text))
+
+class LogView(QPlainTextEdit):
+    """Appends ssh output and honours \\r (a progress line rewritten in place)."""
+
+    def __init__(self):
+        super().__init__()
+        self.setReadOnly(True)
+        self.setFont(QFont("Monospace", 9))
+        self.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.setMaximumBlockCount(20000)
+        self.follow = True
+
+    def append_raw(self, text):
+        text = ANSI_RE.sub("", text)
+        bar = self.verticalScrollBar()
+        at_end = self.follow
+        cur = self.textCursor()
+        cur.movePosition(QTextCursor.End)
+        for piece in re.split(r"(\r\n|\r|\n)", text):
+            if piece in ("\n", "\r\n"):
+                cur.insertText("\n")
+            elif piece == "\r":
+                cur.movePosition(QTextCursor.StartOfBlock, QTextCursor.KeepAnchor)
+                cur.removeSelectedText()
+            elif piece:
+                cur.insertText(piece)
+        if at_end:
+            bar.setValue(bar.maximum())
+
+class TLabel(QLabel):
+    """A QLabel whose setText() translates (status lines set at run time)."""
+
+    def setText(self, text):
+        super().setText(T(text))
+
+class OptionsForm(QWidget):
+    """The form of one script's argparse options. An empty field / a flag in
+    its default state is not put on the command line: the script's own
+    default applies."""
+
+    changed = None  # callback, set by the owner
+
+    def __init__(self):
+        super().__init__()
+        self.lay = QFormLayout(self)
+        self.lay.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        self.widgets = {}   # dest -> (action, widget, label)
+        self.schema = None
+
+    def build(self, schema, error=None):
+        while self.lay.rowCount():
+            self.lay.removeRow(0)
+        self.widgets.clear()
+        self.schema = schema
+        if not schema:
+            lab = TLabel()
+            lab.setText(f"<b>Options non lues.</b><br>{html.escape(error)}<br><br>"
+                         "Corrigez puis cliquez sur « Lire les options ». En attendant, le champ "
+                         "« arguments en plus » passe les options telles quelles."
+                         if error else "Options non lues : « Lire les options » (connexion requise).")
+            lab.setWordWrap(True)
+            lab.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            if error:
+                lab.setStyleSheet("color: #c0392b;")
+            self.lay.addRow(lab)
+            return
+        for ac in schema["actions"]:
+            flag = (max(ac["flags"], key=len) if ac["flags"] else ac["dest"])
+            help_txt = ((ac["help"] or "(pas d'aide dans le script)") + f"\n\noption : {flag}"
+                        + (f"\ndéfaut du script : {ac['default']}" if ac["default"] not in (None, False) else ""))
+            if ac["kind"] in BOOL_KINDS:
+                w = QCheckBox()
+                w.setChecked(self._bool_default(ac))
+                w.toggled.connect(self._emit)
+            elif ac["choices"]:
+                w = QComboBox()
+                w.addItem("")
+                w.addItems(ac["choices"])
+                w.currentTextChanged.connect(self._emit)
+            else:
+                w = QLineEdit()
+                w.setPlaceholderText(T(f"défaut : {ac['default']}") if ac["default"] is not None else
+                                     (ac["metavar"] or ""))
+                w.textChanged.connect(self._emit)
+            w.setToolTip(tip(help_txt))
+            lab = QLabel(flag)
+            lab.setToolTip(tip(help_txt))
+            self.lay.addRow(lab, w)
+            self.widgets[ac["dest"]] = (ac, w, lab)
+
+    def filter(self, text):
+        """Show only the options whose flag or help contains @p text."""
+        t = text.strip().lower()
+        for ac, w, lab in self.widgets.values():
+            hay = (" ".join(ac["flags"]) + " " + ac["dest"] + " " + ac["help"]).lower()
+            self.lay.setRowVisible(w, not t or t in hay)
+
+    def _mark(self):
+        """The options that differ from the script default, in bold."""
+        vals = self.values()
+        for dest, (_ac, _w, lab) in self.widgets.items():
+            f = lab.font()
+            if f.bold() != (dest in vals):
+                f.setBold(dest in vals)
+                lab.setFont(f)
+
+    @staticmethod
+    def _bool_default(ac):
+        if ac["kind"] == "_StoreFalseAction":
+            return True          # checked = the option's default (True)
+        if ac["kind"] == "BooleanOptionalAction":
+            return bool(ac["default"])
+        return False
+
+    def _emit(self, *_):
+        self._mark()
+        if self.changed:
+            self.changed()
+
+    def set_values(self, values):
+        """Reset every field to the script default, then apply @p values."""
+        for dest, (ac, w, _lab) in self.widgets.items():
+            w.blockSignals(True)
+            v = values.get(dest)
+            if isinstance(w, QCheckBox):
+                w.setChecked(bool(v) if v is not None else self._bool_default(ac))
+            elif isinstance(w, QComboBox):
+                w.setCurrentText("" if v is None else str(v))
+            else:
+                w.setText("" if v is None or v is True or v is False else str(v))
+            w.blockSignals(False)
+        self._emit()
+
+    def values(self):
+        """{dest: value} of the fields that differ from the script default."""
+        out = {}
+        for dest, (ac, w, _lab) in self.widgets.items():
+            if isinstance(w, QCheckBox):
+                if w.isChecked() != self._bool_default(ac):
+                    out[dest] = w.isChecked()
+            else:
+                t = w.currentText() if isinstance(w, QComboBox) else w.text()
+                if t.strip():
+                    out[dest] = t.strip()
+        return out
+
+    def args(self):
+        """The command-line arguments of values()."""
+        opts, pos = [], []
+        vals = self.values()
+        for dest, (ac, _w, _lab) in self.widgets.items():
+            if dest not in vals:
+                continue
+            v = vals[dest]
+            if not ac["flags"]:
+                pos += [shq(x) for x in shlex.split(v)]
+                continue
+            long_flag = max(ac["flags"], key=len)
+            if ac["kind"] == "BooleanOptionalAction":
+                no = [f for f in ac["flags"] if f.startswith("--no-")]
+                yes = [f for f in ac["flags"] if not f.startswith("--no-")]
+                opts.append(yes[0] if v else (no[0] if no else long_flag))
+            elif ac["kind"] in BOOL_KINDS:
+                opts.append(long_flag)
+            elif ac["kind"] == "_CountAction":
+                opts += [long_flag] * max(0, int(v) if v.isdigit() else 0)
+            elif ac.get("eq"):            # shell script: --flag=value
+                opts.append(f"{long_flag}={shq(v)}")
+            elif ac["nargs"] in ("+", "*") or isinstance(ac["nargs"], int):
+                opts.append(long_flag)
+                opts += [shq(x) for x in shlex.split(v)]
+            else:
+                opts += [long_flag, shq(v)]
+        return opts + pos
+
+class ScatterView(QChartView):
+    """Seconds per run against threads. The nearest point within 24 px gets
+    the tooltip -- a 7 px dot is too small to aim at."""
+
+    HIT_PX = 24
+
+    def __init__(self):
+        super().__init__()
+        self.setRenderHint(QPainter.Antialiasing)
+        self.setMouseTracking(True)
+        self.points = []      # (threads, seconds, tooltip html) of what is drawn
+        self.log_y = False
+        self._last = None
+
+    def mouseMoveEvent(self, ev):
+        super().mouseMoveEvent(ev)
+        pos = ev.position()
+        if self._last and abs(pos.x() - self._last.x()) + abs(pos.y() - self._last.y()) < 2:
+            return
+        self._last = pos
+        chart = self.chart()
+        if not self.points or not chart.axes():
+            return
+        area = chart.plotArea()
+        ax = chart.axes(Qt.Horizontal)[0]
+        ay = chart.axes(Qt.Vertical)[0]
+        x0, x1, y0, y1 = ax.min(), ax.max(), ay.min(), ay.max()
+        if x1 <= x0 or y1 <= y0:
+            return
+        sx = area.width() / (x1 - x0)
+        if self.log_y:
+            import math
+            ly0, ly1 = math.log10(y0), math.log10(y1)
+            ty = lambda y: area.bottom() - (math.log10(y) - ly0) / (ly1 - ly0) * area.height()
+        else:
+            sy = area.height() / (y1 - y0)
+            ty = lambda y: area.bottom() - (y - y0) * sy
+        sp = self.mapToScene(pos.toPoint())
+        cp = chart.mapFromScene(sp)
+        best, bd = None, self.HIT_PX ** 2
+        for p in self.points:
+            if p[1] <= 0 and self.log_y:
+                continue
+            dx = area.left() + (p[0] - x0) * sx - cp.x()
+            if dx * dx > bd:
+                continue
+            dy = ty(p[1]) - cp.y()
+            d = dx * dx + dy * dy
+            if d < bd:
+                best, bd = p, d
+        if best:
+            QToolTip.showText(ev.globalPosition().toPoint(), best[2], self)
+        else:
+            QToolTip.hideText()
+
+class NumItem(QTableWidgetItem):
+    """A cell shown as its text ("2.00", "40–200") but sorted by its number."""
+
+    def __init__(self, text):
+        super().__init__(text)
+        m = re.match(r"^-?\d+(?:\.\d+)?", text)
+        self.num = float(m.group(0)) if m else None
+
+    def __lt__(self, other):
+        if isinstance(other, NumItem) and self.num is not None and other.num is not None:
+            return self.num < other.num
+        return super().__lt__(other)
+

@@ -1,0 +1,4 @@
+#!/bin/bash
+# Fake squeue -h -u USER -o "%i %T": the fake jobs still alive are RUNNING.
+for f in "$FAKE_Q"/*; do [ -e "$f" ] || continue; id=$(basename "$f"); kill -0 "$id" 2>/dev/null && echo "$id RUNNING"; done
+exit 0

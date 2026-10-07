@@ -1,0 +1,7 @@
+#!/bin/bash
+# Fake ccc_msub: runs the batch script in the background, in its own session
+# (the job id is that session's leader pid), output to its "#MSUB -o" file.
+job="$1"; out=$(grep '^#MSUB -o' "$job" | awk '{print $3}')
+setsid bash "$job" > "$out" 2>&1 < /dev/null &
+id=$!; echo "$id" > "$FAKE_Q/$id"
+echo "Submitted Batch Session $id"
