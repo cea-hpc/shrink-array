@@ -37,10 +37,6 @@
  *       call from inside a parallel region.
  */
 
-//
-// Created by ballereaup on 07/05/24.
-//
-
 #include <algorithm> // std::max
 #include <chrono>    // steady_clock, the gate rates (CHUNK_STATS report only)
 #include <cstddef>   // std::size_t (CHUNK_STATS report only: the retention)

@@ -1,4 +1,3 @@
-#pragma once
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -14,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#pragma once
 
 // ============================================================================
 // CHECK-BUILD INSTRUMENTATION — deferred ctx/op liveness sentinels (grep tag:
@@ -41,9 +42,9 @@ namespace shrink_array::deferred_lifecycle
 
 // Distinct, easily-recognisable sentinels (avoid all-zero / all-one so a
 // zeroed or -1-filled block does not accidentally look alive).
-inline constexpr std::uint64_t ctx_alive_magic = 0xC7A11'0000'A11EULL; // "CTX ALIVE"
-inline constexpr std::uint64_t ctx_dead_magic  = 0xDEAD'C7A1'DEAD'C7A1ULL;
-inline constexpr std::uint64_t op_alive_magic  = 0x0FA11'0000'A11EULL; // "OP  ALIVE"
-inline constexpr std::uint64_t op_dead_magic   = 0xDEAD'0FA1'DEAD'0FA1ULL;
+inline constexpr std::uint64_t ctx_alive_magic = 0xC7A11'0000'A11EULL;     ///< a live ctx ("CTX ALIVE")
+inline constexpr std::uint64_t ctx_dead_magic  = 0xDEAD'C7A1'DEAD'C7A1ULL; ///< a destroyed ctx
+inline constexpr std::uint64_t op_alive_magic  = 0x0FA11'0000'A11EULL;     ///< a live op ("OP  ALIVE")
+inline constexpr std::uint64_t op_dead_magic   = 0xDEAD'0FA1'DEAD'0FA1ULL; ///< a destroyed op
 
 } // namespace shrink_array::deferred_lifecycle

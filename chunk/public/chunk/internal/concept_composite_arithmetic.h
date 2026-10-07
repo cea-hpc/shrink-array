@@ -1,5 +1,3 @@
-
-#pragma once
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -16,13 +14,15 @@
  * limitations under the License.
  */
 
+#pragma once
+
 #include <type_traits> // std::remove_cvref_t, std::is_arithmetic_v
 
 namespace shrink_array
 {
 /**
  * @brief Concept to detect shrink_array proxy types
- * Template parameter T: Type to check
+ * @tparam T Type to check
  *
  * Proxy types are identified by the presence of a 'is_shrink_proxy_tag' typedef.
  * This allows distinguishing proxies from regular types in generic contexts.
@@ -32,7 +32,7 @@ concept IsProxy = requires { typename std::remove_cvref_t<T>::is_shrink_proxy_ta
 
 /**
  * @brief Concept for scalar arithmetic types
- * Template parameter U: Type to check
+ * @tparam U Type to check
  *
  * Matches fundamental arithmetic types: integers and floating-point.
  * These are treated differently from composite types (complex, matrices, etc.)
@@ -42,8 +42,8 @@ concept scalar_arithmetic = std::is_arithmetic_v<std::remove_cvref_t<U>>;
 
 /**
  * @brief Concept for composite arithmetic types (non-scalar)
- * Template parameter U: Type to check
- * Template parameter T: Base type for conversion/construction
+ * @tparam U Type to check
+ * @tparam T Base type for conversion/construction
  *
  * Matches types that:
  * - Are NOT scalar arithmetic

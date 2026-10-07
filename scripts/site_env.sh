@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 # ─────────────────────────────────────────────────────────────────────────────
 # site_env.sh -- the site layer of the build scripts, sourced by
 # compile_all.sh and compile_all_gnu.sh before anything else.

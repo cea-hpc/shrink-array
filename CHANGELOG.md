@@ -9,7 +9,7 @@ Two version numbers, both `MAJOR.MINOR.PATCH`:
 
 | component | where it is set | installed as |
 |---|---|---|
-| the chunk library | `chunk/CMakeLists.txt` (`CHUNK_MAJOR_VERSION`, `CHUNK_MINOR_VERSION`, `CHUNK_PATCH_VERSION`) | the `chunk` CMake package (`find_package(chunk X.Y)`) |
+| the chunk library | the top-level `CMakeLists.txt` (`project(shrink_array VERSION X.Y.Z)`) | the `chunk` CMake package (`find_package(chunk X.Y)`) |
 | fast_allocators | `fast_allocators/CMakeLists.txt` (`ALLOCATORS_*_VERSION`) | the `fast_allocators` package |
 
 The **public interface** that the version describes is:
@@ -47,6 +47,10 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- Usable as a subproject (`add_subdirectory`, `FetchContent`): `SHRINK_ARRAY_BUILD_EXAMPLES`
+  and `SHRINK_ARRAY_BUILD_TESTS`, ON at the top level and OFF otherwise, so a consuming
+  project builds the libraries only; the `chunk::` names exist in the build tree too
+  (ALIAS targets), as after an install.
 - Every variant library is installed and exported under `chunk::`: `chunk::chunk_v1_<size>`,
   `chunk::chunk_v2_<size>`, `chunk::chunk_v2a_<size>`, the `_dyn` ones, the bare
   `chunk::chunk_v1` / `chunk::chunk_v2` / `chunk::chunk_v2a` (default size) and
@@ -69,9 +73,17 @@ the tag's checksum to the recipe.
 - `scripts/check_doxygen.py` (ctest `check_doxygen`, when Doxygen is found): the
   documentation builds with no warning. The HTML draws the mermaid diagrams.
 - `compile_all.sh` / `compile_all_gnu.sh`: `--with-ledger`.
+- `scripts/check_headers.py` (ctest `check_headers`): every C++ file opens with the Apache
+  license header, its years up to date, and carries no IDE `Created by` stamp; the scripts and
+  build files carry `# Copyright ... CEA` / `# SPDX-License-Identifier: Apache-2.0`, the vendored
+  headers the SPDX line of their upstream license; `--fix` repairs.
 
 ### Changed
 
+- CMake 3.20 is required (the documented minimum; the files said 3.12). The top-level
+  project is `shrink_array`, and carries the version (`project(shrink_array VERSION ...)`),
+  from which the chunk library takes its own. Consumed by another project, the build no
+  longer writes the build type or the per-configuration flags into that project's cache.
 - The variant libraries carry C++20, OpenMP (when built with it) and `HAVE_OMPT` to their
   consumers (PUBLIC). An OMPT build links its consumers with `-rdynamic`, so the OpenMP runtime
   finds the library's OMPT tool in the executable.
@@ -86,12 +98,27 @@ the tag's checksum to the recipe.
   are kept. Comments that contradicted the code are fixed.
 - `docs/`: refreshed; the variables, options and build-script options that were missing are
   documented.
+- Vendored ankerl::unordered_dense updated from 5.0.1 to 5.3.1, its two local patches (nvc++)
+  carried over: faster insert / try_emplace hits, lookups in an empty table without a test, a
+  64-byte map instead of 80.
+- The vendored hash tables install under `include/chunk/vendor/` instead of the root of
+  `include/`, where they overwrote, or were shadowed by, a user's own copy of the same
+  library. In the tree they moved to `third_party/chunk/vendor/` (for instance
+  `third_party/chunk/vendor/ankerl/unordered_dense.h`), and chunk's headers include them as
+  `"chunk/vendor/..."`.
+- `NOTICE` (new) lists the third-party code and its licenses; it is installed with `LICENSE` and
+  the license texts under `share/doc/chunk/`. `third_party/README.md` gives each vendored
+  file's upstream, version and local patches.
 
 ### Fixed
 
 - `scripts/check_includes.py` works outside a git checkout (a source archive, a Spack
   build) and checks files not yet added to git.
 - Comments naming headers that moved to `internal/`, or a script that no longer exists.
+- License headers: 29 files had none, others had it truncated, below `#pragma once` or with
+  stale years; the IDE `Created by` stamps are gone. The 61 scripts and build files without a
+  license (`.py`, `.sh`, `.cmake`, the CMake config templates, `CMakeLists.txt`) carry SPDX lines; the three
+  vendored headers, installed with chunk, the SPDX line of their own license (MIT, BSL-1.0).
 
 ### Deprecated
 

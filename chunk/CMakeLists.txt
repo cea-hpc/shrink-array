@@ -1,3 +1,5 @@
+# Copyright 2024-2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 # ---------------------------------------------------------------------------
 # The `chunk` library must be compiled with one of CHUNK / CHUNK2 / CHUNK2A
 # defined (or none, for the vector-mode build). These macros drive
@@ -6,9 +8,12 @@
 # manage_ompt.cpp today; potentially others tomorrow).
 # ---------------------------------------------------------------------------
 
-set(CHUNK_MAJOR_VERSION 2)  # inc. when incompatible change (reset to 0 others)
-set(CHUNK_MINOR_VERSION 2)  # inc. when compatible change (also reset patch vers.)
-set(CHUNK_PATCH_VERSION 8)  # inc. when just fixing bug
+# The version is set once, in the top-level project(shrink_array VERSION ...).
+# MAJOR: incompatible change; MINOR: compatible change; PATCH: fixes only
+# (CHANGELOG.md, "Versioning policy").
+set(CHUNK_MAJOR_VERSION ${shrink_array_VERSION_MAJOR})
+set(CHUNK_MINOR_VERSION ${shrink_array_VERSION_MINOR})
+set(CHUNK_PATCH_VERSION ${shrink_array_VERSION_PATCH})
 
 set(CHUNK_VERSION
         ${CHUNK_MAJOR_VERSION}.${CHUNK_MINOR_VERSION}.${CHUNK_PATCH_VERSION})
@@ -614,6 +619,15 @@ foreach(_vname IN LISTS _chunk_variant_names)
   list(APPEND _chunk_install_targets ${_vname})
 endforeach()
 
+# The installed names in the build tree too: a project that takes this one
+# through add_subdirectory() or FetchContent links chunk::chunk_v2a, as it
+# would after find_package(chunk).
+foreach(_t IN LISTS _chunk_install_targets)
+  if (NOT TARGET chunk::${_t})
+    add_library(chunk::${_t} ALIAS ${_t})
+  endif()
+endforeach()
+
 # The fast_allocators version chunk-config.cmake asks for (find_dependency).
 # fast_allocators/CMakeLists.txt, configured after this file, checks it against
 # its own ALLOCATORS_VERSION through this global property.
@@ -647,13 +661,24 @@ if (CHUNK_STD_ALLOC)
           COMPONENT chunk-devel)
 endif()
 
-# And the vendored third-party headers those include (ankerl/unordered_dense.h
-# from pool_ledger.h and four others): they are on the build-tree include path
-# only, so the installed tree was missing them.
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/third_party/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+# And the vendored third-party headers those include as "chunk/vendor/..."
+# (ankerl's unordered_dense.h, skarupke's flat_hash_map.hpp): under
+# include/chunk/vendor/, never at the root of include/, where they would
+# overwrite, or be shadowed by, a user's own copy of the same library.
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/third_party/chunk/vendor
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/chunk
         COMPONENT chunk-devel
         FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
+
+# The licenses: the library's, the NOTICE listing the third-party code, and
+# that code's license texts (third_party/README.md). With the runtime, which
+# carries code compiled from those headers.
+install(FILES ${PROJECT_SOURCE_DIR}/LICENSE ${PROJECT_SOURCE_DIR}/NOTICE
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/chunk
+        COMPONENT chunk-runtime)
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/third_party/licenses/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/chunk/third_party
+        COMPONENT chunk-runtime)
 
 include(CMakePackageConfigHelpers)
 

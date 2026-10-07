@@ -1,6 +1,3 @@
-
-#pragma once
-
 /*
  * Copyright 2026 CEA (www.cea.fr)
  *
@@ -16,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#pragma once
 
 #include <type_traits> // std::conditional_t, std::is_trivially_copyable_v
 
@@ -58,25 +57,25 @@ namespace shrink_array
 //     void f(in_t<U> v);        // caller f(3.14) → "no matching function"
 //
 // Keep `const U&` (or `U&&` forwarding-ref) in that case. Representative
-// sites in this codebase that MUST stay templated-by-U (list is illustrative,
-// not exhaustive — grep for `template <typename U>` in the Proxy hierarchy
-// to find the current full set):
+// sites templated on U that keep `const U&` or a plain `U` (list is
+// illustrative, not exhaustive — grep for `template <typename U>` in the
+// Proxy hierarchy to find the current full set):
 //
-//     Proxy::assign_impl                              (proxy.h)
-//     Proxy::apply_compound_operation                 (proxy.h)
 //     Proxy::operator=/+=/-=/*=//=/%=                 (proxy.h)
-//     Proxy2::assign_impl / operator=                 (proxy2.h)
-//     Proxy2A::assign_impl / operator=                (proxy2A.h)
+//     Proxy2::operator=                               (proxy2.h)
+//     Proxy2A::operator=                              (proxy2A.h)
 //     Proxy2Base::operator*=///=/%=                   (proxy2_base.h)
 //     ProxyBase::operator+=/-=/&=/|=/^=/<<=/>>=       (proxy_base.h)
-//     ProxyBase::arithmetic_assign                    (proxy_base.h)
-//     ProxyBase::bitwise_assign_{simple,with_result}  (proxy_base.h)
 //     ProxyBase::enqueue_async_arithmetic             (proxy_base.h)
 //     ProxyBase::apply_atomic_op (U parameter)        (proxy_base.h)
 //     ProxyOperators::friend +,-,*,/                  (proxy_operators.h)
-//     increm_chunk_write<T>(T v)                      (chunk_stats.h)
-//     ParamChunk::set_second_value<T>                   (param_chunk.h)
-//     ChunkBase::is_cst_val_and_v_equal_zero          (chunk_base.h)
+//     increm_chunk_write<V>(V v)                      (chunk_stats.h)
+//     Proxy::is_cst_val_and_v_equal_zero              (proxy.h)
+//
+// The engines those operators call -- assign_impl (the three proxies),
+// ProxyBase::arithmetic_assign / bitwise_assign, Proxy::apply_compound_operation
+// -- DO take `in_t<U>`: their callers name U explicitly (`assign_impl<U>(v)`),
+// so nothing is deduced there.
 //
 // ─── RULE (2): ALIASING ──────────────────────────────────────────────────────
 //
@@ -88,16 +87,16 @@ namespace shrink_array
 // `const T&` for some T in use: the sites below keep `T v` by value for that
 // reason, not for a hypothetical future.
 //
-// The one deduced site that now dispatches like in_t is the proxies'
-// operator=: two overloads on small_type<U>, `U v` for a small operand and
-// `const U&` for a large one (proxy.h / proxy2.h / proxy2A.h), the second
-// instantiating assign_impl on `const U&` so that a struct is copied once,
-// into the chunk. No aliasing there: the operand comes from the caller (a
-// const read returns a VALUE, never a reference into a chunk buffer).
+// The proxies' operator= are deduced sites too: they take `const U&` (one
+// overload for a clean conversion, one deprecated for a risky one) and hand
+// the operand to assign_impl<U>, whose in_t<U> copies a small operand once
+// and passes a large one (a struct) by reference into the chunk write. No
+// aliasing there: the operand comes from the caller (a const read returns a
+// VALUE, never a reference into a chunk buffer).
 //
-// Canonical alias site — caller in chunk2A_std_inline.h passes
-// `*ptr_second_value` as `second_v`, then the function writes through
-// `ptr_second_value`:
+// Canonical alias site — the function writes the chunk's second-value slot
+// through `ptr_second_value` (a SecondValueRef) after reading `second_v`, so
+// a `const T&` bound to that slot would change under it:
 //
 //     TabCstVal2Holder::find_or_set_ind_cst_val2      (tab_cst_val2_holder.h)
 //
@@ -108,7 +107,7 @@ namespace shrink_array
 //     TabCstVal2Holder::alloc_chunk(T val)            (tab_cst_val2_holder.h)
 //     ArrayChunk2::set_second_value(T)                (array_chunk2.h and
 //                                                       array_chunk2_inline.h)
-//     Chunk2FastCompPolicy::have_chunk_to_compress(T)  (chunk2_std.h)
+//     Chunk2FastCompPolicy::have_chunk_to_compress(T) (chunk2_std.h)
 //
 // ─── COROLLARY FOR LOCAL VARIABLES ───────────────────────────────────────────
 //

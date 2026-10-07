@@ -1,3 +1,5 @@
+# Copyright 2024-2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 # ── Fast math + vector libm, for the perf targets that call cos/sin/... in
 # their loops. A `simd` loop that calls into libm only vectorises when the
 # call itself has a vector form the compiler is told about: the classic Intel

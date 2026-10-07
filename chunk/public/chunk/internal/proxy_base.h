@@ -272,8 +272,22 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false>
     static void resize_tab_is_int([[maybe_unused]] int nb_tab) noexcept {}
     /// @brief No candidate flags in this configuration; nothing to size.
     static void resize_tab_is_int([[maybe_unused]] int num_tab, [[maybe_unused]] int nb_chunk) noexcept {}
-    /// @brief No candidate flags in this configuration; nothing to release.
-    static void release_tab_is_int([[maybe_unused]] int num_tab) noexcept {}
+    /// @brief Release one array's candidate flags, as the enabled policy does.
+    /// @details NOT a no-op: Chunk2A's serial build has candidate lists and
+    ///          sizes these rows itself (Proxy2A::resize_tab_is_int). Empty
+    ///          here, a cleared array's row kept its flags -- stuck at 1 with
+    ///          no list entry behind them, and one byte per chunk leaked -- and
+    ///          the next resize_tab_is_int() on that tab stopped on its
+    ///          "still queued" check (swap_move_validation, serial chunk2a).
+    ///          v1 and Chunk2 never fill a row here: the guard makes it free.
+    static void release_tab_is_int(int num_tab) noexcept
+    {
+        using row_t = decltype(tab_is_inside_chunk_list_to_compress)::value_type;
+        if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
+        {
+            row_t{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
+        }
+    }
 
   protected:
     /// @brief Never callable in this configuration. Aborts.
@@ -573,10 +587,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return chunk.read_value(num);
     }
 
-    // Public API used by writers (your Proxy2::operator= / manage_core_op_eq)
-    // Use this to perform a write on (num_tab,num_chunk). The write_fn is the actual write body.
-    // internal generic function: executes write_body() on fast- or slow-path
-
     /**
      * @brief Run @p write_body on the fast path, or defer it.
      * @tparam WriteCallable The write itself.
@@ -690,7 +700,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief Check builds: the array's storage generation, and its value when
     ///        operator[] built this proxy (ArrayChunkBase::storage_generation_).
     ///        Empty elsewhere. gen stays null on the proxies the library builds
-    ///        for itself (set_value, deferred replays): those are never stale.
+    ///        for itself (deferred replays): those are never stale.
     struct StaleGuardOn
     {
         const unsigned int* gen  = nullptr;
@@ -856,6 +866,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         }
     }
 
+    /// @brief Arm the proxy with its array and chunk index; the table number
+    ///        is left unresolved (set_num_tab() looks it up).
+    /// @param array_ptr The owning array (its registry key).
+    /// @param num_chunk_ Chunk index within that array.
     void set_this_and_num_chunk(const void* array_ptr, int num_chunk_) const noexcept
     {
         ptr_on_array = array_ptr;
@@ -1176,6 +1190,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         return self;
     }
 
+    /// @brief Bitwise complement of the element's value (read through read_pure()).
     [[nodiscard]] T operator~() const noexcept
         requires std::is_integral_v<T>
     {
@@ -1288,9 +1303,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /**
-     * @brief Initialize per-chunk pointers except second value.
+     * @brief Set the candidate-list flag of chunk @p num_chunkl of array @p num_tabl.
+     * @param num_tabl Array (table) number.
+     * @param num_chunkl Chunk index within that array.
+     * @param v New flag value (0: not queued).
      */
-
     static void set_tab_is_inside_chunk_list_to_compress(int num_tabl, int num_chunkl, char v) noexcept
     {
         FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tabl][num_chunkl] = v;

@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-//
-// Created by ballereaup on 10/12/24.
-//
 #pragma once
 
 #include <array>   // std::array

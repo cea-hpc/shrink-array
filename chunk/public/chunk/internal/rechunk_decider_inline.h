@@ -1,5 +1,3 @@
-#pragma once
-
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -15,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#pragma once
 
 // Out-of-line bodies of RechunkDecider (declared in rechunk_decider.h, which
 // includes this file after the class). Only the one-liners stay in the class.
@@ -45,14 +45,6 @@ inline std::size_t mb_to_bytes(double mb) noexcept
     return mb > 0. ? static_cast<std::size_t>(mb * 1024. * 1024.) : 0u;
 }
 
-// Cap a coarsening move to at most pol_.max_coarsen_factor x cur_size per
-// rechunk. A large coarsening (e.g. x16) leans on the least reliable part of
-// the model -- mat_at extrapolated over many merge levels -- so one wrong
-// jump can COST memory (observed 64->1024: predicted -91 MB, actual +40 MB).
-// Restricting the step lets the advisor re-evaluate at the intermediate size
-// with real chunks to scan (not an extrapolation) and step further only if
-// the gain is real. Fining (best < cur) is reliable and never capped. Returns
-// the table index to act on -- rep.best when no cap applies.
 /// @brief CHUNK_RECHUNK_DRY_RUN=1 (read once): analyse and log, never apply a
 ///        move, whatever the policy says -- the way to measure the analyses'
 ///        cost on the same binary.
@@ -66,6 +58,14 @@ inline bool rechunk_env_dry_run() noexcept
     return v;
 }
 
+// Cap a coarsening move to at most pol_.max_coarsen_factor x cur_size per
+// rechunk. A large coarsening (e.g. x16) leans on the least reliable part of
+// the model -- mat_at extrapolated over many merge levels -- so one wrong
+// jump can COST memory (observed 64->1024: predicted -91 MB, actual +40 MB).
+// Restricting the step lets the advisor re-evaluate at the intermediate size
+// with real chunks to scan (not an extrapolation) and step further only if
+// the gain is real. Fining (best < cur) is reliable and never capped. Returns
+// the table index to act on -- rep.best when no cap applies.
 inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool banned) const
 {
     // CHUNK_RECHUNK_MAX_COARSEN=<n> overrides the policy's factor (1 = no
@@ -111,8 +111,8 @@ inline int RechunkDecider::capped_best_index(const ChunkSizeReport& rep, bool ba
 }
 
 // Feed one advisor observation for array `key` at logical time `tick`.
-// Logs the verdict; returns true iff it WOULD re-chunk (dry-run) this tick.
-
+// Logs the verdict; returns true iff the policy decides to re-chunk this tick
+// (consider() then applies it, unless dry-run).
 inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeReport& rep, const char* name)
 {
     if (rep.best < 0 || rep.cur < 0)
@@ -196,7 +196,7 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     //   - or the forecast data term clears its own, larger, gate.
     // Fining keeps the single-sum rule: there gain_meta <= 0 and the data
     // forecast is exact, so the sum is the right thing to gate.
-    bool clears_gate;
+    bool clears_gate = gain_bytes >= data_gate;
     if (coarsening)
     {
         // The metadata branch carries its own gates: a floor (is the gain
@@ -222,15 +222,9 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         const double      min_rate   = env_meta_rate.value_or(pol_.coarsen_min_meta_rate);
         // A zero-cost estimate (empty array) passes.
         const bool rate_ok = min_rate <= 0. || est_cost_ms <= 0. || meta_rate >= min_rate;
-        clears_gate        = (gain_meta >= static_cast<double>(meta_floor) && rate_ok && gain_bytes >= meta_floor) ||
-                      gain_bytes >= data_gate;
+        clears_gate =
+            clears_gate || (gain_meta >= static_cast<double>(meta_floor) && rate_ok && gain_bytes >= meta_floor);
     }
-    else
-    {
-        clears_gate = gain_bytes >= data_gate;
-    }
-    // Kept for the log line: what the old single gate would have demanded.
-    const std::size_t gain_gate = data_gate;
 
     // Multi-step anti-reversal: would this move return us to a size we
     // occupied within the anti_reversal window? Scans the visited ring
@@ -238,9 +232,9 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
     bool reverting = false;
     if (pol_.anti_reversal_ticks > 0)
     {
-        for (int _i = 0; _i < Hist::kVisited; ++_i)
+        for (int i = 0; i < Hist::kVisited; ++i)
         {
-            if (hist.visited_size[_i] == best_sz && tick - hist.visited_tick[_i] < pol_.anti_reversal_ticks)
+            if (hist.visited_size[i] == best_sz && tick - hist.visited_tick[i] < pol_.anti_reversal_ticks)
             {
                 reverting = true;
                 break;
@@ -296,29 +290,25 @@ inline bool RechunkDecider::observe(const void* key, int tick, const ChunkSizeRe
         hist.visited_tick[hist.visited_head] = tick;
         hist.visited_head                    = (hist.visited_head + 1) % Hist::kVisited;
         hist.last_best_size                  = best_sz;
-        // In dry-run we do NOT change the array; a real phase would re-chunk
-        // here and update the array's current geometry.
+        // The array itself is left alone here: consider() re-chunks it,
+        // unless dry-run.
     }
     else
     {
-        // Explain non-actions (why no re-chunk): "cost too high", "gain below
-        // deadband", "cooldown", "best not yet stable", "already optimal".
+        // Explain non-actions (why no re-chunk): "already optimal", "cooldown",
+        // "anti-reversal", "gain below deadband", "best not yet stable".
         std::fprintf(stderr,
                      "[RECHUNK-DECIDE] %s: wait (%s) "
                      "S=%u best=%u gain %.1f MB "
                      "(meta %.1f + data %.1f; cur %.1f MB, data gate %.1f MB, est. cost %.0f ms, %.0f MB/s)\n",
                      name, reason, cur_size, best_sz, gain_b / (1024. * 1024.), gain_meta / (1024. * 1024.),
                      gain_data / (1024. * 1024.), cur_e.mem_bytes / (1024. * 1024.),
-                     static_cast<double>(gain_gate) / (1024. * 1024.), est_cost_ms, meta_rate);
+                     static_cast<double>(data_gate) / (1024. * 1024.), est_cost_ms, meta_rate);
         std::fflush(stderr);
     }
     return act;
 }
 
-// One-call convenience: analyse `arr`, apply the memory + hysteresis policy,
-// and actually re-chunk it when warranted. The advisor run, the decision and
-// the rechunk_to all happen here, so a caller needs nothing else. No-op in
-// static builds. Returns true iff a re-chunk was decided this tick.
 /// @brief CHUNK_RECHUNK_MEMTRACE: the last tick printed -- one variable for
 ///        every consider<T, Arr> instantiation (a function-local static in the
 ///        template would print once per element type).
@@ -328,6 +318,10 @@ inline int& rechunk_memtrace_last_tick() noexcept
     return t;
 }
 
+// One-call convenience: analyse `arr`, apply the memory + hysteresis policy,
+// and actually re-chunk it when warranted. The advisor run, the decision and
+// the rechunk_to all happen here, so a caller needs nothing else. No-op in
+// static builds. Returns true iff a re-chunk was decided this tick.
 template <typename T, typename Arr>
 bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
 {
@@ -480,7 +474,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
         // settled (re-compressed over the ticks since). Measuring right after
         // rechunk_to would instead catch the freshly-materialised, not-yet-
         // compressed chunks and report a memory INCREASE.
-        if (auto it = pending_after_.find(&arr); it != pending_after_.end())
+        if (const auto it = pending_after_.find(&arr); it != pending_after_.end())
         {
             if (rep.cur >= 0)
             {

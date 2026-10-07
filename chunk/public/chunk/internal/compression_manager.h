@@ -17,13 +17,14 @@
 #pragma once
 
 #include <vector>    // std::vector
+#include <cstddef>   // std::size_t
 #include <cstdint>   // std::int32_t, std::uint64_t, int64_t
 #include <exception> // std::exception (record_enqueue_deferred)
 #include <utility>   // std::move, std::forward
 #include <atomic>    // std::atomic, std::memory_order
 #include <memory>    // std::destroy_at
 
-#include "ankerl/unordered_dense.h" // ankerl::unordered_dense::set
+#include "chunk/vendor/ankerl/unordered_dense.h" // ankerl::unordered_dense::set
 
 #include "chunk/config.h"                            // build_config::any_check, chunk_config::ring_log_debug
 #include "chunk/PMP_CHUNK.h"                         // get_thr_rank_fast
@@ -89,7 +90,7 @@ struct FlushReplayState
         bool saved = in_flush_replay;
     };
 
-    static inline thread_local bool in_flush_replay = false;
+    static inline thread_local bool in_flush_replay = false; ///< this thread replays flushed ops
 };
 
 /**
@@ -128,9 +129,6 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      */
     class CmpDeferredOpBase : public DeferredOperationBase
     {
-      public:
-        ~CmpDeferredOpBase() override = default;
-
       protected:
         int thread_rank = -1; ///< rank that enqueued this op (set by DeferredOperation)
 
@@ -317,6 +315,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         std::atomic<bool> destroyed{false};
     };
 
+    /// @brief One rank's set of chunks with deferred ops queued.
     using unordered_set_deferred_chunks = ankerl::unordered_dense::set<ChunkType*>;
 
     /**
@@ -326,7 +325,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      */
     struct alignas(128) PaddedPendingCounter
     {
-        std::atomic<int64_t> v{0};
+        std::atomic<int64_t> v{0}; ///< the rank's pending ops
     };
 
     /// @brief Allocate the per-rank tracking structures this policy owns.
@@ -335,7 +334,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         init_dangerous_lists_tracking();
 
         init_deferred_queues();
-    };
+    }
 
     ~CompressionManagerOmpPolicy() = default;
 
@@ -379,12 +378,11 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *          candidate list safe again.
      *
      * @tparam ProxyType same proxy type the matching start() was called with
-     * @param log Enable logging of the event
      * @note Handles a negative remaining count explicitly: see hard_inflight_'s
      *       signed-counter contract for why that state is tolerated.
      */
     template <typename ProxyType>
-    void finish([[maybe_unused]] bool log = true);
+    void finish();
 
     /**
      * @brief Enqueue-side bracket around the deferred-map insert.
@@ -407,7 +405,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         rank_flush_release(thr_rank);
     }
 
-    /// @brief The same hint, read by its owner for its own decision.
+    /// @brief The calling thread's "may hold deferred ops" hint, read by the
+    ///        thread itself for its own decision.
     /// @return false only when the calling thread certainly holds no op
     /// @note Relaxed: the flag is thread-local and every store to it is the
     ///       owner's own (mark_thread_has_ops from its enqueue, clear_ from
@@ -511,10 +510,9 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /**
      * @brief Replay and clear every deferred op queued on rank @p thr.
      * @param thr rank whose queue is drained
-     * @param wait_for_compression currently ignored by the implementation
      * @return true if at least one op was replayed
      */
-    [[nodiscard]] static bool flush_deferred(int thr, bool wait_for_compression = true) noexcept;
+    [[nodiscard]] static bool flush_deferred(int thr) noexcept;
 
     /**
      * @brief Cross-thread targeted flush: drain one chunk's pending ops.
@@ -566,7 +564,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      */
     [[nodiscard]] static bool have_deferred_queue() noexcept
     {
-        // Both call sites pass the caller's own rank, which is what this
+        // The calling thread asks for itself, which is what this
         // thread-local flag describes.
         return thread_may_have_ops();
     }
@@ -610,7 +608,6 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         }
     }
 
-    template <typename F>
     /**
      * @brief Run @p fn as the slow-path compression driver.
      * @tparam F callable to run inside the driver bracket
@@ -620,6 +617,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *          state rather than write/flush-handshake state.
      * @note seq_cst: this is the cold path, the cost is irrelevant.
      */
+    template <typename F>
     static void run_slow_path(F&& fn)
     {
         increm_chunk_gate_driver<ChunkType>();
@@ -761,15 +759,38 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     ///       thread_may_have_ops_own), so no other thread shares its line.
     struct ThreadOpsFlag
     {
-        std::atomic<bool> v{false};
+        std::atomic<bool> v{false}; ///< the thread may hold deferred ops
     };
-
-    static constexpr bool verbose = false;
 
     /// @brief Spin-acquire rank @p rank's flush lock (recursive for the owner).
     static void rank_flush_acquire(int rank) noexcept;
     /// @brief Release rank @p rank's flush lock, or drop one nesting level.
     static void rank_flush_release(int rank) noexcept;
+
+    /// @brief Scoped hold of one rank's flush lock: rank_flush_acquire() at
+    ///        construction, rank_flush_release() on every exit of the scope.
+    class RankFlushLock
+    {
+      public:
+        /// @brief Acquire rank @p rank's flush lock.
+        explicit RankFlushLock(int rank) noexcept : rank_(rank)
+        {
+            rank_flush_acquire(rank_);
+        }
+        /// @brief Release it (or drop one nesting level).
+        ~RankFlushLock()
+        {
+            rank_flush_release(rank_);
+        }
+
+        RankFlushLock(const RankFlushLock&)            = delete;
+        RankFlushLock& operator=(const RankFlushLock&) = delete;
+        RankFlushLock(RankFlushLock&&)                 = delete;
+        RankFlushLock& operator=(RankFlushLock&&)      = delete;
+
+      private:
+        int rank_;
+    };
 
     /// @brief Decrement hard_inflight_ and return the new value.
     /// @return remaining hard-inflight count (finish() reports on the last one
@@ -947,6 +968,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /// own write engine after each write (write_with_optional_lock_impl).
     static inline std::vector<PaddedDangerousFlag> dangerous_lists_per_thread;
 
+    /// Per rank: the chunks with deferred ops queued on it (what
+    /// flush_deferred() walks). Written under the rank's flush lock.
     static inline std::vector<unordered_set_deferred_chunks> deferred_chunk_per_thread;
 
     /// Per-rank pending-op counts, the mechanism that makes cross-thread ops
@@ -964,9 +987,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
  * @tparam ChunkType Chunk variant the manager coordinates
  */
 template <typename T, typename ChunkType>
-class CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState<T, ChunkType>
+struct CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayState<T, ChunkType>
 {
-  public:
     /**
      * @brief Serial builds queue nothing, so no rank can hold deferred ops.
      *

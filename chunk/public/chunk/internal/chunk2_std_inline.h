@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -30,6 +29,8 @@
 #include "chunk/chunk2_std.h"                   // Chunk2, the class these bodies belong to
 #include "chunk/internal/proxy2.h"              // Proxy2<T>
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
+#include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED
+#include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
 
 /**
  * @file chunk2_std_inline.h

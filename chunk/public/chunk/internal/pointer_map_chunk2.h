@@ -1,6 +1,3 @@
-
-#pragma once
-
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -17,6 +14,8 @@
  * limitations under the License.
  */
 
+#pragma once
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PointerMapChunk2 — per-array registry of Chunk2's SECOND constant
 // ─────────────────────────────────────────────────────────────────────────────
@@ -27,20 +26,20 @@
 // that indirection work, keyed by the array's identity (a void* handle) and by
 // the value itself:
 //
-//   PointerMapChunk2<T>                  the map itself -- insert / replace /
-//                                        get_second_value / get_ind_second_value
-//                                        / find_ind_tab_cst2, plus
+//   PointerMapChunk2<T>                  the map itself -- insert_only_num_tab /
+//                                        replace / get_second_value / get_num_tab
+//                                        / get_info_second_value /
+//                                        find_ind_tab_cst2, plus
 //                                        report_key_not_found() for the
 //                                        diagnostic path.
 //   PointerMapChunk2InfArrayPolicy<T,B>   the inf_array side, as a policy so the
 //                                        builds that do not register inf_array
 //                                        tuples pay nothing: the <T,false>
 //                                        specialisation is all no-ops.
-//   ValueToInfTupleMapHelper<T>          picks the std::map type used for the
-//                                        value -> inf_array side, and its
-//                                        comparator: complex has no operator<,
-//                                        hence the ComplexLess specialisation
-//                                        and complex_less.h.
+//   ValueToInfTupleMapHelper<T>          names the std::map type of the
+//                                        value -> inf_array side, ordered by
+//                                        ValueLess (value_less.h: complex has
+//                                        no operator<).
 //
 // Two different lookups, on purpose. The key -> value store is a LINEAR scan:
 // PointerMapChunk2 derives from PointerMapLinear over a std::deque (deque, not
@@ -52,7 +51,7 @@
 #include <map>         // std::map
 #include <tuple>       // std::tuple / std::get / std::make_tuple
 #include <type_traits> // std::is_same_v
-#include <utility>     // std::swap (swap_entries), std::pair
+#include <utility>     // std::pair
 #include <vector>      // std::vector
 
 #include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
@@ -77,24 +76,18 @@ struct ValueToInfTupleMapHelper
     using type = std::map<T, inf_array_t*, ValueLess<T>>;
 };
 
-template <typename T>
-using ValueToIntMap_t = ValueToIntMapHelper<T>::type;
-
 /**
  * @brief Policy holding the fast-block-compression-only value -> inf_array
  *        lookup for PointerMapChunk2.
  *
- * @details The v1 twin of this policy lives in proxy.h as
- *          PointerMapInfArrayPolicy; this one differs only in what an
- *          inf_array IS -- for Chunk2 it is the `(second_value, index,
- *          num_tab)` tuple rather than v1's plain index -- so the map is keyed
- *          through ValueToInfTupleMapHelper instead of ValueToIntMapHelper.
+ * @details An inf_array is Chunk2's `(second_value, index, num_tab)` tuple;
+ *          the map, keyed by second value, is ValueToInfTupleMapHelper's.
+ *          v1 (PointerMapChunk, proxy.h) has no such lookup.
  *
  * @tparam T       Element type PointerMapChunk2 is keyed on.
  * @tparam Enabled Whether the map actually exists (fast-block-compression
- *                 builds) or is a zero-overhead no-op (counter-mode builds).
- *                 Tracks chunk_config::use_fast_block_compression, the exact
- *                 compile-time mirror of the macro this replaces.
+ *                 builds) or is a zero-overhead no-op (counter-mode builds):
+ *                 chunk_config::use_fast_block_compression.
  */
 template <typename T, bool Enabled>
 class PointerMapChunk2InfArrayPolicy
@@ -192,31 +185,30 @@ class PointerMapChunk2InfArrayPolicy<T, false>
   public:
     using inf_array_t = std::tuple<T, int, int>;
 
-    /// @name No-op registry
-    /// @{
+    /// @brief No registry: always empty.
     [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const
     {
         return {};
     }
-
-    [[nodiscard]] inf_array_t* find_inf_array(in_t<T>) const
+    /// @brief No registry: never found.
+    [[nodiscard]] inf_array_t* find_inf_array(in_t<T> /*key*/) const
     {
         return nullptr;
     }
-    void erase_inf_array_by_ptr(const inf_array_t*) {}
+    /// @brief No registry: nothing to erase.
+    void erase_inf_array_by_ptr(const inf_array_t* /*self_ptr*/) {}
 
   protected:
-    void insert(in_t<T>, inf_array_t*) {}
-
-    /// @}
+    /// @brief No registry: nothing recorded.
+    void insert(in_t<T> /*key*/, inf_array_t* /*ind*/) {}
 };
 
 /**
- * @brief Template class managing mappings between keys and tuple values.
+ * @brief Per-array registry of Chunk2's second value: array address ->
+ *        (second value, its index in the shared table, num_tab).
  *
- * @tparam T Type of the value associated with the key.
+ * @tparam T Element type.
  */
-
 template <typename T>
 class PointerMapChunk2
     : public PointerMapLinear<std::tuple<T, int, int>, std::deque<std::pair<const void*, std::tuple<T, int, int>>>>,
@@ -249,13 +241,12 @@ class PointerMapChunk2
     // references, so a concurrent reader keeps seeing valid data. (Only
     // ITERATORS can be invalidated -- the traversals below capture size()
     // first, then index stable slots.)
-    using MapType  = ValueToIntMapHelper<T>::type;
-    using MapType0 = ValueToInfTupleMapHelper<T>::type;
+    using MapType = ValueToIntMapHelper<T>::type;
 
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
-    // Check-build diagnostic (from the ARM lookup crash) — dump full context at a failed key lookup.
+    // Check-build diagnostic: dump the full context at a failed key lookup.
     // The key is an array's `this`, inserted once at setup (before any parallel
     // region), so a miss means either (a) a GARBAGE key was passed — the same
     // corruption that SEGVs in release, now a clean INVARIANT_FAILED — or (b) a
@@ -290,27 +281,13 @@ class PointerMapChunk2
         }
     }
 
-    /**
-     * @brief Inserts a tuple (value, index, table number) for a given key.
-     *
-     * @param key Pointer key used as identifier.
-     * @param val Value to store.
-     * @param ind Index associated with the value.
-     * @param num_tab Table number where the value belongs.
-     */
-    void insert(void* key, in_t<T> val, int ind, int num_tab)
-    {
-        vec.emplace_back(key, std::make_tuple(val, ind, num_tab));
-    }
-
     /// Map from values to constant index values.
     MapType map_ind_cst_val2;
 
   public:
-    /// @brief Keep the policy's insert() overload visible: this class declares
-    ///        an insert() of its own, which would otherwise HIDE it rather than
-    ///        overload with it (it was a member of this class before the policy
-    ///        split, so callers of both spellings expect one overload set).
+    /// @brief The policy's insert(second value, inf_array pointer), protected
+    ///        there, is part of this registry's public surface (ArrayChunk2
+    ///        registers its inf_array through it).
     using InfArrayPolicy::insert;
 
     /**
@@ -376,6 +353,7 @@ class PointerMapChunk2
         map_ind_cst_val2[key] = ind;
     }
 
+    /// @brief Every registered second value, in map order.
     [[nodiscard]] std::vector<T> get_all_second_value() const
     {
         std::vector<T> keys;
@@ -475,9 +453,9 @@ class PointerMapChunk2
             {
                 // Snapshot size() ONCE and index into stable deque slots. With a
                 // deque, emplace_back never relocates existing elements, so a
-                // concurrent append cannot free the slots we read here (unlike the
-                // old vector, whose realloc freed the whole buffer mid-scan). We
-                // still snapshot n so a concurrent append can't move the loop bound.
+                // concurrent append cannot free the slots we read here (a
+                // vector's realloc would free the whole buffer mid-scan). We
+                // still snapshot count so a concurrent append can't move the loop bound.
                 const size_t count = vec.size();
 
                 if (count > (1U << 30U))
@@ -522,7 +500,7 @@ class PointerMapChunk2
             // first bool array's num_tab — and its compression-flag write indexes
             // the wrong array's tab_is_inside_chunk_list_to_compress (heap
             // overflow during bool re-chunk). Same "first match shadows tmp"
-            // hazard the erase() comment below describes for the non-bool path.
+            // hazard PointerMapLinear::erase() describes for the non-bool path.
             const size_t count = vec.size();
             for (size_t i = 0; i < count; ++i)
             {

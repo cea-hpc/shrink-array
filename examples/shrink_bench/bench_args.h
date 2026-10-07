@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-
 /**
  * @file bench_args.h
  * @brief Command-line parsing, out of main().

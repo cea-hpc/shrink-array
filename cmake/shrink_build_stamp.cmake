@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 # ============================================================================
 # Build stamp and `check` target.
 #
@@ -28,7 +30,7 @@
 # add_subdirectory(examples).
 # ============================================================================
 
-set(_shrink_stamp_dir "${CMAKE_BINARY_DIR}/generated/build_stamp")
+set(_shrink_stamp_dir "${PROJECT_BINARY_DIR}/generated/build_stamp")
 file(MAKE_DIRECTORY "${_shrink_stamp_dir}")
 
 # --- The fingerprinted sources ----------------------------------------------
@@ -82,12 +84,12 @@ endif()
 set(_shrink_stamp_cpp "${_shrink_stamp_dir}/build_stamp.cpp")
 add_custom_command(
   OUTPUT "${_shrink_stamp_dir}/build_stamp.sentinel"
-  BYPRODUCTS "${_shrink_stamp_cpp}" "${CMAKE_BINARY_DIR}/build_stamp.txt"
+  BYPRODUCTS "${_shrink_stamp_cpp}" "${PROJECT_BINARY_DIR}/build_stamp.txt"
   COMMAND ${CMAKE_COMMAND}
           "-DSRC=${PROJECT_SOURCE_DIR}"
           "-DLIST=${_shrink_stamp_list}"
           "-DOUT_CPP=${_shrink_stamp_cpp}"
-          "-DOUT_TXT=${CMAKE_BINARY_DIR}/build_stamp.txt"
+          "-DOUT_TXT=${PROJECT_BINARY_DIR}/build_stamp.txt"
           "-DGIT=${GIT_EXECUTABLE}"
           -P "${PROJECT_SOURCE_DIR}/cmake/shrink_build_stamp_gen.cmake"
   COMMAND ${CMAKE_COMMAND} -E touch "${_shrink_stamp_dir}/build_stamp.sentinel"
@@ -130,9 +132,9 @@ set(CHUNK_CHECK_JOBS 4 CACHE STRING "ctest -j for the `check` target")
 function(shrink_add_check_target)
   get_property(_deps GLOBAL PROPERTY SHRINK_CHECK_TARGETS)
   add_custom_target(check
-    COMMAND ${CMAKE_COMMAND} -E cat "${CMAKE_BINARY_DIR}/build_stamp.txt"
+    COMMAND ${CMAKE_COMMAND} -E cat "${PROJECT_BINARY_DIR}/build_stamp.txt"
     COMMAND ${CMAKE_CTEST_COMMAND} -L validation --output-on-failure -j ${CHUNK_CHECK_JOBS}
-    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    WORKING_DIRECTORY "${PROJECT_BINARY_DIR}"
     COMMENT "Build the validation executables, then ctest -L validation"
     USES_TERMINAL
     VERBATIM)

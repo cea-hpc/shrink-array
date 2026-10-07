@@ -1,16 +1,19 @@
-// Copyright 2026 CEA (www.cea.fr)
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+/*
+ * Copyright 2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 #pragma once
 
 /**
@@ -44,7 +47,7 @@
 namespace shrink_array::churn
 {
 
-inline std::atomic<long> g_phase_ends{0};
+inline std::atomic<long> g_phase_ends{0}; ///< compression phases ended (phase_ends())
 
 /// @brief One compression phase ended (called once per parallel phase).
 inline void note_phase_end() noexcept
@@ -69,7 +72,7 @@ class Materialisations
     /// @brief One rank's counters, one per key slot.
     struct alignas(128) RankSlot
     {
-        std::array<long, kKeys> n;
+        std::array<long, kKeys> n; ///< materialisations per key slot
     };
 
     /// @brief One materialisation of array @p key on rank @p thr (rank-local).
@@ -111,7 +114,7 @@ class Materialisations
     }
 
     static inline std::vector<RankSlot> slots_; ///< one per rank, sized once (ensure)
-    static inline std::once_flag        once_;
+    static inline std::once_flag        once_;  ///< guards the one sizing of slots_
 };
 
 /// @brief Count one materialisation of the array whose allocation key is

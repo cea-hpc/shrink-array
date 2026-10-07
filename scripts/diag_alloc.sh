@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 # Diagnostic Chunk2A aarch64 — build + runs avec progression détaillée.
 # Usage : ./diag_alloc.sh <variante> [nb_runs]
 #   variantes : fast | std | noreuse | op | ctx | tsan

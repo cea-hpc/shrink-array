@@ -1,6 +1,5 @@
-
 /*
- * Copyright 2024-2025 CEA (www.cea.fr)
+ * Copyright 2024-2026 CEA (www.cea.fr)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,24 +22,24 @@
 namespace shrink_array
 {
 
-/// @brief Random sub-microsecond busy-wait, for back-off in spin loops.
+/// @brief Random busy-wait of 100 ns to 10 us, for back-off in spin loops.
 class NanoSleeper
 {
   private:
-    std::mt19937                       gen;  // Random number generator
-    std::uniform_int_distribution<int> dist; // Random number generator
+    std::mt19937                       gen;  // random number generator
+    std::uniform_int_distribution<int> dist; // the delay, in nanoseconds
 
   public:
     /// @brief Seed the generator from std::random_device; delays are drawn in [100, 10000] ns.
-    NanoSleeper() : gen(std::random_device{}()), dist(100, 10000) {} //  One-time initialization
+    NanoSleeper() : gen(std::random_device{}()), dist(100, 10000) {}
 
     /// @brief Busy-wait a random 100 ns to 10 us (a back-off that does not
     ///        yield the CPU).
     void sleepRandomNano()
     {
-        int delay_ns = dist(gen); // Generate a random delay
+        const int delay_ns = dist(gen);
 
-        auto start = std::chrono::high_resolution_clock::now();
+        const auto start = std::chrono::high_resolution_clock::now();
         while (std::chrono::high_resolution_clock::now() - start < std::chrono::nanoseconds(delay_ns))
         {
             // Busy-wait loop

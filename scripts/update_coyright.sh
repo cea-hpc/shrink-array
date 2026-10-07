@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 
 # Année de départ par défaut si non trouvée
 START_YEAR="2024"

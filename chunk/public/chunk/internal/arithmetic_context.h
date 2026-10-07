@@ -1,4 +1,3 @@
-#pragma once
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -15,8 +14,9 @@
  * limitations under the License.
  */
 
-#include <cstdint> // std::uint64_t (the generation counter)
-#include <tuple>   // std::tuple (inf_array_t)
+#pragma once
+
+#include <cstdint> // std::uint64_t (the liveness sentinel)
 
 #include "chunk/internal/in_t.h"                     // in_t<T>: the operands
 #include "chunk/internal/deferred_lifecycle_check.h" // DEFERRED_LIFECYCLE sentinels
@@ -30,9 +30,8 @@ class Chunk;
 template <typename T>
 class Proxy;
 
-// ============================================================================
-// Helper: dispatch get_num_tab() depending on Proxy signature
-// ============================================================================
+/// @brief The proxy's num_tab: get_num_tab(array_ptr) where the proxy takes
+///        the array, get_num_tab() otherwise.
 template <typename ProxyType>
 constexpr int get_num_tab_helper(const ProxyType& proxy, const void* array_ptr) noexcept
 {
@@ -46,29 +45,19 @@ constexpr int get_num_tab_helper(const ProxyType& proxy, const void* array_ptr) 
     }
 }
 
-// ============================================================================
-// BaseArithmeticContext
-//
-// This is the *safe* minimal context for asynchronous operations.
-// It stores ONLY:
-//   - the location of the write (chunk, index, logical array)
-//   - the operand/operation (in derived classes)
-//
-// It does NOT store:
-//   - values pointer (must be reloaded from chunk at execution time)
-//   - second_value / ind / inf_array (must be recomputed at execution time)
-//   - a Proxy instance (must be reconstructed if needed)
-//   - any cached compression metadata
-//
-// This guarantees that async operations never use stale state.
-// ============================================================================
+/**
+ * @brief The minimal, safe context of a deferred write.
+ * @details It stores ONLY the location of the write (chunk, index, logical
+ *          array), the geometry frozen at enqueue, and, in the derived
+ *          contexts, the operand / operation. It does NOT store the values
+ *          pointer (reloaded from the chunk at replay), second_value / ind /
+ *          inf_array (recomputed at replay), a Proxy instance (rebuilt if
+ *          needed) or any cached compression metadata: a deferred write never
+ *          uses stale state.
+ */
 template <typename T, typename ProxyType, typename ChunkType = Chunk<T>>
-class BaseArithmeticContext
+struct BaseArithmeticContext
 {
-  public:
-    // Only for proxies that expose get_inf_array()
-    using inf_array_t = std::tuple<T, int, int>;
-
     /// @brief Capture the proxy's position, chunk, geometry and allocation key.
     /// @param prox Proxy the context is built from.
     /// @param array_ptr Owning array, stored in ptr_on_array and used to compute num_tab.
@@ -81,10 +70,6 @@ class BaseArithmeticContext
         , chunk_size_frozen(prox.chunk_size()) // resolve while the array is alive
         , alloc_key_frozen(prox.alloc_key())
     {
-        if constexpr (requires { prox.get_inf_array(); })
-        {
-            inf_array_ptr = &prox.get_inf_array();
-        }
     }
 
     /// @brief Poison the liveness sentinel (magic = ctx_dead_magic).
@@ -93,44 +78,45 @@ class BaseArithmeticContext
         magic = deferred_lifecycle::ctx_dead_magic;
     }
 
-    int         num;
-    ChunkType&  chunk;
-    int         num_chunk;
-    int         num_tab;
-    const void* ptr_on_array;
+    // Built in place in a pool block and owned by one deferred op: a copy
+    // would be a second live context for the same write.
+    BaseArithmeticContext(const BaseArithmeticContext&)            = delete;
+    BaseArithmeticContext& operator=(const BaseArithmeticContext&) = delete;
+    BaseArithmeticContext(BaseArithmeticContext&&)                 = delete;
+    BaseArithmeticContext& operator=(BaseArithmeticContext&&)      = delete;
 
-    // Chunk geometry resolved AT ENQUEUE, while the source array is
-    // guaranteed alive. Under DynamicChunkSize the proxy's chunk_size()
-    // dereferences ptr_on_array (the ArrayChunk), but a deferred op can be
-    // replayed (erase_own_rank_op / flush -> write_body) AFTER that array has
-    // been destroyed: a late chunk_size() would be a use-after-free (SIGSEGV
-    // under std-alloc; masked by fast-alloc's immortal arenas and by static
-    // builds, where the size is a constant). Geometry is immutable after array
-    // construction, so the frozen value is exactly what a live re-read would
-    // return.
+    int         num;          ///< index of the element in its chunk
+    ChunkType&  chunk;        ///< the chunk written
+    int         num_chunk;    ///< index of the chunk in its array
+    int         num_tab;      ///< logical array index
+    const void* ptr_on_array; ///< the owning array
+
+    /// @brief Chunk geometry resolved AT ENQUEUE, while the source array is
+    ///        guaranteed alive.
+    /// @details Under DynamicChunkSize the proxy's chunk_size() dereferences
+    ///          ptr_on_array (the ArrayChunk), but a deferred op can be
+    ///          replayed (erase_own_rank_op / flush -> write_body) AFTER that
+    ///          array has been destroyed: a late chunk_size() would be a
+    ///          use-after-free (SIGSEGV under std-alloc; masked by fast-alloc's
+    ///          immortal arenas and by static builds, where the size is a
+    ///          constant). Geometry is immutable after array construction, so
+    ///          the frozen value is exactly what a live re-read would return.
     unsigned int chunk_size_frozen = 0;
     /// @brief The array's slab-affinity key, frozen with the geometry and for the
     ///        same reason; replayed into the thread's allocation key.
     unsigned int alloc_key_frozen = 0;
 
-  private:
-    const inf_array_t* inf_array_ptr = nullptr;
-
-  public:
-    // DEFERRED_LIFECYCLE: liveness sentinel, verified at the top of
-    // the deferred write_body() before this ctx is dereferenced. Kept
-    // UNCONDITIONAL (not under a macro) so the struct layout is identical across
-    // every TU regardless of DEBUG/CHECK_OPTIM — no ODR/layout skew. Only the
-    // *checking* is gated (in DeferredOperation::write_body). Poisoned in the
-    // destructor so a use-after-recycle read no longer sees ctx_alive_magic.
+    /// @brief DEFERRED_LIFECYCLE liveness sentinel, verified at the top of the
+    ///        deferred write_body() before this ctx is dereferenced.
+    /// @details Kept UNCONDITIONAL (not under a macro) so the struct layout is
+    ///          identical across every TU regardless of DEBUG/CHECK_OPTIM -- no
+    ///          ODR/layout skew. Only the *checking* is gated (in
+    ///          DeferredOperation::write_body). Poisoned in the destructor so a
+    ///          use-after-recycle read no longer sees ctx_alive_magic.
     std::uint64_t magic = deferred_lifecycle::ctx_alive_magic;
 };
 
-// ============================================================================
-// ArithmeticProxyContext
-// For Proxy<T> without operand or operation.
-// ============================================================================
-
+/// @brief Context of a deferred Proxy<T> write without operand or operation.
 template <typename T>
 struct ArithmeticProxyContext : public BaseArithmeticContext<T, Proxy<T>>
 {
@@ -142,11 +128,7 @@ struct ArithmeticProxyContext : public BaseArithmeticContext<T, Proxy<T>>
     ArithmeticProxyContext(const Proxy<T>& proxy, const void* array_ptr) : Base(proxy, array_ptr) {}
 };
 
-// ============================================================================
-// ArithmeticAffectationProxyContext
-// For Proxy<T> with a simple assignment operand.
-// ============================================================================
-
+/// @brief Context of a deferred Proxy<T> assignment: the assigned value.
 template <typename T, typename U>
 struct ArithmeticAffectationProxyContext : public BaseArithmeticContext<T, Proxy<T>>
 {
@@ -161,14 +143,11 @@ struct ArithmeticAffectationProxyContext : public BaseArithmeticContext<T, Proxy
     {
     }
 
-    U operand; // Assigned value
+    U operand; ///< assigned value
 };
 
-// ============================================================================
-// ArithmeticOperationProxyContext
-// For Proxy<T> with operand + operation (e.g. +=, -=, *=).
-// ============================================================================
-
+/// @brief Context of a deferred Proxy<T> compound operation (+=, -=, *= ...):
+///        the operand and the operation.
 template <typename T, typename Op>
 struct ArithmeticOperationProxyContext : public BaseArithmeticContext<T, Proxy<T>>
 {
@@ -184,15 +163,11 @@ struct ArithmeticOperationProxyContext : public BaseArithmeticContext<T, Proxy<T
     {
     }
 
-    T  operand;   // Right-hand operand
-    Op operation; // Functor implementing the operation
+    T  operand;   ///< right-hand operand
+    Op operation; ///< functor implementing the operation
 };
 
-// ============================================================================
-// ArithmeticContext
-// Generic context for Proxy2 / Proxy2A without operation.
-// ============================================================================
-
+/// @brief Context of a deferred Proxy2 / Proxy2A write without operation.
 template <typename T, typename ChunkType, typename ProxyType>
 struct ArithmeticContext : public BaseArithmeticContext<T, ProxyType, ChunkType>
 {
@@ -204,10 +179,8 @@ struct ArithmeticContext : public BaseArithmeticContext<T, ProxyType, ChunkType>
     ArithmeticContext(const ProxyType& proxy, const void* array_ptr) : Base(proxy, array_ptr) {}
 };
 
-// ============================================================================
-// ArithmeticOperationContext
-// Generic context for Proxy2 / Proxy2A with operand + operation.
-// ============================================================================
+/// @brief Context of a deferred Proxy2 / Proxy2A compound operation: the
+///        operand and the operation.
 template <typename T, typename Op, typename ChunkType, typename ProxyType>
 struct ArithmeticOperationContext : public BaseArithmeticContext<T, ProxyType, ChunkType>
 {
@@ -223,15 +196,11 @@ struct ArithmeticOperationContext : public BaseArithmeticContext<T, ProxyType, C
     {
     }
 
-    T  operand;
-    Op operation;
+    T  operand;   ///< right-hand operand
+    Op operation; ///< functor implementing the operation
 };
 
-// ============================================================================
-// ArithmeticAffectationContext
-// Generic assignment context for Proxy2 / Proxy2A.
-// ============================================================================
-
+/// @brief Context of a deferred Proxy2 / Proxy2A assignment: the assigned value.
 template <typename T, typename U, typename ChunkType, typename ProxyType>
 struct ArithmeticAffectationContext : public BaseArithmeticContext<T, ProxyType, ChunkType>
 {
@@ -246,7 +215,7 @@ struct ArithmeticAffectationContext : public BaseArithmeticContext<T, ProxyType,
     {
     }
 
-    U operand;
+    U operand; ///< assigned value
 };
 
 } // namespace shrink_array

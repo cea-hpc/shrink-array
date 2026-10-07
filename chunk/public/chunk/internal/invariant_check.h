@@ -1,6 +1,3 @@
-//
-// Created by ballereaup on 30/04/2026.
-//
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -117,24 +114,30 @@ std::string value_repr(const V& v)
     }
 }
 
-/// The type std::format deduces for that argument: the reference for an
-/// lvalue, the value for anything else (an rvalue reference would not match).
+/// @brief The type std::format deduces for that argument: the reference for an
+///        lvalue, the value for anything else (an rvalue reference would not match).
 template <typename A, typename R = decltype(invariant_fmt_arg(std::declval<A>()))>
 using invariant_fmt_arg_t = std::conditional_t<std::is_lvalue_reference_v<R>, R, std::remove_reference_t<R>>;
 
+/**
+ * @brief Report a broken invariant on stderr -- location, message, backtrace --
+ *        and abort.
+ * @param loc  Where the check failed (INVARIANT_FAILED passes the caller's).
+ * @param fmt  std::format string of the message.
+ * @param args Its arguments; one with no formatter is printed as its bytes.
+ */
 template <typename... Args>
 [[noreturn]] void invariant_failed(const std::source_location&                      loc,
                                    std::format_string<invariant_fmt_arg_t<Args>...> fmt,
                                    Args&&... args) noexcept
 {
-    // 1. Determine prefix based on build mode
+    // 1. Prefix by build mode
     constexpr const char* prefix = build_config::is_debug ? "[DEBUG_INVARIANT_FAILURE] " : "[CRITICAL_FAILURE] ";
 
-    // 2. Format and print the message
+    // 2. Format the message, then print the location and the message
     try
     {
         const auto msg = std::format(fmt, invariant_fmt_arg(std::forward<Args>(args))...);
-        // 1. Print Header and Location
         std::fprintf(stderr, "%sIn file '%s' at line %u\n", prefix, loc.file_name(), loc.line());
         std::fprintf(stderr, "Inside function: %s\n", loc.function_name());
         std::fputs(prefix, stderr);

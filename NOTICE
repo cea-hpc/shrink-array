@@ -1,0 +1,20 @@
+shrink-array
+Copyright CEA
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes the following third-party software, as header files
+under third_party/chunk/vendor/ (installed under include/chunk/vendor/). Their
+license texts are in third_party/licenses/ (installed under
+share/doc/chunk/third_party/); third_party/README.md gives their upstream,
+version and the local patches applied to them.
+
+* ankerl::unordered_dense -- https://github.com/martinus/unordered_dense
+  Copyright (c) 2022 Martin Leitner-Ankerl
+  MIT License (third_party/licenses/unordered_dense-MIT.txt)
+  Modified: local patches, marked "Local patch (shrink-array)".
+
+* ska::flat_hash_map -- https://github.com/skarupke/flat_hash_map
+  Copyright Malte Skarupke 2017
+  Boost Software License, Version 1.0 (third_party/licenses/flat_hash_map-BSL-1.0.txt)
+  Modified: local patch, marked "Local patch (shrink-array)".

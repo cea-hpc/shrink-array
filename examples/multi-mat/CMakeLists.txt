@@ -1,3 +1,5 @@
+# Copyright 2024-2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 # Two executables from the same sources (config.h):
 #   multi-mat           the manual version, every compiler: the program makes
 #                       the phase calls of chunk/manage_ompt.h itself (four

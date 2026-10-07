@@ -17,6 +17,7 @@
 #pragma once
 
 #include <atomic>      // std::atomic_thread_fence, std::memory_order_seq_cst
+#include <cstddef>     // std::size_t
 #include <cstdio>      // stderr
 #include <print>       // std::println (the mismatch diagnostic)
 #include <type_traits> // std::common_type_t
@@ -752,7 +753,7 @@ void Proxy<T>::apply_compound_operation(in_t<U> v, BinaryOp op)
                 // (reader_sync -> flush_chunk_all_ranks) can be replaying it
                 // right now -- TSan: write in
                 // execute_arithmetic_compound_operation_async vs this read
-                // (shrink_bench_chunk_check_256, tab4[i] *= ...). Nothing is
+                // (shrink_bench_chunk_256 --mode check, tab4[i] *= ...). Nothing is
                 // returned any more, so there is no reason to read it back.
             }
         }

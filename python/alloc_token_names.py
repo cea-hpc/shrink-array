@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Turn the tokens of an ALLOC_TOKEN census back into type names.
 
     python3 python/alloc_token_names.py [--dwarf] <binary> [<log>]    (log defaults to stdin)

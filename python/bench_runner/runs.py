@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Launching one run: timeout, environment, NUMA prefix, logs, failure records."""
 import subprocess
 import os
@@ -45,7 +47,8 @@ def _write_full_log(cmd, child_env, returncode, stdout_text, stderr_text):
         pass  # logging must never break the run
 
 
-def _run_cmd_impl(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, must_contain=None):
+def _run_cmd_impl(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, must_contain=None,
+                  numa_mode=None):
     """Run cmd. Returns (success, duration_s, returncode, stderr_tail, mem_mo).
 
     extra_ld_library_path: path(s) to PREPEND to LD_LIBRARY_PATH for this run.
@@ -70,7 +73,7 @@ def _run_cmd_impl(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, 
         child_env["LD_LIBRARY_PATH"] = (
             extra_ld_library_path + (":" + prev if prev else "")
         )
-    cmd = _numa.interleave_prefix(child_env, state._NUMA_MODE) + list(cmd)  # --numa-interleave
+    cmd = _numa.interleave_prefix(child_env, numa_mode or state._NUMA_MODE) + list(cmd)  # --numa-interleave
     try:
         res = subprocess.run(
             cmd, env=child_env, cwd=cwd,
@@ -154,9 +157,12 @@ def _run_key(r):
     return (tuple(r["cmd"]), r.get("cwd"), tuple(sorted((r.get("env") or {}).items())))
 
 
-def _note_run(executor, ok, cmd, env_vars, timeout, extra_ld_library_path, cwd, must_contain, stdout_text=None):
+def _note_run(executor, ok, cmd, env_vars, timeout, extra_ld_library_path, cwd, must_contain, stdout_text=None,
+              numa_mode=None):
     rec = {"executor": executor, "cmd": [str(c) for c in cmd], "env": dict(env_vars or {}),
            "timeout": timeout, "ld": extra_ld_library_path, "cwd": cwd, "must_contain": must_contain}
+    if numa_mode:
+        rec["numa"] = numa_mode
     if ok:
         k = _run_key(rec)
         state._PENDING_FAILED_RUNS[:] = [r for r in state._PENDING_FAILED_RUNS if _run_key(r) != k]
@@ -173,11 +179,13 @@ def _note_run(executor, ok, cmd, env_vars, timeout, extra_ld_library_path, cwd, 
     state._PENDING_FAILED_RUNS.append(rec)
 
 
-def run_cmd(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, must_contain=None):
-    """_run_cmd_impl(), recording a failed run for --rerun-failed."""
+def run_cmd(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, must_contain=None, numa_mode=None):
+    """_run_cmd_impl(), recording a failed run for --rerun-failed. numa_mode
+    ("auto" / "off") overrides --numa-interleave for this run only."""
     res = _run_cmd_impl(cmd, env_vars, timeout, extra_ld_library_path=extra_ld_library_path,
-                        cwd=cwd, must_contain=must_contain)
-    _note_run("run_cmd", res[0], cmd, env_vars, timeout, extra_ld_library_path, cwd, must_contain)
+                        cwd=cwd, must_contain=must_contain, numa_mode=numa_mode)
+    _note_run("run_cmd", res[0], cmd, env_vars, timeout, extra_ld_library_path, cwd, must_contain,
+              numa_mode=numa_mode)
     return res
 
 
@@ -395,7 +403,7 @@ def run_rerun_failed(args):
                     ok, _dur, code, tail, _mem = _run_cmd_impl(
                         r["cmd"], r.get("env") or {}, r.get("timeout"),
                         extra_ld_library_path=r.get("ld"), cwd=r.get("cwd"),
-                        must_contain=r.get("must_contain"))
+                        must_contain=r.get("must_contain"), numa_mode=r.get("numa"))
                 if not ok:
                     case_fail = (rep + 1, code, tail)
                     break

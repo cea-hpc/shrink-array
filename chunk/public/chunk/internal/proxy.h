@@ -31,8 +31,8 @@
 #include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
 #include "chunk/internal/conditional_counter.h"          // counter_value_t — resync_nb_val_eq_zero
 #include "chunk/internal/def_force_inline.h"             // FORCE_INLINE
-#include "chunk/internal/map_helper.h"                   // ValueToIntMapHelper
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
+#include "chunk/internal/read_reclaim.h"                 // read_reclaim::ReadSection
 #include "chunk/internal/chunk_stats.h" // increm_chunk_read<> (a dependent call the include tools cannot attribute)
 
 /*---------------------------------------------------------------------------*/
@@ -45,156 +45,18 @@ template <template <typename> class CHUNK_T, typename T>
 class ManagerChunk;
 
 /**
- * @brief Template class managing mappings between keys and tuple values.
- *
- * @tparam T Type of the value associated with the key.
- */
-
-/**
- * @brief Policy holding the fast-block-compression-only value -> inf_array
- *        lookup for PointerMapChunk. Enabled tracks the
- *        same condition as chunk_config::use_fast_block_compression (see
- *        PointerMapChunk's own instantiation below).
- * @tparam T Element type PointerMapChunk is keyed on.
- * @tparam Enabled Whether the map actually exists (fast-block-compression
- *                 builds) or is a zero-overhead no-op (counter-mode builds).
- */
-template <typename T, bool Enabled>
-class PointerMapInfArrayPolicy
-{
-  public:
-    using inf_array_t = int;
-
-  protected:
-    using MapType = ValueToIntMapHelper<T>::type;
-
-    /**
-     * @brief Register the inf_array tuple pointer for a given value.
-     * @param key Value to register.
-     * @param ind inf_array tuple pointer to associate with `key`.
-     */
-    void insert(in_t<T> key, inf_array_t* ind)
-    {
-        map_inf_array[key] = ind;
-    }
-
-    /// Map from a value to its registered inf_array tuple pointer.
-    MapType map_inf_array;
-
-  private:
-    /**
-     * @brief All registered inf_array pointers, in map order.
-     * @return Vector of every value's currently-registered inf_array pointer.
-     */
-    [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const
-    {
-        std::vector<inf_array_t*> values;
-
-        for (const auto& [cle, v] : map_inf_array)
-        {
-            values.push_back(v);
-        }
-
-        return values;
-    }
-
-    /**
-     * @brief Look up the inf_array tuple pointer registered for a value.
-     * @param key Value to look up.
-     * @return The registered pointer, or nullptr if `key` is not registered.
-     */
-    [[nodiscard]] inf_array_t* find_inf_array(in_t<T> key) const noexcept
-    {
-        const auto it = map_inf_array.find(key);
-        if (it != map_inf_array.end())
-        {
-            return it->second;
-        }
-        return nullptr;
-    }
-};
-
-/**
- * @brief Specialization for counter-mode builds: no map, zero overhead.
- */
-template <typename T>
-class PointerMapInfArrayPolicy<T, false>
-{
-  public:
-    using inf_array_t = int;
-
-  protected:
-    /// @brief No registry in this mode: nothing to record.
-    void insert(in_t<T> /*key*/, inf_array_t* /*ind*/) {}
-
-  private:
-    /// @brief No registry in this mode: an empty list.
-    [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const
-    {
-        return {};
-    }
-
-    /// @brief No registry in this mode: never found.
-    [[nodiscard]] inf_array_t* find_inf_array(in_t<T> /*key*/) const
-    {
-        return nullptr;
-    }
-};
-
-/**
  * @brief Registry mapping array-element keys (pointers) to their table
- *        number, plus (via PointerMapInfArrayPolicy, fast-block-compression
- *        builds only) a value -> inf_array lookup used by the compression
- *        machinery.
+ *        number. Unlike PointerMapChunk2, it has no value -> inf_array
+ *        lookup: v1 compression does not group chunks by value.
  * @tparam T Element type this registry is keyed on.
  */
 template <typename T>
-class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fast_block_compression>,
-                        public PointerMapLinear<int, std::vector<std::pair<const void*, int>>>
+class PointerMapChunk : public PointerMapLinear<int, std::vector<std::pair<const void*, int>>>
 {
-  private:
-    using Policy = PointerMapInfArrayPolicy<T, chunk_config::use_fast_block_compression>;
-
-    /// Internal alias for tuple representing a value with index and table number.
-    using inf_array_t = int;
-
-    // The storage (a std::vector) and the traversal operations come from
-    // PointerMapLinear. The container is a template parameter there:
-    // PointerMapChunk2's is a std::deque, for a reason documented over there.
-    using Linear = PointerMapLinear<inf_array_t, std::vector<std::pair<const void*, inf_array_t>>>;
-    /// Brings the base's storage back into this class's scope (dependent base).
-    using Linear::vec;
-
-    /**
-     * @brief Update the table number registered for an existing key.
-     * @param key Key to update.
-     * @param val New table number.
-     * @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
-     */
-    void replace(void* key, in_t<T> val) noexcept
-    {
-        for (auto& item : vec)
-        {
-            if (item.first == key)
-            {
-                item.second = val;
-                return;
-            }
-        }
-
-        INVARIANT_FAILED("[PointerMapChunk replace] key NOT FOUND: this={} size={} key={}",
-                         static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
-    }
-
   public:
-    // Bring Policy::insert(in_t<T>, inf_array_t*) back into scope: our own
-    // insert(void*, int) below would otherwise hide the whole overload set.
-    using Policy::insert;
-
     /**
-     * @brief Inserts a default value and table number for a given key.
-     *
-     * @param key Pointer used as a key in the vector.
+     * @brief Register @p key with table number @p num_tab.
+     * @param key Array address used as the key.
      * @param num_tab Table number associated with the key.
      */
     void insert(void* key, int num_tab)
@@ -224,11 +86,11 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
 
     /**
      * @brief Swap the table numbers registered for two existing keys.
-     * @details Orthographe conservee pour les hooks de re-chunk v1 / v2A, qui
-     *          appellent swap_keys la ou v2 appelle swap_entries. Meme operation.
-     * @param key_a first key; les deux adresses de tableau.
-     * @param key_b second key.
-     * @return false si l'une des deux cles est absente (rien n'est modifie).
+     * @details The name the v1 / v2A re-chunk hooks call; v2 calls
+     *          swap_entries(). Same operation.
+     * @param key_a First key (an array address).
+     * @param key_b Second key.
+     * @return false if either key is absent (nothing is changed).
      */
     bool swap_keys(const void* key_a, const void* key_b) noexcept
     {
@@ -237,6 +99,17 @@ class PointerMapChunk : public PointerMapInfArrayPolicy<T, chunk_config::use_fas
 
     // erase(), swap_entries(), exists(), size() and for_each_key() come from
     // PointerMapLinear: they were the same traversals as in PointerMapChunk2.
+
+  private:
+    /// What a key maps to: its table number.
+    using inf_array_t = int;
+
+    // The storage (a std::vector) and the traversal operations come from
+    // PointerMapLinear. The container is a template parameter there:
+    // PointerMapChunk2's is a std::deque, for a reason documented over there.
+    using Linear = PointerMapLinear<inf_array_t, std::vector<std::pair<const void*, inf_array_t>>>;
+    /// Brings the base's storage back into this class's scope (dependent base).
+    using Linear::vec;
 };
 
 /**
@@ -773,30 +646,6 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     template <typename U, typename BinaryOp>
     void apply_compound_operation(in_t<U> v, BinaryOp op); // in_t: see assign_impl
 
-    /**
-     * @brief UNSAFE: a raw `T&` into this element's chunk buffer, for callers
-     *        that must bind a real reference (e.g. passing `a[i]` to a
-     *        function taking `T&`). Materialises the chunk first if it is
-     *        compressed.
-     * @warning A write through the returned reference bypasses the proxy:
-     *          the chunk is not marked as a compression candidate, deferred
-     *          ops are not replayed first, and nothing orders it against
-     *          other threads. The reference dangles as soon as the chunk is
-     *          recompressed or freed. Prefer the proxy's own operators.
-     * @note Always materialises: the caller's intent (read or write
-     *       through the reference) cannot be known here.
-     * @return Reference to this element's live value.
-     */
-    [[nodiscard]] T& unsafe_ref() noexcept
-    {
-        const bool need_alloc = is_cst_val();
-
-        create_value(need_alloc);
-
-        // raw-read: hands out an address / reference -- materialised first, the caller keeps it valid
-        return values[num];
-    }
-
   public:
     using SA_INHERIT_CTOR_TYPENAME FastCompPolicy::ProxyFastCompPolicy;
 
@@ -1017,6 +866,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         return values[num];
     }
 
+    // No address, and no operator T&() either: with one, `tab[nc] = val` was
+    // routed through it and created blocks for nothing. The price: foo(a[i])
+    // does not compile when foo takes a `T&`.
     T*       operator&()       = delete;
     const T* operator&() const = delete;
 
@@ -1030,11 +882,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         return share_info_array.get_num_tab(ptr);
     }
 
-    // Problem with this operator: if defined it is called
-    // tab[nc] = val: which is problematic because in this case: we create
-    // unnecessary blocks
-    // if we don’t define it we have compiled errors in the
-    // following situation: foo(a[i]) with foo(T &val)
+    /// Registry of every v1 array: array address -> table number.
     static inline PointerMapChunk<T> share_info_array;
 };
 

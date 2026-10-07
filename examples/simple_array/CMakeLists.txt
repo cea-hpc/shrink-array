@@ -1,3 +1,5 @@
+# Copyright 2024-2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 add_executable(simple_array_vector simple_array.cpp)
 add_executable(simple_array_chunk  simple_array.cpp)
 

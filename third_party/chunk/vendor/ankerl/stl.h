@@ -1,7 +1,14 @@
+// SPDX-License-Identifier: MIT
+// shrink-array vendored copy (unmodified).
+//   upstream: https://github.com/martinus/unordered_dense
+//   version : v5.3.1 (commit c164976d1426d623d87b98833ff60c7263fde4e1)
+//   license : MIT (below; third_party/licenses/unordered_dense-MIT.txt)
+// See third_party/README.md in the shrink-array repository.
+
 ///////////////////////// ankerl::unordered_dense::{map, set} /////////////////////////
 
 // A fast & densely stored hashmap and hashset based on robin-hood backward shift deletion.
-// Version 5.0.1
+// Version 5.3.1
 // https://github.com/martinus/unordered_dense
 //
 // Licensed under the MIT License <http://opensource.org/licenses/MIT>.

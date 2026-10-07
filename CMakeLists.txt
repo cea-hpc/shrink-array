@@ -1,5 +1,19 @@
-cmake_minimum_required(VERSION 3.12)
-project(chunk LANGUAGES CXX)
+# Copyright 2024-2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+cmake_minimum_required(VERSION 3.20)
+project(shrink_array VERSION 2.2.8 LANGUAGES CXX)
+
+# Built on its own, or consumed by another project (add_subdirectory,
+# FetchContent)? PROJECT_IS_TOP_LEVEL says it from CMake 3.21; this is the same
+# test for 3.20. A consumer gets the libraries only: no examples, no tests, and
+# nothing written into its cache (build type, per-configuration flags).
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+    set(SHRINK_ARRAY_IS_TOP_LEVEL ON)
+else()
+    set(SHRINK_ARRAY_IS_TOP_LEVEL OFF)
+endif()
+option(SHRINK_ARRAY_BUILD_EXAMPLES "Build the examples, benchmarks and validation harnesses" ${SHRINK_ARRAY_IS_TOP_LEVEL})
+option(SHRINK_ARRAY_BUILD_TESTS "Register the tests (include(CTest))" ${SHRINK_ARRAY_IS_TOP_LEVEL})
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -102,10 +116,15 @@ endif()
 
 set(CHUNK_OMP ${OMP})
 
-include(CTest)
+if(SHRINK_ARRAY_BUILD_TESTS)
+    include(CTest)
+else()
+    set(BUILD_TESTING OFF) # this subtree only: the parent's own setting is left alone
+endif()
 
 # ── Build type ────────────────────────────────────────────────────────────────
-if(NOT CMAKE_BUILD_TYPE)
+# Top level only: a consumer's build type is its own.
+if(SHRINK_ARRAY_IS_TOP_LEVEL AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build" FORCE)
 endif()
 
@@ -226,17 +245,25 @@ endif()
 # NOTE: no ${SANITIZER_FLAGS} here -- they are applied above, for every build
 # type. Putting them in this Debug-only variable is what silently produced
 # uninstrumented RelWithDebInfo sanitizer binaries.
-set(CMAKE_CXX_FLAGS_DEBUG
-    "-O0 -g -DDEBUG"
-    CACHE STRING "Debug flags" FORCE)
+# Top level: in the cache, as before. Consumed by another project: plain
+# variables of this subtree -- the cache is the consumer's.
+if(SHRINK_ARRAY_IS_TOP_LEVEL)
+    set(CMAKE_CXX_FLAGS_DEBUG
+        "-O0 -g -DDEBUG"
+        CACHE STRING "Debug flags" FORCE)
 
-set(CMAKE_CXX_FLAGS_RELEASE
-    "-O3 -g"
-    CACHE STRING "Release flags" FORCE)
+    set(CMAKE_CXX_FLAGS_RELEASE
+        "-O3 -g"
+        CACHE STRING "Release flags" FORCE)
 
-set(CMAKE_CXX_FLAGS_RELWITHDEBINFO
-    "-O3 -g"
-    CACHE STRING "RelWithDebInfo flags" FORCE)
+    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO
+        "-O3 -g"
+        CACHE STRING "RelWithDebInfo flags" FORCE)
+else()
+    set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -DDEBUG")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -g")
+    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g")
+endif()
 
 # ── Runtime RPATH: embed the compiler's own runtime libraries ─────────────────
 # Binaries built with a module compiler (llvm/20.1.8, gcc/15.2.0) depend on that
@@ -721,15 +748,19 @@ if(NOT CHUNK_STD_ALLOC)
     add_subdirectory(fast_allocators)
 endif()
 
-# shrink-build-stamp: [build] line in the validation binaries, `check` target
-include(${PROJECT_SOURCE_DIR}/cmake/shrink_build_stamp.cmake)
-add_subdirectory(examples)
-shrink_add_check_target()
+# Examples, benchmarks and validation harnesses: top level by default
+# (SHRINK_ARRAY_BUILD_EXAMPLES), never imposed on a consuming project.
+if(SHRINK_ARRAY_BUILD_EXAMPLES)
+    # shrink-build-stamp: [build] line in the validation binaries, `check` target
+    include(${PROJECT_SOURCE_DIR}/cmake/shrink_build_stamp.cmake)
+    add_subdirectory(examples)
+    shrink_add_check_target()
+endif()
 
 # Every raw read of a chunk's buffer in the library states why it is safe
 # (scripts/check_raw_reads.py): a source check, run with the validation tests.
 find_package(Python3 COMPONENTS Interpreter QUIET)
-if(BUILD_TESTING AND Python3_Interpreter_FOUND)
+if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_raw_reads
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_raw_reads.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_raw_reads PROPERTY LABELS validation)
@@ -738,6 +769,12 @@ if(BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_includes
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_includes.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_includes PROPERTY LABELS validation)
+    # Every source file carries its license: the Apache block for C++, SPDX
+    # lines for scripts and build files, the upstream SPDX line for the vendored
+    # headers (scripts/check_headers.py; --fix repairs).
+    add_test(NAME check_headers
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_headers.py ${PROJECT_SOURCE_DIR})
+    set_property(TEST check_headers PROPERTY LABELS validation)
     # The documentation matches the code, and the English and French versions
     # each other (scripts/check_docs.py).
     add_test(NAME check_docs

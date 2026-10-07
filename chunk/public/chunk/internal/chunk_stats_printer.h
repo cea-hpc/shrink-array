@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 CEA (www.cea.fr)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 #pragma once
 
 #include <string>   // std::string, std::to_string
@@ -40,10 +56,10 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
                                         int                n_compressed,
                                         int                nb_chunk,
                                         int                n_t1,
-                                        const std::string& chunk_name,         // ex: "Chunk", "Chunk2" ou "Chunk2A"
+                                        const std::string& chunk_name,         // e.g. "Chunk", "Chunk2" or "Chunk2A"
                                         int                n_cross       = -1, // cross-variant probe count (-1 = none)
                                         const std::string& cross_name    = "", // richer variant the probe refers to
-                                        bool               bool_elements = false)            // bool: one second value, true
+                                        bool               bool_elements = false) // bool: one second value, true
 {
     if (nb_chunk == 0)
     {

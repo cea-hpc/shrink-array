@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 # advisor_demo: the ChunkSizeAdvisor's step-0 check -- the same data built
 # at five REAL chunk sizes, then the advisor's per-size predictions (made
 # from S=256 alone) against that ground truth. Returns the number of sizes

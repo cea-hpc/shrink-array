@@ -1,8 +1,12 @@
-cmake_minimum_required(VERSION 3.12)
+# Copyright 2024-2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
+cmake_minimum_required(VERSION 3.20)
 project(fast_allocators LANGUAGES CXX)
 
-if(NOT CMAKE_BUILD_TYPE)
-   set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose de type of build" FORCE)
+# Built on its own only: inside shrink_array, or inside a consuming project, the
+# build type is the top level's.
+if(NOT CMAKE_BUILD_TYPE AND CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+   set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build" FORCE)
 endif ()
 
 if (ALLOCATORS_OMP)

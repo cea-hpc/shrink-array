@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Defaults, presets and the machine fitting of the thread counts."""
 import os
 
@@ -198,6 +200,14 @@ SCALING_FALLBACK_ITER_MAX = 200
 # beyond, and against the best point a slow stretch cannot drift the reference
 # along with it.
 SCALING_MAX_SLOWDOWN = 1.25
+# The guard's runs never go through numactl --interleave, whatever
+# --numa-interleave says: interleaving puts half of each thread's slabs on the
+# other socket, where first touch keeps them local. Grace, chunk@dyn int64
+# --multiply 2, 128 threads (2 sockets), best of 3 interleaved rounds: llvm
+# 14.57 s interleaved / 13.02 s not, gnu 16.49 / 14.68 (-11%); 64 threads
+# (one socket) unchanged. With it, the 128-thread point failed the guard
+# (1.34x the 64-thread one on gnu) on a cost the library does not choose.
+SCALING_NUMA_INTERLEAVE = "off"
 
 # --- 64-bit index checks (int64 binaries) ----------------------------------
 # A few --mode check runs of the int64 binaries against the 32-bit oracle of

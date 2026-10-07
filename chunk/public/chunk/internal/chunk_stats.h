@@ -38,7 +38,7 @@
 
 // All of these serve the CHUNK_STATS half of the file only.
 #include <array>    // std::array
-#include <chrono>   // __chunk_stats_t0, the rates in print_chunk_stats
+#include <chrono>   // __chunk_stats_t0, the rates ParamChunk::ChunkStats() prints
 #include <map>      // std::map
 #include <mutex>    // std::mutex, std::lock_guard
 #include <concepts> // ChunkStatsZeroComparable
@@ -119,7 +119,7 @@ struct alignas(64) ChunkStatsThr
     long gate_driver         = 0; ///< run_slow_path() drivers (a writer sent to the slow path)
 };
 
-/// @brief Program start, for the per-second rates print_chunk_stats() shows
+/// @brief Program start, for the per-second rates ParamChunk::ChunkStats() shows
 ///        next to the gate counters. Static init: as early as the counters.
 inline const std::chrono::steady_clock::time_point __chunk_stats_t0 = std::chrono::steady_clock::now();
 
@@ -412,24 +412,6 @@ void increm_chunk_write(V v) noexcept
     }
 }
 
-// batch variants (a clear/compress sweep touches nb blocks at once)
-
-/// @brief Add `nb` chunks swept by clear_st at teardown, in one batch.
-/// @param nb Number of chunks swept.
-template <typename C>
-void add_chunk_teardown_clear(long nb) noexcept
-{
-    __chunk_stats_slot(C::stat_variant).teardown_clear += nb;
-}
-/// @brief Add `nb` successful compressions, in one batch (a sweep touching
-///        several blocks at once).
-/// @param nb Number of chunks compressed.
-template <typename C>
-void add_chunk_compress(long nb) noexcept
-{
-    __chunk_stats_slot(C::stat_variant).compress += nb;
-}
-
 // ---- reduction / lifecycle -------------------------------------------------
 
 /// @brief Reset every (variant, thread) counter slot to zero.
@@ -681,14 +663,6 @@ void increm_chunk_write() noexcept
 }
 template <typename C, typename V>
 void increm_chunk_write(V) noexcept
-{
-}
-template <typename C>
-void add_chunk_teardown_clear(long) noexcept
-{
-}
-template <typename C>
-void add_chunk_compress(long) noexcept
 {
 }
 inline void init_all_stats() noexcept {}

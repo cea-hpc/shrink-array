@@ -29,7 +29,7 @@
     #include <concepts> // std::assignable_from
 #endif
 
-#include <ankerl/unordered_dense.h> // PointerMapChunk2A::big
+#include "chunk/vendor/ankerl/unordered_dense.h" // PointerMapChunk2A::big
 
 #include "chunk/config.h"                     // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
 #include "chunk/internal/chunk_size_policy.h" // set_thread_chunk_size, set_thread_alloc_key
@@ -725,6 +725,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      */
     void set_info_on_chunk() noexcept;
 
+    /// @brief Arm ptr_second_value from num_tab / num_chunk (no-op for bool).
     void set_ptr_second_value() noexcept;
 
     /// @brief This proxy's array index (ProxyBase::get_num_tab(), re-exported
@@ -1025,9 +1026,9 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
      *
      * @details
      * If the chunk is in constant mode (cst_val1 or cst_val2), this allocates
-     * a full array so individual elements can be modified.
+     * a full array so individual elements can be modified. It arms the cached
+     * metadata itself (set_info_on_chunk()), after sampling is_cst_val2().
      *
-     * @pre metadata_.second_value must be initialized
      * @post Chunk has allocated storage for modifications
      */
     void ensure_writable_storage();
@@ -1065,39 +1066,6 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
                                   in_t<U> v,
                                   bool /*check_first_value_result*/ = false) noexcept; // in_t: see assign_impl
 
-    /**
-     * @brief UNSAFE: a raw `T&` into this element's chunk buffer, for callers
-     *        that must bind a real reference (e.g. passing `a[i]` to a
-     *        function taking `T&`). Materialises the chunk first if it is
-     *        compressed.
-     * @warning A write through the returned reference bypasses the proxy:
-     *          the chunk is not marked as a compression candidate, deferred
-     *          ops are not replayed first, and nothing orders it against
-     *          other threads. The reference dangles as soon as the chunk is
-     *          recompressed or freed. Prefer the proxy's own operators.
-     * @note Materialises as the write path (set_value) does, gated on
-     *       Base2::is_cst_val() (Proxy2Base's, not ProxyBase's). It has no
-     *       caller, so only an instantiation would catch a compile error here.
-     * @return Reference to this element's live value.
-     */
-    [[nodiscard]] T& unsafe_ref() noexcept
-    {
-        if (Base2::is_cst_val())
-        {
-            if constexpr (is_not_bool)
-            {
-                create_value(BaseSpec::ptr_second_value);
-            }
-            else
-            {
-                create_value_bool();
-            }
-        }
-        // raw-read: hands out an address / reference -- materialised first, the caller keeps it valid
-        return values[num];
-    }
-
-    // static inline NanoSleeper nano_sleeper;
     char* ptr_type_cst = nullptr; ///< pointer into tab_type_cst_val[num_tab]
 };
 

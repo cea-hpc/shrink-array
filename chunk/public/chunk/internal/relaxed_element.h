@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 #pragma once
 /**
  * @file relaxed_element.h
@@ -73,6 +74,8 @@ inline constexpr bool relaxed_element_access_v = relaxed_element_access<T>();
 template <typename ChunkType, typename T>
 inline constexpr bool relaxed_element_stores_v = std::is_same_v<ChunkType, Chunk2A<T>> && relaxed_element_access_v<T>;
 
+/// @brief Load @p *ptr through a relaxed std::atomic_ref.
+/// @param ptr Element to read.
 template <typename T>
 [[nodiscard]] T load_element_relaxed(const T* ptr) noexcept
 {

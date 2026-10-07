@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Phase 1 (2c): the STL interface self-check, once per compiler front-end."""
 import sys
 

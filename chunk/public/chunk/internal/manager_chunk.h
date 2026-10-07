@@ -69,10 +69,17 @@ struct TeardownRepeat
 template <bool IsDynamic = build_config::chunk_dynamic>
 struct ManagerChunkDynInterface; // primary left undefined: only the 2 specializations exist
 
+/// @brief Dynamic-geometry builds: register_chunk_size().
 template <>
 struct ManagerChunkDynInterface<true>
 {
+    ManagerChunkDynInterface()          = default;
     virtual ~ManagerChunkDynInterface() = default;
+    // An interface: never copied or moved (no slicing).
+    ManagerChunkDynInterface(const ManagerChunkDynInterface&)            = delete;
+    ManagerChunkDynInterface& operator=(const ManagerChunkDynInterface&) = delete;
+    ManagerChunkDynInterface(ManagerChunkDynInterface&&)                 = delete;
+    ManagerChunkDynInterface& operator=(ManagerChunkDynInterface&&)      = delete;
 
     /// @brief Declare a runtime chunk geometry to this type's allocators.
     virtual void register_chunk_size(unsigned int size, int block_size) = 0;
@@ -82,7 +89,13 @@ struct ManagerChunkDynInterface<true>
 template <>
 struct ManagerChunkDynInterface<false>
 {
+    ManagerChunkDynInterface()          = default;
     virtual ~ManagerChunkDynInterface() = default;
+    // An interface: never copied or moved (no slicing).
+    ManagerChunkDynInterface(const ManagerChunkDynInterface&)            = delete;
+    ManagerChunkDynInterface& operator=(const ManagerChunkDynInterface&) = delete;
+    ManagerChunkDynInterface(ManagerChunkDynInterface&&)                 = delete;
+    ManagerChunkDynInterface& operator=(ManagerChunkDynInterface&&)      = delete;
 };
 
 /**
@@ -99,10 +112,17 @@ struct ManagerChunkDynInterface<false>
 template <bool UseOpenMP = build_config::use_openmp>
 struct ManagerChunkParallelInterface; // primary left undefined: only the 2 specializations exist
 
+/// @brief OpenMP builds: per-thread allocators, reuse lists and deferred ops.
 template <>
 struct ManagerChunkParallelInterface<true>
 {
+    ManagerChunkParallelInterface()          = default;
     virtual ~ManagerChunkParallelInterface() = default;
+    // An interface: never copied or moved (no slicing).
+    ManagerChunkParallelInterface(const ManagerChunkParallelInterface&)            = delete;
+    ManagerChunkParallelInterface& operator=(const ManagerChunkParallelInterface&) = delete;
+    ManagerChunkParallelInterface(ManagerChunkParallelInterface&&)                 = delete;
+    ManagerChunkParallelInterface& operator=(ManagerChunkParallelInterface&&)      = delete;
 
     // --- per-thread allocator and free-list surface ---
     /// @brief Set every rank's allocator geometry, from the calling thread:
@@ -163,7 +183,13 @@ struct ManagerChunkParallelInterface<true>
 template <>
 struct ManagerChunkParallelInterface<false>
 {
+    ManagerChunkParallelInterface()          = default;
     virtual ~ManagerChunkParallelInterface() = default;
+    // An interface: never copied or moved (no slicing).
+    ManagerChunkParallelInterface(const ManagerChunkParallelInterface&)            = delete;
+    ManagerChunkParallelInterface& operator=(const ManagerChunkParallelInterface&) = delete;
+    ManagerChunkParallelInterface(ManagerChunkParallelInterface&&)                 = delete;
+    ManagerChunkParallelInterface& operator=(ManagerChunkParallelInterface&&)      = delete;
 
     /// @brief Set the single allocator's geometry.
     virtual void init_allocator(int block_size) const = 0;
@@ -188,7 +214,13 @@ struct ManagerChunkParallelInterface<false>
  */
 struct ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtual ManagerChunkParallelInterface<>
 {
+    ManagerChunkInt()           = default;
     ~ManagerChunkInt() override = default;
+    // An interface: never copied or moved (no slicing).
+    ManagerChunkInt(const ManagerChunkInt&)            = delete;
+    ManagerChunkInt& operator=(const ManagerChunkInt&) = delete;
+    ManagerChunkInt(ManagerChunkInt&&)                 = delete;
+    ManagerChunkInt& operator=(ManagerChunkInt&&)      = delete;
 
     // --- present in every build ---
     /// @brief Release this type's allocation blocks.
@@ -220,14 +252,14 @@ struct ManagerChunkInt : public virtual ManagerChunkDynInterface<>, public virtu
     [[nodiscard]] virtual bool sweep_mops_up(bool apply) const = 0;
     ///@}
 
-    /// Bytes parked in this manager's reuse pools (printed with CHUNK_STATS).
-    /// Common to every build: the reuse pools are not an OpenMP-only surface,
-    /// and AllTypeChunk reaches this through a ManagerChunkInt*.
+    /// @brief Bytes parked in this manager's reuse pools (printed with CHUNK_STATS).
+    /// @details Common to every build: the reuse pools are not an OpenMP-only
+    ///          surface, and AllTypeChunk reaches this through a ManagerChunkInt*.
     [[nodiscard]] virtual std::size_t reuse_pool_bytes_int() const = 0;
-    /// Return the pools' excess; see ManagerChunk::trim_reuse_pools.
+    /// @brief Return the pools' excess; see ManagerChunk::trim_reuse_pools.
     virtual std::size_t trim_reuse_pools_int(std::size_t keep_per_thread) = 0;
-    /// Print the pools' breakdown by geometry; see
-    /// ManagerChunk::print_reuse_pool_breakdown.
+    /// @brief Print the pools' breakdown by geometry; see
+    ///        ManagerChunk::print_reuse_pool_breakdown.
     virtual void print_reuse_pool_breakdown_int(const char* label) const = 0;
 
     // The build-dependent halves live in the three interface policies above.
@@ -345,9 +377,6 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     friend class ManagerChunkParallelImpl;
 
   private:
-    using p_vector_char = std::vector<char>*;
-    using inf_array_t   = std::tuple<T, int, p_vector_char>;
-
     struct alignas(128) PerThreadFreeList
     {
         std::vector<T*> list;
@@ -558,7 +587,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 }
                 while (lst.size() > keep_per_thread)
                 {
-                    T* block = lst.back();
+                    const T* block = lst.back();
                     lst.pop_back();
                     CHUNK_LEDGER_DISCARD(block, "trim_reuse_pools");
                     svfree(block);
@@ -632,7 +661,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     ///        register_alloc_key() hands to the keyed allocator sets.
     static inline int registered_block_size_ = 0;
 
-    // Serial counterparts of the *_thr stores below: no per-thread indirection.
+    // Serial counterpart of chunk_to_compress_potentially_thr below (and
+    // chunk2A_to_compress_potentially of chunk2A_to_compress_potentially_thr):
+    // no per-thread indirection.
     //
     // Declared in EVERY build -- empty and never touched in OpenMP ones -- for the
     // same reason as list_block_free_thr_by_size_ below: they are members of the
@@ -640,10 +671,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     // `if constexpr (build_config::use_openmp)` still name-looks them up and they
     // have to exist to be named. Declaring them unconditionally is what lets the
     // accessors and the remove_from_compress_list_* helpers select with
-    // `if constexpr`. The static cost is three empty containers
-    // per (variant, type). Only the serial getters below expose them.
-    static inline TChunk2CompMap<CHUNK_T, T> chunk2_to_compress_potentially;
-
+    // `if constexpr`. The static cost is two empty containers per (variant, type).
     static inline TChunkComp<CHUNK_T, T> chunk_to_compress_potentially;
 
     static inline long somme_chunk_create{0};
@@ -709,7 +737,10 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     ManagerChunk()           = default;
     ~ManagerChunk() override = default;
 
-    ManagerChunk(const ManagerChunk& ref) = delete;
+    ManagerChunk(const ManagerChunk&)            = delete;
+    ManagerChunk& operator=(const ManagerChunk&) = delete;
+    ManagerChunk(ManagerChunk&&)                 = delete;
+    ManagerChunk& operator=(ManagerChunk&&)      = delete;
 
     void resize_chunk_to_compress_potentially() const override;
 
@@ -1020,7 +1051,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                     for (int thr = 0; thr < n_thr; ++thr)
                     {
                         auto& lst = per_thr[thr].list;
-                        for (T* b : lst)
+                        for (const T* b : lst)
                         {
                             CHUNK_LEDGER_DISCARD(b, "rechunk_to.drain_reuse");
                             svfree(b);
@@ -1131,12 +1162,23 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      * @brief Drain pass 1 for one rank: sort rank @p rank's parked blocks into
      *        row @p rank of @p bucket by owning rank; blocks no slab claims stay
      *        parked. Touches rank @p rank's list and row only.
+     * @param per_thr the per-rank lists of parked blocks; rank @p rank's is
+     *        sorted, and keeps only the blocks no slab claims.
+     * @param n_thr team size: owning ranks outside [0, n_thr) are not sorted.
+     * @param rank the sorting rank; out of [0, @p n_thr) does nothing.
+     * @param geometry the allocator whose slab_of() finds each block's slab
+     *        and owner.
+     * @param bucket the drain's [sorting rank][owning rank] buckets.
      * @param col_dirty when given (the team drain), flag o is raised for every
      *        owning rank o that receives a block: column o needs a free pass.
      */
     template <typename Alloc>
-    static void drain_sort_rank(std::vector<PerThreadFreeList>& per_thr, int n_thr, int rank, Alloc* geometry,
-                                DrainBuckets& bucket, std::atomic<unsigned char>* col_dirty = nullptr) noexcept
+    static void drain_sort_rank(std::vector<PerThreadFreeList>& per_thr,
+                                int                             n_thr,
+                                int                             rank,
+                                Alloc*                          geometry,
+                                DrainBuckets&                   bucket,
+                                std::atomic<unsigned char>*     col_dirty = nullptr) noexcept
     {
         if (rank < 0 || rank >= n_thr)
         {
@@ -1158,8 +1200,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                 row[static_cast<std::size_t>(slab->owner_rank)].push_back(block);
                 // Load first: the flag's line is shared by the team, raise it
                 // once rather than write it on every block.
-                if (col_dirty != nullptr &&
-                    col_dirty[slab->owner_rank].load(std::memory_order_relaxed) == 0)
+                if (col_dirty != nullptr && col_dirty[slab->owner_rank].load(std::memory_order_relaxed) == 0)
                 {
                     col_dirty[slab->owner_rank].store(1, std::memory_order_relaxed);
                 }
@@ -1176,6 +1217,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      * @brief Drain pass 2 for one rank: free column @p rank of @p bucket into
      *        rank @p rank's own allocator instances -- the only mutation of a
      *        slab chain, always by the rank that owns it.
+     * @param n_thr team size: the rows of @p bucket read.
+     * @param rank the owning rank, whose column is freed; out of [0, @p n_thr)
+     *        does nothing.
+     * @param geometry the allocator whose slab_of() finds each block's slab;
+     *        the block is freed into the instance that slab names as owner.
+     * @param bucket the drain's [sorting rank][owning rank] buckets, filled by
+     *        drain_sort_rank().
      * @param release_cells give the cells' capacity back (a one-off drain) or
      *        keep it (drain_reuse_list_for_size_team(), reused per slice).
      */
@@ -1307,9 +1355,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
             }
             for (auto* set : s.sets)
             {
-                auto&     per_thr = *set;
-                const int n_thr   = static_cast<int>(per_thr.size());
-                const auto is_set = [](const std::atomic<unsigned char>* f, int r) noexcept
+                auto&      per_thr = *set;
+                const int  n_thr   = static_cast<int>(per_thr.size());
+                const auto is_set  = [](const std::atomic<unsigned char>* f, int r) noexcept
                 { return f[r].load(std::memory_order_relaxed) != 0; };
                 drain_sort_rank(per_thr, n_thr, me, geometry, s.bucket, dirty);
 #pragma omp barrier
@@ -1469,15 +1517,13 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *          a later compression pass.
      *
      * @param num_tab tab index whose candidates are removed
-     * @note OpenMP builds only. The serial store is a map<T, vector<Chunk2*>>,
-     *       which carries no num_tab; it is drained instead by AllTypeChunk's
-     *       terminal sweep in clear_core().
+     * @note OpenMP builds only: a serial build queues no Chunk2 candidate (fast
+     *       block compression is OpenMP-only), so there is nothing to drop.
      */
     static void remove_from_compress_list_chunk2_by_num_tab([[maybe_unused]] int num_tab) noexcept
     {
-        // The store's type is dependent (TChunk2CompMap is a per-thread vector of
-        // maps under OpenMP, a plain map otherwise), so the serial branch is
-        // discarded before instantiation.
+        // The store (TChunk2CompMap, a per-thread vector of maps) stays empty
+        // in a serial build, which discards this body.
         if constexpr (build_config::use_openmp)
         {
             const auto nthr = static_cast<int>(map_chunk2_to_compress_potentially_thr.size());
@@ -1521,7 +1567,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
     }
 
-    static inline TChunk2CompMap<CHUNK_T, T>  map_chunk2_to_compress_potentially_thr;
+    /// @brief Chunk2's candidate lists: per rank, one list per second value.
+    static inline TChunk2CompMap<CHUNK_T, T> map_chunk2_to_compress_potentially_thr;
 
     /**
      * @brief Rank @p thr's candidate list for second value @p key, or null
@@ -1538,11 +1585,15 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         const auto it       = by_value.find(key);
         return it != by_value.end() ? it->second.get() : nullptr;
     }
-    static inline TChunk2CompThr<CHUNK_T, T>  chunk2_to_compress_potentially_thr;
+    /// @brief Chunk2: per rank, one list per second-value index, copied by
+    ///        ArrayChunk2 into map_chunk2_to_compress_potentially_thr when it
+    ///        registers a second value.
+    static inline TChunk2CompThr<CHUNK_T, T> chunk2_to_compress_potentially_thr;
+    /// @brief Chunk2A's per-rank candidate lists.
     static inline TChunk2ACompThr<CHUNK_T, T> chunk2A_to_compress_potentially_thr;
-
+    /// @brief Chunk's (v1) per-rank candidate lists.
     static inline TChunkCompThr<CHUNK_T, T> chunk_to_compress_potentially_thr;
-
+    /// @brief Chunk2A's single candidate list of a serial build.
     static inline TChunk2AComp<CHUNK_T, T> chunk2A_to_compress_potentially;
 };
 

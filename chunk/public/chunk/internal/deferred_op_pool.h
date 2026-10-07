@@ -1,5 +1,3 @@
-#pragma once
-
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -16,12 +14,14 @@
  * limitations under the License.
  */
 
+#pragma once
+
 #include <algorithm>  // std::max (slab sizing)
 #include <cassert>    // assert
 #include <cstddef>    // std::byte, std::size_t
 #include <cstdint>    // std::uintptr_t (the block probe)
 #include <cstdio>     // std::fprintf (diagnostics)
-#include <cstdlib>    // std::abort, std::getenv (CHUNK_RECYCLE_TRACE)
+#include <cstdlib>    // std::abort
 #include <memory>     // std::unique_ptr
 #include <utility>    // std::move
 #include <vector>     // std::vector
@@ -29,7 +29,7 @@
 #include <unistd.h>   // sysconf (same)
 
 #include "chunk/config.h"                   // build_config::use_fast_alloc, build_config::deferred_pool_granularity
-#include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB)
+#include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB), env_flag (CHUNK_RECYCLE_TRACE)
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED (the block probe)
 #include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
 #include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, EV_OP_ALLOC / EV_OP_FREE
@@ -89,7 +89,14 @@ namespace shrink_array
 ///        its pool by destroy().
 struct DeferredOperationBase
 {
+    DeferredOperationBase()                   = default;
     virtual ~DeferredOperationBase() noexcept = default;
+
+    // Polymorphic, and pool-owned through destroy(): never copied or moved.
+    DeferredOperationBase(const DeferredOperationBase&)            = delete;
+    DeferredOperationBase& operator=(const DeferredOperationBase&) = delete;
+    DeferredOperationBase(DeferredOperationBase&&)                 = delete;
+    DeferredOperationBase& operator=(DeferredOperationBase&&)      = delete;
 
     /// @brief Replay the write.
     virtual void write_body() = 0;
@@ -107,6 +114,7 @@ struct DeferredOpDeleter
     }
 };
 
+/// @brief Non-owning handle on a queued op (destroy() releases it, not the pointer).
 using DeferredOpPtr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
 
 // Everything below is the per-thread deferred-op / ctx pool machinery. Only the
@@ -122,7 +130,14 @@ using DeferredOpPtr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
 ///        object type, found by AllocatorRegistry).
 struct FastAllocatorBase
 {
+    FastAllocatorBase()          = default;
     virtual ~FastAllocatorBase() = default;
+
+    // Polymorphic, held by unique_ptr in the registry: never copied or moved.
+    FastAllocatorBase(const FastAllocatorBase&)            = delete;
+    FastAllocatorBase& operator=(const FastAllocatorBase&) = delete;
+    FastAllocatorBase(FastAllocatorBase&&)                 = delete;
+    FastAllocatorBase& operator=(FastAllocatorBase&&)      = delete;
 
     /// @brief Take a block (uninitialised).
     virtual void* allocate_raw() = 0;
@@ -159,8 +174,8 @@ struct FastAllocatorBase
 template <typename T>
 struct DeferredByteAllocSlot
 {
-    TCTypeAllocator<std::byte> alloc;
-    bool                       initialized = false;
+    TCTypeAllocator<std::byte> alloc;               ///< this thread's byte allocator for T
+    bool                       initialized = false; ///< alloc set up (allocator())
 };
 
 /**
@@ -205,7 +220,7 @@ struct DeferredFreeListSlot
         }
     }
 
-    std::vector<T*> fl;
+    std::vector<T*> fl; ///< recycled blocks, reused by allocate_raw()
 };
 
 /**
@@ -338,11 +353,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
                     // the output stays bounded (~log2(N) lines per thread) and a
                     // change of ORDER of magnitude is still obvious.
                     // CHUNK_RECYCLE_TRACE=1 restores one line per block.
-                    static const bool trace = []
-                    {
-                        const char* env = std::getenv("CHUNK_RECYCLE_TRACE");
-                        return env != nullptr && env[0] != '\0' && env[0] != '0';
-                    }();
+                    static const bool               trace     = env_flag("CHUNK_RECYCLE_TRACE");
                     static thread_local std::size_t n_foreign = 0;
                     ++n_foreign;
                     if (trace || (n_foreign & (n_foreign - 1)) == 0)
@@ -493,6 +504,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
 // Allocator Registry and Tags
 // ============================================================================
 
+/// @brief Registry tag of the deferred-op allocators (OpRegistry).
 struct OpTag
 {
 };
@@ -501,15 +513,17 @@ struct CtxTag
 {
 };
 
-// Map each registry tag to its arena so op and ctx pools allocate slabs from
-// disjoint address spaces.
+/// @brief The arena of a registry tag, so op and ctx pools allocate slabs
+///        from disjoint address spaces.
 template <typename Tag>
 struct arena_of_tag;
+/// @brief Op allocators: the Op arena.
 template <>
 struct arena_of_tag<OpTag>
 {
     static constexpr fast_alloc::ArenaKind value = fast_alloc::ArenaKind::Op;
 };
+/// @brief Context allocators: the Ctx arena.
 template <>
 struct arena_of_tag<CtxTag>
 {
@@ -561,16 +575,16 @@ class AllocatorRegistry
     }
 };
 
-using OpRegistry  = AllocatorRegistry<OpTag>;
-using CtxRegistry = AllocatorRegistry<CtxTag>;
+using OpRegistry  = AllocatorRegistry<OpTag>;  ///< the deferred-op allocators
+using CtxRegistry = AllocatorRegistry<CtxTag>; ///< the context allocators
 
 // ============================================================================
 // Allocation API
 // ============================================================================
 
-// Diagnostic mode (CHUNK_ALIGN_CHECK, CMake option): abort+print if a pooled block is misaligned
-// for the type about to be constructed on it. On aarch64 a misaligned atomic
-// access (LDAR/STLR/LDXR) faults — a candidate cause for the slab-only crash.
+/// @brief CHUNK_ALIGN_CHECK builds (CMake option): print and abort if pooled
+///        block @p mem is misaligned for the T about to be constructed on it.
+/// @details On aarch64 a misaligned atomic access (LDAR/STLR/LDXR) faults.
 template <typename T>
 void chunk_align_probe([[maybe_unused]] const char* site, [[maybe_unused]] void* mem) noexcept
 {
@@ -597,8 +611,7 @@ template <typename T, typename... Args>
     void*              mem   = alloc->allocate_raw();
     assert(mem && "OpRegistry allocator returned null");
     chunk_align_probe<T>("op", mem);
-    // ASan: unpoison this op block (poisoned at the previous free_op), BEFORE
-    // construct_at.
+    // Check builds: the block must not be live as a ctx or an op already.
     pool_ledger::on_op_alloc(mem, sizeof(T), alloc->slab_addr());
     T* constructed = std::construct_at(static_cast<T*>(mem), std::forward<Args>(args)...);
     // Debug ring log AFTER construct_at, so OP_ALLOC marks a fully-built op
@@ -628,6 +641,9 @@ template <typename T, typename... Args>
 // Deallocation API
 // ============================================================================
 
+/// @brief Record the release in the pool ledger and recycle @p op into its
+///        OpRegistry allocator.
+/// @param op Operation block to recycle; not destroyed here.
 template <typename T>
 void free_op(T* op)
 {
@@ -640,9 +656,6 @@ void free_op(T* op)
     pool_ledger::on_op_free(static_cast<void*>(op));
     FastAllocatorBase* alloc = OpRegistry::get_or_create<T>();
     alloc->recycle(static_cast<void*>(op));
-    // ASan: poison the freed op block. Any read/write of it before the next
-    // pool_new_op unpoisons it is reported AT THE ACCESS, with the culprit's
-    // stack -- which plain ASan cannot see inside a mmap-managed pool.
 }
 
 /// @brief Record the release in the pool ledger and recycle @p context into its CtxRegistry allocator.

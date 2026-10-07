@@ -16,19 +16,17 @@
 
 #pragma once
 
-// Central type list used by the example / benchmark executables when
-// initializing the shrink_array library:
+// A sample type list for ParamChunk::init_indexes<Types>(), which registers
+// the managers of those element types up front:
 //
 //     shrink_array::ParamChunk::init_indexes<MyChunkTypes>(true);
 //
-// The library itself carries no hard-coded list of "supported" T;
-// each consumer is responsible for declaring the types it uses. Grouping the
-// list here avoids duplicating (and forgetting to keep in sync) the tuple in
-// every example .cpp. Individual examples that only need a subset are
-// encouraged to declare their own tuple locally rather than pulling this one.
+// Nothing includes it: the arrays register their element types themselves,
+// and the examples call init_indexes(bool).
 
 #include <complex> // std::complex
 #include <tuple>   // std::tuple (MyChunkTypes)
 
+/// @brief A sample element-type list for ParamChunk::init_indexes<Types>().
 using MyChunkTypes =
     std::tuple<int, double, bool, short, unsigned long, long, std::complex<double>, float, unsigned char>;

@@ -1,11 +1,3 @@
-
-#pragma once
-
-#include <utility> // std::forward
-
-#include "chunk/internal/proxy2_base.h" // the declarations these bodies belong to
-#include "chunk/internal/in_t.h"        // in_t<T>
-
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -21,6 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#pragma once
+
+#include <utility> // std::forward
+
+#include "chunk/internal/proxy2_base.h" // the declarations these bodies belong to
+#include "chunk/internal/in_t.h"        // in_t<T>
+
 namespace shrink_array
 {
 

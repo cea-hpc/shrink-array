@@ -60,6 +60,7 @@ The source checks run with the others (`ctest -R check_`):
 | test | rule |
 |---|---|
 | `check_includes` | every `#include` says why it is there; system and project headers are not mixed in one block |
+| `check_headers` | every C++ file opens with the Apache license header (years up to date) and carries no IDE `Created by` stamp; scripts and build files (`.py`, `.sh`, `.cmake`, `CMakeLists.txt`) carry `# Copyright ... CEA` and `# SPDX-License-Identifier: Apache-2.0`; the vendored headers, their upstream SPDX line; `scripts/check_headers.py --fix` repairs |
 | `check_raw_reads` | every raw read of a chunk buffer in the library says why it is safe |
 | `check_docs` | links, code names cited in the documents, English/French pairs, no history markers in comments, the files cited in comments exist |
 

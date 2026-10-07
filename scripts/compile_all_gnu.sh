@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright 2025-2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 
 # NOTE: CMAKE_BUILD_PARALLEL_LEVEL is no longer hard-coded here. It is derived
 # in functions_for_compile.sh from the core count divided by CHUNK_MAX_JOBS,
@@ -334,11 +336,17 @@ compile_with_cmake "$build_rep/cmake-build-gnu-std-alloc-debug${ICF_SUFFIX}/$arc
   "-DCHUNK_STD_ALLOC:BOOL=ON -DOMP:BOOL=OFF -DCMAKE_BUILD_TYPE=Debug $ARCH_FLAGS $ICF_CMAKE_OPT" \
   "gnu debug std allocator (no openmp)"
 
-# Wait for every gnu build and print the summary as they finish.
-# Mandatory: when launched from compile_all.sh, this script would otherwise
-# return with its ninjas orphaned, out of reach of the parent's wait.
-echo -e '\n─── Waiting for gnu builds ───\n'
-wait_all
+# Run alone: wait for every gnu build and print the summary as they finish.
+# Under compile_all.sh (CHUNK_HANDOFF_FILE): hand the builds still running over
+# to it instead (handoff_jobs) -- waiting here kept compile_all.sh from starting
+# any other family while the last, longest gnu build finished.
+if [ -n "${CHUNK_HANDOFF_FILE:-}" ] && [ "$DRYRUN" != true ]; then
+    echo -e '\n─── Handing the gnu builds still running over to compile_all.sh ───\n'
+    handoff_jobs
+else
+    echo -e '\n─── Waiting for gnu builds ───\n'
+    wait_all
+fi
 rc=$?
 # Standalone run: a --target / --exec that let nothing through is an error
 # (under compile_all.sh the parent gives that verdict for both scripts).
@@ -346,7 +354,9 @@ if ! check_arg_epilogue; then
     echo -e "\ncompile_all_gnu: nothing built\n"
     exit 1
 fi
-if [ "$rc" -eq 0 ]; then
+if [ -s "${CHUNK_HANDOFF_FILE:-/nonexistent}" ]; then
+    echo -e "\ncompile_all_gnu: $(wc -l < "$CHUNK_HANDOFF_FILE") build(s) still running, handed over to compile_all.sh; $rc failed so far\n"
+elif [ "$rc" -eq 0 ]; then
     echo -e "\ncompile_all_gnu: all builds OK\n"
 else
     echo -e "\ncompile_all_gnu: $rc failed build(s) (logs: $LOG_DIR)\n"

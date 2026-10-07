@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Phase 4: scalability guard (omp-llvm, omp-gnu)."""
 import sys
 
@@ -8,8 +10,8 @@ from ..progress import CONFIG_W, VARIANT_W
 from ..runs import _append_error_now, effective_timeout, run_cmd
 from ..settings import (
     SCALING_CONFIGS, SCALING_FALLBACK_DIVISOR, SCALING_FALLBACK_ITER_MAX, SCALING_ITER_MAX,
-    SCALING_MAX_SLOWDOWN, SCALING_MULTIPLY, SCALING_REFERENCE_VARIANT, SCALING_THREADS,
-    SCALING_TIMEOUT,
+    SCALING_MAX_SLOWDOWN, SCALING_MULTIPLY, SCALING_NUMA_INTERLEAVE, SCALING_REFERENCE_VARIANT,
+    SCALING_THREADS, SCALING_TIMEOUT,
 )
 from ..term import _hms, bold, cyan, dim, green, red, yellow
 
@@ -49,7 +51,9 @@ def run_scaling_phase(args, extra_ldpath, errors):
     --iter_max 200 (SCALING_FALLBACK_*). The thread counts
     the machine cannot honour (more than CHUNK_PMP_MAX_THREADS / the CPUs
     present) are dropped with a note rather than measured against an
-    oversubscribed run.
+    oversubscribed run. The runs never go through numactl --interleave
+    (SCALING_NUMA_INTERLEAVE): the guard measures the library, not a memory
+    placement imposed from outside.
     """
     print(cyan(bold("\n📈 Scalability guard — "
                     + ", ".join(short_config_label(c) for c in SCALING_CONFIGS))))
@@ -133,7 +137,7 @@ def run_scaling_phase(args, extra_ldpath, errors):
                     [exe] + bench_args, {"OMP_NUM_THREADS": str(tc)},
                     (max(SCALING_TIMEOUT, effective_timeout(args.timeout, args.timeout_per_thread, tc))
                      if is_int64 else effective_timeout(args.timeout, args.timeout_per_thread, tc)),
-                    extra_ld_library_path=extra_ldpath, cwd=rdir)
+                    extra_ld_library_path=extra_ldpath, cwd=rdir, numa_mode=SCALING_NUMA_INTERLEAVE)
 
                 if not ok:
                     sys.stdout.write("\r" + lead + red("FAIL") + f" (code {code})\n")

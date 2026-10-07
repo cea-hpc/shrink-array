@@ -14,9 +14,6 @@
  * limitations under the License.
  */
 
-//
-// Created by ballereaup on 03/04/24.
-//
 #pragma once
 
 #include <algorithm>   // std::fill_n

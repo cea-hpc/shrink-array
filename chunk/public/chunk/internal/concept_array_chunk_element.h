@@ -1,11 +1,5 @@
-//
-// Created by ballereaup on 26/09/2025.
-//
-
-#pragma once
-
 /*
- * Copyright 2024-2025 CEA (www.cea.fr)
+ * Copyright 2024-2026 CEA (www.cea.fr)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#pragma once
 
 #include <concepts>    // std::equality_comparable
 #include <type_traits> // std::is_trivially_copyable_v, std::is_default_constructible_v

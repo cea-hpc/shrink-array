@@ -1,3 +1,11 @@
+// SPDX-License-Identifier: BSL-1.0
+// shrink-array vendored copy -- not the pristine upstream file.
+//   upstream: https://github.com/skarupke/flat_hash_map (unmaintained)
+//   version : master, commit 2c4687431f978f02a3780e24b8b701d22aa32d9c
+//             (2018-07-15, the last upstream commit)
+//   changes : 1 local patch, marked "Local patch (shrink-array)"
+//   license : Boost Software License 1.0 (third_party/licenses/flat_hash_map-BSL-1.0.txt)
+// See third_party/README.md in the shrink-array repository.
 //          Copyright Malte Skarupke 2017.
 // Distributed under the Boost Software License, Version 1.0.
 //    (See http://www.boost.org/LICENSE_1_0.txt)
@@ -495,7 +503,8 @@ public:
             return std::addressof(current->value);
         }
 
-// clang 22 emits -Wclass-conversion at the *definition* of this templated
+// Local patch (shrink-array): clang 22 emits -Wclass-conversion at the
+// *definition* of this templated
 // conversion operator (self-conversion when ValueType is const), before SFINAE
 // is even evaluated — so the enable_if below is not enough on its own. Silence
 // the cosmetic warning locally for clang (the conversion is never invoked: the

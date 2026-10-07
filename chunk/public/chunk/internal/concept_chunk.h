@@ -1,8 +1,3 @@
-
-#pragma once
-
-#include <type_traits> // std::is_same_v
-
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -19,6 +14,9 @@
  * limitations under the License.
  */
 
+#pragma once
+
+#include <type_traits> // std::is_same_v
 
 namespace shrink_array
 {
@@ -32,21 +30,23 @@ class Chunk2;
 template <typename T>
 class Chunk2A;
 
+/// @brief CHUNK_T<T> is Chunk<T>.
 template <template <typename> typename CHUNK_T, typename T>
 concept IsChunk = std::is_same_v<CHUNK_T<T>, Chunk<T>>;
 
+/// @brief CHUNK_T<T> is Chunk2A<T>.
 template <template <typename> typename CHUNK_T, typename T>
 concept IsChunk2A = std::is_same_v<CHUNK_T<T>, Chunk2A<T>>;
 
+/// @brief CHUNK_T<T> is Chunk2<T>.
 template <template <typename> typename CHUNK_T, typename T>
 concept IsChunk2 = std::is_same_v<CHUNK_T<T>, Chunk2<T>>;
 
-template <template <typename> typename CHUNK_T, typename T>
-concept IsChunkOrChunk2 = IsChunk<CHUNK_T, T> || IsChunk2<CHUNK_T, T>;
-
+/// @brief CHUNK_T<T> is Chunk2<T> or Chunk2A<T>.
 template <template <typename> typename CHUNK_T, typename T>
 concept IsChunk2Or2A = IsChunk2<CHUNK_T, T> || IsChunk2A<CHUNK_T, T>;
 
+/// @brief The chunk template of a chunk type (specialised below).
 template <typename>
 struct chunk_template_of;
 

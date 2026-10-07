@@ -29,15 +29,15 @@
 namespace shrink_array
 {
 
+/// @brief Iteration over the types of @p Tuple; only std::tuple is supported.
 template <typename Tuple>
-class for_each_type_impl;
+struct for_each_type_impl;
 
 /// @brief Specialisation for std::tuple<Ts...>: iterates over Ts.
 template <typename... Ts>
-class for_each_type_impl<std::tuple<Ts...>>
+struct for_each_type_impl<std::tuple<Ts...>>
 {
-  private:
-    /// @brief Call `f.template operator()<T>()` for each T of the tuple, in order.
+    /// @brief Call `fn.template operator()<T>()` for each T of the tuple, in order.
     template <typename F>
     static void apply(F&& fn)
     {

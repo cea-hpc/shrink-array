@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Run-wide mutable state: set once by cli.main(), read by the run helpers."""
 import os
 import sys

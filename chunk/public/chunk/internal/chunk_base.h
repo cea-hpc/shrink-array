@@ -1,4 +1,3 @@
-#pragma once
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -14,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#pragma once
 #include <vector>      // std::vector
 #include <unistd.h>    // sysconf(_SC_PAGESIZE)
 #include <algorithm>   // std::min, the constant scans
@@ -45,7 +46,7 @@
 #include "chunk/ring_log_debug.h"                       // EV_VALUE_ALLOC/FREE (debug ring log)
 #include "chunk/internal/global_check.h"                // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
 #include "chunk/internal/invariant_check.h"             // INVARIANT_FAILED
-#include "chunk/internal/deferred_op_pool.h"            // DeferredOperationBase, DeferredOpDeleter
+#include "chunk/internal/deferred_op_pool.h"            // DeferredOpPtr
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_* block-lifecycle checks (check builds)
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_* / add_chunk_* (CHUNK_STATS)
 #include "chunk/internal/bad_ptr_check.h"               // CHUNK_CHECK_VALUES_PTR (check builds)
@@ -65,8 +66,16 @@ template <typename T>
 class TCTypeAllocator;
 #endif
 
-#include "flat_hash_map.hpp"        // ska::flat_hash_map
-#include "ankerl/unordered_dense.h" // ankerl::unordered_dense::map
+#include "chunk/vendor/flat_hash_map.hpp"        // ska::flat_hash_map
+#include "chunk/vendor/ankerl/unordered_dense.h" // ankerl::unordered_dense::map
+
+// The vendored unordered_dense.h keeps upstream's include guard: in a
+// translation unit that includes a user's own copy first, that copy is the
+// one compiled here. Any 5.x has what chunk uses; another major is refused
+// here, by name, rather than deep inside a template.
+static_assert(ANKERL_UNORDERED_DENSE_VERSION_MAJOR == 5,
+              "chunk needs ankerl::unordered_dense 5.x: another major version of "
+              "ankerl/unordered_dense.h was included before chunk's headers");
 
 // deferred_ops_storage.h has no internal dependency on _OPENMP (just
 // <memory>/<mutex>/<atomic>/PMP_CHUNK.h), so it is always included: nothing
@@ -628,11 +637,11 @@ struct ChunkAllocPolicy<T, Derived, false>
 // four separate ones, because they are tightly coupled (per_thread_map is
 // used unqualified across all of them, and to_be_queued_for_deferred_
 // processing/wait_for_availability/is_not_available are declared here with
-// their bodies out-of-line in chunk_base_inline.h, exactly as before).
+// their bodies out-of-line in chunk_base_inline.h).
 // Every name they use (DeferredOpsStorage, WriteCompressSyncPolicy,
 // DeferredOpPtr, CompressionManager<T,Derived>) is unconditionally declared
-// elsewhere, and the false specialization below is simply never instantiated
-// in a serial build.
+// elsewhere, and the true specialization is simply never instantiated in a
+// serial build.
 // Storage note: `values` (ChunkBase's own atomic pointer) and `pending_ops_`
 // stay declared on ChunkBase itself for object-layout stability (same
 // principle as DeferredReadGate above); this policy only owns the access,
@@ -648,14 +657,9 @@ template <typename T, typename Derived>
 class ChunkDeferredOpsPolicy<T, Derived, true>
 {
   public:
-    using defer_op_ptr = std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>;
-
-    using unordered_map_deferred_operations =
-        ankerl::unordered_dense::map<int, std::unique_ptr<DeferredOperationBase, DeferredOpDeleter>>;
+    using unordered_map_deferred_operations = ankerl::unordered_dense::map<int, DeferredOpPtr>;
     // per-thread map type: maps Derived* (chunk pointer) -> unique_ptr<map<num, op>>
     using per_thread_map = ska::flat_hash_map<Derived*, std::unique_ptr<unordered_map_deferred_operations>>;
-    // Global static storage (one per CompressionManager instantiation).
-    using global_map_type = ankerl::unordered_dense::map<int, per_thread_map>;
 
     /// @brief Atomic CAS of values from expected constant pointer to a new buffer.
     /// @param values_loc  New buffer to install on success.
@@ -760,16 +764,6 @@ class ChunkDeferredOpsPolicy<T, Derived, true>
         }
         DeferredOpsStorage<per_thread_map>::instance().allocate();
     }
-
-    // ── Compare and Swap ────────────────────────────────────────────────────
-    /// @brief Type-tag helper: yields per_thread_map's type without needing
-    ///        an instance. Always returns nullptr; only the pointer's static
-    ///        type is ever used by callers.
-    /// @return nullptr, typed as per_thread_map*.
-    static per_thread_map* per_thread_map_type_id()
-    {
-        return nullptr;
-    }
 };
 
 // Serial: none of the above exists -- no deferred writes, no CAS
@@ -801,7 +795,7 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
     /// @param size Chunk element count this allocator serves.
     /// @param max_thr Number of per-thread allocator slots to create.
     /// @param block_size Per-thread slab byte budget (mirrored from
-    ///                   init_allocator_thr).
+    ///                   init_allocators()).
     /// @param key Affinity key (0 = shared rank pool). See pool_key().
     static void register_chunk_size(unsigned int size, int max_thr, int block_size, unsigned int key = 0)
     {
@@ -824,11 +818,11 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
     }
 
     /// @brief Register (create + init) the single allocator for `size`, once.
-    /// @details Mirrors the serial init_allocator convention:
-    ///          init(element_count, block_size, -1), where the first arg is
-    ///          the chunk's element count (= size in a dynamic build, cf.
-    ///          alloc_chunk_count()) and -1 = never munmap a value slab
-    ///          (as init_allocator/init_allocator_thr).
+    /// @details Mirrors the serial init_allocator() convention:
+    ///          init(storage_units(size), block_size, -1), where size is the
+    ///          chunk's element count (alloc_chunk_count() in a dynamic build)
+    ///          and -1 = never munmap a value slab (as init_allocator() /
+    ///          init_allocators()).
     /// @param size Chunk element count this allocator serves.
     /// @param block_size Slab byte budget.
     static void register_chunk_size_serial(unsigned int size, int block_size)
@@ -1823,9 +1817,10 @@ class ChunkBase : public DeferredReadGate<Derived>,
      * @note NOT used by print_adr() or operator()(int): those hand out an
      *       address and a mutable reference into the buffer, which a registry
      *       lookup cannot stand in for.
+     *
+     * @tparam Relaxed read the element through a relaxed atomic_ref: for an
+     *         element another thread may be writing (relaxed_element.h).
      */
-    /// @tparam Relaxed read the element through a relaxed atomic_ref: for an
-    ///         element another thread may be writing (relaxed_element.h).
     template <bool Relaxed = false>
     [[nodiscard]] T element_at(this const Derived& self, int i) noexcept
     {

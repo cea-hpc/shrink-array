@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 #pragma once
 
 /**
@@ -50,11 +51,11 @@
 namespace shrink_array::bits
 {
 
-using word_t = std::uint64_t;
+using word_t = std::uint64_t; ///< the storage word
 
-inline constexpr std::size_t word_bits  = 64;
-inline constexpr word_t      word_ones  = ~word_t{0};
-inline constexpr std::size_t word_bytes = sizeof(word_t);
+inline constexpr std::size_t word_bits  = 64;             ///< bits per word
+inline constexpr word_t      word_ones  = ~word_t{0};     ///< a word of 1 bits
+inline constexpr std::size_t word_bytes = sizeof(word_t); ///< bytes per word
 
 /// @brief Words holding @p n bits.
 [[nodiscard]] constexpr std::size_t words_for(std::size_t n) noexcept

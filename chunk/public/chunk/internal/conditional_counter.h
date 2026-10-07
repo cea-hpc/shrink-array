@@ -1,7 +1,3 @@
-//
-// Created by ballereaup on 28/04/2026.
-//
-
 /*
  * Copyright 2026 CEA (www.cea.fr)
  *
@@ -29,15 +25,16 @@
 namespace shrink_array
 {
 
-// Backing type for the per-chunk counters (nb_val_eq_zero, nb_val_eq_*_value).
-// These count cells within a chunk, so they must be able to represent values
-// up to __chunk_size (a full chunk of zeros has nb_val_eq_zero == __chunk_size,
-// tested by is_full_zero()). This was a raw `unsigned char`, which overflows
-// for __chunk_size > 255: at CHUNK_SIZE=512 the count wrapped, is_full_zero()
-// could never become true, cells were left unmaterialised and read back as
-// garbage (subnormal doubles) — a sequential (single-thread, non-OpenMP)
-// correctness bug that appeared past 255. `unsigned short` (up to 65535) covers
-// every realistic chunk size while staying compact (2 bytes).
+/// @brief Backing type for the per-chunk counters (nb_val_eq_zero,
+///        nb_val_eq_*_value).
+/// @details These count cells within a chunk, so they must be able to represent values
+///          up to __chunk_size (a full chunk of zeros has nb_val_eq_zero == __chunk_size,
+///          tested by is_full_zero()). This was a raw `unsigned char`, which overflows
+///          for __chunk_size > 255: at CHUNK_SIZE=512 the count wrapped, is_full_zero()
+///          could never become true, cells were left unmaterialised and read back as
+///          garbage (subnormal doubles) — a sequential (single-thread, non-OpenMP)
+///          correctness bug that appeared past 255. `unsigned short` (up to 65535) covers
+///          every realistic chunk size while staying compact (2 bytes).
 using counter_value_t = unsigned short;
 
 static_assert(__chunk_size <= USHRT_MAX,
@@ -90,11 +87,10 @@ class ConditionalCounter
             return 0;
         }
     }
+    /// @}
 
   private:
     [[no_unique_address]] std::conditional_t<Enabled, counter_value_t, std::monostate> value{};
-
-    /// @}
 };
 
 } // namespace shrink_array

@@ -1,8 +1,3 @@
-//
-// Created by ballereaup on 13/10/2025.
-//
-#pragma once
-
 /*
  * Copyright 2025-2026 CEA (www.cea.fr)
  *
@@ -18,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#pragma once
 
 #include <cstdint> // uint8_t (EventCode underlying type)
 #include <cstdio>  // std::fprintf/std::snprintf — used HERE, not via includers

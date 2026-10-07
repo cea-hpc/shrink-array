@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 #pragma once
 
 /**
@@ -42,11 +43,13 @@ namespace shrink_array
 
 namespace internal
 {
+/// @brief A packed buffer seen as its words.
 template <typename T>
 [[nodiscard]] inline const bits::word_t* as_words(const T* v) noexcept
 {
     return reinterpret_cast<const bits::word_t*>(v);
 }
+/// @copydoc as_words(const T*)
 template <typename T>
 [[nodiscard]] inline bits::word_t* as_words(T* v) noexcept
 {

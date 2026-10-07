@@ -75,7 +75,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
 
     /**
      * @brief Initialize second_value and index without full metadata load
-     * @details Lighter-weight alternative to set_info_chunk() when tab/chunk info
+     * @details Lighter-weight alternative to set_info_on_chunk() when tab/chunk info
      *          is not immediately needed.
      * @post second_value and ind are valid; num_tab unchanged
      */
@@ -124,7 +124,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
 
     /// @brief Arm this proxy with the owning array's registry mirror
     ///        (ArrayChunk2::registry_mirror()).
-    /// @details Called by ArrayChunkBase::operator[] / set_value. A proxy that
+    /// @details Called by ArrayChunkBase::operator[]. A proxy that
     ///          is NOT armed -- a deferred-replay reconstruction, a *_from_key
     ///          path -- keeps resolving the tuple through share_info_array.
     /// @note Without it, every write scans the registry (deque::size(), then
@@ -202,7 +202,7 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
 
     /// @brief Arm this proxy with the owning array's registry mirror
     ///        (ArrayChunk2::registry_mirror()).
-    /// @details Called by ArrayChunkBase::operator[] / set_value. A proxy that
+    /// @details Called by ArrayChunkBase::operator[]. A proxy that
     ///          is NOT armed -- a deferred-replay reconstruction, a *_from_key
     ///          path -- keeps resolving the tuple through share_info_array.
     /// @note Without it, every write scans the registry (deque::size(), then
@@ -314,10 +314,10 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @brief Check if compression should be triggered for current thread
      * @details Examines compression list size and activates slow-path if threshold exceeded.
      *          Activates slow-path mode to prevent concurrent fast-path access during compression.
+     * @param thr_rank Calling thread's rank (whose list is examined).
      * @post May activate slow-path mode if compression is needed
      * @note Thread safety: Sets atomic slow-path flag visible to all threads
      */
-
     void trigger_compression_if_needed(this Derived& self, int thr_rank) noexcept;
 
     /**
@@ -895,31 +895,6 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     void apply_compound_operation(Op      op,
                                   in_t<U> v,
                                   bool    check_first_value_result = false) noexcept; // in_t: see assign_impl
-
-    /**
-     * @brief UNSAFE: a raw `T&` into this element's chunk buffer, for callers
-     *        that must bind a real reference (e.g. passing `a[i]` to a
-     *        function taking `T&`). Materialises the chunk first if it is
-     *        compressed.
-     * @warning A write through the returned reference bypasses the proxy:
-     *          the chunk is not marked as a compression candidate, deferred
-     *          ops are not replayed first, and nothing orders it against
-     *          other threads. The reference dangles as soon as the chunk is
-     *          recompressed or freed. Prefer the proxy's own operators.
-     * @note Materialises through the no-arg create_value(), gated on
-     *       Base2::is_cst_val(), for bool and non-bool alike.
-     * @return Reference to this element's live value.
-     */
-    [[nodiscard]] T& unsafe_ref() noexcept
-    {
-        static_assert(!is_packed_bit_v<T>, "unsafe_ref returns T&: a Bit has no address (bit.h)");
-        if (Base2::is_cst_val())
-        {
-            create_value();
-        }
-        // raw-read: hands out an address / reference -- materialised first, the caller keeps it valid
-        return values[num];
-    }
 
   public:
     /**

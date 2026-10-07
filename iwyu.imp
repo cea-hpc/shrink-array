@@ -39,7 +39,8 @@
 
   # --- Third-party ankerl (unordered_dense): internal headers -> the public one
   # (LAST entry — no trailing comma before the closing ].)
-  { include: ["@<ankerl/.*>", "private", "<ankerl/unordered_dense.h>", "public"] }
+  # (vendored: third_party/chunk/vendor/, included as "chunk/vendor/...")
+  { include: ["@[\"<]chunk/vendor/ankerl/.*[\">]", "private", "\"chunk/vendor/ankerl/unordered_dense.h\"", "public"] }
 
   # --- Common STL mappings --------------------------------------------------
   # IWYU ships built-in STL mappings, so no external stl.c++.imp ref is required.

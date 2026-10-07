@@ -59,7 +59,6 @@ bool need_load_balance_list_block_free_thr()
 
     for (int thr_rank = 0; thr_rank < max_thr; ++thr_rank)
     {
-        // const auto& lbf = Chunk<T>::manager_chunk::get_list_block_free_thr(thr_rank);
         const int sz = Chunk<T>::manager_chunk::get_list_block_free_thr_size(thr_rank);
         if (sz < 0.9 * lg || sz > 1.1 * lg)
         {

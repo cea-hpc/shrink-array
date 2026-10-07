@@ -1,4 +1,3 @@
-#pragma once
 /*
  * Copyright 2024-2026 CEA (www.cea.fr)
  *
@@ -14,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
+#pragma once
 
 // ============================================================================
 // CHECK-BUILD INSTRUMENTATION — block-lifecycle ledger (grep tag: POOL_LEDGER).
@@ -50,15 +51,16 @@
 #include "chunk/debug.h"                    // print_backtrace
 #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
 
-#include "ankerl/unordered_dense.h" // the live maps
+#include "chunk/vendor/ankerl/unordered_dense.h" // the live maps
 
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_IN_PARALLEL_REGION / _THREAD_RANK, and <omp.h> with it
 
 namespace shrink_array::pool_ledger
 {
 
-// One record per live block: its size and the rank that allocated it, for
-// richer diagnostics when an invariant trips.
+/// @brief One record per live ctx / op block: its size, the rank that
+///        allocated it and the pool that served it, for the diagnostics when
+///        an invariant trips.
 struct Rec
 {
     std::size_t size;
@@ -85,7 +87,7 @@ inline ankerl::unordered_dense::map<void*, Rec>& op_live()
     return live;
 }
 
-// Standalone rank probe — no PMP_CHUNK dependency to keep include order clean.
+/// @brief The calling thread's rank, or -1 outside a parallel region.
 inline int current_rank() noexcept
 {
     // No directive: this is not a template, so an `if constexpr` branch is
@@ -246,11 +248,13 @@ inline void on_op_free(void* ptr) noexcept
 //
 // Illegal (each trips the assert, naming previous state + previous rank):
 //   double-park  (park a PARKED block)     → two chunks think they own it
-//   double-free  (release a FREE block)    → the classic UAF/double-free
 //   pop LIVE     (hand a LIVE block twice) → the "init_block <-> free" TSan pair
-//   park/pop/release of an UNTRACKED block → foreign or already-recycled ptr
+//   park/pop/discard of an UNTRACKED block → foreign or already-recycled ptr
+// A released block leaves the table (malloc may hand its address out again),
+// so a second release of it is not seen here: glibc / ASan report that one.
 // ============================================================================
 
+/// @brief A value block's state in the block ledger.
 enum class BState : std::uint8_t
 {
     FREE   = 0,
@@ -289,7 +293,7 @@ inline ankerl::unordered_dense::map<const void*, BRec>& block_live()
     return live;
 }
 
-// ── End-of-run report (diagnostic) ───────────────────────────────────────────
+/// @brief End-of-run report: every block still in the ledger, by (state, last site).
 // Lists every block still recorded in block_live(), grouped by (state, last
 // site). Enabled only when the ledger is on AND CHUNK_LEDGER_REPORT is set in
 // the environment, so it costs nothing otherwise. It separates the causes a
@@ -365,7 +369,8 @@ inline void report_live_blocks() noexcept
     }
 }
 
-// Registered once, on the first block the ledger sees.
+/// @brief Register report_live_blocks() at exit (CHUNK_LEDGER_REPORT), once,
+///        on the first block the ledger sees.
 //
 // ORDER MATTERS: block_live() is a function-local static, destroyed at exit in
 // the REVERSE order of construction relative to std::atexit registrations. The
@@ -392,9 +397,12 @@ inline void maybe_register_live_report() noexcept
 }
 
 
-// Core transition. `allow_unknown` is true only for b_alloc: a never-seen
-// pointer is implicitly FREE and becomes LIVE. For pop/park/release, an unknown
-// pointer is itself a bug (we lost track of its birth, or it is foreign).
+/// @brief Core transition of the block ledger: @p block must be in state
+///        @p expected and moves to @p next (FREE: leaves the table).
+// `allow_unknown` is true for b_alloc -- a never-seen pointer is implicitly
+// FREE and becomes LIVE -- and for b_release (see on_block_release). For
+// pop/park/discard, an unknown pointer is itself a bug (we lost track of its
+// birth, or it is foreign).
 inline void block_transition(const void* block,
                              BState      expected,
                              BState      next,
@@ -511,13 +519,15 @@ inline void on_block_park(const void* block, const char* site) noexcept
 inline void on_block_release(const void* block, const char* site) noexcept
 {
     // allow_unknown=true: a release of a never-tracked address is non-fatal here
-    // (foreign/reused block), letting the real svfree proceed so an ASan build
-    // still reports the double-free with both stacks. A release of a *tracked*
-    // block in the wrong state (e.g. already FREE) still trips the ILLEGAL branch
-    // with the first release site, thanks to the FREE tombstone above.
+    // (foreign/reused block, or a second release: the first one removed the
+    // entry), letting the real svfree proceed so an ASan build still reports
+    // the double-free with both stacks. A release of a tracked PARKED block
+    // still trips the ILLEGAL branch, with the site of its last transition.
     block_transition(block, BState::LIVE, BState::FREE, site, "b_release", /*allow_unknown=*/true);
 }
-// Discard a PARKED block (in a reuse free-list) straight back to the system.
+/// @brief Record a parked block freed straight from its reuse list (PARKED -> FREE).
+/// @param block Block address.
+/// @param site Label of the calling site.
 // Used when draining a reuse-list whose buffers are being svfree'd: they are
 // PARKED (not LIVE), so a plain release would be an illegal transition.
 inline void on_block_discard(const void* block, const char* site) noexcept
@@ -530,15 +540,14 @@ inline void on_block_discard(const void* block, const char* site) noexcept
 // ── Call-site macros for the BLOCK ledger ────────────────────────────────────
 // Defined unconditionally; the underlying hooks compile to nothing when
 // build_config::any_check is false (same policy as the ctx/op ledger above).
-// Grep tag: CHUNK_LEDGER_ / POOL_LEDGER to remove all scaffolding when settled.
 // CHUNK_NO_LEDGER: hard off-switch for the block ledger, independent of
 // build_config::any_check. Each hook takes a global std::mutex + a global
 // map lookup, so under any_check at high thread counts the single lock
 // serialises every thread and dominates debug run time. Define CHUNK_NO_LEDGER
 // (e.g. -DCHUNK_NO_LEDGER) to compile the hooks to nothing for a fast debug
-// build while keeping every other any_check invariant/assert active. The block
-// ledger is not the detector for the current double-free (glibc catches that),
-// so turning it off loses no coverage for it.
+// build while keeping every other any_check invariant/assert active. A double
+// free is caught by glibc / ASan rather than by this ledger (see the table
+// above), so turning it off loses no coverage for it.
 #ifdef CHUNK_NO_LEDGER
     #define CHUNK_LEDGER_ALLOC(p, site) ((void)0)
     #define CHUNK_LEDGER_POP(p, site) ((void)0)

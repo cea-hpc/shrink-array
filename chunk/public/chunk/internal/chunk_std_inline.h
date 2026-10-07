@@ -30,11 +30,12 @@
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)
-#include "chunk/internal/manager_chunk.h"       // manager_chunk:: candidate lists
+#include "chunk/internal/manager_chunk.h"       // manager_chunk:: candidate lists (dependent calls)
 #include "chunk/internal/proxy.h"               // Proxy<T>: the compression pass's proxy
 #include "chunk/PMP_CHUNK.h"                    // CHUNK_PMP_*
 #include "chunk/internal/pool_ledger.h"         // CHUNK_LEDGER_*
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
+#include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
 
 namespace shrink_array
 {
@@ -227,7 +228,7 @@ bool ChunkFastCompPolicy<T, Derived, Enabled>::have_chunk_to_compress(int max_th
 }
 
 /**
- * @brief Zero-fill an about-to-be-published v1 buffer, mirroring alloc_values(true).
+ * @brief Zero-fill a freshly allocated v1 buffer before it is published (create_value's fresh-block initialiser).
  * @param vals buffer of shrink_array::alloc_chunk_count() elements
  * @details svcalloc_align already returns zeroed memory, so the fill is only
  *          needed for the pooled allocator, whose blocks carry whatever the
