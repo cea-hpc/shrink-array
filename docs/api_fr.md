@@ -8,7 +8,7 @@
 
 ***
 
-Tous les noms sont dans l'espace de noms `shrink_array`, sauf `build_config` et `chunk_config` (globaux).
+Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chunk_config` compris ; ceux de la bibliothèque d'allocation sont dans `fast_alloc`. Les macros commencent par CHUNK (CHUNK_, CHUNK2A_) ou FAST_ALLOC_.
 
 ## 1. Démarrer et arrêter la bibliothèque
 

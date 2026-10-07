@@ -25,6 +25,9 @@
     #include <cstdlib>  // std::abort
     #include <iostream> // std::cerr
 
+namespace shrink_array
+{
+
 /// @brief Report element @p i as NaN on std::cerr and abort.
 /// @param i Index of the element.
 inline void global_check_nan(long i) noexcept
@@ -71,5 +74,7 @@ template <typename T>
 void global_check_nan([[maybe_unused]] const T& val, [[maybe_unused]] long i) noexcept
 {
 }
+
+} // namespace shrink_array
 
 #endif

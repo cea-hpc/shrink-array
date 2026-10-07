@@ -115,14 +115,14 @@ installation comme dans l'arbre des sources.
 
 #include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // build_config::has_not_ompt
+#include "chunk/config.h"          // sa::build_config::has_not_ompt
 #include "chunk/manage_ompt.h"     // begin_parallel_phase, finalize_parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
 
-static void begin_phase() { if constexpr (build_config::has_not_ompt) sa::begin_parallel_phase(); }
-static void end_phase()   { if constexpr (build_config::has_not_ompt) sa::finalize_parallel_phase(); }
+static void begin_phase() { if constexpr (sa::build_config::has_not_ompt) sa::begin_parallel_phase(); }
+static void end_phase()   { if constexpr (sa::build_config::has_not_ompt) sa::finalize_parallel_phase(); }
 
 int main()
 {
@@ -204,7 +204,7 @@ shrink_array::finalize_parallel_phase();      // une fois, après la région
 Si on les oublie, rien n'échoue tout de suite, mais les écritures différées ne sont appliquées
 qu'à la lecture suivante de l'élément, et les passes de compression entre régions n'ont pas
 lieu : la mémoire reste plus haute qu'elle ne devrait. Les écrire derrière
-`if constexpr (build_config::has_not_ompt)`, comme ci-dessus, garde un seul source pour les deux
+`if constexpr (sa::build_config::has_not_ompt)`, comme ci-dessus, garde un seul source pour les deux
 runtimes.
 
 Avec OMPT, si le runtime n'a pas chargé l'outil de la bibliothèque (`OMP_TOOL=disabled`, un

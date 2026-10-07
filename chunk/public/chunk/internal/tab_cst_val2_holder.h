@@ -88,7 +88,7 @@ namespace shrink_array
 inline bool cst2_thp_advise() noexcept
 {
 #if CHUNK_OPT_FAST_ALLOC
-    return alloc_config::thp_advise();
+    return fast_alloc::alloc_config::thp_advise();
 #else
     return false;
 #endif

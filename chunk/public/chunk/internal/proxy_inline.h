@@ -29,7 +29,7 @@
 #include "chunk/internal/arithmetic_context.h"           // ArithmeticAffectationProxyContext
 #include "chunk/internal/concept_is_clean_assignement.h" // base_t
 #include "chunk/internal/read_reclaim.h"    // read_reclaim::PassScope (perform_compression / compress in a region)
-#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 
 namespace shrink_array
 {
@@ -255,7 +255,7 @@ void Proxy<T>::execute_arithmetic_compound_operation(OP op, [[maybe_unused]] con
 // a new compressor bypasses start() from where a drain can run, or an
 // `_async` body is called outside a drain. A store would then land in a
 // released buffer and the write would be lost in silence -- which is what
-// check_replay_store() below turns into an INVARIANT_FAILED in check builds
+// check_replay_store() below turns into an CHUNK_INVARIANT_FAILED in check builds
 // (build_config::any_check; nothing in release).
 
 namespace internal
@@ -277,7 +277,7 @@ inline void check_replay_store([[maybe_unused]] ChunkT&     chunk,
     {
         if (chunk.values_load() != stored_to) [[unlikely]]
         {
-            INVARIANT_FAILED("{}: values changed during a deferred replay (chunk={} num={}): a compressor ran "
+            CHUNK_INVARIANT_FAILED("{}: values changed during a deferred replay (chunk={} num={}): a compressor ran "
                              "outside CompressionManager::start() or the replay ran outside a flush drain; "
                              "the store is lost",
                              where, static_cast<const void*>(&chunk), num);

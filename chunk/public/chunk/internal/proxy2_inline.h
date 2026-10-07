@@ -28,7 +28,7 @@
 #include "chunk/internal/arithmetic_context.h"           // ArithmeticAffectationContext
 #include "chunk/internal/chunk_size_policy.h"            // DynChunkSizeGuard, set_thread_chunk_size
 #include "chunk/internal/concept_is_clean_assignement.h" // base_t
-#include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
 #include "chunk/internal/test_hooks.h"   // TEST KNOB: test_hooks::maybe_read_delay
 
@@ -56,7 +56,7 @@ const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_arr
             const inf_array_t reg = Derived::get_info_second_value(get_ptr_on_array());
             if (std::get<1>(reg) != std::get<1>(*inf_array_src_) || std::get<2>(reg) != std::get<2>(*inf_array_src_))
             {
-                INVARIANT_FAILED(
+                CHUNK_INVARIANT_FAILED(
                     "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
                     std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg), std::get<2>(reg),
@@ -90,7 +90,7 @@ const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_arr
             const inf_array_t reg = Derived::get_info_second_value(get_ptr_on_array());
             if (std::get<1>(reg) != std::get<1>(*inf_array_src_) || std::get<2>(reg) != std::get<2>(*inf_array_src_))
             {
-                INVARIANT_FAILED(
+                CHUNK_INVARIANT_FAILED(
                     "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
                     std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg), std::get<2>(reg),
@@ -564,7 +564,7 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
                     const bool is_cst1_loc = proxy.is_cst_val1();
                     if (is_cst1_loc)
                     {
-                        INVARIANT_FAILED("[deferred write_body] chunk still cst_val1 after create_value "
+                        CHUNK_INVARIANT_FAILED("[deferred write_body] chunk still cst_val1 after create_value "
                                          "(chunk={}, num={})",
                                          static_cast<const void*>(&chunk), num);
                     }
@@ -572,7 +572,7 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
                     const bool is_cst2_loc = proxy.is_cst_val2();
                     if (is_cst2_loc)
                     {
-                        INVARIANT_FAILED("[deferred write_body] chunk still cst_val2 after create_value "
+                        CHUNK_INVARIANT_FAILED("[deferred write_body] chunk still cst_val2 after create_value "
                                          "(chunk={}, num={})",
                                          static_cast<const void*>(&chunk), num);
                     }

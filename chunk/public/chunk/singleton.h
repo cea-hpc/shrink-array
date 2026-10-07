@@ -17,7 +17,7 @@
 #pragma once
 
 /// @file singleton.h
-/// @brief The chunk library's name for fast_allocators' ::Singleton: one
+/// @brief The chunk library's name for fast_allocators' fast_alloc::Singleton: one
 ///        implementation for both.
 
 #include "fast_allocators/internal/singleton.h" // Singleton
@@ -26,10 +26,10 @@ namespace shrink_array
 {
 
 /// @brief Lazily created, never deleted, process-wide instance of T, built with
-///        `new T()` on first use. ::Singleton under the chunk library's name.
+///        `new T()` on first use. fast_alloc::Singleton under the chunk library's name.
 /// @note An alias: a class befriending it, or declaring it in advance, names
-///       ::Singleton itself (see AllTypeChunk).
+///       fast_alloc::Singleton itself (see AllTypeChunk).
 template <typename T>
-using SingletonChk = ::Singleton<T>;
+using SingletonChk = ::fast_alloc::Singleton<T>;
 
 } // namespace shrink_array

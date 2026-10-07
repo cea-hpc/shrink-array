@@ -40,7 +40,7 @@
 
 #include "fast_allocators/build_options.h" // FAST_ALLOC_OPT_*: the options the library was built with
 
-namespace alloc_config
+namespace fast_alloc::alloc_config
 {
 
 /// @brief Built against `new[]`/`delete[]` rather than the slab allocator
@@ -63,7 +63,7 @@ inline constexpr bool is_debug = FAST_ALLOC_OPT_DEBUG != 0;
 
 /// @brief The reinforced debug level of the slab lists: a debug build with
 ///        FAST_ALLOC_CHECK_LISTS (CMake option of the same name) walks a whole
-///        list on every insert and remove (SL_LIST_CHECK in tc_allocator.h).
+///        list on every insert and remove (FAST_ALLOC_SL_LIST_CHECK in tc_allocator.h).
 ///        Linear per operation: a plain Debug build does not.
 inline constexpr bool check_slab_lists = FAST_ALLOC_OPT_DEBUG != 0 && FAST_ALLOC_OPT_CHECK_LISTS != 0;
 
@@ -253,4 +253,4 @@ inline constexpr bool alloc_align =
     false;
 #endif
 
-} // namespace alloc_config
+} // namespace fast_alloc::alloc_config

@@ -26,9 +26,9 @@
 #include "chunk/config.h"                              // build_config::any_check, chunk_config::ring_log_debug
 #include "chunk/PMP_CHUNK.h"                           // get_thr_rank_fast, CHUNK_PMP_RANK_BOUND
 #include "chunk/ring_log_debug.h"                      // ScopedRingLogManualEnd, ring_log_op
-#include "chunk/internal/cpu_pause.h"                  // CPU_PAUSE
+#include "chunk/internal/cpu_pause.h"                  // CHUNK_CPU_PAUSE
 #include "chunk/internal/deferred_op_pool.h"           // DeferredOperationBase
-#include "chunk/internal/invariant_check.h"            // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"            // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy
 
 namespace shrink_array
@@ -41,7 +41,7 @@ namespace shrink_array
 
 // ── Per-rank flush lock (sharded xflush_lock) ─────────────────────────────
 // Spin-acquire the flush lock for rank r. The library's spin discipline
-// (CPU_PAUSE, yield after 1000 spins). Guards the per-rank op-map
+// (CHUNK_CPU_PAUSE, yield after 1000 spins). Guards the per-rank op-map
 // container arr[r] against concurrent structural mutation by another flusher.
 template <typename T, typename ChunkType, bool Enabled>
 void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::rank_flush_acquire(int rank) noexcept
@@ -68,7 +68,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::rank_flush_acquire(int 
         }
         else
         {
-            CPU_PAUSE();
+            CHUNK_CPU_PAUSE();
         }
     }
     lk.depth = 1;
@@ -171,7 +171,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
             }
             else
             {
-                CPU_PAUSE();
+                CHUNK_CPU_PAUSE();
             }
         }
     }
@@ -270,7 +270,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
             }
             catch (const std::exception& e)
             {
-                INVARIANT_FAILED("flush_deferred: re-insert failed: {} (rank {}, chunk {})", e.what(), thr,
+                CHUNK_INVARIANT_FAILED("flush_deferred: re-insert failed: {} (rank {}, chunk {})", e.what(), thr,
                                  static_cast<const void*>(chunk));
             }
         }
@@ -298,7 +298,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
             const auto it = thread_map.find(c);
             if (it == thread_map.end() || !it->second || it->second->empty())
             {
-                INVARIANT_FAILED("flush_deferred(thr={}): chunk {} left in the set with no op queued", thr,
+                CHUNK_INVARIANT_FAILED("flush_deferred(thr={}): chunk {} left in the set with no op queued", thr,
                                  static_cast<const void*>(c));
             }
         }
@@ -354,7 +354,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
             }
             else
             {
-                CPU_PAUSE();
+                CHUNK_CPU_PAUSE();
             }
         }
     }
@@ -425,13 +425,13 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
                     const auto             addr = reinterpret_cast<std::uintptr_t>(raw);
                     if (raw == nullptr || addr < 0x1000 || (addr & 0x7U) != 0)
                     {
-                        INVARIANT_FAILED("[FLUSH_PROBE xrank] bad op_ptr in op_map: num={} op={} rank={}", num,
+                        CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] bad op_ptr in op_map: num={} op={} rank={}", num,
                                          static_cast<const void*>(raw), r);
                     }
                     const std::uintptr_t vptr = *reinterpret_cast<const std::uintptr_t*>(raw);
                     if (vptr < 0x1000)
                     {
-                        INVARIANT_FAILED("[FLUSH_PROBE xrank] op has null/garbage vptr (recycled under map?): "
+                        CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] op has null/garbage vptr (recycled under map?): "
                                          "num={} op={} vptr={:#x} rank={}",
                                          num, static_cast<const void*>(raw), vptr, r);
                     }
@@ -484,7 +484,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
             }
             catch (const std::exception& e)
             {
-                INVARIANT_FAILED("flush_chunk_all_ranks: erase failed: {} (rank {}, chunk {})", e.what(), r,
+                CHUNK_INVARIANT_FAILED("flush_chunk_all_ranks: erase failed: {} (rank {}, chunk {})", e.what(), r,
                                  static_cast<const void*>(chunk));
             }
         }
@@ -564,7 +564,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
     }
     catch (const std::exception& e)
     {
-        INVARIANT_FAILED("erase_own_rank_op: erase failed: {} (rank {}, chunk {}, offset {})", e.what(), thr,
+        CHUNK_INVARIANT_FAILED("erase_own_rank_op: erase failed: {} (rank {}, chunk {}, offset {})", e.what(), thr,
                          static_cast<const void*>(chunk), num);
     }
 
@@ -585,7 +585,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
         }
         catch (const std::exception& e)
         {
-            INVARIANT_FAILED("erase_own_rank_op: chunk erase failed: {} (rank {}, chunk {})", e.what(), thr,
+            CHUNK_INVARIANT_FAILED("erase_own_rank_op: chunk erase failed: {} (rank {}, chunk {})", e.what(), thr,
                              static_cast<const void*>(chunk));
         }
         if (thread_map.empty())
@@ -712,7 +712,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::start()
         }
         else
         {
-            CPU_PAUSE();
+            CHUNK_CPU_PAUSE();
         }
     }
 
@@ -795,7 +795,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::wait_out_compressor(con
         }
         else
         {
-            CPU_PAUSE();
+            CHUNK_CPU_PAUSE();
         }
     }
     increm_chunk_gate_wait<ChunkType>(yields, mark_hit);

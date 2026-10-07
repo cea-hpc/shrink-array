@@ -21,6 +21,9 @@
 #include <cstdlib>  // std::free
 #include <string>   // std::string
 
+namespace shrink_array
+{
+
 /// @brief Name of type T, demangled when possible.
 /// @return The demangled name, or typeid(T).name() when demangling fails.
 template <typename T>
@@ -32,3 +35,6 @@ std::string type_name()
     std::free(demangled);
     return result;
 }
+
+} // namespace shrink_array
+

@@ -139,7 +139,7 @@ is compared with the registry.
 The read operator returns a **value**, never a reference:
 
 ```cpp
-SA_FLATTEN FORCE_INLINE T operator[](ind_type i) const noexcept
+CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](ind_type i) const noexcept
 {
     const int num_chunk = i >> size_policy_.decalage();
     const int num       = i & size_policy_.modulo();

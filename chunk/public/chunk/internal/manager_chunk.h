@@ -611,7 +611,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                     const T* block = lst.back();
                     lst.pop_back();
                     CHUNK_LEDGER_DISCARD(block, "trim_reuse_pools");
-                    svfree(block);
+                    fast_alloc::svfree(block);
                     freed += CHUNK_T<T>::storage_units(elem_count) * sizeof(T);
                 }
                 // A vector that shrank keeps its capacity, so a pool that peaked
@@ -1090,7 +1090,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                         for (const T* b : lst)
                         {
                             CHUNK_LEDGER_DISCARD(b, "rechunk_to.drain_reuse");
-                            svfree(b);
+                            fast_alloc::svfree(b);
                         }
                         lst.clear();
                     }

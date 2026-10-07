@@ -31,7 +31,7 @@
 #include "chunk/PMP_CHUNK.h"                         // get_thr_rank_fast
 #include "chunk/internal/in_t.h"                     // in_t<T>
 #include "chunk/ring_log_debug.h"                    // ring_log, get_tid, EV_*_THREAD_HAS_OPS
-#include "chunk/internal/invariant_check.h"          // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"          // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_size_policy.h"        // t_active_chunk_size — per-op geometry pin in write_body
 #include "chunk/internal/deferred_op_pool.h"         // DeferredOperationBase
 #include "chunk/internal/deferred_lifecycle_check.h" // DEFERRED_LIFECYCLE sentinels
@@ -192,7 +192,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
                 //     was already destroy()'d — i.e. we are flushing it twice.
                 if (magic != deferred_lifecycle::op_alive_magic)
                 {
-                    INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op magic corrupt/poisoned "
+                    CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op magic corrupt/poisoned "
                                      "(op={}, magic={:#x}, executed={}, enqueue_rank={}, flusher_rank={})",
                                      static_cast<const void*>(this), magic, executed, this->thread_rank, flusher_rank);
                 }
@@ -200,7 +200,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
                 // (2) This op must not have run before (double-flush guard).
                 if (executed)
                 {
-                    INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op executed twice "
+                    CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op executed twice "
                                      "(op={}, enqueue_rank={}, flusher_rank={})",
                                      static_cast<const void*>(this), this->thread_rank, flusher_rank);
                 }
@@ -210,14 +210,14 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
                 //     this op still referenced it (the root use-after-recycle).
                 if (ctx == nullptr)
                 {
-                    INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op has null ctx at write_body "
+                    CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op has null ctx at write_body "
                                      "(op={}, enqueue_rank={}, flusher_rank={})",
                                      static_cast<const void*>(this), this->thread_rank, flusher_rank);
                 }
 
                 if (ctx->magic != deferred_lifecycle::ctx_alive_magic)
                 {
-                    INVARIANT_FAILED("[DEFERRED_LIFECYCLE] ctx not alive at write_body "
+                    CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] ctx not alive at write_body "
                                      "(op={}, ctx={}, ctx_magic={:#x}, enqueue_rank={}, flusher_rank={})",
                                      static_cast<const void*>(this), static_cast<const void*>(ctx), ctx->magic,
                                      this->thread_rank, flusher_rank);
@@ -503,7 +503,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         {
             if (FlushReplayState<T, ChunkType>::in_flush_replay) [[unlikely]]
             {
-                INVARIANT_FAILED("record_enqueue_deferred: op enqueued during a flush replay (rank {}, chunk {})",
+                CHUNK_INVARIANT_FAILED("record_enqueue_deferred: op enqueued during a flush replay (rank {}, chunk {})",
                                  thr_rank, static_cast<const void*>(&chunk));
             }
         }
@@ -517,7 +517,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         }
         catch (const std::exception& e)
         {
-            INVARIANT_FAILED("record_enqueue_deferred: insert failed: {} (rank {}, chunk {})", e.what(), thr_rank,
+            CHUNK_INVARIANT_FAILED("record_enqueue_deferred: insert failed: {} (rank {}, chunk {})", e.what(), thr_rank,
                              static_cast<const void*>(&chunk));
         }
         enqueue_unlock(thr_rank);
@@ -723,7 +723,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * behind a running compression cost a few % of wall time and more peak
      * RSS.
      *
-     * @note Spin discipline of the library: CPU_PAUSE, a yield every 1000,
+     * @note Spin discipline of the library: CHUNK_CPU_PAUSE, a yield every 1000,
      *       CHUNK_WRITE_WAIT_MAX_YIELDS yields at most (-D tunable).
      */
     static void wait_out_compressor(const ChunkType& chunk) noexcept;
@@ -890,7 +890,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         {
             if (before - count < 0) [[unlikely]]
             {
-                INVARIANT_FAILED("dec_pending_ops: rank {} count {} -> {} (retired {}): more ops retired than "
+                CHUNK_INVARIANT_FAILED("dec_pending_ops: rank {} count {} -> {} (retired {}): more ops retired than "
                                  "published -- a double count",
                                  thr_rank, before, before - count, count);
             }

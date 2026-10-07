@@ -36,7 +36,7 @@
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
 #include "chunk/internal/crp_helper.h"                   // CRTPSupport
 #include "chunk/internal/in_t.h"                         // in_t<T>
-#include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/tab_cst_val2_holder.h"          // SecondValueRef
 #include "chunk/internal/TChunk.h"                       // TChunk2AComp
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
@@ -91,7 +91,7 @@ class PointerMapChunk2A
      * @brief Look up the table number registered for a key.
      * @param key Key to look up.
      * @return The registered table number.
-     * @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
+     * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
     [[nodiscard]] int get_num_tab(const void* key) const noexcept
     {
@@ -104,7 +104,7 @@ class PointerMapChunk2A
                     return tab;
                 }
             }
-            INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
+            CHUNK_INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
                              static_cast<const void*>(this), small.size(), key);
         }
 
@@ -112,7 +112,7 @@ class PointerMapChunk2A
         {
             return it->second;
         }
-        INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
+        CHUNK_INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
                          static_cast<const void*>(this), big.size(), key);
     }
 
@@ -150,7 +150,7 @@ class PointerMapChunk2A
             }
             catch (const std::exception& e)
             {
-                INVARIANT_FAILED("[PointerMapChunk2A erase] failed: {} (this={} key={})", e.what(),
+                CHUNK_INVARIANT_FAILED("[PointerMapChunk2A erase] failed: {} (this={} key={})", e.what(),
                                  static_cast<const void*>(this), key);
             }
         }
@@ -718,7 +718,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
             {
                 if (num_tab != share_info_array->get_num_tab(ptr_on_array))
                 {
-                    INVARIANT_FAILED("Proxy2A::set_num_tab: armed num_tab {} differs from the registry's for array {}",
+                    CHUNK_INVARIANT_FAILED("Proxy2A::set_num_tab: armed num_tab {} differs from the registry's for array {}",
                                      num_tab, ptr_on_array);
                 }
             }

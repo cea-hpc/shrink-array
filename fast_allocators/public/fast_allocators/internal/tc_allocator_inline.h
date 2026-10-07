@@ -29,6 +29,9 @@
 #include "fast_allocators/tc_allocator.h" // the declarations these bodies belong to
 #include "fast_allocators/slab_arena.h"   // disjoint op/ctx/value slab arenas
 
+namespace fast_alloc
+{
+
 template <FreeLinks Links>
 inline void TCSlab<Links>::alloc_block()
 {
@@ -184,3 +187,6 @@ inline void TCSlab<Links>::free_block(int i) noexcept
 
     --nn_ref;
 }
+
+} // namespace fast_alloc
+

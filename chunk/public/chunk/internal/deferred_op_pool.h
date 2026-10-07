@@ -30,7 +30,7 @@
 
 #include "chunk/config.h"                   // build_config::use_fast_alloc, build_config::deferred_pool_granularity
 #include "chunk/internal/env_parse.h"       // env_number (CHUNK_DEFERRED_POOL_KB), env_flag (CHUNK_RECYCLE_TRACE)
-#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED (the block probe)
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (the block probe)
 #include "chunk/internal/pool_ledger.h"     // pool_ledger::on_op_alloc / on_ctx_alloc and the frees
 #include "chunk/ring_log_debug.h"           // ring_log_op, dump_ring_for_addr, EV_OP_ALLOC / EV_OP_FREE
 
@@ -51,7 +51,6 @@ enum class ArenaKind
     Ctx,
     Value
 };
-} // namespace fast_alloc
 
 /// @brief std-alloc stand-in for the fast allocator: operator new/delete
 ///        behind the same call surface (init/set_arena no-ops, every
@@ -76,6 +75,7 @@ class TCTypeAllocator
         return static_cast<std::byte*>(::operator new(sizeof(T)));
     }
 };
+} // namespace fast_alloc
 #endif
 
 namespace shrink_array
@@ -174,7 +174,7 @@ struct FastAllocatorBase
 template <typename T>
 struct DeferredByteAllocSlot
 {
-    TCTypeAllocator<std::byte> alloc;               ///< this thread's byte allocator for T
+    fast_alloc::TCTypeAllocator<std::byte> alloc;               ///< this thread's byte allocator for T
     bool                       initialized = false; ///< alloc set up (allocator())
 };
 
@@ -231,7 +231,7 @@ template <typename T, fast_alloc::ArenaKind Arena = fast_alloc::ArenaKind::Op>
 class FastAllocatorConcrete : public FastAllocatorBase
 {
   public:
-    using ByteAlloc = TCTypeAllocator<std::byte>;
+    using ByteAlloc = fast_alloc::TCTypeAllocator<std::byte>;
 
     /// @brief Set block_size to sizeof(T) and, under fast-alloc, create this thread's allocator.
     FastAllocatorConcrete()
@@ -469,12 +469,12 @@ class FastAllocatorConcrete : public FastAllocatorBase
 
             if (ptr == nullptr)
             {
-                INVARIANT_FAILED("[ALLOC_PROBE {}] allocate_raw returned NULL for T size={}", path, sizeof(T));
+                CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] allocate_raw returned NULL for T size={}", path, sizeof(T));
             }
 
             if ((addr & (alignof(std::max_align_t) - 1)) != 0 && (addr & 0x7U) != 0)
             {
-                INVARIANT_FAILED("[ALLOC_PROBE {}] misaligned block p={} (T size={})", path,
+                CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] misaligned block p={} (T size={})", path,
                                  static_cast<const void*>(ptr), sizeof(T));
             }
 
@@ -492,7 +492,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
 
             if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)
             {
-                INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path,
+                CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path,
                                  static_cast<const void*>(ptr), sizeof(T),
                                  build_config::use_fast_alloc ? static_cast<const void*>(&allocator()) : nullptr);
             }

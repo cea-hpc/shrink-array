@@ -18,4 +18,4 @@
 
 /// @brief Largest size the StaticConstArray ladder serves, in bytes; past it,
 ///        malloc.
-#define MAX_CONST_BLOCK_SIZE 65536
+#define FAST_ALLOC_MAX_CONST_BLOCK_SIZE 65536

@@ -73,7 +73,7 @@
  * region that must not trigger a flush) without unregistering the tool. A
  * counter, not a flag: see its declaration in chunk/config.h.
  */
-OmptSuspendCounter g_ompt_suspended{0}; // 0 = callbacks active
+shrink_array::OmptSuspendCounter shrink_array::g_ompt_suspended{0}; // 0 = callbacks active
 
 namespace
 {
@@ -326,7 +326,7 @@ void flush_allocator_free_batches()
     #if !CHUNK_OPT_STD_ALLOC
     if (omp_in_parallel() == 0)
     {
-        StaticConstArray::clearInfoFreeElt();
+        fast_alloc::StaticConstArray::clearInfoFreeElt();
     }
     #endif
 }
@@ -559,7 +559,7 @@ void shrink_array::check_ompt_tool_loaded()
  * The symbol is still defined so that code testing it links in every variant;
  * here no callback exists and the application drives the phase transitions.
  */
-OmptSuspendCounter g_ompt_suspended{1}; // no callback exists in this build
+shrink_array::OmptSuspendCounter shrink_array::g_ompt_suspended{1}; // no callback exists in this build
 
 /// @brief No OMPT tool in this build: nothing to check (see manage_ompt.h).
 void shrink_array::check_ompt_tool_loaded() {}

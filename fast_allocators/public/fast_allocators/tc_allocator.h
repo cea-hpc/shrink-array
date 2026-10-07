@@ -46,7 +46,7 @@
  *
  * @par Configuration
  * The options are read in alloc_config.h, from the generated build_options.h,
- * and nowhere else (DBG_ASSERT aside), so the bodies here branch with
+ * and nowhere else (FAST_ALLOC_DBG_ASSERT aside), so the bodies here branch with
  * `if constexpr`. Both arms must compile in every configuration --
  * that is the point. See ::bypass_slabs.
  *
@@ -69,7 +69,7 @@
 #include <cstdint>     // uintptr_t
 #include <limits>      // std::numeric_limits: TCAllocatorEB's index range
 #include <type_traits> // std::conditional_t (free_index_t)
-#include <cassert>     // assert (DBG_ASSERT)
+#include <cassert>     // assert (FAST_ALLOC_DBG_ASSERT)
 #include <sys/mman.h>  // mmap, munmap
 #include <unistd.h>    // sysconf (fast_alloc::page_size)
 
@@ -79,6 +79,9 @@
 #include "fast_allocators/internal/alloc_config.h"    // alloc_config::use_std_alloc / is_debug / use_openmp
 #include "fast_allocators/slab_arena.h"               // ArenaKind for op/ctx/value slab routing
 #include "fast_allocators/internal/next_power_of_2.h" // NextPowerOf2, for slab_of()'s effective slab geometry
+
+namespace fast_alloc
+{
 
 /**
  * @brief Must this call hand out plain `new[]` memory instead of slab memory?
@@ -97,8 +100,6 @@
     return alloc_config::use_std_alloc;
 }
 
-namespace fast_alloc
-{
 
 /// @brief The system page size, read once (sysconf).
 [[nodiscard]] inline long page_size() noexcept
@@ -144,13 +145,12 @@ inline void* map_anonymous(size_t size)
     return tmp;
 }
 
-} // namespace fast_alloc
 
 /// @brief assert() in a debug build (alloc_config::is_debug); nothing otherwise.
 #if FAST_ALLOC_OPT_DEBUG
-    #define DBG_ASSERT(x) assert(x)
+    #define FAST_ALLOC_DBG_ASSERT(x) assert(x)
 #else
-    #define DBG_ASSERT(x)
+    #define FAST_ALLOC_DBG_ASSERT(x)
 #endif
 
 /**
@@ -459,7 +459,7 @@ void TCSlab<FreeLinks::InPayload>::operator delete(void* ptr);
 ///        reinforced debug level (FAST_ALLOC_CHECK_LISTS on a DEBUG build, see
 ///        alloc_config::check_slab_lists); a plain Debug build keeps the cheap
 ///        DBG_ASSERTs.
-#define SL_LIST_CHECK(x)                              \
+#define FAST_ALLOC_SL_LIST_CHECK(x)                              \
     do                                                \
     {                                                 \
         if constexpr (alloc_config::check_slab_lists) \
@@ -475,7 +475,7 @@ void TCSlab<FreeLinks::InPayload>::operator delete(void* ptr);
 // ---------------------------------------------------------------------------
 /**
  * @brief Is @p node in the list headed by @p list?
- * @note Recursive and linear -- a debug aid, called only from DBG_ASSERT.
+ * @note Recursive and linear -- a debug aid, called only from FAST_ALLOC_DBG_ASSERT.
  */
 template <typename Node>
 [[nodiscard]] bool sl_contains(const Node* list, const Node* node) noexcept
@@ -488,7 +488,7 @@ template <typename Node>
  * @details The head has no predecessor and nothing after it does either.
  *          Catches a node inserted into two lists at once, which is how a slab
  *          ends up in `block` and `block_full` simultaneously.
- * @note Linear -- a debug aid, called only from DBG_ASSERT.
+ * @note Linear -- a debug aid, called only from FAST_ALLOC_DBG_ASSERT.
  */
 template <typename Node>
 [[nodiscard]] bool sl_check(const Node* node) noexcept
@@ -522,10 +522,10 @@ template <typename Node>
 template <typename Node>
 void sl_remove(Node*& list, Node* node) noexcept
 {
-    DBG_ASSERT(node != nullptr);
-    DBG_ASSERT(list != nullptr);
-    SL_LIST_CHECK(sl_check(list));
-    SL_LIST_CHECK(sl_contains(list, node));
+    FAST_ALLOC_DBG_ASSERT(node != nullptr);
+    FAST_ALLOC_DBG_ASSERT(list != nullptr);
+    FAST_ALLOC_SL_LIST_CHECK(sl_check(list));
+    FAST_ALLOC_SL_LIST_CHECK(sl_contains(list, node));
 
     if (node == list)
     {
@@ -537,7 +537,7 @@ void sl_remove(Node*& list, Node* node) noexcept
     }
     else
     {
-        DBG_ASSERT(node->prev != nullptr);
+        FAST_ALLOC_DBG_ASSERT(node->prev != nullptr);
         if (node->next != nullptr)
         {
             node->next->prev = node->prev;
@@ -546,7 +546,7 @@ void sl_remove(Node*& list, Node* node) noexcept
     }
     node->prev = nullptr;
     node->next = nullptr;
-    SL_LIST_CHECK(sl_check(list));
+    FAST_ALLOC_SL_LIST_CHECK(sl_check(list));
 }
 
 /**
@@ -559,8 +559,8 @@ void sl_remove(Node*& list, Node* node) noexcept
 template <typename Node>
 void sl_insert(Node*& list, Node* node) noexcept
 {
-    DBG_ASSERT(node != nullptr);
-    SL_LIST_CHECK(sl_check(list));
+    FAST_ALLOC_DBG_ASSERT(node != nullptr);
+    FAST_ALLOC_SL_LIST_CHECK(sl_check(list));
 
     node->prev = nullptr;
     node->next = list;
@@ -570,8 +570,8 @@ void sl_insert(Node*& list, Node* node) noexcept
     }
     list = node;
 
-    SL_LIST_CHECK(sl_check(list));
-    SL_LIST_CHECK(sl_contains(list, node));
+    FAST_ALLOC_SL_LIST_CHECK(sl_check(list));
+    FAST_ALLOC_SL_LIST_CHECK(sl_contains(list, node));
 }
 
 
@@ -882,7 +882,7 @@ class TCSlabPool
         // a 40-byte op would pick the shift (sizeof(std::byte) == 1) and free
         // the wrong element; the deferred-op pool is such an allocator and
         // never frees through here. The assertion catches a new caller.
-        DBG_ASSERT(!std::has_single_bit(sizeof(ElementType)) ||
+        FAST_ALLOC_DBG_ASSERT(!std::has_single_bit(sizeof(ElementType)) ||
                    std::has_single_bit(static_cast<unsigned int>(slab->ElementSize)));
         const int i = std::has_single_bit(sizeof(ElementType)) ? slab->num_block_pow2(ptr) : slab->num_block(ptr);
 
@@ -1002,7 +1002,7 @@ class TCSlabPool
                         {
                             break; // no room to record it: it stays, as it was
                         }
-                        DBG_ASSERT(p->owner == self());
+                        FAST_ALLOC_DBG_ASSERT(p->owner == self());
                         remove(*head, p);
                         p->data = nullptr; // the block goes back in the batch below, not through ~Slab
                         delete p;
@@ -1138,7 +1138,7 @@ class TCSlabPool
         slab->owner_rank = rank_;
         slab->owner_key  = key_;
         slab->init(static_cast<int>(ElementSize), BlockAllocator);
-        DBG_ASSERT(slab->slab_bytes() == slab_bytes_);
+        FAST_ALLOC_DBG_ASSERT(slab->slab_bytes() == slab_bytes_);
         return slab;
     }
 
@@ -1609,7 +1609,7 @@ class TCAllocatorEB
 
     // A free element holds the index of the next free one, in T -- a type
     // sized from the element. The block must be addressable by it: a
-    // compile-time check (it was a runtime DBG_ASSERT, DEBUG builds only).
+    // compile-time check (it was a runtime FAST_ALLOC_DBG_ASSERT, DEBUG builds only).
     static_assert(static_cast<uintptr_t>(BlockBytes) < (uintptr_t{1} << ((sizeof(T) * 8) - 1)),
                   "TCAllocatorEB: block too large for the element's free-list index type");
 
@@ -1899,5 +1899,7 @@ class TCTypeAllocatorEBC
 ///          as a non-type template argument below and in StaticConstArray,
 ///          where an unsigned int constant expression is required.
 inline constexpr unsigned int SIZE_BLOCK = 1u << 20u; // 1048576
+
+} // namespace fast_alloc
 
 #include "fast_allocators/internal/tc_allocator_inline.h" // the template bodies

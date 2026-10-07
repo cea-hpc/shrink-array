@@ -57,7 +57,7 @@
 /// @brief The suspension counter the library reads and updates
 ///        (chunk_config::OMPTcc, declared in chunk/config.h): the callbacks
 ///        below run only while it is zero, which it is at start.
-OmptSuspendCounter g_ompt_suspended{0}; // 0 = callbacks active
+shrink_array::OmptSuspendCounter shrink_array::g_ompt_suspended{0}; // 0 = callbacks active
 
 namespace
 {
@@ -71,7 +71,7 @@ std::atomic<bool> in_phase_end{false};
 
 void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, unsigned int, unsigned int, int)
 {
-    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
+    if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0)
     {
         return;
     }
@@ -83,7 +83,7 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
 
 void on_sync_region(ompt_sync_region_t, ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, const void*)
 {
-    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0 || in_phase_end.load(std::memory_order_relaxed))
+    if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0 || in_phase_end.load(std::memory_order_relaxed))
     {
         return;
     }
@@ -95,7 +95,7 @@ void on_sync_region(ompt_sync_region_t, ompt_scope_endpoint_t endpoint, ompt_dat
 
 void on_parallel_end(ompt_data_t*, ompt_data_t*, int, const void*)
 {
-    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0 || in_phase_end.load(std::memory_order_relaxed))
+    if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0 || in_phase_end.load(std::memory_order_relaxed))
     {
         return;
     }

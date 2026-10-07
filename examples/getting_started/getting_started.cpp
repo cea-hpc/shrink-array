@@ -23,7 +23,7 @@
 
 #include "chunk/array_chunk2A.h" // shrink_array::ArrayChunk2A
 #include "chunk/chunk_std.h"     // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"        // build_config::has_not_ompt (global namespace)
+#include "chunk/config.h"        // sa::build_config::has_not_ompt
 #include "chunk/manage_ompt.h"   // begin_parallel_phase, finalize_parallel_phase
 #include "chunk/param_chunk.h"   // ParamChunk::init_indexes
 
@@ -36,14 +36,14 @@ namespace sa = shrink_array;
 // nothing; in a serial build too.
 static void begin_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (sa::build_config::has_not_ompt)
     {
         sa::begin_parallel_phase();
     }
 }
 static void end_phase()
 {
-    if constexpr (build_config::has_not_ompt)
+    if constexpr (sa::build_config::has_not_ompt)
     {
         sa::finalize_parallel_phase();
     }

@@ -146,6 +146,27 @@ the tag's checksum to the recipe.
   where `MAP_ANONYMOUS` is missing). chunk/chunk_define.h and
   chunk/internal/define_mm_protect.h are removed, and build_config::has_bzip2 moved to the
   benchmark (`have_bzip2`).
+- **No name in the global namespace.** fast_allocators is in namespace `fast_alloc`
+  (`fast_alloc::Singleton`, `fast_alloc::StaticConstArray`, `fast_alloc::TCTypeAllocator`,
+  `fast_alloc::SIZE_BLOCK`, `fast_alloc::alloc_config`, the `sv*` functions...); the chunk
+  library's last global names are in `shrink_array`: `shrink_array::build_config`,
+  `shrink_array::chunk_config`, `shrink_array::g_ompt_suspended`, `type_name`, the term colours,
+  `get_thr_rank_fast`, the chunk definitions (`Chunk2Def`...). A program that wrote
+  build_config:: or chunk_config:: without `using namespace shrink_array` adds the namespace
+  (or a namespace alias, as the benchmark does). complex_double is no longer defined by
+  chunk/chunk_std.h (nothing used it; the benchmark has its own).
+- Renamed, without the old names, the macros a header defines: `CHUNK_FORCE_INLINE`,
+  `CHUNK_FLATTEN`, `CHUNK_ASSUME`, `CHUNK_CPU_PAUSE`, `CHUNK_INVARIANT_FAILED`,
+  `CHUNK_CRTP_USE_DEDUCING_THIS`, `CHUNK_CRTP_FORCE_DEDUCING_THIS`, `CHUNK_INHERIT_CTOR_TYPENAME`, `CHUNK_RING_LOG_ANY`,
+  `CHUNK_TUNING_LEVEL` (was FORCE_INLINE, SA_FLATTEN, SA_ASSUME, CPU_PAUSE, INVARIANT_FAILED,
+  CRTP_USE_DEDUCING_THIS, CRTP_FORCE_DEDUCING_THIS, SA_INHERIT_CTOR_TYPENAME, RING_LOG_ANY, SHRINK_LEVEL);
+  fast_allocators: `FAST_ALLOC_DBG_ASSERT`, `FAST_ALLOC_LSAN_IGNORE`, `FAST_ALLOC_SL_LIST_CHECK`,
+  `FAST_ALLOC_SIMD_SZ`, `FAST_ALLOC_MAX_CONST_BLOCK_SIZE`, `FAST_ALLOC_PMP_THREAD_RANK`,
+  `FAST_ALLOC_PMP_MAX_THREADS`, `FAST_ALLOC_PMP_IN_PARALLEL_REGION` (was DBG_ASSERT,
+  SA_LSAN_IGNORE, SL_LIST_CHECK, SIMD_SZ, MAX_CONST_BLOCK_SIZE, PMP_THREAD_RANK,
+  PMP_MAX_THREADS, PMP_IN_PARALLEL_REGION). The fallback definitions of the membarrier(2)
+  commands are constants of `shrink_array`, no longer macros. is_power_of_tow is
+  `is_power_of_two`.
 
 ### Fixed
 

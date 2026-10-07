@@ -20,13 +20,9 @@
 /*---------------------------------------------------------------------------*/
 
 #include <atomic>  // std::memory_order_acquire, std::memory_order_acq_rel
-#include <complex> // std::complex (complex_double)
 #include <cstddef> // std::size_t
 #include <tuple>   // the candidate-list entries
 #include <vector>  // std::vector
-
-/// @brief The complex element type of the library (chunk_std.cpp instantiates it).
-using complex_double = std::complex<double>;
 
 #include "chunk/internal/chunk_base.h"          // ChunkBase
 #include "chunk/config.h"                       // build_config::use_openmp, chunk_config

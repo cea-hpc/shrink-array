@@ -29,21 +29,16 @@
 #if defined(__linux__)
     #include <sys/syscall.h> // SYS_membarrier
     #include <unistd.h>      // syscall
-    #if __has_include(<linux/membarrier.h>)
-        #include <linux/membarrier.h> // MEMBARRIER_CMD_*
-    #endif
-    // Older uapi headers stop before the expedited commands (Linux 4.14): the
-    // values are ABI, so spell them out rather than lose the fast path.
-    #ifndef MEMBARRIER_CMD_PRIVATE_EXPEDITED
-        #define MEMBARRIER_CMD_PRIVATE_EXPEDITED (1 << 3)
-    #endif
-    #ifndef MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED
-        #define MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED (1 << 4)
-    #endif
 #endif
 
 namespace shrink_array
 {
+
+// membarrier(2) commands, spelled out: the values are ABI (Linux 4.14), older
+// uapi headers stop before them, and <linux/membarrier.h> declares them as
+// enumerators, which a fallback macro could not detect.
+inline constexpr int membarrier_cmd_private_expedited = 1 << 3;          // MEMBARRIER_CMD_PRIVATE_EXPEDITED
+inline constexpr int membarrier_cmd_register_private_expedited = 1 << 4; // MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED
 
 /**
  * @brief The heavy side of the asymmetric handshake: process-wide, not per
@@ -88,7 +83,7 @@ inline bool register_membarrier() noexcept
         {
             return true;
         }
-        const long rc = ::syscall(SYS_membarrier, MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED, 0, 0);
+        const long rc = ::syscall(SYS_membarrier, membarrier_cmd_register_private_expedited, 0, 0);
         membarrier_ready.store(rc == 0, std::memory_order_release);
         return rc == 0;
 #else
@@ -114,7 +109,7 @@ inline void heavy_barrier() noexcept
 #if defined(__linux__) && defined(SYS_membarrier)
         if (membarrier_ready.load(std::memory_order_relaxed)) [[likely]]
         {
-            ::syscall(SYS_membarrier, MEMBARRIER_CMD_PRIVATE_EXPEDITED, 0, 0);
+            ::syscall(SYS_membarrier, membarrier_cmd_private_expedited, 0, 0);
         }
 #endif
     }

@@ -103,7 +103,7 @@ variant.
 #include <cstdio>
 #include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // build_config::has_not_ompt
+#include "chunk/config.h"          // sa::build_config::has_not_ompt
 #include "chunk/manage_ompt.h"     // begin_parallel_phase, finalize_parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
@@ -118,12 +118,12 @@ int main()
 
 #pragma omp parallel
         {
-            if constexpr (build_config::has_not_ompt) sa::begin_parallel_phase();
+            if constexpr (sa::build_config::has_not_ompt) sa::begin_parallel_phase();
 #pragma omp for
             for (int i = 0; i < n / 2; ++i)
                 a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;   // the 3.5 run compresses
         }
-        if constexpr (build_config::has_not_ompt) sa::finalize_parallel_phase();
+        if constexpr (sa::build_config::has_not_ompt) sa::finalize_parallel_phase();
 
         a.shrink_to_fit();                    // fold the chunks that became constant
         std::printf("chunks holding a buffer: %.1f %%\n", a.stats());

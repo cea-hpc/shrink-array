@@ -28,7 +28,7 @@
 #include "chunk/internal/deferred_op_pool.h"           // DeferredOperationBase, DeferredOpDeleter, DeferredOpPtr
 #include "chunk/internal/deferred_ops_storage.h"       // DeferredOpsStorage
 #include "chunk/internal/freepath_counters.h"          // CHUNK_FREEPATH_INC
-#include "chunk/internal/invariant_check.h"            // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"            // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/read_reclaim.h"               // read_reclaim::defer_release
 #include "fast_allocators/internal/svalloc.h"          // svfree
 #include "chunk/internal/write_compress_sync_policy.h" // WriteCompressSyncPolicy
@@ -123,12 +123,12 @@ void ChunkBase<T, Derived>::free_block_to_pool([[maybe_unused]] int thr_rank, T*
         // Ledger: the std-alloc path returns the block to the system via
         // svfree; without this notification the page goes back to malloc, is
         // re-handed to a later allocate_chunk_internal, and on_block_alloc
-        // sees it still LIVE -> spurious INVARIANT_FAILED. This is the OpenMP
+        // sees it still LIVE -> spurious CHUNK_INVARIANT_FAILED. This is the OpenMP
         // recycle path (block_clear -> free_block_to_pool); free_values is the
         // other one. LIVE -> FREE, before the free, while the pointer is still
         // ours.
-        CHUNK_LEDGER_RELEASE(val, "free_block_to_pool.svfree");
-        svfree(val);
+        CHUNK_LEDGER_RELEASE(val, "free_block_to_pool.fast_alloc::svfree");
+        fast_alloc::svfree(val);
     }
 }
 
@@ -229,7 +229,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
     }
     catch (const std::exception& e)
     {
-        INVARIANT_FAILED("deferred enqueue failed: {} (rank {}, chunk {}, offset {})", e.what(), thr_rank,
+        CHUNK_INVARIANT_FAILED("deferred enqueue failed: {} (rank {}, chunk {}, offset {})", e.what(), thr_rank,
                          static_cast<const void*>(chunk_ptr), num);
     }
 
@@ -269,7 +269,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::wait_for_availability([[maybe_unu
     // waiting on the driver count is the deadlock anti-pattern documented on
     // hard_inflight_. flush_chunk_all_ranks() below already establishes the
     // only ordering that matters -- begin_flush(self_rank) blocks any future
-    // compressor start(), then a well-behaved drain (CPU_PAUSE + yield,
+    // compressor start(), then a well-behaved drain (CHUNK_CPU_PAUSE + yield,
     // stealers only) waits out in-flight compressors. Driver-only threads
     // steal nothing.
 

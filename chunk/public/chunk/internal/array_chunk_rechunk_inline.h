@@ -51,7 +51,7 @@
 #include "chunk/chunk_traits.h"                 // Proxy2A<T>
 #include "chunk/internal/chunk_size_policy.h"   // set_thread_chunk_size / set_active_chunk_size
 #include "chunk/bit.h"                          // is_bool_like_v (refill bulk read gate)
-#include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED (refill bulk read check)
+#include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED (refill bulk read check)
 
 namespace shrink_array::internal
 {
@@ -876,7 +876,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 {
                     if (k != static_cast<std::size_t>(len)) [[unlikely]]
                     {
-                        INVARIANT_FAILED("rechunk refill bulk read: new chunk {} copied {} elements, span is {}",
+                        CHUNK_INVARIANT_FAILED("rechunk refill bulk read: new chunk {} copied {} elements, span is {}",
                                          new_chunk, k, static_cast<std::size_t>(len));
                     }
                     const auto check_at = [&](ind_type j)
@@ -884,7 +884,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                         const T ref = static_cast<T>(std::as_const(self())[base + j]);
                         if (std::memcmp(&ref, &buf[static_cast<std::size_t>(j)], sizeof(T)) != 0) [[unlikely]]
                         {
-                            INVARIANT_FAILED("rechunk refill bulk read: new chunk {} element {} (global {}) differs "
+                            CHUNK_INVARIANT_FAILED("rechunk refill bulk read: new chunk {} element {} (global {}) differs "
                                              "from the per-element read ({} -> {})",
                                              new_chunk, static_cast<long long>(j), static_cast<long long>(base + j),
                                              old_size, new_size);

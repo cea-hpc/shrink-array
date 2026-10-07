@@ -8,7 +8,7 @@
 
 ***
 
-All names are in namespace `shrink_array`, except `build_config` and `chunk_config` (global).
+All names are in namespace `shrink_array`, `build_config` and `chunk_config` included; the allocator library's are in `fast_alloc`. The macros start with CHUNK (CHUNK_, CHUNK2A_) or FAST_ALLOC_.
 
 ## 1. Starting and stopping the library
 

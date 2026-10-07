@@ -16,9 +16,9 @@
 
 #pragma once
 
-#include <thread> // std::this_thread::yield (the ARM and fallback CPU_PAUSE)
+#include <thread> // std::this_thread::yield (the ARM and fallback CHUNK_CPU_PAUSE)
 
-// CPU_PAUSE(): the spin-wait hint of the library's wait loops (rank flush
+// CHUNK_CPU_PAUSE(): the spin-wait hint of the library's wait loops (rank flush
 // locks, start()'s writer wait, the flush drains), which yield to the OS only
 // after 1000 of them. The std::this_thread::yield() fallback is a
 // sched_yield() SYSCALL per spin -- it cost 1-7% of the perf bench at 8
@@ -26,15 +26,15 @@
 // _M_X64 tested instead of __x86_64__ / __i386__).
 #ifdef __ARM_ARCH
     #if defined(__GNUC__) || defined(__clang__)
-        #define CPU_PAUSE() asm volatile("yield" ::: "memory")
+        #define CHUNK_CPU_PAUSE() asm volatile("yield" ::: "memory")
     #else
-        #define CPU_PAUSE() std::this_thread::yield()
+        #define CHUNK_CPU_PAUSE() std::this_thread::yield()
     #endif
 #elif defined(__x86_64__) || defined(__i386__) // x86/x64, gcc and clang
-    #define CPU_PAUSE() __builtin_ia32_pause()
+    #define CHUNK_CPU_PAUSE() __builtin_ia32_pause()
 #elif defined(_M_IX86) || defined(_M_X64) // x86/x64, MSVC
     #include <intrin.h>                   // _mm_pause
-    #define CPU_PAUSE() _mm_pause()
+    #define CHUNK_CPU_PAUSE() _mm_pause()
 #else
-    #define CPU_PAUSE() std::this_thread::yield()
+    #define CHUNK_CPU_PAUSE() std::this_thread::yield()
 #endif

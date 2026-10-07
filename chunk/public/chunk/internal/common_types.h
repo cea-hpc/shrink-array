@@ -27,6 +27,12 @@
 #include <complex> // std::complex
 #include <tuple>   // std::tuple (MyChunkTypes)
 
+namespace shrink_array
+{
+
 /// @brief A sample element-type list for ParamChunk::init_indexes<Types>().
 using MyChunkTypes =
     std::tuple<int, double, bool, short, unsigned long, long, std::complex<double>, float, unsigned char>;
+
+} // namespace shrink_array
+

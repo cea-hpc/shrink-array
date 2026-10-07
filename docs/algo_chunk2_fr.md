@@ -139,7 +139,7 @@ est comparée au registre.
 L'opérateur de lecture renvoie une **valeur**, jamais une référence :
 
 ```cpp
-SA_FLATTEN FORCE_INLINE T operator[](ind_type i) const noexcept
+CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](ind_type i) const noexcept
 {
     const int num_chunk = i >> size_policy_.decalage();
     const int num       = i & size_policy_.modulo();

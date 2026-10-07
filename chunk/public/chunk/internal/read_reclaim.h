@@ -72,7 +72,7 @@
 
 #include "chunk/config.h"                              // build_config::use_openmp
 #include "chunk/internal/chunk_size_policy.h"          // t_active_chunk_size / t_alloc_key, restored per released block
-#include "chunk/internal/cpu_pause.h"                  // CPU_PAUSE
+#include "chunk/internal/cpu_pause.h"                  // CHUNK_CPU_PAUSE
 #include "chunk/internal/write_compress_sync_policy.h" // dekker::heavy_barrier / asymmetric_active
 
 #ifndef CHUNK_READ_RECLAIM_SLOTS
@@ -212,7 +212,7 @@ inline void wait_for_readers() noexcept
         }
         for (int spins = 0; g_slots[i].seq.load(std::memory_order_acquire) == v;)
         {
-            CPU_PAUSE();
+            CHUNK_CPU_PAUSE();
             if (++spins == 1000)
             {
                 std::this_thread::yield(); // the reader may have been preempted on this CPU
@@ -222,7 +222,7 @@ inline void wait_for_readers() noexcept
     }
     for (int spins = 0; g_overflow_readers.load(std::memory_order_acquire) != 0;)
     {
-        CPU_PAUSE();
+        CHUNK_CPU_PAUSE();
         if (++spins == 1000)
         {
             std::this_thread::yield();

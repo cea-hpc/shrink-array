@@ -1178,7 +1178,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_thr(int b
         for (const auto* elm : blocks)
         {
             CHUNK_LEDGER_DISCARD(elm, "clear_list_block_free_thr.drain");
-            svfree(elm);
+            fast_alloc::svfree(elm);
         }
     }
     else
@@ -1188,7 +1188,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_thr(int b
             if (!skip.contains(elm))
             {
                 CHUNK_LEDGER_DISCARD(elm, "clear_list_block_free_thr.drain");
-                svfree(elm);
+                fast_alloc::svfree(elm);
             }
         }
     }

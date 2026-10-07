@@ -221,6 +221,11 @@ inline BenchSched bench_sched_for(Int start, Int end) noexcept
 #include "chunk/config.h"      // chunk_config::, build_config:: (the bench TUs)
 #include "chunk/type_name.h"   // type_name<T>() (shrink_bench.cpp)
 
+// The library's configuration lives in namespace shrink_array; the bench TUs
+// read it under its short names.
+namespace build_config = shrink_array::build_config;
+namespace chunk_config = shrink_array::chunk_config;
+
 #if defined CHUNK_VARIANT_V1
     #include "chunk/array_chunk.h" // ArrayChunk (the CHUNK variant)
 #elif defined CHUNK_VARIANT_V2

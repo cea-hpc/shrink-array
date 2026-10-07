@@ -110,14 +110,14 @@ well as inside the tree.
 
 #include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // build_config::has_not_ompt
+#include "chunk/config.h"          // sa::build_config::has_not_ompt
 #include "chunk/manage_ompt.h"     // begin_parallel_phase, finalize_parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
 
-static void begin_phase() { if constexpr (build_config::has_not_ompt) sa::begin_parallel_phase(); }
-static void end_phase()   { if constexpr (build_config::has_not_ompt) sa::finalize_parallel_phase(); }
+static void begin_phase() { if constexpr (sa::build_config::has_not_ompt) sa::begin_parallel_phase(); }
+static void end_phase()   { if constexpr (sa::build_config::has_not_ompt) sa::finalize_parallel_phase(); }
 
 int main()
 {
@@ -198,7 +198,7 @@ shrink_array::finalize_parallel_phase();      // once, after the region
 
 Forget them and nothing fails at once, but deferred writes are only applied when the element
 is next read, and the compression passes between regions do not run: memory stays higher than
-it should. Writing them behind `if constexpr (build_config::has_not_ompt)`, as above, keeps
+it should. Writing them behind `if constexpr (sa::build_config::has_not_ompt)`, as above, keeps
 one source for both runtimes.
 
 With OMPT, if the runtime did not load the library's tool (`OMP_TOOL=disabled`, another tool

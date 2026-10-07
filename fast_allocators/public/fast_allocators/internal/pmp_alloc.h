@@ -24,32 +24,32 @@
 #ifdef _OPENMP
     #include <omp.h> // omp_get_max_threads, omp_get_thread_num, omp_in_parallel
 
-    #ifndef PMP_MAX_THREADS
-        #define PMP_MAX_THREADS omp_get_max_threads()
+    #ifndef FAST_ALLOC_PMP_MAX_THREADS
+        #define FAST_ALLOC_PMP_MAX_THREADS omp_get_max_threads()
     #endif
 
-    #ifndef PMP_THREAD_RANK
-        #define PMP_THREAD_RANK omp_get_thread_num()
+    #ifndef FAST_ALLOC_PMP_THREAD_RANK
+        #define FAST_ALLOC_PMP_THREAD_RANK omp_get_thread_num()
     #endif
 
-    #ifndef PMP_IN_PARALLEL_REGION
-        #define PMP_IN_PARALLEL_REGION omp_in_parallel()
+    #ifndef FAST_ALLOC_PMP_IN_PARALLEL_REGION
+        #define FAST_ALLOC_PMP_IN_PARALLEL_REGION omp_in_parallel()
     #endif
 
 #else
 
     // A serial build has one thread, rank 0 -- values, not empty expansions, so
     // code that names them compiles in both modes (mirrors chunk's PMP_CHUNK.h).
-    #ifndef PMP_MAX_THREADS
-        #define PMP_MAX_THREADS 1
+    #ifndef FAST_ALLOC_PMP_MAX_THREADS
+        #define FAST_ALLOC_PMP_MAX_THREADS 1
     #endif
 
-    #ifndef PMP_THREAD_RANK
-        #define PMP_THREAD_RANK 0
+    #ifndef FAST_ALLOC_PMP_THREAD_RANK
+        #define FAST_ALLOC_PMP_THREAD_RANK 0
     #endif
 
-    #ifndef PMP_IN_PARALLEL_REGION
-        #define PMP_IN_PARALLEL_REGION false
+    #ifndef FAST_ALLOC_PMP_IN_PARALLEL_REGION
+        #define FAST_ALLOC_PMP_IN_PARALLEL_REGION false
     #endif
 
 #endif

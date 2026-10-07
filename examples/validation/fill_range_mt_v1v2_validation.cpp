@@ -66,7 +66,7 @@
 
 /// The suspension counter read by chunk_config::OMPTcc: non-zero, no OMPT
 /// callback exists in this binary (chunk_v1v2 is built without the tool).
-OmptSuspendCounter g_ompt_suspended{1};
+shrink_array::OmptSuspendCounter shrink_array::g_ompt_suspended{1};
 
 using namespace shrink_array;
 

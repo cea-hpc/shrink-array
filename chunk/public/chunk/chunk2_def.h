@@ -17,6 +17,9 @@
 #pragma once
 
 #include "chunk/config.h" // chunk_config::tuning_level
+namespace shrink_array
+{
+
 /**
  * @brief Compile-time settings of Chunk2: the compression-list thresholds,
  *        adjusted by chunk_config::tuning_level.
@@ -41,3 +44,6 @@ struct Chunk2Def
                                                                 ? 50 // Chunk2A's (was 20)
                                                                 : 100;
 };
+
+} // namespace shrink_array
+

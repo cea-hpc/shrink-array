@@ -51,7 +51,7 @@
 #include "chunk/config.h"                     // build_config::chunk_dynamic, build_config::any_check
 #include "chunk/internal/func_p2.h"           // log2int (constexpr, also usable at run time)
 #include "chunk/internal/chunk_size_config.h" // __chunk_size / __decalage_chunk / __modulo_chunk
-#include "chunk/internal/invariant_check.h"   // INVARIANT_FAILED (non-power-of-two geometry)
+#include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED (non-power-of-two geometry)
 
 namespace shrink_array
 {
@@ -123,7 +123,7 @@ inline void set_active_chunk_size(unsigned int size) noexcept
     {
         if (!is_valid_chunk_size(size)) [[unlikely]]
         {
-            INVARIANT_FAILED("set_active_chunk_size({}): a chunk size must be a power of two "
+            CHUNK_INVARIANT_FAILED("set_active_chunk_size({}): a chunk size must be a power of two "
                              "(the index split is a shift and a mask)",
                              size);
         }
@@ -308,7 +308,7 @@ class DynamicChunkSize
         {
             if (!is_valid_chunk_size(size)) [[unlikely]]
             {
-                INVARIANT_FAILED("ChunkSizePolicy::set_size({}): not a power of two -- shift {} with mask {} "
+                CHUNK_INVARIANT_FAILED("ChunkSizePolicy::set_size({}): not a power of two -- shift {} with mask {} "
                                  "would send two elements to one slot",
                                  size, log2int(static_cast<std::size_t>(size)), size - 1u);
             }

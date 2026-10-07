@@ -63,7 +63,7 @@
 
 // The *OmpPolicy serial specialisations declare no array-new, so there is
 // nothing to test without OpenMP; CMake builds this target under OMP alone.
-static_assert(build_config::use_openmp, "OpenMP builds only: the array-new is the *OmpPolicy's");
+static_assert(shrink_array::build_config::use_openmp, "OpenMP builds only: the array-new is the *OmpPolicy's");
 
 // Defined by every executable of the library (the fast allocator reads it).
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp

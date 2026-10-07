@@ -33,14 +33,14 @@
 #include "chunk/internal/element_access.h" // elem_get / elem_set, is_packed_bit_v: Bit buffers are words of bits
 #include "chunk/config.h"                  // chunk_config::use_fast_block_compression, build_config::any_check
 #include "chunk/internal/chunk_stats.h" // increm_chunk_* in the bodies (dependent calls the include tools cannot attribute)
-#include "chunk/internal/def_force_inline.h"             // FORCE_INLINE: the write engine and its wrappers
+#include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE: the write engine and its wrappers
 #include "chunk/internal/in_t.h"                         // in_t<T>
-#include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/proxy_operators.h"              // ProxyOperators
 #include "chunk/internal/tab_cst_val2_holder.h"          // TabCstVal2Holder: second-value identifiers
 #include "chunk/internal/relaxed_element.h"              // store_value: Chunk2A's relaxed element stores
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanCompoundOp, IsCleanShiftOp, base_t
-#include "chunk/internal/crp_helper.h"                   // CRTPSupport, CRTP_USE_DEDUCING_THIS
+#include "chunk/internal/crp_helper.h"                   // CRTPSupport, CHUNK_CRTP_USE_DEDUCING_THIS
 #include "chunk/internal/test_hooks.h"                   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
 #include "chunk/internal/read_reclaim.h"                 // ReadSection: read_values_outside_session
 #include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
@@ -135,7 +135,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
 
     /// @brief Queue the chunk @p ctx names as a compression candidate, on the
     ///        replay path.
-#if CRTP_USE_DEDUCING_THIS
+#if CHUNK_CRTP_USE_DEDUCING_THIS
     // C++23: explicit object parameter replaces CRTPSupport::derived().
     void add_to_compression_list_async(this const auto& self, auto* ctx);
 #else
@@ -177,7 +177,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
                 {
                     if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
                     {
-                        INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
+                        CHUNK_INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
                                          "flag row is reallocated ({} -> {} chunks)",
                                          num_tab, j, row.size(), nb_chunk);
                     }
@@ -424,7 +424,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         {
             if (stale_guard_.gen != nullptr && *stale_guard_.gen != stale_guard_.seen) [[unlikely]]
             {
-                INVARIANT_FAILED("write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
+                CHUNK_INVARIANT_FAILED("write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
                                  "storage (resize, reserve, shrink_to_fit, clear, assign, swap, an assignment or a "
                                  "re-chunk): keep a value with `T v = a[i];`, not `auto v = a[i];`",
                                  ptr_on_array, num_chunk, num);
@@ -560,7 +560,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         {
             if (chunk.steal_committed()) [[unlikely]]
             {
-                INVARIANT_FAILED("store_value on a chunk committed to a compressor (num={})", num);
+                CHUNK_INVARIANT_FAILED("store_value on a chunk committed to a compressor (num={})", num);
             }
         }
         // Chunk2A: the marking filter of another writer may be reading this
@@ -640,11 +640,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *       write lambda) and every write paid a call into it. Only this
      *       body is forced -- the slow-path callees (wait_out_compressor,
      *       run_slow_path, flush_deferred, ...) stay ordinary calls; do NOT
-     *       turn this into SA_FLATTEN, which would copy them into every
+     *       turn this into CHUNK_FLATTEN, which would copy them into every
      *       write site.
      */
     template <typename WriteCallable, typename LBD_INFO>
-    [[nodiscard]] FORCE_INLINE bool write_with_optional_lock_impl(WriteCallable&&           write_body,
+    [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_impl(WriteCallable&&           write_body,
                                                                   [[maybe_unused]] LBD_INFO lbd_info) noexcept;
 
     /**
@@ -1339,7 +1339,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @param write_fn Function to execute.
      */
     template <typename WriteFn>
-    [[nodiscard]] FORCE_INLINE bool write_with_optional_lock_info(WriteFn write_fn)
+    [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_info(WriteFn write_fn)
     {
         const auto lbd_info = [this]
         {

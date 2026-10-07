@@ -34,7 +34,7 @@
 #include "chunk/internal/element_access.h"              // Bit buffers: words of bits
 #include "chunk/internal/bit_words.h"                   // bits::fill_bits, bits::word_t
 #include "chunk/config.h"                               // build_config::use_openmp, chunk_config
-#include "chunk/internal/invariant_check.h"             // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/bad_ptr_check.h"               // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/PMP_CHUNK.h"                            // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/chunk2_candidate_list_check.h" // chunk2_missing_candidate_list
@@ -91,7 +91,7 @@ class ChunkSpec2
         {
             if (static_cast<size_t>(ind) >= tab_m_ptr_cst_val2->size()) [[unlikely]]
             {
-                INVARIANT_FAILED("[chunk] suspect get_cst_val2<{}>: ind={} size={}", typeid(T).name(), ind,
+                CHUNK_INVARIANT_FAILED("[chunk] suspect get_cst_val2<{}>: ind={} size={}", typeid(T).name(), ind,
                                  tab_m_ptr_cst_val2->size());
                 return nullptr;
             }
@@ -1535,7 +1535,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
             {
                 if constexpr (build_config::any_check)
                 {
-                    INVARIANT_FAILED("[chunk] compress to cst_val2 on an array with no second value");
+                    CHUNK_INVARIANT_FAILED("[chunk] compress to cst_val2 on an array with no second value");
                 }
                 return nullptr;
             }

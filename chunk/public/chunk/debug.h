@@ -22,6 +22,9 @@
 #include <cstdlib>    // std::free (demangled name)
 #include <iostream>   // std::cerr
 
+namespace shrink_array
+{
+
 /// @brief Print the calling thread's backtrace (up to 100 frames) to std::cerr, demangling names when possible.
 inline void print_backtrace()
 {
@@ -83,3 +86,6 @@ inline void print_backtrace()
 
     std::free(static_cast<void*>(symbols));
 }
+
+} // namespace shrink_array
+

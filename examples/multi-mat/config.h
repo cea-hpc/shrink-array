@@ -57,7 +57,7 @@
  */
 
 #include "chunk/PMP_CHUNK.h"   // the OpenMP shims of the library (serial build: 1 thread, rank 0)
-#include "chunk/config.h"      // build_config::use_openmp, chunk_config::stats
+#include "chunk/config.h"      // shrink_array::build_config::use_openmp, chunk_config::stats
 #include "chunk/manage_ompt.h" // shrink_array::begin_parallel_phase, finalize_barrier_phase
 
 #if defined(MULTIMAT_EMBEDDED_COMPRESSION) && !CHUNK_OPT_OMPT
@@ -96,11 +96,11 @@ inline constexpr bool interactive_input = false;
 #endif
 
 /// @brief OpenMP build (the library's own flag: `_OPENMP`).
-inline constexpr bool use_openmp = build_config::use_openmp;
+inline constexpr bool use_openmp = shrink_array::build_config::use_openmp;
 
 /// @brief The library keeps its per-variant counters (CHUNK_STATS) and can
 ///        print them at exit.
-inline constexpr bool chunk_stats = chunk_config::stats;
+inline constexpr bool chunk_stats = shrink_array::chunk_config::stats;
 
 // ── OpenMP shims ─────────────────────────────────────────────────────────
 // Through the library's, which are 1 / 0 / false in a serial build, so the

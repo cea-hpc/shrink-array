@@ -20,28 +20,28 @@
 
 #ifdef __INTEL_COMPILER
     #if CHUNK_OPT_DEBUG
-        #define FORCE_INLINE inline
+        #define CHUNK_FORCE_INLINE inline
     #else
-        #define FORCE_INLINE __forceinline
+        #define CHUNK_FORCE_INLINE __forceinline
     #endif
 
 #elif defined(__GNUC__) || defined(__clang__)
     #if CHUNK_OPT_DEBUG
-        #define FORCE_INLINE inline
+        #define CHUNK_FORCE_INLINE inline
     #else
         // `inline` included, as in the DEBUG branch (and as __forceinline
         // implies): GNU warns "always_inline function might not be
         // inlinable" on a function not declared inline -- e.g. a member
         // template defined out of class -- and a caller cannot add `inline`
         // itself without a duplicate-specifier error in DEBUG.
-        #define FORCE_INLINE inline __attribute__((always_inline))
+        #define CHUNK_FORCE_INLINE inline __attribute__((always_inline))
     #endif
 #else
-    #define FORCE_INLINE inline
+    #define CHUNK_FORCE_INLINE inline
 #endif
 
 // ---------------------------------------------------------------------------
-// SA_FLATTEN — inline the WHOLE call tree into the marked function. Powerful on
+// CHUNK_FLATTEN — inline the WHOLE call tree into the marked function. Powerful on
 // a hot leaf like operator[], but it blows up compile time, so it is:
 //   * opt-in, behind -DSHRINK_AGGRESSIVE_INLINE (off by default), and
 //   * never emitted for nvc++ (__NVCOMPILER), whose optimizer is already very
@@ -49,13 +49,13 @@
 // GNU/clang only; a no-op elsewhere.
 // ---------------------------------------------------------------------------
 #if defined(SHRINK_AGGRESSIVE_INLINE) && (defined(__GNUC__) || defined(__clang__)) && !defined(__NVCOMPILER)
-    #define SA_FLATTEN __attribute__((flatten))
+    #define CHUNK_FLATTEN __attribute__((flatten))
 #else
-    #define SA_FLATTEN
+    #define CHUNK_FLATTEN
 #endif
 
 // ---------------------------------------------------------------------------
-// SA_ASSUME(expr) — C++23 [[assume(expr)]], STRICTLY under C++23 (__cplusplus >=
+// CHUNK_ASSUME(expr) — C++23 [[assume(expr)]], STRICTLY under C++23 (__cplusplus >=
 // 202302L) and only where the compiler advertises the attribute; a no-op
 // otherwise. Also excluded for nvc++ (__NVCOMPILER) as a safety measure. NOTE:
 // expr MUST be side-effect free; the compiler treats it as UB-if-false and may
@@ -63,9 +63,9 @@
 // ---------------------------------------------------------------------------
 #if defined(__has_cpp_attribute) && !defined(__NVCOMPILER) && (__cplusplus >= 202302L)
     #if __has_cpp_attribute(assume) >= 202207L
-        #define SA_ASSUME(expr) [[assume(expr)]]
+        #define CHUNK_ASSUME(expr) [[assume(expr)]]
     #endif
 #endif
-#ifndef SA_ASSUME
-    #define SA_ASSUME(expr) ((void)0)
+#ifndef CHUNK_ASSUME
+    #define CHUNK_ASSUME(expr) ((void)0)
 #endif

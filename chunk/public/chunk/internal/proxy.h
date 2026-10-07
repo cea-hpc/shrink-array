@@ -28,9 +28,9 @@
 #include "chunk/internal/chunk_size_policy.h"  // set_thread_chunk_size, set_thread_alloc_key
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment, ElementAddable, ElementModulable
 #include "chunk/internal/in_t.h"                         // in_t<T>
-#include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/conditional_counter.h"          // counter_value_t — resync_nb_val_eq_zero
-#include "chunk/internal/def_force_inline.h"             // FORCE_INLINE
+#include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/internal/read_reclaim.h"                 // read_reclaim::ReadSection
 #include "chunk/internal/chunk_stats.h" // increm_chunk_read<> (a dependent call the include tools cannot attribute)
@@ -69,7 +69,7 @@ class PointerMapChunk : public PointerMapLinear<int, std::vector<std::pair<const
      * @brief Look up the table number registered for a key.
      * @param key Key to look up.
      * @return The registered table number.
-     * @note A key that is not registered is an invariant failure (INVARIANT_FAILED: message, then abort).
+     * @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
      */
     [[nodiscard]] int get_num_tab(const void* key) const noexcept
     {
@@ -81,7 +81,7 @@ class PointerMapChunk : public PointerMapLinear<int, std::vector<std::pair<const
             }
         }
 
-        INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}",
+        CHUNK_INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}",
                          static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
     }
 
@@ -389,9 +389,9 @@ class ProxyFastCompPolicy<Derived, T, false> : public ProxyBase<Derived, T, Chun
 };
 
 #ifdef __clang__
-    #define SA_INHERIT_CTOR_TYPENAME typename
+    #define CHUNK_INHERIT_CTOR_TYPENAME typename
 #else
-    #define SA_INHERIT_CTOR_TYPENAME
+    #define CHUNK_INHERIT_CTOR_TYPENAME
 #endif
 
 /*!
@@ -519,7 +519,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @return Whatever Base::write_with_optional_lock_impl() returns.
      */
     template <typename WriteFn>
-    FORCE_INLINE bool write_with_optional_lock(WriteFn write_fn) noexcept
+    CHUNK_FORCE_INLINE bool write_with_optional_lock(WriteFn write_fn) noexcept
     {
         const auto lbd_info = [this]
         {
@@ -640,7 +640,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     void apply_compound_operation(in_t<U> v, BinaryOp op); // in_t: see assign_impl
 
   public:
-    using SA_INHERIT_CTOR_TYPENAME FastCompPolicy::ProxyFastCompPolicy;
+    using CHUNK_INHERIT_CTOR_TYPENAME FastCompPolicy::ProxyFastCompPolicy;
 
     /**
      * @brief Construct a proxy for element `num_` of `chunk_`.

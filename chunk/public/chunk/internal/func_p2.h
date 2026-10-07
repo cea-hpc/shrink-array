@@ -18,9 +18,12 @@
 
 #include <cstddef> // size_t
 
+namespace shrink_array
+{
+
 /// @brief Whether @p value is a power of two.
 /// @return true when @p value is non-zero and has a single bit set.
-constexpr bool is_power_of_tow(int value) noexcept
+constexpr bool is_power_of_two(int value) noexcept
 {
     return ((value & (value - 1)) == 0) && (value != 0);
 }
@@ -31,3 +34,6 @@ constexpr size_t log2int(size_t value) noexcept
 {
     return (value < 2) ? 0 : 1 + log2int(value / 2);
 }
+
+} // namespace shrink_array
+

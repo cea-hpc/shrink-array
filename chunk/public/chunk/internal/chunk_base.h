@@ -45,7 +45,7 @@
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_IN_PARALLEL_REGION
 #include "chunk/ring_log_debug.h"                       // EV_VALUE_ALLOC/FREE (debug ring log)
 #include "chunk/internal/global_check.h"                // global_check_nan (DO_CHECK: config.h's CheckNaN<true>)
-#include "chunk/internal/invariant_check.h"             // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/deferred_op_pool.h"            // DeferredOpPtr
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_* block-lifecycle checks (check builds)
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_* / add_chunk_* (CHUNK_STATS)
@@ -60,11 +60,14 @@
     #include "fast_allocators/slab_arena.h"   // the slab header slab_of() returns (owner, owner_key)
     #include "fast_allocators/tc_allocator.h" // TCTypeAllocator, TCTypeCAllocator
 #else
+namespace fast_alloc
+{
 template <typename T>
 class TCTypeCAllocator; // forward declaration
 
 template <typename T>
 class TCTypeAllocator;
+} // namespace fast_alloc
 #endif
 
 #include "chunk/vendor/flat_hash_map.hpp"        // ska::flat_hash_map
@@ -125,7 +128,11 @@ struct ProxyTypeTrait<Chunk<T>>
 #ifndef _OPENMP
 template <typename T>
 class TCTypeCAllocator;
+#else
+using fast_alloc::TCTypeCAllocator;
 #endif
+// The serial allocator, by its short name in this file (both builds).
+using fast_alloc::TCTypeAllocator;
 
 
 // ============================================================================
@@ -366,7 +373,7 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
                     {
                         if (ncnt < 0) [[unlikely]]
                         {
-                            INVARIANT_FAILED("pending_retire: chunk {} pending count {} -> {} (retired {}): "
+                            CHUNK_INVARIANT_FAILED("pending_retire: chunk {} pending count {} -> {} (retired {}): "
                                              "more ops retired than published -- a double count",
                                              static_cast<const void*>(&static_cast<Derived&>(*this)), cnt, ncnt, count);
                         }
@@ -537,9 +544,9 @@ struct ChunkAllocPolicy<T, Derived, true>
             }
             else
             {
-                values_loc = svcalloc_align<T>(Derived::storage_units(alloc_chunk_count()));
-                CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.svcalloc");
-                CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.svcalloc");
+                values_loc = fast_alloc::svcalloc_align<T>(Derived::storage_units(alloc_chunk_count()));
+                CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.fast_alloc::svcalloc");
+                CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.fast_alloc::svcalloc");
                 init_fresh(values_loc);
             }
         }
@@ -609,7 +616,7 @@ struct ChunkAllocPolicy<T, Derived, false>
         }
         else
         {
-            values_loc = svcalloc_align<T>(Derived::storage_units(alloc_chunk_count()));
+            values_loc = fast_alloc::svcalloc_align<T>(Derived::storage_units(alloc_chunk_count()));
             CHUNK_CHECK_VALUES_PTR(values_loc, "alloc.svcalloc_serial");
             CHUNK_LEDGER_ALLOC(values_loc, "allocate_chunk_internal.svcalloc_serial");
             init_fresh(values_loc);
@@ -1389,7 +1396,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         {
             if (!derived().written()) [[unlikely]]
             {
-                INVARIANT_FAILED("operator()(int) on a chunk that is not materialised");
+                CHUNK_INVARIANT_FAILED("operator()(int) on a chunk that is not materialised");
             }
         }
         static_assert(!is_packed, "operator()(int) returns T&: a Bit has no address (bit.h)");
@@ -1435,7 +1442,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         }
         else
         {
-            svfree(ptr);
+            fast_alloc::svfree(ptr);
         }
     }
 

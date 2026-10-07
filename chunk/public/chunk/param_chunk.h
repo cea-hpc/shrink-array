@@ -23,7 +23,7 @@
 #include "chunk/config.h"                     // build_config::use_openmp, chunk_dynamic
 #include "chunk/internal/chunk_size_config.h" // __chunk_size, __decalage_chunk, __modulo_chunk
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size
-#include "chunk/internal/func_p2.h"           // is_power_of_tow, log2int
+#include "chunk/internal/func_p2.h"           // is_power_of_two, log2int
 #include "chunk/singleton.h"                  // SingletonChk
 #include "chunk/all_type_chunk.h"             // AllTypeChunk
 
@@ -236,7 +236,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      */
     static bool check_pow2(int chunk_size) noexcept
     {
-        return is_power_of_tow(chunk_size);
+        return is_power_of_two(chunk_size);
     }
 
     /**
