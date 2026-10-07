@@ -88,6 +88,9 @@ the tag's checksum to the recipe.
   are kept. Comments that contradicted the code are fixed.
 - `docs/`: refreshed; the variables, options and build-script options that were missing are
   documented.
+- Vendored ankerl::unordered_dense updated from 5.0.1 to 5.3.1, its two local patches (nvc++)
+  carried over: faster insert / try_emplace hits, lookups in an empty table without a test, a
+  64-byte map instead of 80.
 - The vendored hash tables install under `include/chunk/vendor/` instead of the root of
   `include/`, where they overwrote, or were shadowed by, a user's own copy of the same
   library. In the tree they moved to `third_party/chunk/vendor/` (for instance
