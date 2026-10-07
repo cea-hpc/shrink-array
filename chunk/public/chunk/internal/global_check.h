@@ -16,13 +16,18 @@
 
 #pragma once
 
-#ifdef DO_CHECK
+#include "chunk/build_options.h" // CHUNK_OPT_DO_CHECK
+
+#if CHUNK_OPT_DO_CHECK
 
     #include <cmath>    // std::isnan
     #include <complex>  // std::complex
     #include <cstdio>   // stderr
     #include <cstdlib>  // std::abort
     #include <print>    // std::println
+
+namespace shrink_array
+{
 
 /// @brief Report element @p i as NaN on stderr and abort.
 /// @param i Index of the element.
@@ -70,5 +75,7 @@ template <typename T>
 void global_check_nan([[maybe_unused]] const T& val, [[maybe_unused]] long i) noexcept
 {
 }
+
+} // namespace shrink_array
 
 #endif

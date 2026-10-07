@@ -8,15 +8,15 @@
 
 ***
 
-Tous les noms sont dans l'espace de noms `shrink_array`, sauf `build_config` et `chunk_config` (globaux).
+Tous les noms sont dans l'espace de noms `shrink_array`, `build_config` et `chunk_config` compris ; ceux de la bibliothèque d'allocation sont dans `fast_alloc`. Les macros commencent par CHUNK (CHUNK_, CHUNK2A_) ou FAST_ALLOC_.
 
 ## 1. Démarrer et arrêter la bibliothèque
 
 | appel | en-tête | quand |
 |---|---|---|
-| `ParamChunk::init_indexes(true)` | `chunk/param_chunk.h` | une fois, avant le premier tableau (`true` : gros blocs d'allocation) |
-| `release_chunk_pools()` | `chunk/chunk_std.h` | une fois, à la fin, après le dernier tableau |
-| `destroy_block_chunk()` | `chunk/chunk_std.h` | juste après `release_chunk_pools()` |
+| `ParamChunk::init_indexes(true)` | `chunk/param_chunk.h` | facultatif, une fois, avant le premier tableau, pour choisir les blocs (`true` : gros blocs d'allocation) ; sans lui, le premier tableau lance `init_indexes(true)` |
+| `release_chunk_pools()` | `chunk/chunk_std.h` | facultatif, une fois, à la fin ; tant qu'un tableau vit encore (global ou `static`), il ne fait que vider les listes libres |
+| `destroy_block_chunk()` | `chunk/chunk_std.h` | facultatif, juste après `release_chunk_pools()` ; sans effet tant qu'un tableau vit |
 | `ParamChunk::force_compression()` | `chunk/param_chunk.h` | pour compresser maintenant tous les candidats en attente, pour une mesure ou un point de reprise |
 | `ParamChunk::ChunkStats()` | `chunk/param_chunk.h` | affiche les compteurs `CHUNK_STATS` (sans effet dans les autres builds) |
 

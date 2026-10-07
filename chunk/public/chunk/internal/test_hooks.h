@@ -48,7 +48,7 @@
 #include <chrono> // std::chrono::steady_clock, std::chrono::microseconds
 
 #include "chunk/config.h"             // build_config::force_defer_every, build_config::use_openmp
-#include "chunk/internal/cpu_pause.h" // CPU_PAUSE
+#include "chunk/internal/cpu_pause.h" // CHUNK_CPU_PAUSE
 
 #ifndef CHUNK_TEST_READ_DELAY_EVERY
     #define CHUNK_TEST_READ_DELAY_EVERY 0
@@ -67,7 +67,7 @@ namespace shrink_array::test_hooks
 {
 
 /// @brief The hooks are compiled in: CHUNK_TEST_HOOKS (the harnesses' builds).
-#ifdef CHUNK_TEST_HOOKS
+#if CHUNK_OPT_TEST_HOOKS
 inline constexpr bool compiled = true;
 #else
 inline constexpr bool compiled = false;
@@ -123,7 +123,7 @@ inline void spin_for_us(unsigned us) noexcept
     const auto wait = std::chrono::microseconds(us);
     while (std::chrono::steady_clock::now() - t0 < wait)
     {
-        CPU_PAUSE();
+        CHUNK_CPU_PAUSE();
     }
 }
 

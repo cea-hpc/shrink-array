@@ -19,7 +19,7 @@
 #include <cstdint> // uint8_t (EventCode underlying type)
 #include <cstdio>  // std::fprintf/std::snprintf — used HERE, not via includers
 
-#include "chunk/config.h" // chunk_config::ring_log_debug, RING_LOG_ANY
+#include "chunk/config.h" // chunk_config::ring_log_debug, CHUNK_RING_LOG_ANY
 
 namespace shrink_array
 {
@@ -60,7 +60,7 @@ enum EventCode : uint8_t
     EV_VALUE_FREE,  // a chunk values buffer was freed at addr
 };
 
-#ifdef RING_LOG_ANY
+#ifdef CHUNK_RING_LOG_ANY
 
 /// @brief One ring-buffer record: timestamp, thread id, event, payload and (op events) address.
 struct RingEntry

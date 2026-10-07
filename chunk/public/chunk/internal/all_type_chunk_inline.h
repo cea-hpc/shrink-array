@@ -20,8 +20,7 @@
 // (register_manager / ensure_manager, called from the arrays' create) and the
 // up-front registration of a type list (initialize<Types>).
 
-#include <atomic>  // std::memory_order (nb_managers_)
-#include <cstdio>  // the refusal messages of register_manager
+#include <cstdio>  // the refusal message of register_manager
 #include <cstdlib> // std::abort
 #include <memory>  // std::make_unique
 #include <mutex>   // std::scoped_lock (registry_mutex_)
@@ -32,6 +31,7 @@
 #include "chunk/internal/manager_chunk.h" // ManagerChunk<CHUNK_T, T>
 #include "chunk/singleton.h"              // SingletonChk<AllTypeChunk>, for ensure_manager
 #include "chunk/chunk_traits.h"           // the Chunk / Chunk2 / Chunk2A declarations initialize<Types> names
+#include "chunk/internal/link_check.h"    // CHUNK_LINK_CHECK: the program's settings, the library's
 // Not the chunk definitions: a ManagerChunk<CHUNK_T, T> is only built at the
 // instantiation of register_manager<>, in the TU that constructs the array (and
 // so has the chunk), and including them here from the arrays' own headers
@@ -46,30 +46,22 @@ void AllTypeChunk::register_manager()
     const std::scoped_lock lock(registry_mutex_);
 
     // Idempotent under the lock: initialize<Types>() may name a type whose
-    // first array already registered it, or the other way round.
-    for (const auto& m : getListTypeChunk())
+    // first array already registered it, or the other way round. One flag per
+    // manager type, no dynamic_cast: the library does not need RTTI.
+    if (registered_<ManagerT>)
     {
-        if (dynamic_cast<const ManagerT*>(m.get()) != nullptr)
-        {
-            return;
-        }
+        return;
     }
 
+    // ensure_manager() runs ensure_ready() first; initialize<Types>() runs
+    // after init_indexes(). Reaching here unready is a library bug.
     if (!ready_)
     {
-        std::fputs("shrink_array: an array was constructed before ParamChunk::init_indexes() ran -- "
-                   "call it once at startup, before the first array.\n",
-                   stderr);
-        std::abort();
-    }
-    const int count = nb_managers_.load(std::memory_order_relaxed);
-    if (count >= kMaxManagers)
-    {
-        std::fprintf(stderr, "shrink_array: more than %d (chunk template, element type) pairs in one process.\n",
-                     kMaxManagers);
+        std::fputs("shrink_array: a manager registered before ParamChunk::init_indexes() ran.\n", stderr);
         std::abort();
     }
 
+    ManagerT::init_static_state(); // the per-rank structures, before anyone can reach them
     auto manager = std::make_unique<ManagerT>();
 
     // The whole per-type setup, before anyone can see the manager: the
@@ -85,8 +77,8 @@ void AllTypeChunk::register_manager()
         }
     }
 
-    managers_[static_cast<std::size_t>(count)] = std::move(manager);
-    nb_managers_.store(count + 1, std::memory_order_release); // publishes the slot
+    publish_manager(std::move(manager));
+    registered_<ManagerT> = true;
 }
 
 template <typename ManagerT>
@@ -97,6 +89,8 @@ void AllTypeChunk::ensure_manager()
     // the same type wait on the initialisation, as the language requires.
     [[maybe_unused]] static const bool registered = []
     {
+        link_check::CHUNK_LINK_CHECK(); // links only against a library built with this TU's settings
+        ensure_ready();                 // init_indexes(true) if the program has not run it
         SingletonChk<AllTypeChunk>::getRef().register_manager<ManagerT>();
         return true;
     }();

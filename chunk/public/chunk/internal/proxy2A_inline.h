@@ -35,7 +35,7 @@
 #include "chunk/internal/concept_is_clean_assignement.h" // base_t
 #include "chunk/internal/deferred_op_pool.h"             // pool_new_ctx
 #include "chunk/internal/bad_ptr_check.h"                // CHUNK_CHECK_VALUES_PTR (check builds)
-#include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_stats.h"                  // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_size_policy.h"            // DynChunkSizeGuard, set_thread_chunk_size
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
@@ -99,7 +99,7 @@ inline constexpr int kReplayRetrySpin = 64;
  *          contention spike into a lost run. What happens instead, in every
  *          build: each turn is counted (saturating); past kReplayRetrySpin the
  *          thread yields its core so the compressor it waits for can run; at
- *          kReplayRetryCap a check build fails (INVARIANT_FAILED -- the tests
+ *          kReplayRetryCap a check build fails (CHUNK_INVARIANT_FAILED -- the tests
  *          are where a runaway loop must stop) and a release build prints one
  *          warning to stderr for the whole process, then keeps going.
  *
@@ -288,7 +288,7 @@ void Proxy2A<T>::resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk)
         {
             if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
             {
-                INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
+                CHUNK_INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
                                  "flag row is reallocated ({} -> {} chunks)",
                                  num_tab, j, nb_chunk_old, nb_chunk);
             }
@@ -780,7 +780,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                         const unsigned int csz_guard = proxy.chunk_size();
                         if (std::cmp_greater_equal(num, csz_guard))
                         {
-                            INVARIANT_FAILED("[deferred2A write] num OUT OF RANGE "
+                            CHUNK_INVARIANT_FAILED("[deferred2A write] num OUT OF RANGE "
                                              "(num={}, chunk_size={}, chunk={})",
                                              num, csz_guard, static_cast<const void*>(&chunk));
                         }
@@ -800,7 +800,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                         {
                             if (++retry_count > internal::kReplayRetryCap)
                             {
-                                INVARIANT_FAILED("[deferred2A write] chunk keeps reverting to cst before "
+                                CHUNK_INVARIANT_FAILED("[deferred2A write] chunk keeps reverting to cst before "
                                                  "store (chunk={}, num={}, values_before={}, cur_cst_val1={}, "
                                                  "cur_values={})",
                                                  static_cast<const void*>(&chunk), num,
@@ -830,7 +830,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                     {
                         if (proxy.is_cst_val1())
                         {
-                            INVARIANT_FAILED("lbd_equal_asynch: is_cst_val1 TRUE after successful store! "
+                            CHUNK_INVARIANT_FAILED("lbd_equal_asynch: is_cst_val1 TRUE after successful store! "
                                              "chunk={} num={} values_before={} values_after={}",
                                              static_cast<const void*>(&chunk), num,
                                              static_cast<const void*>(values_before),
@@ -838,7 +838,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                         }
                         if (proxy.is_cst_val2())
                         {
-                            INVARIANT_FAILED("lbd_equal_asynch: is_cst_val2 TRUE after successful store! "
+                            CHUNK_INVARIANT_FAILED("lbd_equal_asynch: is_cst_val2 TRUE after successful store! "
                                              "chunk={} num={} values_before={} values_after={}",
                                              static_cast<const void*>(&chunk), num,
                                              static_cast<const void*>(values_before),
@@ -849,7 +849,7 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                         const auto    expected = static_cast<T>(ctx->operand);
                         if (readback != expected)
                         {
-                            INVARIANT_FAILED("lbd_equal_asynch: readback mismatch after store! "
+                            CHUNK_INVARIANT_FAILED("lbd_equal_asynch: readback mismatch after store! "
                                              "chunk={} num={} expected={} readback={}",
                                              static_cast<const void*>(&chunk), num, expected, readback);
                         }
@@ -1298,13 +1298,13 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
         {
             if (proxy.is_cst_val1())
             {
-                INVARIANT_FAILED("execute_inplace_operation_async: is_cst_val1 TRUE after store! "
+                CHUNK_INVARIANT_FAILED("execute_inplace_operation_async: is_cst_val1 TRUE after store! "
                                  "chunk={} num={}",
                                  static_cast<const void*>(&ctx->chunk), ctx->num);
             }
             if (proxy.is_cst_val2())
             {
-                INVARIANT_FAILED("execute_inplace_operation_async: is_cst_val2 TRUE after store! "
+                CHUNK_INVARIANT_FAILED("execute_inplace_operation_async: is_cst_val2 TRUE after store! "
                                  "chunk={} num={}",
                                  static_cast<const void*>(&ctx->chunk), ctx->num);
             }

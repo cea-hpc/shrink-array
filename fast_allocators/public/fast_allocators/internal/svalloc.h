@@ -48,26 +48,16 @@
 
 #include <stdlib.h> // posix_memalign (POSIX: <cstdlib> need not declare it)
 
-#ifndef SIMD_SZ
-
-    #if defined MIC || defined KNL
-        #define SIMD_SZ 64u
-    #elif ARM
-        #define SIMD_SZ 16u
-    #elif ATOS_7
-        #define SIMD_SZ 32u
-    #else
-        #define SIMD_SZ 32u
-    #endif
-
+#ifndef FAST_ALLOC_SIMD_SZ
+    #define FAST_ALLOC_SIMD_SZ 32u
 #endif
 
 namespace fast_alloc
 {
 
 /// @brief The alignment of the aligned allocations and of the aligned bucket
-///        ladder: SIMD_SZ bytes (a build may define SIMD_SZ itself).
-inline constexpr std::size_t alignment = SIMD_SZ;
+///        ladder: FAST_ALLOC_SIMD_SZ bytes (a build may define FAST_ALLOC_SIMD_SZ itself).
+inline constexpr std::size_t alignment = FAST_ALLOC_SIMD_SZ;
 
 /**
  * @brief Report a failed allocation and stop -- the library's policy on
@@ -131,8 +121,6 @@ inline void check_malloc(const void* p, const char* what, std::size_t n, std::si
 }
 } // namespace detail
 
-} // namespace fast_alloc
-
 /// @brief @p n elements of T, uninitialised, aligned on fast_alloc::alignment.
 ///        Release with svfree_align(). Never null: aborts on failure.
 template <typename T>
@@ -189,3 +177,5 @@ inline void svfree(const void* p) noexcept
     assert(p != nullptr);
     std::free(const_cast<void*>(p));
 }
+
+} // namespace fast_alloc

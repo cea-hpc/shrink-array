@@ -67,8 +67,39 @@ else()
   target_compile_features(fast_allocators PRIVATE cxx_std_23)
 endif()
 
+# --- fast_allocators/build_options.h -------------------------------------
+# The options the headers read, generated into the build tree and installed:
+# an installed consumer compiles them exactly as the library was. Defaults for
+# a standalone build of this directory: Debug checks with a Debug build, slab
+# reclaim on, no list walking.
+if (NOT DEFINED CHUNK_DEBUG)
+  if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CHUNK_DEBUG ON)
+  else()
+    set(CHUNK_DEBUG OFF)
+  endif()
+endif()
+if (NOT DEFINED CHUNK_RECLAIM_EMPTY_SLABS)
+  set(CHUNK_RECLAIM_EMPTY_SLABS ON)
+endif()
+foreach(_fa_opt OPENMP:ALLOCATORS_OMP DEBUG:CHUNK_DEBUG CHECK_LISTS:FAST_ALLOC_CHECK_LISTS
+                RECLAIM_EMPTY_SLABS:CHUNK_RECLAIM_EMPTY_SLABS)
+  string(REPLACE ":" ";" _fa_pair ${_fa_opt})
+  list(GET _fa_pair 0 _fa_name)
+  list(GET _fa_pair 1 _fa_var)
+  if (${_fa_var})
+    set(FAST_ALLOC_OPT_${_fa_name} 1)
+  else()
+    set(FAST_ALLOC_OPT_${_fa_name} 0)
+  endif()
+endforeach()
+set(FAST_ALLOC_GENERATED_INCLUDE_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+configure_file(public/fast_allocators/build_options.h.in
+  ${FAST_ALLOC_GENERATED_INCLUDE_DIR}/fast_allocators/build_options.h @ONLY)
+
 target_include_directories(fast_allocators
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/public>
+  $<BUILD_INTERFACE:${FAST_ALLOC_GENERATED_INCLUDE_DIR}>
   $<INSTALL_INTERFACE:include>)
 
 if (ALLOCATORS_OMP)
@@ -98,6 +129,9 @@ install(DIRECTORY public/fast_allocators
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
   COMPONENT fast_allocators-devel
   FILES_MATCHING PATTERN "*.h")
+install(FILES ${FAST_ALLOC_GENERATED_INCLUDE_DIR}/fast_allocators/build_options.h
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fast_allocators
+  COMPONENT fast_allocators-devel)
 
 include(CMakePackageConfigHelpers)
 

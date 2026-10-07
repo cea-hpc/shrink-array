@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <algorithm> // std::ranges::contains, the registered sizes
+#include <algorithm> // std::ranges::contains (the registered sizes), std::copy_n (the registry table)
 #include <cstddef>   // std::size_t (the reuse-pool byte counts)
 #include <mutex>     // std::mutex, std::lock_guard
 #include <atomic>    // for atomic_thread_fence, memory_order_seq_cst, atomic
@@ -32,12 +32,13 @@
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
 #include "chunk/manage_ompt.h"               // the declarations of the five phase functions below
+#include "chunk/param_chunk.h"               // ParamChunk::init_indexes (ensure_ready)
 
 // Stays a directive, and cannot be anything else: a std-alloc build does not put
 // fast_allocators/public on the include path at all, so the header is not merely
 // unused there -- it is unreachable. The two report_all_arenas() calls below are
 // guarded the same way for the same reason.
-#ifndef CHUNK_STD_ALLOC
+#if !CHUNK_OPT_STD_ALLOC
     #include "fast_allocators/slab_arena.h" // step-1 arena RSS instrumentation
 #endif
 
@@ -54,6 +55,47 @@ AllTypeChunk::AllTypeChunk()
         check_ompt_tool_loaded();
     }
 }
+void AllTypeChunk::ensure_ready()
+{
+    static std::once_flag once;
+    std::call_once(once,
+                   []
+                   {
+                       auto& reg   = SingletonChk<AllTypeChunk>::getRef();
+                       bool  ready = false;
+                       {
+                           const std::scoped_lock lock(reg.registry_mutex_);
+                           ready = reg.ready_;
+                       }
+                       if (!ready)
+                       {
+                           ParamChunk::init_indexes(true);
+                       }
+                   });
+}
+
+void AllTypeChunk::publish_manager(std::unique_ptr<ManagerChunkInt> manager)
+{
+    const auto count = static_cast<std::size_t>(nb_managers_.load(std::memory_order_relaxed));
+    if (count == table_capacity_)
+    {
+        // Full (or none yet): a table twice as large, the published slots
+        // copied, published before the count that will cover the new slot.
+        const std::size_t capacity = table_capacity_ == 0 ? kFirstTableSize : 2 * table_capacity_;
+        auto              table    = std::make_unique<ManagerChunkInt*[]>(capacity);
+        if (table_capacity_ != 0)
+        {
+            std::copy_n(tables_.back().get(), count, table.get());
+        }
+        table_.store(table.get(), std::memory_order_release);
+        tables_.push_back(std::move(table));
+        table_capacity_ = capacity;
+    }
+    owned_.push_back(std::move(manager));
+    tables_.back()[count] = owned_.back().get();
+    nb_managers_.store(static_cast<int>(count + 1), std::memory_order_release); // publishes the slot
+}
+
 namespace
 {
 // Cross-thread exclusion of the SERIAL deferred flush. Deliberately SEPARATE
@@ -156,7 +198,7 @@ void finalize_parallel_phase_after_flush()
         // Empirically load-bearing (see the note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
         std::atomic_thread_fence(std::memory_order_seq_cst);
-#ifndef CHUNK_STD_ALLOC
+#if !CHUNK_OPT_STD_ALLOC
         fast_alloc::report_all_arenas("after_flush");
 #endif
     }
@@ -190,7 +232,7 @@ void finalize_parallel_phase()
         // Empirically load-bearing (see the note in
         // finalize_parallel_phase_only_flush). Do NOT remove.
         std::atomic_thread_fence(std::memory_order_seq_cst);
-#ifndef CHUNK_STD_ALLOC
+#if !CHUNK_OPT_STD_ALLOC
         fast_alloc::report_all_arenas("finalize_phase");
 #endif
     }
@@ -243,7 +285,7 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
     {
         if (elm->have_chunk_to_compress_potentially(max_thr))
         {
-            work.push_back(elm.get());
+            work.push_back(elm);
         }
     }
     if (work.empty())

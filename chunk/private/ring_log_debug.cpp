@@ -35,7 +35,7 @@
 #include "chunk/PMP_CHUNK.h"      // chunk_pmp_team_rank (get_tid)
 #include "chunk/ring_log_debug.h" // the declarations defined here
 
-#ifdef RING_LOG_ANY
+#ifdef CHUNK_RING_LOG_ANY
 
 namespace shrink_array
 {

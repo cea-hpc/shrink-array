@@ -122,7 +122,7 @@ using invariant_fmt_arg_t = std::conditional_t<std::is_lvalue_reference_v<R>, R,
 /**
  * @brief Report a broken invariant on stderr -- location, message, backtrace --
  *        and abort.
- * @param loc  Where the check failed (INVARIANT_FAILED passes the caller's).
+ * @param loc  Where the check failed (CHUNK_INVARIANT_FAILED passes the caller's).
  * @param fmt  std::format string of the message.
  * @param args Its arguments; one with no formatter is printed as its bytes.
  */
@@ -163,6 +163,6 @@ template <typename... Args>
 // --- The Frontend Macro ---
 // This is the ONLY way to capture source_location automatically
 // while keeping std::format_string compile-time checks.
-#define INVARIANT_FAILED(fmt, ...) shrink_array::invariant_failed(std::source_location::current(), fmt, ##__VA_ARGS__)
+#define CHUNK_INVARIANT_FAILED(fmt, ...) shrink_array::invariant_failed(std::source_location::current(), fmt, ##__VA_ARGS__)
 
 } // namespace shrink_array

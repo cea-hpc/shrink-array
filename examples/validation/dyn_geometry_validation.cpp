@@ -16,7 +16,7 @@
 
 // ============================================================================
 // Dynamic-geometry validation harness. Variant-agnostic: tests chunk / chunk2 /
-// chunk2a depending on the compile-time macro (CHUNK / CHUNK2 / CHUNK2A), like
+// chunk2a depending on the compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like
 // rechunk_validation.cpp and shrink_bench.cpp.
 // ============================================================================
 //
@@ -74,7 +74,7 @@ namespace validation::dyn_geometry_validation
 
 // --- Active variant selection (same shape as rechunk_validation.cpp) ---------
 static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a,
-              "dyn_geometry_validation must be built with CHUNK, CHUNK2 or CHUNK2A");
+              "dyn_geometry_validation must be built with CHUNK_VARIANT_V1, _V2 or _V2A");
 
 static_assert(build_config::chunk_dynamic,
               "dyn_geometry_validation is meaningless without CHUNK_DYNAMIC: with the "

@@ -131,7 +131,7 @@ class DirtyBitsetSupport<Derived, true>
     static void clear_all_dirty_bitsets()
     {
         using proxy_type = Derived::proxy_type;
-        proxy_type::share_info_array.for_each_key(
+        proxy_type::share_info_array->for_each_key(
             [](const void* key)
             {
                 if (key)

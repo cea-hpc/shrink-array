@@ -16,6 +16,9 @@
 
 #pragma once
 
+namespace shrink_array
+{
+
 /// @brief Compile-time settings of Chunk2A: compression-list and buffer-reuse thresholds.
 class Chunk2ADef
 {
@@ -29,7 +32,7 @@ class Chunk2ADef
     // arrays at high thread counts).
     //
     // This is driven by a DEDICATED knob, CHUNK2A_COMPRESS_LEVEL, NOT the global
-    // SHRINK_LEVEL: the global one also drives chunk2's thresholds and buffer
+    // CHUNK_TUNING_LEVEL: the global one also drives chunk2's thresholds and buffer
     // reuse, so tuning chunk2a through it would move several unrelated
     // variables at once and make A/B comparisons meaningless.
     // Override at build time with -DCHUNK2A_COMPRESS_LEVEL=<0|1|2|3>:
@@ -64,3 +67,6 @@ class Chunk2ADef
     /// Reuse budget per thread = chunks / (this * max threads); used for every variant, global and per size.
     constexpr static int factor_div_somme_chunk_buffer_resuse = 50;
 };
+
+} // namespace shrink_array
+

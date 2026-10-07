@@ -16,7 +16,7 @@
 
 // ============================================================================
 // Deferred-write path harness. Variant-agnostic: chunk / chunk2 / chunk2a by
-// the compile-time macro (CHUNK / CHUNK2 / CHUNK2A), like the other harnesses.
+// the compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like the other harnesses.
 // ============================================================================
 //
 // Guards ONE property: a write that the engine refuses on the spot and PARKS
@@ -106,7 +106,7 @@
 #include "chunk/PMP_CHUNK.h"          // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"        // begin_parallel_phase / finalize_parallel_phase
 #include "chunk/internal/env_parse.h" // env_number / arg_number (checked, not atoi)
-#ifdef CHUNK_STATS
+#if CHUNK_OPT_STATS
     #include "chunk/internal/chunk_stats.h" // CHUNK_STATS_N_VARIANT, reduce_chunk_stats
 #endif
 
@@ -847,7 +847,7 @@ int run(int argc, char** argv)
         }
     }
 
-#ifdef CHUNK_STATS
+#if CHUNK_OPT_STATS
     if (test_hooks::force_defer_compiled && test_hooks::force_defer_every > 0)
     {
         long deferred = 0;

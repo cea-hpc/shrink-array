@@ -25,7 +25,7 @@
 #include "chunk/config.h"                     // build_config::use_openmp, chunk_dynamic
 #include "chunk/internal/chunk_size_config.h" // __chunk_size, __decalage_chunk, __modulo_chunk
 #include "chunk/internal/chunk_size_policy.h" // active_chunk_size
-#include "chunk/internal/func_p2.h"           // is_power_of_tow, log2int
+#include "chunk/internal/func_p2.h"           // is_power_of_two, log2int
 #include "chunk/singleton.h"                  // SingletonChk
 #include "chunk/all_type_chunk.h"             // AllTypeChunk
 
@@ -39,8 +39,10 @@ namespace shrink_array
  *          chunked array: it publishes the chunk geometry (size / shift / mask),
  *          sizes the allocation blocks, creates the value allocators and the
  *          per-thread reuse structures, and prints the instrumentation report at
- *          the end of the run. A typical program calls exactly two of these:
- *          ParamChunk::init_indexes() at startup and ParamChunk::ChunkStats() at exit.
+ *          the end of the run. A typical program calls at most two of these:
+ *          ParamChunk::init_indexes() at startup -- optional, the first array
+ *          runs init_indexes(true) when it was not called -- and
+ *          ParamChunk::ChunkStats() at exit.
  *
  *          The geometry accessors are compatibility shims: the chunk size is a
  *          compile-time constant (see chunk_size_config.h) so that `i >>
@@ -236,7 +238,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      */
     static bool check_pow2(int chunk_size) noexcept
     {
-        return is_power_of_tow(chunk_size);
+        return is_power_of_two(chunk_size);
     }
 
     /**
@@ -283,8 +285,10 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *                        result is divided by the thread count and floored at
      *                        a minimum, so it never degenerates on many threads.
      *
-     * @note Must be called once, in a sequential context, before any chunked array
-     *       is used.
+     * @note Optional. Called in a sequential context before the first array,
+     *       it chooses @p big_chunk_block; otherwise the first array of the
+     *       process runs init_indexes(true) itself (AllTypeChunk::ensure_ready),
+     *       wherever it is constructed -- a global array included.
      * @warning A chunk must fit in one allocation block; a warning is emitted
      *          otherwise.
      */

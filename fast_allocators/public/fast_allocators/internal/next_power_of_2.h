@@ -18,6 +18,9 @@
 
 #include <bit> // std::bit_ceil (C++20)
 
+namespace fast_alloc
+{
+
 /**
  * @brief Smallest power of two >= @p value; 1 for 0 and 1.
  * @details std::bit_ceil, which is defined for 0 and 1 (both give 1). The
@@ -27,3 +30,6 @@
 {
     return std::bit_ceil(value);
 }
+
+} // namespace fast_alloc
+

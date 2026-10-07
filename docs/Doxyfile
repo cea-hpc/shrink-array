@@ -2057,10 +2057,10 @@ INCLUDE_FILE_PATTERNS  =
 PREDEFINED             = _OPENMP \
                          CHUNK_DYNAMIC \
                          CHUNK_STATS \
-                         "FORCE_INLINE=inline" \
-                         "SA_FLATTEN=" \
-                         "SA_ASSUME(x)=" \
-                         "SA_INHERIT_CTOR_TYPENAME=" \
+                         "CHUNK_FORCE_INLINE=inline" \
+                         "CHUNK_FLATTEN=" \
+                         "CHUNK_ASSUME(x)=" \
+                         "CHUNK_INHERIT_CTOR_TYPENAME=" \
                          "FAST_ALLOC_COLD=" \
                          "HOT=" \
                          "COLD=" \

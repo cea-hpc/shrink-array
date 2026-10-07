@@ -23,12 +23,12 @@
 //   1. defines BZIP2 by default (unless already defined by the build system),
 //   2. pulls the base chunk headers in the correct order,
 //   3. derives SHRINK_ARRAY / CHECK_COMPRESSION / NEED_COMPRESSION from the
-//      variant macros (CHUNK / CHUNK2 / CHUNK2A) and the mode macros
-//      (DEBUG / CHECK),
+//      variant macros (CHUNK_VARIANT_V1 / _V2 / _V2A) and the mode macros
+//      (CHUNK_OPT_DEBUG / CHECK),
 //   4. pulls the variant-specific array_chunk* headers,
 //   5. defines the complex_double alias used across TUs.
 //
-// The variant macros (CHUNK / CHUNK2 / CHUNK2A) MUST be defined identically
+// The variant macros (CHUNK_VARIANT_V1 / _V2 / _V2A) MUST be defined identically
 // on every TU of a given executable target. In practice they are defined
 // PUBLIC on the chunk_vN library target so nothing else has to worry.
 
@@ -72,14 +72,14 @@
 
 #include "bench_int.h" // Int / UInt: the bench index type (32- or 64-bit)
 
-#include "chunk/chunk_define.h"            // FAST_ALLOC (the bench TUs)
+#include "chunk/build_options.h"           // CHUNK_OPT_* (the bench TUs)
 #include "chunk/term_color.h"              // tc (the bench TUs)
 #include "chunk/PMP_CHUNK.h"               // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"             // begin_parallel_phase, finalize_barrier_phase (bench_phases.h)
 #include "chunk/singleton.h"               // SingletonChk (the bench TUs)
 #include "chunk/global_stats_chunk_list.h" // GlobalStatsChunkList (shrink_bench.cpp)
 
-#if (defined CHUNK || defined CHUNK2 || defined CHUNK2A)
+#if (defined CHUNK_VARIANT_V1 || defined CHUNK_VARIANT_V2 || defined CHUNK_VARIANT_V2A)
     #define SHRINK_ARRAY
 #endif
 
@@ -209,7 +209,7 @@ inline BenchSched bench_sched_for(Int start, Int end) noexcept
 // Not gated on any mode macro: the mode is a runtime flag (--mode, see
 // bench_config.h). A debug build always carries the compression verification
 // code; a --mode perf run simply does not execute it.
-#if defined SHRINK_ARRAY && defined DEBUG
+#if defined SHRINK_ARRAY && CHUNK_OPT_DEBUG
     #define CHECK_COMPRESSION
 #endif
 
@@ -221,11 +221,16 @@ inline BenchSched bench_sched_for(Int start, Int end) noexcept
 #include "chunk/config.h"      // chunk_config::, build_config:: (the bench TUs)
 #include "chunk/type_name.h"   // type_name<T>() (shrink_bench.cpp)
 
-#ifdef CHUNK
+// The library's configuration lives in namespace shrink_array; the bench TUs
+// read it under its short names.
+namespace build_config = shrink_array::build_config;
+namespace chunk_config = shrink_array::chunk_config;
+
+#ifdef CHUNK_VARIANT_V1
     #include "chunk/array_chunk.h" // ArrayChunk (the CHUNK variant)
-#elifdef CHUNK2
+#elifdef CHUNK_VARIANT_V2
     #include "chunk/array_chunk2.h" // ArrayChunk2 (the CHUNK2 variant)
-#elifdef CHUNK2A
+#elifdef CHUNK_VARIANT_V2A
     #include "chunk/array_chunk2.h"  // ArrayChunk2 (tab_bool, see bench_array.h)
     #include "chunk/array_chunk2A.h" // ArrayChunk2A (the CHUNK2A variant)
 #else

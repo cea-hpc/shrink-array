@@ -6,7 +6,7 @@ import sys
 import time
 import argparse
 
-from . import state
+from . import events, state
 from .builds import CURRENT_MACHINE, short_config_label
 from .phases.check import run_check_phase
 from .phases.ctest import run_ctest_phase
@@ -239,6 +239,11 @@ def build_parser():
                              "$CCCWORKDIR/bench_results when that "
                              "work tree exists (never the script's own directory), "
                              "else the current directory. Created if missing.")
+    parser.add_argument("--events-file", default=os.environ.get("CHUNK_BENCH_EVENTS"),
+                        help="Write the run's structured progress there, one JSON object per "
+                             "line (phase start/end, runs done, end of run): what an outside "
+                             "tool such as shrink_gui follows. Default: $CHUNK_BENCH_EVENTS, "
+                             "else none.")
     parser.add_argument("--errors-log",  default="bench_errors.log",
                         help="Errors log filename (placed in --output-dir).")
     parser.add_argument("--summary-csv", default="bench_summary.csv",
@@ -380,6 +385,9 @@ def main():
     drop_absent_configs(args)
     plan = Plan(args, perf_excluded, extra_ldpath)
     counter = RunCounter(plan.count_runs())
+    events.open_file(args.events_file)
+    events.emit("start", total_runs=counter.total, configs=list(args.configs),
+                variants=list(args.variants), output_dir=args.output_dir, argv=sys.argv[1:])
 
     results = {}
     errors  = []
@@ -390,15 +398,19 @@ def main():
         # First on purpose: quick, and a failure here reads better than the
         # same fault surfacing as a bench crash three phases later.
         if not args.skip_ctest:
-            run_ctest_phase(args, extra_ldpath, errors)
+            with events.phase("ctest", errors):
+                run_ctest_phase(args, extra_ldpath, errors)
 
         # --- Phase 1: Correctness ---------------------------------------
         if not args.skip_check:
-            run_check_phase(args, plan, counter, errors)
+            with events.phase("check", errors):
+                run_check_phase(args, plan, counter, errors)
             if not args.skip_stl_test:
-                run_stl_phase(args, plan, counter, errors)
+                with events.phase("stl", errors):
+                    run_stl_phase(args, plan, counter, errors)
             if not args.skip_sanitizers:
-                run_sanitizer_phase(args, plan, counter, errors)
+                with events.phase("sanitizer", errors):
+                    run_sanitizer_phase(args, plan, counter, errors)
 
         # --- Phase 1b: seq-vs-omp compression-classification compare ----
         # A correctness check, so it sits with the others, BEFORE the perf
@@ -406,34 +418,40 @@ def main():
         # OpenMP build is a bug to look at now, not after an hour of timings.
         # Reads CHUNK_STATS, so it only bites on a -stats pair.
         if not args.skip_seq_omp_compare:
-            run_seq_omp_compare_phase(args, extra_ldpath, errors)
+            with events.phase("seq_omp_compare", errors):
+                run_seq_omp_compare_phase(args, extra_ldpath, errors)
 
         # --- Phase 2: Performance ---------------------------------------
         if not args.skip_perf:
-            run_perf_phase(args, plan, counter, errors, results)
+            with events.phase("perf", errors):
+                run_perf_phase(args, plan, counter, errors, results)
 
         # --- Phase 3: adaptive re-chunk feature test (dyn) --------------
         if not args.skip_rechunk:
-            run_rechunk_phase(args, extra_ldpath, errors)
+            with events.phase("rechunk", errors):
+                run_rechunk_phase(args, extra_ldpath, errors)
 
         # --- Phase 3b: 64-bit index checks (int64 binaries) --------------
         # Needs the oracles of the correctness phase, like the rechunk check.
         if not args.skip_check and not args.skip_int64_check:
-            run_int64_check_phase(args, extra_ldpath, errors)
+            with events.phase("int64_check", errors):
+                run_int64_check_phase(args, extra_ldpath, errors)
 
         # --- Phase 4: scalability guard (omp-llvm, omp-gnu) -------------
         # After the perf sweep: it reads the same binaries, and a failure here
         # is about the SHAPE of the curve, which only means something once the
         # timings above have been produced without incident.
         if not args.skip_scaling and not args.skip_perf:
-            run_scaling_phase(args, extra_ldpath, errors)
+            with events.phase("scaling", errors):
+                run_scaling_phase(args, extra_ldpath, errors)
 
         # --- Phase 5: randomised parameter sweep (opt-in) ---------------
         # Last on purpose: it is the only phase that does NOT repeat the same
         # trajectory, so a failure here is new information rather than a
         # re-confirmation, and running it after the deterministic phases keeps
         # their timings clean.
-        run_fuzz_phase(args, extra_ldpath, errors)
+        with events.phase("fuzz", errors):
+            run_fuzz_phase(args, extra_ldpath, errors)
 
     except KeyboardInterrupt:
         interrupted = True
@@ -445,6 +463,8 @@ def main():
                   mem_chunk2a_vs_chunk2_max=mem_c2a_vs_c2,
                   mem_vs_baseline_max=args.mem_vs_baseline_max)
 
+    events.emit("end", errors=len(errors), interrupted=interrupted, minutes=round(total_min, 2),
+                summary_csv=args.summary_csv, errors_log=args.errors_log)
     sys.exit(1 if errors else (130 if interrupted else 0))
 
 

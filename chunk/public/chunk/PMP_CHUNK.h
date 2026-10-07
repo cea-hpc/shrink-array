@@ -49,7 +49,7 @@ struct chunk_pmp_schedule
 
     #include <omp.h> // omp_get_thread_num, omp_get_max_threads, omp_in_parallel
 
-    #include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
+    #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
     #include "chunk/internal/env_parse.h"       // CHUNK_THREAD_CAPACITY
 
 namespace shrink_array
@@ -98,7 +98,7 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
 {
     if (rank >= chunk_thread_capacity()) [[unlikely]]
     {
-        INVARIANT_FAILED("thread rank {} but the per-thread structures hold {}: the OpenMP team grew past the thread "
+        CHUNK_INVARIANT_FAILED("thread rank {} but the per-thread structures hold {}: the OpenMP team grew past the thread "
                          "capacity fixed when the arrays were set up. Set OMP_NUM_THREADS (or call "
                          "omp_set_num_threads) to the largest team before creating the arrays, or raise "
                          "CHUNK_THREAD_CAPACITY.",
@@ -134,7 +134,7 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
     }
     if (omp_get_active_level() > 1) [[unlikely]]
     {
-        INVARIANT_FAILED("nested ACTIVE parallel regions (active level {}) are not supported by the chunk arrays: "
+        CHUNK_INVARIANT_FAILED("nested ACTIVE parallel regions (active level {}) are not supported by the chunk arrays: "
                          "per-thread ranks of different inner teams would collide. Keep the inner regions "
                          "serialised (OMP_MAX_ACTIVE_LEVELS=1, the default) or do not touch the arrays in them.",
                          omp_get_active_level());
@@ -200,7 +200,6 @@ inline void chunk_pmp_set_max_active_levels(int levels) noexcept
 {
     omp_set_max_active_levels(levels);
 }
-} // namespace shrink_array
 
 /// @brief Rank of the calling thread in the active OpenMP team, read from the thread-local cache.
 /// @return The cached rank; filled from the OpenMP library on first use when the cache holds -1.
@@ -223,7 +222,7 @@ inline int get_thr_rank_fast() noexcept
         // builds too, where an assert is compiled out.
         if (rank != ::shrink_array::chunk_pmp_library_rank()) [[unlikely]]
         {
-            INVARIANT_FAILED("stale thread-rank cache: {} but this thread is rank {} of the active team", rank,
+            CHUNK_INVARIANT_FAILED("stale thread-rank cache: {} but this thread is rank {} of the active team", rank,
                              ::shrink_array::chunk_pmp_library_rank());
         }
     }
@@ -239,9 +238,10 @@ inline int chunk_pmp_thread_rank() noexcept
     return ::shrink_array::chunk_pmp_checked_rank(::shrink_array::chunk_pmp_library_rank());
 }
 
-        #define CHUNK_PMP_THREAD_RANK chunk_pmp_thread_rank()
+        #define CHUNK_PMP_THREAD_RANK ::shrink_array::chunk_pmp_thread_rank()
 
     #endif
+} // namespace shrink_array
 
     #ifndef CHUNK_PMP_MAX_THREADS
         #define CHUNK_PMP_MAX_THREADS omp_get_max_threads()
@@ -290,13 +290,13 @@ inline void chunk_pmp_set_schedule(chunk_pmp_schedule) noexcept {}
 inline void chunk_pmp_set_num_threads(int) noexcept {}
 /// @copydoc chunk_pmp_set_max_active_levels -- serial build: no levels.
 inline void chunk_pmp_set_max_active_levels(int) noexcept {}
-} // namespace shrink_array
 
 /// @brief Serial build: the calling thread's rank, always 0.
 inline int get_thr_rank_fast() noexcept
 {
     return 0;
 }
+} // namespace shrink_array
     #ifndef CHUNK_PMP_THREAD_RANK
         #define CHUNK_PMP_THREAD_RANK 0
     #endif
@@ -326,6 +326,8 @@ inline int get_thr_rank_fast() noexcept
 
 #endif
 
+namespace shrink_array
+{
 /// @brief Size of a per-thread table for @p nn elements.
 /// @param nn Number of elements.
 /// @return nn / max_threads + max_threads inside a parallel region when nn exceeds the thread count (>1),
@@ -365,3 +367,5 @@ inline int get_size_max_tab_omp(int nn, [[maybe_unused]] int nb_static)
 #endif
     return nn;
 }
+
+} // namespace shrink_array

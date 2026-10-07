@@ -109,7 +109,7 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
         return;
     }
 
-    const auto& sh_inf  = Proxy<T>::share_info_array;
+    const auto& sh_inf  = *Proxy<T>::share_info_array;
     const int   num_tab = sh_inf.get_num_tab(this->registry_key());
 
     // Plain Chunk classification: a block that is NOT written() is stored in its
@@ -219,7 +219,7 @@ void ArrayChunk<T, ind_type>::clear_core()
     // relies on this to keep the shared list free of foreign-geometry chunks.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const auto& sh_inf   = Proxy<T>::share_info_array;
+        const auto& sh_inf   = *Proxy<T>::share_info_array;
         const int   num_tab_ = sh_inf.get_num_tab(this->registry_key());
         manager_chunk::remove_from_compress_list_chunk_by_num_tab(num_tab_);
     }
@@ -537,7 +537,7 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
         make_block_compression();
     }
 
-    const auto& sh_inf = Proxy<T>::share_info_array;
+    const auto& sh_inf = *Proxy<T>::share_info_array;
 
     const int num_tab = sh_inf.get_num_tab(this->registry_key());
 

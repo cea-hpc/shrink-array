@@ -97,8 +97,8 @@
 #                           on), and std::sortable is false (no in-place
 #                           sort, by construction).
 #
-# All sources are variant-agnostic (the array type follows the CHUNK / CHUNK2
-# / CHUNK2A macro) and depend on the library alone -- none of the shrink_bench
+# All sources are variant-agnostic (the array type follows the CHUNK_VARIANT_V1 /
+# _V2 / _V2A macro) and depend on the library alone -- none of the shrink_bench
 # bench files -- which is why they live here rather than next to the bench.
 # Every test carries the `validation` label: `ctest -L validation` runs the
 # lot, and that is what python/bench_and_test.py's ctest phase invokes.
@@ -152,7 +152,7 @@ set(CHUNK_VALIDATION_UNITY_BATCH "0" CACHE STRING "Harnesses per unity translati
 
 set(_rt_variant_names   chunk       chunk2      chunk2a)
 set(_rt_variant_libbase chunk_v1    chunk_v2    chunk_v2a)
-set(_rt_variant_macro   CHUNK       CHUNK2      CHUNK2A)
+set(_rt_variant_macro   CHUNK_VARIANT_V1 CHUNK_VARIANT_V2 CHUNK_VARIANT_V2A)
 
 set(_rt_geometries ${CHUNK_DEFAULT_SIZE})
 if (CHUNK_BUILD_DYN)
@@ -344,14 +344,14 @@ foreach(_geom IN LISTS _rt_geometries)
   endforeach()
 endforeach()
 
-# --- fill_range_mt_v1v2_validation: the two-variant library (CHUNK=1;CHUNK2=1,
+# --- fill_range_mt_v1v2_validation: the two-variant library (CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1,
 # default static size, no OMPT tool -- the harness defines the switch and makes
 # the phase calls, as multi-mat does), ArrayChunk and ArrayChunk2 in one
 # program. At 1 and 8 threads like the others.
 if (TARGET chunk_v1v2_${CHUNK_DEFAULT_SIZE})
   set(_tgt fill_range_mt_v1v2_validation)
   add_executable(${_tgt} fill_range_mt_v1v2_validation.cpp)
-  target_link_libraries(${_tgt} PRIVATE chunk_v1v2_${CHUNK_DEFAULT_SIZE}) # CHUNK, CHUNK2, CHUNK_SIZE: PUBLIC
+  target_link_libraries(${_tgt} PRIVATE chunk_v1v2_${CHUNK_DEFAULT_SIZE}) # CHUNK_VARIANT_V1, _V2, CHUNK_SIZE: PUBLIC
   validation_setup_target(${_tgt})
   foreach(_nthr 1 8)
     add_test(NAME ${_tgt}_${_nthr}thr COMMAND ${_tgt})

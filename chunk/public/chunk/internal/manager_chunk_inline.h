@@ -204,7 +204,7 @@ bool ManagerChunk<CHUNK_T, T>::have_chunk_to_compress_potentially(int n_thr) con
         {
             if constexpr (is_not_bool)
             {
-                const auto& sh_inf           = Proxy2<T>::share_info_array;
+                const auto& sh_inf           = *Proxy2<T>::share_info_array;
                 const auto& v_all_second_val = sh_inf.get_all_second_value();
                 return std::ranges::any_of(v_all_second_val, [n_thr](const auto& second_value)
                                            { return CHUNK_T<T>::have_chunk_to_compress(second_value, n_thr); });
@@ -242,7 +242,7 @@ void ManagerChunk<CHUNK_T, T>::compress_chunk_to_compress_potentially([[maybe_un
         {
             if constexpr (is_not_bool)
             {
-                const auto& sh_inf          = Proxy2<T>::share_info_array;
+                const auto& sh_inf          = *Proxy2<T>::share_info_array;
                 const auto& v_all_inf_array = sh_inf.get_all_inf_array();
                 for (const auto& inf_array : v_all_inf_array)
                 {
@@ -269,7 +269,7 @@ void ManagerChunk<CHUNK_T, T>::sweep_prepare()
     {
         if constexpr (is_not_bool)
         {
-            const auto v = Proxy2<T>::share_info_array.get_all_inf_array();
+            const auto v = Proxy2<T>::share_info_array->get_all_inf_array();
             sweep_inf_arrays_.assign(v.begin(), v.end());
         }
     }
@@ -634,7 +634,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::alloc_chunk_allocator_thr()
     if constexpr (build_config::use_openmp && build_config::use_fast_alloc)
     {
         // Built whole: an allocator is not movable.
-        CHUNK_T<T>::allocator_data = std::vector<TCTypeCAllocator<T>>(static_cast<std::size_t>(self.max_thr));
+        *CHUNK_T<T>::allocator_data = std::vector<TCTypeCAllocator<T>>(static_cast<std::size_t>(self.max_thr));
     }
 }
 
@@ -694,8 +694,8 @@ void ManagerChunkParallelImpl<CHUNK_T, T, false>::init_allocator(int block_size)
     // default, so a value pool never shares slabs with the deferred-op pool
     // (see register_chunk_size_serial in chunk_base.h; this is the static /
     // unregistered-size fallback allocator).
-    CHUNK_T<T>::allocator_data.set_arena(fast_alloc::ArenaKind::Value);
-    CHUNK_T<T>::allocator_data.init(CHUNK_T<T>::storage_units(shrink_array::alloc_chunk_count()), block_size, -1);
+    CHUNK_T<T>::allocator_data->set_arena(fast_alloc::ArenaKind::Value);
+    CHUNK_T<T>::allocator_data->init(CHUNK_T<T>::storage_units(shrink_array::alloc_chunk_count()), block_size, -1);
 }
 
 /**
@@ -753,7 +753,14 @@ template <template <typename> typename CHUNK_T, typename T>
 void ManagerChunkParallelImpl<CHUNK_T, T, false>::delete_chunk_allocator()
 {
     // std-alloc: allocator_data is NullValueAllocator, destroy() is a no-op.
-    CHUNK_T<T>::allocator_data.destroy();
+    CHUNK_T<T>::allocator_data->destroy();
+}
+
+template <template <typename> typename CHUNK_T, typename T>
+void ManagerChunk<CHUNK_T, T>::init_static_state()
+{
+    CompressionManager<T, CHUNK_T<T>>::ensure_initialised();
+    (void)CHUNK_T<T>::get_manager(); // built now, outside any parallel region of the type
 }
 
 /**
@@ -772,7 +779,7 @@ void ManagerChunk<CHUNK_T, T>::destroy_block_chunk()
     // std-alloc: allocator_data is NullValueAllocator, destroy() is a no-op.
     if constexpr (build_config::not_use_openmp)
     {
-        CHUNK_T<T>::allocator_data.destroy();
+        CHUNK_T<T>::allocator_data->destroy();
     }
 }
 
@@ -841,13 +848,13 @@ std::size_t ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_pr
     nb      = std::max(nb, mgr::get_list_block_free_thr().size());
     if constexpr (build_config::chunk_dynamic)
     {
-        for (const auto& size_kv : mgr::list_block_free_thr_by_size_)
+        for (const auto& size_kv : *mgr::list_block_free_thr_by_size_)
         {
             nb = std::max(nb, size_kv.second.size());
         }
     }
 
-    for (const auto& key_kv : mgr::list_block_free_thr_keyed_)
+    for (const auto& key_kv : *mgr::list_block_free_thr_keyed_)
     {
         nb = std::max(nb, key_kv.second.size());
     }
@@ -915,7 +922,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_screen(in
     // array's worth of chunks. Applies to v1 as much as to chunk2/2A.
     if constexpr (build_config::chunk_dynamic)
     {
-        for (auto& size_kv : mgr::list_block_free_thr_by_size_)
+        for (auto& size_kv : *mgr::list_block_free_thr_by_size_)
         {
             if (bucket_idx >= size_kv.second.size())
             {
@@ -931,7 +938,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_screen(in
     }
     // The keyed lists (per-array affinity) are screened the same way: a block
     // parked there is a block like any other, just filed under its array.
-    for (auto& key_kv : mgr::list_block_free_thr_keyed_)
+    for (auto& key_kv : *mgr::list_block_free_thr_keyed_)
     {
         if (bucket_idx >= key_kv.second.size())
         {
@@ -1171,7 +1178,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_thr(int b
         for (const auto* elm : blocks)
         {
             CHUNK_LEDGER_DISCARD(elm, "clear_list_block_free_thr.drain");
-            svfree(elm);
+            fast_alloc::svfree(elm);
         }
     }
     else
@@ -1181,7 +1188,7 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::clear_list_block_free_thr(int b
             if (!skip.contains(elm))
             {
                 CHUNK_LEDGER_DISCARD(elm, "clear_list_block_free_thr.drain");
-                svfree(elm);
+                fast_alloc::svfree(elm);
             }
         }
     }

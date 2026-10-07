@@ -23,7 +23,7 @@
  * leaving only chunk-specific logic in derived classes.
  */
 
-#include <type_traits> // std::is_integral_v, std::is_same_v, std::conditional_t
+#include <type_traits> // std::is_integral_v, std::is_same_v, std::conditional_t, std::remove_reference_t
 #include <atomic>      // std::atomic
 #include <complex>     // std::complex
 #include <cstdlib>     // std::size_t, std::abort
@@ -33,15 +33,16 @@
 #include "chunk/internal/element_access.h" // elem_get / elem_set, is_packed_bit_v: Bit buffers are words of bits
 #include "chunk/config.h"                  // chunk_config::use_fast_block_compression, build_config::any_check
 #include "chunk/internal/chunk_stats.h" // increm_chunk_* in the bodies (dependent calls the include tools cannot attribute)
-#include "chunk/internal/def_force_inline.h"             // FORCE_INLINE: the write engine and its wrappers
+#include "chunk/internal/def_force_inline.h"             // CHUNK_FORCE_INLINE: the write engine and its wrappers
 #include "chunk/internal/in_t.h"                         // in_t<T>
-#include "chunk/internal/invariant_check.h"              // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"              // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/proxy_operators.h"              // ProxyOperators
 #include "chunk/internal/tab_cst_val2_holder.h"          // TabCstVal2Holder: second-value identifiers
 #include "chunk/internal/relaxed_element.h"              // store_value: Chunk2A's relaxed element stores
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanCompoundOp, IsCleanShiftOp, base_t
 #include "chunk/internal/test_hooks.h"                   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
 #include "chunk/internal/read_reclaim.h"                 // ReadSection: read_values_outside_session
+#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
 {
@@ -169,7 +170,7 @@ class ProxyBaseFastCompPolicy
                 {
                     if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
                     {
-                        INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
+                        CHUNK_INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
                                          "flag row is reallocated ({} -> {} chunks)",
                                          num_tab, j, row.size(), nb_chunk);
                     }
@@ -194,7 +195,7 @@ class ProxyBaseFastCompPolicy
      */
     static void release_tab_is_int(int num_tab) noexcept
     {
-        using row_t = decltype(tab_is_inside_chunk_list_to_compress)::value_type;
+        using row_t = std::remove_reference_t<decltype(tab_is_inside_chunk_list_to_compress)>::value_type;
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
         {
             row_t{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
@@ -238,7 +239,8 @@ class ProxyBaseFastCompPolicy
     static ProxyType make_proxy_with_info(Ctx* ctx);
 
     /// @brief The one compression manager for this (T, ChunkType) pair.
-    static inline CompressionManager<T, ChunkType> compression_mgr;
+    static inline constinit internal::Immortal<CompressionManager<T, ChunkType>> compression_mgr_storage_{};
+    static inline CompressionManager<T, ChunkType>& compression_mgr = compression_mgr_storage_.value;
 
     /// @brief This proxy's entry in #tab_is_inside_chunk_list_to_compress, or
     ///        null before set_ptr_is_inside_chunk_list_to_compress() runs.
@@ -250,7 +252,8 @@ class ProxyBaseFastCompPolicy
      * movable). char, not bool: vector<bool> is the packed specialisation.
      */
 
-    static inline std::vector<std::vector<std::atomic<char>>> tab_is_inside_chunk_list_to_compress;
+    static inline constinit internal::Immortal<std::vector<std::vector<std::atomic<char>>>> tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline std::vector<std::vector<std::atomic<char>>>& tab_is_inside_chunk_list_to_compress = tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
 /**
@@ -282,7 +285,7 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false>
     ///          v1 and Chunk2 never fill a row here: the guard makes it free.
     static void release_tab_is_int(int num_tab) noexcept
     {
-        using row_t = decltype(tab_is_inside_chunk_list_to_compress)::value_type;
+        using row_t = std::remove_reference_t<decltype(tab_is_inside_chunk_list_to_compress)>::value_type;
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
         {
             row_t{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
@@ -298,9 +301,11 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false>
     }
 
     // Management members
-    static inline CompressionManager<T, ChunkType>            compression_mgr;
+    static inline constinit internal::Immortal<CompressionManager<T, ChunkType>> compression_mgr_storage_{};
+    static inline CompressionManager<T, ChunkType>& compression_mgr = compression_mgr_storage_.value;
     std::atomic<char>*                                        ptr_is_inside_chunk_list_to_compress;
-    static inline std::vector<std::vector<std::atomic<char>>> tab_is_inside_chunk_list_to_compress;
+    static inline constinit internal::Immortal<std::vector<std::vector<std::atomic<char>>>> tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline std::vector<std::vector<std::atomic<char>>>& tab_is_inside_chunk_list_to_compress = tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
 namespace internal
@@ -520,7 +525,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         {
             if (chunk.steal_committed()) [[unlikely]]
             {
-                INVARIANT_FAILED("store_value on a chunk committed to a compressor (num={})", num);
+                CHUNK_INVARIANT_FAILED("store_value on a chunk committed to a compressor (num={})", num);
             }
         }
         // Chunk2A: the marking filter of another writer may be reading this
@@ -600,11 +605,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      *       write lambda) and every write paid a call into it. Only this
      *       body is forced -- the slow-path callees (wait_out_compressor,
      *       run_slow_path, flush_deferred, ...) stay ordinary calls; do NOT
-     *       turn this into SA_FLATTEN, which would copy them into every
+     *       turn this into CHUNK_FLATTEN, which would copy them into every
      *       write site.
      */
     template <typename WriteCallable, typename LBD_INFO>
-    [[nodiscard]] FORCE_INLINE bool write_with_optional_lock_impl(this Derived&             self,
+    [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_impl(this Derived&             self,
                                                                   WriteCallable&&           write_body,
                                                                   [[maybe_unused]] LBD_INFO lbd_info) noexcept;
 
@@ -723,7 +728,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         {
             if (stale_guard_.gen != nullptr && *stale_guard_.gen != stale_guard_.seen) [[unlikely]]
             {
-                INVARIANT_FAILED("write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
+                CHUNK_INVARIANT_FAILED("write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
                                  "storage (resize, reserve, shrink_to_fit, clear, assign, swap, an assignment or a "
                                  "re-chunk): keep a value with `T v = a[i];`, not `auto v = a[i];`",
                                  ptr_on_array, num_chunk, num);
@@ -883,7 +888,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @param num_chunk_ chunk index
     /// @param num_tab_   the array's num_tab (ArrayChunkBase::num_tab), the
     ///                   value it registered under its address
-    /// @note The registry lookup (share_info_array.get_num_tab) is a linear
+    /// @note The registry lookup (share_info_array->get_num_tab) is a linear
     ///       scan of the live arrays of this type, or a hash probe past a
     ///       threshold, and it ran on EVERY write: 1.5% of the reference run.
     ///       The array knows the answer; it is checked against the registry
@@ -1334,7 +1339,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @param write_fn Function to execute.
      */
     template <typename WriteFn>
-    [[nodiscard]] FORCE_INLINE bool write_with_optional_lock_info(this Derived& self, WriteFn write_fn)
+    [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_info(this Derived& self, WriteFn write_fn)
     {
         const auto lbd_info = [&self]
         {

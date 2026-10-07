@@ -26,7 +26,7 @@
 
 #include "chunk/chunk_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/config.h"    // build_config::chunk_dynamic, chunk_config::stats
-#include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_array_new.h"     // chunk_array_new::init_chunks (operator new[])
 #include "chunk/internal/chunk_size_policy.h"   // alloc_chunk_count
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_* / add_chunk_* (CHUNK_STATS)
@@ -431,7 +431,7 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
         {
             if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]
             {
-                INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
+                CHUNK_INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
                                  "dedup flag -- two passes on one chunk",
                                  static_cast<const void*>(marked));
             }

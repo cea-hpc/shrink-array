@@ -18,7 +18,7 @@
  * @file manage_ompt.cpp
  * @brief OMPT tool wiring the chunk library into the OpenMP runtime.
  *
- * Compiled as a real tool only under `HAVE_EMBEDDED_COMPRESSION_WITH_OMPT`.
+ * Compiled as a real tool only under `CHUNK_OPT_OMPT`.
  * The runtime discovers it through ompt_start_tool(), which registers three
  * callbacks; each of them maps a point of the OpenMP lifecycle onto one of the
  * phase transitions declared in chunk/manage_ompt.h, so an application built
@@ -48,19 +48,19 @@
 #include "chunk/all_type_chunk.h"          // AllTypeChunk
 #include "chunk/internal/churn_counters.h" // churn::note_phase_end
 
-#ifdef HAVE_OMPT
+#if CHUNK_OPT_OMPT
     #include <omp-tools.h> // ompt_set_callback, ompt_start_tool_result_t
 #endif
 
 // Stays a directive: it gates the WHOLE translation unit -- the global switch
 // below and every callback -- so there is no statement for an `if constexpr` to
 // sit in. A build without OMPT compiles only the stand-ins of the #else branch.
-#if defined HAVE_EMBEDDED_COMPRESSION_WITH_OMPT
+#if CHUNK_OPT_OMPT
 
     #include <omp.h> // omp_in_parallel: the allocator flush runs outside any active region
     // Directive, like all_type_chunk.cpp's: a std-alloc build does not put
     // fast_allocators/public on the include path at all.
-    #ifndef CHUNK_STD_ALLOC
+    #if !CHUNK_OPT_STD_ALLOC
         #include "fast_allocators/internal/static_const_array.h" // StaticConstArray::clearInfoFreeElt
     #endif
 
@@ -73,7 +73,7 @@
  * region that must not trigger a flush) without unregistering the tool. A
  * counter, not a flag: see its declaration in chunk/config.h.
  */
-OmptSuspendCounter g_ompt_suspended{0}; // 0 = callbacks active
+shrink_array::OmptSuspendCounter shrink_array::g_ompt_suspended{0}; // 0 = callbacks active
 
 namespace
 {
@@ -234,7 +234,7 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
     {
         return;
     }
-    if (endpoint != ompt_scope_begin || g_ompt_suspended.load(std::memory_order_relaxed) != 0)
+    if (endpoint != ompt_scope_begin || shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0)
     {
         shrink_array::g_fast_omp_rank = -1; // recomputed on the next get_thr_rank_fast()
         return;
@@ -263,7 +263,7 @@ void parallel_end_chunk_work()
 {
     shrink_array::churn::note_phase_end(); // one compression phase (churn_counters.h)
     // Vector-mode build: chunk lib is inactive, nothing to finalize.
-    if constexpr (!chunk_config::is_shrink_enabled)
+    if constexpr (!shrink_array::chunk_config::is_shrink_enabled)
     {
         return;
     }
@@ -323,10 +323,10 @@ void parallel_end_chunk_work()
  */
 void flush_allocator_free_batches()
 {
-    #ifndef CHUNK_STD_ALLOC
+    #if !CHUNK_OPT_STD_ALLOC
     if (omp_in_parallel() == 0)
     {
-        StaticConstArray::clearInfoFreeElt();
+        fast_alloc::StaticConstArray::clearInfoFreeElt();
     }
     #endif
 }
@@ -341,7 +341,7 @@ void flush_allocator_free_batches()
  */
 void on_parallel_end(ompt_data_t*, const ompt_frame_t*, ompt_data_t*, uint32_t, const void*)
 {
-    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
+    if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0)
     {
         return;
     }
@@ -370,7 +370,7 @@ void on_barrier_end(ompt_sync_region_t    kind,
                     ompt_data_t*,
                     const void*)
 {
-    if (g_ompt_suspended.load(std::memory_order_relaxed) != 0)
+    if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0)
     {
         return;
     }
@@ -525,7 +525,7 @@ void shrink_array::check_ompt_tool_loaded()
         if (state == 0)
         {
             std::fprintf(stderr,
-                         "[OMPT] %s: this build (HAVE_OMPT) runs its phase boundaries -- deferred-write flush, "
+                         "[OMPT] %s: this build (OMPT tool) runs its phase boundaries -- deferred-write flush, "
                          "compression between parallel regions -- from an OMPT tool, and the OpenMP runtime did "
                          "not load it. Usual causes: OMP_TOOL=disabled; another tool found first through "
                          "OMP_TOOL_LIBRARIES; ompt_start_tool not found in the executable. "
@@ -559,7 +559,7 @@ void shrink_array::check_ompt_tool_loaded()
  * The symbol is still defined so that code testing it links in every variant;
  * here no callback exists and the application drives the phase transitions.
  */
-OmptSuspendCounter g_ompt_suspended{1}; // no callback exists in this build
+shrink_array::OmptSuspendCounter shrink_array::g_ompt_suspended{1}; // no callback exists in this build
 
 /// @brief No OMPT tool in this build: nothing to check (see manage_ompt.h).
 void shrink_array::check_ompt_tool_loaded() {}

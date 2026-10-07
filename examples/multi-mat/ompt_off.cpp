@@ -29,4 +29,4 @@
 
 /// @brief The suspension counter read by chunk_config::OMPTcc (chunk/config.h),
 ///        non-zero: no callback exists in this binary.
-OmptSuspendCounter g_ompt_suspended{1};
+shrink_array::OmptSuspendCounter shrink_array::g_ompt_suspended{1};

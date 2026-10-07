@@ -24,7 +24,7 @@
 #include "chunk/internal/compression_manager.h"         // CompressionManager<> in flush_pending_deferred_ops
 #include "chunk/config.h"                   // build_config::any_check, chunk_config::use_fast_block_compression
 #include "chunk/PMP_CHUNK.h"                // CHUNK_PMP_RANK_BOUND, CHUNK_PMP_IN_PARALLEL_REGION
-#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED (check builds)
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (check builds)
 
 namespace shrink_array
 {
@@ -75,7 +75,7 @@ void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
                     {
                         if (const auto left = CM::pending_ops_rank(r); left != 0) [[unlikely]]
                         {
-                            INVARIANT_FAILED("flush_pending_deferred_ops(force): rank {} still counts {} pending "
+                            CHUNK_INVARIANT_FAILED("flush_pending_deferred_ops(force): rank {} still counts {} pending "
                                              "op(s) after its drain, outside any region (counter drift)",
                                              r, left);
                         }

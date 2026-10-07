@@ -33,7 +33,7 @@
 #include "chunk/internal/element_access.h"              // Bit buffers: words of bits
 #include "chunk/internal/bit_words.h"                   // bits::fill_bits, bits::word_t
 #include "chunk/config.h"                               // build_config::use_openmp, chunk_config
-#include "chunk/internal/invariant_check.h"             // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/bad_ptr_check.h"               // CHUNK_CHECK_VALUES_PTR (check builds)
 #include "chunk/PMP_CHUNK.h"                            // get_thr_rank_fast, CHUNK_PMP_THREAD_RANK
 #include "chunk/internal/chunk2_candidate_list_check.h" // chunk2_missing_candidate_list
@@ -41,6 +41,7 @@
 #include "chunk/internal/chunk2_base.h"                 // Chunk2Base
 #include "chunk/internal/conditional_counter.h"         // ConditionalCounter, counter_value_t
 #include "chunk/internal/TChunk.h"                      // VectorTuple4ChunkInt2 (the candidate lists)
+#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
 {
@@ -87,10 +88,10 @@ class ChunkSpec2
         }
         if constexpr (build_config::any_check)
         {
-            if (static_cast<size_t>(ind) >= tab_m_ptr_cst_val2.size()) [[unlikely]]
+            if (static_cast<size_t>(ind) >= tab_m_ptr_cst_val2->size()) [[unlikely]]
             {
-                INVARIANT_FAILED("[chunk] suspect get_cst_val2<{}>: ind={} size={}", typeid(T).name(), ind,
-                                 tab_m_ptr_cst_val2.size());
+                CHUNK_INVARIANT_FAILED("[chunk] suspect get_cst_val2<{}>: ind={} size={}", typeid(T).name(), ind,
+                                 tab_m_ptr_cst_val2->size());
                 return nullptr;
             }
         }
@@ -98,11 +99,11 @@ class ChunkSpec2
         T* ret = nullptr;
         if constexpr (use_mm_protect)
         {
-            ret = tab_m_ptr_cst_val2[ind];
+            ret = (*tab_m_ptr_cst_val2)[ind];
         }
         else
         {
-            ret = tab_m_ptr_cst_val2[ind].data();
+            ret = (*tab_m_ptr_cst_val2)[ind].data();
         }
         CHUNK_CHECK_VALUES_PTR(ret, "get_cst_val2");
         return ret;
@@ -133,17 +134,18 @@ class ChunkSpec2
         std::fill_n(values_loc, alloc_chunk_count(), value);
     }
 
-    static inline vec_array_chunk_size_max tab_m_ptr_cst_val2;
+    static inline constinit internal::LazyImmortal<vec_array_chunk_size_max> tab_m_ptr_cst_val2;
 
     // mm_protect mode only: element count currently allocated at
-    // tab_m_ptr_cst_val2[ind] (a raw mmap'd T*, unlike the plain-array mode
+    // (*tab_m_ptr_cst_val2)[ind] (a raw mmap'd T*, unlike the plain-array mode
     // where each slot is a fixed cst_buffer_size std::array and always big
     // enough). Lets set_second_value's reuse path (a later array registering
     // an already-known second_value at a LARGER geometry) detect an
     // undersized allocation and grow it instead of overrunning it. Empty /
     // short in the non-mm_protect build (still declared so it links, but
     // logically unused).
-    static inline std::vector<std::size_t> tab_m_ptr_cst_val2_mm_elems;
+    static inline constinit internal::Immortal<std::vector<std::size_t>> tab_m_ptr_cst_val2_mm_elems_storage_{};
+    static inline std::vector<std::size_t>& tab_m_ptr_cst_val2_mm_elems = tab_m_ptr_cst_val2_mm_elems_storage_.value;
 
   protected:
     // ANY-index marker test: is `v` one of the cst_val2 constant pointers,
@@ -158,7 +160,7 @@ class ChunkSpec2
      */
     [[nodiscard]] static bool is_cst_val2_any(const T* v) noexcept
     {
-        const int nb_cst_val2 = static_cast<int>(tab_m_ptr_cst_val2.size());
+        const int nb_cst_val2 = static_cast<int>(tab_m_ptr_cst_val2->size());
         for (int i = 0; i < nb_cst_val2; ++i)
         {
             if (v == get_cst_val2(i))
@@ -1137,7 +1139,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     ///          trivial (sets max_thr only).
     static auto& get_manager() noexcept
     {
-        return s_manager_;
+        return *s_manager_;
     }
 
     /**
@@ -1540,7 +1542,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
             {
                 if constexpr (build_config::any_check)
                 {
-                    INVARIANT_FAILED("[chunk] compress to cst_val2 on an array with no second value");
+                    CHUNK_INVARIANT_FAILED("[chunk] compress to cst_val2 on an array with no second value");
                 }
                 return nullptr;
             }
@@ -1626,7 +1628,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
         }
     }
 
-    inline static manager_chunk2 s_manager_{};
+    static inline constinit internal::LazyImmortal<manager_chunk2> s_manager_;
 };
 
 } // end namespace shrink_array

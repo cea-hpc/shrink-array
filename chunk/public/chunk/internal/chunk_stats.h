@@ -62,7 +62,7 @@ inline constexpr int CHUNK_STATS_N_VARIANT = 3;
 /// @brief Display name for each variant, indexed by stat_variant.
 inline constexpr const char* chunk_variant_name[CHUNK_STATS_N_VARIANT] = {"chunk", "chunk2", "chunk2a"};
 
-#ifdef CHUNK_STATS
+#if CHUNK_OPT_STATS
 
 /**
  * @brief Per-(variant, thread) event counters. One cache line per slot, so
@@ -515,7 +515,7 @@ inline ChunkStatsThr reduce_chunk_stats(int variant) noexcept
 // array_chunk*_inline.h), so it is simply never instantiated when stats are
 // off; and the latter returns ChunkStatsThr by value, a type that itself
 // only exists in this #ifdef branch, so its only caller (param_chunk.cpp) is
-// necessarily already gated behind its own `#ifdef CHUNK_STATS`.
+// necessarily already gated behind its own `#if CHUNK_OPT_STATS`.
 
 #else // !CHUNK_STATS
 

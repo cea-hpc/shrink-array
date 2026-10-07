@@ -34,7 +34,9 @@
 #include <cstddef>  // std::size_t
 #include <optional> // std::optional, std::nullopt
 
-#if !defined CHUNK_STD_ALLOC                // std-alloc builds have no fast_allocators include path
+#include "chunk/build_options.h" // CHUNK_OPT_STD_ALLOC
+
+#if !CHUNK_OPT_STD_ALLOC                // std-alloc builds have no fast_allocators include path
     #include "fast_allocators/slab_arena.h" // fast_alloc::value_arena
 #endif
 
@@ -53,7 +55,7 @@ struct ArenaBytes
 ///        (the chunk buffers are plain mallocs: there is no arena to report).
 [[nodiscard]] inline std::optional<ArenaBytes> values_arena_bytes() noexcept
 {
-#if defined CHUNK_STD_ALLOC
+#if CHUNK_OPT_STD_ALLOC
     return std::nullopt;
 #else
     const auto& va = fast_alloc::value_arena();

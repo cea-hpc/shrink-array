@@ -21,13 +21,14 @@
 #include "chunk/chunk_std.h"              // the declarations defined here (ChunkPoolParallelInterface)
 #include "chunk/config.h"                 // build_config::use_openmp, use_fast_alloc
 #include "chunk/internal/chunk_stats.h"   // ChunkStatsThr (CHUNK_STATS only)
+#include "chunk/internal/live_arrays.h"   // live_array_count: the teardown waits for the last array
 #include "chunk/internal/process_verbs.h" // compress_now_and_trim_pools, defined here
 #include "chunk/singleton.h"              // SingletonChk
 
 namespace shrink_array
 {
 
-#ifdef CHUNK_STATS
+#if CHUNK_OPT_STATS
 // Per-variant (chunk/chunk2/chunk2a) x per-thread counter table. Each thread
 // bumps its own cache-line-aligned slot on the hot path (no atomics); the
 // end-of-run report reduces over threads. See chunk_stats.h.
@@ -125,19 +126,39 @@ void clear_all_list_block_free_thr()
     chunk_pools::clear_all_list_block_free_thr();
 }
 
+// The teardown verbs that pull structures from under the arrays -- the
+// per-rank list containers, the serial allocator, the blocks -- do nothing
+// while an array is alive: a global or static array is destroyed after main
+// returns, i.e. after the teardown main ends with, and parks its buffers in
+// those structures. They then stay reachable until the process exits.
+// Emptying the free lists is always safe, and still done.
+
 void delete_list_block_chunk_free_itself()
 {
+    if (internal::live_array_count() > 0)
+    {
+        return;
+    }
     chunk_pools::delete_list_block_chunk_free_itself();
 }
 
 void delete_chunk_allocator()
 {
+    if (internal::live_array_count() > 0)
+    {
+        return;
+    }
     chunk_pools::delete_chunk_allocator();
 }
 
 /// @copydoc shrink_array::release_chunk_pools
 void release_chunk_pools()
 {
+    if (internal::live_array_count() > 0)
+    {
+        chunk_pools::clear_all_list_block_free_thr(); // the parked buffers only
+        return;
+    }
     chunk_pools::release_chunk_pools();
 }
 
@@ -158,6 +179,10 @@ void destroy_block_chunk()
     // ManagerChunkInt, present in every build, so it stays a plain function.
     if constexpr (build_config::use_fast_alloc)
     {
+        if (internal::live_array_count() > 0)
+        {
+            return; // see release_chunk_pools()
+        }
         const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
         ens_type_chunk.destroy_block_chunk();
     }

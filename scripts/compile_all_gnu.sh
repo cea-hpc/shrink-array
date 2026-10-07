@@ -80,8 +80,9 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --exec=*)
-            # Build a single Ninja target (one executable) inside each selected
-            # build dir, e.g. --exec=shrink_bench_chunk_64. Combine with
+            # Build only the Ninja target(s) matching it inside each selected
+            # build dir, e.g. --exec=shrink_bench_chunk_64, --exec='*_dyn', or a
+            # comma-separated list of both. Combine with
             # --target=<glob> to also restrict WHICH build dirs are configured.
             export CHUNK_BUILD_EXEC="${1#*=}"
             shift

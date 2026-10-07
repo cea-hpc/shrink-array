@@ -20,13 +20,9 @@
 /*---------------------------------------------------------------------------*/
 
 #include <atomic>  // std::memory_order_acquire, std::memory_order_acq_rel
-#include <complex> // std::complex (complex_double)
 #include <cstddef> // std::size_t
 #include <tuple>   // the candidate-list entries
 #include <vector>  // std::vector
-
-/// @brief The complex element type of the library (chunk_std.cpp instantiates it).
-using complex_double = std::complex<double>;
 
 #include "chunk/internal/chunk_base.h"          // ChunkBase
 #include "chunk/config.h"                       // build_config::use_openmp, chunk_config
@@ -35,6 +31,7 @@ using complex_double = std::complex<double>;
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_write (CHUNK_STATS)
 #include "chunk/internal/conditional_counter.h" // ConditionalCounter
 #include "chunk/internal/proxy.h"               // Proxy<T>
+#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
 {
@@ -124,7 +121,7 @@ struct ChunkPoolParallelInterface<false, AllT>
 };
 
 /// @brief When fast allocation is enabled, call destroy_block_chunk() on the AllTypeChunk singleton; otherwise
-///        do nothing.
+///        do nothing. Nothing either while an array is alive (see release_chunk_pools()).
 extern void destroy_block_chunk();
 
 // Build-agnostic free functions over the policy above. Declared -- and defined,
@@ -151,6 +148,12 @@ extern bool need_load_balance_list_block_free();
  *          its single allocator (delete_chunk_allocator()). This does the right
  *          one, so the caller need not know which.
  * @note Pair it with destroy_block_chunk(), which is build-agnostic already.
+ *       Both are optional: the process can simply exit.
+ * @note While an array is alive -- typically a global or static one, which is
+ *       destroyed after main returns -- this only empties the free lists, and
+ *       destroy_block_chunk(), delete_list_block_chunk_free_itself() and
+ *       delete_chunk_allocator() do nothing: the array will park its buffers
+ *       in those structures when it dies. They stay reachable until the exit.
  */
 extern void release_chunk_pools();
 
@@ -624,10 +627,12 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
         // singleton). Chunk<T> is a class template compiled across several TUs /
         // library targets; the lazy guard's first init happened from compress()
         // inside an OpenMP region, deadlocking threads on __cxa_guard_acquire.
-        // An `inline static` member has one definition across TUs (C++17) and is
-        // built during static init, before main() / any thread — no guard, no
-        // race. The manager ctor is trivial (sets max_thr only).
-        return s_manager_;
+        // An `inline static` member has one definition across TUs (C++17). It is
+        // a LazyImmortal (chunk/internal/immortal.h): built by the registration
+        // of the manager (ManagerChunk::init_static_state), before any array or
+        // thread can reach it, under a mutex rather than a __cxa guard, and
+        // never destroyed -- a global array still uses it after main.
+        return *s_manager_;
     }
 
     /**
@@ -658,7 +663,7 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
      */
     void block_clear(this auto& self, int thr_rank);
 
-    inline static manager_chunk s_manager_{};
+    static inline constinit internal::LazyImmortal<manager_chunk> s_manager_;
 };
 
 } // namespace shrink_array

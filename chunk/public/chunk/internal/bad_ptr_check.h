@@ -53,7 +53,7 @@ namespace shrink_array::bad_ptr
  * @brief Validate that @p ptr is either null or a plausible values pointer.
  *
  * Compiles to nothing when build_config::any_check is false.
- * The source_location captured by INVARIANT_FAILED points at the caller,
+ * The source_location captured by CHUNK_INVARIANT_FAILED points at the caller,
  * because @p loc is defaulted to std::source_location::current() at the
  * call site, not inside this function.
  *

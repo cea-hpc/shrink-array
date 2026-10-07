@@ -192,7 +192,7 @@ class RechunkSupport<Derived, true>
      */
     static void rechunk_all_to(unsigned int new_size)
     {
-        proxy_type::share_info_array.for_each_key(
+        proxy_type::share_info_array->for_each_key(
             [new_size](const void* key)
             {
                 if (key)

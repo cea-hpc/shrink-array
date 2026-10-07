@@ -22,12 +22,12 @@
 
 #include "chunk/internal/in_t.h"            // in_t<T>: the element snapshots
 #include "chunk/internal/chunk_array_new.h" // chunk_array_new::init_chunks (operator new[])
-#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED (steal-mark check)
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (steal-mark check)
 
 #include "chunk/internal/chunk_size_policy.h" // ChunkElems, set_thread_chunk_size
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_*, get_thr_rank_fast
 #include "chunk/config.h"                     // build_config::use_openmp, chunk_config::use_chunk_steal_mark
-#include "chunk/internal/cpu_pause.h"         // CPU_PAUSE (spin in create_value*)
+#include "chunk/internal/cpu_pause.h"         // CHUNK_CPU_PAUSE (spin in create_value*)
 #include "chunk/chunk2A_std.h" // the declarations these bodies belong to (self-contained, like the other *_inline.h)
 #include "chunk/internal/proxy2A.h"       // Proxy2A<T>
 #include "chunk/internal/manager_chunk.h" // manager_chunk2A:: (dependent calls the include tools cannot attribute)
@@ -172,7 +172,7 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
             // flight, so no mark is needed and its absence proves nothing.
             if (claimed && !Base::steal_marked()) [[unlikely]]
             {
-                INVARIANT_FAILED("fill_list_to_compress on an unclaimed chunk (num_chunk=%d num_tab=%d)", num_chunk,
+                CHUNK_INVARIANT_FAILED("fill_list_to_compress on an unclaimed chunk (num_chunk=%d num_tab=%d)", num_chunk,
                                  num_tab);
             }
         }
@@ -395,7 +395,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
         {
             if (num_chunk < 0) [[unlikely]]
             {
-                INVARIANT_FAILED("Chunk2A block pass: candidate {} of {} has num_chunk={}", k, sz, num_chunk);
+                CHUNK_INVARIANT_FAILED("Chunk2A block pass: candidate {} of {} has num_chunk={}", k, sz, num_chunk);
             }
         }
         // Hand the candidate back: its mark FIRST, then the dedup flag. While
@@ -415,7 +415,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
         {
             if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]
             {
-                INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
+                CHUNK_INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
                                  "dedup flag -- two passes on one chunk",
                                  static_cast<const void*>(marked));
             }
@@ -841,14 +841,14 @@ void wait_before_materialise(const ChunkT& chunk) noexcept
     {
         while (chunk.steal_marked())
         {
-            CPU_PAUSE();
+            CHUNK_CPU_PAUSE();
         }
     }
     else
     {
         while (CompressionManager<T, ChunkT>::is_hard_compression_inflight())
         {
-            CPU_PAUSE();
+            CHUNK_CPU_PAUSE();
         }
     }
 }

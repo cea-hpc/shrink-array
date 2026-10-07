@@ -30,6 +30,9 @@
     #include <execinfo.h> // backtrace, backtrace_symbols
 #endif
 
+namespace shrink_array
+{
+
 /**
  * @brief Print the calling thread's backtrace (up to 100 frames) to stderr.
  * @details With std::stacktrace: demangled names, and file:line when the
@@ -102,3 +105,6 @@ inline void print_backtrace()
     std::free(static_cast<void*>(symbols));
 #endif
 }
+
+} // namespace shrink_array
+

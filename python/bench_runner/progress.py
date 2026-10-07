@@ -3,6 +3,7 @@
 """The live progress line and bar shared by every phase."""
 import time
 
+from . import events
 from .builds import short_config_label
 from .term import _hms, dim, green
 
@@ -54,6 +55,17 @@ class RunCounter:
     ETA of the check, STL, sanitizer and perf phases."""
 
     def __init__(self, total):
-        self.idx = 0
+        self._idx = 0
         self.total = total
         self.start = time.time()
+
+    # The phases count with `counter.idx += 1`: the setter is where every run
+    # done is seen, so it reports to events.jsonl (throttled there).
+    @property
+    def idx(self):
+        return self._idx
+
+    @idx.setter
+    def idx(self, value):
+        self._idx = value
+        events.progress(value, self.total)

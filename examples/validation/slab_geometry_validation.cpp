@@ -60,8 +60,8 @@ static std::string ptr_text(const void* p)
 
 int check_pair(int small_bytes, int large_bytes, std::uintptr_t budget)
 {
-    TCTypeCAllocator<char> a_small;
-    TCTypeCAllocator<char> a_large;
+    fast_alloc::TCTypeCAllocator<char> a_small;
+    fast_alloc::TCTypeCAllocator<char> a_large;
     a_small.init(static_cast<size_t>(small_bytes), budget, -1);
     a_large.init(static_cast<size_t>(large_bytes), budget, -1);
 
@@ -70,8 +70,8 @@ int check_pair(int small_bytes, int large_bytes, std::uintptr_t budget)
     {
         const auto* const other = (a == &a_small) ? &a_large : &a_small;
         const char*       p     = a->alloc();
-        TCCAllocator*     own   = a->slab_of(p);
-        TCCAllocator*     seen  = other->slab_of(p);
+        fast_alloc::TCCAllocator*     own   = a->slab_of(p);
+        fast_alloc::TCCAllocator*     seen  = other->slab_of(p);
         const bool        ok    = own != nullptr && seen == own && own->owner == static_cast<const void*>(a);
         if (!ok)
         {

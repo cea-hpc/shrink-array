@@ -20,15 +20,16 @@
 
 #include "fast_allocators/internal/singleton.h"          // Singleton
 #include "fast_allocators/tc_allocator.h"                // VTCTypeAllocator, TCTypeAllocatorEBC
-#include "fast_allocators/internal/alloc_config.h"       // constexpr mirror of STD_ALLOC
+#include "fast_allocators/internal/alloc_config.h"       // alloc_config::use_std_alloc
 #include "fast_allocators/internal/static_const_array.h" // the declarations defined here
-#include "fast_allocators/internal/pmp_alloc.h"          // PMP_MAX_THREADS
+#include "fast_allocators/internal/pmp_alloc.h"          // FAST_ALLOC_PMP_MAX_THREADS
 #include "fast_allocators/internal/svalloc.h"            // svalloc, svcalloc, svfree
 
-InfoFreeElt StaticConstArray::tab_info_free_elt;
+namespace fast_alloc
+{
 
 /// @copydoc InfoFreeElt::InfoFreeElt
-/// @note Sized by PMP_MAX_THREADS at construction (before main). A rank past
+/// @note Sized by FAST_ALLOC_PMP_MAX_THREADS at construction (before main). A rank past
 ///       it -- a team raised later -- is not batched: freeBlock() frees its
 ///       blocks at once rather than index past these arrays.
 InfoFreeElt::InfoFreeElt()
@@ -37,7 +38,7 @@ InfoFreeElt::InfoFreeElt()
     // branch), so the 2 x 10000-entry arrays are not worth allocating.
     if constexpr (alloc_config::use_openmp)
     {
-        const int max_thr = PMP_MAX_THREADS;
+        const int max_thr = FAST_ALLOC_PMP_MAX_THREADS;
 
         tab_sz  = svalloc<IntMaxFreeElt>(max_thr);
         tab_ptr = svalloc<VoidMaxFreeElt>(max_thr);
@@ -78,10 +79,10 @@ InfoFreeElt::~InfoFreeElt()
 /// @copydoc StaticConstArray::clearInfoFreeElt(int)
 void StaticConstArray::clearInfoFreeElt(int thr_rank)
 {
-    for (int k = 0; k < tab_info_free_elt.compt[thr_rank]; ++k)
+    for (int k = 0; k < tab_info_free_elt().compt[thr_rank]; ++k)
     {
-        const int szl  = tab_info_free_elt.tab_sz[thr_rank][k];
-        void*     ptrl = tab_info_free_elt.tab_ptr[thr_rank][k];
+        const int szl  = tab_info_free_elt().tab_sz[thr_rank][k];
+        void*     ptrl = tab_info_free_elt().tab_ptr[thr_rank][k];
         freeBlockWithInt(szl, ptrl);
     }
 }
@@ -89,19 +90,19 @@ void StaticConstArray::clearInfoFreeElt(int thr_rank)
 /// @copydoc StaticConstArray::clearInfoFreeElt()
 void StaticConstArray::clearInfoFreeElt()
 {
-    // Over the ranks the batches were SIZED for, not PMP_MAX_THREADS: that may
+    // Over the ranks the batches were SIZED for, not FAST_ALLOC_PMP_MAX_THREADS: that may
     // have grown since (omp_set_num_threads) and would index past the arrays;
     // nb_thr is 0 serially, where nothing was allocated. reset(), not compt = 0:
     // somme_sz must come down too, or the emptied batch still counts as full.
-    for (int thr_rank = 0; thr_rank < tab_info_free_elt.nb_thr; ++thr_rank)
+    for (int thr_rank = 0; thr_rank < tab_info_free_elt().nb_thr; ++thr_rank)
     {
         clearInfoFreeElt(thr_rank);
-        tab_info_free_elt.reset(thr_rank);
+        tab_info_free_elt().reset(thr_rank);
     }
 }
 
-// ::Allocator8 / ::Allocator24: inline in static_const_array.h (Allocator8 is
-// the ladder's 8-byte bucket; both immortal).
+// StaticConstArray::allocator8() / allocator24(): in static_const_array.h
+// (allocator8() is the ladder's 8-byte bucket; both immortal).
 
 /**
  * @brief Registry of the live ::TCTypeAllocator instances, for the memory report.
@@ -184,13 +185,16 @@ void compute_sum_allocated_size_TCAlloc(size_t& sum_UsedSize, size_t& sum_nn_ref
     alloc_sz     = 0;
 
     // The ladder exists as a set of objects whatever the build, but under
-    // STD_ALLOC nothing was ever allocated from it, so there is nothing to add.
+    // FAST_ALLOC_STD_ALLOC nothing was ever allocated from it, so there is nothing to add.
     if constexpr (alloc_config::use_slabs)
     {
         std::apply([&](const auto&... bucket) { (bucket.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz), ...); },
-                   StaticConstArray::buckets);
+                   StaticConstArray::buckets());
     }
 
     // Not part of StaticConstArray, but it's now or never to count them!
     Singleton<ManageTCTypeAllocator>::getRef().addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
 }
+
+} // namespace fast_alloc
+

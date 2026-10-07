@@ -67,7 +67,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     ///        create() through ArrayChunkBase.
     void pre_create_hook()
     {
-        auto& sh_inf = Proxy<T>::share_info_array;
+        auto& sh_inf = *Proxy<T>::share_info_array;
 
         sh_inf.insert(this->registry_key(), Base::nb_tab);
 
@@ -107,7 +107,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     {
         using std::swap;
         swap(this->num_tab, other.num_tab);
-        Proxy<T>::share_info_array.swap_keys(this->registry_key(), other.registry_key());
+        Proxy<T>::share_info_array->swap_keys(this->registry_key(), other.registry_key());
     }
 
   public:
@@ -210,7 +210,7 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
         // address does not inherit our stale num_tab via the first-match lookup
         // in PointerMapChunk. Required for rechunk_to's tmp; correct for every
         // array. Must run AFTER clear() (which still needs get_num_tab(registry_key())).
-        Proxy<T>::share_info_array.erase(this->registry_key());
+        Proxy<T>::share_info_array->erase(this->registry_key());
     }
 
     /**

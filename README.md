@@ -104,7 +104,7 @@ variant.
 #include <cstdio>
 #include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // build_config::has_not_ompt
+#include "chunk/config.h"          // sa::build_config::has_not_ompt
 #include "chunk/manage_ompt.h"     // begin_parallel_phase, finalize_parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
@@ -112,24 +112,24 @@ namespace sa = shrink_array;
 
 int main()
 {
-    sa::ParamChunk::init_indexes(true);       // once, before the first array
+    sa::ParamChunk::init_indexes(true);       // optional: the first array runs it otherwise
     {
         const int                n = 1 << 24;
         sa::ArrayChunk2A<double> a(n);        // every element 0.0, no buffer yet
 
 #pragma omp parallel
         {
-            if constexpr (build_config::has_not_ompt) sa::begin_parallel_phase();
+            if constexpr (sa::build_config::has_not_ompt) sa::begin_parallel_phase();
 #pragma omp for
             for (int i = 0; i < n / 2; ++i)
                 a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;   // the 3.5 run compresses
         }
-        if constexpr (build_config::has_not_ompt) sa::finalize_parallel_phase();
+        if constexpr (sa::build_config::has_not_ompt) sa::finalize_parallel_phase();
 
         a.shrink_to_fit();                    // fold the chunks that became constant
         std::printf("chunks holding a buffer: %.1f %%\n", a.stats());
     }                                         // the array releases its chunks here
-    sa::release_chunk_pools();                // at the end, once every array is gone
+    sa::release_chunk_pools();                // optional: give the pools back before the end
     sa::destroy_block_chunk();
 }
 ```
@@ -144,8 +144,8 @@ The complete version, which also checks what it reads back, is
 
 An array holds any type that is **trivially copyable**, **equality comparable** and **default
 constructible**: every arithmetic type, `bool`, `std::complex`, enums, `std::array` of those and
-any aggregate of them. Nothing is declared up front: each array registers its element type
-when the first one is constructed.
+any aggregate of them. Nothing is declared up front and nothing needs calling first: each array registers its element
+type when the first one is constructed, global and `static` arrays included.
 
 ```cpp
 struct Point { double x, y, z; auto operator<=>(const Point&) const = default; };

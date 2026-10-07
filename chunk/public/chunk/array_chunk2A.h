@@ -185,7 +185,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
     ~ArrayChunk2A()
     {
         clear();
-        Proxy2A<T>::share_info_array.erase(this->registry_key());
+        Proxy2A<T>::share_info_array->erase(this->registry_key());
     }
 
     /**
@@ -331,7 +331,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      */
     void pre_create_hook()
     {
-        auto& sh_inf = Proxy2A<T>::share_info_array;
+        auto& sh_inf = *Proxy2A<T>::share_info_array;
 
         sh_inf.insert(this->registry_key(), nb_tab);
         num_tab = nb_tab;
@@ -412,7 +412,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         using std::swap;
         swap(this->num_tab, other.num_tab);
         swap(holds_cst2_registry_, other.holds_cst2_registry_);
-        Proxy2A<T>::share_info_array.swap_keys(this->registry_key(), other.registry_key());
+        Proxy2A<T>::share_info_array->swap_keys(this->registry_key(), other.registry_key());
     }
 
     // ── cst2 mark-sweep GC — STEP B: read-only mark + report ─────────────────
@@ -432,7 +432,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
      */
     static void gc_collect_live(std::unordered_set<const void*>& live)
     {
-        Proxy2A<T>::share_info_array.for_each_key(
+        Proxy2A<T>::share_info_array->for_each_key(
             [&](const void* key)
             {
                 // The key is the array's core, whatever its index type.

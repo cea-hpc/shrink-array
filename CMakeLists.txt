@@ -46,24 +46,17 @@ option(CHUNK_FORCE_LEDGER "Keep the pool ledger active under OpenMP (off by defa
 # Turn it OFF if a profile ever shows page faults from slabs that empty and
 # refill in a loop; "strace -c -e trace=madvise" gives the call count directly.
 #
-# ON is the headers' own default (alloc_config.h, config.h), so ON defines
-# nothing and only OFF does, as CHUNK_NO_RECLAIM_EMPTY_SLABS. Not the other
-# way round: a project using the installed package never sees this
-# add_definitions, and would compile the inline allocator code with the
-# opposite value from the library it linked.
+# Recorded, like every option the headers read, in the generated
+# chunk/build_options.h and fast_allocators/build_options.h, installed with the
+# libraries: a project using the installed package compiles the inline
+# allocator code with the library's value, whatever it defines itself.
 option(CHUNK_RECLAIM_EMPTY_SLABS "Release an emptied slab's pages with madvise instead of keeping them resident" ON)
-if(NOT CHUNK_RECLAIM_EMPTY_SLABS)
-    add_definitions(-DCHUNK_NO_RECLAIM_EMPTY_SLABS)
-endif()
 
 # Reinforced debug level for fast_allocators' slab lists: on a Debug build,
 # every insert / remove also walks the whole list (sl_check, sl_contains) --
 # linear per operation, quadratic over a run, so off unless asked for. A plain
 # Debug build keeps the cheap assertions. See alloc_config::check_slab_lists.
 option(FAST_ALLOC_CHECK_LISTS "Debug builds: check every slab list in full on each insert / remove (slow)" OFF)
-if(FAST_ALLOC_CHECK_LISTS)
-    add_definitions(-DFAST_ALLOC_CHECK_LISTS)
-endif()
 
 # The write/compress handshake (chunk_config::asymmetric_dekker, config.h) is
 # asymmetric wherever it can be, with no option: the write announces itself
@@ -79,13 +72,10 @@ endif()
 # +3% CPU on the perf bench. Off by default; see SecondValueTraits in
 # chunk/internal/tab_cst_val2_holder.h.
 option(CHUNK_SECOND_VALUE_INDEXED "Chunk2A: store second values as 4-byte identifiers (less memory, +3% write CPU)" OFF)
-if(CHUNK_SECOND_VALUE_INDEXED)
-    add_definitions(-DCHUNK_SECOND_VALUE_INDEXED)
-endif()
 # CHECK_OPTIM (option above) turns build_config::any_check on in a release
-# build: chunk/CMakeLists.txt passes it to the library, PUBLIC.
+# build (chunk/build_options.h).
 
-# MM_PROTECT: Chunk/Chunk2's shared constant buffers (cst_val1, the cst_val2
+# CHUNK_MM_PROTECT: Chunk/Chunk2's shared constant buffers (cst_val1, the cst_val2
 # region) are mprotect'ed read-only, so a stray write into a compressed chunk
 # faults at the culprit instead of corrupting a value shared by thousands of
 # chunks. A debugging build: one mprotect per buffer, and page-rounded slots.
@@ -93,9 +83,6 @@ endif()
 # class templates, which no other configuration instantiates -- compile_all.sh
 # builds it so they keep compiling.
 option(CHUNK_MM_PROTECT "Read-only (mprotect) constant buffers: a stray write to a compressed chunk faults" OFF)
-if(CHUNK_MM_PROTECT)
-    add_definitions(-DMM_PROTECT)
-endif()
 
 # ── Sanitizer option ──────────────────────────────────────────────────────────
 set(SANITIZER "none" CACHE STRING "Sanitizer to enable: none, thread, address, token")
@@ -133,8 +120,8 @@ if(OMP)
     if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
         # TSan is incompatible with OMPT instrumentation
         if(NOT SANITIZER STREQUAL "thread")
-            add_definitions(-DHAVE_OMPT)
-            # For the targets that exist only with the OMPT tool
+            # Recorded in chunk/build_options.h (CHUNK_OPT_OMPT); also read
+            # for the targets that exist only with the OMPT tool
             # (examples/multi-mat's embedded-compression executable).
             set(CHUNK_HAVE_OMPT ON)
         endif()
@@ -245,11 +232,24 @@ endif()
 # NOTE: no ${SANITIZER_FLAGS} here -- they are applied above, for every build
 # type. Putting them in this Debug-only variable is what silently produced
 # uninstrumented RelWithDebInfo sanitizer binaries.
+# The library's debug checks (build_config::is_debug, the slab-list assertions):
+# on in a Debug build, recorded in the generated build_options.h headers rather
+# than passed as -DDEBUG -- a generic macro every program may define its own
+# way. Deliberately not an option(): the default follows the build type of THIS
+# configure; -DCHUNK_DEBUG=ON / OFF forces it.
+if(NOT DEFINED CHUNK_DEBUG)
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(CHUNK_DEBUG ON)
+    else()
+        set(CHUNK_DEBUG OFF)
+    endif()
+endif()
+
 # Top level: in the cache, as before. Consumed by another project: plain
 # variables of this subtree -- the cache is the consumer's.
 if(SHRINK_ARRAY_IS_TOP_LEVEL)
     set(CMAKE_CXX_FLAGS_DEBUG
-        "-O0 -g -DDEBUG"
+        "-O0 -g"
         CACHE STRING "Debug flags" FORCE)
 
     set(CMAKE_CXX_FLAGS_RELEASE
@@ -260,7 +260,7 @@ if(SHRINK_ARRAY_IS_TOP_LEVEL)
         "-O3 -g"
         CACHE STRING "RelWithDebInfo flags" FORCE)
 else()
-    set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -DDEBUG")
+    set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -g")
     set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g")
 endif()
@@ -734,12 +734,10 @@ endif()
 # read and pass delays) are compiled into the whole tree wherever the
 # harnesses are built, OFF at run time until a harness switches them on --
 # so the harnesses that use them share one executable with the others (one
-# definition of the header-only engine for all) instead of one each. A global
-# definition, like the CHUNK_* configuration macros: the library archives and
+# definition of the header-only engine for all) instead of one each. Recorded
+# in chunk/build_options.h (CHUNK_OPT_TEST_HOOKS): the library archives and
 # every executable see the same engine. Perf configurations never have it.
-if(_build_validation)
-    add_definitions(-DCHUNK_TEST_HOOKS)
-endif()
+set(CHUNK_TEST_HOOKS ${_build_validation})
 
 add_subdirectory(chunk)
 

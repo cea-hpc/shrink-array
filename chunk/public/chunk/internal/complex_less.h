@@ -18,6 +18,9 @@
 
 #include <complex> // std::complex
 
+namespace shrink_array
+{
+
 /// @brief Lexicographic ordering of std::complex<T>: real part first, then imaginary part.
 template <typename T>
 struct ComplexLess
@@ -37,3 +40,6 @@ struct ComplexLess
         return lhs.imag() < rhs.imag();
     }
 };
+
+} // namespace shrink_array
+

@@ -99,7 +99,7 @@ void check_sizes()
     bool aligned = true;
     for (const auto& [i, n] : std::views::enumerate(kSizes))
     {
-        void*             p = BlkAllocator::alloc_block(n);
+        void*             p = fast_alloc::BlkAllocator::alloc_block(n);
         if (p == nullptr)
         {
             ok_blk = false;
@@ -107,9 +107,9 @@ void check_sizes()
         }
         fill(p, n, i);
         ok_blk = ok_blk && intact(p, n, i);
-        BlkAllocator::free_block(p, n);
+        fast_alloc::BlkAllocator::free_block(p, n);
 
-        void* t = BlkAllocator::alloc_tab(n);
+        void* t = fast_alloc::BlkAllocator::alloc_tab(n);
         if (t == nullptr)
         {
             ok_tab = false;
@@ -118,7 +118,7 @@ void check_sizes()
         aligned = aligned && (reinterpret_cast<std::uintptr_t>(t) % fast_alloc::alignment) == 0;
         fill(t, n, i + 1000);
         ok_tab = ok_tab && intact(t, n, i + 1000);
-        BlkAllocator::free_tab(t);
+        fast_alloc::BlkAllocator::free_tab(t);
     }
     expect(ok_blk, "alloc_block/free_block: 1 B to 1 MiB, on, between and past the buckets");
     expect(ok_tab, "alloc_tab/free_tab: same sizes, size read back from the header");
@@ -155,13 +155,13 @@ void check_huge()
     {
         const std::size_t n = sizes[i];
 
-        void* p = BlkAllocator::alloc_block(n);
+        void* p = fast_alloc::BlkAllocator::alloc_block(n);
         ok_blk  = ok_blk && p != nullptr && ends_ok(p, n, 10 * i);
-        BlkAllocator::free_block(p, n);
+        fast_alloc::BlkAllocator::free_block(p, n);
 
-        void* t = BlkAllocator::alloc_tab(n);
+        void* t = fast_alloc::BlkAllocator::alloc_tab(n);
         ok_tab  = ok_tab && t != nullptr && ends_ok(t, n, 10 * i + 5);
-        BlkAllocator::free_tab(t);
+        fast_alloc::BlkAllocator::free_tab(t);
     }
     expect(ok_blk, "alloc_block/free_block: 2 GiB - 64, 2 GiB + 64, 4 GiB + 64");
     expect(ok_tab, "alloc_tab/free_tab: same sizes, size_t header");
@@ -179,8 +179,8 @@ void check_distinct()
         for (std::size_t j = 0; j < kN; ++j)
         {
             sz[j]  = kSizes[j % 20]; // up to 65537: the ladder and its fallback
-            blk[j] = BlkAllocator::alloc_block(sz[j]);
-            tab[j] = BlkAllocator::alloc_tab(sz[j]);
+            blk[j] = fast_alloc::BlkAllocator::alloc_block(sz[j]);
+            tab[j] = fast_alloc::BlkAllocator::alloc_tab(sz[j]);
             fill(blk[j], sz[j], 2 * j);
             fill(tab[j], sz[j], 2 * j + 1);
         }
@@ -191,8 +191,8 @@ void check_distinct()
         }
         for (std::size_t j = 0; j < kN; ++j)
         {
-            BlkAllocator::free_block(blk[j], sz[j]);
-            BlkAllocator::free_tab(tab[j]);
+            fast_alloc::BlkAllocator::free_block(blk[j], sz[j]);
+            fast_alloc::BlkAllocator::free_tab(tab[j]);
         }
         expect(ok, round == 0 ? "3000 + 3000 live blocks of mixed sizes never overlap"
                               : "same after every block was freed and taken again");
@@ -210,7 +210,7 @@ void check_parallel()
         {
             const std::size_t n  = kSizes[static_cast<std::size_t>(it) % 20];
             const std::size_t id = static_cast<std::size_t>(it) * 97u;
-            void*             p  = (it % 2) ? BlkAllocator::alloc_tab(n) : BlkAllocator::alloc_block(n);
+            void*             p  = (it % 2) ? fast_alloc::BlkAllocator::alloc_tab(n) : fast_alloc::BlkAllocator::alloc_block(n);
             fill(p, n, id);
             if (!intact(p, n, id))
             {
@@ -218,18 +218,18 @@ void check_parallel()
             }
             if (it % 2)
             {
-                BlkAllocator::free_tab(p);
+                fast_alloc::BlkAllocator::free_tab(p);
             }
             else
             {
-                BlkAllocator::free_block(p, n);
+                fast_alloc::BlkAllocator::free_block(p, n);
             }
         }
     }
     // Quiescent point: the blocks freed inside the region were batched per
     // thread; hand them back to the ladder (what the chunk library's
     // parallel_end callback does).
-    StaticConstArray::clearInfoFreeElt();
+    fast_alloc::StaticConstArray::clearInfoFreeElt();
     expect(bad == 0, "every thread allocating, writing and freeing at once");
 }
 
@@ -248,17 +248,17 @@ void check_inside_caller_critical()
             const std::size_t id = static_cast<std::size_t>(it) * 131u;
 #pragma omp critical
             {
-                void* p = BlkAllocator::alloc_block(n);
+                void* p = fast_alloc::BlkAllocator::alloc_block(n);
                 fill(p, n, id);
                 if (!intact(p, n, id))
                 {
                     ++bad;
                 }
-                BlkAllocator::free_block(p, n);
+                fast_alloc::BlkAllocator::free_block(p, n);
             }
         }
     }
-    StaticConstArray::clearInfoFreeElt();
+    fast_alloc::StaticConstArray::clearInfoFreeElt();
     expect(bad == 0, "alloc and free from inside the caller's own unnamed omp critical");
 }
 

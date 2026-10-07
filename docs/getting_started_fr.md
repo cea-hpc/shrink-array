@@ -83,8 +83,10 @@ target_link_libraries(mon_appli PRIVATE chunk::chunk_v2a)
 
 La bibliothèque liée **choisit la variante et la taille de chunk**. Les en-têtes sont les mêmes
 pour toutes, et la bibliothèque apporte les définitions de compilation qui sélectionnent la
-sienne (`CHUNK2A=1`, `CHUNK_SIZE=256` ou `CHUNK_DYNAMIC`, `HAVE_OMPT`), ainsi que le C++20,
-`-fopenmp` si elle a été construite avec OpenMP, et ses dépendances :
+sienne (`CHUNK_VARIANT_V2A=1`, `CHUNK_SIZE=256` ou `CHUNK_DYNAMIC`), ainsi que le C++20,
+`-fopenmp` si elle a été construite avec OpenMP, et ses dépendances. Les autres options de sa
+construction sont dans `chunk/build_options.h`, installé, que lisent les en-têtes : un
+programme les compile comme la bibliothèque.
 
 | cible | variante | taille de chunk |
 |---|---|---|
@@ -113,14 +115,14 @@ installation comme dans l'arbre des sources.
 
 #include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // build_config::has_not_ompt
+#include "chunk/config.h"          // sa::build_config::has_not_ompt
 #include "chunk/manage_ompt.h"     // begin_parallel_phase, finalize_parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
 
-static void begin_phase() { if constexpr (build_config::has_not_ompt) sa::begin_parallel_phase(); }
-static void end_phase()   { if constexpr (build_config::has_not_ompt) sa::finalize_parallel_phase(); }
+static void begin_phase() { if constexpr (sa::build_config::has_not_ompt) sa::begin_parallel_phase(); }
+static void end_phase()   { if constexpr (sa::build_config::has_not_ompt) sa::finalize_parallel_phase(); }
 
 int main()
 {
@@ -156,8 +158,9 @@ int main()
 ```
 
 1. **`init_indexes(true)`**, une fois, avant le premier tableau : prépare les blocs
-   d'allocation (`true` : gros blocs, le choix habituel). Les types d'éléments ne se déclarent
-   pas : chacun est enregistré à la construction du premier tableau de ce type.
+   d'allocation (`true` : gros blocs, le choix habituel). Facultatif : sans lui, le premier
+   tableau du programme lance lui-même `init_indexes(true)`. Les types d'éléments ne se
+   déclarent pas : chacun est enregistré à la construction du premier tableau de ce type.
 2. **Un tableau neuf** lit `T{}` partout et n'alloue aucun tampon.
 3. **Les appels de phase**, nécessaires seulement sans OMPT (§5). Ils ne compilent rien quand
    la bibliothèque a été construite avec OMPT, ni dans un build séquentiel.
@@ -168,7 +171,10 @@ int main()
    à récupérer la mémoire à un moment précis.
 6. **La destruction du tableau** rend ses tampons. La bibliothèque affiche alors une ligne par
    tableau, avec son taux de compression.
-7. **La paire d'arrêt**, en fin de programme, après le dernier tableau.
+7. **La paire d'arrêt**, en fin de programme, après le dernier tableau. Facultative elle aussi :
+   le processus peut simplement se terminer. Si un tableau vit encore (global ou `static`,
+   détruit après le retour de `main`), la paire garde ce dont il aura besoin et ne fait que
+   vider les listes libres.
 
 Résultat attendu : environ 12 % des chunks ont un tampon. Un `std::vector` les aurait tous.
 
@@ -198,7 +204,7 @@ shrink_array::finalize_parallel_phase();      // une fois, après la région
 Si on les oublie, rien n'échoue tout de suite, mais les écritures différées ne sont appliquées
 qu'à la lecture suivante de l'élément, et les passes de compression entre régions n'ont pas
 lieu : la mémoire reste plus haute qu'elle ne devrait. Les écrire derrière
-`if constexpr (build_config::has_not_ompt)`, comme ci-dessus, garde un seul source pour les deux
+`if constexpr (sa::build_config::has_not_ompt)`, comme ci-dessus, garde un seul source pour les deux
 runtimes.
 
 Avec OMPT, si le runtime n'a pas chargé l'outil de la bibliothèque (`OMP_TOOL=disabled`, un
@@ -226,6 +232,9 @@ programme avec un message.
   non plus : trier une copie en `std::vector`, puis la remettre par `assign()`.
 - **Un proxy ne doit pas survivre au stockage.** Chacune des opérations séquentielles du §5
   invalide les proxys de ce tableau. Garder les proxys le temps d'une expression.
+- **Les tableaux globaux et `static` fonctionnent** : construits avant `main`, détruits après
+  son retour. L'état de la bibliothèque est construit à sa première utilisation et jamais
+  détruit, l'ordre des initialisations statiques n'importe donc pas.
 - **Les indices sont des `int` par défaut.** Au-delà de 2³¹ éléments, utiliser le second
   paramètre du modèle : `ArrayChunk2A<double, long>`.
 - **Les types d'éléments** : tout type trivialement copiable, comparable par `==` et

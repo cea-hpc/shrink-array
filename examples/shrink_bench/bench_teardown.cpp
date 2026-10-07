@@ -109,10 +109,10 @@ void bench_teardown(BenchArrays& bench_arr, bool test_stl)
     if constexpr (chunk_config::use_chunk2)
     {
         std::println("\n[share_info] entries still mapped after clear():  double {}  Int {}  float {}  short {}",
-                     shrink_array::Proxy2<double>::share_info_array.share_info_entries(),
-                     shrink_array::Proxy2<int>::share_info_array.share_info_entries(),
-                     shrink_array::Proxy2<float>::share_info_array.share_info_entries(),
-                     shrink_array::Proxy2<short>::share_info_array.share_info_entries());
+                     shrink_array::Proxy2<double>::share_info_array->share_info_entries(),
+                     shrink_array::Proxy2<int>::share_info_array->share_info_entries(),
+                     shrink_array::Proxy2<float>::share_info_array->share_info_entries(),
+                     shrink_array::Proxy2<short>::share_info_array->share_info_entries());
     }
 
     // bench_phase_compress_all() is declared in bench_phases.h and defined in

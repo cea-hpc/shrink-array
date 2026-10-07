@@ -22,16 +22,19 @@
 #if defined(__has_feature)
     #if __has_feature(address_sanitizer) || __has_feature(leak_sanitizer)
         #include <sanitizer/lsan_interface.h> // __lsan_ignore_object
-        #define SA_LSAN_IGNORE(p) __lsan_ignore_object(p)
+        #define FAST_ALLOC_LSAN_IGNORE(p) __lsan_ignore_object(p)
     #endif
 #elifdef __SANITIZE_ADDRESS__
     #include <sanitizer/lsan_interface.h> // __lsan_ignore_object
-    #define SA_LSAN_IGNORE(p) __lsan_ignore_object(p)
+    #define FAST_ALLOC_LSAN_IGNORE(p) __lsan_ignore_object(p)
 #endif
 
-#ifndef SA_LSAN_IGNORE
-    #define SA_LSAN_IGNORE(p) ((void)0)
+#ifndef FAST_ALLOC_LSAN_IGNORE
+    #define FAST_ALLOC_LSAN_IGNORE(p) ((void)0)
 #endif
+
+namespace fast_alloc
+{
 
 /**
  * @brief Process-wide lazily-constructed instance of T, shared by every thread.
@@ -112,9 +115,12 @@ class Singleton
         if (instance == nullptr)
         {
             instance = new T();       // immortal: never deleted
-            SA_LSAN_IGNORE(instance); // intentional leak, not a real one
+            FAST_ALLOC_LSAN_IGNORE(instance); // intentional leak, not a real one
             unique_instance.store(instance, std::memory_order_release);
         }
         return instance;
     }
 };
+
+} // namespace fast_alloc
+

@@ -7,6 +7,7 @@ import time
 import re as _re
 
 from ..builds import resolve_build_dir, short_config_label, validation_built
+from .. import events
 from ..progress import CONFIG_W
 from ..runs import _append_error_now, effective_timeout, run_capture_stdout_streaming
 from ..settings import is_sanitizer_config, sanitizer_env_for
@@ -81,6 +82,7 @@ class _CtestProgress:
             self.durations.append((float(m.group(4)), name))
             if "Passed" not in line:
                 self.n_fail += 1
+            events.progress(self.done, self.total, failed=self.n_fail)
             self.render()
 
     def oldest(self):

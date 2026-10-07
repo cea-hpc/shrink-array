@@ -49,7 +49,7 @@
 
 #include "chunk/config.h"                   // build_config::any_check
 #include "chunk/debug.h"                    // print_backtrace
-#include "chunk/internal/invariant_check.h" // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 
 #include "chunk/vendor/ankerl/unordered_dense.h" // the live maps
 
@@ -77,14 +77,18 @@ inline std::mutex& mtx()
 /// @brief Live ctx blocks, keyed by address.
 inline ankerl::unordered_dense::map<void*, Rec>& ctx_live()
 {
-    static ankerl::unordered_dense::map<void*, Rec> live;
-    return live;
+    // Never destroyed: a global array is destroyed after main, and its buffers
+    // go through the ledger then (see chunk/internal/immortal.h).
+    static auto* live = new ankerl::unordered_dense::map<void*, Rec>();
+    return *live;
 }
 /// @brief Live op blocks, keyed by address.
 inline ankerl::unordered_dense::map<void*, Rec>& op_live()
 {
-    static ankerl::unordered_dense::map<void*, Rec> live;
-    return live;
+    // Never destroyed: a global array is destroyed after main, and its buffers
+    // go through the ledger then (see chunk/internal/immortal.h).
+    static auto* live = new ankerl::unordered_dense::map<void*, Rec>();
+    return *live;
 }
 
 /// @brief The calling thread's rank, or -1 outside a parallel region.
@@ -123,7 +127,7 @@ inline int current_rank() noexcept
 // Either way, every other any_check invariant/assert stays active.
 #ifdef CHUNK_NO_LEDGER
 inline constexpr bool pool_ledger_enabled = false;
-#elifdef CHUNK_FORCE_LEDGER
+#elif CHUNK_OPT_FORCE_LEDGER
 inline constexpr bool pool_ledger_enabled = build_config::any_check;
 #else
 inline constexpr bool pool_ledger_enabled = build_config::any_check && !build_config::use_openmp;
@@ -140,13 +144,13 @@ inline void on_ctx_alloc(void* ptr, std::size_t sz, const void* slab = nullptr) 
         const std::scoped_lock lk(mtx());
         if (const auto it = op_live().find(ptr); it != op_live().end())
         {
-            INVARIANT_FAILED("[POOL_LEDGER] ctx_alloc at {} but block is LIVE as op "
+            CHUNK_INVARIANT_FAILED("[POOL_LEDGER] ctx_alloc at {} but block is LIVE as op "
                              "(op_size={}, op_alloc_rank={}, ctx_size={}, op_slab={}, ctx_slab={})",
                              ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab);
         }
         if (const auto it = ctx_live().find(ptr); it != ctx_live().end())
         {
-            INVARIANT_FAILED("[POOL_LEDGER] ctx_alloc DOUBLE-alloc at {} — block already live as ctx "
+            CHUNK_INVARIANT_FAILED("[POOL_LEDGER] ctx_alloc DOUBLE-alloc at {} — block already live as ctx "
                              "(prev_size={}, prev_alloc_rank={}, new_size={}, prev_slab={}, new_slab={}, "
                              "SLABS_{}). Means the ctx pool returned a still-live block → double-recycle "
                              "of this ctx, or the slab handed out a live block.",
@@ -166,13 +170,13 @@ inline void on_ctx_free(void* ptr) noexcept
         const std::scoped_lock lk(mtx());
         if (const auto it = op_live().find(ptr); it != op_live().end())
         {
-            INVARIANT_FAILED("[POOL_LEDGER] ctx_free at {} but block is LIVE as op "
+            CHUNK_INVARIANT_FAILED("[POOL_LEDGER] ctx_free at {} but block is LIVE as op "
                              "(op_size={}, op_alloc_rank={})",
                              ptr, it->second.size, it->second.alloc_rank);
         }
         if (ctx_live().erase(ptr) == 0)
         {
-            INVARIANT_FAILED("[POOL_LEDGER] ctx_free at {} of an unknown/already-freed ctx block", ptr);
+            CHUNK_INVARIANT_FAILED("[POOL_LEDGER] ctx_free at {} of an unknown/already-freed ctx block", ptr);
         }
     }
 }
@@ -193,7 +197,7 @@ inline void on_op_alloc(void* ptr, std::size_t sz, const void* slab = nullptr) n
         //                           (TCTypeAllocator slab hands out overlapping mem)
         if (const auto it = ctx_live().find(ptr); it != ctx_live().end())
         {
-            INVARIANT_FAILED("[POOL_LEDGER] op_alloc at {} but block is LIVE as ctx "
+            CHUNK_INVARIANT_FAILED("[POOL_LEDGER] op_alloc at {} but block is LIVE as ctx "
                              "(ctx_size={}, ctx_alloc_rank={}, op_size={}, ctx_slab={}, op_slab={}, "
                              "SLABS_{})",
                              ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
@@ -201,7 +205,7 @@ inline void on_op_alloc(void* ptr, std::size_t sz, const void* slab = nullptr) n
         }
         if (const auto it = op_live().find(ptr); it != op_live().end())
         {
-            INVARIANT_FAILED("[POOL_LEDGER] op_alloc DOUBLE-alloc at {} — block already live as op "
+            CHUNK_INVARIANT_FAILED("[POOL_LEDGER] op_alloc DOUBLE-alloc at {} — block already live as op "
                              "(prev_size={}, prev_alloc_rank={}, new_size={}, prev_slab={}, new_slab={}, "
                              "SLABS_{})",
                              ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
@@ -220,13 +224,13 @@ inline void on_op_free(void* ptr) noexcept
         const std::scoped_lock lk(mtx());
         if (const auto it = ctx_live().find(ptr); it != ctx_live().end())
         {
-            INVARIANT_FAILED("[POOL_LEDGER] op_free at {} but block is LIVE as ctx "
+            CHUNK_INVARIANT_FAILED("[POOL_LEDGER] op_free at {} but block is LIVE as ctx "
                              "(ctx_size={}, ctx_alloc_rank={})",
                              ptr, it->second.size, it->second.alloc_rank);
         }
         if (op_live().erase(ptr) == 0)
         {
-            INVARIANT_FAILED("[POOL_LEDGER] op_free at {} of an unknown/already-freed op block", ptr);
+            CHUNK_INVARIANT_FAILED("[POOL_LEDGER] op_free at {} of an unknown/already-freed op block", ptr);
         }
     }
 }
@@ -289,8 +293,8 @@ struct BRec
 /// @brief Tracked value blocks, keyed by address.
 inline ankerl::unordered_dense::map<const void*, BRec>& block_live()
 {
-    static ankerl::unordered_dense::map<const void*, BRec> live;
-    return live;
+    static auto* live = new ankerl::unordered_dense::map<const void*, BRec>(); // never destroyed, as above
+    return *live;
 }
 
 /// @brief End-of-run report: every block still in the ledger, by (state, last site).
@@ -454,7 +458,7 @@ inline void block_transition(const void* block,
         {
             if (!allow_unknown)
             {
-                INVARIANT_FAILED("[POOL_LEDGER/BLOCK] {} of UNTRACKED block {} — site='{}' rank={} "
+                CHUNK_INVARIANT_FAILED("[POOL_LEDGER/BLOCK] {} of UNTRACKED block {} — site='{}' rank={} "
                                  "(expected state {}) → foreign or already-recycled pointer",
                                  op, block, site, rank, bstate_name(expected));
             }
@@ -470,7 +474,7 @@ inline void block_transition(const void* block,
         BRec& info = it->second;
         if (info.state != expected)
         {
-            INVARIANT_FAILED("[POOL_LEDGER/BLOCK] ILLEGAL {} of block {} — site='{}' rank={} : "
+            CHUNK_INVARIANT_FAILED("[POOL_LEDGER/BLOCK] ILLEGAL {} of block {} — site='{}' rank={} : "
                              "state={} (expected {}), last op by rank={} at site='{}'",
                              op, block, site, rank, bstate_name(info.state), bstate_name(expected), info.last_rank,
                              info.last_site);

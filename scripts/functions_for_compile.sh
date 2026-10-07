@@ -136,9 +136,44 @@ run_cmd() {
 #   'omp-llvm*'     -> the whole omp-llvm family
 #   '*sanitizer*'   -> every sanitizer build
 #   '*check*'       -> every check build
+#   'omp-llvm,*thread-sanitizer'  -> a list: any of its globs (commas never
+#                      appear in a configuration or target name)
+
+# <name> matches one of the comma-separated globs of <list>. Split with
+# `read -a`: an unquoted $list would also be pathname-expanded ('*_dyn'
+# against the files of the current directory).
+__glob_list_match() {  # <name> <list> -> 0 match, 1 none
+    local __pats __p
+    IFS=, read -r -a __pats <<< "$2"
+    for __p in "${__pats[@]}"; do
+        [ -n "$__p" ] || continue
+        # shellcheck disable=SC2254
+        case "$1" in ($__p) return 0 ;; esac
+    done
+    return 1
+}
+
 __target_wants() {  # <name> -> 0 build it, 1 skip it
     [ -z "${CHUNK_BUILD_TARGET:-}" ] && return 0
-    case "$1" in ($CHUNK_BUILD_TARGET) return 0 ;; esac
+    __glob_list_match "$1" "$CHUNK_BUILD_TARGET"
+}
+
+# The first element of a --target / --exec list that matches none of
+# <names...>: printed, status 0; every element matches something: status 1.
+# A list is checked element by element, so a typo in one of its globs is an
+# error even when the others match.
+__first_unmatched() {  # <list> <names...>
+    local __pats __p __n
+    IFS=, read -r -a __pats <<< "$1"; shift
+    for __p in "${__pats[@]}"; do
+        [ -n "$__p" ] || continue
+        for __n in "$@"; do
+            # shellcheck disable=SC2254
+            case "$__n" in ($__p) continue 2 ;; esac
+        done
+        printf '%s\n' "$__p"
+        return 0
+    done
     return 1
 }
 
@@ -234,12 +269,14 @@ known_build_names() {  # <script>... → one name per line
 check_target_arg() {  # <known names...> → exit 2 when --target=<glob> matches none
     [ -n "${CHUNK_BUILD_TARGET:-}" ] || return 0
     [ "${CHUNK_ARGS_CHECKED_BY_PARENT:-}" = 1 ] && return 0
-    local n
-    for n in "$@"; do
-        __target_wants "$n" && return 0
-    done
-    echo "ERROR: --target=$CHUNK_BUILD_TARGET matches no build configuration" >&2
-    echo "       did you mean: $(__closest_names "$CHUNK_BUILD_TARGET" "$@" | paste -sd' ')" >&2
+    local bad
+    bad=$(__first_unmatched "$CHUNK_BUILD_TARGET" "$@") || return 0
+    if [ "$bad" = "$CHUNK_BUILD_TARGET" ]; then
+        echo "ERROR: --target=$CHUNK_BUILD_TARGET matches no build configuration" >&2
+    else
+        echo "ERROR: --target=$CHUNK_BUILD_TARGET: '$bad' matches no build configuration" >&2
+    fi
+    echo "       did you mean: $(__closest_names "$bad" "$@" | paste -sd' ')" >&2
     echo "       (a glob over the cmake-build-<name> names of the scripts, e.g. --target='omp-llvm*')" >&2
     exit 2
 }
@@ -281,7 +318,7 @@ check_arg_epilogue() {
         if [ -s "$d/exec-candidates" ]; then
             local _cands=()   # the targets of the dirs where it was looked up
             mapfile -t _cands < <(sort -u "$d/exec-candidates")
-            echo "       did you mean: $(__closest_names "$CHUNK_BUILD_EXEC" "${_cands[@]}" | paste -sd' ')" >&2
+            echo "       did you mean: $(__closest_names "$(__first_unmatched "$CHUNK_BUILD_EXEC" "${_cands[@]}" || echo "$CHUNK_BUILD_EXEC")" "${_cands[@]}" | paste -sd' ')" >&2
         else
             echo "       (no build dir was configured, so no target list to compare with)" >&2
         fi
@@ -583,7 +620,7 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
         local _dry_exec=""
         if [ -n "${CHUNK_BUILD_EXEC:-}" ]; then
             case "$CHUNK_BUILD_EXEC" in
-                *[*?[]*) _dry_exec="--target <targets matching '$CHUNK_BUILD_EXEC'> " ;;
+                *[*?[,]*) _dry_exec="--target <targets matching '$CHUNK_BUILD_EXEC'> " ;;
                 *)       _dry_exec="--target $CHUNK_BUILD_EXEC " ;;
             esac
         fi
@@ -607,16 +644,37 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
         local _names=() _t
         mapfile -t _names < <(__ninja_target_names "$dir")
         case "$CHUNK_BUILD_EXEC" in
-            *[*?[]*)
-                # Pattern: every matching target, fed to cmake as concrete names
+            *[*?[,]*)
+                # Pattern, or a comma-separated list of names and patterns:
+                # every matching target, fed to cmake as concrete names
                 # (cmake --build --target does NOT accept globs).
                 local _matches=()
                 for _t in "${_names[@]}"; do
-                    # shellcheck disable=SC2254
-                    case "$_t" in
-                        $CHUNK_BUILD_EXEC) _matches+=(--target "$_t") ;;
-                    esac
+                    __glob_list_match "$_t" "$CHUNK_BUILD_EXEC" && _matches+=(--target "$_t")
                 done
+                # Not configured yet (no target list): a list of plain names
+                # goes through as is, as a single plain name does below.
+                if [ ${#_names[@]} -eq 0 ]; then
+                    case "$CHUNK_BUILD_EXEC" in
+                        *[*?[]*) ;;
+                        *)
+                            local _lit
+                            IFS=, read -r -a _lit <<< "$CHUNK_BUILD_EXEC"
+                            for _t in "${_lit[@]}"; do
+                                [ -n "$_t" ] && _matches+=(--target "$_t")
+                            done
+                            ;;
+                    esac
+                fi
+                # An element of a list that matches nothing here: said, per
+                # dir, even when the others matched (a typo would otherwise
+                # vanish in the list).
+                if [ ${#_names[@]} -gt 0 ] && [ ${#_matches[@]} -gt 0 ]; then
+                    local _miss
+                    _miss=$(__first_unmatched "$CHUNK_BUILD_EXEC" "${_names[@]}") &&
+                        printf '[WARN] %-40s no Ninja target matches %s (from --exec=%s)\n' \
+                               "$name" "$_miss" "$CHUNK_BUILD_EXEC"
+                fi
                 if [ ${#_matches[@]} -eq 0 ]; then
                     printf '[WARN] %-40s no Ninja target matches --exec=%s (building nothing here)\n' \
                            "$name" "$CHUNK_BUILD_EXEC"

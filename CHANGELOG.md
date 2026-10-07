@@ -84,10 +84,10 @@ the tag's checksum to the recipe.
   project is `shrink_array`, and carries the version (`project(shrink_array VERSION ...)`),
   from which the chunk library takes its own. Consumed by another project, the build no
   longer writes the build type or the per-configuration flags into that project's cache.
-- The variant libraries carry C++20, OpenMP (when built with it) and `HAVE_OMPT` to their
-  consumers (PUBLIC). An OMPT build links its consumers with `-rdynamic`, so the OpenMP runtime
+- The variant libraries carry C++20 and OpenMP (when built with it) to their consumers
+  (PUBLIC). An OMPT build links its consumers with `-rdynamic`, so the OpenMP runtime
   finds the library's OMPT tool in the executable.
-- `HAVE_AGRESSIVE_COMPRESSION` is renamed `HAVE_AGGRESSIVE_COMPRESSION` (option, macro,
+- `HAVE_AGRESSIVE_COMPRESSION` is renamed `HAVE_AGGRESSIVE_COMPRESSION` (option,
   `chunk_config::have_aggressive_compression`, build directory names). CMake still accepts the
   old option name, with a deprecation message.
 - The `cmake-build-omp-gnu-debug-ledger` build is no longer part of the default
@@ -109,9 +109,68 @@ the tag's checksum to the recipe.
 - `NOTICE` (new) lists the third-party code and its licenses; it is installed with `LICENSE` and
   the license texts under `share/doc/chunk/`. `third_party/README.md` gives each vendored
   file's upstream, version and local patches.
+- `ParamChunk::init_indexes()` is optional: the first array of the program runs
+  `init_indexes(true)` when it was not called. `release_chunk_pools()` and
+  `destroy_block_chunk()` are optional too, and safe with arrays still alive: they then only
+  empty the free lists.
+- Global and `static` arrays work, for every variant, with OpenMP or not, fast or standard
+  allocator, `MM_PROTECT` or not. The library's static state that an array reaches
+  (per-type registries, pools, maps, the allocator ladder) is built at its first use or
+  constant-initialised, and never destroyed (`chunk/internal/immortal.h`): a global array used
+  to read it before its dynamic initialisation and after its destruction.
+- No limit on the number of (chunk template, element type) pairs: the manager registry grows
+  (it aborted past 256). Registering a manager no longer uses RTTI (`dynamic_cast`).
+- **The build options are recorded, not passed as macros.** CMake generates
+  `chunk/build_options.h` and `fast_allocators/build_options.h` (`CHUNK_OPT_*`,
+  `FAST_ALLOC_OPT_*`), installed with the libraries; the headers read them there, never from the
+  command line of the file that includes them. An installed consumer used to compile the headers
+  with its own value of every option the targets did not carry (MM_PROTECT,
+  `CHUNK_SECOND_VALUE_INDEXED`, CHUNK_NO_RECLAIM_EMPTY_SLABS, DEBUG, the test hooks...): two
+  definitions of the same templates in one program, silently. A file compiled with OpenMP
+  against a library built without it, or the reverse, is refused with an `#error`. The
+  libraries no longer export HAVE_OMPT, `CHECK_OPTIM`, `CHUNK_STATS`, `CHUNK_STD_ALLOC`,
+  `CHUNK_POOL_NO_REUSE`, `CHUNK_ALIGN_CHECK`, `HAVE_AGGRESSIVE_COMPRESSION`, `CHUNK_FORCE_LEDGER`,
+  `CHUNK_DEFERRED_DRAIN_THRESHOLD`, `CHUNK_FORCE_DEFER_EVERY` as definitions.
+- **A program compiled with other per-library settings than the library it links does not link.**
+  The variant, `CHUNK_SIZE` and `CHUNK_DYNAMIC` are spelled into the name of one function each
+  variant library defines (`chunk/internal/link_check.h`); the undefined symbol names the
+  settings the program was compiled with.
+- Renamed, without the old names: the variant macros CHUNK, CHUNK2, CHUNK2A are
+  `CHUNK_VARIANT_V1`, `CHUNK_VARIANT_V2`, `CHUNK_VARIANT_V2A`. The bare `-D` switches DEBUG,
+  PERF, DO_CHECK, DEBUG_SET_SIZE, RECHUNK_LEDGERTRACE, RING_LOG_DEBUG, RING_LOG_OP are
+  CMake options `CHUNK_DEBUG` (on with a Debug build), `CHUNK_PERF`, `CHUNK_DO_CHECK`,
+  `CHUNK_DEBUG_SET_SIZE`, `CHUNK_RECHUNK_LEDGERTRACE`, `CHUNK_RING_LOG_DEBUG`,
+  `CHUNK_RING_LOG_OP`; MM_PROTECT is the option `CHUNK_MM_PROTECT` alone. fast_allocators:
+  STD_ALLOC and ALLOC_ALIGN are `FAST_ALLOC_STD_ALLOC` and `FAST_ALLOC_ALIGN`; the platform
+  macros MIC, KNL, ARM, ATOS_7, BSD are gone (no build defined them; `MAP_ANON` is used
+  where `MAP_ANONYMOUS` is missing). chunk/chunk_define.h and
+  chunk/internal/define_mm_protect.h are removed, and build_config::has_bzip2 moved to the
+  benchmark (`have_bzip2`).
+- **No name in the global namespace.** fast_allocators is in namespace `fast_alloc`
+  (`fast_alloc::Singleton`, `fast_alloc::StaticConstArray`, `fast_alloc::TCTypeAllocator`,
+  `fast_alloc::SIZE_BLOCK`, `fast_alloc::alloc_config`, the `sv*` functions...); the chunk
+  library's last global names are in `shrink_array`: `shrink_array::build_config`,
+  `shrink_array::chunk_config`, `shrink_array::g_ompt_suspended`, `type_name`, the term colours,
+  `get_thr_rank_fast`, the chunk definitions (`Chunk2Def`...). A program that wrote
+  build_config:: or chunk_config:: without `using namespace shrink_array` adds the namespace
+  (or a namespace alias, as the benchmark does). complex_double is no longer defined by
+  chunk/chunk_std.h (nothing used it; the benchmark has its own).
+- Renamed, without the old names, the macros a header defines: `CHUNK_FORCE_INLINE`,
+  `CHUNK_FLATTEN`, `CHUNK_ASSUME`, `CHUNK_CPU_PAUSE`, `CHUNK_INVARIANT_FAILED`,
+  `CHUNK_CRTP_USE_DEDUCING_THIS`, `CHUNK_CRTP_FORCE_DEDUCING_THIS`, `CHUNK_INHERIT_CTOR_TYPENAME`, `CHUNK_RING_LOG_ANY`,
+  `CHUNK_TUNING_LEVEL` (was FORCE_INLINE, SA_FLATTEN, SA_ASSUME, CPU_PAUSE, INVARIANT_FAILED,
+  CRTP_USE_DEDUCING_THIS, CRTP_FORCE_DEDUCING_THIS, SA_INHERIT_CTOR_TYPENAME, RING_LOG_ANY, SHRINK_LEVEL);
+  fast_allocators: `FAST_ALLOC_DBG_ASSERT`, `FAST_ALLOC_LSAN_IGNORE`, `FAST_ALLOC_SL_LIST_CHECK`,
+  `FAST_ALLOC_SIMD_SZ`, `FAST_ALLOC_MAX_CONST_BLOCK_SIZE`, `FAST_ALLOC_PMP_THREAD_RANK`,
+  `FAST_ALLOC_PMP_MAX_THREADS`, `FAST_ALLOC_PMP_IN_PARALLEL_REGION` (was DBG_ASSERT,
+  SA_LSAN_IGNORE, SL_LIST_CHECK, SIMD_SZ, MAX_CONST_BLOCK_SIZE, PMP_THREAD_RANK,
+  PMP_MAX_THREADS, PMP_IN_PARALLEL_REGION). The fallback definitions of the membarrier(2)
+  commands are constants of `shrink_array`, no longer macros. is_power_of_tow is
+  `is_power_of_two`.
 
 ### Fixed
 
+- `ParamChunk::init_indexes<Types>()` compiles: it called a private member of `AllTypeChunk`.
 - `scripts/check_includes.py` works outside a git checkout (a source archive, a Spack
   build) and checks files not yet added to git.
 - Comments naming headers that moved to `internal/`, or a script that no longer exists.

@@ -17,7 +17,7 @@
 /**
  * @file fill_range_mt_v1v2_validation.cpp
  * @brief fill_range_mt() in a build that holds TWO variants (chunk_v1v2:
- *        CHUNK=1;CHUNK2=1), on an ArrayChunk and an ArrayChunk2 side by side.
+ *        CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1), on an ArrayChunk and an ArrayChunk2 side by side.
  *
  * @details The range ops once chose their per-variant behaviour from the build
  *          flags (chunk_config::use_chunk / use_chunk2) instead of the array's
@@ -66,7 +66,7 @@
 
 /// The suspension counter read by chunk_config::OMPTcc: non-zero, no OMPT
 /// callback exists in this binary (chunk_v1v2 is built without the tool).
-OmptSuspendCounter g_ompt_suspended{1};
+shrink_array::OmptSuspendCounter shrink_array::g_ompt_suspended{1};
 
 using namespace shrink_array;
 

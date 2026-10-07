@@ -19,6 +19,9 @@
 #include <complex>     // std::complex
 #include <type_traits> // std::is_same_v
 
+namespace shrink_array
+{
+
 /// @brief True when T is an instance of std::complex.
 template <typename T>
 concept ComplexType = requires { typename T::value_type; } && std::is_same_v<T, std::complex<typename T::value_type>>;
@@ -39,3 +42,6 @@ struct ChunkDef
     constexpr static int factor_div_nb_chunk_for_compress      = 100; ///< Threshold = chunks / (this * max threads)
     constexpr static int size_min_buffer_reuse                 = 100; ///< Floor of a per-size reuse budget
 };
+
+} // namespace shrink_array
+

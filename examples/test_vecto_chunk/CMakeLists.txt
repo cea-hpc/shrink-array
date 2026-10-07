@@ -14,7 +14,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Intel")
 endif ()
 chunk_require_cxx_std(test_vecto_chunk PRIVATE)
 
-# test_vecto_chunk doesn't use CHUNK/CHUNK2/CHUNK2A → chunk_vector.
+# test_vecto_chunk doesn't use CHUNK_VARIANT_V1 / _V2 / _V2A → chunk_vector.
 # The v1 (Chunk<T>) variant at the default static size, not the bare
 # `chunk_vector` target: that one carries no variant define (the std::vector
 # shape of the library) while this example instantiates ArrayChunk<double>

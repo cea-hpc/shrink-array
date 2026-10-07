@@ -145,7 +145,8 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
   --debug-only  Compile only the debug builds (skip release / RelWithDebInfo).
   --only=<c>       Build only compiler <c> (gnu|oneapi|nvhpc|llvm|aocc).
   --target=<glob>  Build only the config(s) whose name matches <glob>
-                   (e.g. omp-llvm, 'omp-llvm*', '*sanitizer*', '*check*').
+                   (e.g. omp-llvm, 'omp-llvm*', '*sanitizer*', '*check*'), or
+                   any glob of a comma-separated list (omp-llvm,omp-gnu-debug).
                    Combine with --only=<c> to also skip other compilers' configure.
                    A glob that matches no known configuration is an error
                    (exit 2) naming the closest ones, before anything runs.
@@ -154,7 +155,9 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
                    e.g. --exec=shrink_bench_chunk_64. A pattern builds a
                    family, e.g. --exec='*_dyn' (all dynamic exes) or
                    --exec='*_256' (all static-256 exes) or
-                   --exec='shrink_bench_chunk2a_*'. Patterns are matched against
+                   --exec='shrink_bench_chunk2a_*', or a comma-separated list
+                   of names and patterns (--exec='shrink_bench_chunk_64,*_dyn').
+                   Patterns are matched against
                    the real Ninja target list; quote them so the shell does not
                    expand the glob first. Ninja still builds each target's deps
                    (the chunk libs), just not the other exes. A name or pattern

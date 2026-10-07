@@ -17,7 +17,7 @@
 // ============================================================================
 // SEQUENTIAL re-chunk validation harness (path C, non-OMP) -- v3.
 // Variant-agnostic: tests chunk / chunk2 / chunk2a depending on the
-// compile-time macro (CHUNK / CHUNK2 / CHUNK2A), like shrink_bench.cpp.
+// compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like shrink_bench.cpp.
 // ============================================================================
 //
 // Proves CONTENT INVARIANCE and, on failure, LOCATES the cause:
@@ -177,7 +177,7 @@ std::string pass_label(const char* label)
 
 // --- Active variant selection (same shape as shrink_bench.cpp) -------
 static_assert(chunk_config::use_chunk || chunk_config::use_chunk2 || chunk_config::use_chunk2a,
-              "rechunk_validation must be built with CHUNK, CHUNK2 or CHUNK2A "
+              "rechunk_validation must be built with CHUNK_VARIANT_V1, _V2 or _V2A "
               "(re-chunk is chunk-only; no std::vector fallback here)");
 
 template <typename T>

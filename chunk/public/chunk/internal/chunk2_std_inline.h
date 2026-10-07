@@ -29,7 +29,7 @@
 #include "chunk/chunk2_std.h"                   // Chunk2, the class these bodies belong to
 #include "chunk/internal/proxy2.h"              // Proxy2<T>
 #include "chunk/internal/block_pass_precheck.h" // block_pass_yields_to_flush
-#include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED
+#include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/test_hooks.h"          // TEST KNOB: test_hooks::maybe_pass_delay
 
 /**
@@ -814,7 +814,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
         {
             if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]
             {
-                INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
+                CHUNK_INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
                                  "dedup flag -- two passes on one chunk",
                                  static_cast<const void*>(marked));
             }
@@ -929,7 +929,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr_r
                 // No array, no info tuple -- and nothing of that value left
                 // to fold: skip it (unguarded, force_compression() /
                 // shrink_to_fit() after such a clear dereferences null).
-                const auto* inf = Proxy2<T>::share_info_array.find_inf_array(second_val);
+                const auto* inf = Proxy2<T>::share_info_array->find_inf_array(second_val);
                 if (inf == nullptr)
                 {
                     continue;

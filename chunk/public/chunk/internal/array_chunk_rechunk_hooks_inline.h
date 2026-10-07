@@ -43,7 +43,7 @@ void RechunkHooks<Derived, true>::rechunk_drop_candidates(this Derived& self)
     {
         // Bypasses CompressionManager::start(): see check_no_flush_outside_start.
         check_no_flush_outside_start<proxy_type>("RechunkHooks::rechunk_drop_candidates");
-        const int num_tab = proxy_type::share_info_array.get_num_tab(self.registry_key());
+        const int num_tab = proxy_type::share_info_array->get_num_tab(self.registry_key());
         const int thr     = get_thr_rank_fast();
         shrink_array::set_thread_chunk_size(self.size_policy_.size());
         const auto compress_list = [&](auto& list)
@@ -84,7 +84,7 @@ bool RechunkHooks<Derived, true>::rechunk_swap_identity(this Derived& self, Deri
     // so swap the member (kept consistent with the registry swap_keys below).
     using std::swap;
     swap(self.num_tab, tmp.num_tab);
-    return proxy_type::share_info_array.swap_keys(self.registry_key(), tmp.registry_key());
+    return proxy_type::share_info_array->swap_keys(self.registry_key(), tmp.registry_key());
 }
 
 } // namespace shrink_array

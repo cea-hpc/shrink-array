@@ -19,6 +19,9 @@
 #include "fast_allocators/tc_allocator.h"                // TCAllocator (serial builds only)
 #include "fast_allocators/internal/static_const_array.h" // TypeAllocator (serial builds only)
 
+namespace fast_alloc
+{
+
 #ifndef _OPENMP // openmp problem allocator remembers itself
                 // --> deadlock
 template <>
@@ -33,3 +36,6 @@ void TCSlab<FreeLinks::InPayload>::operator delete(void* ptr)
     TypeAllocator<TCAllocator>::free(ptr);
 }
 #endif
+
+} // namespace fast_alloc
+

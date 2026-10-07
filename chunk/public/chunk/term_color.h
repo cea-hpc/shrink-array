@@ -18,6 +18,9 @@
 
 #include <unistd.h> // isatty / STDOUT_FILENO
 
+namespace shrink_array
+{
+
 /// @brief ANSI colour codes, or empty strings when stdout is not a terminal.
 ///
 /// const char*, not std::string: the members hold string literals either way, and
@@ -56,3 +59,6 @@ inline const TermColor tc = []() noexcept
         /*MAGENTA*/ i ? "\033[35m" : "",
     };
 }();
+
+} // namespace shrink_array
+

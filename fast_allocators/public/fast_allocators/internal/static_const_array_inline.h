@@ -26,9 +26,12 @@
 
 #include "fast_allocators/internal/static_const_array.h"        // the declarations these bodies belong to
 #include "fast_allocators/internal/int_alloc.h"                 // int_alloc, int_free
-#include "fast_allocators/internal/alloc_config.h"              // constexpr mirrors of STD_ALLOC / _OPENMP
-#include "fast_allocators/internal/pmp_alloc.h"                 // PMP_IN_PARALLEL_REGION / PMP_THREAD_RANK
-#include "fast_allocators/internal/static_const_array_define.h" // MAX_CONST_BLOCK_SIZE
+#include "fast_allocators/internal/alloc_config.h"              // alloc_config::use_std_alloc / use_openmp
+#include "fast_allocators/internal/pmp_alloc.h"                 // FAST_ALLOC_PMP_IN_PARALLEL_REGION / FAST_ALLOC_PMP_THREAD_RANK
+#include "fast_allocators/internal/static_const_array_define.h" // FAST_ALLOC_MAX_CONST_BLOCK_SIZE
+
+namespace fast_alloc
+{
 
 template <class F>
 decltype(auto) StaticConstArray::with_bucket(std::size_t i, F&& f)
@@ -37,15 +40,15 @@ decltype(auto) StaticConstArray::with_bucket(std::size_t i, F&& f)
     // jump table.
     return [&]<std::size_t... I>(std::index_sequence<I...>) -> decltype(auto)
     {
-        using R = decltype(f(std::get<0>(buckets)));
+        using R = decltype(f(std::get<0>(buckets())));
         if constexpr (std::is_void_v<R>)
         {
-            (void)((i == I ? (f(std::get<I>(buckets)), true) : false) || ...);
+            (void)((i == I ? (f(std::get<I>(buckets())), true) : false) || ...);
         }
         else
         {
             R result{};
-            (void)((i == I ? (result = f(std::get<I>(buckets)), true) : false) || ...);
+            (void)((i == I ? (result = f(std::get<I>(buckets())), true) : false) || ...);
             return result;
         }
     }(std::make_index_sequence<n_buckets>{});
@@ -73,10 +76,10 @@ inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
     }
 
     // Tree: unbalanced: favor speed on small blocks
-    if (sz <= MAX_CONST_BLOCK_SIZE)
+    if (sz <= FAST_ALLOC_MAX_CONST_BLOCK_SIZE)
     {
         void* vv = nullptr;
-        if (PMP_IN_PARALLEL_REGION)
+        if (FAST_ALLOC_PMP_IN_PARALLEL_REGION)
         {
 #pragma omp critical(fast_alloc_ladder)
             {
@@ -126,27 +129,27 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
     }
 
 
-    if (sz <= MAX_CONST_BLOCK_SIZE)
+    if (sz <= FAST_ALLOC_MAX_CONST_BLOCK_SIZE)
     {
-        // Batch per thread inside a region. Serially PMP_IN_PARALLEL_REGION is
+        // Batch per thread inside a region. Serially FAST_ALLOC_PMP_IN_PARALLEL_REGION is
         // a constant false and the batch was never allocated, so the branch
         // is dead; it still type-checks (rank 0, declarations present), which
         // is what lets this be plain code rather than a directive.
-        if (alloc_config::use_openmp && PMP_IN_PARALLEL_REGION)
+        if (alloc_config::use_openmp && FAST_ALLOC_PMP_IN_PARALLEL_REGION)
         {
-            const int thr_rank = PMP_THREAD_RANK;
+            const int thr_rank = FAST_ALLOC_PMP_THREAD_RANK;
 
             // A rank the batches were not sized for (the team grew after
             // they were built, before main): there is no batch to index, so
             // free at once, under the critical section the full path takes.
-            if (thr_rank >= tab_info_free_elt.nb_thr) [[unlikely]]
+            if (thr_rank >= tab_info_free_elt().nb_thr) [[unlikely]]
             {
 #pragma omp critical(fast_alloc_ladder)
                 freeBlockWithInt(sz, ptr);
                 return true;
             }
 
-            const bool is_full = tab_info_free_elt.push_back(ptr, sz, thr_rank);
+            const bool is_full = tab_info_free_elt().push_back(ptr, sz, thr_rank);
 
             if (is_full)
             {
@@ -157,7 +160,7 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
                     clearInfoFreeElt(thr_rank);
                 }
 
-                tab_info_free_elt.reset(thr_rank);
+                tab_info_free_elt().reset(thr_rank);
             }
         }
         else
@@ -170,3 +173,6 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
 
     return false;
 }
+
+} // namespace fast_alloc
+

@@ -16,7 +16,7 @@
 
 // ============================================================================
 // Read / reclaim harness. Variant-agnostic: chunk / chunk2 / chunk2a follow the
-// compile-time macro (CHUNK / CHUNK2 / CHUNK2A), like the other harnesses here.
+// compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like the other harnesses here.
 // OpenMP builds only: the property is about two threads.
 // ============================================================================
 //
@@ -110,7 +110,7 @@
 //   chunk constant again, a candidate, so passes run all the time on every
 //   thread. Thread 0's passes wait at the hand-back point
 //   (CHUNK_TEST_PASS_DELAY_*, test_hooks.h). Check builds stop on the
-//   erasure itself (INVARIANT_FAILED in the pass); every build checks the
+//   erasure itself (CHUNK_INVARIANT_FAILED in the pass); every build checks the
 //   read-backs and that the pool ends at 0.
 
 #include <atomic>      // std::atomic, std::memory_order

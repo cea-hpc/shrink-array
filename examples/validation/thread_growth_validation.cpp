@@ -16,7 +16,7 @@
 
 // ============================================================================
 // Thread-growth harness. Variant-agnostic: chunk / chunk2 / chunk2a by the
-// compile-time macro (CHUNK / CHUNK2 / CHUNK2A), like the other harnesses.
+// compile-time macro (CHUNK_VARIANT_V1 / _V2 / _V2A), like the other harnesses.
 // ============================================================================
 //
 // Guards ONE property: the OpenMP team may grow after the arrays are created.

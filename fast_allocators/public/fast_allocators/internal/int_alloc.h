@@ -21,6 +21,9 @@
 #include "fast_allocators/internal/alloc_config.h" // alloc_config::alloc_align
 #include "fast_allocators/internal/svalloc.h"      // svalloc, svalloc_align, svfree, svfree_align
 
+namespace fast_alloc
+{
+
 /// @brief Release a buffer obtained from int_alloc(size_t), with the matching
 ///        routine: aligned or not, as alloc_config::alloc_align says.
 /// @param var Buffer to release.
@@ -67,3 +70,6 @@ inline void* int_alloc_align(size_t size)
 {
     return svalloc_align<char>(size);
 }
+
+} // namespace fast_alloc
+

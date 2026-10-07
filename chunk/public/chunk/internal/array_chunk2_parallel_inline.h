@@ -85,7 +85,7 @@ void FastBlockSupport2<Derived, true>::make_block_compression(this Derived& self
             using proxy_t   = typename Traits::proxy_type;
             using manager_t = typename Traits::manager_type;
 
-            const int  num_tab  = proxy_t::share_info_array.get_num_tab(self.registry_key());
+            const int  num_tab  = proxy_t::share_info_array->get_num_tab(self.registry_key());
             const auto inf      = self.get_info_second_value();
             const int  thr_self = get_thr_rank_fast();
             bool       found    = false;

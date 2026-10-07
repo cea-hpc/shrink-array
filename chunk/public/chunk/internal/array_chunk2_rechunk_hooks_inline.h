@@ -45,7 +45,7 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates(this Derived& self)
     // bool has no second value and is left to the drop.
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const int num_tab = proxy_type::share_info_array.get_num_tab(self.registry_key());
+        const int num_tab = proxy_type::share_info_array->get_num_tab(self.registry_key());
         if constexpr (Derived::is_not_bool && build_config::use_openmp)
         {
             const auto inf = self.get_info_second_value();
@@ -124,7 +124,7 @@ bool RechunkHooks2<Derived, true>::rechunk_swap_identity(this Derived& self, Der
     // `this`; the members are only touched by operator= / set_second_value) and
     // they may be uninitialized, so swapping would read indeterminate values
     // (MSan / valgrind). The registry-tuple swap IS the identity swap.
-    return proxy_type::share_info_array.swap_entries(self.registry_key(), tmp.registry_key());
+    return proxy_type::share_info_array->swap_entries(self.registry_key(), tmp.registry_key());
 }
 
 template <typename Derived>
@@ -146,7 +146,7 @@ void RechunkHooks2<Derived, true>::rechunk_reown_after_swap(this Derived& self, 
             {
                 self.inf_array    = tmp.inf_array; // tmp's is valid (set_second_value ran)
                 self.ind_cst_val2 = tmp.ind_cst_val2;
-                proxy_type::share_info_array.insert(state, &self.inf_array);
+                proxy_type::share_info_array->insert(state, &self.inf_array);
             }
         }
     }

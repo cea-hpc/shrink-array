@@ -164,6 +164,8 @@ def check_names(root, md_files, words, names, verbose):
                     base = span.rsplit("/", 1)[-1]
                     if base in names or span in names or (root / span).exists() or span in ALLOWED:
                         continue
+                    if any(generated_or_file(root / d / span) for d in INCLUDE_DIRS):
+                        continue
                     if f.name.endswith(".md") and (f.parent / span).exists():
                         continue
                     bad.append("%s:%d: file `%s` not found in the tree" % (f.relative_to(root), n, span))
@@ -252,6 +254,12 @@ def comment_lines(root, files):
                 yield f, n, line
 
 
+def generated_or_file(path):
+    """The file exists, or CMake generates it from path + ".in" (configure_file:
+    chunk/build_options.h from chunk/public/chunk/build_options.h.in)."""
+    return path.exists() or path.with_name(path.name + ".in").exists()
+
+
 def check_history(root, lines):
     return ["%s:%d: history marker in a comment: %s" % (f.relative_to(root), n, line.strip()[:100])
             for f, n, line in lines if HISTORY.search(line)]
@@ -261,7 +269,7 @@ def check_cited_paths(root, lines):
     bad = []
     for f, n, line in lines:
         for path in CITED_PATH.findall(line):
-            if not any((root / d / path).exists() for d in INCLUDE_DIRS) and not (f.parent / path).exists():
+            if not any(generated_or_file(root / d / path) for d in INCLUDE_DIRS) and not (f.parent / path).exists():
                 bad.append("%s:%d: no file %s" % (f.relative_to(root), n, path))
     return bad
 

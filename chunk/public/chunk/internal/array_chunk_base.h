@@ -47,8 +47,9 @@
 #include "chunk/chunk_traits.h"                 // ArrayChunkTraits, Proxy2
 #include "chunk/internal/array_chunk_core.h"    // ArrayChunkCore — geometry, chunks, bitset, identity
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
-#include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED — used HERE (swap check)
-#include "chunk/internal/def_force_inline.h"    // FORCE_INLINE
+#include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED — used HERE (swap check)
+#include "chunk/internal/def_force_inline.h"    // CHUNK_FORCE_INLINE
+#include "chunk/internal/live_arrays.h"         // LiveArrayToken — the teardown verbs' live-array count
 
 namespace shrink_array
 {
@@ -450,7 +451,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
             {
                 if (chunk_->read_gate_should_wait(num_)) [[unlikely]]
                 {
-                    INVARIANT_FAILED("ArrayChunkBase::const_iterator: a write was deferred onto chunk {} of array {} "
+                    CHUNK_INVARIANT_FAILED("ArrayChunkBase::const_iterator: a write was deferred onto chunk {} of array {} "
                                      "during the iteration (offset {}); the iterator would not see it -- no other "
                                      "thread may write an array that is being iterated",
                                      num_chunk_, static_cast<const void*>(owner_), num_);
@@ -505,7 +506,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
             {
                 if (lhs.owner_ != rhs.owner_) [[unlikely]]
                 {
-                    INVARIANT_FAILED("ArrayChunkBase::const_iterator: iterators of two different arrays compared "
+                    CHUNK_INVARIANT_FAILED("ArrayChunkBase::const_iterator: iterators of two different arrays compared "
                                      "or subtracted ({} vs {})",
                                      static_cast<const void*>(lhs.owner_), static_cast<const void*>(rhs.owner_));
                 }
@@ -927,7 +928,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         {
             if (self.size_policy_.size() != other.size_policy_.size())
             {
-                INVARIANT_FAILED("ArrayChunk::swap: mismatched chunk geometry ({} vs {})", self.size_policy_.size(),
+                CHUNK_INVARIANT_FAILED("ArrayChunk::swap: mismatched chunk geometry ({} vs {})", self.size_policy_.size(),
                                  other.size_policy_.size());
             }
         }
@@ -941,7 +942,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param i global element index (unchecked)
      * @return the element value, after the read gate has been honoured
      */
-    SA_FLATTEN FORCE_INLINE T operator()(this const Derived& self, ind_type i) noexcept
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator()(this const Derived& self, ind_type i) noexcept
     {
         const int   num_chunk = self.chunk_index_of(i);
         const int   num       = self.offset_in_chunk(i);
@@ -961,7 +962,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @warning Bypasses the write proxy: valid only where the chunk is known to
      *          be materialised. Prefer operator[] otherwise.
      */
-    SA_FLATTEN FORCE_INLINE T& operator()(this Derived& self, ind_type i) noexcept
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T& operator()(this Derived& self, ind_type i) noexcept
     {
         const int num_chunk = self.chunk_index_of(i);
         const int num       = self.offset_in_chunk(i);
@@ -979,15 +980,15 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *
      * @details Force-inlined: GNU otherwise leaves this out-of-line, and it showed
      *          up as ~30% of the 128-thread GNU profile (operator[] across all
-     *          types). LLVM and nvc++ already inline it. FORCE_INLINE degrades to
-     *          plain `inline` in debug and for nvc++; SA_FLATTEN (opt-in,
+     *          types). LLVM and nvc++ already inline it. CHUNK_FORCE_INLINE degrades to
+     *          plain `inline` in debug and for nvc++; CHUNK_FLATTEN (opt-in,
      *          -DSHRINK_AGGRESSIVE_INLINE, never nvc++) additionally pulls the
      *          whole read path into this leaf on GNU/clang.
      *
      * @param i global element index; the caller guarantees 0 <= i < size()
      * @return the element VALUE (see the member-typedef note on const_reference)
      */
-    SA_FLATTEN FORCE_INLINE T operator[](this const Derived& self, ind_type i) noexcept
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE T operator[](this const Derived& self, ind_type i) noexcept
     {
         const int num_chunk = self.chunk_index_of(i);
         const int num       = self.offset_in_chunk(i);
@@ -997,8 +998,8 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         // modulo() read into a local first: clang ignores an assumption that
         // calls a function it cannot prove side-effect free (-Wassume).
         [[maybe_unused]] const int chunk_mod = static_cast<int>(self.size_policy_.modulo());
-        SA_ASSUME(num_chunk >= 0);
-        SA_ASSUME(num >= 0 && num <= chunk_mod);
+        CHUNK_ASSUME(num_chunk >= 0);
+        CHUNK_ASSUME(num >= 0 && num <= chunk_mod);
         const auto& chunk_t = self.chunk_list[num_chunk];
 
         self.sync_chunk(chunk_t, num_chunk, num);
@@ -1027,7 +1028,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          `auto v = a[i];` (which keeps the proxy). The compound operators
      *          (+= ... >>=) and the prefix ++/-- return the same kind of proxy.
      */
-    SA_FLATTEN FORCE_INLINE proxy_type operator[](this Derived& self, ind_type i) noexcept
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE proxy_type operator[](this Derived& self, ind_type i) noexcept
     {
         const int         num_chunk = self.chunk_index_of(i);
         auto&             chunk_t   = self.chunk_list[num_chunk];
@@ -1180,6 +1181,10 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     ///        it. Per array, not swapped: a swap invalidates both sides.
     unsigned int storage_generation_ = 0;
 
+    /// @brief Counts this array among the live ones (live_arrays.h): the
+    ///        teardown verbs keep the pools while any array is alive.
+    [[no_unique_address]] internal::LiveArrayToken live_token_;
+
     /// @brief Every proxy of this array built so far is now stale.
     void invalidate_proxies() noexcept
     {
@@ -1258,7 +1263,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         {
             if (ch.read_gate_should_wait(offset)) [[unlikely]]
             {
-                INVARIANT_FAILED("ArrayChunkBase bulk read: a write was deferred onto chunk {} of array {} "
+                CHUNK_INVARIANT_FAILED("ArrayChunkBase bulk read: a write was deferred onto chunk {} of array {} "
                                  "during the read (offset {}); it would not be seen -- no other thread may "
                                  "write an array that is being read in bulk",
                                  num_chunk, static_cast<const void*>(this), offset);
@@ -1290,7 +1295,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      * @param offset Offset within the chunk.
      * @note Compiles to nothing in a serial build (`if constexpr (use_openmp)`).
      */
-    FORCE_INLINE void
+    CHUNK_FORCE_INLINE void
     sync_chunk(this const Derived& self, const chunk_type& chunk_t, int num_chunk, int offset) noexcept
     {
         if constexpr (build_config::use_openmp)

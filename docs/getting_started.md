@@ -79,8 +79,10 @@ target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
 
 The library you link **chooses the variant and the chunk size**. The headers are the same
 for all of them, and the library brings the compile definitions that select its own
-(`CHUNK2A=1`, `CHUNK_SIZE=256` or `CHUNK_DYNAMIC`, `HAVE_OMPT`), together with C++20,
-`-fopenmp` when it was built with OpenMP, and its dependencies:
+(`CHUNK_VARIANT_V2A=1`, `CHUNK_SIZE=256` or `CHUNK_DYNAMIC`), together with C++20,
+`-fopenmp` when it was built with OpenMP, and its dependencies. The other options it was built
+with are in the installed `chunk/build_options.h`, which the headers read: a program compiles them
+as the library did.
 
 | target | variant | chunk size |
 |---|---|---|
@@ -108,14 +110,14 @@ well as inside the tree.
 
 #include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // build_config::has_not_ompt
+#include "chunk/config.h"          // sa::build_config::has_not_ompt
 #include "chunk/manage_ompt.h"     // begin_parallel_phase, finalize_parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
 
-static void begin_phase() { if constexpr (build_config::has_not_ompt) sa::begin_parallel_phase(); }
-static void end_phase()   { if constexpr (build_config::has_not_ompt) sa::finalize_parallel_phase(); }
+static void begin_phase() { if constexpr (sa::build_config::has_not_ompt) sa::begin_parallel_phase(); }
+static void end_phase()   { if constexpr (sa::build_config::has_not_ompt) sa::finalize_parallel_phase(); }
 
 int main()
 {
@@ -151,7 +153,8 @@ int main()
 ```
 
 1. **`init_indexes(true)`**, once, before the first array: it sets up the allocation blocks
-   (`true`: large blocks, the usual choice). Element types need no declaration: each one is
+   (`true`: large blocks, the usual choice). Optional: without it, the first array of the
+   program runs `init_indexes(true)` itself. Element types need no declaration: each one is
    registered the first time an array of it is built.
 2. **A new array** reads `T{}` everywhere and allocates no buffer.
 3. **The phase calls**, needed only without OMPT (§5). They compile to nothing when the
@@ -163,7 +166,10 @@ int main()
    the memory back at a precise point.
 6. **Destroying the array** gives its buffers back. The library prints one line per array at
    that point, with its compression ratio.
-7. **The shutdown pair**, at the end of the program, after the last array.
+7. **The shutdown pair**, at the end of the program, after the last array. Optional too: the
+   process can simply exit. With an array still alive (a global or `static` one, destroyed
+   after `main` returns), the pair keeps what that array will need and only empties the free
+   lists.
 
 Expected output: about 12 % of the chunks hold a buffer. A `std::vector` would hold all of
 them.
@@ -192,7 +198,7 @@ shrink_array::finalize_parallel_phase();      // once, after the region
 
 Forget them and nothing fails at once, but deferred writes are only applied when the element
 is next read, and the compression passes between regions do not run: memory stays higher than
-it should. Writing them behind `if constexpr (build_config::has_not_ompt)`, as above, keeps
+it should. Writing them behind `if constexpr (sa::build_config::has_not_ompt)`, as above, keeps
 one source for both runtimes.
 
 With OMPT, if the runtime did not load the library's tool (`OMP_TOOL=disabled`, another tool
@@ -218,6 +224,9 @@ of cores)` threads. A program that runs more threads than cores sets
   sort a `std::vector` copy and `assign()` it back.
 - **A proxy must not outlive the storage.** Any of the sequential operations of §5 invalidates
   the proxies of that array. Keep proxies short-lived.
+- **Global and `static` arrays work**: built before `main`, destroyed after it returns. The
+  library's own state is built at its first use and never destroyed, so the order of the
+  static initialisations does not matter.
 - **Indices are `int` by default.** For more than 2³¹ elements, use the second template
   parameter: `ArrayChunk2A<double, long>`.
 - **Element types**: anything trivially copyable, `==`-comparable and default-constructible

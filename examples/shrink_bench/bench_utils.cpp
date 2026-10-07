@@ -32,7 +32,8 @@
 #include "chunk/internal/exact_rss.h" // exact current and peak memory
 
 #include "chunk/all_type_chunk.h" // reuse_pool_bytes, the retention split of memory_consumption
-#ifdef FAST_ALLOC
+#include "chunk/build_options.h"  // CHUNK_OPT_FAST_ALLOC
+#if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/slab_arena.h" // report_all_arenas, its slab-side counterpart
 #endif
 // -----------------------------------------------------------------------------
@@ -227,7 +228,7 @@ void memory_consumption(const std::string& msg)
             // reduce_chunk_stats() only exist in a CHUNK_STATS build, and a
             // discarded branch of a non-template function still looks its
             // names up.
-#ifdef CHUNK_STATS
+#if CHUNK_OPT_STATS
             {
                 long live_bytes  = 0;
                 long live_chunks = 0;
@@ -251,7 +252,7 @@ void memory_consumption(const std::string& msg)
         // fast_alloc namespace only exists when slab_arena.h was included,
         // which is itself under this macro (top of the file), and a discarded
         // branch of a non-template function still looks its names up.
-#ifdef FAST_ALLOC
+#if CHUNK_OPT_FAST_ALLOC
         fast_alloc::report_all_arenas(msg.c_str());
 #endif
     }

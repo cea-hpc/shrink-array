@@ -163,7 +163,7 @@ void initializeRNG(std::mt19937& rng, const std::string& seed_file_name)
 
 using namespace shrink_array;
 
-/// simple_array_chunk (CHUNK, or CHUNK2) runs on ArrayChunk, simple_array_vector
+/// simple_array_chunk (CHUNK_VARIANT_V1, or _V2) runs on ArrayChunk, simple_array_vector
 /// on std::vector.
 constexpr bool use_chunk_array = chunk_config::use_chunk || chunk_config::use_chunk2;
 using Array                    = std::conditional_t<use_chunk_array, ArrayChunk<double>, std::vector<double>>;

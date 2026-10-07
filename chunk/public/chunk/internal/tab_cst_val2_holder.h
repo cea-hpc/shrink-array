@@ -71,7 +71,8 @@
 #include "chunk/internal/env_parse.h"         // env_number (CHUNK_CST_VAL2_ID_LIMIT)
 #include "chunk/internal/in_t.h"              // in_t<T>: the value parameters
 #include "chunk/config.h"                     // build_config::use_mm_protect
-#ifdef FAST_ALLOC
+#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/internal/alloc_config.h" // alloc_config::thp_advise (CHUNK_THP)
 #endif
 
@@ -88,8 +89,8 @@ namespace shrink_array
 /// reclaim_empty_slabs mirror in config.h).
 inline bool cst2_thp_advise() noexcept
 {
-#ifdef FAST_ALLOC
-    return alloc_config::thp_advise();
+#if CHUNK_OPT_FAST_ALLOC
+    return fast_alloc::alloc_config::thp_advise();
 #else
     return false;
 #endif
@@ -892,7 +893,8 @@ class GlobalVecHolder
     ///        their pointer, and index_clear() is the one point where no
     ///        reader is in flight (its contract). They sum to less than the
     ///        live table, so this is bounded by the same factor of two.
-    static inline std::vector<std::unique_ptr<IndexTable>> index_generations;
+    static inline constinit internal::Immortal<std::vector<std::unique_ptr<IndexTable>>> index_generations_storage_{};
+    static inline std::vector<std::unique_ptr<IndexTable>>& index_generations = index_generations_storage_.value;
 };
 
 /**
@@ -1182,15 +1184,6 @@ class TabCstVal2Holder
 template <>
 class TabCstVal2Holder<bool>
 {
-  private:
-    /// @brief All `true`, evaluated at compile time so #m_ptr is constant-initialised.
-    [[nodiscard]] static constexpr std::array<bool, cst_buffer_size> all_true() noexcept
-    {
-        std::array<bool, cst_buffer_size> arr{};
-        arr.fill(true);
-        return arr;
-    }
-
   public:
     /// @brief Nothing to create. @see TabCstVal2Holder::create
     static void create() {}
@@ -1214,8 +1207,14 @@ class TabCstVal2Holder<bool>
         return m_ptr.data();
     }
 
-    /// @brief The one shared array, all `true`.
-    static inline std::array<bool, cst_buffer_size> m_ptr = all_true();
+    /// @brief The one shared array, all `true`. constinit: a global array can
+    ///        reach it before any dynamic initialisation has run.
+    static inline constinit std::array<bool, cst_buffer_size> m_ptr = []
+    {
+        std::array<bool, cst_buffer_size> arr{};
+        arr.fill(true);
+        return arr;
+    }();
 };
 
 } // namespace shrink_array

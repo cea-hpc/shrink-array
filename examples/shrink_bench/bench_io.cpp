@@ -17,9 +17,8 @@
 #include "bench_io.h" // the declarations defined here
 
 // BZip2 helpers. Only present when BZIP2 is defined at build time.
-// build_config::has_bzip2 (in chunk/config.h) must be consistent with
-// this compile flag — otherwise write_binary_file() would call these
-// symbols without them being linked.
+// have_bzip2 (bench_config.h) mirrors this compile flag, so write_binary_file()
+// calls these symbols only when they are linked.
 
 #ifdef BZIP2
 
