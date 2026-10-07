@@ -106,6 +106,21 @@ struct RechunkStorageScope
     RechunkStorageScope(RechunkStorageScope&&)                 = delete;
     RechunkStorageScope& operator=(RechunkStorageScope&&)      = delete;
 };
+
+/// CHUNK_RECHUNK_REUSE_LIST (read once, default on; 0 = off): a re-chunk's
+/// dying storage hands its chunk_list buffer to the next re-chunk's new
+/// storage (ArrayChunkCore::acquire_chunk_list / release_chunk_list) instead of
+/// freeing it. Off = a fresh vector per re-chunk, as before.
+inline const bool g_reuse_chunk_list = []() noexcept
+{
+    const char* e = std::getenv("CHUNK_RECHUNK_REUSE_LIST");
+    return e == nullptr || e[0] == '\0' || e[0] != '0';
+}();
+
+/// True while rechunk_to() destroys its temporary, which by then holds the OLD
+/// storage: its clear_core() keeps the chunk_list buffer for the next
+/// re-chunk. Set and reset at a quiescent serial point, around one destructor.
+inline bool g_releasing_rechunk_storage = false;
 } // namespace alloc_affinity_detail
 
 /// @brief The index-type-independent part of a chunked array of ChunkType (see the description at the top of
@@ -226,6 +241,48 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
     }
 
     /**
+     * @brief Size chunk_list to @p n chunks, from the spare a previous
+     *        re-chunk left when this is a re-chunk's new storage.
+     *
+     * @details Every re-chunk builds a whole new chunk_list and frees the old
+     *          one: at a small geometry and billions of elements, hundreds of
+     *          MB faulted in by the serial resize, then unmapped again (a TLB
+     *          shootdown on every CPU) at the old storage's teardown, ~30 times
+     *          a run. The spare is the previous old storage's buffer, its pages
+     *          still resident: taken when it holds @p n chunks without being
+     *          more than 4x too large (the surplus stays resident while in use).
+     *          Only for the storage rechunk_to() builds (quiescent, serial) and
+     *          only into an empty list, so no live chunk address ever moves.
+     * @param n the chunk count
+     */
+    void acquire_chunk_list(std::size_t n)
+    {
+        if (alloc_affinity_detail::g_building_rechunk_storage && alloc_affinity_detail::g_reuse_chunk_list &&
+            chunk_list.capacity() == 0 && spare_chunk_list_.capacity() >= n && spare_chunk_list_.capacity() / 4 <= n)
+        {
+            chunk_list.swap(spare_chunk_list_); // spare left empty, without a buffer
+        }
+        chunk_list.resize(n);
+    }
+
+    /**
+     * @brief Empty chunk_list at the end of a teardown; a re-chunk's old storage
+     *        keeps its buffer as the spare for the next re-chunk.
+     * @details The larger of the two buffers is kept (more re-chunks fit in
+     *          it), the other one freed. At most one spare per chunk type.
+     */
+    void release_chunk_list()
+    {
+        chunk_list.clear();
+        if (alloc_affinity_detail::g_releasing_rechunk_storage && alloc_affinity_detail::g_reuse_chunk_list &&
+            chunk_list.capacity() > spare_chunk_list_.capacity())
+        {
+            chunk_list.swap(spare_chunk_list_);
+            std::vector<chunk_type>().swap(chunk_list); // frees the smaller one
+        }
+    }
+
+    /**
      * @brief Chunk-size policy — the single home for chunk geometry.
      *
      * @details Shared by all containers that derive from ArrayChunkBase
@@ -254,6 +311,10 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
     ///        type whatever its index type (the keys name allocator sets of the
     ///        per-T manager).
     static inline std::atomic<unsigned int> next_alloc_key_{1};
+
+    /// The chunk_list buffer a re-chunk's old storage left (empty, capacity
+    /// only), for the next re-chunk's new storage. See acquire_chunk_list().
+    static inline std::vector<chunk_type> spare_chunk_list_{};
 
     /// @brief The derived array's rechunk_to(), installed by ArrayChunkBase.
     void (*rechunk_fn_)(ArrayChunkCore&, unsigned int) = nullptr;

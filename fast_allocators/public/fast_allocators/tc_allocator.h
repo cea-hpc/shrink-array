@@ -954,6 +954,26 @@ class TCSlabPool
      */
     std::size_t recycle_empty_slabs(std::vector<void*>& scratch) noexcept
     {
+        const std::size_t n = detach_empty_slabs(scratch);
+        recycle_detached(scratch);
+        return n;
+    }
+
+    /**
+     * @brief The first half of recycle_empty_slabs(): unlink every empty slab
+     *        and delete its header, recording its block in @p scratch, WITHOUT
+     *        touching the arena (no lock).
+     * @param scratch Reused buffer of block addresses; cleared here.
+     * @return Number of slabs detached.
+     * @details For a team: each thread detaches its own rank's slabs in
+     *          parallel, then one thread hands every rank's batch to the arena
+     *          (recycle_detached()), instead of every thread queueing on the
+     *          arena's mutex at once. Same preconditions as
+     *          recycle_empty_slabs(). The blocks belong to nobody until
+     *          recycle_detached() runs: call it before anything allocates.
+     */
+    std::size_t detach_empty_slabs(std::vector<void*>& scratch) noexcept
+    {
         scratch.clear();
         if constexpr (!alloc_config::use_slabs)
         {
@@ -988,8 +1008,19 @@ class TCSlabPool
                     p = next;
                 }
             }
-            fast_alloc::arena_for(arena_kind).recycle_batch(scratch.data(), scratch.size(), slab_bytes_, rank_);
             return scratch.size();
+        }
+    }
+
+    /// @brief The second half of recycle_empty_slabs(): hand the blocks
+    ///        detach_empty_slabs() recorded to this instance's arena, under
+    ///        this instance's rank (fast_alloc::SlabArena::recycle_batch).
+    /// @param scratch The blocks, as detach_empty_slabs() left them.
+    void recycle_detached(const std::vector<void*>& scratch) const noexcept
+    {
+        if constexpr (alloc_config::use_slabs)
+        {
+            fast_alloc::arena_for(arena_kind).recycle_batch(scratch.data(), scratch.size(), slab_bytes_, rank_);
         }
     }
 

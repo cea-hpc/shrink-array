@@ -841,6 +841,7 @@ class SlabArena
             }
         }
         std::sort(spans.begin(), spans.end(), [](const Span& a, const Span& b) { return a.begin < b.begin; });
+        // Coalesced in place: spans[0, runs) become the runs.
         const bool  coalesce = detail::reclaim_coalesce();
         std::size_t runs     = 0;
         std::size_t bytes    = 0;
@@ -853,10 +854,32 @@ class SlabArena
             }
             const std::uintptr_t begin = spans[first].begin;
             const std::size_t    len   = spans[last].begin + spans[last].len - begin;
-            ::madvise(reinterpret_cast<void*>(begin), len, MADV_DONTNEED);
-            ++runs;
+            spans[runs++]              = Span{begin, len};
             bytes += len;
             first = last + 1;
+        }
+        // Serial, or from a team of CHUNK_RECLAIM_THREADS as the slab sweep
+        // (EmptySlabSweep::advise_runs): still under the lock, which the team
+        // does not need, so no allocate() takes a slab mid-advise.
+#ifdef _OPENMP
+        const auto n_runs = static_cast<long>(runs);
+        const int  nthr   = detail::reclaim_sweep_threads();
+        if (nthr > 1 && omp_in_parallel() == 0 && n_runs >= 4L * nthr)
+        {
+            const Span* run = spans.data();
+    #pragma omp parallel for schedule(dynamic, 16) num_threads(nthr)
+            for (long i = 0; i < n_runs; ++i)
+            {
+                ::madvise(reinterpret_cast<void*>(run[i].begin), run[i].len, MADV_DONTNEED);
+            }
+        }
+        else
+#endif
+        {
+            for (std::size_t i = 0; i < runs; ++i)
+            {
+                ::madvise(reinterpret_cast<void*>(spans[i].begin), spans[i].len, MADV_DONTNEED);
+            }
         }
         reclaim_calls().fetch_add(slabs, std::memory_order_relaxed);
         reclaim_syscalls().fetch_add(runs, std::memory_order_relaxed);

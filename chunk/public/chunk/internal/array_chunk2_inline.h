@@ -176,7 +176,7 @@ void ArrayChunk2<T, ind_type>::rebuild_storage(ind_type sz)
 
             // chunk will be init to 0 (pointer on m_ptr_cst_val1)
 
-            chunk_list.resize(nb_chunk);
+            this->acquire_chunk_list(static_cast<std::size_t>(nb_chunk));
             this->alloc_dirty_bitset(nb_chunk);
 
             if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
@@ -810,7 +810,7 @@ void ArrayChunk2<T, ind_type>::clear_core()
 
     m_size = 0;
 
-    chunk_list.clear(); // Mandatory with the new allocator
+    this->release_chunk_list(); // Mandatory with the new allocator (a re-chunk keeps the buffer)
 
     nb_chunk = 0;
 

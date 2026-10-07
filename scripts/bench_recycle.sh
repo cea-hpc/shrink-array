@@ -14,6 +14,9 @@
 #   MULTIPLY [2]: --multiply of the workload
 #   NUMA ["auto"]: auto = numactl --interleave over the nodes the run spans, as
 #                  bench_and_test.py does; off = no numactl; "auto off" = both
+#   ENVS ["-"]: environment sets to compare, each tag:VAR=VAL[,VAR=VAL...] or "-"
+#               for none; the tag (no "_", "@" or ":") is appended to the label.
+#               e.g. ENVS="- coarsen8:CHUNK_RECHUNK_MAX_COARSEN=8 nolist:CHUNK_RECHUNK_REUSE_LIST=0"
 set -u
 export LC_ALL=C   # printf %.2f and awk read and write "1.23" whatever the user locale
 usage() { echo "usage: $0 <build_root> [reps=3] [python_dir]" >&2; exit 1; }
@@ -40,6 +43,16 @@ print(' '.join(n.interleave_prefix({'OMP_NUM_THREADS':'$1','OMP_PROC_BIND':'clos
 THREADS=${THREADS:-32 64 128}; RECYCLE=${RECYCLE:-1 0}; NUMA=${NUMA:-auto}
 CONFIGS=${CONFIGS:-omp-llvm omp-gnu}; VARIANTS=${VARIANTS:-chunk@dyn}
 for m in $NUMA; do [ "$m" = auto ] || [ "$m" = off ] || { echo "NUMA: auto or off, not '$m'" >&2; exit 1; }; done
+ENVS=${ENVS:--}
+for e in $ENVS; do
+  [ "$e" = - ] && continue
+  tag=${e%%:*}
+  [[ "$e" == *:* && -n "$tag" && "$tag" != *[_@]* ]] ||
+    { echo "ENVS: tag:VAR=VAL[,VAR=VAL...] (tag without _ or @), not '$e'" >&2; exit 1; }
+  for kv in $(tr , ' ' <<<"${e#*:}"); do
+    [[ "$kv" =~ ^[A-Za-z_][A-Za-z0-9_]*=.*$ ]] || { echo "ENVS: '$kv' is not VAR=VAL (in '$e')" >&2; exit 1; }
+  done
+done
 echo "config threads recycle numa rep seconds" | tee "$OUT/results.txt"
 for c in $CONFIGS; do
  cfg=cmake-build-${c#cmake-build-}
@@ -49,7 +62,9 @@ for c in $CONFIGS; do
   exe=$(ls "$ROOT/$cfg"/*/examples/shrink_bench/$name 2>/dev/null | grep "$(uname -m)" | head -1)
   [ -x "$exe" ] || { echo "missing $name in $cfg" >&2; continue; }
   # one label per config and variant; chunk@dyn alone keeps the bare config name
-  lab=${cfg#cmake-build-}; [ "$VARIANTS" = chunk@dyn ] || lab=$lab:$v
+  lab0=${cfg#cmake-build-}; [ "$VARIANTS" = chunk@dyn ] || lab0=$lab0:$v
+  for es in $ENVS; do
+  if [ "$es" = - ]; then lab=$lab0; envset=(); else lab=$lab0+${es%%:*}; read -ra envset <<<"$(tr , ' ' <<<"${es#*:}")"; fi
   for t in $THREADS; do
     for r in $(seq "$REPS"); do
       for m in $NUMA; do    # interleaved, so drift hits every side equally
@@ -57,7 +72,7 @@ for c in $CONFIGS; do
         for rec in $RECYCLE; do
           log="$OUT/${lab/@/-}_${t}th_rec${rec}_numa-${m}_r$r.log"
           s=$(date +%s.%N)
-          ( cd "$OUT" && OMP_NUM_THREADS=$t CHUNK_RECHUNK_RECYCLE=$rec CHUNK_RECHUNK_TRACE=1 \
+          ( cd "$OUT" && env ${envset[@]+"${envset[@]}"} OMP_NUM_THREADS=$t CHUNK_RECHUNK_RECYCLE=$rec CHUNK_RECHUNK_TRACE=1 \
               $pre "$exe" "${ARGS[@]}" ) >"$log" 2>&1 || echo "  FAIL: $log" >&2
           e=$(date +%s.%N)
           printf "%s %s %s %s %s %.2f\n" "$lab" $t $rec $m $r \
@@ -65,6 +80,7 @@ for c in $CONFIGS; do
         done
       done
     done
+  done
   done
  done
 done

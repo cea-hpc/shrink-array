@@ -84,7 +84,7 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
             manager_chunk2A::compute_size_max_number_of_chunk_to_check_compress();
 
             acquire_cst2_registry();
-            chunk_list.resize(nb_chunk);
+            this->acquire_chunk_list(static_cast<std::size_t>(nb_chunk));
 
             this->alloc_dirty_bitset(nb_chunk);
 
@@ -582,7 +582,7 @@ void ArrayChunk2A<T, ind_type>::clear_core()
 
     m_size = 0;
 
-    chunk_list.clear(); // Mandatory with the new allocator
+    this->release_chunk_list(); // Mandatory with the new allocator (a re-chunk keeps the buffer)
 
     Proxy2A<T>::clear_tab_is_int(num_tab);
 

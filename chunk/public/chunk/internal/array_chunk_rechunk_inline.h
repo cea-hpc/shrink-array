@@ -70,6 +70,15 @@ inline const bool g_rechunk_recycle = []() noexcept
     return env == nullptr || env[0] == '\0' || env[0] != '0';
 }();
 
+/// CHUNK_RECHUNK_ADVISE_EACH_SLICE (default off; 1 = on): with slab recycling,
+/// madvise the recycled slabs a slice did not take at EVERY slice boundary, as
+/// before, rather than once at the end of the refill.
+inline const bool g_rechunk_advise_each_slice = []() noexcept
+{
+    const char* env = std::getenv("CHUNK_RECHUNK_ADVISE_EACH_SLICE");
+    return env != nullptr && env[0] != '\0' && env[0] != '0';
+}();
+
 /// CHUNK_RECHUNK_TRACE_MEM (read once, set = on): the MEMORY side of the trace --
 /// [RECHUNK-RSS] (exact RSS, a page-table walk per read), the new geometry's
 /// occupancy, the allocator census. Kept apart from CHUNK_RECHUNK_TRACE so the
@@ -444,7 +453,11 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         // and parks its OLD-geometry blocks by size. Without the end-of-life
         // census: tmp's death is not an exit (ArrayChunkBase::exit_census_).
         tmp.exit_census_ = false;
+        // ... and its chunk_list buffer becomes the next re-chunk's (see
+        // ArrayChunkCore::release_chunk_list), reset right after the brace.
+        alloc_affinity_detail::g_releasing_rechunk_storage = true;
     }
+    alloc_affinity_detail::g_releasing_rechunk_storage = false;
     const auto t5 = t_now(); // tmp destroyed
     r_teardown    = rss_now();
 
@@ -1293,12 +1306,24 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                 }
                                 std::fill(recycle_held.begin(), recycle_held.end(), static_cast<unsigned char>(0));
                                 // The previous boundary's slabs this slice did
-                                // not take go back to the kernel now: a
-                                // shrinking re-chunk, which frees more than it
-                                // allocates, holds one slice's surplus at most.
-                                set_thread_chunk_size(static_cast<unsigned int>(old_size));
-                                chunk_type::get_chunk_allocator(0, old_key_refill).advise_recycled_slabs();
-                                set_thread_chunk_size(static_cast<unsigned int>(new_size));
+                                // not take: back to the kernel now only under
+                                // CHUNK_RECHUNK_ADVISE_EACH_SLICE=1. By default
+                                // they wait for the end of the refill (one
+                                // pass, below the slice loop): what they hold
+                                // is memory the OLD geometry released, so the
+                                // RSS stays at its entry level plus whatever
+                                // the new geometry needs beyond the old one --
+                                // the same bound as when they are advised
+                                // between slices, when they are refaulted. And
+                                // the 15 serial madvise passes of a re-chunk
+                                // (one TLB shootdown on every CPU per run)
+                                // become one.
+                                if (internal::g_rechunk_advise_each_slice)
+                                {
+                                    set_thread_chunk_size(static_cast<unsigned int>(old_size));
+                                    chunk_type::get_chunk_allocator(0, old_key_refill).advise_recycled_slabs();
+                                    set_thread_chunk_size(static_cast<unsigned int>(new_size));
+                                }
                                 if (internal::g_rechunk_trace)
                                 {
                                     slice_t1 = slice_clock::now();
@@ -1306,6 +1331,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                 }
                             } // implicit barrier: recycle_held is clear
                             {
+                                // Each thread unlinks its own rank's empty
+                                // slabs, in parallel and without the arena's
+                                // lock; the single below hands them over. Every
+                                // thread calling recycle_batch() itself queued
+                                // the whole team on that one mutex.
                                 const int me = CHUNK_PMP_THREAD_RANK;
                                 if (me >= 0 && static_cast<std::size_t>(me) < recycle_held.size())
                                 {
@@ -1314,23 +1344,26 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                         thread_chunk_size(); // this thread's, as the slice left it
                                     set_thread_chunk_size(static_cast<unsigned int>(old_size));
                                     chunk_type::get_chunk_allocator(me, old_key_refill)
-                                        .recycle_empty_slabs(recycle_scratch[static_cast<std::size_t>(me)]);
+                                        .detach_empty_slabs(recycle_scratch[static_cast<std::size_t>(me)]);
                                     set_thread_chunk_size(saved_sz);
                                 }
                             }
 #pragma omp barrier
 #pragma omp single
                             {
-                                // Ranks no team member holds (a smaller team
-                                // than the rank bound).
                                 set_thread_chunk_size(static_cast<unsigned int>(old_size));
                                 for (std::size_t r = 0; r < recycle_held.size(); ++r)
                                 {
+                                    auto& allocator = chunk_type::get_chunk_allocator(static_cast<int>(r), old_key_refill);
                                     if (recycle_held[r] == 0)
                                     {
-                                        chunk_type::get_chunk_allocator(static_cast<int>(r), old_key_refill)
-                                            .recycle_empty_slabs(recycle_scratch[r]);
+                                        // A rank no team member holds (a
+                                        // smaller team than the rank bound).
+                                        allocator.detach_empty_slabs(recycle_scratch[r]);
                                     }
+                                    // One uncontended lock per rank, each
+                                    // rank's slabs under its own rank (NUMA).
+                                    allocator.recycle_detached(recycle_scratch[r]);
                                 }
                                 set_thread_chunk_size(static_cast<unsigned int>(new_size));
                                 if (internal::g_rechunk_trace)
