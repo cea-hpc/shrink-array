@@ -37,15 +37,15 @@ decltype(auto) StaticConstArray::with_bucket(std::size_t i, F&& f)
     // jump table.
     return [&]<std::size_t... I>(std::index_sequence<I...>) -> decltype(auto)
     {
-        using R = decltype(f(std::get<0>(buckets)));
+        using R = decltype(f(std::get<0>(buckets())));
         if constexpr (std::is_void_v<R>)
         {
-            (void)((i == I ? (f(std::get<I>(buckets)), true) : false) || ...);
+            (void)((i == I ? (f(std::get<I>(buckets())), true) : false) || ...);
         }
         else
         {
             R result{};
-            (void)((i == I ? (result = f(std::get<I>(buckets)), true) : false) || ...);
+            (void)((i == I ? (result = f(std::get<I>(buckets())), true) : false) || ...);
             return result;
         }
     }(std::make_index_sequence<n_buckets>{});
@@ -139,14 +139,14 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
             // A rank the batches were not sized for (the team grew after
             // they were built, before main): there is no batch to index, so
             // free at once, under the critical section the full path takes.
-            if (thr_rank >= tab_info_free_elt.nb_thr) [[unlikely]]
+            if (thr_rank >= tab_info_free_elt().nb_thr) [[unlikely]]
             {
 #pragma omp critical(fast_alloc_ladder)
                 freeBlockWithInt(sz, ptr);
                 return true;
             }
 
-            const bool is_full = tab_info_free_elt.push_back(ptr, sz, thr_rank);
+            const bool is_full = tab_info_free_elt().push_back(ptr, sz, thr_rank);
 
             if (is_full)
             {
@@ -157,7 +157,7 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
                     clearInfoFreeElt(thr_rank);
                 }
 
-                tab_info_free_elt.reset(thr_rank);
+                tab_info_free_elt().reset(thr_rank);
             }
         }
         else

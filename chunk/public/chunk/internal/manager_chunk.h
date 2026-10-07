@@ -38,6 +38,7 @@
 #include "fast_allocators/internal/svalloc.h" // svfree (drain_reuse_list_for_size)
 
 #include "chunk/internal/freepath_counters.h" // CHUNK_FREEPATH_INC (CHUNK_ARENA_REPORT)
+#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
 {
@@ -409,7 +410,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         if (key != 0)
         {
-            size_buffer_reuse_by_key_[key] = std::max(budget, ChunkDef::size_min_buffer_reuse);
+            (*size_buffer_reuse_by_key_)[key] = std::max(budget, ChunkDef::size_min_buffer_reuse);
         }
     }
 
@@ -431,10 +432,10 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         if constexpr (chunk_config::chunk_dynamic)
         {
-            const auto it = list_block_free_thr_by_size_.find(size);
-            if (it == list_block_free_thr_by_size_.end())
+            const auto it = list_block_free_thr_by_size_->find(size);
+            if (it == list_block_free_thr_by_size_->end())
             {
-                list_block_free_thr_by_size_[size].resize(max_thr);
+                (*list_block_free_thr_by_size_)[size].resize(max_thr);
             }
         }
     }
@@ -450,10 +451,10 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         {
             return; // the shared pool is register_free_list_size()'s
         }
-        const auto it = list_block_free_thr_keyed_.find(keyed_index(key, size));
-        if (it == list_block_free_thr_keyed_.end())
+        const auto it = list_block_free_thr_keyed_->find(keyed_index(key, size));
+        if (it == list_block_free_thr_keyed_->end())
         {
-            list_block_free_thr_keyed_[keyed_index(key, size)].resize(max_thr);
+            (*list_block_free_thr_keyed_)[keyed_index(key, size)].resize(max_thr);
         }
     }
 
@@ -494,7 +495,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
         if constexpr (chunk_config::chunk_dynamic)
         {
-            for (const auto& kv : list_block_free_thr_by_size_)
+            for (const auto& kv : *list_block_free_thr_by_size_)
             {
                 std::size_t blocks          = 0;
                 std::size_t non_empty_ranks = 0;
@@ -548,7 +549,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
         if constexpr (chunk_config::chunk_dynamic)
         {
-            for (const auto& kv : list_block_free_thr_by_size_)
+            for (const auto& kv : *list_block_free_thr_by_size_)
             {
                 std::size_t blocks = 0;
                 for (const auto& ptf : kv.second)
@@ -625,7 +626,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
             if constexpr (chunk_config::chunk_dynamic)
             {
-                for (auto& kv : list_block_free_thr_by_size_)
+                for (auto& kv : *list_block_free_thr_by_size_)
                 {
                     for (auto& ptf : kv.second)
                     {
@@ -692,16 +693,18 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     // have to exist to be named. Declaring them unconditionally is what lets the
     // accessors and the remove_from_compress_list_* helpers select with
     // `if constexpr`. The static cost is two empty containers per (variant, type).
-    static inline TChunkComp<CHUNK_T, T> chunk_to_compress_potentially;
+    static inline constinit internal::Immortal<TChunkComp<CHUNK_T, T>> chunk_to_compress_potentially_storage_{};
+    static inline TChunkComp<CHUNK_T, T>& chunk_to_compress_potentially = chunk_to_compress_potentially_storage_.value;
 
     static inline long somme_chunk_create{0};
 
     static inline int                                   size_buffer_reuse;
-    static inline std::unordered_map<unsigned int, int> size_buffer_reuse_by_key_; ///< see get_size_buffer_reuse(key)
+    static inline constinit internal::LazyImmortal<std::unordered_map<unsigned int, int>> size_buffer_reuse_by_key_; ///< see get_size_buffer_reuse(key)
 
     static inline int size_max_number_of_chunk_to_check_compress;
 
-    static inline std::vector<PerThreadFreeList> list_block_free_thr;
+    static inline constinit internal::Immortal<std::vector<PerThreadFreeList>> list_block_free_thr_storage_{};
+    static inline std::vector<PerThreadFreeList>& list_block_free_thr = list_block_free_thr_storage_.value;
     // Multi-size: a separate reuse free-list per (size, thread). A reused block
     // must match the active chunk size, so blocks are never shared across sizes.
     // Written only at register_chunk_size (sequential); read per-alloc/free.
@@ -711,7 +714,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     // discarded if-constexpr branch is still name-looked-up, and this
     // is a member of the current instantiation, so it has to exist to be named.
     // The static cost is one empty std::map per (variant, type), never touched.
-    static inline std::map<unsigned int, std::vector<PerThreadFreeList>> list_block_free_thr_by_size_;
+    static inline constinit internal::LazyImmortal<std::map<unsigned int, std::vector<PerThreadFreeList>>> list_block_free_thr_by_size_;
     /// @brief Reuse lists of the arrays with their own slab affinity: one
     ///        vector of per-rank lists per (affinity key, size), key != 0.
     ///        Key 0 -- the rank's shared pool -- stays on
@@ -721,7 +724,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     ///        for K; a foreign-rank block parks under ITS key (slab->owner_key)
     ///        and is either reused by this rank for that same array or routed
     ///        to its owner by the drain. Nothing has to be filtered at pop.
-    static inline std::map<std::uint64_t, std::vector<PerThreadFreeList>> list_block_free_thr_keyed_;
+    static inline constinit internal::LazyImmortal<std::map<std::uint64_t, std::vector<PerThreadFreeList>>> list_block_free_thr_keyed_;
 
     /**
      * @brief Teardown hand-off buffer: pointers cleared for release, by rank.
@@ -734,7 +737,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *
      *          Only live during teardown; cleared as it is consumed.
      */
-    static inline std::vector<std::vector<T*>> teardown_to_free_;
+    static inline constinit internal::Immortal<std::vector<std::vector<T*>>> teardown_to_free_storage_{};
+    static inline std::vector<std::vector<T*>>& teardown_to_free_ = teardown_to_free_storage_.value;
 
     /**
      * @brief Cross-bucket repeats found by clear_list_block_free_dedup(), one
@@ -743,7 +747,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *          sharing), read by the free phase after the barrier. Empty on any
      *          sane run.
      */
-    static inline std::vector<std::vector<internal::TeardownRepeat<T>>> teardown_repeats_;
+    static inline constinit internal::Immortal<std::vector<std::vector<internal::TeardownRepeat<T>>>> teardown_repeats_storage_{};
+    static inline std::vector<std::vector<internal::TeardownRepeat<T>>>& teardown_repeats_ = teardown_repeats_storage_.value;
 
   public:
     /**
@@ -756,6 +761,14 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      */
     ManagerChunk()           = default;
     ~ManagerChunk() override = default;
+
+    /**
+     * @brief Size the static per-rank structures of (CHUNK_T, T) that no
+     *        constructor sizes any more (CompressionManager::ensure_initialised).
+     * @details Called by AllTypeChunk::register_manager(), before the manager
+     *          is published: the fan-outs and the first array come after it.
+     */
+    static void init_static_state();
 
     ManagerChunk(const ManagerChunk&)            = delete;
     ManagerChunk& operator=(const ManagerChunk&) = delete;
@@ -802,7 +815,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         }
         if constexpr (chunk_config::chunk_dynamic)
         {
-            for (const auto& kv : list_block_free_thr_by_size_)
+            for (const auto& kv : *list_block_free_thr_by_size_)
             {
                 for (const auto& ptf : kv.second)
                 {
@@ -820,8 +833,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         std::size_t blocks = 0;
         if constexpr (chunk_config::chunk_dynamic)
         {
-            const auto it = list_block_free_thr_by_size_.find(size);
-            if (it != list_block_free_thr_by_size_.end())
+            const auto it = list_block_free_thr_by_size_->find(size);
+            if (it != list_block_free_thr_by_size_->end())
             {
                 for (const auto& ptf : it->second)
                 {
@@ -845,8 +858,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         if (key != 0)
         {
-            const auto it = size_buffer_reuse_by_key_.find(key);
-            if (it != size_buffer_reuse_by_key_.end())
+            const auto it = size_buffer_reuse_by_key_->find(key);
+            if (it != size_buffer_reuse_by_key_->end())
             {
                 return it->second;
             }
@@ -895,16 +908,16 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         const unsigned int sz   = thread_chunk_size();
         if (key != 0)
         {
-            const auto it = list_block_free_thr_keyed_.find(keyed_index(key, sz));
-            if (it != list_block_free_thr_keyed_.end() && rank < it->second.size())
+            const auto it = list_block_free_thr_keyed_->find(keyed_index(key, sz));
+            if (it != list_block_free_thr_keyed_->end() && rank < it->second.size())
             {
                 return &it->second[thr_rank].list;
             }
         }
         if constexpr (chunk_config::chunk_dynamic)
         {
-            const auto it = list_block_free_thr_by_size_.find(sz);
-            if (it != list_block_free_thr_by_size_.end() && rank < it->second.size())
+            const auto it = list_block_free_thr_by_size_->find(sz);
+            if (it != list_block_free_thr_by_size_->end() && rank < it->second.size())
             {
                 return &it->second[thr_rank].list;
             }
@@ -923,8 +936,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         if (key != 0)
         {
-            const auto it = list_block_free_thr_keyed_.find(keyed_index(key, thread_chunk_size()));
-            if (it != list_block_free_thr_keyed_.end() && static_cast<size_t>(thr_rank) < it->second.size())
+            const auto it = list_block_free_thr_keyed_->find(keyed_index(key, thread_chunk_size()));
+            if (it != list_block_free_thr_keyed_->end() && static_cast<size_t>(thr_rank) < it->second.size())
             {
                 return it->second[thr_rank].list;
             }
@@ -953,8 +966,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         {
             if constexpr (chunk_config::chunk_dynamic)
             {
-                const auto it = list_block_free_thr_by_size_.find(thread_chunk_size());
-                if (it != list_block_free_thr_by_size_.end() && static_cast<size_t>(thr_rank) < it->second.size())
+                const auto it = list_block_free_thr_by_size_->find(thread_chunk_size());
+                if (it != list_block_free_thr_by_size_->end() && static_cast<size_t>(thr_rank) < it->second.size())
                 {
                     return it->second[thr_rank].list.size();
                 }
@@ -981,12 +994,12 @@ class ManagerChunk final : public virtual ManagerChunkInt,
         if constexpr (chunk_config::chunk_dynamic)
         {
             const unsigned int sz = thread_chunk_size();
-            const auto         it = list_block_free_thr_by_size_.find(sz);
+            const auto         it = list_block_free_thr_by_size_->find(sz);
             // The per-size vector is sized at register_runtime_chunk_size()
             // time; a thread rank beyond it would be the same out-of-bounds
             // operator[] as on the legacy store, so fall back rather than
             // index blindly.
-            if (it != list_block_free_thr_by_size_.end() && static_cast<size_t>(thr_rank) < it->second.size())
+            if (it != list_block_free_thr_by_size_->end() && static_cast<size_t>(thr_rank) < it->second.size())
             {
                 return it->second[thr_rank].list;
             }
@@ -1016,8 +1029,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     {
         if constexpr (chunk_config::chunk_dynamic)
         {
-            const auto it = list_block_free_thr_by_size_.find(sz);
-            if (it != list_block_free_thr_by_size_.end())
+            const auto it = list_block_free_thr_by_size_->find(sz);
+            if (it != list_block_free_thr_by_size_->end())
             {
                 return it->second[thr_rank].list;
             }
@@ -1164,11 +1177,11 @@ class ManagerChunk final : public virtual ManagerChunkInt,
                     }
                 }
             }; // drain_one
-            if (const auto it = list_block_free_thr_by_size_.find(size); it != list_block_free_thr_by_size_.end())
+            if (const auto it = list_block_free_thr_by_size_->find(size); it != list_block_free_thr_by_size_->end())
             {
                 drain_one(it->second);
             }
-            for (auto& kv : list_block_free_thr_keyed_)
+            for (auto& kv : *list_block_free_thr_keyed_)
             {
                 if (static_cast<unsigned int>(kv.first & 0xffffffffu) == size)
                 {
@@ -1332,11 +1345,11 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 #pragma omp single
             {
                 s.sets.clear();
-                if (const auto it = list_block_free_thr_by_size_.find(size); it != list_block_free_thr_by_size_.end())
+                if (const auto it = list_block_free_thr_by_size_->find(size); it != list_block_free_thr_by_size_->end())
                 {
                     s.sets.push_back(&it->second);
                 }
-                for (auto& kv : list_block_free_thr_keyed_)
+                for (auto& kv : *list_block_free_thr_keyed_)
                 {
                     if (static_cast<unsigned int>(kv.first & 0xffffffffu) == size)
                     {
@@ -1591,7 +1604,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     }
 
     /// @brief Chunk2's candidate lists: per rank, one list per second value.
-    static inline TChunk2CompMap<CHUNK_T, T> map_chunk2_to_compress_potentially_thr;
+    static inline constinit internal::Immortal<TChunk2CompMap<CHUNK_T, T>> map_chunk2_to_compress_potentially_thr_storage_{};
+    static inline TChunk2CompMap<CHUNK_T, T>& map_chunk2_to_compress_potentially_thr = map_chunk2_to_compress_potentially_thr_storage_.value;
 
     /**
      * @brief Rank @p thr's candidate list for second value @p key, or null
@@ -1611,13 +1625,17 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     /// @brief Chunk2: per rank, one list per second-value index, copied by
     ///        ArrayChunk2 into map_chunk2_to_compress_potentially_thr when it
     ///        registers a second value.
-    static inline TChunk2CompThr<CHUNK_T, T> chunk2_to_compress_potentially_thr;
+    static inline constinit internal::Immortal<TChunk2CompThr<CHUNK_T, T>> chunk2_to_compress_potentially_thr_storage_{};
+    static inline TChunk2CompThr<CHUNK_T, T>& chunk2_to_compress_potentially_thr = chunk2_to_compress_potentially_thr_storage_.value;
     /// @brief Chunk2A's per-rank candidate lists.
-    static inline TChunk2ACompThr<CHUNK_T, T> chunk2A_to_compress_potentially_thr;
+    static inline constinit internal::Immortal<TChunk2ACompThr<CHUNK_T, T>> chunk2A_to_compress_potentially_thr_storage_{};
+    static inline TChunk2ACompThr<CHUNK_T, T>& chunk2A_to_compress_potentially_thr = chunk2A_to_compress_potentially_thr_storage_.value;
     /// @brief Chunk's (v1) per-rank candidate lists.
-    static inline TChunkCompThr<CHUNK_T, T> chunk_to_compress_potentially_thr;
+    static inline constinit internal::Immortal<TChunkCompThr<CHUNK_T, T>> chunk_to_compress_potentially_thr_storage_{};
+    static inline TChunkCompThr<CHUNK_T, T>& chunk_to_compress_potentially_thr = chunk_to_compress_potentially_thr_storage_.value;
     /// @brief Chunk2A's single candidate list of a serial build.
-    static inline TChunk2AComp<CHUNK_T, T> chunk2A_to_compress_potentially;
+    static inline constinit internal::Immortal<TChunk2AComp<CHUNK_T, T>> chunk2A_to_compress_potentially_storage_{};
+    static inline TChunk2AComp<CHUNK_T, T>& chunk2A_to_compress_potentially = chunk2A_to_compress_potentially_storage_.value;
 };
 
 } // namespace shrink_array

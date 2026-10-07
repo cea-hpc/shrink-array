@@ -23,7 +23,7 @@
  * leaving only chunk-specific logic in derived classes.
  */
 
-#include <type_traits> // std::is_integral_v, std::is_same_v, std::conditional_t
+#include <type_traits> // std::is_integral_v, std::is_same_v, std::conditional_t, std::remove_reference_t
 #include <atomic>      // std::atomic
 #include <complex>     // std::complex
 #include <cstdlib>     // std::size_t, std::abort
@@ -43,6 +43,7 @@
 #include "chunk/internal/crp_helper.h"                   // CRTPSupport, CRTP_USE_DEDUCING_THIS
 #include "chunk/internal/test_hooks.h"                   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
 #include "chunk/internal/read_reclaim.h"                 // ReadSection: read_values_outside_session
+#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
 {
@@ -201,7 +202,7 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      */
     static void release_tab_is_int(int num_tab) noexcept
     {
-        using row_t = decltype(tab_is_inside_chunk_list_to_compress)::value_type;
+        using row_t = std::remove_reference_t<decltype(tab_is_inside_chunk_list_to_compress)>::value_type;
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
         {
             row_t{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
@@ -245,7 +246,8 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
     static ProxyType make_proxy_with_info(Ctx* ctx);
 
     /// @brief The one compression manager for this (T, ChunkType) pair.
-    static inline CompressionManager<T, ChunkType> compression_mgr;
+    static inline constinit internal::Immortal<CompressionManager<T, ChunkType>> compression_mgr_storage_{};
+    static inline CompressionManager<T, ChunkType>& compression_mgr = compression_mgr_storage_.value;
 
     /// @brief This proxy's entry in #tab_is_inside_chunk_list_to_compress, or
     ///        null before set_ptr_is_inside_chunk_list_to_compress() runs.
@@ -257,7 +259,8 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
      * movable). char, not bool: vector<bool> is the packed specialisation.
      */
 
-    static inline std::vector<std::vector<std::atomic<char>>> tab_is_inside_chunk_list_to_compress;
+    static inline constinit internal::Immortal<std::vector<std::vector<std::atomic<char>>>> tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline std::vector<std::vector<std::atomic<char>>>& tab_is_inside_chunk_list_to_compress = tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
 /**
@@ -289,7 +292,7 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSupport
     ///          v1 and Chunk2 never fill a row here: the guard makes it free.
     static void release_tab_is_int(int num_tab) noexcept
     {
-        using row_t = decltype(tab_is_inside_chunk_list_to_compress)::value_type;
+        using row_t = std::remove_reference_t<decltype(tab_is_inside_chunk_list_to_compress)>::value_type;
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
         {
             row_t{}.swap(tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)]);
@@ -305,9 +308,11 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSupport
     }
 
     // Management members
-    static inline CompressionManager<T, ChunkType>            compression_mgr;
+    static inline constinit internal::Immortal<CompressionManager<T, ChunkType>> compression_mgr_storage_{};
+    static inline CompressionManager<T, ChunkType>& compression_mgr = compression_mgr_storage_.value;
     std::atomic<char>*                                        ptr_is_inside_chunk_list_to_compress;
-    static inline std::vector<std::vector<std::atomic<char>>> tab_is_inside_chunk_list_to_compress;
+    static inline constinit internal::Immortal<std::vector<std::vector<std::atomic<char>>>> tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline std::vector<std::vector<std::atomic<char>>>& tab_is_inside_chunk_list_to_compress = tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
 namespace internal
@@ -883,7 +888,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @param num_chunk_ chunk index
     /// @param num_tab_   the array's num_tab (ArrayChunkBase::num_tab), the
     ///                   value it registered under its address
-    /// @note The registry lookup (share_info_array.get_num_tab) is a linear
+    /// @note The registry lookup (share_info_array->get_num_tab) is a linear
     ///       scan of the live arrays of this type, or a hash probe past a
     ///       threshold, and it ran on EVERY write: 1.5% of the reference run.
     ///       The array knows the answer; it is checked against the registry

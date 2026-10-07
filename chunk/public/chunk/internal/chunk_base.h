@@ -84,6 +84,7 @@ static_assert(ANKERL_UNORDERED_DENSE_VERSION_MAJOR == 5,
 // (serial builds), and doing so lets ChunkDeferredOpsPolicy below reference
 // it unconditionally.
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
+#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 namespace shrink_array
 {
 // Forward declaration: only named here, in contexts that depend on T. The
@@ -798,7 +799,7 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
     /// @param key Affinity key (0 = shared rank pool). See pool_key().
     static void register_chunk_size(unsigned int size, int max_thr, int block_size, unsigned int key = 0)
     {
-        if (allocator_pool_.contains(pool_key(key, size)))
+        if (allocator_pool_->contains(pool_key(key, size)))
         {
             return; // already registered
         }
@@ -813,7 +814,7 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
             allocator.set_key(key);  // ... and owner_key
             allocator.init(static_cast<int>(Derived::storage_units(size)), block_size / v, -1);
         }
-        allocator_pool_.emplace(pool_key(key, size), std::move(arr));
+        allocator_pool_->emplace(pool_key(key, size), std::move(arr));
     }
 
     /// @brief Register (create + init) the single allocator for `size`, once.
@@ -826,7 +827,7 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
     /// @param block_size Slab byte budget.
     static void register_chunk_size_serial(unsigned int size, int block_size)
     {
-        if (allocator_pool_serial_.contains(size))
+        if (allocator_pool_serial_->contains(size))
         {
             return; // already registered
         }
@@ -836,7 +837,7 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
         // one be reobtained by the other, corrupting both pools' slab lists.
         allocator->set_arena(fast_alloc::ArenaKind::Value);
         allocator->init(static_cast<size_t>(Derived::storage_units(size)), static_cast<uintptr_t>(block_size), -1);
-        allocator_pool_serial_.emplace(size, std::move(allocator));
+        allocator_pool_serial_->emplace(size, std::move(allocator));
     }
 
     // ── Routing ──
@@ -857,7 +858,7 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
     static auto& route_omp_dynamic_alloc(int thr_rank, unsigned int key = 0) noexcept
     {
         const unsigned int sz = thread_chunk_size();
-        if (const auto it = allocator_pool_.find(pool_key(key, sz)); it != allocator_pool_.end())
+        if (const auto it = allocator_pool_->find(pool_key(key, sz)); it != allocator_pool_->end())
         {
             return it->second[thr_rank];
         }
@@ -866,7 +867,7 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
         // whose geometry has nothing to do with `sz`.
         if (key != 0)
         {
-            if (const auto it0 = allocator_pool_.find(pool_key(0u, sz)); it0 != allocator_pool_.end())
+            if (const auto it0 = allocator_pool_->find(pool_key(0u, sz)); it0 != allocator_pool_->end())
             {
                 return it0->second[thr_rank];
             }
@@ -874,7 +875,7 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
         // Fallback: not registered (shouldn't happen on the alloc path
         // once set_chunk_size ran) — use the legacy single pool so the
         // free path and single-size use keep working.
-        return Derived::allocator_data[thr_rank];
+        return (*Derived::allocator_data)[thr_rank];
     }
 
     /// @brief Serial mirror of route_omp_dynamic_alloc(); no per-thread
@@ -886,13 +887,13 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
     static auto& route_serial_dynamic_alloc() noexcept
     {
         const unsigned int sz = thread_chunk_size();
-        if (const auto it = allocator_pool_serial_.find(sz); it != allocator_pool_serial_.end())
+        if (const auto it = allocator_pool_serial_->find(sz); it != allocator_pool_serial_->end())
         {
             return *it->second; // deref unique_ptr
         }
         // Fallback: unregistered size -> the legacy single allocator, so
         // single-size use and the free path keep working.
-        return Derived::allocator_data;
+        return *Derived::allocator_data;
     }
 
   private:
@@ -916,7 +917,7 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
         return (static_cast<std::uint64_t>(key) << 32U) | size;
     }
 
-    static inline std::map<std::uint64_t, std::vector<TCTypeCAllocator<T>>> allocator_pool_;
+    static inline constinit internal::LazyImmortal<std::map<std::uint64_t, std::vector<TCTypeCAllocator<T>>>> allocator_pool_;
 
     // Serial (non-OMP) counterpart of allocator_pool_ above: one allocator per
     // chunk size, WITHOUT the per-thread dimension (serial builds have a single
@@ -927,7 +928,7 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
     // in non-OMP fast-alloc builds: old and new sizes coexist during
     // rechunk_refill (read *this at old, write tmp at new), so a per-size pool
     // is required rather than a re-init of the single allocator_data.
-    static inline std::map<unsigned int, std::unique_ptr<TCTypeAllocator<T>>> allocator_pool_serial_;
+    static inline constinit internal::LazyImmortal<std::map<unsigned int, std::unique_ptr<TCTypeAllocator<T>>>> allocator_pool_serial_;
 };
 
 // Static (non-dynamic) builds: a single fixed geometry, so there is no
@@ -941,17 +942,17 @@ class ChunkDynamicAllocPolicy<T, Derived, false>
     ///        single legacy allocator.
     /// @param thr_rank Calling thread's rank.
     /// @param key      Unused: static builds have a single pool per rank.
-    /// @return Reference to Derived::allocator_data[thr_rank].
+    /// @return Reference to (*Derived::allocator_data)[thr_rank].
     static auto& route_omp_dynamic_alloc(int thr_rank, [[maybe_unused]] unsigned int key = 0) noexcept
     {
-        return Derived::allocator_data[thr_rank];
+        return (*Derived::allocator_data)[thr_rank];
     }
 
     /// @brief Serial mirror of the above; no per-thread dimension.
     /// @return Reference to Derived::allocator_data.
     static auto& route_serial_dynamic_alloc() noexcept
     {
-        return Derived::allocator_data;
+        return *Derived::allocator_data;
     }
 };
 
@@ -1492,7 +1493,11 @@ class ChunkBase : public CRTPSupport<Derived>,
     {
         if constexpr (use_mm_protect)
         {
-            return m_ptr_cst_val1;
+            // Mapped at the first call, never unmapped: a global array reaches
+            // it before main (the member below is a null pointer then) and
+            // after main returns.
+            static T* const buffer = map_cst_val1();
+            return buffer;
         }
         else
         {
@@ -1555,7 +1560,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         }
     }
 
-    static inline AllocatorType allocator_data;
+    static inline constinit internal::LazyImmortal<AllocatorType> allocator_data;
 
     /// First constant value for compression: the value-initialised T. Spelled
     /// T{} and not 0 everywhere in the library, so that an aggregate (a struct
@@ -1563,42 +1568,36 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// initialise its first member only, `T(0)` not compile.
     static inline T first_value{};
 
-    // alignas: a Bit chunk compressed to the first constant points here, and
-    // its reads load 64-bit words (element_access.h).
-    alignas(bits::word_t) static inline cst_val1_type m_ptr_cst_val1 = []
+    // MM_PROTECT: the read-only mapping that get_cst_val1() returns, mapped once.
+    static T* map_cst_val1()
     {
-        if constexpr (build_config::use_mm_protect)
+        const size_t bytes     = cst_buffer_size * sizeof(T);
+        const size_t pagesize  = sysconf(_SC_PAGESIZE);
+        const size_t allocsize = ((bytes + pagesize - 1) / pagesize) * pagesize;
+
+        void* ptr = mmap(nullptr, allocsize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+        if (ptr == MAP_FAILED)
         {
-            // --- branch mmap ---
-            const size_t bytes     = cst_buffer_size * sizeof(T);
-            const size_t pagesize  = sysconf(_SC_PAGESIZE);
-            const size_t allocsize = ((bytes + pagesize - 1) / pagesize) * pagesize;
-
-            void* ptr = mmap(nullptr, allocsize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-
-            if (ptr == MAP_FAILED)
-            {
-                perror("mmap failed");
-                std::abort();
-            }
-
-            T* arr = static_cast<T*>(ptr);
-            for (size_t i = 0; i < cst_buffer_size; ++i)
-            {
-                arr[i] = first_value;
-            }
-
-            mprotect(ptr, allocsize, PROT_READ);
-            return arr;
+            perror("mmap failed");
+            std::abort();
         }
-        else
+
+        T* arr = static_cast<T*>(ptr);
+        for (size_t i = 0; i < cst_buffer_size; ++i)
         {
-            // --- branch std::array ---
-            std::array<T, cst_buffer_size> arr{};
-            arr.fill(first_value);
-            return arr;
+            arr[i] = first_value;
         }
-    }();
+
+        mprotect(ptr, allocsize, PROT_READ);
+        return arr;
+    }
+
+    // alignas: a Bit chunk compressed to the first constant points here, and
+    // its reads load 64-bit words (element_access.h). constinit, every element
+    // T{} (= first_value): a global array reaches it before any dynamic
+    // initialisation. Unused under MM_PROTECT (null; see get_cst_val1()).
+    alignas(bits::word_t) static inline constinit cst_val1_type m_ptr_cst_val1{};
 
   protected:
     // Type traits

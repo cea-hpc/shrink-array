@@ -256,7 +256,7 @@ void ArrayChunk2A<T, ind_type>::clear()
                 const auto v0                        = ck.constant_value(csz);
                 summary[static_cast<std::size_t>(j)] = {v0.has_value(), v0.value_or(T{})};
             }
-            const auto& sh_inf   = Proxy2A<T>::share_info_array;
+            const auto& sh_inf   = *Proxy2A<T>::share_info_array;
             const int   num_tab_ = sh_inf.get_num_tab(this->registry_key());
             report_size_prediction<T>(summary, csz, num_tab_, "chunk2a",
                                       sizeof(std::remove_reference_t<decltype(chunk_list[0])>));
@@ -754,7 +754,7 @@ void ArrayChunk2A<T, ind_type>::release_chunk_range(int first, int last)
     {
         // Before Proxy2A::resize_tab_is_int() truncates the per-chunk type
         // table: clear_st() reads tab_type_cst_val[num_tab][j].
-        const int num_tab = Proxy2A<T>::share_info_array.get_num_tab(this->registry_key());
+        const int num_tab = Proxy2A<T>::share_info_array->get_num_tab(this->registry_key());
         for (int j = first; j < last; ++j)
         {
             if (chunk_list[j].written())
@@ -797,7 +797,7 @@ template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
 {
     this->invalidate_proxies();
-    const auto& sh_inf = Proxy2A<T>::share_info_array;
+    const auto& sh_inf = *Proxy2A<T>::share_info_array;
 
     const int      num_tab      = sh_inf.get_num_tab(this->registry_key());
     const int      old_nb_chunk = nb_chunk;

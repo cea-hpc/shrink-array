@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <algorithm> // std::find, the registered sizes
+#include <algorithm> // std::find (the registered sizes), std::copy_n (the registry table)
 #include <cstddef>   // std::size_t (the reuse-pool byte counts)
 #include <mutex>     // std::mutex, std::lock_guard
 #include <atomic>    // for atomic_thread_fence, memory_order_seq_cst, atomic
@@ -32,6 +32,7 @@
 #include "chunk/internal/deferred_op_pool.h" // for reset_all
 #include "chunk/internal/phase_guard.h"      // check-build guard of the phase protocol
 #include "chunk/manage_ompt.h"               // the declarations of the five phase functions below
+#include "chunk/param_chunk.h"               // ParamChunk::init_indexes (ensure_ready)
 
 // Stays a directive, and cannot be anything else: a std-alloc build does not put
 // fast_allocators/public on the include path at all, so the header is not merely
@@ -54,6 +55,47 @@ AllTypeChunk::AllTypeChunk()
         check_ompt_tool_loaded();
     }
 }
+void AllTypeChunk::ensure_ready()
+{
+    static std::once_flag once;
+    std::call_once(once,
+                   []
+                   {
+                       auto& reg   = SingletonChk<AllTypeChunk>::getRef();
+                       bool  ready = false;
+                       {
+                           const std::scoped_lock lock(reg.registry_mutex_);
+                           ready = reg.ready_;
+                       }
+                       if (!ready)
+                       {
+                           ParamChunk::init_indexes(true);
+                       }
+                   });
+}
+
+void AllTypeChunk::publish_manager(std::unique_ptr<ManagerChunkInt> manager)
+{
+    const auto count = static_cast<std::size_t>(nb_managers_.load(std::memory_order_relaxed));
+    if (count == table_capacity_)
+    {
+        // Full (or none yet): a table twice as large, the published slots
+        // copied, published before the count that will cover the new slot.
+        const std::size_t capacity = table_capacity_ == 0 ? kFirstTableSize : 2 * table_capacity_;
+        auto              table    = std::make_unique<ManagerChunkInt*[]>(capacity);
+        if (table_capacity_ != 0)
+        {
+            std::copy_n(tables_.back().get(), count, table.get());
+        }
+        table_.store(table.get(), std::memory_order_release);
+        tables_.push_back(std::move(table));
+        table_capacity_ = capacity;
+    }
+    owned_.push_back(std::move(manager));
+    tables_.back()[count] = owned_.back().get();
+    nb_managers_.store(static_cast<int>(count + 1), std::memory_order_release); // publishes the slot
+}
+
 namespace
 {
 // Cross-thread exclusion of the SERIAL deferred flush. Deliberately SEPARATE
@@ -243,7 +285,7 @@ void AllTypeChunk::compress_chunk_to_compress_potentially(bool apply) const
     {
         if (elm->have_chunk_to_compress_potentially(max_thr))
         {
-            work.push_back(elm.get());
+            work.push_back(elm);
         }
     }
     if (work.empty())

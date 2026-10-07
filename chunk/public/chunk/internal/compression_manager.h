@@ -23,6 +23,7 @@
 #include <utility>   // std::move, std::forward
 #include <atomic>    // std::atomic, std::memory_order
 #include <memory>    // std::destroy_at
+#include <mutex>     // std::call_once, std::once_flag (ensure_initialised)
 
 #include "chunk/vendor/ankerl/unordered_dense.h" // ankerl::unordered_dense::set
 
@@ -35,6 +36,7 @@
 #include "chunk/internal/deferred_op_pool.h"         // DeferredOperationBase
 #include "chunk/internal/deferred_lifecycle_check.h" // DEFERRED_LIFECYCLE sentinels
 #include "chunk/internal/chunk_stats.h"              // increm_chunk_gate_* (the handshake, rare side)
+#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
 {
@@ -328,12 +330,28 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         std::atomic<int64_t> v{0}; ///< the rank's pending ops
     };
 
-    /// @brief Allocate the per-rank tracking structures this policy owns.
-    CompressionManagerOmpPolicy()
-    {
-        init_dangerous_lists_tracking();
+    /// @brief Nothing to build: constexpr, so that the compression_mgr of each
+    ///        proxy is constant-initialised (chunk/internal/immortal.h). The
+    ///        per-rank structures are sized by ensure_initialised().
+    constexpr CompressionManagerOmpPolicy() = default;
 
-        init_deferred_queues();
+    /**
+     * @brief Size the per-rank tracking structures this policy owns, once.
+     * @details Called when the manager of (T, ChunkType) is registered
+     *          (AllTypeChunk::register_manager): before the first array of the
+     *          type, and before any fan-out can reach these structures. They
+     *          used to be sized by the constructor of a static, at an
+     *          unspecified point of the static initialisation -- after a
+     *          global array's construction, possibly.
+     */
+    static void ensure_initialised()
+    {
+        std::call_once(init_once_,
+                       []
+                       {
+                           init_dangerous_lists_tracking();
+                           init_deferred_queues();
+                       });
     }
 
     ~CompressionManagerOmpPolicy() = default;
@@ -960,17 +978,23 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     ///          compression starves and memory doubles.
     alignas(128) static inline std::atomic<std::int32_t> stealing_inflight_{0};
 
+    /// ensure_initialised() runs the sizing once.
+    static inline constinit std::once_flag init_once_{};
+
     /// One lock per rank; sized at init_deferred_queues() with max_thr entries.
-    static inline std::vector<PaddedFlushLock> xflush_lock_rank;
+    static inline constinit internal::Immortal<std::vector<PaddedFlushLock>> xflush_lock_rank_storage_{};
+    static inline std::vector<PaddedFlushLock>& xflush_lock_rank = xflush_lock_rank_storage_.value;
 
     /// Per rank: "this rank's candidate list has crossed the threshold and
     /// perform_compression() has not looked at it since". Read by the rank's
     /// own write engine after each write (write_with_optional_lock_impl).
-    static inline std::vector<PaddedDangerousFlag> dangerous_lists_per_thread;
+    static inline constinit internal::Immortal<std::vector<PaddedDangerousFlag>> dangerous_lists_per_thread_storage_{};
+    static inline std::vector<PaddedDangerousFlag>& dangerous_lists_per_thread = dangerous_lists_per_thread_storage_.value;
 
     /// Per rank: the chunks with deferred ops queued on it (what
     /// flush_deferred() walks). Written under the rank's flush lock.
-    static inline std::vector<unordered_set_deferred_chunks> deferred_chunk_per_thread;
+    static inline constinit internal::Immortal<std::vector<unordered_set_deferred_chunks>> deferred_chunk_per_thread_storage_{};
+    static inline std::vector<unordered_set_deferred_chunks>& deferred_chunk_per_thread = deferred_chunk_per_thread_storage_.value;
 
     /// Per-rank pending-op counts, the mechanism that makes cross-thread ops
     /// visible to a reader running on a different rank than the writer.
@@ -978,7 +1002,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     ///          decremented at flush AFTER the op is drained. A reader sums the
     ///          shards: zero means no chunk anywhere has a pending op, so the
     ///          sync can early-out without scanning.
-    static inline std::vector<PaddedPendingCounter> pending_ops_shard;
+    static inline constinit internal::Immortal<std::vector<PaddedPendingCounter>> pending_ops_shard_storage_{};
+    static inline std::vector<PaddedPendingCounter>& pending_ops_shard = pending_ops_shard_storage_.value;
 };
 
 /**
@@ -1006,6 +1031,9 @@ struct CompressionManagerOmpPolicy<T, ChunkType, false> : public FlushReplayStat
     {
         return false;
     }
+
+    /// @brief Nothing to size serially.
+    static void ensure_initialised() noexcept {}
 };
 
 /**

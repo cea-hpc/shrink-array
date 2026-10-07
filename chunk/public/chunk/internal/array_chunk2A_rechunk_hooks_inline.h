@@ -87,7 +87,7 @@ bool RechunkHooks2A<Derived, true>::rechunk_swap_identity(Derived& tmp)
     // member AND make the registry agree (get_num_tab(registry_key()) -> S' row).
     using std::swap;
     swap(self().num_tab, tmp.num_tab);
-    return proxy_type::share_info_array.swap_keys(self().registry_key(), tmp.registry_key());
+    return proxy_type::share_info_array->swap_keys(self().registry_key(), tmp.registry_key());
 }
 
 } // namespace shrink_array

@@ -22,6 +22,7 @@
 #include <mutex>   // std::mutex, std::scoped_lock
 
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_* macros — used HERE, not via includers
+#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
 {
@@ -36,13 +37,11 @@ class DeferredOpsStorage
   public:
     /**
      * @brief Singleton access.
-     * Uses 'static inline' (C++17) to ensure the instance is initialized
-     * at program load time, avoiding the "Magic Static" lock check.
+     * The instance is constant-initialised (deferred_ops_storage_instance,
+     * below): no "Magic Static" lock check, usable before any dynamic
+     * initialisation.
      */
-    static DeferredOpsStorage& instance() noexcept
-    {
-        return global_instance;
-    }
+    static DeferredOpsStorage& instance() noexcept;
 
     /**
      * @brief Returns the raw pointer to the thread maps.
@@ -58,11 +57,11 @@ class DeferredOpsStorage
      *
      * Double-checked locking on arr_raw, under alloc_mutex. NOT std::call_once
      * with a unique_ptr<once_flag> member: a DYNAMIC default-member-initializer
-     * (make_unique) on a static-storage singleton (global_instance) is a
+     * (make_unique) on a static-storage singleton (the instance) is a
      * static-initialization-order hazard -- allocate() running before that init
      * dereferences a null unique_ptr (SIGABRT under nvc++). std::mutex has a
      * constexpr constructor, so alloc_mutex is CONSTANT-initialized and
-     * global_instance needs no dynamic init at all.
+     * the instance needs no dynamic init at all.
      */
     void allocate()
     {
@@ -106,13 +105,10 @@ class DeferredOpsStorage
     }
 
   private:
-    DeferredOpsStorage() = default;
+    constexpr DeferredOpsStorage() = default;
 
-    // Static inline ensures the singleton object itself exists for the entire
-    // duration of the program. All members are constant-initializable
-    // (constexpr mutex/atomic ctors, empty std::vector -- constexpr in C++20), so global_instance needs
-    // NO dynamic initialization — no static-init-order hazard.
-    static inline DeferredOpsStorage global_instance;
+    // The singleton's storage (deferred_ops_storage_instance below) builds it.
+    friend union internal::Immortal<DeferredOpsStorage>;
 
     std::vector<per_thread_map> arr_owner;
 
@@ -122,5 +118,23 @@ class DeferredOpsStorage
     // Guards allocate()/destroy(). constexpr ctor -> constant-initialized.
     std::mutex alloc_mutex;
 };
+
+/**
+ * @brief The one DeferredOpsStorage of each map type.
+ * @details Every member is constant-initialisable (constexpr mutex and atomic
+ *          constructors, an empty std::vector), so it needs no dynamic
+ *          initialisation -- no static-init-order hazard -- and, as an
+ *          Immortal (chunk/internal/immortal.h), it is never destroyed: a
+ *          global array still reaches it after main returns. Outside the class:
+ *          an Immortal of the class needs the class complete.
+ */
+template <typename per_thread_map>
+inline constinit internal::Immortal<DeferredOpsStorage<per_thread_map>> deferred_ops_storage_instance{};
+
+template <typename per_thread_map>
+DeferredOpsStorage<per_thread_map>& DeferredOpsStorage<per_thread_map>::instance() noexcept
+{
+    return deferred_ops_storage_instance<per_thread_map>.value;
+}
 
 } // namespace shrink_array

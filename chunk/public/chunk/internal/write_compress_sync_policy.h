@@ -24,6 +24,7 @@
 #include "chunk/config.h"         // chunk_config::asymmetric_dekker, chunk_config::ring_log_debug
 #include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_THREAD_CAPACITY
 #include "chunk/ring_log_debug.h" // ring_log, get_tid
+#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 #if defined(__linux__)
     #include <sys/syscall.h> // SYS_membarrier
@@ -474,7 +475,8 @@ class WriteCompressSyncPolicy
     }
 
     /// @brief One writer flag per thread rank, sized by ensure_initialized().
-    static inline std::vector<WritingFlag> per_thread_writing;
+    static inline constinit internal::Immortal<std::vector<WritingFlag>> per_thread_writing_storage_{};
+    static inline std::vector<WritingFlag>& per_thread_writing = per_thread_writing_storage_.value;
 
     /// @brief Number of threads currently inside a flush critical section
     ///        (begin_flush()/end_flush()).

@@ -42,6 +42,7 @@
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/internal/proxy2_base.h"                  // Proxy2Base
 #include "chunk/internal/dependent_false.h"              // dependent_false_v (wrong-type branches)
+#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
 {
@@ -442,7 +443,8 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
      * \brief Static container holding second values for each tab and chunk.
      * Indexed as tab_second_value[num_tab][num_chunk].
      */
-    static inline std::vector<std::vector<second_value_slot_t>> tab_second_value;
+    static inline constinit internal::Immortal<std::vector<std::vector<second_value_slot_t>>> tab_second_value_storage_{};
+    static inline std::vector<std::vector<second_value_slot_t>>& tab_second_value = tab_second_value_storage_.value;
 };
 
 /*!
@@ -546,7 +548,8 @@ class ProxySpec2A<bool, Derived> : public Proxy2Base<Derived, bool, Chunk2A<bool
      * \brief Static container holding second values for each tab and chunk.
      * Indexed as tab_second_value[num_tab][num_chunk].
      */
-    static inline std::vector<std::unique_ptr<bool[]>> tab_second_value;
+    static inline constinit internal::Immortal<std::vector<std::unique_ptr<bool[]>>> tab_second_value_storage_{};
+    static inline std::vector<std::unique_ptr<bool[]>>& tab_second_value = tab_second_value_storage_.value;
 };
 
 /**
@@ -713,7 +716,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         {
             if constexpr (build_config::any_check)
             {
-                if (num_tab != share_info_array.get_num_tab(ptr_on_array))
+                if (num_tab != share_info_array->get_num_tab(ptr_on_array))
                 {
                     INVARIANT_FAILED("Proxy2A::set_num_tab: armed num_tab {} differs from the registry's for array {}",
                                      num_tab, ptr_on_array);
@@ -721,7 +724,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
             }
             return;
         }
-        num_tab = share_info_array.get_num_tab(ptr_on_array);
+        num_tab = share_info_array->get_num_tab(ptr_on_array);
     }
 
     /**
@@ -775,12 +778,13 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     /**
      * @brief Per-tab array of flags indicating the type of constant value used.
      */
-    static inline std::vector<std::vector<char>> tab_type_cst_val; ///< type-of-constant flags
+    static inline constinit internal::Immortal<std::vector<std::vector<char>>> tab_type_cst_val_storage_{}; ///< type-of-constant flags
+    static inline std::vector<std::vector<char>>& tab_type_cst_val = tab_type_cst_val_storage_.value;
 
     /**
      * @brief Mapping from pointer to tab information for chunk lookup.
      */
-    static inline PointerMapChunk2A<T> share_info_array; ///< pointer->tab mapping
+    static inline constinit internal::LazyImmortal<PointerMapChunk2A<T>> share_info_array; ///< pointer->tab mapping
 
   private:
     using manager_chunk2A = ManagerChunk<Chunk2A, T>;

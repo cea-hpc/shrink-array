@@ -109,9 +109,21 @@ the tag's checksum to the recipe.
 - `NOTICE` (new) lists the third-party code and its licenses; it is installed with `LICENSE` and
   the license texts under `share/doc/chunk/`. `third_party/README.md` gives each vendored
   file's upstream, version and local patches.
+- `ParamChunk::init_indexes()` is optional: the first array of the program runs
+  `init_indexes(true)` when it was not called. `release_chunk_pools()` and
+  `destroy_block_chunk()` are optional too, and safe with arrays still alive: they then only
+  empty the free lists.
+- Global and `static` arrays work, for every variant, with OpenMP or not, fast or standard
+  allocator, `MM_PROTECT` or not. The library's static state that an array reaches
+  (per-type registries, pools, maps, the allocator ladder) is built at its first use or
+  constant-initialised, and never destroyed (`chunk/internal/immortal.h`): a global array used
+  to read it before its dynamic initialisation and after its destruction.
+- No limit on the number of (chunk template, element type) pairs: the manager registry grows
+  (it aborted past 256). Registering a manager no longer uses RTTI (`dynamic_cast`).
 
 ### Fixed
 
+- `ParamChunk::init_indexes<Types>()` compiles: it called a private member of `AllTypeChunk`.
 - `scripts/check_includes.py` works outside a git checkout (a source archive, a Spack
   build) and checks files not yet added to git.
 - Comments naming headers that moved to `internal/`, or a script that no longer exists.

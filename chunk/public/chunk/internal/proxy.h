@@ -34,6 +34,7 @@
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/internal/read_reclaim.h"                 // read_reclaim::ReadSection
 #include "chunk/internal/chunk_stats.h" // increm_chunk_read<> (a dependent call the include tools cannot attribute)
+#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
@@ -234,7 +235,7 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      */
     [[nodiscard]] static int get_num_tab_async(auto* /*ctx*/, const void* ptr) noexcept
     {
-        return Derived::share_info_array.get_num_tab(ptr);
+        return Derived::share_info_array->get_num_tab(ptr);
     }
 
     /**
@@ -871,11 +872,11 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      */
     [[nodiscard]] static int get_num_tab(const void* ptr) noexcept
     {
-        return share_info_array.get_num_tab(ptr);
+        return share_info_array->get_num_tab(ptr);
     }
 
     /// Registry of every v1 array: array address -> table number.
-    static inline PointerMapChunk<T> share_info_array;
+    static inline constinit internal::LazyImmortal<PointerMapChunk<T>> share_info_array;
 };
 
 /// @brief Write the element's value, read through proxy.read_pure(), to @p os.

@@ -25,8 +25,6 @@
 #include "fast_allocators/internal/pmp_alloc.h"          // PMP_MAX_THREADS
 #include "fast_allocators/internal/svalloc.h"            // svalloc, svcalloc, svfree
 
-InfoFreeElt StaticConstArray::tab_info_free_elt;
-
 /// @copydoc InfoFreeElt::InfoFreeElt
 /// @note Sized by PMP_MAX_THREADS at construction (before main). A rank past
 ///       it -- a team raised later -- is not batched: freeBlock() frees its
@@ -78,10 +76,10 @@ InfoFreeElt::~InfoFreeElt()
 /// @copydoc StaticConstArray::clearInfoFreeElt(int)
 void StaticConstArray::clearInfoFreeElt(int thr_rank)
 {
-    for (int k = 0; k < tab_info_free_elt.compt[thr_rank]; ++k)
+    for (int k = 0; k < tab_info_free_elt().compt[thr_rank]; ++k)
     {
-        const int szl  = tab_info_free_elt.tab_sz[thr_rank][k];
-        void*     ptrl = tab_info_free_elt.tab_ptr[thr_rank][k];
+        const int szl  = tab_info_free_elt().tab_sz[thr_rank][k];
+        void*     ptrl = tab_info_free_elt().tab_ptr[thr_rank][k];
         freeBlockWithInt(szl, ptrl);
     }
 }
@@ -93,15 +91,15 @@ void StaticConstArray::clearInfoFreeElt()
     // have grown since (omp_set_num_threads) and would index past the arrays;
     // nb_thr is 0 serially, where nothing was allocated. reset(), not compt = 0:
     // somme_sz must come down too, or the emptied batch still counts as full.
-    for (int thr_rank = 0; thr_rank < tab_info_free_elt.nb_thr; ++thr_rank)
+    for (int thr_rank = 0; thr_rank < tab_info_free_elt().nb_thr; ++thr_rank)
     {
         clearInfoFreeElt(thr_rank);
-        tab_info_free_elt.reset(thr_rank);
+        tab_info_free_elt().reset(thr_rank);
     }
 }
 
-// ::Allocator8 / ::Allocator24: inline in static_const_array.h (Allocator8 is
-// the ladder's 8-byte bucket; both immortal).
+// StaticConstArray::allocator8() / allocator24(): in static_const_array.h
+// (allocator8() is the ladder's 8-byte bucket; both immortal).
 
 /**
  * @brief Registry of the live ::TCTypeAllocator instances, for the memory report.
@@ -188,7 +186,7 @@ void compute_sum_allocated_size_TCAlloc(size_t& sum_UsedSize, size_t& sum_nn_ref
     if constexpr (alloc_config::use_slabs)
     {
         std::apply([&](const auto&... bucket) { (bucket.addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz), ...); },
-                   StaticConstArray::buckets);
+                   StaticConstArray::buckets());
     }
 
     // Not part of StaticConstArray, but it's now or never to count them!

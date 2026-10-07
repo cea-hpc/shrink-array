@@ -49,6 +49,7 @@
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/invariant_check.h"     // INVARIANT_FAILED — used HERE (swap check)
 #include "chunk/internal/def_force_inline.h"    // FORCE_INLINE
+#include "chunk/internal/live_arrays.h"         // LiveArrayToken — the teardown verbs' live-array count
 
 namespace shrink_array
 {
@@ -1170,6 +1171,10 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     ///        changed (ProxyBase::check_not_stale); other builds never read
     ///        it. Per array, not swapped: a swap invalidates both sides.
     unsigned int storage_generation_ = 0;
+
+    /// @brief Counts this array among the live ones (live_arrays.h): the
+    ///        teardown verbs keep the pools while any array is alive.
+    [[no_unique_address]] internal::LiveArrayToken live_token_;
 
     /// @brief Every proxy of this array built so far is now stale.
     void invalidate_proxies() noexcept

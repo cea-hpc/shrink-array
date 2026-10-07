@@ -198,7 +198,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      *
      * @warning Neither erase is optional, and each closes a distinct
      *          use-after-free:
-     *          - share_info_array.erase(registry_key()) drops the (address -> tuple)
+     *          - share_info_array->erase(registry_key()) drops the (address -> tuple)
      *            entry. Without it, a later array reusing this address inherits
      *            our stale num_tab and second value through PointerMapChunk2's
      *            first-match lookup. rechunk_to()'s short-lived @c tmp makes
@@ -217,11 +217,11 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     ~ArrayChunk2()
     {
         clear();
-        Proxy2<T>::share_info_array.erase(this->registry_key());
+        Proxy2<T>::share_info_array->erase(this->registry_key());
 
         if constexpr (chunk_config::use_fast_block_compression && is_not_bool)
         {
-            Proxy2<T>::share_info_array.erase_inf_array_by_ptr(&inf_array);
+            Proxy2<T>::share_info_array->erase_inf_array_by_ptr(&inf_array);
         }
     }
 
@@ -285,7 +285,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
         if constexpr (!is_bool_like_v<T>)
         {
             auto* key = const_cast<void*>(this->registry_key());
-            return Proxy2<T>::share_info_array.get_second_value(key);
+            return Proxy2<T>::share_info_array->get_second_value(key);
         }
         else
         {
@@ -296,7 +296,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     /// @brief Full registry tuple for this array: second value, its index, num_tab.
     [[nodiscard]] inf_array_t get_info_second_value() const noexcept
     {
-        return Proxy2<T>::share_info_array.get_info_second_value(this->registry_key());
+        return Proxy2<T>::share_info_array->get_info_second_value(this->registry_key());
     }
 
     /// @brief Index of this array's second value in the shared value table.
@@ -491,7 +491,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     {
         if constexpr (is_not_bool && chunk_config::use_fast_block_compression)
         {
-            auto& sh_inf = Proxy2<T>::share_info_array;
+            auto& sh_inf = *Proxy2<T>::share_info_array;
             if (sh_inf.find_inf_array(T{}) == nullptr)
             {
                 sh_inf.insert(T{}, &inf_array_none);
@@ -528,7 +528,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      */
     void swap_identity(ArrayChunk2& other)
     {
-        auto& sh_inf = Proxy2<T>::share_info_array;
+        auto& sh_inf = *Proxy2<T>::share_info_array;
         sh_inf.swap_entries(this->registry_key(), other.registry_key());
         std::swap(ind_cst_val2, other.ind_cst_val2);
         sync_registry_mirror();

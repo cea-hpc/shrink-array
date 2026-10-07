@@ -273,7 +273,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::perform_compression()
                 {
                     static_cast<void>(CompressionManagerType::flush_deferred(thr_rank));
 
-                    const auto* inf_ptr = Derived::share_info_array.find_inf_array(second_val);
+                    const auto* inf_ptr = Derived::share_info_array->find_inf_array(second_val);
                     Chunk2<T>::make_block_compression(thr_rank, *inf_ptr, self());
 
                     derived().set_info_on_chunk();

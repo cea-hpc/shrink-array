@@ -38,6 +38,7 @@
 #include "chunk/internal/proxy_base.h"                  // ProxyBase
 #include "chunk/internal/proxy2_base.h"                 // Proxy2Base
 #include "chunk/internal/chunk_stats.h" // increm_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
+#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 // compression_manager.h is already included unconditionally by proxy_base.h
 // (which this file includes above), and CompressionManagerType is referenced
@@ -1129,7 +1130,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      */
     [[nodiscard]] static inf_array_t get_info_second_value(const void* ptr) noexcept
     {
-        return share_info_array.get_info_second_value(ptr);
+        return share_info_array->get_info_second_value(ptr);
     }
 
     /**
@@ -1137,7 +1138,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      *
      * Used to retrieve compression-related information for a given value.
      */
-    static inline PointerMapChunk2<T> share_info_array;
+    static inline constinit internal::LazyImmortal<PointerMapChunk2<T>> share_info_array;
 };
 
 /// @brief Write the element's value, read through proxy.read_pure(), to @p os.

@@ -156,8 +156,9 @@ int main()
 ```
 
 1. **`init_indexes(true)`**, une fois, avant le premier tableau : prépare les blocs
-   d'allocation (`true` : gros blocs, le choix habituel). Les types d'éléments ne se déclarent
-   pas : chacun est enregistré à la construction du premier tableau de ce type.
+   d'allocation (`true` : gros blocs, le choix habituel). Facultatif : sans lui, le premier
+   tableau du programme lance lui-même `init_indexes(true)`. Les types d'éléments ne se
+   déclarent pas : chacun est enregistré à la construction du premier tableau de ce type.
 2. **Un tableau neuf** lit `T{}` partout et n'alloue aucun tampon.
 3. **Les appels de phase**, nécessaires seulement sans OMPT (§5). Ils ne compilent rien quand
    la bibliothèque a été construite avec OMPT, ni dans un build séquentiel.
@@ -168,7 +169,10 @@ int main()
    à récupérer la mémoire à un moment précis.
 6. **La destruction du tableau** rend ses tampons. La bibliothèque affiche alors une ligne par
    tableau, avec son taux de compression.
-7. **La paire d'arrêt**, en fin de programme, après le dernier tableau.
+7. **La paire d'arrêt**, en fin de programme, après le dernier tableau. Facultative elle aussi :
+   le processus peut simplement se terminer. Si un tableau vit encore (global ou `static`,
+   détruit après le retour de `main`), la paire garde ce dont il aura besoin et ne fait que
+   vider les listes libres.
 
 Résultat attendu : environ 12 % des chunks ont un tampon. Un `std::vector` les aurait tous.
 
@@ -226,6 +230,9 @@ programme avec un message.
   non plus : trier une copie en `std::vector`, puis la remettre par `assign()`.
 - **Un proxy ne doit pas survivre au stockage.** Chacune des opérations séquentielles du §5
   invalide les proxys de ce tableau. Garder les proxys le temps d'une expression.
+- **Les tableaux globaux et `static` fonctionnent** : construits avant `main`, détruits après
+  son retour. L'état de la bibliothèque est construit à sa première utilisation et jamais
+  détruit, l'ordre des initialisations statiques n'importe donc pas.
 - **Les indices sont des `int` par défaut.** Au-delà de 2³¹ éléments, utiliser le second
   paramètre du modèle : `ArrayChunk2A<double, long>`.
 - **Les types d'éléments** : tout type trivialement copiable, comparable par `==` et

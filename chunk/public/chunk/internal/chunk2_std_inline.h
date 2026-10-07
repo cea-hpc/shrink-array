@@ -924,7 +924,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr_r
                 // No array, no info tuple -- and nothing of that value left
                 // to fold: skip it (unguarded, force_compression() /
                 // shrink_to_fit() after such a clear dereferences null).
-                const auto* inf = Proxy2<T>::share_info_array.find_inf_array(second_val);
+                const auto* inf = Proxy2<T>::share_info_array->find_inf_array(second_val);
                 if (inf == nullptr)
                 {
                     continue;

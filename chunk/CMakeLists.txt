@@ -269,8 +269,10 @@ set(CHUNK_INTERNAL_HEADERS
         public/chunk/internal/freepath_counters.h
         public/chunk/internal/func_p2.h
         public/chunk/internal/global_check.h
+        public/chunk/internal/immortal.h
         public/chunk/internal/in_t.h
         public/chunk/internal/invariant_check.h
+        public/chunk/internal/live_arrays.h
         public/chunk/internal/manager_chunk.h
         public/chunk/internal/manager_chunk_inline.h
         public/chunk/internal/map_helper.h

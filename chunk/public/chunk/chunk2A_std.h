@@ -34,6 +34,7 @@
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_write
 
 #include "chunk/internal/TChunk.h" // TChunk2AComp, VectorTuple4ChunkInt2
+#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 
 namespace shrink_array
@@ -696,7 +697,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
         // threads on __cxa_guard_acquire. An `inline static` member has one
         // definition across TUs (C++17), built during static init before main()
         // and before any thread — no guard, no race. Manager ctor is trivial.
-        return s_manager_;
+        return *s_manager_;
     }
 
     /// @brief Rank @p thr's candidate list.
@@ -831,7 +832,7 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
                                ChunkElems                size,
                                bool                      claimed = false);
 
-    inline static manager_chunk2A s_manager_{};
+    static inline constinit internal::LazyImmortal<manager_chunk2A> s_manager_;
 };
 
 } // namespace shrink_array

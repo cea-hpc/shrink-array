@@ -77,14 +77,18 @@ inline std::mutex& mtx()
 /// @brief Live ctx blocks, keyed by address.
 inline ankerl::unordered_dense::map<void*, Rec>& ctx_live()
 {
-    static ankerl::unordered_dense::map<void*, Rec> live;
-    return live;
+    // Never destroyed: a global array is destroyed after main, and its buffers
+    // go through the ledger then (see chunk/internal/immortal.h).
+    static auto* live = new ankerl::unordered_dense::map<void*, Rec>();
+    return *live;
 }
 /// @brief Live op blocks, keyed by address.
 inline ankerl::unordered_dense::map<void*, Rec>& op_live()
 {
-    static ankerl::unordered_dense::map<void*, Rec> live;
-    return live;
+    // Never destroyed: a global array is destroyed after main, and its buffers
+    // go through the ledger then (see chunk/internal/immortal.h).
+    static auto* live = new ankerl::unordered_dense::map<void*, Rec>();
+    return *live;
 }
 
 /// @brief The calling thread's rank, or -1 outside a parallel region.
@@ -289,8 +293,8 @@ struct BRec
 /// @brief Tracked value blocks, keyed by address.
 inline ankerl::unordered_dense::map<const void*, BRec>& block_live()
 {
-    static ankerl::unordered_dense::map<const void*, BRec> live;
-    return live;
+    static auto* live = new ankerl::unordered_dense::map<const void*, BRec>(); // never destroyed, as above
+    return *live;
 }
 
 /// @brief End-of-run report: every block still in the ledger, by (state, last site).

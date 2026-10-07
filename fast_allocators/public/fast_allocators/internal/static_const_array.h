@@ -60,7 +60,7 @@
 #include <cassert>     // TypeAllocator::alloc: the size its free will route by
 #include <cstddef>     // std::size_t
 #include <tuple>       // std::tuple, std::get, std::apply (the ladder)
-#include <type_traits> // std::is_same_v (Allocator8 alias check)
+#include <type_traits> // std::is_same_v (allocator8() alias check)
 
 #include "fast_allocators/internal/svalloc.h"   // fast_alloc::alignment
 #include "fast_allocators/internal/pmp_alloc.h" // PMP_MAX_THREADS / PMP_THREAD_RANK / PMP_IN_PARALLEL_REGION
@@ -78,7 +78,7 @@
  *          only records the block here, and the whole batch is handed back at
  *          once when it fills -- one critical section instead of one per free.
  *
- * @note One instance exists, StaticConstArray::tab_info_free_elt.
+ * @note One instance exists, StaticConstArray::tab_info_free_elt().
  *
  * @warning A batch that is still filling holds blocks that are free but not
  *          reusable: they belong to no bucket's free list until the flush.
@@ -241,9 +241,38 @@ class StaticConstArray
     // observed as SIGSEGV / "Cannot access memory" in
     // TCTypeAllocator<T>::destroy_int() at static teardown, well after
     // main() returns cleanly with every in-run integrity check passing.
-    // A reference has no destructor of its own to run, so leaking the
-    // pointee here is intentional and harmless, matching the arena.
-    static inline Ladder& buckets = *(new Ladder());
+    // Leaking the pointee is intentional and harmless, matching the arena.
+    //
+    // A function, not a `static inline Ladder& = *new Ladder()` member: that
+    // reference is bound by a DYNAMIC initialisation, run in the translation
+    // units that include this header -- a global array built from a unit that
+    // does not include it reached a null ladder (serial build, under ASan).
+    // The function-local static is built at its first use, whatever the order.
+    [[nodiscard]] static Ladder& buckets()
+    {
+        static auto* const ladder = new Ladder();
+        return *ladder;
+    }
+
+    /// @brief Standalone bucket for 24-byte blocks (the ladder goes 16 -> 32).
+    /// @details IMMORTAL, like the ladder and for the same reason: it backs
+    ///          TypeAllocator's 24-byte allocations, which may still be
+    ///          released during static teardown. Leaked on purpose.
+    [[nodiscard]] static TCTypeAllocatorEBC<24, SIZE_BLOCK>& allocator24()
+    {
+        static auto* const allocator = new TCTypeAllocatorEBC<24, SIZE_BLOCK>();
+        return *allocator;
+    }
+
+    /// @brief The 8-byte bucket, the most common size, by name.
+    /// @details IS the ladder's bucket 1 (sizes 5..8), not a pool of its own:
+    ///          FixedSizeAllocator reaches it directly, skipping the size
+    ///          comparisons of the ladder walk. Same lock either way
+    ///          (critical(fast_alloc_ladder)).
+    [[nodiscard]] static TCTypeAllocatorEBC<8, SIZE_BLOCK>& allocator8()
+    {
+        return std::get<1>(buckets());
+    }
 
     /// @brief The bucket getBlockAllocInt() / freeBlockWithInt() use for
     ///        @p sz bytes: the smallest that holds it, the top one past 32768.
@@ -294,29 +323,20 @@ class StaticConstArray
     template <class F>
     static decltype(auto) with_bucket(std::size_t i, F&& f);
 
-    static InfoFreeElt tab_info_free_elt; ///< The per-thread batches.
+    /// @brief The per-thread batches. IMMORTAL, like the ladder: a global array
+    ///        is built before main and destroyed after it returns, and frees
+    ///        through these batches at both ends -- an instance defined in
+    ///        static_const_array.cpp would be built after it and destroyed
+    ///        first. Built at the first use, as the ladder.
+    [[nodiscard]] static InfoFreeElt& tab_info_free_elt()
+    {
+        static auto* const batches = new InfoFreeElt();
+        return *batches;
+    }
 };
 
 static_assert(std::is_same_v<std::tuple_element_t<1, StaticConstArray::Ladder>, TCTypeAllocatorEBC<8, SIZE_BLOCK>>,
-              "Allocator8 aliases the ladder's bucket 1: it must stay the 8-byte one");
-
-/// @brief The 8-byte bucket, the most common size, by name.
-/// @details IS the ladder's bucket 1 (sizes 5..8), not a pool of its own:
-///          ::FixedSizeAllocator reaches it directly, skipping the size
-///          comparisons of the ladder walk. One pool, not a second 8-byte
-///          global (with its own 1 MiB slab and an unspecified destruction
-///          order): immortal, with the ladder. Same lock either way
-///          (critical(fast_alloc_ladder)).
-/// @note Inline, defined after StaticConstArray in this header, which every
-///       user includes: partially-ordered initialisation sets up `buckets`
-///       before this reference binds to it.
-inline TCTypeAllocatorEBC<8, SIZE_BLOCK>& Allocator8 = std::get<1>(StaticConstArray::buckets);
-
-/// @brief Standalone bucket for 24-byte blocks (the ladder goes 16 -> 32).
-/// @details IMMORTAL, like the ladder and for the same reason: it backs
-///          TypeAllocator's 24-byte allocations, which may still be released
-///          during static teardown. Leaked on purpose. @see Allocator8
-inline TCTypeAllocatorEBC<24, SIZE_BLOCK>& Allocator24 = *(new TCTypeAllocatorEBC<24, SIZE_BLOCK>());
+              "allocator8() is the ladder's bucket 1: it must stay the 8-byte one");
 
 /**
  * @brief Ladder front end that falls back to malloc, by size. PUBLIC API.
@@ -459,7 +479,7 @@ struct BlkAllocator : public StaticConstArray
  * @details Same fallback as ::BlkAllocator (a bucket, malloc past the top of
  *          the ladder), with a shortcut: 8 and 24 bytes are
  *          by far the most common sizes here, so they go straight to
- *          ::Allocator8 / ::Allocator24 instead of walking the ladder.
+ *          StaticConstArray::allocator8() / allocator24() instead of walking the ladder.
  */
 template <typename ElemT>
 class FixedSizeAllocator : private StaticConstArray
@@ -476,11 +496,11 @@ class FixedSizeAllocator : private StaticConstArray
         {
             if (sizeof(ElemT) == 8)
             {
-                return shortcut_alloc(Allocator8);
+                return shortcut_alloc(StaticConstArray::allocator8());
             }
             if (sizeof(ElemT) == 24)
             {
-                return shortcut_alloc(Allocator24);
+                return shortcut_alloc(StaticConstArray::allocator24());
             }
 
             void* ptr = getBlockAlloc(sizeof(ElemT));
@@ -507,11 +527,11 @@ class FixedSizeAllocator : private StaticConstArray
         {
             if (size == 8)
             {
-                return shortcut_alloc(Allocator8);
+                return shortcut_alloc(StaticConstArray::allocator8());
             }
             if (size == 24)
             {
-                return shortcut_alloc(Allocator24);
+                return shortcut_alloc(StaticConstArray::allocator24());
             }
 
             // size_t test before narrowing, as BlkAllocator::alloc_block().
@@ -546,11 +566,11 @@ class FixedSizeAllocator : private StaticConstArray
         {
             if (sizeof(ElemT) == 8)
             {
-                shortcut_free(Allocator8, ptr);
+                shortcut_free(StaticConstArray::allocator8(), ptr);
             }
             else if (sizeof(ElemT) == 24)
             {
-                shortcut_free(Allocator24, ptr);
+                shortcut_free(StaticConstArray::allocator24(), ptr);
             }
             else
             {
@@ -565,7 +585,7 @@ class FixedSizeAllocator : private StaticConstArray
     }
 
   private:
-    /// @brief Allocator8 / Allocator24 are plain buckets, no more thread-safe
+    /// @brief allocator8() / allocator24() are plain buckets, no more thread-safe
     ///        than the ladder's: same guard as getBlockAlloc(). Serially
     ///        PMP_IN_PARALLEL_REGION is the constant false and the branch folds
     ///        away.

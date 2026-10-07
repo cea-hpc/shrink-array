@@ -98,7 +98,7 @@ void ArrayChunk2<T, ind_type>::create(ind_type sz)
 
     chunk_config::CheckNaN<chunk_config::do_check>::update(true);
 
-    auto& sh_inf = Proxy2<T>::share_info_array;
+    auto& sh_inf = *Proxy2<T>::share_info_array;
 
     sh_inf.insert_only_num_tab(this->registry_key(), nb_tab);
     ++nb_tab;
@@ -148,7 +148,7 @@ void ArrayChunk2<T, ind_type>::rebuild_storage(ind_type sz)
 {
     // Already registered: num_tab is the registry value, not nb_tab-1 (only
     // valid right after create()'s ++nb_tab).
-    const int num_tab = Proxy2<T>::share_info_array.get_num_tab(this->registry_key());
+    const int num_tab = Proxy2<T>::share_info_array->get_num_tab(this->registry_key());
 
     if (sz)
     {
@@ -232,7 +232,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
         }
     }
 
-    auto& sh_inf = Proxy2<T>::share_info_array;
+    auto& sh_inf = *Proxy2<T>::share_info_array;
 
     if constexpr (is_not_bool)
     {
@@ -240,7 +240,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
 
         if (ind == -1)
         {
-            ind = Chunk2<T>::tab_m_ptr_cst_val2.size();
+            ind = Chunk2<T>::tab_m_ptr_cst_val2->size();
 
             if constexpr (build_config::use_mm_protect)
             {
@@ -260,7 +260,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
 
                 mprotect(ptr, alloc_size, PROT_READ);
 
-                Chunk2<T>::tab_m_ptr_cst_val2.push_back(arr);
+                Chunk2<T>::tab_m_ptr_cst_val2->push_back(arr);
                 if (Chunk2<T>::tab_m_ptr_cst_val2_mm_elems.size() <= static_cast<std::size_t>(ind))
                 {
                     Chunk2<T>::tab_m_ptr_cst_val2_mm_elems.resize(ind + 1, 0);
@@ -269,10 +269,10 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
             }
             else
             {
-                Chunk2<T>::tab_m_ptr_cst_val2.resize(ind + 1);
+                Chunk2<T>::tab_m_ptr_cst_val2->resize(ind + 1);
                 for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
                 {
-                    Chunk2<T>::tab_m_ptr_cst_val2[ind][i] = sec_value;
+                    (*Chunk2<T>::tab_m_ptr_cst_val2)[ind][i] = sec_value;
                 }
             }
 
@@ -309,7 +309,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
         else
         {
             // ind already registered for sec_value -- possibly by a DIFFERENT
-            // array, at a DIFFERENT (smaller) geometry: tab_m_ptr_cst_val2[ind]
+            // array, at a DIFFERENT (smaller) geometry: (*tab_m_ptr_cst_val2)[ind]
             // was only filled up to THAT array's size_policy_.size() at
             // registration time. Reused as-is here, any chunk of THIS array
             // compressed to cst_val2 at offsets beyond the original fill would
@@ -345,7 +345,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
                     // Old buffer (if any) is intentionally NOT unmapped: another
                     // still-live array's chunk may hold its address as `values`
                     // (immortal-arena discipline, same as elsewhere in this file).
-                    Chunk2<T>::tab_m_ptr_cst_val2[ind] = arr;
+                    (*Chunk2<T>::tab_m_ptr_cst_val2)[ind] = arr;
                     if (Chunk2<T>::tab_m_ptr_cst_val2_mm_elems.size() <= static_cast<std::size_t>(ind))
                     {
                         Chunk2<T>::tab_m_ptr_cst_val2_mm_elems.resize(ind + 1, 0);
@@ -357,7 +357,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
             {
                 for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
                 {
-                    Chunk2<T>::tab_m_ptr_cst_val2[ind][i] = sec_value;
+                    (*Chunk2<T>::tab_m_ptr_cst_val2)[ind][i] = sec_value;
                 }
             }
 
@@ -381,10 +381,10 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
     {
         if constexpr (is_not_bool)
         {
-            Chunk2<T>::tab_m_ptr_cst_val2.resize(+1);
+            Chunk2<T>::tab_m_ptr_cst_val2->resize(+1);
             for (int i = 0; i < static_cast<int>(this->size_policy_.size()); ++i)
             {
-                Chunk2<T>::tab_m_ptr_cst_val2[0][i] = true;
+                (*Chunk2<T>::tab_m_ptr_cst_val2)[0][i] = true;
             }
         }
         if constexpr (chunk_config::use_fast_block_compression)
@@ -429,7 +429,7 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
         return;
     }
 
-    const auto& sh_inf  = Proxy2<T>::share_info_array;
+    const auto& sh_inf  = *Proxy2<T>::share_info_array;
     const int   num_tab = sh_inf.get_num_tab(const_cast<void*>(this->registry_key()));
 
     // Chunk2-specific classification. FIXED: written(ind) tests
@@ -644,7 +644,7 @@ void ArrayChunk2<T, ind_type>::clear_core()
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const auto& sh_inf = Proxy2<T>::share_info_array;
+        const auto& sh_inf = *Proxy2<T>::share_info_array;
 
         const int num_tab = sh_inf.get_num_tab(this->registry_key());
 
@@ -836,7 +836,7 @@ void ArrayChunk2<T, ind_type>::clear_core()
     // emptied tab_bool_bits' row, and its next write faulted).
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        Proxy2<T>::release_tab_is_int(Proxy2<T>::share_info_array.get_num_tab(this->registry_key()));
+        Proxy2<T>::release_tab_is_int(Proxy2<T>::share_info_array->get_num_tab(this->registry_key()));
     }
 }
 
@@ -1107,7 +1107,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
                 {
                     std::cerr << " is_inside="
                               << static_cast<int>(shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
-                                                      shrink_array::Proxy2<T>::share_info_array.get_num_tab(
+                                                      shrink_array::Proxy2<T>::share_info_array->get_num_tab(
                                                           const_cast<void*>(this->registry_key())))[ind1]
                                                       .load(std::memory_order_acquire));
                 }
@@ -1157,7 +1157,7 @@ void ArrayChunk2<T, ind_type>::compress_int()
                 {
                     std::cerr << " is_inside="
                               << static_cast<int>(shrink_array::Proxy2<T>::get_tab_is_inside_list_to_compress(
-                                                      shrink_array::Proxy2<T>::share_info_array.get_num_tab(
+                                                      shrink_array::Proxy2<T>::share_info_array->get_num_tab(
                                                           const_cast<void*>(this->registry_key())))[ind2]
                                                       .load(std::memory_order_acquire));
                 }
@@ -1278,7 +1278,7 @@ void ArrayChunk2<T, ind_type>::resize(ind_type newsz)
 
     if constexpr (chunk_config::use_fast_block_compression)
     {
-        const auto& sh_inf = Proxy2<T>::share_info_array;
+        const auto& sh_inf = *Proxy2<T>::share_info_array;
 
         const int num_tab = sh_inf.get_num_tab(this->registry_key());
         Proxy2<T>::resize_tab_is_int(num_tab, nb_chunk);

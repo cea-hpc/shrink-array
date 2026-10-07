@@ -16,7 +16,6 @@
 
 #pragma once
 
-#include <array>   // std::array
 #include <atomic>  // std::atomic
 #include <cstddef> // std::size_t
 #include <memory>  // std::unique_ptr
@@ -214,9 +213,11 @@ struct AllTypeChunkDynInterface<Derived, false>
  *
  * Access is through <tt>SingletonChk\<AllTypeChunk\>\::getRef()</tt>. The registry starts
  * empty and fills itself: the first array of each (chunk template, element
- * type) registers its manager from its create() (ensure_manager), once
- * ParamChunk::init_indexes() has published the block size. A program may also
- * register a list of types up front with ParamChunk::init_indexes<Types>().
+ * type) registers its manager from its create() (ensure_manager). The first
+ * array of the process also runs ParamChunk::init_indexes(true) if the program
+ * has not called it (ensure_ready), so an array may be constructed anywhere,
+ * a global one included. A program may also register a list of types up front
+ * with ParamChunk::init_indexes<Types>().
  *
  * @note The available surface depends on the build, and the parts that vary
  *       live in the two policies above:
@@ -267,11 +268,24 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
 
     /// @return The registered managers, in registration order: the prefix
     ///         published so far, read without a lock (see the members below).
-    [[nodiscard]] std::span<const std::unique_ptr<ManagerChunkInt>> getListTypeChunk() const noexcept
+    [[nodiscard]] std::span<ManagerChunkInt* const> getListTypeChunk() const noexcept
     {
+        // The count first: every table published after the slot count-1 was
+        // written holds that slot, so the table read next has all of them.
         const auto count = static_cast<std::size_t>(nb_managers_.load(std::memory_order_acquire));
-        return {managers_.data(), count};
+        return {table_.load(std::memory_order_acquire), count};
     }
+
+    /**
+     * @brief ParamChunk::init_indexes(true), once, if the program has not run
+     *        init_indexes() itself before its first array.
+     * @details Called by ensure_manager(), i.e. by the first array of each
+     *          type, outside the registry lock. Any context the first array can
+     *          be built in: a global array (static initialisation), a parallel
+     *          region (std::call_once serialises the threads). An explicit
+     *          init_indexes() call keeps working as before, before or after.
+     */
+    static void ensure_ready();
 
     /// Compresses every compressible chunk of every type, ignoring the candidate lists.
     void force_chunk_to_compress() const;
@@ -347,10 +361,24 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
      * work touches nothing another thread can be using yet, and the fan-outs
      * read the registry without a lock (see the members below).
      *
-     * @pre ParamChunk::init_indexes() has run.
+     * Runs ensure_ready() first: init_indexes() is optional.
      */
     template <typename ManagerT>
     static void ensure_manager();
+
+    /**
+     * @brief Registers every element type of a tuple up front, for the chunk
+     *        templates the build compiles arrays for.
+     *
+     * Called by `ParamChunk::init_indexes<Types>()`, hence public.
+     * Optional since the arrays register their own types: what it buys is
+     * having every manager in place before the first parallel region, at the
+     * cost of managers for types the program may never use.
+     *
+     * @tparam Types Tuple of element types the program will store in chunks.
+     */
+    template <typename Types>
+    void initialize();
 
   private:
     // ── The registry: append-only, published without a lock ────────────────
@@ -367,10 +395,16 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     // registration, and never see a manager before it is whole. Nothing is
     // ever removed before the teardown, so the slots are stable.
     //
-    // A fixed capacity, so that a slot's address never moves under a reader:
-    // 256 is three chunk templates times more element types than any program
-    // has had; exceeding it aborts with a message.
-    static constexpr int kMaxManagers = 256;
+    // No capacity limit. The slots are a table of manager pointers; when it is
+    // full, registration copies it into one twice as large and publishes that.
+    // The old tables are kept, not freed -- a reader may still be walking a
+    // span of one -- so their memory (64, 128, 256... pointers: less than the
+    // last table again) lives as long as the registry.
+    static constexpr std::size_t kFirstTableSize = 64;
+
+    /// @brief Store @p manager in the next slot, growing the table if it is
+    ///        full, and publish it. Called with registry_mutex_ held.
+    void publish_manager(std::unique_ptr<ManagerChunkInt> manager);
 
     /**
      * @brief Build, initialise and publish the manager @p ManagerT
@@ -389,26 +423,23 @@ class AllTypeChunk : public AllTypeChunkParallelInterface<AllTypeChunk>, public 
     template <template <typename> class CHUNK_T, typename Types>
     void fillManagerChunk();
 
-    /**
-     * @brief Registers every element type of a tuple up front, for the chunk
-     *        templates the build compiles arrays for.
-     *
-     * Consumer entry point, called by `ParamChunk::init_indexes<Types>()`.
-     * Optional since the arrays register their own types: what it buys is
-     * having every manager in place before the first parallel region, at the
-     * cost of managers for types the program may never use.
-     *
-     * @tparam Types Tuple of element types the program will store in chunks.
-     */
-    template <typename Types>
-    void initialize();
-
     /// Resizes every manager's compression-candidate list to the current thread count.
     void resize_chunk_to_compress_potentially() const;
 
-    std::array<std::unique_ptr<ManagerChunkInt>, kMaxManagers> managers_;
-    std::atomic<int>                                           nb_managers_{0};
-    std::mutex                                                 registry_mutex_;
+    /// The managers, owned; touched only under registry_mutex_.
+    std::vector<std::unique_ptr<ManagerChunkInt>> owned_;
+    /// Every slot table published so far, the current one last (see above).
+    std::vector<std::unique_ptr<ManagerChunkInt*[]>> tables_;
+    /// The current slot table, for the lock-free readers.
+    std::atomic<ManagerChunkInt**> table_{nullptr};
+    std::size_t                    table_capacity_ = 0;
+    std::atomic<int>               nb_managers_{0};
+    std::mutex                     registry_mutex_;
+
+    /// Set under registry_mutex_ when the manager type @p ManagerT is
+    /// registered: the duplicate check of register_manager(), with no RTTI.
+    template <typename ManagerT>
+    static inline bool registered_ = false;
 
     /// Set by ParamChunk::init_indexes(): the registry accepts managers only
     /// once the block size (and the stats) exist. An array constructed before
