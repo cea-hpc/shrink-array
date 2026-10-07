@@ -37,7 +37,8 @@
 #include <vector>      // the refill buffers
 
 #include "chunk/internal/in_t.h"                // in_t<T>: the element snapshots
-#include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase: self.set_chunk_size, invalidate_proxies#include "chunk/internal/array_chunk_core.h"    // alloc_affinity_detail::RechunkStorageScope
+#include "chunk/internal/array_chunk_base.h"    // ArrayChunkBase: self.set_chunk_size, invalidate_proxies
+#include "chunk/internal/array_chunk_core.h"    // alloc_affinity_detail::RechunkStorageScope
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport, the class these bodies belong to
 #include "chunk/array_chunk_range_ops.h"        // copy_range -- the public bulk fill
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_rechunk* (CHUNK_STATS)
