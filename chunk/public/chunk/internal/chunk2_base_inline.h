@@ -88,11 +88,11 @@ void Chunk2Base<T, Derived>::block_clear_common(this Derived&        self,
 
 template <typename T, typename Derived>
 template <typename IndexType>
-void Chunk2Base<T, Derived>::clear_impl(this Derived&       self,
-                                        IndexType           index_opt,
-                                        int                 thr_rank,
-                                        char*               ptr_type_cst,
-                                        SecondValueRef<T>   ptr_second_value)
+void Chunk2Base<T, Derived>::clear_impl(this Derived&     self,
+                                        IndexType         index_opt,
+                                        int               thr_rank,
+                                        char*             ptr_type_cst,
+                                        SecondValueRef<T> ptr_second_value)
 {
     // Check if written - use index if provided
     bool is_written = false;

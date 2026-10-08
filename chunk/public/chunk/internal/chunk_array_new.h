@@ -39,20 +39,16 @@
 
 #include <cstddef> // std::size_t
 
-#include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS / CHUNK_PMP_IN_PARALLEL_REGION
-#include "chunk/config.h"    // build_config::use_openmp
+#include "chunk/internal/parallel_storage_init.h" // for_each_chunk, kParallelInitMinChunks
 
 namespace shrink_array::chunk_array_new
 {
 
-/// @brief Chunk count under which the initialisation stays on the calling
-///        thread -- the threshold the array paths use (ArrayChunk::create,
-///        ArrayChunk2::rebuild_storage, ...).
-inline constexpr std::size_t kParallelInitMinChunks = 500;
-
 /**
- * @brief Run @p init on each of the @p count chunks at @p v, in parallel past
- *        kParallelInitMinChunks.
+ * @brief Run @p init on each of the @p count chunks at @p v: on a team of its
+ *        own from parallel_storage_init::kParallelInitMinChunks chunks on,
+ *        outside a region -- parallel_storage_init::for_each_chunk(), the
+ *        rule the arrays' own init loops follow too.
  *
  * @details The initialiser is one store per chunk, so this is a memory-bound
  *          sweep: worth a team on a large array, and only OUTSIDE a parallel
@@ -78,24 +74,7 @@ inline constexpr std::size_t kParallelInitMinChunks = 500;
 template <typename C, typename Init>
 void init_chunks(C* v, std::size_t count, Init init) noexcept
 {
-    if constexpr (build_config::use_openmp)
-    {
-        if (count >= kParallelInitMinChunks && CHUNK_PMP_MAX_THREADS >= 2 && !CHUNK_PMP_IN_PARALLEL_REGION)
-        {
-#pragma omp parallel for simd
-            for (std::size_t k = 0; k < count; ++k)
-            {
-                init(v[k]);
-            }
-            return;
-        }
-    }
-
-#pragma omp simd
-    for (std::size_t k = 0; k < count; ++k)
-    {
-        init(v[k]);
-    }
+    parallel_storage_init::for_each_chunk(static_cast<int>(count), [v, &init](int k) { init(v[k]); });
 }
 
 } // namespace shrink_array::chunk_array_new

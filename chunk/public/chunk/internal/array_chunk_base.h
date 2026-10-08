@@ -451,10 +451,11 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
             {
                 if (chunk_->read_gate_should_wait(num_)) [[unlikely]]
                 {
-                    CHUNK_INVARIANT_FAILED("ArrayChunkBase::const_iterator: a write was deferred onto chunk {} of array {} "
-                                     "during the iteration (offset {}); the iterator would not see it -- no other "
-                                     "thread may write an array that is being iterated",
-                                     num_chunk_, static_cast<const void*>(owner_), num_);
+                    CHUNK_INVARIANT_FAILED(
+                        "ArrayChunkBase::const_iterator: a write was deferred onto chunk {} of array {} "
+                        "during the iteration (offset {}); the iterator would not see it -- no other "
+                        "thread may write an array that is being iterated",
+                        num_chunk_, static_cast<const void*>(owner_), num_);
                 }
             }
         }
@@ -507,8 +508,8 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
                 if (lhs.owner_ != rhs.owner_) [[unlikely]]
                 {
                     CHUNK_INVARIANT_FAILED("ArrayChunkBase::const_iterator: iterators of two different arrays compared "
-                                     "or subtracted ({} vs {})",
-                                     static_cast<const void*>(lhs.owner_), static_cast<const void*>(rhs.owner_));
+                                           "or subtracted ({} vs {})",
+                                           static_cast<const void*>(lhs.owner_), static_cast<const void*>(rhs.owner_));
                 }
             }
         }
@@ -928,8 +929,8 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
         {
             if (self.size_policy_.size() != other.size_policy_.size())
             {
-                CHUNK_INVARIANT_FAILED("ArrayChunk::swap: mismatched chunk geometry ({} vs {})", self.size_policy_.size(),
-                                 other.size_policy_.size());
+                CHUNK_INVARIANT_FAILED("ArrayChunk::swap: mismatched chunk geometry ({} vs {})",
+                                       self.size_policy_.size(), other.size_policy_.size());
             }
         }
         self.swap_storage_and_identity(other);
@@ -1264,9 +1265,9 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
             if (ch.read_gate_should_wait(offset)) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("ArrayChunkBase bulk read: a write was deferred onto chunk {} of array {} "
-                                 "during the read (offset {}); it would not be seen -- no other thread may "
-                                 "write an array that is being read in bulk",
-                                 num_chunk, static_cast<const void*>(this), offset);
+                                       "during the read (offset {}); it would not be seen -- no other thread may "
+                                       "write an array that is being read in bulk",
+                                       num_chunk, static_cast<const void*>(this), offset);
             }
         }
     }

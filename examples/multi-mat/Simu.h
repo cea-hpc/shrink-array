@@ -29,7 +29,7 @@
 #include <cstddef>    // std::size_t
 #include <version>    // __cpp_lib_mdspan
 #if defined(__cpp_lib_mdspan)
-#include <mdspan> // std::mdspan, std::dextents
+    #include <mdspan> // std::mdspan, std::dextents
 #endif
 
 #include "Containers.h" // MultiArray, VectChunk2

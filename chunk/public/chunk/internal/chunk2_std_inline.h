@@ -127,10 +127,10 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(this Deriv
                                                                       unsigned int            n_elems)
 {
     // in_t: a reference into the (const, caller-owned) tuple when T is large.
-    const in_t<T> second_v = std::get<0>(inf_array);
+    const in_t<T> second_v = inf_array.second_value;
     self.fill_list_to_compress_impl(
         ll_compt1, ll_compt2, num_chunk, num_tab, [&second_v]() -> in_t<T> { return second_v; },
-        self.is_not_cst_val2(std::get<1>(inf_array)), n_elems);
+        self.is_not_cst_val2(inf_array.ind), n_elems);
 }
 
 /**
@@ -236,7 +236,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress_impl(this 
  */
 template <typename T, typename Derived, bool Enabled>
 template <typename SecondValueFunc, typename ClearFunc>
-void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(this Derived&  self,
+void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_impl(this Derived&   self,
                                                               bool            apply,
                                                               unsigned int    n_elems,
                                                               SecondValueFunc get_second_value,
@@ -289,15 +289,15 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress(this Derived&        se
     // the stale entry. compress_impl only refuses cst_val1; a chunk already at
     // cst_val2 would pass, scan the SHARED second-value block, find it
     // constant and clear it a second time -- freeing that shared block.
-    if (!self.written(std::get<1>(inf_array)))
+    if (!self.written(inf_array.ind))
     {
         return;
     }
 
     self.compress_impl(
-        apply, n_elems, [&inf_array] { return std::get<0>(inf_array); },
+        apply, n_elems, [&inf_array] { return inf_array.second_value; },
         [&self, thr_rank, &inf_array](int num_compress_value)
-        { self.clear_int_st(num_compress_value, std::get<1>(inf_array), thr_rank); });
+        { self.clear_int_st(num_compress_value, inf_array.ind, thr_rank); });
 }
 
 /**
@@ -525,7 +525,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
                                                                                   const inf_array_t& inf_array,
                                                                                   bool               apply)
 {
-    compress_chunk_to_compress_in_par_impl(thr_rank, std::get<0>(inf_array),
+    compress_chunk_to_compress_in_par_impl(thr_rank, inf_array.second_value,
                                            [thr_rank, &inf_array, apply](auto* chunk_t, unsigned int n_elems)
                                            { chunk_t->compress(thr_rank, inf_array, apply, n_elems); });
 }
@@ -603,7 +603,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_p
                                                                                    const inf_array_t&      inf_array)
 {
     fill_list_chunk_to_compress_in_par_impl(
-        thr_rank, std::get<0>(inf_array),
+        thr_rank, inf_array.second_value,
         [&ll_compt1, &ll_compt2, &inf_array](auto* chunk_t, int num_chunk, int num_tab, unsigned int n_elems)
         {
             const auto n1 = ll_compt1.size();
@@ -815,8 +815,8 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression_impl(int 
             if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
-                                 "dedup flag -- two passes on one chunk",
-                                 static_cast<const void*>(marked));
+                                       "dedup flag -- two passes on one chunk",
+                                       static_cast<const void*>(marked));
             }
         }
         Proxy2<T>::reset_tab_is_inside_list_to_compress(num_tab, num_chunk);
@@ -859,10 +859,10 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int      
 {
     if constexpr (is_not_bool)
     {
-        const in_t<T> second_value = std::get<0>(inf_array); // the caller's tuple, alive for the call
+        const in_t<T> second_value = inf_array.second_value; // the caller's record, alive for the call
 
         const auto lbd_clear_func = [thr_rank, &inf_array](auto* chunk_t, int clear_type)
-        { chunk_t->clear_int_st(clear_type, std::get<1>(inf_array), thr_rank); };
+        { chunk_t->clear_int_st(clear_type, inf_array.ind, thr_rank); };
 
         make_block_compression_impl(
             thr_rank, second_value, proxy2, [thr_rank, &inf_array](auto& ll_compt1, auto& ll_compt2)
@@ -1060,7 +1060,7 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::create_value(this Derived&      self,
                     BaseSpec::init_block_2nd_value(ptr, inf_array);
                 }
             },
-            std::get<1>(inf_array), need_set_second_value);
+            inf_array.ind, need_set_second_value);
     }
     else
     {
@@ -1206,7 +1206,10 @@ void Chunk2OmpPolicy<T, Derived, false>::clear_st(this Derived& self, int ind)
  * statistics are counted here and nowhere else.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2OmpPolicy<T, Derived, Enabled>::block_clear(this Derived& self, int num_compress_value, int ind, [[maybe_unused]] int thr_rank)
+void Chunk2OmpPolicy<T, Derived, Enabled>::block_clear(this Derived&        self,
+                                                       int                  num_compress_value,
+                                                       int                  ind,
+                                                       [[maybe_unused]] int thr_rank)
 {
     // CHUNK_STATS: one materialised block released by a successful compression.
     // Counted here because block_clear is the single point every variant and
@@ -1245,7 +1248,10 @@ void Chunk2OmpPolicy<T, Derived, false>::block_clear(this Derived& self, int num
  *      check_not_constant_before_clear().
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2OmpPolicy<T, Derived, Enabled>::clear_int_st(this Derived& self, int num_compress_value, int ind, int thr_rank)
+void Chunk2OmpPolicy<T, Derived, Enabled>::clear_int_st(this Derived& self,
+                                                        int           num_compress_value,
+                                                        int           ind,
+                                                        int           thr_rank)
 {
     self.Base::check_not_constant_before_clear(num_compress_value, ind);
     self.block_clear(num_compress_value, ind, thr_rank);

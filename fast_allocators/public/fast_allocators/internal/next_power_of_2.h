@@ -32,4 +32,3 @@ namespace fast_alloc
 }
 
 } // namespace fast_alloc
-

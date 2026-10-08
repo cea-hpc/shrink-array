@@ -301,7 +301,7 @@ const char* op_name(Op o)
 int run_compound_case(Op o)
 {
     using I = long long;
-    Array<I> a;
+    Array<I>   a;
     const long S = static_cast<long>(a.chunk_size());
     a.resize(static_cast<int>(3 * S));
     maybe_set_second_value(a, I{7});

@@ -24,10 +24,10 @@
 #include <type_traits> // std::is_void_v
 #include <utility>     // std::index_sequence
 
-#include "fast_allocators/internal/static_const_array.h"        // the declarations these bodies belong to
-#include "fast_allocators/internal/int_alloc.h"                 // int_alloc, int_free
-#include "fast_allocators/internal/alloc_config.h"              // alloc_config::use_std_alloc / use_openmp
-#include "fast_allocators/internal/pmp_alloc.h"                 // FAST_ALLOC_PMP_IN_PARALLEL_REGION / FAST_ALLOC_PMP_THREAD_RANK
+#include "fast_allocators/internal/static_const_array.h" // the declarations these bodies belong to
+#include "fast_allocators/internal/int_alloc.h"          // int_alloc, int_free
+#include "fast_allocators/internal/alloc_config.h"       // alloc_config::use_std_alloc / use_openmp
+#include "fast_allocators/internal/pmp_alloc.h" // FAST_ALLOC_PMP_IN_PARALLEL_REGION / FAST_ALLOC_PMP_THREAD_RANK
 #include "fast_allocators/internal/static_const_array_define.h" // FAST_ALLOC_MAX_CONST_BLOCK_SIZE
 
 namespace fast_alloc
@@ -175,4 +175,3 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
 }
 
 } // namespace fast_alloc
-

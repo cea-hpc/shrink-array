@@ -458,8 +458,8 @@ void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int 
         alloc_affinity_detail::g_releasing_rechunk_storage = true;
     }
     alloc_affinity_detail::g_releasing_rechunk_storage = false;
-    const auto t5 = t_now(); // tmp destroyed
-    r_teardown    = rss_now();
+    const auto t5                                      = t_now(); // tmp destroyed
+    r_teardown                                         = rss_now();
 
     // Free the OLD-geometry blocks tmp just parked into the old-size reuse
     // list. Nothing pops them again -- this array (and, in a global
@@ -877,17 +877,18 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                     if (k != static_cast<std::size_t>(len)) [[unlikely]]
                     {
                         CHUNK_INVARIANT_FAILED("rechunk refill bulk read: new chunk {} copied {} elements, span is {}",
-                                         new_chunk, k, static_cast<std::size_t>(len));
+                                               new_chunk, k, static_cast<std::size_t>(len));
                     }
                     const auto check_at = [&](ind_type j)
                     {
                         const T ref = static_cast<T>(std::as_const(self)[base + j]);
                         if (std::memcmp(&ref, &buf[static_cast<std::size_t>(j)], sizeof(T)) != 0) [[unlikely]]
                         {
-                            CHUNK_INVARIANT_FAILED("rechunk refill bulk read: new chunk {} element {} (global {}) differs "
-                                             "from the per-element read ({} -> {})",
-                                             new_chunk, static_cast<long long>(j), static_cast<long long>(base + j),
-                                             old_size, new_size);
+                            CHUNK_INVARIANT_FAILED(
+                                "rechunk refill bulk read: new chunk {} element {} (global {}) differs "
+                                "from the per-element read ({} -> {})",
+                                new_chunk, static_cast<long long>(j), static_cast<long long>(base + j), old_size,
+                                new_size);
                         }
                     };
                     for (ind_type j = 0; j < len; j += 64)
@@ -1005,7 +1006,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             //
             // Wired for 2A and Chunk2. The two compress() signatures differ --
             // 2A locates the chunk by (num_chunk, num_tab), Chunk2 takes the
-            // array's inf_array tuple -- but the fold is the same: re-scan and
+            // array's inf_array record -- but the fold is the same: re-scan and
             // clear_int_st with the variant's own state, nothing synthesised.
             // bool registers no second value (get_ind_second_value aborts) and
             // is bit-packed; it never takes this path.
@@ -1053,7 +1054,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                         auto& nch = tmp.chunk_list[static_cast<std::size_t>(new_chunk)];
                         nch.compress(get_thr_rank_fast(), inf_new2,
                                      /*apply=*/true, static_cast<unsigned int>(new_size));
-                        if (!nch.is_cst_val1() && !nch.is_cst_val2(std::get<1>(inf_new2)))
+                        if (!nch.is_cst_val1() && !nch.is_cst_val2(inf_new2.ind))
                         {
                             ++tally.refused;
                         }
@@ -1215,10 +1216,10 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                 // DISJOINT new chunks, so the bypassed gate guards nothing.
                 // Per-thread (thread_local), so it lives inside the region.
                 const typename CompressionManager<T, chunk_type>::FlushReplayGuard rechunk_replay_guard;
-                std::vector<T>                buf(static_cast<std::size_t>(new_size));
-                RebuildTally                  tally; // this thread's fold counts for this slice
-                                                     // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
-                                                     // (internal::rebuild_schedule).
+                std::vector<T> buf(static_cast<std::size_t>(new_size));
+                RebuildTally   tally; // this thread's fold counts for this slice
+                                      // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
+                                      // (internal::rebuild_schedule).
                 const slice_clock::time_point sp_w0 = sp_on ? slice_clock::now() : slice_clock::time_point{};
                 // nowait + the explicit barrier below: the same closing barrier,
                 // with each thread's loop end observable (CHUNK_RECHUNK_TRACE).
@@ -1255,13 +1256,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                 // blocks home, then give back the slabs they just emptied. Only
                 // blocks already released by release_st are touched -- the
                 // source chunks the remaining slices still have to read are
-                // untouched. It used to run between two regions, on the master
-                // alone, around a drain that opened two regions of its own per
-                // list set (and ran serially under OMPT): 5 ms per boundary at
-                // 64 threads, 7 at 128 on Grace, 15 boundaries per re-chunk.
-                // Now the whole team drains (each rank its own list and its own
-                // slabs, as before) and one thread sweeps. n_slices > 1 only in
-                // these builds (see above).
+                // untouched. The whole team drains (each rank its own list and
+                // its own slabs) and one thread sweeps: on the master alone,
+                // between two regions, a boundary costs ~5 ms at 64 threads on
+                // Grace, 15 boundaries per re-chunk. n_slices > 1 only in these
+                // builds (see above).
                 if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
                 {
                     if (sl + 1 < n_slices)
@@ -1354,7 +1353,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                                 set_thread_chunk_size(static_cast<unsigned int>(old_size));
                                 for (std::size_t r = 0; r < recycle_held.size(); ++r)
                                 {
-                                    auto& allocator = chunk_type::get_chunk_allocator(static_cast<int>(r), old_key_refill);
+                                    auto& allocator =
+                                        chunk_type::get_chunk_allocator(static_cast<int>(r), old_key_refill);
                                     if (recycle_held[r] == 0)
                                     {
                                         // A rank no team member holds (a
@@ -1500,7 +1500,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                     // still looked up for a v1 Derived that has no such member.
                     if constexpr (Derived::is_not_bool)
                     {
-                        compressed = compressed || ch.is_cst_val2(std::get<1>(inf_new2));
+                        compressed = compressed || ch.is_cst_val2(inf_new2.ind);
                     }
                 }
                 if (!compressed)

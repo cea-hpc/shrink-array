@@ -36,7 +36,7 @@
 #include "chunk/internal/deferred_op_pool.h"         // DeferredOperationBase
 #include "chunk/internal/deferred_lifecycle_check.h" // DEFERRED_LIFECYCLE sentinels
 #include "chunk/internal/chunk_stats.h"              // increm_chunk_gate_* (the handshake, rare side)
-#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/immortal.h"                 // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
 {
@@ -193,16 +193,17 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
                 if (magic != deferred_lifecycle::op_alive_magic)
                 {
                     CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op magic corrupt/poisoned "
-                                     "(op={}, magic={:#x}, executed={}, enqueue_rank={}, flusher_rank={})",
-                                     static_cast<const void*>(this), magic, executed, this->thread_rank, flusher_rank);
+                                           "(op={}, magic={:#x}, executed={}, enqueue_rank={}, flusher_rank={})",
+                                           static_cast<const void*>(this), magic, executed, this->thread_rank,
+                                           flusher_rank);
                 }
 
                 // (2) This op must not have run before (double-flush guard).
                 if (executed)
                 {
                     CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op executed twice "
-                                     "(op={}, enqueue_rank={}, flusher_rank={})",
-                                     static_cast<const void*>(this), this->thread_rank, flusher_rank);
+                                           "(op={}, enqueue_rank={}, flusher_rank={})",
+                                           static_cast<const void*>(this), this->thread_rank, flusher_rank);
                 }
 
                 // (3) The captured ctx must still be alive. A poisoned or absent
@@ -211,16 +212,16 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
                 if (ctx == nullptr)
                 {
                     CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] op has null ctx at write_body "
-                                     "(op={}, enqueue_rank={}, flusher_rank={})",
-                                     static_cast<const void*>(this), this->thread_rank, flusher_rank);
+                                           "(op={}, enqueue_rank={}, flusher_rank={})",
+                                           static_cast<const void*>(this), this->thread_rank, flusher_rank);
                 }
 
                 if (ctx->magic != deferred_lifecycle::ctx_alive_magic)
                 {
                     CHUNK_INVARIANT_FAILED("[DEFERRED_LIFECYCLE] ctx not alive at write_body "
-                                     "(op={}, ctx={}, ctx_magic={:#x}, enqueue_rank={}, flusher_rank={})",
-                                     static_cast<const void*>(this), static_cast<const void*>(ctx), ctx->magic,
-                                     this->thread_rank, flusher_rank);
+                                           "(op={}, ctx={}, ctx_magic={:#x}, enqueue_rank={}, flusher_rank={})",
+                                           static_cast<const void*>(this), static_cast<const void*>(ctx), ctx->magic,
+                                           this->thread_rank, flusher_rank);
                 }
 
                 executed = true;
@@ -339,10 +340,10 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @brief Size the per-rank tracking structures this policy owns, once.
      * @details Called when the manager of (T, ChunkType) is registered
      *          (AllTypeChunk::register_manager): before the first array of the
-     *          type, and before any fan-out can reach these structures. They
-     *          used to be sized by the constructor of a static, at an
-     *          unspecified point of the static initialisation -- after a
-     *          global array's construction, possibly.
+     *          type, and before any fan-out can reach these structures. Not by
+     *          the constructor of a static: that runs at an unspecified point
+     *          of the static initialisation, possibly after a global array's
+     *          construction.
      */
     static void ensure_initialised()
     {
@@ -504,7 +505,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
             if (FlushReplayState<T, ChunkType>::in_flush_replay) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("record_enqueue_deferred: op enqueued during a flush replay (rank {}, chunk {})",
-                                 thr_rank, static_cast<const void*>(&chunk));
+                                       thr_rank, static_cast<const void*>(&chunk));
             }
         }
         enqueue_lock(thr_rank);
@@ -518,7 +519,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         catch (const std::exception& e)
         {
             CHUNK_INVARIANT_FAILED("record_enqueue_deferred: insert failed: {} (rank {}, chunk {})", e.what(), thr_rank,
-                             static_cast<const void*>(&chunk));
+                                   static_cast<const void*>(&chunk));
         }
         enqueue_unlock(thr_rank);
 
@@ -891,8 +892,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
             if (before - count < 0) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("dec_pending_ops: rank {} count {} -> {} (retired {}): more ops retired than "
-                                 "published -- a double count",
-                                 thr_rank, before, before - count, count);
+                                       "published -- a double count",
+                                       thr_rank, before, before - count, count);
             }
         }
     }
@@ -989,12 +990,15 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /// perform_compression() has not looked at it since". Read by the rank's
     /// own write engine after each write (write_with_optional_lock_impl).
     static inline constinit internal::Immortal<std::vector<PaddedDangerousFlag>> dangerous_lists_per_thread_storage_{};
-    static inline std::vector<PaddedDangerousFlag>& dangerous_lists_per_thread = dangerous_lists_per_thread_storage_.value;
+    static inline std::vector<PaddedDangerousFlag>&                              dangerous_lists_per_thread =
+        dangerous_lists_per_thread_storage_.value;
 
     /// Per rank: the chunks with deferred ops queued on it (what
     /// flush_deferred() walks). Written under the rank's flush lock.
-    static inline constinit internal::Immortal<std::vector<unordered_set_deferred_chunks>> deferred_chunk_per_thread_storage_{};
-    static inline std::vector<unordered_set_deferred_chunks>& deferred_chunk_per_thread = deferred_chunk_per_thread_storage_.value;
+    static inline constinit internal::Immortal<std::vector<unordered_set_deferred_chunks>>
+                                                              deferred_chunk_per_thread_storage_{};
+    static inline std::vector<unordered_set_deferred_chunks>& deferred_chunk_per_thread =
+        deferred_chunk_per_thread_storage_.value;
 
     /// Per-rank pending-op counts, the mechanism that makes cross-thread ops
     /// visible to a reader running on a different rank than the writer.

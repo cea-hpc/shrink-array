@@ -95,8 +95,8 @@ inline void check_no_flush_outside_start([[maybe_unused]] const char* where) noe
         if (WriteCompressSyncPolicy<ProxyType>::any_thread_flushing(0)) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("{}: compresses outside CompressionManager::start() while a deferred-op flush is in "
-                             "progress; a v1 replay storing into this chunk would be lost (proxy_inline.h)",
-                             where);
+                                   "progress; a v1 replay storing into this chunk would be lost (proxy_inline.h)",
+                                   where);
         }
     }
 }

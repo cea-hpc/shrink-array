@@ -43,8 +43,8 @@
  * @see array_chunk_rechunk_hooks_inline.h for the bodies
  */
 
-#include "chunk/config.h"              // build_config::chunk_dynamic
-#include "chunk/chunk_traits.h"        // ArrayChunkTraits
+#include "chunk/config.h"       // build_config::chunk_dynamic
+#include "chunk/chunk_traits.h" // ArrayChunkTraits
 
 namespace shrink_array
 {
@@ -96,7 +96,6 @@ class RechunkHooks<Derived, true>
      *          the registry entry, keeping the two consistent.
      */
     bool rechunk_swap_identity(this Derived& self, Derived& tmp);
-
 };
 
 // ── Static-geometry build: nothing to hook ───────────────────────────────────

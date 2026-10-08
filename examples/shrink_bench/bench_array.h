@@ -119,7 +119,8 @@ inline constexpr complex_double zero_complex = std::complex<double>(0., 0.);
 ///        Array<bool>; the std::vector baseline uses short, because
 ///        std::vector<bool>'s proxy is useless here. The asymmetry predates the
 ///        split -- this alias just names it so BenchArrays can hold a reference.
-using BenchBoolArray = std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, shrink_array::BaselineVector<short>>;
+using BenchBoolArray =
+    std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, shrink_array::BaselineVector<short>>;
 
 /**
  * @brief What main() declares tab_bool_bits as: tab_bool's twin, written with

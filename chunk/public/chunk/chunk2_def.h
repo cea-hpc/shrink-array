@@ -46,4 +46,3 @@ struct Chunk2Def
 };
 
 } // namespace shrink_array
-

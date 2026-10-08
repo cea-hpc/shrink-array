@@ -20,11 +20,11 @@
 
 #if CHUNK_OPT_DO_CHECK
 
-    #include <cmath>    // std::isnan
-    #include <complex>  // std::complex
-    #include <cstdio>   // stderr
-    #include <cstdlib>  // std::abort
-    #include <print>    // std::println
+    #include <cmath>   // std::isnan
+    #include <complex> // std::complex
+    #include <cstdio>  // stderr
+    #include <cstdlib> // std::abort
+    #include <print>   // std::println
 
 namespace shrink_array
 {

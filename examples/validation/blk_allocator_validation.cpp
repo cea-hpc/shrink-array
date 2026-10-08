@@ -99,7 +99,7 @@ void check_sizes()
     bool aligned = true;
     for (const auto& [i, n] : std::views::enumerate(kSizes))
     {
-        void*             p = fast_alloc::BlkAllocator::alloc_block(n);
+        void* p = fast_alloc::BlkAllocator::alloc_block(n);
         if (p == nullptr)
         {
             ok_blk = false;
@@ -210,7 +210,7 @@ void check_parallel()
         {
             const std::size_t n  = kSizes[static_cast<std::size_t>(it) % 20];
             const std::size_t id = static_cast<std::size_t>(it) * 97u;
-            void*             p  = (it % 2) ? fast_alloc::BlkAllocator::alloc_tab(n) : fast_alloc::BlkAllocator::alloc_block(n);
+            void* p = (it % 2) ? fast_alloc::BlkAllocator::alloc_tab(n) : fast_alloc::BlkAllocator::alloc_block(n);
             fill(p, n, id);
             if (!intact(p, n, id))
             {

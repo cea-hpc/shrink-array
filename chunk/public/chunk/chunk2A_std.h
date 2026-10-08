@@ -33,7 +33,7 @@
 #include "chunk/internal/chunk2_base.h"         // Chunk2Base
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_write
 
-#include "chunk/internal/TChunk.h" // TChunk2AComp, VectorTuple4ChunkInt2
+#include "chunk/internal/TChunk.h"   // TChunk2AComp, VectorTuple4ChunkInt2
 #include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 
@@ -253,8 +253,7 @@ class Chunk2AStateQueries
 
     /**
      * @brief The constant a chunk whose values pointer is @p ptr stands for,
-     *        read from the registry: second_value_of_chunk() for a pointer
-     *        the caller already loaded.
+     *        read from the registry, for a pointer the caller already loaded.
      *
      * @pre @p ptr satisfies is_cst_val2_ptr_of().
      * @details Used by ChunkBase::element_at(): a second constant has no
@@ -322,20 +321,6 @@ class Chunk2AStateQueries
     [[nodiscard]] bool is_not_cst_val2(this const Derived& self) noexcept
     {
         return !self.is_cst_val2();
-    }
-
-    /// @brief second_value_from_ptr() on this chunk's own values pointer.
-    /// @pre is_cst_val2().
-    [[nodiscard]] T second_value_of_chunk(this const Derived& self) noexcept
-    {
-        if constexpr (is_not_bool)
-        {
-            return Holder::value_of_id(Holder::id_of_ptr(self.values_load()));
-        }
-        else
-        {
-            return true; // bool: the second value is the only other one
-        }
     }
 };
 

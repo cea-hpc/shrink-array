@@ -172,8 +172,8 @@ void Chunk2A<T>::fill_list_to_compress(vec_tuple_chunkA2p_int2&  ll_compt1,
             // flight, so no mark is needed and its absence proves nothing.
             if (claimed && !Base::steal_marked()) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("fill_list_to_compress on an unclaimed chunk (num_chunk=%d num_tab=%d)", num_chunk,
-                                 num_tab);
+                CHUNK_INVARIANT_FAILED("fill_list_to_compress on an unclaimed chunk (num_chunk=%d num_tab=%d)",
+                                       num_chunk, num_tab);
             }
         }
 
@@ -332,8 +332,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
 
         char* ptr_type_cst = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
 
-        // Long form in both modes: thr is 0 with OpenMP off. clear_int_st(5-arg)
-        // is now available in non-OMP (step 1).
+        // Long form in both modes: thr is 0 with OpenMP off.
         const SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
         chunk_ptr->clear_int_st(0, ptr_type_cst, ptr_second_value, thr);
         chunk_ptr->steal_unmark();
@@ -416,8 +415,8 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
             if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
-                                 "dedup flag -- two passes on one chunk",
-                                 static_cast<const void*>(marked));
+                                       "dedup flag -- two passes on one chunk",
+                                       static_cast<const void*>(marked));
             }
         }
         if (num_chunk >= 0)
@@ -1099,12 +1098,12 @@ void Chunk2AOmpPolicy<T, Derived, false>::clear_st(this Derived&     self,
  * counted here and nowhere else.
  */
 template <typename T, typename Derived, bool Enabled>
-void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(this Derived&     self,
-                                                        int               num_compress_value,
-                                                        char*             ptr_type_cst,
-                                                        SecondValueRef<T> ptr_second_value,
+void Chunk2AOmpPolicy<T, Derived, Enabled>::block_clear(this Derived&        self,
+                                                        int                  num_compress_value,
+                                                        char*                ptr_type_cst,
+                                                        SecondValueRef<T>    ptr_second_value,
                                                         [[maybe_unused]] int thr_rank,
-                                                        T*                cst2_ptr)
+                                                        T*                   cst2_ptr)
 {
     // CHUNK_STATS: one materialised block released by a successful compression.
     // Counted here because block_clear is the single point every variant and

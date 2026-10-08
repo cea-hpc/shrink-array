@@ -31,7 +31,7 @@
  * @see array_chunk_parallel_common_inline.h for the body
  */
 
-#include "chunk/chunk_traits.h"        // ArrayChunkTraits
+#include "chunk/chunk_traits.h" // ArrayChunkTraits
 
 namespace shrink_array
 {

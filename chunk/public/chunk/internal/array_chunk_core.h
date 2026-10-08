@@ -176,10 +176,10 @@ template <typename ChunkType>
 class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
 {
   public:
-    using chunk_type   = ChunkType;                            ///< Chunk type held in chunk_list.
+    using chunk_type      = ChunkType;                                            ///< Chunk type held in chunk_list.
     using chunk_list_type = std::vector<chunk_type, NoInitAllocator<chunk_type>>; ///< chunk_list's type.
-    using proxy_type   = ChunkTraits<ChunkType>::proxy_type;   ///< Proxy type owning the per-T registry.
-    using manager_type = ChunkTraits<ChunkType>::manager_type; ///< Per-T manager owning the allocators.
+    using proxy_type      = ChunkTraits<ChunkType>::proxy_type;   ///< Proxy type owning the per-T registry.
+    using manager_type    = ChunkTraits<ChunkType>::manager_type; ///< Per-T manager owning the allocators.
 
     /// @brief The chunk geometry: elements per chunk.
     [[nodiscard]] unsigned int chunk_size() const noexcept
@@ -370,8 +370,8 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
      */
     [[no_unique_address]] ActiveSizePolicy size_policy_{};
 
-    chunk_list_type         chunk_list;  ///< The chunks, in index order.
-    int                     nb_chunk{0}; ///< Number of live chunks in `chunk_list`.
+    chunk_list_type chunk_list;  ///< The chunks, in index order.
+    int             nb_chunk{0}; ///< Number of live chunks in `chunk_list`.
 
     int num_tab{0}; ///< Identity of this array in the per-type registries.
     /// @brief Number of arrays of this element type created so far (source of

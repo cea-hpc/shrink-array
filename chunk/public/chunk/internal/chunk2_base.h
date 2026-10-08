@@ -145,8 +145,8 @@ class Chunk2Base : public ChunkBase<T, Derived>
     /// @param ind_opt Chunk2's second-value slot index; empty for Chunk2A and
     ///        bool, whose second value is not table-indexed.
     void check_not_constant_before_clear(this const Derived& self,
-                                         int                  num_compress_value,
-                                         std::optional<int>   ind_opt) noexcept
+                                         int                 num_compress_value,
+                                         std::optional<int>  ind_opt) noexcept
     {
         if constexpr (!build_config::any_check)
         {
@@ -231,11 +231,11 @@ class Chunk2Base : public ChunkBase<T, Derived>
     /// @param ptr_type_cst Constant type pointer (Chunk2A only)
     /// @param ptr_second_value Second value pointer (Chunk2A only)
     template <typename IndexType>
-    void clear_impl(this Derived&       self,
-                    IndexType           index_opt,
-                    int                 thr_rank,
-                    char*               ptr_type_cst     = nullptr,
-                    SecondValueRef<T>   ptr_second_value = {});
+    void clear_impl(this Derived&     self,
+                    IndexType         index_opt,
+                    int               thr_rank,
+                    char*             ptr_type_cst     = nullptr,
+                    SecondValueRef<T> ptr_second_value = {});
 
     /**
      * @brief Ensures the provided pointer does not target shared constant memory.

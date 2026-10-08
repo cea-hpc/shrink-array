@@ -41,7 +41,7 @@ void RechunkHooks2<Derived, true>::rechunk_drop_candidates(this Derived& self)
     //
     // COMPRESS them first -- see RechunkHooks2A: a candidate dropped here
     // would stay materialised through the rebuild and never be re-queued.
-    // Chunk2's compress() takes the array's (second_value, ind, num_tab) tuple;
+    // Chunk2's compress() takes the array's (second_value, ind, num_tab) record;
     // bool has no second value and is left to the drop.
     if constexpr (chunk_config::use_fast_block_compression)
     {

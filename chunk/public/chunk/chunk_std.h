@@ -31,7 +31,7 @@
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_write (CHUNK_STATS)
 #include "chunk/internal/conditional_counter.h" // ConditionalCounter
 #include "chunk/internal/proxy.h"               // Proxy<T>
-#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/immortal.h"            // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
 {
@@ -319,8 +319,8 @@ class ChunkOmpPolicy : public ChunkBase<T, Derived>
         T* expected = old;
         T* new_ptr  = Base::get_cst_val1();
 
-        if (!self.values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel, std::memory_order_acquire))
-            [[unlikely]]
+        if (!self.values.compare_exchange_strong(expected, new_ptr, std::memory_order_acq_rel,
+                                                 std::memory_order_acquire)) [[unlikely]]
         {
             return nullptr;
         }

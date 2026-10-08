@@ -36,4 +36,3 @@ constexpr size_t log2int(size_t value) noexcept
 }
 
 } // namespace shrink_array
-

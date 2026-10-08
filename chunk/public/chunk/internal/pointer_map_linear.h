@@ -25,7 +25,7 @@
  *          by walking a flat sequence of (key, payload) pairs. Their erase(),
  *          exists(), size(), for_each_key() and swap_entries() are the same
  *          code. Only the payload differs: a table number for the first, a
- *          (second_value, ind, num_tab) tuple for the second.
+ *          (second_value, ind, num_tab) record for the second.
  *
  *          Everything that is a plain scan lives here once. Each registry keeps
  *          what is specific to it: v1 its table-number accessors, v2 its whole

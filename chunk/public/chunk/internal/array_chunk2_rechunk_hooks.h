@@ -39,9 +39,9 @@
  * @see array_chunk2_rechunk_hooks_inline.h for the bodies
  */
 
-#include "chunk/config.h"              // build_config::chunk_dynamic
-#include "chunk/chunk_traits.h"        // ArrayChunkTraits
-#include "chunk/internal/in_t.h"       // in_t<T>: the captured state
+#include "chunk/config.h"        // build_config::chunk_dynamic
+#include "chunk/chunk_traits.h"  // ArrayChunkTraits
+#include "chunk/internal/in_t.h" // in_t<T>: the captured state
 
 namespace shrink_array
 {
@@ -82,7 +82,7 @@ class RechunkHooks2<Derived, true>
 
     /// @brief Capture the array-level state that must survive the rechunk.
     /// @return this array's second value
-    value_type rechunk_capture_state(this const Derived& self);
+    [[nodiscard]] value_type rechunk_capture_state(this const Derived& self);
 
     /**
      * @brief Re-declare the captured state on the freshly built array.
@@ -106,7 +106,6 @@ class RechunkHooks2<Derived, true>
      *          needs -- see ArrayChunk2's destructor, second warning.
      */
     void rechunk_reown_after_swap(this Derived& self, Derived& tmp, in_t<value_type> state);
-
 };
 
 // ── Static-geometry build: nothing to hook ───────────────────────────────────
@@ -129,7 +128,7 @@ class RechunkHooks2<Derived, false>
     /** @brief No-op: the geometry is fixed at compile time. */
     void rechunk_drain_reuse_list(unsigned int /*new_size*/) noexcept {}
     /** @brief No state to carry: there is no re-chunk to carry it across. */
-    value_type rechunk_capture_state() const
+    [[nodiscard]] value_type rechunk_capture_state() const
     {
         return value_type{};
     }

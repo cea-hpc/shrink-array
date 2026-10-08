@@ -231,9 +231,9 @@ void bench_phase_compute(BenchArrays&            bench_arr,
             }
         }
 
-        // No finalize_barrier_phase_g() after either nowait loop: that hook is
-        // a barrier plus a flush of the deferred writes, i.e. exactly what the
-        // OMPT build does at an implicit barrier -- and a nowait loop has none.
+        // No barrier plus flush of the deferred writes (finalize_barrier_phase)
+        // after either nowait loop: that is exactly what the OMPT build does at
+        // an implicit barrier -- and a nowait loop has none.
         // Both builds now flush these two loops' writes at the next loop's
         // barrier, which is before anything reads them.
         //
@@ -283,8 +283,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
         // write of its own that is still deferred is what the library's read
         // gate resolves (DeferredReadGate: a read of a chunk with pending ops
         // drains them first). No cross-thread dependency, no barrier, and no
-        // finalize_barrier_phase_g() after it -- same reasoning as the two
-        // nowait loops above.
+        // flush after it -- same reasoning as the two nowait loops above.
         if (k % 4 != 0)
         {
             // To simulate behavior of a code where we read more than we write

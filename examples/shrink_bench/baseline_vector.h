@@ -98,14 +98,17 @@ class BaselineVector : public std::vector<T, default_init_allocator<T>>
     using base = std::vector<T, default_init_allocator<T>>;
 
   public:
-    using typename base::size_type;
     using base::base;
     using base::resize;
+    using typename base::size_type;
 
     BaselineVector() = default;
 
     /// @brief @p n elements reading T{}, zeroed in parallel.
-    explicit BaselineVector(size_type n) : base(n) { zero_from(0); }
+    explicit BaselineVector(size_type n) : base(n)
+    {
+        zero_from(0);
+    }
 
     /// @brief Resize to @p n; new elements read T{}, zeroed in parallel.
     void resize(size_type n)

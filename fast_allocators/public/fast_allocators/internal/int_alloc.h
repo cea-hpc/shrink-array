@@ -72,4 +72,3 @@ inline void* int_alloc_align(size_t size)
 }
 
 } // namespace fast_alloc
-

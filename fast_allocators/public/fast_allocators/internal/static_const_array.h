@@ -62,7 +62,7 @@
 #include <tuple>       // std::tuple, std::get, std::apply (the ladder)
 #include <type_traits> // std::is_same_v (allocator8() alias check)
 
-#include "fast_allocators/internal/svalloc.h"   // fast_alloc::alignment
+#include "fast_allocators/internal/svalloc.h" // fast_alloc::alignment
 #include "fast_allocators/internal/pmp_alloc.h" // FAST_ALLOC_PMP_MAX_THREADS / FAST_ALLOC_PMP_THREAD_RANK / FAST_ALLOC_PMP_IN_PARALLEL_REGION
 
 #include "fast_allocators/internal/int_alloc.h"                 // int_alloc, int_free, int_alloc_align, int_free_align
@@ -378,7 +378,8 @@ struct BlkAllocator : public StaticConstArray
             // Compared in size_t BEFORE narrowing: getBlockAlloc() takes an
             // unsigned int, and 4 GiB + 64 would reach it as 64 -- a 64-byte
             // block for a 4 GiB request.
-            void* ptr = size <= FAST_ALLOC_MAX_CONST_BLOCK_SIZE ? getBlockAlloc(static_cast<unsigned int>(size)) : nullptr;
+            void* ptr =
+                size <= FAST_ALLOC_MAX_CONST_BLOCK_SIZE ? getBlockAlloc(static_cast<unsigned int>(size)) : nullptr;
 
             // getBlockAlloc() returns null for a size past the largest bucket;
             // that is not a failure, it is "too big for the ladder".
@@ -538,7 +539,8 @@ class FixedSizeAllocator : private StaticConstArray
             }
 
             // size_t test before narrowing, as BlkAllocator::alloc_block().
-            void* ptr = size <= FAST_ALLOC_MAX_CONST_BLOCK_SIZE ? getBlockAlloc(static_cast<unsigned int>(size)) : nullptr;
+            void* ptr =
+                size <= FAST_ALLOC_MAX_CONST_BLOCK_SIZE ? getBlockAlloc(static_cast<unsigned int>(size)) : nullptr;
 
             if (!ptr)
             {

@@ -105,7 +105,6 @@ class FastBlockSupport<Derived, true>
      *          when called from outside a parallel region.
      */
     void make_block_compression(this Derived& self);
-
 };
 
 // ── Any other mode: no candidate queue to drain ──────────────────────────────

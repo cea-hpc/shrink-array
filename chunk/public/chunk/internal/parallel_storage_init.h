@@ -44,7 +44,13 @@
  *          wrong for an array built inside a region (an array created by each
  *          thread of a team gets 1/N of its chunks initialised; one created
  *          under `omp single` blocks on a barrier the others never reach).
- *          Same rule as chunk_array_new::init_chunks.
+ *          The rule -- use_own_team(): kParallelInitMinChunks or more chunks,
+ *          outside a region, two threads or more -- is the library's only one:
+ *          chunk_array_new::init_chunks (the chunks' operator new[]) is a
+ *          wrapper of for_each_chunk(). It was a copy once, and the two had
+ *          drifted: `>=` against `>`, and the array paths passing their own
+ *          literals (500, and 16384 for Chunk2A, undocumented) rather than
+ *          the constant.
  */
 
 #include <cstddef> // std::size_t
@@ -62,6 +68,12 @@ inline constexpr std::size_t kFirstTouchMinBytes = std::size_t{2} << 20U;
 /// @brief Page stride of the first touch (the smallest page; a huge page
 ///        is touched several times, harmlessly).
 inline constexpr std::size_t kTouchStride = 4096;
+
+/// @brief Chunk count from which a per-chunk initialisation takes a team of
+///        its own (outside a region): below it, the calling thread is faster
+///        than a team's start-up. Every per-chunk init loop of the library
+///        goes through for_each_chunk(), so this is THE threshold.
+inline constexpr int kParallelInitMinChunks = 500;
 
 /// @brief May this call open a team of its own? Outside a parallel region,
 ///        with at least two threads available.
@@ -113,20 +125,25 @@ void reserve_first_touched(Vec& v, std::size_t n)
     }
 }
 
+/// @brief Does a loop over @p n chunks take a team of its own? At least
+///        kParallelInitMinChunks of them, and can_open_team().
+inline bool use_own_team(long n) noexcept
+{
+    return n >= kParallelInitMinChunks && can_open_team();
+}
+
 /**
  * @brief Run @p init(i) for every chunk index i in [0, @p n): on a team of its
- *        own when outside a region and @p n exceeds @p min_parallel, on the
- *        calling thread otherwise.
- * @param n            chunk count
- * @param min_parallel chunk count up to which the loop stays serial
- * @param init         callable `void(int)`; iterations must be independent
+ *        own when use_own_team(@p n), on the calling thread otherwise.
+ * @param n    chunk count
+ * @param init callable `void(int)`; iterations must be independent
  */
 template <typename Init>
-void for_each_chunk(int n, int min_parallel, Init&& init)
+void for_each_chunk(int n, Init&& init)
 {
     if constexpr (build_config::use_openmp)
     {
-        if (n > min_parallel && can_open_team())
+        if (use_own_team(n))
         {
 #pragma omp parallel for schedule(static)
             for (int i = 0; i < n; ++i)

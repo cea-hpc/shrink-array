@@ -55,14 +55,13 @@ const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_arr
             // ind and num_tab only: ind maps one-to-one to the value, and a
             // value compare would raise a false alarm on a NaN second value.
             const inf_array_t reg = Derived::get_info_second_value(self.get_ptr_on_array());
-            if (std::get<1>(reg) != std::get<1>(*self.inf_array_src_) ||
-                std::get<2>(reg) != std::get<2>(*self.inf_array_src_))
+            if (reg.ind != self.inf_array_src_->ind || reg.num_tab != self.inf_array_src_->num_tab)
             {
                 CHUNK_INVARIANT_FAILED(
                     "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
-                    std::get<1>(*self.inf_array_src_), std::get<2>(*self.inf_array_src_), std::get<1>(reg),
-                    std::get<2>(reg), static_cast<const void*>(self.get_ptr_on_array()));
+                    self.inf_array_src_->ind, self.inf_array_src_->num_tab, reg.ind, reg.num_tab,
+                    static_cast<const void*>(self.get_ptr_on_array()));
             }
         }
     }
@@ -90,14 +89,13 @@ const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_arr
             // ind and num_tab only: ind maps one-to-one to the value, and a
             // value compare would raise a false alarm on a NaN second value.
             const inf_array_t reg = Derived::get_info_second_value(self.get_ptr_on_array());
-            if (std::get<1>(reg) != std::get<1>(*self.inf_array_src_) ||
-                std::get<2>(reg) != std::get<2>(*self.inf_array_src_))
+            if (reg.ind != self.inf_array_src_->ind || reg.num_tab != self.inf_array_src_->num_tab)
             {
                 CHUNK_INVARIANT_FAILED(
                     "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
-                    std::get<1>(*self.inf_array_src_), std::get<2>(*self.inf_array_src_), std::get<1>(reg),
-                    std::get<2>(reg), static_cast<const void*>(self.get_ptr_on_array()));
+                    self.inf_array_src_->ind, self.inf_array_src_->num_tab, reg.ind, reg.num_tab,
+                    static_cast<const void*>(self.get_ptr_on_array()));
             }
         }
     }
@@ -116,31 +114,31 @@ ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array(this 
 }
 
 // Every write runs one of these. They take the fields from the armed mirror --
-// memory written long before -- never from a copy just stored. The former
-//     inf_array = load_inf_array(); second_value = std::get<0>(inf_array); ...
-// returned the 16-byte tuple through a stack temporary (a q-register store)
-// and read it straight back with 8- and 4-byte loads: a store the core cannot
-// forward to narrower loads, so each write waited for it to reach the cache.
-// On Grace (Neoverse V2), 64 threads, variant_compare --constants 1: 38.6 % of
-// Proxy2<double>::assign_impl's samples sat right behind those loads, and
-// Chunk2's constant-write pass ran 7-12 % behind Chunk2A's (whose write path
-// has no such tuple). Unarmed proxies (replay, *_from_key) keep the registry
-// path: rare, and a registry lookup costs more than the stall anyway.
+// memory written long before -- never from a copy just stored. Not
+//     inf_array = load_inf_array(); second_value = inf_array.second_value; ...
+// which returns the 16-byte record through a stack temporary (a q-register
+// store) and reads it straight back with 8- and 4-byte loads: a store the core
+// cannot forward to narrower loads, so each write waits for it to reach the
+// cache: on Grace (Neoverse V2), 64 threads, 38.6 % of
+// Proxy2<double>::assign_impl's samples behind those loads, and Chunk2's
+// constant-write pass 7-12 % behind Chunk2A's. Unarmed proxies (replay,
+// *_from_key) keep the registry path: rare, and a registry lookup costs more
+// than the stall anyway.
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_info_on_chunk(this Derived& self)
 {
     if (const inf_array_t* src = self.armed_inf_array()) [[likely]]
     {
         static_cast<ProxySpec2&>(self).inf_array = *src;
-        self.second_value                        = std::get<0>(*src);
-        self.ind                                 = std::get<1>(*src);
-        self.set_num_tab(std::get<2>(*src)); // what set_num_tab() would read back from inf_array
+        self.second_value                        = src->second_value;
+        self.ind                                 = src->ind;
+        self.set_num_tab(src->num_tab); // what set_num_tab() would read back from inf_array
     }
     else
     {
         static_cast<ProxySpec2&>(self).inf_array = Derived::get_info_second_value(self.get_ptr_on_array());
-        self.second_value                        = std::get<0>(static_cast<ProxySpec2&>(self).inf_array);
-        self.ind                                 = std::get<1>(static_cast<ProxySpec2&>(self).inf_array);
+        self.second_value                        = static_cast<ProxySpec2&>(self).inf_array.second_value;
+        self.ind                                 = static_cast<ProxySpec2&>(self).inf_array.ind;
         self.set_num_tab();
     }
 
@@ -156,21 +154,21 @@ void ProxySpec2<T, Derived>::set_info_second_value_ind(this Derived& self)
     if (const inf_array_t* src = self.armed_inf_array()) [[likely]]
     {
         static_cast<ProxySpec2&>(self).inf_array = *src;
-        self.second_value                        = std::get<0>(*src);
-        self.ind                                 = std::get<1>(*src);
+        self.second_value                        = src->second_value;
+        self.ind                                 = src->ind;
         return;
     }
     static_cast<ProxySpec2&>(self).inf_array = Derived::get_info_second_value(self.get_ptr_on_array());
-    self.second_value                        = std::get<0>(static_cast<ProxySpec2&>(self).inf_array);
-    self.ind                                 = std::get<1>(static_cast<ProxySpec2&>(self).inf_array);
+    self.second_value                        = static_cast<ProxySpec2&>(self).inf_array.second_value;
+    self.ind                                 = static_cast<ProxySpec2&>(self).inf_array.ind;
 }
 
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_info_second_value_ind_from_key(const void* key)
 {
     inf_array    = Derived::get_info_second_value(key);
-    second_value = std::get<0>(inf_array);
-    ind          = std::get<1>(inf_array);
+    second_value = inf_array.second_value;
+    ind          = inf_array.ind;
 }
 
 template <typename T, typename Derived>
@@ -180,7 +178,7 @@ void ProxySpec2<T, Derived>::set_info_on_chunk(this Derived& self)
     if (const inf_array_t* src = self.armed_inf_array()) [[likely]]
     {
         static_cast<ProxySpec2&>(self).inf_array = *src;
-        self.set_num_tab(std::get<2>(*src)); // not read back from inf_array (see above)
+        self.set_num_tab(src->num_tab); // not read back from inf_array (see above)
     }
     else
     {
@@ -552,16 +550,16 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
                     if (is_cst1_loc)
                     {
                         CHUNK_INVARIANT_FAILED("[deferred write_body] chunk still cst_val1 after create_value "
-                                         "(chunk={}, num={})",
-                                         static_cast<const void*>(&chunk), num);
+                                               "(chunk={}, num={})",
+                                               static_cast<const void*>(&chunk), num);
                     }
 
                     const bool is_cst2_loc = proxy.is_cst_val2();
                     if (is_cst2_loc)
                     {
                         CHUNK_INVARIANT_FAILED("[deferred write_body] chunk still cst_val2 after create_value "
-                                         "(chunk={}, num={})",
-                                         static_cast<const void*>(&chunk), num);
+                                               "(chunk={}, num={})",
+                                               static_cast<const void*>(&chunk), num);
                     }
                 }
 

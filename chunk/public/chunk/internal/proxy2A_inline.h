@@ -290,8 +290,8 @@ void Proxy2A<T>::resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk)
             if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
-                                 "flag row is reallocated ({} -> {} chunks)",
-                                 num_tab, j, nb_chunk_old, nb_chunk);
+                                       "flag row is reallocated ({} -> {} chunks)",
+                                       num_tab, j, nb_chunk_old, nb_chunk);
             }
         }
     }
@@ -783,8 +783,8 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                         if (std::cmp_greater_equal(num, csz_guard))
                         {
                             CHUNK_INVARIANT_FAILED("[deferred2A write] num OUT OF RANGE "
-                                             "(num={}, chunk_size={}, chunk={})",
-                                             num, csz_guard, static_cast<const void*>(&chunk));
+                                                   "(num={}, chunk_size={}, chunk={})",
+                                                   num, csz_guard, static_cast<const void*>(&chunk));
                         }
 
                         // Check-build guard: garbage-pointer check on the write target.
@@ -803,12 +803,12 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                             if (++retry_count > internal::kReplayRetryCap)
                             {
                                 CHUNK_INVARIANT_FAILED("[deferred2A write] chunk keeps reverting to cst before "
-                                                 "store (chunk={}, num={}, values_before={}, cur_cst_val1={}, "
-                                                 "cur_values={})",
-                                                 static_cast<const void*>(&chunk), num,
-                                                 static_cast<const void*>(values_before),
-                                                 static_cast<const void*>(chunk.get_cst_val1()),
-                                                 static_cast<const void*>(chunk.values_load()));
+                                                       "store (chunk={}, num={}, values_before={}, cur_cst_val1={}, "
+                                                       "cur_values={})",
+                                                       static_cast<const void*>(&chunk), num,
+                                                       static_cast<const void*>(values_before),
+                                                       static_cast<const void*>(chunk.get_cst_val1()),
+                                                       static_cast<const void*>(chunk.values_load()));
                             }
                             continue;
                         }
@@ -833,18 +833,18 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                         if (proxy.is_cst_val1())
                         {
                             CHUNK_INVARIANT_FAILED("lbd_equal_asynch: is_cst_val1 TRUE after successful store! "
-                                             "chunk={} num={} values_before={} values_after={}",
-                                             static_cast<const void*>(&chunk), num,
-                                             static_cast<const void*>(values_before),
-                                             static_cast<const void*>(values_after));
+                                                   "chunk={} num={} values_before={} values_after={}",
+                                                   static_cast<const void*>(&chunk), num,
+                                                   static_cast<const void*>(values_before),
+                                                   static_cast<const void*>(values_after));
                         }
                         if (proxy.is_cst_val2())
                         {
                             CHUNK_INVARIANT_FAILED("lbd_equal_asynch: is_cst_val2 TRUE after successful store! "
-                                             "chunk={} num={} values_before={} values_after={}",
-                                             static_cast<const void*>(&chunk), num,
-                                             static_cast<const void*>(values_before),
-                                             static_cast<const void*>(values_after));
+                                                   "chunk={} num={} values_before={} values_after={}",
+                                                   static_cast<const void*>(&chunk), num,
+                                                   static_cast<const void*>(values_before),
+                                                   static_cast<const void*>(values_after));
                         }
                         // raw-read: deferred replay, after materialisation -- flushes exclude the stealers
                         const in_t<T> readback = values_after[num];
@@ -852,8 +852,8 @@ T Proxy2A<T>::assign_impl(in_t<U> v) noexcept
                         if (readback != expected)
                         {
                             CHUNK_INVARIANT_FAILED("lbd_equal_asynch: readback mismatch after store! "
-                                             "chunk={} num={} expected={} readback={}",
-                                             static_cast<const void*>(&chunk), num, expected, readback);
+                                                   "chunk={} num={} expected={} readback={}",
+                                                   static_cast<const void*>(&chunk), num, expected, readback);
                         }
                     }
 
@@ -1301,14 +1301,14 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
             if (proxy.is_cst_val1())
             {
                 CHUNK_INVARIANT_FAILED("execute_inplace_operation_async: is_cst_val1 TRUE after store! "
-                                 "chunk={} num={}",
-                                 static_cast<const void*>(&ctx->chunk), ctx->num);
+                                       "chunk={} num={}",
+                                       static_cast<const void*>(&ctx->chunk), ctx->num);
             }
             if (proxy.is_cst_val2())
             {
                 CHUNK_INVARIANT_FAILED("execute_inplace_operation_async: is_cst_val2 TRUE after store! "
-                                 "chunk={} num={}",
-                                 static_cast<const void*>(&ctx->chunk), ctx->num);
+                                       "chunk={} num={}",
+                                       static_cast<const void*>(&ctx->chunk), ctx->num);
             }
         }
 

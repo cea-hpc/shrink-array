@@ -32,8 +32,8 @@
  * @see array_chunk2A_rechunk_hooks_inline.h for the bodies
  */
 
-#include "chunk/config.h"              // build_config::chunk_dynamic
-#include "chunk/chunk_traits.h"        // ArrayChunkTraits
+#include "chunk/config.h"       // build_config::chunk_dynamic
+#include "chunk/chunk_traits.h" // ArrayChunkTraits
 
 namespace shrink_array
 {
@@ -79,7 +79,6 @@ class RechunkHooks2A<Derived, true>
      *       address keeps pointing at its own metadata.
      */
     bool rechunk_swap_identity(this Derived& self, Derived& tmp);
-
 };
 
 // ── Static-geometry build: nothing to hook ───────────────────────────────────

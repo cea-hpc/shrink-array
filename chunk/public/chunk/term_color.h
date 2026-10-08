@@ -61,4 +61,3 @@ inline const TermColor tc = []() noexcept
 }();
 
 } // namespace shrink_array
-

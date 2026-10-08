@@ -71,7 +71,7 @@
 #include "chunk/internal/env_parse.h"         // env_number (CHUNK_CST_VAL2_ID_LIMIT)
 #include "chunk/internal/in_t.h"              // in_t<T>: the value parameters
 #include "chunk/config.h"                     // build_config::use_mm_protect
-#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/internal/alloc_config.h" // alloc_config::thp_advise (CHUNK_THP)
 #endif
@@ -727,7 +727,7 @@ class GlobalVecHolder
 #endif
 
     static constexpr size_t INDEX_CAP       = 1uz << chunk_cst_val2_index_loc; ///< Initial capacity.
-    static constexpr int    INDEX_MAX_PROBE = 64; ///< Bounded; giving up means fallback.
+    static constexpr int    INDEX_MAX_PROBE = 64;                              ///< Bounded; giving up means fallback.
 
     /// @brief Reserve the region. Idempotent; called by init().
     static void region_init()

@@ -38,4 +38,3 @@ void TCSlab<FreeLinks::InPayload>::operator delete(void* ptr)
 #endif
 
 } // namespace fast_alloc
-

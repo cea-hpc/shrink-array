@@ -272,7 +272,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
             catch (const std::exception& e)
             {
                 CHUNK_INVARIANT_FAILED("flush_deferred: re-insert failed: {} (rank {}, chunk {})", e.what(), thr,
-                                 static_cast<const void*>(chunk));
+                                       static_cast<const void*>(chunk));
             }
         }
     }
@@ -300,7 +300,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
             if (it == thread_map.end() || !it->second || it->second->empty())
             {
                 CHUNK_INVARIANT_FAILED("flush_deferred(thr={}): chunk {} left in the set with no op queued", thr,
-                                 static_cast<const void*>(c));
+                                       static_cast<const void*>(c));
             }
         }
     }
@@ -326,7 +326,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
 
     const uint32_t payload = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(chunk) >> 4U) & 0x00FFFFFFU;
 
-    // ─── Cross-flush mutual exclusion is now PER RANK ─────────────────────
+    // ─── Cross-flush mutual exclusion is PER RANK ─────────────────────────
     // The double-free guard (two flushers draining the same arr[r][chunk] and
     // both destroy()-ing an op) only needs mutual exclusion on the rank whose
     // map is being drained. We therefore take xflush_lock_rank[r] INSIDE the
@@ -427,14 +427,14 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
                     if (raw == nullptr || addr < 0x1000 || (addr & 0x7U) != 0)
                     {
                         CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] bad op_ptr in op_map: num={} op={} rank={}", num,
-                                         static_cast<const void*>(raw), r);
+                                               static_cast<const void*>(raw), r);
                     }
                     const std::uintptr_t vptr = *reinterpret_cast<const std::uintptr_t*>(raw);
                     if (vptr < 0x1000)
                     {
                         CHUNK_INVARIANT_FAILED("[FLUSH_PROBE xrank] op has null/garbage vptr (recycled under map?): "
-                                         "num={} op={} vptr={:#x} rank={}",
-                                         num, static_cast<const void*>(raw), vptr, r);
+                                               "num={} op={} vptr={:#x} rank={}",
+                                               num, static_cast<const void*>(raw), vptr, r);
                     }
                 }
 
@@ -486,7 +486,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
             catch (const std::exception& e)
             {
                 CHUNK_INVARIANT_FAILED("flush_chunk_all_ranks: erase failed: {} (rank {}, chunk {})", e.what(), r,
-                                 static_cast<const void*>(chunk));
+                                       static_cast<const void*>(chunk));
             }
         }
     }
@@ -566,7 +566,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
     catch (const std::exception& e)
     {
         CHUNK_INVARIANT_FAILED("erase_own_rank_op: erase failed: {} (rank {}, chunk {}, offset {})", e.what(), thr,
-                         static_cast<const void*>(chunk), num);
+                               static_cast<const void*>(chunk), num);
     }
 
     // Exact bookkeeping of the flush erase path.
@@ -587,7 +587,7 @@ void CompressionManagerOmpPolicy<T, ChunkType, Enabled>::erase_own_rank_op(int t
         catch (const std::exception& e)
         {
             CHUNK_INVARIANT_FAILED("erase_own_rank_op: chunk erase failed: {} (rank {}, chunk {})", e.what(), thr,
-                             static_cast<const void*>(chunk));
+                                   static_cast<const void*>(chunk));
         }
         if (thread_map.empty())
         {

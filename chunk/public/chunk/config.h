@@ -439,7 +439,7 @@ struct OMPTcc<true>
     /// @details update(false) suspends the callbacks, update(true) resumes
     ///          them; they stay suspended while ANY thread holds a suspension.
     ///          The resume never takes the count below zero, so an extra
-    ///          update(true) is a no-op, as it was with the former flag.
+    ///          update(true) is a no-op.
     ///          relaxed: a switch, publishing no data.
     static void update(bool state) noexcept
     {
@@ -449,7 +449,8 @@ struct OMPTcc<true>
             return;
         }
         int cur = ::shrink_array::g_ompt_suspended.load(std::memory_order_relaxed);
-        while (cur > 0 && !::shrink_array::g_ompt_suspended.compare_exchange_weak(cur, cur - 1, std::memory_order_relaxed))
+        while (cur > 0 &&
+               !::shrink_array::g_ompt_suspended.compare_exchange_weak(cur, cur - 1, std::memory_order_relaxed))
         {
         }
     }

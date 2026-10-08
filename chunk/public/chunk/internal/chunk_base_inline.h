@@ -162,16 +162,16 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
     auto* chunk_ptr = static_cast<Derived*>(const_cast<ChunkDeferredOpsPolicy*>(this));
 
     // ── Enqueue vs cross-thread flush: PER-RANK shard lock ────────────────
-    // The former Dekker handshake made every enqueue back off on the GLOBAL
-    // num_thread_flushing counter: while ANY flush was in progress anywhere,
-    // NO writer in the process could enqueue. Under read-heavy phases flushes
-    // are quasi-permanent, so writers piled into a naked spin (the 89% x86
-    // hotspot, 93s @128T) while pending ops could not drain — a convoy. The
-    // actual requirement is pairwise (flusher of rank r <-> writer of rank r):
-    // exactly what xflush_lock_rank[thr_rank] provides. Uncontended cost: one
-    // CAS + one release store, cheaper than the two seq_cst stores + fence +
-    // global load of the Dekker. The lock is owner-recursive because a drain's
-    // write_body may re-enter here (re-enqueue on the own rank).
+    // Not a back-off on a GLOBAL flush counter: with it, NO writer in the
+    // process can enqueue while ANY flush is in progress anywhere, and under
+    // read-heavy phases flushes are quasi-permanent -- writers pile into a
+    // naked spin while pending ops cannot drain, a convoy (89% of the x86
+    // profile, 93 s at 128 threads). The requirement is pairwise (flusher of
+    // rank r <-> writer of rank r): exactly what xflush_lock_rank[thr_rank]
+    // provides. Uncontended cost: one CAS + one release store, cheaper than
+    // two seq_cst stores + a fence + a global load. The lock is owner-recursive
+    // because a drain's write_body may re-enter here (re-enqueue on the own
+    // rank).
     //
     // begin_write/end_write are KEPT: they are the writer half of the
     // compressor-yield protocol (start() spins on any_thread_writing), which
@@ -231,7 +231,7 @@ void ChunkDeferredOpsPolicy<T, Derived, true>::to_be_queued_for_deferred_process
     catch (const std::exception& e)
     {
         CHUNK_INVARIANT_FAILED("deferred enqueue failed: {} (rank {}, chunk {}, offset {})", e.what(), thr_rank,
-                         static_cast<const void*>(chunk_ptr), num);
+                               static_cast<const void*>(chunk_ptr), num);
     }
 
     Policy::end_write(thr_rank);

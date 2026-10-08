@@ -163,6 +163,7 @@ template <typename... Args>
 // --- The Frontend Macro ---
 // This is the ONLY way to capture source_location automatically
 // while keeping std::format_string compile-time checks.
-#define CHUNK_INVARIANT_FAILED(fmt, ...) shrink_array::invariant_failed(std::source_location::current(), fmt, ##__VA_ARGS__)
+#define CHUNK_INVARIANT_FAILED(fmt, ...) \
+    shrink_array::invariant_failed(std::source_location::current(), fmt, ##__VA_ARGS__)
 
 } // namespace shrink_array

@@ -540,7 +540,7 @@ struct ChunkSizeAdvisor
             const int64_t sub_per_chunk = int64_t{1} << k;
             const int64_t scanned_subs  = scanned * sub_per_chunk;
             const double  frac_cst = scanned_subs > 0 ? static_cast<double>(fine_cst[static_cast<std::size_t>(k)]) /
-                                                            static_cast<double>(scanned_subs)
+                                                           static_cast<double>(scanned_subs)
                                                       : 0.;
             const int64_t nchunks  = nc * sub_per_chunk; // cst chunks split into cst children
             const auto    mat      = static_cast<int64_t>(

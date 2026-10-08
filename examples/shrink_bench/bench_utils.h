@@ -81,8 +81,8 @@ struct is_vector<std::vector<T, Alloc>> : public std::true_type
 
 /// @brief A class derived from std::vector (the baseline's BaselineVector) is a vector.
 template <typename T>
-    requires(std::is_base_of_v<std::vector<typename T::value_type, typename T::allocator_type>, T>
-             && !std::is_same_v<T, std::vector<typename T::value_type, typename T::allocator_type>>)
+    requires(std::is_base_of_v<std::vector<typename T::value_type, typename T::allocator_type>, T> &&
+             !std::is_same_v<T, std::vector<typename T::value_type, typename T::allocator_type>>)
 struct is_vector<T> : public std::true_type
 {
 };
@@ -117,7 +117,8 @@ template <typename V>
 // jump-label pass of the serial build.
 __attribute__((optimize("O2")))
 #endif
-uint64_t calculate_checksum(const V& vec)
+uint64_t
+calculate_checksum(const V& vec)
 {
     uint64_t checksum = 0;
 

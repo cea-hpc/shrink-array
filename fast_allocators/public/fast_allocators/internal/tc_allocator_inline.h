@@ -19,13 +19,13 @@
 // Bodies of the slab classes declared in tc_allocator.h, which includes this
 // file at its end.
 
-#include <bit>      // std::bit_width, the element-size shift
-#include <cstddef>  // std::ptrdiff_t, the element offsets
-#include <cstdint>  // std::uintptr_t
-#include <cstdio>   // stderr
-#include <cstdlib>  // std::abort on an arena failure
-#include <print>    // std::println on an arena failure
-#include <vector>   // std::vector
+#include <bit>     // std::bit_width, the element-size shift
+#include <cstddef> // std::ptrdiff_t, the element offsets
+#include <cstdint> // std::uintptr_t
+#include <cstdio>  // stderr
+#include <cstdlib> // std::abort on an arena failure
+#include <print>   // std::println on an arena failure
+#include <vector>  // std::vector
 
 #include "fast_allocators/tc_allocator.h" // the declarations these bodies belong to
 #include "fast_allocators/slab_arena.h"   // disjoint op/ctx/value slab arenas
@@ -47,7 +47,8 @@ inline void TCSlab<Links>::alloc_block()
     // overwrite it. Nothing to round to -- refuse, with the sizes.
     if (BlockSize < 1) [[unlikely]]
     {
-        std::println(stderr, "[TCAllocator] element of {} bytes does not fit in a slab of {} bytes (back-pointer included)",
+        std::println(stderr,
+                     "[TCAllocator] element of {} bytes does not fit in a slab of {} bytes (back-pointer included)",
                      ElementSize, BlockAllocator);
         std::abort();
     }
@@ -152,7 +153,7 @@ inline void* TCSlab<Links>::alloc() noexcept
         if (backptr_dropped) [[unlikely]]
         {
             *fast_alloc::start_lifetime_as<TCSlab*>(data + BlockAllocator - sizeof(void*)) = this;
-            backptr_dropped                                                                 = false;
+            backptr_dropped                                                                = false;
         }
     }
 
@@ -191,4 +192,3 @@ inline void TCSlab<Links>::free_block(int i) noexcept
 }
 
 } // namespace fast_alloc
-

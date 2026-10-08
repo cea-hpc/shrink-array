@@ -30,12 +30,17 @@ class Chunk;
 template <typename T>
 class Proxy;
 
-/// @brief The proxy's num_tab: get_num_tab(array_ptr) where the proxy takes
-///        the array, get_num_tab() otherwise.
+/// @brief The proxy's num_tab: its armed value where the proxy keeps one
+///        (get_num_tab_cached, v1), get_num_tab(array_ptr) where the proxy
+///        takes the array, get_num_tab() otherwise.
 template <typename ProxyType>
 constexpr int get_num_tab_helper(const ProxyType& proxy, const void* array_ptr) noexcept
 {
-    if constexpr (requires { proxy.get_num_tab(array_ptr); })
+    if constexpr (requires { proxy.get_num_tab_cached(array_ptr); })
+    {
+        return proxy.get_num_tab_cached(array_ptr);
+    }
+    else if constexpr (requires { proxy.get_num_tab(array_ptr); })
     {
         return proxy.get_num_tab(array_ptr);
     }

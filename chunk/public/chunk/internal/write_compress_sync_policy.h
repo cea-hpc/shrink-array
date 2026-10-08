@@ -21,9 +21,9 @@
 #include <cstdint> // uint32_t (the ring_log payloads)
 #include <mutex>   // std::once_flag / std::call_once — NOT just std::mutex; do not remove again
 
-#include "chunk/config.h"         // chunk_config::asymmetric_dekker, chunk_config::ring_log_debug
-#include "chunk/PMP_CHUNK.h"      // CHUNK_PMP_THREAD_CAPACITY
-#include "chunk/ring_log_debug.h" // ring_log, get_tid
+#include "chunk/config.h"            // chunk_config::asymmetric_dekker, chunk_config::ring_log_debug
+#include "chunk/PMP_CHUNK.h"         // CHUNK_PMP_THREAD_CAPACITY
+#include "chunk/ring_log_debug.h"    // ring_log, get_tid
 #include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 #if defined(__linux__)
@@ -37,7 +37,7 @@ namespace shrink_array
 // membarrier(2) commands, spelled out: the values are ABI (Linux 4.14), older
 // uapi headers stop before them, and <linux/membarrier.h> declares them as
 // enumerators, which a fallback macro could not detect.
-inline constexpr int membarrier_cmd_private_expedited = 1 << 3;          // MEMBARRIER_CMD_PRIVATE_EXPEDITED
+inline constexpr int membarrier_cmd_private_expedited          = 1 << 3; // MEMBARRIER_CMD_PRIVATE_EXPEDITED
 inline constexpr int membarrier_cmd_register_private_expedited = 1 << 4; // MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED
 
 /**

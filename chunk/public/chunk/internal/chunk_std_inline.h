@@ -432,8 +432,8 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
             if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
-                                 "dedup flag -- two passes on one chunk",
-                                 static_cast<const void*>(marked));
+                                       "dedup flag -- two passes on one chunk",
+                                       static_cast<const void*>(marked));
             }
         }
         Proxy<T>::reset_tab_inside_list_to_compress(num_tab, num_chunk);
@@ -526,10 +526,10 @@ void ChunkOmpPolicy<T, Derived, Enabled>::clear_st(this Derived& self, int thr_r
 }
 
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::release_st(this Derived&      self,
-                                                     int                thr_rank,
-                                                     unsigned int       n_elems,
-                                                     bool               count_release)
+void ChunkOmpPolicy<T, Derived, Enabled>::release_st(this Derived& self,
+                                                     int           thr_rank,
+                                                     unsigned int  n_elems,
+                                                     bool          count_release)
 {
     // CHUNK_STATS: a release that is not a compression (the re-chunk rebuild's
     // old chunks) -- its bytes leave the live figure all the same.

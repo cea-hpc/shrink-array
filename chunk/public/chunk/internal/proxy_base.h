@@ -42,7 +42,7 @@
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanCompoundOp, IsCleanShiftOp, base_t
 #include "chunk/internal/test_hooks.h"                   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
 #include "chunk/internal/read_reclaim.h"                 // ReadSection: read_values_outside_session
-#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
 
 namespace shrink_array
 {
@@ -170,9 +170,10 @@ class ProxyBaseFastCompPolicy
                 {
                     if (row[j].load(std::memory_order_relaxed) != 0) [[unlikely]]
                     {
-                        CHUNK_INVARIANT_FAILED("resize_tab_is_int: tab {} chunk {} still queued for compression while its "
-                                         "flag row is reallocated ({} -> {} chunks)",
-                                         num_tab, j, row.size(), nb_chunk);
+                        CHUNK_INVARIANT_FAILED(
+                            "resize_tab_is_int: tab {} chunk {} still queued for compression while its "
+                            "flag row is reallocated ({} -> {} chunks)",
+                            num_tab, j, row.size(), nb_chunk);
                     }
                 }
             }
@@ -252,8 +253,10 @@ class ProxyBaseFastCompPolicy
      * movable). char, not bool: vector<bool> is the packed specialisation.
      */
 
-    static inline constinit internal::Immortal<std::vector<std::vector<std::atomic<char>>>> tab_is_inside_chunk_list_to_compress_storage_{};
-    static inline std::vector<std::vector<std::atomic<char>>>& tab_is_inside_chunk_list_to_compress = tab_is_inside_chunk_list_to_compress_storage_.value;
+    static inline constinit internal::Immortal<std::vector<std::vector<std::atomic<char>>>>
+                                                               tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline std::vector<std::vector<std::atomic<char>>>& tab_is_inside_chunk_list_to_compress =
+        tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
 /**
@@ -303,9 +306,11 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false>
     // Management members
     static inline constinit internal::Immortal<CompressionManager<T, ChunkType>> compression_mgr_storage_{};
     static inline CompressionManager<T, ChunkType>& compression_mgr = compression_mgr_storage_.value;
-    std::atomic<char>*                                        ptr_is_inside_chunk_list_to_compress;
-    static inline constinit internal::Immortal<std::vector<std::vector<std::atomic<char>>>> tab_is_inside_chunk_list_to_compress_storage_{};
-    static inline std::vector<std::vector<std::atomic<char>>>& tab_is_inside_chunk_list_to_compress = tab_is_inside_chunk_list_to_compress_storage_.value;
+    std::atomic<char>*                              ptr_is_inside_chunk_list_to_compress;
+    static inline constinit internal::Immortal<std::vector<std::vector<std::atomic<char>>>>
+                                                               tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline std::vector<std::vector<std::atomic<char>>>& tab_is_inside_chunk_list_to_compress =
+        tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
 namespace internal
@@ -610,8 +615,8 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      */
     template <typename WriteCallable, typename LBD_INFO>
     [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_impl(this Derived&             self,
-                                                                  WriteCallable&&           write_body,
-                                                                  [[maybe_unused]] LBD_INFO lbd_info) noexcept;
+                                                                        WriteCallable&&           write_body,
+                                                                        [[maybe_unused]] LBD_INFO lbd_info) noexcept;
 
     /**
      * @brief Record a write to be applied later, when the fast path refuses it.
@@ -728,10 +733,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         {
             if (stale_guard_.gen != nullptr && *stale_guard_.gen != stale_guard_.seen) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
-                                 "storage (resize, reserve, shrink_to_fit, clear, assign, swap, an assignment or a "
-                                 "re-chunk): keep a value with `T v = a[i];`, not `auto v = a[i];`",
-                                 ptr_on_array, num_chunk, num);
+                CHUNK_INVARIANT_FAILED(
+                    "write proxy of array {} (chunk {}, offset {}) used after the array rebuilt its "
+                    "storage (resize, reserve, shrink_to_fit, clear, assign, swap, an assignment or a "
+                    "re-chunk): keep a value with `T v = a[i];`, not `auto v = a[i];`",
+                    ptr_on_array, num_chunk, num);
             }
         }
     }

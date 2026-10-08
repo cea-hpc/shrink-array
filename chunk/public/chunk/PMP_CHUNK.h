@@ -16,7 +16,9 @@
 
 #pragma once
 
-#include "chunk/config.h" // build_config::any_check
+#include <algorithm> // std::max (get_size_max_tab_omp)
+
+#include "chunk/config.h" // build_config::any_check, build_config::use_openmp
 
 namespace shrink_array
 {
@@ -98,11 +100,12 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
 {
     if (rank >= chunk_thread_capacity()) [[unlikely]]
     {
-        CHUNK_INVARIANT_FAILED("thread rank {} but the per-thread structures hold {}: the OpenMP team grew past the thread "
-                         "capacity fixed when the arrays were set up. Set OMP_NUM_THREADS (or call "
-                         "omp_set_num_threads) to the largest team before creating the arrays, or raise "
-                         "CHUNK_THREAD_CAPACITY.",
-                         rank, chunk_thread_capacity());
+        CHUNK_INVARIANT_FAILED(
+            "thread rank {} but the per-thread structures hold {}: the OpenMP team grew past the thread "
+            "capacity fixed when the arrays were set up. Set OMP_NUM_THREADS (or call "
+            "omp_set_num_threads) to the largest team before creating the arrays, or raise "
+            "CHUNK_THREAD_CAPACITY.",
+            rank, chunk_thread_capacity());
     }
     int seen = internal::g_rank_high_water.load(std::memory_order_relaxed);
     while (rank >= seen &&
@@ -134,10 +137,11 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
     }
     if (omp_get_active_level() > 1) [[unlikely]]
     {
-        CHUNK_INVARIANT_FAILED("nested ACTIVE parallel regions (active level {}) are not supported by the chunk arrays: "
-                         "per-thread ranks of different inner teams would collide. Keep the inner regions "
-                         "serialised (OMP_MAX_ACTIVE_LEVELS=1, the default) or do not touch the arrays in them.",
-                         omp_get_active_level());
+        CHUNK_INVARIANT_FAILED(
+            "nested ACTIVE parallel regions (active level {}) are not supported by the chunk arrays: "
+            "per-thread ranks of different inner teams would collide. Keep the inner regions "
+            "serialised (OMP_MAX_ACTIVE_LEVELS=1, the default) or do not touch the arrays in them.",
+            omp_get_active_level());
     }
     for (int l = level; l >= 1; --l)
     {
@@ -223,7 +227,7 @@ inline int get_thr_rank_fast() noexcept
         if (rank != ::shrink_array::chunk_pmp_library_rank()) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("stale thread-rank cache: {} but this thread is rank {} of the active team", rank,
-                             ::shrink_array::chunk_pmp_library_rank());
+                                   ::shrink_array::chunk_pmp_library_rank());
         }
     }
     return rank;
@@ -334,14 +338,15 @@ namespace shrink_array
 ///         otherwise @p nn.
 inline int get_size_max_tab_omp(int nn)
 {
-#ifdef _OPENMP
-    const int max_thr = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_MAX_THREADS : 1;
-    if (nn > max_thr && max_thr > 1)
+    if constexpr (build_config::use_openmp)
     {
-        const int pp = (nn / std::max(1, max_thr)) + max_thr;
-        return pp;
+        const int max_thr = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_MAX_THREADS : 1;
+        if (nn > max_thr && max_thr > 1)
+        {
+            const int pp = (nn / std::max(1, max_thr)) + max_thr;
+            return pp;
+        }
     }
-#endif
     return nn;
 }
 
@@ -352,19 +357,20 @@ inline int get_size_max_tab_omp(int nn)
 ///         exceeds the thread count (>1), otherwise @p nn.
 inline int get_size_max_tab_omp(int nn, [[maybe_unused]] int nb_static)
 {
-#ifdef _OPENMP
-    const int max_thr = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_MAX_THREADS : 1;
-
-    if (nn > max_thr && max_thr > 1)
+    if constexpr (build_config::use_openmp)
     {
-        int       pp  = nn / max_thr;
-        const int nbs = pp / nb_static;
+        const int max_thr = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_MAX_THREADS : 1;
 
-        pp = ((nbs + 1) * nb_static) + max_thr;
+        if (nn > max_thr && max_thr > 1)
+        {
+            int       pp  = nn / max_thr;
+            const int nbs = pp / nb_static;
 
-        return pp;
+            pp = ((nbs + 1) * nb_static) + max_thr;
+
+            return pp;
+        }
     }
-#endif
     return nn;
 }
 

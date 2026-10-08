@@ -46,16 +46,6 @@ inline void begin_parallel_phase_g()
     }
 }
 
-/// @brief Without OMPT: `omp barrier`, then shrink_array::finalize_barrier_phase(); no-op otherwise.
-inline void finalize_barrier_phase_g()
-{
-    if constexpr (build_config::has_not_ompt)
-    {
-#pragma omp barrier
-        shrink_array::finalize_barrier_phase();
-    }
-}
-
 /// @brief Without OMPT: shrink_array::finalize_parallel_phase_only_flush(); no-op otherwise.
 inline void finalize_parallel_phase_only_flush_g()
 {

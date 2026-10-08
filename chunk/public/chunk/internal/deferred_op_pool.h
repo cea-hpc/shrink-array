@@ -175,7 +175,7 @@ template <typename T>
 struct DeferredByteAllocSlot
 {
     fast_alloc::TCTypeAllocator<std::byte> alloc;               ///< this thread's byte allocator for T
-    bool                       initialized = false; ///< alloc set up (allocator())
+    bool                                   initialized = false; ///< alloc set up (allocator())
 };
 
 /**
@@ -475,7 +475,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
             if ((addr & (alignof(std::max_align_t) - 1)) != 0 && (addr & 0x7U) != 0)
             {
                 CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] misaligned block p={} (T size={})", path,
-                                 static_cast<const void*>(ptr), sizeof(T));
+                                       static_cast<const void*>(ptr), sizeof(T));
             }
 
             // Page-containing-p mapped? msync(MS_ASYNC) touches nothing but the
@@ -493,8 +493,8 @@ class FastAllocatorConcrete : public FastAllocatorBase
             if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)
             {
                 CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path,
-                                 static_cast<const void*>(ptr), sizeof(T),
-                                 build_config::use_fast_alloc ? static_cast<const void*>(&allocator()) : nullptr);
+                                       static_cast<const void*>(ptr), sizeof(T),
+                                       build_config::use_fast_alloc ? static_cast<const void*>(&allocator()) : nullptr);
             }
         }
     }
@@ -531,6 +531,19 @@ struct arena_of_tag<CtxTag>
 };
 
 /**
+ * @brief One thread's cached answer of AllocatorRegistry<Tag>::get_or_create<T>().
+ * @details T-tagged storage, as DeferredByteAllocSlot: the get_or_create<T>()
+ *          bodies of two same-sized types stay distinct, so -fipa-icf cannot
+ *          fold them onto one slot.
+ */
+template <typename Tag, typename T>
+struct CachedAllocatorSlot
+{
+    FastAllocatorBase* alloc      = nullptr; ///< the allocator found, or nullptr
+    unsigned int       generation = 0;       ///< the registry generation it was found in
+};
+
+/**
  * @brief Registry that manages a collection of FastAllocators, one per object size.
  */
 template <typename Tag>
@@ -542,6 +555,32 @@ class AllocatorRegistry
     /// @return The allocator whose block_size is sizeof(T).
     template <typename T>
     static FastAllocatorBase* get_or_create()
+    {
+        // Called at every allocation and every release of a deferred op or
+        // context: the answer for T is cached per thread, until reset()
+        // empties the registry (its generation moves on).
+        thread_local CachedAllocatorSlot<Tag, T> cached;
+        if (cached.alloc != nullptr && cached.generation == generation()) [[likely]]
+        {
+            return cached.alloc;
+        }
+        cached.alloc      = find_or_create<T>();
+        cached.generation = generation();
+        return cached.alloc;
+    }
+
+    /// @brief Destroy this thread's allocators (teardown).
+    static void reset()
+    {
+        allocs().clear();
+        ++generation(); // the cached answers point at the destroyed descriptors
+    }
+
+  private:
+    /// @brief The registry scan behind get_or_create(): this thread's allocator
+    ///        for objects of sizeof(T) bytes, created on first request.
+    template <typename T>
+    static FastAllocatorBase* find_or_create()
     {
         auto&        v  = allocs();
         const size_t sz = sizeof(T);
@@ -560,13 +599,17 @@ class AllocatorRegistry
         return raw;
     }
 
-    /// @brief Destroy this thread's allocators (teardown).
-    static void reset()
+    /// @brief This thread's registry generation: moved on by reset(), it
+    ///        invalidates every cached answer of get_or_create().
+    /// @note Two tags may share it (identical bodies, -fipa-icf): a reset of
+    ///       one then also invalidates the other's cache, which only costs a
+    ///       rescan.
+    static unsigned int& generation()
     {
-        allocs().clear();
+        thread_local unsigned int g = 0;
+        return g;
     }
 
-  private:
     /// @brief This thread's allocators (one per object size seen so far).
     static std::vector<std::unique_ptr<FastAllocatorBase>>& allocs()
     {
@@ -612,7 +655,11 @@ template <typename T, typename... Args>
     assert(mem && "OpRegistry allocator returned null");
     chunk_align_probe<T>("op", mem);
     // Check builds: the block must not be live as a ctx or an op already.
-    pool_ledger::on_op_alloc(mem, sizeof(T), alloc->slab_addr());
+    if constexpr (pool_ledger::pool_ledger_enabled)
+    {
+        // slab_addr() is virtual: not called at all when the ledger is off.
+        pool_ledger::on_op_alloc(mem, sizeof(T), alloc->slab_addr());
+    }
     T* constructed = std::construct_at(static_cast<T*>(mem), std::forward<Args>(args)...);
     // Debug ring log AFTER construct_at, so OP_ALLOC marks a fully-built op
     // (vptr written).
@@ -633,7 +680,10 @@ template <typename T, typename... Args>
     void*              mem   = alloc->allocate_raw();
     assert(mem && "CtxRegistry allocator returned null");
     chunk_align_probe<T>("ctx", mem);
-    pool_ledger::on_ctx_alloc(mem, sizeof(T), alloc->slab_addr());
+    if constexpr (pool_ledger::pool_ledger_enabled)
+    {
+        pool_ledger::on_ctx_alloc(mem, sizeof(T), alloc->slab_addr()); // virtual: only when the ledger is on
+    }
     return std::construct_at(static_cast<T*>(mem), std::forward<Args>(args)...);
 }
 

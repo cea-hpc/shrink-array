@@ -107,4 +107,3 @@ inline void print_backtrace()
 }
 
 } // namespace shrink_array
-

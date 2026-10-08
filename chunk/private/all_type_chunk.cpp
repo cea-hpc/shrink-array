@@ -20,6 +20,7 @@
 #include <atomic>    // for atomic_thread_fence, memory_order_seq_cst, atomic
 #include <memory>    // for unique_ptr
 #include <optional>  // SerialFlushOwnership
+#include <utility>   // std::move
 #include <vector>    // for vector
 #include <malloc.h>  // malloc_trim, mallopt
 

@@ -40,8 +40,8 @@
 #include "chunk/internal/TChunk.h"                       // TChunk2AComp
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/internal/proxy2_base.h"                  // Proxy2Base
-#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/parallel_storage_init.h" // reserve_first_touched, for_each_chunk
+#include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/parallel_storage_init.h"        // reserve_first_touched, for_each_chunk
 
 namespace shrink_array
 {
@@ -104,7 +104,7 @@ class PointerMapChunk2A
                 }
             }
             CHUNK_INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
-                             static_cast<const void*>(this), small.size(), key);
+                                   static_cast<const void*>(this), small.size(), key);
         }
 
         if (const auto it = big.find(key); it != big.end())
@@ -112,7 +112,7 @@ class PointerMapChunk2A
             return it->second;
         }
         CHUNK_INVARIANT_FAILED("[PointerMapChunk2A get_num_tab] key NOT FOUND: this={} size={} key={}",
-                         static_cast<const void*>(this), big.size(), key);
+                               static_cast<const void*>(this), big.size(), key);
     }
 
     /**
@@ -150,7 +150,7 @@ class PointerMapChunk2A
             catch (const std::exception& e)
             {
                 CHUNK_INVARIANT_FAILED("[PointerMapChunk2A erase] failed: {} (this={} key={})", e.what(),
-                                 static_cast<const void*>(this), key);
+                                       static_cast<const void*>(this), key);
             }
         }
     }
@@ -446,7 +446,8 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
      * \brief Static container holding second values for each tab and chunk.
      * Indexed as tab_second_value[num_tab][num_chunk].
      */
-    static inline constinit internal::Immortal<std::vector<std::vector<second_value_slot_t>>> tab_second_value_storage_{};
+    static inline constinit internal::Immortal<std::vector<std::vector<second_value_slot_t>>>
+                                                                 tab_second_value_storage_{};
     static inline std::vector<std::vector<second_value_slot_t>>& tab_second_value = tab_second_value_storage_.value;
 };
 
@@ -719,8 +720,9 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
             {
                 if (num_tab != share_info_array->get_num_tab(ptr_on_array))
                 {
-                    CHUNK_INVARIANT_FAILED("Proxy2A::set_num_tab: armed num_tab {} differs from the registry's for array {}",
-                                     num_tab, ptr_on_array);
+                    CHUNK_INVARIANT_FAILED(
+                        "Proxy2A::set_num_tab: armed num_tab {} differs from the registry's for array {}", num_tab,
+                        ptr_on_array);
                 }
             }
             return;
@@ -779,7 +781,8 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     /**
      * @brief Per-tab array of flags indicating the type of constant value used.
      */
-    static inline constinit internal::Immortal<std::vector<std::vector<char>>> tab_type_cst_val_storage_{}; ///< type-of-constant flags
+    static inline constinit internal::Immortal<std::vector<std::vector<char>>>
+                                                  tab_type_cst_val_storage_{}; ///< type-of-constant flags
     static inline std::vector<std::vector<char>>& tab_type_cst_val = tab_type_cst_val_storage_.value;
 
     /**
