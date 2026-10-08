@@ -258,3 +258,28 @@ def test_build_check_follows_the_options(gui):
     assert c["mode"] == "warn" and "cmake-build-omp-gnu" in c["builds"]
     w.program.setCurrentText("compile_all.sh")
     assert not w.check_builds.isEnabled()
+
+
+def test_delete_with_outputs_and_local_copy(gui, site, monkeypatch):
+    import os
+    w, pump = gui
+    _choose_fake(w, pump)
+    w.program.setCurrentText("fake_stress.py")
+    monkeypatch.setitem(__import__("shrink_gui.config", fromlist=["x"]).PROGRAMS["fake_stress.py"],
+                        "own_outputs", "dir")
+    rid = _submit(w, pump, {"runs": "2"}, len(w.runs))
+    assert _wait_status(w, pump, rid, "fini")
+    log = site.helper("tail", "~/shrink_runs", rid, 0)["data"]
+    od = log.split("Outputs, CSV and log in ")[1].split()[0]
+    local = site.local / rid
+    local.mkdir()
+    seen = {}
+
+    def fake_dialog(run, own, loc):
+        seen.update(own=own, loc=loc)
+        return True, True, True
+    monkeypatch.setattr(w, "delete_dialog", fake_dialog)
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == rid))
+    w.delete()
+    assert pump(lambda: not (site.runs / rid).exists() and not local.exists(), 10)
+    assert seen == {"own": "dir", "loc": str(local)} and not os.path.exists(od)

@@ -600,8 +600,61 @@ def act_points(a):
     print(json.dumps({"builds": sorted(builds, key=builds.get), "exes": sorted(exes, key=exes.get),
                       "rows": rows[-30000:], "total": n}))
 
+def _same_dir(a, b):
+    try:
+        return os.path.realpath(a) == os.path.realpath(b)
+    except (TypeError, ValueError):
+        return False
+
+def outputs_to_delete(base, rid, d, meta, own):
+    """(paths to remove, error): the program outputs of run @p rid, as
+    @p own says ("dir": the output directory its log announces; a list: those
+    entries of that directory). Refused when another run announces the same
+    directory -- any other one for "dir", for a list one still active or
+    newer (the files are then its own, rewritten after ours)."""
+    od = out_dir(d, meta)
+    if not od:
+        return None, "pas de dossier de sortie annoncé dans le log de %s" % rid
+    od = os.path.expanduser(od)
+    real = os.path.realpath(od)
+    home = os.path.realpath(os.path.expanduser("~"))
+    if (not os.path.isabs(od) or real in ("/", home) or real.count(os.sep) < 3
+            or os.path.realpath(os.path.join(home, "shrink-array")).startswith(real)):
+        return None, "dossier de sortie refusé : %s" % od
+    if not os.path.isdir(od):
+        return [], None                        # already gone: nothing to do
+    q = None
+    for other in sorted(os.listdir(base)):
+        od2 = os.path.join(base, other)
+        m2 = read(os.path.join(od2, "meta.json"))
+        if other == rid or m2 is None:
+            continue
+        m2 = json.loads(m2)
+        if not _same_dir(out_dir(od2, m2) or "", od):
+            continue
+        if own == "dir":
+            return None, "%s utilise aussi %s : rien supprimé" % (other, od)
+        if q is None:
+            q = queue_states()
+        st = status(od2, q)[0]
+        if st in ("en cours", "en attente", "démarrage") or st.startswith("en attente") \
+                or m2.get("created", "") > meta.get("created", ""):
+            return None, "%s, plus récent ou actif, écrit aussi dans %s : rien supprimé" % (other, od)
+    if own == "dir":
+        return [od], None
+    out = []
+    for name in own:
+        if os.sep in name or name in ("", ".", ".."):
+            continue
+        p = os.path.join(od, name)
+        if os.path.lexists(p):
+            out.append(p)
+    return out, None
+
 def act_delete(a):
-    """Remove one run directory -- never the program's own output directory."""
+    """Remove one run directory and, when a[2] asks for it ({"own": ...},
+    base64 JSON), the program outputs that are the run's own
+    (outputs_to_delete). Everything is checked before anything is removed."""
     import shutil
     base, rid = rdir(a[0]), a[1]
     if not re.match(r"^[\w.-]+$", rid) or rid in (".", ".."):
@@ -611,8 +664,26 @@ def act_delete(a):
     if not os.path.isfile(os.path.join(d, "meta.json")):
         print(json.dumps({"error": "%s n'est pas un run" % d}))
         return
+    opts = json.loads(base64.b64decode(a[2]).decode()) if len(a) > 2 and a[2] else {}
+    paths = []
+    if opts.get("own"):
+        meta = json.loads(read(os.path.join(d, "meta.json"), "{}") or "{}")
+        paths, err = outputs_to_delete(base, rid, d, meta, opts["own"])
+        if err:
+            print(json.dumps({"error": err}))
+            return
+    removed = []
+    for p in paths:
+        if os.path.isdir(p) and not os.path.islink(p):
+            shutil.rmtree(p, ignore_errors=True)
+        else:
+            try:
+                os.remove(p)
+            except OSError:
+                continue
+        removed.append(p)
     shutil.rmtree(d)
-    print(json.dumps({"ok": True}))
+    print(json.dumps({"ok": True, "removed": removed}))
 
 BUILD_NAME_RE = re.compile(r'cmake-build-([^/"\s]*)')
 EXE_RULE_RE = re.compile(rb"CXX_EXECUTABLE_LINKER__(\w+)")

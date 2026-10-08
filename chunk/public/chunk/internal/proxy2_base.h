@@ -186,8 +186,11 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     {
         if constexpr (std::is_integral_v<T> && is_not_bool)
         {
-            // 2. Execution via the common engine
-            derived().template apply_compound_operation<U>(typename Base::modulo{}, v, false);
+            // 2. Execution via the common engine. true, as for *= and /=: a
+            // non-zero slot can land on zero (4 % 2), and with false that zero
+            // was never counted -- the chunk then never reached "full first
+            // value" and stayed materialised.
+            derived().template apply_compound_operation<U>(typename Base::modulo{}, v, true);
             return derived();
         }
         else

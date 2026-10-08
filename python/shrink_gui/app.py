@@ -220,7 +220,7 @@ class Main(QMainWindow):
         bagain.setToolTip("Remet dans le formulaire le programme, la partition et les options de ce run")
         bagain.clicked.connect(self.reuse)
         bdelete = QPushButton("Supprimer")
-        bdelete.setToolTip("Supprime le dossier du run sur inti (pas les sorties du programme)")
+        bdelete.setToolTip("Supprime le dossier du run sur inti (au choix : ses sorties, la copie locale)")
         bdelete.clicked.connect(self.delete)
         acts = QHBoxLayout()
         for b in (brefresh, bstop, bfetch, bagain, bdelete):
@@ -499,8 +499,8 @@ class Main(QMainWindow):
                                    "résultats du programme (CSV, log, erreurs ; jamais les output_*).",
         "Reprendre ses options": "Remet dans le formulaire le programme, la partition et les options "
                                  "du run sélectionné, pour le relancer ou le modifier.",
-        "Supprimer": "Supprime le dossier du run sur inti (pas les sorties du programme). "
-                     "Seulement pour un run terminé.",
+        "Supprimer": "Supprime le dossier du run sur inti ; au choix, aussi les sorties du "
+                     "programme propres à ce run et la copie locale. Seulement pour un run terminé.",
         "Rafraîchir le résumé": "Relit le fichier résumé du run sélectionné.",
     }
 
@@ -1509,6 +1509,37 @@ class Main(QMainWindow):
                 more = " (les 30000 derniers runs de chaque fichier)"
         self.pt_note.setText(f"{len(drawn)} run(s) affiché(s){more}{note_extra}")
 
+    def delete_dialog(self, run, own, local):
+        """Confirmation of "Supprimer": (ok, also the program outputs on inti,
+        also the local copy). The two boxes are remembered."""
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox
+        dlg = QDialog(self)
+        dlg.setWindowTitle(T("Supprimer"))
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel(T(f"Supprimer le run {run['id']} ?\n\nSur inti, son dossier (log, scripts, "
+                               "code de retour).")))
+        c_out = QCheckBox(T("aussi le dossier de sortie du programme, propre à ce run" if own == "dir" else
+                            "aussi ses logs dans le dossier de sortie partagé (" + ", ".join(own or []) +
+                            " ; jamais oracle/)" if own else "pas de sorties propres à ce programme"))
+        c_out.setEnabled(bool(own))
+        c_out.setChecked(bool(own) and self.settings.value("delete_outputs", "false") == "true")
+        c_loc = QCheckBox(T(f"aussi la copie locale {local}") if local else T("pas de copie locale"))
+        c_loc.setEnabled(bool(local))
+        c_loc.setChecked(bool(local) and self.settings.value("delete_local", "false") == "true")
+        lay.addWidget(c_out)
+        lay.addWidget(c_loc)
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        lay.addWidget(bb)
+        if dlg.exec() != QDialog.Accepted:
+            return False, False, False
+        if own:
+            self.settings.setValue("delete_outputs", "true" if c_out.isChecked() else "false")
+        if local:
+            self.settings.setValue("delete_local", "true" if c_loc.isChecked() else "false")
+        return True, c_out.isChecked() and bool(own), c_loc.isChecked() and bool(local)
+
     def delete(self):
         run = self.selected_run()
         if not run:
@@ -1516,11 +1547,11 @@ class Main(QMainWindow):
         if run["status"] in self.ACTIVE or run["status"].startswith("en attente"):
             self.error("arrêtez d'abord ce run (il est encore actif)")
             return
-        if ask(
-                self, "Supprimer",
-                f"Supprimer le dossier du run {run['id']} sur inti ?\n"
-                "(log, scripts, code de retour ; les sorties du programme restent en place)"
-        ) != QMessageBox.Yes:
+        own = PROGRAMS.get(run["meta"].get("program"), {}).get("own_outputs")
+        local = os.path.join(os.path.expanduser(self.local_dir.text().strip()), run["id"])
+        local = local if os.path.isdir(local) else None
+        ok, with_out, with_local = self.delete_dialog(run, own, local)
+        if not ok:
             return
 
         def done(r):
@@ -1529,10 +1560,16 @@ class Main(QMainWindow):
             if self.current == run["id"]:
                 self.current = None
                 self.log.clear()
-            self.info(f"{run['id']} supprimé")
+            if with_local:
+                import shutil
+                shutil.rmtree(local, ignore_errors=True)
+            n = len(r.get("removed", []))
+            self.info(f"{run['id']} supprimé" + (f" (+ {n} sortie(s) sur inti)" if n else "")
+                      + (" (+ copie locale)" if with_local else ""))
             self.refresh()
 
-        self.remote.helper("delete", [self.runs_dir.text().strip(), run["id"]], done)
+        opts = base64.b64encode(json.dumps({"own": own} if with_out else {}).encode()).decode()
+        self.remote.helper("delete", [self.runs_dir.text().strip(), run["id"], opts], done)
 
     def fetch(self):
         rid = self.selected()

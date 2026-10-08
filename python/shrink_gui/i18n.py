@@ -182,11 +182,16 @@ EN = {
         "again or change it.",
     "Remet dans le formulaire le programme, la partition et les options de ce run":
         "Puts this run's program, partition and options back in the form",
-    "Supprime le dossier du run sur inti (pas les sorties du programme). "
-    "Seulement pour un run terminé.":
-        "Deletes the run directory on inti (not the program's outputs). Finished runs only.",
-    "Supprime le dossier du run sur inti (pas les sorties du programme)":
-        "Deletes the run directory on inti (not the program's outputs)",
+    "Supprime le dossier du run sur inti ; au choix, aussi les sorties du "
+    "programme propres à ce run et la copie locale. Seulement pour un run terminé.":
+        "Deletes the run directory on inti; optionally also the program outputs that are "
+        "this run's own, and the local copy. Finished runs only.",
+    "Supprime le dossier du run sur inti (au choix : ses sorties, la copie locale)":
+        "Deletes the run directory on inti (optionally: its outputs, the local copy)",
+    "aussi le dossier de sortie du programme, propre à ce run":
+        "also the program's output directory, this run's own",
+    "pas de sorties propres à ce programme": "no outputs of its own for this program",
+    "pas de copie locale": "no local copy",
     "Relit le fichier résumé du run sélectionné.": "Reads the selected run's summary file again.",
     "ccc_msub : ce qui lance run.sh sur le nœud réservé, par exemple "
     "« ccc_mprun -C ccc-rhel9 -n 1 -c 288 » (environnement RHEL 9 du gh200).\n"
@@ -351,6 +356,19 @@ EN_RE = [(re.compile(a), b) for a, b in (
      r"programme restent en place\)$",
      r"Delete the directory of run \1 on inti?\n(log, scripts, exit code; the program's outputs stay)"),
     (r"^(\S+) supprimé$", r"\1 deleted"),
+    (r"^(\S+) supprimé( \(\+ (\d+) sortie\(s\) sur inti\))?( \(\+ copie locale\))?$",
+     lambda m: m.group(1) + " deleted" + (f" (+ {m.group(3)} output(s) on inti)" if m.group(2) else "")
+     + (" (+ local copy)" if m.group(4) else "")),
+    (r"^Supprimer le run (\S+) \?\n\nSur inti, son dossier \(log, scripts, code de retour\)\.$",
+     r"Delete run \1?\n\nOn inti, its directory (log, scripts, exit code)."),
+    (r"^aussi ses logs dans le dossier de sortie partagé \((.+) ; jamais oracle/\)$",
+     r"also its logs in the shared output directory (\1; never oracle/)"),
+    (r"^aussi la copie locale (.+)$", r"also the local copy \1"),
+    (r"^pas de dossier de sortie annoncé dans le log de (\S+)$", r"no output directory announced in the log of \1"),
+    (r"^dossier de sortie refusé : (.+)$", r"output directory refused: \1"),
+    (r"^(\S+) utilise aussi (.+) : rien supprimé$", r"\1 uses \2 too: nothing deleted"),
+    (r"^(\S+), plus récent ou actif, écrit aussi dans (.+) : rien supprimé$",
+     r"\1, newer or active, writes to \2 too: nothing deleted"),
     (r"^récupération de (\S+)…$", r"fetching \1…"), (r"^récupération : ", "fetch: "),
     (r"^(\d+) fichier\(s\) → ", r"\1 file(s) → "),
     (r" sur (\S+) : ", r" on \1: "),
