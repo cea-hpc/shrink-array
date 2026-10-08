@@ -201,23 +201,22 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         const ind_type old_size = m_size;
         derived().resize(newsz); // calls derived resize(sz)
 
-        const auto lbd = [this, old_size, newsz, val]
+        // A team of its own outside a region; the calling thread inside one
+        // (an orphaned `omp for` there wrote `val` into 1/N of the new range).
+        if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
         {
-#pragma omp for schedule(static) nowait
+#pragma omp parallel for schedule(static)
             for (ind_type i = old_size; i < newsz; ++i)
             {
                 derived()[i] = val;
             }
-        };
-
-        if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-        {
-#pragma omp parallel
-            lbd();
         }
         else
         {
-            lbd();
+            for (ind_type i = old_size; i < newsz; ++i)
+            {
+                derived()[i] = val;
+            }
         }
     }
 };

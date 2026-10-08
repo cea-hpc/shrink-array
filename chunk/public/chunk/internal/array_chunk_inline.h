@@ -559,29 +559,20 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
     // here; idempotent for one that already has a key.
     this->assign_alloc_key();
 
-    if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-    {
-#pragma omp parallel for
-        for (int i = old_nb_chunk; i < nb_chunk; ++i)
-        {
-            this->construct_chunk(i).init_values_cst_val();
-        }
-    }
-    else
-    {
-#pragma omp for
-        for (int i = old_nb_chunk; i < nb_chunk; ++i)
-        {
-            this->construct_chunk(i).init_values_cst_val();
-        }
-    }
+    // The new chunks [old_nb_chunk, nb_chunk): a team of its own outside a
+    // region, the calling thread inside one -- never an orphaned `omp for`,
+    // which inside a region left 1/N of a thread's own array unconstructed
+    // (region_storage_validation).
+    parallel_storage_init::for_each_chunk(nb_chunk - old_nb_chunk, 500, [this, old_nb_chunk](int k)
+                                          { this->construct_chunk(old_nb_chunk + k).init_values_cst_val(); });
 
     // std::vector semantics for the regrown range [old_size, newsz): it reads
     // T{}. The chunks added above are fresh, but the one holding the OLD end
     // keeps its tail -- after a shrink, the values written there before would
     // come back on the next growth (deferred_path_validation, resize-grow-again).
     // Reset that tail: at most one chunk, through the normal write path, after
-    // the reallocations. `omp for` like the init loop above.
+    // the reallocations. Serial: at most one chunk, and called inside a region
+    // an `omp for` would cover 1/N of it.
     if (newsz > old_size)
     {
         const auto     csz       = static_cast<ind_type>(this->chunk_size());
@@ -592,7 +583,6 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
         const ind_type  old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<ind_type>(cover_ll) : newsz;
         const ind_type stale_end = newsz < old_cover ? newsz : old_cover;
-#pragma omp for
         for (ind_type i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};
@@ -607,25 +597,22 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz, in_t<T> val)
 
     resize(newsz);
 
-    const auto lbd_init = [this, old_size, newsz, val]
+    // A team of its own outside a region; the calling thread inside one (an
+    // orphaned `omp for` there wrote `val` into 1/N of the new range).
+    if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
     {
-#pragma omp for schedule(static) nowait
+#pragma omp parallel for schedule(static)
         for (ind_type i = old_size; i < newsz; ++i)
         {
             (*this)[i] = val;
         }
-    };
-
-    if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-    {
-#pragma omp parallel
-        {
-            lbd_init();
-        }
     }
     else
     {
-        lbd_init();
+        for (ind_type i = old_size; i < newsz; ++i)
+        {
+            (*this)[i] = val;
+        }
     }
 }
 
