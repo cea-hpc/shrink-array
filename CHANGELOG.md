@@ -80,6 +80,11 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- Benchmark baseline (`shrink_bench_vector_*`): the arrays are a `std::vector` with an
+  allocator that does not zero them (`examples/shrink_bench/baseline_vector.h`), zeroed by a
+  parallel loop instead: the creation is parallel, and each page lands on the NUMA node of
+  the thread that works on it. Creation times of the baseline are not comparable with
+  earlier runs.
 - CMake 3.20 is required (the documented minimum; the files said 3.12). The top-level
   project is `shrink_array`, and carries the version (`project(shrink_array VERSION ...)`),
   from which the chunk library takes its own. Consumed by another project, the build no

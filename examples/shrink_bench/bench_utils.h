@@ -79,6 +79,14 @@ struct is_vector<std::vector<T, Alloc>> : public std::true_type
 {
 };
 
+/// @brief A class derived from std::vector (the baseline's BaselineVector) is a vector.
+template <typename T>
+    requires(std::is_base_of_v<std::vector<typename T::value_type, typename T::allocator_type>, T>
+             && !std::is_same_v<T, std::vector<typename T::value_type, typename T::allocator_type>>)
+struct is_vector<T> : public std::true_type
+{
+};
+
 // -----------------------------------------------------------------------------
 // Trait: is T a std::atomic<pointer> ?
 // -----------------------------------------------------------------------------

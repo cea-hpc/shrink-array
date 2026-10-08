@@ -53,6 +53,7 @@ set(SHRINK_BENCH_HEADERS
         bench_io.h
         bench_args.h
         bench_array.h
+        baseline_vector.h
         bench_phases.h
         bench_stl_checks.h
 )
@@ -67,8 +68,8 @@ set(SHRINK_BENCH_HEADERS
 #   _dyn              -> dynamic lib chunk_v<x>_dyn (runtime geometry), with the
 #                        runtime size baked via -DDYN_CHUNK_SIZE=<SHRINK_BENCH_DYN_SIZE>.
 # Naming: shrink_bench_<variant>_<mode>_<declination>, e.g.
-#   shrink_bench_chunk2_256, shrink_bench_chunk2a_dyn. Le mode check/perf est
-#   choisi a l'execution par --mode.
+#   shrink_bench_chunk2_256, shrink_bench_chunk2a_dyn. The check / perf mode is
+#   chosen at run time with --mode.
 #
 # vector has no chunk geometry: it keeps its two plain targets (no declination).
 # The size list mirrors chunk/CMakeLists.txt's CHUNK_STATIC_SIZES; keep them in
