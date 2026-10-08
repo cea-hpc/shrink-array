@@ -216,3 +216,19 @@ def test_helper_reads_utf8_in_c_locale(site):
     out = subprocess.run([str(site.bin / "ssh"), "inti", "python3 - options ~ u.sh help bash"],
                          input=HELPER.encode(), env=env, capture_output=True, timeout=60)
     assert json.loads(out.stdout)["actions"][0]["flags"] == ["--fast"], out.stderr
+
+
+def test_tail_starts_at_the_end_of_a_long_log(site):
+    _launch(site, "big", "true")
+    assert site.wait(lambda: _status(site, "big")["status"] == "fini")
+    log = site.runs / "big" / "out.log"
+    with open(log, "a") as f:
+        for i in range(100000):
+            f.write(f"line {i:06d} " + "x" * 40 + "\n")
+    size = log.stat().st_size
+    r = site.helper("tail", "~/shrink_runs", "big", -1)
+    assert 0 < r["skipped"] < size and r["offset"] == size and not r["more"]
+    assert r["data"].startswith("line ") and r["data"].endswith("line 099999 " + "x" * 40 + "\n")
+    assert size - r["skipped"] <= 2 * 1024 * 1024
+    r0 = site.helper("tail", "~/shrink_runs", "big", 0)          # from the start: by blocks
+    assert r0["skipped"] == 0 and r0["more"] and r0["data"].startswith("[gui]")

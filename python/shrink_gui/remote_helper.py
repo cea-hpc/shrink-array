@@ -413,20 +413,37 @@ def act_list(a):
                          "last": last_line(os.path.join(d, "out.log"))})
     print(json.dumps({"host": socket.gethostname(), "runs": runs}))
 
+TAIL_START = 2 * 1024 * 1024   # a first display: the end of the log only
+TAIL_CHUNK = 4 * 1024 * 1024   # then what was appended, by blocks of this size
+
 def act_tail(a):
+    """The log from byte a[2] on. a[2] < 0: a first display -- the last
+    TAIL_START bytes from a line start, "skipped" telling how many came
+    before (the view keeps 20000 lines: reading a long log from its start
+    cost one ssh round trip per block for lines it then dropped)."""
     d, off = rdir(a[0], a[1]), int(a[2])
     p = os.path.join(d, "out.log")
-    data = b""
+    data, skipped = b"", 0
     if os.path.exists(p):          # a pending batch job has no log yet
         size = os.path.getsize(p)
-        if off > size:
-            off = 0
         with open(p, "rb") as f:
+            if off < 0:
+                off = max(0, size - TAIL_START)
+                if off:
+                    f.seek(off)
+                    head = f.read(64 * 1024)
+                    nl = head.find(b"\n")
+                    off += nl + 1 if nl >= 0 else 0
+                skipped = off
+            elif off > size:
+                off = 0
             f.seek(off)
-            data = f.read(512 * 1024)
+            data = f.read(TAIL_CHUNK)
+        more = off + len(data) < size
     else:
-        off = 0
-    print(json.dumps({"offset": off + len(data), "data": data.decode("utf-8", "replace")}))
+        off, more = 0, False
+    print(json.dumps({"offset": off + len(data), "data": data.decode("utf-8", "replace"),
+                      "skipped": skipped, "more": more}))
 
 def act_stop(a):
     d = rdir(a[0], a[1])

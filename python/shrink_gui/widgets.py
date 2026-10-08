@@ -80,20 +80,45 @@ class LogView(QPlainTextEdit):
         self.setMaximumBlockCount(20000)
         self.follow = True
 
+    @staticmethod
+    def _collapse(line):
+        """A line holding \\r (a progress bar rewritten in place): what a
+        terminal ends up showing, the last non-empty rewrite."""
+        parts = [p for p in line.split("\r") if p]
+        return parts[-1] if parts else ""
+
     def append_raw(self, text):
-        text = ANSI_RE.sub("", text)
+        """Appends @p text in ONE insertion: \\r rewrites are resolved here,
+        in Python, and only the last maximumBlockCount() lines are kept (the
+        view would drop the others anyway). Inserting line by line cost one
+        Qt call per line -- minutes for a long log."""
+        text = ANSI_RE.sub("", text).replace("\r\n", "\n")
+        if not text:
+            return
         bar = self.verticalScrollBar()
         at_end = self.follow
         cur = self.textCursor()
+        cur.beginEditBlock()
         cur.movePosition(QTextCursor.End)
-        for piece in re.split(r"(\r\n|\r|\n)", text):
-            if piece in ("\n", "\r\n"):
-                cur.insertText("\n")
-            elif piece == "\r":
+        if "\r" in text:
+            lines = text.split("\n")
+            if "\r" in lines[0]:        # rewrites the line in progress
                 cur.movePosition(QTextCursor.StartOfBlock, QTextCursor.KeepAnchor)
+                lines[0] = self._collapse(cur.selectedText() + lines[0])
                 cur.removeSelectedText()
-            elif piece:
-                cur.insertText(piece)
+            lines = lines[:1] + [self._collapse(ln) if "\r" in ln else ln for ln in lines[1:]]
+            text = "\n".join(lines)
+        keep = self.maximumBlockCount()
+        if keep > 0 and text.count("\n") > keep:
+            cut = len(text)
+            for _ in range(keep):
+                cut = text.rfind("\n", 0, cut)
+                if cut < 0:
+                    break
+            if cut > 0:
+                text = text[cut + 1:]
+        cur.insertText(text)
+        cur.endEditBlock()
         if at_end:
             bar.setValue(bar.maximum())
 

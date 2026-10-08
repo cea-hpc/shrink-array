@@ -283,3 +283,16 @@ def test_delete_with_outputs_and_local_copy(gui, site, monkeypatch):
     w.delete()
     assert pump(lambda: not (site.runs / rid).exists() and not local.exists(), 10)
     assert seen == {"own": "dir", "loc": str(local)} and not os.path.exists(od)
+
+
+def test_log_view_rewrites_and_trims(qapp):
+    from shrink_gui.widgets import LogView
+    v = LogView()
+    for c in ["start\n", "prog 1\r", "prog 2\rprog 3\n", "done\r\n", "a\rbb\rc\n", "x"]:
+        v.append_raw(c)
+    assert v.toPlainText().splitlines() == ["start", "prog 3", "done", "c", "x"]
+    v = LogView()
+    v.setMaximumBlockCount(50)
+    v.append_raw("".join(f"{i}\n" for i in range(100000)))
+    lines = v.toPlainText().splitlines()
+    assert lines[-1] == "99999" and len(lines) < 50

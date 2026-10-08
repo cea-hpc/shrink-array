@@ -356,6 +356,8 @@ EN_RE = [(re.compile(a), b) for a, b in (
      r"programme restent en place\)$",
      r"Delete the directory of run \1 on inti?\n(log, scripts, exit code; the program's outputs stay)"),
     (r"^(\S+) supprimé$", r"\1 deleted"),
+    (r"^\[gui\] … les (\S+) premiers Mo du log ne sont pas affichés \(« Récupérer les résultats » copie le log "
+     r"complet\)$", r"[gui] … the first \1 MB of the log are not shown (\"Fetch results\" copies the whole log)"),
     (r"^(\S+) supprimé( \(\+ (\d+) sortie\(s\) sur inti\))?( \(\+ copie locale\))?$",
      lambda m: m.group(1) + " deleted" + (f" (+ {m.group(3)} output(s) on inti)" if m.group(2) else "")
      + (" (+ local copy)" if m.group(4) else "")),

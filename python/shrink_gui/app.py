@@ -952,7 +952,7 @@ class Main(QMainWindow):
             if r is None:
                 return
             self.info(f"soumis : job {r['jobid']}" if "jobid" in r else f"lancé : {r['run_dir']}")
-            self.current, self.offset = rid, 0
+            self.current, self.offset = rid, -1     # -1: the end of the log first (act_tail)
             self.log.clear()
             self.refresh(select=rid)
 
@@ -1020,7 +1020,7 @@ class Main(QMainWindow):
     def select(self):
         rid = self.selected()
         if rid and rid != self.current:
-            self.current, self.offset = rid, 0
+            self.current, self.offset = rid, -1     # -1: the end of the log first (act_tail)
             self.log.clear()
             self.poll_tail()
             self.pt_data = None
@@ -1039,10 +1039,13 @@ class Main(QMainWindow):
                 return
             if r["offset"] < self.offset:      # file restarted
                 self.log.clear()
+            if r.get("skipped"):
+                self.log.append_raw(T(f"[gui] … les {r['skipped'] / 1e6:.1f} premiers Mo du log ne sont pas "
+                                      "affichés (« Récupérer les résultats » copie le log complet)") + "\n")
             if r["data"]:
                 self.log.append_raw(r["data"])
             self.offset = r["offset"]
-            if len(r["data"]) >= 512 * 1024:   # more to read
+            if r.get("more"):                 # appended faster than one block: read on
                 QTimer.singleShot(0, self.poll_tail)
 
         self.remote.helper("tail", [self.runs_dir.text().strip(), rid, self.offset], done)
