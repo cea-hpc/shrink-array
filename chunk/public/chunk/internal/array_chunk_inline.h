@@ -31,6 +31,7 @@
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
+#include "chunk/internal/parallel_storage_init.h" // reserve_first_touched, for_each_chunk
 #include "chunk/internal/in_t.h"                        // in_t<T>
 
 namespace shrink_array
@@ -77,22 +78,11 @@ void ArrayChunk<T, ind_type>::rebuild_storage(ind_type sz)
             this->alloc_dirty_bitset(nb_chunk);
             this->assign_alloc_key(); // own slabs if large enough (see alloc_key_)
 
-            if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-            {
-#pragma omp parallel for
-                for (int i = 0; i < nb_chunk; ++i)
-                {
-                    chunk_list[i].init_values_cst_val();
-                }
-            }
-            else
-            {
-#pragma omp for
-                for (int i = 0; i < nb_chunk; ++i)
-                {
-                    chunk_list[i].init_values_cst_val();
-                }
-            }
+            // A team of its own outside a region; the calling thread inside one
+            // (an orphaned `omp for` would initialise 1/N of an array created by
+            // each thread, and hang one created under `omp single`).
+            parallel_storage_init::for_each_chunk(nb_chunk, 500,
+                                                  [this](int i) { chunk_list[i].init_values_cst_val(); });
         }
     }
 

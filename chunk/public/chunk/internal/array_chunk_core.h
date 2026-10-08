@@ -57,6 +57,7 @@
 #include "chunk/chunk_traits.h"                      // ChunkTraits (proxy_type, manager_type)
 #include "chunk/internal/chunk_size_policy.h"        // ActiveSizePolicy
 #include "chunk/internal/array_chunk_dirty_bitset.h" // DirtyBitsetSupport
+#include "chunk/internal/parallel_storage_init.h" // reserve_first_touched, for_each_chunk
 
 namespace shrink_array
 {
@@ -262,6 +263,10 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
         {
             chunk_list.swap(spare_chunk_list_); // spare left empty, without a buffer
         }
+        // A fresh buffer is faulted in by a team, not by the value-initialising
+        // resize below (one thread, and every page on its NUMA node). The spare
+        // just taken is resident already: left alone.
+        parallel_storage_init::reserve_first_touched(chunk_list, n);
         chunk_list.resize(n);
     }
 

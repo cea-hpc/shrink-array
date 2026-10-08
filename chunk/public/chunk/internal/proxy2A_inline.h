@@ -39,6 +39,7 @@
 #include "chunk/internal/chunk_stats.h"                  // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_size_policy.h"            // DynChunkSizeGuard, set_thread_chunk_size
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
+#include "chunk/internal/parallel_storage_init.h" // reserve_first_touched, for_each_chunk
 
 /**
  * @file proxy2A_inline.h
@@ -298,6 +299,7 @@ void Proxy2A<T>::resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk)
     // the tail loop that followed it stored zeros over zeros).
     Base::tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)] =
         std::vector<std::atomic<char>>(static_cast<std::size_t>(nb_chunk));
+    parallel_storage_init::reserve_first_touched(tab_type_cst_val[num_tab], static_cast<std::size_t>(nb_chunk));
     tab_type_cst_val[num_tab].resize(nb_chunk, 0);
 }
 

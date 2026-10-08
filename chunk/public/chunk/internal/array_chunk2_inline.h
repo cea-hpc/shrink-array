@@ -38,6 +38,7 @@
 #include "chunk/config.h"                               // chunk_config::use_fast_block_compression, chunk_config::stats
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
+#include "chunk/internal/parallel_storage_init.h" // reserve_first_touched, for_each_chunk
 // Explicit includes for symbols used by clear_core() below: ManagerChunk
 // (per-size free-list + candidate-filter helpers), pool_ledger
 // (CHUNK_LEDGER_PARK/DISCARD), chunk_size_policy (runtime geometry). All
@@ -179,22 +180,11 @@ void ArrayChunk2<T, ind_type>::rebuild_storage(ind_type sz)
             this->acquire_chunk_list(static_cast<std::size_t>(nb_chunk));
             this->alloc_dirty_bitset(nb_chunk);
 
-            if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-            {
-#pragma omp parallel for
-                for (int i = 0; i < nb_chunk; ++i)
-                {
-                    chunk_list[i].init_after_constructor();
-                }
-            }
-            else
-            {
-#pragma omp for
-                for (int i = 0; i < nb_chunk; ++i)
-                {
-                    chunk_list[i].init_after_constructor();
-                }
-            }
+            // A team of its own outside a region; the calling thread inside one
+            // (an orphaned `omp for` would initialise 1/N of an array created by
+            // each thread, and hang one created under `omp single`).
+            parallel_storage_init::for_each_chunk(nb_chunk, 500,
+                                                  [this](int i) { chunk_list[i].init_after_constructor(); });
         }
     }
     else
