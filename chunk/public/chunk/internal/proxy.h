@@ -233,9 +233,21 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param ptr Chunk pointer to look up.
      * @return The table number @p ptr belongs to.
      */
-    [[nodiscard]] static int get_num_tab_async(auto* /*ctx*/, const void* ptr) noexcept
+    [[nodiscard]] static int get_num_tab_async(auto* ctx, [[maybe_unused]] const void* ptr) noexcept
     {
-        return Derived::share_info_array->get_num_tab(ptr);
+        // The context's num_tab, captured at enqueue: the one the replay proxy
+        // is armed with (make_proxy_with_info), without a registry scan per
+        // replayed op. Check builds compare it with the registry while the
+        // array is still registered.
+        if constexpr (build_config::any_check)
+        {
+            if (Derived::share_info_array->exists(ptr) && Derived::share_info_array->get_num_tab(ptr) != ctx->num_tab)
+            {
+                CHUNK_INVARIANT_FAILED("[Proxy get_num_tab_async] ctx num_tab={} but the registry says {} for {}",
+                                       ctx->num_tab, Derived::share_info_array->get_num_tab(ptr), ptr);
+            }
+        }
+        return ctx->num_tab;
     }
 
     /**
@@ -873,6 +885,17 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     [[nodiscard]] static int get_num_tab(const void* ptr) noexcept
     {
         return share_info_array->get_num_tab(ptr);
+    }
+
+    /**
+     * @brief This proxy's table number: the armed one (operator[] arms it),
+     *        the registry lookup otherwise.
+     * @param array_ptr This proxy's array (ptr_on_array).
+     * @return The table number of @p array_ptr.
+     */
+    [[nodiscard]] int get_num_tab_cached(const void* array_ptr) const noexcept
+    {
+        return this->num_tab >= 0 ? this->num_tab : get_num_tab(array_ptr);
     }
 
     /// Registry of every v1 array: array address -> table number.

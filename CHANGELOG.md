@@ -80,6 +80,14 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- Deferred operations: `AllocatorRegistry::get_or_create<T>()` caches its answer per thread
+  and per type instead of scanning the registry at every allocation and release of an op or
+  a context (`reset()` invalidates the cache); the virtual `slab_addr()` is no longer called
+  when the pool ledger is off. In v1, the table number of a deferred write is no longer
+  looked up in the registry (a linear scan over the live arrays) at enqueue and again at
+  replay: the proxy's armed `num_tab` is captured in the context, and the replay reads it
+  back (`Proxy::get_num_tab_cached`, `get_num_tab_async`); check builds compare it with the
+  registry.
 - `chunk_list` (the chunks of an array) no longer has its new chunks value-initialised by
   `std::vector::resize` on the calling thread: its allocator (`NoInitAllocator`,
   `internal/array_chunk_core.h`) leaves them unconstructed, and the init loops of `create`
