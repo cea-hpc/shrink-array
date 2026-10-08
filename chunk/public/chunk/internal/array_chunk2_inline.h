@@ -572,7 +572,7 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
         add_chunk_still_compressed_at_exit<Chunk2<T>>(n_compressed);
         record_chunk_size_at_exit<Chunk2<T>>(static_cast<unsigned int>(this->size_policy_.size()));
     }
-    print_formatted_chunk_stats(os, num_tab, type_name<T>(), n_compressed, nb_chunk, n_t1, "Chunk2",
+    print_formatted_chunk_stats(os, num_tab, this->debug_name(), type_name<T>(), n_compressed, nb_chunk, n_t1, "Chunk2",
                                 /*n_cross=*/n_would_be_2a, /*cross_name=*/"Chunk2A");
 }
 

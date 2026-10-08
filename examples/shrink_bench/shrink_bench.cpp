@@ -575,6 +575,26 @@ int main(int argc, char* argv[])
                              tab_long, tab_ulong,     tab_quant,   tab_point, tab_cell,  tab_mask,
                              sz,       interval,      !no_struct,  !no_mask};
 
+    // The end-of-life stats print these next to the table number.
+    maybe_set_debug_name(tab1, "tab1");
+    maybe_set_debug_name(tab2, "tab2");
+    maybe_set_debug_name(tab3, "tab3");
+    maybe_set_debug_name(tab4, "tab4");
+    maybe_set_debug_name(tab5, "tab5");
+    maybe_set_debug_name(tab_int, "tab_int");
+    maybe_set_debug_name(tab_bool, "tab_bool");
+    maybe_set_debug_name(tab_bool_bits, "tab_bool_bits");
+    maybe_set_debug_name(tab_complex, "tab_complex");
+    maybe_set_debug_name(tab_float, "tab_float");
+    maybe_set_debug_name(tab_short, "tab_short");
+    maybe_set_debug_name(tab_char, "tab_char");
+    maybe_set_debug_name(tab_long, "tab_long");
+    maybe_set_debug_name(tab_ulong, "tab_ulong");
+    maybe_set_debug_name(tab_quant, "tab_quant");
+    maybe_set_debug_name(tab_point, "tab_point");
+    maybe_set_debug_name(tab_cell, "tab_cell");
+    maybe_set_debug_name(tab_mask, "tab_mask");
+
     SingletonChk<GlobalStatsChunkList>::getRef().print();
 
     auto                          end             = std::chrono::steady_clock::now();

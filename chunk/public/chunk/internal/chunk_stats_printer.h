@@ -31,6 +31,8 @@ namespace shrink_array
 ///
 /// @param os            stream the report is written to.
 /// @param num_tab       table number of the array (its registry index).
+/// @param array_name    the array's set_debug_name(), printed before the
+///                      number when not empty.
 /// @param type_name     element type, as printed.
 /// @param n_compressed  chunks stored in a compressed (constant) form.
 /// @param nb_chunk      total chunks in the array.
@@ -51,6 +53,7 @@ namespace shrink_array
 ///                      verdict for them.
 inline void print_formatted_chunk_stats(std::ostream&      os,
                                         int                num_tab,
+                                        const std::string& array_name,
                                         const std::string& type_name,
                                         int                n_compressed,
                                         int                nb_chunk,
@@ -126,10 +129,14 @@ inline void print_formatted_chunk_stats(std::ostream&      os,
     const auto        sflags = ss.flags();
     const auto        sprec  = ss.precision();
 
-    const std::string tab_label = "[tab_" + std::to_string(num_tab) + " " + type_name + "]";
+    // The table number changes at every re-chunk; the name, when the caller
+    // gave one, is what says which array this is.
+    const std::string tab_label = array_name.empty()
+                                      ? "[tab_" + std::to_string(num_tab) + " " + type_name + "]"
+                                      : "[" + array_name + " #" + std::to_string(num_tab) + " " + type_name + "]";
 
     // Step 1: the left-aligned prefix.
-    ss << std::left << std::setw(30) << tab_label << RESET;
+    ss << std::left << std::setw(40) << tab_label << RESET;
 
     // Step 2: overall compression statistics.
     ss << std::right << std::setw(6) << n_compressed << "/" << std::setw(6) << nb_chunk << " chunks compressed ("

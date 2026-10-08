@@ -210,6 +210,19 @@ void maybe_set_second_value(Arr& a, const Val& v)
 }
 
 // -----------------------------------------------------------------------------
+// The same for set_debug_name(name): the chunked arrays print it in their
+// end-of-life stats line, next to a table number that every re-chunk changes.
+// -----------------------------------------------------------------------------
+template <typename Arr>
+void maybe_set_debug_name(Arr& a, const char* name)
+{
+    if constexpr (requires(Arr& x) { x.set_debug_name(name); })
+    {
+        a.set_debug_name(name);
+    }
+}
+
+// -----------------------------------------------------------------------------
 // Non-template utilities defined in bench_utils.cpp.
 // -----------------------------------------------------------------------------
 extern bool __debug_flag;

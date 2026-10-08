@@ -50,7 +50,9 @@
 #include <cstddef>     // std::size_t
 #include <cstdint>     // std::uint64_t
 #include <cstdlib>     // std::getenv (CHUNK_ALLOC_AFFINITY_EAGER)
+#include <string>      // std::string (debug_name_)
 #include <type_traits> // std::conditional_t
+#include <utility>     // std::move (set_debug_name)
 #include <vector>      // std::vector (chunk_list)
 
 #include "chunk/config.h"                            // build_config::alloc_affinity_min_bytes, build_config::any_check
@@ -148,6 +150,26 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
     [[nodiscard]] int chunk_count() const noexcept
     {
         return nb_chunk;
+    }
+
+    /**
+     * @brief Name this array in the end-of-life stats line, next to its table
+     *        number: `[tab_quant #20 double]` instead of `[tab_20 double]`.
+     * @details The table number is the per-type registry index, and every
+     *          re-chunk hands the array its temporary's (a new one): after a
+     *          dynamic run nothing says which variable `tab_20` was. The name
+     *          stays with the object -- neither a re-chunk nor swap() moves it,
+     *          they move storage. Empty (the default): the number alone.
+     * @param name the name to print
+     */
+    void set_debug_name(std::string name)
+    {
+        debug_name_ = std::move(name);
+    }
+    /// @brief The name set by set_debug_name(), empty if none.
+    [[nodiscard]] const std::string& debug_name() const noexcept
+    {
+        return debug_name_;
     }
 
     /**
@@ -323,6 +345,9 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
 
     /// @brief The derived array's rechunk_to(), installed by ArrayChunkBase.
     void (*rechunk_fn_)(ArrayChunkCore&, unsigned int) = nullptr;
+
+    /// @brief See set_debug_name().
+    std::string debug_name_;
 };
 
 /**

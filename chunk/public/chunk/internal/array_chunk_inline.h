@@ -162,7 +162,7 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
         // size distribution (no-op on static builds, see chunk_stats.h).
         record_chunk_size_at_exit<Chunk<T>>(static_cast<unsigned int>(this->size_policy_.size()));
     }
-    print_formatted_chunk_stats(os, num_tab, type_name<T>(), n_compressed, nb_chunk,
+    print_formatted_chunk_stats(os, num_tab, this->debug_name(), type_name<T>(), n_compressed, nb_chunk,
                                 /*n_t1=*/0, "Chunk",
                                 /*n_cross=*/n_would_be_t2, /*cross_name=*/"Chunk2");
 }
