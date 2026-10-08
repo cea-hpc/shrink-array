@@ -135,6 +135,18 @@ class Main(QMainWindow):
         self.launcher_row_label = QLabel("Lanceur (job)")
         where.addRow(self.launcher_row_label, self.launcher)
         where.addRow("Dépôt (inti)", self.repo)
+        # Branch and state of inti's repository, and the pulls.
+        self.git_state = TLabel("?")
+        self.git_state.setTextFormat(Qt.RichText)
+        self.bpull = QPushButton("git pull")
+        self.bpull.clicked.connect(lambda: self.git_pull(rebase=False))
+        self.bpull_rebase = QPushButton("git pull --rebase")
+        self.bpull_rebase.clicked.connect(lambda: self.git_pull(rebase=True))
+        grow = QHBoxLayout()
+        grow.addWidget(self.git_state, 1)
+        grow.addWidget(self.bpull)
+        grow.addWidget(self.bpull_rebase)
+        where.addRow("Git (inti)", grow)
         where.addRow("Runs (inti)", self.runs_dir)
         where.addRow("Résultats (local)", self.local_dir)
         self.local_repo = QLineEdit(self._get("local_repo"))
@@ -502,6 +514,11 @@ class Main(QMainWindow):
         "Supprimer": "Supprime le dossier du run sur inti ; au choix, aussi les sorties du "
                      "programme propres à ce run et la copie locale. Seulement pour un run terminé.",
         "Rafraîchir le résumé": "Relit le fichier résumé du run sélectionné.",
+        "git pull": "git pull dans le dépôt d'inti (fusion si les branches ont divergé). "
+                    "Un conflit annule le pull : le dépôt reste tel qu'il était.",
+        "git pull --rebase": "git pull --rebase dans le dépôt d'inti : vos commits locaux "
+                             "d'inti sont rejoués au-dessus de la branche distante. Un conflit "
+                             "annule le rebase : le dépôt reste tel qu'il était.",
     }
 
     def set_tooltips(self):
@@ -879,6 +896,7 @@ class Main(QMainWindow):
                 self.fill_qos(self.qos.currentData())
                 self.update_qos()
             self.inti_git = r.get("git")
+            self.show_git_state()
             self.conn.setText(f"<span style='color:#1e8449'>connecté — {r['host']}, "
                               f"python {r['python']}</span>{warn}{self.git_line()}")
             self.refresh()
@@ -1136,6 +1154,72 @@ class Main(QMainWindow):
         except (OSError, subprocess.SubprocessError):
             return None
         return {"commit": c, "branch": b} if c else None
+
+    def show_git_state(self):
+        """The "Git (inti)" row: branch, commit, changes, upstream, ahead/behind."""
+        g = getattr(self, "inti_git", None)
+        if not g:
+            self.git_state.setText("pas de dépôt git (ou pas encore de connexion)")
+            for b in (self.bpull, self.bpull_rebase):
+                b.setEnabled(False)
+            return
+        txt = f"branche <b>{html.escape(g['branch'])}</b> @ {g['commit'][:8]}"
+        if g.get("dirty"):
+            txt += " · <span style='color:#b9770e'>modifications locales</span>"
+        up = g.get("upstream")
+        if not up:
+            txt += " · pas de branche suivie"
+        else:
+            txt += f" · suit {html.escape(up)}"
+            ahead, behind = g.get("ahead", 0), g.get("behind", 0)
+            if behind:
+                txt += f" · <span style='color:#b9770e'><b>{behind}</b> en retard</span>"
+            if ahead:
+                txt += f" · <b>{ahead}</b> en avance"
+            if not ahead and not behind:
+                txt += " · à jour au dernier fetch"
+        self.git_state.setText(txt)
+        for b in (self.bpull, self.bpull_rebase):
+            b.setEnabled(bool(up))
+
+    def git_pull(self, rebase):
+        """git pull [--rebase] in inti's repository, after a confirmation."""
+        g = getattr(self, "inti_git", None)
+        if not g:
+            self.error("pas de dépôt git sur inti : vérifiez la connexion")
+            return
+        what = "git pull --rebase" if rebase else "git pull"
+        active = [r for r in self.runs if r["status"] in self.ACTIVE]
+        text = T(f"{what} dans {self.repo.text().strip()} (branche {g['branch']}) ?")
+        if active:
+            text += "\n\n" + T(f"{len(active)} run(s) encore actif(s) : un build ou un bench en cours "
+                                 f"peut lire des sources modifiées en cours de route.")
+        if ask(self, "Git", text) != QMessageBox.Yes:
+            return
+        for b in (self.bpull, self.bpull_rebase):
+            b.setEnabled(False)
+        self.info(f"{what} sur inti…")
+
+        def done(r):
+            if r is None:  # the error is already in the status bar
+                self.show_git_state()
+                return
+            self.inti_git = r.get("git") or self.inti_git
+            self.show_git_state()
+            if r["ok"]:
+                moved = r.get("git") and r["git"]["commit"] != r.get("before")
+                self.info(f"{what} : " + (f"{r['before'][:8]} → {r['git']['commit'][:8]}" if moved
+                                          else "déjà à jour"))
+                if moved:
+                    self.check()   # the connection line, then the script options again
+                    self.scan()
+            else:
+                head = T(f"{what} a échoué")
+                if r.get("aborted"):
+                    head += T(f" ; {r['aborted']} annulé, le dépôt est revenu à son état d'avant")
+                QMessageBox.warning(self, "Git", head + "\n\n" + r.get("output", "")[-3000:])
+
+        self.remote.helper("git_pull", [self.repo.text().strip(), "rebase" if rebase else "merge"], done)
 
     def git_line(self):
         """ — inti : 1a2b3c4d (branch) · local : … ≠, for the connection line."""

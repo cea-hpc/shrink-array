@@ -17,7 +17,18 @@ EN = {
     "Calculateur :": "Machine:", "Vérifier la connexion": "Check connection",
     "Où et comment": "Where and how", "Quoi": "What", "Partition": "Partition",
     "Soumission": "Submission", "Durée max (-T)": "Max time (-T)", "Directives": "Directives",
-    "Lanceur (job)": "Launcher (job)", "Dépôt (inti)": "Repository (inti)",
+    "Lanceur (job)": "Launcher (job)", "Dépôt (inti)": "Repository (inti)", "Git (inti)": "Git (inti)",
+    "pas de dépôt git (ou pas encore de connexion)": "no git repository (or not connected yet)",
+    "pas de dépôt git sur inti : vérifiez la connexion": "no git repository on inti: check the connection",
+    "git pull dans le dépôt d'inti (fusion si les branches ont divergé). "
+    "Un conflit annule le pull : le dépôt reste tel qu'il était.":
+        "git pull in inti's repository (a merge if the branches have diverged). "
+        "A conflict cancels the pull: the repository stays as it was.",
+    "git pull --rebase dans le dépôt d'inti : vos commits locaux "
+    "d'inti sont rejoués au-dessus de la branche distante. Un conflit "
+    "annule le rebase : le dépôt reste tel qu'il était.":
+        "git pull --rebase in inti's repository: your local commits on inti are replayed on top "
+        "of the remote branch. A conflict cancels the rebase: the repository stays as it was.",
     "Runs (inti)": "Runs (inti)", "Résultats (local)": "Results (local)",
     "Langue": "Language",
     "gh200-bxi — ARM, 288 cœurs": "gh200-bxi — ARM, 288 cores",
@@ -396,6 +407,22 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"pas de bloc usage\(\) \{ cat <<EOF \.\.\. EOF \} où lire les options \(le script n'est pas exécuté ici\)",
      "no usage() { cat <<EOF ... EOF } block to read the options from (the script is not run here)"),
     (r" — inti : ", " — inti: "), (r" · local : identique", " · local: same"),
+    (r"^branche <b>", "branch <b>"), (r" · modifications locales", " · local changes"),
+    (r"modifications locales</span>", "local changes</span>"),
+    (r" · pas de branche suivie", " · no upstream branch"), (r" · suit ", " · tracks "),
+    (r"</b> en retard</span>", "</b> behind</span>"), (r"</b> en avance", "</b> ahead"),
+    (r" · à jour au dernier fetch", " · up to date as of the last fetch"),
+    (r"^(git pull(?: --rebase)?) dans (\S+) \(branche (\S+)\) \?$", r"\1 in \2 (branch \3)?"),
+    (r"^(\d+) run\(s\) encore actif\(s\) : un build ou un bench en cours peut lire des sources "
+     r"modifiées en cours de route\.$",
+     r"\1 run(s) still active: a build or a bench in progress may read sources changed under it."),
+    (r"^(git pull(?: --rebase)?) sur inti…$", r"\1 on inti…"),
+    (r"^(git pull(?: --rebase)?) : déjà à jour$", r"\1: already up to date"),
+    (r"^(git pull(?: --rebase)?) : (\S+) → (\S+)$", r"\1: \2 → \3"),
+    (r"^(git pull(?: --rebase)?) a échoué$", r"\1 failed"),
+    (r"^ ; (rebase|merge) annulé, le dépôt est revenu à son état d'avant$",
+     r"; \1 cancelled, the repository is back as it was"),
+    (r"^git_pull : pas de dépôt git dans (\S+)$", r"git_pull: no git repository in \1"),
     (r"local : (<b>\w+</b>) \(([^)]*)\) ≠ inti", r"local: \1 (\2) ≠ inti"),
     (r"^branche : ", "branch: "),
     (r"\* modifications non commitées dans le dépôt d'inti à la soumission",
