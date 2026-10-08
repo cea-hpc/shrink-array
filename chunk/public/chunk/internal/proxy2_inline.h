@@ -1064,6 +1064,16 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
             // (a manage_full_* may fold the chunk, and nothing reads v_new
             // after it): in_t, no copy of a struct.
             const in_t<T> v_new = this->raw_elem();
+            // Transition OUT of the second value first, independently of the
+            // transition IN below (as execute_simple_operation does). Chained
+            // to the first-value branch, `second_value * 0` (or `/ inf`) counted
+            // the new zero but kept the old second value counted: one too many,
+            // so a later second-value write reached "full" with one element
+            // still different and folded the chunk to cst2 -- that element lost.
+            if (was_second_value0 && v_new != second_value)
+            {
+                chunk.dec_nb_val_eq_second_value();
+            }
             if (check_first_value_result && Base::is_not_cst_val1() && v_new == Chunk2<T>::first_value)
             {
                 chunk.inc_nb_val_eq_first_value();
@@ -1071,10 +1081,6 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
                 {
                     this->manage_full_first_value();
                 }
-            }
-            else if (was_second_value0 && v_new != second_value)
-            {
-                chunk.dec_nb_val_eq_second_value();
             }
             else if (!was_second_value && v_new == second_value)
             {

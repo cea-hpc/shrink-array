@@ -12,8 +12,70 @@ def shq(v):
         return str(v)
     return '"' + str(v).replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\`") + '"'
 
-def make_run_sh(repo, cwd, command):
-    """What runs on the compute node."""
+# Are the executables of the builds a run uses up to date? On the node, before
+# the command: `ninja -n` on the executables already built under examples/ of
+# each build directory of this architecture -- the targets compile_all.sh made,
+# not those it was never asked to build. "[n/m] ..." lines = work to do =
+# stale. Exit 96 ("refuse") or a warning ("warn"). Without ninja, skipped.
+CHECK_BUILDS_SH = r"""
+gui_check_builds() {
+    local mode="$1" root="$2"; shift 2
+    root="${root/#\~/$HOME}"
+    if ! command -v ninja >/dev/null 2>&1; then
+        echo "[gui] build check: no ninja on this node, skipped"; return 0
+    fi
+    local arch b name d n=0 stale=() unknown=() exes out
+    arch=$(uname -m)
+    for b in "$@"; do
+        name="$b"; [[ "$name" == cmake-build-* ]] || name="cmake-build-$name"
+        for d in "$root/$name"/*__"$arch" "$root/$name"; do
+            [ -f "$d/build.ninja" ] || continue
+            mapfile -t exes < <(cd "$d" && find examples -type f -perm -u+x -not -path '*/CMakeFiles/*' 2>/dev/null | sort)
+            [ ${#exes[@]} -gt 0 ] || break
+            n=$((n + 1))
+            if ! out=$(ninja -C "$d" -n "${exes[@]}" 2>&1); then
+                unknown+=("$d")
+            elif grep -q '^\[' <<< "$out"; then
+                stale+=("$d ($(grep -c '^\[' <<< "$out") step(s))")
+            fi
+            break
+        done
+    done
+    for d in "${unknown[@]}"; do echo "[gui] build check: ninja -n failed in $d (not checked)"; done
+    if [ ${#stale[@]} -eq 0 ]; then
+        echo "[gui] build check: $n build(s) up to date"; return 0
+    fi
+    echo "[gui] build check: ${#stale[@]} of $n build(s) NOT up to date (compile them first):"
+    printf '[gui]   %s\n' "${stale[@]}"
+    if [ "$mode" = refuse ]; then
+        echo "[gui] not started (the check can be set to warn or off in the form)"; exit 96
+    fi
+    echo "[gui] warning only: started anyway"
+}
+"""
+
+
+def check_builds_call(check):
+    """The run.sh lines of the build check @p check = {"mode": "refuse"|"warn",
+    "root": build root (may hold $USER), "builds": [names] or None,
+    "builds_file": a file of names, one per line (# comments), relative to the
+    program's directory -- or a single name when there is no such file};
+    "" when there is none."""
+    if not check or check.get("mode") not in ("refuse", "warn"):
+        return ""
+    root = shq(check.get("root") or "$CHUNK_BUILD_ROOT")
+    if check.get("builds_file"):   # a file of names if there is one, else a single name
+        f = shq(check["builds_file"])
+        names = (f'if [ -f {f} ]; then mapfile -t GUI_BUILDS < <(sed -e "s/#.*//" -e "s/[[:space:]]//g" {f} '
+                 f'| grep -v "^$"); else GUI_BUILDS=({f}); fi')
+    else:
+        names = "GUI_BUILDS=(" + " ".join(shq(b) for b in check.get("builds") or []) + ")"
+    return (CHECK_BUILDS_SH + names + "\n"
+            + f'gui_check_builds {check["mode"]} {root} "${{GUI_BUILDS[@]}}"\n')
+
+
+def make_run_sh(repo, cwd, command, check=None):
+    """What runs on the compute node. @p check: the build check (check_builds_call)."""
     return f"""#!/bin/bash
 echo "[gui] node $(hostname)  start $(date '+%F %T')  job ${{SLURM_JOB_ID:-}}"
 RUN_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -45,16 +107,56 @@ fi
 echo "[gui] $(python3 --version 2>&1) ($PY)"
 cd {shlex.quote(cwd)} || exit 97
 echo "[gui] cwd $PWD"
-echo "[gui] command: "{shlex.quote(command)}
+{check_builds_call(check)}echo "[gui] command: "{shlex.quote(command)}
 {command}
 """
 
-def make_launch_sh(mprun_opts):
-    """ccc_mprun mode: runs on the login node, detached."""
+def wait_sh(after=None, delay_s=0):
+    """The detached mode's wait before ccc_mprun: @p delay_s seconds, then the
+    end of the run @p after = {"run": id, "cond": "ok"|"any"}, a sibling in the
+    runs directory (its exit_code file; a batch run that left the queue
+    without one counts as failed). Not started: exit code 95. The file
+    "waiting" marks the wait (status "en attente")."""
+    if not after and not delay_s:
+        return ""
+    # Stopped while waiting ("Arrêter" sends TERM to the group, the sleep
+    # included): end there, as a stopped run.
+    out = ['trap \'rm -f "$D/waiting"; touch "$D/stopped"; echo 143 > "$D/exit_code"; exit 143\' TERM',
+           'touch "$D/waiting"']
+    if delay_s:
+        out.append(f'echo "[gui] waiting {int(delay_s)} s before starting"; sleep {int(delay_s)}')
+    if after:
+        rid, cond = after["run"], after.get("cond", "ok")
+        out.append(f"""W="$D/../{rid}"
+echo "[gui] waiting for the end of run {rid} ({'if it succeeds' if cond == 'ok' else 'whatever its result'})"
+POLL="${{SHRINK_GUI_POLL:-30}}"
+while [ ! -s "$W/exit_code" ]; do
+    J=$(cat "$W/jobid" 2>/dev/null)
+    if [ -n "$J" ] && ! squeue -h -j "$J" -o %i 2>/dev/null | grep -q "^$J\\b"; then
+        sleep "$POLL"; [ -s "$W/exit_code" ] && break
+        echo "[gui] run {rid} left the queue without an exit code: not started"
+        rm -f "$D/waiting"; echo 95 > "$D/exit_code"; exit 0
+    fi
+    sleep "$POLL"
+done
+c=$(cat "$W/exit_code")
+echo "[gui] run {rid} ended (exit code $c)"
+""")
+        if cond == "ok":
+            out.append(f"""if [ "$c" != 0 ]; then
+    echo "[gui] run {rid} failed: not started"; rm -f "$D/waiting"; echo 95 > "$D/exit_code"; exit 0
+fi""")
+    out.append('rm -f "$D/waiting"')
+    out.append('trap \'touch "$D/stopped"\' TERM')
+    return "\n".join(out) + "\n"
+
+
+def make_launch_sh(mprun_opts, after=None, delay_s=0):
+    """ccc_mprun mode: runs on the login node, detached; waits first if asked (wait_sh)."""
     return f"""#!/bin/bash
 D="$(cd "$(dirname "$0")" && pwd)"
 trap 'touch "$D/stopped"' TERM
-echo "[gui] ccc_mprun {mprun_opts}"
+{wait_sh(after, delay_s)}echo "[gui] ccc_mprun {mprun_opts}"
 ccc_mprun {mprun_opts} bash "$D/run.sh" &
 m=$!
 wait $m

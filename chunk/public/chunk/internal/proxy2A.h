@@ -41,6 +41,7 @@
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/internal/proxy2_base.h"                  // Proxy2Base
 #include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/parallel_storage_init.h" // reserve_first_touched, for_each_chunk
 
 namespace shrink_array
 {
@@ -409,10 +410,14 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
     static void resize(int nb_tab, int nb_chunk_old, int nb_chunk)
     {
         auto& row = tab_second_value[static_cast<std::size_t>(nb_tab)];
+        // A row filled from empty (every storage build) is faulted in by a team.
+        parallel_storage_init::reserve_first_touched(row, static_cast<std::size_t>(nb_chunk));
+        const int held = static_cast<int>(row.size());
         row.resize(static_cast<std::size_t>(nb_chunk)); // keeps [0, min(old, new))
         // The tail from the OLD count is cleared, as the reallocation did: the
-        // row may hold more than nb_chunk_old entries.
-        for (int k = nb_chunk_old; k < nb_chunk; ++k)
+        // row may hold more than nb_chunk_old entries. Only up to what the row
+        // held: resize() has just value-initialised the rest.
+        for (int k = nb_chunk_old; k < std::min(held, nb_chunk); ++k)
         {
             row[static_cast<std::size_t>(k)] = second_value_slot_t{};
         }

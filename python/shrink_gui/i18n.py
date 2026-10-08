@@ -182,11 +182,16 @@ EN = {
         "again or change it.",
     "Remet dans le formulaire le programme, la partition et les options de ce run":
         "Puts this run's program, partition and options back in the form",
-    "Supprime le dossier du run sur inti (pas les sorties du programme). "
-    "Seulement pour un run terminé.":
-        "Deletes the run directory on inti (not the program's outputs). Finished runs only.",
-    "Supprime le dossier du run sur inti (pas les sorties du programme)":
-        "Deletes the run directory on inti (not the program's outputs)",
+    "Supprime le dossier du run sur inti ; au choix, aussi les sorties du "
+    "programme propres à ce run et la copie locale. Seulement pour un run terminé.":
+        "Deletes the run directory on inti; optionally also the program outputs that are "
+        "this run's own, and the local copy. Finished runs only.",
+    "Supprime le dossier du run sur inti (au choix : ses sorties, la copie locale)":
+        "Deletes the run directory on inti (optionally: its outputs, the local copy)",
+    "aussi le dossier de sortie du programme, propre à ce run":
+        "also the program's output directory, this run's own",
+    "pas de sorties propres à ce programme": "no outputs of its own for this program",
+    "pas de copie locale": "no local copy",
     "Relit le fichier résumé du run sélectionné.": "Reads the selected run's summary file again.",
     "ccc_msub : ce qui lance run.sh sur le nœud réservé, par exemple "
     "« ccc_mprun -C ccc-rhel9 -n 1 -c 288 » (environnement RHEL 9 du gh200).\n"
@@ -236,6 +241,36 @@ EN = {
         "bench_and_test.py: its phases (duration, errors, from events.jsonl) or its bench_summary.csv.",
     "Choix de la langue de l'interface (changement immédiat).":
         "Interface language (applied at once).",
+    # start conditions and build check (Démarrage / Builds à jour)
+    "Démarrage": "Start", "Builds à jour": "Builds up to date", "pas avant": "not before",
+    "dès la soumission": "on submission", "si elle réussit": "if it succeeds",
+    "quelle que soit son issue": "whatever its result",
+    "refuser de démarrer si un build n'est pas à jour": "refuse to start if a build is not up to date",
+    "avertir seulement": "warn only", "ne pas vérifier": "do not check",
+    "Démarrer après la fin d'une compilation (run compile_all.sh pas encore fini).\n\n"
+    "ccc_msub : dépendance Slurm (le job attend dans la file sans prendre de nœud). "
+    "ccc_mprun détaché : le lancement attend le code de retour de ce run.\n\n"
+    "« si elle réussit » : une compilation en échec, et le run ne démarre jamais "
+    "(en batch il reste en attente : à arrêter).":
+        "Start after the end of a compilation (a compile_all.sh run not finished yet).\n\n"
+        "ccc_msub: a Slurm dependency (the job waits in the queue without holding a node). "
+        "ccc_mprun, detached: the launch waits for that run's exit code.\n\n"
+        "\"if it succeeds\": a failed compilation and the run never starts "
+        "(in batch it stays pending: stop it).",
+    "Ne pas démarrer avant ce délai, compté depuis la soumission "
+    "(ccc_msub : --begin de Slurm ; ccc_mprun détaché : une attente avant le lancement).":
+        "Do not start before this delay, counted from the submission "
+        "(ccc_msub: Slurm's --begin; ccc_mprun, detached: a wait before the launch).",
+    "Avant la commande, sur le nœud : ninja -n sur les exécutables déjà construits "
+    "de chaque build que le programme utilisera (--configs de bench_and_test.py, "
+    "--builds de multi_launch_stress.py, sous --build-root). Un build dont une "
+    "source, un en-tête ou la configuration a changé depuis sa compilation n'est "
+    "pas à jour.\n\n« refuser » : le run s'arrête (code 96) en listant ces builds.":
+        "Before the command, on the node: ninja -n on the executables already built in "
+        "each build the program will use (--configs of bench_and_test.py, --builds of "
+        "multi_launch_stress.py, under --build-root). A build whose sources, headers or "
+        "configuration changed since it was compiled is not up to date.\n\n\"refuse\": "
+        "the run stops (code 96), listing those builds.",
 }
 
 # Messages built on the fly (and those inti sends back): regex on the French,
@@ -248,6 +283,11 @@ EN_RE = [(re.compile(a), b) for a, b in (
      "Fix it, then click \"Read options\". Meanwhile the \"extra arguments\" field passes options as they are."),
     (r"\(pas d'aide dans le script\)", "(no help in the script)"),
     (r"^la QoS (\S+) n'est pas ouverte sur (\S+)$", r"QoS \1 is not open on \2"),
+    (r"^après (\S+)$", r"after \1"),
+    (r"^en attente sans fin \((\S+) a échoué : à arrêter\)$", r"pending for ever (\1 failed: stop it)"),
+    (r"^le run (\S+) a échoué \(code (\S+)\) : rien soumis$", r"run \1 failed (code \2): nothing submitted"),
+    (r"^le run (\S+) n'existe pas$", r"run \1 does not exist"),
+    (r"^le run (\S+) n'a pas de job batch à attendre$", r"run \1 has no batch job to wait for"),
     (r"^(.+) dépasse le maximum de la QoS (\S+) sur (\S+) \((.+)\)$", r"\1 exceeds the maximum of QoS \2 on \3 (\4)"),
     (r"^(\d+) cœurs dépassent le maximum de la QoS (\S+) sur (\S+) \((\d+)\)$",
      r"\1 cores exceed the maximum of QoS \2 on \3 (\4)"),
@@ -316,6 +356,19 @@ EN_RE = [(re.compile(a), b) for a, b in (
      r"programme restent en place\)$",
      r"Delete the directory of run \1 on inti?\n(log, scripts, exit code; the program's outputs stay)"),
     (r"^(\S+) supprimé$", r"\1 deleted"),
+    (r"^(\S+) supprimé( \(\+ (\d+) sortie\(s\) sur inti\))?( \(\+ copie locale\))?$",
+     lambda m: m.group(1) + " deleted" + (f" (+ {m.group(3)} output(s) on inti)" if m.group(2) else "")
+     + (" (+ local copy)" if m.group(4) else "")),
+    (r"^Supprimer le run (\S+) \?\n\nSur inti, son dossier \(log, scripts, code de retour\)\.$",
+     r"Delete run \1?\n\nOn inti, its directory (log, scripts, exit code)."),
+    (r"^aussi ses logs dans le dossier de sortie partagé \((.+) ; jamais oracle/\)$",
+     r"also its logs in the shared output directory (\1; never oracle/)"),
+    (r"^aussi la copie locale (.+)$", r"also the local copy \1"),
+    (r"^pas de dossier de sortie annoncé dans le log de (\S+)$", r"no output directory announced in the log of \1"),
+    (r"^dossier de sortie refusé : (.+)$", r"output directory refused: \1"),
+    (r"^(\S+) utilise aussi (.+) : rien supprimé$", r"\1 uses \2 too: nothing deleted"),
+    (r"^(\S+), plus récent ou actif, écrit aussi dans (.+) : rien supprimé$",
+     r"\1, newer or active, writes to \2 too: nothing deleted"),
     (r"^récupération de (\S+)…$", r"fetching \1…"), (r"^récupération : ", "fetch: "),
     (r"^(\d+) fichier\(s\) → ", r"\1 file(s) → "),
     (r" sur (\S+) : ", r" on \1: "),

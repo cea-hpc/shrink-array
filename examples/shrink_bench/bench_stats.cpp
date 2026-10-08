@@ -47,10 +47,12 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
     auto& tab_float     = bench_arr.tab_float;
     auto& tab_short     = bench_arr.tab_short;
     auto& tab_char      = bench_arr.tab_char;
+    auto& tab_long      = bench_arr.tab_long;
+    auto& tab_ulong     = bench_arr.tab_ulong;
+    auto& tab_quant     = bench_arr.tab_quant;
     auto& tab_point     = bench_arr.tab_point;
     auto& tab_cell      = bench_arr.tab_cell;
-
-    const Int sz = bench_arr.sz;
+    auto& tab_mask      = bench_arr.tab_mask;
 
     auto lbd_fill_values = [&](const std::string& name, const auto& tab, auto sec_val)
     {
@@ -113,9 +115,11 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
             }
         }
 
-        const double pc  = double(nb) / double(sz);
-        const double pcz = double(nbz) / double(sz);
-        const double pcv = double(nbv) / double(sz);
+        // Over the array's own size: tab_float and tab_char hold 2 * sz
+        // elements, tab_short sz / 2, tab_mask mask_scale * sz.
+        const double pc  = double(nb) / double(ssz);
+        const double pcz = double(nbz) / double(ssz);
+        const double pcv = double(nbv) / double(ssz);
 
         // int, not Int: a display width handed to the format string, never an
         // array index -- Int widens to 64 bits under BENCH_INT64.
@@ -157,6 +161,38 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         std::println("");
     }
 
+    // tab_quant has one second value per level it lands on (up to
+    // bench_double_bands), not one: its census is zeros and the rest.
+    auto lbd_fill_quant = [](const std::string& name, const auto& tab)
+    {
+        Int       nbz = 0;
+        const Int ssz = tab.size();
+
+#pragma omp parallel for reduction(+ : nbz)
+        for (Int k = 0; k < ssz; ++k)
+        {
+            if (tab[k] == 0.0)
+            {
+                nbz++;
+            }
+        }
+        const Int nb = ssz - nbz;
+
+        constexpr int name_width   = 20;
+        const int     name_padding = std::max<int>(0, (name_width - static_cast<int>(name.length())) / 2);
+        std::cout << std::fixed << std::setprecision(2);
+        std::cout << std::setw(name_padding) << "" << "\nstatistics " << name << "\n";
+
+        constexpr int label_width = 22;
+        constexpr int value_width = 10;
+        std::cout << std::setw(label_width) << std::left << "Numbers of 0" << ":" << std::setw(value_width)
+                  << std::right << nbz << std::setw(value_width) << std::right
+                  << (100.0 * double(nbz) / double(ssz)) << " %" << "\n";
+        std::cout << std::setw(label_width) << std::left << "Numbers of levels != 0" << ":"
+                  << std::setw(value_width) << std::right << nb << std::setw(value_width) << std::right
+                  << (100.0 * double(nb) / double(ssz)) << " %" << "\n";
+    };
+
     // One lambda instead of two. The body of a generic lambda is a TEMPLATE, so
     // here `if constexpr` really discards: tab.stats(), which std::vector has
     // no member for, is never instantiated in the baseline build. That is the
@@ -191,6 +227,13 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
             lbd_fill_values("tab_short", tab_short, second_value_s0);
             lbd_fill_values("tab_float", tab_float, second_value_f0);
             lbd_fill_values("tab_char", tab_char, second_value_c0);
+            lbd_fill_values("tab_long", tab_long, second_value_l);
+            lbd_fill_values("tab_ulong", tab_ulong, second_value_ul);
+            lbd_fill_quant("tab_quant", tab_quant);
+            if (bench_arr.with_mask) // --no_mask
+            {
+                lbd_fill_values("tab_mask", tab_mask, second_value_b);
+            }
             if (bench_arr.with_struct) // --no_struct
             {
                 lbd_fill_values("tab_point", tab_point, second_value_p);
@@ -216,6 +259,13 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
                 lbd_fill_chunk("tab_float", tab_float);
                 lbd_fill_chunk("tab_short", tab_short);
                 lbd_fill_chunk("tab_char", tab_char);
+                lbd_fill_chunk("tab_long", tab_long);
+                lbd_fill_chunk("tab_ulong", tab_ulong);
+                lbd_fill_chunk("tab_quant", tab_quant);
+                if (bench_arr.with_mask)
+                {
+                    lbd_fill_chunk("tab_mask", tab_mask);
+                }
                 if (bench_arr.with_struct)
                 {
                     lbd_fill_chunk("tab_point", tab_point);

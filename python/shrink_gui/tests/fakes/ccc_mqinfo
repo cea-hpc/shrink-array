@@ -1,0 +1,13 @@
+#!/bin/bash
+# Fake ccc_mqinfo: the QoS limits of the fake inti (test is 3 h on gh200-bxi,
+# 2 h on milan-bxi; long is not open on milan-bxi, xlong not on gh200-bxi).
+cat <<'TABLE'
+Name    Partition   Priority  MaxCPUs  MaxSub     MaxTime
+------  ----------  --------  -------  ------  ----------
+test    gh200-bxi         40      576       2    03:00:00
+test    milan-bxi         40      256       2    02:00:00
+normal  gh200-bxi         20              100  1-00:00:00
+normal  milan-bxi         20              100  1-00:00:00
+long    gh200-bxi         20              100  3-00:00:00
+xlong   milan-bxi         20              100  7-00:00:00
+TABLE

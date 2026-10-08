@@ -71,6 +71,17 @@ def queue_states():
 STATES = {"PENDING": "en attente", "CONFIGURING": "démarrage", "RUNNING": "en cours",
           "COMPLETING": "en cours", "SUSPENDED": "suspendu"}
 
+def pending_detail(d, st):
+    """A waiting run whose start condition can no longer be met: the run it
+    waits for failed (Slurm keeps such a job pending, DependencyNeverSatisfied)."""
+    meta = json.loads(read(os.path.join(d, "meta.json"), "{}") or "{}")
+    after = meta.get("after")
+    if after and after.get("cond", "ok") == "ok":
+        code = (read(os.path.join(os.path.dirname(d), after["run"], "exit_code")) or "").strip()
+        if code and code != "0":
+            return "en attente sans fin (%s a échoué : à arrêter)" % after["run"]
+    return st
+
 def status(d, q):
     stopped = os.path.exists(os.path.join(d, "stopped"))
     code = (read(os.path.join(d, "exit_code")) or "").strip()
@@ -83,7 +94,10 @@ def status(d, q):
         if q is None:
             return "inconnu (pas de squeue)", None
         if jobid in q:
-            return STATES.get(q[jobid], q[jobid].lower()), None
+            st = STATES.get(q[jobid], q[jobid].lower())
+            if q[jobid] == "PENDING":
+                return pending_detail(d, st), None
+            return st, None
         if stopped:
             return "arrêté", None
         return "terminé sans code (limite de temps ? voir le log)", None
@@ -94,6 +108,8 @@ def status(d, q):
     if host != socket.gethostname():
         return "en cours ? (lancé depuis %s)" % host, None
     if alive(int(pid)):
+        if os.path.exists(os.path.join(d, "waiting")):
+            return pending_detail(d, "en attente"), None
         return "en cours", None
     return ("arrêté" if stopped else "interrompu"), None
 
@@ -228,9 +244,42 @@ def act_options(a):
     sys.stdout = real_stdout
     print(json.dumps({"error": "%s ne lit pas ses options avec argparse (%s)" % (a[1], pyv)}))
 
+def after_extra(base, spec):
+    """(Slurm options for ccc_msub -E, error): the start conditions of a batch
+    run -- after the run spec["after"] = {"run", "cond": "ok"|"any"}
+    (--dependency=afterok|afterany on its job), not before spec["delay_s"]
+    seconds (--begin=now+N). A run already finished is decided here: Slurm
+    forgets a finished job after a few minutes, a dependency on it would be
+    refused."""
+    extra = []
+    after = spec.get("after")
+    if after:
+        ad = rdir(base, after["run"])
+        if not os.path.isfile(os.path.join(ad, "meta.json")):
+            return None, "le run %s n'existe pas" % after["run"]
+        code = (read(os.path.join(ad, "exit_code")) or "").strip()
+        jobid = (read(os.path.join(ad, "jobid")) or "").strip()
+        if code:
+            if after.get("cond", "ok") == "ok" and code != "0":
+                return None, "le run %s a échoué (code %s) : rien soumis" % (after["run"], code)
+        elif jobid:
+            extra.append("--dependency=%s:%s" % ("afterok" if after.get("cond", "ok") == "ok" else "afterany",
+                                                 jobid))
+        else:
+            return None, "le run %s n'a pas de job batch à attendre" % after["run"]
+    if spec.get("delay_s"):
+        extra.append("--begin=now+%d" % int(spec["delay_s"]))
+    return extra, None
+
 def act_launch(a):
     base, rid, spec = a[0], a[1], json.loads(base64.b64decode(a[2]).decode())
     d = rdir(base, rid)
+    extra = []
+    if spec["mode"] == "msub":
+        extra, err = after_extra(base, spec)
+        if err:
+            print(json.dumps({"error": err}))
+            return
     os.makedirs(d)
     write(os.path.join(d, "run.sh"), spec["run.sh"])
     # The code the run is submitted on; run.sh records the one it STARTS on
@@ -243,6 +292,7 @@ def act_launch(a):
                + "#MSUB -r %s\n#MSUB -T %d\n#MSUB -o %s\n#MSUB -e %s\n"
                % (spec["name"], spec["time_s"], log, log)
                + ("#MSUB -Q %s\n" % spec["qos"] if spec.get("qos") else "")
+               + ('#MSUB -E "%s"\n' % " ".join(extra) if extra else "")
                + 'D=%s\n' % shlex.quote(d)
                + ('echo "[gui] launcher: %s"\n' % spec["launcher"] if spec.get("launcher") else "")
                + '%sbash "$D/run.sh"\ncode=$?\necho "$code" > "$D/exit_code"\n'
@@ -550,8 +600,61 @@ def act_points(a):
     print(json.dumps({"builds": sorted(builds, key=builds.get), "exes": sorted(exes, key=exes.get),
                       "rows": rows[-30000:], "total": n}))
 
+def _same_dir(a, b):
+    try:
+        return os.path.realpath(a) == os.path.realpath(b)
+    except (TypeError, ValueError):
+        return False
+
+def outputs_to_delete(base, rid, d, meta, own):
+    """(paths to remove, error): the program outputs of run @p rid, as
+    @p own says ("dir": the output directory its log announces; a list: those
+    entries of that directory). Refused when another run announces the same
+    directory -- any other one for "dir", for a list one still active or
+    newer (the files are then its own, rewritten after ours)."""
+    od = out_dir(d, meta)
+    if not od:
+        return None, "pas de dossier de sortie annoncé dans le log de %s" % rid
+    od = os.path.expanduser(od)
+    real = os.path.realpath(od)
+    home = os.path.realpath(os.path.expanduser("~"))
+    if (not os.path.isabs(od) or real in ("/", home) or real.count(os.sep) < 3
+            or os.path.realpath(os.path.join(home, "shrink-array")).startswith(real)):
+        return None, "dossier de sortie refusé : %s" % od
+    if not os.path.isdir(od):
+        return [], None                        # already gone: nothing to do
+    q = None
+    for other in sorted(os.listdir(base)):
+        od2 = os.path.join(base, other)
+        m2 = read(os.path.join(od2, "meta.json"))
+        if other == rid or m2 is None:
+            continue
+        m2 = json.loads(m2)
+        if not _same_dir(out_dir(od2, m2) or "", od):
+            continue
+        if own == "dir":
+            return None, "%s utilise aussi %s : rien supprimé" % (other, od)
+        if q is None:
+            q = queue_states()
+        st = status(od2, q)[0]
+        if st in ("en cours", "en attente", "démarrage") or st.startswith("en attente") \
+                or m2.get("created", "") > meta.get("created", ""):
+            return None, "%s, plus récent ou actif, écrit aussi dans %s : rien supprimé" % (other, od)
+    if own == "dir":
+        return [od], None
+    out = []
+    for name in own:
+        if os.sep in name or name in ("", ".", ".."):
+            continue
+        p = os.path.join(od, name)
+        if os.path.lexists(p):
+            out.append(p)
+    return out, None
+
 def act_delete(a):
-    """Remove one run directory -- never the program's own output directory."""
+    """Remove one run directory and, when a[2] asks for it ({"own": ...},
+    base64 JSON), the program outputs that are the run's own
+    (outputs_to_delete). Everything is checked before anything is removed."""
     import shutil
     base, rid = rdir(a[0]), a[1]
     if not re.match(r"^[\w.-]+$", rid) or rid in (".", ".."):
@@ -561,8 +664,26 @@ def act_delete(a):
     if not os.path.isfile(os.path.join(d, "meta.json")):
         print(json.dumps({"error": "%s n'est pas un run" % d}))
         return
+    opts = json.loads(base64.b64decode(a[2]).decode()) if len(a) > 2 and a[2] else {}
+    paths = []
+    if opts.get("own"):
+        meta = json.loads(read(os.path.join(d, "meta.json"), "{}") or "{}")
+        paths, err = outputs_to_delete(base, rid, d, meta, opts["own"])
+        if err:
+            print(json.dumps({"error": err}))
+            return
+    removed = []
+    for p in paths:
+        if os.path.isdir(p) and not os.path.islink(p):
+            shutil.rmtree(p, ignore_errors=True)
+        else:
+            try:
+                os.remove(p)
+            except OSError:
+                continue
+        removed.append(p)
     shutil.rmtree(d)
-    print(json.dumps({"ok": True}))
+    print(json.dumps({"ok": True, "removed": removed}))
 
 BUILD_NAME_RE = re.compile(r'cmake-build-([^/"\s]*)')
 EXE_RULE_RE = re.compile(rb"CXX_EXECUTABLE_LINKER__(\w+)")

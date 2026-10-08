@@ -27,6 +27,13 @@ node (the first prototype's way). A run is a directory on inti
     exit_code   written when the command returns
     stopped     written by "Arrêter"
 
+Start conditions ("Démarrage"): after a compile_all.sh run not finished yet
+(ccc_msub: a Slurm dependency, afterok or afterany, passed with -E; detached
+mode: launch.sh waits for that run's exit_code), and/or not before a delay
+(--begin). "Builds à jour": run.sh first runs `ninja -n` on the executables
+already built in each build the program will use (--configs / --builds under
+--build-root) and refuses to start (exit code 96) or warns when one is stale.
+
 "Récupérer" fetches the run directory, plus the summary files of the
 program's own output directory, read from the log ("📁 Outputs, CSV and log
 in ..." / "📁 Run outputs → ...") -- never the per-run output_* files.

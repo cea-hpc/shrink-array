@@ -32,7 +32,8 @@ PRESETS = {
 }
 
 # Programs: script and working directory relative to the repository, how the
-# options are read, "time_s" (default job duration), "msub_only" (refused in the detached ccc_mprun mode), how the
+# options are read, "builds_opt" (the options naming the builds the run uses,
+# for the up-to-date check), "time_s" (default job duration), "msub_only" (refused in the detached ccc_mprun mode), how the
 # options are read ("argparse" or "help"), what the log says about progress,
 # and what "Récupérer" / the Résumé tab take from the output directory the
 # program announces in its log (out_re).
@@ -46,6 +47,14 @@ PROGRAMS = {
         "progress_re": r"Run (\d+)/(\d+) on build",
         "eta_re": r"Estimated Time Left: ([\d.]+)s",
         "summary": "multi_launch", "summary_file": "timings_summary.csv",
+        # The build check before the command ("Builds à jour"): the option
+        # naming the build root, the one naming the builds (a list, or a file
+        # of names one per line, relative to cwd).
+        "builds_opt": {"root": "build_root", "builds": "builds"},
+        # What "Supprimer" may also remove ("ses sorties"): "dir" = the output
+        # directory the log announces, the run's own; a list = those entries
+        # of a SHARED output directory (never the rest of it).
+        "own_outputs": "dir",
     },
     "bench_and_test.py": {
         "time_s": 21600,  # default -T (a few hours); then remembered per program
@@ -55,6 +64,11 @@ PROGRAMS = {
         "out_files": ["bench_summary.csv", "bench_errors.log", "failed_cases.jsonl"],
         "progress_re": None, "eta_re": None,
         "summary": "csv", "summary_file": "bench_summary.csv",
+        "builds_opt": {"root": "build_root", "builds": "configs"},
+        # bench_results/<arch> is shared by every run of the architecture and
+        # holds the oracles (oracle/): only what each run rewrites goes.
+        "own_outputs": ["bench_output.log", "bench_errors.log", "failed_cases.jsonl", "bench_summary.csv",
+                        "run_logs", "runs"],
     },
     "compile_all.sh": {
         "time_s": 5400,  # default -T (short); then remembered per program

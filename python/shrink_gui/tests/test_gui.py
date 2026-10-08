@@ -214,3 +214,72 @@ def test_target_and_exec_pickers(gui, site, monkeypatch):
     assert set(exes) >= {"shrink_bench_chunk_64", "shrink_bench_chunk_dyn"}
     assert "shrink_bench_chunk_256" not in exes                     # x86_64 build: not on gh200
     assert ("--exec=" + w.form.widgets["exec"][1].text()) in w.preview.toPlainText().replace("'", "")
+
+
+def test_start_after_a_compile_run(gui, site):
+    import base64
+    import json
+    from test_start_conditions import _spec
+    w, pump = gui
+    blob = base64.b64encode(json.dumps(_spec("sleep 4", program="compile_all.sh")).encode()).decode()
+    jc = site.helper("launch", "~/shrink_runs", "0-compile", blob)["jobid"]   # sorts after the new run
+    w.refresh()
+    assert pump(lambda: w.after.findData("0-compile") >= 0, 10)          # an active compile run is offered
+    assert not w.after_cond.isEnabled()
+    w.after.setCurrentIndex(w.after.findData("0-compile"))
+    assert w.after_cond.isEnabled()
+    _choose_fake(w, pump)
+    w.delay_on.setChecked(True)
+    w.delay.setValue(120)
+    rid = _submit(w, pump, {"runs": "2"}, len(w.runs))
+    job = (site.runs / rid / "job.sh").read_text()
+    assert f'#MSUB -E "--dependency=afterok:{jc} --begin=now+120"' in job
+    assert pump(lambda: (w.refresh() or True) and next(r for r in w.runs if r["id"] == rid)["status"] == "en attente", 10)
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == rid))
+    w.delete()                                                    # still queued: refused
+    assert (site.runs / rid).exists()
+
+
+def test_build_check_follows_the_options(gui):
+    w, pump = gui
+    w.program.setCurrentText("multi_launch_stress.py")
+    assert pump(lambda: w.form.schema is not None and "builds" in w.form.widgets)
+    assert w.check_builds.isEnabled()
+    c = w.build_check()
+    assert c["mode"] == "refuse" and c["builds_file"] == "build_arm.txt" and "shrink-array" in c["root"]
+    w.form.set_values({"builds": "omp-gnu,omp-llvm"})
+    assert w.build_check()["builds"] == ["omp-gnu", "omp-llvm"]
+    w.check_builds.setCurrentIndex(w.check_builds.findData("off"))
+    assert w.build_check() is None
+    w.check_builds.setCurrentIndex(w.check_builds.findData("warn"))
+    w.program.setCurrentText("bench_and_test.py")
+    assert pump(lambda: w.form.schema is not None and "configs" in w.form.widgets, 60)
+    c = w.build_check()
+    assert c["mode"] == "warn" and "cmake-build-omp-gnu" in c["builds"]
+    w.program.setCurrentText("compile_all.sh")
+    assert not w.check_builds.isEnabled()
+
+
+def test_delete_with_outputs_and_local_copy(gui, site, monkeypatch):
+    import os
+    w, pump = gui
+    _choose_fake(w, pump)
+    w.program.setCurrentText("fake_stress.py")
+    monkeypatch.setitem(__import__("shrink_gui.config", fromlist=["x"]).PROGRAMS["fake_stress.py"],
+                        "own_outputs", "dir")
+    rid = _submit(w, pump, {"runs": "2"}, len(w.runs))
+    assert _wait_status(w, pump, rid, "fini")
+    log = site.helper("tail", "~/shrink_runs", rid, 0)["data"]
+    od = log.split("Outputs, CSV and log in ")[1].split()[0]
+    local = site.local / rid
+    local.mkdir()
+    seen = {}
+
+    def fake_dialog(run, own, loc):
+        seen.update(own=own, loc=loc)
+        return True, True, True
+    monkeypatch.setattr(w, "delete_dialog", fake_dialog)
+    w.table.selectRow(next(i for i, r in enumerate(w.runs) if r["id"] == rid))
+    w.delete()
+    assert pump(lambda: not (site.runs / rid).exists() and not local.exists(), 10)
+    assert seen == {"own": "dir", "loc": str(local)} and not os.path.exists(od)

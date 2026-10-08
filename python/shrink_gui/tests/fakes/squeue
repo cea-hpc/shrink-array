@@ -1,4 +1,13 @@
 #!/bin/bash
-# Fake squeue -h -u USER -o "%i %T": the fake jobs still alive are RUNNING.
-for f in "$FAKE_Q"/*; do [ -e "$f" ] || continue; id=$(basename "$f"); kill -0 "$id" 2>/dev/null && echo "$id RUNNING"; done
+# Fake squeue -h -u USER -o "%i %T" (or -j ID): the fake jobs still alive,
+# PENDING while they wait for a dependency / a begin time (fake ccc_msub),
+# RUNNING otherwise.
+want=""
+while [ $# -gt 0 ]; do [ "$1" = -j ] && { want=$2; shift; }; shift; done
+for f in "$FAKE_Q"/*; do
+    id=$(basename "$f"); [[ "$id" =~ ^[0-9]+$ ]] || continue
+    [ -n "$want" ] && [ "$id" != "$want" ] && continue
+    kill -0 "$id" 2>/dev/null || continue
+    if [ -e "$FAKE_Q/pending_$id" ]; then echo "$id PENDING"; else echo "$id RUNNING"; fi
+done
 exit 0

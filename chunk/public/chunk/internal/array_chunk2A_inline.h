@@ -39,6 +39,7 @@
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
+#include "chunk/internal/parallel_storage_init.h" // reserve_first_touched, for_each_chunk
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_* (check builds)
 
 namespace shrink_array
@@ -108,22 +109,7 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
                 Proxy2A<T>::BaseSpec::set(num_tab, i, T{});
                 chunk_list[i].init_after_constructor();
             };
-            const bool parallel_chunk_init = !CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 16384;
-            if (parallel_chunk_init)
-            {
-#pragma omp parallel for schedule(static)
-                for (int i = 0; i < nb_chunk; ++i)
-                {
-                    init_chunk(i);
-                }
-            }
-            else
-            {
-                for (int i = 0; i < nb_chunk; ++i)
-                {
-                    init_chunk(i);
-                }
-            }
+            parallel_storage_init::for_each_chunk(nb_chunk, 16384, init_chunk);
         }
     }
 
