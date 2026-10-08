@@ -179,9 +179,19 @@ the tag's checksum to the recipe.
   PMP_MAX_THREADS, PMP_IN_PARALLEL_REGION). The fallback definitions of the membarrier(2)
   commands are constants of `shrink_array`, no longer macros. is_power_of_tow is
   `is_power_of_two`.
+- Element write path (OpenMP builds): three acquire loads of the chunk header per write
+  instead of five. Check #1 reuses the gate probe's value (reloaded only after waiting out a
+  compressor), and the WAW guard reloads `pending_ops_` only when the entry read found
+  something pending; check #2, the writer half of the Dekker handshake after
+  `announce_write`, stays a fresh load. Landed in commit 083a0e54, whose message does not
+  mention it.
 
 ### Fixed
 
+- Chunk2, serial builds: `x *= 0` (or `/=`) on an element holding the second value left it
+  counted as one, so a later second-value write could fold the chunk to that constant with the
+  element still different, and the element was lost. `%=` did not count a zero result as the
+  first value (a missed compression, no value lost).
 - `ParamChunk::init_indexes<Types>()` compiles: it called a private member of `AllTypeChunk`.
 - `scripts/check_includes.py` works outside a git checkout (a source archive, a Spack
   build) and checks files not yet added to git.
