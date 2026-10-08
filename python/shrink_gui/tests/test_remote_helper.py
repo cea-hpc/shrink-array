@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """remote_helper.py, run as on inti (through the fake ssh), without Qt."""
 import ast
 import base64

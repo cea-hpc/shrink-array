@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Run on inti by shrink_gui: `python3 - <action> <args...>`, this file on stdin.
 
 Nothing is installed on inti: every ssh call sends this file again, so it is

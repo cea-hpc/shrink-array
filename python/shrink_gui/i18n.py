@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """French / English: T() and its tables. The interface is written in French."""
 import html
 import re

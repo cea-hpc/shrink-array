@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """shrink_gui -- prototype: submit and follow the shrink-array runs on inti
 from the laptop.
 

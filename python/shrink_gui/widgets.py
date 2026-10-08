@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Widgets: the log, the options form, the chart, table cells."""
 import html
 import re

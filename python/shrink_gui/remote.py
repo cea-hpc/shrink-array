@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """ssh calls: one QProcess each, the helper sent on stdin."""
 import json
 import pathlib
