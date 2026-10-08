@@ -942,9 +942,8 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @param v Operand.
      * @param op The operator.
      * @param check_first_value_result When true, a result equal to the first
-     *        value is also treated as a compression candidate (`*=` and `/=`
-     *        pass true: they can land on it from a non-zero slot; `%=` passes
-     *        false).
+     *        value is also treated as a compression candidate (`*=`, `/=` and
+     *        `%=` pass true: they can land on it from a non-zero slot).
      * @note Materialises any foreign deferred write to this offset first
      *       (reader_sync) so the RMW cannot clobber it.
      */
