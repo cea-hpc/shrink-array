@@ -22,7 +22,7 @@
 #include <atomic>      // std::memory_order_acquire, std::memory_order_release
 #include <cstddef>     // std::size_t
 #include <cstdlib>     // std::abort
-#include <tuple>       // inf_array_t, the candidate-list entries
+#include <tuple>       // the candidate-list entries
 #include <type_traits> // std::is_same_v, std::conditional_t
 #include <vector>      // std::vector
 #include <cstring>     // std::memset (the Bit second constant)
@@ -43,6 +43,7 @@
 #include "chunk/internal/conditional_counter.h"         // ConditionalCounter, counter_value_t
 #include "chunk/internal/TChunk.h"                      // VectorTuple4ChunkInt2 (the candidate lists)
 #include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/second_value_info.h" // SecondValueInfo (inf_array_t)
 
 namespace shrink_array
 {
@@ -128,10 +129,10 @@ class ChunkSpec2
      * \param values_loc Buffer to fill.
      * \param inf_array (second_value, ...) tuple; only the value is used here.
      */
-    static void init_block_2nd_value(T* values_loc, const std::tuple<T, int, int>& inf_array)
+    static void init_block_2nd_value(T* values_loc, const SecondValueInfo<T>& inf_array)
     {
         // in_t: fill_n takes a const T& anyway; no copy of a struct on the way.
-        const in_t<T> value = std::get<0>(inf_array);
+        const in_t<T> value = inf_array.second_value;
         std::fill_n(values_loc, alloc_chunk_count(), value);
     }
 
@@ -403,7 +404,7 @@ class Chunk2OmpPolicy : public Chunk2Base<T, Derived>
     using Base           = Chunk2Base<T, Derived>;
     using BaseSpec       = ChunkSpec2<T>;
     using manager_chunk2 = ManagerChunk<Chunk2, T>;
-    using inf_array_t    = std::tuple<T, int, int>;
+    using inf_array_t    = SecondValueInfo<T>;
 
     using Base::derived;
     using Base::first_value;
@@ -560,7 +561,7 @@ class Chunk2OmpPolicy<T, Derived, false> : public Chunk2Base<T, Derived>
   public:
     using Base        = Chunk2Base<T, Derived>;
     using BaseSpec    = ChunkSpec2<T>;
-    using inf_array_t = std::tuple<T, int, int>;
+    using inf_array_t = SecondValueInfo<T>;
 
     using Base::derived;
     using Base::first_value;
@@ -654,7 +655,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
     // geometry, carried from the candidate queue so the clear loop can pin the
     // thread to it before freeing (same shape as vec_tuple_chunkA2p_int2).
     using vec_tuple_chunk2p_int2 = std::vector<std::tuple<Chunk2<T>*, int, int, unsigned int>>;
-    using inf_array_t            = std::tuple<T, int, int>;
+    using inf_array_t            = SecondValueInfo<T>;
 
     /**
      * @brief Scans all threads to see if any chunk is marked for compression with a specific value.
@@ -1022,7 +1023,7 @@ class Chunk2FastCompPolicy<T, Derived, false> : public Chunk2OmpPolicy<T, Derive
     /// thread to it before freeing (same shape as vec_tuple_chunkA2p_int2).
     using vec_tuple_chunk2p_int2 = std::vector<std::tuple<Chunk2<T>*, int, int, unsigned int>>;
     /// (second value, its index in the shared value table, num_tab).
-    using inf_array_t = std::tuple<T, int, int>;
+    using inf_array_t = SecondValueInfo<T>;
 
     /// @name No-op counterparts of the true specialization's queries and passes
     ///       (same pattern as ChunkFastCompPolicy<T, Derived, false>)
@@ -1102,7 +1103,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
     // (second value, index, num_tab). Redeclared here on purpose: the policy
     // bases declare the same name, and this one hides theirs so Chunk2's own
     // members see one type. It must stay THEIR type -- checked below.
-    using inf_array_t = std::tuple<T, int, int>;
+    using inf_array_t = SecondValueInfo<T>;
 
     // Statistics variant tag (CHUNK_STATS): 1 = chunk2.
     static constexpr int stat_variant = 1;
@@ -1406,7 +1407,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      */
     void alloc_chunk(const inf_array_t& inf_array)
     {
-        if (is_cst_val(std::get<1>(inf_array)))
+        if (is_cst_val(inf_array.ind))
         {
             // bool has its own materialiser: the non-bool create_value is a
             // no-op in release for it (see its static_assert).
@@ -1430,7 +1431,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      */
     void alloc_chunk(const inf_array_t& inf_array, [[maybe_unused]] int thr_rank)
     {
-        if (is_cst_val(std::get<1>(inf_array)))
+        if (is_cst_val(inf_array.ind))
         {
             if constexpr (chunk_config::stats)
             {

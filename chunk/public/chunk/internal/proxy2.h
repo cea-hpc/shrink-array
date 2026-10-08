@@ -16,7 +16,6 @@
 
 #pragma once
 
-#include <tuple>    // std::tuple, std::get
 #include <atomic>   // std::atomic, std::memory_order_release
 #include <concepts> // std::assignable_from
 #include <cstddef>  // std::size_t
@@ -39,6 +38,7 @@
 #include "chunk/internal/proxy2_base.h"                 // Proxy2Base
 #include "chunk/internal/chunk_stats.h" // increm_chunk_write<> in the bodies (a dependent call the include tools cannot attribute)
 #include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/second_value_info.h" // SecondValueInfo (inf_array_t)
 
 // compression_manager.h is already included unconditionally by proxy_base.h
 // (which this file includes above), and CompressionManagerType is referenced
@@ -72,7 +72,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
     using Base      = Proxy2Base<Derived, T, Chunk2<T>>;
     using Base::derived;
     using values_type_ref = Proxy2Base<Derived, T, ChunkType>::values_type_ref;
-    using inf_array_t     = std::tuple<T, int, int>;
+    using inf_array_t     = SecondValueInfo<T>;
 
     using Base::Base;
 
@@ -117,7 +117,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
 
     /**
      * @brief Load all compression metadata from global map
-     * @details Retrieves (second_value, ind, num_tab) tuple from share_info_array
+     * @details Retrieves (second_value, ind, num_tab) record from share_info_array
      *          using ptr_on_array as key. Also initializes compression flag pointer.
      * @pre ptr_on_array must point to valid array
      * @post second_value, ind, num_tab, and ptr_is_inside_chunk_list_to_compress are valid
@@ -169,7 +169,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      */
     T make_second_value() const noexcept
     {
-        return std::get<0>(inf_array);
+        return inf_array.second_value;
     }
 
     /**
@@ -204,7 +204,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
         return derived().get_ptr_on_array();
     }
 
-    /// @brief The (second_value, ind, num_tab) tuple: from the armed mirror when
+    /// @brief The (second_value, ind, num_tab) record: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
     ///        two are compared (model: Proxy2A::set_num_tab).
     [[nodiscard]] inf_array_t load_inf_array() const;
@@ -225,7 +225,7 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
   public:
     using Base = Proxy2Base<Derived, T, Chunk2<T>>;
     using Base::derived;
-    using inf_array_t = std::tuple<T, int, int>;
+    using inf_array_t = SecondValueInfo<T>;
 
     using ChunkType = Chunk2<T>;
 
@@ -317,7 +317,7 @@ class ProxySpec2<T, Derived> : public Proxy2Base<Derived, T, Chunk2<T>>
         return derived().get_ptr_on_array();
     }
 
-    /// @brief The (second_value, ind, num_tab) tuple: from the armed mirror when
+    /// @brief The (second_value, ind, num_tab) record: from the armed mirror when
     ///        there is one, from the registry otherwise. Under any_check the
     ///        two are compared (model: Proxy2A::set_num_tab).
     [[nodiscard]] inf_array_t load_inf_array() const;
@@ -1060,7 +1060,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      */
     void set_num_tab() noexcept
     {
-        num_tab = std::get<2>(inf_array);
+        num_tab = inf_array.num_tab;
     }
 
     /**

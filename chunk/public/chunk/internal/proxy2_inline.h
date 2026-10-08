@@ -54,12 +54,12 @@ const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_arr
             // ind and num_tab only: ind maps one-to-one to the value, and a
             // value compare would raise a false alarm on a NaN second value.
             const inf_array_t reg = Derived::get_info_second_value(get_ptr_on_array());
-            if (std::get<1>(reg) != std::get<1>(*inf_array_src_) || std::get<2>(reg) != std::get<2>(*inf_array_src_))
+            if (reg.ind != inf_array_src_->ind || reg.num_tab != inf_array_src_->num_tab)
             {
                 CHUNK_INVARIANT_FAILED(
                     "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
-                    std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg), std::get<2>(reg),
+                    inf_array_src_->ind, inf_array_src_->num_tab, reg.ind, reg.num_tab,
                     static_cast<const void*>(get_ptr_on_array()));
             }
         }
@@ -88,12 +88,12 @@ const ProxySpec2<T, Derived>::inf_array_t* ProxySpec2<T, Derived>::armed_inf_arr
             // ind and num_tab only: ind maps one-to-one to the value, and a
             // value compare would raise a false alarm on a NaN second value.
             const inf_array_t reg = Derived::get_info_second_value(get_ptr_on_array());
-            if (std::get<1>(reg) != std::get<1>(*inf_array_src_) || std::get<2>(reg) != std::get<2>(*inf_array_src_))
+            if (reg.ind != inf_array_src_->ind || reg.num_tab != inf_array_src_->num_tab)
             {
                 CHUNK_INVARIANT_FAILED(
                     "ProxySpec2::load_inf_array: armed (ind {}, num_tab {}) differs from the registry's "
                     "(ind {}, num_tab {}) for array {} -- a registry write without sync_registry_mirror()?",
-                    std::get<1>(*inf_array_src_), std::get<2>(*inf_array_src_), std::get<1>(reg), std::get<2>(reg),
+                    inf_array_src_->ind, inf_array_src_->num_tab, reg.ind, reg.num_tab,
                     static_cast<const void*>(get_ptr_on_array()));
             }
         }
@@ -114,7 +114,7 @@ ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() con
 
 // Every write runs one of these. They take the fields from the armed mirror --
 // memory written long before -- never from a copy just stored. The former
-//     inf_array = load_inf_array(); second_value = std::get<0>(inf_array); ...
+//     inf_array = load_inf_array(); second_value = inf_array.second_value; ...
 // returned the 16-byte tuple through a stack temporary (a q-register store)
 // and read it straight back with 8- and 4-byte loads: a store the core cannot
 // forward to narrower loads, so each write waited for it to reach the cache.
@@ -129,15 +129,15 @@ void ProxySpec2<T, Derived>::set_info_on_chunk()
     if (const inf_array_t* src = armed_inf_array()) [[likely]]
     {
         inf_array    = *src;
-        second_value = std::get<0>(*src);
-        ind          = std::get<1>(*src);
-        derived().set_num_tab(std::get<2>(*src)); // what set_num_tab() would read back from inf_array
+        second_value = src->second_value;
+        ind          = src->ind;
+        derived().set_num_tab(src->num_tab); // what set_num_tab() would read back from inf_array
     }
     else
     {
         inf_array    = Derived::get_info_second_value(get_ptr_on_array());
-        second_value = std::get<0>(inf_array);
-        ind          = std::get<1>(inf_array);
+        second_value = inf_array.second_value;
+        ind          = inf_array.ind;
         derived().set_num_tab();
     }
 
@@ -153,21 +153,21 @@ void ProxySpec2<T, Derived>::set_info_second_value_ind()
     if (const inf_array_t* src = armed_inf_array()) [[likely]]
     {
         inf_array    = *src;
-        second_value = std::get<0>(*src);
-        ind          = std::get<1>(*src);
+        second_value = src->second_value;
+        ind          = src->ind;
         return;
     }
     inf_array    = Derived::get_info_second_value(get_ptr_on_array());
-    second_value = std::get<0>(inf_array);
-    ind          = std::get<1>(inf_array);
+    second_value = inf_array.second_value;
+    ind          = inf_array.ind;
 }
 
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_info_second_value_ind_from_key(const void* key)
 {
     inf_array    = Derived::get_info_second_value(key);
-    second_value = std::get<0>(inf_array);
-    ind          = std::get<1>(inf_array);
+    second_value = inf_array.second_value;
+    ind          = inf_array.ind;
 }
 
 // Hidden from Doxygen: the Proxy2 alias (BaseSpec) and the bool specialization
@@ -179,11 +179,11 @@ void ProxySpec2<T, Derived>::set_second_value()
     if (const inf_array_t* src = armed_inf_array()) [[likely]]
     {
         inf_array    = *src;
-        second_value = std::get<0>(*src);
+        second_value = src->second_value;
         return;
     }
     inf_array    = Derived::get_info_second_value(get_ptr_on_array());
-    second_value = std::get<0>(inf_array);
+    second_value = inf_array.second_value;
 }
 /// @endcond
 
@@ -194,7 +194,7 @@ void ProxySpec2<T, Derived>::set_info_on_chunk()
     if (const inf_array_t* src = armed_inf_array()) [[likely]]
     {
         inf_array = *src;
-        derived().set_num_tab(std::get<2>(*src)); // not read back from inf_array (see above)
+        derived().set_num_tab(src->num_tab); // not read back from inf_array (see above)
     }
     else
     {

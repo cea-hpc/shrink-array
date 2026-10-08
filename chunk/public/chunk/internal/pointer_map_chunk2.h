@@ -49,7 +49,6 @@
 #include <cstdio>      // fprintf / fflush in report_key_not_found
 #include <deque>       // std::deque: share_info storage, no realloc invalidation
 #include <map>         // std::map
-#include <tuple>       // std::tuple / std::get / std::make_tuple
 #include <type_traits> // std::is_same_v
 #include <utility>     // std::pair
 #include <vector>      // std::vector
@@ -62,15 +61,16 @@
 #include "chunk/internal/in_t.h"               // in_t<T>
 #include "chunk/config.h"                      // build_config::any_check
 #include "chunk/internal/invariant_check.h"    // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/second_value_info.h" // SecondValueInfo (inf_array_t)
 
 namespace shrink_array
 {
 
-/// @brief Names the map from a second value to its inf_array tuple (T, int, int), ordered by ValueLess<T>.
+/// @brief Names the map from a second value to its inf_array record (SecondValueInfo<T>), ordered by ValueLess<T>.
 template <typename T>
 struct ValueToInfTupleMapHelper
 {
-    using inf_array_t = std::tuple<T, int, int>;
+    using inf_array_t = SecondValueInfo<T>;
 
     // Keyed by the second value, ordered by ValueLess (value_less.h).
     using type = std::map<T, inf_array_t*, ValueLess<T>>;
@@ -93,7 +93,7 @@ template <typename T, bool Enabled>
 class PointerMapChunk2InfArrayPolicy
 {
   public:
-    using inf_array_t = std::tuple<T, int, int>;
+    using inf_array_t = SecondValueInfo<T>;
 
     /**
      * @brief All registered inf_array pointers, in map order.
@@ -112,7 +112,7 @@ class PointerMapChunk2InfArrayPolicy
     }
 
     /**
-     * @brief Look up the inf_array tuple pointer registered for a second value.
+     * @brief Look up the inf_array record pointer registered for a second value.
      * @param key Second value to look up.
      * @return The registered pointer, or nullptr if @p key is not registered.
      */
@@ -160,16 +160,16 @@ class PointerMapChunk2InfArrayPolicy
     using MapType0 = ValueToInfTupleMapHelper<T>::type;
 
     /**
-     * @brief Register the inf_array tuple pointer for a second value.
+     * @brief Register the inf_array record pointer for a second value.
      * @param key Second value to register.
-     * @param ind inf_array tuple pointer to associate with @p key.
+     * @param ind inf_array record pointer to associate with @p key.
      */
     void insert(in_t<T> key, inf_array_t* ind)
     {
         map_inf_array[key] = ind;
     }
 
-    /// Map from a second value to its registered inf_array tuple pointer.
+    /// Map from a second value to its registered inf_array record pointer.
     MapType0 map_inf_array;
 };
 
@@ -183,7 +183,7 @@ template <typename T>
 class PointerMapChunk2InfArrayPolicy<T, false>
 {
   public:
-    using inf_array_t = std::tuple<T, int, int>;
+    using inf_array_t = SecondValueInfo<T>;
 
     /// @brief No registry: always empty.
     [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const
@@ -211,12 +211,12 @@ class PointerMapChunk2InfArrayPolicy<T, false>
  */
 template <typename T>
 class PointerMapChunk2
-    : public PointerMapLinear<std::tuple<T, int, int>, std::deque<std::pair<const void*, std::tuple<T, int, int>>>>,
+    : public PointerMapLinear<SecondValueInfo<T>, std::deque<std::pair<const void*, SecondValueInfo<T>>>>,
       public PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>
 {
   private:
     /// Internal alias for tuple representing a value with index and table number.
-    using inf_array_t = std::tuple<T, int, int>;
+    using inf_array_t = SecondValueInfo<T>;
 
     using Linear = PointerMapLinear<inf_array_t, std::deque<std::pair<const void*, inf_array_t>>>;
     /// @brief Bring the base's storage into this class's scope.
@@ -274,7 +274,7 @@ class PointerMapChunk2
             for (size_t i = 0; i < lim; ++i)
             {
                 std::fprintf(stderr, " [%p num_tab=%d]", static_cast<const void*>(vec[i].first),
-                             std::get<2>(vec[i].second));
+                             vec[i].second.num_tab);
             }
             std::fprintf(stderr, "%s\n", (count > lim) ? " …(truncated)" : "");
             std::fflush(stderr);
@@ -302,7 +302,7 @@ class PointerMapChunk2
         // of whichever second value was registered first, by any array).
         const T   val{};
         const int ind = chunk_config::no_second_value_index;
-        vec.emplace_back(key, std::make_tuple(val, ind, num_tab));
+        vec.emplace_back(key, inf_array_t{val, ind, num_tab});
     }
 
     /**
@@ -335,9 +335,9 @@ class PointerMapChunk2
         {
             if (item.first == key)
             {
-                auto& tup        = item.second;
-                std::get<0>(tup) = val;
-                std::get<1>(tup) = ind;
+                auto& info        = item.second;
+                info.second_value = val;
+                info.ind          = ind;
                 return;
             }
         }
@@ -394,8 +394,8 @@ class PointerMapChunk2
         {
             if (item.first == key)
             {
-                std::get<0>(item.second) = val;
-                std::get<1>(item.second) = ind;
+                item.second.second_value = val;
+                item.second.ind = ind;
                 return;
             }
         }
@@ -415,7 +415,7 @@ class PointerMapChunk2
             {
                 if (item.first == key)
                 {
-                    return std::get<0>(item.second);
+                    return item.second.second_value;
                 }
             }
         }
@@ -435,7 +435,7 @@ class PointerMapChunk2
         {
             if (item.first == key)
             {
-                return std::get<2>(item.second);
+                return item.second.num_tab;
             }
         }
         report_key_not_found(key, "get_num_tab");

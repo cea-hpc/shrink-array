@@ -39,6 +39,7 @@
 
 #include "chunk/internal/freepath_counters.h" // CHUNK_FREEPATH_INC (CHUNK_ARENA_REPORT)
 #include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/second_value_info.h" // SecondValueInfo (inf_array_t)
 
 namespace shrink_array
 {
@@ -676,7 +677,7 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
     /// @brief Chunk2: the second-value lists sweep_rank() drains, snapshotted
     ///        serially by sweep_prepare() as the per-type pass always did.
-    std::vector<std::tuple<T, int, int>*> sweep_inf_arrays_;
+    std::vector<SecondValueInfo<T>*> sweep_inf_arrays_;
 
     /// @brief Slab byte budget seen at the last register_chunk_size(); what
     ///        register_alloc_key() hands to the keyed allocator sets.

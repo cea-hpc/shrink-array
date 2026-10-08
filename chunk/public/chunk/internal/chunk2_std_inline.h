@@ -127,10 +127,10 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_to_compress(vec_tuple_
                                                                       unsigned int            n_elems)
 {
     // in_t: a reference into the (const, caller-owned) tuple when T is large.
-    const in_t<T> second_v = std::get<0>(inf_array);
+    const in_t<T> second_v = inf_array.second_value;
     fill_list_to_compress_impl(
         ll_compt1, ll_compt2, num_chunk, num_tab, [&second_v]() -> in_t<T> { return second_v; },
-        derived().is_not_cst_val2(std::get<1>(inf_array)), n_elems);
+        derived().is_not_cst_val2(inf_array.ind), n_elems);
 }
 
 /**
@@ -285,15 +285,15 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress([[maybe_unused]] int th
     // the stale entry. compress_impl only refuses cst_val1; a chunk already at
     // cst_val2 would pass, scan the SHARED second-value block, find it
     // constant and clear it a second time -- freeing that shared block.
-    if (!derived().written(std::get<1>(inf_array)))
+    if (!derived().written(inf_array.ind))
     {
         return;
     }
 
     compress_impl(
-        apply, n_elems, [&inf_array] { return std::get<0>(inf_array); },
+        apply, n_elems, [&inf_array] { return inf_array.second_value; },
         [this, thr_rank, &inf_array](int num_compress_value)
-        { this->clear_int_st(num_compress_value, std::get<1>(inf_array), thr_rank); });
+        { this->clear_int_st(num_compress_value, inf_array.ind, thr_rank); });
 }
 
 /**
@@ -520,7 +520,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::compress_chunk_to_compress_in_pa
                                                                                   const inf_array_t& inf_array,
                                                                                   bool               apply)
 {
-    compress_chunk_to_compress_in_par_impl(thr_rank, std::get<0>(inf_array),
+    compress_chunk_to_compress_in_par_impl(thr_rank, inf_array.second_value,
                                            [thr_rank, &inf_array, apply](auto* chunk_t, unsigned int n_elems)
                                            { chunk_t->compress(thr_rank, inf_array, apply, n_elems); });
 }
@@ -598,7 +598,7 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::fill_list_chunk_to_compress_in_p
                                                                                    const inf_array_t&      inf_array)
 {
     fill_list_chunk_to_compress_in_par_impl(
-        thr_rank, std::get<0>(inf_array),
+        thr_rank, inf_array.second_value,
         [&ll_compt1, &ll_compt2, &inf_array](auto* chunk_t, int num_chunk, int num_tab, unsigned int n_elems)
         {
             const auto n1 = ll_compt1.size();
@@ -854,10 +854,10 @@ void Chunk2FastCompPolicy<T, Derived, Enabled>::make_block_compression(int      
 {
     if constexpr (is_not_bool)
     {
-        const in_t<T> second_value = std::get<0>(inf_array); // the caller's tuple, alive for the call
+        const in_t<T> second_value = inf_array.second_value; // the caller's record, alive for the call
 
         const auto lbd_clear_func = [thr_rank, &inf_array](auto* chunk_t, int clear_type)
-        { chunk_t->clear_int_st(clear_type, std::get<1>(inf_array), thr_rank); };
+        { chunk_t->clear_int_st(clear_type, inf_array.ind, thr_rank); };
 
         make_block_compression_impl(
             thr_rank, second_value, proxy2, [thr_rank, &inf_array](auto& ll_compt1, auto& ll_compt2)
@@ -1053,7 +1053,7 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::create_value(bool               need_
                     BaseSpec::init_block_2nd_value(ptr, inf_array);
                 }
             },
-            std::get<1>(inf_array), need_set_second_value);
+            inf_array.ind, need_set_second_value);
     }
     else
     {

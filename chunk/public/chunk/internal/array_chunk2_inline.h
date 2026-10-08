@@ -272,8 +272,8 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
             ind_cst_val2 = ind;
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                std::get<0>(inf_array) = sec_value;
-                std::get<1>(inf_array) = ind;
+                inf_array.second_value = sec_value;
+                inf_array.ind = ind;
             }
 
             if constexpr (build_config::use_openmp)
@@ -355,8 +355,8 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
 
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                std::get<0>(inf_array) = sec_value;
-                std::get<1>(inf_array) = ind;
+                inf_array.second_value = sec_value;
+                inf_array.ind = ind;
             }
         }
         const bool exi = sh_inf.exists(this->registry_key());
@@ -379,8 +379,8 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
         }
         if constexpr (chunk_config::use_fast_block_compression)
         {
-            std::get<0>(inf_array) = true;
-            std::get<1>(inf_array) = 0;
+            inf_array.second_value = true;
+            inf_array.ind = 0;
         }
         if constexpr (build_config::use_openmp)
         {

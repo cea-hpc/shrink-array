@@ -18,7 +18,6 @@
 
 #include <cstdlib>     // for abort
 #include <iostream>    // for cout, ostream
-#include <tuple>       // for tuple
 #include <type_traits> // for is_same_v
 #include <utility>     // for get, move
 #include <vector>      // for vector
@@ -28,6 +27,7 @@
 
 #include "chunk/bit.h"                                  // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"                        // in_t<T>: the element snapshots
+#include "chunk/internal/second_value_info.h"           // SecondValueInfo (inf_array_t)
 #include "chunk/internal/array_chunk2_base.h"           // for ArrayChunk2Base
 #include "chunk/internal/array_chunk2_parallel.h"       // ParallelSupport2 — OpenMP-only mixin
 #include "chunk/internal/array_chunk2_rechunk_hooks.h"  // RechunkHooks2 — CHUNK_DYNAMIC-only mixin
@@ -103,7 +103,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     using Base2::resize; // Import resize(sz, val)
 
     /// Registry entry of an array: (second value, its index in the shared value table, num_tab).
-    using inf_array_t = std::tuple<T, int, int>;
+    using inf_array_t = SecondValueInfo<T>;
 
     using manager_chunk2 = ManagerChunk<Chunk2, T>; ///< Same type as manager_type.
 
@@ -305,7 +305,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     {
         if constexpr (is_not_bool)
         {
-            return std::get<1>(get_info_second_value());
+            return get_info_second_value().ind;
         }
         else
         {
@@ -537,7 +537,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
         {
             for (ArrayChunk2* arr : {this, &other})
             {
-                const T value = std::get<0>(arr->inf_array);
+                const T value = arr->inf_array.second_value;
                 if (value != T{})
                 {
                     sh_inf.insert(value, &arr->inf_array);

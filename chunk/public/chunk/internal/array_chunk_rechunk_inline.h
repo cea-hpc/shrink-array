@@ -1005,7 +1005,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
             //
             // Wired for 2A and Chunk2. The two compress() signatures differ --
             // 2A locates the chunk by (num_chunk, num_tab), Chunk2 takes the
-            // array's inf_array tuple -- but the fold is the same: re-scan and
+            // array's inf_array record -- but the fold is the same: re-scan and
             // clear_int_st with the variant's own state, nothing synthesised.
             // bool registers no second value (get_ind_second_value aborts) and
             // is bit-packed; it never takes this path.
@@ -1053,7 +1053,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                         auto& nch = tmp.chunk_list[static_cast<std::size_t>(new_chunk)];
                         nch.compress(get_thr_rank_fast(), inf_new2,
                                      /*apply=*/true, static_cast<unsigned int>(new_size));
-                        if (!nch.is_cst_val1() && !nch.is_cst_val2(std::get<1>(inf_new2)))
+                        if (!nch.is_cst_val1() && !nch.is_cst_val2(inf_new2.ind))
                         {
                             ++tally.refused;
                         }
@@ -1500,7 +1500,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     // still looked up for a v1 Derived that has no such member.
                     if constexpr (Derived::is_not_bool)
                     {
-                        compressed = compressed || ch.is_cst_val2(std::get<1>(inf_new2));
+                        compressed = compressed || ch.is_cst_val2(inf_new2.ind);
                     }
                 }
                 if (!compressed)
