@@ -81,7 +81,7 @@ void ArrayChunk<T, ind_type>::rebuild_storage(ind_type sz)
             // A team of its own outside a region; the calling thread inside one
             // (an orphaned `omp for` would initialise 1/N of an array created by
             // each thread, and hang one created under `omp single`).
-            parallel_storage_init::for_each_chunk(nb_chunk, 500,
+            parallel_storage_init::for_each_chunk(nb_chunk,
                                                   [this](int i) { this->construct_chunk(i).init_values_cst_val(); });
         }
     }
@@ -563,7 +563,7 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
     // region, the calling thread inside one -- never an orphaned `omp for`,
     // which inside a region left 1/N of a thread's own array unconstructed
     // (region_storage_validation).
-    parallel_storage_init::for_each_chunk(nb_chunk - old_nb_chunk, 500, [this, old_nb_chunk](int k)
+    parallel_storage_init::for_each_chunk(nb_chunk - old_nb_chunk, [this, old_nb_chunk](int k)
                                           { this->construct_chunk(old_nb_chunk + k).init_values_cst_val(); });
 
     // std::vector semantics for the regrown range [old_size, newsz): it reads

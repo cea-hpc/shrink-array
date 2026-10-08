@@ -101,7 +101,9 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
             // of master-only time per run of shrink_bench_chunk2a_dyn at 64
             // threads (creation + the new array of each rechunk). Same pattern as
             // ArrayChunk2::rebuild_storage; serial inside a region (the caller
-            // need not be the whole team) and for small arrays.
+            // need not be the whole team) and for small arrays -- the one
+            // threshold, parallel_storage_init::kParallelInitMinChunks (this
+            // loop passed 16384 of its own, for no recorded reason).
             const auto init_chunk = [&](int i)
             {
                 Proxy2A<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab, i, 0);
@@ -109,7 +111,7 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
                 Proxy2A<T>::BaseSpec::set(num_tab, i, T{});
                 this->construct_chunk(i).init_after_constructor();
             };
-            parallel_storage_init::for_each_chunk(nb_chunk, 16384, init_chunk);
+            parallel_storage_init::for_each_chunk(nb_chunk, init_chunk);
         }
     }
 
@@ -802,7 +804,7 @@ void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
     // orphaned `omp for`, which inside a region left 1/N of a thread's own
     // array unconstructed (region_storage_validation). Each iteration writes
     // slot i of tables sized above and nothing else.
-    parallel_storage_init::for_each_chunk(nb_chunk - old_nb_chunk, 500,
+    parallel_storage_init::for_each_chunk(nb_chunk - old_nb_chunk,
                                           [this, old_nb_chunk, num_tab](int k)
                                           {
                                               const int i = old_nb_chunk + k;
