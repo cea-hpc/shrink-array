@@ -55,3 +55,6 @@ fix_*.py
 # --- Doxygen output (cd docs && doxygen) ---
 docs/html/
 docs/doxygen-warnings.log
+
+# --- Local PySide6 wheels (shrink_gui install, not part of the repo) ---
+python/pyside6_wheels/
