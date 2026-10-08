@@ -179,6 +179,24 @@ def _note_run(executor, ok, cmd, env_vars, timeout, extra_ld_library_path, cwd, 
     state._PENDING_FAILED_RUNS.append(rec)
 
 
+def repro_line(cmd, env_vars, cwd=None):
+    """The shell line that replays one run by hand, for a failure record.
+
+    The cwd is part of it, not a detail: a check run reads the seed and the
+    reference files of the oracle directory it runs in, and a serial binary is
+    deterministic for a given seed. Run elsewhere, the bench draws another
+    seed -- other data, other re-chunk decisions -- and a failure looks like a
+    rare race that will not reproduce."""
+    import shlex
+    env = " ".join(f"{k}={shlex.quote(str(v))}" for k, v in env_vars.items())
+    line = " ".join(shlex.quote(str(c)) for c in cmd)
+    if env:
+        line = f"{env} {line}"
+    if cwd:
+        line = f"cd {shlex.quote(str(cwd))} && {line}"
+    return line
+
+
 def run_cmd(cmd, env_vars, timeout, extra_ld_library_path=None, cwd=None, must_contain=None, numa_mode=None):
     """_run_cmd_impl(), recording a failed run for --rerun-failed. numa_mode
     ("auto" / "off") overrides --numa-interleave for this run only."""

@@ -5,7 +5,7 @@ import sys
 
 from ..builds import int64_variant, oracle_complete, oracle_dir, resolve_exe, short_config_label
 from ..progress import CONFIG_W, VARIANT_W
-from ..runs import _append_error_now, effective_timeout, run_cmd
+from ..runs import _append_error_now, effective_timeout, repro_line, run_cmd
 from ..settings import INT64_CHECK_VARIANTS, sanitizer_env_for
 from ..term import _hms, bold, cyan, dim, green, red, yellow
 
@@ -44,9 +44,11 @@ def run_int64_check_phase(args, extra_ldpath, errors):
                      f"{shown[:VARIANT_W + 6]:<{VARIANT_W + 6}} | ")
             sys.stdout.write("\r" + lead + "running…       ")
             sys.stdout.flush()
+            run_env = {**env, **sanitizer_env_for(cfg)}
+            run_cwd = oracle_dir(args.output_dir, cfg)
             ok, dur, code, err_tail, _ = run_cmd(
-                [exe, "--mode", "check"], {**env, **sanitizer_env_for(cfg)}, to,
-                extra_ld_library_path=extra_ldpath, cwd=oracle_dir(args.output_dir, cfg))
+                [exe, "--mode", "check"], run_env, to,
+                extra_ld_library_path=extra_ldpath, cwd=run_cwd)
             if ok:
                 n_pass += 1
                 sys.stdout.write("\r" + lead + green("check OK ✓") + f" ({dur:.1f}s)\n")
@@ -54,6 +56,7 @@ def run_int64_check_phase(args, extra_ldpath, errors):
                 sys.stdout.write("\r" + lead + red("FAIL") + f" (code {code})\n")
                 _entry = (f"INT64_CHECK_FAIL: {exe} --mode check threads={args.check_threads} code={code}\n"
                           f"  (int64 build against the 32-bit oracle of {label})\n"
+                          f"  reproduce: {repro_line([exe, '--mode', 'check'], run_env, run_cwd)}\n"
                           f"  stderr_tail:\n    " + err_tail.replace('\n', '\n    '))
                 errors.append(_entry)
                 _append_error_now(args.errors_log, _entry)

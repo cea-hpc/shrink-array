@@ -7,7 +7,7 @@ import time
 
 from ..builds import ORACLE_EXE_KEY, ORACLE_MARKER, exe_fingerprint, oracle_dir, short_config_label
 from ..progress import _prog, get_progress_bar
-from ..runs import _append_error_now, effective_timeout, run_cmd
+from ..runs import _append_error_now, effective_timeout, repro_line, run_cmd
 from ..term import bold, cyan, green, red
 
 
@@ -84,16 +84,19 @@ def run_check_phase(args, plan, counter, errors):
                 )
                 sys.stdout.flush()
 
+                check_env = {"OMP_NUM_THREADS": str(args.check_threads)}
+                check_cwd = oracle_dir(args.output_dir, cfg)
                 ok, _, code, err_tail, _ = run_cmd(
-                    [exe], {"OMP_NUM_THREADS": str(args.check_threads)},
+                    [exe], check_env,
             effective_timeout(args.timeout, args.timeout_per_thread, args.check_threads),
-                    extra_ld_library_path=plan.extra_ldpath, cwd=oracle_dir(args.output_dir, cfg)
+                    extra_ld_library_path=plan.extra_ldpath, cwd=check_cwd
                 )
                 if ok:
                     success_in_row += 1
                 else:
                     _entry = (
                         f"CHECK_FAIL: {exe} iter={r+1} code={code}\n"
+                        f"  reproduce: {repro_line([exe], check_env, check_cwd)}\n"
                         f"  stderr_tail:\n    "
                         + err_tail.replace('\n', '\n    ')
                     )

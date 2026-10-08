@@ -8,7 +8,7 @@ from ..builds import (
     skip_variant_on_config,
 )
 from ..progress import CONFIG_W, VARIANT_W
-from ..runs import _append_error_now, effective_timeout, run_cmd
+from ..runs import _append_error_now, effective_timeout, repro_line, run_cmd
 from ..settings import sanitizer_env_for
 from ..term import _hms, bold, cyan, dim, green, red, yellow
 
@@ -104,9 +104,10 @@ def run_rechunk_phase(args, extra_ldpath, errors):
                 # no file and gets a directory of its own.
                 rdir = (oracle_dir(args.output_dir, cfg) if stage == "check"
                         else _run_dir(args.output_dir, "rechunk", short_config_label(cfg), var, stage))
+                run_env = {**env_common, **san}
                 ok, dur, code, err_tail, _ = run_cmd(
                     [exe] + stage_extra_args[stage],
-                    {**env_common, **san}, to,
+                    run_env, to,
                     extra_ld_library_path=extra_ldpath, cwd=rdir,
                     # "[APPLIED]", not "[RECHUNK-APPLY]": the library prints
                     # "[RECHUNK-DECIDE] <array>: re-chunk S=.. -> S'=.. (...) [APPLIED]".
@@ -125,6 +126,7 @@ def run_rechunk_phase(args, extra_ldpath, errors):
                         f"{' '.join(stage_extra_args[stage])} stage={stage} code={code}\n"
                         f"  (expected '[APPLIED]'; env CHUNK_ADVISOR_PERIOD=4 "
                         f"CHUNK_COARSEN_MIN_META_MB=0 CHUNK_COARSEN_MIN_META_RATE=0 CHUNK_ADVISOR_MIN_GAIN_MB=0)\n"
+                        f"  reproduce: {repro_line([exe] + stage_extra_args[stage], run_env, rdir)}\n"
                         f"  stderr_tail:\n    " + err_tail.replace('\n', '\n    ')
                     )
                     errors.append(_entry)
