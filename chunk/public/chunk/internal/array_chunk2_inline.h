@@ -185,7 +185,7 @@ void ArrayChunk2<T, ind_type>::rebuild_storage(ind_type sz)
             // (an orphaned `omp for` would initialise 1/N of an array created by
             // each thread, and hang one created under `omp single`).
             parallel_storage_init::for_each_chunk(nb_chunk, 500,
-                                                  [this](int i) { chunk_list[i].init_after_constructor(); });
+                                                  [this](int i) { this->construct_chunk(i).init_after_constructor(); });
         }
     }
     else
@@ -573,7 +573,7 @@ void ArrayChunk2<T, ind_type>::print_compression_stats(std::ostream& os) const
         add_chunk_still_compressed_at_exit<Chunk2<T>>(n_compressed);
         record_chunk_size_at_exit<Chunk2<T>>(static_cast<unsigned int>(this->size_policy_.size()));
     }
-    print_formatted_chunk_stats(os, num_tab, type_name<T>(), n_compressed, nb_chunk, n_t1, "Chunk2",
+    print_formatted_chunk_stats(os, num_tab, this->debug_name(), type_name<T>(), n_compressed, nb_chunk, n_t1, "Chunk2",
                                 /*n_cross=*/n_would_be_2a, /*cross_name=*/"Chunk2A");
 }
 
@@ -1273,29 +1273,20 @@ void ArrayChunk2<T, ind_type>::resize(ind_type newsz)
         Proxy2<T>::resize_tab_is_int(num_tab, nb_chunk);
     }
 
-    if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-    {
-#pragma omp parallel for
-        for (int i = old_nb_chunk; i < nb_chunk; ++i)
-        {
-            chunk_list[i].init_after_constructor();
-        }
-    }
-    else
-    {
-#pragma omp for
-        for (int i = old_nb_chunk; i < nb_chunk; ++i)
-        {
-            chunk_list[i].init_after_constructor();
-        }
-    }
+    // The new chunks [old_nb_chunk, nb_chunk): a team of its own outside a
+    // region, the calling thread inside one -- never an orphaned `omp for`,
+    // which inside a region left 1/N of a thread's own array unconstructed
+    // (region_storage_validation).
+    parallel_storage_init::for_each_chunk(nb_chunk - old_nb_chunk, 500, [this, old_nb_chunk](int k)
+                                          { this->construct_chunk(old_nb_chunk + k).init_after_constructor(); });
 
     // std::vector semantics for the regrown range [old_size, newsz): it reads
     // T{}. The chunks added above are fresh, but the one holding the OLD end
     // keeps its tail -- after a shrink, the values written there before came
     // back on the next growth (deferred_path_validation, resize-grow-again).
     // Reset that tail: at most one chunk, through the normal write path, after
-    // the reallocations. `omp for` like the init loop above.
+    // the reallocations. Serial: at most one chunk, and called inside a region
+    // an `omp for` would cover 1/N of it.
     if (newsz > old_size)
     {
         const auto     csz       = static_cast<ind_type>(this->chunk_size());
@@ -1306,7 +1297,6 @@ void ArrayChunk2<T, ind_type>::resize(ind_type newsz)
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
         const ind_type  old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<ind_type>(cover_ll) : newsz;
         const ind_type stale_end = newsz < old_cover ? newsz : old_cover;
-#pragma omp for
         for (ind_type i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};

@@ -68,6 +68,12 @@
 #                           sized for it), and a team past the capacity stops
 #                           with an invariant failure (the executable re-runs
 #                           itself with --beyond to check it).
+#   region_storage_validation an array created, grown (with and without a
+#                           value), shrunk and regrown by ONE thread inside a
+#                           parallel region (`omp single`, `omp masked`)
+#                           reads back what std::vector would, and counts its
+#                           written chunks right. The storage paths once fell
+#                           back on an orphaned `omp for` there, and hung.
 #   nested_region_validation a thread that opens a nested (serialised) region
 #                           keeps its own per-rank structures afterwards; two
 #                           ACTIVE levels stop with an invariant failure
@@ -170,7 +176,8 @@ math(EXPR _rt_nvar_last "${_rt_nvar} - 1")
 set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         mark_path_validation fill_range_mt_validation index64_validation
                         swap_move_validation range_counters_validation thread_growth_validation
-                        nested_region_validation iterator_validation stale_proxy_validation)
+                        nested_region_validation iterator_validation stale_proxy_validation
+                        region_storage_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.

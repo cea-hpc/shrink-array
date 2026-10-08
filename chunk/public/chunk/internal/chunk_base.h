@@ -1820,9 +1820,8 @@ class ChunkBase : public DeferredReadGate<Derived>,
      *          comes from the registry: one pointer range test on the read
      *          path, in this one place rather than seven.
      *
-     * @note NOT used by print_adr() or operator()(int): those hand out an
-     *       address and a mutable reference into the buffer, which a registry
-     *       lookup cannot stand in for.
+     * @note NOT used by operator()(int): it hands out a mutable reference
+     *       into the buffer, which a registry lookup cannot stand in for.
      *
      * @tparam Relaxed read the element through a relaxed atomic_ref: for an
      *         element another thread may be writing (relaxed_element.h).
@@ -1900,31 +1899,6 @@ class ChunkBase : public DeferredReadGate<Derived>,
         }
         // raw-read: element_at_unguarded -- under element_at's ReadSection, or a scan of a claimed chunk
         return load_at<Relaxed>(vals, i);
-    }
-
-    /// @brief Get the address of a value at given index
-    /// @param i Index in the chunk
-    /// @return Pointer to the value at index i
-    [[nodiscard]] T* print_adr(this const Derived& self, int i) noexcept
-    {
-        // An ADDRESS into the buffer, which the registry cannot stand in for:
-        // a second-value chunk has no buffer. Materialise first,
-        // so the address is real and the semantics are exactly what they were.
-        // Its only caller is ArrayChunkBase's re-export, itself never called
-        // internally -- this is a diagnostic path.
-        if constexpr (requires {
-                          self.is_cst_val2();
-                          self.materialise_for_address();
-                      })
-        {
-            if (self.is_cst_val2()) [[unlikely]]
-            {
-                self.materialise_for_address();
-            }
-        }
-        static_assert(!is_packed, "print_adr: a Bit has no address (bit.h)");
-        // raw-read: hands out an address / reference -- materialised first, the caller keeps it valid
-        return &self.values_load()[i];
     }
 
     /// @brief Return @p ptr to the allocator instance that carved it, found

@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Structured progress of a bench_and_test.py run: one JSON object per line.
 
 Written to --events-file, else $CHUNK_BENCH_EVENTS, else nowhere. Kinds:

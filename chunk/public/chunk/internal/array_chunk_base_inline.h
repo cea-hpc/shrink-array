@@ -104,9 +104,11 @@ int ArrayChunkBase<Derived>::get_nb_chunk_written(this const Derived& self)
     const int  nb_chunk   = self.nb_chunk;
     const auto lbd        = [&](int j) { return static_cast<int>(self.is_written_at(j)); };
 
+    // Inside a region: the calling thread counts them all. An orphaned
+    // `omp for` summed 1/N of the chunks into a per-thread total (no
+    // reduction): every caller got a partial count.
     if (CHUNK_PMP_IN_PARALLEL_REGION)
     {
-#pragma omp for schedule(static) nowait
         for (int j = 0; j < nb_chunk; ++j)
         {
             nb_written += lbd(j);

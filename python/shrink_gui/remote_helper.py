@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Run on inti by shrink_gui: `python3 - <action> <args...>`, this file on stdin.
 
 Nothing is installed on inti: every ssh call sends this file again, so it is
@@ -127,8 +129,55 @@ def git_info(repo):
     commit = git("rev-parse", "HEAD")
     if not commit:
         return None
-    return {"commit": commit, "branch": git("rev-parse", "--abbrev-ref", "HEAD") or "",
-            "dirty": bool(git("status", "--porcelain", "--untracked-files=no"))}
+    info = {"commit": commit, "branch": git("rev-parse", "--abbrev-ref", "HEAD") or "",
+            "dirty": bool(git("status", "--porcelain", "--untracked-files=no")),
+            "upstream": git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}") or ""}
+    # Ahead / behind the upstream, as of the last fetch (a pull fetches).
+    counts = git("rev-list", "--left-right", "--count", "HEAD...@{u}") if info["upstream"] else None
+    if counts and len(counts.split()) == 2:
+        info["ahead"], info["behind"] = (int(x) for x in counts.split())
+    return info
+
+def git_run(repo, args, timeout):
+    """(code, output) of `git -C repo args`: no prompt (a password asked on a
+    closed terminal would hang the ssh call), stdin closed, a time limit."""
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_SSH_COMMAND="ssh -o BatchMode=yes")
+    try:
+        p = subprocess.Popen(["git", "-C", repo] + list(args), stdin=subprocess.DEVNULL,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
+    except OSError as e:
+        return 127, str(e)
+    try:
+        out, _ = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        out, _ = p.communicate()
+        return 124, out.decode("utf-8", "replace") + "\n(time limit reached: %d s)" % timeout
+    return p.returncode, out.decode("utf-8", "replace")
+
+def act_git_pull(a):
+    """git pull (a[1] == "merge") or git pull --rebase (a[1] == "rebase") in
+    the repository a[0]. A pull that stops half-way (conflict) is aborted:
+    the repository is never left mid-merge or mid-rebase on inti."""
+    repo = os.path.expanduser(a[0])
+    before = git_info(repo)
+    if not before:
+        print(json.dumps({"error": "pas de dépôt git dans %s" % a[0]}))
+        return
+    rebase = len(a) > 1 and a[1] == "rebase"
+    code, out = git_run(repo, ["pull", "--rebase" if rebase else "--no-rebase"], 300)
+    aborted = None
+    if code != 0:
+        gitdir = cmd_out(["git", "-C", repo, "rev-parse", "--git-dir"])
+        gitdir = os.path.join(repo, gitdir.strip()) if gitdir else os.path.join(repo, ".git")
+        if os.path.isdir(os.path.join(gitdir, "rebase-merge")) or os.path.isdir(os.path.join(gitdir, "rebase-apply")):
+            git_run(repo, ["rebase", "--abort"], 60)
+            aborted = "rebase"
+        elif os.path.exists(os.path.join(gitdir, "MERGE_HEAD")):
+            git_run(repo, ["merge", "--abort"], 60)
+            aborted = "merge"
+    print(json.dumps({"ok": code == 0, "output": out[-8000:], "aborted": aborted,
+                      "before": before["commit"], "git": git_info(repo)}))
 
 def act_check(a):
     r = {"host": socket.gethostname(), "python": sys.version.split()[0],
@@ -413,20 +462,37 @@ def act_list(a):
                          "last": last_line(os.path.join(d, "out.log"))})
     print(json.dumps({"host": socket.gethostname(), "runs": runs}))
 
+TAIL_START = 2 * 1024 * 1024   # a first display: the end of the log only
+TAIL_CHUNK = 4 * 1024 * 1024   # then what was appended, by blocks of this size
+
 def act_tail(a):
+    """The log from byte a[2] on. a[2] < 0: a first display -- the last
+    TAIL_START bytes from a line start, "skipped" telling how many came
+    before (the view keeps 20000 lines: reading a long log from its start
+    cost one ssh round trip per block for lines it then dropped)."""
     d, off = rdir(a[0], a[1]), int(a[2])
     p = os.path.join(d, "out.log")
-    data = b""
+    data, skipped = b"", 0
     if os.path.exists(p):          # a pending batch job has no log yet
         size = os.path.getsize(p)
-        if off > size:
-            off = 0
         with open(p, "rb") as f:
+            if off < 0:
+                off = max(0, size - TAIL_START)
+                if off:
+                    f.seek(off)
+                    head = f.read(64 * 1024)
+                    nl = head.find(b"\n")
+                    off += nl + 1 if nl >= 0 else 0
+                skipped = off
+            elif off > size:
+                off = 0
             f.seek(off)
-            data = f.read(512 * 1024)
+            data = f.read(TAIL_CHUNK)
+        more = off + len(data) < size
     else:
-        off = 0
-    print(json.dumps({"offset": off + len(data), "data": data.decode("utf-8", "replace")}))
+        off, more = 0, False
+    print(json.dumps({"offset": off + len(data), "data": data.decode("utf-8", "replace"),
+                      "skipped": skipped, "more": more}))
 
 def act_stop(a):
     d = rdir(a[0], a[1])
@@ -727,7 +793,7 @@ def act_build_targets(a):
                      "configured": mtime is not None, "mtime": mtime, "execs": sorted(execs)})
     print(json.dumps({"configs": sorted(configs), "dirs": dirs, "build_rep": build_rep}))
 
-ACTIONS = {"build_targets": act_build_targets, "check": act_check, "options": act_options, "launch": act_launch, "list": act_list,
+ACTIONS = {"build_targets": act_build_targets, "check": act_check, "git_pull": act_git_pull, "options": act_options, "launch": act_launch, "list": act_list,
            "tail": act_tail, "stop": act_stop, "pack": act_pack, "summary": act_summary,
            "points": act_points, "delete": act_delete}
 if __name__ == "__main__":

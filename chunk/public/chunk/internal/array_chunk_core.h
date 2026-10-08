@@ -50,14 +50,16 @@
 #include <cstddef>     // std::size_t
 #include <cstdint>     // std::uint64_t
 #include <cstdlib>     // std::getenv (CHUNK_ALLOC_AFFINITY_EAGER)
+#include <memory>      // std::allocator, std::construct_at (chunk_list's allocator)
+#include <string>      // std::string (debug_name_)
 #include <type_traits> // std::conditional_t
+#include <utility>     // std::move (set_debug_name)
 #include <vector>      // std::vector (chunk_list)
 
 #include "chunk/config.h"                            // build_config::alloc_affinity_min_bytes, build_config::any_check
 #include "chunk/chunk_traits.h"                      // ChunkTraits (proxy_type, manager_type)
 #include "chunk/internal/chunk_size_policy.h"        // ActiveSizePolicy
 #include "chunk/internal/array_chunk_dirty_bitset.h" // DirtyBitsetSupport
-#include "chunk/internal/parallel_storage_init.h" // reserve_first_touched, for_each_chunk
 
 namespace shrink_array
 {
@@ -124,6 +126,50 @@ inline const bool g_reuse_chunk_list = []() noexcept
 inline bool g_releasing_rechunk_storage = false;
 } // namespace alloc_affinity_detail
 
+/**
+ * @brief chunk_list's allocator: std::allocator whose argument-less construct()
+ *        does nothing.
+ * @details `chunk_list.resize(n)` value-initialised every new chunk on the
+ *          calling thread: a serial sweep over the whole new range (hundreds
+ *          of MB at a small geometry), each page placed on that thread's NUMA
+ *          node, and every chunk written again right after by the parallel
+ *          init loop. With this allocator resize() only reserves the storage;
+ *          the init loops construct each chunk (ArrayChunkCore::construct_chunk)
+ *          on the thread that initialises it. Copies and moves (a reallocation)
+ *          still construct, through the forwarding overload.
+ *
+ *          Contract: every element a growing resize() adds is constructed with
+ *          construct_chunk() before any other use. The resize sites and their
+ *          init loops: ArrayChunk*::create (through acquire_chunk_list) and
+ *          ArrayChunk*::resize.
+ * @tparam T the chunk type
+ */
+template <typename T>
+struct NoInitAllocator : std::allocator<T>
+{
+    using value_type = T; ///< Element type.
+
+    NoInitAllocator() noexcept = default;
+    /// @brief Rebinding copy (allocator requirements).
+    template <typename U>
+    NoInitAllocator(const NoInitAllocator<U>& /*other*/) noexcept // NOLINT(google-explicit-constructor)
+    {
+    }
+
+    /// @brief Default construction: left to construct_chunk().
+    template <typename U>
+    void construct(U* /*p*/) noexcept
+    {
+    }
+
+    /// @brief Any other construction (copy, move): as std::allocator.
+    template <typename U, typename A0, typename... Args>
+    void construct(U* p, A0&& a0, Args&&... args)
+    {
+        std::construct_at(p, std::forward<A0>(a0), std::forward<Args>(args)...);
+    }
+};
+
 /// @brief The index-type-independent part of a chunked array of ChunkType (see the description at the top of
 ///        this file).
 template <typename ChunkType>
@@ -131,6 +177,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
 {
   public:
     using chunk_type   = ChunkType;                            ///< Chunk type held in chunk_list.
+    using chunk_list_type = std::vector<chunk_type, NoInitAllocator<chunk_type>>; ///< chunk_list's type.
     using proxy_type   = ChunkTraits<ChunkType>::proxy_type;   ///< Proxy type owning the per-T registry.
     using manager_type = ChunkTraits<ChunkType>::manager_type; ///< Per-T manager owning the allocators.
 
@@ -148,6 +195,26 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
     [[nodiscard]] int chunk_count() const noexcept
     {
         return nb_chunk;
+    }
+
+    /**
+     * @brief Name this array in the end-of-life stats line, next to its table
+     *        number: `[tab_quant #20 double]` instead of `[tab_20 double]`.
+     * @details The table number is the per-type registry index, and every
+     *          re-chunk hands the array its temporary's (a new one): after a
+     *          dynamic run nothing says which variable `tab_20` was. The name
+     *          stays with the object -- neither a re-chunk nor swap() moves it,
+     *          they move storage. Empty (the default): the number alone.
+     * @param name the name to print
+     */
+    void set_debug_name(std::string name)
+    {
+        debug_name_ = std::move(name);
+    }
+    /// @brief The name set by set_debug_name(), empty if none.
+    [[nodiscard]] const std::string& debug_name() const noexcept
+    {
+        return debug_name_;
     }
 
     /**
@@ -257,11 +324,24 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
         {
             chunk_list.swap(spare_chunk_list_); // spare left empty, without a buffer
         }
-        // A fresh buffer is faulted in by a team, not by the value-initialising
-        // resize below (one thread, and every page on its NUMA node). The spare
-        // just taken is resident already: left alone.
-        parallel_storage_init::reserve_first_touched(chunk_list, n);
+        // The resize below only reserves (NoInitAllocator): the caller's init
+        // loop constructs each chunk (construct_chunk) on the thread that
+        // initialises it, static schedule -- that loop is the first touch of
+        // a fresh buffer, page faults and NUMA placement included.
         chunk_list.resize(n);
+    }
+
+    /**
+     * @brief Construct chunk @p i of chunk_list in place, value-initialised (as
+     *        std::vector's resize did before NoInitAllocator).
+     * @details For the init loops after a growing resize(), so that the chunk
+     *          is first written by the thread that initialises it.
+     * @param i the chunk index, below chunk_list.size()
+     * @return the chunk
+     */
+    chunk_type& construct_chunk(int i) noexcept
+    {
+        return *std::construct_at(&chunk_list[static_cast<std::size_t>(i)]);
     }
 
     /**
@@ -277,7 +357,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
             chunk_list.capacity() > spare_chunk_list_.capacity())
         {
             chunk_list.swap(spare_chunk_list_);
-            std::vector<chunk_type>().swap(chunk_list); // frees the smaller one
+            chunk_list_type().swap(chunk_list); // frees the smaller one
         }
     }
 
@@ -290,7 +370,7 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
      */
     [[no_unique_address]] ActiveSizePolicy size_policy_{};
 
-    std::vector<chunk_type> chunk_list;  ///< The chunks, in index order.
+    chunk_list_type         chunk_list;  ///< The chunks, in index order.
     int                     nb_chunk{0}; ///< Number of live chunks in `chunk_list`.
 
     int num_tab{0}; ///< Identity of this array in the per-type registries.
@@ -313,10 +393,13 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
 
     /// The chunk_list buffer a re-chunk's old storage left (empty, capacity
     /// only), for the next re-chunk's new storage. See acquire_chunk_list().
-    static inline std::vector<chunk_type> spare_chunk_list_{};
+    static inline chunk_list_type spare_chunk_list_{};
 
     /// @brief The derived array's rechunk_to(), installed by ArrayChunkBase.
     void (*rechunk_fn_)(ArrayChunkCore&, unsigned int) = nullptr;
+
+    /// @brief See set_debug_name().
+    std::string debug_name_;
 };
 
 /**

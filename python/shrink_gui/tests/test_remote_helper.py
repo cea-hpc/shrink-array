@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """remote_helper.py, run as on inti (through the fake ssh), without Qt."""
 import ast
 import base64
@@ -216,3 +218,108 @@ def test_helper_reads_utf8_in_c_locale(site):
     out = subprocess.run([str(site.bin / "ssh"), "inti", "python3 - options ~ u.sh help bash"],
                          input=HELPER.encode(), env=env, capture_output=True, timeout=60)
     assert json.loads(out.stdout)["actions"][0]["flags"] == ["--fast"], out.stderr
+
+
+def test_tail_starts_at_the_end_of_a_long_log(site):
+    _launch(site, "big", "true")
+    assert site.wait(lambda: _status(site, "big")["status"] == "fini")
+    log = site.runs / "big" / "out.log"
+    with open(log, "a") as f:
+        for i in range(100000):
+            f.write(f"line {i:06d} " + "x" * 40 + "\n")
+    size = log.stat().st_size
+    r = site.helper("tail", "~/shrink_runs", "big", -1)
+    assert 0 < r["skipped"] < size and r["offset"] == size and not r["more"]
+    assert r["data"].startswith("line ") and r["data"].endswith("line 099999 " + "x" * 40 + "\n")
+    assert size - r["skipped"] <= 2 * 1024 * 1024
+    r0 = site.helper("tail", "~/shrink_runs", "big", 0)          # from the start: by blocks
+    assert r0["skipped"] == 0 and r0["more"] and r0["data"].startswith("[gui]")
+
+
+def _git_env(site):
+    return dict(site.env, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+                GIT_COMMITTER_EMAIL="t@t")
+
+
+def _git(env, cwd, *args):
+    return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True,
+                          text=True).stdout.strip()
+
+
+def _origin_and_clone(site, tmp_path):
+    """A bare origin with one commit on `dev`, a second clone to push from, and
+    ~/c on inti tracking origin/dev."""
+    env = _git_env(site)
+    origin = tmp_path / "origin.git"
+    _git(env, tmp_path, "init", "-q", "--bare", str(origin))
+    up = tmp_path / "up"
+    _git(env, tmp_path, "clone", "-q", str(origin), str(up))
+    _git(env, up, "checkout", "-q", "-b", "dev")
+    (up / "f").write_text("1\n")
+    _git(env, up, "add", "f")
+    _git(env, up, "commit", "-qm", "one")
+    _git(env, up, "push", "-q", "origin", "dev")
+    _git(env, site.home, "clone", "-q", "-b", "dev", str(origin), "c")
+    c = site.home / "c"
+    # The identity a merge or a rebase commits under, as inti's clone has one.
+    _git(env, c, "config", "user.name", "t")
+    _git(env, c, "config", "user.email", "t@t")
+    return env, up, c
+
+
+def _push(env, up, name, text, msg):
+    (up / name).write_text(text)
+    _git(env, up, "add", name)
+    _git(env, up, "commit", "-qm", msg)
+    _git(env, up, "push", "-q", "origin", "dev")
+
+
+def test_git_info_upstream(site, tmp_path):
+    env, up, c = _origin_and_clone(site, tmp_path)
+    g = site.helper("check", "~/c")["git"]
+    assert g["branch"] == "dev" and g["upstream"] == "origin/dev" and (g["ahead"], g["behind"]) == (0, 0)
+    _push(env, up, "g", "x\n", "two")
+    _git(env, c, "fetch", "-q")
+    assert site.helper("check", "~/c")["git"]["behind"] == 1
+
+
+def test_git_pull_fast_forward(site, tmp_path):
+    env, up, c = _origin_and_clone(site, tmp_path)
+    _push(env, up, "g", "x\n", "two")
+    r = site.helper("git_pull", "~/c", "merge")
+    assert r["ok"] and r["aborted"] is None
+    assert r["git"]["commit"] == _git(env, up, "rev-parse", "HEAD") != r["before"]
+
+
+def test_git_pull_rebase_over_a_local_commit(site, tmp_path):
+    env, up, c = _origin_and_clone(site, tmp_path)
+    _push(env, up, "g", "x\n", "remote")
+    (c / "h").write_text("local\n")
+    _git(env, c, "add", "h")
+    _git(env, c, "commit", "-qm", "local")
+    r = site.helper("git_pull", "~/c", "rebase")
+    assert r["ok"], r["output"]
+    # the local commit replayed on top of the remote one: linear history
+    assert _git(env, c, "rev-parse", "HEAD~1") == _git(env, up, "rev-parse", "HEAD")
+    assert r["git"]["ahead"] == 1 and r["git"]["behind"] == 0
+
+
+@pytest.mark.parametrize("mode", ["merge", "rebase"])
+def test_git_pull_conflict_is_aborted(site, tmp_path, mode):
+    env, up, c = _origin_and_clone(site, tmp_path)
+    _push(env, up, "f", "remote\n", "remote")
+    (c / "f").write_text("local\n")
+    _git(env, c, "commit", "-qam", "local")
+    head = _git(env, c, "rev-parse", "HEAD")
+    r = site.helper("git_pull", "~/c", mode)
+    assert not r["ok"] and r["aborted"] == mode
+    # back as it was: same commit, clean tree, no merge or rebase in progress
+    assert _git(env, c, "rev-parse", "HEAD") == head
+    assert _git(env, c, "status", "--porcelain") == ""
+    assert not (c / ".git" / "MERGE_HEAD").exists() and not (c / ".git" / "rebase-merge").exists()
+
+
+def test_git_pull_without_repository(site):
+    res = subprocess.run([str(site.bin / "ssh"), "inti", "python3 - git_pull ~/nothing merge"],
+                         input=HELPER.encode(), env=site.env, capture_output=True, timeout=60)
+    assert "error" in json.loads(res.stdout)

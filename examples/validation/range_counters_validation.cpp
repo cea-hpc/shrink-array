@@ -37,6 +37,7 @@
 //   first  -- fill_range, then one first value;
 //   second -- fill_range, then one second value (Chunk2 / 2A);
 //   copy   -- copy_range from a plain source, then one first value.
+// Then the compound operators on a compressed chunk (run_compound_case).
 // In an OpenMP build the counters do not exist and the cases simply pass.
 //
 // Exit 0 = every check holds. Any thread count.
@@ -256,6 +257,111 @@ int run_mul_zero_case()
     return bad ? 1 : 0;
 }
 
+// ── Compound operators on a compressed chunk (v1, counter mode) ─────────────
+// v1 arms a compressed chunk at nb_val_eq_zero = chunk_size - 1, betting that
+// the element written turns non-zero. An operator that leaves it at 0 (0 &= x,
+// 0 <<= k, 0 >>= k, 0 += 0, 0 -= 0, 0 |= 0, 0 ^= 0) lost the bet with nothing
+// to correct it: one zero short for good, the chunk could never be compressed
+// again. *=, /= and %= were never exposed: they skip a zero element.
+// Each case: an all-zero array, the operator on one element of chunk #1, which
+// must end compressed; then that element set to 9 and back to 0, which must
+// compress it again (the count is exact); every element reads 0.
+enum class Op
+{
+    and_,
+    shl,
+    shr,
+    add0,
+    sub0,
+    or0,
+    xor0
+};
+
+const char* op_name(Op o)
+{
+    switch (o)
+    {
+        case Op::and_:
+            return "&= 5";
+        case Op::shl:
+            return "<<= 3";
+        case Op::shr:
+            return ">>= 1";
+        case Op::add0:
+            return "+= 0";
+        case Op::sub0:
+            return "-= 0";
+        case Op::or0:
+            return "|= 0";
+        default:
+            return "^= 0";
+    }
+}
+
+int run_compound_case(Op o)
+{
+    using I = long long;
+    Array<I> a;
+    const long S = static_cast<long>(a.chunk_size());
+    a.resize(static_cast<int>(3 * S));
+    maybe_set_second_value(a, I{7});
+    const int k = static_cast<int>(S) + 3;
+    switch (o)
+    {
+        case Op::and_:
+            a[k] &= I{5};
+            break;
+        case Op::shl:
+            a[k] <<= 3;
+            break;
+        case Op::shr:
+            a[k] >>= 1;
+            break;
+        case Op::add0:
+            a[k] += I{0};
+            break;
+        case Op::sub0:
+            a[k] -= I{0};
+            break;
+        case Op::or0:
+            a[k] |= I{0};
+            break;
+        case Op::xor0:
+            a[k] ^= I{0};
+            break;
+    }
+    int        bad    = 0;
+    const bool check  = chunk_config::use_chunk && chunk_config::use_compression_with_counter;
+    const bool after1 = std::as_const(a).written(k);
+    a[k]              = I{9};
+    a[k]              = I{0};
+    const bool after2 = std::as_const(a).written(k);
+    if (check && (after1 || after2))
+    {
+        std::printf("[%s/0 %s] FAIL: chunk #1 still materialised %s\n", variant_name(), op_name(o),
+                    after1 ? "after the operator (a zero result)" : "after 9 then 0 (the zero count drifted)");
+        ++bad;
+    }
+    for (long i = 0; i < 3 * S; ++i)
+    {
+        if (std::as_const(a)[static_cast<int>(i)] != I{0})
+        {
+            if (bad < 5)
+            {
+                std::printf("[%s/0 %s] FAIL [%ld] = %lld, expected 0\n", variant_name(), op_name(o), i,
+                            static_cast<long long>(std::as_const(a)[static_cast<int>(i)]));
+            }
+            ++bad;
+        }
+    }
+    if (!bad)
+    {
+        std::printf("[%s/0 %s] OK%s\n", variant_name(), op_name(o),
+                    check ? ": chunk compressed after the operator and after 9 then 0" : " (values only)");
+    }
+    return bad ? 1 : 0;
+}
+
 } // namespace
 
 int run(int /*argc*/, char** /*argv*/)
@@ -270,6 +376,10 @@ int run(int /*argc*/, char** /*argv*/)
     fails += run_case(Case::second);
     fails += run_case(Case::copy);
     fails += run_mul_zero_case();
+    for (const Op o : {Op::and_, Op::shl, Op::shr, Op::add0, Op::sub0, Op::or0, Op::xor0})
+    {
+        fails += run_compound_case(o);
+    }
 
     release_chunk_pools();
     destroy_block_chunk();

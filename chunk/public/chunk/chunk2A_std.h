@@ -275,24 +275,6 @@ class Chunk2AStateQueries
         }
     }
 
-    /**
-     * @brief Give this chunk a real buffer, because a caller needs an address.
-     *
-     * @details ChunkBase::print_adr() hands out `&values[i]`, which no registry
-     *          lookup can stand in for: there is no buffer behind a chunk
-     *          compressed to a second constant. Its one caller is
-     *          ArrayChunkBase's re-export, itself never called inside the
-     *          library, so this is a diagnostic path and the chunk losing its
-     *          compressed state costs nothing that matters.
-     */
-    void materialise_for_address(this Derived& self) noexcept
-    {
-        if (self.is_cst_val2())
-        {
-            self.Base::create_value(self.second_value_of_chunk());
-        }
-    }
-
     /// @brief Is @p ptr one of the constant arrays (first or a second one)?
     /// @note For a values pointer the caller already loaded -- the pre-store
     ///       guards of the proxy -- where is_cst_val() would load it again.

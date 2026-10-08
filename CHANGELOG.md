@@ -80,6 +80,18 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- `chunk_list` (the chunks of an array) no longer has its new chunks value-initialised by
+  `std::vector::resize` on the calling thread: its allocator (`NoInitAllocator`,
+  `internal/array_chunk_core.h`) leaves them unconstructed, and the init loops of `create`
+  and `resize` construct each chunk (`construct_chunk`) on the thread that initialises it.
+  One serial pass less at each creation and re-chunk (the pages were already faulted in by
+  a team), and a growing `resize()` no longer writes its new chunks from one thread.
+  `getChunkList()` returns `const chunk_list_type&` (a `std::vector` with that allocator).
+- Benchmark baseline (`shrink_bench_vector_*`): the arrays are a `std::vector` with an
+  allocator that does not zero them (`examples/shrink_bench/baseline_vector.h`), zeroed by a
+  parallel loop instead: the creation is parallel, and each page lands on the NUMA node of
+  the thread that works on it. Creation times of the baseline are not comparable with
+  earlier runs.
 - CMake 3.20 is required (the documented minimum; the files said 3.12). The top-level
   project is `shrink_array`, and carries the version (`project(shrink_array VERSION ...)`),
   from which the chunk library takes its own. Consumed by another project, the build no
@@ -157,9 +169,10 @@ the tag's checksum to the recipe.
   chunk/chunk_std.h (nothing used it; the benchmark has its own).
 - Renamed, without the old names, the macros a header defines: `CHUNK_FORCE_INLINE`,
   `CHUNK_FLATTEN`, `CHUNK_ASSUME`, `CHUNK_CPU_PAUSE`, `CHUNK_INVARIANT_FAILED`,
-  `CHUNK_CRTP_USE_DEDUCING_THIS`, `CHUNK_CRTP_FORCE_DEDUCING_THIS`, `CHUNK_INHERIT_CTOR_TYPENAME`, `CHUNK_RING_LOG_ANY`,
+  `CHUNK_INHERIT_CTOR_TYPENAME`, `CHUNK_RING_LOG_ANY`,
   `CHUNK_TUNING_LEVEL` (was FORCE_INLINE, SA_FLATTEN, SA_ASSUME, CPU_PAUSE, INVARIANT_FAILED,
-  CRTP_USE_DEDUCING_THIS, CRTP_FORCE_DEDUCING_THIS, SA_INHERIT_CTOR_TYPENAME, RING_LOG_ANY, SHRINK_LEVEL);
+  SA_INHERIT_CTOR_TYPENAME, RING_LOG_ANY, SHRINK_LEVEL; CRTP_USE_DEDUCING_THIS and
+  CRTP_FORCE_DEDUCING_THIS are gone with the CRTP helper, every mixin using deducing this);
   fast_allocators: `FAST_ALLOC_DBG_ASSERT`, `FAST_ALLOC_LSAN_IGNORE`, `FAST_ALLOC_SL_LIST_CHECK`,
   `FAST_ALLOC_SIMD_SZ`, `FAST_ALLOC_MAX_CONST_BLOCK_SIZE`, `FAST_ALLOC_PMP_THREAD_RANK`,
   `FAST_ALLOC_PMP_MAX_THREADS`, `FAST_ALLOC_PMP_IN_PARALLEL_REGION` (was DBG_ASSERT,
@@ -167,9 +180,19 @@ the tag's checksum to the recipe.
   PMP_MAX_THREADS, PMP_IN_PARALLEL_REGION). The fallback definitions of the membarrier(2)
   commands are constants of `shrink_array`, no longer macros. is_power_of_tow is
   `is_power_of_two`.
+- Element write path (OpenMP builds): three acquire loads of the chunk header per write
+  instead of five. Check #1 reuses the gate probe's value (reloaded only after waiting out a
+  compressor), and the WAW guard reloads `pending_ops_` only when the entry read found
+  something pending; check #2, the writer half of the Dekker handshake after
+  `announce_write`, stays a fresh load. Landed in commit 083a0e54, whose message does not
+  mention it.
 
 ### Fixed
 
+- Chunk2, serial builds: `x *= 0` (or `/=`) on an element holding the second value left it
+  counted as one, so a later second-value write could fold the chunk to that constant with the
+  element still different, and the element was lost. `%=` did not count a zero result as the
+  first value (a missed compression, no value lost).
 - `ParamChunk::init_indexes<Types>()` compiles: it called a private member of `AllTypeChunk`.
 - `scripts/check_includes.py` works outside a git checkout (a source archive, a Spack
   build) and checks files not yet added to git.

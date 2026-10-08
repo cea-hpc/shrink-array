@@ -28,7 +28,8 @@
 #include <type_traits> // std::conditional_t
 #include <vector>      // std::vector<bool>: tab_mask in the baseline
 
-#include "bench_prelude.h" // Int, complex_double, chunk_config::
+#include "baseline_vector.h" // BaselineVector: the std::vector baseline, zeroed in parallel
+#include "bench_prelude.h"   // Int, complex_double, chunk_config::
 
 #include "bench_struct.h" // Point3, Cell: the aggregate element types
 
@@ -52,7 +53,7 @@ using ActiveArray = std::conditional_t<
     ArrayChunk2A<T, Int>,
     std::conditional_t<chunk_config::use_chunk2,
                        ArrayChunk2<T, Int>,
-                       std::conditional_t<chunk_config::use_chunk, ArrayChunk<T, Int>, std::vector<T>>>>;
+                       std::conditional_t<chunk_config::use_chunk, ArrayChunk<T, Int>, BaselineVector<T>>>>;
 
 
 // Runtime chunk size for CHUNK_DYNAMIC builds. Seeded into g_active_chunk_size
@@ -118,7 +119,7 @@ inline constexpr complex_double zero_complex = std::complex<double>(0., 0.);
 ///        Array<bool>; the std::vector baseline uses short, because
 ///        std::vector<bool>'s proxy is useless here. The asymmetry predates the
 ///        split -- this alias just names it so BenchArrays can hold a reference.
-using BenchBoolArray = std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, std::vector<short>>;
+using BenchBoolArray = std::conditional_t<chunk_config::is_shrink_enabled, Array<bool>, shrink_array::BaselineVector<short>>;
 
 /**
  * @brief What main() declares tab_bool_bits as: tab_bool's twin, written with

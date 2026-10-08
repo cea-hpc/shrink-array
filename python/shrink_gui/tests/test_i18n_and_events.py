@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """Translations, and bench_runner/events.py (the other side of events.jsonl)."""
 import json
 

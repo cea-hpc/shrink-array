@@ -107,7 +107,7 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
                 Proxy2A<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab, i, 0);
                 Proxy2A<T>::tab_type_cst_val[num_tab][i] = is_val1;
                 Proxy2A<T>::BaseSpec::set(num_tab, i, T{});
-                chunk_list[i].init_after_constructor();
+                this->construct_chunk(i).init_after_constructor();
             };
             parallel_storage_init::for_each_chunk(nb_chunk, 16384, init_chunk);
         }
@@ -206,7 +206,7 @@ void ArrayChunk2A<T, ind_type>::print_compression_stats(std::ostream& os) const
 
     // Centralized rendering: shared layout/colors/verdict with ArrayChunk2
     // (see chunk_stats_printer.h).
-    print_formatted_chunk_stats(os, num_tab, type_name<T>(), n_compressed, nb_chunk, n_t1, "Chunk2A",
+    print_formatted_chunk_stats(os, num_tab, this->debug_name(), type_name<T>(), n_compressed, nb_chunk, n_t1, "Chunk2A",
                                 /*n_cross=*/-1, /*cross_name=*/"", /*bool_elements=*/std::is_same_v<T, bool>);
 }
 
@@ -796,36 +796,29 @@ void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
 
     Proxy2A<T>::resize_tab_is_int(num_tab, old_nb_chunk, nb_chunk);
 
-    if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
-    {
-#pragma omp parallel for
-        for (int i = old_nb_chunk; i < nb_chunk; ++i)
-        {
-            chunk_list[i].init_after_constructor();
-        }
-    }
-    else
-    {
-#pragma omp for
-        for (int i = old_nb_chunk; i < nb_chunk; ++i)
-        {
-            chunk_list[i].init_after_constructor();
-        }
-    }
-
-    for (int i = old_nb_chunk; i < nb_chunk; ++i)
-    {
-        Proxy2A<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab, i, 0);
-        Proxy2A<T>::tab_type_cst_val[num_tab][i] = is_val1;
-        Proxy2A<T>::BaseSpec::set(num_tab, i, T{}); // T{}: the struct elements have no conversion from 0
-    }
+    // The new chunks [old_nb_chunk, nb_chunk) and their table slots: a team of
+    // its own outside a region, the calling thread inside one -- never an
+    // orphaned `omp for`, which inside a region left 1/N of a thread's own
+    // array unconstructed (region_storage_validation). Each iteration writes
+    // slot i of tables sized above and nothing else.
+    parallel_storage_init::for_each_chunk(nb_chunk - old_nb_chunk, 500,
+                                          [this, old_nb_chunk, num_tab](int k)
+                                          {
+                                              const int i = old_nb_chunk + k;
+                                              this->construct_chunk(i).init_after_constructor();
+                                              Proxy2A<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab, i, 0);
+                                              Proxy2A<T>::tab_type_cst_val[num_tab][i] = is_val1;
+                                              // T{}: the struct elements have no conversion from 0
+                                              Proxy2A<T>::BaseSpec::set(num_tab, i, T{});
+                                          });
 
     // std::vector semantics for the regrown range [old_size, newsz): it reads
     // T{}. The chunks added above are fresh, but the one holding the OLD end
     // keeps its tail -- after a shrink, the values written there before came
     // back on the next growth (deferred_path_validation, resize-grow-again).
     // Reset that tail: at most one chunk, through the normal write path, after
-    // the reallocations. `omp for`, the convention of the resize loops.
+    // the reallocations. Serial: at most one chunk, and called inside a region
+    // an `omp for` would cover 1/N of it.
     if (newsz > old_size)
     {
         const auto     csz       = static_cast<ind_type>(this->chunk_size());
@@ -836,7 +829,6 @@ void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
         const ind_type  old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<ind_type>(cover_ll) : newsz;
         const ind_type stale_end = newsz < old_cover ? newsz : old_cover;
-#pragma omp for
         for (ind_type i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};

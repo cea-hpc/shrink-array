@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """The window, end to end, offscreen, against the fake inti."""
 import re
 import time
@@ -283,3 +285,50 @@ def test_delete_with_outputs_and_local_copy(gui, site, monkeypatch):
     w.delete()
     assert pump(lambda: not (site.runs / rid).exists() and not local.exists(), 10)
     assert seen == {"own": "dir", "loc": str(local)} and not os.path.exists(od)
+
+
+def test_log_view_rewrites_and_trims(qapp):
+    from shrink_gui.widgets import LogView
+    v = LogView()
+    for c in ["start\n", "prog 1\r", "prog 2\rprog 3\n", "done\r\n", "a\rbb\rc\n", "x"]:
+        v.append_raw(c)
+    assert v.toPlainText().splitlines() == ["start", "prog 3", "done", "c", "x"]
+    v = LogView()
+    v.setMaximumBlockCount(50)
+    v.append_raw("".join(f"{i}\n" for i in range(100000)))
+    lines = v.toPlainText().splitlines()
+    assert lines[-1] == "99999" and len(lines) < 50
+
+
+def test_git_row_and_pull(gui, site, tmp_path):
+    """The "Git (inti)" row shows the branch; "git pull" brings the commit."""
+    import subprocess
+    w, pump = gui
+    env = dict(site.env, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+               GIT_COMMITTER_EMAIL="t@t")
+
+    def git(cwd, *args):
+        return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True,
+                              text=True).stdout.strip()
+
+    origin, up = tmp_path / "o.git", tmp_path / "up"
+    git(tmp_path, "init", "-q", "--bare", str(origin))
+    git(tmp_path, "clone", "-q", str(origin), str(up))
+    git(up, "checkout", "-q", "-b", "dev")
+    (up / "f").write_text("1\n")
+    git(up, "add", "f")
+    git(up, "commit", "-qm", "one")
+    git(up, "push", "-q", "origin", "dev")
+    git(site.home, "clone", "-q", "-b", "dev", str(origin), "c")
+    (up / "f").write_text("2\n")
+    git(up, "commit", "-qam", "two")
+    git(up, "push", "-q", "origin", "dev")
+
+    w.repo.setText("~/c")
+    w.check()
+    assert pump(lambda: "branche <b>dev</b>" in w.git_state.text()), w.git_state.text()
+    assert w.bpull.isEnabled() and w.bpull_rebase.isEnabled()
+    w.bpull.click()
+    want = git(up, "rev-parse", "HEAD")
+    assert pump(lambda: getattr(w, "inti_git", {}).get("commit") == want)
+    assert pump(lambda: want[:8] in w.git_state.text())

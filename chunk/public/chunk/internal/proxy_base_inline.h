@@ -523,9 +523,12 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
         // regime keeps its ops queued (owner-recursive lock, uncontended there
         // -- the enqueue path below takes the same lock anyway).
         [[maybe_unused]] int own_replay_excl_rank = -1;
+        // Read once here, reused by the WAW guard below: see there.
+        [[maybe_unused]] bool entry_pending = false;
         if constexpr (build_config::use_openmp)
         {
-            if (self.chunk.pending_any()) [[unlikely]]
+            entry_pending = self.chunk.pending_any();
+            if (entry_pending) [[unlikely]]
             {
                 const int thr_entry = get_thr_rank_fast();
                 if (self.chunk.foreign_pending(thr_entry, self.num))
@@ -554,13 +557,18 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
         const OwnReplayExclGuard own_replay_excl_guard{own_replay_excl_rank};
 
         // ─── Check #1: pure optimisation, not correctness ───────────────────
-        // Relaxed probe before touching begin_write's cache line. If a
-        // compression is clearly already in flight, skip straight to the slow
-        // path without contending the per_thread_writing[thr] cache line
-        // that the compressor is busy-waiting on.
+        // A probe before touching begin_write's cache line: one load of the
+        // gate (must_defer_write: the chunk's steal mark, acquire -- the line
+        // `values` was just loaded from; without the marks, hard_inflight_,
+        // relaxed). If a compression is clearly in flight, wait it out or
+        // take the slow path without contending the per_thread_writing[thr]
+        // cache line the compressor is busy-waiting on. The same load serves
+        // as check #1 below, reloaded only after a wait: nothing in between
+        // can make a clear gate matter, the test hook being thread-local.
         //
         // A stale read here is safe: check #2 below, after announce_write,
-        // is the one the handshake's ordering covers.
+        // is the one the handshake's ordering covers -- and the one that
+        // must be a fresh load, never this value reused.
         //
         // The gate is a parked compressor (its writer window is being
         // opened, microseconds) or a compressor's pass having THIS chunk
@@ -578,9 +586,11 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
         // waiting shuts no window, and a window is a few hundred
         // microseconds against an enqueue and a replay per write (see
         // wait_out_compressor).
-        if (compression_mgr.must_defer_write(self.chunk)) [[unlikely]]
+        bool gate_closed = compression_mgr.must_defer_write(self.chunk);
+        if (gate_closed) [[unlikely]]
         {
             compression_mgr.wait_out_compressor(self.chunk);
+            gate_closed = compression_mgr.must_defer_write(self.chunk);
         }
 
         // Test hook (test_hooks.h, force_defer_every): one write in N takes
@@ -591,7 +601,7 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
         const bool force_defer_1 = forced == 1;
         const bool force_defer_2 = forced == 2;
 
-        if (!force_defer_1 && !compression_mgr.must_defer_write(self.chunk)) [[likely]]
+        if (!force_defer_1 && !gate_closed) [[likely]]
         {
             const int thr = get_thr_rank_fast();
 
@@ -614,10 +624,12 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
                 }
             }
 
-            // (3) check THEIR flag (inflight), relaxed. If this load does not
-            //     see inflight>0 then the compressor's scan of
-            //     per_thread_writing[thr] sees our flag and spins -- see
-            //     announce_write() for why, in either handshake shape.
+            // (3) check THEIR flag -- the chunk's steal mark (acquire), or
+            //     hard_inflight_ without the marks: a FRESH load, after the
+            //     announce. If it does not see the gate closed, the
+            //     compressor's scan of per_thread_writing[thr] sees our flag
+            //     and spins -- see announce_write() for why, in either
+            //     handshake shape.
             if (!force_defer_2 && !compression_mgr.must_defer_write(self.chunk)) [[likely]]
             {
                 // Dekker established. chunk.values cannot be mutated by any
@@ -650,9 +662,13 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl([[maybe_unused]]
                 // erase folds away there. use_openmp in the constexpr condition
                 // keeps the branch un-instantiated in serial builds (the erase
                 // body names OpenMP-only machinery).
+                // entry_pending first: the guard is after OUR rank's ops, and
+                // only the rank's own thread enqueues on it -- none can have
+                // appeared since the entry read found the chunk clear. Read
+                // again only when something was pending then.
                 if constexpr (build_config::use_openmp)
                 {
-                    if (self.chunk.pending_any()) [[unlikely]]
+                    if (entry_pending && self.chunk.pending_any()) [[unlikely]]
                     {
                         CompressionManagerType::erase_own_rank_op(thr, &self.chunk, self.num);
                     }

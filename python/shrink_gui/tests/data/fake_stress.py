@@ -1,3 +1,5 @@
+# Copyright 2026 CEA (www.cea.fr)
+# SPDX-License-Identifier: Apache-2.0
 """A stand-in for multi_launch_stress.py in the tests: same log lines (progress,
 output directory) and same timings_summary.csv columns, runs in milliseconds.
 Deterministic: --speed scales every time, so two runs compare exactly."""
