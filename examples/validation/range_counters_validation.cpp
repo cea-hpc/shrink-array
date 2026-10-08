@@ -207,6 +207,54 @@ int run_case(Case c)
     return bad ? 1 : 0;
 }
 
+/// `second * 0` through the proxy (Chunk2): the element leaves the second value
+/// AND enters the first. Both counters must move; the second-value count once
+/// did not (Proxy2::apply_compound_operation), so it stayed one too high and the
+/// LAST of the following second-value writes reached chunk_size with the zero
+/// still in the chunk: folded to cst2, the zero read back as the second value
+/// (shrink_bench_chunk2_dyn, one element of a chunk in a check run).
+int run_mul_zero_case()
+{
+    if constexpr (!chunk_config::use_chunk2)
+    {
+        return 0;
+    }
+    Array<double> a;
+    const long    S = static_cast<long>(a.chunk_size());
+    const long    N = 3 * S;
+    a.resize(static_cast<int>(N));
+    maybe_set_second_value(a, kSecond);
+
+    shrink_array::fill_range(a, static_cast<std::size_t>(S), static_cast<std::size_t>(2 * S), kPlain);
+    a[static_cast<int>(S)] = kSecond;
+    a[static_cast<int>(S)] *= 0.0;
+    for (long i = S + 1; i < 2 * S; ++i)
+    {
+        a[static_cast<int>(i)] = kSecond;
+    }
+    compress_in_region(a);
+
+    int bad = 0;
+    for (long i = 0; i < N; ++i)
+    {
+        const double want = (i < S || i >= 2 * S || i == S) ? 0.0 : kSecond;
+        const double got  = std::as_const(a)[static_cast<int>(i)];
+        if (got != want)
+        {
+            if (bad < 5)
+            {
+                std::printf("[%s/mul_zero] FAIL [%ld] = %g, expected %g\n", variant_name(), i, got, want);
+            }
+            ++bad;
+        }
+    }
+    if (!bad)
+    {
+        std::printf("[%s/mul_zero] OK: second * 0, then the rest of the chunk to the second value\n", variant_name());
+    }
+    return bad ? 1 : 0;
+}
+
 } // namespace
 
 int run(int /*argc*/, char** /*argv*/)
@@ -220,6 +268,7 @@ int run(int /*argc*/, char** /*argv*/)
     fails += run_case(Case::first);
     fails += run_case(Case::second);
     fails += run_case(Case::copy);
+    fails += run_mul_zero_case();
 
     release_chunk_pools();
     destroy_block_chunk();
