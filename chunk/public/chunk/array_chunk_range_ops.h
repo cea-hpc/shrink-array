@@ -58,6 +58,7 @@
  *          already carry.
  */
 
+#include <algorithm>   // std::min (the range clamps)
 #include <cstddef>     // std::size_t, std::ptrdiff_t
 #include <type_traits> // std::is_same_v
 
@@ -461,10 +462,7 @@ void fill_range(Arr& arr, std::size_t first, std::size_t last, const U& v, bool 
     {
         return;
     }
-    if (last > size)
-    {
-        last = size;
-    }
+    last = std::min(last, size);
 
     // Drain this array's pending deferred writes FIRST: the bulk stores below
     // bypass the deferred machinery, and an op still queued on one of these
@@ -640,10 +638,7 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, boo
     {
         return;
     }
-    if (last > size)
-    {
-        last = size;
-    }
+    last = std::min(last, size);
 
     // Drain this array's pending deferred writes FIRST: the bulk stores below
     // bypass the deferred machinery, and an op still queued on one of these
@@ -804,10 +799,7 @@ void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
     {
         return;
     }
-    if (last > size)
-    {
-        last = size;
-    }
+    last = std::min(last, size);
 
     const in_t<T> value = static_cast<T>(v);
 
@@ -955,10 +947,7 @@ void for_each_value(const Arr& arr, std::size_t first, std::size_t last, F&& f)
 {
     using ind_type  = decltype(arr.size());
     const auto size = static_cast<std::size_t>(arr.size());
-    if (last > size)
-    {
-        last = size;
-    }
+    last = std::min(last, size);
     if (first >= last)
     {
         return;
@@ -983,10 +972,7 @@ OutIt read_range(const Arr& arr, std::size_t first, std::size_t last, OutIt out)
 {
     using ind_type  = decltype(arr.size());
     const auto size = static_cast<std::size_t>(arr.size());
-    if (last > size)
-    {
-        last = size;
-    }
+    last = std::min(last, size);
     if (first >= last)
     {
         return out;
