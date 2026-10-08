@@ -17,6 +17,12 @@
 set(ARMPL_ROOT "/ccc/products2/armpl-25.07/Rhel_9__aarch64/gcc--12.3.0__cuda--12.4/default"
     CACHE PATH "ArmPL install root (lib/libamath.so + include/)")
 
+# The per-loop "why not vectorised" report of the fast-math targets (see the
+# end of chunk_enable_fast_math). Off by default: gcc's -fopt-info-vec-missed
+# prints every missed loop of every header the targets include, hundreds of
+# lines per build, burying the warnings.
+option(CHUNK_VEC_REPORT "Fast-math targets: report the loops the compiler did not vectorise" OFF)
+
 function(chunk_enable_fast_math target)
     # NVHPC (nvc++) : skip entirely. It's a validation compiler here, its
     # fast-math flags differ, and applying gcc/clang switches breaks the build.
@@ -86,11 +92,13 @@ int main()
     # dependence, the call, the type. Applied here because this function marks
     # the targets where a `simd` pragma is expected to succeed: they are the
     # ones that get -fveclib, without which any loop calling sin/cos/tan stays
-    # scalar whatever else is true.
-    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        list(APPEND _fm -Rpass-analysis=loop-vectorize -Rpass-missed=loop-vectorize)
-    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        list(APPEND _fm -fopt-info-vec-missed)
+    # scalar whatever else is true. On request only (CHUNK_VEC_REPORT).
+    if(CHUNK_VEC_REPORT)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            list(APPEND _fm -Rpass-analysis=loop-vectorize -Rpass-missed=loop-vectorize)
+        elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            list(APPEND _fm -fopt-info-vec-missed)
+        endif()
     endif()
 
     target_compile_options(${target} PRIVATE ${_fm})
