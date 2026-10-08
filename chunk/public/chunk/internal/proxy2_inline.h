@@ -113,16 +113,16 @@ ProxySpec2<T, Derived>::inf_array_t ProxySpec2<T, Derived>::load_inf_array() con
 }
 
 // Every write runs one of these. They take the fields from the armed mirror --
-// memory written long before -- never from a copy just stored. The former
+// memory written long before -- never from a copy just stored. Not
 //     inf_array = load_inf_array(); second_value = inf_array.second_value; ...
-// returned the 16-byte tuple through a stack temporary (a q-register store)
-// and read it straight back with 8- and 4-byte loads: a store the core cannot
-// forward to narrower loads, so each write waited for it to reach the cache.
-// On Grace (Neoverse V2), 64 threads, variant_compare --constants 1: 38.6 % of
-// Proxy2<double>::assign_impl's samples sat right behind those loads, and
-// Chunk2's constant-write pass ran 7-12 % behind Chunk2A's (whose write path
-// has no such tuple). Unarmed proxies (replay, *_from_key) keep the registry
-// path: rare, and a registry lookup costs more than the stall anyway.
+// which returns the 16-byte record through a stack temporary (a q-register
+// store) and reads it straight back with 8- and 4-byte loads: a store the core
+// cannot forward to narrower loads, so each write waits for it to reach the
+// cache: on Grace (Neoverse V2), 64 threads, 38.6 % of
+// Proxy2<double>::assign_impl's samples behind those loads, and Chunk2's
+// constant-write pass 7-12 % behind Chunk2A's. Unarmed proxies (replay,
+// *_from_key) keep the registry path: rare, and a registry lookup costs more
+// than the stall anyway.
 template <typename T, typename Derived>
 void ProxySpec2<T, Derived>::set_info_on_chunk()
 {

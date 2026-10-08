@@ -439,7 +439,7 @@ struct OMPTcc<true>
     /// @details update(false) suspends the callbacks, update(true) resumes
     ///          them; they stay suspended while ANY thread holds a suspension.
     ///          The resume never takes the count below zero, so an extra
-    ///          update(true) is a no-op, as it was with the former flag.
+    ///          update(true) is a no-op.
     ///          relaxed: a switch, publishing no data.
     static void update(bool state) noexcept
     {

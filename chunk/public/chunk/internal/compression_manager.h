@@ -339,10 +339,10 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @brief Size the per-rank tracking structures this policy owns, once.
      * @details Called when the manager of (T, ChunkType) is registered
      *          (AllTypeChunk::register_manager): before the first array of the
-     *          type, and before any fan-out can reach these structures. They
-     *          used to be sized by the constructor of a static, at an
-     *          unspecified point of the static initialisation -- after a
-     *          global array's construction, possibly.
+     *          type, and before any fan-out can reach these structures. Not by
+     *          the constructor of a static: that runs at an unspecified point
+     *          of the static initialisation, possibly after a global array's
+     *          construction.
      */
     static void ensure_initialised()
     {

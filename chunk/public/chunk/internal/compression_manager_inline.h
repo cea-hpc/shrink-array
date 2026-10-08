@@ -325,7 +325,7 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_chunk_all_ranks(C
 
     const uint32_t payload = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(chunk) >> 4U) & 0x00FFFFFFU;
 
-    // ─── Cross-flush mutual exclusion is now PER RANK ─────────────────────
+    // ─── Cross-flush mutual exclusion is PER RANK ─────────────────────────
     // The double-free guard (two flushers draining the same arr[r][chunk] and
     // both destroy()-ing an op) only needs mutual exclusion on the rank whose
     // map is being drained. We therefore take xflush_lock_rank[r] INSIDE the

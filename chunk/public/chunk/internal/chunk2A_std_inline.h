@@ -333,8 +333,7 @@ void Chunk2A<T>::make_block_compression(int thr, Proxy2A<T>* proxy2A)
 
         char* ptr_type_cst = &Proxy2A<T>::tab_type_cst_val[num_tab][num_chunk];
 
-        // Long form in both modes: thr is 0 with OpenMP off. clear_int_st(5-arg)
-        // is now available in non-OMP (step 1).
+        // Long form in both modes: thr is 0 with OpenMP off.
         const SecondValueRef<T> ptr_second_value = Proxy2A<T>::BaseSpec::get_tab_second_value(num_tab, num_chunk);
         chunk_ptr->clear_int_st(0, ptr_type_cst, ptr_second_value, thr);
         chunk_ptr->steal_unmark();

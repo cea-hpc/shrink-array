@@ -47,8 +47,8 @@ const Proxy<T>& Proxy<T>::operator=(const Proxy<T>& from) noexcept
 
         // Write through the engine: Dekker handshake / deferred path,
         // WAW-erase, pending_any()-guarded zero early-out, compression
-        // marking and nb_val_eq_zero maintenance. The former inline store
-        // bypassed all of it (a[i] = b[j] could land in a CAS-swapped buffer,
+        // marking and nb_val_eq_zero maintenance. An inline store would
+        // bypass all of it (a[i] = b[j] could land in a CAS-swapped buffer,
         // be overwritten by an older deferred replay, or drift the zero
         // counter into a spurious full-zero compression).
         assign_impl<T>(v);

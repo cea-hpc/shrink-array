@@ -1255,13 +1255,11 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 // blocks home, then give back the slabs they just emptied. Only
                 // blocks already released by release_st are touched -- the
                 // source chunks the remaining slices still have to read are
-                // untouched. It used to run between two regions, on the master
-                // alone, around a drain that opened two regions of its own per
-                // list set (and ran serially under OMPT): 5 ms per boundary at
-                // 64 threads, 7 at 128 on Grace, 15 boundaries per re-chunk.
-                // Now the whole team drains (each rank its own list and its own
-                // slabs, as before) and one thread sweeps. n_slices > 1 only in
-                // these builds (see above).
+                // untouched. The whole team drains (each rank its own list and
+                // its own slabs) and one thread sweeps: on the master alone,
+                // between two regions, a boundary costs ~5 ms at 64 threads on
+                // Grace, 15 boundaries per re-chunk. n_slices > 1 only in these
+                // builds (see above).
                 if constexpr (build_config::use_fast_alloc && build_config::use_openmp)
                 {
                     if (sl + 1 < n_slices)
