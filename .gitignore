@@ -50,6 +50,7 @@ apply_*.py
 
 # Editor / patch fossils (backups and one-shot fix scripts): never part of the tree.
 *.bak*
+*.sa
 fix_*.py
 
 # --- Doxygen output (cd docs && doxygen) ---
