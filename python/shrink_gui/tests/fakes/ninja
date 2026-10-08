@@ -1,0 +1,8 @@
+#!/bin/bash
+# Fake ninja -C DIR -n TARGETS...: work to do when DIR holds a file STALE.
+while [ $# -gt 0 ]; do [ "$1" = -C ] && { dir=$2; shift; }; shift; done
+if [ -e "$dir/STALE" ]; then
+    echo "[1/2] Building CXX object examples/foo.o"; echo "[2/2] Linking CXX executable examples/foo"
+else
+    echo "ninja: no work to do."
+fi
