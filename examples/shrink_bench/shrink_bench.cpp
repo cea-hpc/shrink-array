@@ -550,13 +550,14 @@ int main(int argc, char* argv[])
                             : static_cast<Int>(mask_want);
     if (!no_mask && static_cast<long long>(mask_sz) != mask_want)
     {
-        std::cout << "Note: tab_mask capped at " << mask_sz << " elements (" << mask_want
-                  << " requested; Int is 32-bit here, the int64 build takes the full size)\n";
+        std::println("Note: tab_mask capped at {} elements ({} requested; Int is 32-bit here, the int64 build "
+                     "takes the full size)",
+                     mask_sz, mask_want);
     }
     BenchMaskArray tab_mask(no_mask ? 1 : mask_sz);
     if (!no_mask)
     {
-        std::cout << "tab_mask: " << mask_sz << " elements (--mask_scale " << mask_scale << ")\n";
+        std::println("tab_mask: {} elements (--mask_scale {})", mask_sz, mask_scale);
     }
 
     // Handle on the eighteen arrays, passed to the extracted phases. References,

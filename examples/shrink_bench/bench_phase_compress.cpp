@@ -156,7 +156,7 @@ void bench_phase_compress_all(BenchArrays& bench_arr)
             if (bench_arr.with_mask) // --no_mask
             {
 #pragma omp single nowait
-                std::cout << " tab_mask" << std::endl;
+                announce(" tab_mask");
                 compress_one(tab_mask);
             }
         }

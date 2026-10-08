@@ -433,7 +433,7 @@ void ParamChunk::ChunkStats()
         }
         if (stats.still_compressed_at_exit != 0)
         {
-            std::cout << "  still compressed (at exit) = " << stats.still_compressed_at_exit << "\n";
+            std::println("  still compressed (at exit) = {}", stats.still_compressed_at_exit);
         }
         // Scan yield: how many of the chunks examined as compression candidates
         // actually got compressed, and what those scans cost in element reads

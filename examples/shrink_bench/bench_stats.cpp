@@ -180,17 +180,16 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
 
         constexpr int name_width   = 20;
         const int     name_padding = std::max<int>(0, (name_width - static_cast<int>(name.length())) / 2);
-        std::cout << std::fixed << std::setprecision(2);
-        std::cout << std::setw(name_padding) << "" << "\nstatistics " << name << "\n";
+        // std::println like the other censuses: std::cout << std::fixed left
+        // the stream state on for every later number the bench printed.
+        std::println("{:{}}\nstatistics {}", "", name_padding, name);
 
         constexpr int label_width = 22;
         constexpr int value_width = 10;
-        std::cout << std::setw(label_width) << std::left << "Numbers of 0" << ":" << std::setw(value_width)
-                  << std::right << nbz << std::setw(value_width) << std::right
-                  << (100.0 * double(nbz) / double(ssz)) << " %" << "\n";
-        std::cout << std::setw(label_width) << std::left << "Numbers of levels != 0" << ":"
-                  << std::setw(value_width) << std::right << nb << std::setw(value_width) << std::right
-                  << (100.0 * double(nb) / double(ssz)) << " %" << "\n";
+        std::println("{:<{}}:{:>{}}{:>{}.2f} %", "Numbers of 0", label_width, nbz, value_width,
+                     100.0 * double(nbz) / double(ssz), value_width);
+        std::println("{:<{}}:{:>{}}{:>{}.2f} %", "Numbers of levels != 0", label_width, nb, value_width,
+                     100.0 * double(nb) / double(ssz), value_width);
     };
 
     // One lambda instead of two. The body of a generic lambda is a TEMPLATE, so
