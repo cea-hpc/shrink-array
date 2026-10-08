@@ -331,11 +331,12 @@ class ArrayChunkCore : public DirtyBitsetSupport<ArrayChunkCore<ChunkType>>
         {
             chunk_list.swap(spare_chunk_list_); // spare left empty, without a buffer
         }
-        // A fresh buffer is faulted in by a team, not by the value-initialising
-        // resize below (one thread, and every page on its NUMA node). The spare
-        // just taken is resident already: left alone.
+        // A fresh buffer is faulted in by a team. The resize below only
+        // reserves (NoInitAllocator): the caller's init loop constructs each
+        // chunk (construct_chunk), on the thread that initialises it. The
+        // spare just taken is resident already: left alone.
         parallel_storage_init::reserve_first_touched(chunk_list, n);
-        chunk_list.resize(n); // reserves only: the caller's init loop constructs (construct_chunk)
+        chunk_list.resize(n);
     }
 
     /**

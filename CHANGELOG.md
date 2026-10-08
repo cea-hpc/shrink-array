@@ -82,11 +82,11 @@ the tag's checksum to the recipe.
 
 - `chunk_list` (the chunks of an array) no longer has its new chunks value-initialised by
   `std::vector::resize` on the calling thread: its allocator (`NoInitAllocator`,
-  `internal/array_chunk_core.h`) leaves them unconstructed, and the parallel init loops of
-  `create` and `resize` construct each chunk (`construct_chunk`) on the thread that
-  initialises it. One serial pass less at each creation, resize and re-chunk, and the
-  pages of `chunk_list` spread over the NUMA nodes. `getChunkList()` returns
-  `const chunk_list_type&` (a `std::vector` with that allocator).
+  `internal/array_chunk_core.h`) leaves them unconstructed, and the init loops of `create`
+  and `resize` construct each chunk (`construct_chunk`) on the thread that initialises it.
+  One serial pass less at each creation and re-chunk (the pages were already faulted in by
+  a team), and a growing `resize()` no longer writes its new chunks from one thread.
+  `getChunkList()` returns `const chunk_list_type&` (a `std::vector` with that allocator).
 - Benchmark baseline (`shrink_bench_vector_*`): the arrays are a `std::vector` with an
   allocator that does not zero them (`examples/shrink_bench/baseline_vector.h`), zeroed by a
   parallel loop instead: the creation is parallel, and each page lands on the NUMA node of

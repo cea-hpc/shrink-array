@@ -82,7 +82,7 @@ void ArrayChunk<T, ind_type>::rebuild_storage(ind_type sz)
             // (an orphaned `omp for` would initialise 1/N of an array created by
             // each thread, and hang one created under `omp single`).
             parallel_storage_init::for_each_chunk(nb_chunk, 500,
-                                                  [this](int i) { chunk_list[i].init_values_cst_val(); });
+                                                  [this](int i) { this->construct_chunk(i).init_values_cst_val(); });
         }
     }
 
@@ -564,7 +564,7 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
 #pragma omp parallel for
         for (int i = old_nb_chunk; i < nb_chunk; ++i)
         {
-            chunk_list[i].init_values_cst_val();
+            this->construct_chunk(i).init_values_cst_val();
         }
     }
     else
@@ -572,7 +572,7 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
 #pragma omp for
         for (int i = old_nb_chunk; i < nb_chunk; ++i)
         {
-            chunk_list[i].init_values_cst_val();
+            this->construct_chunk(i).init_values_cst_val();
         }
     }
 
