@@ -288,7 +288,7 @@ __exec_record() {  # matched|<candidate names...>
     local d; d="$(__slot_dir)"
     if [ "$1" = matched ]; then
         : > "$d/exec-matched"
-    else
+    elif [ $# -gt 0 ]; then   # no names (list unreadable): nothing to suggest from
         printf '%s\n' "$@" >> "$d/exec-candidates"
     fi
 }
@@ -297,8 +297,15 @@ __exec_record() {  # matched|<candidate names...>
 # names (CXX_EXECUTABLE_LINKER__<target>_<Config>): executables and libraries,
 # without the object files, the CTest phonies and the per-dir helpers.
 __ninja_target_names() {  # <build-dir> → one name per line (empty if unknown)
-    [ -f "$1/build.ninja" ] && command -v ninja >/dev/null 2>&1 || return 0
-    ninja -C "$1" -t targets all 2>/dev/null \
+    [ -f "$1/build.ninja" ] || return 0
+    # The ninja CMake itself builds with (its cache), not the one on PATH: a
+    # module load further down (gcc/16.1.0 on ARM) can drop ninja from PATH
+    # while cmake --build still finds it through the cache -- the builds ran,
+    # the list came back empty and every --exec pattern "matched no target".
+    local _ninja
+    _ninja=$(sed -n 's/^CMAKE_MAKE_PROGRAM:[A-Z]*=//p' "$1/CMakeCache.txt" 2>/dev/null)
+    [ -x "$_ninja" ] || _ninja=$(command -v ninja || command -v ninja-build) || return 0
+    "$_ninja" -C "$1" -t targets all 2>/dev/null \
       | sed -nE 's/^.*: CXX_(EXECUTABLE|STATIC_LIBRARY|SHARED_LIBRARY)_LINKER__(.*)$/\2/p' \
       | sed -E 's/_(Debug|Release|RelWithDebInfo|MinSizeRel)?$//' | sort -u
 }
@@ -320,7 +327,7 @@ check_arg_epilogue() {
             mapfile -t _cands < <(sort -u "$d/exec-candidates")
             echo "       did you mean: $(__closest_names "$(__first_unmatched "$CHUNK_BUILD_EXEC" "${_cands[@]}" || echo "$CHUNK_BUILD_EXEC")" "${_cands[@]}" | paste -sd' ')" >&2
         else
-            echo "       (no build dir was configured, so no target list to compare with)" >&2
+            echo "       (no target list could be read: build dir not configured, or no ninja to list it with)" >&2
         fi
         rc=1
     fi
@@ -676,8 +683,13 @@ launch_build() {  # <build-dir> [cmake --build extra args…]
                                "$name" "$_miss" "$CHUNK_BUILD_EXEC"
                 fi
                 if [ ${#_matches[@]} -eq 0 ]; then
-                    printf '[WARN] %-40s no Ninja target matches --exec=%s (building nothing here)\n' \
-                           "$name" "$CHUNK_BUILD_EXEC"
+                    if [ ${#_names[@]} -eq 0 ]; then
+                        printf '[WARN] %-40s target list unreadable, cannot resolve --exec=%s (building nothing here)\n' \
+                               "$name" "$CHUNK_BUILD_EXEC"
+                    else
+                        printf '[WARN] %-40s no Ninja target matches --exec=%s (building nothing here)\n' \
+                               "$name" "$CHUNK_BUILD_EXEC"
+                    fi
                     # Nothing matched: skip this build dir entirely rather than
                     # falling back to a full build (which would surprise the user).
                     __exec_record "${_names[@]}"
