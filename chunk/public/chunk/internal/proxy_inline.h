@@ -555,6 +555,21 @@ void Proxy<T>::execute_simple_operation(LAMBDA operation)
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
+        // Armed above at chunk_size - 1, betting that the element turns
+        // non-zero -- but 0 += 0, 0 -= 0 leave it at the first value, and
+        // neither transition below fires (was_first_value is true): the count
+        // stayed one short for good and the chunk could never be compressed
+        // again. Settle the bet: the chunk is all first values, compress it.
+        // raw-read: serial counter mode (no fast block compression, no concurrent pass)
+        if (is_val1 && values[num] == static_cast<T>(Chunk<T>::first_value))
+        {
+            chunk.inc_nb_val_eq_zero();
+            if (chunk.is_full_zero(this->chunk_size()))
+            {
+                this->manage_full_zero();
+            }
+            return;
+        }
         // Already-armed transitions (arming handled above).
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
         if (was_first_value && !is_val1 && values[num] != static_cast<T>(Chunk<T>::first_value))
@@ -602,6 +617,24 @@ void Proxy<T>::execute_inplace_operation(LAMBDA operation)
     const bool         is_val = is_cst_val();
     [[maybe_unused]] T v_old  = T{};
 
+    if constexpr (chunk_config::use_compression_with_counter)
+    {
+        // A compressed chunk the operation leaves at the first value -- 0 &= x,
+        // 0 <<= k, 0 >>= k, 0 |= 0, 0 ^= 0 -- has nothing to write. Do not
+        // materialise it: the operation (a pure function of the element: the
+        // bitwise operators, ++, --) is tried on the constant instead, as
+        // apply_compound_operation() skips *= /= %= on a zero element.
+        if (is_val)
+        {
+            auto probe = static_cast<T>(Chunk<T>::first_value);
+            operation(probe);
+            if (probe == static_cast<T>(Chunk<T>::first_value))
+            {
+                return;
+            }
+        }
+    }
+
     if constexpr (chunk_config::use_fast_block_compression)
     {
         v_old = read_values();
@@ -629,6 +662,19 @@ void Proxy<T>::execute_inplace_operation(LAMBDA operation)
 
     if constexpr (chunk_config::use_compression_with_counter)
     {
+        // Unreachable after the probe above, kept as the simple engine's twin:
+        // armed at chunk_size - 1 for a result that is the first value after
+        // all, the count would stay one short and the chunk never compress.
+        // raw-read: serial counter mode (no fast block compression, no concurrent pass)
+        if (is_val && values[num] == static_cast<T>(Chunk<T>::first_value))
+        {
+            chunk.inc_nb_val_eq_zero();
+            if (chunk.is_full_zero(this->chunk_size()))
+            {
+                this->manage_full_zero();
+            }
+            return;
+        }
         // raw-read: serial counter mode (no fast block compression, no concurrent pass)
         if (was_first_value && !is_val && values[num] != Chunk<T>::first_value)
         {

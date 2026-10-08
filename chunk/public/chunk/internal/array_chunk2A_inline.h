@@ -107,7 +107,7 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
                 Proxy2A<T>::Base::set_tab_is_inside_chunk_list_to_compress(num_tab, i, 0);
                 Proxy2A<T>::tab_type_cst_val[num_tab][i] = is_val1;
                 Proxy2A<T>::BaseSpec::set(num_tab, i, T{});
-                chunk_list[i].init_after_constructor();
+                this->construct_chunk(i).init_after_constructor();
             };
             parallel_storage_init::for_each_chunk(nb_chunk, 16384, init_chunk);
         }
@@ -802,7 +802,7 @@ void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
 #pragma omp parallel for
         for (int i = old_nb_chunk; i < nb_chunk; ++i)
         {
-            chunk_list[i].init_after_constructor();
+            this->construct_chunk(i).init_after_constructor();
         }
     }
     else
@@ -810,7 +810,7 @@ void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
 #pragma omp for
         for (int i = old_nb_chunk; i < nb_chunk; ++i)
         {
-            chunk_list[i].init_after_constructor();
+            this->construct_chunk(i).init_after_constructor();
         }
     }
 

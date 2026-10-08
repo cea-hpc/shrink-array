@@ -393,7 +393,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     void compress();
 
     /// @brief Read-only access to the underlying chunk list.
-    [[nodiscard]] const std::vector<Chunk2<T>>& getChunkList() const noexcept
+    [[nodiscard]] const Base::chunk_list_type& getChunkList() const noexcept
     {
         return chunk_list;
     }

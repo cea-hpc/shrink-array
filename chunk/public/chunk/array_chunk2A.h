@@ -295,7 +295,7 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
 
     /// @brief Read-only access to the underlying chunk list.
     /// @return const reference to the chunks backing this array
-    [[nodiscard]] const std::vector<Chunk2A<T>>& getChunkList() const noexcept
+    [[nodiscard]] const Base::chunk_list_type& getChunkList() const noexcept
     {
         return chunk_list;
     }
