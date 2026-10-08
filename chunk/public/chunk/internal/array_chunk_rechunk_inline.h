@@ -1242,7 +1242,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 n_refused.fetch_add(tally.refused, std::memory_order_relaxed);
                 n_installed.fetch_add(tally.installed, std::memory_order_relaxed);
 #pragma omp barrier
-#pragma omp master
+#pragma omp masked
                 {
                     if (sp_on)
                     {
@@ -1266,7 +1266,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 {
                     if (sl + 1 < n_slices)
                     {
-#pragma omp master
+#pragma omp masked
                         {
                             if (internal::g_rechunk_trace)
                             {
@@ -1411,7 +1411,7 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                         }
                     }
                 }
-#pragma omp master
+#pragma omp masked
                 {
                     if (sp_on)
                     {
