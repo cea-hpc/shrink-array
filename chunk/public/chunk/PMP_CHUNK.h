@@ -16,7 +16,9 @@
 
 #pragma once
 
-#include "chunk/config.h" // build_config::any_check
+#include <algorithm> // std::max (get_size_max_tab_omp)
+
+#include "chunk/config.h" // build_config::any_check, build_config::use_openmp
 
 namespace shrink_array
 {
@@ -334,14 +336,15 @@ namespace shrink_array
 ///         otherwise @p nn.
 inline int get_size_max_tab_omp(int nn)
 {
-#ifdef _OPENMP
-    const int max_thr = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_MAX_THREADS : 1;
-    if (nn > max_thr && max_thr > 1)
+    if constexpr (build_config::use_openmp)
     {
-        const int pp = (nn / std::max(1, max_thr)) + max_thr;
-        return pp;
+        const int max_thr = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_MAX_THREADS : 1;
+        if (nn > max_thr && max_thr > 1)
+        {
+            const int pp = (nn / std::max(1, max_thr)) + max_thr;
+            return pp;
+        }
     }
-#endif
     return nn;
 }
 
@@ -352,19 +355,20 @@ inline int get_size_max_tab_omp(int nn)
 ///         exceeds the thread count (>1), otherwise @p nn.
 inline int get_size_max_tab_omp(int nn, [[maybe_unused]] int nb_static)
 {
-#ifdef _OPENMP
-    const int max_thr = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_MAX_THREADS : 1;
-
-    if (nn > max_thr && max_thr > 1)
+    if constexpr (build_config::use_openmp)
     {
-        int       pp  = nn / max_thr;
-        const int nbs = pp / nb_static;
+        const int max_thr = CHUNK_PMP_IN_PARALLEL_REGION ? CHUNK_PMP_MAX_THREADS : 1;
 
-        pp = ((nbs + 1) * nb_static) + max_thr;
+        if (nn > max_thr && max_thr > 1)
+        {
+            int       pp  = nn / max_thr;
+            const int nbs = pp / nb_static;
 
-        return pp;
+            pp = ((nbs + 1) * nb_static) + max_thr;
+
+            return pp;
+        }
     }
-#endif
     return nn;
 }
 
