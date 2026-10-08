@@ -100,11 +100,12 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
 {
     if (rank >= chunk_thread_capacity()) [[unlikely]]
     {
-        CHUNK_INVARIANT_FAILED("thread rank {} but the per-thread structures hold {}: the OpenMP team grew past the thread "
-                         "capacity fixed when the arrays were set up. Set OMP_NUM_THREADS (or call "
-                         "omp_set_num_threads) to the largest team before creating the arrays, or raise "
-                         "CHUNK_THREAD_CAPACITY.",
-                         rank, chunk_thread_capacity());
+        CHUNK_INVARIANT_FAILED(
+            "thread rank {} but the per-thread structures hold {}: the OpenMP team grew past the thread "
+            "capacity fixed when the arrays were set up. Set OMP_NUM_THREADS (or call "
+            "omp_set_num_threads) to the largest team before creating the arrays, or raise "
+            "CHUNK_THREAD_CAPACITY.",
+            rank, chunk_thread_capacity());
     }
     int seen = internal::g_rank_high_water.load(std::memory_order_relaxed);
     while (rank >= seen &&
@@ -136,10 +137,11 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
     }
     if (omp_get_active_level() > 1) [[unlikely]]
     {
-        CHUNK_INVARIANT_FAILED("nested ACTIVE parallel regions (active level {}) are not supported by the chunk arrays: "
-                         "per-thread ranks of different inner teams would collide. Keep the inner regions "
-                         "serialised (OMP_MAX_ACTIVE_LEVELS=1, the default) or do not touch the arrays in them.",
-                         omp_get_active_level());
+        CHUNK_INVARIANT_FAILED(
+            "nested ACTIVE parallel regions (active level {}) are not supported by the chunk arrays: "
+            "per-thread ranks of different inner teams would collide. Keep the inner regions "
+            "serialised (OMP_MAX_ACTIVE_LEVELS=1, the default) or do not touch the arrays in them.",
+            omp_get_active_level());
     }
     for (int l = level; l >= 1; --l)
     {
@@ -225,7 +227,7 @@ inline int get_thr_rank_fast() noexcept
         if (rank != ::shrink_array::chunk_pmp_library_rank()) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("stale thread-rank cache: {} but this thread is rank {} of the active team", rank,
-                             ::shrink_array::chunk_pmp_library_rank());
+                                   ::shrink_array::chunk_pmp_library_rank());
         }
     }
     return rank;

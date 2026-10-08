@@ -46,8 +46,8 @@ inline void TCSlab<Links>::alloc_block()
     // overwrite it. Nothing to round to -- refuse, with the sizes.
     if (BlockSize < 1) [[unlikely]]
     {
-        std::cerr << "[TCAllocator] element of " << ElementSize << " bytes does not fit in a slab of "
-                  << BlockAllocator << " bytes (back-pointer included)\n";
+        std::cerr << "[TCAllocator] element of " << ElementSize << " bytes does not fit in a slab of " << BlockAllocator
+                  << " bytes (back-pointer included)\n";
         std::abort();
     }
 
@@ -189,4 +189,3 @@ inline void TCSlab<Links>::free_block(int i) noexcept
 }
 
 } // namespace fast_alloc
-

@@ -36,7 +36,7 @@
 
 #include "chunk/build_options.h" // CHUNK_OPT_STD_ALLOC
 
-#if !CHUNK_OPT_STD_ALLOC                // std-alloc builds have no fast_allocators include path
+#if !CHUNK_OPT_STD_ALLOC                    // std-alloc builds have no fast_allocators include path
     #include "fast_allocators/slab_arena.h" // fast_alloc::value_arena
 #endif
 

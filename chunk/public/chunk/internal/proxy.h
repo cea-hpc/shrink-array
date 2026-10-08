@@ -34,7 +34,7 @@
 #include "chunk/internal/proxy_base.h"                   // ProxyBase
 #include "chunk/internal/read_reclaim.h"                 // read_reclaim::ReadSection
 #include "chunk/internal/chunk_stats.h" // increm_chunk_read<> (a dependent call the include tools cannot attribute)
-#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/immortal.h"    // Immortal / LazyImmortal: statics safe for global arrays
 
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
@@ -82,7 +82,7 @@ class PointerMapChunk : public PointerMapLinear<int, std::vector<std::pair<const
         }
 
         CHUNK_INVARIANT_FAILED("[PointerMapChunk get_num_tab] key NOT FOUND: this={} size={} key={}",
-                         static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
+                               static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
     }
 
     /**

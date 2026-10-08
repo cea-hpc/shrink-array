@@ -175,7 +175,7 @@ template <typename T>
 struct DeferredByteAllocSlot
 {
     fast_alloc::TCTypeAllocator<std::byte> alloc;               ///< this thread's byte allocator for T
-    bool                       initialized = false; ///< alloc set up (allocator())
+    bool                                   initialized = false; ///< alloc set up (allocator())
 };
 
 /**
@@ -475,7 +475,7 @@ class FastAllocatorConcrete : public FastAllocatorBase
             if ((addr & (alignof(std::max_align_t) - 1)) != 0 && (addr & 0x7U) != 0)
             {
                 CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] misaligned block p={} (T size={})", path,
-                                 static_cast<const void*>(ptr), sizeof(T));
+                                       static_cast<const void*>(ptr), sizeof(T));
             }
 
             // Page-containing-p mapped? msync(MS_ASYNC) touches nothing but the
@@ -493,8 +493,8 @@ class FastAllocatorConcrete : public FastAllocatorBase
             if (::msync(const_cast<void*>(pg0), 1, MS_ASYNC) != 0 || ::msync(const_cast<void*>(pg1), 1, MS_ASYNC) != 0)
             {
                 CHUNK_INVARIANT_FAILED("[ALLOC_PROBE {}] block NOT MAPPED (wild ptr): p={} T size={} slab={}", path,
-                                 static_cast<const void*>(ptr), sizeof(T),
-                                 build_config::use_fast_alloc ? static_cast<const void*>(&allocator()) : nullptr);
+                                       static_cast<const void*>(ptr), sizeof(T),
+                                       build_config::use_fast_alloc ? static_cast<const void*>(&allocator()) : nullptr);
             }
         }
     }

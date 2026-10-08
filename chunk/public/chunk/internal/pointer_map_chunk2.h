@@ -61,7 +61,7 @@
 #include "chunk/internal/in_t.h"               // in_t<T>
 #include "chunk/config.h"                      // build_config::any_check
 #include "chunk/internal/invariant_check.h"    // CHUNK_INVARIANT_FAILED
-#include "chunk/internal/second_value_info.h" // SecondValueInfo (inf_array_t)
+#include "chunk/internal/second_value_info.h"  // SecondValueInfo (inf_array_t)
 
 namespace shrink_array
 {
@@ -273,8 +273,7 @@ class PointerMapChunk2
             const size_t lim = (count > 64u) ? 64u : count;
             for (size_t i = 0; i < lim; ++i)
             {
-                std::fprintf(stderr, " [%p num_tab=%d]", static_cast<const void*>(vec[i].first),
-                             vec[i].second.num_tab);
+                std::fprintf(stderr, " [%p num_tab=%d]", static_cast<const void*>(vec[i].first), vec[i].second.num_tab);
             }
             std::fprintf(stderr, "%s\n", (count > lim) ? " …(truncated)" : "");
             std::fflush(stderr);
@@ -343,7 +342,7 @@ class PointerMapChunk2
         }
         report_key_not_found(key, "replace_all_other_elm");
         CHUNK_INVARIANT_FAILED("[share_info replace_all_other_elm] key NOT FOUND: this={} size={} key={}",
-                         static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
+                               static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
     }
 
     /// @brief Record that second value @p key sits at index @p ind of the
@@ -395,14 +394,14 @@ class PointerMapChunk2
             if (item.first == key)
             {
                 item.second.second_value = val;
-                item.second.ind = ind;
+                item.second.ind          = ind;
                 return;
             }
         }
 
         report_key_not_found(key, "replace");
-        CHUNK_INVARIANT_FAILED("[share_info replace] key NOT FOUND: this={} size={} key={}", static_cast<const void*>(this),
-                         vec.size(), static_cast<const void*>(key));
+        CHUNK_INVARIANT_FAILED("[share_info replace] key NOT FOUND: this={} size={} key={}",
+                               static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
     }
 
     /// @brief The second value recorded for array @p key (true for bool).
@@ -425,7 +424,7 @@ class PointerMapChunk2
         }
         report_key_not_found(key, "get_second_value");
         CHUNK_INVARIANT_FAILED("[share_info get_second_value] key NOT FOUND: this={} size={} key={}",
-                         static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
+                               static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
     }
     /// @brief The num_tab recorded for array @p key.
     /// @note A key that is not registered is an invariant failure (CHUNK_INVARIANT_FAILED: message, then abort).
@@ -440,7 +439,7 @@ class PointerMapChunk2
         }
         report_key_not_found(key, "get_num_tab");
         CHUNK_INVARIANT_FAILED("[share_info get_num_tab] key NOT FOUND: this={} size={} key={}",
-                         static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
+                               static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
     }
 
     /// @brief The whole (second value, index, num_tab) tuple recorded for
@@ -461,7 +460,7 @@ class PointerMapChunk2
                 if (count > (1U << 30U))
                 {
                     CHUNK_INVARIANT_FAILED("[share_info get] corrupt vec: this={} size={} key={}",
-                                     static_cast<const void*>(this), count, key);
+                                           static_cast<const void*>(this), count, key);
                 }
 
                 for (size_t i = 0; i < count; ++i)
@@ -472,9 +471,9 @@ class PointerMapChunk2
                     }
                 }
                 CHUNK_INVARIANT_FAILED("[share_info get] key NOT FOUND: this={} size={} key={} "
-                                 "(dangling ctx->ptr_on_array, or array destroyed while a deferred op "
-                                 "still referenced it?)",
-                                 static_cast<const void*>(this), count, key);
+                                       "(dangling ctx->ptr_on_array, or array destroyed while a deferred op "
+                                       "still referenced it?)",
+                                       static_cast<const void*>(this), count, key);
             }
             else
             {
@@ -489,7 +488,7 @@ class PointerMapChunk2
                 }
                 report_key_not_found(key, "get_info_second_value");
                 CHUNK_INVARIANT_FAILED("[share_info get_info_second_value] key NOT FOUND: this={} size={} key={}",
-                                 static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
+                                       static_cast<const void*>(this), vec.size(), static_cast<const void*>(key));
             }
         }
         else

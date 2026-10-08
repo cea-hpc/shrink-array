@@ -37,4 +37,3 @@ std::string type_name()
 }
 
 } // namespace shrink_array
-

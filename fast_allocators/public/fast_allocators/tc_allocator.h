@@ -459,7 +459,7 @@ void TCSlab<FreeLinks::InPayload>::operator delete(void* ptr);
 ///        reinforced debug level (FAST_ALLOC_CHECK_LISTS on a DEBUG build, see
 ///        alloc_config::check_slab_lists); a plain Debug build keeps the cheap
 ///        DBG_ASSERTs.
-#define FAST_ALLOC_SL_LIST_CHECK(x)                              \
+#define FAST_ALLOC_SL_LIST_CHECK(x)                   \
     do                                                \
     {                                                 \
         if constexpr (alloc_config::check_slab_lists) \
@@ -883,7 +883,7 @@ class TCSlabPool
         // the wrong element; the deferred-op pool is such an allocator and
         // never frees through here. The assertion catches a new caller.
         FAST_ALLOC_DBG_ASSERT(!std::has_single_bit(sizeof(ElementType)) ||
-                   std::has_single_bit(static_cast<unsigned int>(slab->ElementSize)));
+                              std::has_single_bit(static_cast<unsigned int>(slab->ElementSize)));
         const int i = std::has_single_bit(sizeof(ElementType)) ? slab->num_block_pow2(ptr) : slab->num_block(ptr);
 
         slab->free_block(i);

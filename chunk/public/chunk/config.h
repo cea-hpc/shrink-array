@@ -449,7 +449,8 @@ struct OMPTcc<true>
             return;
         }
         int cur = ::shrink_array::g_ompt_suspended.load(std::memory_order_relaxed);
-        while (cur > 0 && !::shrink_array::g_ompt_suspended.compare_exchange_weak(cur, cur - 1, std::memory_order_relaxed))
+        while (cur > 0 &&
+               !::shrink_array::g_ompt_suspended.compare_exchange_weak(cur, cur - 1, std::memory_order_relaxed))
         {
         }
     }

@@ -117,7 +117,7 @@ concept ElementSubtractable = requires(T lhs, T rhs) {
 /// @brief T * T converts back to T.
 template <typename T>
 concept ElementMultipliable = requires(T lhs, T rhs) {
-    { lhs * rhs } -> std::convertible_to<T>;
+    { lhs* rhs } -> std::convertible_to<T>;
 };
 /// @brief T / T converts back to T.
 template <typename T>

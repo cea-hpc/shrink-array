@@ -38,7 +38,7 @@
 #include "fast_allocators/internal/svalloc.h" // svfree (drain_reuse_list_for_size)
 
 #include "chunk/internal/freepath_counters.h" // CHUNK_FREEPATH_INC (CHUNK_ARENA_REPORT)
-#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #include "chunk/internal/second_value_info.h" // SecondValueInfo (inf_array_t)
 
 namespace shrink_array
@@ -699,8 +699,9 @@ class ManagerChunk final : public virtual ManagerChunkInt,
 
     static inline long somme_chunk_create{0};
 
-    static inline int                                   size_buffer_reuse;
-    static inline constinit internal::LazyImmortal<std::unordered_map<unsigned int, int>> size_buffer_reuse_by_key_; ///< see get_size_buffer_reuse(key)
+    static inline int size_buffer_reuse;
+    static inline constinit internal::LazyImmortal<std::unordered_map<unsigned int, int>>
+        size_buffer_reuse_by_key_; ///< see get_size_buffer_reuse(key)
 
     static inline int size_max_number_of_chunk_to_check_compress;
 
@@ -715,7 +716,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     // discarded if-constexpr branch is still name-looked-up, and this
     // is a member of the current instantiation, so it has to exist to be named.
     // The static cost is one empty std::map per (variant, type), never touched.
-    static inline constinit internal::LazyImmortal<std::map<unsigned int, std::vector<PerThreadFreeList>>> list_block_free_thr_by_size_;
+    static inline constinit internal::LazyImmortal<std::map<unsigned int, std::vector<PerThreadFreeList>>>
+        list_block_free_thr_by_size_;
     /// @brief Reuse lists of the arrays with their own slab affinity: one
     ///        vector of per-rank lists per (affinity key, size), key != 0.
     ///        Key 0 -- the rank's shared pool -- stays on
@@ -725,7 +727,8 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     ///        for K; a foreign-rank block parks under ITS key (slab->owner_key)
     ///        and is either reused by this rank for that same array or routed
     ///        to its owner by the drain. Nothing has to be filtered at pop.
-    static inline constinit internal::LazyImmortal<std::map<std::uint64_t, std::vector<PerThreadFreeList>>> list_block_free_thr_keyed_;
+    static inline constinit internal::LazyImmortal<std::map<std::uint64_t, std::vector<PerThreadFreeList>>>
+        list_block_free_thr_keyed_;
 
     /**
      * @brief Teardown hand-off buffer: pointers cleared for release, by rank.
@@ -748,8 +751,10 @@ class ManagerChunk final : public virtual ManagerChunkInt,
      *          sharing), read by the free phase after the barrier. Empty on any
      *          sane run.
      */
-    static inline constinit internal::Immortal<std::vector<std::vector<internal::TeardownRepeat<T>>>> teardown_repeats_storage_{};
-    static inline std::vector<std::vector<internal::TeardownRepeat<T>>>& teardown_repeats_ = teardown_repeats_storage_.value;
+    static inline constinit internal::Immortal<std::vector<std::vector<internal::TeardownRepeat<T>>>>
+                                                                         teardown_repeats_storage_{};
+    static inline std::vector<std::vector<internal::TeardownRepeat<T>>>& teardown_repeats_ =
+        teardown_repeats_storage_.value;
 
   public:
     /**
@@ -1605,8 +1610,10 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     }
 
     /// @brief Chunk2's candidate lists: per rank, one list per second value.
-    static inline constinit internal::Immortal<TChunk2CompMap<CHUNK_T, T>> map_chunk2_to_compress_potentially_thr_storage_{};
-    static inline TChunk2CompMap<CHUNK_T, T>& map_chunk2_to_compress_potentially_thr = map_chunk2_to_compress_potentially_thr_storage_.value;
+    static inline constinit internal::Immortal<TChunk2CompMap<CHUNK_T, T>>
+                                              map_chunk2_to_compress_potentially_thr_storage_{};
+    static inline TChunk2CompMap<CHUNK_T, T>& map_chunk2_to_compress_potentially_thr =
+        map_chunk2_to_compress_potentially_thr_storage_.value;
 
     /**
      * @brief Rank @p thr's candidate list for second value @p key, or null
@@ -1626,17 +1633,23 @@ class ManagerChunk final : public virtual ManagerChunkInt,
     /// @brief Chunk2: per rank, one list per second-value index, copied by
     ///        ArrayChunk2 into map_chunk2_to_compress_potentially_thr when it
     ///        registers a second value.
-    static inline constinit internal::Immortal<TChunk2CompThr<CHUNK_T, T>> chunk2_to_compress_potentially_thr_storage_{};
-    static inline TChunk2CompThr<CHUNK_T, T>& chunk2_to_compress_potentially_thr = chunk2_to_compress_potentially_thr_storage_.value;
+    static inline constinit internal::Immortal<TChunk2CompThr<CHUNK_T, T>>
+                                              chunk2_to_compress_potentially_thr_storage_{};
+    static inline TChunk2CompThr<CHUNK_T, T>& chunk2_to_compress_potentially_thr =
+        chunk2_to_compress_potentially_thr_storage_.value;
     /// @brief Chunk2A's per-rank candidate lists.
-    static inline constinit internal::Immortal<TChunk2ACompThr<CHUNK_T, T>> chunk2A_to_compress_potentially_thr_storage_{};
-    static inline TChunk2ACompThr<CHUNK_T, T>& chunk2A_to_compress_potentially_thr = chunk2A_to_compress_potentially_thr_storage_.value;
+    static inline constinit internal::Immortal<TChunk2ACompThr<CHUNK_T, T>>
+                                               chunk2A_to_compress_potentially_thr_storage_{};
+    static inline TChunk2ACompThr<CHUNK_T, T>& chunk2A_to_compress_potentially_thr =
+        chunk2A_to_compress_potentially_thr_storage_.value;
     /// @brief Chunk's (v1) per-rank candidate lists.
     static inline constinit internal::Immortal<TChunkCompThr<CHUNK_T, T>> chunk_to_compress_potentially_thr_storage_{};
-    static inline TChunkCompThr<CHUNK_T, T>& chunk_to_compress_potentially_thr = chunk_to_compress_potentially_thr_storage_.value;
+    static inline TChunkCompThr<CHUNK_T, T>&                              chunk_to_compress_potentially_thr =
+        chunk_to_compress_potentially_thr_storage_.value;
     /// @brief Chunk2A's single candidate list of a serial build.
     static inline constinit internal::Immortal<TChunk2AComp<CHUNK_T, T>> chunk2A_to_compress_potentially_storage_{};
-    static inline TChunk2AComp<CHUNK_T, T>& chunk2A_to_compress_potentially = chunk2A_to_compress_potentially_storage_.value;
+    static inline TChunk2AComp<CHUNK_T, T>&                              chunk2A_to_compress_potentially =
+        chunk2A_to_compress_potentially_storage_.value;
 };
 
 } // namespace shrink_array

@@ -39,7 +39,7 @@
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
-#include "chunk/internal/parallel_storage_init.h" // reserve_first_touched, for_each_chunk
+#include "chunk/internal/parallel_storage_init.h"       // reserve_first_touched, for_each_chunk
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_* (check builds)
 
 namespace shrink_array
@@ -209,7 +209,8 @@ void ArrayChunk2A<T, ind_type>::print_compression_stats(std::ostream& os) const
 
     // Centralized rendering: shared layout/colors/verdict with ArrayChunk2
     // (see chunk_stats_printer.h).
-    print_formatted_chunk_stats(os, num_tab, this->debug_name(), type_name<T>(), n_compressed, nb_chunk, n_t1, "Chunk2A",
+    print_formatted_chunk_stats(os, num_tab, this->debug_name(), type_name<T>(), n_compressed, nb_chunk, n_t1,
+                                "Chunk2A",
                                 /*n_cross=*/-1, /*cross_name=*/"", /*bool_elements=*/std::is_same_v<T, bool>);
 }
 
@@ -824,14 +825,14 @@ void ArrayChunk2A<T, ind_type>::resize(ind_type newsz)
     // an `omp for` would cover 1/N of it.
     if (newsz > old_size)
     {
-        const auto     csz       = static_cast<ind_type>(this->chunk_size());
+        const auto csz = static_cast<ind_type>(this->chunk_size());
         // Up to the end of the OLD chunk count: chunks_for() keeps a chunk past
         // the last element, so when old_size fell on a chunk boundary that
         // spare chunk kept its stale values too (pool_accounting, grow back).
         // In long long: old_nb_chunk * csz may pass ind_type's range near its top.
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
         const ind_type  old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<ind_type>(cover_ll) : newsz;
-        const ind_type stale_end = newsz < old_cover ? newsz : old_cover;
+        const ind_type  stale_end = newsz < old_cover ? newsz : old_cover;
         for (ind_type i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};

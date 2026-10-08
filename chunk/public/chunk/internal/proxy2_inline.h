@@ -565,16 +565,16 @@ T Proxy2<T>::assign_impl(in_t<U> v) noexcept
                     if (is_cst1_loc)
                     {
                         CHUNK_INVARIANT_FAILED("[deferred write_body] chunk still cst_val1 after create_value "
-                                         "(chunk={}, num={})",
-                                         static_cast<const void*>(&chunk), num);
+                                               "(chunk={}, num={})",
+                                               static_cast<const void*>(&chunk), num);
                     }
 
                     const bool is_cst2_loc = proxy.is_cst_val2();
                     if (is_cst2_loc)
                     {
                         CHUNK_INVARIANT_FAILED("[deferred write_body] chunk still cst_val2 after create_value "
-                                         "(chunk={}, num={})",
-                                         static_cast<const void*>(&chunk), num);
+                                               "(chunk={}, num={})",
+                                               static_cast<const void*>(&chunk), num);
                     }
                 }
 

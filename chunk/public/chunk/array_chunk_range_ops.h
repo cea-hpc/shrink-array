@@ -947,7 +947,7 @@ void for_each_value(const Arr& arr, std::size_t first, std::size_t last, F&& f)
 {
     using ind_type  = decltype(arr.size());
     const auto size = static_cast<std::size_t>(arr.size());
-    last = std::min(last, size);
+    last            = std::min(last, size);
     if (first >= last)
     {
         return;
@@ -972,7 +972,7 @@ OutIt read_range(const Arr& arr, std::size_t first, std::size_t last, OutIt out)
 {
     using ind_type  = decltype(arr.size());
     const auto size = static_cast<std::size_t>(arr.size());
-    last = std::min(last, size);
+    last            = std::min(last, size);
     if (first >= last)
     {
         return out;

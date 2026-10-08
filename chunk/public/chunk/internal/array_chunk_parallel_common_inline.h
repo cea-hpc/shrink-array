@@ -76,8 +76,8 @@ void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
                         if (const auto left = CM::pending_ops_rank(r); left != 0) [[unlikely]]
                         {
                             CHUNK_INVARIANT_FAILED("flush_pending_deferred_ops(force): rank {} still counts {} pending "
-                                             "op(s) after its drain, outside any region (counter drift)",
-                                             r, left);
+                                                   "op(s) after its drain, outside any region (counter drift)",
+                                                   r, left);
                         }
                     }
                 }

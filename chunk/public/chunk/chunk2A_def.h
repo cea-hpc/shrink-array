@@ -69,4 +69,3 @@ class Chunk2ADef
 };
 
 } // namespace shrink_array
-

@@ -114,7 +114,7 @@ class Singleton
         T*                     instance = unique_instance.load(std::memory_order_relaxed); // under the lock
         if (instance == nullptr)
         {
-            instance = new T();       // immortal: never deleted
+            instance = new T();               // immortal: never deleted
             FAST_ALLOC_LSAN_IGNORE(instance); // intentional leak, not a real one
             unique_instance.store(instance, std::memory_order_release);
         }
@@ -123,4 +123,3 @@ class Singleton
 };
 
 } // namespace fast_alloc
-

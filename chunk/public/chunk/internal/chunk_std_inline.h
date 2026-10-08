@@ -430,8 +430,8 @@ void ChunkFastCompPolicy<T, Derived, Enabled>::make_block_compression(int thr, c
             if (auto* const marked = std::get<0>(tup); marked != nullptr && marked->steal_marked()) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("compression pass: candidate {} was marked while this pass still held its "
-                                 "dedup flag -- two passes on one chunk",
-                                 static_cast<const void*>(marked));
+                                       "dedup flag -- two passes on one chunk",
+                                       static_cast<const void*>(marked));
             }
         }
         Proxy<T>::reset_tab_inside_list_to_compress(num_tab, num_chunk);

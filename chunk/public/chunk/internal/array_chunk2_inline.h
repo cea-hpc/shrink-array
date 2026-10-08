@@ -38,7 +38,7 @@
 #include "chunk/config.h"                               // chunk_config::use_fast_block_compression, chunk_config::stats
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
-#include "chunk/internal/parallel_storage_init.h" // reserve_first_touched, for_each_chunk
+#include "chunk/internal/parallel_storage_init.h"       // reserve_first_touched, for_each_chunk
 // Explicit includes for symbols used by clear_core() below: ManagerChunk
 // (per-size free-list + candidate-filter helpers), pool_ledger
 // (CHUNK_LEDGER_PARK/DISCARD), chunk_size_policy (runtime geometry). All
@@ -273,7 +273,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
             if constexpr (chunk_config::use_fast_block_compression)
             {
                 inf_array.second_value = sec_value;
-                inf_array.ind = ind;
+                inf_array.ind          = ind;
             }
 
             if constexpr (build_config::use_openmp)
@@ -356,7 +356,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
             if constexpr (chunk_config::use_fast_block_compression)
             {
                 inf_array.second_value = sec_value;
-                inf_array.ind = ind;
+                inf_array.ind          = ind;
             }
         }
         const bool exi = sh_inf.exists(this->registry_key());
@@ -380,7 +380,7 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
         if constexpr (chunk_config::use_fast_block_compression)
         {
             inf_array.second_value = true;
-            inf_array.ind = 0;
+            inf_array.ind          = 0;
         }
         if constexpr (build_config::use_openmp)
         {
@@ -1290,14 +1290,14 @@ void ArrayChunk2<T, ind_type>::resize(ind_type newsz)
     // an `omp for` would cover 1/N of it.
     if (newsz > old_size)
     {
-        const auto     csz       = static_cast<ind_type>(this->chunk_size());
+        const auto csz = static_cast<ind_type>(this->chunk_size());
         // Up to the end of the OLD chunk count: chunks_for() keeps a chunk past
         // the last element, so when old_size fell on a chunk boundary that
         // spare chunk kept its stale values too (pool_accounting, grow back).
         // In long long: old_nb_chunk * csz may pass ind_type's range near its top.
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
         const ind_type  old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<ind_type>(cover_ll) : newsz;
-        const ind_type stale_end = newsz < old_cover ? newsz : old_cover;
+        const ind_type  stale_end = newsz < old_cover ? newsz : old_cover;
         for (ind_type i = old_size; i < stale_end; ++i)
         {
             (*this)[i] = T{};

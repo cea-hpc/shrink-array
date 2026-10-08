@@ -69,7 +69,7 @@
 #include "chunk/internal/env_parse.h"         // env_number (CHUNK_CST_VAL2_ID_LIMIT)
 #include "chunk/internal/in_t.h"              // in_t<T>: the value parameters
 #include "chunk/config.h"                     // build_config::use_mm_protect
-#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/internal/alloc_config.h" // alloc_config::thp_advise (CHUNK_THP)
 #endif

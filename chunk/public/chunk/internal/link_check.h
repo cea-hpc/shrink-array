@@ -59,8 +59,8 @@
 #define CHUNK_LINK_CHECK_NAME(v1, v2, v2a, size, dyn) CHUNK_LINK_CHECK_NAME_(v1, v2, v2a, size, dyn)
 
 /// The function of this TU's settings (see above).
-#define CHUNK_LINK_CHECK                                                                                               \
-    CHUNK_LINK_CHECK_NAME(CHUNK_LINK_CHECK_V1, CHUNK_LINK_CHECK_V2, CHUNK_LINK_CHECK_V2A, CHUNK_SIZE,                \
+#define CHUNK_LINK_CHECK                                                                              \
+    CHUNK_LINK_CHECK_NAME(CHUNK_LINK_CHECK_V1, CHUNK_LINK_CHECK_V2, CHUNK_LINK_CHECK_V2A, CHUNK_SIZE, \
                           CHUNK_LINK_CHECK_DYN)
 
 namespace shrink_array::link_check

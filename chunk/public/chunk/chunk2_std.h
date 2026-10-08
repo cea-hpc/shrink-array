@@ -42,8 +42,8 @@
 #include "chunk/internal/chunk2_base.h"                 // Chunk2Base
 #include "chunk/internal/conditional_counter.h"         // ConditionalCounter, counter_value_t
 #include "chunk/internal/TChunk.h"                      // VectorTuple4ChunkInt2 (the candidate lists)
-#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/second_value_info.h" // SecondValueInfo (inf_array_t)
+#include "chunk/internal/immortal.h"                    // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/second_value_info.h"           // SecondValueInfo (inf_array_t)
 
 namespace shrink_array
 {
@@ -93,7 +93,7 @@ class ChunkSpec2
             if (static_cast<size_t>(ind) >= tab_m_ptr_cst_val2->size()) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("[chunk] suspect get_cst_val2<{}>: ind={} size={}", typeid(T).name(), ind,
-                                 tab_m_ptr_cst_val2->size());
+                                       tab_m_ptr_cst_val2->size());
                 return nullptr;
             }
         }

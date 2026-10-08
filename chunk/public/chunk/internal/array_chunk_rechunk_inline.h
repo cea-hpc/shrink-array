@@ -458,8 +458,8 @@ void RechunkSupport<Derived, true>::rechunk_to(unsigned int new_size)
         alloc_affinity_detail::g_releasing_rechunk_storage = true;
     }
     alloc_affinity_detail::g_releasing_rechunk_storage = false;
-    const auto t5 = t_now(); // tmp destroyed
-    r_teardown    = rss_now();
+    const auto t5                                      = t_now(); // tmp destroyed
+    r_teardown                                         = rss_now();
 
     // Free the OLD-geometry blocks tmp just parked into the old-size reuse
     // list. Nothing pops them again -- this array (and, in a global
@@ -877,17 +877,18 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     if (k != static_cast<std::size_t>(len)) [[unlikely]]
                     {
                         CHUNK_INVARIANT_FAILED("rechunk refill bulk read: new chunk {} copied {} elements, span is {}",
-                                         new_chunk, k, static_cast<std::size_t>(len));
+                                               new_chunk, k, static_cast<std::size_t>(len));
                     }
                     const auto check_at = [&](ind_type j)
                     {
                         const T ref = static_cast<T>(std::as_const(self())[base + j]);
                         if (std::memcmp(&ref, &buf[static_cast<std::size_t>(j)], sizeof(T)) != 0) [[unlikely]]
                         {
-                            CHUNK_INVARIANT_FAILED("rechunk refill bulk read: new chunk {} element {} (global {}) differs "
-                                             "from the per-element read ({} -> {})",
-                                             new_chunk, static_cast<long long>(j), static_cast<long long>(base + j),
-                                             old_size, new_size);
+                            CHUNK_INVARIANT_FAILED(
+                                "rechunk refill bulk read: new chunk {} element {} (global {}) differs "
+                                "from the per-element read ({} -> {})",
+                                new_chunk, static_cast<long long>(j), static_cast<long long>(base + j), old_size,
+                                new_size);
                         }
                     };
                     for (ind_type j = 0; j < len; j += 64)
@@ -1215,10 +1216,10 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                 // DISJOINT new chunks, so the bypassed gate guards nothing.
                 // Per-thread (thread_local), so it lives inside the region.
                 const typename CompressionManager<T, chunk_type>::FlushReplayGuard rechunk_replay_guard;
-                std::vector<T>                buf(static_cast<std::size_t>(new_size));
-                RebuildTally                  tally; // this thread's fold counts for this slice
-                                                     // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
-                                                     // (internal::rebuild_schedule).
+                std::vector<T> buf(static_cast<std::size_t>(new_size));
+                RebuildTally   tally; // this thread's fold counts for this slice
+                                      // schedule(runtime): CHUNK_RECHUNK_SCHEDULE, default guided,16
+                                      // (internal::rebuild_schedule).
                 const slice_clock::time_point sp_w0 = sp_on ? slice_clock::now() : slice_clock::time_point{};
                 // nowait + the explicit barrier below: the same closing barrier,
                 // with each thread's loop end observable (CHUNK_RECHUNK_TRACE).
@@ -1352,7 +1353,8 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                                 set_thread_chunk_size(static_cast<unsigned int>(old_size));
                                 for (std::size_t r = 0; r < recycle_held.size(); ++r)
                                 {
-                                    auto& allocator = chunk_type::get_chunk_allocator(static_cast<int>(r), old_key_refill);
+                                    auto& allocator =
+                                        chunk_type::get_chunk_allocator(static_cast<int>(r), old_key_refill);
                                     if (recycle_held[r] == 0)
                                     {
                                         // A rank no team member holds (a

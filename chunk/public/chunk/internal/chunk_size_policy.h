@@ -124,8 +124,8 @@ inline void set_active_chunk_size(unsigned int size) noexcept
         if (!is_valid_chunk_size(size)) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("set_active_chunk_size({}): a chunk size must be a power of two "
-                             "(the index split is a shift and a mask)",
-                             size);
+                                   "(the index split is a shift and a mask)",
+                                   size);
         }
     }
     g_active_chunk_size = size;
@@ -309,8 +309,8 @@ class DynamicChunkSize
             if (!is_valid_chunk_size(size)) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("ChunkSizePolicy::set_size({}): not a power of two -- shift {} with mask {} "
-                                 "would send two elements to one slot",
-                                 size, log2int(static_cast<std::size_t>(size)), size - 1u);
+                                       "would send two elements to one slot",
+                                       size, log2int(static_cast<std::size_t>(size)), size - 1u);
             }
         }
         size_               = size;

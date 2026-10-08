@@ -193,11 +193,11 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         constexpr int label_width = 22;
         constexpr int value_width = 10;
         std::cout << std::setw(label_width) << std::left << "Numbers of 0" << ":" << std::setw(value_width)
-                  << std::right << nbz << std::setw(value_width) << std::right
-                  << (100.0 * double(nbz) / double(ssz)) << " %" << "\n";
-        std::cout << std::setw(label_width) << std::left << "Numbers of levels != 0" << ":"
-                  << std::setw(value_width) << std::right << nb << std::setw(value_width) << std::right
-                  << (100.0 * double(nb) / double(ssz)) << " %" << "\n";
+                  << std::right << nbz << std::setw(value_width) << std::right << (100.0 * double(nbz) / double(ssz))
+                  << " %" << "\n";
+        std::cout << std::setw(label_width) << std::left << "Numbers of levels != 0" << ":" << std::setw(value_width)
+                  << std::right << nb << std::setw(value_width) << std::right << (100.0 * double(nb) / double(ssz))
+                  << " %" << "\n";
     };
 
     // One lambda instead of two. The body of a generic lambda is a TEMPLATE, so

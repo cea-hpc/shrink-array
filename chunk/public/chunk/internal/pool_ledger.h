@@ -145,17 +145,17 @@ inline void on_ctx_alloc(void* ptr, std::size_t sz, const void* slab = nullptr) 
         if (const auto it = op_live().find(ptr); it != op_live().end())
         {
             CHUNK_INVARIANT_FAILED("[POOL_LEDGER] ctx_alloc at {} but block is LIVE as op "
-                             "(op_size={}, op_alloc_rank={}, ctx_size={}, op_slab={}, ctx_slab={})",
-                             ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab);
+                                   "(op_size={}, op_alloc_rank={}, ctx_size={}, op_slab={}, ctx_slab={})",
+                                   ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab);
         }
         if (const auto it = ctx_live().find(ptr); it != ctx_live().end())
         {
             CHUNK_INVARIANT_FAILED("[POOL_LEDGER] ctx_alloc DOUBLE-alloc at {} — block already live as ctx "
-                             "(prev_size={}, prev_alloc_rank={}, new_size={}, prev_slab={}, new_slab={}, "
-                             "SLABS_{}). Means the ctx pool returned a still-live block → double-recycle "
-                             "of this ctx, or the slab handed out a live block.",
-                             ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
-                             (it->second.slab == slab) ? "SAME" : "DIFF");
+                                   "(prev_size={}, prev_alloc_rank={}, new_size={}, prev_slab={}, new_slab={}, "
+                                   "SLABS_{}). Means the ctx pool returned a still-live block → double-recycle "
+                                   "of this ctx, or the slab handed out a live block.",
+                                   ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
+                                   (it->second.slab == slab) ? "SAME" : "DIFF");
         }
         ctx_live().emplace(ptr, Rec{.size = sz, .alloc_rank = current_rank(), .slab = slab});
     }
@@ -171,8 +171,8 @@ inline void on_ctx_free(void* ptr) noexcept
         if (const auto it = op_live().find(ptr); it != op_live().end())
         {
             CHUNK_INVARIANT_FAILED("[POOL_LEDGER] ctx_free at {} but block is LIVE as op "
-                             "(op_size={}, op_alloc_rank={})",
-                             ptr, it->second.size, it->second.alloc_rank);
+                                   "(op_size={}, op_alloc_rank={})",
+                                   ptr, it->second.size, it->second.alloc_rank);
         }
         if (ctx_live().erase(ptr) == 0)
         {
@@ -198,18 +198,18 @@ inline void on_op_alloc(void* ptr, std::size_t sz, const void* slab = nullptr) n
         if (const auto it = ctx_live().find(ptr); it != ctx_live().end())
         {
             CHUNK_INVARIANT_FAILED("[POOL_LEDGER] op_alloc at {} but block is LIVE as ctx "
-                             "(ctx_size={}, ctx_alloc_rank={}, op_size={}, ctx_slab={}, op_slab={}, "
-                             "SLABS_{})",
-                             ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
-                             (it->second.slab == slab) ? "SHARED" : "DISTINCT");
+                                   "(ctx_size={}, ctx_alloc_rank={}, op_size={}, ctx_slab={}, op_slab={}, "
+                                   "SLABS_{})",
+                                   ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
+                                   (it->second.slab == slab) ? "SHARED" : "DISTINCT");
         }
         if (const auto it = op_live().find(ptr); it != op_live().end())
         {
             CHUNK_INVARIANT_FAILED("[POOL_LEDGER] op_alloc DOUBLE-alloc at {} — block already live as op "
-                             "(prev_size={}, prev_alloc_rank={}, new_size={}, prev_slab={}, new_slab={}, "
-                             "SLABS_{})",
-                             ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
-                             (it->second.slab == slab) ? "SAME" : "DIFF");
+                                   "(prev_size={}, prev_alloc_rank={}, new_size={}, prev_slab={}, new_slab={}, "
+                                   "SLABS_{})",
+                                   ptr, it->second.size, it->second.alloc_rank, sz, it->second.slab, slab,
+                                   (it->second.slab == slab) ? "SAME" : "DIFF");
         }
         op_live().emplace(ptr, Rec{.size = sz, .alloc_rank = current_rank(), .slab = slab});
     }
@@ -225,8 +225,8 @@ inline void on_op_free(void* ptr) noexcept
         if (const auto it = ctx_live().find(ptr); it != ctx_live().end())
         {
             CHUNK_INVARIANT_FAILED("[POOL_LEDGER] op_free at {} but block is LIVE as ctx "
-                             "(ctx_size={}, ctx_alloc_rank={})",
-                             ptr, it->second.size, it->second.alloc_rank);
+                                   "(ctx_size={}, ctx_alloc_rank={})",
+                                   ptr, it->second.size, it->second.alloc_rank);
         }
         if (op_live().erase(ptr) == 0)
         {
@@ -460,8 +460,8 @@ inline void block_transition(const void* block,
             if (!allow_unknown)
             {
                 CHUNK_INVARIANT_FAILED("[POOL_LEDGER/BLOCK] {} of UNTRACKED block {} — site='{}' rank={} "
-                                 "(expected state {}) → foreign or already-recycled pointer",
-                                 op, block, site, rank, bstate_name(expected));
+                                       "(expected state {}) → foreign or already-recycled pointer",
+                                       op, block, site, rank, bstate_name(expected));
             }
             // Don't record a brand-new entry as FREE: a released unknown block
             // should simply not be tracked (see erase rationale below).
@@ -476,9 +476,9 @@ inline void block_transition(const void* block,
         if (info.state != expected)
         {
             CHUNK_INVARIANT_FAILED("[POOL_LEDGER/BLOCK] ILLEGAL {} of block {} — site='{}' rank={} : "
-                             "state={} (expected {}), last op by rank={} at site='{}'",
-                             op, block, site, rank, bstate_name(info.state), bstate_name(expected), info.last_rank,
-                             info.last_site);
+                                   "state={} (expected {}), last op by rank={} at site='{}'",
+                                   op, block, site, rank, bstate_name(info.state), bstate_name(expected),
+                                   info.last_rank, info.last_site);
         }
 
         // Released back to the system (svfree): remove the entry. A released

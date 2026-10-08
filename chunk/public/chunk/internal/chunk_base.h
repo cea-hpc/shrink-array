@@ -87,7 +87,7 @@ static_assert(ANKERL_UNORDERED_DENSE_VERSION_MAJOR == 5,
 // (serial builds), and doing so lets ChunkDeferredOpsPolicy below reference
 // it unconditionally.
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
-#include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/immortal.h"             // Immortal / LazyImmortal: statics safe for global arrays
 namespace shrink_array
 {
 // Forward declaration: only named here, in contexts that depend on T. The
@@ -374,8 +374,9 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
                         if (ncnt < 0) [[unlikely]]
                         {
                             CHUNK_INVARIANT_FAILED("pending_retire: chunk {} pending count {} -> {} (retired {}): "
-                                             "more ops retired than published -- a double count",
-                                             static_cast<const void*>(&static_cast<Derived&>(*this)), cnt, ncnt, count);
+                                                   "more ops retired than published -- a double count",
+                                                   static_cast<const void*>(&static_cast<Derived&>(*this)), cnt, ncnt,
+                                                   count);
                         }
                     }
                     return;
@@ -924,7 +925,8 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
         return (static_cast<std::uint64_t>(key) << 32U) | size;
     }
 
-    static inline constinit internal::LazyImmortal<std::map<std::uint64_t, std::vector<TCTypeCAllocator<T>>>> allocator_pool_;
+    static inline constinit internal::LazyImmortal<std::map<std::uint64_t, std::vector<TCTypeCAllocator<T>>>>
+        allocator_pool_;
 
     // Serial (non-OMP) counterpart of allocator_pool_ above: one allocator per
     // chunk size, WITHOUT the per-thread dimension (serial builds have a single
@@ -935,7 +937,8 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
     // in non-OMP fast-alloc builds: old and new sizes coexist during
     // rechunk_refill (read *this at old, write tmp at new), so a per-size pool
     // is required rather than a re-init of the single allocator_data.
-    static inline constinit internal::LazyImmortal<std::map<unsigned int, std::unique_ptr<TCTypeAllocator<T>>>> allocator_pool_serial_;
+    static inline constinit internal::LazyImmortal<std::map<unsigned int, std::unique_ptr<TCTypeAllocator<T>>>>
+        allocator_pool_serial_;
 };
 
 // Static (non-dynamic) builds: a single fixed geometry, so there is no

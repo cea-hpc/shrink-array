@@ -83,7 +83,8 @@ void on_implicit_task(ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*
 
 void on_sync_region(ompt_sync_region_t, ompt_scope_endpoint_t endpoint, ompt_data_t*, ompt_data_t*, const void*)
 {
-    if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0 || in_phase_end.load(std::memory_order_relaxed))
+    if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0 ||
+        in_phase_end.load(std::memory_order_relaxed))
     {
         return;
     }
@@ -95,7 +96,8 @@ void on_sync_region(ompt_sync_region_t, ompt_scope_endpoint_t endpoint, ompt_dat
 
 void on_parallel_end(ompt_data_t*, ompt_data_t*, int, const void*)
 {
-    if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0 || in_phase_end.load(std::memory_order_relaxed))
+    if (shrink_array::g_ompt_suspended.load(std::memory_order_relaxed) != 0 ||
+        in_phase_end.load(std::memory_order_relaxed))
     {
         return;
     }

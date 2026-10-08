@@ -33,7 +33,7 @@
 #include "chunk/internal/chunk2_base.h"         // Chunk2Base
 #include "chunk/internal/chunk_stats.h"         // increm_chunk_write
 
-#include "chunk/internal/TChunk.h" // TChunk2AComp, VectorTuple4ChunkInt2
+#include "chunk/internal/TChunk.h"   // TChunk2AComp, VectorTuple4ChunkInt2
 #include "chunk/internal/immortal.h" // Immortal / LazyImmortal: statics safe for global arrays
 
 

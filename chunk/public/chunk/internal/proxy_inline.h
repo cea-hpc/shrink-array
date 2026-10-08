@@ -278,9 +278,9 @@ inline void check_replay_store([[maybe_unused]] ChunkT&     chunk,
         if (chunk.values_load() != stored_to) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("{}: values changed during a deferred replay (chunk={} num={}): a compressor ran "
-                             "outside CompressionManager::start() or the replay ran outside a flush drain; "
-                             "the store is lost",
-                             where, static_cast<const void*>(&chunk), num);
+                                   "outside CompressionManager::start() or the replay ran outside a flush drain; "
+                                   "the store is lost",
+                                   where, static_cast<const void*>(&chunk), num);
         }
     }
 }

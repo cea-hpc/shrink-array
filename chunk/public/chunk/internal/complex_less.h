@@ -42,4 +42,3 @@ struct ComplexLess
 };
 
 } // namespace shrink_array
-

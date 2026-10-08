@@ -35,4 +35,3 @@ using MyChunkTypes =
     std::tuple<int, double, bool, short, unsigned long, long, std::complex<double>, float, unsigned char>;
 
 } // namespace shrink_array
-

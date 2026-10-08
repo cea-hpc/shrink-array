@@ -179,10 +179,10 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list([[maybe_unused]] 
             if (ptr_is_inside_chunk_list_to_compress == nullptr) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("add_to_compression_list(vec_tuple): chunk={} num={} "
-                                 "num_chunk={} num_tab={} "
-                                 "ptr_is_inside_chunk_list_to_compress is null "
-                                 "(set_info_on_chunk not called on this write path?)",
-                                 static_cast<const void*>(&chunk), num, num_chunk, num_tab);
+                                       "num_chunk={} num_tab={} "
+                                       "ptr_is_inside_chunk_list_to_compress is null "
+                                       "(set_info_on_chunk not called on this write path?)",
+                                       static_cast<const void*>(&chunk), num, num_chunk, num_tab);
             }
         }
         // Test, then test-and-set. The flag is almost always 1 (the chunk is
@@ -208,8 +208,8 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list([[maybe_unused]] 
                     static_cast<std::size_t>(num_chunk) >= flags[static_cast<std::size_t>(num_tab)].size()) [[unlikely]]
                 {
                     CHUNK_INVARIANT_FAILED("add_to_compression_list: num_chunk={} num_tab={} outside the flag table "
-                                     "({} tables)",
-                                     num_chunk, num_tab, flags.size());
+                                           "({} tables)",
+                                           num_chunk, num_tab, flags.size());
                 }
             }
             // CHUNK_STATS: this write newly flagged the chunk as a candidate.
@@ -256,10 +256,10 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list() const
             if (ptr_is_inside_chunk_list_to_compress == nullptr) [[unlikely]]
             {
                 CHUNK_INVARIANT_FAILED("add_to_compression_list (fast-block): chunk={} num={} "
-                                 "num_chunk={} num_tab={} "
-                                 "ptr_is_inside_chunk_list_to_compress is null "
-                                 "(set_info_on_chunk not called on this write path?)",
-                                 static_cast<const void*>(&chunk), num, num_chunk, num_tab);
+                                       "num_chunk={} num_tab={} "
+                                       "ptr_is_inside_chunk_list_to_compress is null "
+                                       "(set_info_on_chunk not called on this write path?)",
+                                       static_cast<const void*>(&chunk), num, num_chunk, num_tab);
             }
         }
         // CHUNK_STATS: the flag gates queueing. mark_refused counts the writes that
@@ -297,9 +297,10 @@ void ProxyBase<Derived, T, ChunkType>::add_to_compression_list() const
                         static_cast<std::size_t>(num_chunk) >= flags[static_cast<std::size_t>(num_tab)].size())
                         [[unlikely]]
                     {
-                        CHUNK_INVARIANT_FAILED("add_to_compression_list: num_chunk={} num_tab={} outside the flag table "
-                                         "({} tables)",
-                                         num_chunk, num_tab, flags.size());
+                        CHUNK_INVARIANT_FAILED(
+                            "add_to_compression_list: num_chunk={} num_tab={} outside the flag table "
+                            "({} tables)",
+                            num_chunk, num_tab, flags.size());
                     }
                 }
 
@@ -699,8 +700,8 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
                     using Policy = WriteCompressSyncPolicy<Derived>;
                     if (!Policy::is_thread_writing(thr))
                     {
-                        CHUNK_INVARIANT_FAILED("Dekker: per_thread_writing[{}] cleared between begin_write and write_body",
-                                         thr);
+                        CHUNK_INVARIANT_FAILED(
+                            "Dekker: per_thread_writing[{}] cleared between begin_write and write_body", thr);
                     }
                 }
 
@@ -792,7 +793,8 @@ ProxyBase<Derived, T, ChunkType>::write_with_optional_lock_impl(WriteCallable&& 
                 using Policy = WriteCompressSyncPolicy<Derived>;
                 if (Policy::is_thread_writing(thr))
                 {
-                    CHUNK_INVARIANT_FAILED("Dekker: per_thread_writing[{}] still TRUE after end_write (slow path)", thr);
+                    CHUNK_INVARIANT_FAILED("Dekker: per_thread_writing[{}] still TRUE after end_write (slow path)",
+                                           thr);
                 }
             }
 
@@ -915,11 +917,11 @@ void ProxyBase<Derived, T, ChunkType>::enqueue_deferred_write(CtxType* ctx, Lamb
         if (CHUNK_PMP_IN_PARALLEL_REGION && !phase_guard::armed()) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("[PHASE PROTOCOL] deferred write from a parallel region that did not call "
-                             "begin_parallel_phase() (or whose previous phase was never finalized): without "
-                             "OMPT every region must be bracketed by begin_parallel_phase() on each thread "
-                             "and finalize_parallel_phase() after the region, or this write replays after "
-                             "a later region's writes. chunk={} num={} rank={}",
-                             static_cast<const void*>(&chunk), ctx->num, get_thr_rank_fast());
+                                   "begin_parallel_phase() (or whose previous phase was never finalized): without "
+                                   "OMPT every region must be bracketed by begin_parallel_phase() on each thread "
+                                   "and finalize_parallel_phase() after the region, or this write replays after "
+                                   "a later region's writes. chunk={} num={} rank={}",
+                                   static_cast<const void*>(&chunk), ctx->num, get_thr_rank_fast());
         }
     }
 
@@ -1066,10 +1068,11 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
                     const T* values_after = chunk.values_load();
                     if (values_after != values_before)
                     {
-                        CHUNK_INVARIANT_FAILED("apply_atomic_op SYNC: chunk={} num={} values pointer CHANGED across store: "
-                                         "before={} after={} ; the store may have been LOST",
-                                         static_cast<const void*>(&chunk), num, static_cast<const void*>(values_before),
-                                         static_cast<const void*>(values_after));
+                        CHUNK_INVARIANT_FAILED(
+                            "apply_atomic_op SYNC: chunk={} num={} values pointer CHANGED across store: "
+                            "before={} after={} ; the store may have been LOST",
+                            static_cast<const void*>(&chunk), num, static_cast<const void*>(values_before),
+                            static_cast<const void*>(values_after));
                     }
                 }
             });
@@ -1101,14 +1104,14 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
                                 if (proxy.is_cst_val1())
                                 {
                                     CHUNK_INVARIANT_FAILED("apply_atomic_op ASYNC lambda: chunk={} num={} is_cst_val1 "
-                                                     "before read+store (decompression skipped?)",
-                                                     static_cast<const void*>(&ctx->chunk), ctx->num);
+                                                           "before read+store (decompression skipped?)",
+                                                           static_cast<const void*>(&ctx->chunk), ctx->num);
                                 }
                                 if (check_is_cst_val2(proxy))
                                 {
                                     CHUNK_INVARIANT_FAILED("apply_atomic_op ASYNC lambda: chunk={} num={} is_cst_val2 "
-                                                     "before read+store (decompression skipped?)",
-                                                     static_cast<const void*>(&ctx->chunk), ctx->num);
+                                                           "before read+store (decompression skipped?)",
+                                                           static_cast<const void*>(&ctx->chunk), ctx->num);
                                 }
                             }
 
@@ -1128,12 +1131,13 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
                                 const T* values_after = ctx->chunk.values_load();
                                 if (values_after != values_before)
                                 {
-                                    CHUNK_INVARIANT_FAILED("apply_atomic_op ASYNC lambda: chunk={} num={} values pointer "
-                                                     "CHANGED across store_value_async: before={} after={} ; "
-                                                     "the store may have landed in a stale buffer (LOST)",
-                                                     static_cast<const void*>(&ctx->chunk), ctx->num,
-                                                     static_cast<const void*>(values_before),
-                                                     static_cast<const void*>(values_after));
+                                    CHUNK_INVARIANT_FAILED(
+                                        "apply_atomic_op ASYNC lambda: chunk={} num={} values pointer "
+                                        "CHANGED across store_value_async: before={} after={} ; "
+                                        "the store may have landed in a stale buffer (LOST)",
+                                        static_cast<const void*>(&ctx->chunk), ctx->num,
+                                        static_cast<const void*>(values_before),
+                                        static_cast<const void*>(values_after));
                                 }
                                 // Additional sanity: the stored value should be readable back
                                 // from the current pointer.
@@ -1142,10 +1146,10 @@ void ProxyBase<Derived, T, ChunkType>::apply_atomic_op(Op operation, const U& v,
                                 const auto    expected = static_cast<T>(res);
                                 if (readback != expected)
                                 {
-                                    CHUNK_INVARIANT_FAILED("apply_atomic_op ASYNC lambda: chunk={} num={} readback mismatch: "
-                                                     "wrote={} but readback={}",
-                                                     static_cast<const void*>(&ctx->chunk), ctx->num, expected,
-                                                     readback);
+                                    CHUNK_INVARIANT_FAILED(
+                                        "apply_atomic_op ASYNC lambda: chunk={} num={} readback mismatch: "
+                                        "wrote={} but readback={}",
+                                        static_cast<const void*>(&ctx->chunk), ctx->num, expected, readback);
                                 }
                             }
                         });
