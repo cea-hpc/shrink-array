@@ -32,7 +32,8 @@ PRESETS = {
 }
 
 # Programs: script and working directory relative to the repository, how the
-# options are read, "time_s" (default job duration), "msub_only" (refused in the detached ccc_mprun mode), how the
+# options are read, "builds_opt" (the options naming the builds the run uses,
+# for the up-to-date check), "time_s" (default job duration), "msub_only" (refused in the detached ccc_mprun mode), how the
 # options are read ("argparse" or "help"), what the log says about progress,
 # and what "Récupérer" / the Résumé tab take from the output directory the
 # program announces in its log (out_re).
@@ -46,6 +47,10 @@ PROGRAMS = {
         "progress_re": r"Run (\d+)/(\d+) on build",
         "eta_re": r"Estimated Time Left: ([\d.]+)s",
         "summary": "multi_launch", "summary_file": "timings_summary.csv",
+        # The build check before the command ("Builds à jour"): the option
+        # naming the build root, the one naming the builds (a list, or a file
+        # of names one per line, relative to cwd).
+        "builds_opt": {"root": "build_root", "builds": "builds"},
     },
     "bench_and_test.py": {
         "time_s": 21600,  # default -T (a few hours); then remembered per program
@@ -55,6 +60,7 @@ PROGRAMS = {
         "out_files": ["bench_summary.csv", "bench_errors.log", "failed_cases.jsonl"],
         "progress_re": None, "eta_re": None,
         "summary": "csv", "summary_file": "bench_summary.csv",
+        "builds_opt": {"root": "build_root", "builds": "configs"},
     },
     "compile_all.sh": {
         "time_s": 5400,  # default -T (short); then remembered per program

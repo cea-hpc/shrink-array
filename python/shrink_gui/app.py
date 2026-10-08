@@ -1,4 +1,5 @@
 """The main window."""
+import ast
 import base64
 import html
 import io
@@ -84,6 +85,31 @@ class Main(QMainWindow):
         qrow = QHBoxLayout()
         qrow.addWidget(self.qos)
         qrow.addWidget(self.qos_note, 1)
+        # Start: after a compile run (Slurm dependency, or a wait in the
+        # detached mode), not before a delay; the builds checked on the node.
+        self.after = QComboBox()
+        self.after_cond = QComboBox()
+        self.after_cond.addItem("si elle réussit", "ok")
+        self.after_cond.addItem("quelle que soit son issue", "any")
+        self.after_cond.setCurrentIndex(max(0, self.after_cond.findData(self.settings.value("after_cond", "ok"))))
+        self.after.currentIndexChanged.connect(lambda *_: self.after_cond.setEnabled(bool(self.after.currentData())))
+        self.fill_after()
+        self.delay_on = QCheckBox("pas avant")
+        self.delay = DurationBox()
+        self.delay.setValue(int(self.settings.value("delay_s", 3600)))
+        self.delay.setEnabled(False)
+        self.delay_on.toggled.connect(self.delay.setEnabled)
+        arow = QHBoxLayout()
+        arow.addWidget(self.after, 2)
+        arow.addWidget(self.after_cond, 1)
+        arow.addWidget(self.delay_on)
+        arow.addWidget(self.delay, 1)
+        self.check_builds = QComboBox()
+        for label, key in (("refuser de démarrer si un build n'est pas à jour", "refuse"),
+                           ("avertir seulement", "warn"), ("ne pas vérifier", "off")):
+            self.check_builds.addItem(label, key)
+        self.check_builds.setCurrentIndex(
+            max(0, self.check_builds.findData(self.settings.value("check_builds", "refuse"))))
         self.directives = QPlainTextEdit()
         self.directives.setFont(QFont("Monospace", 9))
         self.directives.setFixedHeight(92)
@@ -98,6 +124,8 @@ class Main(QMainWindow):
         where.addRow("Soumission", self.mode)
         where.addRow("Durée max (-T)", self.time_s)
         where.addRow("QoS (-Q)", qrow)
+        where.addRow("Démarrage", arow)
+        where.addRow("Builds à jour", self.check_builds)
         where.addRow("Directives", self.directives)
         self.launcher = QLineEdit()
         self.launcher.setPlaceholderText("vide : la commande tourne directement dans le job")
@@ -388,7 +416,7 @@ class Main(QMainWindow):
                 w.setPlaceholderText(T(w.placeholderText()))
         for i in range(self.tabs.count()):
             self.tabs.setTabText(i, T(self.tabs.tabText(i)))
-        for c in (self.preset, self.mode):
+        for c in (self.preset, self.mode, self.after_cond, self.check_builds):
             for i in range(c.count()):
                 c.setItemText(i, T(c.itemText(i)))
 
@@ -410,6 +438,18 @@ class Main(QMainWindow):
                "xlong (pas sur gh200-bxi).\n\n« auto » prend la plus prioritaire qui accepte la durée, "
                "puis la plus courte. Un -Q écrit dans les directives l'emporte.\n\nLes limites sont "
                "relues sur inti à chaque vérification de la connexion.",
+        "after": "Démarrer après la fin d'une compilation (run compile_all.sh pas encore fini).\n\n"
+                 "ccc_msub : dépendance Slurm (le job attend dans la file sans prendre de nœud). "
+                 "ccc_mprun détaché : le lancement attend le code de retour de ce run.\n\n"
+                 "« si elle réussit » : une compilation en échec, et le run ne démarre jamais "
+                 "(en batch il reste en attente : à arrêter).",
+        "delay_on": "Ne pas démarrer avant ce délai, compté depuis la soumission "
+                    "(ccc_msub : --begin de Slurm ; ccc_mprun détaché : une attente avant le lancement).",
+        "check_builds": "Avant la commande, sur le nœud : ninja -n sur les exécutables déjà construits "
+                        "de chaque build que le programme utilisera (--configs de bench_and_test.py, "
+                        "--builds de multi_launch_stress.py, sous --build-root). Un build dont une "
+                        "source, un en-tête ou la configuration a changé depuis sa compilation n'est "
+                        "pas à jour.\n\n« refuser » : le run s'arrête (code 96) en listant ces builds.",
         "directives": "Lignes #MSUB du script batch (ou options ccc_mprun en mode détaché). Propres à "
                       "la partition, mémorisées.\n\n-T, -r, -o et -e sont ajoutés d'après le formulaire.",
         "repo": "Le dépôt shrink-array SUR INTI. Les options sont lues dans ces scripts-là, et c'est "
@@ -524,6 +564,9 @@ class Main(QMainWindow):
             self.settings.setValue(key, w.text())
         self.settings.setValue(f"time_s/{self.program.currentText()}", self.time_s.value())
         self.settings.setValue("qos", self.qos.currentData())
+        self.settings.setValue("after_cond", self.after_cond.currentData())
+        self.settings.setValue("delay_s", self.delay.value())
+        self.settings.setValue("check_builds", self.check_builds.currentData())
         self.settings.setValue("preset", self.preset.currentData())
         self.settings.setValue("mode", self.mode.currentData())
         self.settings.setValue("program", self.program.currentText())
@@ -578,6 +621,7 @@ class Main(QMainWindow):
                                                      PROGRAMS[prog].get("time_s", DEFAULTS["time_s"]))))
         cached = self.settings.value(f"schema/{self.program.currentText()}")
         self.form.pickers = {d: self.pick for d in PROGRAMS[prog].get("pickers", {})}
+        self.check_builds.setEnabled("builds_opt" in PROGRAMS[prog])
         self.form.build(json.loads(cached) if cached else None)
         self.form.filter(self.opt_filter.text())
         self.apply_arch_defaults()
@@ -624,6 +668,61 @@ class Main(QMainWindow):
         prog = self.program.currentText()
         self.settings.setValue(f"defaults/{prog}/{self.arch()}", json.dumps(self.form.values()))
         self.info(f"défauts enregistrés pour {prog} sur {self.arch()}")
+
+    # ------------------------------------------------- start conditions
+    def fill_after(self):
+        """What a submission can wait for: the compile_all.sh runs not
+        finished yet (a finished one needs no waiting)."""
+        keep = self.after.currentData() if self.after.count() else ""
+        self.after.blockSignals(True)
+        self.after.clear()
+        self.after.addItem(T("dès la soumission"), "")
+        for r in self.runs:
+            if (r["meta"].get("program") == "compile_all.sh"
+                    and (r["status"] in self.ACTIVE or r["status"].startswith("en attente"))):
+                self.after.addItem(T(f"après {r['id']}"), r["id"])
+        self.after.setCurrentIndex(max(0, self.after.findData(keep)))
+        self.after.blockSignals(False)
+        self.after_cond.setEnabled(bool(self.after.currentData()))
+
+    def form_value(self, dest):
+        """The value option @p dest will have: the form's, else the script's
+        default (a list default arrives as its repr)."""
+        v = self.form.values().get(dest)
+        if v not in (None, ""):
+            return v
+        for ac in (self.form.schema or {}).get("actions", []):
+            if ac["dest"] == dest:
+                d = ac["default"]
+                if isinstance(d, str) and d[:1] in "[(":
+                    try:
+                        return list(ast.literal_eval(d))
+                    except (ValueError, SyntaxError):
+                        return d
+                return d
+        return None
+
+    def build_check(self):
+        """The build check run.sh makes before the command
+        (runscripts.check_builds_call), or None: the builds the program will
+        use, read from its own options."""
+        opt = PROGRAMS[self.program.currentText()].get("builds_opt")
+        mode = self.check_builds.currentData()
+        if not opt or mode == "off" or not self.form.schema:
+            return None
+        builds = self.form_value(opt["builds"])
+        if not builds:
+            return None
+        root = self.form_value(opt["root"])
+        check = {"mode": mode, "root": root if isinstance(root, str) and root else "$CHUNK_BUILD_ROOT"}
+        if isinstance(builds, str):
+            parts = [x for x in re.split(r"[,\s]+", builds) if x]
+            if len(parts) == 1:          # a file of names (as multi_launch_stress --builds), or one name
+                check["builds_file"] = parts[0]
+                return check
+            builds = parts
+        check["builds"] = [str(b) for b in builds]
+        return check
 
     def command(self):
         prog = self.program.currentText()
@@ -817,16 +916,22 @@ class Main(QMainWindow):
                 "(oracles, résumé).\n\nSoumettre quand même ?") != QMessageBox.Yes:
             return
         cmd = self.command()
+        after_id = self.after.currentData() or ""
+        after = {"run": after_id, "cond": self.after_cond.currentData()} if after_id else None
+        delay_s = self.delay.value() if self.delay_on.isChecked() else 0
+        check = self.build_check()
         rid = time.strftime("%Y%m%d-%H%M%S") + "-" + prog.split(".")[0].split("_")[0] + "-" + pkey
         spec = {
             "mode": mode,
-            "run.sh": make_run_sh(self.repo.text().strip(), PROGRAMS[prog]["cwd"], cmd),
+            "run.sh": make_run_sh(self.repo.text().strip(), PROGRAMS[prog]["cwd"], cmd, check),
             "msub": self.directives.toPlainText() if mode == "msub" else "",
             "launcher": self.launcher.text().strip() if mode == "msub" else "",
             "launch.sh": make_launch_sh(f"{' '.join(self.directives.toPlainText().split())} "
-                                        f"-T{self.time_s.value()}" + (f" -Q {qname}" if qname else ""))
+                                        f"-T{self.time_s.value()}" + (f" -Q {qname}" if qname else ""),
+                                        after, delay_s)
                          if mode == "mprun" else "",
             "qos": qname or "",
+            "after": after, "delay_s": delay_s,
             "name": re.sub(r"[^A-Za-z0-9_.-]", "_", f"{prog.split('.')[0]}_{pkey}")[:40],
             "time_s": self.time_s.value(),
             "meta": {"program": prog, "partition": pkey, "arch": self.arch(), "mode": mode,
@@ -835,6 +940,8 @@ class Main(QMainWindow):
                      "repo": self.repo.text().strip(), "time_s": self.time_s.value(),
                      "qos": qname or qos.explicit_qos(self.directives.toPlainText()) or "",
                      "qos_wanted": self.qos.currentData(),
+                     "after": after, "delay_s": delay_s,
+                     "check_builds": check["mode"] if check else "off",
                      "created": time.strftime("%F %T"),
                      **{k: PROGRAMS[prog][k] for k in ("out_re", "out_files", "progress_re",
                                                        "eta_re", "summary", "summary_file")}},
@@ -862,6 +969,7 @@ class Main(QMainWindow):
             if r is None:
                 return
             self.runs = r["runs"]
+            self.fill_after()
             self.notify_changes()
             self.fill_compare()
             cur = next((x for x in self.runs if x["id"] == self.current), None)
@@ -958,6 +1066,8 @@ class Main(QMainWindow):
             self.qos.setCurrentIndex(max(0, self.qos.findData(m["qos_wanted"])))
         self.form.set_values(m.get("values", {}))
         self.extra.setText(m.get("extra", ""))
+        if m.get("check_builds") and self.check_builds.isEnabled():
+            self.check_builds.setCurrentIndex(max(0, self.check_builds.findData(m["check_builds"])))
         self.info(f"options de {run['id']} reprises")
 
     def stop(self):
@@ -1403,7 +1513,7 @@ class Main(QMainWindow):
         run = self.selected_run()
         if not run:
             return
-        if run["status"] in self.ACTIVE:
+        if run["status"] in self.ACTIVE or run["status"].startswith("en attente"):
             self.error("arrêtez d'abord ce run (il est encore actif)")
             return
         if ask(

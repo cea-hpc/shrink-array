@@ -236,6 +236,36 @@ EN = {
         "bench_and_test.py: its phases (duration, errors, from events.jsonl) or its bench_summary.csv.",
     "Choix de la langue de l'interface (changement immédiat).":
         "Interface language (applied at once).",
+    # start conditions and build check (Démarrage / Builds à jour)
+    "Démarrage": "Start", "Builds à jour": "Builds up to date", "pas avant": "not before",
+    "dès la soumission": "on submission", "si elle réussit": "if it succeeds",
+    "quelle que soit son issue": "whatever its result",
+    "refuser de démarrer si un build n'est pas à jour": "refuse to start if a build is not up to date",
+    "avertir seulement": "warn only", "ne pas vérifier": "do not check",
+    "Démarrer après la fin d'une compilation (run compile_all.sh pas encore fini).\n\n"
+    "ccc_msub : dépendance Slurm (le job attend dans la file sans prendre de nœud). "
+    "ccc_mprun détaché : le lancement attend le code de retour de ce run.\n\n"
+    "« si elle réussit » : une compilation en échec, et le run ne démarre jamais "
+    "(en batch il reste en attente : à arrêter).":
+        "Start after the end of a compilation (a compile_all.sh run not finished yet).\n\n"
+        "ccc_msub: a Slurm dependency (the job waits in the queue without holding a node). "
+        "ccc_mprun, detached: the launch waits for that run's exit code.\n\n"
+        "\"if it succeeds\": a failed compilation and the run never starts "
+        "(in batch it stays pending: stop it).",
+    "Ne pas démarrer avant ce délai, compté depuis la soumission "
+    "(ccc_msub : --begin de Slurm ; ccc_mprun détaché : une attente avant le lancement).":
+        "Do not start before this delay, counted from the submission "
+        "(ccc_msub: Slurm's --begin; ccc_mprun, detached: a wait before the launch).",
+    "Avant la commande, sur le nœud : ninja -n sur les exécutables déjà construits "
+    "de chaque build que le programme utilisera (--configs de bench_and_test.py, "
+    "--builds de multi_launch_stress.py, sous --build-root). Un build dont une "
+    "source, un en-tête ou la configuration a changé depuis sa compilation n'est "
+    "pas à jour.\n\n« refuser » : le run s'arrête (code 96) en listant ces builds.":
+        "Before the command, on the node: ninja -n on the executables already built in "
+        "each build the program will use (--configs of bench_and_test.py, --builds of "
+        "multi_launch_stress.py, under --build-root). A build whose sources, headers or "
+        "configuration changed since it was compiled is not up to date.\n\n\"refuse\": "
+        "the run stops (code 96), listing those builds.",
 }
 
 # Messages built on the fly (and those inti sends back): regex on the French,
@@ -248,6 +278,11 @@ EN_RE = [(re.compile(a), b) for a, b in (
      "Fix it, then click \"Read options\". Meanwhile the \"extra arguments\" field passes options as they are."),
     (r"\(pas d'aide dans le script\)", "(no help in the script)"),
     (r"^la QoS (\S+) n'est pas ouverte sur (\S+)$", r"QoS \1 is not open on \2"),
+    (r"^après (\S+)$", r"after \1"),
+    (r"^en attente sans fin \((\S+) a échoué : à arrêter\)$", r"pending for ever (\1 failed: stop it)"),
+    (r"^le run (\S+) a échoué \(code (\S+)\) : rien soumis$", r"run \1 failed (code \2): nothing submitted"),
+    (r"^le run (\S+) n'existe pas$", r"run \1 does not exist"),
+    (r"^le run (\S+) n'a pas de job batch à attendre$", r"run \1 has no batch job to wait for"),
     (r"^(.+) dépasse le maximum de la QoS (\S+) sur (\S+) \((.+)\)$", r"\1 exceeds the maximum of QoS \2 on \3 (\4)"),
     (r"^(\d+) cœurs dépassent le maximum de la QoS (\S+) sur (\S+) \((\d+)\)$",
      r"\1 cores exceed the maximum of QoS \2 on \3 (\4)"),

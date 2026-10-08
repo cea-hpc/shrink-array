@@ -71,6 +71,17 @@ def queue_states():
 STATES = {"PENDING": "en attente", "CONFIGURING": "démarrage", "RUNNING": "en cours",
           "COMPLETING": "en cours", "SUSPENDED": "suspendu"}
 
+def pending_detail(d, st):
+    """A waiting run whose start condition can no longer be met: the run it
+    waits for failed (Slurm keeps such a job pending, DependencyNeverSatisfied)."""
+    meta = json.loads(read(os.path.join(d, "meta.json"), "{}") or "{}")
+    after = meta.get("after")
+    if after and after.get("cond", "ok") == "ok":
+        code = (read(os.path.join(os.path.dirname(d), after["run"], "exit_code")) or "").strip()
+        if code and code != "0":
+            return "en attente sans fin (%s a échoué : à arrêter)" % after["run"]
+    return st
+
 def status(d, q):
     stopped = os.path.exists(os.path.join(d, "stopped"))
     code = (read(os.path.join(d, "exit_code")) or "").strip()
@@ -83,7 +94,10 @@ def status(d, q):
         if q is None:
             return "inconnu (pas de squeue)", None
         if jobid in q:
-            return STATES.get(q[jobid], q[jobid].lower()), None
+            st = STATES.get(q[jobid], q[jobid].lower())
+            if q[jobid] == "PENDING":
+                return pending_detail(d, st), None
+            return st, None
         if stopped:
             return "arrêté", None
         return "terminé sans code (limite de temps ? voir le log)", None
@@ -94,6 +108,8 @@ def status(d, q):
     if host != socket.gethostname():
         return "en cours ? (lancé depuis %s)" % host, None
     if alive(int(pid)):
+        if os.path.exists(os.path.join(d, "waiting")):
+            return pending_detail(d, "en attente"), None
         return "en cours", None
     return ("arrêté" if stopped else "interrompu"), None
 
@@ -228,9 +244,42 @@ def act_options(a):
     sys.stdout = real_stdout
     print(json.dumps({"error": "%s ne lit pas ses options avec argparse (%s)" % (a[1], pyv)}))
 
+def after_extra(base, spec):
+    """(Slurm options for ccc_msub -E, error): the start conditions of a batch
+    run -- after the run spec["after"] = {"run", "cond": "ok"|"any"}
+    (--dependency=afterok|afterany on its job), not before spec["delay_s"]
+    seconds (--begin=now+N). A run already finished is decided here: Slurm
+    forgets a finished job after a few minutes, a dependency on it would be
+    refused."""
+    extra = []
+    after = spec.get("after")
+    if after:
+        ad = rdir(base, after["run"])
+        if not os.path.isfile(os.path.join(ad, "meta.json")):
+            return None, "le run %s n'existe pas" % after["run"]
+        code = (read(os.path.join(ad, "exit_code")) or "").strip()
+        jobid = (read(os.path.join(ad, "jobid")) or "").strip()
+        if code:
+            if after.get("cond", "ok") == "ok" and code != "0":
+                return None, "le run %s a échoué (code %s) : rien soumis" % (after["run"], code)
+        elif jobid:
+            extra.append("--dependency=%s:%s" % ("afterok" if after.get("cond", "ok") == "ok" else "afterany",
+                                                 jobid))
+        else:
+            return None, "le run %s n'a pas de job batch à attendre" % after["run"]
+    if spec.get("delay_s"):
+        extra.append("--begin=now+%d" % int(spec["delay_s"]))
+    return extra, None
+
 def act_launch(a):
     base, rid, spec = a[0], a[1], json.loads(base64.b64decode(a[2]).decode())
     d = rdir(base, rid)
+    extra = []
+    if spec["mode"] == "msub":
+        extra, err = after_extra(base, spec)
+        if err:
+            print(json.dumps({"error": err}))
+            return
     os.makedirs(d)
     write(os.path.join(d, "run.sh"), spec["run.sh"])
     # The code the run is submitted on; run.sh records the one it STARTS on
@@ -243,6 +292,7 @@ def act_launch(a):
                + "#MSUB -r %s\n#MSUB -T %d\n#MSUB -o %s\n#MSUB -e %s\n"
                % (spec["name"], spec["time_s"], log, log)
                + ("#MSUB -Q %s\n" % spec["qos"] if spec.get("qos") else "")
+               + ('#MSUB -E "%s"\n' % " ".join(extra) if extra else "")
                + 'D=%s\n' % shlex.quote(d)
                + ('echo "[gui] launcher: %s"\n' % spec["launcher"] if spec.get("launcher") else "")
                + '%sbash "$D/run.sh"\ncode=$?\necho "$code" > "$D/exit_code"\n'
