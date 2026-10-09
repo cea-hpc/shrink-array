@@ -124,6 +124,7 @@ enable_sanitizers=true   # the llvm debug thread/address-sanitizer builds
 llvm_cs_size=""          # on-demand llvm build with a custom CHUNK_SIZE (e.g. 1024); empty = off
 NO_HARDENING=false       # --no-hardening: skip CHUNK_GLIBCXX_ASSERTIONS / CHUNK_UBSAN on Debug+sanitizer builds
 WITH_LEDGER=false        # --with-ledger: also build the gnu debug ledger config (forwarded)
+WITH_TOKEN=false         # --with-token-sanitizer: also build the llvm token (alloc-token) sanitizer config
 
 # Parse command-line arguments
 usage() {
@@ -166,6 +167,11 @@ Usage: $0 [--dryrun] [--build] [--debug-only]
   --with-nvhpc     Also build nvhpc, off by default (slow: ~1h30 on x86,
                    no performance gain).
   --no-sanitizers  Skip the llvm thread/address-sanitizer builds.
+  --with-token-sanitizer
+                   Also build cmake-build-omp-llvm-debug-std-alloc-token-sanitizer
+                   (-DSANITIZER=token, the alloc-token census, Clang >= 22),
+                   off by default. A --target glob that selects it builds it
+                   too; --no-sanitizers skips it.
   --with-ledger    Also build cmake-build-omp-gnu-debug-ledger (Debug OpenMP
                    with CHUNK_FORCE_LEDGER=ON), off by default. Forwarded to
                    compile_all_gnu.sh. A --target glob that selects it builds
@@ -208,6 +214,7 @@ for arg in "$@"; do
         --no-sanitizers) enable_sanitizers=false; shift ;;
         --no-hardening)  NO_HARDENING=true;       shift ;;
         --with-ledger)   WITH_LEDGER=true;        shift ;;
+        --with-token-sanitizer) WITH_TOKEN=true;  shift ;;
         --jobs=*)
             # How many build DIRS may compile at once (see functions_for_compile.sh).
             export CHUNK_MAX_JOBS="${arg#*=}"
@@ -597,11 +604,16 @@ if [ "$enable_sanitizers" = true ]; then
 # Token (alloc-token census) on the std_alloc axis only: it instruments
 # malloc / operator new, and under fast_allocators the chunk buffers come from
 # mmap'd slabs the census never sees.
+# Opt-in: built with --with-token-sanitizer, or when a --target glob selects it.
+if [ "$WITH_TOKEN" = true ] || { [ -n "${CHUNK_BUILD_TARGET:-}" ] && __target_wants "omp-llvm-debug-std-alloc-token-sanitizer"; }; then
 set_build_header 'Compiling llvm debug openmp std_alloc token sanitizer:'
 if [ "$BUILD_ONLY" = false ]; then
    run_cmd "CXX='$clangxx' cmake -S \"$CHUNK_SRC_DIR\" -B $build_rep/cmake-build-omp-llvm-debug-std-alloc-token-sanitizer/$arch $LLVM_CXX_OPT $LLVM_STDLIB_OPT -DOMP:BOOL=ON -DCHUNK_STD_ALLOC:BOOL=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS= -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -G Ninja -DSANITIZER=token"
 fi
 launch_build "$build_rep/cmake-build-omp-llvm-debug-std-alloc-token-sanitizer/$arch"
+else
+    echo "[default] skipping llvm debug openmp std_alloc token sanitizer (--with-token-sanitizer builds it)"
+fi
 
 set_build_header 'Compiling llvm debug openmp thread sanitizer:'
 if [ "$BUILD_ONLY" = false ]; then

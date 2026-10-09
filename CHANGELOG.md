@@ -47,6 +47,10 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `shrink_array::for_each_span(a, [first, last,] f)` (`array_chunk_range_ops.h`): the elements
+  as `std::span<const T>` blocks, so the loop over them can be vectorised; a compressed chunk
+  is passed as `f(v, count)` in O(1) when `f` accepts it. On a contiguous container
+  (`std::vector`), one span.
 - `element_ref_validation_<variant>` and `element_ref_misuse_<1..8>` (ctest, check builds):
   every `std::vector`-style use of `a[i]` compiles and holds, and each of eight uses of a
   named element proxy fails to compile with `ElementRef`'s message.
@@ -83,6 +87,7 @@ the tag's checksum to the recipe.
 - `scripts/check_doxygen.py` (ctest `check_doxygen`, when Doxygen is found): the
   documentation builds with no warning. The HTML draws the mermaid diagrams.
 - `compile_all.sh` / `compile_all_gnu.sh`: `--with-ledger`.
+- `compile_all.sh`: `--with-token-sanitizer`.
 - `scripts/check_headers.py` (ctest `check_headers`): every C++ file opens with the Apache
   license header, its years up to date, and carries no IDE `Created by` stamp; the scripts and
   build files carry `# Copyright ... CEA` / `# SPDX-License-Identifier: Apache-2.0`, the vendored
@@ -122,6 +127,8 @@ the tag's checksum to the recipe.
   old option name, with a deprecation message.
 - The `cmake-build-omp-gnu-debug-ledger` build is no longer part of the default
   `compile_all.sh` run (`--with-ledger`, or a `--target` that selects it).
+- The `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` build is no longer part of the
+  default `compile_all.sh` run (`--with-token-sanitizer`, or a `--target` that selects it).
 - The `[RECHUNK-POOL]` trace labels key 0 `(shared pool)`; it said `never swept`, which was
   wrong.
 - Source comments rewritten throughout: the development history is gone, the rules it taught
