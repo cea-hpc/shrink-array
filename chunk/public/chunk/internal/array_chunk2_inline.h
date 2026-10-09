@@ -221,6 +221,21 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
         }
     }
 
+    if constexpr (is_not_bool)
+    {
+        // T{} is the first value; while the second is T{} too (none
+        // declared), declaring T{} would register a block and candidate lists
+        // for a value every write already folds as the first one.
+        if (sec_value == T{} && get_second_value() == T{})
+        {
+            if (message)
+            {
+                std::cerr << "\nWarning set_second_value(T{}) ignored: T{} is already the first value\n";
+            }
+            return;
+        }
+    }
+
     auto& sh_inf = *Proxy2<T>::share_info_array;
 
     if constexpr (is_not_bool)

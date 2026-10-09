@@ -1082,9 +1082,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     // COMPOUND ARITHMETIC OPERATORS
     // ========================================================================
     template <typename U, typename Op>
-    void apply_compound_operation(Op      op,
-                                  in_t<U> v,
-                                  bool /*check_first_value_result*/ = false) noexcept; // in_t: see assign_impl
+    void apply_compound_operation(Op op, in_t<U> v) noexcept; // in_t: see assign_impl
 
     char* ptr_type_cst = nullptr; ///< pointer into tab_type_cst_val[num_tab]
 };

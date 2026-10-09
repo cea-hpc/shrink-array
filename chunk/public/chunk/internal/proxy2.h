@@ -941,16 +941,14 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @tparam Op Binary operator applied to (current, v).
      * @param v Operand.
      * @param op The operator.
-     * @param check_first_value_result When true, a result equal to the first
-     *        value is also treated as a compression candidate (`*=`, `/=` and
-     *        `%=` pass true: they can land on it from a non-zero slot).
+     * @note A result equal to the first value is counted as one, and a chunk
+     *       it fills folds: `*=`, `/=` and `%=` (the callers) can land on it
+     *       from a non-zero slot.
      * @note Materialises any foreign deferred write to this offset first
      *       (reader_sync) so the RMW cannot clobber it.
      */
     template <typename U, typename Op>
-    void apply_compound_operation(Op      op,
-                                  in_t<U> v,
-                                  bool    check_first_value_result = false) noexcept; // in_t: see assign_impl
+    void apply_compound_operation(Op op, in_t<U> v) noexcept; // in_t: see assign_impl
 
   public:
     /**

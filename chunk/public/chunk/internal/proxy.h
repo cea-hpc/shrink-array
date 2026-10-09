@@ -765,7 +765,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     /**
      * @brief Divide this element by `v` in place.
      * @tparam U Type of the operand.
-     * @param v Divisor.
+     * @param v Divisor. Integer element: check builds stop on v == 0
+     *        (internal::check_integer_divisor); a floating one gives inf/NaN.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
@@ -773,6 +774,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         requires ElementDivisible<T>
     Proxy operator/=(const U& v) noexcept
     {
+        internal::check_integer_divisor<T>(v, "/=");
         apply_compound_operation<U>(v, std::divides<>());
         return *this;
     }
@@ -796,7 +798,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Compute this element modulo `v` in place. Integral T only; a
      *        no-op passthrough (returns v unchanged) for non-integral T.
      * @tparam U Type of the operand.
-     * @param v Modulus.
+     * @param v Modulus. Check builds stop on v == 0
+     *        (internal::check_integer_divisor).
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.*/
@@ -806,6 +809,7 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     {
         if constexpr (std::is_integral_v<T>)
         {
+            internal::check_integer_divisor<T>(v, "%=");
             apply_compound_operation<U>(v, typename Base::modulo{});
             return *this;
         }

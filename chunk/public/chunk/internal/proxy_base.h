@@ -103,6 +103,27 @@ template <typename T>
     // raw-read: element_of -- callers hold the write session, a ReadSection, or replay after materialisation
     return elem_get(vals, n);
 }
+
+/// @brief Check builds: stop on an integer `/=` or `%=` by zero.
+/// @details Integer division or modulo by zero is undefined behaviour in C++
+///          (SIGFPE on x86, a silent 0 on ARM); an invariant failure says
+///          where. Integer elements only: for a floating T the division is
+///          IEEE (inf, NaN) and the result is defined. Compiled out of release
+///          builds. Shared by Proxy (v1) and Proxy2Base (Chunk2, Chunk2A).
+/// @tparam T Element type.
+/// @param v Divisor (a value or a proxy).
+/// @param op "/=" or "%=", for the message.
+template <typename T, typename U>
+CHUNK_FORCE_INLINE void check_integer_divisor([[maybe_unused]] const U& v, [[maybe_unused]] const char* op) noexcept
+{
+    if constexpr (build_config::any_check && std::is_integral_v<T> && !std::is_same_v<T, bool>)
+    {
+        if (static_cast<base_t<U>>(v) == base_t<U>{}) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("integer element {} by zero (undefined behaviour)", op);
+        }
+    }
+}
 } // namespace internal
 
 /**

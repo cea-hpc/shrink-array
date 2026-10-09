@@ -74,6 +74,12 @@
 #                           reads back what std::vector would, and counts its
 #                           written chunks right. The storage paths once fell
 #                           back on an orphaned `omp for` there, and hung.
+#   compound_ops_validation `*=`, `/=`, `%=` read back what std::vector would
+#                           (results landing on zero included), `double /= 0.0`
+#                           gives inf, set_second_value(0) declares nothing;
+#                           check builds: an integer `/= 0` or `%= 0` stops
+#                           the program (the executable re-runs itself with
+#                           --child to check it).
 #   nested_region_validation a thread that opens a nested (serialised) region
 #                           keeps its own per-rank structures afterwards; two
 #                           ACTIVE levels stop with an invariant failure
@@ -177,7 +183,7 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         mark_path_validation fill_range_mt_validation index64_validation
                         swap_move_validation range_counters_validation thread_growth_validation
                         nested_region_validation iterator_validation stale_proxy_validation
-                        region_storage_validation)
+                        region_storage_validation compound_ops_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.

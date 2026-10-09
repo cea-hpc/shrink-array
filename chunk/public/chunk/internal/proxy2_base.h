@@ -125,7 +125,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
 
             // 2. Call the common math engine
             // We use the transparent functor std::multiplies<>
-            derived().template apply_compound_operation<U>(std::multiplies<>{}, v, true);
+            derived().template apply_compound_operation<U>(std::multiplies<>{}, v);
             return derived();
         }
     }
@@ -133,7 +133,8 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     /**
      * @brief Divide this element by `v` in place.
      * @tparam U Type of the operand.
-     * @param v Divisor. Debug builds abort on v == 0.
+     * @param v Divisor. Integer element: check builds stop on v == 0
+     *        (internal::check_integer_divisor); a floating one gives inf/NaN.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.
@@ -150,13 +151,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         }
         else
         {
-            if constexpr (build_config::do_check)
-            {
-                if (v == 0)
-                {
-                    std::abort();
-                }
-            }
+            internal::check_integer_divisor<T>(v, "/=");
 
             // Early-out: dividing by 1 changes nothing -- nothing to write, and
             // nothing to read: reading the returned proxy goes through
@@ -166,7 +161,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
                 return derived();
             }
             // 2. Execution via the common engine
-            derived().template apply_compound_operation<U>(std::divides<>{}, v, true);
+            derived().template apply_compound_operation<U>(std::divides<>{}, v);
             return derived();
         }
     }
@@ -174,7 +169,8 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     /**
      * @brief Compute this element modulo `v` in place.
      * @tparam U Type of the operand.
-     * @param v Modulus.
+     * @param v Modulus. Check builds stop on v == 0
+     *        (internal::check_integer_divisor).
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.
@@ -186,11 +182,12 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     {
         if constexpr (std::is_integral_v<T> && is_not_bool)
         {
-            // 2. Execution via the common engine. true, as for *= and /=: a
-            // non-zero slot can land on zero (4 % 2), and with false that zero
-            // was never counted -- the chunk then never reached "full first
-            // value" and stayed materialised.
-            derived().template apply_compound_operation<U>(typename Base::modulo{}, v, true);
+            internal::check_integer_divisor<T>(v, "%=");
+            // 2. Execution via the common engine. A non-zero slot can land on
+            // zero (4 % 2): apply_compound_operation counts a result equal to
+            // the first value, so the chunk reaches "full first value" and
+            // folds.
+            derived().template apply_compound_operation<U>(typename Base::modulo{}, v);
             return derived();
         }
         else

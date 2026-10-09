@@ -1355,7 +1355,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
  */
 template <typename T>
 template <typename U, typename Op>
-void Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v, bool /*check_first_value_result*/) noexcept
+void Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v) noexcept
 {
     this->check_not_stale();
     // No set_info_on_chunk() here: nothing before apply_atomic_op() reads the
