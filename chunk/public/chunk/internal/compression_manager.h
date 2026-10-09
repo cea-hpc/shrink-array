@@ -427,14 +427,13 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /// @brief The calling thread's "may hold deferred ops" hint, read by the
     ///        thread itself for its own decision.
     /// @return false only when the calling thread certainly holds no op
-    /// @note Relaxed: the flag is thread-local and every store to it is the
-    ///       owner's own (mark_thread_has_ops from its enqueue, clear_ from
+    /// @note A plain load: the flag is thread-local and every store to it is
+    ///       the owner's own (mark_thread_has_ops from its enqueue, clear_ from
     ///       its own drains), so program order is all the ordering there is.
-    ///       Read after every fast-path write (the backlog check): keep it
-    ///       relaxed, an acquire load there is a measurable cost on AArch64.
+    ///       Read after every fast-path write (the backlog check).
     [[nodiscard]] static bool thread_may_have_ops_own() noexcept
     {
-        return get_thread_ops_flag_tls().v.load(std::memory_order_relaxed);
+        return get_thread_ops_flag_tls().v;
     }
 
     /// @brief Count one more pending op on @p thr_rank.
@@ -769,11 +768,12 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     };
 
     /// @brief "This thread may hold deferred ops" hint.
-    /// @note Not padded: a thread_local touched by its owner only (see
-    ///       thread_may_have_ops_own), so no other thread shares its line.
+    /// @note A plain bool: a thread_local, reached only through
+    ///       get_thread_ops_flag_tls() by the thread that owns it -- no other
+    ///       thread ever reads or writes it, so there is nothing to order.
     struct ThreadOpsFlag
     {
-        std::atomic<bool> v{false}; ///< the thread may hold deferred ops
+        bool v = false; ///< the thread may hold deferred ops
     };
 
     /// @brief Spin-acquire rank @p rank's flush lock (recursive for the owner).
@@ -826,15 +826,15 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
 
     /// @brief Announce that this thread now holds at least one deferred op.
     /// @param thr_rank caller's rank, for the debug ring log only
-    /// @note seq_cst: the flag must be visible before a drain decides to skip
-    ///       this rank.
+    /// @note Only this thread reads it back: the drains of other threads go by
+    ///       the per-rank pending counters and the chunks' pending words.
     static void mark_thread_has_ops(int thr_rank) noexcept
     {
         if constexpr (chunk_config::ring_log_debug)
         {
             ring_log(get_tid(), EV_MARK_THREAD_HAS_OPS, static_cast<uint32_t>(thr_rank));
         }
-        get_thread_ops_flag_tls().v.store(true, std::memory_order_seq_cst);
+        get_thread_ops_flag_tls().v = true;
     }
 
     /// @brief Announce that this thread's deferred ops have all been drained.
@@ -845,7 +845,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
         {
             ring_log(get_tid(), EV_CLEAR_THREAD_HAS_OPS, static_cast<uint32_t>(thr_rank));
         }
-        get_thread_ops_flag_tls().v.store(false, std::memory_order_release);
+        get_thread_ops_flag_tls().v = false;
     }
 
     /// @brief Conservative check: might this thread hold deferred ops?
@@ -853,7 +853,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /// @return false only when the calling thread certainly holds none
     [[nodiscard]] static bool thread_may_have_ops() noexcept
     {
-        return get_thread_ops_flag_tls().v.load(std::memory_order_acquire);
+        return get_thread_ops_flag_tls().v;
     }
 
     /**
