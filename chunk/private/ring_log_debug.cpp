@@ -336,17 +336,9 @@ struct Endpoint
 
 bool is_stdout_tty()
 {
-    // Cached result to avoid repeated syscalls
-    static std::atomic<int> cached{-1};
-    const int               v = cached.load(std::memory_order_acquire);
-    if (v != -1)
-    {
-        return v != 0;
-    }
-
-    const int result = isatty(fileno(stdout)) != 0 ? 1 : 0;
-    cached.store(result, std::memory_order_release);
-    return result != 0;
+    // Asked once: a function-local static is initialised thread-safely.
+    static const bool cached = isatty(fileno(stdout)) != 0;
+    return cached;
 }
 
 // Change this to control how often to log in non-TTY mode (percent steps)

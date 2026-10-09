@@ -285,7 +285,12 @@ bool CompressionManagerOmpPolicy<T, ChunkType, Enabled>::flush_deferred(int thr)
         deferred_chunk_loc.swap(chunks);
     }
 
-    if (thread_map.empty())
+    // The flag is the CALLING thread's, so only a drain of its own rank may
+    // lower it: draining another rank (the all-ranks loop of a serial flush)
+    // says nothing about this thread's own queue, and a false "holds none"
+    // would let a compound op on a zero skip itself while one of this
+    // thread's ops on the element is still queued.
+    if (thread_map.empty() && thr == get_thr_rank_fast())
     {
         clear_thread_has_ops(thr);
     }
