@@ -538,7 +538,7 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @pre num_tab must be < tab_is_inside_chunk_list_to_compress.size()
      */
 
-    static std::vector<std::atomic<char>>& get_tab_is_inside_list_to_compress(int num_tab)
+    static chunk_flag_row_t& get_tab_is_inside_list_to_compress(int num_tab)
     {
         return tab_is_inside_chunk_list_to_compress[num_tab];
     }

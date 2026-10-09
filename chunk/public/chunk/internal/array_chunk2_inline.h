@@ -38,7 +38,7 @@
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
-#include "chunk/internal/parallel_storage_init.h"       // reserve_first_touched, for_each_chunk
+#include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
 // Explicit includes for symbols used by clear_core() below: ManagerChunk
 // (per-size free-list + candidate-filter helpers), pool_ledger
 // (CHUNK_LEDGER_PARK/DISCARD), chunk_size_policy (runtime geometry). All

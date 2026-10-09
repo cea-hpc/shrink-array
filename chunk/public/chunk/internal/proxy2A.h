@@ -43,7 +43,7 @@
 #include "chunk/internal/proxy2_base.h"                  // Proxy2Base
 #include "chunk/internal/dependent_false.h"              // dependent_false_v (wrong-type branches)
 #include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
-#include "chunk/internal/parallel_storage_init.h"        // reserve_first_touched, for_each_chunk
+#include "chunk/internal/parallel_storage_init.h"        // no_init_vector, resize_filled, for_each_chunk
 
 namespace shrink_array
 {
@@ -359,6 +359,10 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
     ///        instead of 8 or 16.
     using second_value_slot_t = SecondValueTraits<T>::slot_t;
 
+    /// @brief One array's slots, one per chunk: same element type, filled by
+    ///        a team for a large array (resize_filled).
+    using second_value_row_t = parallel_storage_init::no_init_vector<second_value_slot_t>;
+
     using Base2::Base2;
 
     /*!
@@ -377,7 +381,7 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
      * \param num_tab Index of the tab.
      * \return Reference to the vector of second values.
      */
-    [[nodiscard]] static std::vector<second_value_slot_t>& get_tab_second_value(int num_tab) noexcept
+    [[nodiscard]] static second_value_row_t& get_tab_second_value(int num_tab) noexcept
     {
         return tab_second_value[static_cast<std::size_t>(num_tab)];
     }
@@ -411,11 +415,11 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
      */
     static void resize(int nb_tab, int nb_chunk_old, int nb_chunk)
     {
-        auto& row = tab_second_value[static_cast<std::size_t>(nb_tab)];
-        // A row filled from empty (every storage build) is faulted in by a team.
-        parallel_storage_init::reserve_first_touched(row, static_cast<std::size_t>(nb_chunk));
+        auto&     row  = tab_second_value[static_cast<std::size_t>(nb_tab)];
         const int held = static_cast<int>(row.size());
-        row.resize(static_cast<std::size_t>(nb_chunk)); // keeps [0, min(old, new))
+        // Keeps [0, min(old, new)); the new slots value-initialised by a team
+        // for a large array (every storage build fills a row from empty).
+        parallel_storage_init::resize_filled(row, static_cast<std::size_t>(nb_chunk), second_value_slot_t{});
         // The tail from the OLD count is cleared, as the reallocation did: the
         // row may hold more than nb_chunk_old entries. Only up to what the row
         // held: resize() has just value-initialised the rest.
@@ -437,7 +441,7 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
         // Swapped with an empty row: `= {}` would keep the capacity.
         if (num_tab >= 0 && static_cast<std::size_t>(num_tab) < tab_second_value.size())
         {
-            std::vector<second_value_slot_t>().swap(tab_second_value[static_cast<std::size_t>(num_tab)]);
+            second_value_row_t().swap(tab_second_value[static_cast<std::size_t>(num_tab)]);
         }
     }
 
@@ -448,9 +452,8 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
      * \brief Static container holding second values for each tab and chunk.
      * Indexed as tab_second_value[num_tab][num_chunk].
      */
-    static inline constinit internal::Immortal<std::vector<std::vector<second_value_slot_t>>>
-                                                                 tab_second_value_storage_{};
-    static inline std::vector<std::vector<second_value_slot_t>>& tab_second_value = tab_second_value_storage_.value;
+    static inline constinit internal::Immortal<std::vector<second_value_row_t>> tab_second_value_storage_{};
+    static inline std::vector<second_value_row_t>& tab_second_value = tab_second_value_storage_.value;
 };
 
 /*!
@@ -794,7 +797,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         // Released, not just emptied: clear() keeps the capacity, and every
         // re-chunk (new storage under a new num_tab, the old one destroyed)
         // would leave one byte per old chunk behind.
-        std::vector<char>().swap(tab_type_cst_val[num_tab]);
+        parallel_storage_init::no_init_vector<char>().swap(tab_type_cst_val[num_tab]);
         // And the candidate flags (one byte per chunk), which leaked the same way.
         Base::release_tab_is_int(num_tab);
     }
@@ -802,9 +805,10 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     /**
      * @brief Per-tab array of flags indicating the type of constant value used.
      */
-    static inline constinit internal::Immortal<std::vector<std::vector<char>>>
-                                                  tab_type_cst_val_storage_{}; ///< type-of-constant flags
-    static inline std::vector<std::vector<char>>& tab_type_cst_val = tab_type_cst_val_storage_.value;
+    static inline constinit internal::Immortal<std::vector<parallel_storage_init::no_init_vector<char>>>
+        tab_type_cst_val_storage_{}; ///< type-of-constant flags
+    static inline std::vector<parallel_storage_init::no_init_vector<char>>& tab_type_cst_val =
+        tab_type_cst_val_storage_.value;
 
     /**
      * @brief Mapping from pointer to tab information for chunk lookup.

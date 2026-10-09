@@ -39,7 +39,7 @@
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
-#include "chunk/internal/parallel_storage_init.h"       // reserve_first_touched, for_each_chunk
+#include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_* (check builds)
 
 namespace shrink_array

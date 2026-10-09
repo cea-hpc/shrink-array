@@ -45,7 +45,8 @@
 #include <utility>   // std::swap
 #include <vector>    // std::vector
 
-#include "chunk/config.h" // build_config::use_openmp
+#include "chunk/config.h"                         // build_config::use_openmp
+#include "chunk/internal/parallel_storage_init.h" // no_init_vector, make_filled: the words built by a team
 
 namespace shrink_array
 {
@@ -153,8 +154,9 @@ class DirtyBitsetSupport<Derived, true>
     {
         nb_words_ = words_for(nb_chunk);
         // + 1: the "some bit was set" flag (any_marked_word), after the bits.
-        // Built whole (atomic words are not movable), all clear.
-        bitset_ = std::vector<PaddedDirtyWord>(static_cast<std::size_t>(nb_words_) + 1);
+        // Built whole (atomic words are not movable), all clear, by a team for
+        // a large array.
+        bitset_ = parallel_storage_init::make_filled<PaddedDirtyWord>(static_cast<std::size_t>(nb_words_) + 1);
     }
 
     /**
@@ -173,7 +175,8 @@ class DirtyBitsetSupport<Derived, true>
         const int old_nb_words = words_for(old_nb_chunk);
         const int new_nb_words = words_for(new_nb_chunk);
 
-        std::vector<PaddedDirtyWord> new_bitset(static_cast<std::size_t>(new_nb_words) + 1);
+        auto new_bitset =
+            parallel_storage_init::make_filled<PaddedDirtyWord>(static_cast<std::size_t>(new_nb_words) + 1);
 
         if (!bitset_.empty())
         {
@@ -264,7 +267,7 @@ class DirtyBitsetSupport<Derived, true>
     /// One bit per chunk, one cache line per 64 chunks, then the flag word.
     /// mutable: the words are atomics, marked and read through const paths
     /// (any_marked_word).
-    mutable std::vector<PaddedDirtyWord> bitset_;
+    mutable parallel_storage_init::no_init_vector<PaddedDirtyWord> bitset_;
     int nb_words_{0}; ///< Words of bits in @ref bitset_ (its size - 1), so clearing needs no chunk count.
 
     static_assert(kChunksPerWord == 1 << kWordShift, "kWordShift must be log2(kChunksPerWord)");

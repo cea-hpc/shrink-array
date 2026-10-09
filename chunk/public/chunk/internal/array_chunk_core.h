@@ -50,7 +50,7 @@
 #include <cstddef>     // std::size_t
 #include <cstdint>     // std::uint64_t
 #include <cstdlib>     // std::getenv (CHUNK_ALLOC_AFFINITY_EAGER)
-#include <memory>      // std::allocator, std::construct_at (chunk_list's allocator)
+#include <memory>      // std::construct_at (construct_chunk)
 #include <string>      // std::string (debug_name_)
 #include <type_traits> // std::conditional_t
 #include <utility>     // std::move (set_debug_name)
@@ -60,6 +60,7 @@
 #include "chunk/chunk_traits.h"                      // ChunkTraits (proxy_type, manager_type)
 #include "chunk/internal/chunk_size_policy.h"        // ActiveSizePolicy
 #include "chunk/internal/array_chunk_dirty_bitset.h" // DirtyBitsetSupport
+#include "chunk/internal/parallel_storage_init.h"    // NoInitAllocator (chunk_list)
 
 namespace shrink_array
 {
@@ -126,49 +127,15 @@ inline const bool g_reuse_chunk_list = []() noexcept
 inline bool g_releasing_rechunk_storage = false;
 } // namespace alloc_affinity_detail
 
-/**
- * @brief chunk_list's allocator: std::allocator whose argument-less construct()
- *        does nothing.
- * @details `chunk_list.resize(n)` value-initialised every new chunk on the
- *          calling thread: a serial sweep over the whole new range (hundreds
- *          of MB at a small geometry), each page placed on that thread's NUMA
- *          node, and every chunk written again right after by the parallel
- *          init loop. With this allocator resize() only reserves the storage;
- *          the init loops construct each chunk (ArrayChunkCore::construct_chunk)
- *          on the thread that initialises it. Copies and moves (a reallocation)
- *          still construct, through the forwarding overload.
- *
- *          Contract: every element a growing resize() adds is constructed with
- *          construct_chunk() before any other use. The resize sites and their
- *          init loops: ArrayChunk*::create (through acquire_chunk_list) and
- *          ArrayChunk*::resize.
- * @tparam T the chunk type
- */
-template <typename T>
-struct NoInitAllocator : std::allocator<T>
-{
-    using value_type = T; ///< Element type.
-
-    NoInitAllocator() noexcept = default;
-    /// @brief Rebinding copy (allocator requirements).
-    template <typename U>
-    NoInitAllocator(const NoInitAllocator<U>& /*other*/) noexcept // NOLINT(google-explicit-constructor)
-    {
-    }
-
-    /// @brief Default construction: left to construct_chunk().
-    template <typename U>
-    void construct(U* /*p*/) noexcept
-    {
-    }
-
-    /// @brief Any other construction (copy, move): as std::allocator.
-    template <typename U, typename A0, typename... Args>
-    void construct(U* p, A0&& a0, Args&&... args)
-    {
-        std::construct_at(p, std::forward<A0>(a0), std::forward<Args>(args)...);
-    }
-};
+// chunk_list's allocator is NoInitAllocator (parallel_storage_init.h):
+// `chunk_list.resize(n)` value-initialised every new chunk on the calling
+// thread -- a serial sweep over the whole new range (hundreds of MB at a small
+// geometry), each page placed on that thread's NUMA node, and every chunk
+// written again right after by the parallel init loop. With it resize() only
+// reserves the storage; the init loops construct each chunk
+// (ArrayChunkCore::construct_chunk) on the thread that initialises it. The
+// resize sites and their init loops: ArrayChunk*::create (through
+// acquire_chunk_list) and ArrayChunk*::resize.
 
 /// @brief The index-type-independent part of a chunked array of ChunkType (see the description at the top of
 ///        this file).

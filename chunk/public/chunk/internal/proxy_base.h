@@ -44,9 +44,16 @@
 #include "chunk/internal/test_hooks.h"                   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
 #include "chunk/internal/read_reclaim.h"                 // ReadSection: read_values_outside_session
 #include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/parallel_storage_init.h"        // no_init_vector, make_filled: the candidate-flag rows
 
 namespace shrink_array
 {
+/// @brief One array's per-chunk candidate flags ("already in a compression
+///        list"): one atomic<char> per chunk, built by make_filled (a team for
+///        a large array). char, not bool: vector<bool> is the packed
+///        specialisation.
+using chunk_flag_row_t = parallel_storage_init::no_init_vector<std::atomic<char>>;
+
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
 template <typename T, typename ChunkType>
@@ -206,9 +213,9 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
                 }
             }
         }
-        // Value-initialised: every flag 0 (C++20 atomics).
+        // Every flag 0, constructed by a team for a large array.
         tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)] =
-            std::vector<std::atomic<char>>(static_cast<std::size_t>(nb_chunk));
+            parallel_storage_init::make_filled<std::atomic<char>>(static_cast<std::size_t>(nb_chunk), char{0});
     }
 
     /**
@@ -277,13 +284,13 @@ class ProxyBaseFastCompPolicy : public CRTPSupport<Derived>
 
     /**
      * @brief Per-tab array of atomic flags indicating whether each chunk is marked for compression.
-     * Each entry holds nb_chunk atomic<char> flags, built whole (atomics are not
-     * movable). char, not bool: vector<bool> is the packed specialisation.
+     * Each entry holds nb_chunk atomic<char> flags (chunk_flag_row_t), built
+     * whole by make_filled (atomics are not movable).
      */
 
-    static inline constinit internal::Immortal<std::vector<std::vector<std::atomic<char>>>>
-                                                               tab_is_inside_chunk_list_to_compress_storage_{};
-    static inline std::vector<std::vector<std::atomic<char>>>& tab_is_inside_chunk_list_to_compress =
+    static inline constinit internal::Immortal<std::vector<chunk_flag_row_t>>
+                                                 tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline std::vector<chunk_flag_row_t>& tab_is_inside_chunk_list_to_compress =
         tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
@@ -335,9 +342,9 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSupport
     static inline constinit internal::Immortal<CompressionManager<T, ChunkType>> compression_mgr_storage_{};
     static inline CompressionManager<T, ChunkType>& compression_mgr = compression_mgr_storage_.value;
     std::atomic<char>*                              ptr_is_inside_chunk_list_to_compress;
-    static inline constinit internal::Immortal<std::vector<std::vector<std::atomic<char>>>>
-                                                               tab_is_inside_chunk_list_to_compress_storage_{};
-    static inline std::vector<std::vector<std::atomic<char>>>& tab_is_inside_chunk_list_to_compress =
+    static inline constinit internal::Immortal<std::vector<chunk_flag_row_t>>
+                                                 tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline std::vector<chunk_flag_row_t>& tab_is_inside_chunk_list_to_compress =
         tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
@@ -1346,7 +1353,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /// @brief The whole candidate-flag row for array @p num_tab.
-    static std::vector<std::atomic<char>>& get_tab_is_inside_list_to_compress(int num_tab) noexcept
+    static chunk_flag_row_t& get_tab_is_inside_list_to_compress(int num_tab) noexcept
     {
         return FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab];
     }
