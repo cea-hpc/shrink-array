@@ -83,19 +83,21 @@ namespace shrink_array
 {
 
 // ── Array-new (placement-new arrays; see chunk_array_new.h) ────────────────
+// Out of line on purpose, as operator delete[] below: see there.
 template <typename T, typename Derived, bool Enabled>
-void* Chunk2AOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
+[[gnu::noinline]] void* Chunk2AOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 {
     auto* v = static_cast<Chunk2A<T>*>(::operator new(sz));
     init_chunks_cst_val(v, sz / sizeof(Chunk2A<T>));
     return static_cast<void*>(v);
 }
 
-// Out of line on purpose. operator new[] (the chunk initialisation) is not
-// inlined; inlined, this one would hand gcc's -Wmismatched-new-delete a
-// ::operator delete applied to what Chunk2AOmpPolicy::operator new[] returned, and
-// it warns (a false positive: that operator new[] allocates with ::operator
-// new). Kept a call, the pair it sees is the class's own new[] / delete[].
+// Out of line on purpose, as operator new[] above. Inlined, either one hands
+// gcc's -Wmismatched-new-delete a ::operator new or ::operator delete paired
+// with the class's other operator -- a test calling the two directly
+// (chunk_array_new_validation) inlined new[] -- and it warns (a false
+// positive: operator new[] allocates with ::operator new). Kept calls, the
+// pair it sees is the class's own new[] / delete[].
 template <typename T, typename Derived, bool Enabled>
 [[gnu::noinline]] void Chunk2AOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
