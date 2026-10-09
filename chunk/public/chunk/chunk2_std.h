@@ -1510,7 +1510,7 @@ class Chunk2 : public Chunk2CounterPolicy<chunk_config::use_compression_with_cou
      *         won the race (caller must not free anything); otherwise the
      *         old pointer, which the caller now owns and must free/recycle.
      */
-    T* try_mark_cst_and_get_old(int num_compress_value, int ind)
+    [[nodiscard]] T* try_mark_cst_and_get_old(int num_compress_value, int ind)
     {
         // Load the current pointer (may point to allocated data or to a constant block)
         T* old = Base::values_load();

@@ -97,7 +97,6 @@ void push_to_compress_list(Vec& vec, ChunkPtr chunk, int num_chunk, int num_tab,
     }
 }
 
-
 // ============================================================================
 // Helper function to call get_num_tab with the correct signature
 // ============================================================================
@@ -964,8 +963,6 @@ void ProxyBase<Derived, T, ChunkType>::enqueue_async_arithmetic(const U& v, Op o
     // Async wrapper: reconstruct a fresh ProxyType at execution time
     auto op_async = [ctx, body = std::forward<AsyncBody>(async_body)]() mutable
     {
-        using ProxyType = std::remove_cvref_t<decltype(derived())>;
-
         auto proxy = ProxyBase::template make_proxy_with_info<ProxyType>(ctx);
 
         body(ctx, proxy);

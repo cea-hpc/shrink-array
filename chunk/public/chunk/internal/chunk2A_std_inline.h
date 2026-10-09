@@ -1150,9 +1150,11 @@ void Chunk2AOmpPolicy<T, Derived, false>::block_clear(int               num_comp
     {
         return;
     }
+
     increm_chunk_compress<Derived>();
     Base::free_values(values);
     Derived::set_cst_val_to_cst_val(num_compress_value, ptr_type_cst);
+
     // Serial: no CAS, the values pointer is set outright to the constant --
     // the caller's array for a type 2, from the tables otherwise.
     if (num_compress_value == 1 && cst2_ptr != nullptr)

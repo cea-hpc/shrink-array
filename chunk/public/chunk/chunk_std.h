@@ -534,16 +534,18 @@ class Chunk : private ChunkCounterPolicy<chunk_config::use_compression_with_coun
     ~Chunk() = default;
 
     /// @brief Copy the zero-counter base and the `values` pointer of @p other.
+    ///
+    ///  Copy the ChunkCounterPolicy base: it holds nb_val_eq_zero, the count
+    /// of zero elements. A user-defined copy ctor otherwise DEFAULT-constructs
+    /// the bases, resetting the counter to 0. That desync makes
+    /// inc_nb_val_eq_zero later reach __chunk_size on a chunk that is not
+    /// actually all-zero, so manage_full_zero() wrongly re-compresses it to
+    /// cst_val1 (observed: a later read returns the constant instead of the
+    /// stored value). We can't copy the ChunkFastCompPolicy base the same way
+    /// because it contains the atomic `values` (non-copyable) — that's why
+    /// `values` is copied by hand below.
     Chunk(const Chunk& other)
-        // Copy the ChunkCounterPolicy base: it holds nb_val_eq_zero, the count
-        // of zero elements. A user-defined copy ctor otherwise DEFAULT-constructs
-        // the bases, resetting the counter to 0. That desync makes
-        // inc_nb_val_eq_zero later reach __chunk_size on a chunk that is not
-        // actually all-zero, so manage_full_zero() wrongly re-compresses it to
-        // cst_val1 (observed: a later read returns the constant instead of the
-        // stored value). We can't copy the ChunkFastCompPolicy base the same way
-        // because it contains the atomic `values` (non-copyable) — that's why
-        // `values` is copied by hand below.
+
         : ChunkCounterPolicy<chunk_config::use_compression_with_counter>(other)
     {
         if constexpr (build_config::use_openmp)

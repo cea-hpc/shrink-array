@@ -249,8 +249,8 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @param second_val The second constant value to compare against.
      * @return true if new_value is first_value or second_val.
      */
-    [[nodiscard]] bool
-    pre_check_mark_for_compression_strict(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
+    [[nodiscard]] static bool
+    pre_check_mark_for_compression_strict(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) noexcept
     {
         return new_value == first_value || new_value == second_val;
     }
@@ -339,7 +339,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *          need tab/chunk information before writing.
      */
     template <typename WriteFn>
-    CHUNK_FORCE_INLINE bool write_with_optional_lock_with_set_ptr(WriteFn write_fn) noexcept
+    [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_with_set_ptr(WriteFn write_fn) noexcept
     {
         const auto lbd_info = [this]
         {
@@ -399,7 +399,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @return true if the chunk is at cst_val1 and new_value == second_val,
      *         or at cst_val2 and new_value == first_value.
      */
-    bool
+    [[nodiscard]] bool
     is_cst_val_new_value_is_other_cst_val(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
     {
         // CRTP dispatch: each variant owns its fast pre-check. Chunk2 keeps the

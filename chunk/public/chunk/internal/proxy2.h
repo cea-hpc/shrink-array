@@ -83,7 +83,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      * @brief Async-context counterpart of get_ptr_on_array().
      * @param ctx Async write context.
      */
-    const T* get_ptr_on_array_async(auto* ctx) const noexcept
+    [[nodiscard]] const T* get_ptr_on_array_async(auto* ctx) const noexcept
     {
         return derived().get_ptr_on_array_async(ctx);
     }
@@ -131,7 +131,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      *        set_info_second_value_ind().
      * @return The second constant value.
      */
-    T get_second_value() const noexcept
+    [[nodiscard]] T get_second_value() const noexcept
     {
         return second_value;
     }
@@ -167,7 +167,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      *        full metadata load rather than the lighter-weight one.
      * @return The second constant value.
      */
-    T make_second_value() const noexcept
+    [[nodiscard]] T make_second_value() const noexcept
     {
         return inf_array.second_value;
     }
@@ -199,7 +199,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      * @brief Pointer to the owning array (used as the compression-metadata
      *        map key).
      */
-    const T* get_ptr_on_array() const noexcept
+    [[nodiscard]] const T* get_ptr_on_array() const noexcept
     {
         return derived().get_ptr_on_array();
     }
@@ -926,7 +926,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     // operators do NOT inline into the caller, so its parameter is what
     // crosses a call -- a char by value stays in a register, a struct goes by
     // reference. Non-deducible, hence the explicit assign_impl<U>(v) below.
-    T assign_impl(in_t<U> v) noexcept;
+    [[nodiscard]] T assign_impl(in_t<U> v) noexcept;
 
     // ========================================================================
     // COMPOUND ARITHMETIC OPERATORS
@@ -1002,7 +1002,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @brief Pointer to the owning array (used as the compression-metadata
      *        map key).
      */
-    const T* get_ptr_on_array() const noexcept
+    [[nodiscard]] const T* get_ptr_on_array() const noexcept
     {
         return static_cast<const T*>(ptr_on_array);
     }
