@@ -95,6 +95,16 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- Fatal checks of the library report through `CHUNK_INVARIANT_FAILED` (location, message,
+  backtrace) instead of a message on `stderr` / `std::cerr` and `std::abort()`: chunk size 0 at
+  `create`, a manager registered before `init_indexes`, clearing an unwritten chunk, the
+  `use_mm_protect` and second-value region `mmap` failures (with `strerror(errno)`), second-value
+  identifiers exhausted, `[SLAB MISALIGN]`, `[LEDGER_BADPTR]`, `[CHUNK2]` missing candidate list,
+  NaN (`CHUNK_DO_CHECK`), and the bare `std::abort()` of the bool / non-bool and build-mode
+  branches that cannot be reached. Three messages that went on now stop, as broken invariants:
+  v1's debug clear of an unwritten chunk (ChunkBase's same check already aborted), a failed
+  identity swap in `rechunk_to` (check builds), and, in check builds, deferred writes about to be
+  discarded by `flush_all_deferred` (`[DRAIN] ... LOST`; release builds still only print).
 - Deferred operations: `AllocatorRegistry::get_or_create<T>()` caches its answer per thread
   and per type instead of scanning the registry at every allocation and release of an op or
   a context (`reset()` invalidates the cache); the virtual `slab_addr()` is no longer called

@@ -19,7 +19,6 @@
 #include <atomic>   // std::atomic, std::memory_order_release
 #include <concepts> // std::assignable_from
 #include <cstddef>  // std::size_t
-#include <cstdlib>  // std::abort
 #include <memory>   // std::addressof (operator=: operator& is deleted)
 #include <ostream>  // std::ostream
 #include <vector>   // std::vector
@@ -27,6 +26,7 @@
 #include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"               // in_t<T>
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/crp_helper.h"         // CRTPSupport
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
 #include "chunk/internal/pointer_map_chunk2.h" // PointerMapChunk2
@@ -1042,7 +1042,8 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         }
         else
         {
-            std::abort();
+            CHUNK_INVARIANT_FAILED("Proxy2<bool>::is_cst_val2(ind): bool has no indexed second constant -- use "
+                                   "is_cst_val2()");
         }
     }
 

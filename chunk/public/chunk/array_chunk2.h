@@ -16,7 +16,6 @@
 
 #pragma once
 
-#include <cstdlib>     // for abort
 #include <iostream>    // for cout, ostream
 #include <type_traits> // for is_same_v
 #include <utility>     // for get, move
@@ -34,6 +33,7 @@
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
 #include "chunk/config.h"                               // for use_fast_block_compression, use_openmp
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_THREAD_CAPACITY
 #include "chunk/chunk2_std.h"                           // Chunk2<T>
@@ -309,7 +309,7 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
         }
         else
         {
-            std::abort();
+            CHUNK_INVARIANT_FAILED("ArrayChunk2<bool>::get_ind_second_value(): bool registers no second value");
         }
     }
 

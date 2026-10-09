@@ -21,7 +21,6 @@
 #include <deque>       // tab_m_ptr_cst_val2: grows without moving its arrays
 #include <atomic>      // std::memory_order_acquire, std::memory_order_release
 #include <cstddef>     // std::size_t
-#include <cstdlib>     // std::abort
 #include <tuple>       // the candidate-list entries
 #include <type_traits> // std::is_same_v, std::conditional_t
 #include <vector>      // std::vector
@@ -712,7 +711,8 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
         }
         else
         {
-            std::abort();
+            CHUNK_INVARIANT_FAILED("Chunk2::compare_and_swap(values, ind, ...) on a bool chunk: "
+                                   "compare_and_swap_bool is the bool path");
         }
     }
 
@@ -734,7 +734,7 @@ class Chunk2FastCompPolicy : public ChunkSpec2<T>, public Chunk2OmpPolicy<T, Der
         }
         else
         {
-            std::abort();
+            CHUNK_INVARIANT_FAILED("Chunk2::compare_and_swap_bool on a non-bool chunk");
         }
     }
 

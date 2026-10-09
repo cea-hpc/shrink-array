@@ -19,7 +19,6 @@
 #include <atomic>      // std::memory_order (the missed-compression audit)
 #include <cstddef>     // std::size_t
 #include <cstdio>      // std::fprintf (check-build trace)
-#include <cstdlib>     // std::getenv, std::abort
 #include <iomanip>     // std::setw (print_type_name)
 #include <iostream>    // std::cout / std::cerr
 #include <string>      // the type name in print_type_name
@@ -36,6 +35,7 @@
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*, get_size_max_tab_omp
 #include "chunk/singleton.h"                            // SingletonChk<AllTypeChunk>::getRef
 #include "chunk/type_name.h"                            // type_name<T>
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
@@ -74,8 +74,7 @@ void ArrayChunk2A<T, ind_type>::rebuild_storage(ind_type sz)
         }
         else if (sz && !this->size_policy_.size())
         {
-            std::cerr << "__chunk_size null !\n";
-            std::abort();
+            CHUNK_INVARIANT_FAILED("create({} elements): the chunk size is 0 (no geometry set)", sz);
         }
 
         if (nb_chunk)

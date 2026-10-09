@@ -26,7 +26,7 @@
 #include <type_traits> // std::is_integral_v, std::is_same_v, std::conditional_t, std::remove_reference_t
 #include <atomic>      // std::atomic
 #include <complex>     // std::complex
-#include <cstdlib>     // std::size_t, std::abort
+#include <cstdlib>     // std::size_t
 #include <functional>  // std::plus, std::minus
 #include <vector>      // std::vector
 
@@ -328,7 +328,7 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false> : public CRTPSupport
     template <typename ProxyType, typename Ctx>
     static ProxyType make_proxy_with_info(Ctx* /*ctx*/)
     {
-        std::abort();
+        CHUNK_INVARIANT_FAILED("make_proxy_with_info: no deferred replay in a build without fast block compression");
     }
 
     // Management members

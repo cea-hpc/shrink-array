@@ -18,7 +18,6 @@
 
 #include <cassert>  // assert (the candidate-list lookups)
 #include <cstddef>  // std::size_t
-#include <cstdlib>  // std::abort
 #include <optional> // std::nullopt (the clears)
 
 #include "chunk/config.h"                       // build_config::chunk_dynamic, chunk_config::OMPTcc
@@ -1062,7 +1061,8 @@ void Chunk2OmpPolicy<T, Derived, Enabled>::create_value(bool               need_
     }
     else
     {
-        std::abort();
+        CHUNK_INVARIANT_FAILED("Chunk2::create_value(need_set_second_value, inf_array, rank) on a bool chunk: "
+                               "the bool path has its own");
     }
 }
 

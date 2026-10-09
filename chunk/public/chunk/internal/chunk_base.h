@@ -24,10 +24,8 @@
 #include <atomic>      // std::atomic, std::memory_order
 #include <array>       // std::array
 #include <cstddef>     // std::size_t
-#include <cstdio>      // perror (use_mm_protect: the cst_val1 buffer)
-#include <cstdlib>     // std::abort
-#include <cstring>     // std::memset
-#include <iostream>    // std::cerr
+#include <cerrno>      // errno (use_mm_protect: the cst_val1 buffer's mmap)
+#include <cstring>     // std::memset, std::strerror
 #include <memory>      // std::unique_ptr, std::make_unique
 #include <optional>    // std::optional (constant_value)
 #include <sys/mman.h>  // mmap, mprotect, PROT_READ
@@ -1530,7 +1528,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         }
         else
         {
-            std::abort();
+            CHUNK_INVARIANT_FAILED("get_chunk_allocator() in a build without the fast allocator");
         }
     }
 
@@ -1627,8 +1625,8 @@ class ChunkBase : public CRTPSupport<Derived>,
 
         if (ptr == MAP_FAILED)
         {
-            perror("mmap failed");
-            std::abort();
+            CHUNK_INVARIANT_FAILED("mmap of the read-only first-value buffer ({} bytes) failed: {}", allocsize,
+                                   std::strerror(errno));
         }
 
         T* arr = static_cast<T*>(ptr);
@@ -1665,8 +1663,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         {
             if (!is_written_at(j))
             {
-                std::cerr << "Error: trying to clear a chunk that is not written\n";
-                std::abort();
+                CHUNK_INVARIANT_FAILED("trying to clear a chunk that is not written (offset {})", j);
             }
         }
     }
@@ -1680,8 +1677,7 @@ class ChunkBase : public CRTPSupport<Derived>,
         {
             if (!derived().written())
             {
-                std::cerr << "Error: trying to clear a chunk that is not written\n";
-                std::abort();
+                CHUNK_INVARIANT_FAILED("trying to clear a chunk that is not written");
             }
         }
     }

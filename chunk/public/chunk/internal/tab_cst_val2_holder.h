@@ -52,9 +52,9 @@
  */
 
 #include <sys/mman.h>  // mmap, mprotect, madvise
-#include <cstring>     // std::memcpy
+#include <cerrno>      // errno (the region's mmap)
+#include <cstring>     // std::memcpy, std::strerror
 #include <cstdint>     // std::uint32_t, uint64_t
-#include <cstdlib>     // std::abort
 #include <atomic>      // std::atomic, std::memory_order
 #include <array>       // std::array
 #include <memory>      // std::unique_ptr, std::make_unique
@@ -69,6 +69,7 @@
 #include "chunk/internal/env_parse.h"         // env_number (CHUNK_CST_VAL2_ID_LIMIT)
 #include "chunk/internal/in_t.h"              // in_t<T>: the value parameters
 #include "chunk/config.h"                     // build_config::use_mm_protect
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/immortal.h"          // Immortal / LazyImmortal: statics safe for global arrays
 #if CHUNK_OPT_FAST_ALLOC
     #include "fast_allocators/internal/alloc_config.h" // alloc_config::thp_advise (CHUNK_THP)
@@ -407,13 +408,11 @@ class GlobalVecHolder
         }
         if (off + bytes > cap_bytes) [[unlikely]]
         {
-            std::cerr << "[cst_val2] second-value identifiers exhausted: " << (off / bytes) << " of "
-                      << (cap_bytes / (bytes != 0 ? bytes : 1)) << ", bound by " << limiting
-                      << " (CHUNK_CST_VAL2_MAX_IDS=" << kMaxIds
-                      << ", CHUNK_CST_VAL2_REGION_BYTES=" << (kRegionBytes >> 20U)
-                      << " MiB). Raise it, or reduce the number of DISTINCT second "
-                      << "values the workload registers.\n";
-            std::abort();
+            CHUNK_INVARIANT_FAILED("[cst_val2] second-value identifiers exhausted: {} of {}, bound by {} "
+                                   "(CHUNK_CST_VAL2_MAX_IDS={}, CHUNK_CST_VAL2_REGION_BYTES={} MiB). Raise it, or "
+                                   "reduce the number of DISTINCT second values the workload registers.",
+                                   off / bytes, cap_bytes / (bytes != 0 ? bytes : 1), limiting, kMaxIds,
+                                   kRegionBytes >> 20U);
         }
         return region_begin.load(std::memory_order_relaxed) + off;
     }
@@ -741,8 +740,8 @@ class GlobalVecHolder
         void*     raw  = mmap(nullptr, kRegionUsable, prot, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
         if (raw == MAP_FAILED) [[unlikely]]
         {
-            std::cerr << "[cst_val2] cannot reserve the second-value region (" << (kRegionUsable >> 20U) << " MiB)\n";
-            std::abort();
+            CHUNK_INVARIANT_FAILED("[cst_val2] cannot reserve the second-value region ({} MiB): {}",
+                                   kRegionUsable >> 20U, std::strerror(errno));
         }
         // CHUNK_THP (experimental, off by default): advice only. Not under
         // MM_PROTECT, where the region stays PROT_NONE.

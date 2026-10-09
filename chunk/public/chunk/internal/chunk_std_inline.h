@@ -19,7 +19,6 @@
 #include <algorithm>       // std::fill_n (init_block)
 #include <atomic>          // std::atomic_thread_fence
 #include <cstddef>         // std::size_t
-#include <iostream>        // std::cerr (debug-build clear guard)
 #include <source_location> // std::source_location
 #include <tuple>           // the candidate-list entries
 
@@ -626,8 +625,9 @@ void ChunkOmpPolicy<T, Derived, false>::release_st(bool count_release)
     {
         if (!derived().written())
         {
-            std::cerr << "Error: trying to clear a chunk that is not written\n";
-            return;
+            // As ChunkBase::debug_check_written: clearing an unwritten chunk
+            // parks the shared sentinel as a buffer. Was a message, then on.
+            CHUNK_INVARIANT_FAILED("trying to clear a chunk that is not written");
         }
     }
 

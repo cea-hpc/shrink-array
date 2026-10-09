@@ -19,7 +19,6 @@
 #include <algorithm> // std::ranges::find (the healed-chunk report), std::min (the birth size of bits)
 #include <atomic>    // std::memory_order
 #include <cstddef>   // std::size_t
-#include <cstdlib>   // std::abort
 #include <iostream>  // std::cerr
 #include <ostream>   // print_compression_stats(std::ostream&)
 #include <string>    // the healed-chunk report
@@ -36,6 +35,7 @@
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_teardown_clear, add_chunk_released
 #include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
 #include "chunk/config.h"                               // chunk_config::use_fast_block_compression, chunk_config::stats
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
 #include "chunk/internal/parallel_storage_init.h"       // reserve_first_touched, for_each_chunk
@@ -164,8 +164,7 @@ void ArrayChunk2<T, ind_type>::rebuild_storage(ind_type sz)
         }
         else if (sz && !this->size_policy_.size())
         {
-            std::cerr << "__chunk_size null !\n";
-            std::abort();
+            CHUNK_INVARIANT_FAILED("create({} elements): the chunk size is 0 (no geometry set)", sz);
         }
 
         if (nb_chunk)

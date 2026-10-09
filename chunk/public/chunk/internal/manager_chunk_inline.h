@@ -33,6 +33,7 @@
 
 #include "chunk/internal/manager_chunk.h"     // the declarations these bodies belong to
 #include "chunk/config.h"                     // build_config::use_fast_alloc, chunk_config::use_fast_block_compression
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 #include "fast_allocators/internal/svalloc.h" // svfree
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count
@@ -618,6 +619,13 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
         // at a serial point), not only in check builds.
         if (CompressionManager<T, CHUNK_T<T>>::any_pending_ops()) [[unlikely]]
         {
+            // Check builds: lost writes are a broken invariant, not a warning.
+            if constexpr (build_config::any_check)
+            {
+                CHUNK_INVARIANT_FAILED("[DRAIN] flush_all_deferred: deferred ops still queued after {} pass(es) -- "
+                                       "storage.destroy() would discard them: their writes would be LOST",
+                                       pass);
+            }
             std::fprintf(stderr,
                          "[DRAIN] flush_all_deferred: deferred ops still queued after %d pass(es) -- "
                          "storage.destroy() discards them: their writes are LOST\n",
