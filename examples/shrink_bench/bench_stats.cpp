@@ -20,7 +20,6 @@
 #include <algorithm>   // std::max (name_padding)
 #include <complex>     // operator== on complex_double
 #include <cstddef>     // std::size_t
-#include <sstream>     // std::ostringstream
 #include <string>      // std::string
 #include <type_traits> // std::is_same_v
 #include <cstdio>      // std::fflush
@@ -29,7 +28,7 @@
 #include "bench_config.h"  // the CONSTEXPR macro
 #include "bench_prelude.h" // Proxy2<T>::share_info_array (share_info line)
 #include "bench_phases.h"  // bench_stats, bench_print_checksums (defined here)
-#include "bench_utils.h"   // calculate_checksum
+#include "bench_utils.h"   // calculate_checksum, bench_text
 
 void bench_stats(BenchArrays& bench_arr, bool stats)
 {
@@ -59,7 +58,6 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         using value_type           = std::remove_reference_t<std::remove_const_t<decltype(tab)>>::value_type;
         constexpr bool is_not_bool = !shrink_array::is_bool_like_v<value_type>; // bool, Bit
         constexpr bool is_complex  = std::is_same_v<value_type, complex_double>;
-        constexpr bool is_char     = std::is_same_v<value_type, unsigned char>;
 
         Int nbz = 0;
         Int nbv = 0;
@@ -143,16 +141,8 @@ void bench_stats(BenchArrays& bench_arr, bool stats)
         // The colon right after the padded label: always in the same position.
         std::println("{:<{}}:{:>{}}{:>{}.2f} %", label0, label_width, nbz, value_width, pcz * 100, value_width);
 
-        // Second output line: build the label dynamically with a suffix.
-        std::ostringstream oss;
-        oss << "Numbers of ";
-
-        if constexpr (is_char)
-            oss << static_cast<int>(sec_val);
-        else
-            oss << sec_val;
-
-        const std::string label = oss.str();
+        // Second output line: the label names the second value.
+        const std::string label = "Numbers of " + bench_text(sec_val);
         std::println("{:<{}}:{:>{}}{:>{}.2f} %", label, label_width, nbv, value_width, pcv * 100, value_width);
     };
 

@@ -17,17 +17,20 @@
 #pragma once
 
 #include "bench_prelude.h" // Int, chunk_config::has_ompt
+#include "bench_struct.h"  // Point3, Cell and their std::formatter (bench_text)
 
 #include <atomic>      // std::atomic
 #include <bit>         // std::bit_cast (checksum_word)
 #include <cstddef>     // size_t
 #include <cstdint>     // uint64_t, int64_t
+#include <format>      // std::format (bench_text)
 #include <random>      // std::mt19937
 #include <string>      // std::string
 #include <type_traits> // std::true_type, std::false_type
 #include <vector>      // std::vector
 
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_MAX_THREADS, CHUNK_PMP_THREAD_RANK
+#include "chunk/bit.h"       // shrink_array::is_bool_like_v (bench_text)
 
 // -----------------------------------------------------------------------------
 // Cache-line-padded uint64 used as a per-thread accumulator to avoid false
@@ -65,6 +68,32 @@ struct uint64_t_padding
         char     padding[CACHE_LINE_SIZE];
     };
 };
+
+/// @brief A bench value as text, the way operator<< printed it: the narrow
+///        character types, bool and Bit as numbers (tab_char would otherwise show
+///        a control byte), floating point as %g, complex as "(re,im)".
+/// @return The text of @p v.
+template <class V>
+std::string bench_text(const V& v)
+{
+    if constexpr (shrink_array::is_bool_like_v<V> || std::is_same_v<V, char> || std::is_same_v<V, signed char> ||
+                  std::is_same_v<V, unsigned char>)
+    {
+        return std::format("{}", static_cast<int>(v));
+    }
+    else if constexpr (std::is_floating_point_v<V>)
+    {
+        return std::format("{:g}", v);
+    }
+    else if constexpr (std::is_same_v<V, complex_double>)
+    {
+        return std::format("({:g},{:g})", v.real(), v.imag());
+    }
+    else
+    {
+        return std::format("{}", v);
+    }
+}
 
 // -----------------------------------------------------------------------------
 // Trait: is T a std::vector<...> ?
@@ -186,8 +215,7 @@ template <typename V>
 // jump-label pass of the serial build.
 __attribute__((optimize("O2")))
 #endif
-uint64_t
-calculate_checksum(const V& vec)
+uint64_t calculate_checksum(const V& vec)
 {
     uint64_t checksum = 0;
 

@@ -44,6 +44,7 @@
 
 #include <compare> // the defaulted operator<=>
 #include <cstdint> // std::int32_t
+#include <format>  // std::formatter
 #include <ostream> // std::ostream
 
 /// Three doubles. The defaulted <=> gives the == every element type needs and
@@ -64,18 +65,46 @@ struct Cell
     float        fraction;
 };
 
-/// @brief Print @p p as "(x, y, z)".
+/// @brief std::format of a Point3: "(x, y, z)", each coordinate as %g. No format spec.
+template <>
+struct std::formatter<Point3>
+{
+    constexpr auto parse(std::format_parse_context& ctx)
+    {
+        return ctx.begin();
+    }
+    auto format(const Point3& p, std::format_context& ctx) const
+    {
+        return std::format_to(ctx.out(), "({:g}, {:g}, {:g})", p.x, p.y, p.z);
+    }
+};
+
+/// @brief std::format of a Cell: "{material, fraction}", the fraction as %g. No format spec.
+template <>
+struct std::formatter<Cell>
+{
+    constexpr auto parse(std::format_parse_context& ctx)
+    {
+        return ctx.begin();
+    }
+    auto format(const Cell& c, std::format_context& ctx) const
+    {
+        return std::format_to(ctx.out(), "{{{}, {:g}}}", c.material, c.fraction);
+    }
+};
+
+/// @brief Print @p p as "(x, y, z)" (its std::formatter).
 /// @return @p os.
 inline std::ostream& operator<<(std::ostream& os, const Point3& p)
 {
-    return os << "(" << p.x << ", " << p.y << ", " << p.z << ")";
+    return os << std::format("{}", p);
 }
 
-/// @brief Print @p c as "{material, fraction}".
+/// @brief Print @p c as "{material, fraction}" (its std::formatter).
 /// @return @p os.
 inline std::ostream& operator<<(std::ostream& os, const Cell& c)
 {
-    return os << "{" << c.material << ", " << c.fraction << "}";
+    return os << std::format("{}", c);
 }
 
 /// @name The second values of the struct arrays

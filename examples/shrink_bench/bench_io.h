@@ -35,7 +35,6 @@
 #include <cstdint>   // std::uint64_t, std::uintptr_t
 #include <cstdlib>   // std::abort
 #include <fstream>   // std::ifstream, std::ofstream
-#include <sstream>   // std::ostringstream
 #include <string>    // std::string, std::to_string, std::getline
 #include <unistd.h>  // unlink
 #include <format>    // std::format
@@ -70,10 +69,10 @@ void decompress_file(const std::string& source_file, const std::string& dest_fil
 // are rendered as "v ...xN... v" (N = run length — keeping the count visible
 // is deliberate: a 64-long run and a 512-long run must not look alike when
 // hunting geometry bugs); short runs are printed element by element. `sink`
-// receives std::string fragments (log_message, or a stderr wrapper) and
-// `fmt` formats one value (the local format_val lambdas).
-template <typename Sink, typename Fmt, typename T>
-static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, UInt count)
+// receives std::string fragments (log_message, or a stderr wrapper); each
+// value is written by bench_text.
+template <typename Sink, typename T>
+static void log_values_compacted(Sink&& sink, const T* values, UInt count)
 {
     UInt p = 0;
     while (p < count)
@@ -88,7 +87,7 @@ static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, UInt c
         }
 
         const UInt        run_length = p - start_idx;
-        const std::string val_str    = fmt(current_val);
+        const std::string val_str    = bench_text(current_val);
         if (run_length > 2)
         {
             std::string line = val_str;
@@ -347,29 +346,14 @@ void read_check_binary_file(Int                ind,
         std::abort();
     }
 
-    // Helper lambda to format values as strings, handling char-to-Int conversion
-    const auto format_val = [&](auto val) -> std::string
-    {
-        if constexpr (std::is_same_v<T, char> || std::is_same_v<T, unsigned char> || std::is_same_v<T, signed char>)
-        {
-            return std::to_string(static_cast<int>(val));
-        }
-        else
-        {
-            std::ostringstream oss;
-            oss << val;
-            return oss.str();
-        }
-    };
-
     // No directive: the whole lambda lives inside template <typename VEC>
     // read_check_binary_file, so every data_check.* call below is DEPENDENT and
     // the `if constexpr` inside it is genuinely not instantiated for a
     // std::vector VEC. It is unused there -- io_res == 2 is unreachable without
     // a shrink build -- hence [[maybe_unused]]. Capture-default rather than a
-    // list for the same reason: format_val is only named in that discarded
-    // branch, and an explicit capture that the std::vector instantiation
-    // never reads draws -Wunused-lambda-capture from clang.
+    // list for the same reason: what it captures is only named in that
+    // discarded branch, and an explicit capture that the std::vector
+    // instantiation never reads draws -Wunused-lambda-capture from clang.
     [[maybe_unused]]
     const auto lbd_check_trace = [&](std::ifstream& trace_file, Int k, auto& value)
     {
@@ -462,7 +446,7 @@ void read_check_binary_file(Int                ind,
 
             const auto lbd_print = [&]
             {
-                std::println(stderr, "value               : {}", format_val(value));
+                std::println(stderr, "value               : {}", bench_text(value));
                 std::println(stderr, "chunk number        : {}", num_chunk);
                 std::println(stderr, "number inside chunk : {}", num);
                 std::println(stderr, "is values           : {:d}", is_values);
@@ -546,14 +530,14 @@ void read_check_binary_file(Int                ind,
 
                         if (all_equal)
                         {
-                            std::println(stderr, "All values of chunk are identical: {}", format_val(first));
+                            std::println(stderr, "All values of chunk are identical: {}", bench_text(first));
                         }
                         else
                         {
                             std::println(stderr, "All values of chunk (compacted):");
                             const T* vals = chunk_t.values; // atomic<T*> implicit load or plain ptr
-                            log_values_compacted([](const std::string& m) { std::print(stderr, "{}", m); }, format_val,
-                                                 vals, data_check.chunk_size());
+                            log_values_compacted([](const std::string& m) { std::print(stderr, "{}", m); }, vals,
+                                                 data_check.chunk_size());
                         }
                     }
 
@@ -686,10 +670,8 @@ void read_check_binary_file(Int                ind,
                     const std::string s0 = std::format("0x{:x}", addr);
 
                     log_message("address values       : " + s0 + "\n");
-                    addr = reinterpret_cast<std::uintptr_t>(&raw_ptr[num]);
-                    std::ostringstream oss1;
-                    oss1 << "0x" << std::hex << addr;
-                    const std::string s1  = oss1.str();
+                    addr                  = reinterpret_cast<std::uintptr_t>(&raw_ptr[num]);
+                    const std::string s1  = std::format("0x{:x}", addr);
                     const Int         val = *reinterpret_cast<Int*>(addr);
                     log_message("value  = " + std::to_string(val) + "\n");
                     log_message("address values[" + std::to_string(num) + "] : " + s1 + "\n");
@@ -808,29 +790,8 @@ void read_check_binary_file(Int                ind,
                 {
                     log_message(std::string("")); // Same as above
                 }
-
-                // unsigned char goes through operator<< as a CHARACTER: a mismatch
-                // on tab_char would print a control byte instead of the number.
-                // Promote the narrow types to a wide integer for display only;
-                // every other T prints as is.
-                const auto printable = [](const auto& v)
-                {
-                    using V = std::remove_cvref_t<decltype(v)>;
-                    if constexpr (std::is_same_v<V, unsigned char> || std::is_same_v<V, signed char> ||
-                                  std::is_same_v<V, char>)
-                    {
-                        return static_cast<int>(v);
-                    }
-                    else
-                    {
-                        return v;
-                    }
-                };
-
-                std::ostringstream oss;
-                oss << tab_name << "[" << k << "]"
-                    << " not equal ! read : " << printable(value) << " != " << printable(data_check[k]);
-                log_message(oss.str() + "\n");
+                log_message(std::format("{}[{}] not equal ! read : {} != {}\n", tab_name, k, bench_text(value),
+                                        bench_text(value_check)));
 
                 if constexpr (chunk_config::is_shrink_enabled)
                 {
@@ -857,24 +818,18 @@ void read_check_binary_file(Int                ind,
                         raw_ptr = chunk_t.values;
                     }
 
-                    auto               addr_values_member = reinterpret_cast<std::uintptr_t>(&chunk_t.values);
-                    std::ostringstream oss_member;
-                    oss_member << "0x" << std::hex << addr_values_member;
-                    const std::string s_member = oss_member.str();
+                    const auto        addr_values_member = reinterpret_cast<std::uintptr_t>(&chunk_t.values);
+                    const std::string s_member           = std::format("0x{:x}", addr_values_member);
 
                     log_message("address &values       : " + s_member + "\n");
 
-                    auto               addr = reinterpret_cast<std::uintptr_t>(raw_ptr);
-                    std::ostringstream oss0;
-                    oss0 << "0x" << std::hex << addr;
-                    const std::string s0 = oss0.str();
+                    auto              addr = reinterpret_cast<std::uintptr_t>(raw_ptr);
+                    const std::string s0   = std::format("0x{:x}", addr);
 
                     log_message("address values       : " + s0 + "\n");
 
-                    addr = reinterpret_cast<std::uintptr_t>(&raw_ptr[num]);
-                    std::ostringstream oss1;
-                    oss1 << std::hex << &raw_ptr[num];
-                    const std::string s1 = oss1.str();
+                    addr                 = reinterpret_cast<std::uintptr_t>(&raw_ptr[num]);
+                    const std::string s1 = std::format("0x{:x}", addr);
 
                     log_message("address values[" + std::to_string(num) + "] : " + s1 + "\n");
                 }
@@ -900,7 +855,7 @@ void read_check_binary_file(Int                ind,
                         log_message("\nis_cst_val1 should be not !\n");
                         {
                             const T* vals = chunk_t.values;
-                            log_values_compacted(log_message, format_val, vals, data_check.chunk_size());
+                            log_values_compacted(log_message, vals, data_check.chunk_size());
                         }
                     }
                     // IIFE: the two spellings of is_cst_val2 cannot each be an
@@ -938,7 +893,7 @@ void read_check_binary_file(Int                ind,
                             log_message("chunk values contain : ");
                             {
                                 const T* vals = chunk_t.values;
-                                log_values_compacted(log_message, format_val, vals, data_check.chunk_size());
+                                log_values_compacted(log_message, vals, data_check.chunk_size());
                             }
                         }
                         else
@@ -950,7 +905,7 @@ void read_check_binary_file(Int                ind,
                         {
                             const T* m_ptr_cst_values = chunk_t.values_load(); // a cst2 chunk reads from its array
                             log_message("\nm_ptr_cst_val2 contain : ");
-                            log_values_compacted(log_message, format_val, m_ptr_cst_values, data_check.chunk_size());
+                            log_values_compacted(log_message, m_ptr_cst_values, data_check.chunk_size());
                         }
                     }
                     else
@@ -971,14 +926,14 @@ void read_check_binary_file(Int                ind,
 
                         if (all_equal)
                         {
-                            log_message("All values of chunk are identical: " + format_val(first_v) + "\n");
+                            log_message("All values of chunk are identical: " + bench_text(first_v) + "\n");
                         }
                         else
                         {
                             log_message("All values of chunk (compacted):\n");
                             {
                                 const T* vals = chunk_t.values;
-                                log_values_compacted(log_message, format_val, vals, data_check.chunk_size());
+                                log_values_compacted(log_message, vals, data_check.chunk_size());
                             }
                         }
                     }
