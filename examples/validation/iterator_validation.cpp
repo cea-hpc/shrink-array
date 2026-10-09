@@ -54,14 +54,14 @@
 // tests run it at 1 and 8).
 
 #include <algorithm>        // std::lower_bound, std::sort, std::ranges::equal_range
-#include <cstdio>           // std::snprintf
-#include <format>           // std::format_string (Report::fail)
+#include <format>           // std::format, std::format_string (Report::fail)
 #include <print>            // std::println
 #include <initializer_list> // std::initializer_list (range-for over a braced list)
 #include <functional>       // std::greater
 #include <iterator>         // std::random_access_iterator, std::iterator_traits, std::distance
 #include <ranges>           // std::ranges::random_access_range
 #include <span>             // std::span (for_each_span)
+#include <string_view>      // std::string_view (Report::done)
 #include <type_traits>      // std::conditional_t, std::is_same_v
 #include <utility>          // std::forward
 #include <vector>           // std::vector
@@ -226,7 +226,7 @@ struct Report
         }
         ++bad;
     }
-    int done(const char* ok_msg) const
+    int done(std::string_view ok_msg) const
     {
         if (!bad)
         {
@@ -261,9 +261,7 @@ int check_premise(const Arr& a, long N)
                "compressed chunks",
                folded, want);
     }
-    char msg[128];
-    std::snprintf(msg, sizeof msg, "%ld of %ld chunks folded (chunk_size=%ld)", folded, (N + S - 1) / S, S);
-    return r.done(msg);
+    return r.done(std::format("{} of {} chunks folded (chunk_size={})", folded, (N + S - 1) / S, S));
 }
 
 /// @brief Sequential read, it[i] at every i, the distance.
@@ -418,9 +416,7 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
         r.fail("std::advance(begin(), N - 1) reads {:g}, expected {:g}", *adv, ref.back());
     }
 
-    char msg[96];
-    std::snprintf(msg, sizeof msg, "%ld jumps read and stepped from, end() - 1, std::advance", n);
-    return r.done(msg);
+    return r.done(std::format("{} jumps read and stepped from, end() - 1, std::advance", n));
 }
 
 /// @brief Values present, between, below and above the range.
@@ -510,9 +506,7 @@ int check_searches(const Arr& a, const std::vector<double>& ref)
             r.fail("{}({:g}) = {}, the std::vector gives {}", kSearchName[k], v, got, want);
         }
     }
-    char msg[96];
-    std::snprintf(msg, sizeof msg, "%zu values x 11 searches agree with the std::vector", q.size());
-    return r.done(msg);
+    return r.done(std::format("{} values x 11 searches agree with the std::vector", q.size()));
 }
 
 /// @brief The same searches from every thread at once, inside a region.
@@ -716,9 +710,7 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
         r.fail("slices read with read_range from every thread at once differ from the reference");
     }
 
-    char msg[128];
-    std::snprintf(msg, sizeof msg, "%ld sub-ranges, both containers, T* and back_inserter, parallel slices", n);
-    return r.done(msg);
+    return r.done(std::format("{} sub-ranges, both containers, T* and back_inserter, parallel slices", n));
 }
 
 /// @brief What the iterator cannot do in place, done on a copy.

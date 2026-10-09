@@ -21,9 +21,10 @@
 
 #include <algorithm> // std::max
 #include <cstddef>   // std::size_t
-#include <cstdio>    // std::fprintf, std::fflush, std::snprintf
+#include <cstdio>    // std::fprintf, std::fflush
 #include <cstdlib>   // std::getenv -- CHUNK_FORCE_RECHUNK debug hooks
 #include <cstring>   // std::strcmp (CHUNK_ADVISOR_TABLE)
+#include <format>    // std::format (CHUNK_ADVISOR_TABLE title)
 #include <string>    // std::string
 #include <optional>  // std::optional
 
@@ -462,9 +463,7 @@ bool RechunkDecider::consider(Arr& arr, int tick, int iter, const char* name)
             if (table_env != nullptr && table_env[0] != '\0' && table_env[0] != '0' &&
                 (std::strcmp(table_env, "1") == 0 || std::strcmp(table_env, name) == 0))
             {
-                char title[96];
-                std::snprintf(title, sizeof title, "%s tick %d iter %d", name, tick, iter);
-                ChunkSizeAdvisor<T>::print(rep, title);
+                ChunkSizeAdvisor<T>::print(rep, std::format("{} tick {} iter {}", name, tick, iter).c_str());
                 std::fflush(stdout);
             }
         }

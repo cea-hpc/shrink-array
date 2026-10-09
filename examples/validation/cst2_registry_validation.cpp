@@ -49,13 +49,15 @@
  *          Usage: cst2_registry_validation [chunks]
  */
 
-#include <cstdio>     // std::snprintf, std::remove
-#include <print>      // std::println
-#include <cstdlib>    // std::system
-#include <fstream>    // the --id-limit child's log
-#include <string>     // std::string, std::to_string, std::getline
-#include <sys/wait.h> // WIFEXITED, WEXITSTATUS
-#include <unistd.h>   // getpid
+#include <cstdio>      // std::remove
+#include <format>      // std::format
+#include <print>       // std::println
+#include <cstdlib>     // std::system
+#include <fstream>     // the --id-limit child's log
+#include <string>      // std::string, std::to_string, std::getline
+#include <string_view> // std::string_view (expect's where)
+#include <sys/wait.h>  // WIFEXITED, WEXITSTATUS
+#include <unistd.h>    // getpid
 
 #include "chunk/chunk_traits.h"       // forward decls (Chunk2A) + default ind_type = int
 #include "chunk/array_chunk2A.h"      // ArrayChunk2A, Chunk2A complete (its registry types)
@@ -129,7 +131,7 @@ static int fails = 0;
 
 /// @brief Check the registry's users and entries at a quiescent point.
 ///        @p min_entries: at least that many; -1 for exactly 0.
-static void expect(const char* where, int users, long min_entries)
+static void expect(std::string_view where, int users, long min_entries)
 {
     const int  u    = Registry::users();
     const long e    = static_cast<long>(Registry::count_entries());
@@ -143,7 +145,7 @@ static void expect(const char* where, int users, long min_entries)
     }
 }
 
-static void expect_values(const char* where, const Arr& a, long n, double v)
+static void expect_values(std::string_view where, const Arr& a, long n, double v)
 {
     const long bad = mismatches(a, n, v);
     if (bad)
@@ -230,13 +232,9 @@ int run(int argc, char** argv)
             Arr a(static_cast<int>(N));
             fill(a, N, v);
             expect_values("gen alive: values", a, N, v);
-            char where[64];
-            std::snprintf(where, sizeof where, "gen %d alive (value %g)", g + 1, v);
-            expect(where, 1, 1);
+            expect(std::format("gen {} alive (value {:g})", g + 1, v), 1, 1);
         }
-        char where[64];
-        std::snprintf(where, sizeof where, "gen %d destroyed", g + 1);
-        expect(where, 0, -1);
+        expect(std::format("gen {} destroyed", g + 1), 0, -1);
     }
 
     // B: an outer array alive across an inner one's life.

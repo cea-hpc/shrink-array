@@ -49,13 +49,14 @@
 //
 // Chunk2 builds only (ArrayChunkBits is ArrayChunk2<Bit>). Exit 0 = pass.
 
-#include <algorithm> // std::min
-#include <cstdint>   // std::uint64_t, std::uint32_t
-#include <cstdio>    // std::snprintf
-#include <print>     // std::println
-#include <random>    // std::mt19937_64
-#include <utility>   // std::pair
-#include <vector>    // std::vector
+#include <algorithm>   // std::min
+#include <cstdint>     // std::uint64_t, std::uint32_t
+#include <format>      // std::format
+#include <print>       // std::println
+#include <string_view> // std::string_view (compare's step)
+#include <random>      // std::mt19937_64
+#include <utility>     // std::pair
+#include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"          // forward decls + default ind_type = int (ArrayChunk2<bool>)
 #include "chunk/array_chunk_bits.h"      // ArrayChunkBits, Bit (and ArrayChunk2 with them)
@@ -101,7 +102,7 @@ bool varied(long i)
     return (i % 3) == 0 || (i % 7) == 2;
 }
 
-long compare(const ArrayChunkBits<>& a, const std::vector<bool>& ref, const char* step)
+long compare(const ArrayChunkBits<>& a, const std::vector<bool>& ref, std::string_view step)
 {
     long bad   = 0;
     long first = -1;
@@ -496,9 +497,7 @@ int advisor_and_rechunk(long N)
                 std::println("[bits] FAIL rechunk: geometry {}, expected {}", a.chunk_size(), to);
                 ++fails;
             }
-            char step[48];
-            std::snprintf(step, sizeof step, "after rechunk_to(%u)", to);
-            fails += compare(a, ref, step) != 0;
+            fails += compare(a, ref, std::format("after rechunk_to({})", to)) != 0;
         }
     }
 

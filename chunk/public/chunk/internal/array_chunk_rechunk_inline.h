@@ -29,6 +29,7 @@
 #include <cstddef>     // std::size_t
 #include <cstdio>      // std::fprintf (CHUNK_RECHUNK_TRACE)
 #include <cstring>     // std::memcpy / std::memcmp (refill bulk read)
+#include <format>      // std::format_to_n (CHUNK_RECHUNK_SCHEDULE text)
 #include <cstdlib>     // std::getenv (CHUNK_RECHUNK_TRACE, CHUNK_RECHUNK_SCHEDULE)
 #include <optional>    // the affinity scope around tmp
 #include <type_traits> // std::is_same_v, the v1 bool guard
@@ -188,7 +189,7 @@ inline const RebuildSchedule& rebuild_schedule() noexcept
             return parsed;
         }
         parsed.schedule = {k, chunk}; // chunk 0: the runtime's default for this kind
-        std::snprintf(parsed.text, sizeof parsed.text, "%s,%d", kind, chunk);
+        *std::format_to_n(parsed.text, sizeof parsed.text - 1, "{},{}", kind, chunk).out = '\0';
         return parsed;
     }();
     return schedule;

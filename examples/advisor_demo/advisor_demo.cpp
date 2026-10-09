@@ -18,7 +18,7 @@
 // several REAL chunk sizes, then compare the advisor's per-size predictions
 // (each set made from ONE reference size: 256, then 1024) against ground
 // truth at each size.
-#include <cstdio>   // std::printf, std::snprintf
+#include <format>   // std::format
 #include <iterator> // std::size
 #include <vector>   // std::vector
 #include <print>    // std::println
@@ -137,9 +137,7 @@ int main()
         opt.coarser_levels = 2;
         opt.finer_levels   = 2;
         const auto rep     = ChunkSizeAdvisor<double>::analyze(ref, opt);
-        char       title[32];
-        std::snprintf(title, sizeof title, "ref S=%u", ref_size);
-        ChunkSizeAdvisor<double>::print(rep, title);
+        ChunkSizeAdvisor<double>::print(rep, std::format("ref S={}", ref_size).c_str());
 
         std::println("\n── prediction (from S={}) vs ground truth ──", ref_size);
         for (const auto& e : rep.table)
