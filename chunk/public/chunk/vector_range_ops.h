@@ -181,6 +181,38 @@ void fill_range_mt(C& container, std::size_t first, std::size_t last, const U& v
     fill_range(container, first, last, v);
 }
 
+/**
+ * @brief copy_range_mt on a plain container: copy_range, callable from several
+ *        threads at once on DISJOINT indices (see fill_range_mt's overload).
+ */
+template <typename C, typename It>
+    requires(!internal::ChunkedArray<C>)
+void copy_range_mt(C& container, std::size_t first, std::size_t last, It src_first)
+{
+    static_assert(!std::is_same_v<C, std::vector<bool>>,
+                  "copy_range_mt: std::vector<bool> packs neighbouring indices into one word");
+    copy_range(container, first, last, src_first);
+}
+
+/**
+ * @brief transform_range_mt on a plain container: element i of [first, last)
+ *        gets op(*(src_first + (i - first))); callable from several threads at
+ *        once on DISJOINT indices (see fill_range_mt's overload).
+ */
+template <typename C, typename It, typename Op>
+    requires(!internal::ChunkedArray<C>)
+void transform_range_mt(C& container, std::size_t first, std::size_t last, It src_first, Op&& op)
+{
+    static_assert(!std::is_same_v<C, std::vector<bool>>,
+                  "transform_range_mt: std::vector<bool> packs neighbouring indices into one word");
+    const auto size = static_cast<std::size_t>(container.size());
+    last            = std::min(last, size);
+    for (std::size_t i = first; i < last; ++i)
+    {
+        container[i] = op(*(src_first + static_cast<std::ptrdiff_t>(i - first)));
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Bulk reads, generic half: for_each_value / read_range on any container.
 // array_chunk_range_ops.h adds the chunked overloads (one read section per

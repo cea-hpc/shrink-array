@@ -949,7 +949,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         if (std::addressof(from) != this) // operator& is deleted
         {
             const in_t<T> v = static_cast<T>(from); // complete before the write starts
-            assign_impl<T>(v);
+            static_cast<void>(assign_impl<T>(v));   // the value written: not needed here
         }
         return *this;
     }

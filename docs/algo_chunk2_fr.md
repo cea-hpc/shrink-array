@@ -498,6 +498,15 @@ Un chunk non matérialisé est d'abord matérialisé par le chemin normal, **hor
 retirant), et un chunk n'est **jamais libéré** par `fill_range_mt` : un autre thread peut
 être en train d'écrire d'autres éléments de ce même tampon.
 
+`copy_range_mt(a, first, last, src_first)` et `transform_range_mt(a, first, last, src_first, op)`
+suivent les mêmes étapes (un seul moteur, `internal::store_range_mt`). Les valeurs d'un morceau
+sont calculées dans un tampon par thread **avant l'étape 3** : le code de l'appelant -- un
+itérateur, éventuellement sur un autre tableau chunké, ou `op` -- ne s'exécute jamais dans la
+session, où un calcul long tiendrait le compresseur à l'écart et une écriture par proxy
+effacerait l'annonce. La décision de mise en file regarde les valeurs du morceau lui-même :
+toutes égales, et d'une valeur que la variante sait comprimer (un remplissage est un tel
+morceau, la règle est donc celle de `fill_range_mt`).
+
 **Deux points propres à Chunk2**, corrigés en septembre 2026, qui justifiaient auparavant de
 le laisser sur le chemin élément par élément :
 

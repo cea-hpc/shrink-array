@@ -231,8 +231,9 @@ et rejouée, jamais perdue ([docs/synchronisation_dekker_fr.md](docs/synchronisa
 ### Remplir des plages
 
 `chunk/array_chunk_range_ops.h` décide une fois par chunk au lieu d'une fois par élément :
-`fill_range(a, first, last, v)`, `copy_range(a, first, last, src_first)`, et `fill_range_mt`
-pour plusieurs threads qui remplissent en même temps des plages disjointes.
+`fill_range(a, first, last, v)`, `copy_range(a, first, last, src_first)`, et `fill_range_mt`,
+`copy_range_mt`, `transform_range_mt` pour plusieurs threads qui écrivent en même temps des plages
+disjointes.
 
 ### Taille de chunk adaptative
 

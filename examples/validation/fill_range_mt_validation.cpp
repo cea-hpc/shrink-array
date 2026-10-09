@@ -16,12 +16,16 @@
 
 /**
  * @file fill_range_mt_validation.cpp
- * @brief fill_range_mt() called from every thread at once, interleaved with
- *        element writes on the SAME chunks, against a std::vector reference.
+ * @brief fill_range_mt(), copy_range_mt() and transform_range_mt() called
+ *        from every thread at once, interleaved with element writes on the
+ *        SAME chunks, against a std::vector reference.
  *
  * @details Each round, inside one parallel region and with no barrier between
  *          the two loops (nowait), the index space is cut into blocks of 64:
- *          blocks of one kind go to fill_range_mt(), the others to element
+ *          blocks of one kind go to the bulk writer of the round -- by turns
+ *          fill_range_mt(), copy_range_mt() from a std::vector, and
+ *          transform_range_mt() from another chunked array (its const
+ *          iterator, read outside the write sessions) -- the others to element
  *          writes `arr[i] = ...`. A 64-block is smaller than a chunk, so a
  *          chunk is shared by several threads and by both kinds of writer --
  *          the case the per-chunk write session must survive. Values rotate
@@ -33,7 +37,8 @@
  *
  *          Usage: fill_range_mt_validation [N] [rounds]
  *                 fill_range_mt_validation N perf   -- throughput, element loop
- *                                                      vs fill_range_mt
+ *                                                      vs fill_range_mt and vs
+ *                                                      copy_range_mt
  */
 
 #include <chrono>      // std::chrono::steady_clock, std::chrono::duration
@@ -108,17 +113,69 @@ static double elem_value(long i, int r)
     return m == 0 ? 0.0 : m == 1 ? 9.0 : 1.0 + static_cast<double>((i + r) % 1000);
 }
 
+// Source value of the copy / transform rounds at index i: runs of the first
+// constant, of a repeated constant and of varying values, moving with r.
+static double src_value(long i, int r)
+{
+    const long m = ((i / 500) + r) % 3;
+    return m == 0 ? 0.0 : m == 1 ? 9.0 : 0.5 + static_cast<double>((i * 7 + r) % 991);
+}
+
+// The operation of the transform rounds: keeps 0 at 0, so first-constant runs
+// stay compressible.
+static double transform_op(double x)
+{
+    return 2.0 * x;
+}
+
+/// The bulk writer of round r: fill, copy, transform -- three rounds each.
+enum class Mode
+{
+    fill,
+    copy,
+    transform
+};
+static Mode mode_of(int r)
+{
+    const int m = (r / 3) % 3;
+    return m == 0 ? Mode::fill : m == 1 ? Mode::copy : Mode::transform;
+}
+static const char* mode_name(Mode m)
+{
+    return m == Mode::fill ? "fill_range_mt" : m == Mode::copy ? "copy_range_mt" : "transform_range_mt";
+}
+
 static int run_validation(long N, int rounds)
 {
     Array<double>       arr(N);
     std::vector<double> ref(static_cast<std::size_t>(N), 0.0);
+    std::vector<double> src(static_cast<std::size_t>(N), 0.0); // copy rounds
+    Array<double>       src_arr(N);                            // transform rounds: a chunked source
     const long          nblk = (N + kBlk - 1) / kBlk;
     long                bad  = 0;
 
     for (int r = 0; r < rounds && bad == 0; ++r)
     {
+        const Mode mode = mode_of(r);
         // Fill value of this round: first constant, repeated constant, or new.
         const double fill_v = (r % 3 == 0) ? 0.0 : (r % 3 == 1) ? 9.0 : 100.0 + r;
+        // The sources, written serially before the round (no writer of
+        // src_arr during it: its iterator's contract).
+        if (mode == Mode::copy)
+        {
+            for (long i = 0; i < N; ++i)
+            {
+                src[static_cast<std::size_t>(i)] = src_value(i, r);
+            }
+        }
+        else if (mode == Mode::transform)
+        {
+            for (long i = 0; i < N; ++i)
+            {
+                src_arr[i] = src_value(i, r);
+            }
+        }
+        const Array<double>& csrc = src_arr;
         // Which blocks are filled this round: a pattern that moves with r, so a
         // block alternates between the two kinds of writer over the rounds.
         const auto is_fill = [r](long b) { return (((b / 3) + r) % 2) == 0; };
@@ -133,9 +190,22 @@ static int run_validation(long N, int rounds)
                 {
                     continue;
                 }
-                const long lo = b * kBlk;
-                const long hi = lo + kBlk < N ? lo + kBlk : N;
-                fill_range_mt(arr, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), fill_v);
+                const long lo  = b * kBlk;
+                const long hi  = lo + kBlk < N ? lo + kBlk : N;
+                const auto ulo = static_cast<std::size_t>(lo);
+                const auto uhi = static_cast<std::size_t>(hi);
+                if (mode == Mode::fill)
+                {
+                    fill_range_mt(arr, ulo, uhi, fill_v);
+                }
+                else if (mode == Mode::copy)
+                {
+                    copy_range_mt(arr, ulo, uhi, src.begin() + lo);
+                }
+                else
+                {
+                    transform_range_mt(arr, ulo, uhi, csrc.begin() + lo, transform_op);
+                }
             }
 #pragma omp for schedule(static, 1) nowait
             for (long b = 0; b < nblk; ++b)
@@ -160,7 +230,10 @@ static int run_validation(long N, int rounds)
             const long hi = lo + kBlk < N ? lo + kBlk : N;
             for (long i = lo; i < hi; ++i)
             {
-                ref[static_cast<std::size_t>(i)] = is_fill(b) ? fill_v : elem_value(i, r);
+                const double bulk                = mode == Mode::fill   ? fill_v
+                                                   : mode == Mode::copy ? src_value(i, r)
+                                                                        : transform_op(src_value(i, r));
+                ref[static_cast<std::size_t>(i)] = is_fill(b) ? bulk : elem_value(i, r);
             }
         }
 
@@ -182,22 +255,24 @@ static int run_validation(long N, int rounds)
             {
                 if (bad < 5)
                 {
-                    std::println("[{}] FAIL round {}: arr[{}] = {:g}, expected {:g}", variant_name(), r, i, got,
-                                 ref[static_cast<std::size_t>(i)]);
+                    std::println("[{}] FAIL round {} ({}): arr[{}] = {:g}, expected {:g}", variant_name(), r,
+                                 mode_name(mode), i, got, ref[static_cast<std::size_t>(i)]);
                 }
                 ++bad;
             }
         }
     }
     arr.clear();
+    src_arr.clear();
     if (bad)
     {
         std::println("[{}] {} mismatch(es)", variant_name(), bad);
     }
     else
     {
-        std::println("[{}] OK: {} rounds, N={}, fills and element writes interleaved on shared chunks", variant_name(),
-                     rounds, N);
+        std::println("[{}] OK: {} rounds, N={}, fill / copy / transform and element writes interleaved on shared "
+                     "chunks",
+                     variant_name(), rounds, N);
     }
     return bad ? 1 : 0;
 }
@@ -210,11 +285,14 @@ constexpr long kPerfBlk = 32;
 
 static void run_perf(long N)
 {
-    Array<double> arr(N);
-    const long    nblk = (N + kPerfBlk - 1) / kPerfBlk;
-    const auto    now  = [] { return std::chrono::steady_clock::now(); };
-    double        t_el = 0;
-    double        t_mt = 0;
+    Array<double>       arr(N);
+    const long          nblk = (N + kPerfBlk - 1) / kPerfBlk;
+    const auto          now  = [] { return std::chrono::steady_clock::now(); };
+    double              t_el = 0;
+    double              t_mt = 0;
+    double              t_ce = 0; // copy: element loop
+    double              t_cm = 0; // copy: copy_range_mt
+    std::vector<double> src(static_cast<std::size_t>(N));
     for (int rep = 0; rep < 6; ++rep)
     {
         const double v  = 1.0 + rep;
@@ -250,14 +328,53 @@ static void run_perf(long N)
         }
         end_phase();
         const auto t2 = now();
+        // Copy: neighbouring elements differ, so no chunk is ever uniform.
+        for (long i = 0; i < N; ++i)
+        {
+            src[static_cast<std::size_t>(i)] = v + (0.125 * static_cast<double>(i % 7));
+        }
+        const auto t3 = now();
+#pragma omp parallel
+        {
+            begin_phase();
+#pragma omp for schedule(static, 1)
+            for (long b = 0; b < nblk; ++b)
+            {
+                const long lo = b * kPerfBlk;
+                const long hi = lo + kPerfBlk < N ? lo + kPerfBlk : N;
+                for (long i = lo; i < hi; ++i)
+                {
+                    arr[i] = src[static_cast<std::size_t>(i)];
+                }
+            }
+        }
+        end_phase();
+        const auto t4 = now();
+#pragma omp parallel
+        {
+            begin_phase();
+#pragma omp for schedule(static, 1)
+            for (long b = 0; b < nblk; ++b)
+            {
+                const long lo = b * kPerfBlk;
+                const long hi = lo + kPerfBlk < N ? lo + kPerfBlk : N;
+                copy_range_mt(arr, static_cast<std::size_t>(lo), static_cast<std::size_t>(hi), src.begin() + lo);
+            }
+        }
+        end_phase();
+        const auto t5 = now();
         if (rep > 0) // the first round materialises everything: not measured
         {
             t_el += std::chrono::duration<double>(t1 - t0).count();
             t_mt += std::chrono::duration<double>(t2 - t1).count();
+            t_ce += std::chrono::duration<double>(t4 - t3).count();
+            t_cm += std::chrono::duration<double>(t5 - t4).count();
         }
     }
     std::println("[{}] perf N={} threads={}: element loop {:.3f} s, fill_range_mt {:.3f} s (x{:.2f})", variant_name(),
                  N, CHUNK_PMP_MAX_THREADS, t_el, t_mt, t_mt > 0 ? t_el / t_mt : 0.);
+    std::println("[{}] perf N={} threads={}: copy element loop {:.3f} s, copy_range_mt {:.3f} s (x{:.2f})",
+                 variant_name(), N, CHUNK_PMP_MAX_THREADS, t_ce, t_cm, t_cm > 0 ? t_ce / t_cm : 0.);
     arr.clear();
 }
 

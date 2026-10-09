@@ -223,8 +223,8 @@ and a write that meets a compressor on its chunk is deferred and replayed, never
 ### Filling ranges
 
 `chunk/array_chunk_range_ops.h` decides once per chunk instead of once per element:
-`fill_range(a, first, last, v)`, `copy_range(a, first, last, src_first)`, and `fill_range_mt`
-for several threads filling disjoint ranges at once.
+`fill_range(a, first, last, v)`, `copy_range(a, first, last, src_first)`, and `fill_range_mt`,
+`copy_range_mt`, `transform_range_mt` for several threads writing disjoint ranges at once.
 
 ### Adaptive chunk size
 

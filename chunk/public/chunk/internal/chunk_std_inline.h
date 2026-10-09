@@ -44,8 +44,9 @@ namespace shrink_array
 // serial build selects the empty <..., false> specialisation. Chunk's own
 // members here compile in both modes.
 
+// Out of line on purpose, as operator delete[] below: see there.
 template <typename T, typename Derived, bool Enabled>
-void* ChunkOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
+[[gnu::noinline]] void* ChunkOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
 {
     auto* v = static_cast<Chunk<T>*>(::operator new(sz));
     init_chunks_cst_val(v, sz / sizeof(Chunk<T>));
@@ -58,11 +59,12 @@ void ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk<T>* v, std::
     chunk_array_new::init_chunks(v, count, [](Chunk<T>& chunk) { chunk.init_values_cst_val(); });
 }
 
-// Out of line on purpose. operator new[] (the chunk initialisation) is not
-// inlined; inlined, this one would hand gcc's -Wmismatched-new-delete a
-// ::operator delete applied to what ChunkOmpPolicy::operator new[] returned, and
-// it warns (a false positive: that operator new[] allocates with ::operator
-// new). Kept a call, the pair it sees is the class's own new[] / delete[].
+// Out of line on purpose, as operator new[] above. Inlined, either one hands
+// gcc's -Wmismatched-new-delete a ::operator new or ::operator delete paired
+// with the class's other operator -- a test calling the two directly
+// (chunk_array_new_validation) inlined new[] -- and it warns (a false
+// positive: operator new[] allocates with ::operator new). Kept calls, the
+// pair it sees is the class's own new[] / delete[].
 template <typename T, typename Derived, bool Enabled>
 [[gnu::noinline]] void ChunkOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
