@@ -631,29 +631,24 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * @brief Run @p fn as the slow-path compression driver.
      * @tparam F callable to run inside the driver bracket
      * @param fn the driver body, typically perform_compression()
-     * @details Brackets @p fn with driver_inflight_. The counter lives here, not
-     *          in WriteCompressSyncPolicy, because it is compression-lifecycle
-     *          state rather than write/flush-handshake state.
-     * @note seq_cst: this is the cold path, the cost is irrelevant.
+     * @details No counter of drivers in flight: nothing would read it (the
+     *          write-path gate reads hard_inflight_ or the chunk's mark), and
+     *          nothing may wait on one (see hard_inflight_'s deadlock
+     *          invariant). NO heavy barrier here either: the exclusion a driver
+     *          needs comes from start(), inside fn, with its own announce.
      */
     template <typename F>
     static void run_slow_path(F&& fn)
     {
         increm_chunk_gate_driver<ChunkType>();
-        driver_inflight_.fetch_add(1, std::memory_order_seq_cst);
-        // NO heavy barrier here: driver_inflight_ is accounting only. The
-        // exclusion a driver needs comes from start(), inside fn, with its own
-        // announce.
         std::forward<F>(fn)();
-        driver_inflight_.fetch_sub(1, std::memory_order_seq_cst);
     }
 
     /// @brief Is a compressor inside the CAS-stealing window?
     /// @return true while stealing_inflight_ is positive: a compressor past the
     ///         writer gate, which may CAS-steal and free a chunk's `values`
     /// @details The predicate create_value() and the flush drains spin on.
-    ///          Never driver_inflight_ (a driver may only be draining a flush),
-    ///          never hard_inflight_ (a parked compressor): see the deadlock
+    ///          Never hard_inflight_ (a parked compressor): see the deadlock
     ///          invariant on hard_inflight_ and stealing_inflight_.
     [[nodiscard]] static bool is_hard_compression_inflight() noexcept
     {
@@ -927,9 +922,10 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /// @warning DEADLOCK INVARIANT. Code that must let a flush-draining slow
     ///          path proceed (create_value(), the flush drain loops) waits on
     ///          stealing_inflight_ ONLY, through is_hard_compression_inflight().
-    ///          Never on driver_inflight_: a driver may be merely draining
-    ///          flush_deferred(), blocked on an xflush lock the waiter holds
-    ///          transitively. Never on this counter: see stealing_inflight_.
+    ///          Never on a count of slow-path drivers: a driver may be merely
+    ///          draining flush_deferred(), blocked on an xflush lock the waiter
+    ///          holds transitively. Never on this counter: see
+    ///          stealing_inflight_.
     ///
     /// @warning SIGNED on purpose -- part of the contract, do not make it
     ///          unsigned. Some give-up interleavings decrement twice (start()'s
@@ -942,23 +938,6 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     ///       WriteCompressSyncPolicy's flushing/writing flags in start() and in
     ///       the flush drains.
     alignas(128) static inline std::atomic<std::int32_t> hard_inflight_{0};
-
-    /// Threads inside the slow-path compression driver
-    /// (run_slow_path{perform_compression}) -- a superset of the hard window on
-    /// the proxy path.
-    ///
-    /// @note Accounting only: the write-path gate reads hard_inflight_ alone
-    ///       (must_defer_write), and this feeds the CHUNK_STATS gate driver
-    ///       counter and nothing else. Steering writers on it only
-    ///       manufactured deferred ops, and the flushes and yielded start()s
-    ///       that come with them.
-    /// @warning Never wait on this counter; see hard_inflight_'s deadlock
-    ///          invariant.
-    /// @warning LAYOUT: keep this counter and hard_inflight_ on TWO dedicated
-    ///          cache lines. Packed into one word, they put 4 seq_cst RMW per
-    ///          compression on the line every write-path gate reads; the
-    ///          cross-socket ping-pong collapsed the x86 2-socket init phase.
-    alignas(128) static inline std::atomic<std::int32_t> driver_inflight_{0};
 
     /// Compressors PAST the writer gate: Dekker established, allowed to
     /// CAS-steal `values`. A stealer depends on no writer flag, so waiters on

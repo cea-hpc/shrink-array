@@ -335,9 +335,9 @@ qui ont passé la porte et peuvent voler un tampon. La matérialisation d'un chu
 voleurs (ou la marque du chunk), **jamais** les garés : un garé attend les écrivains, un
 écrivain dans `create_value` attendrait le garé, et les vidages attendraient les deux, soit un
 interblocage en triangle. Les deux fusions possibles échouent, d'où la règle écrite dans
-`compression_manager.h` : **garder les deux compteurs**. Un troisième, `driver_inflight_`,
-compte les threads qui pilotent une passe ; il ne sert qu'aux statistiques et **ne doit jamais
-être attendu**.
+`compression_manager.h` : **garder les deux compteurs**. Les threads qui pilotent une passe
+ne sont pas comptés (seule la statistique CHUNK_STATS « gate driver » les voit), et un tel
+compte **ne doit jamais être attendu**.
 
 `hard_inflight_` est **signé** à dessein : certains abandons le décrémentent deux fois, et une
 valeur transitoire de −1 laisse le test `> 0` faux, alors qu'un non signé passerait à 4·10⁹ et
@@ -429,7 +429,7 @@ sans quoi l'allocation pourrait reprendre le bloc qu'une passe est en train de r
 - **Toutes les attentes sont bornées, et chaque côté a une issue de repli** (différer,
   renoncer). Le progrès est garanti par la passe entre deux régions et par le vidage de fin de
   phase, qui tournent sans concurrence.
-- **Ne jamais attendre `hard_inflight_` ni `driver_inflight_` depuis un chemin qui peut tenir
+- **Ne jamais attendre `hard_inflight_` (ni un compte des pilotes de passe) depuis un chemin qui peut tenir
   un drapeau d'écrivain ou un verrou de rang** : seulement `stealing_inflight_` ou la marque du
   chunk.
 - **Le côté rare doit rester rare.** Toute modification qui multiplie les annonces de

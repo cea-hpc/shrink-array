@@ -335,9 +335,9 @@ that have passed the gate and can steal a buffer. The materialisation of a chunk
 stealing compressors (or the chunk's mark), **never** for the parked ones: a parked one waits for writers, a
 writer in `create_value` would wait for the parked one, and flushes would wait for both, which is a
 triangular deadlock. Both possible merges fail, hence the rule written in
-`compression_manager.h`: **keep both counters**. A third one, `driver_inflight_`,
-counts the threads driving a pass; it is only used for statistics and **must never
-be waited on**.
+`compression_manager.h`: **keep both counters**. The threads driving a pass are
+not counted (only the CHUNK_STATS gate-driver statistic sees them), and such a
+count **must never be waited on**.
 
 `hard_inflight_` is **signed** on purpose: some aborts decrement it twice, and a
 transient value of −1 leaves the `> 0` test false, whereas an unsigned one would jump to 4·10⁹ and
@@ -429,7 +429,7 @@ otherwise the allocation could take back the block that a pass is returning.
 - **All waits are bounded, and each side has a fallback** (defer,
   give up). Progress is guaranteed by the pass between two regions and by the end-of-phase
   flush, which run without concurrency.
-- **Never wait on `hard_inflight_` or `driver_inflight_` from a path that may hold
+- **Never wait on `hard_inflight_` (or on a count of pass drivers) from a path that may hold
   a writer flag or a rank lock**: only `stealing_inflight_` or the chunk's
   mark.
 - **The rare side must stay rare.** Any change that multiplies compressor or flush
