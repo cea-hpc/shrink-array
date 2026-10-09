@@ -140,10 +140,9 @@ void ArrayChunk2<T, ind_type>::create(ind_type sz)
 }
 
 // Chunk count derives from the geometry by a shift, so a null chunk size is a
-// hard error rather than a degenerate case. The chunk-init loop is written
-// twice on purpose: `omp parallel for` when we are outside a region and the
-// array is big enough to be worth opening one, an orphaned `omp for` otherwise
-// (which is serial when no region is open, and shares the work when one is).
+// hard error rather than a degenerate case. The chunks are initialised by
+// parallel_storage_init::for_each_chunk(): a team of its own outside a region
+// for a large enough array, the calling thread otherwise.
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2<T, ind_type>::rebuild_storage(ind_type sz)
 {
