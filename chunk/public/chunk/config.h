@@ -116,6 +116,16 @@ inline constexpr bool check_optim = CHUNK_OPT_CHECK_OPTIM != 0;
 // Convenience predicate: any kind of debug or runtime-check active
 inline constexpr bool any_check = is_debug || check_optim;
 
+/// The non-const operator[], at(), front() and back() return an ElementRef
+/// (internal/element_ref.h): the write proxy, usable as a temporary only, so
+/// that a use of `auto v = a[i];` does not compile. Check builds; the proxy
+/// itself otherwise, or with -DCHUNK_LOOSE_ELEMENT_REF.
+#ifdef CHUNK_LOOSE_ELEMENT_REF
+inline constexpr bool strict_element_ref = false;
+#else
+inline constexpr bool strict_element_ref = any_check;
+#endif
+
 inline constexpr bool has_ompt = CHUNK_OPT_OMPT != 0;
 
 // Derived — has_not_ompt kept for call-site readability

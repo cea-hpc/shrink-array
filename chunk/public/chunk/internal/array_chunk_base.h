@@ -49,6 +49,7 @@
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED — used HERE (swap check)
 #include "chunk/internal/def_force_inline.h"    // CHUNK_FORCE_INLINE
+#include "chunk/internal/element_ref.h"         // ElementRef: operator[] in check builds
 #include "chunk/internal/live_arrays.h"         // LiveArrayToken — the teardown verbs' live-array count
 
 namespace shrink_array
@@ -153,7 +154,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     using value_type      = T;
     using size_type       = std::size_t;
     using difference_type = std::ptrdiff_t;
-    using reference       = proxy_type; // non-const positional access (write proxy)
+    /// non-const positional access: the write proxy, wrapped in an ElementRef in
+    /// check builds (build_config::strict_element_ref)
+    using reference = std::conditional_t<build_config::strict_element_ref, ElementRef<proxy_type, T>, proxy_type>;
     using const_reference = T;          // const positional access (value)
 
     /** @} */
@@ -1019,8 +1022,30 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          Take a value when it has to survive: `T v = a[i];`, not
      *          `auto v = a[i];` (which keeps the proxy). The compound operators
      *          (+= ... >>=) and the prefix ++/-- return the same kind of proxy.
+     *          In check builds the proxy comes wrapped in an ElementRef, whose
+     *          operations only a temporary may use: a use of
+     *          `auto v = a[i];` does not compile (internal/element_ref.h).
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE proxy_type operator[](ind_type i) noexcept
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE reference operator[](ind_type i) noexcept
+    {
+        if constexpr (build_config::strict_element_ref)
+        {
+            return reference(element_proxy(i));
+        }
+        else
+        {
+            return element_proxy(i);
+        }
+    }
+
+    /**
+     * @brief The write proxy of element @p i, in every build: operator[]'s
+     *        work, for the library code that names the proxy (operator[]
+     *        wraps it in an ElementRef in check builds).
+     * @param i global element index; the caller guarantees 0 <= i < size()
+     * @return the write proxy for that element, armed as operator[]'s
+     */
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE proxy_type element_proxy(ind_type i) noexcept
     {
         const int         num_chunk = chunk_index_of(i);
         auto&             chunk_t   = chunk_list[num_chunk];

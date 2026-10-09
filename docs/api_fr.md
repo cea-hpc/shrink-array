@@ -70,7 +70,12 @@ Absents : `data()`, les itérateurs mutables, `insert` / `erase` au milieu, un t
 | `a[i] == v`, `a[i] != v` | comparent la valeur courante ; les autres comparaisons passent par la conversion en `T` |
 
 `auto x = a[i];` garde le proxy, qui suit l'élément. Un proxy ne doit pas survivre au
-stockage du tableau : toute opération **(S)** l'invalide.
+stockage du tableau : toute opération **(S)** l'invalide. Dans les builds de vérification
+(Debug, `CHECK_OPTIM`), `operator[]`, `at()`, `front()` et `back()` rendent le proxy enveloppé
+dans un `ElementRef` (`internal/element_ref.h`) que seul un temporaire peut utiliser :
+`auto x = a[i];` puis tout usage de `x` ne compile pas, avec un message. Un proxy gardé
+volontairement : `std::move(x) = v;`, ou `a.element_proxy(i)`. `-DCHUNK_LOOSE_ELEMENT_REF`
+désactive la vérification.
 
 ## 5. Opérations sur des plages
 

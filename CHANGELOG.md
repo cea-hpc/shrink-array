@@ -47,6 +47,13 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- Check builds (`any_check`: Debug, `CHECK_OPTIM`): the non-const `operator[]`, `at()`,
+  `front()` and `back()` return `ElementRef<proxy_type, T>` (`internal/element_ref.h`), the
+  write proxy usable as a temporary only. `auto v = a[i];` then any use of `v` (conversion,
+  assignment, compound operator, comparison, arithmetic) does not compile, with a message
+  pointing to `T v = a[i];`. Release builds return the proxy as before;
+  `-DCHUNK_LOOSE_ELEMENT_REF` turns the check off. `ArrayChunkBase::element_proxy(i)` returns
+  the proxy in every build, for code that keeps it on purpose.
 - Usable as a subproject (`add_subdirectory`, `FetchContent`): `SHRINK_ARRAY_BUILD_EXAMPLES`
   and `SHRINK_ARRAY_BUILD_TESTS`, ON at the top level and OFF otherwise, so a consuming
   project builds the libraries only; the `chunk::` names exist in the build tree too

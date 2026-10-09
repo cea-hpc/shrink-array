@@ -93,6 +93,7 @@
 #include <cstring>     // std::memcmp (the return-contract region)
 #include <thread>      // std::this_thread::yield
 #include <type_traits> // std::is_same_v, std::conditional_t, std::is_integral_v
+#include <utility>     // std::forward (the returns lambdas: an element proxy is a temporary)
 #include <vector>      // std::vector
 
 #include "chunk/chunk_traits.h"       // forward decls + default ind_type = int
@@ -221,37 +222,37 @@ template <typename T, typename C>
 static long returns_chain(C& c, long i)
 {
     long bad = 0;
-    bad += check_returned<T>(c, i, [&](auto&& e) { return T(e = static_cast<T>((i % 17) + 1)); });
+    bad += check_returned<T>(c, i, [&](auto&& e) { return T(std::forward<decltype(e)>(e) = static_cast<T>((i % 17) + 1)); });
     if constexpr (is_complex_v<T>)
     {
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e += T(1.5, -0.5)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e -= T(0.25, 0.75)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e *= T(2.0, 1.0)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e /= T(2.0, 3.0)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e *= 2.0); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) += T(1.5, -0.5)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) -= T(0.25, 0.75)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) *= T(2.0, 1.0)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) /= T(2.0, 3.0)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) *= 2.0); });
     }
     else if constexpr (std::is_floating_point_v<T>)
     {
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e += T(1.25)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e -= T(0.5)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e *= T(3)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e /= T(1.01)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(++e); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(--e); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) += T(1.25)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) -= T(0.5)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) *= T(3)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) /= T(1.01)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(++std::forward<decltype(e)>(e)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(--std::forward<decltype(e)>(e)); });
     }
     else
     {
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e += T(5)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e -= T(2)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e *= T(3)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e %= T(7)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e |= T(0x1)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e &= T(0x1F)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e ^= T(0x3)); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e <<= 2); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(e >>= 1); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(++e); });
-        bad += check_returned<T>(c, i, [](auto&& e) { return T(--e); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) += T(5)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) -= T(2)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) *= T(3)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) %= T(7)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) |= T(0x1)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) &= T(0x1F)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) ^= T(0x3)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) <<= 2); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(std::forward<decltype(e)>(e) >>= 1); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(++std::forward<decltype(e)>(e)); });
+        bad += check_returned<T>(c, i, [](auto&& e) { return T(--std::forward<decltype(e)>(e)); });
     }
     return bad;
 }

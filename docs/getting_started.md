@@ -240,7 +240,8 @@ of cores)` threads. A program that runs more threads than cores sets
 
 - **`auto` keeps a proxy.** On a non-const array, `tab[i]` returns a write proxy. `T v = tab[i];`
   takes the value; `auto v = tab[i];` keeps the proxy, which follows the element if it changes
-  later. In code ported from `std::vector`, replace `auto` with the element type.
+  later. In code ported from `std::vector`, replace `auto` with the element type. A Debug or
+  `CHECK_OPTIM` build refuses to compile a use of such a `v`, and says so.
 - **No `T&` on an element.** `tab[i].x = 1` does not compile; read the element, change it,
   write it back. `data()`, mutable iterators and an in-place `std::sort` do not exist either:
   sort a `std::vector` copy and `assign()` it back.

@@ -248,7 +248,8 @@ programme avec un message.
 - **`auto` garde un proxy.** Sur un tableau non constant, `tab[i]` rend un proxy d'écriture.
   `T v = tab[i];` prend la valeur ; `auto v = tab[i];` garde le proxy, qui suit l'élément s'il
   change ensuite. Dans du code venu d'un `std::vector`, remplacer `auto` par le type de
-  l'élément.
+  l'élément. Un build Debug ou `CHECK_OPTIM` refuse de compiler un usage d'un tel `v`, et le
+  dit.
 - **Pas de `T&` sur un élément.** `tab[i].x = 1` ne compile pas : lire l'élément, le modifier,
   le réécrire. `data()`, les itérateurs modifiables et un `std::sort` en place n'existent pas
   non plus : trier une copie en `std::vector`, puis la remettre par `assign()`.
