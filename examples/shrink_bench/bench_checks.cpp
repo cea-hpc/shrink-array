@@ -56,6 +56,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
     const Int                   io_res      = io.io_res;
     [[maybe_unused]] const bool read_trace  = io.read_trace;
     [[maybe_unused]] const bool write_trace = io.write_trace;
+    const bool                  checksum_only = io.checksum_only;
 
     auto lbd_check =
         [&](Int kk, const std::string& tab_name, const auto& tab, std::uint64_t checksum, bool special_writing = false)
@@ -68,7 +69,7 @@ void bench_check_all(BenchArrays& bench_arr, Int ind, const BenchIoFlags& io)
 
         if (io_res == 1)
         {
-            write_binary_file(filename, tab, checksum, special_writing, no_compress);
+            write_binary_file(filename, tab, checksum, special_writing, no_compress, checksum_only);
         }
         // io_res == 2 is unreachable without a shrink build (get_io_mode returns
         // 1, never 2), so this is dead code there -- but it now COMPILES there:

@@ -19,6 +19,7 @@
 #include "bench_prelude.h" // Int, chunk_config::has_ompt
 
 #include <atomic>      // std::atomic
+#include <bit>         // std::bit_cast (checksum_word)
 #include <cstddef>     // size_t
 #include <cstdint>     // uint64_t, int64_t
 #include <random>      // std::mt19937
@@ -102,12 +103,80 @@ struct is_atomic_pointer<std::atomic<U*>> : public std::true_type
 };
 
 // -----------------------------------------------------------------------------
+// The checksum of an array: the sum, over its elements different from T{}, of
+// a hash of the element's VALUE MIXED WITH ITS INDEX. It used to sum the bytes
+// of the elements, which no index entered: two chunks swapped, a chunk's
+// content copied to the wrong index while another took its place, compensating
+// byte errors -- the very class of geometry / re-chunk bugs the check runs hunt
+// -- all summed to the same value. The sum stays order-free (a parallel
+// reduction, modulo 2^64) and costs about what the byte loop did.
+//   - integral elements hash their VALUE, not their bytes: tab_bool is a
+//     std::vector<short> in the baseline and an Array<bool> in a shrink build
+//     (bench_array.h), and their checksums must agree;
+//   - floating-point elements their bit pattern (-0.0 == T{} is skipped, as it
+//     always was: the library compresses it to +0.0 by design);
+//   - aggregates (complex, Point3, Cell -- no padding, bench_struct.h) their
+//     bytes, folded into one word.
+// Changing it changes every reference checksum: regenerate the reference
+// (multi_launch_stress.py --regen-ref) once.
+// -----------------------------------------------------------------------------
+namespace bench_checksum
+{
+/// @brief splitmix64's finaliser: a bijective 64-bit mix.
+constexpr std::uint64_t mix64(std::uint64_t x) noexcept
+{
+    x ^= x >> 30U;
+    x *= 0xbf58476d1ce4e5b9ULL;
+    x ^= x >> 27U;
+    x *= 0x94d049bb133111ebULL;
+    x ^= x >> 31U;
+    return x;
+}
+
+/// @brief One element as a 64-bit word: its value for an integral type, its
+///        bits for a floating one, its bytes folded (FNV-1a) otherwise.
+template <typename T>
+inline std::uint64_t checksum_word(const T& e) noexcept
+{
+    if constexpr (std::is_integral_v<T>)
+    {
+        return static_cast<std::uint64_t>(e);
+    }
+    else if constexpr (std::is_same_v<T, double>)
+    {
+        return std::bit_cast<std::uint64_t>(e);
+    }
+    else if constexpr (std::is_same_v<T, float>)
+    {
+        return std::bit_cast<std::uint32_t>(e);
+    }
+    else
+    {
+        const auto*   bytes = reinterpret_cast<const unsigned char*>(&e);
+        std::uint64_t h     = 0xcbf29ce484222325ULL;
+        for (std::size_t i = 0; i < sizeof(T); ++i)
+        {
+            h = (h ^ bytes[i]) * 0x100000001b3ULL;
+        }
+        return h;
+    }
+}
+
+/// @brief The contribution of element @p e at index @p k.
+template <typename T>
+inline std::uint64_t contribution(std::uint64_t k, const T& e) noexcept
+{
+    return mix64(checksum_word(e) ^ mix64(k + 0x9e3779b97f4a7c15ULL));
+}
+} // namespace bench_checksum
+
+// -----------------------------------------------------------------------------
 // Checksum templates. calculate_checksum() runs its own parallel region;
 // calculate_checksum_0() assumes it is already inside one (uses `omp for`
 // nowait) and writes into a per-thread accumulator slot.
 // -----------------------------------------------------------------------------
-/// @brief Checksum of @p vec, in its own parallel region: the sum of the bytes of every element different from
-///        V::value_type{}.
+/// @brief Checksum of @p vec, in its own parallel region: the sum of bench_checksum::contribution(k, element)
+///        over the elements different from V::value_type{}.
 /// @param vec Container to sum.
 /// @return The bitwise complement of the sum.
 template <typename V>
@@ -136,11 +205,7 @@ calculate_checksum(const V& vec)
 
         if (element != zero)
         {
-            const auto* bytes = reinterpret_cast<const unsigned char*>(&element);
-            for (size_t i = 0; i < sizeof(T); ++i)
-            {
-                checksum += bytes[i];
-            }
+            checksum += bench_checksum::contribution(static_cast<std::uint64_t>(k), element);
         }
     }
 
@@ -150,8 +215,8 @@ calculate_checksum(const V& vec)
     return ~checksum;
 }
 
-/// @brief Inside a parallel region (`omp for nowait`): add the bytes of every element of @p vec different from
-///        V::value_type{} to the calling thread's slot of @p checksum_thr.
+/// @brief Inside a parallel region (`omp for nowait`): add bench_checksum::contribution(k, element) of every
+///        element of @p vec different from V::value_type{} to the calling thread's slot of @p checksum_thr.
 /// @param vec Container to sum.
 /// @param checksum_thr Per-thread accumulators, indexed by thread rank.
 template <typename V>
@@ -174,11 +239,7 @@ void calculate_checksum_0(const V& vec, std::vector<uint64_t_padding>& checksum_
 
         if (element != zero)
         {
-            const auto* bytes = reinterpret_cast<const unsigned char*>(&element);
-            for (size_t i = 0; i < sizeof(T); ++i)
-            {
-                checksum += static_cast<uint64_t_padding>(bytes[i]);
-            }
+            checksum += static_cast<uint64_t_padding>(bench_checksum::contribution(static_cast<std::uint64_t>(k), element));
         }
     }
 }

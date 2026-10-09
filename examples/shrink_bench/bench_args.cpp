@@ -76,6 +76,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
     // stays VERBATIM, and we copy into `args` on the way out.
     bool   no_io_v       = false;
     bool   compress_v    = false;
+    bool   checksum_only = false;
     bool   write_trace   = false;
     bool   read_trace    = false;
     bool   test_stl      = false;      // --test_stl: run the STL-interface self-checks
@@ -116,6 +117,10 @@ BenchArgs parse_bench_args(int argc, char* argv[])
             else if (arg == "--compress")
             {
                 compress_v = true;
+            }
+            else if (arg == "--checksum_only")
+            {
+                checksum_only = true;
             }
             else if (arg == "--write_trace")
             {
@@ -204,6 +209,7 @@ BenchArgs parse_bench_args(int argc, char* argv[])
 
     args.no_io_v         = no_io_v;
     args.compress_v      = compress_v;
+    args.checksum_only   = checksum_only;
     args.write_trace     = write_trace;
     args.read_trace      = read_trace;
     args.test_stl        = test_stl;

@@ -46,7 +46,8 @@ bool __debug_flag = false;
 // this list never reaches main()'s branch for it.
 const std::vector<std::string> valid_args = {
     "--no_io", "--compress", "--write_trace",   "--read_trace", "--multiply", "--divisor",    "--iter_max",
-    "--mode",  "--test_stl", "--test_prealloc", "--no_struct",  "--no_mask",  "--mask_scale", "--help"};
+    "--mode",  "--test_stl", "--test_prealloc", "--no_struct",  "--no_mask",  "--mask_scale", "--checksum_only",
+    "--help"};
 
 // -----------------------------------------------------------------------------
 // Seed persistence.

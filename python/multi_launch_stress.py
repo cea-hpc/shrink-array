@@ -34,7 +34,9 @@ Two ways to name the binaries:
   --regen-ref regenerates the reference before the runs, with the vector
   (std::vector) check binary: in the current directory in the historical
   mode, in every build's binary directory under --builds -- each build's
-  reference comes from its own compiler.
+  reference comes from its own compiler. With --only-checksum, that
+  reference holds the checksums only (no data): a mismatch aborts the run,
+  a full reference is needed to locate it.
 """
 
 import os
@@ -147,6 +149,13 @@ parser.add_argument("--regen-ref", action="store_true",
                          "binary before the runs: in the current directory (historical mode), "
                          "or in each build's binary directory (--builds), from that build's "
                          "own vector binary. The old data_tab_* files are removed first.")
+# No "regen" in this help: the GUI's option filter matches flags AND help text.
+parser.add_argument("--only-checksum", action="store_true",
+                    help="With the reference rebuilt before the runs, the vector binary writes "
+                         "the data_tab_*_check_sum files only (shrink_bench --checksum_only), no "
+                         "data: ~20 GB less per oracle. The checks are then bit-exact (no "
+                         "1e-10 / 1e-6 element tolerance) and a mismatch aborts without "
+                         "locating the element: rebuild a full reference to diagnose it.")
 
 # ⭐ Selection = VARIANTS x SIZES. Binaries are named
 #   shrink_bench_<variant>[_<size>]  with size in 64/256/1024/dyn, lance
@@ -390,6 +399,8 @@ else:
 # directory its binaries run in, after removing the previous files -- a check
 # run against a partial oracle aborts on the first missing dump. Not under
 # NO_IO, which would disable the very writes this is about.
+if args.only_checksum and not args.regen_ref:
+    print("⚠️ --only-checksum without --regen-ref: no effect, the existing reference is used as is")
 if args.regen_ref:
     if no_io:
         print("⚠️ --regen-ref with --no_io: the runs will not read the reference just regenerated")
@@ -411,7 +422,8 @@ if args.regen_ref:
         log_name = f"regen_ref_{build}.txt" if build else "regen_ref.txt"
         t0 = time.perf_counter()
         with open(log_name, "w") as log:
-            result = subprocess.run(_numa.interleave_prefix(env, args.numa_interleave) + [vector_of[build]] + MODE_ARGS,
+            result = subprocess.run(_numa.interleave_prefix(env, args.numa_interleave) + [vector_of[build]] + MODE_ARGS
+                                    + (["--checksum_only"] if args.only_checksum else []),
                                     check=False, stdout=log, stderr=subprocess.STDOUT,
                                     env=env, cwd=ref_dir_of[build])
         wall = time.perf_counter() - t0
