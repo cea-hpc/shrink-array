@@ -1238,10 +1238,15 @@ void RechunkSupport<Derived, true>::rechunk_refill(Derived& tmp, int old_size, i
                     sp.work_sum.fetch_add(sp_ns(sp_w0, sp_w1), std::memory_order_relaxed);
                     sp.n.fetch_add(1, std::memory_order_relaxed);
                 }
-                // One RMW per thread and slice, not one per folded chunk.
-                n_folded.fetch_add(tally.folded, std::memory_order_relaxed);
-                n_refused.fetch_add(tally.refused, std::memory_order_relaxed);
-                n_installed.fetch_add(tally.installed, std::memory_order_relaxed);
+                // One RMW per thread and slice, not one per folded chunk; and
+                // none at all unless the [RECHUNK] census, their only reader,
+                // is on.
+                if (internal::g_rechunk_trace_mem)
+                {
+                    n_folded.fetch_add(tally.folded, std::memory_order_relaxed);
+                    n_refused.fetch_add(tally.refused, std::memory_order_relaxed);
+                    n_installed.fetch_add(tally.installed, std::memory_order_relaxed);
+                }
 #pragma omp barrier
 #pragma omp masked
                 {
