@@ -57,8 +57,13 @@ void ChunkOmpPolicy<T, Derived, Enabled>::init_chunks_cst_val(Chunk<T>* v, std::
     chunk_array_new::init_chunks(v, count, [](Chunk<T>& chunk) { chunk.init_values_cst_val(); });
 }
 
+// Out of line on purpose. operator new[] (the chunk initialisation) is not
+// inlined; inlined, this one would hand gcc's -Wmismatched-new-delete a
+// ::operator delete applied to what ChunkOmpPolicy::operator new[] returned, and
+// it warns (a false positive: that operator new[] allocates with ::operator
+// new). Kept a call, the pair it sees is the class's own new[] / delete[].
 template <typename T, typename Derived, bool Enabled>
-void ChunkOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
+[[gnu::noinline]] void ChunkOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
     ::operator delete(ptr);
 }

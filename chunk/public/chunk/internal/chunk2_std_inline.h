@@ -88,8 +88,13 @@ void* Chunk2OmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
     return static_cast<void*>(v);
 }
 
+// Out of line on purpose. operator new[] (the chunk initialisation) is not
+// inlined; inlined, this one would hand gcc's -Wmismatched-new-delete a
+// ::operator delete applied to what Chunk2OmpPolicy::operator new[] returned, and
+// it warns (a false positive: that operator new[] allocates with ::operator
+// new). Kept a call, the pair it sees is the class's own new[] / delete[].
 template <typename T, typename Derived, bool Enabled>
-void Chunk2OmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
+[[gnu::noinline]] void Chunk2OmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
     ::operator delete(ptr);
 }
