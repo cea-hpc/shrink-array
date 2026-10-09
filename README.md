@@ -1,5 +1,7 @@
 # shrink-array: compressed arrays for C++
 
+> Version française : [README_fr.md](README_fr.md).
+
 shrink-array provides arrays that are used like a `std::vector` and take less memory when large
 parts of them hold the same value -- zero, or a few repeated values. It is written for HPC codes:
 C++20, OpenMP, arrays of 10⁹ elements, up to a few hundred threads.
@@ -27,15 +29,27 @@ The variant and the chunk size are chosen by the library you link (`chunk::chunk
 `chunk::chunk_v2a_dyn`, ...); the headers are the same for all of them. Write the class of
 that variant, or an alias on it ([docs/getting_started.md](docs/getting_started.md) §3): an
 array of another variant than the library's is not supported. Chunk2A compresses the
-most and is the one to try first. As an order of magnitude, on the `shrink_bench` benchmark
-(arrays of 10⁹ elements, 64 threads), memory at the end of the run:
+most and is the one to try first.
 
-| variant | static size 256 | dynamic size (adaptive re-chunk) |
+What the arrays save depends on the data. For an order of magnitude, the `shrink_bench`
+benchmark ([examples/shrink_bench](examples/shrink_bench), `--mode perf`) holds arrays of about
+10⁹ elements of a dozen element types (`double`, `float`, `int`, `long`, `std::complex`,
+structures, `bool`...). Each one is filled so that most of it is zero or one of a few repeated
+values and the rest varied data, then rewritten piece by piece over the 2,000 iterations of a
+compute loop. Memory of the whole process at the end of the run, measured exactly
+([docs/performance_measurement.md](docs/performance_measurement.md)), on Grace with 64 threads:
+
+| variant | static chunks of 256 elements (`_256`) | dynamic chunks (`_dyn`): from 64, adaptive re-chunk |
 |---|---|---|
 | Chunk2A | 7.26 GB | 6.0 GB |
 | Chunk2 | 17.3 GB | 16.3 GB |
 | Chunk (v1) | 40.2 GB | 40.3 GB |
 
+For scale, the same arrays as `std::vector`s hold about 100 GB of elements (computed from the
+element sizes, not measured). The gap between the variants is the share of the data each one
+can compress: v1 only the zero runs, Chunk2 one more value per array, Chunk2A every run of a
+repeated value. On data where every chunk holds varied values, there is nothing to compress and
+the arrays cost a little more than a `std::vector`.
 [docs/variants.md](docs/variants.md) explains what each one costs and which one to choose.
 `ArrayChunkBits` stores `bool` one bit per element (Chunk2 builds).
 

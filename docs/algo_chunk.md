@@ -32,8 +32,8 @@ The library: `chunk::chunk_v1` (it defines `CHUNK_VARIANT_V1`). Code: `chunk/chu
 ## 2. What a chunk costs
 
 The chunk object is 16 bytes (in OpenMP builds, where the zero counter of the sequential
-mode is an empty type, see §4), plus one "already in compression list" byte and one
-bit of the *dirty bitset*. With no second value, v1 has **no type or value
+mode is an empty type, see §4), plus one "already in compression list" byte and two
+bytes of the *dirty bitset* (one bit, in a 64-bit word padded to 128 bytes). With no second value, v1 has **no type or value
 metadata** per chunk: it is the variant with the least metadata, and the one whose
 memory is made up the most of **materialised data**. On `shrink_bench` at 64 threads,
 about 38 GB of its 40 GB is data.

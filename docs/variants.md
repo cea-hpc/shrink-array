@@ -36,7 +36,8 @@ packs 8 booleans per byte in a materialised chunk.
 ## 3. What a chunk costs
 
 Every chunk costs its **metadata**, whether it is compressed or not. For all three variants,
-the chunk object itself is 16 bytes. On top of that, per chunk:
+the chunk object itself is 16 bytes in an OpenMP build (8 with `SHRINK_SMALL_CHUNK`, which
+gives up the per-chunk read and write gates). On top of that, per chunk:
 
 - one "already in compression list" byte (block compression);
 - two bytes for the array's *dirty bitset* (one bit per chunk, in 64-bit words each padded to

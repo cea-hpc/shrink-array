@@ -257,19 +257,22 @@ inline constexpr bool have_aggressive_compression = CHUNK_OPT_AGGRESSIVE_COMPRES
  * SHRINK_SMALL_CHUNK: chunk size vs read-gate precision trade-off.
  *
  * Default (undefined): each chunk carries a per-chunk pending_ops_ counter
- * (std::atomic<int32_t>). Because ChunkBase is 8-byte aligned (the `values`
- * pointer), the 4-byte counter costs 8 bytes with padding, so e.g.
- * sizeof(Chunk2A<double>) is 24. In exchange the read path gates precisely on
- * THIS chunk's pending count and keeps clean-chunk reads off flush_chunk_all_
+ * (std::atomic<int32_t>) and, in the 4 bytes of padding after it (ChunkBase
+ * is 8-byte aligned on the `values` pointer), the steal mark: 8 + 4 + 4, so
+ * every chunk of an OpenMP build is 16 bytes (sizeof(Chunk2A<double>) == 16,
+ * as v1's and Chunk2's). In exchange the read path gates precisely on THIS
+ * chunk's pending count and keeps clean-chunk reads off flush_chunk_all_
  * ranks — ~10% faster at high thread counts (measured: the coarse gate spun
- * ~11% of samples in rank_flush_acquire's CAS).
+ * ~11% of samples in rank_flush_acquire's CAS) -- and a writer waits only
+ * when ITS chunk is being scanned.
  *
- * Defined (-DSHRINK_SMALL_CHUNK=ON): drop the counter -> chunks stay at 16
- * bytes, at the cost of the coarse any_pending_ops() gate (any pending op
- * anywhere makes a dirty-chunk read flush). Choose this when chunk memory
- * footprint matters more than the ~10% throughput.
+ * Defined (-DSHRINK_SMALL_CHUNK=ON): drop the counter and the mark -> 8-byte
+ * chunks, at the cost of the coarse any_pending_ops() gate (any pending op
+ * anywhere makes a dirty-chunk read flush) and of the global write/compress
+ * gate. Choose this when chunk memory footprint matters more than the ~10%
+ * throughput.
  *
- * A true 16-byte + precise-gate build is not cleanly achievable: the counter
+ * An 8-byte + precise-gate build is not cleanly achievable: the counter
  * cannot be bit-packed into the aligned `values` pointer (it is a count, not a
  * flag) and an external per-array counter would need a chunk*->index lookup on
  * the flush side (which only holds the pointer).

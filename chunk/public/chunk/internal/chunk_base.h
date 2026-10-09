@@ -1686,8 +1686,8 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// Per-chunk count of deferred ops currently pending (enqueued but not yet
     /// drained), plus its owner tag: see DeferredReadGate<Derived, Precise>.
     /// Present only where the deferred-op machinery exists: OpenMP builds, and
-    /// not under -DSHRINK_SMALL_CHUNK (which trades it away for 16-byte
-    /// chunks). Published (release) BEFORE the map insert, so a pending op is
+    /// not under -DSHRINK_SMALL_CHUNK (which trades it, and steal_mark_, away
+    /// for 8-byte chunks). Published (release) BEFORE the map insert, so a pending op is
     /// visible for its whole lifetime; retired (release) after the drain; the
     /// read gates acquire-load it.
     ///
@@ -1711,8 +1711,8 @@ class ChunkBase : public CRTPSupport<Derived>,
     /// whole team paying a global exclusion window per pass.
     ///
     /// Lives in the 4 bytes of padding after pending_ops_ (ChunkBase is
-    /// 8-byte aligned on `values`), so it costs nothing: sizeof(Chunk2A<double>)
-    /// stays 24. Same \#if as pending_ops_, for the same gcc phase-1 lookup
+    /// 8-byte aligned on `values`), so it costs nothing: 8 + 4 + 4, every
+    /// chunk of an OpenMP build stays at 16 bytes. Same \#if as pending_ops_, for the same gcc phase-1 lookup
     /// reason; SHRINK_SMALL_CHUNK builds keep the global gate
     /// (chunk_config::use_chunk_steal_mark).
     std::atomic<uint32_t> steal_mark_{0};
