@@ -26,6 +26,13 @@ Rules, on chunk/, fast_allocators/ and examples/ (.h, .hpp, .cpp), comment and
    chunk_base.h and array_chunk_base.h.
 4. No editor or merge leftovers tracked anywhere: *.sa, *.orig, *.rej, *.bak,
    *~.
+5. No C stdout printing: printf / std::printf / vprintf. std::println instead;
+   std::fprintf(stderr, ...) stays (the paths where nothing may allocate).
+6. No sprintf / snprintf: std::format, or std::format_to_n into a buffer that
+   must stay a fixed char array.
+7. No std::ostringstream / std::stringstream to build text: std::format.
+   Exceptions: the rule-1 files, and element_ref_validation.cpp, which checks
+   that `os << a[i]` compiles.
 
 Usage: scripts/check_cpp23_idioms.py [repo root]   (exit 1 on a violation)
 """
@@ -53,6 +60,11 @@ DOWNCAST_FILES = {
     "chunk/public/chunk/internal/chunk_base.h",
     "chunk/public/chunk/internal/array_chunk_base.h",
 }
+
+C_PRINTF = re.compile(r"(?<![\w:])(std::)?v?printf\s*\(")
+C_SPRINTF = re.compile(r"(?<![\w:])(std::)?v?s(n)?printf\s*\(")
+SSTREAM = re.compile(r"\bstd::(ostringstream|stringstream)\b")
+SSTREAM_FILES = IOSTREAM_FILES | {"examples/validation/element_ref_validation.cpp"}
 
 LEFTOVER = re.compile(r"(\.sa|\.orig|\.rej|\.bak|~)$")
 
@@ -89,6 +101,12 @@ def check(root: pathlib.Path):
             code = code_part(line)
             if (IOSTREAM.search(code) and f not in IOSTREAM_FILES and not IOSTREAM_LINE_OK.search(code)):
                 bad.append(f"{f}:{n}: iostream output ({IOSTREAM.search(code).group(0)}): use std::println")
+            if C_PRINTF.search(code):
+                bad.append(f"{f}:{n}: C printf to stdout: use std::println")
+            if C_SPRINTF.search(code):
+                bad.append(f"{f}:{n}: snprintf / sprintf: use std::format (std::format_to_n for a fixed buffer)")
+            if SSTREAM.search(code) and f not in SSTREAM_FILES:
+                bad.append(f"{f}:{n}: {SSTREAM.search(code).group(0)}: use std::format")
             if DERIVED_CALL.search(code):
                 bad.append(f"{f}:{n}: derived(): take `this Derived& self` instead")
             if DOWNCAST.search(code) and f not in DOWNCAST_FILES:
