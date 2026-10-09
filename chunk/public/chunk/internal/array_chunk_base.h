@@ -37,8 +37,10 @@
  * @see chunk_size_policy.h for the geometry policy (static vs dynamic)
  */
 
+#include <concepts> // std::invocable (for_each_span's run overload)
 #include <cstddef>  // std::size_t (size_type)
-#include <utility>  // std::swap
+#include <span>     // std::span (for_each_span)
+#include <utility>  // std::swap, std::as_const
 #include <iterator> // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
 
 #include "chunk/config.h"                       // build_config::any_check, chunk_config::do_check
@@ -700,7 +702,7 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     /**
      * @name Bulk reads
      * The read half of fill_range / copy_range. Call them through the free
-     * functions shrink_array::for_each_value / read_range
+     * functions shrink_array::for_each_value / for_each_span / read_range
      * (array_chunk_range_ops.h), which take a std::vector as well.
      * @{
      */
@@ -771,6 +773,91 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
     void for_each_value(F&& f) const
     {
         for_each_value(ind_type{0}, m_size, std::forward<F>(f));
+    }
+
+    /**
+     * @brief Call @p f(std::span<const T>) on [@p first, @p last), block by
+     *        block, in order: the loop over the span can be vectorised.
+     *
+     * @details for_each_value() handing over each block of up to kBulkBlock
+     *          elements instead of its elements one by one.
+     *
+     *          When @p f is also callable as f(const T& v, std::size_t count),
+     *          a compressed chunk is passed that way: its constant and the
+     *          number of elements of the range it covers, in O(1), nothing
+     *          copied -- a sum adds v * count. Other callables get the
+     *          constant as spans, like any block.
+     *
+     *          Stats and NaN-check builds fill each block through the
+     *          iterator, so every element still goes through the const
+     *          operator[], and never call f(v, count).
+     * @param first first index, inclusive (clamped to [0, size()])
+     * @param last  last index, exclusive (clamped to size())
+     * @param f     called as f(std::span<const T>), and f(v, count) when it
+     *              accepts it; its return value is ignored. A span is only
+     *              valid during its call.
+     * @warning for_each_value()'s contract: no other thread may write the
+     *          array during the call; callable from a parallel region, every
+     *          thread on its own slice.
+     */
+    template <typename F>
+    void for_each_span(ind_type first, ind_type last, F&& f) const
+    {
+        T buf[kBulkBlock];
+        if constexpr (kBulkFast)
+        {
+            for_each_chunk_span(first, last,
+                                [&](const chunk_type& ch, int num_chunk, int lo, int hi)
+                                {
+                                    for (int j = lo; j < hi; j += kBulkBlock)
+                                    {
+                                        const int n = (hi - j) < kBulkBlock ? (hi - j) : kBulkBlock;
+                                        if constexpr (std::invocable<F&, const T&, std::size_t>)
+                                        {
+                                            // A compressed chunk stays so for the rest of the
+                                            // call (no writer): the constant covers [j, hi).
+                                            T cst{};
+                                            if (ch.read_block_or_constant(j, n, buf, cst))
+                                            {
+                                                check_no_write_during_bulk_read(ch, num_chunk, j);
+                                                f(std::as_const(cst), static_cast<std::size_t>(hi - j));
+                                                return;
+                                            }
+                                        }
+                                        else
+                                        {
+                                            ch.read_block(j, n, buf);
+                                        }
+                                        check_no_write_during_bulk_read(ch, num_chunk, j);
+                                        f(std::span<const T>(buf, static_cast<std::size_t>(n)));
+                                    }
+                                });
+        }
+        else
+        {
+            int n = 0;
+            for_each_value(first, last,
+                           [&](const T& x)
+                           {
+                               buf[n++] = x;
+                               if (n == kBulkBlock)
+                               {
+                                   f(std::span<const T>(buf, static_cast<std::size_t>(n)));
+                                   n = 0;
+                               }
+                           });
+            if (n > 0)
+            {
+                f(std::span<const T>(buf, static_cast<std::size_t>(n)));
+            }
+        }
+    }
+
+    /// @brief for_each_span() over every element.
+    template <typename F>
+    void for_each_span(F&& f) const
+    {
+        for_each_span(ind_type{0}, m_size, std::forward<F>(f));
     }
 
     /**

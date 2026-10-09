@@ -60,6 +60,7 @@
 #include <functional>       // std::greater
 #include <iterator>         // std::random_access_iterator, std::iterator_traits, std::distance
 #include <ranges>           // std::ranges::random_access_range
+#include <span>             // std::span (for_each_span)
 #include <type_traits>      // std::conditional_t, std::is_same_v
 #include <vector>           // std::vector
 
@@ -72,7 +73,7 @@
 #include "chunk/config.h"                // chunk_config::use_chunk*, build_config::has_not_ompt
 #include "chunk/PMP_CHUNK.h"             // CHUNK_PMP_MAX_THREADS
 #include "chunk/manage_ompt.h"           // begin_parallel_phase / finalize_parallel_phase
-#include "chunk/array_chunk_range_ops.h" // for_each_value / read_range (bulk-reads step)
+#include "chunk/array_chunk_range_ops.h" // for_each_value / for_each_span / read_range (bulk-reads step)
 
 #include "validation_harness.h" // self_command; run() is called by validation_driver.cpp
 
@@ -569,8 +570,29 @@ int check_reverse(const Arr& a, const std::vector<double>& ref)
     return r.done("rbegin()/rend(), rbegin()[k]");
 }
 
-/// @brief for_each_value / read_range against the reference: whole range,
-///        sub-ranges around every boundary, clamping, a T* and an
+/// @brief for_each_span callable: appends the spans, and the runs of a
+///        compressed chunk expanded, to @p out; counts the runs.
+struct SpanCollector
+{
+    std::vector<double>& out;
+    long*                runs = nullptr;
+
+    void operator()(std::span<const double> s) const
+    {
+        out.insert(out.end(), s.begin(), s.end());
+    }
+    void operator()(const double& v, std::size_t count) const
+    {
+        out.insert(out.end(), count, v);
+        if (runs != nullptr)
+        {
+            ++*runs;
+        }
+    }
+};
+
+/// @brief for_each_value / for_each_span / read_range against the reference:
+///        whole range, sub-ranges around every boundary, clamping, a T* and an
 ///        output-iterator destination, slices read from every thread at once,
 ///        and the same calls on the std::vector (the generic overloads).
 int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
@@ -598,6 +620,30 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
         {
             r.fail("for_each_value(%s) over the whole range differs from the reference (%zu values)",
                    pass == 0 ? "array" : "vector", got.size());
+        }
+    }
+
+    // for_each_span, whole range: spans only, then spans and runs. The
+    // compressed chunks [0, kC0) come as runs where the build reads by block.
+    {
+        std::vector<double> got;
+        shrink_array::for_each_span(a,
+                                    [&got](std::span<const double> s) { got.insert(got.end(), s.begin(), s.end()); });
+        if (got != ref)
+        {
+            r.fail("for_each_span(array) with a span-only callable differs from the reference (%zu values)",
+                   got.size());
+        }
+        got.clear();
+        long runs = 0;
+        shrink_array::for_each_span(a, SpanCollector{got, &runs});
+        if (got != ref)
+        {
+            r.fail("for_each_span(array) with spans and runs differs from the reference (%zu values)", got.size());
+        }
+        if (!chunk_config::stats && !chunk_config::do_check && runs < kC0)
+        {
+            r.fail("for_each_span(array): %ld compressed chunks passed as runs, expected at least %ld", runs, kC0);
         }
     }
 
@@ -641,6 +687,16 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
             if (sum_a != sum_v)
             {
                 r.fail("for_each_value(%ld, %ld): array sum %.17g, vector sum %.17g", first, last, sum_a, sum_v);
+            }
+
+            std::vector<double> spans_a;
+            std::vector<double> spans_v;
+            shrink_array::for_each_span(a, sz(first), sz(last), SpanCollector{spans_a});
+            shrink_array::for_each_span(ref, sz(first), sz(last), SpanCollector{spans_v});
+            if (spans_a != spans_v || static_cast<long>(spans_v.size()) != want)
+            {
+                r.fail("for_each_span(%ld, %ld): array %zu values, vector %zu, expected %ld", first, last,
+                       spans_a.size(), spans_v.size(), want);
             }
         }
     }

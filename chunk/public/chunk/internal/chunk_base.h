@@ -1367,6 +1367,44 @@ class ChunkBase : public CRTPSupport<Derived>,
         }
     }
 
+    /**
+     * @brief read_block(), unless the chunk is compressed: then its constant.
+     *
+     * @details The same single load of `values` under one read section. A
+     *          chunk compressed to the first constant -- or, Chunk2A, to its
+     *          second -- sets @p cst and leaves @p out untouched, so the caller
+     *          takes the rest of the chunk at once
+     *          (ArrayChunkBase::for_each_span). A Chunk2 on its second constant
+     *          points at a filled buffer and is read as a block.
+     * @return true when @p cst was set, false when @p out was filled
+     */
+    bool read_block_or_constant(int first, int count, T* out, T& cst) const noexcept
+    {
+        const read_reclaim::ReadSection section;
+        const T* const                  vals = values_load();
+        test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+        if (is_cst_val1(vals))
+        {
+            // raw-read: read_block_or_constant -- the shared first-constant buffer
+            cst = load_at<false>(vals, 0);
+            return true;
+        }
+        if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
+        {
+            if (derived().is_cst_val2_ptr_of(vals)) [[unlikely]]
+            {
+                cst = derived().second_value_from_ptr(vals);
+                return true;
+            }
+        }
+        for (int j = 0; j < count; ++j)
+        {
+            // raw-read: read_block_or_constant -- under its own ReadSection
+            out[j] = load_at<false>(vals, first + j);
+        }
+        return false;
+    }
+
     /// @brief Proxy access for read-write operations
     /// @param i Index in the chunk
     /// @return Proxy object for lazy write

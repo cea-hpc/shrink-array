@@ -963,6 +963,33 @@ void for_each_value(const Arr& arr, F&& f)
 }
 
 /**
+ * @brief for_each_span() on a chunked array: f(std::span<const T>) block by
+ *        block, and f(v, count) on a compressed chunk when f accepts it
+ *        (ArrayChunkBase::for_each_span).
+ * @warning No other thread may write @p arr during the call (the iterator's
+ *          contract). Callable from a parallel region on disjoint slices.
+ */
+template <internal::ChunkedArray Arr, typename F>
+void for_each_span(const Arr& arr, std::size_t first, std::size_t last, F&& f)
+{
+    using ind_type  = decltype(arr.size());
+    const auto size = static_cast<std::size_t>(arr.size());
+    last            = std::min(last, size);
+    if (first >= last)
+    {
+        return;
+    }
+    arr.for_each_span(static_cast<ind_type>(first), static_cast<ind_type>(last), std::forward<F>(f));
+}
+
+/// @brief for_each_span() over every element of a chunked array.
+template <internal::ChunkedArray Arr, typename F>
+void for_each_span(const Arr& arr, F&& f)
+{
+    arr.for_each_span(std::forward<F>(f));
+}
+
+/**
  * @brief read_range() on a chunked array: into a T*, each block is read
  *        straight into the destination (ArrayChunkBase::read_range).
  * @return @p out advanced past the last element written.
