@@ -47,6 +47,14 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `copy_range_mt(a, first, last, src_first)` and `transform_range_mt(a, first, last, src_first, op)`
+  (`array_chunk_range_ops.h`, and plain-container overloads in `vector_range_ops.h`): the bulk
+  copy and `std::transform`, callable by several threads at once on disjoint ranges, with one
+  write session per chunk span like `fill_range_mt`. The three share one engine
+  (`internal::store_range_mt`); a span's values are computed into a per-thread buffer before its
+  session, so the caller's iterator or operation never runs inside it.
+  `bits::store_bit_range_atomic` for `ArrayChunkBits`. Measured in `fill_range_mt_validation N
+  perf` (Release, 2 cores): copy x6 to x12 at 1 thread, x4 to x7 at 2, over the element loop.
 - `shrink_array::for_each_span(a, [first, last,] f)` (`array_chunk_range_ops.h`): the elements
   as `std::span<const T>` blocks, so the loop over them can be vectorised; a compressed chunk
   is passed as `f(v, count)` in O(1) when `f` accepts it. On a contiguous container

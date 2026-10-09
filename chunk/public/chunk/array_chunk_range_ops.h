@@ -60,11 +60,12 @@
 
 #include <algorithm>   // std::min (the range clamps)
 #include <cstddef>     // std::size_t, std::ptrdiff_t
-#include <type_traits> // std::is_same_v
+#include <type_traits> // std::is_same_v, std::conditional_t
+#include <vector>      // std::vector (the span buffer of copy_range_mt / transform_range_mt)
 
 #include "chunk/bit.h"                                 // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/element_access.h"             // internal::as_words: Bit chunks are words of bits
-#include "chunk/internal/bit_words.h"                  // bits::count_ones, bits::scan_words, bits::fill_bit_range
+#include "chunk/internal/bit_words.h"                  // bits::count_ones, bits::scan_words, bits::fill_bit_range(_atomic), bits::store_bit_range_atomic
 #include "chunk/internal/in_t.h"                       // in_t<T>: the element snapshots
 #include "chunk/PMP_CHUNK.h"                           // get_thr_rank_fast
 #include "chunk/internal/chunk_size_policy.h"          // set_thread_chunk_size
@@ -738,18 +739,53 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, ass
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// fill_range_mt: the parallel form -- one write SESSION per chunk
+// fill_range_mt / copy_range_mt / transform_range_mt: the parallel forms --
+// one write SESSION per chunk
 // ─────────────────────────────────────────────────────────────────────────────
 
+namespace internal
+{
+
 /**
- * @brief Bulk fill callable concurrently from several threads, each on its own
- *        indices: one write session per chunk instead of one per element.
+ * @brief fill_span_relaxed_edges() for values that differ: offset o gets
+ *        @p at(o). Same five shared offsets stored as relaxed atomics, the
+ *        runs between them plain.
+ */
+template <typename T, typename At>
+void store_span_relaxed_edges(T* dst, std::size_t o_lo, std::size_t o_hi, std::size_t S, At&& at) noexcept
+{
+    const std::size_t shared[] = {0, 1, S / 2, S - 2, S - 1};
+    std::size_t       o        = o_lo;
+    for (const std::size_t s : shared)
+    {
+        if (s < o)
+        {
+            continue;
+        }
+        if (s >= o_hi)
+        {
+            break;
+        }
+        for (; o < s; ++o)
+        {
+            dst[o] = at(o);
+        }
+        store_element_relaxed(dst + s, at(s));
+        o = s + 1;
+    }
+    for (; o < o_hi; ++o)
+    {
+        dst[o] = at(o);
+    }
+}
+
+/**
+ * @brief The engine of fill_range_mt, copy_range_mt and transform_range_mt:
+ *        element i of [first, last) gets @p value_at(i), with one write
+ *        session per chunk span instead of one per element.
  *
- * @details fill_range() writes raw into a chunk's buffer under a SERIAL
- *          contract (no concurrent writer, no compression pass). This variant
- *          keeps the per-element write path's guarantees by taking its steps
- *          once per chunk span instead of once per element:
- *            1. pending deferred ops on the chunk -> this span goes through the
+ * @details Per chunk span:
+ *            1. pending deferred ops on the chunk -> the span goes through the
  *               element path (it syncs foreign ops, erases/excludes own ones);
  *            2. a compressor on the chunk -> wait it out (bounded, before
  *               announcing, like the element path);
@@ -759,15 +795,249 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, ass
  *               doubt -> retire and take the element path for the span;
  *            5. raw stores into the chunk's buffer;
  *            6. retire;
- *            7. queue the chunk as a compression candidate (as the last element
- *               write would have: the pass drops it if it is not constant).
+ *            7. queue the chunk as a compression candidate when it can be
+ *               uniform (the pass drops it if it is not).
  *          A chunk that is not materialised is first materialised through the
  *          element path, outside any session (a proxy write inside a session
  *          would re-announce and then clear this thread's writer flag).
- *          Unlike fill_range, a chunk is never RELEASED here (a whole-chunk
- *          fill of the constant leaves it materialised and queued): another
- *          thread may be writing other elements of the same chunk, into that
- *          very buffer.
+ *          A chunk is never RELEASED here: another thread may be writing other
+ *          elements of the same chunk, into that very buffer.
+ *
+ *          @p value_at is the CALLER's code (an iterator, a user operation):
+ *          it never runs inside a session, where a read of a chunked array or
+ *          a long computation would hold the compressor off, and a write
+ *          through a proxy would clear this thread's writer flag. Unless
+ *          @p Constant, a span's values are computed into a buffer first, and
+ *          the session only stores them. Each value_at(i) is called once.
+ *
+ *          The queueing rule only looks at the span's own values (reading the
+ *          elements other threads write is a race, except Chunk2A's relaxed
+ *          ones): v1 compresses only to first_value, Chunk2 to first_value or
+ *          the array's second value, Chunk2A aggregates only a span covering
+ *          the whole chunk, uniform. A fill is a uniform span of v, so the
+ *          rule reduces to fill_range_mt's.
+ *
+ * @tparam Constant value_at returns one value for every index (fill_range_mt):
+ *                  no buffer
+ * @param value_at  called as value_at(i), i the global index; returns a value
+ *                  convertible to the element type
+ */
+template <bool Constant, ChunkedArray Arr, typename ValueAt>
+void store_range_mt(Arr& arr, std::size_t first, std::size_t last, ValueAt&& value_at)
+{
+    using T          = Arr::value_type;
+    using ind_type   = decltype(arr.size());
+    using chunk_type = Arr::chunk_type;
+
+    const auto size = static_cast<std::size_t>(arr.size());
+    if (first >= last || first >= size)
+    {
+        return;
+    }
+    last = std::min(last, size);
+
+    constexpr bool session = (is_v2a_v<Arr> || is_v2_v<Arr> || is_v1_v<Arr>) && build_config::use_openmp &&
+                             chunk_config::use_fast_block_compression && (raw_fillable_v<T> || is_packed_bit_v<T>);
+    if constexpr (!session)
+    {
+        for (std::size_t i = first; i < last; ++i)
+        {
+            arr[static_cast<ind_type>(i)] = static_cast<T>(value_at(i));
+        }
+    }
+    else
+    {
+        using Policy = WriteCompressSyncPolicy<typename Arr::proxy_type>;
+        using Mgr    = CompressionManager<T, chunk_type>;
+        // The span's values, computed before the session (not for a constant).
+        // bool, not Bit, for ArrayChunkBits: a Bit is a packed reference type.
+        using buf_value_t = std::conditional_t<is_packed_bit_v<T>, bool, T>;
+
+        const unsigned int S    = arr.chunk_size();
+        const int          ind2 = second_value_index(arr); // Chunk2's written(ind)
+        if constexpr (build_config::chunk_dynamic)
+        {
+            set_thread_chunk_size(S);
+        }
+        const int thr = get_thr_rank_fast();
+
+        // One buffer per thread and element type, reused across calls: the
+        // callers cut a range into small spans (a block per call), and an
+        // allocation per call cost more than the copy (malloc contention,
+        // plus the zeroing of a whole chunk's worth per span).
+        buf_value_t* buf = nullptr;
+        if constexpr (!Constant)
+        {
+            thread_local std::vector<buf_value_t> tl_buf;
+            if (tl_buf.size() < S)
+            {
+                tl_buf.resize(S);
+            }
+            buf = tl_buf.data();
+        }
+
+        const std::size_t first_chunk = first / S;
+        const std::size_t last_chunk  = (last - 1) / S;
+
+        for (std::size_t ci = first_chunk; ci <= last_chunk; ++ci)
+        {
+            const std::size_t c_begin = ci * S;
+            const std::size_t c_end   = c_begin + S;
+            const std::size_t lo      = first > c_begin ? first : c_begin;
+            const std::size_t hi      = last < c_end ? last : c_end;
+
+            auto& ch = arr.chunk_ref(ci);
+
+            // Materialise through the element path, outside any session.
+            std::size_t i = lo;
+            while (i < hi && !materialised(arr, ch, ind2))
+            {
+                arr[static_cast<ind_type>(i)] = static_cast<T>(value_at(i));
+                ++i;
+            }
+            if (i == hi)
+            {
+                continue;
+            }
+
+            // The span's values (offsets into the chunk), and whether they are
+            // all one value: once, before the session.
+            bool        same = true;
+            buf_value_t v0{};
+            if constexpr (Constant)
+            {
+                v0 = static_cast<buf_value_t>(static_cast<T>(value_at(i)));
+            }
+            else
+            {
+                v0 = static_cast<buf_value_t>(static_cast<T>(value_at(i)));
+                buf[i - c_begin] = v0;
+                for (std::size_t k = i + 1; k < hi; ++k)
+                {
+                    const auto v       = static_cast<buf_value_t>(static_cast<T>(value_at(k)));
+                    buf[k - c_begin] = v;
+                    same             = same && (v == v0);
+                }
+            }
+            const auto at = [&](std::size_t o) -> buf_value_t
+            {
+                if constexpr (Constant)
+                {
+                    static_cast<void>(o);
+                    return v0;
+                }
+                else
+                {
+                    return buf[o];
+                }
+            };
+
+            bool done    = false;
+            bool uniform = false;  // may the chunk be uniform? (step 7)
+            if (!ch.pending_any()) // 1. deferred ops on the chunk: element path
+            {
+                if (Mgr::must_defer_write(ch)) // 2. a compressor on it: wait (bounded)
+                {
+                    Mgr::wait_out_compressor(ch);
+                }
+
+                Policy::announce_write(thr, &ch);                                                   // 3.
+                if (!Mgr::must_defer_write(ch) && !ch.pending_any() && materialised(arr, ch, ind2)) // 4.
+                {
+                    T* dst = ch.values_load(); // 5.
+                    if constexpr (is_packed_bit_v<T>)
+                    {
+                        // ArrayChunkBits: other threads write the other bits of
+                        // the span's edge words -- atomic updates there, a
+                        // store for the words the span owns whole. false and
+                        // true are both compressible.
+                        if constexpr (Constant)
+                        {
+                            bits::fill_bit_range_atomic(as_words(dst), i - c_begin, hi - c_begin, v0);
+                        }
+                        else
+                        {
+                            bits::store_bit_range_atomic(as_words(dst), i - c_begin, hi - c_begin, at);
+                        }
+                        uniform = same;
+                    }
+                    else if constexpr (relaxed_element_stores_v<chunk_type, T>)
+                    {
+                        // Other writers of this chunk read some of these
+                        // elements, and write the ones this span reads.
+                        if constexpr (Constant)
+                        {
+                            fill_span_relaxed_edges(dst, i - c_begin, hi - c_begin, S, static_cast<T>(v0));
+                        }
+                        else
+                        {
+                            store_span_relaxed_edges(dst, i - c_begin, hi - c_begin, S, at);
+                        }
+                        uniform = may_be_uniform_relaxed(dst, S); // buffer pinned by the session
+                    }
+                    else
+                    {
+                        for (std::size_t k = i; k < hi; ++k)
+                        {
+                            dst[k - c_begin] = at(k - c_begin);
+                        }
+                        // No read of elements this span does not own: other
+                        // writers of the chunk store them PLAIN here (only
+                        // Chunk2A's are relaxed atomics), and reading them was a
+                        // data race (TSan, bench_phase_range_mt). Queue on the
+                        // span's values instead, as the element paths mark: v1
+                        // compresses only to first_value, Chunk2 only to
+                        // first_value or the array's second value. Chunk2A
+                        // aggregates (no lock-free atomic_ref): only a span
+                        // covering the whole chunk, uniform.
+                        if constexpr (is_v1_v<Arr>)
+                        {
+                            uniform = same && static_cast<T>(v0) == static_cast<T>(chunk_type::first_value);
+                        }
+                        else if constexpr (is_v2_v<Arr> && requires { arr.get_second_value(); })
+                        {
+                            uniform = same && (static_cast<T>(v0) == static_cast<T>(chunk_type::first_value) ||
+                                               static_cast<T>(v0) == static_cast<T>(arr.get_second_value()));
+                        }
+                        else
+                        {
+                            uniform = same && i == c_begin && hi == c_end;
+                        }
+                    }
+                    done = true;
+                }
+                Policy::end_write(thr); // 6.
+            }
+
+            if (!done)
+            {
+                for (; i < hi; ++i)
+                {
+                    arr[static_cast<ind_type>(i)] = static_cast<T>(at(i - c_begin));
+                }
+                continue; // the element path queued the chunk itself
+            }
+
+            if (uniform) // 7. only a chunk that can be uniform
+            {
+                queue_for_compression(arr, c_begin);
+            }
+        }
+    }
+}
+
+} // namespace internal
+
+/**
+ * @brief Bulk fill callable concurrently from several threads, each on its own
+ *        indices: one write session per chunk instead of one per element.
+ *
+ * @details fill_range() writes raw into a chunk's buffer under a SERIAL
+ *          contract (no concurrent writer, no compression pass). This variant
+ *          keeps the per-element write path's guarantees by taking its steps
+ *          once per chunk span: see internal::store_range_mt. Unlike
+ *          fill_range, a chunk is never RELEASED here (a whole-chunk fill of
+ *          the constant leaves it materialised and queued).
  *
  *          Chunk2A, Chunk2 and Chunk under OpenMP with fast block compression
  *          (ArrayChunkBits too: bits::fill_bit_range_atomic, one atomic update
@@ -790,146 +1060,59 @@ void copy_range(Arr& arr, std::size_t first, std::size_t last, It src_first, ass
 template <internal::ChunkedArray Arr, typename U>
 void fill_range_mt(Arr& arr, std::size_t first, std::size_t last, const U& v)
 {
-    using T          = Arr::value_type;
-    using ind_type   = decltype(arr.size());
-    using chunk_type = Arr::chunk_type;
-
-    const auto size = static_cast<std::size_t>(arr.size());
-    if (first >= last || first >= size)
-    {
-        return;
-    }
-    last = std::min(last, size);
-
+    using T             = Arr::value_type;
     const in_t<T> value = static_cast<T>(v);
+    internal::store_range_mt<true>(arr, first, last, [&value](std::size_t) { return static_cast<T>(value); });
+}
 
-    constexpr bool session = (internal::is_v2a_v<Arr> || internal::is_v2_v<Arr> || internal::is_v1_v<Arr>) &&
-                             build_config::use_openmp && chunk_config::use_fast_block_compression &&
-                             (internal::raw_fillable_v<T> || is_packed_bit_v<T>);
-    if constexpr (!session)
-    {
-        for (std::size_t i = first; i < last; ++i)
-        {
-            arr[static_cast<ind_type>(i)] = value;
-        }
-    }
-    else
-    {
-        using Policy = WriteCompressSyncPolicy<typename Arr::proxy_type>;
-        using Mgr    = CompressionManager<T, chunk_type>;
+/**
+ * @brief copy_range() callable concurrently from several threads, each on its
+ *        own indices: [first, last) gets [src_first, src_first + (last - first)),
+ *        with one write session per chunk span.
+ *
+ * @details fill_range_mt's protocol (internal::store_range_mt); a span's source
+ *          values are read before its session, never inside it. Same variants
+ *          and builds as fill_range_mt; elsewhere the element loop.
+ *
+ * @pre   fill_range_mt's. The source does not alias @p arr; it may be another
+ *        chunked array's const iterator (read outside the sessions), provided
+ *        nothing writes that array meanwhile.
+ * @param arr       target array
+ * @param first     first target index, inclusive (clamped to size())
+ * @param last      last target index, exclusive (clamped to size())
+ * @param src_first random-access source iterator: element i reads
+ *                  *(src_first + (i - first))
+ */
+template <internal::ChunkedArray Arr, typename It>
+void copy_range_mt(Arr& arr, std::size_t first, std::size_t last, It src_first)
+{
+    internal::store_range_mt<false>(arr, first, last, [&src_first, first](std::size_t i)
+                                    { return *(src_first + static_cast<std::ptrdiff_t>(i - first)); });
+}
 
-        const unsigned int S    = arr.chunk_size();
-        const int          ind2 = internal::second_value_index(arr); // Chunk2's written(ind)
-        if constexpr (build_config::chunk_dynamic)
-        {
-            set_thread_chunk_size(S);
-        }
-        const int thr = get_thr_rank_fast();
-
-        const std::size_t first_chunk = first / S;
-        const std::size_t last_chunk  = (last - 1) / S;
-
-        for (std::size_t ci = first_chunk; ci <= last_chunk; ++ci)
-        {
-            const std::size_t c_begin = ci * S;
-            const std::size_t c_end   = c_begin + S;
-            const std::size_t lo      = first > c_begin ? first : c_begin;
-            const std::size_t hi      = last < c_end ? last : c_end;
-
-            auto& ch = arr.chunk_ref(ci);
-
-            // Materialise through the element path, outside any session.
-            std::size_t i = lo;
-            while (i < hi && !internal::materialised(arr, ch, ind2))
-            {
-                arr[static_cast<ind_type>(i)] = value;
-                ++i;
-            }
-            if (i == hi)
-            {
-                continue;
-            }
-
-            bool done    = false;
-            bool uniform = false;  // may_be_uniform, read inside the session
-            if (!ch.pending_any()) // 1. deferred ops on the chunk: element path
-            {
-                if (Mgr::must_defer_write(ch)) // 2. a compressor on it: wait (bounded)
-                {
-                    Mgr::wait_out_compressor(ch);
-                }
-
-                Policy::announce_write(thr, &ch);                                                             // 3.
-                if (!Mgr::must_defer_write(ch) && !ch.pending_any() && internal::materialised(arr, ch, ind2)) // 4.
-                {
-                    T* dst = ch.values_load(); // 5.
-                    if constexpr (is_packed_bit_v<T>)
-                    {
-                        // ArrayChunkBits: other threads write the other bits of
-                        // the span's edge words -- one atomic update per word
-                        // (fetch_or / fetch_and there, a store for the words
-                        // the span owns whole). Queued on the value, as Chunk2
-                        // below: false and true are both compressible.
-                        bits::fill_bit_range_atomic(internal::as_words(dst), i - c_begin, hi - c_begin,
-                                                    static_cast<bool>(value));
-                        uniform = true;
-                    }
-                    else if constexpr (internal::relaxed_element_stores_v<chunk_type, T>)
-                    {
-                        // Other writers of this chunk read some of these
-                        // elements, and write the ones this span reads.
-                        internal::fill_span_relaxed_edges(dst, i - c_begin, hi - c_begin, S, static_cast<T>(value));
-                        uniform = internal::may_be_uniform_relaxed(dst, S); // buffer pinned by the session
-                    }
-                    else
-                    {
-                        for (std::size_t k = i; k < hi; ++k)
-                        {
-                            dst[k - c_begin] = value;
-                        }
-                        // No read of elements this span does not own: other
-                        // writers of the chunk store them PLAIN here (only
-                        // Chunk2A's are relaxed atomics), and reading them was a
-                        // data race (TSan, bench_phase_range_mt). Queue on the
-                        // value instead, as the element paths mark: v1 compresses
-                        // only to first_value, Chunk2 only to first_value or the
-                        // array's second value. Chunk2A aggregates (no lock-free
-                        // atomic_ref): only a span covering the whole chunk,
-                        // uniform by construction; a partial one is not queued.
-                        if constexpr (internal::is_v1_v<Arr>)
-                        {
-                            uniform = static_cast<T>(value) == static_cast<T>(chunk_type::first_value);
-                        }
-                        else if constexpr (internal::is_v2_v<Arr> && requires { arr.get_second_value(); })
-                        {
-                            uniform = static_cast<T>(value) == static_cast<T>(chunk_type::first_value) ||
-                                      static_cast<T>(value) == static_cast<T>(arr.get_second_value());
-                        }
-                        else
-                        {
-                            uniform = (i == c_begin && hi == c_end);
-                        }
-                    }
-                    done = true;
-                }
-                Policy::end_write(thr); // 6.
-            }
-
-            if (!done)
-            {
-                for (; i < hi; ++i)
-                {
-                    arr[static_cast<ind_type>(i)] = value;
-                }
-                continue; // the element path queued the chunk itself
-            }
-
-            if (uniform) // 7. only a chunk that can be uniform
-            {
-                internal::queue_for_compression(arr, c_begin);
-            }
-        }
-    }
+/**
+ * @brief std::transform into a chunked array, callable concurrently from
+ *        several threads, each on its own indices: element i of [first, last)
+ *        gets op(*(src_first + (i - first))), with one write session per chunk
+ *        span.
+ *
+ * @details copy_range_mt with an operation: @p op runs before the span's
+ *          session, once per element, in index order within a chunk span.
+ *
+ * @pre   copy_range_mt's. @p op does not touch @p arr (it runs between the
+ *        element writes of the span's materialisation and the session).
+ * @param arr       target array
+ * @param first     first target index, inclusive (clamped to size())
+ * @param last      last target index, exclusive (clamped to size())
+ * @param src_first random-access source iterator
+ * @param op        called as op(source value); returns a value convertible to
+ *                  the element type
+ */
+template <internal::ChunkedArray Arr, typename It, typename Op>
+void transform_range_mt(Arr& arr, std::size_t first, std::size_t last, It src_first, Op&& op)
+{
+    internal::store_range_mt<false>(arr, first, last, [&src_first, &op, first](std::size_t i)
+                                    { return op(*(src_first + static_cast<std::ptrdiff_t>(i - first))); });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

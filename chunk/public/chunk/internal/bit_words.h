@@ -229,6 +229,44 @@ inline void store_bit_range(word_t* w, std::size_t lo, std::size_t hi, Get&& get
     }
 }
 
+/**
+ * @brief store_bit_range() for a buffer other threads write and read at the
+ *        same time (copy_range_mt, transform_range_mt): each word is updated
+ *        atomically, as in fill_bit_range_atomic().
+ * @details A word the range covers entirely: a relaxed atomic store of the
+ *          assembled word. A word it covers in part: fetch_or of its 1 bits,
+ *          then fetch_and clearing its 0 bits -- two RMWs, each keeping the
+ *          bits of the other writers, who write other bits.
+ */
+template <typename Get>
+inline void store_bit_range_atomic(word_t* w, std::size_t lo, std::size_t hi, Get&& get)
+{
+    std::size_t i = lo;
+    while (i < hi)
+    {
+        const std::size_t k   = i / word_bits;
+        const std::size_t off = i % word_bits;
+        const std::size_t end = (hi - (k * word_bits)) < word_bits ? hi - (k * word_bits) : word_bits;
+        word_t            x   = 0;
+        for (std::size_t b = off; b < end; ++b)
+        {
+            x |= static_cast<word_t>(static_cast<bool>(get((k * word_bits) + b))) << b;
+        }
+        const word_t                  m = span_mask(off, end);
+        const std::atomic_ref<word_t> word(w[k]);
+        if (m == word_ones)
+        {
+            word.store(x, std::memory_order_relaxed);
+        }
+        else
+        {
+            word.fetch_or(x, std::memory_order_relaxed);
+            word.fetch_and(~(m & ~x), std::memory_order_relaxed);
+        }
+        i = (k * word_bits) + end;
+    }
+}
+
 /// @brief What a scan of a buffer found.
 enum class Uniform
 {

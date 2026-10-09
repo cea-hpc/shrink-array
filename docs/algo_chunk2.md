@@ -498,6 +498,14 @@ proxy write inside the session would clear the thread's announcement when it
 withdraws), and a chunk is **never freed** by `fill_range_mt`: another thread may
 be writing other elements of the same buffer.
 
+`copy_range_mt(a, first, last, src_first)` and `transform_range_mt(a, first, last, src_first, op)`
+take the same steps (one engine, `internal::store_range_mt`). The values of a piece are
+computed into a per-thread buffer **before step 3**: the caller's code -- an iterator,
+possibly over another chunked array, or `op` -- never runs inside the session, where a long
+computation would hold the compressor off and a proxy write would clear the announcement.
+The queuing decision looks at the piece's own values: all equal, and a value the variant
+can compress (a fill is such a piece, so the rule is `fill_range_mt`'s).
+
 **Two points specific to Chunk2**, fixed in September 2026, which previously justified
 keeping it on the element-by-element path:
 

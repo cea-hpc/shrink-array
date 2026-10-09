@@ -87,6 +87,8 @@ désactive la vérification.
 | `fill_range(a, first, last, v)` | séquentiel : `[first, last)` mis à `v` |
 | `copy_range(a, first, last, src_first)` | séquentiel : `[first, last)` copié depuis un itérateur |
 | `fill_range_mt(a, first, last, v)` | appelable par plusieurs threads à la fois, sur des plages disjointes (un chunk peut être partagé) |
+| `copy_range_mt(a, first, last, src_first)` | `copy_range`, appelable comme `fill_range_mt` |
+| `transform_range_mt(a, first, last, src_first, op)` | l'élément `i` reçoit `op(*(src_first + (i - first)))`, appelable comme `fill_range_mt` ; `op` ne doit pas toucher `a` |
 | `for_each_value(a, first, last, f)` | lecture : `f(v)` sur chaque élément, une section de lecture par bloc |
 | `for_each_span(a, first, last, f)` | lecture : `f(std::span<const T>)` par bloc (une boucle vectorisable) ; un chunk compressé en `f(v, count)` quand `f` l'accepte. Un `std::vector` est un seul span |
 | `read_range(a, first, last, out)` | lecture : `[first, last)` copié vers `out` |
