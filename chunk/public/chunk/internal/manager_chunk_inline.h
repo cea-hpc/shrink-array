@@ -33,6 +33,7 @@
 
 #include "chunk/internal/manager_chunk.h"     // the declarations these bodies belong to
 #include "chunk/config.h"                     // build_config::use_fast_alloc, chunk_config::use_fast_block_compression
+#include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED
 #include "fast_allocators/internal/svalloc.h" // svfree
 #include "chunk/PMP_CHUNK.h"                  // CHUNK_PMP_THREAD_RANK, CHUNK_PMP_MAX_THREADS
 #include "chunk/internal/chunk_size_policy.h" // alloc_chunk_count
@@ -552,10 +553,25 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
             }
 
             bool pass_flushed = false;
+            int  team         = 0;
 #pragma omp parallel reduction(|| : pass_flushed)
             {
                 const int thr_rank = CHUNK_PMP_THREAD_RANK;
+                if (thr_rank == 0)
+                {
+                    team = CHUNK_PMP_NUM_THREADS;
+                }
                 pass_flushed |= CompressionManager<T, CHUNK_T<T>>::flush_deferred(thr_rank);
+            }
+            // The ranks this region's team does not have: a team opened with
+            // num_threads(n) above omp_get_max_threads() -- or one that shrank
+            // since -- leaves ops on ranks >= `team`, which storage.destroy()
+            // below discarded (nested_region_validation at OMP_NUM_THREADS=1,
+            // outer team of 4, forced deferrals: every write of ranks 1-3 after
+            // the last flush LOST). Same mop-up as the compression sweeps.
+            for (int r = team; r < CHUNK_PMP_RANK_BOUND; ++r)
+            {
+                pass_flushed |= CompressionManager<T, CHUNK_T<T>>::flush_deferred(r);
             }
             local_flushed |= pass_flushed;
             // Another pass produced flushes? then re-enqueues may still exist.
@@ -603,6 +619,13 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
         // at a serial point), not only in check builds.
         if (CompressionManager<T, CHUNK_T<T>>::any_pending_ops()) [[unlikely]]
         {
+            // Check builds: lost writes are a broken invariant, not a warning.
+            if constexpr (build_config::any_check)
+            {
+                CHUNK_INVARIANT_FAILED("[DRAIN] flush_all_deferred: deferred ops still queued after {} pass(es) -- "
+                                       "storage.destroy() would discard them: their writes would be LOST",
+                                       pass);
+            }
             std::fprintf(stderr,
                          "[DRAIN] flush_all_deferred: deferred ops still queued after %d pass(es) -- "
                          "storage.destroy() discards them: their writes are LOST\n",

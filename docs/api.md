@@ -50,7 +50,7 @@ outside any parallel region, and it invalidates the array's proxies.
 | replace **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | iterate | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | const random-access iterators, by value |
 | compress **(S)** | `compress()` | a full compression pass now (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`) |
-| statistics | `stats()`, `get_nb_chunk_written()`, `print_compression_stats()` | percentage and number of chunks holding a buffer; one line per array |
+| statistics | `stats()`, `get_nb_chunk_written()` | percentage and number of chunks holding a buffer (each array also prints one line when it is destroyed) |
 | geometry | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` only in the `_dyn` libraries (a no-op in static ones) |
 
 Chunk2 only: `set_second_value(v)` **(S)**, before the writes, and `get_second_value()`.
@@ -65,12 +65,17 @@ Not there: `data()`, mutable iterators, `insert` / `erase` in the middle, an in-
 |---|---|
 | `T v = a[i];` | reads the value |
 | `a[i] = v;` | writes it (may materialise the chunk, or be deferred while a compressor holds it) |
+| `a[i] = b[j];` | copies the value: reads `b[j]`, then writes `a[i]` as above |
 | `a[i] += v;` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=` | compound operations, for the types that have them; return a proxy |
 | `++a[i]`, `--a[i]` | return a proxy; `a[i]++` returns the old value as a `T` |
 | `a[i] == v`, `a[i] != v` | compare the current value; other comparisons go through the conversion to `T` |
 
 `auto x = a[i];` keeps the proxy, which follows the element. A proxy must not outlive the
-array's storage: every **(S)** operation invalidates it.
+array's storage: every **(S)** operation invalidates it. In check builds (Debug, `CHECK_OPTIM`),
+`operator[]`, `at()`, `front()` and `back()` return the proxy wrapped in an `ElementRef`
+(`internal/element_ref.h`) that only a temporary may use: `auto x = a[i];` then any use of `x`
+does not compile, with a message. A proxy kept on purpose: `std::move(x) = v;`, or
+`a.element_proxy(i)`. `-DCHUNK_LOOSE_ELEMENT_REF` turns the check off.
 
 ## 5. Range operations
 
@@ -81,6 +86,9 @@ array's storage: every **(S)** operation invalidates it.
 | `fill_range(a, first, last, v)` | sequential: `[first, last)` set to `v` |
 | `copy_range(a, first, last, src_first)` | sequential: `[first, last)` copied from an iterator |
 | `fill_range_mt(a, first, last, v)` | callable by several threads at once, on disjoint ranges (a chunk may be shared) |
+| `for_each_value(a, first, last, f)` | read: `f(v)` on each element, one read section per block |
+| `for_each_span(a, first, last, f)` | read: `f(std::span<const T>)` per block (a vectorisable loop); a compressed chunk as `f(v, count)` when `f` accepts it. A `std::vector` is one span |
+| `read_range(a, first, last, out)` | read: `[first, last)` copied to `out` |
 
 ## 6. OpenMP phases
 

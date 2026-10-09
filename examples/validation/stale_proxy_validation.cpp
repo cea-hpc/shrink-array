@@ -33,11 +33,10 @@
 //
 // What it does: each case runs in a child (this executable re-run with
 // --case <k>, a fresh process rather than a fork, the OpenMP runtime being
-// what it is). The child takes `auto p = a[10];`, uses it once, performs the
-// case's operation, and uses p again. A rebuild case must stop on the
-// invariant, with its message; a control case (nothing rebuilt, or a fresh
-// proxy taken after the rebuild) must run to the end. Outside check builds
-// the detection is compiled out and the harness only says so.
+// what it is). The child takes `auto p = a.element_proxy(10);` (what `auto p = a[10];` keeps), uses it once, performs
+// the case's operation, and uses p again. A rebuild case must stop on the invariant, with its message; a control case
+// (nothing rebuilt, or a fresh proxy taken after the rebuild) must run to the end. Outside check builds the detection
+// is compiled out and the harness only says so.
 // ============================================================================
 
 #include <cstdio>      // std::printf, std::fopen, std::remove
@@ -121,8 +120,8 @@ static int run_case(int k)
 {
     A    a(kN);
     A    b(kN);
-    auto p   = a[10];
-    p        = 1; // armed and valid
+    auto p   = a.element_proxy(10); // the proxy itself: a[10] refuses to be named in check builds
+    p        = 1;                   // armed and valid
     int sink = 0;
 
     switch (k)
@@ -138,7 +137,7 @@ static int run_case(int k)
         case 2:
             a.resize(2 * kN);
             {
-                auto q = a[10]; // taken after the rebuild: valid
+                auto q = a.element_proxy(10); // taken after the rebuild: valid
                 q      = 2;
                 sink += static_cast<int>(q);
             }

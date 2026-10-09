@@ -26,7 +26,7 @@
 #include <type_traits> // std::is_integral_v, std::is_same_v, std::conditional_t, std::remove_reference_t
 #include <atomic>      // std::atomic
 #include <complex>     // std::complex
-#include <cstdlib>     // std::size_t, std::abort
+#include <cstdlib>     // std::size_t
 #include <functional>  // std::plus, std::minus
 #include <vector>      // std::vector
 
@@ -43,9 +43,16 @@
 #include "chunk/internal/test_hooks.h"                   // TEST KNOB: CHUNK_TEST_READ_DELAY_EVERY (read_values)
 #include "chunk/internal/read_reclaim.h"                 // ReadSection: read_values_outside_session
 #include "chunk/internal/immortal.h"                     // Immortal / LazyImmortal: statics safe for global arrays
+#include "chunk/internal/parallel_storage_init.h"        // no_init_vector, make_filled: the candidate-flag rows
 
 namespace shrink_array
 {
+/// @brief One array's per-chunk candidate flags ("already in a compression
+///        list"): one atomic<char> per chunk, built by make_filled (a team for
+///        a large array). char, not bool: vector<bool> is the packed
+///        specialisation.
+using chunk_flag_row_t = parallel_storage_init::no_init_vector<std::atomic<char>>;
+
 // Forward declaration: only named here, in contexts that depend on T. The
 // definition (chunk/internal/compression_manager.h) comes with the _inline tails.
 template <typename T, typename ChunkType>
@@ -101,6 +108,27 @@ template <typename T>
     // them in a chunk_size / 8 byte buffer.
     // raw-read: element_of -- callers hold the write session, a ReadSection, or replay after materialisation
     return elem_get(vals, n);
+}
+
+/// @brief Check builds: stop on an integer `/=` or `%=` by zero.
+/// @details Integer division or modulo by zero is undefined behaviour in C++
+///          (SIGFPE on x86, a silent 0 on ARM); an invariant failure says
+///          where. Integer elements only: for a floating T the division is
+///          IEEE (inf, NaN) and the result is defined. Compiled out of release
+///          builds. Shared by Proxy (v1) and Proxy2Base (Chunk2, Chunk2A).
+/// @tparam T Element type.
+/// @param v Divisor (a value or a proxy).
+/// @param op "/=" or "%=", for the message.
+template <typename T, typename U>
+CHUNK_FORCE_INLINE void check_integer_divisor([[maybe_unused]] const U& v, [[maybe_unused]] const char* op) noexcept
+{
+    if constexpr (build_config::any_check && std::is_integral_v<T> && !std::is_same_v<T, bool>)
+    {
+        if (static_cast<base_t<U>>(v) == base_t<U>{}) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("integer element {} by zero (undefined behaviour)", op);
+        }
+    }
 }
 } // namespace internal
 
@@ -178,9 +206,9 @@ class ProxyBaseFastCompPolicy
                 }
             }
         }
-        // Value-initialised: every flag 0 (C++20 atomics).
+        // Every flag 0, constructed by a team for a large array.
         tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)] =
-            std::vector<std::atomic<char>>(static_cast<std::size_t>(nb_chunk));
+            parallel_storage_init::make_filled<std::atomic<char>>(static_cast<std::size_t>(nb_chunk), char{0});
     }
 
     /**
@@ -249,13 +277,13 @@ class ProxyBaseFastCompPolicy
 
     /**
      * @brief Per-tab array of atomic flags indicating whether each chunk is marked for compression.
-     * Each entry holds nb_chunk atomic<char> flags, built whole (atomics are not
-     * movable). char, not bool: vector<bool> is the packed specialisation.
+     * Each entry holds nb_chunk atomic<char> flags (chunk_flag_row_t), built
+     * whole by make_filled (atomics are not movable).
      */
 
-    static inline constinit internal::Immortal<std::vector<std::vector<std::atomic<char>>>>
-                                                               tab_is_inside_chunk_list_to_compress_storage_{};
-    static inline std::vector<std::vector<std::atomic<char>>>& tab_is_inside_chunk_list_to_compress =
+    static inline constinit internal::Immortal<std::vector<chunk_flag_row_t>>
+                                                 tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline std::vector<chunk_flag_row_t>& tab_is_inside_chunk_list_to_compress =
         tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
@@ -300,16 +328,16 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false>
     template <typename ProxyType, typename Ctx>
     static ProxyType make_proxy_with_info(Ctx* /*ctx*/)
     {
-        std::abort();
+        CHUNK_INVARIANT_FAILED("make_proxy_with_info: no deferred replay in a build without fast block compression");
     }
 
     // Management members
     static inline constinit internal::Immortal<CompressionManager<T, ChunkType>> compression_mgr_storage_{};
     static inline CompressionManager<T, ChunkType>& compression_mgr = compression_mgr_storage_.value;
     std::atomic<char>*                              ptr_is_inside_chunk_list_to_compress;
-    static inline constinit internal::Immortal<std::vector<std::vector<std::atomic<char>>>>
-                                                               tab_is_inside_chunk_list_to_compress_storage_{};
-    static inline std::vector<std::vector<std::atomic<char>>>& tab_is_inside_chunk_list_to_compress =
+    static inline constinit internal::Immortal<std::vector<chunk_flag_row_t>>
+                                                 tab_is_inside_chunk_list_to_compress_storage_{};
+    static inline std::vector<chunk_flag_row_t>& tab_is_inside_chunk_list_to_compress =
         tab_is_inside_chunk_list_to_compress_storage_.value;
 };
 
@@ -1325,7 +1353,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     }
 
     /// @brief The whole candidate-flag row for array @p num_tab.
-    static std::vector<std::atomic<char>>& get_tab_is_inside_list_to_compress(int num_tab) noexcept
+    static chunk_flag_row_t& get_tab_is_inside_list_to_compress(int num_tab) noexcept
     {
         return FastCompPolicy::tab_is_inside_chunk_list_to_compress[num_tab];
     }

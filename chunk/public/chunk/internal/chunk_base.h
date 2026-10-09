@@ -24,9 +24,10 @@
 #include <atomic>      // std::atomic, std::memory_order
 #include <array>       // std::array
 #include <cstddef>     // std::size_t
-#include <cstdio>      // perror (use_mm_protect: the cst_val1 buffer), stderr
+#include <cerrno>      // errno (use_mm_protect: the cst_val1 buffer's mmap)
+#include <cstdio>      // stderr
 #include <cstdlib>     // std::abort
-#include <cstring>     // std::memset
+#include <cstring>     // std::memset, std::strerror
 #include <memory>      // std::unique_ptr, std::make_unique
 #include <optional>    // std::optional (constant_value)
 #include <print>       // std::println
@@ -1364,6 +1365,44 @@ class ChunkBase : public DeferredReadGate<Derived>,
         }
     }
 
+    /**
+     * @brief read_block(), unless the chunk is compressed: then its constant.
+     *
+     * @details The same single load of `values` under one read section. A
+     *          chunk compressed to the first constant -- or, Chunk2A, to its
+     *          second -- sets @p cst and leaves @p out untouched, so the caller
+     *          takes the rest of the chunk at once
+     *          (ArrayChunkBase::for_each_span). A Chunk2 on its second constant
+     *          points at a filled buffer and is read as a block.
+     * @return true when @p cst was set, false when @p out was filled
+     */
+    bool read_block_or_constant(this const Derived& self, int first, int count, T* out, T& cst) noexcept
+    {
+        const read_reclaim::ReadSection section;
+        const T* const                  vals = self.values_load();
+        test_hooks::maybe_read_delay(); // TEST KNOB, as in element_at_unguarded
+        if (self.is_cst_val1(vals))
+        {
+            // raw-read: read_block_or_constant -- the shared first-constant buffer
+            cst = load_at<false>(vals, 0);
+            return true;
+        }
+        if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
+        {
+            if (self.is_cst_val2_ptr_of(vals)) [[unlikely]]
+            {
+                cst = self.second_value_from_ptr(vals);
+                return true;
+            }
+        }
+        for (int j = 0; j < count; ++j)
+        {
+            // raw-read: read_block_or_constant -- under its own ReadSection
+            out[j] = load_at<false>(vals, first + j);
+        }
+        return false;
+    }
+
     /// @brief Proxy access for read-write operations
     /// @param i Index in the chunk
     /// @return Proxy object for lazy write
@@ -1489,7 +1528,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
         }
         else
         {
-            std::abort();
+            CHUNK_INVARIANT_FAILED("get_chunk_allocator() in a build without the fast allocator");
         }
     }
 
@@ -1586,8 +1625,8 @@ class ChunkBase : public DeferredReadGate<Derived>,
 
         if (ptr == MAP_FAILED)
         {
-            perror("mmap failed");
-            std::abort();
+            CHUNK_INVARIANT_FAILED("mmap of the read-only first-value buffer ({} bytes) failed: {}", allocsize,
+                                   std::strerror(errno));
         }
 
         T* arr = static_cast<T*>(ptr);
@@ -1624,8 +1663,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
         {
             if (!self.is_written_at(j))
             {
-                std::println(stderr, "Error: trying to clear a chunk that is not written");
-                std::abort();
+                CHUNK_INVARIANT_FAILED("trying to clear a chunk that is not written (offset {})", j);
             }
         }
     }
@@ -1639,8 +1677,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
         {
             if (!self.written())
             {
-                std::println(stderr, "Error: trying to clear a chunk that is not written");
-                std::abort();
+                CHUNK_INVARIANT_FAILED("trying to clear a chunk that is not written");
             }
         }
     }
@@ -1683,8 +1720,8 @@ class ChunkBase : public DeferredReadGate<Derived>,
     /// Per-chunk count of deferred ops currently pending (enqueued but not yet
     /// drained), plus its owner tag: see DeferredReadGate<Derived, Precise>.
     /// Present only where the deferred-op machinery exists: OpenMP builds, and
-    /// not under -DSHRINK_SMALL_CHUNK (which trades it away for 16-byte
-    /// chunks). Published (release) BEFORE the map insert, so a pending op is
+    /// not under -DSHRINK_SMALL_CHUNK (which trades it, and steal_mark_, away
+    /// for 8-byte chunks). Published (release) BEFORE the map insert, so a pending op is
     /// visible for its whole lifetime; retired (release) after the drain; the
     /// read gates acquire-load it.
     ///
@@ -1708,8 +1745,8 @@ class ChunkBase : public DeferredReadGate<Derived>,
     /// whole team paying a global exclusion window per pass.
     ///
     /// Lives in the 4 bytes of padding after pending_ops_ (ChunkBase is
-    /// 8-byte aligned on `values`), so it costs nothing: sizeof(Chunk2A<double>)
-    /// stays 24. Same \#if as pending_ops_, for the same gcc phase-1 lookup
+    /// 8-byte aligned on `values`), so it costs nothing: 8 + 4 + 4, every
+    /// chunk of an OpenMP build stays at 16 bytes. Same \#if as pending_ops_, for the same gcc phase-1 lookup
     /// reason; SHRINK_SMALL_CHUNK builds keep the global gate
     /// (chunk_config::use_chunk_steal_mark).
     std::atomic<uint32_t> steal_mark_{0};

@@ -37,9 +37,10 @@
 #include "chunk/internal/chunk_stats.h"                 // increm_chunk_teardown_clear, add_chunk_released
 #include "chunk/all_type_chunk.h"                       // AllTypeChunk::ensure_manager
 #include "chunk/config.h"                               // chunk_config::use_fast_block_compression, chunk_config::stats
+#include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_*
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
-#include "chunk/internal/parallel_storage_init.h"       // reserve_first_touched, for_each_chunk
+#include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
 // Explicit includes for symbols used by clear_core() below: ManagerChunk
 // (per-size free-list + candidate-filter helpers), pool_ledger
 // (CHUNK_LEDGER_PARK/DISCARD), chunk_size_policy (runtime geometry). All
@@ -141,10 +142,9 @@ void ArrayChunk2<T, ind_type>::create(ind_type sz)
 }
 
 // Chunk count derives from the geometry by a shift, so a null chunk size is a
-// hard error rather than a degenerate case. The chunk-init loop is written
-// twice on purpose: `omp parallel for` when we are outside a region and the
-// array is big enough to be worth opening one, an orphaned `omp for` otherwise
-// (which is serial when no region is open, and shares the work when one is).
+// hard error rather than a degenerate case. The chunks are initialised by
+// parallel_storage_init::for_each_chunk(): a team of its own outside a region
+// for a large enough array, the calling thread otherwise.
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk2<T, ind_type>::rebuild_storage(ind_type sz)
 {
@@ -166,8 +166,7 @@ void ArrayChunk2<T, ind_type>::rebuild_storage(ind_type sz)
         }
         else if (sz && !this->size_policy_.size())
         {
-            std::println(stderr, "__chunk_size null !");
-            std::abort();
+            CHUNK_INVARIANT_FAILED("create({} elements): the chunk size is 0 (no geometry set)", sz);
         }
 
         if (nb_chunk)
@@ -220,6 +219,21 @@ void ArrayChunk2<T, ind_type>::set_second_value(T sec_value, bool message)
         if constexpr (is_bool)
         {
             std::println(stderr, "\nWarning useless method for bool : second_value is true");
+        }
+    }
+
+    if constexpr (is_not_bool)
+    {
+        // T{} is the first value; while the second is T{} too (none
+        // declared), declaring T{} would register a block and candidate lists
+        // for a value every write already folds as the first one.
+        if (sec_value == T{} && get_second_value() == T{})
+        {
+            if (message)
+            {
+                std::println(stderr, "\nWarning set_second_value(T{{}}) ignored: T{{}} is already the first value");
+            }
+            return;
         }
     }
 

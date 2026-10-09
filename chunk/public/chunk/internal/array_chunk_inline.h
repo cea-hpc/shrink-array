@@ -31,9 +31,10 @@
 #include "chunk/internal/pool_ledger.h"                 // CHUNK_LEDGER_PARK / DISCARD
 #include "chunk/type_name.h"                            // type_name<T>
 #include "chunk/config.h"                               // build_config::chunk_dynamic, chunk_config::stats
+#include "chunk/internal/invariant_check.h"             // CHUNK_INVARIANT_FAILED
 #include "chunk/internal/chunk_size_policy.h"           // set_thread_chunk_size
 #include "chunk/internal/concept_array_chunk_element.h" // ArrayChunkElement
-#include "chunk/internal/parallel_storage_init.h"       // reserve_first_touched, for_each_chunk
+#include "chunk/internal/parallel_storage_init.h"       // for_each_chunk
 #include "chunk/internal/in_t.h"                        // in_t<T>
 
 namespace shrink_array
@@ -70,8 +71,7 @@ void ArrayChunk<T, ind_type>::rebuild_storage(ind_type sz)
         }
         else if (sz && !this->size_policy_.size())
         {
-            std::println(stderr, "__chunk_size null !");
-            std::abort();
+            CHUNK_INVARIANT_FAILED("create({} elements): the chunk size is 0 (no geometry set)", sz);
         }
 
         if (nb_chunk)

@@ -1,5 +1,7 @@
 # shrink-array: compressed arrays for C++
 
+> Version française : [README_fr.md](README_fr.md).
+
 shrink-array provides arrays that are used like a `std::vector` and take less memory when large
 parts of them hold the same value -- zero, or a few repeated values. It is written for HPC codes:
 C++23, OpenMP, arrays of 10⁹ elements, up to a few hundred threads.
@@ -24,16 +26,30 @@ slower.
 | Chunk2A | `ArrayChunk2A<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare |
 
 The variant and the chunk size are chosen by the library you link (`chunk::chunk_v2a_256`,
-`chunk::chunk_v2a_dyn`, ...); the headers are the same for all of them. Chunk2A compresses the
-most and is the one to try first. As an order of magnitude, on the `shrink_bench` benchmark
-(arrays of 10⁹ elements, 64 threads), memory at the end of the run:
+`chunk::chunk_v2a_dyn`, ...); the headers are the same for all of them. Write the class of
+that variant, or an alias on it ([docs/getting_started.md](docs/getting_started.md) §3): an
+array of another variant than the library's is not supported. Chunk2A compresses the
+most and is the one to try first.
 
-| variant | static size 256 | dynamic size (adaptive re-chunk) |
+What the arrays save depends on the data. For an order of magnitude, the `shrink_bench`
+benchmark ([examples/shrink_bench](examples/shrink_bench), `--mode perf`) holds arrays of about
+10⁹ elements of a dozen element types (`double`, `float`, `int`, `long`, `std::complex`,
+structures, `bool`...). Each one is filled so that most of it is zero or one of a few repeated
+values and the rest varied data, then rewritten piece by piece over the 2,000 iterations of a
+compute loop. Memory of the whole process at the end of the run, measured exactly
+([docs/performance_measurement.md](docs/performance_measurement.md)), on Grace with 64 threads:
+
+| variant | static chunks of 256 elements (`_256`) | dynamic chunks (`_dyn`): from 64, adaptive re-chunk |
 |---|---|---|
 | Chunk2A | 7.26 GB | 6.0 GB |
 | Chunk2 | 17.3 GB | 16.3 GB |
 | Chunk (v1) | 40.2 GB | 40.3 GB |
 
+For scale, the same arrays as `std::vector`s hold about 100 GB of elements (computed from the
+element sizes, not measured). The gap between the variants is the share of the data each one
+can compress: v1 only the zero runs, Chunk2 one more value per array, Chunk2A every run of a
+repeated value. On data where every chunk holds varied values, there is nothing to compress and
+the arrays cost a little more than a `std::vector`.
 [docs/variants.md](docs/variants.md) explains what each one costs and which one to choose.
 `ArrayChunkBits` stores `bool` one bit per element (Chunk2 builds).
 
@@ -179,7 +195,8 @@ The non-const `operator[]` returns a *proxy*, not a `T&`: a handle on the elemen
 on conversion and routes every write through the compression machinery.
 
 - `T v = a[i];` takes the value; `auto v = a[i];` keeps the proxy, which then follows the
-  element. Code ported from `std::vector` wants `T`, not `auto`.
+  element. Code ported from `std::vector` wants `T`, not `auto`. In check builds (Debug,
+  `CHECK_OPTIM`) a use of such a `v` does not compile (`internal/element_ref.h`).
 - `a[i] += x;` and the other compound operators return a proxy; discarding it, as here, lets the
   library defer the operation at no cost. `a[i]++` returns the old value as a `T`.
 - A proxy holds references into the array's chunks: anything that rebuilds them -- `resize`,
@@ -224,7 +241,7 @@ See [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md).
 - [examples/multi-mat](examples/multi-mat): multi-material fields, each material in compressed
   arrays or in `std::vector`s, with loops written once for both
   ([Loops.h](examples/multi-mat/Loops.h)).
-- [examples/shrink_bench](examples/shrink_bench): the reference benchmark -- thirteen arrays of
+- [examples/shrink_bench](examples/shrink_bench): the reference benchmark -- eighteen arrays of
   different element types under a compute loop, `--mode check` against `std::vector` reference
   files, `--mode perf` for timing.
 - [examples/validation](examples/validation): one harness per property (compression round trip,
@@ -232,6 +249,11 @@ See [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md).
 - [examples/advisor_demo](examples/advisor_demo) and
   [examples/variant_compare](examples/variant_compare): the chunk-size advisor against real sizes,
   and Chunk2 against Chunk2A on one workload.
+- [python/shrink_gui](python/shrink_gui): a window on the laptop to submit the build, the tests
+  and the benchmark on the cluster and follow them ([docs/shrink_gui.md](docs/shrink_gui.md)).
+
+`simple_array` and `multi-mat` work on arrays of 10⁹ elements: their `ctest` needs a compute
+node (24 GB for the `std::vector` version of `simple_array`) and is killed on a laptop.
 
 ## Documentation
 
@@ -244,6 +266,7 @@ See [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md).
 | use dynamic chunk sizes | [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md) |
 | tune the library or the build | [docs/environment_variables.md](docs/environment_variables.md) |
 | measure memory and time reliably | [docs/performance_measurement.md](docs/performance_measurement.md) |
+| submit and follow runs on the cluster from a window | [docs/shrink_gui.md](docs/shrink_gui.md) |
 | contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 Every document also exists in French; the index is [docs/README.md](docs/README.md). What changed

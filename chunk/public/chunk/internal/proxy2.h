@@ -19,13 +19,14 @@
 #include <atomic>   // std::atomic, std::memory_order_release
 #include <concepts> // std::assignable_from
 #include <cstddef>  // std::size_t
-#include <cstdlib>  // std::abort
+#include <memory>   // std::addressof (operator=: operator& is deleted)
 #include <ostream>  // std::ostream
 #include <vector>   // std::vector
 
 #include "chunk/bit.h"                         // is_bool_like_v: bool and Bit share the bool path
 #include "chunk/internal/in_t.h"               // in_t<T>
 #include "chunk/config.h"                      // chunk_config::use_fast_block_compression, build_config::chunk_dynamic
+#include "chunk/internal/invariant_check.h"    // CHUNK_INVARIANT_FAILED
 #include "chunk/PMP_CHUNK.h"                   // get_thr_rank_fast
 #include "chunk/internal/pointer_map_chunk2.h" // PointerMapChunk2
 #include "chunk/internal/concept_is_clean_assignement.h" // IsCleanAssignment
@@ -109,7 +110,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      *        set_info_second_value_ind().
      * @return The second constant value.
      */
-    T get_second_value() const noexcept
+    [[nodiscard]] T get_second_value() const noexcept
     {
         return second_value;
     }
@@ -145,7 +146,7 @@ class ProxySpec2 : public Proxy2Base<Derived, T, Chunk2<T>>
      *        full metadata load rather than the lighter-weight one.
      * @return The second constant value.
      */
-    T make_second_value() const noexcept
+    [[nodiscard]] T make_second_value() const noexcept
     {
         return inf_array.second_value;
     }
@@ -482,7 +483,7 @@ class Proxy2FastCompPolicy : public ProxySpec2<T, Derived>
      * @pre num_tab must be < tab_is_inside_chunk_list_to_compress.size()
      */
 
-    static std::vector<std::atomic<char>>& get_tab_is_inside_list_to_compress(int num_tab)
+    static chunk_flag_row_t& get_tab_is_inside_list_to_compress(int num_tab)
     {
         return tab_is_inside_chunk_list_to_compress[num_tab];
     }
@@ -870,7 +871,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
     // operators do NOT inline into the caller, so its parameter is what
     // crosses a call -- a char by value stays in a register, a struct goes by
     // reference. Non-deducible, hence the explicit assign_impl<U>(v) below.
-    T assign_impl(in_t<U> v) noexcept;
+    [[nodiscard]] T assign_impl(in_t<U> v) noexcept;
 
     // ========================================================================
     // COMPOUND ARITHMETIC OPERATORS
@@ -885,16 +886,14 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @tparam Op Binary operator applied to (current, v).
      * @param v Operand.
      * @param op The operator.
-     * @param check_first_value_result When true, a result equal to the first
-     *        value is also treated as a compression candidate (`*=`, `/=` and
-     *        `%=` pass true: they can land on it from a non-zero slot).
+     * @note A result equal to the first value is counted as one, and a chunk
+     *       it fills folds: `*=`, `/=` and `%=` (the callers) can land on it
+     *       from a non-zero slot.
      * @note Materialises any foreign deferred write to this offset first
      *       (reader_sync) so the RMW cannot clobber it.
      */
     template <typename U, typename Op>
-    void apply_compound_operation(Op      op,
-                                  in_t<U> v,
-                                  bool    check_first_value_result = false) noexcept; // in_t: see assign_impl
+    void apply_compound_operation(Op op, in_t<U> v) noexcept; // in_t: see assign_impl
 
   public:
     /**
@@ -936,8 +935,25 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
         return assign_impl<T>(static_cast<T>(v));
     }
 
-    const Proxy2& operator=(const Proxy2& from) = delete;
-    Proxy2(const Proxy2& other)                 = default;
+    /**
+     * @brief Proxy-to-proxy assignment, `a[i] = b[j]`: read @p from's value
+     *        through operator T() (the gated read), then write it through
+     *        assign_impl() (the whole write engine) -- Proxy::operator='s
+     *        meaning. Deleted before, so code written for std::vector did not
+     *        compile.
+     * @param from Proxy to read the value from.
+     * @return *this.
+     */
+    const Proxy2& operator=(const Proxy2& from) noexcept
+    {
+        if (std::addressof(from) != this) // operator& is deleted
+        {
+            const in_t<T> v = static_cast<T>(from); // complete before the write starts
+            assign_impl<T>(v);
+        }
+        return *this;
+    }
+    Proxy2(const Proxy2& other) = default;
 
     T*       operator&()       = delete;
     const T* operator&() const = delete;
@@ -946,7 +962,7 @@ class Proxy2 : public Proxy2FastCompPolicy<Proxy2<T>, T, Chunk2<T>, chunk_config
      * @brief Pointer to the owning array (used as the compression-metadata
      *        map key).
      */
-    const T* get_ptr_on_array() const noexcept
+    [[nodiscard]] const T* get_ptr_on_array() const noexcept
     {
         return static_cast<const T*>(ptr_on_array);
     }

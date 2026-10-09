@@ -34,10 +34,14 @@ struct BenchArgs
     /// --compress: bzip2 the reference files written by the vector baseline and
     /// read the .bz2 oracle back. Off by default: the check runs work on the
     /// plain .bin, which spares the compress / decompress round trip.
-    bool compress_v  = false;
-    bool write_trace = false; ///< --write_trace
-    bool read_trace  = false; ///< --read_trace
-    bool test_stl    = false; ///< --test_stl: run the STL-interface self-checks
+    bool compress_v = false;
+    /// --checksum_only: the vector baseline writes the "_check_sum" files only, no
+    /// data. A shrink run then passes or fails on the checksum alone (bit-exact: the
+    /// element fallback's 1e-10 / 1e-6 tolerance is gone) and aborts on a miss.
+    bool checksum_only = false;
+    bool write_trace   = false; ///< --write_trace
+    bool read_trace    = false; ///< --read_trace
+    bool test_stl      = false; ///< --test_stl: run the STL-interface self-checks
     /// --test_prealloc: alloc_chunk() over a partial window, then the loop
     /// that uses it (shrink_bench.cpp, run_prealloc_checks).
     bool test_prealloc = false;

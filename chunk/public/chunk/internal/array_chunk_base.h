@@ -37,8 +37,10 @@
  * @see chunk_size_policy.h for the geometry policy (static vs dynamic)
  */
 
+#include <concepts> // std::invocable (for_each_span's run overload)
 #include <cstddef>  // std::size_t (size_type)
-#include <utility>  // std::swap
+#include <span>     // std::span (for_each_span)
+#include <utility>  // std::swap, std::as_const
 #include <iterator> // std::reverse_iterator, iterator tags — const_iterator, input_iterator (assign)
 #include <memory>   // std::addressof
 
@@ -49,6 +51,7 @@
 #include "chunk/internal/array_chunk_rechunk.h" // RechunkSupport — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/invariant_check.h"     // CHUNK_INVARIANT_FAILED — used HERE (swap check)
 #include "chunk/internal/def_force_inline.h"    // CHUNK_FORCE_INLINE
+#include "chunk/internal/element_ref.h"         // ElementRef: operator[] in check builds
 #include "chunk/internal/live_arrays.h"         // LiveArrayToken — the teardown verbs' live-array count
 
 namespace shrink_array
@@ -163,8 +166,10 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     using value_type      = T;
     using size_type       = std::size_t;
     using difference_type = std::ptrdiff_t;
-    using reference       = proxy_type; // non-const positional access (write proxy)
-    using const_reference = T;          // const positional access (value)
+    /// non-const positional access: the write proxy, wrapped in an ElementRef in
+    /// check builds (build_config::strict_element_ref)
+    using reference       = std::conditional_t<build_config::strict_element_ref, ElementRef<proxy_type, T>, proxy_type>;
+    using const_reference = T; // const positional access (value)
 
     /** @} */
 
@@ -706,7 +711,7 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     /**
      * @name Bulk reads
      * The read half of fill_range / copy_range. Call them through the free
-     * functions shrink_array::for_each_value / read_range
+     * functions shrink_array::for_each_value / for_each_span / read_range
      * (array_chunk_range_ops.h), which take a std::vector as well.
      * @{
      */
@@ -777,6 +782,91 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
     void for_each_value(F&& f) const
     {
         for_each_value(ind_type{0}, m_size, std::forward<F>(f));
+    }
+
+    /**
+     * @brief Call @p f(std::span<const T>) on [@p first, @p last), block by
+     *        block, in order: the loop over the span can be vectorised.
+     *
+     * @details for_each_value() handing over each block of up to kBulkBlock
+     *          elements instead of its elements one by one.
+     *
+     *          When @p f is also callable as f(const T& v, std::size_t count),
+     *          a compressed chunk is passed that way: its constant and the
+     *          number of elements of the range it covers, in O(1), nothing
+     *          copied -- a sum adds v * count. Other callables get the
+     *          constant as spans, like any block.
+     *
+     *          Stats and NaN-check builds fill each block through the
+     *          iterator, so every element still goes through the const
+     *          operator[], and never call f(v, count).
+     * @param first first index, inclusive (clamped to [0, size()])
+     * @param last  last index, exclusive (clamped to size())
+     * @param f     called as f(std::span<const T>), and f(v, count) when it
+     *              accepts it; its return value is ignored. A span is only
+     *              valid during its call.
+     * @warning for_each_value()'s contract: no other thread may write the
+     *          array during the call; callable from a parallel region, every
+     *          thread on its own slice.
+     */
+    template <typename F>
+    void for_each_span(ind_type first, ind_type last, F&& f) const
+    {
+        T buf[kBulkBlock];
+        if constexpr (kBulkFast)
+        {
+            for_each_chunk_span(first, last,
+                                [&](const chunk_type& ch, int num_chunk, int lo, int hi)
+                                {
+                                    for (int j = lo; j < hi; j += kBulkBlock)
+                                    {
+                                        const int n = (hi - j) < kBulkBlock ? (hi - j) : kBulkBlock;
+                                        if constexpr (std::invocable<F&, const T&, std::size_t>)
+                                        {
+                                            // A compressed chunk stays so for the rest of the
+                                            // call (no writer): the constant covers [j, hi).
+                                            T cst{};
+                                            if (ch.read_block_or_constant(j, n, buf, cst))
+                                            {
+                                                check_no_write_during_bulk_read(ch, num_chunk, j);
+                                                f(std::as_const(cst), static_cast<std::size_t>(hi - j));
+                                                return;
+                                            }
+                                        }
+                                        else
+                                        {
+                                            ch.read_block(j, n, buf);
+                                        }
+                                        check_no_write_during_bulk_read(ch, num_chunk, j);
+                                        f(std::span<const T>(buf, static_cast<std::size_t>(n)));
+                                    }
+                                });
+        }
+        else
+        {
+            int n = 0;
+            for_each_value(first, last,
+                           [&](const T& x)
+                           {
+                               buf[n++] = x;
+                               if (n == kBulkBlock)
+                               {
+                                   f(std::span<const T>(buf, static_cast<std::size_t>(n)));
+                                   n = 0;
+                               }
+                           });
+            if (n > 0)
+            {
+                f(std::span<const T>(buf, static_cast<std::size_t>(n)));
+            }
+        }
+    }
+
+    /// @brief for_each_span() over every element.
+    template <typename F>
+    void for_each_span(F&& f) const
+    {
+        for_each_span(ind_type{0}, m_size, std::forward<F>(f));
     }
 
     /**
@@ -1028,8 +1118,30 @@ class ArrayChunkBase : public RegistryKeyCanaryBase,
      *          Take a value when it has to survive: `T v = a[i];`, not
      *          `auto v = a[i];` (which keeps the proxy). The compound operators
      *          (+= ... >>=) and the prefix ++/-- return the same kind of proxy.
+     *          In check builds the proxy comes wrapped in an ElementRef, whose
+     *          operations only a temporary may use: a use of
+     *          `auto v = a[i];` does not compile (internal/element_ref.h).
      */
-    CHUNK_FLATTEN CHUNK_FORCE_INLINE proxy_type operator[](this Derived& self, ind_type i) noexcept
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE reference operator[](this Derived& self, ind_type i) noexcept
+    {
+        if constexpr (build_config::strict_element_ref)
+        {
+            return reference(self.element_proxy(i));
+        }
+        else
+        {
+            return self.element_proxy(i);
+        }
+    }
+
+    /**
+     * @brief The write proxy of element @p i, in every build: operator[]'s
+     *        work, for the library code that names the proxy (operator[]
+     *        wraps it in an ElementRef in check builds).
+     * @param i global element index; the caller guarantees 0 <= i < size()
+     * @return the write proxy for that element, armed as operator[]'s
+     */
+    CHUNK_FLATTEN CHUNK_FORCE_INLINE proxy_type element_proxy(this Derived& self, ind_type i) noexcept
     {
         const int         num_chunk = self.chunk_index_of(i);
         auto&             chunk_t   = self.chunk_list[num_chunk];

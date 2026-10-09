@@ -39,7 +39,7 @@
 #include "chunk/internal/chunk_stats.h"                  // increm_chunk_* (CHUNK_STATS)
 #include "chunk/internal/chunk_size_policy.h"            // DynChunkSizeGuard, set_thread_chunk_size
 #include "chunk/internal/read_reclaim.h" // read_reclaim::PassScope (perform_compression / compress in a region)
-#include "chunk/internal/parallel_storage_init.h" // reserve_first_touched, for_each_chunk
+#include "chunk/internal/parallel_storage_init.h" // make_filled, resize_filled, for_each_chunk
 
 /**
  * @file proxy2A_inline.h
@@ -146,13 +146,11 @@ inline void replay_retry(int&                        retry_count,
 }
 } // namespace internal
 
-// Metadata arming. These four form a family: each arms a different subset of the
-// cached per-chunk pointers, and callers pick the cheapest one that covers what
-// they are about to touch. Order matters -- num_tab must be resolved before any
-// pointer is computed, since every table is indexed by it.
+// Metadata arming. Order matters -- num_tab must be resolved before any pointer
+// is computed, since every table is indexed by it. The assignment bodies
+// (handle_*_assignment) arm only what the write engine has not.
 
-// Full arming: resolves num_tab, then every cached pointer. The most expensive
-// of the four, and the default for a write that has not proved it needs less.
+// Full arming: resolves num_tab, then every cached pointer.
 template <typename T>
 void Proxy2A<T>::set_info_on_chunk() noexcept
 {
@@ -167,22 +165,8 @@ void Proxy2A<T>::set_info_on_chunk() noexcept
     }
 }
 
-// Everything set_info_on_chunk() does EXCEPT ptr_second_value, and without
-// re-resolving num_tab: for callers that already hold a valid num_tab and do not
-// need the second value.
-template <typename T>
-void Proxy2A<T>::set_other_info_on_chunk() noexcept
-{
-    Base::set_ptr_is_inside_chunk_list_to_compress();
-
-    ptr_type_cst = &tab_type_cst_val[num_tab][num_chunk];
-}
-
 /**
  * @brief Arms ptr_second_value alone, from an already-valid num_tab.
- *
- * Cheapest member of the arming family: for callers that hold a valid num_tab
- * and only need to compare against this chunk's second value.
  *
  * @pre num_tab and num_chunk are already resolved.
  * @note No-op for bool, whose specialisation keeps no per-chunk second value.
@@ -196,35 +180,18 @@ void Proxy2A<T>::set_ptr_second_value() noexcept
     }
 }
 
-/**
- * @brief Resolves num_tab, then arms ptr_second_value from it.
- *
- * For callers holding neither. Everything each table is indexed by comes from
- * num_tab, so it must be resolved before any pointer is computed.
- *
- * @note The second-value arming is skipped for bool.
- */
-template <typename T>
-void Proxy2A<T>::set_ptr_second_value_and_num_tab() noexcept
-{
-    set_num_tab();
-    if constexpr (is_not_bool)
-    {
-        set_ptr_second_value();
-    }
-}
-
 // Re-reads the slot through ptr_second_value; prefer the explicit-old-value
 // variant below wherever the caller already knows it. bool carries no per-chunk
 // second value, so it routes to the plain ProxyBase form.
 template <typename T>
-void Proxy2A<T>::mark_for_compression_if_needed(in_t<T> new_value) const
+void Proxy2A<T>::mark_for_compression_if_needed(in_t<T> new_value, [[maybe_unused]] const T* vals) const
 {
     if constexpr (is_not_bool)
     {
         // Called BEFORE the store (handle_no_bool_assignment): the memory check
         // must expect the old value -- see mark_for_compression_before_store.
-        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value.get(), new_value, Chunk2A<T>::first_value);
+        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value.get(), new_value, Chunk2A<T>::first_value,
+                                                 vals);
     }
     else
     {
@@ -295,12 +262,11 @@ void Proxy2A<T>::resize_tab_is_int(int num_tab, int nb_chunk_old, int nb_chunk)
             }
         }
     }
-    // Value-initialised, every flag 0 (make_unique<T[]> value-initialised too:
-    // the tail loop that followed it stored zeros over zeros).
+    // Every flag 0; the new type-of-constant entries 0. Both constructed by a
+    // team for a large array (parallel_storage_init).
     Base::tab_is_inside_chunk_list_to_compress[static_cast<std::size_t>(num_tab)] =
-        std::vector<std::atomic<char>>(static_cast<std::size_t>(nb_chunk));
-    parallel_storage_init::reserve_first_touched(tab_type_cst_val[num_tab], static_cast<std::size_t>(nb_chunk));
-    tab_type_cst_val[num_tab].resize(nb_chunk, 0);
+        parallel_storage_init::make_filled<std::atomic<char>>(static_cast<std::size_t>(nb_chunk), char{0});
+    parallel_storage_init::resize_filled(tab_type_cst_val[num_tab], static_cast<std::size_t>(nb_chunk), char{0});
 }
 
 /**
@@ -537,26 +503,46 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::ensure_writable_stor
  *     value stored;
  *  -# otherwise the chunk is materialised if still constant, then written.
  *
+ * @param vals The chunk's values pointer, loaded by the caller inside the write
+ *        session; every state test reads it instead of reloading `values`.
  * @param v Value to store.
  * @pre The metadata pointers this reads are armed (see the handle_*_assignment
  *      callers, which arm exactly what their branch needs).
  */
 template <typename T>
-void Proxy2A<T>::perform_core_assignment(in_t<T> v) const
+void Proxy2A<T>::perform_core_assignment(T* vals, in_t<T> v) const
 {
+    // After a materialisation, the one reload: create_value() does not return
+    // the live buffer, and a concurrent writer may have won its CAS (ours then
+    // went back to the pool). Materialised now, so stable until the session ends.
+    const auto materialise = [this, &vals]
+    {
+        if constexpr (is_not_bool)
+        {
+            create_value(BaseSpec::ptr_second_value);
+        }
+        else
+        {
+            create_value_bool();
+        }
+        vals = chunk.values_load();
+    };
+
+    const bool is_cst2 = chunk.is_cst_val2_ptr_of(vals);
+
     if constexpr (is_not_bool)
     {
         if (v == static_cast<T>(BaseSpec::ptr_second_value.get()))
         {
-            if (is_cst_val2() || Base::load_value() == BaseSpec::ptr_second_value.get())
+            if (is_cst2 || Base::read_values_at(vals) == BaseSpec::ptr_second_value.get())
             {
                 return;
             }
-            if (Base::is_cst_val1())
+            if (Base::is_cst_val1(vals))
             {
-                create_value(BaseSpec::ptr_second_value);
+                materialise();
 
-                Base::store_value(BaseSpec::ptr_second_value.get());
+                Base::store_value_at(vals, BaseSpec::ptr_second_value.get());
 
                 return;
             }
@@ -564,15 +550,15 @@ void Proxy2A<T>::perform_core_assignment(in_t<T> v) const
     }
     else if (v)
     {
-        if (is_cst_val2() || Base::load_value())
+        if (is_cst2 || Base::read_values_at(vals))
         {
             return;
         }
-        if (Base::is_cst_val1())
+        if (Base::is_cst_val1(vals))
         {
-            create_value_bool();
+            materialise();
 
-            Base::store_value(true);
+            Base::store_value_at(vals, true);
 
             return;
         }
@@ -583,21 +569,12 @@ void Proxy2A<T>::perform_core_assignment(in_t<T> v) const
         increm_chunk_write<ChunkType>(v);
     }
 
-    const bool need_alloc = Base2::is_cst_val();
-
-    if (need_alloc)
+    if (is_cst2 || Base::is_cst_val1(vals))
     {
-        if constexpr (is_not_bool)
-        {
-            create_value(BaseSpec::ptr_second_value);
-        }
-        else
-        {
-            create_value_bool();
-        }
+        materialise();
     }
 
-    Base::store_value(v);
+    Base::store_value_at(vals, v);
 
     if constexpr (build_config::do_check)
     {
@@ -611,10 +588,10 @@ void Proxy2A<T>::perform_core_assignment(in_t<T> v) const
 /**
  * @brief Assignment body for non-bool element types.
  *
- * Arms the per-chunk metadata, marks the chunk for compression when the new
- * value closes a constant run, then stores. The arming is deliberately split:
- * on a cst_val2 chunk only the second value is resolved first, so that a write
- * of that very value can return without paying for the rest.
+ * Arms the per-chunk metadata the write engine has not, marks the chunk for
+ * compression when the new value closes a constant run, then stores. The
+ * second value is resolved first, so that writing it onto a cst_val2 chunk
+ * returns without paying for the rest.
  *
  * @param v Value to assign.
  */
@@ -623,25 +600,36 @@ void Proxy2A<T>::handle_no_bool_assignment(in_t<T> v)
 {
     if constexpr (is_not_bool)
     {
-        if (is_cst_val2())
+        // ONE load of the values pointer for the whole body, as in
+        // Proxy::assign_impl: inside the write session no compressor can change
+        // it, and no writer either once it is not a constant -- the only change
+        // left, a concurrent materialisation, is what perform_core_assignment()
+        // reloads after.
+        T* const vals = chunk.values_load();
+
+        // num_tab and the queued-flag pointer: with the fast block compression
+        // the write engine armed both before this body
+        // (write_with_optional_lock_with_set_ptr), and the acquire loads since
+        // keep the compiler from merging a second arming with the first.
+        if constexpr (!chunk_config::use_fast_block_compression)
         {
-            set_ptr_second_value_and_num_tab();
-
-            if (v == static_cast<T>(BaseSpec::ptr_second_value.get()))
-            {
-                return;
-            }
-
-            set_other_info_on_chunk();
+            set_num_tab();
+            Base::set_ptr_is_inside_chunk_list_to_compress();
         }
-        else
+        set_ptr_second_value();
+
+        // Writing its second value onto a cst_val2 chunk: nothing to do, and
+        // no need for the rest of the metadata.
+        if (chunk.is_cst_val2_ptr_of(vals) && v == static_cast<T>(BaseSpec::ptr_second_value.get()))
         {
-            set_info_on_chunk();
+            return;
         }
 
-        mark_for_compression_if_needed(v);
+        ptr_type_cst = &tab_type_cst_val[num_tab][num_chunk];
 
-        perform_core_assignment(v);
+        mark_for_compression_if_needed(v, vals);
+
+        perform_core_assignment(vals, v);
     }
 }
 
@@ -659,25 +647,27 @@ void Proxy2A<T>::handle_bool_assignment(in_t<T> v)
 {
     if constexpr (is_bool)
     {
-        if (is_cst_val2())
+        // One load of the values pointer, as in handle_no_bool_assignment().
+        T* const vals = chunk.values_load();
+
+        // Armed by the write engine with the fast block compression: see
+        // handle_no_bool_assignment().
+        if constexpr (!chunk_config::use_fast_block_compression)
         {
             set_num_tab();
-
-            if (v)
-            {
-                return;
-            }
-
-            set_other_info_on_chunk();
+            Base::set_ptr_is_inside_chunk_list_to_compress();
         }
-        else
+
+        if (chunk.is_cst_val2_ptr_of(vals) && v)
         {
-            set_info_on_chunk();
+            return;
         }
 
-        mark_for_compression_if_needed(v);
+        ptr_type_cst = &tab_type_cst_val[num_tab][num_chunk];
 
-        perform_core_assignment(v);
+        mark_for_compression_if_needed(v, vals);
+
+        perform_core_assignment(vals, v);
     }
 }
 
@@ -1336,7 +1326,7 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_oper
  */
 template <typename T>
 template <typename U, typename Op>
-void Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v, bool /*check_first_value_result*/) noexcept
+void Proxy2A<T>::apply_compound_operation(Op op, in_t<U> v) noexcept
 {
     this->check_not_stale();
     // No set_info_on_chunk() here: nothing before apply_atomic_op() reads the

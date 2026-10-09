@@ -420,9 +420,11 @@ void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int 
         {
             if (!ok)
             {
-                std::fprintf(stderr, "[RECHUNK] identity swap failed (this or tmp "
-                                     "not registered) -- rechunk aborted mid-swap\n");
-                std::fflush(stderr);
+                // The storage is swapped already, the registry is not: the
+                // per-num_tab tables no longer follow the chunks. Was a message,
+                // then on.
+                CHUNK_INVARIANT_FAILED("[RECHUNK] identity swap failed (this or tmp not registered) -- storage "
+                                       "swapped, registry not");
             }
         }
         (void)ok;

@@ -20,18 +20,17 @@
 // (register_manager / ensure_manager, called from the arrays' create) and the
 // up-front registration of a type list (initialize<Types>).
 
-#include <cstdio>  // the refusal message of register_manager
-#include <cstdlib> // std::abort
-#include <memory>  // std::make_unique
-#include <mutex>   // std::scoped_lock (registry_mutex_)
+#include <memory> // std::make_unique
+#include <mutex>  // std::scoped_lock (registry_mutex_)
 
-#include "chunk/all_type_chunk.h"         // the declarations these bodies belong to
-#include "chunk/config.h"                 // build_config::chunk_dynamic, chunk_config::use_chunk*
-#include "chunk/internal/for_each_type.h" // for_each_type
-#include "chunk/internal/manager_chunk.h" // ManagerChunk<CHUNK_T, T>
-#include "chunk/singleton.h"              // SingletonChk<AllTypeChunk>, for ensure_manager
-#include "chunk/chunk_traits.h"           // the Chunk / Chunk2 / Chunk2A declarations initialize<Types> names
-#include "chunk/internal/link_check.h"    // CHUNK_LINK_CHECK: the program's settings, the library's
+#include "chunk/all_type_chunk.h"           // the declarations these bodies belong to
+#include "chunk/config.h"                   // build_config::chunk_dynamic, chunk_config::use_chunk*
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
+#include "chunk/internal/for_each_type.h"   // for_each_type
+#include "chunk/internal/manager_chunk.h"   // ManagerChunk<CHUNK_T, T>
+#include "chunk/singleton.h"                // SingletonChk<AllTypeChunk>, for ensure_manager
+#include "chunk/chunk_traits.h"             // the Chunk / Chunk2 / Chunk2A declarations initialize<Types> names
+#include "chunk/internal/link_check.h"      // CHUNK_LINK_CHECK: the program's settings, the library's
 // Not the chunk definitions: a ManagerChunk<CHUNK_T, T> is only built at the
 // instantiation of register_manager<>, in the TU that constructs the array (and
 // so has the chunk), and including them here from the arrays' own headers
@@ -57,8 +56,7 @@ void AllTypeChunk::register_manager()
     // after init_indexes(). Reaching here unready is a library bug.
     if (!ready_)
     {
-        std::fputs("shrink_array: a manager registered before ParamChunk::init_indexes() ran.\n", stderr);
-        std::abort();
+        CHUNK_INVARIANT_FAILED("a manager registered before ParamChunk::init_indexes() ran");
     }
 
     ManagerT::init_static_state(); // the per-rank structures, before anyone can reach them

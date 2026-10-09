@@ -95,9 +95,31 @@ programme les compile comme la bibliothèque.
 | `chunk::chunk_v2a_dyn`, … | | choisie à l'exécution, par tableau (modifiable par `rechunk_to()` ou par le décideur adaptatif) |
 | `chunk::chunk_vector` | aucune : les tableaux sont des `std::vector` | — |
 
-Lier **une seule** bibliothèque de variante par programme. `chunk::chunk_vector` construit le
-même programme sur de simples `std::vector`, ce qui est la façon la plus simple de comparer
-mémoire et temps.
+Lier **une seule** bibliothèque de variante par programme, et écrire **la classe de cette
+variante** : `ArrayChunk2A<T>` avec `chunk::chunk_v2a`. La classe écrite est celle que l'on
+obtient -- un programme qui nomme `ArrayChunk2A` la garde quelle que soit la bibliothèque --,
+et un tableau d'une autre variante que celle de la bibliothèque n'est pas pris en charge :
+selon les appels, il ne compile pas ou il plante. Pour que l'édition de liens choisisse,
+passer par un alias sur la variante que la bibliothèque définit (`examples/shrink_bench` et
+`examples/simple_array` le font) :
+
+```cpp
+#include <type_traits>
+#include <vector>
+#include "chunk/array_chunk.h"
+#include "chunk/array_chunk2.h"
+#include "chunk/array_chunk2A.h"
+#include "chunk/config.h"
+
+namespace sa = shrink_array;
+template <typename T>
+using Array = std::conditional_t<sa::chunk_config::use_chunk2a, sa::ArrayChunk2A<T>,
+              std::conditional_t<sa::chunk_config::use_chunk2, sa::ArrayChunk2<T>,
+              std::conditional_t<sa::chunk_config::use_chunk, sa::ArrayChunk<T>, std::vector<T>>>>;
+```
+
+Avec lui, `chunk::chunk_vector` construit le même programme sur de simples `std::vector`, ce
+qui est la façon la plus simple de comparer mémoire et temps.
 
 `find_package(chunk)` définit aussi `chunk_STATIC_SIZES`, `chunk_DEFAULT_SIZE`,
 `chunk_HAS_DYN`, `chunk_OPENMP`, `chunk_OMPT` et `chunk_STD_ALLOC`, pour un projet qui veut
@@ -226,7 +248,8 @@ programme avec un message.
 - **`auto` garde un proxy.** Sur un tableau non constant, `tab[i]` rend un proxy d'écriture.
   `T v = tab[i];` prend la valeur ; `auto v = tab[i];` garde le proxy, qui suit l'élément s'il
   change ensuite. Dans du code venu d'un `std::vector`, remplacer `auto` par le type de
-  l'élément.
+  l'élément. Un build Debug ou `CHECK_OPTIM` refuse de compiler un usage d'un tel `v`, et le
+  dit.
 - **Pas de `T&` sur un élément.** `tab[i].x = 1` ne compile pas : lire l'élément, le modifier,
   le réécrire. `data()`, les itérateurs modifiables et un `std::sort` en place n'existent pas
   non plus : trier une copie en `std::vector`, puis la remettre par `assign()`.

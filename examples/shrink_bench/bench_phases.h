@@ -253,6 +253,7 @@ struct BenchIoFlags
     Int         io_res;      ///< get_io_mode(): 0 none, 1 write, 2 read-and-check
     bool        read_trace;
     bool        write_trace;
+    bool        checksum_only = false; ///< --checksum_only: write the checksum files alone
 };
 
 /**

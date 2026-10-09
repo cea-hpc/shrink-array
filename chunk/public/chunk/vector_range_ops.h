@@ -40,7 +40,10 @@
 #include <concepts>    // std::convertible_to
 #include <cstddef>     // std::size_t, std::ptrdiff_t
 #include <iterator>    // std::next
+#include <ranges>      // std::ranges::contiguous_range, range_value_t (for_each_span)
+#include <span>        // std::span (for_each_span)
 #include <type_traits> // std::is_same_v (fill_range_mt's vector<bool> guard)
+#include <utility>     // std::forward
 #include <vector>      // std::vector<bool> (same guard)
 
 namespace shrink_array
@@ -217,6 +220,39 @@ void for_each_value(const C& container, F&& f)
     {
         f(*it);
     }
+}
+
+/**
+ * @brief Call @p f(std::span<const T>) on [@p first, @p last): a contiguous
+ *        container is handed over as one span.
+ * @details The chunked overload (array_chunk_range_ops.h) hands over blocks,
+ *          and compressed chunks as f(v, count) when f accepts it: code
+ *          written for it runs unchanged on a std::vector.
+ * @param container source container (std::vector<bool> is not contiguous)
+ * @param first     first index, inclusive (clamped to container.size())
+ * @param last      last index, exclusive (clamped to container.size())
+ * @param f         called as f(std::span<const T>); its return value is ignored
+ */
+template <typename C, typename F>
+    requires(!internal::ChunkedArray<C> && std::ranges::contiguous_range<const C>)
+void for_each_span(const C& container, std::size_t first, std::size_t last, F&& f)
+{
+    using T         = std::ranges::range_value_t<const C>;
+    const auto size = static_cast<std::size_t>(std::ranges::size(container));
+    last            = std::min(last, size);
+    if (first >= last)
+    {
+        return;
+    }
+    f(std::span<const T>(std::ranges::data(container) + first, last - first));
+}
+
+/// @brief for_each_span() over every element of @p container.
+template <typename C, typename F>
+    requires(!internal::ChunkedArray<C> && std::ranges::contiguous_range<const C>)
+void for_each_span(const C& container, F&& f)
+{
+    for_each_span(container, 0, static_cast<std::size_t>(std::ranges::size(container)), std::forward<F>(f));
 }
 
 /**

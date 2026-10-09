@@ -502,9 +502,9 @@ be writing other elements of the same buffer.
 keeping it on the element-by-element path:
 
 - the test "is this chunk materialised?" must call `written(ind)` with the array's second
-  value index (`detail::materialised(a, ch, ind2)`): `written()` without argument
+  value index (`internal::materialised(a, ch, ind2)`): `written()` without argument
   is reserved for `bool` and returns `false` for other types;
-- queuing (`detail::queue_for_compression`) must **load the second value** before
+- queuing (`internal::queue_for_compression`) must **load the second value** before
   adding the chunk (`set_info_on_chunk()`), since Chunk2's lists are indexed by
   it. Without that, the chunks landed in the list of `T{}`, which no pass drains.
 
@@ -524,7 +524,7 @@ types without lock-free atomics, and for Chunk and Chunk2, these are plain reads
   ("is_cst_val2 should be not"). Not reproduced on a single-core machine, nor in a
   second run on the cluster; the lead is a pass that compresses a chunk queued
   by a direct copy while another thread's direct, unannounced writes are still
-  reaching it. The known fallback: exclude Chunk2 from `detail::raw_fillable_v`.
+  reaching it. The known fallback: exclude Chunk2 from `internal::raw_fillable_v`.
 - TSan reports, for Chunk and Chunk2 in `fill_range_mt`, the plain read of the three
   elements above against another thread's write on the same chunk. The fix
   considered: decide on the written **value** (the first value for Chunk, the first or

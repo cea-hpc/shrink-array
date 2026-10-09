@@ -24,8 +24,7 @@
 
 #pragma once
 
-#include <cstdio>  // std::fprintf, std::fflush
-#include <cstdlib> // std::abort
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 
 namespace shrink_array
 {
@@ -35,13 +34,10 @@ namespace shrink_array
 ///        now says what happened.
 [[noreturn]] inline void chunk2_missing_candidate_list(int thr) noexcept
 {
-    std::fprintf(stderr,
-                 "[CHUNK2] rank %d: no compression candidate list for this array's second value -- "
-                 "a write was queued for an array that never called set_second_value(); "
-                 "Proxy2::pre_check_mark_for_compression() must reject it\n",
-                 thr);
-    std::fflush(stderr);
-    std::abort();
+    CHUNK_INVARIANT_FAILED("[CHUNK2] rank {}: no compression candidate list for this array's second value -- "
+                           "a write was queued for an array that never called set_second_value(); "
+                           "Proxy2::pre_check_mark_for_compression() must reject it",
+                           thr);
 }
 
 } // namespace shrink_array

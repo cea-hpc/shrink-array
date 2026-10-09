@@ -117,12 +117,17 @@ static void log_values_compacted(Sink&& sink, Fmt&& fmt, const T* values, UInt c
 /// @param checksum Value written to the checksum file.
 /// @param special_writing true, with bool or short elements: write each element as one bool.
 /// @param no_compress Non-null: skip the compression.
+/// @param checksum_only true (--checksum_only): write the checksum file alone. The data
+///        file and its .bz2 are not written, and stale copies left by an earlier full
+///        reference are removed, so a later checksum miss cannot be compared against
+///        data from another oracle (read_check_binary_file then aborts).
 template <typename VEC>
 void write_binary_file(const std::string& filename,
                        const VEC&         data,
                        std::uint64_t      checksum,
                        bool               special_writing,
-                       const char*        no_compress)
+                       const char*        no_compress,
+                       bool               checksum_only = false)
 {
     using CV = std::remove_reference_t<VEC>;
     using V  = std::remove_const_t<CV>;
@@ -132,6 +137,25 @@ void write_binary_file(const std::string& filename,
 
     if constexpr (is_vector<V>())
     {
+        if (checksum_only)
+        {
+            std::ofstream file_check_sum(filename_check_sum, std::ios::binary);
+            if (!file_check_sum)
+            {
+                std::println(stderr, "Error open file : {}", filename_check_sum);
+                std::abort();
+            }
+#pragma omp critical
+            {
+                std::println("Write : {} (checksum only)", filename_check_sum);
+            }
+            file_check_sum.write(reinterpret_cast<const char*>(&checksum), sizeof(uint64_t));
+            file_check_sum.close();
+            unlink(filename.c_str());
+            unlink(filename_gz.c_str());
+            return;
+        }
+
         using T = VEC::value_type;
         std::ofstream file(filename, std::ios::binary);
         if (!file)
@@ -273,6 +297,22 @@ void read_check_binary_file(Int                ind,
         std::println(stderr, "");
     }
 
+    // A reference written with --checksum_only has no data to compare against:
+    // the miss cannot be located, so stop here with a clear message rather than
+    // through a missing-file error further down.
+    if (::access(filename.c_str(), F_OK) != 0 && ::access(filename_gz.c_str(), F_OK) != 0)
+    {
+#pragma omp critical
+        {
+            std::println(stderr,
+                         "{}: iteration {}: elements cannot be compared (checksum read {}, calculated {}): the "
+                         "reference has no data file ({} / {}): it was written with --checksum_only. Regenerate a "
+                         "full reference (vector baseline without --checksum_only) to locate the diverging element.",
+                         tab_name, ind, lchs_read, lchs, filename, filename_gz);
+        }
+        std::abort();
+    }
+
     const Int sz = data_check.size();
 
     // Whether `filename` (.bin) is a decompression TEMPORARY we created here
@@ -302,8 +342,9 @@ void read_check_binary_file(Int                ind,
     std::ifstream file(filename, std::ios::binary);
     if (!file)
     {
+        // After a checksum miss: returning would let the run pass unchecked.
         std::println(stderr, "Error open file  : {}", filename);
-        return;
+        std::abort();
     }
 
     // Helper lambda to format values as strings, handling char-to-Int conversion

@@ -1015,9 +1015,7 @@ void Proxy2FastCompPolicy<Derived, T, ChunkType, Enabled>::execute_inplace_opera
 
 template <typename T>
 template <typename U, typename Op>
-void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
-                                         in_t<U>               v,
-                                         [[maybe_unused]] bool check_first_value_result) noexcept
+void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op op, in_t<U> v) noexcept
 {
     this->check_not_stale();
     // Cross-rank RMW materialisation: pull any foreign
@@ -1072,7 +1070,7 @@ void Proxy2<T>::apply_compound_operation([[maybe_unused]] Op   op,
             {
                 chunk.dec_nb_val_eq_second_value();
             }
-            if (check_first_value_result && Base::is_not_cst_val1() && v_new == Chunk2<T>::first_value)
+            if (Base::is_not_cst_val1() && v_new == Chunk2<T>::first_value)
             {
                 chunk.inc_nb_val_eq_first_value();
                 if (chunk.is_full_first_value(this->chunk_size()))

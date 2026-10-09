@@ -177,7 +177,7 @@ void resync_counters(Arr& arr, Chunk& ch, std::size_t c_begin, const T* dst, uns
                 ++nz;
             }
         }
-        arr[static_cast<Arr::ind_type>(c_begin)].resync_nb_val_eq_zero(nz);
+        arr.element_proxy(static_cast<Arr::ind_type>(c_begin)).resync_nb_val_eq_zero(nz);
     }
     else if constexpr (track_chunk2_counts_v<Arr> && requires { arr.get_second_value(); })
     {
@@ -337,7 +337,7 @@ void queue_for_compression(Arr& arr, std::size_t i)
                 return;
             }
         }
-        auto proxy = arr[static_cast<decltype(arr.size())>(i)];
+        auto proxy = arr.element_proxy(static_cast<decltype(arr.size())>(i));
         // Chunk2 FIRST: Proxy2 also has set_num_tab_ptr_is_inside_chunk() (from
         // the shared base), but that one does not load the second value -- the
         // key of Chunk2's candidate list -- so the chunk landed in the list of
@@ -408,11 +408,11 @@ void packed_chunk_store(Arr&         arr,
         ch.set_nb_val_eq_second_value(ones);
         if (ones == static_cast<counter_value_t>(S))
         {
-            arr[static_cast<ind_type>(c_begin)].manage_full_second_value();
+            arr.element_proxy(static_cast<ind_type>(c_begin)).manage_full_second_value();
         }
         else if (ones == 0)
         {
-            arr[static_cast<ind_type>(c_begin)].manage_full_first_value();
+            arr.element_proxy(static_cast<ind_type>(c_begin)).manage_full_first_value();
         }
     }
     else if (bits::scan_words(w, S) != bits::Uniform::mixed)
@@ -960,6 +960,33 @@ template <internal::ChunkedArray Arr, typename F>
 void for_each_value(const Arr& arr, F&& f)
 {
     arr.for_each_value(std::forward<F>(f));
+}
+
+/**
+ * @brief for_each_span() on a chunked array: f(std::span<const T>) block by
+ *        block, and f(v, count) on a compressed chunk when f accepts it
+ *        (ArrayChunkBase::for_each_span).
+ * @warning No other thread may write @p arr during the call (the iterator's
+ *          contract). Callable from a parallel region on disjoint slices.
+ */
+template <internal::ChunkedArray Arr, typename F>
+void for_each_span(const Arr& arr, std::size_t first, std::size_t last, F&& f)
+{
+    using ind_type  = decltype(arr.size());
+    const auto size = static_cast<std::size_t>(arr.size());
+    last            = std::min(last, size);
+    if (first >= last)
+    {
+        return;
+    }
+    arr.for_each_span(static_cast<ind_type>(first), static_cast<ind_type>(last), std::forward<F>(f));
+}
+
+/// @brief for_each_span() over every element of a chunked array.
+template <internal::ChunkedArray Arr, typename F>
+void for_each_span(const Arr& arr, F&& f)
+{
+    arr.for_each_span(std::forward<F>(f));
 }
 
 /**

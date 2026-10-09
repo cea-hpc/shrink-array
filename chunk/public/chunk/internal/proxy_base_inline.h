@@ -96,7 +96,6 @@ void push_to_compress_list(Vec& vec, ChunkPtr chunk, int num_chunk, int num_tab,
     }
 }
 
-
 // ============================================================================
 // Helper function to call get_num_tab with the correct signature
 // ============================================================================

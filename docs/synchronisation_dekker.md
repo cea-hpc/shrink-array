@@ -210,7 +210,7 @@ array of each variant, before any parallel write. The result is stored in
 | TSan build (`CHUNK_TSAN_BUILD`), or non-Linux system | symmetric, chosen **at compile time** (`chunk_config::asymmetric_dekker = false`) |
 
 So the protocol is never weaker than the symmetric form: it is only faster
-when it can be. `print_chunk_stats()` reports the form that ran
+when it can be. `ParamChunk::ChunkStats()` reports the form that ran
 (`dekker::protocol_name()`).
 
 ### 4.4 The price, and the condition
@@ -456,7 +456,7 @@ is a protocol violation.
 | `CHUNK_READ_RECLAIM_SLOTS` | 1,024 | number of reader threads that each have their own sequence number |
 
 The gate counters (passes started, aborts due to a flush, aborts on an overly
-long wait, deferred writes) are in the `CHUNK_STATS` report (`print_chunk_stats()`),
+long wait, deferred writes) are in the `CHUNK_STATS` report (`ParamChunk::ChunkStats()`),
 together with the form of the protocol that ran.
 
 ## 8. Where to read the code

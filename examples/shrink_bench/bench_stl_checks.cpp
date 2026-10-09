@@ -31,6 +31,11 @@
 #include "bench_stl_checks.h" // the declarations defined here
 #include "bench_utils.h"      // maybe_set_second_value
 
+// The terminal colours. Declared here rather than reached through the
+// `using namespace shrink_array` of bench_init.cpp, which only leaks into this
+// file in a unity build (SHRINK_BENCH_UNITY=OFF did not compile).
+using shrink_array::tc;
+
 void run_stl_self_checks([[maybe_unused]] bool test_stl)
 {
     // Was a constexpr local of main(); the read-idempotence block below is its

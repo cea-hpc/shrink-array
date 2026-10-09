@@ -24,11 +24,11 @@ dynamique. Elles diffèrent par **ce qu'elles savent compresser**.
 
 ## 2. Ce que chacune sait compresser
 
-| variante | build | un chunk est compressé s'il est uniforme à… | coût d'une constante |
+| variante | bibliothèque (macro qu'elle définit) | un chunk est compressé s'il est uniforme à… | coût d'une constante |
 |---|---|---|---|
-| **Chunk** (v1) | `-DCHUNK=1` | **zéro** (`T{}`) | rien : un tampon constant partagé |
-| **Chunk2** | `-DCHUNK2=1` | zéro, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
-| **Chunk2A** | `-DCHUNK2A=1` | zéro, **ou n'importe quelle autre valeur**, choisie chunk par chunk | un tableau du registre des secondes valeurs (`tab_cst_val2_holder.h`) par valeur distincte, partagé par tout le processus |
+| **Chunk** (v1) | `chunk::chunk_v1` (`CHUNK_VARIANT_V1`) | **zéro** (`T{}`) | rien : un tampon constant partagé |
+| **Chunk2** | `chunk::chunk_v2` (`CHUNK_VARIANT_V2`) | zéro, **ou** une **seconde valeur** propre au tableau (`set_second_value`) | rien au-delà du tableau |
+| **Chunk2A** | `chunk::chunk_v2a` (`CHUNK_VARIANT_V2A`) | zéro, **ou n'importe quelle autre valeur**, choisie chunk par chunk | un tableau du registre des secondes valeurs (`tab_cst_val2_holder.h`) par valeur distincte, partagé par tout le processus |
 
 Les tableaux de booléens des builds Chunk2 peuvent en plus utiliser `ArrayChunkBits`, qui
 range 8 booléens par octet dans un chunk matérialisé.
@@ -36,11 +36,13 @@ range 8 booléens par octet dans un chunk matérialisé.
 ## 3. Ce que coûte un chunk
 
 Tout chunk coûte ses **métadonnées**, qu'il soit compressé ou non. Pour les trois variantes,
-l'objet chunk lui-même fait 16 octets. S'y ajoutent, par chunk :
+l'objet chunk lui-même fait 16 octets dans un build OpenMP (8 avec `SHRINK_SMALL_CHUNK`, qui
+renonce aux portes de lecture et d'écriture par chunk). S'y ajoutent, par chunk :
 
 - un octet « déjà en liste de compression » (compression par bloc) ;
-- un bit dans le *dirty bitset* du tableau, et une part des listes de suivi (l'advisor compte
-  environ 3 octets pour l'ensemble) ;
+- deux octets pour le *dirty bitset* du tableau (un bit par chunk, dans des mots de 64 bits
+  complétés chacun à 128 octets contre le faux partage), et une part des listes de suivi
+  (l'advisor compte environ 3 octets pour l'ensemble) ;
 - pour **Chunk2A** : un octet de type de constante et un emplacement pour la seconde valeur
   du chunk, de `sizeof(T)` octets (8 pour un `double`), ou de 4 octets avec l'option CMake
   `CHUNK_SECOND_VALUE_INDEXED`.

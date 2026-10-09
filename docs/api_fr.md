@@ -50,7 +50,7 @@ hors de toute région parallèle, et il invalide les proxys du tableau.
 | remplacement **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | itération | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | itérateurs const à accès aléatoire, par valeur |
 | compression **(S)** | `compress()` | une passe de compression complète, immédiate (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`) |
-| statistiques | `stats()`, `get_nb_chunk_written()`, `print_compression_stats()` | pourcentage et nombre de chunks qui détiennent un tampon ; une ligne par tableau |
+| statistiques | `stats()`, `get_nb_chunk_written()` | pourcentage et nombre de chunks qui détiennent un tampon (chaque tableau imprime aussi une ligne à sa destruction) |
 | géométrie | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` seulement dans les bibliothèques `_dyn` (sans effet dans les statiques) |
 
 Chunk2 seulement : `set_second_value(v)` **(S)**, avant les écritures, et `get_second_value()`.
@@ -65,12 +65,18 @@ Absents : `data()`, les itérateurs mutables, `insert` / `erase` au milieu, un t
 |---|---|
 | `T v = a[i];` | lit la valeur |
 | `a[i] = v;` | l'écrit (peut matérialiser le chunk, ou être différée tant qu'un compresseur le détient) |
+| `a[i] = b[j];` | copie la valeur : lit `b[j]`, puis écrit `a[i]` comme ci-dessus |
 | `a[i] += v;` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=` | opérations composées, pour les types qui les ont ; renvoient un proxy |
 | `++a[i]`, `--a[i]` | renvoient un proxy ; `a[i]++` renvoie l'ancienne valeur sous forme de `T` |
 | `a[i] == v`, `a[i] != v` | comparent la valeur courante ; les autres comparaisons passent par la conversion en `T` |
 
 `auto x = a[i];` garde le proxy, qui suit l'élément. Un proxy ne doit pas survivre au
-stockage du tableau : toute opération **(S)** l'invalide.
+stockage du tableau : toute opération **(S)** l'invalide. Dans les builds de vérification
+(Debug, `CHECK_OPTIM`), `operator[]`, `at()`, `front()` et `back()` rendent le proxy enveloppé
+dans un `ElementRef` (`internal/element_ref.h`) que seul un temporaire peut utiliser :
+`auto x = a[i];` puis tout usage de `x` ne compile pas, avec un message. Un proxy gardé
+volontairement : `std::move(x) = v;`, ou `a.element_proxy(i)`. `-DCHUNK_LOOSE_ELEMENT_REF`
+désactive la vérification.
 
 ## 5. Opérations sur des plages
 
@@ -81,6 +87,9 @@ stockage du tableau : toute opération **(S)** l'invalide.
 | `fill_range(a, first, last, v)` | séquentiel : `[first, last)` mis à `v` |
 | `copy_range(a, first, last, src_first)` | séquentiel : `[first, last)` copié depuis un itérateur |
 | `fill_range_mt(a, first, last, v)` | appelable par plusieurs threads à la fois, sur des plages disjointes (un chunk peut être partagé) |
+| `for_each_value(a, first, last, f)` | lecture : `f(v)` sur chaque élément, une section de lecture par bloc |
+| `for_each_span(a, first, last, f)` | lecture : `f(std::span<const T>)` par bloc (une boucle vectorisable) ; un chunk compressé en `f(v, count)` quand `f` l'accepte. Un `std::vector` est un seul span |
+| `read_range(a, first, last, out)` | lecture : `[first, last)` copié vers `out` |
 
 ## 6. Phases OpenMP
 

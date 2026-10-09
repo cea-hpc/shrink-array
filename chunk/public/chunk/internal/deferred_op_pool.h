@@ -21,7 +21,6 @@
 #include <cstddef>    // std::byte, std::size_t
 #include <cstdint>    // std::uintptr_t (the block probe)
 #include <cstdio>     // std::fprintf (diagnostics)
-#include <cstdlib>    // std::abort
 #include <memory>     // std::unique_ptr
 #include <utility>    // std::move
 #include <vector>     // std::vector
@@ -635,11 +634,9 @@ void chunk_align_probe([[maybe_unused]] const char* site, [[maybe_unused]] void*
     {
         if ((reinterpret_cast<std::uintptr_t>(mem) & (alignof(T) - 1)) != 0)
         {
-            std::fprintf(stderr,
-                         "[SLAB MISALIGN] %s: ptr=%p alignof=%zu sizeof=%zu (block from slab is under-aligned for T)\n",
-                         site, mem, static_cast<size_t>(alignof(T)), sizeof(T));
-            std::fflush(stderr);
-            std::abort();
+            CHUNK_INVARIANT_FAILED("[SLAB MISALIGN] {}: ptr={} alignof={} sizeof={} (block from slab is under-aligned "
+                                   "for T)",
+                                   site, mem, alignof(T), sizeof(T));
         }
     }
 }

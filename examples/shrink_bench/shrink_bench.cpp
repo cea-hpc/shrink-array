@@ -241,6 +241,7 @@ int main(int argc, char* argv[])
     const BenchArgs bench_args      = parse_bench_args(argc, argv);
     const bool      no_io_v         = bench_args.no_io_v;
     const bool      compress_v      = bench_args.compress_v;
+    const bool      checksum_only   = bench_args.checksum_only;
     const bool      write_trace     = bench_args.write_trace;
     const bool      read_trace      = bench_args.read_trace;
     const bool      test_stl        = bench_args.test_stl;
@@ -265,6 +266,10 @@ int main(int argc, char* argv[])
     if (compress_v)
     {
         std::println("Compression is enabled.");
+    }
+    if (checksum_only)
+    {
+        std::println("Reference written as checksums only.");
     }
     if (write_trace)
     {
@@ -608,7 +613,7 @@ int main(int argc, char* argv[])
 
     // Verification pass (writing or reading back the reference files):
     // lbd_check and lbd_check_all, in bench_checks.cpp.
-    const BenchIoFlags bench_io_flags{no_io, no_compress, io_res, read_trace, write_trace};
+    const BenchIoFlags bench_io_flags{no_io, no_compress, io_res, read_trace, write_trace, checksum_only};
 
     bench_check_all(bench_arrays, -1, bench_io_flags);
 

@@ -74,6 +74,12 @@
 #                           reads back what std::vector would, and counts its
 #                           written chunks right. The storage paths once fell
 #                           back on an orphaned `omp for` there, and hung.
+#   compound_ops_validation `*=`, `/=`, `%=` read back what std::vector would
+#                           (results landing on zero included), `double /= 0.0`
+#                           gives inf, set_second_value(0) declares nothing;
+#                           check builds: an integer `/= 0` or `%= 0` stops
+#                           the program (the executable re-runs itself with
+#                           --child to check it).
 #   nested_region_validation a thread that opens a nested (serialised) region
 #                           keeps its own per-rank structures afterwards; two
 #                           ACTIVE levels stop with an invariant failure
@@ -177,7 +183,7 @@ set(_rt_harnesses       compress_roundtrip pool_accounting open_types_validation
                         mark_path_validation fill_range_mt_validation index64_validation
                         swap_move_validation range_counters_validation thread_growth_validation
                         nested_region_validation iterator_validation stale_proxy_validation
-                        region_storage_validation)
+                        region_storage_validation compound_ops_validation)
 set(_rt_dyn_harnesses   pool_accounting open_types_validation index64_validation stale_proxy_validation)
 
 # Compile definitions of a variant at a geometry.
@@ -350,6 +356,45 @@ foreach(_geom IN LISTS _rt_geometries)
     endforeach()
   endforeach()
 endforeach()
+
+# --- element_ref_validation: what a check build accepts and refuses through
+# operator[] (chunk/internal/element_ref.h). Check builds only (CHUNK_DEBUG or
+# CHECK_OPTIM): elsewhere operator[] returns the bare proxy.
+#   element_ref_validation_<variant>: every std::vector-style use of a[i]
+#     compiles and leaves std::vector's values (default static size).
+#   element_ref_misuse_<n>: one use of a NAMED element proxy, which must not
+#     compile: the test builds the object target (not part of `all`) and passes
+#     when the compiler output carries ElementRef's message. One at a time:
+#     they share the build tree.
+if (CHUNK_DEBUG OR CHECK_OPTIM)
+  foreach(_vi RANGE ${_rt_nvar_last})
+    list(GET _rt_variant_names   ${_vi} _vname)
+    list(GET _rt_variant_libbase ${_vi} _libbase)
+    list(GET _rt_variant_macro   ${_vi} _vmacro)
+    if (TARGET ${_libbase}_${CHUNK_DEFAULT_SIZE})
+      set(_tgt element_ref_validation_${_vname})
+      add_executable(${_tgt} element_ref_validation.cpp)
+      target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE})
+      validation_variant_defs(${_tgt} ${_vmacro} ${CHUNK_DEFAULT_SIZE})
+      validation_setup_target(${_tgt})
+      add_test(NAME ${_tgt} COMMAND ${_tgt})
+      set_property(TEST ${_tgt} PROPERTY LABELS validation)
+    endif()
+  endforeach()
+  if (TARGET chunk_v2a_${CHUNK_DEFAULT_SIZE})
+    foreach(_case RANGE 1 8)
+      set(_tgt element_ref_misuse_${_case})
+      add_library(${_tgt} OBJECT EXCLUDE_FROM_ALL element_ref_validation.cpp)
+      target_link_libraries(${_tgt} PRIVATE chunk_v2a_${CHUNK_DEFAULT_SIZE})
+      validation_variant_defs(${_tgt} CHUNK_VARIANT_V2A ${CHUNK_DEFAULT_SIZE})
+      target_compile_definitions(${_tgt} PRIVATE ELEMENT_REF_CASE=${_case})
+      validation_setup_target(${_tgt})
+      add_test(NAME ${_tgt} COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target ${_tgt})
+      set_tests_properties(${_tgt} PROPERTIES PASS_REGULAR_EXPRESSION "named element proxy is used"
+                                              RESOURCE_LOCK element_ref_misuse_build LABELS validation)
+    endforeach()
+  endif()
+endif()
 
 # --- fill_range_mt_v1v2_validation: the two-variant library (CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1,
 # default static size, no OMPT tool -- the harness defines the switch and makes

@@ -17,7 +17,7 @@ comments of the sources:
    checked; ALLOWED lists the names that are real but live outside the tree
    (standard library, OpenMP, Linux, tools).
 3. Pairs: a document and its French version (x.md / x_fr.md, or the explicit
-   pairs below) have the same skeleton: the same number of headings at each
+   pairs below, and README.md / README_fr.md) have the same skeleton: the same number of headings at each
    level, of table rows and of code fences. A section, a table row or an
    example added in one language only shows up here.
 4. History: no development-history marker in a comment of the C++ sources,
@@ -51,6 +51,8 @@ PAIRS = {
 
 # Real names that are not defined in this tree.
 ALLOWED = {
+    # files a shrink_gui run writes in its directory on the cluster (docs/shrink_gui.md)
+    "run.sh", "job.sh", "launch.sh",
     # C++ standard library, compiler, language
     "std", "size_t", "int64_t", "uint32_t", "operator", "noexcept", "constexpr", "seq_cst",
     "memory_order_seq_cst", "memory_order_relaxed", "memory_order_acquire", "memory_order_release",
@@ -228,6 +230,15 @@ def check_pairs(root):
         en = next((e for e, f in PAIRS.items() if f == fr.name), stem)
         if not (d / en).exists():
             bad.append("docs/%s: no English version (%s)" % (fr.name, en))
+    # The top-level README and its French version.
+    en, fr = root / "README.md", root / "README_fr.md"
+    if en.exists() and fr.exists():
+        se, sf = skeleton(en), skeleton(fr)
+        if se != sf:
+            bad.append("README.md vs README_fr.md: headings %s / %s, table rows %d / %d, code fences %d / %d"
+                       % (se[0], sf[0], se[1], sf[1], se[2], sf[2]))
+    elif en.exists():
+        bad.append("README.md: no French version (README_fr.md)")
     return bad
 
 

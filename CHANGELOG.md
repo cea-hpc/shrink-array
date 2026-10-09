@@ -47,6 +47,20 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `shrink_array::for_each_span(a, [first, last,] f)` (`array_chunk_range_ops.h`): the elements
+  as `std::span<const T>` blocks, so the loop over them can be vectorised; a compressed chunk
+  is passed as `f(v, count)` in O(1) when `f` accepts it. On a contiguous container
+  (`std::vector`), one span.
+- `element_ref_validation_<variant>` and `element_ref_misuse_<1..8>` (ctest, check builds):
+  every `std::vector`-style use of `a[i]` compiles and holds, and each of eight uses of a
+  named element proxy fails to compile with `ElementRef`'s message.
+- Check builds (`any_check`: Debug, `CHECK_OPTIM`): the non-const `operator[]`, `at()`,
+  `front()` and `back()` return `ElementRef<proxy_type, T>` (`internal/element_ref.h`), the
+  write proxy usable as a temporary only. `auto v = a[i];` then any use of `v` (conversion,
+  assignment, compound operator, comparison, arithmetic) does not compile, with a message
+  pointing to `T v = a[i];`. Release builds return the proxy as before;
+  `-DCHUNK_LOOSE_ELEMENT_REF` turns the check off. `ArrayChunkBase::element_proxy(i)` returns
+  the proxy in every build, for code that keeps it on purpose.
 - Usable as a subproject (`add_subdirectory`, `FetchContent`): `SHRINK_ARRAY_BUILD_EXAMPLES`
   and `SHRINK_ARRAY_BUILD_TESTS`, ON at the top level and OFF otherwise, so a consuming
   project builds the libraries only; the `chunk::` names exist in the build tree too
@@ -73,6 +87,7 @@ the tag's checksum to the recipe.
 - `scripts/check_doxygen.py` (ctest `check_doxygen`, when Doxygen is found): the
   documentation builds with no warning. The HTML draws the mermaid diagrams.
 - `compile_all.sh` / `compile_all_gnu.sh`: `--with-ledger`.
+- `compile_all.sh`: `--with-token-sanitizer`.
 - `scripts/check_headers.py` (ctest `check_headers`): every C++ file opens with the Apache
   license header, its years up to date, and carries no IDE `Created by` stamp; the scripts and
   build files carry `# Copyright ... CEA` / `# SPDX-License-Identifier: Apache-2.0`, the vendored
@@ -80,6 +95,16 @@ the tag's checksum to the recipe.
 
 ### Changed
 
+- Fatal checks of the library report through `CHUNK_INVARIANT_FAILED` (location, message,
+  backtrace) instead of a message on `stderr` / `std::cerr` and `std::abort()`: chunk size 0 at
+  `create`, a manager registered before `init_indexes`, clearing an unwritten chunk, the
+  `use_mm_protect` and second-value region `mmap` failures (with `strerror(errno)`), second-value
+  identifiers exhausted, `[SLAB MISALIGN]`, `[LEDGER_BADPTR]`, `[CHUNK2]` missing candidate list,
+  NaN (`CHUNK_DO_CHECK`), and the bare `std::abort()` of the bool / non-bool and build-mode
+  branches that cannot be reached. Three messages that went on now stop, as broken invariants:
+  v1's debug clear of an unwritten chunk (ChunkBase's same check already aborted), a failed
+  identity swap in `rechunk_to` (check builds), and, in check builds, deferred writes about to be
+  discarded by `flush_all_deferred` (`[DRAIN] ... LOST`; release builds still only print).
 - Deferred operations: `AllocatorRegistry::get_or_create<T>()` caches its answer per thread
   and per type instead of scanning the registry at every allocation and release of an op or
   a context (`reset()` invalidates the cache); the virtual `slab_addr()` is no longer called
@@ -112,6 +137,8 @@ the tag's checksum to the recipe.
   old option name, with a deprecation message.
 - The `cmake-build-omp-gnu-debug-ledger` build is no longer part of the default
   `compile_all.sh` run (`--with-ledger`, or a `--target` that selects it).
+- The `cmake-build-omp-llvm-debug-std-alloc-token-sanitizer` build is no longer part of the
+  default `compile_all.sh` run (`--with-token-sanitizer`, or a `--target` that selects it).
 - The `[RECHUNK-POOL]` trace labels key 0 `(shared pool)`; it said `never swept`, which was
   wrong.
 - Source comments rewritten throughout: the development history is gone, the rules it taught
@@ -197,6 +224,17 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Deferred writes LOST at a phase end when the region that queued them had more threads than
+  `omp_get_max_threads()` (`#pragma omp parallel num_threads(n)` above `OMP_NUM_THREADS`, or a
+  team that shrank since): the serial `flush_all_deferred` drained only the ranks of its own
+  default-sized team, then `storage.destroy()` discarded the others' ops
+  (`nested_region_validation_*_1thr` under `CHUNK_FORCE_DEFER_EVERY`). It now sweeps the ranks
+  beyond its team serially, as the compression passes do. Same mop-up added to v1's
+  `Chunk::compress_chunk_to_compress`, whose candidates of those ranks were never swept (and
+  which now keeps to its own rank inside a region, as Chunk2A's does).
+- `a[i] = b[j]` compiles in every variant and copies the value (gated read of `b[j]`, then the
+  full write path): v1's `Proxy::operator=(const Proxy&)` took `&from` past the deleted
+  `operator&`, and v2 / v2A deleted the assignment.
 - Chunk2, serial builds: `x *= 0` (or `/=`) on an element holding the second value left it
   counted as one, so a later second-value write could fold the chunk to that constant with the
   element still different, and the element was lost. `%=` did not count a zero result as the

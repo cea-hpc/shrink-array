@@ -44,9 +44,10 @@ bool __debug_flag = false;
 // "--test_stl" must be listed here: the filter below (ranges::find over
 // valid_args) runs FIRST and rejects an unknown flag, so a flag missing from
 // this list never reaches main()'s branch for it.
-const std::vector<std::string> valid_args = {
-    "--no_io", "--compress", "--write_trace",   "--read_trace", "--multiply", "--divisor",    "--iter_max",
-    "--mode",  "--test_stl", "--test_prealloc", "--no_struct",  "--no_mask",  "--mask_scale", "--help"};
+const std::vector<std::string> valid_args = {"--no_io",      "--compress",      "--write_trace", "--read_trace",
+                                             "--multiply",   "--divisor",       "--iter_max",    "--mode",
+                                             "--test_stl",   "--test_prealloc", "--no_struct",   "--no_mask",
+                                             "--mask_scale", "--checksum_only", "--help"};
 
 // -----------------------------------------------------------------------------
 // Seed persistence.

@@ -117,7 +117,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
 
             // 2. Call the common math engine
             // We use the transparent functor std::multiplies<>
-            self.template apply_compound_operation<U>(std::multiplies<>{}, v, true);
+            self.template apply_compound_operation<U>(std::multiplies<>{}, v);
             return self;
         }
     }
@@ -125,7 +125,8 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     /**
      * @brief Divide this element by `v` in place.
      * @tparam U Type of the operand.
-     * @param v Divisor. Debug builds abort on v == 0.
+     * @param v Divisor. Integer element: check builds stop on v == 0
+     *        (internal::check_integer_divisor); a floating one gives inf/NaN.
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.
@@ -142,13 +143,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         }
         else
         {
-            if constexpr (build_config::do_check)
-            {
-                if (v == 0)
-                {
-                    std::abort();
-                }
-            }
+            internal::check_integer_divisor<T>(v, "/=");
 
             // Early-out: dividing by 1 changes nothing -- nothing to write, and
             // nothing to read: reading the returned proxy goes through
@@ -158,7 +153,7 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
                 return self;
             }
             // 2. Execution via the common engine
-            self.template apply_compound_operation<U>(std::divides<>{}, v, true);
+            self.template apply_compound_operation<U>(std::divides<>{}, v);
             return self;
         }
     }
@@ -166,7 +161,8 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     /**
      * @brief Compute this element modulo `v` in place.
      * @tparam U Type of the operand.
-     * @param v Modulus.
+     * @param v Modulus. Check builds stop on v == 0
+     *        (internal::check_integer_divisor).
      * @return This proxy. Converting it to T reads the resulting value,
      *         synchronised (operator T() -> read_pure()); discarding it,
      *         as `a[i] += x;` does, keeps the operation fully deferrable.
@@ -178,11 +174,12 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     {
         if constexpr (std::is_integral_v<T> && is_not_bool)
         {
-            // 2. Execution via the common engine. true, as for *= and /=: a
-            // non-zero slot can land on zero (4 % 2), and with false that zero
-            // was never counted -- the chunk then never reached "full first
-            // value" and stayed materialised.
-            self.template apply_compound_operation<U>(typename Base::modulo{}, v, true);
+            internal::check_integer_divisor<T>(v, "%=");
+            // 2. Execution via the common engine. A non-zero slot can land on
+            // zero (4 % 2): apply_compound_operation counts a result equal to
+            // the first value, so the chunk reaches "full first value" and
+            // folds.
+            self.template apply_compound_operation<U>(typename Base::modulo{}, v);
             return self;
         }
         else
@@ -241,8 +238,8 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @param second_val The second constant value to compare against.
      * @return true if new_value is first_value or second_val.
      */
-    [[nodiscard]] bool
-    pre_check_mark_for_compression_strict(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) const noexcept
+    [[nodiscard]] static bool
+    pre_check_mark_for_compression_strict(in_t<T> new_value, in_t<T> first_value, in_t<T> second_val) noexcept
     {
         return new_value == first_value || new_value == second_val;
     }
@@ -287,15 +284,28 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *          race changed it), but before the store memory still holds the
      *          old value, so its check would fire on every write that changes
      *          the value and queue the chunk whatever should_mark said.
+     * @param vals The chunk's values pointer, loaded by the caller inside the
+     *        write session: the old value and the race check read through it
+     *        instead of reloading it (see Proxy2A::handle_no_bool_assignment).
      */
     void mark_for_compression_before_store(this const Derived& self,
                                            in_t<T>             second_val,
                                            in_t<T>             new_value,
-                                           in_t<T>             first_value)
+                                           in_t<T>             first_value,
+                                           const T*            vals)
     {
-        const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
-        const T    old = self.Base::read_values();
-        self.mark_for_compression_core(old, new_value, old, isv, second_val, first_value);
+        // isv false makes the whole test a no-op: skip the read of the old
+        // value too, which mark_for_compression_core() would not look at.
+        if (!self.is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val))
+        {
+            return;
+        }
+        const T old = self.Base::read_values_at(vals);
+        if (self.should_mark_for_compression(old, new_value, second_val, first_value) ||
+            (self.Base::read_values_at(vals) != old)) [[unlikely]]
+        {
+            self.add_to_compression_list();
+        }
     }
 
     /**
@@ -338,7 +348,8 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *          need tab/chunk information before writing.
      */
     template <typename WriteFn>
-    CHUNK_FORCE_INLINE bool write_with_optional_lock_with_set_ptr(this Derived& self, WriteFn write_fn) noexcept
+    [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_with_set_ptr(this Derived& self,
+                                                                                WriteFn       write_fn) noexcept
     {
         const auto lbd_info = [&self]
         {
@@ -398,10 +409,10 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      * @return true if the chunk is at cst_val1 and new_value == second_val,
      *         or at cst_val2 and new_value == first_value.
      */
-    bool is_cst_val_new_value_is_other_cst_val(this const Derived& self,
-                                               in_t<T>             new_value,
-                                               in_t<T>             first_value,
-                                               in_t<T>             second_val) noexcept
+    [[nodiscard]] bool is_cst_val_new_value_is_other_cst_val(this const Derived& self,
+                                                             in_t<T>             new_value,
+                                                             in_t<T>             first_value,
+                                                             in_t<T>             second_val) noexcept
     {
         // CRTP dispatch: each variant owns its fast pre-check. Chunk2 keeps the
         // "a constant is written" test below; Chunk2A widens it (see

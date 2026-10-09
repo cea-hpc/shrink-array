@@ -48,7 +48,6 @@
 #include <mutex>   // std::mutex, std::scoped_lock
 
 #include "chunk/config.h"                   // build_config::any_check
-#include "chunk/debug.h"                    // print_backtrace
 #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 
 #include "chunk/vendor/ankerl/unordered_dense.h" // the live maps
@@ -438,10 +437,8 @@ inline void block_transition(const void* block,
 #endif
             if (bad_high || (up & 0x7U) != 0)
             {
-                std::fprintf(stderr, "[LEDGER_BADPTR] non-canonical block key %p op=%s site=%s\n", block, op, site);
-                std::fflush(stderr);
-                print_backtrace();
-                std::abort();
+                CHUNK_INVARIANT_FAILED("[LEDGER_BADPTR] non-canonical block key {} op={} site={}",
+                                       static_cast<const void*>(block), op, site);
             }
         }
 

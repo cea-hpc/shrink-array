@@ -22,19 +22,17 @@
 
     #include <cmath>   // std::isnan
     #include <complex> // std::complex
-    #include <cstdio>  // stderr
-    #include <cstdlib> // std::abort
-    #include <print>   // std::println
+
+    #include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED
 
 namespace shrink_array
 {
 
-/// @brief Report element @p i as NaN on stderr and abort.
+/// @brief Report element @p i as NaN (location, backtrace) and abort.
 /// @param i Index of the element.
 inline void global_check_nan(long i) noexcept
 {
-    std::println(stderr, " ** FATAL: Element : {} of the array is nan\n", i);
-    std::abort();
+    CHUNK_INVARIANT_FAILED("element {} of the array is NaN (CHUNK_DO_CHECK)", i);
 }
 
 /// @brief Abort when @p val is NaN.

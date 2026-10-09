@@ -531,7 +531,7 @@ void bench_phase_compute(BenchArrays&            bench_arr,
 
                     if (tab2[i] >= 0)
                     {
-                        neutral_sqrt_assign(tab2, i, tab2[i]);
+                        neutral_sqrt_assign(tab2, i, static_cast<double>(tab2[i]));
                     }
                     tab_bool[i]      = true;
                     tab_bool_bits[i] = true;

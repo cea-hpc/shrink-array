@@ -26,14 +26,14 @@ propre nombre d'éléments : la géométrie vit dans la politique de taille du t
 (`size_policy_`), et c'est pourquoi les listes de candidats à la compression transportent le
 nombre d'éléments de chaque chunk (voir `TChunk.h`).
 
-Le build : `-DCHUNK=1`. Code : `chunk/chunk_std.h`, `chunk/array_chunk.h`,
+La bibliothèque : `chunk::chunk_v1` (elle définit `CHUNK_VARIANT_V1`). Code : `chunk/chunk_std.h`, `chunk/array_chunk.h`,
 `internal/chunk_std_inline.h`, `internal/array_chunk_inline.h`, `internal/proxy.h`.
 
 ## 2. Ce que coûte un chunk
 
 L'objet chunk fait 16 octets (dans les builds OpenMP, où le compteur de zéros du mode
-séquentiel est un type vide, voir §4), plus un octet « déjà en liste de compression » et un
-bit du *dirty bitset*. Sans seconde valeur, v1 n'a **aucune métadonnée de type ou de
+séquentiel est un type vide, voir §4), plus un octet « déjà en liste de compression » et deux
+octets du *dirty bitset* (un bit, dans un mot de 64 bits complété à 128 octets). Sans seconde valeur, v1 n'a **aucune métadonnée de type ou de
 valeur** par chunk : c'est la variante la plus économe en métadonnées, et celle dont la
 mémoire est le plus faite de **données matérialisées**. Sur `shrink_bench` à 64 threads,
 environ 38 Go de ses 40 Go sont des données.

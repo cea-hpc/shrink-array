@@ -90,8 +90,13 @@ void* Chunk2AOmpPolicy<T, Derived, Enabled>::operator new[](std::size_t sz)
     return static_cast<void*>(v);
 }
 
+// Out of line on purpose. operator new[] (the chunk initialisation) is not
+// inlined; inlined, this one would hand gcc's -Wmismatched-new-delete a
+// ::operator delete applied to what Chunk2AOmpPolicy::operator new[] returned, and
+// it warns (a false positive: that operator new[] allocates with ::operator
+// new). Kept a call, the pair it sees is the class's own new[] / delete[].
 template <typename T, typename Derived, bool Enabled>
-void Chunk2AOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
+[[gnu::noinline]] void Chunk2AOmpPolicy<T, Derived, Enabled>::operator delete[](void* ptr)
 {
     ::operator delete(ptr);
 }
@@ -1169,9 +1174,11 @@ void Chunk2AOmpPolicy<T, Derived, false>::block_clear(this Derived&     self,
     {
         return;
     }
+
     increm_chunk_compress<Derived>();
     self.Chunk2Base<T, Derived>::free_values(self.values);
     Derived::set_cst_val_to_cst_val(num_compress_value, ptr_type_cst);
+
     // Serial: no CAS, the values pointer is set outright to the constant --
     // the caller's array for a type 2, from the tables otherwise.
     if (num_compress_value == 1 && cst2_ptr != nullptr)
