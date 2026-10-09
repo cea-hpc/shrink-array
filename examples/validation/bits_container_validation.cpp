@@ -51,7 +51,8 @@
 
 #include <algorithm> // std::min
 #include <cstdint>   // std::uint64_t, std::uint32_t
-#include <cstdio>    // std::printf, std::snprintf
+#include <cstdio>    // std::snprintf
+#include <print>     // std::println
 #include <random>    // std::mt19937_64
 #include <utility>   // std::pair
 #include <vector>    // std::vector
@@ -118,8 +119,8 @@ long compare(const ArrayChunkBits<>& a, const std::vector<bool>& ref, const char
     }
     if (bad)
     {
-        std::printf("[bits] FAIL %s: %ld mismatches, first at %ld (chunk %ld)\n", step, bad, first,
-                    first / static_cast<long>(a.chunk_size()));
+        std::println("[bits] FAIL {}: {} mismatches, first at {} (chunk {})", step, bad, first,
+                     first / static_cast<long>(a.chunk_size()));
     }
     return bad;
 }
@@ -191,7 +192,7 @@ int round_trip(long N)
     const double expect  = 100.0 * static_cast<double>(n_runs / 3) / static_cast<double>(n_runs);
     if (written > expect + 1.0 || written < expect - 1.0)
     {
-        std::printf("[bits] FAIL compression: %.1f%% of the chunks written, expected ~%.1f%%\n", written, expect);
+        std::println("[bits] FAIL compression: {:.1f}% of the chunks written, expected ~{:.1f}%", written, expect);
         ++fails;
     }
 
@@ -214,8 +215,8 @@ int round_trip(long N)
 
     if (fails == 0)
     {
-        std::printf("[bits] OK round trip: %ld elements, chunk_size=%u, %.1f%% of chunks written after the pass\n", N,
-                    a.chunk_size(), written);
+        std::println("[bits] OK round trip: {} elements, chunk_size={}, {:.1f}% of chunks written after the pass", N,
+                     a.chunk_size(), written);
     }
     a.clear();
     return fails;
@@ -258,7 +259,7 @@ int neighbours(long N)
     fails += compare(a, ref, "neighbouring writes") != 0;
     if (fails == 0)
     {
-        std::printf("[bits] OK neighbouring elements written by %d threads: none lost\n", CHUNK_PMP_MAX_THREADS);
+        std::println("[bits] OK neighbouring elements written by {} threads: none lost", CHUNK_PMP_MAX_THREADS);
     }
     a.clear();
     return fails;
@@ -277,13 +278,13 @@ int birth_size()
     int                fails = 0;
     if (a.chunk_size() != expect || active_chunk_size() != active || b.chunk_size() != active)
     {
-        std::printf("[bits] FAIL birth size: bits %u (expected %u), then active %u and bool %u (expected %u)\n",
-                    a.chunk_size(), expect, active_chunk_size(), b.chunk_size(), active);
+        std::println("[bits] FAIL birth size: bits {} (expected {}), then active {} and bool {} (expected {})",
+                     a.chunk_size(), expect, active_chunk_size(), b.chunk_size(), active);
         ++fails;
     }
     else
     {
-        std::printf("[bits] OK birth size: bits at %u, the active size stays %u\n", a.chunk_size(), active);
+        std::println("[bits] OK birth size: bits at {}, the active size stays {}", a.chunk_size(), active);
     }
     a.clear();
     b.clear();
@@ -301,7 +302,7 @@ int surface()
     fails += !(b3 && !b4 && a[4] == true && a[3] == b3 && a[5] == false);
     if (fails)
     {
-        std::printf("[bits] FAIL element surface\n");
+        std::println("[bits] FAIL element surface");
     }
     a.clear();
     return fails;
@@ -375,7 +376,7 @@ int logical_ops(long N)
 
     if (fails == 0)
     {
-        std::printf("[bits] OK |= &= ^= against std::vector<bool>, neighbouring elements in parallel\n");
+        std::println("[bits] OK |= &= ^= against std::vector<bool>, neighbouring elements in parallel");
     }
     m.clear();
     a.clear();
@@ -439,16 +440,16 @@ int advisor_and_rechunk(long N)
     const auto rep = ChunkSizeAdvisor<Bit>::analyze(a, opt);
     if (rep.cur < 0)
     {
-        std::printf("[bits] FAIL advisor: no row for the current size %ld\n", S);
+        std::println("[bits] FAIL advisor: no row for the current size {}", S);
         return fails + 1;
     }
     const auto&  cur        = rep.table[static_cast<std::size_t>(rep.cur)];
     const double data_bytes = cur.mem_bytes - (static_cast<double>(cur.n_chunks) * rep.meta_bytes);
     if (cur.mat != mat_expected || data_bytes != static_cast<double>(mat_expected) * static_cast<double>(S) / 8.)
     {
-        std::printf("[bits] FAIL advisor exact row: mat %lld (expected %ld), data %.0f B (expected %.0f)\n",
-                    static_cast<long long>(cur.mat), mat_expected, data_bytes,
-                    static_cast<double>(mat_expected) * static_cast<double>(S) / 8.);
+        std::println("[bits] FAIL advisor exact row: mat {} (expected {}), data {:.0f} B (expected {:.0f})",
+                     static_cast<long long>(cur.mat), mat_expected, data_bytes,
+                     static_cast<double>(mat_expected) * static_cast<double>(S) / 8.);
         ++fails;
     }
     // At S/2 each such chunk is one compressible half (all true) and one mixed.
@@ -461,15 +462,15 @@ int advisor_and_rechunk(long N)
             const double r = static_cast<double>(row.mat) / static_cast<double>(mat_expected);
             if (r < 0.98 || r > 1.02)
             {
-                std::printf("[bits] FAIL advisor finer row S=%ld: mat %lld, expected ~%ld\n", S / 2,
-                            static_cast<long long>(row.mat), mat_expected);
+                std::println("[bits] FAIL advisor finer row S={}: mat {}, expected ~{}", S / 2,
+                             static_cast<long long>(row.mat), mat_expected);
                 ++fails;
             }
         }
     }
     if (!seen_half)
     {
-        std::printf("[bits] FAIL advisor: no finer row at S=%ld\n", S / 2);
+        std::println("[bits] FAIL advisor: no finer row at S={}", S / 2);
         ++fails;
     }
 
@@ -492,7 +493,7 @@ int advisor_and_rechunk(long N)
             a.rechunk_to(to);
             if (a.chunk_size() != to)
             {
-                std::printf("[bits] FAIL rechunk: geometry %u, expected %u\n", a.chunk_size(), to);
+                std::println("[bits] FAIL rechunk: geometry {}, expected {}", a.chunk_size(), to);
                 ++fails;
             }
             char step[48];
@@ -503,8 +504,8 @@ int advisor_and_rechunk(long N)
 
     if (fails == 0)
     {
-        std::printf("[bits] OK advisor (exact row, S/8 bytes, finer row by word)%s\n",
-                    build_config::chunk_dynamic ? ", rechunk down and up" : "");
+        std::println("[bits] OK advisor (exact row, S/8 bytes, finer row by word){}",
+                     build_config::chunk_dynamic ? ", rechunk down and up" : "");
     }
     a.clear();
     return fails;
@@ -588,8 +589,8 @@ int bulk_ranges(long N)
         if (a.getChunkList()[static_cast<std::size_t>(c0 + c)].written() ||
             a.getChunkList()[static_cast<std::size_t>(c1 + c)].written())
         {
-            std::printf("[bits] FAIL fill_range: whole chunk %ld / %ld filled with a constant still materialised\n",
-                        c0 + c, c1 + c);
+            std::println("[bits] FAIL fill_range: whole chunk {} / {} filled with a constant still materialised",
+                         c0 + c, c1 + c);
             ++fails;
             break;
         }
@@ -597,7 +598,7 @@ int bulk_ranges(long N)
 
     if (fails == 0)
     {
-        std::printf("[bits] OK fill_range / copy_range (64 per word), constant chunks compressed after the pass\n");
+        std::println("[bits] OK fill_range / copy_range (64 per word), constant chunks compressed after the pass");
     }
     a.clear();
     return fails;
@@ -642,7 +643,7 @@ int parallel_fill(long N)
     }
     if (fails == 0)
     {
-        std::printf("[bits] OK fill_range_mt from %d threads, neighbouring spans in one word\n", CHUNK_PMP_MAX_THREADS);
+        std::println("[bits] OK fill_range_mt from {} threads, neighbouring spans in one word", CHUNK_PMP_MAX_THREADS);
     }
     a.clear();
     return fails;
@@ -655,7 +656,7 @@ int run(int argc, char** argv)
     const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
     ParamChunk::init_indexes(true);
 
-    std::printf("=== bits_container_validation  N=%ld  threads=%d ===\n", N, CHUNK_PMP_MAX_THREADS);
+    std::println("=== bits_container_validation  N={}  threads={} ===", N, CHUNK_PMP_MAX_THREADS);
     int fails = 0;
     fails += birth_size();
     fails += surface();
@@ -669,7 +670,7 @@ int run(int argc, char** argv)
     release_chunk_pools();
     destroy_block_chunk();
 
-    std::printf("[bits] %s\n", fails == 0 ? "=== ALL CHECKS PASSED ===" : "=== FAILURES ===");
+    std::println("[bits] {}", fails == 0 ? "=== ALL CHECKS PASSED ===" : "=== FAILURES ===");
     return fails;
 }
 

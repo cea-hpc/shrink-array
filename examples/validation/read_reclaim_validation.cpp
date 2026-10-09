@@ -116,7 +116,7 @@
 #include <atomic>      // std::atomic, std::memory_order
 #include <chrono>      // std::chrono::steady_clock, std::chrono::duration
 #include <cstdint>     // std::uint64_t
-#include <cstdio>      // std::printf
+#include <print>       // std::println
 #include <cstdlib>     // std::getenv, std::atol
 #include <string_view> // std::string_view
 #include <type_traits> // std::conditional_t
@@ -228,7 +228,7 @@ int run_compound(int team, int writers, double seconds, long pollute)
 {
     if constexpr (!chunk_config::use_chunk2 && !chunk_config::use_chunk2a)
     {
-        std::printf("[%s/read-reclaim compound] SKIP: no second value on this variant\n", variant_name());
+        std::println("[{}/read-reclaim compound] SKIP: no second value on this variant", variant_name());
         return 77;
     }
 
@@ -241,10 +241,10 @@ int run_compound(int team, int writers, double seconds, long pollute)
         maybe_set_second_value(a, kSecond);
         const Arr& ca = a;
 
-        std::printf("=== read_reclaim_validation compound [variant = %s]  threads=%d (writers %d)  chunk_size=%ld  "
-                    "read_delay_every=%u (%u us)  pollute=%ld  %.0f s ===\n",
-                    variant_name(), team, writers, S, test_hooks::read_delay_every, test_hooks::read_delay_us, pollute,
-                    seconds);
+        std::println("=== read_reclaim_validation compound [variant = {}]  threads={} (writers {})  chunk_size={}  "
+                     "read_delay_every={} ({} us)  pollute={}  {:.0f} s ===",
+                     variant_name(), team, writers, S, test_hooks::read_delay_every, test_hooks::read_delay_us, pollute,
+                     seconds);
 
         // Victims uniform at the second value, serially, before any region.
         for (long w = 0; w < writers; ++w)
@@ -350,11 +350,11 @@ int run_compound(int team, int writers, double seconds, long pollute)
                     {
                         if (bad < 8)
                         {
-                            std::printf("[%s/read-reclaim compound] FAIL element %ld (chunk %ld, offset %ld) = %g, "
-                                        "expected %g -- a compound operation was lost%s\n",
-                                        variant_name(), static_cast<long>(idx), w * kPerWriter + c, k, v, kSecond,
-                                        v == kSecond / 2 ? " (a *= 2 dropped)"
-                                                         : (v == kSecond * 2 ? " (a *= 0.5 dropped)" : ""));
+                            std::println("[{}/read-reclaim compound] FAIL element {} (chunk {}, offset {}) = {:g}, "
+                                         "expected {:g} -- a compound operation was lost{}",
+                                         variant_name(), static_cast<long>(idx), w * kPerWriter + c, k, v, kSecond,
+                                         v == kSecond / 2 ? " (a *= 2 dropped)"
+                                                          : (v == kSecond * 2 ? " (a *= 0.5 dropped)" : ""));
                         }
                         ++bad;
                     }
@@ -363,32 +363,32 @@ int run_compound(int team, int writers, double seconds, long pollute)
         }
 
         const long seen = compressed_seen.load();
-        std::printf("[%s/read-reclaim compound] %ld compound ops, %ld sweeps, %ld victim chunks found compressed "
-                    "after a sweep\n",
-                    variant_name(), rmw_ops.load(), sweeps.load(), seen);
+        std::println("[{}/read-reclaim compound] {} compound ops, {} sweeps, {} victim chunks found compressed "
+                     "after a sweep",
+                     variant_name(), rmw_ops.load(), sweeps.load(), seen);
         if (seen == 0)
         {
-            std::printf("[%s/read-reclaim compound] FAIL premise: no victim chunk was compressed inside the region "
-                        "-- the test proves nothing\n",
-                        variant_name());
+            std::println("[{}/read-reclaim compound] FAIL premise: no victim chunk was compressed inside the region "
+                         "-- the test proves nothing",
+                         variant_name());
             rc = 1;
         }
         if (bad > 0)
         {
-            std::printf("[%s/read-reclaim compound] FAIL %ld element(s) off V\n", variant_name(), bad);
+            std::println("[{}/read-reclaim compound] FAIL {} element(s) off V", variant_name(), bad);
             rc = 1;
         }
         else if (seen > 0)
         {
-            std::printf("[%s/read-reclaim compound] OK: every compound operation applied\n", variant_name());
+            std::println("[{}/read-reclaim compound] OK: every compound operation applied", variant_name());
         }
     }
 
     release_chunk_pools();
     destroy_block_chunk();
 
-    std::printf("\n[%s] %s\n", variant_name(),
-                rc ? "=== READ RECLAIM COMPOUND FAILED ===" : "=== READ RECLAIM COMPOUND OK ===");
+    std::println("\n[{}] {}", variant_name(),
+                 rc ? "=== READ RECLAIM COMPOUND FAILED ===" : "=== READ RECLAIM COMPOUND OK ===");
     return rc;
 }
 
@@ -406,9 +406,9 @@ int run_remark(int team, double seconds)
         test_hooks::pass_delay_us =
             static_cast<unsigned>(env_long("READ_RECLAIM_PASS_DELAY_US", CHUNK_TEST_PASS_DELAY_US));
 
-        std::printf("=== read_reclaim_validation remark [variant = %s]  threads=%d  chunk_size=%ld  pool=%ld chunks  "
-                    "pass_delay_every=%u (%u us, thread 0)  %.0f s ===\n",
-                    variant_name(), team, S, kPool, test_hooks::pass_delay_every, test_hooks::pass_delay_us, seconds);
+        std::println("=== read_reclaim_validation remark [variant = {}]  threads={}  chunk_size={}  pool={} chunks  "
+                     "pass_delay_every={} ({} us, thread 0)  {:.0f} s ===",
+                     variant_name(), team, S, kPool, test_hooks::pass_delay_every, test_hooks::pass_delay_us, seconds);
 
         std::atomic<long> lost{0};
         std::atomic<long> writes{0};
@@ -441,9 +441,9 @@ int run_remark(int team, double seconds)
                         const long k = lost.fetch_add(1, std::memory_order_relaxed);
                         if (k < 8)
                         {
-                            std::printf("[%s/read-reclaim remark] FAIL thread %d: element %ld (chunk %ld, offset %ld) "
-                                        "reads %g right after writing 1 -- the write was lost\n",
-                                        variant_name(), me, static_cast<long>(idx), c, j, got);
+                            std::println("[{}/read-reclaim remark] FAIL thread {}: element {} (chunk {}, offset {}) "
+                                         "reads {:g} right after writing 1 -- the write was lost",
+                                         variant_name(), me, static_cast<long>(idx), c, j, got);
                         }
                     }
                     a[idx] = 0.0; // constant again: a candidate
@@ -461,24 +461,24 @@ int run_remark(int team, double seconds)
             nonzero += (ca[static_cast<Ind>(i)] != 0.0) ? 1 : 0;
         }
 
-        std::printf("[%s/read-reclaim remark] %ld write pairs, %ld lost read-backs, %ld elements left non-zero\n",
-                    variant_name(), writes.load(), lost.load(), nonzero);
+        std::println("[{}/read-reclaim remark] {} write pairs, {} lost read-backs, {} elements left non-zero",
+                     variant_name(), writes.load(), lost.load(), nonzero);
         if (lost.load() > 0 || nonzero > 0)
         {
-            std::printf("[%s/read-reclaim remark] FAIL\n", variant_name());
+            std::println("[{}/read-reclaim remark] FAIL", variant_name());
             rc = 1;
         }
         else
         {
-            std::printf("[%s/read-reclaim remark] OK: no write lost\n", variant_name());
+            std::println("[{}/read-reclaim remark] OK: no write lost", variant_name());
         }
     }
 
     release_chunk_pools();
     destroy_block_chunk();
 
-    std::printf("\n[%s] %s\n", variant_name(),
-                rc ? "=== READ RECLAIM REMARK FAILED ===" : "=== READ RECLAIM REMARK OK ===");
+    std::println("\n[{}] {}", variant_name(),
+                 rc ? "=== READ RECLAIM REMARK FAILED ===" : "=== READ RECLAIM REMARK OK ===");
     return rc;
 }
 
@@ -505,7 +505,7 @@ int run(int argc, char** argv)
     const int team = omp_get_max_threads();
     if (team < 2)
     {
-        std::printf("[%s/read-reclaim] SKIP: needs at least 2 threads (OMP_NUM_THREADS=%d)\n", variant_name(), team);
+        std::println("[{}/read-reclaim] SKIP: needs at least 2 threads (OMP_NUM_THREADS={})", variant_name(), team);
         return 77;
     }
     const int writers = team >= 8 ? team / 4 : 1;
@@ -533,10 +533,10 @@ int run(int argc, char** argv)
         a.resize(static_cast<Ind>(N));
         const Arr& ca = a;
 
-        std::printf("=== read_reclaim_validation [variant = %s]  threads=%d (writers %d)  chunk_size=%ld  "
-                    "read_delay_every=%u (%u us)  pollute=%ld  %.0f s ===\n",
-                    variant_name(), team, writers, S, test_hooks::read_delay_every, test_hooks::read_delay_us, pollute,
-                    seconds);
+        std::println("=== read_reclaim_validation [variant = {}]  threads={} (writers {})  chunk_size={}  "
+                     "read_delay_every={} ({} us)  pollute={}  {:.0f} s ===",
+                     variant_name(), team, writers, S, test_hooks::read_delay_every, test_hooks::read_delay_us, pollute,
+                     seconds);
 
         std::atomic<int>  writers_left{writers};
         std::atomic<long> bad{0};
@@ -620,10 +620,10 @@ int run(int argc, char** argv)
                         const long k = bad.fetch_add(1, std::memory_order_relaxed);
                         if (k < 8)
                         {
-                            std::printf("[%s/read-reclaim] FAIL stale read: element %ld (chunk %ld, offset %ld) = %g, "
-                                        "expected 0 -- read from a released buffer%s\n",
-                                        variant_name(), static_cast<long>(idx), w * kPerWriter + c, j, v,
-                                        v == kPollute ? " (reused and overwritten)" : "");
+                            std::println("[{}/read-reclaim] FAIL stale read: element {} (chunk {}, offset {}) = {:g}, "
+                                         "expected 0 -- read from a released buffer{}",
+                                         variant_name(), static_cast<long>(idx), w * kPerWriter + c, j, v,
+                                         v == kPollute ? " (reused and overwritten)" : "");
                         }
                     }
                 }
@@ -635,30 +635,30 @@ int run(int argc, char** argv)
 
         fails           = bad.load();
         const long seen = compressed_seen.load();
-        std::printf("[%s/read-reclaim] %ld reads, %ld sweeps, %ld victim chunks found compressed after a sweep\n",
-                    variant_name(), reads.load(), sweeps.load(), seen);
+        std::println("[{}/read-reclaim] {} reads, {} sweeps, {} victim chunks found compressed after a sweep",
+                     variant_name(), reads.load(), sweeps.load(), seen);
         if (seen == 0)
         {
-            std::printf("[%s/read-reclaim] FAIL premise: no victim chunk was compressed inside the region -- the "
-                        "pass never ran there, the test proves nothing\n",
-                        variant_name());
+            std::println("[{}/read-reclaim] FAIL premise: no victim chunk was compressed inside the region -- the "
+                         "pass never ran there, the test proves nothing",
+                         variant_name());
             rc = 1;
         }
         if (fails > 0)
         {
-            std::printf("[%s/read-reclaim] FAIL %ld stale read(s)\n", variant_name(), fails);
+            std::println("[{}/read-reclaim] FAIL {} stale read(s)", variant_name(), fails);
             rc = 1;
         }
         else if (seen > 0)
         {
-            std::printf("[%s/read-reclaim] OK: no read returned anything but the constant\n", variant_name());
+            std::println("[{}/read-reclaim] OK: no read returned anything but the constant", variant_name());
         }
     }
 
     release_chunk_pools();
     destroy_block_chunk();
 
-    std::printf("\n[%s] %s\n", variant_name(), rc ? "=== READ RECLAIM FAILED ===" : "=== READ RECLAIM OK ===");
+    std::println("\n[{}] {}", variant_name(), rc ? "=== READ RECLAIM FAILED ===" : "=== READ RECLAIM OK ===");
     return rc;
 }
 

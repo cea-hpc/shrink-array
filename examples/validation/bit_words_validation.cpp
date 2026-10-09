@@ -33,7 +33,7 @@
 
 #include <algorithm> // std::min
 #include <cstddef>   // std::size_t
-#include <cstdio>    // std::printf
+#include <print>     // std::println
 #include <random>    // std::mt19937_64, std::uniform_int_distribution
 #include <ranges>    // std::views::enumerate
 #include <thread>    // std::thread
@@ -54,7 +54,7 @@ void check(bool ok, const char* what, std::size_t n)
     if (!ok)
     {
         ++g_fails;
-        std::printf("FAIL %s (n=%zu)\n", what, n);
+        std::println("FAIL {} (n={})", what, n);
     }
 }
 
@@ -314,7 +314,7 @@ int main()
 
     if (g_fails == 0)
     {
-        std::printf("bit_words_validation: all checks passed\n");
+        std::println("bit_words_validation: all checks passed");
     }
     return g_fails == 0 ? 0 : 1;
 }

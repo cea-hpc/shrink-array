@@ -32,7 +32,7 @@
 // Run by ctest; the variant comes from the CHUNK_VARIANT_* macro of the target.
 
 #include <complex>     // std::complex<double>
-#include <cstdio>      // std::printf
+#include <print>       // std::println
 #include <sstream>     // std::ostringstream (os << a[i])
 #include <type_traits> // std::conditional_t, std::is_same_v
 #include <utility>     // std::move
@@ -61,7 +61,7 @@ void expect(const char* what, const T& got, const T& want)
 {
     if (!(got == want))
     {
-        std::printf("[element_ref] FAIL: %s\n", what);
+        std::println("[element_ref] FAIL: {}", what);
         ++fails;
     }
 }
@@ -148,7 +148,7 @@ int usage()
 
     if (fails == 0)
     {
-        std::printf("[element_ref] OK: every std::vector-style use of a[i] compiles and holds\n");
+        std::println("[element_ref] OK: every std::vector-style use of a[i] compiles and holds");
     }
     return fails != 0 ? 1 : 0;
 }
@@ -166,7 +166,7 @@ void misuse()
     v      = 3.0;
     #elif ELEMENT_REF_CASE == 3
     auto v = a[0]; // arithmetic
-    std::printf("%g\n", v + 1.0);
+    std::println("{:g}", v + 1.0);
     #elif ELEMENT_REF_CASE == 4
     auto   v = (a[0] += 1.0); // a compound result kept
     double d = v;
@@ -181,7 +181,7 @@ void misuse()
     auto v = a[0]; // comparison
     if (v == 1.0)
     {
-        std::printf("1\n");
+        std::println("1");
     }
     #elif ELEMENT_REF_CASE == 8
     auto v = a[0]; // a copy

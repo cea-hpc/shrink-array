@@ -39,7 +39,7 @@
 // EXIT STATUS: 0 when every check holds, 1 otherwise.
 
 #include <cstdint> // std::uintptr_t
-#include <cstdio>  // std::printf
+#include <print>   // std::println
 #include <cstdlib> // std::getenv (BLK_HUGE)
 #include <ranges>  // std::views::enumerate
 #include <vector>  // std::vector
@@ -84,7 +84,7 @@ int fails = 0;
 
 void expect(bool ok, const char* what)
 {
-    std::printf("  [%s] %s\n", ok ? " ok " : "FAIL", what);
+    std::println("  [{}] {}", ok ? " ok " : "FAIL", what);
     if (!ok)
     {
         ++fails;
@@ -134,7 +134,7 @@ void check_huge()
 {
     if (sizeof(std::size_t) < 8 || std::getenv("BLK_HUGE") == nullptr)
     {
-        std::printf("  [skip] sizes past 2 GiB / 4 GiB (set BLK_HUGE=1)\n");
+        std::println("  [skip] sizes past 2 GiB / 4 GiB (set BLK_HUGE=1)");
         return;
     }
     constexpr std::size_t kGiB    = 1uz << 30;
@@ -266,13 +266,13 @@ void check_inside_caller_critical()
 
 int main()
 {
-    std::printf("=== blk_allocator_validation ===\n");
+    std::println("=== blk_allocator_validation ===");
     check_sizes();
     check_huge();
     check_distinct();
     check_parallel();
     check_inside_caller_critical();
     check_distinct(); // the ladder is still sound after the batches went back
-    std::printf("\n%s\n", fails ? "=== BLK ALLOCATOR FAILED ===" : "=== BLK ALLOCATOR OK ===");
+    std::println("\n{}", fails ? "=== BLK ALLOCATOR FAILED ===" : "=== BLK ALLOCATOR OK ===");
     return fails ? 1 : 0;
 }

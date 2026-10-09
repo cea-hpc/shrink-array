@@ -55,7 +55,7 @@
 #include <atomic>  // std::atomic, std::memory_order_relaxed
 #include <chrono>  // std::chrono::steady_clock, std::chrono::duration
 #include <cstdint> // std::uint64_t
-#include <cstdio>  // std::printf
+#include <print>   // std::println
 #include <cstdlib> // std::getenv, std::atof
 
 #include "chunk/chunk_traits.h" // forward decls + default ind_type = int
@@ -143,7 +143,7 @@ int run(int /*argc*/, char** /*argv*/)
 
     if constexpr (!build_config::use_openmp)
     {
-        std::printf("[chunk2/foreign-key] SKIP: the passes this is about run inside a parallel region\n");
+        std::println("[chunk2/foreign-key] SKIP: the passes this is about run inside a parallel region");
         return 77;
     }
 
@@ -159,9 +159,9 @@ int run(int /*argc*/, char** /*argv*/)
         const Arr& ca   = a;
         const Arr& cb   = b;
         const int  team = CHUNK_PMP_MAX_THREADS;
-        std::printf("=== chunk2_foreign_key_validation  chunk_size=%ld  threads=%d  a: %ld chunks of %g (declares "
-                    "%g)  b: %ld chunks (declares %g) ===\n",
-                    S, team, kChunksA, kValB, kValA, kChunksB, kValB);
+        std::println("=== chunk2_foreign_key_validation  chunk_size={}  threads={}  a: {} chunks of {:g} (declares "
+                     "{:g})  b: {} chunks (declares {:g}) ===",
+                     S, team, kChunksA, kValB, kValA, kChunksB, kValB);
 
         // `a` = 2.0 everywhere, `b` = 2.0 everywhere and compressed to it.
 #pragma omp parallel
@@ -225,20 +225,20 @@ int run(int /*argc*/, char** /*argv*/)
 
         const long a_compressed = pointing_at(ca, kChunksA, b_cst);
         const long b_compressed = compressed(cb, kChunksB, S);
-        std::printf("[chunk2/foreign-key] %ld toggles (%.1f s); b: %ld/%ld chunks compressed before, %ld after; a: %ld "
-                    "of %ld chunks on b's constant before the stress, %ld after\n",
-                    toggles.load(), seconds, b_compressed0, kChunksB, b_compressed, a_on_b_cst0, kChunksA,
-                    a_compressed);
+        std::println("[chunk2/foreign-key] {} toggles ({:.1f} s); b: {}/{} chunks compressed before, {} after; a: {} "
+                     "of {} chunks on b's constant before the stress, {} after",
+                     toggles.load(), seconds, b_compressed0, kChunksB, b_compressed, a_on_b_cst0, kChunksA,
+                     a_compressed);
         if (b_compressed0 == 0)
         {
-            std::printf("[chunk2/foreign-key] FAIL premise: `b` was not compressed to its second value\n");
+            std::println("[chunk2/foreign-key] FAIL premise: `b` was not compressed to its second value");
             ++fails;
         }
         if (a_compressed != 0)
         {
-            std::printf("[chunk2/foreign-key] FAIL %ld chunk(s) of `a` point at `b`'s constant array: compressed to "
-                        "another array's second value\n",
-                        a_compressed);
+            std::println("[chunk2/foreign-key] FAIL {} chunk(s) of `a` point at `b`'s constant array: compressed to "
+                         "another array's second value",
+                         a_compressed);
             ++fails;
         }
 
@@ -260,21 +260,21 @@ int run(int /*argc*/, char** /*argv*/)
         }
         if (bad_b != 0 || bad_a != 0)
         {
-            std::printf("[chunk2/foreign-key] FAIL after writing 5.0 into each chunk of `a`: %ld element(s) of `b` and "
-                        "%ld of `a` read wrong -- the write landed in a shared constant array\n",
-                        bad_b, bad_a);
+            std::println("[chunk2/foreign-key] FAIL after writing 5.0 into each chunk of `a`: {} element(s) of `b` and "
+                         "{} of `a` read wrong -- the write landed in a shared constant array",
+                         bad_b, bad_a);
             ++fails;
         }
         else
         {
-            std::printf("[chunk2/foreign-key] OK: no chunk of `a` compressed to `b`'s value, writes stay in `a`\n");
+            std::println("[chunk2/foreign-key] OK: no chunk of `a` compressed to `b`'s value, writes stay in `a`");
         }
     }
 
     release_chunk_pools();
     destroy_block_chunk();
 
-    std::printf("\n[chunk2] %s\n", fails ? "=== FOREIGN KEY FAILED ===" : "=== FOREIGN KEY OK ===");
+    std::println("\n[chunk2] {}", fails ? "=== FOREIGN KEY FAILED ===" : "=== FOREIGN KEY OK ===");
     return fails ? 1 : 0;
 }
 

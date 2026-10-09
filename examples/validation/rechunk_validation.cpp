@@ -53,7 +53,7 @@
 // ambient chunk size, the registries -- so they run in separate processes,
 // never side by side in one).
 
-#include <cstdio>      // printf, fprintf
+#include <cstdio>      // fprintf
 #include <cstring>     // std::strcmp
 #include <functional>  // std::function
 #include <string>      // std::string
@@ -557,15 +557,15 @@ int check_non_pow2_refused(const char* label)
         arr.rechunk_to(s);
         if (arr.chunk_size() != old_size)
         {
-            printf("[%s/%s] FAIL: rechunk_to(%u) applied: geometry %u -> %u\n", variant_name(), label, s, old_size,
-                   arr.chunk_size());
+            std::println("[{}/{}] FAIL: rechunk_to({}) applied: geometry {} -> {}", variant_name(), label, s, old_size,
+                         arr.chunk_size());
             ++bad;
         }
     }
     const long mism = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
     if (mism)
     {
-        printf("[%s/%s] FAIL: %ld element(s) changed by the refused re-chunks\n", variant_name(), label, mism);
+        std::println("[{}/{}] FAIL: {} element(s) changed by the refused re-chunks", variant_name(), label, mism);
         ++bad;
     }
 
@@ -575,12 +575,12 @@ int check_non_pow2_refused(const char* label)
     empty.set_chunk_size(96u);
     if (empty.chunk_size() != e0)
     {
-        printf("[%s/%s] FAIL: empty array: geometry %u -> %u\n", variant_name(), label, e0, empty.chunk_size());
+        std::println("[{}/{}] FAIL: empty array: geometry {} -> {}", variant_name(), label, e0, empty.chunk_size());
         ++bad;
     }
     if (active_chunk_size() != ambient)
     {
-        printf("[%s/%s] FAIL: ambient size %u -> %u\n", variant_name(), label, ambient, active_chunk_size());
+        std::println("[{}/{}] FAIL: ambient size {} -> {}", variant_name(), label, ambient, active_chunk_size());
         ++bad;
     }
 
@@ -589,8 +589,8 @@ int check_non_pow2_refused(const char* label)
     const long after = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
     if (arr.chunk_size() != old_size * 2u || after)
     {
-        printf("[%s/%s] FAIL: legal rechunk_to(%u) afterwards: geometry %u, %ld mismatch(es)\n", variant_name(), label,
-               old_size * 2u, arr.chunk_size(), after);
+        std::println("[{}/{}] FAIL: legal rechunk_to({}) afterwards: geometry {}, {} mismatch(es)", variant_name(),
+                     label, old_size * 2u, arr.chunk_size(), after);
         ++bad;
     }
     // Back to the case's start geometry for the next pass.
@@ -599,9 +599,9 @@ int check_non_pow2_refused(const char* label)
 
     if (!bad)
     {
-        printf("[%s/%s] OK: 48/96/3/%u refused (filled and empty arrays), content and geometry kept, "
-               "%u -> %u still works\n",
-               variant_name(), label, old_size + 1u, old_size, old_size * 2u);
+        std::println("[{}/{}] OK: 48/96/3/{} refused (filled and empty arrays), content and geometry kept, "
+                     "{} -> {} still works",
+                     variant_name(), label, old_size + 1u, old_size, old_size * 2u);
     }
     return bad ? 1 : 0;
 }

@@ -18,7 +18,7 @@
 // parallel, read back, folded, and the library shut down. Exit status 0 when
 // every value reads back as written.
 
-#include <cstdio>  // std::printf
+#include <print>   // std::println
 #include <utility> // std::as_const
 
 #include "chunk/array_chunk2A.h" // shrink_array::ArrayChunk2A
@@ -98,7 +98,7 @@ int main()
         }
 
         a.shrink_to_fit(); // fold every chunk that has become constant (sequential point)
-        std::printf("n = %d elements, %d wrong, chunks holding a buffer: %.1f %%\n", n, bad, a.stats());
+        std::println("n = {} elements, {} wrong, chunks holding a buffer: {:.1f} %", n, bad, a.stats());
     } // the array releases its chunks here
 
     sa::release_chunk_pools(); // give the reuse pools back

@@ -86,7 +86,6 @@
 
 #include <algorithm>   // std::min
 #include <atomic>      // std::atomic, std::memory_order
-#include <cstdio>      // printf
 #include <cstdlib>     // std::abs (int, chain_int)
 #include <cmath>       // std::floor
 #include <complex>     // std::complex<double> (the return-contract region)
@@ -296,14 +295,14 @@ static int run_returns(const char* label, long N)
     }
     if (bad != 0 || mismatched != 0)
     {
-        printf("[%s/returns-%s] FAIL: %ld compound result(s) not the stored value, %ld/%ld elements off the "
-               "reference\n",
-               variant_name(), label, bad, mismatched, N);
+        std::println("[{}/returns-{}] FAIL: {} compound result(s) not the stored value, {}/{} elements off the "
+                     "reference",
+                     variant_name(), label, bad, mismatched, N);
     }
     else
     {
-        printf("[%s/returns-%s] OK: every compound operator returned the stored value (%ld elements)\n", variant_name(),
-               label, N);
+        std::println("[{}/returns-{}] OK: every compound operator returned the stored value ({} elements)",
+                     variant_name(), label, N);
     }
     arr.clear();
     return (bad != 0 || mismatched != 0) ? 1 : 0;
@@ -762,7 +761,7 @@ static int run_resize(const char* label, long N)
         ref.resize(static_cast<std::size_t>(n), T{});
         if (static_cast<long>(arr.size()) != n)
         {
-            printf("[%s/resize] FAIL: size() = %ld after resize(%ld)\n", label, static_cast<long>(arr.size()), n);
+            std::println("[{}/resize] FAIL: size() = {} after resize({})", label, static_cast<long>(arr.size()), n);
             ++fails;
         }
     };
@@ -782,7 +781,7 @@ static int run_resize(const char* label, long N)
     arr.clear();
     if (fails == 0)
     {
-        printf("[%s/resize] ok: grow, shrink, grow with deferred ops queued\n", label);
+        std::println("[{}/resize] ok: grow, shrink, grow with deferred ops queued", label);
     }
     return fails ? 1 : 0;
 }
@@ -794,12 +793,12 @@ int run(int argc, char** argv)
     test_hooks::force_defer_every = build_config::force_defer_every > 0 ? build_config::force_defer_every : 7U;
     if constexpr (!build_config::use_openmp)
     {
-        printf("[deferred_path] note: serial build, no deferred path to force\n");
+        std::println("[deferred_path] note: serial build, no deferred path to force");
     }
     else if constexpr (!test_hooks::force_defer_compiled)
     {
-        printf("[deferred_path] note: this build has no test hooks (CHUNK_TEST_HOOKS): no write is forced down "
-               "the deferred path\n");
+        std::println("[deferred_path] note: this build has no test hooks (CHUNK_TEST_HOOKS): no write is forced down "
+                     "the deferred path");
     }
 
     // 128 Ki elements: some 60 chunks per run at the default geometry, a
@@ -840,11 +839,11 @@ int run(int argc, char** argv)
     if (test_hooks::force_defer_compiled && test_hooks::force_defer_every > 0)
     {
         const unsigned long forced = test_hooks::forced_deferrals.load();
-        printf("[%s] writes forced down the deferred path: %lu\n", variant_name(), forced);
+        std::println("[{}] writes forced down the deferred path: {}", variant_name(), forced);
         if (forced == 0)
         {
-            printf("[%s] FAIL: the forced-deferral hook is on and fired 0 times -- the path was not exercised\n",
-                   variant_name());
+            std::println("[{}] FAIL: the forced-deferral hook is on and fired 0 times -- the path was not exercised",
+                         variant_name());
             ++fails;
         }
     }

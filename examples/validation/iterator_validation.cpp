@@ -54,14 +54,16 @@
 // tests run it at 1 and 8).
 
 #include <algorithm>        // std::lower_bound, std::sort, std::ranges::equal_range
-#include <cstdarg>          // va_list (Report::fail)
-#include <cstdio>           // std::printf, std::snprintf
+#include <cstdio>           // std::snprintf
+#include <format>           // std::format_string (Report::fail)
+#include <print>            // std::println
 #include <initializer_list> // std::initializer_list (range-for over a braced list)
 #include <functional>       // std::greater
 #include <iterator>         // std::random_access_iterator, std::iterator_traits, std::distance
 #include <ranges>           // std::ranges::random_access_range
 #include <span>             // std::span (for_each_span)
 #include <type_traits>      // std::conditional_t, std::is_same_v
+#include <utility>          // std::forward
 #include <vector>           // std::vector
 
 #include "chunk/chunk_traits.h"          // forward decls + default ind_type = int
@@ -214,18 +216,13 @@ void fill(Arr& a, long N, Fn&& value)
 /// @brief Mismatch reporter: counts every failure, prints the first few.
 struct Report
 {
-    // C varargs on purpose: the format attribute keeps -Wformat checking
-    // every call (a forwarded, non-literal format would not be checked).
-    [[gnu::format(printf, 2, 3)]] void fail(const char* fmt, ...) // NOLINT(cert-dcl50-cpp)
+    // std::format_string checks every call's format against its arguments at compile time.
+    template <class... Args>
+    void fail(std::format_string<Args...> fmt, Args&&... args)
     {
         if (bad < 8)
         {
-            std::printf("[%s/%s] FAIL ", variant_name(), step);
-            va_list ap;
-            va_start(ap, fmt);
-            std::vprintf(fmt, ap);
-            va_end(ap);
-            std::printf("\n");
+            std::println("[{}/{}] FAIL {}", variant_name(), step, std::format(fmt, std::forward<Args>(args)...));
         }
         ++bad;
     }
@@ -233,11 +230,11 @@ struct Report
     {
         if (!bad)
         {
-            std::printf("[%s/%s] OK: %s\n", variant_name(), step, ok_msg);
+            std::println("[{}/{}] OK: {}", variant_name(), step, ok_msg);
         }
         else
         {
-            std::printf("[%s/%s] %ld failure(s)\n", variant_name(), step, bad);
+            std::println("[{}/{}] {} failure(s)", variant_name(), step, bad);
         }
         return bad ? 1 : 0;
     }
@@ -260,7 +257,7 @@ int check_premise(const Arr& a, long N)
     const long want = (chunk_config::use_chunk2 || chunk_config::use_chunk2a) ? kC0 + (kC2 - kC1) : kC0;
     if (folded < want)
     {
-        r.fail("%ld chunk(s) folded after the pass, expected at least %ld: the jumps would not land in "
+        r.fail("{} chunk(s) folded after the pass, expected at least {}: the jumps would not land in "
                "compressed chunks",
                folded, want);
     }
@@ -283,12 +280,12 @@ int check_content(const Arr& a, const std::vector<double>& ref)
     {
         if (b[i] != ref[static_cast<std::size_t>(i)])
         {
-            r.fail("begin()[%ld] = %g, expected %g", i, b[i], ref[static_cast<std::size_t>(i)]);
+            r.fail("begin()[{}] = {:g}, expected {:g}", i, b[i], ref[static_cast<std::size_t>(i)]);
         }
     }
     if (a.end() - a.begin() != N || std::distance(a.begin(), a.end()) != N)
     {
-        r.fail("end() - begin() = %ld, std::distance = %ld, expected %ld", static_cast<long>(a.end() - a.begin()),
+        r.fail("end() - begin() = {}, std::distance = {}, expected {}", static_cast<long>(a.end() - a.begin()),
                static_cast<long>(std::distance(a.begin(), a.end())), N);
     }
     return r.done("sequential read, it[i] everywhere, end() - begin()");
@@ -315,11 +312,11 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
         const It it = b + k;
         if (it - b != k)
         {
-            r.fail("(begin() + %ld) - begin() = %ld", k, static_cast<long>(it - b));
+            r.fail("(begin() + {}) - begin() = {}", k, static_cast<long>(it - b));
         }
         if (k < N && *it != at(k))
         {
-            r.fail("*(begin() + %ld) = %g, expected %g", k, *it, at(k));
+            r.fail("*(begin() + {}) = {:g}, expected {:g}", k, *it, at(k));
         }
         for (const long d : dl)
         {
@@ -338,20 +335,20 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
             const It j5 = it - (-d);
             if (j1 - b != t || j2 != j1 || j3 != j1 || j4 != j1 || j5 != j1)
             {
-                r.fail("from %ld by %ld: the five forms of the jump disagree (landed at %ld)", k, d,
+                r.fail("from {} by {}: the five forms of the jump disagree (landed at {})", k, d,
                        static_cast<long>(j1 - b));
             }
             if (j1 - it != d)
             {
-                r.fail("from %ld by %ld: (it + d) - it = %ld", k, d, static_cast<long>(j1 - it));
+                r.fail("from {} by {}: (it + d) - it = {}", k, d, static_cast<long>(j1 - it));
             }
             if ((j1 < it) != (d < 0) || (j1 > it) != (d > 0) || (j1 <= it) != (d <= 0) || (j1 >= it) != (d >= 0))
             {
-                r.fail("from %ld by %ld: the ordering disagrees with the indices", k, d);
+                r.fail("from {} by {}: the ordering disagrees with the indices", k, d);
             }
             if (t < N && (*j1 != at(t) || it[d] != at(t)))
             {
-                r.fail("from %ld by %ld: *(it + d) = %g, it[d] = %g, expected %g", k, d, *j1, it[d], at(t));
+                r.fail("from {} by {}: *(it + d) = {:g}, it[d] = {:g}, expected {:g}", k, d, *j1, it[d], at(t));
             }
             // The cursor after a seek: a step forward and back from it.
             if (t + 1 < N)
@@ -360,7 +357,7 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
                 ++s;
                 if (*s != at(t + 1) || s - b != t + 1)
                 {
-                    r.fail("from %ld by %ld then ++: %g, expected %g", k, d, *s, at(t + 1));
+                    r.fail("from {} by {} then ++: {:g}, expected {:g}", k, d, *s, at(t + 1));
                 }
             }
             if (t >= 1)
@@ -369,7 +366,7 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
                 --s;
                 if (*s != at(t - 1) || s - b != t - 1)
                 {
-                    r.fail("from %ld by %ld then --: %g, expected %g", k, d, *s, at(t - 1));
+                    r.fail("from {} by {} then --: {:g}, expected {:g}", k, d, *s, at(t - 1));
                 }
             }
         }
@@ -392,7 +389,7 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
             const It m4 = (b + k) - (k + 1);
             if (m4 != m1 || m4 - b != -1)
             {
-                r.fail("(begin() + %ld) - %ld does not land one before begin", k, k + 1);
+                r.fail("(begin() + {}) - {} does not land one before begin", k, k + 1);
             }
         }
         if (m1 - b != -1 || m2 != m1 || m3 != m1 || !(m1 < b) || b - m1 != 1)
@@ -403,22 +400,22 @@ int check_jumps(const Arr& a, const std::vector<double>& ref)
         ++p;
         if (p != b || *p != at(0))
         {
-            r.fail("++ from one before begin reads %g, expected %g", *p, at(0));
+            r.fail("++ from one before begin reads {:g}, expected {:g}", *p, at(0));
         }
         if (*(m1 + 1) != at(0) || m1[1] != at(0))
         {
-            r.fail("one before begin: *(it + 1) / it[1] read %g / %g, expected %g", *(m1 + 1), m1[1], at(0));
+            r.fail("one before begin: *(it + 1) / it[1] read {:g} / {:g}, expected {:g}", *(m1 + 1), m1[1], at(0));
         }
     }
     if (*(a.end() - 1) != ref.back())
     {
-        r.fail("*(end() - 1) = %g, expected %g", *(a.end() - 1), ref.back());
+        r.fail("*(end() - 1) = {:g}, expected {:g}", *(a.end() - 1), ref.back());
     }
     It adv = a.begin();
     std::advance(adv, N - 1);
     if (*adv != ref.back())
     {
-        r.fail("std::advance(begin(), N - 1) reads %g, expected %g", *adv, ref.back());
+        r.fail("std::advance(begin(), N - 1) reads {:g}, expected {:g}", *adv, ref.back());
     }
 
     char msg[96];
@@ -510,7 +507,7 @@ int check_searches(const Arr& a, const std::vector<double>& ref)
         long want = 0;
         if (const int k = search_mismatch(a, ref, v, &got, &want))
         {
-            r.fail("%s(%g) = %ld, the std::vector gives %ld", kSearchName[k], v, got, want);
+            r.fail("{}({:g}) = {}, the std::vector gives {}", kSearchName[k], v, got, want);
         }
     }
     char msg[96];
@@ -542,7 +539,7 @@ int check_parallel_searches(const Arr& a, const std::vector<double>& ref)
     end_phase();
     if (bad)
     {
-        r.fail("%ld of %ld values searched concurrently disagree with the std::vector", bad, nq);
+        r.fail("{} of {} values searched concurrently disagree with the std::vector", bad, nq);
     }
     return r.done("every search agrees, run from every thread at once");
 }
@@ -558,13 +555,13 @@ int check_reverse(const Arr& a, const std::vector<double>& ref)
     }
     if (a.rend() - a.rbegin() != N)
     {
-        r.fail("rend() - rbegin() = %ld, expected %ld", static_cast<long>(a.rend() - a.rbegin()), N);
+        r.fail("rend() - rbegin() = {}, expected {}", static_cast<long>(a.rend() - a.rbegin()), N);
     }
     for (const long k : {0L, 1L, kTail - 1, kTail, kTail + 1, kTail + S, N - 1})
     {
         if (k >= 0 && k < N && a.rbegin()[k] != ref.rbegin()[k])
         {
-            r.fail("rbegin()[%ld] = %g, expected %g", k, a.rbegin()[k], ref.rbegin()[k]);
+            r.fail("rbegin()[{}] = {:g}, expected {:g}", k, a.rbegin()[k], ref.rbegin()[k]);
         }
     }
     return r.done("rbegin()/rend(), rbegin()[k]");
@@ -618,7 +615,7 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
         }
         if (got != ref)
         {
-            r.fail("for_each_value(%s) over the whole range differs from the reference (%zu values)",
+            r.fail("for_each_value({}) over the whole range differs from the reference ({} values)",
                    pass == 0 ? "array" : "vector", got.size());
         }
     }
@@ -631,19 +628,18 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
                                     [&got](std::span<const double> s) { got.insert(got.end(), s.begin(), s.end()); });
         if (got != ref)
         {
-            r.fail("for_each_span(array) with a span-only callable differs from the reference (%zu values)",
-                   got.size());
+            r.fail("for_each_span(array) with a span-only callable differs from the reference ({} values)", got.size());
         }
         got.clear();
         long runs = 0;
         shrink_array::for_each_span(a, SpanCollector{got, &runs});
         if (got != ref)
         {
-            r.fail("for_each_span(array) with spans and runs differs from the reference (%zu values)", got.size());
+            r.fail("for_each_span(array) with spans and runs differs from the reference ({} values)", got.size());
         }
         if (!chunk_config::stats && !chunk_config::do_check && runs < kC0)
         {
-            r.fail("for_each_span(array): %ld compressed chunks passed as runs, expected at least %ld", runs, kC0);
+            r.fail("for_each_span(array): {} compressed chunks passed as runs, expected at least {}", runs, kC0);
         }
     }
 
@@ -665,7 +661,7 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
             if (end_a - buf.data() != want || !std::equal(buf.begin(), buf.begin() + want, ref.begin() + first) ||
                 buf[sz(want)] != -1.0)
             {
-                r.fail("read_range(array, %ld, %ld, T*): %ld written, content %s", first, last,
+                r.fail("read_range(array, {}, {}, T*): {} written, content {}", first, last,
                        static_cast<long>(end_a - buf.data()),
                        std::equal(buf.begin(), buf.begin() + want, ref.begin() + first) ? "ok" : "WRONG");
             }
@@ -676,8 +672,8 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
             shrink_array::read_range(ref, sz(first), sz(last), std::back_inserter(via_vec));
             if (via_it != via_vec || static_cast<long>(via_vec.size()) != want)
             {
-                r.fail("read_range(%ld, %ld) into a back_inserter: array %zu values, vector %zu, expected %ld", first,
-                       last, via_it.size(), via_vec.size(), want);
+                r.fail("read_range({}, {}) into a back_inserter: array {} values, vector {}, expected {}", first, last,
+                       via_it.size(), via_vec.size(), want);
             }
 
             double sum_a = 0.0;
@@ -686,7 +682,7 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
             shrink_array::for_each_value(ref, sz(first), sz(last), [&](double x) { sum_v += x; });
             if (sum_a != sum_v)
             {
-                r.fail("for_each_value(%ld, %ld): array sum %.17g, vector sum %.17g", first, last, sum_a, sum_v);
+                r.fail("for_each_value({}, {}): array sum {:.17g}, vector sum {:.17g}", first, last, sum_a, sum_v);
             }
 
             std::vector<double> spans_a;
@@ -695,8 +691,8 @@ int check_bulk_reads(const Arr& a, const std::vector<double>& ref)
             shrink_array::for_each_span(ref, sz(first), sz(last), SpanCollector{spans_v});
             if (spans_a != spans_v || static_cast<long>(spans_v.size()) != want)
             {
-                r.fail("for_each_span(%ld, %ld): array %zu values, vector %zu, expected %ld", first, last,
-                       spans_a.size(), spans_v.size(), want);
+                r.fail("for_each_span({}, {}): array {} values, vector {}, expected {}", first, last, spans_a.size(),
+                       spans_v.size(), want);
             }
         }
     }
@@ -754,7 +750,7 @@ int run(int /*argc*/, char** /*argv*/)
 {
     ParamChunk::init_indexes(true);
 
-    std::printf("=== iterator_validation [variant = %s]  threads=%d ===\n", variant_name(), CHUNK_PMP_MAX_THREADS);
+    std::println("=== iterator_validation [variant = {}]  threads={} ===", variant_name(), CHUNK_PMP_MAX_THREADS);
 
     int fails = 0;
     {
@@ -789,7 +785,7 @@ int run(int /*argc*/, char** /*argv*/)
     release_chunk_pools();
     destroy_block_chunk();
 
-    std::printf("\n[%s] %s\n", variant_name(), fails ? "=== ITERATOR FAILED ===" : "=== ITERATOR OK ===");
+    std::println("\n[{}] {}", variant_name(), fails ? "=== ITERATOR FAILED ===" : "=== ITERATOR OK ===");
     return fails ? 1 : 0;
 }
 
