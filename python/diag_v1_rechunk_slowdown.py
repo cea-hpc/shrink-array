@@ -35,6 +35,10 @@ Part 1 -- A/B on the rebuild's state (always). shrink_bench_chunk_1024
     dyn_noreuse    CHUNK_RECHUNK_REUSE_LIST=0    no chunk_list buffer reuse
     dyn_lazy       CHUNK_ALLOC_AFFINITY_EAGER=0  per-array slab sets at the
                    first re-chunk, not at creation
+    dyn_dryrun     CHUNK_RECHUNK_DRY_RUN=1   the advisor analyses, never moves
+    dyn_noadvisor  CHUNK_ADVISOR_PERIOD=0    no advisor (stays at 64)
+                   these two have no re-chunk: compare them with each other
+                   (the analyses' cost) and with dyn over the same iterations
   The time per iteration comes from the timestamps of the "iter <k> : time"
   lines (printed every 100 iterations; stdout line-buffered by stdbuf), so
   each 100-iteration interval gives a mean. An interval in which a
@@ -83,6 +87,9 @@ CONFIGS = [
     ("dyn_norecycle", "shrink_bench_chunk_dyn", {"CHUNK_RECHUNK_RECYCLE": "0"}),
     ("dyn_noreuse", "shrink_bench_chunk_dyn", {"CHUNK_RECHUNK_REUSE_LIST": "0"}),
     ("dyn_lazy", "shrink_bench_chunk_dyn", {"CHUNK_ALLOC_AFFINITY_EAGER": "0"}),
+    # the advisor's own share: analyses without any re-chunk, and none at all
+    ("dyn_dryrun", "shrink_bench_chunk_dyn", {"CHUNK_RECHUNK_DRY_RUN": "1"}),
+    ("dyn_noadvisor", "shrink_bench_chunk_dyn", {"CHUNK_ADVISOR_PERIOD": "0"}),
 ]
 
 
@@ -315,13 +322,12 @@ def main():
                     per_iter[k] = (freed, own, foreign)
                 ks = sorted(per_iter)
                 lr = r2.last_rechunk() or 0
-                deltas = [(k, (per_iter[k][2] - per_iter[p][2]) / (k - p), (per_iter[k][0] - per_iter[p][0]) / (k - p))
+                deltas = [tuple((per_iter[k][j] - per_iter[p][j]) / (k - p) for j in range(3))
                           for p, k in zip(ks, ks[1:]) if p > lr]
                 if deltas:
-                    pf = statistics.mean(d[1] for d in deltas)
-                    fr = statistics.mean(d[2] for d in deltas)
+                    fr, po, pf = (statistics.mean(d[j] for d in deltas) for j in range(3))
                     summary.append(f"{name:8s} after iteration {lr}: per iteration freed {fr:.0f}, "
-                                   f"parked_foreign {pf:.0f}")
+                                   f"parked_own {po:.0f}, parked_foreign {pf:.0f}")
             with open(r2.dir / "freepath.csv", "w") as f:
                 f.write("iteration,when,freed,parked_own,parked_foreign\n")
                 for row in r2.freepath:
