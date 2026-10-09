@@ -47,6 +47,9 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `element_ref_validation_<variant>` and `element_ref_misuse_<1..8>` (ctest, check builds):
+  every `std::vector`-style use of `a[i]` compiles and holds, and each of eight uses of a
+  named element proxy fails to compile with `ElementRef`'s message.
 - Check builds (`any_check`: Debug, `CHECK_OPTIM`): the non-const `operator[]`, `at()`,
   `front()` and `back()` return `ElementRef<proxy_type, T>` (`internal/element_ref.h`), the
   write proxy usable as a temporary only. `auto v = a[i];` then any use of `v` (conversion,
@@ -203,6 +206,17 @@ the tag's checksum to the recipe.
 
 ### Fixed
 
+- Deferred writes LOST at a phase end when the region that queued them had more threads than
+  `omp_get_max_threads()` (`#pragma omp parallel num_threads(n)` above `OMP_NUM_THREADS`, or a
+  team that shrank since): the serial `flush_all_deferred` drained only the ranks of its own
+  default-sized team, then `storage.destroy()` discarded the others' ops
+  (`nested_region_validation_*_1thr` under `CHUNK_FORCE_DEFER_EVERY`). It now sweeps the ranks
+  beyond its team serially, as the compression passes do. Same mop-up added to v1's
+  `Chunk::compress_chunk_to_compress`, whose candidates of those ranks were never swept (and
+  which now keeps to its own rank inside a region, as Chunk2A's does).
+- `a[i] = b[j]` compiles in every variant and copies the value (gated read of `b[j]`, then the
+  full write path): v1's `Proxy::operator=(const Proxy&)` took `&from` past the deleted
+  `operator&`, and v2 / v2A deleted the assignment.
 - Chunk2, serial builds: `x *= 0` (or `/=`) on an element holding the second value left it
   counted as one, so a later second-value write could fold the chunk to that constant with the
   element still different, and the element was lost. `%=` did not count a zero result as the

@@ -21,7 +21,7 @@
 #include <cstdlib>     // std::abort (debug stubs)
 #include <exception>   // std::exception (PointerMapChunk2A::erase)
 #include <iostream>    // std::cerr (debug stubs)
-#include <memory>      // std::unique_ptr
+#include <memory>      // std::unique_ptr, std::addressof (operator=: operator& is deleted)
 #include <type_traits> // std::is_same_v
 #include <utility>     // std::pair, std::swap
 #include <vector>      // std::vector
@@ -700,7 +700,24 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         return assign_impl<T>(static_cast<T>(v));
     }
 
-    const Proxy2A& operator=(const Proxy2A& from) = delete;
+    /**
+     * @brief Proxy-to-proxy assignment, `a[i] = b[j]`: read @p from's value
+     *        through operator T() (the gated read), then write it through
+     *        assign_impl() (the whole write engine) -- Proxy::operator='s
+     *        meaning. Deleted before, so code written for std::vector did not
+     *        compile.
+     * @param from Proxy to read the value from.
+     * @return *this.
+     */
+    const Proxy2A& operator=(const Proxy2A& from) noexcept
+    {
+        if (std::addressof(from) != this) // operator& is deleted
+        {
+            const in_t<T> v = static_cast<T>(from); // complete before the write starts
+            assign_impl<T>(v);
+        }
+        return *this;
+    }
     Proxy2A(const Proxy2A& other)                 = default;
 
     /**

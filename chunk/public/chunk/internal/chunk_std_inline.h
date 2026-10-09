@@ -199,9 +199,33 @@ void Chunk<T>::compress_chunk_to_compress(bool /*apply*/)
 {
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(false);
 
-#pragma omp parallel
+    if (CHUNK_PMP_IN_PARALLEL_REGION)
     {
+        // Inside a region: this rank's own list, and nothing else (as
+        // Chunk2A::compress_chunk_to_compress): the mop-up below, run by every
+        // thread of the team, would sweep the other ranks' lists concurrently.
         compress_sweep_rank(CHUNK_PMP_THREAD_RANK);
+    }
+    else
+    {
+        int team = 0;
+#pragma omp parallel
+        {
+            const int thr = CHUNK_PMP_THREAD_RANK;
+            if (thr == 0)
+            {
+                team = CHUNK_PMP_NUM_THREADS;
+            }
+            compress_sweep_rank(thr);
+        }
+        // The ranks this team does not have (a team opened with num_threads(n)
+        // above omp_get_max_threads()): their candidates were never swept, and
+        // their flags stayed at 1, so those chunks could not be queued again.
+        // The mop-up of Chunk2 / Chunk2A.
+        for (int thr = team; thr < CHUNK_PMP_RANK_BOUND; ++thr)
+        {
+            compress_sweep_rank(thr);
+        }
     }
 
     chunk_config::OMPTcc<chunk_config::has_ompt>::update(true);

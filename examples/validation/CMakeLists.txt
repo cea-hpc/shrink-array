@@ -357,6 +357,45 @@ foreach(_geom IN LISTS _rt_geometries)
   endforeach()
 endforeach()
 
+# --- element_ref_validation: what a check build accepts and refuses through
+# operator[] (chunk/internal/element_ref.h). Check builds only (CHUNK_DEBUG or
+# CHECK_OPTIM): elsewhere operator[] returns the bare proxy.
+#   element_ref_validation_<variant>: every std::vector-style use of a[i]
+#     compiles and leaves std::vector's values (default static size).
+#   element_ref_misuse_<n>: one use of a NAMED element proxy, which must not
+#     compile: the test builds the object target (not part of `all`) and passes
+#     when the compiler output carries ElementRef's message. One at a time:
+#     they share the build tree.
+if (CHUNK_DEBUG OR CHECK_OPTIM)
+  foreach(_vi RANGE ${_rt_nvar_last})
+    list(GET _rt_variant_names   ${_vi} _vname)
+    list(GET _rt_variant_libbase ${_vi} _libbase)
+    list(GET _rt_variant_macro   ${_vi} _vmacro)
+    if (TARGET ${_libbase}_${CHUNK_DEFAULT_SIZE})
+      set(_tgt element_ref_validation_${_vname})
+      add_executable(${_tgt} element_ref_validation.cpp)
+      target_link_libraries(${_tgt} PRIVATE ${_libbase}_${CHUNK_DEFAULT_SIZE})
+      validation_variant_defs(${_tgt} ${_vmacro} ${CHUNK_DEFAULT_SIZE})
+      validation_setup_target(${_tgt})
+      add_test(NAME ${_tgt} COMMAND ${_tgt})
+      set_property(TEST ${_tgt} PROPERTY LABELS validation)
+    endif()
+  endforeach()
+  if (TARGET chunk_v2a_${CHUNK_DEFAULT_SIZE})
+    foreach(_case RANGE 1 8)
+      set(_tgt element_ref_misuse_${_case})
+      add_library(${_tgt} OBJECT EXCLUDE_FROM_ALL element_ref_validation.cpp)
+      target_link_libraries(${_tgt} PRIVATE chunk_v2a_${CHUNK_DEFAULT_SIZE})
+      validation_variant_defs(${_tgt} CHUNK_VARIANT_V2A ${CHUNK_DEFAULT_SIZE})
+      target_compile_definitions(${_tgt} PRIVATE ELEMENT_REF_CASE=${_case})
+      validation_setup_target(${_tgt})
+      add_test(NAME ${_tgt} COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target ${_tgt})
+      set_tests_properties(${_tgt} PROPERTIES PASS_REGULAR_EXPRESSION "named element proxy is used"
+                                              RESOURCE_LOCK element_ref_misuse_build LABELS validation)
+    endforeach()
+  endif()
+endif()
+
 # --- fill_range_mt_v1v2_validation: the two-variant library (CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1,
 # default static size, no OMPT tool -- the harness defines the switch and makes
 # the phase calls, as multi-mat does), ArrayChunk and ArrayChunk2 in one

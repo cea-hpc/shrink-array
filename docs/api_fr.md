@@ -65,6 +65,7 @@ Absents : `data()`, les itérateurs mutables, `insert` / `erase` au milieu, un t
 |---|---|
 | `T v = a[i];` | lit la valeur |
 | `a[i] = v;` | l'écrit (peut matérialiser le chunk, ou être différée tant qu'un compresseur le détient) |
+| `a[i] = b[j];` | copie la valeur : lit `b[j]`, puis écrit `a[i]` comme ci-dessus |
 | `a[i] += v;` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=` | opérations composées, pour les types qui les ont ; renvoient un proxy |
 | `++a[i]`, `--a[i]` | renvoient un proxy ; `a[i]++` renvoie l'ancienne valeur sous forme de `T` |
 | `a[i] == v`, `a[i] != v` | comparent la valeur courante ; les autres comparaisons passent par la conversion en `T` |

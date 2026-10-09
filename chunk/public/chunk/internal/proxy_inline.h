@@ -20,6 +20,7 @@
 #include <cstddef>     // std::size_t
 #include <iostream>    // std::cerr (the mismatch diagnostic)
 #include <type_traits> // std::common_type_t
+#include <memory>      // std::addressof (operator=: operator& is deleted)
 #include <utility>     // std::move
 
 #include "chunk/internal/in_t.h"  // in_t<T>
@@ -37,7 +38,9 @@ namespace shrink_array
 template <typename T>
 const Proxy<T>& Proxy<T>::operator=(const Proxy<T>& from) noexcept
 {
-    if (&from != this)
+    // std::addressof: Proxy's operator& is deleted (no element address), so
+    // `&from` did not compile and a[i] = b[j] did not either.
+    if (std::addressof(from) != this)
     {
         // Read through operator T(): the dirty-bit gated read (read_pure()
         // when a deferred op may be queued on from's chunk). The read is

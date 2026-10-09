@@ -552,10 +552,25 @@ void ManagerChunkParallelImpl<CHUNK_T, T, true>::flush_all_deferred(bool in_para
             }
 
             bool pass_flushed = false;
+            int  team         = 0;
 #pragma omp parallel reduction(|| : pass_flushed)
             {
                 const int thr_rank = CHUNK_PMP_THREAD_RANK;
+                if (thr_rank == 0)
+                {
+                    team = CHUNK_PMP_NUM_THREADS;
+                }
                 pass_flushed |= CompressionManager<T, CHUNK_T<T>>::flush_deferred(thr_rank);
+            }
+            // The ranks this region's team does not have: a team opened with
+            // num_threads(n) above omp_get_max_threads() -- or one that shrank
+            // since -- leaves ops on ranks >= `team`, which storage.destroy()
+            // below discarded (nested_region_validation at OMP_NUM_THREADS=1,
+            // outer team of 4, forced deferrals: every write of ranks 1-3 after
+            // the last flush LOST). Same mop-up as the compression sweeps.
+            for (int r = team; r < CHUNK_PMP_RANK_BOUND; ++r)
+            {
+                pass_flushed |= CompressionManager<T, CHUNK_T<T>>::flush_deferred(r);
             }
             local_flushed |= pass_flushed;
             // Another pass produced flushes? then re-enqueues may still exist.

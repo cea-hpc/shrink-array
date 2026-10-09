@@ -65,6 +65,7 @@ Not there: `data()`, mutable iterators, `insert` / `erase` in the middle, an in-
 |---|---|
 | `T v = a[i];` | reads the value |
 | `a[i] = v;` | writes it (may materialise the chunk, or be deferred while a compressor holds it) |
+| `a[i] = b[j];` | copies the value: reads `b[j]`, then writes `a[i]` as above |
 | `a[i] += v;` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=` | compound operations, for the types that have them; return a proxy |
 | `++a[i]`, `--a[i]` | return a proxy; `a[i]++` returns the old value as a `T` |
 | `a[i] == v`, `a[i] != v` | compare the current value; other comparisons go through the conversion to `T` |
