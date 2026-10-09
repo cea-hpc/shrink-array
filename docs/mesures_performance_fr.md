@@ -151,6 +151,18 @@ que v1, après son rechunk, n'occupait plus que ~40 cœurs au lieu de ~52.
 **La fragmentation de la mémoire du nœud** : `cat /proc/buddyinfo`. Sur un noyau à pages de
 64 Kio, la dernière colonne compte les blocs libres de 512 Mio.
 
+**Ce qui distingue un run lent d'un run rapide** (la bimodalité du 2.1) :
+`python/bimodal_probe.py` lance N fois le même binaire et relève, pour chaque run, les pages par
+nœud NUMA, AnonHugePages, la mémoire libre et les blocs libres d'ordre maximal de chaque nœud
+avant le run, et les compteurs perf pour mille instructions (parcours de TLB, recharges L1D / L2,
+accès distants). Il coupe les runs au plus grand écart de temps et dit quelles grandeurs séparent
+les deux groupes. `--mode` alterne des environnements (`--mode "" --mode "CHUNK_THP=never"`,
+`--mode "numactl --membind=0"`).
+
+```
+python3 python/bimodal_probe.py --runs 12 -- $BIN --mode perf --no_io
+```
+
 ## 4. Pièges rencontrés
 
 - **Un binaire qui n'a pas été reconstruit**, ou un script qui n'a pas été appliqué : une

@@ -151,6 +151,17 @@ that v1, after its rechunk, only kept ~40 cores busy instead of ~52.
 **Fragmentation of the node's memory**: `cat /proc/buddyinfo`. On a kernel with
 64 KiB pages, the last column counts the free 512 MiB blocks.
 
+**What tells a slow run from a fast one** (the bimodality of 2.1): `python/bimodal_probe.py`
+runs the same binary N times and records, for each run, the pages per NUMA node, AnonHugePages,
+the free memory and free top-order blocks of each node before the run, and the perf counters
+per thousand instructions (TLB walks, L1D / L2 refills, remote accesses). It splits the runs at
+the largest time gap and says which quantities separate the two groups. `--mode` alternates
+environments (`--mode "" --mode "CHUNK_THP=never"`, `--mode "numactl --membind=0"`).
+
+```
+python3 python/bimodal_probe.py --runs 12 -- $BIN --mode perf --no_io
+```
+
 ## 4. Traps encountered
 
 - **A binary that was not rebuilt**, or a script that was not applied: an
