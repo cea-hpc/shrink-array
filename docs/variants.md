@@ -24,11 +24,11 @@ geometry. They differ in **what they can compress**.
 
 ## 2. What each one can compress
 
-| variant | build | a chunk is compressed if it is uniform at… | cost of a constant |
+| variant | library (macro it defines) | a chunk is compressed if it is uniform at… | cost of a constant |
 |---|---|---|---|
-| **Chunk** (v1) | `-DCHUNK=1` | **zero** (`T{}`) | nothing: one shared constant buffer |
-| **Chunk2** | `-DCHUNK2=1` | zero, **or** a **second value** specific to the array (`set_second_value`) | nothing beyond the array |
-| **Chunk2A** | `-DCHUNK2A=1` | zero, **or any other value**, chosen chunk by chunk | one array from the second-value registry (`tab_cst_val2_holder.h`) per distinct value, shared by the whole process |
+| **Chunk** (v1) | `chunk::chunk_v1` (`CHUNK_VARIANT_V1`) | **zero** (`T{}`) | nothing: one shared constant buffer |
+| **Chunk2** | `chunk::chunk_v2` (`CHUNK_VARIANT_V2`) | zero, **or** a **second value** specific to the array (`set_second_value`) | nothing beyond the array |
+| **Chunk2A** | `chunk::chunk_v2a` (`CHUNK_VARIANT_V2A`) | zero, **or any other value**, chosen chunk by chunk | one array from the second-value registry (`tab_cst_val2_holder.h`) per distinct value, shared by the whole process |
 
 Boolean arrays in Chunk2 builds can also use `ArrayChunkBits`, which
 packs 8 booleans per byte in a materialised chunk.
@@ -39,7 +39,8 @@ Every chunk costs its **metadata**, whether it is compressed or not. For all thr
 the chunk object itself is 16 bytes. On top of that, per chunk:
 
 - one "already in compression list" byte (block compression);
-- one bit in the array's *dirty bitset*, and a share of the tracking lists (the advisor counts
+- two bytes for the array's *dirty bitset* (one bit per chunk, in 64-bit words each padded to
+  128 bytes against false sharing), and a share of the tracking lists (the advisor counts
   about 3 bytes for all of these);
 - for **Chunk2A**: one constant-type byte and a slot for the chunk's second value,
   of `sizeof(T)` bytes (8 for a `double`), or of 4 bytes with the CMake option

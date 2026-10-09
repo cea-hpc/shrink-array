@@ -502,9 +502,9 @@ retirant), et un chunk n'est **jamais libéré** par `fill_range_mt` : un autre 
 le laisser sur le chemin élément par élément :
 
 - le test « ce chunk est-il matérialisé ? » doit appeler `written(ind)` avec l'indice de
-  seconde valeur du tableau (`detail::materialised(a, ch, ind2)`) : `written()` sans argument
+  seconde valeur du tableau (`internal::materialised(a, ch, ind2)`) : `written()` sans argument
   est réservé à `bool` et renvoie `false` pour les autres types ;
-- la mise en file (`detail::queue_for_compression`) doit **charger la seconde valeur** avant
+- la mise en file (`internal::queue_for_compression`) doit **charger la seconde valeur** avant
   d'ajouter le chunk (`set_info_on_chunk()`), puisque les listes de Chunk2 sont indexées par
   elle. Sans ça, les chunks atterrissaient dans la liste de `T{}`, qu'aucune passe ne vide.
 
@@ -524,7 +524,7 @@ types sans atomique sans verrou, et pour Chunk et Chunk2, ce sont des lectures o
   (« is_cst_val2 should be not »). Non reproduit sur une machine à un cœur, ni lors d'un
   second passage sur le cluster ; la piste est une passe qui compresse un chunk mis en file
   par une copie directe pendant que les écritures directes, non annoncées, d'un autre thread
-  y arrivent encore. Le repli connu : exclure Chunk2 de `detail::raw_fillable_v`.
+  y arrivent encore. Le repli connu : exclure Chunk2 de `internal::raw_fillable_v`.
 - TSan signale, pour Chunk et Chunk2 dans `fill_range_mt`, la lecture ordinaire des trois
   éléments ci-dessus contre l'écriture d'un autre thread sur le même chunk. Le correctif
   envisagé : décider sur la **valeur** écrite (la première valeur pour Chunk, la première ou

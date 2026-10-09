@@ -5,7 +5,9 @@
 > État : début octobre 2026. La liste a été relevée dans le code ; une variable qui n'est pas
 > lue est ignorée sans message, donc en cas de doute, vérifier avec
 > `grep -rn '"NOM"' chunk fast_allocators examples`. Sauf mention contraire, une variable est
-> lue une seule fois, et `0` ou une valeur vide équivaut à son absence.
+> lue une seule fois, et `0` ou une valeur vide équivaut à son absence -- sauf pour les traces
+> du §3 marquées *définie*, actives dès qu'elles sont définies (même à `0`), et pour les
+> variables dont la ligne dit ce que fait `0`.
 
 ***
 
@@ -22,8 +24,13 @@
 | `CHUNK_RECHUNK_SCHEDULE` | `guided,16` | ordonnancement OpenMP de la reconstruction (`kind[,chunk]`) |
 | `CHUNK_RECHUNK_SLICES` | 16 | nombre de tranches de la reconstruction de v1 |
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | un balayage ne rend les slabs vides au système que s'il y en a au moins autant |
+| `CHUNK_RECLAIM_COALESCE` | 1 | `0` : un `madvise` par slab vide au lieu d'un par suite de slabs contigus (comparaison) |
+| `CHUNK_RECLAIM_THREADS` | 1 | threads qui émettent les `madvise` d'un balayage ; `0` : `omp_get_max_threads()` |
+| `CHUNK_RECHUNK_RECYCLE` | actif | reconstruction de v1 : les slabs qu'une tranche vient de vider vont à la tranche suivante au lieu d'être rendus au système ; `0` le désactive |
+| `CHUNK_RECHUNK_ADVISE_EACH_SLICE` | inactif | `1` : avec le recyclage, rend les slabs recyclés inutilisés à chaque frontière de tranche plutôt qu'une fois à la fin |
+| `CHUNK_RECHUNK_REUSE_LIST` | actif | un rechunk réutilise le tampon de la liste de chunks du rechunk précédent (pages déjà résidentes) ; `0` : un nouveau à chaque fois |
 | `CHUNK_THP` | 0 | non défini : le mode THP du noyau décide. `never` : pas de huge pages transparentes sur les arènes de slabs (`MADV_NOHUGEPAGE`) -- en mode `always`, un slab devient sinon résident en entier dès qu'il est touché ; comparer les deux avec le RSS et AnonHugePages de `smaps_rollup`. Expérimental : `1` les demande (`MADV_HUGEPAGE`) sur les arènes de slabs et la région cst2. Ignoré, avec un message, quand la huge page dépasse 2 Mio (noyau à pages de 64 Kio : 512 Mio). Coût : un slab entamé devient résident en entier |
-| `CHUNK_THREAD_CAPACITY` | nombre de cœurs | nombre de rangs pour lequel les structures par thread sont dimensionnées (à augmenter en cas de sursouscription) |
+| `CHUNK_THREAD_CAPACITY` | max(`omp_get_max_threads()`, cœurs) | nombre de rangs pour lequel les structures par thread sont dimensionnées ; ne peut qu'augmenter le défaut (sursouscription) |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | taille des slabs des pools d'écritures différées, en Kio (les slabs d'opérations ne sont jamais rendus : plus gros, moins d'appels à l'allocateur mais plus de mémoire résidente) |
 | `CHUNK_REQUIRE_OMPT` | — | builds OMPT : `1` arrête le programme si l'outil OMPT n'a pas été chargé par le runtime (sinon, un message sur stderr), puisque les fins de phase n'auraient alors jamais lieu |
 
@@ -37,19 +44,20 @@ dans la section 1 et dans [mesures_performance_fr.md](mesures_performance_fr.md)
 
 | variable | ce qu'elle affiche |
 |---|---|
-| `CHUNK_RECHUNK_TRACE` | pour chaque rechunk : durée des étapes, repliements et installations directes, mémoire à chaque étape (`[RECHUNK-RSS]`) |
-| `CHUNK_RECHUNK_TRACE_SLICES` | mémoire à chaque tranche de la reconstruction de v1 |
+| `CHUNK_RECHUNK_TRACE` (*définie*) | pour chaque rechunk : durée des phases et des tranches |
+| `CHUNK_RECHUNK_TRACE_MEM` (*définie*) | le côté mémoire de la trace des rechunks : mémoire exacte à chaque étape (`[RECHUNK-RSS]`), occupation de la nouvelle géométrie, chunks repliés, refusés et installés directement, recensement des allocateurs. Coûteux (des secondes par run à des dizaines de Go) : séparé des mesures de temps |
+| `CHUNK_RECHUNK_TRACE_SLICES` (*définie*) | mémoire à chaque tranche de la reconstruction de v1 (lue à chaque rechunk) |
 | `CHUNK_RECHUNK_MEMTRACE` | à chaque passage de l'advisor : mémoire exacte, dont la part résidente de l'arène des tampons |
 | `CHUNK_ADVISOR_TABLE` | `1` ou `=nom` : la table complète de l'advisor à chaque passage (tous les tableaux ou un seul) |
 | `CHUNK_RECHUNK_CHURN` | `1` ou `=nom` : matérialisations par passage et estimation du coût passager qu'elles impliquent |
-| `CHUNK_AFFINITY_TRACE` | chaque jeu d'allocateurs par tableau créé (clé, taille, budget) |
+| `CHUNK_AFFINITY_TRACE` (*définie*) | chaque jeu d'allocateurs par tableau créé (clé, taille, budget) |
 | `CHUNK_ARENA_REPORT` | le bilan de l'arène des tampons (slabs distribués, rendus au système) |
 | `CHUNK_RECYCLE_TRACE` | une ligne par bloc recyclé du pool des écritures différées (au lieu d'un résumé) |
-| `CHUNK_LEDGER_REPORT` | le rapport du registre des blocs (builds avec registre) |
+| `CHUNK_LEDGER_REPORT` (*définie*) | le rapport du registre des blocs (builds avec registre) |
 | `CHUNK_OMPT_STATS` | statistiques des régions de synchronisation (builds OMPT) |
-| `CHUNK_CST2_PROBE` | Chunk2A : rapport du registre des secondes valeurs à chaque passage (banc) |
-| `ALLOC_TOKEN_REPORT` | à la sortie, le recensement des allocations par jeton |
-| `FAST_ALLOC_TRACE` | une ligne `[MUNMAP]` par slab vidé que la réserve d'un pool ne garde pas et qui est libéré (muet par défaut) |
+| `CHUNK_CST2_PROBE` (*définie*) | Chunk2A : rapport du registre des secondes valeurs à chaque passage (banc) |
+| `ALLOC_TOKEN_REPORT` | les builds `SANITIZER=token` impriment toujours, à la sortie, les allocations par jeton (les 40 plus grosses) ; elle en fixe le nombre : `0` aucune, `N` les N plus grosses, `all` toutes |
+| `FAST_ALLOC_TRACE` (*définie*) | une ligne `[MUNMAP]` par slab vidé que la réserve d'un pool ne garde pas et qui est libéré (muet par défaut) |
 
 ## 4. Rechunks forcés (tests)
 

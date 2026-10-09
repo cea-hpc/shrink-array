@@ -195,7 +195,8 @@ is limited to the rebuilds.
   (`CHUNK_RECHUNK_CHURN=1`), but a workload that writes a lot into constant regions
   could make a coarsening regrettable: this is the role of learning
   (`coarsen_trust_ratio`) and of the anti-reversal rule.
-- **Rechunking boolean arrays** has no validation harness: the benchmark does not hand
-  `tab_bool` to the decider.
+- **Rechunking boolean arrays** is validated for `ArrayChunkBits` only
+  (`bits_container_validation`, Chunk2 at dyn); `ArrayChunk2<bool>` and `ArrayChunk2A<bool>`
+  have no harness, and the benchmark does not hand `tab_bool` to the decider.
 - **The peak remains the starting one**: a dynamic run that starts from 64 first reaches the
   memory of static 64, then goes down.

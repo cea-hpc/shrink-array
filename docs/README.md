@@ -22,6 +22,7 @@
 | use dynamic geometry and adaptive re-chunking | [adaptive_rechunk.md](adaptive_rechunk.md) | utiliser la géométrie dynamique et le rechunk adaptatif | [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) |
 | tune the library, the benchmark or the build | [environment_variables.md](environment_variables.md) | régler la bibliothèque, le banc ou la compilation | [variables_environnement_fr.md](variables_environnement_fr.md) |
 | measure memory and time without fooling myself | [performance_measurement.md](performance_measurement.md) | mesurer mémoire et temps sans se tromper | [mesures_performance_fr.md](mesures_performance_fr.md) |
+| submit and follow the runs on the cluster from a window | [shrink_gui.md](shrink_gui.md) | soumettre et suivre les runs sur le calculateur depuis une fenêtre | [shrink_gui_fr.md](shrink_gui_fr.md) |
 
 ## The documents / Les documents
 
@@ -38,6 +39,7 @@
 | [adaptive_rechunk.md](adaptive_rechunk.md) / [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) | advisor, decider, rebuild, per-array allocators, results and limits |
 | [environment_variables.md](environment_variables.md) / [variables_environnement_fr.md](variables_environnement_fr.md) | environment variables, macros, CMake options, build-script options |
 | [performance_measurement.md](performance_measurement.md) / [mesures_performance_fr.md](mesures_performance_fr.md) | measurement traps (`VmRSS`, timing noise), method, recipes |
+| [shrink_gui.md](shrink_gui.md) / [shrink_gui_fr.md](shrink_gui_fr.md) | the GUI that submits `compile_all.sh`, `bench_and_test.py` and `multi_launch_stress.py` on the cluster and follows them: start, window, git pull, site configuration |
 | `example_bench_test.txt`, `example_multi_launch_stress.txt` | how to launch `bench_and_test.py` and `multi_launch_stress.py` |
 
 ## The code on one page / Le code en une page
@@ -50,4 +52,4 @@
 | `fast_allocators/` | the buffer allocators (arenas, slabs, reuse lists) |
 | `examples/` | `getting_started`, `simple_array`, `multi-mat`, the `shrink_bench` benchmark, the `validation` harnesses, `advisor_demo`, `variant_compare` |
 | `scripts/` | `compile_all.sh` / `compile_all_gnu.sh`: the whole build matrix |
-| `python/` | `bench_and_test.py` (test and performance campaigns), `multi_launch_stress.py` (repeated runs at random thread counts) |
+| `python/` | `bench_and_test.py` (test and performance campaigns), `multi_launch_stress.py` (repeated runs at random thread counts), `shrink_gui/` (the GUI) |

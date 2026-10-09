@@ -91,8 +91,30 @@ as the library did.
 | `chunk::chunk_v2a_dyn`, … | | chosen at run time, per array (can be changed with `rechunk_to()` or by the adaptive decider) |
 | `chunk::chunk_vector` | none: the arrays are `std::vector` | — |
 
-Link **one** variant library per program. `chunk::chunk_vector` builds the same program on
-plain `std::vector`s, which is the easiest way to compare memory and time.
+Link **one** variant library per program, and write **that variant's class**:
+`ArrayChunk2A<T>` with `chunk::chunk_v2a`. The class you write is what you get -- a program
+naming `ArrayChunk2A` keeps it whatever it links -- and an array of another variant than the
+library's is not supported: depending on the calls, it does not compile or it crashes.
+To let the link choose, write the arrays through an alias on the variant the library
+defines (`examples/shrink_bench` and `examples/simple_array` do so):
+
+```cpp
+#include <type_traits>
+#include <vector>
+#include "chunk/array_chunk.h"
+#include "chunk/array_chunk2.h"
+#include "chunk/array_chunk2A.h"
+#include "chunk/config.h"
+
+namespace sa = shrink_array;
+template <typename T>
+using Array = std::conditional_t<sa::chunk_config::use_chunk2a, sa::ArrayChunk2A<T>,
+              std::conditional_t<sa::chunk_config::use_chunk2, sa::ArrayChunk2<T>,
+              std::conditional_t<sa::chunk_config::use_chunk, sa::ArrayChunk<T>, std::vector<T>>>>;
+```
+
+With it, `chunk::chunk_vector` builds the same program on plain `std::vector`s, which is the
+easiest way to compare memory and time.
 
 `find_package(chunk)` also sets `chunk_STATIC_SIZES`, `chunk_DEFAULT_SIZE`, `chunk_HAS_DYN`,
 `chunk_OPENMP`, `chunk_OMPT` and `chunk_STD_ALLOC`, for a project that wants to check what the

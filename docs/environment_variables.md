@@ -5,7 +5,9 @@
 > Status: early October 2026. The list was collected from the code; a variable that is not
 > read is ignored without any message, so when in doubt, check with
 > `grep -rn '"NAME"' chunk fast_allocators examples`. Unless stated otherwise, a variable is
-> read only once, and `0` or an empty value is the same as leaving it unset.
+> read only once, and `0` or an empty value is the same as leaving it unset -- except for the
+> traces of §3 marked *set*, on as soon as they are defined (even at `0`), and for the
+> variables whose row says what `0` does.
 
 ***
 
@@ -22,8 +24,13 @@
 | `CHUNK_RECHUNK_SCHEDULE` | `guided,16` | OpenMP schedule of the rebuild (`kind[,chunk]`) |
 | `CHUNK_RECHUNK_SLICES` | 16 | number of slices in the v1 rebuild |
 | `CHUNK_RECLAIM_MIN_SLABS` | 0 | a sweep gives empty slabs back to the system only if there are at least this many |
+| `CHUNK_RECLAIM_COALESCE` | 1 | `0`: one `madvise` per empty slab instead of one per run of adjacent slabs (comparison) |
+| `CHUNK_RECLAIM_THREADS` | 1 | threads issuing a sweep's `madvise` calls; `0`: `omp_get_max_threads()` |
+| `CHUNK_RECHUNK_RECYCLE` | on | v1 rebuild: the slabs a slice has just emptied go to the next slice instead of back to the system; `0` turns it off |
+| `CHUNK_RECHUNK_ADVISE_EACH_SLICE` | off | `1`: with recycling, gives the unused recycled slabs back at every slice boundary rather than once at the end |
+| `CHUNK_RECHUNK_REUSE_LIST` | on | a rechunk reuses the previous rechunk's chunk list buffer (pages already resident); `0`: a new one each time |
 | `CHUNK_THP` | 0 | unset: the kernel's THP mode decides. `never`: no transparent huge pages on the slab arenas (`MADV_NOHUGEPAGE`) -- under the mode `always` a slab otherwise becomes resident whole at its first touch; compare the two with the RSS and AnonHugePages of `smaps_rollup`. Experimental: `1` requests them (`MADV_HUGEPAGE`) on the slab arenas and the cst2 region. Ignored, with a message, when the huge page is larger than 2 MiB (kernel with 64 KiB pages: 512 MiB). Cost: a slab that has been started becomes fully resident |
-| `CHUNK_THREAD_CAPACITY` | number of cores | number of ranks the per-thread structures are sized for (increase it in case of oversubscription) |
+| `CHUNK_THREAD_CAPACITY` | max(`omp_get_max_threads()`, cores) | number of ranks the per-thread structures are sized for; can only raise the default (oversubscription) |
 | `CHUNK_DEFERRED_POOL_KB` | 64 | slab size of the deferred-write pools, in KiB (the operation slabs are never given back: larger means fewer allocator calls but more resident memory) |
 | `CHUNK_REQUIRE_OMPT` | — | OMPT builds: `1` aborts the program if the OMPT tool was not loaded by the runtime (otherwise, a message on stderr), since the end-of-phase events would then never happen |
 
@@ -37,19 +44,20 @@ in section 1 and in [performance_measurement.md](performance_measurement.md) §2
 
 | variable | what it prints |
 |---|---|
-| `CHUNK_RECHUNK_TRACE` | for each rechunk: duration of the steps, fallbacks and direct installations, memory at each step (`[RECHUNK-RSS]`) |
-| `CHUNK_RECHUNK_TRACE_SLICES` | memory at each slice of the v1 rebuild |
+| `CHUNK_RECHUNK_TRACE` (*set*) | for each rechunk: duration of the phases and of the slices |
+| `CHUNK_RECHUNK_TRACE_MEM` (*set*) | the memory side of the rechunk trace: exact memory at each step (`[RECHUNK-RSS]`), occupancy of the new geometry, chunks folded, refused and installed directly, allocator census. Costly (seconds per run at tens of GB): kept apart from the timings |
+| `CHUNK_RECHUNK_TRACE_SLICES` (*set*) | memory at each slice of the v1 rebuild (read at every rechunk) |
 | `CHUNK_RECHUNK_MEMTRACE` | at each advisor pass: exact memory, including the resident part of the buffer arena |
-| `CHUNK_ADVISOR_TABLE` | `1` or `=nom`: the full advisor table at each pass (all arrays or a single one) |
-| `CHUNK_RECHUNK_CHURN` | `1` or `=nom`: materialisations per pass and an estimate of the transient cost they imply |
-| `CHUNK_AFFINITY_TRACE` | each per-array set of allocators created (key, size, budget) |
+| `CHUNK_ADVISOR_TABLE` | `1` or `=name`: the full advisor table at each pass (all arrays or a single one) |
+| `CHUNK_RECHUNK_CHURN` | `1` or `=name`: materialisations per pass and an estimate of the transient cost they imply |
+| `CHUNK_AFFINITY_TRACE` (*set*) | each per-array set of allocators created (key, size, budget) |
 | `CHUNK_ARENA_REPORT` | the summary of the buffer arena (slabs handed out, given back to the system) |
 | `CHUNK_RECYCLE_TRACE` | one line per recycled block of the deferred-write pool (instead of a summary) |
-| `CHUNK_LEDGER_REPORT` | the report of the block registry (builds with the registry) |
+| `CHUNK_LEDGER_REPORT` (*set*) | the report of the block registry (builds with the registry) |
 | `CHUNK_OMPT_STATS` | statistics of the synchronisation regions (OMPT builds) |
-| `CHUNK_CST2_PROBE` | Chunk2A: report of the second-value registry at each pass (benchmark) |
-| `ALLOC_TOKEN_REPORT` | on exit, the count of allocations per token |
-| `FAST_ALLOC_TRACE` | one `[MUNMAP]` line per emptied slab that a pool's reserve does not keep and that is freed (silent by default) |
+| `CHUNK_CST2_PROBE` (*set*) | Chunk2A: report of the second-value registry at each pass (benchmark) |
+| `ALLOC_TOKEN_REPORT` | `SANITIZER=token` builds always print, on exit, the allocations per token (the 40 largest); this sets how many: `0` none, `N` the N largest, `all` every token |
+| `FAST_ALLOC_TRACE` (*set*) | one `[MUNMAP]` line per emptied slab that a pool's reserve does not keep and that is freed (silent by default) |
 
 ## 4. Forced rechunks (tests)
 

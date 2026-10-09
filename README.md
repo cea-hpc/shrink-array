@@ -24,7 +24,9 @@ slower.
 | Chunk2A | `ArrayChunk2A<T>` | `T{}`, or **any** value, chunk by chunk, with nothing to declare |
 
 The variant and the chunk size are chosen by the library you link (`chunk::chunk_v2a_256`,
-`chunk::chunk_v2a_dyn`, ...); the headers are the same for all of them. Chunk2A compresses the
+`chunk::chunk_v2a_dyn`, ...); the headers are the same for all of them. Write the class of
+that variant, or an alias on it ([docs/getting_started.md](docs/getting_started.md) §3): an
+array of another variant than the library's is not supported. Chunk2A compresses the
 most and is the one to try first. As an order of magnitude, on the `shrink_bench` benchmark
 (arrays of 10⁹ elements, 64 threads), memory at the end of the run:
 
@@ -223,7 +225,7 @@ See [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md).
 - [examples/multi-mat](examples/multi-mat): multi-material fields, each material in compressed
   arrays or in `std::vector`s, with loops written once for both
   ([Loops.h](examples/multi-mat/Loops.h)).
-- [examples/shrink_bench](examples/shrink_bench): the reference benchmark -- thirteen arrays of
+- [examples/shrink_bench](examples/shrink_bench): the reference benchmark -- eighteen arrays of
   different element types under a compute loop, `--mode check` against `std::vector` reference
   files, `--mode perf` for timing.
 - [examples/validation](examples/validation): one harness per property (compression round trip,
@@ -231,6 +233,11 @@ See [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md).
 - [examples/advisor_demo](examples/advisor_demo) and
   [examples/variant_compare](examples/variant_compare): the chunk-size advisor against real sizes,
   and Chunk2 against Chunk2A on one workload.
+- [python/shrink_gui](python/shrink_gui): a window on the laptop to submit the build, the tests
+  and the benchmark on the cluster and follow them ([docs/shrink_gui.md](docs/shrink_gui.md)).
+
+`simple_array` and `multi-mat` work on arrays of 10⁹ elements: their `ctest` needs a compute
+node (24 GB for the `std::vector` version of `simple_array`) and is killed on a laptop.
 
 ## Documentation
 
@@ -243,6 +250,7 @@ See [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md).
 | use dynamic chunk sizes | [docs/adaptive_rechunk.md](docs/adaptive_rechunk.md) |
 | tune the library or the build | [docs/environment_variables.md](docs/environment_variables.md) |
 | measure memory and time reliably | [docs/performance_measurement.md](docs/performance_measurement.md) |
+| submit and follow runs on the cluster from a window | [docs/shrink_gui.md](docs/shrink_gui.md) |
 | contribute | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 Every document also exists in French; the index is [docs/README.md](docs/README.md). What changed
