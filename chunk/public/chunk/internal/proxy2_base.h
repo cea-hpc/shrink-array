@@ -294,12 +294,25 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
      *          race changed it), but before the store memory still holds the
      *          old value, so its check would fire on every write that changes
      *          the value and queue the chunk whatever should_mark said.
+     * @param vals The chunk's values pointer, loaded by the caller inside the
+     *        write session: the old value and the race check read through it
+     *        instead of reloading it (see Proxy2A::handle_no_bool_assignment).
      */
-    void mark_for_compression_before_store(in_t<T> second_val, in_t<T> new_value, in_t<T> first_value) const
+    void
+    mark_for_compression_before_store(in_t<T> second_val, in_t<T> new_value, in_t<T> first_value, const T* vals) const
     {
-        const bool isv = is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val);
-        const T    old = Base::read_values();
-        mark_for_compression_core(old, new_value, old, isv, second_val, first_value);
+        // isv false makes the whole test a no-op: skip the read of the old
+        // value too, which mark_for_compression_core() would not look at.
+        if (!is_cst_val_new_value_is_other_cst_val(new_value, first_value, second_val))
+        {
+            return;
+        }
+        const T old = Base::read_values_at(vals);
+        if (derived().should_mark_for_compression(old, new_value, second_val, first_value) ||
+            (Base::read_values_at(vals) != old)) [[unlikely]]
+        {
+            add_to_compression_list();
+        }
     }
 
     /**

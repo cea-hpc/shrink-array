@@ -834,11 +834,13 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
     /**
      * @brief Marks the current chunk for compression if the new value requires it.
      * @param new_value The value being assigned.
+     * @param vals The chunk's values pointer, loaded by the caller inside the
+     *        write session; the non-bool path reads the slot through it.
      * @note Re-reads the current value from the slot; prefer
      *       mark_for_compression_if_needed_with_value() when the caller already
      *       holds it, so no concurrent writer can be read in between.
      */
-    void mark_for_compression_if_needed(in_t<T> new_value) const;
+    void mark_for_compression_if_needed(in_t<T> new_value, const T* vals) const;
 
     /**
      * @brief Marks chunk for potential compression with explicit old value
@@ -905,7 +907,7 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
 
     inline void perform_compression() noexcept;
 
-    inline void perform_core_assignment(in_t<T> v) const;
+    inline void perform_core_assignment(T* vals, in_t<T> v) const;
 
     /**
      * @brief Checks if a value change should trigger compression consideration

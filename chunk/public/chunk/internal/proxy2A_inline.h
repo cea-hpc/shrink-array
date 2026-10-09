@@ -218,13 +218,14 @@ void Proxy2A<T>::set_ptr_second_value_and_num_tab() noexcept
 // variant below wherever the caller already knows it. bool carries no per-chunk
 // second value, so it routes to the plain ProxyBase form.
 template <typename T>
-void Proxy2A<T>::mark_for_compression_if_needed(in_t<T> new_value) const
+void Proxy2A<T>::mark_for_compression_if_needed(in_t<T> new_value, [[maybe_unused]] const T* vals) const
 {
     if constexpr (is_not_bool)
     {
         // Called BEFORE the store (handle_no_bool_assignment): the memory check
         // must expect the old value -- see mark_for_compression_before_store.
-        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value.get(), new_value, Chunk2A<T>::first_value);
+        Base2::mark_for_compression_before_store(BaseSpec::ptr_second_value.get(), new_value, Chunk2A<T>::first_value,
+                                                 vals);
     }
     else
     {
@@ -537,26 +538,46 @@ void Proxy2AFastCompPolicy<Derived, T, ChunkType, Enabled>::ensure_writable_stor
  *     value stored;
  *  -# otherwise the chunk is materialised if still constant, then written.
  *
+ * @param vals The chunk's values pointer, loaded by the caller inside the write
+ *        session; every state test reads it instead of reloading `values`.
  * @param v Value to store.
  * @pre The metadata pointers this reads are armed (see the handle_*_assignment
  *      callers, which arm exactly what their branch needs).
  */
 template <typename T>
-void Proxy2A<T>::perform_core_assignment(in_t<T> v) const
+void Proxy2A<T>::perform_core_assignment(T* vals, in_t<T> v) const
 {
+    // After a materialisation, the one reload: create_value() does not return
+    // the live buffer, and a concurrent writer may have won its CAS (ours then
+    // went back to the pool). Materialised now, so stable until the session ends.
+    const auto materialise = [this, &vals]
+    {
+        if constexpr (is_not_bool)
+        {
+            create_value(BaseSpec::ptr_second_value);
+        }
+        else
+        {
+            create_value_bool();
+        }
+        vals = chunk.values_load();
+    };
+
+    const bool is_cst2 = chunk.is_cst_val2_ptr_of(vals);
+
     if constexpr (is_not_bool)
     {
         if (v == static_cast<T>(BaseSpec::ptr_second_value.get()))
         {
-            if (is_cst_val2() || Base::load_value() == BaseSpec::ptr_second_value.get())
+            if (is_cst2 || Base::read_values_at(vals) == BaseSpec::ptr_second_value.get())
             {
                 return;
             }
-            if (Base::is_cst_val1())
+            if (Base::is_cst_val1(vals))
             {
-                create_value(BaseSpec::ptr_second_value);
+                materialise();
 
-                Base::store_value(BaseSpec::ptr_second_value.get());
+                Base::store_value_at(vals, BaseSpec::ptr_second_value.get());
 
                 return;
             }
@@ -564,15 +585,15 @@ void Proxy2A<T>::perform_core_assignment(in_t<T> v) const
     }
     else if (v)
     {
-        if (is_cst_val2() || Base::load_value())
+        if (is_cst2 || Base::read_values_at(vals))
         {
             return;
         }
-        if (Base::is_cst_val1())
+        if (Base::is_cst_val1(vals))
         {
-            create_value_bool();
+            materialise();
 
-            Base::store_value(true);
+            Base::store_value_at(vals, true);
 
             return;
         }
@@ -583,21 +604,12 @@ void Proxy2A<T>::perform_core_assignment(in_t<T> v) const
         increm_chunk_write<ChunkType>(v);
     }
 
-    const bool need_alloc = Base2::is_cst_val();
-
-    if (need_alloc)
+    if (is_cst2 || Base::is_cst_val1(vals))
     {
-        if constexpr (is_not_bool)
-        {
-            create_value(BaseSpec::ptr_second_value);
-        }
-        else
-        {
-            create_value_bool();
-        }
+        materialise();
     }
 
-    Base::store_value(v);
+    Base::store_value_at(vals, v);
 
     if constexpr (build_config::do_check)
     {
@@ -623,7 +635,14 @@ void Proxy2A<T>::handle_no_bool_assignment(in_t<T> v)
 {
     if constexpr (is_not_bool)
     {
-        if (is_cst_val2())
+        // ONE load of the values pointer for the whole body, as in
+        // Proxy::assign_impl: inside the write session no compressor can change
+        // it, and no writer either once it is not a constant -- the only change
+        // left, a concurrent materialisation, is what perform_core_assignment()
+        // reloads after.
+        T* const vals = chunk.values_load();
+
+        if (chunk.is_cst_val2_ptr_of(vals))
         {
             set_ptr_second_value_and_num_tab();
 
@@ -639,9 +658,9 @@ void Proxy2A<T>::handle_no_bool_assignment(in_t<T> v)
             set_info_on_chunk();
         }
 
-        mark_for_compression_if_needed(v);
+        mark_for_compression_if_needed(v, vals);
 
-        perform_core_assignment(v);
+        perform_core_assignment(vals, v);
     }
 }
 
@@ -659,7 +678,10 @@ void Proxy2A<T>::handle_bool_assignment(in_t<T> v)
 {
     if constexpr (is_bool)
     {
-        if (is_cst_val2())
+        // One load of the values pointer, as in handle_no_bool_assignment().
+        T* const vals = chunk.values_load();
+
+        if (chunk.is_cst_val2_ptr_of(vals))
         {
             set_num_tab();
 
@@ -675,9 +697,9 @@ void Proxy2A<T>::handle_bool_assignment(in_t<T> v)
             set_info_on_chunk();
         }
 
-        mark_for_compression_if_needed(v);
+        mark_for_compression_if_needed(v, vals);
 
-        perform_core_assignment(v);
+        perform_core_assignment(vals, v);
     }
 }
 
