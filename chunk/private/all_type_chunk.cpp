@@ -20,6 +20,7 @@
 #include <atomic>    // for atomic_thread_fence, memory_order_seq_cst, atomic
 #include <memory>    // for unique_ptr
 #include <optional>  // SerialFlushOwnership
+#include <ranges>    // std::views::transform, std::ranges::to (clear_list_block_free's bucket counts)
 #include <utility>   // std::move
 #include <vector>    // for vector
 #include <malloc.h>  // malloc_trim, mallopt
@@ -528,12 +529,11 @@ void AllTypeChunkParallelInterface<Derived, true>::clear_list_block_free_thr(thi
     // Called at teardown, outside any other parallel region.
     const auto& types = self.getListTypeChunk();
 
-    std::vector<std::size_t> nb_buckets;
-    nb_buckets.reserve(types.size());
-    for (const auto& elm : types)
-    {
-        nb_buckets.push_back(elm->clear_list_block_free_prepare());
-    }
+    // One prepare per type, in list order (views::transform is lazy: ranges::to
+    // runs it once per element, front to back).
+    const auto nb_buckets =
+        types | std::views::transform([](const auto& elm) { return elm->clear_list_block_free_prepare(); }) |
+        std::ranges::to<std::vector>();
 
 #pragma omp parallel
     {

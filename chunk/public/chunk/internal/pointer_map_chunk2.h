@@ -49,6 +49,7 @@
 #include <cstdio>      // fprintf / fflush in report_key_not_found
 #include <deque>       // std::deque: share_info storage, no realloc invalidation
 #include <map>         // std::map
+#include <ranges>      // std::views::keys / values, std::ranges::to (get_all_*)
 #include <type_traits> // std::is_same_v
 #include <utility>     // std::pair
 #include <vector>      // std::vector
@@ -101,14 +102,7 @@ class PointerMapChunk2InfArrayPolicy
      */
     [[nodiscard]] std::vector<inf_array_t*> get_all_inf_array() const
     {
-        std::vector<inf_array_t*> values;
-
-        for (const auto& [key, v] : map_inf_array)
-        {
-            values.push_back(v);
-        }
-
-        return values;
+        return map_inf_array | std::views::values | std::ranges::to<std::vector>();
     }
 
     /**
@@ -355,14 +349,7 @@ class PointerMapChunk2
     /// @brief Every registered second value, in map order.
     [[nodiscard]] std::vector<T> get_all_second_value() const
     {
-        std::vector<T> keys;
-
-        for (const auto& [key, v] : map_ind_cst_val2)
-        {
-            keys.push_back(key);
-        }
-
-        return keys;
+        return map_ind_cst_val2 | std::views::keys | std::ranges::to<std::vector>();
     }
 
     /// @brief Index of second value @p key in the shared value table, or -1
