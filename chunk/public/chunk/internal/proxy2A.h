@@ -896,13 +896,6 @@ class Proxy2A : public Proxy2AFastCompPolicy<Proxy2A<T>, T, Chunk2A<T>, chunk_co
         }
     }
 
-    /**
-     * @brief Initialize per-chunk pointers except second value.
-     */
-    void set_other_info_on_chunk() noexcept;
-
-    void set_ptr_second_value_and_num_tab() noexcept;
-
     inline void trigger_compression_if_needed(int thr_rank);
 
     inline void perform_compression() noexcept;
