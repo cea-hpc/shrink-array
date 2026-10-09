@@ -24,36 +24,26 @@
 #include <utility>         // std::forward
 #include <type_traits>     // std::remove_cvref_t, std::conditional_t
 #include <source_location> // std::source_location
-#include <complex>         // std::complex (its std::formatter)
+#include <complex>         // std::complex (spelled by invariant_fmt_arg)
 
 #include "chunk/debug.h"  // print_backtrace
 #include "chunk/config.h" // build_config
 
-// --- Specialization must be in the std namespace ---
-
-namespace std
-{
-
-/// @brief std::format support for std::complex<T>, printed as "(re+imi)".
-template <typename T>
-struct formatter<std::complex<T>, char>
-{
-    /// @brief No format specifier is accepted: parsing stops where it starts.
-    constexpr auto parse(std::format_parse_context& ctx)
-    {
-        return ctx.begin();
-    }
-
-    /// @brief Write @p value as "(re+imi)".
-    auto format(const std::complex<T>& value, std::format_context& ctx) const
-    {
-        return std::format_to(ctx.out(), "({}+{}i)", value.real(), value.imag());
-    }
-};
-} // namespace std
-
 namespace shrink_array
 {
+// std::complex is spelled here, by an invariant_fmt_arg overload, and not by
+// a std::formatter<std::complex<T>> specialisation: adding one to namespace
+// std is undefined unless it depends on a program-defined type
+// ([namespace.std]), it would leak from this public header into every user's
+// code (a user defining their own gets a redefinition), and it would clash
+// with a standard library that ships one (proposed for C++26, P2197).
+
+/// @brief True for std::complex<T>.
+template <typename V>
+inline constexpr bool invariant_is_complex = false;
+template <typename T>
+inline constexpr bool invariant_is_complex<std::complex<T>> = true;
+
 /// @brief True when std::format has a formatter for V (C++20 spelling of
 ///        C++23's std::formattable: a disabled formatter has no format()).
 template <typename V>
@@ -79,10 +69,19 @@ A&& invariant_fmt_arg(A&& arg)
     return std::forward<A>(arg);
 }
 
+/// @brief Overload for std::complex: "(re+imi)", "(re-imi)" for a negative imaginary part.
+template <typename A>
+    requires invariant_is_complex<std::remove_cvref_t<A>>
+std::string invariant_fmt_arg(A&& z)
+{
+    return std::format("({}{:+}i)", z.real(), z.imag());
+}
+
 /// @brief Overload for a type with no formatter: the bytes of @p arg in hex, prefixed with "0x".
 /// @param arg Value to dump.
 /// @return The hex string, two digits per byte in memory order.
 template <typename A>
+    requires(!invariant_formattable<std::remove_cvref_t<A>> && !invariant_is_complex<std::remove_cvref_t<A>>)
 std::string invariant_fmt_arg(A&& arg)
 {
     using V = std::remove_cvref_t<A>;
