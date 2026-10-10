@@ -83,10 +83,26 @@ EN = {
         "hence the options' default values.",
     "ccc_msub : job batch, indépendant de cette fenêtre et du nœud de login "
     "(recommandé).\n\nccc_mprun détaché : lancé depuis le nœud de login ; il dépend de ce "
-    "nœud tant qu'il tourne.":
+    "nœud tant qu'il tourne.\n\nEn arrière-plan sur cette machine : sans gestionnaire de "
+    "jobs, indépendant de cette fenêtre ; la durée max est appliquée par timeout (code 124).":
         "ccc_msub: batch job, independent of this window and of the login node "
         "(recommended).\n\nccc_mprun, detached: started from the login node; it depends on that "
-        "node while it runs.",
+        "node while it runs.\n\nIn the background on this machine: no job scheduler, independent "
+        "of this window; the maximum duration is applied by timeout (code 124).",
+    "En arrière-plan sur cette machine : sans gestionnaire de jobs, indépendant de cette fenêtre ; "
+    "la durée max est appliquée par timeout (code 124).":
+        "In the background on this machine: no job scheduler, independent of this window; the maximum "
+        "duration is applied by timeout (code 124).",
+    "Lancer les runs sur cette machine plutôt que sur le calculateur : pas de ssh ni de "
+    "gestionnaire de jobs, le run tourne en arrière-plan ici (sous Windows, dans WSL). "
+    "Dépôt et dossier des runs sont mémorisés à part.":
+        "Run on this machine instead of the cluster: no ssh and no job scheduler, the run goes in the "
+        "background here (in WSL on Windows). The repository and the runs directory are kept apart.",
+    "en arrière-plan sur cette machine": "in the background on this machine",
+    "vide : run.sh directement ; pour plafonner la mémoire : systemd-run --user --scope -q "
+    "-p MemoryMax=16G -p MemorySwapMax=0":
+        "empty: run.sh directly; to cap the memory: systemd-run --user --scope -q "
+        "-p MemoryMax=16G -p MemorySwapMax=0",
     "ccc_msub : job batch, indépendant de cette fenêtre et du nœud de login (recommandé).":
         "ccc_msub: batch job, independent of this window and of the login node (recommended).",
     "ccc_mprun détaché : lancé depuis le nœud de login ; il dépend de ce nœud tant qu'il tourne.":
@@ -226,10 +242,10 @@ EN = {
         "performance measurements.",
     "Compilation de toutes les configurations (options lues dans son --help).":
         "Builds every configuration (options read from its --help).",
-    "Compilation de toutes les configurations, en job batch (ccc_msub) seulement. Options lues dans "
-    "le texte de son usage(), sans l'exécuter sur le nœud de login.":
-        "Builds every configuration, as a batch job (ccc_msub) only. Options read from the text of its "
-        "usage(), without running it on the login node.",
+    "Compilation de toutes les configurations, en job batch (ccc_msub) ou sur cette machine, jamais "
+    "depuis le nœud de login. Options lues dans le texte de son usage(), sans l'exécuter.":
+        "Builds every configuration, as a batch job (ccc_msub) or on this machine, never from the login "
+        "node. Options read from the text of its usage(), without running it.",
     "Le log du run sélectionné, suivi en direct.": "The selected run's log, followed live.",
     "Le résumé du run : par build pour multi_launch_stress.py (runs, échecs, temps), "
     "le CSV tel quel pour bench_and_test.py.":
@@ -289,6 +305,13 @@ EN = {
 # Messages built on the fly (and those inti sends back): regex on the French,
 # English replacement. Applied in order, on the whole text.
 EN_RE = [(re.compile(a), b) for a, b in (
+    (r"cette machine", "this machine"), (r"(\d+) cœurs\b", r"\1 cores"), (r"(\d) Gio\b", r"\1 GiB"),
+    (r"^shrink-array — runs sur (.+) \(prototype\)$", r"shrink-array — runs on \1 (prototype)"),
+    (r"^Dépôt \((.+)\)$", r"Repository (\1)"),
+    (r"^pas de dépôt git sur (.+) : vérifiez la connexion$", r"no git repository on \1: check the connection"),
+    (r"python3 en échec sur this machine \(voir la barre d'état\)",
+     "python3 failed on this machine (see the status bar)"),
+    (r"\bson groupe de processus \(SIGTERM\)", "its process group (SIGTERM)"),
     (r"réponse illisible de (\S+) :", r"unreadable answer from \1:"),
     (r"<b>Options non lues\.</b>", "<b>Options not read.</b>"),
     (r"Corrigez puis cliquez sur « Lire les options »\. En attendant, le champ « arguments en plus » "
@@ -311,7 +334,7 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^motif : (\d+) configurations$", r"pattern: \1 configurations"),
     (r"^motif : (\d+) exécutables$", r"pattern: \1 executables"),
     (r"^dans (\d+)/(\d+) build\(s\)$", r"in \1/\2 build(s)"),
-    (r"^lecture des builds de (\S+) sur inti…$", r"reading the \1 builds on inti…"),
+    (r"^lecture des builds de (\S+) sur (.+)…$", r"reading the \1 builds on \2…"),
     (r"^(\d+) configurations, (\d+) build\(s\) (\S+) dans (\S+)$", r"\1 configurations, \2 \3 build(s) in \4"),
     (r"^Configurations de compile_all\.sh \(cmake-build-<nom>\)\. « configurée » : son build existe déjà "
      r"pour (\S+) dans (\S+)\.$",
@@ -329,7 +352,7 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"\noption : ", "\noption: "), (r"\ndéfaut du script : ", "\nscript default: "),
     (r"^défaut : ", "default: "), (r"\nlanceur : ", "\nlauncher: "),
     (r"^lecture des options de (.*)…$", r"reading the options of \1…"),
-    (r"^(\S+) : (\d+) options lues \(python (\S+) sur inti\)$", r"\1: \2 options read (python \3 on inti)"),
+    (r"^(\S+) : (\d+) options lues \(python (\S+) sur (.+)\)$", r"\1: \2 options read (python \3 on \4)"),
     (r"^(\S+) : (\d+) options lues$", r"\1: \2 options read"),
     (r"^défauts enregistrés pour (\S+) sur (\S+)$", r"defaults saved for \1 on \2"),
     (r"pas de connexion maître : lancez (<b>ssh -fNM \S+</b>) dans un terminal",
@@ -408,7 +431,7 @@ EN_RE = [(re.compile(a), b) for a, b in (
      r'\1 is submitted with ccc_msub only (it must not run from the login node): choose "ccc_msub (batch)"'),
     (r"pas de bloc usage\(\) \{ cat <<EOF \.\.\. EOF \} où lire les options \(le script n'est pas exécuté ici\)",
      "no usage() { cat <<EOF ... EOF } block to read the options from (the script is not run here)"),
-    (r" — inti : ", " — inti: "), (r" · local : identique", " · local: same"),
+    (r" — ([^<:]+) : <b>", r" — \1: <b>"), (r" · local : identique", " · local: same"),
     (r"^branche <b>", "branch <b>"), (r" · modifications locales", " · local changes"),
     (r"modifications locales</span>", "local changes</span>"),
     (r" · pas de branche suivie", " · no upstream branch"), (r" · suit ", " · tracks "),
@@ -418,14 +441,14 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^(\d+) run\(s\) encore actif\(s\) : un build ou un bench en cours peut lire des sources "
      r"modifiées en cours de route\.$",
      r"\1 run(s) still active: a build or a bench in progress may read sources changed under it."),
-    (r"^(git pull(?: --rebase)?) sur inti…$", r"\1 on inti…"),
+    (r"^(git pull(?: --rebase)?) sur (.+)…$", r"\1 on \2…"),
     (r"^(git pull(?: --rebase)?) : déjà à jour$", r"\1: already up to date"),
     (r"^(git pull(?: --rebase)?) : (\S+) → (\S+)$", r"\1: \2 → \3"),
     (r"^(git pull(?: --rebase)?) a échoué$", r"\1 failed"),
     (r"^ ; (rebase|merge) annulé, le dépôt est revenu à son état d'avant$",
      r"; \1 cancelled, the repository is back as it was"),
     (r"^git_pull : pas de dépôt git dans (\S+)$", r"git_pull: no git repository in \1"),
-    (r"local : (<b>\w+</b>) \(([^)]*)\) ≠ inti", r"local: \1 (\2) ≠ inti"),
+    (r"local : (<b>\w+</b>) \(([^)]*)\) ≠ ", r"local: \1 (\2) ≠ "),
     (r"^branche : ", "branch: "),
     (r"\* modifications non commitées dans le dépôt d'inti à la soumission",
      "* uncommitted changes in inti's repository at submission"),

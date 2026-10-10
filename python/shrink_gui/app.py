@@ -7,6 +7,7 @@ import html
 import io
 import json
 import os
+import platform
 import re
 import sys
 import tarfile
@@ -21,11 +22,11 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, 
                                QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from shrink_gui import i18n, qos
-from shrink_gui.config import (APP, ARCH_DEFAULTS, BUILD_REP, COLOR_BY, DEFAULTS, PRESETS, PROGRAMS, VIZ,
-                               exe_parts)
+from shrink_gui.config import (APP, ARCH_DEFAULTS, BUILD_REP, COLOR_BY, DEFAULTS, LOCAL, LOCAL_DEFAULTS, PRESETS,
+                               PROGRAMS, VIZ, exe_parts)
 from shrink_gui.i18n import T, status_text, tip
 from shrink_gui.remote import Remote
-from shrink_gui.runscripts import make_launch_sh, make_run_sh
+from shrink_gui.runscripts import make_launch_sh, make_local_launch_sh, make_run_sh
 from shrink_gui.widgets import (DurationBox, LogView, NumItem, OptionsForm, PickerDialog, ScatterView, TLabel,
                                 ask, families, split_list, unique_globs)
 
@@ -39,7 +40,7 @@ class Main(QMainWindow):
         super().__init__()
         self.setWindowTitle("shrink-array — runs sur inti (prototype)")
         self.settings = QSettings(APP, APP)
-        self.remote = Remote(self, lambda: self.host.text().strip(), self.error)
+        self.remote = Remote(self, self.machine, self.error)
         self.runs = []
         self.current = None      # id of the run shown in the log
         self.offset = 0
@@ -47,15 +48,21 @@ class Main(QMainWindow):
         self.list_busy = False
         self.prev_status = None  # id -> status at the previous refresh (notifications)
         self.build_info = {}     # arch suffix -> act_build_targets (the "Choisir…" lists)
+        self.local_info = None   # this machine, from the check: machine, cpus, mem_gb
+        self.rescan = False      # read the options again at the next check (machine changed)
 
-        # --- connection
+        # --- connection: the cluster through ssh, or this machine
         self.host = QLineEdit(self._get("host"))
+        self.local_cb = QCheckBox("cette machine")
+        self.local_cb.setChecked(self.settings.value("machine", DEFAULTS["machine"]) == LOCAL)
+        self.host.setEnabled(not self.local_cb.isChecked())
         self.conn = TLabel("?")
         bcheck = QPushButton("Vérifier la connexion")
         bcheck.clicked.connect(self.check)
         top = QHBoxLayout()
         top.addWidget(QLabel("Calculateur :"))
         top.addWidget(self.host)
+        top.addWidget(self.local_cb)
         top.addWidget(bcheck)
         top.addWidget(self.conn, 1)
         self.lang = QComboBox()
@@ -68,13 +75,8 @@ class Main(QMainWindow):
 
         # --- where / how
         self.preset = QComboBox()
-        for key, p in PRESETS.items():
-            self.preset.addItem(p["label"], key)
-        self.preset.setCurrentIndex(max(0, self.preset.findData(self._get("preset"))))
         self.mode = QComboBox()
-        self.mode.addItem("ccc_msub (batch)", "msub")
-        self.mode.addItem("ccc_mprun détaché", "mprun")
-        self.mode.setCurrentIndex(max(0, self.mode.findData(self._get("mode"))))
+        self.fill_machine_lists()
         self.time_s = DurationBox()
         self.time_s.setValue(int(self._get("time_s")))
         # QoS: the limits of ccc_mqinfo (read by the connection check, else
@@ -118,13 +120,15 @@ class Main(QMainWindow):
         self.directives.setToolTip("Lignes #MSUB du script batch (ccc_msub) ou options ccc_mprun "
                                    "(mode détaché), propres à la partition et mémorisées.\n"
                                    "-T, -r, -o et -e sont ajoutés d'après le formulaire.")
-        self.repo = QLineEdit(self._get("repo"))
-        self.runs_dir = QLineEdit(self._get("runs_dir"))
+        self.repo = QLineEdit(self._mget("repo"))
+        self.runs_dir = QLineEdit(self._mget("runs_dir"))
         self.local_dir = QLineEdit(self._get("local_dir"))
         where = QFormLayout()
+        self.where = where
         where.addRow("Partition", self.preset)
         where.addRow("Soumission", self.mode)
         where.addRow("Durée max (-T)", self.time_s)
+        self.qos_row = qrow
         where.addRow("QoS (-Q)", qrow)
         where.addRow("Démarrage", arow)
         where.addRow("Builds à jour", self.check_builds)
@@ -136,7 +140,8 @@ class Main(QMainWindow):
                                  "Mémorisé par partition.")
         self.launcher_row_label = QLabel("Lanceur (job)")
         where.addRow(self.launcher_row_label, self.launcher)
-        where.addRow("Dépôt (inti)", self.repo)
+        self.repo_label = QLabel("Dépôt (inti)")
+        where.addRow(self.repo_label, self.repo)
         # Branch and state of inti's repository, and the pulls.
         self.git_state = TLabel("?")
         self.git_state.setTextFormat(Qt.RichText)
@@ -148,8 +153,10 @@ class Main(QMainWindow):
         grow.addWidget(self.git_state, 1)
         grow.addWidget(self.bpull)
         grow.addWidget(self.bpull_rebase)
-        where.addRow("Git (inti)", grow)
-        where.addRow("Runs (inti)", self.runs_dir)
+        self.git_label = QLabel("Git (inti)")
+        where.addRow(self.git_label, grow)
+        self.runs_label = QLabel("Runs (inti)")
+        where.addRow(self.runs_label, self.runs_dir)
         where.addRow("Résultats (local)", self.local_dir)
         self.local_repo = QLineEdit(self._get("local_repo"))
         self.local_repo.setPlaceholderText("facultatif : pour comparer son commit à celui d'inti")
@@ -379,6 +386,8 @@ class Main(QMainWindow):
 
         self._preset_key = None
         self._launcher_key = None
+        self.update_machine_labels()
+        self.local_cb.toggled.connect(self.machine_changed)
         self.preset.currentIndexChanged.connect(self.preset_changed)
         self.mode.currentIndexChanged.connect(self.preset_changed)
         self.program.currentTextChanged.connect(self.program_changed)
@@ -442,7 +451,11 @@ class Main(QMainWindow):
                   "donc les valeurs par défaut des options.",
         "mode": "ccc_msub : job batch, indépendant de cette fenêtre et du nœud de login "
                 "(recommandé).\n\nccc_mprun détaché : lancé depuis le nœud de login ; il dépend de ce "
-                "nœud tant qu'il tourne.",
+                "nœud tant qu'il tourne.\n\nEn arrière-plan sur cette machine : sans gestionnaire de "
+                "jobs, indépendant de cette fenêtre ; la durée max est appliquée par timeout (code 124).",
+        "local_cb": "Lancer les runs sur cette machine plutôt que sur le calculateur : pas de ssh ni de "
+                    "gestionnaire de jobs, le run tourne en arrière-plan ici (sous Windows, dans WSL). "
+                    "Dépôt et dossier des runs sont mémorisés à part.",
         "time_s": "Durée maximale du job (-T). Au-delà, le job est tué par le gestionnaire et finit "
                   "« terminé sans code ». Se tape « 1 h 30 », « 90 min », « 2 j » ou « 1-00:00:00 ».\n\n"
                   "Mémorisée par programme : compile_all.sh court, bench_and_test.py quelques heures, "
@@ -548,15 +561,17 @@ class Main(QMainWindow):
                                       "threads tiré au hasard. Résumé et graphique disponibles.",
             "bench_and_test.py": "Bench et tests : validations ctest, checks, sanitizers, comparaison "
                                  "seq/omp et mesures de performance.",
-            "compile_all.sh": "Compilation de toutes les configurations, en job batch (ccc_msub) seulement. "
-                              "Options lues dans le texte de son usage(), sans l'exécuter sur le nœud de login.",
+            "compile_all.sh": "Compilation de toutes les configurations, en job batch (ccc_msub) ou sur cette "
+                              "machine, jamais depuis le nœud de login. Options lues dans le texte de son "
+                              "usage(), sans l'exécuter.",
         }
         for i in range(self.program.count()):
             t = prog_tips.get(self.program.itemText(i))
             if t:
                 self.program.setItemData(i, tip(t), Qt.ToolTipRole)
         mode_tips = {"msub": self.TIPS["mode"].split("\n\n")[0],
-                     "mprun": self.TIPS["mode"].split("\n\n")[1]}
+                     "mprun": self.TIPS["mode"].split("\n\n")[1],
+                     "local": self.TIPS["mode"].split("\n\n")[2]}
         for i in range(self.mode.count()):
             self.mode.setItemData(i, tip(mode_tips[self.mode.itemData(i)]), Qt.ToolTipRole)
         tab_tips = ["Le log du run sélectionné, suivi en direct.",
@@ -571,6 +586,94 @@ class Main(QMainWindow):
     def _get(self, key):
         return self.settings.value(key, DEFAULTS[key])
 
+    # ------------------------------------------------------------- machine
+    def is_local(self):
+        """The runs go on this machine ("cette machine"), not on the cluster."""
+        return self.local_cb.isChecked()
+
+    def machine(self):
+        """The host the helper runs on: LOCAL, or the ssh host name."""
+        return LOCAL if self.is_local() else self.host.text().strip()
+
+    def machine_name(self):
+        """The machine, as the labels name it."""
+        return "cette machine" if self.is_local() else (self.host.text().strip() or "?")
+
+    def _mkey(self, key, local=None):
+        """The settings key of a field kept per machine (repository, runs
+        directory): the cluster keeps the historical keys."""
+        local = self.is_local() if local is None else local
+        return f"local/{key}" if local else key
+
+    def _mget(self, key):
+        if self.is_local():
+            return self.settings.value(self._mkey(key), LOCAL_DEFAULTS[key])
+        return self._get(key)
+
+    def fill_machine_lists(self):
+        """The partitions and submission modes of the machine: the cluster's,
+        or this machine's single one (no scheduler: in the background)."""
+        local = self.is_local()
+        for c in (self.preset, self.mode):
+            c.blockSignals(True)
+            c.clear()
+        for key, p in PRESETS.items():
+            if bool(p.get("local")) == local:
+                self.preset.addItem(T(self.local_label()) if local else T(p["label"]), key)
+        if local:
+            self.mode.addItem(T("en arrière-plan sur cette machine"), "local")
+        else:
+            self.mode.addItem("ccc_msub (batch)", "msub")
+            self.mode.addItem(T("ccc_mprun détaché"), "mprun")
+            self.preset.setCurrentIndex(max(0, self.preset.findData(self._get("preset"))))
+            self.mode.setCurrentIndex(max(0, self.mode.findData(self._get("mode"))))
+        for c in (self.preset, self.mode):
+            c.blockSignals(False)
+
+    def local_label(self):
+        """This machine's "partition": what the check found there."""
+        r = self.local_info or {}
+        bits = [b for b in (r.get("machine"), f"{r['cpus']} cœurs" if r.get("cpus") else "",
+                            f"{r['mem_gb']:g} Gio" if r.get("mem_gb") else "") if b]
+        return "cette machine" + (" — " + ", ".join(bits) if bits else "")
+
+    def update_machine_labels(self):
+        name = self.machine_name()
+        self.setWindowTitle(T(f"shrink-array — runs sur {name} (prototype)"))
+        self.repo_label.setText(T(f"Dépôt ({name})"))
+        self.git_label.setText(T(f"Git ({name})"))
+        self.runs_label.setText(T(f"Runs ({name})"))
+        local = self.is_local()
+        self.host.setEnabled(not local)
+        for w in (self.qos_row, self.directives):    # the scheduler's QoS and #MSUB lines
+            self.where.setRowVisible(w, not local)
+
+    def machine_changed(self, *_):
+        """Cluster <-> this machine: each keeps its repository, runs directory,
+        partition and mode; the run list and the options are read again."""
+        was_local = not self.is_local()
+        for key, w in (("repo", self.repo), ("runs_dir", self.runs_dir)):
+            self.settings.setValue(self._mkey(key, was_local), w.text())
+        if not was_local:
+            self.settings.setValue("preset", self.preset.currentData())
+            self.settings.setValue("mode", self.mode.currentData())
+        self.settings.setValue("machine", LOCAL if self.is_local() else "")
+        self.repo.setText(self._mget("repo"))
+        self.runs_dir.setText(self._mget("runs_dir"))
+        self.fill_machine_lists()
+        self.preset_changed()
+        self.update_machine_labels()
+        self.runs, self.prev_status, self.current = [], None, None
+        self.table.setRowCount(0)
+        self.log.clear()
+        self.inti_git = None
+        self.show_git_state()
+        self.build_info.clear()
+        self.fill_after()
+        self.set_tooltips()
+        self.rescan = True
+        self.check()
+
     def arch(self):
         return PRESETS[self.preset.currentData()]["arch"]
 
@@ -578,16 +681,19 @@ class Main(QMainWindow):
         return f"directives2/{preset or self.preset.currentData()}/{mode or self.mode.currentData()}"
 
     def save(self):
-        for key, w in (("host", self.host), ("repo", self.repo), ("runs_dir", self.runs_dir),
-                       ("local_dir", self.local_dir), ("local_repo", self.local_repo)):
+        for key, w in (("host", self.host), ("local_dir", self.local_dir), ("local_repo", self.local_repo)):
             self.settings.setValue(key, w.text())
+        for key, w in (("repo", self.repo), ("runs_dir", self.runs_dir)):
+            self.settings.setValue(self._mkey(key), w.text())
+        self.settings.setValue("machine", LOCAL if self.is_local() else "")
         self.settings.setValue(f"time_s/{self.program.currentText()}", self.time_s.value())
         self.settings.setValue("qos", self.qos.currentData())
         self.settings.setValue("after_cond", self.after_cond.currentData())
         self.settings.setValue("delay_s", self.delay.value())
         self.settings.setValue("check_builds", self.check_builds.currentData())
-        self.settings.setValue("preset", self.preset.currentData())
-        self.settings.setValue("mode", self.mode.currentData())
+        if not self.is_local():      # this machine has a single partition and mode
+            self.settings.setValue("preset", self.preset.currentData())
+            self.settings.setValue("mode", self.mode.currentData())
         self.settings.setValue("program", self.program.currentText())
         if self._preset_key:
             self.settings.setValue(self._preset_key, self.directives.toPlainText())
@@ -627,9 +733,14 @@ class Main(QMainWindow):
         self.directives.setPlainText(self.settings.value(self._preset_key, builtin))
         self._launcher_key = f"launcher/{self.preset.currentData()}"
         self.launcher.setText(self.settings.value(self._launcher_key, p.get("launcher", "")))
-        is_msub = self.mode.currentData() == "msub"
-        self.launcher.setVisible(is_msub)
-        self.launcher_row_label.setVisible(is_msub)
+        # the launcher: of run.sh in the batch job, or on this machine
+        has_launcher = self.mode.currentData() in ("msub", "local")
+        self.launcher.setVisible(has_launcher)
+        self.launcher_row_label.setVisible(has_launcher)
+        self.launcher.setPlaceholderText(T(
+            "vide : run.sh directement ; pour plafonner la mémoire : systemd-run --user --scope -q "
+            "-p MemoryMax=16G -p MemorySwapMax=0" if self.mode.currentData() == "local"
+            else "vide : la commande tourne directement dans le job"))
         self.apply_arch_defaults()
         if hasattr(self, "qos_note"):
             self.update_qos()
@@ -667,7 +778,7 @@ class Main(QMainWindow):
                 else:
                     self.apply_arch_defaults()
             self.form.filter(self.opt_filter.text())
-            via = f" (python {r['python']} sur inti)" if r.get("python") else ""
+            via = f" (python {r['python']} sur {self.machine_name()})" if r.get("python") else ""
             self.info(f"{prog} : {len(r['actions'])} options lues{via}")
 
         spec = PROGRAMS[prog]
@@ -757,6 +868,8 @@ class Main(QMainWindow):
     # ---------------------------------------------- --target / --exec pickers
     def arch_suffix(self):
         """The <arch> component of compile_all.sh's build dirs ends with uname -m."""
+        if self.is_local():
+            return (self.local_info or {}).get("machine") or platform.machine()
         return "aarch64" if self.arch() == "arm" else "x86_64"
 
     def pick(self, dest):
@@ -766,7 +879,7 @@ class Main(QMainWindow):
         sfx = self.arch_suffix()
         info = self.build_info.get(sfx)
         if info is None:
-            self.info(f"lecture des builds de {sfx} sur inti…")
+            self.info(f"lecture des builds de {sfx} sur {self.machine_name()}…")
 
             def done(r):
                 if r is not None:
@@ -774,7 +887,9 @@ class Main(QMainWindow):
                     self.info(f"{len(r['configs'])} configurations, {len(r['dirs'])} build(s) {sfx} "
                               f"dans {r['build_rep']}")
                     self.pick(dest)
-            self.remote.helper("build_targets", [self.repo.text().strip(), BUILD_REP, sfx], done)
+            # this machine: the builds are where site_env.sh puts them (the repository)
+            build_rep = "" if self.is_local() else BUILD_REP
+            self.remote.helper("build_targets", [self.repo.text().strip(), build_rep, sfx], done)
             return
         ac, w, _lab = self.form.widgets[dest]
         multi = "comma" in (ac.get("help") or "").lower()
@@ -887,8 +1002,22 @@ class Main(QMainWindow):
 
         def helper_ok(r):
             if r is None:
-                self.conn.setText("<span style='color:#c0392b'>connexion maître OK, mais python3 "
+                self.conn.setText("<span style='color:#c0392b'>python3 en échec sur cette machine "
+                                  "(voir la barre d'état)</span>" if self.is_local() else
+                                  "<span style='color:#c0392b'>connexion maître OK, mais python3 "
                                   "distant en échec (voir la barre d'état)</span>")
+                return
+            if self.is_local():
+                self.local_info = r
+                self.preset.setItemText(0, T(self.local_label()))
+                self.inti_git = r.get("git")
+                self.show_git_state()
+                self.conn.setText(f"<span style='color:#1e8449'>cette machine — {r['host']}, "
+                                  f"python {r['python']}</span>{self.git_line()}")
+                self.refresh()
+                if self.rescan or not self.form.schema:
+                    self.rescan = False
+                    self.scan()
                 return
             warn = "" if r.get("msub") else " — <b>ccc_msub introuvable</b>"
             rows = qos.parse_mqinfo(r.get("mqinfo") or "")
@@ -902,7 +1031,8 @@ class Main(QMainWindow):
             self.conn.setText(f"<span style='color:#1e8449'>connecté — {r['host']}, "
                               f"python {r['python']}</span>{warn}{self.git_line()}")
             self.refresh()
-            if not self.form.schema:
+            if self.rescan or not self.form.schema:
+                self.rescan = False
                 self.scan()
 
         self.remote.check_master(master)
@@ -918,11 +1048,13 @@ class Main(QMainWindow):
             return
         pkey = self.preset.currentData()
         mode = self.mode.currentData()
-        if PROGRAMS[prog].get("msub_only") and mode != "msub":
+        if PROGRAMS[prog].get("msub_only") and mode == "mprun":
             self.error(f"{prog} se soumet par ccc_msub seulement (il ne doit pas tourner depuis le nœud "
                        "de login) : choisissez « ccc_msub (batch) »")
             return
-        qname, _row, qerr = self.qos_choice()
+        qname, qerr = None, None
+        if mode != "local":          # no scheduler, no QoS on this machine
+            qname, _row, qerr = self.qos_choice()
         if qerr:
             self.error(qerr)
             return
@@ -949,16 +1081,18 @@ class Main(QMainWindow):
             "launch.sh": make_launch_sh(f"{' '.join(self.directives.toPlainText().split())} "
                                         f"-T{self.time_s.value()}" + (f" -Q {qname}" if qname else ""),
                                         after, delay_s)
-                         if mode == "mprun" else "",
+                         if mode == "mprun" else
+                         make_local_launch_sh(self.launcher.text().strip(), self.time_s.value(), after, delay_s)
+                         if mode == "local" else "",
             "qos": qname or "",
             "after": after, "delay_s": delay_s,
             "name": re.sub(r"[^A-Za-z0-9_.-]", "_", f"{prog.split('.')[0]}_{pkey}")[:40],
             "time_s": self.time_s.value(),
             "meta": {"program": prog, "partition": pkey, "arch": self.arch(), "mode": mode,
-                     "launcher": self.launcher.text().strip() if mode == "msub" else "",
+                     "launcher": self.launcher.text().strip() if mode in ("msub", "local") else "",
                      "command": cmd, "values": self.form.values(), "extra": self.extra.text(),
                      "repo": self.repo.text().strip(), "time_s": self.time_s.value(),
-                     "qos": qname or qos.explicit_qos(self.directives.toPlainText()) or "",
+                     "qos": "" if mode == "local" else qname or qos.explicit_qos(self.directives.toPlainText()) or "",
                      "qos_wanted": self.qos.currentData(),
                      "after": after, "delay_s": delay_s,
                      "check_builds": check["mode"] if check else "off",
@@ -1097,7 +1231,9 @@ class Main(QMainWindow):
         run = self.selected_run()
         if not run:
             return
-        what = f"le job {run['jobid']} (ccc_mdel)" if run.get("jobid") else "ccc_mprun (SIGTERM)"
+        what = (f"le job {run['jobid']} (ccc_mdel)" if run.get("jobid") else
+                "son groupe de processus (SIGTERM)" if run["meta"].get("mode") == "local" else
+                "ccc_mprun (SIGTERM)")
         if ask(self, "Arrêter", f"Arrêter le run {run['id']} ?\n{what}") != QMessageBox.Yes:
             return
 
@@ -1188,7 +1324,7 @@ class Main(QMainWindow):
         """git pull [--rebase] in inti's repository, after a confirmation."""
         g = getattr(self, "inti_git", None)
         if not g:
-            self.error("pas de dépôt git sur inti : vérifiez la connexion")
+            self.error(f"pas de dépôt git sur {self.machine_name()} : vérifiez la connexion")
             return
         what = "git pull --rebase" if rebase else "git pull"
         active = [r for r in self.runs if r["status"] in self.ACTIVE]
@@ -1200,7 +1336,7 @@ class Main(QMainWindow):
             return
         for b in (self.bpull, self.bpull_rebase):
             b.setEnabled(False)
-        self.info(f"{what} sur inti…")
+        self.info(f"{what} sur {self.machine_name()}…")
 
         def done(r):
             if r is None:  # the error is already in the status bar
@@ -1228,14 +1364,15 @@ class Main(QMainWindow):
         g = getattr(self, "inti_git", None)
         if not g:
             return ""
-        txt = f" — inti : <b>{g['commit'][:8]}</b>{'*' if g.get('dirty') else ''} ({html.escape(g['branch'])})"
+        name = self.machine_name()
+        txt = f" — {name} : <b>{g['commit'][:8]}</b>{'*' if g.get('dirty') else ''} ({html.escape(g['branch'])})"
         loc = self.local_git()
         if loc:
             if loc["commit"] == g["commit"]:
                 txt += " · local : identique"
             else:
                 txt += (f" · <span style='color:#b9770e'>local : <b>{loc['commit'][:8]}</b> "
-                        f"({html.escape(loc['branch'])}) ≠ inti</span>")
+                        f"({html.escape(loc['branch'])}) ≠ {name}</span>")
         return txt
 
     def notify_changes(self):

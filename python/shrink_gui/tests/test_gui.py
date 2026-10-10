@@ -1,6 +1,8 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 """The window, end to end, offscreen, against the fake inti."""
+import base64
+import json
 import re
 import time
 
@@ -82,12 +84,9 @@ def test_stop(gui):
     assert _wait_status(w, pump, rid, "arrêté")
 
 
-def test_english_has_no_french_left(gui, qapp):
+def _french_left(w):
+    """The visible texts, entries and tooltips of the window still in French."""
     from PySide6.QtWidgets import QCheckBox, QComboBox, QGroupBox, QLabel, QLineEdit, QPushButton
-    w, pump = gui
-    w.lang.setCurrentIndex(w.lang.findData("en"))
-    w = qapp.main_window
-    assert pump(lambda: "connected" in w.conn.text())
     fr = re.compile(r"[éèêàùçôîœ«»]|\b(les|des|du|une|pas|aucun|tous|toutes|lire|relit|rafraîchir|"
                     r"arrêter|supprimer|récupérer|résumé|commande|défaut|reste|sur inti)\b", re.I)
     left = []
@@ -106,7 +105,15 @@ def test_english_has_no_french_left(gui, qapp):
         t = re.sub("<[^>]+>", "", x.toolTip())
         if fr.search(t):
             left.append("tooltip: " + t[:60])
-    assert left == []
+    return left
+
+
+def test_english_has_no_french_left(gui, qapp):
+    w, pump = gui
+    w.lang.setCurrentIndex(w.lang.findData("en"))
+    w = qapp.main_window
+    assert pump(lambda: "connected" in w.conn.text())
+    assert _french_left(w) == []
 
 
 def test_commit_column(gui, site):
@@ -332,3 +339,67 @@ def test_git_row_and_pull(gui, site, tmp_path):
     want = git(up, "rev-parse", "HEAD")
     assert pump(lambda: getattr(w, "inti_git", {}).get("commit") == want)
     assert pump(lambda: want[:8] in w.git_state.text())
+
+
+# ------------------------------------------------------------ this machine
+def _to_local(w, pump, site):
+    """Switch the window to this machine, its repository and runs in the test's directory."""
+    w.settings.setValue("local/repo", str(site.home / "shrink-array"))
+    w.settings.setValue("local/runs_dir", str(site.root / "local_runs"))
+    w.local_cb.setChecked(True)
+    assert pump(lambda: "cette machine —" in w.conn.text(), 20), w.conn.text()
+
+
+def test_local_machine(gui, site):
+    from shrink_gui.config import LOCAL
+    w, pump = gui
+    _to_local(w, pump, site)
+    assert not w.host.isEnabled() and w.repo_label.text() == "Dépôt (cette machine)"
+    assert [w.preset.itemData(i) for i in range(w.preset.count())] == [LOCAL]
+    assert [w.mode.itemData(i) for i in range(w.mode.count())] == ["local"]
+    assert "cœurs" in w.preset.itemText(0)
+    assert not w.where.isRowVisible(w.qos_row) and not w.where.isRowVisible(w.directives)
+    assert w.launcher.isVisibleTo(w)
+    _choose_fake(w, pump)
+    rid = _submit(w, pump, {"runs": "4", "step": "0.01"}, 0)
+    assert rid.endswith("-" + LOCAL) and _wait_status(w, pump, rid, "fini")
+    assert (site.root / "local_runs" / rid / "launch.sh").exists() and not (site.runs / rid).exists()
+    w.table.selectRow(0)
+    assert pump(lambda: "exit code 0" in w.log.toPlainText(), 10)
+    w.fetch()
+    assert pump(lambda: (site.local / rid / "run" / "out.log").exists(), 10)
+    # back to the cluster: its own repository, partition, mode and runs
+    w.local_cb.setChecked(False)
+    assert pump(lambda: "connecté" in w.conn.text(), 20), w.conn.text()
+    assert w.repo.text() == "~/shrink-array" and w.preset.currentData() == "gh200-bxi"
+    assert w.mode.currentData() == "msub" and w.where.isRowVisible(w.qos_row)
+    assert all(r["id"] != rid for r in w.runs)
+    # and this machine's fields are remembered
+    w.local_cb.setChecked(True)
+    assert pump(lambda: "cette machine —" in w.conn.text(), 20)
+    assert w.repo.text() == str(site.home / "shrink-array")
+    assert pump(lambda: any(r["id"] == rid for r in w.runs), 10)
+
+
+def test_compile_all_on_this_machine(gui, site, monkeypatch):
+    w, pump = gui
+    _to_local(w, pump, site)
+    w.program.setCurrentText("compile_all.sh")
+    assert pump(lambda: w.form.schema is not None and "dryrun" in w.form.widgets)
+    calls = []
+    monkeypatch.setattr(w.remote, "helper", lambda action, args, done, binary=False: calls.append((action, args)))
+    w.launch()
+    launches = [a for act, a in calls if act == "launch"]
+    assert launches, w.statusBar().currentMessage()
+    spec = json.loads(base64.b64decode(launches[-1][2]))
+    assert spec["mode"] == "local" and "timeout -k 60" in spec["launch.sh"] and spec["meta"]["qos"] == ""
+
+
+def test_local_machine_in_english(gui, site, qapp):
+    w, pump = gui
+    _to_local(w, pump, site)
+    w.lang.setCurrentIndex(w.lang.findData("en"))
+    w = qapp.main_window
+    assert pump(lambda: "this machine —" in w.conn.text(), 20), w.conn.text()
+    assert w.repo_label.text() == "Repository (this machine)" and w.preset.itemText(0).startswith("this machine")
+    assert _french_left(w) == []

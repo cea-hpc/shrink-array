@@ -2,8 +2,9 @@
 
 > English version: [shrink_gui.md](shrink_gui.md).
 
-> Octobre 2026, `shrink_gui` 0.11 (prototype). Une fenêtre sur le portable pour soumettre
-> `compile_all.sh`, `bench_and_test.py` et `multi_launch_stress.py` sur le calculateur, suivre
+> Octobre 2026, `shrink_gui` 0.12 (prototype). Une fenêtre sur le portable pour soumettre
+> `compile_all.sh`, `bench_and_test.py` et `multi_launch_stress.py` sur le calculateur, ou
+> pour les lancer sur le portable lui-même (§3, « Cette machine »), suivre
 > leur log, lire leur résumé et rapatrier leurs résultats. Le détail du code est dans la
 > docstring de `python/shrink_gui/__init__.py`.
 
@@ -100,6 +101,30 @@ donne), dernière ligne du log. Une notification signale un run qui se termine.
 | Reprendre ses options | remet dans le formulaire le programme, la partition et les options du run |
 | Supprimer | supprime le dossier du run (run terminé seulement) ; au choix, aussi les sorties propres à ce run et la copie locale |
 
+### Cette machine
+
+La case « cette machine », à côté du champ de l'hôte, envoie les runs sur la machine où tourne
+la fenêtre au lieu du calculateur : ni ssh ni gestionnaire de jobs. Le helper passe par
+`bash -c` ici (depuis Windows, par `wsl.exe` : dans WSL), et le run tourne en arrière-plan.
+Il ne dépend pas de la fenêtre : la fermer laisse le run continuer, comme un job batch.
+
+- **Partition** : une seule, « cette machine », avec l'architecture, le nombre de cœurs et la
+  mémoire trouvés à la vérification de la connexion. Ses défauts sont les siens
+  (`ARCH_DEFAULTS[(programme, "local")]`). La QoS et les directives sont celles du
+  gestionnaire de jobs : masquées.
+- **Soumission** : « en arrière-plan sur cette machine ». `launch.sh` lance `run.sh`, sous
+  `timeout` quand une durée max est donnée (code 124 au-delà).
+- **Lanceur** : un préfixe de `run.sh`, mémorisé. Pour plafonner la mémoire d'un run, et
+  qu'un run trop gourmand ne fasse pas tomber WSL :
+  `systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0`.
+- **Dépôt, Runs** : distincts de ceux du calculateur (par défaut `~/shrink-array` et
+  `~/shrink_runs` de cette machine) ; passer de l'un à l'autre garde les deux.
+- **Démarrage, Builds à jour, Arrêter, Récupérer, Supprimer** : comme sur le calculateur.
+  « Démarrage : après » attend un run `compile_all.sh` de cette machine ; « Arrêter » termine
+  le groupe de processus du run.
+- `compile_all.sh` tourne aussi ici : il n'est refusé que depuis le nœud de login du
+  calculateur.
+
 ## 4. Exemples
 
 **Compiler, puis tester une fois la compilation réussie.** Programme `compile_all.sh`, mode
@@ -110,6 +135,11 @@ file Slurm ; s'il échoue, le second reste en attente et l'interface le signale.
 **Une campagne de stress sur x86.** Partition `milan-bxi`, programme
 `multi_launch_stress.py`, « Défauts de l'architecture » (8 à 64 threads, builds de
 `build_x86_64.txt`), « Soumettre ». L'onglet Graphique se remplit au fil des runs.
+
+**Compiler et tester sur le portable.** Cocher « cette machine », programme `compile_all.sh`
+avec son `--target`, « Soumettre » ; puis `bench_and_test.py`, « Démarrage : après » ce run,
+« Soumettre ». Avec le lanceur `systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0`,
+un run qui demande plus de mémoire est tué seul.
 
 Les lignes de commande équivalentes, sans interface, sont dans
 [example_bench_test.txt](example_bench_test.txt) et
@@ -134,10 +164,12 @@ Tout ce qui dépend du site est dans `python/shrink_gui/config.py` :
 
 | nom | contenu |
 |---|---|
-| `PRESETS` | les partitions : directives `#MSUB`, lanceur, options `ccc_mprun` |
+| `PRESETS` | les partitions : directives `#MSUB`, lanceur, options `ccc_mprun` ; `local` est cette machine |
 | `PROGRAMS` | les programmes : script, répertoire de travail, lecture des options, motifs d'avancement et de sortie |
 | `ARCH_DEFAULTS` | les valeurs par défaut par (programme, architecture) |
 | `DEFAULTS` | hôte, dépôt, dossier des runs, dossier local, partition et programme au démarrage |
+| `LOCAL_DEFAULTS` | le dépôt et le dossier des runs de cette machine |
+| `LOCAL_SHELL` | comment le helper tourne sur cette machine (`bash -c`, ou `wsl.exe -e bash -c` sous Windows) |
 | `SHRINK_GUI_SSH` (variable d'environnement) | le binaire ssh à utiliser (défaut `ssh`) |
 
 Les valeurs saisies dans la fenêtre sont mémorisées entre deux sessions (QSettings). La langue
@@ -159,3 +191,6 @@ Ils sont sautés si PySide6 n'est pas installé.
   (`ccc_msub`, `ccc_mprun`, `ccc_mqinfo`). Un autre site adapte `config.py` et les commandes de soumission de
   `runscripts.py`.
 - Une seule connexion à la fois. L'interface n'ouvre pas la connexion maître elle-même.
+- « Cette machine » depuis Windows (`wsl.exe`) n'est pas couverte par les tests (ils tournent
+  sous Linux). WSL peut arrêter une distribution quand plus aucune de ses fenêtres n'est
+  ouverte : en garder une ouverte pendant un run.

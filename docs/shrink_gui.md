@@ -2,8 +2,9 @@
 
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
-> October 2026, `shrink_gui` 0.11 (prototype). A window on the laptop to submit
-> `compile_all.sh`, `bench_and_test.py` and `multi_launch_stress.py` on the cluster, follow
+> October 2026, `shrink_gui` 0.12 (prototype). A window on the laptop to submit
+> `compile_all.sh`, `bench_and_test.py` and `multi_launch_stress.py` on the cluster, or to
+> run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the
 > docstring of `python/shrink_gui/__init__.py`.
 
@@ -99,6 +100,27 @@ the log. A notification announces a run that ends.
 | Reuse its options | puts the run's program, partition and options back in the form |
 | Delete | deletes the run directory (finished runs only); optionally also the outputs that are this run's own, and the local copy |
 
+### This machine
+
+The "this machine" box beside the host field sends the runs to the machine the window runs
+on instead of the cluster: no ssh and no job scheduler. The helper runs through `bash -c`
+here (from Windows, through `wsl.exe`: in WSL), and the run goes in the background. It does
+not depend on the window: closing it leaves the run going, as a batch job would.
+
+- **Partition**: a single one, "this machine", with the architecture, core count and memory
+  the connection check found. Its defaults are its own (`ARCH_DEFAULTS[(program, "local")]`).
+  The QoS and the directives are the scheduler's: hidden.
+- **Submission**: "in the background on this machine". `launch.sh` runs `run.sh`, under
+  `timeout` when a maximum duration is set (exit code 124 past it).
+- **Launcher**: a prefix of `run.sh`, remembered. To cap the memory of a run, and keep an
+  out-of-memory run from bringing WSL down:
+  `systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0`.
+- **Repository, Runs**: kept apart from the cluster's (by default `~/shrink-array` and
+  `~/shrink_runs` of this machine); switching back and forth keeps both.
+- **Start, Builds up to date, Stop, Fetch, Delete**: as on the cluster. "Start: after" waits
+  for a `compile_all.sh` run of this machine; "Stop" ends the run's process group.
+- `compile_all.sh` runs here too: it is refused only from the cluster's login node.
+
 ## 4. Examples
 
 **Build, then test once the build succeeded.** Program `compile_all.sh`, mode `ccc_msub`,
@@ -109,6 +131,11 @@ second stays pending and the interface says so.
 **A stress campaign on x86.** Partition `milan-bxi`, program `multi_launch_stress.py`,
 "Architecture defaults" (8 to 64 threads, the builds of `build_x86_64.txt`), "Submit". The
 Chart tab fills in as the runs come.
+
+**Build and test on the laptop.** Tick "this machine", program `compile_all.sh` with its
+`--target`, "Submit"; then `bench_and_test.py`, "Start: after" that run, "Submit". With a
+launcher `systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0`, a run that
+needs more memory is killed alone.
 
 The equivalent command lines, without the interface, are in
 [example_bench_test.txt](example_bench_test.txt) and
@@ -133,10 +160,12 @@ Everything site-specific is in `python/shrink_gui/config.py`:
 
 | name | contents |
 |---|---|
-| `PRESETS` | the partitions: `#MSUB` directives, launcher, `ccc_mprun` options |
+| `PRESETS` | the partitions: `#MSUB` directives, launcher, `ccc_mprun` options; `local` is this machine |
 | `PROGRAMS` | the programs: script, working directory, how options are read, progress and output patterns |
 | `ARCH_DEFAULTS` | the defaults per (program, architecture) |
 | `DEFAULTS` | host, repository, runs directory, local directory, partition and program at start |
+| `LOCAL_DEFAULTS` | this machine's repository and runs directory |
+| `LOCAL_SHELL` | how the helper runs on this machine (`bash -c`, or `wsl.exe -e bash -c` on Windows) |
 | `SHRINK_GUI_SSH` (environment variable) | the ssh binary to use (default `ssh`) |
 
 What you type in the window is remembered from one session to the next (QSettings). The
@@ -158,3 +187,6 @@ They are skipped when PySide6 is not installed.
   `ccc_mprun`, `ccc_mqinfo`). Another site adapts `config.py` and the submission commands
   of `runscripts.py`.
 - One connection at a time. The interface does not open the master connection itself.
+- This machine from Windows (`wsl.exe`) is not covered by the tests (they run on Linux).
+  WSL may stop a distribution once no window of it is left open: keep one open while a
+  run goes.

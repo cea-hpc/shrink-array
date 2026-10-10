@@ -179,10 +179,17 @@ def act_git_pull(a):
     print(json.dumps({"ok": code == 0, "output": out[-8000:], "aborted": aborted,
                       "before": before["commit"], "git": git_info(repo)}))
 
+def mem_gb():
+    """The machine's memory in GiB (MemTotal of /proc/meminfo), or None."""
+    m = re.search(r"^MemTotal:\s+(\d+) kB", read("/proc/meminfo", "") or "", re.M)
+    return round(int(m.group(1)) / 1048576.0, 1) if m else None
+
 def act_check(a):
     r = {"host": socket.gethostname(), "python": sys.version.split()[0],
          "msub": cmd_out(["which", "ccc_msub"]) is not None,
-         "mqinfo": cmd_out(["ccc_mqinfo"])}       # the QoS limits (parsed by the GUI)
+         "mqinfo": cmd_out(["ccc_mqinfo"]),       # the QoS limits (parsed by the GUI)
+         # what this machine is, for the local mode's "partition"
+         "machine": os.uname()[4], "cpus": os.cpu_count(), "mem_gb": mem_gb()}
     if a:
         r["git"] = git_info(a[0])
     print(json.dumps(r))
