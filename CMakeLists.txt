@@ -448,18 +448,48 @@ if(NOT USE_MOLD STREQUAL "OFF")
                            "${_mold_shim}/ld")
         endif()
 
-        # Confirm the driver accepts it (module toolchains can surprise).
+        # Confirm the driver accepts it (module toolchains can surprise). The
+        # cached answer is per mold version: an upgraded mold is tried again.
+        execute_process(COMMAND "${MOLD_EXECUTABLE}" --version
+                        OUTPUT_VARIABLE _mold_ver
+                        OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+        string(MAKE_C_IDENTIFIER "${_mold_ver}" _mold_ver_id)
         include(CheckCXXSourceCompiles)
         set(CMAKE_REQUIRED_LINK_OPTIONS "${_mold_link_opts}")
-        check_cxx_source_compiles("int main(){return 0;}" _mold_link_works)
+        check_cxx_source_compiles("int main(){return 0;}" _mold_link_works_${_mold_ver_id})
         unset(CMAKE_REQUIRED_LINK_OPTIONS)
+        set(_mold_link_works "${_mold_link_works_${_mold_ver_id}}")
+        # GCC >= 16 links every program with libatomic_asneeded.so, the linker
+        # script `INPUT ( AS_NEEDED ( -latomic ) )`, and mold 2.40.4 (Ubuntu
+        # 26.04) rejects a group that opens with AS_NEEDED: "library not found:
+        # AS_NEEDED", every link fails. The same libatomic on the command line
+        # instead: -fno-link-libatomic drops the script, and -latomic under
+        # --as-needed, at the end of the line, is recorded only when used.
+        set(_mold_atomic_libs "")
+        if(NOT _mold_link_works AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            set(CMAKE_REQUIRED_LINK_OPTIONS "${_mold_link_opts};-fno-link-libatomic")
+            set(CMAKE_REQUIRED_LIBRARIES "-Wl,--push-state,--as-needed;-latomic;-Wl,--pop-state")
+            check_cxx_source_compiles("int main(){return 0;}" _mold_link_atomic_works_${_mold_ver_id})
+            unset(CMAKE_REQUIRED_LINK_OPTIONS)
+            unset(CMAKE_REQUIRED_LIBRARIES)
+            if(_mold_link_atomic_works_${_mold_ver_id})
+                set(_mold_link_works TRUE)
+                list(APPEND _mold_link_opts "-fno-link-libatomic")
+                set(_mold_atomic_libs "-Wl,--push-state,--as-needed -latomic -Wl,--pop-state")
+            endif()
+        endif()
         if(_mold_link_works)
-            execute_process(COMMAND "${MOLD_EXECUTABLE}" --version
-                            OUTPUT_VARIABLE _mold_ver
-                            OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+            set(_mold_note "")
+            if(_mold_atomic_libs)
+                set(_mold_note ", libatomic as ${_mold_atomic_libs} (mold rejects libatomic_asneeded.so)")
+            endif()
+            string(JOIN " " _mold_opts_text ${_mold_link_opts})
             message(STATUS "Linker: mold (${_mold_ver}) — ${MOLD_EXECUTABLE} "
-                           "via ${_mold_link_opts}")
+                           "via ${_mold_opts_text}${_mold_note}")
             add_link_options(${_mold_link_opts})
+            if(_mold_atomic_libs)
+                string(APPEND CMAKE_CXX_STANDARD_LIBRARIES " ${_mold_atomic_libs}")
+            endif()
         else()
             message(STATUS "Linker: mold found but ${_mold_link_opts} rejected by "
                            "${CMAKE_CXX_COMPILER_ID} — using the default linker")
