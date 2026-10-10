@@ -1,7 +1,7 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 """shrink_gui -- prototype: submit and follow the shrink-array runs on inti
-from the laptop.
+from the laptop, or run them on the laptop itself ("cette machine").
 
 Everything goes through `ssh <host>`, so through the ControlMaster you opened
 yourself (`ssh -fNM inti`): this program never handles a password. Nothing is
@@ -40,6 +40,15 @@ already built in each build the program will use (--configs / --builds under
 program's own output directory, read from the log ("📁 Outputs, CSV and log
 in ..." / "📁 Run outputs → ...") -- never the per-run output_* files.
 
+This machine ("cette machine" beside the host field): no ssh, the helper
+runs through config.LOCAL_SHELL (bash -c; wsl.exe from Windows), and a run is
+launch.sh in the background -- runscripts.make_local_launch_sh: run.sh under
+`timeout` (the maximum duration), behind the launcher prefix (systemd-run
+--scope -p MemoryMax=... caps its memory). One partition, PRESETS["local"],
+with its own defaults (arch "local"); the repository and the runs directory
+are kept apart (settings local/repo, local/runs_dir). Status and "Arrêter" go
+by pid and process group, as the detached ccc_mprun mode does.
+
 Requires PySide6 on the laptop (pip install PySide6). Python >= 3.6 on inti.
 Each run also records the git commit it was submitted on and the one it
 started on (Commit column); bench_and_test.py writes its structured progress
@@ -60,4 +69,4 @@ Modules:
   app.py            the window
 """
 
-__version__ = "0.11"
+__version__ = "0.12"

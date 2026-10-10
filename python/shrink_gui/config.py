@@ -6,6 +6,9 @@ import re
 
 APP = "shrink_gui"
 
+# The "host" of this machine: the helper runs here, without ssh (LOCAL_SHELL).
+LOCAL = "local"
+
 # --------------------------------------------------------------------------
 # Site knowledge -- edit here.
 # --------------------------------------------------------------------------
@@ -30,6 +33,18 @@ PRESETS = {
         "msub": "#MSUB -q milan-bxi\n#MSUB -N 1\n#MSUB -n 1\n#MSUB -c 64\n",
         "launcher": "",
         "mprun": "-N1 -c 64 -p milan-bxi -Xfirst",
+    },
+    # This machine ("cette machine" beside the host field): no scheduler, the
+    # run goes in the background here (launch.sh, mode "local"). Its own
+    # defaults ("arch" local), no #MSUB lines; "launcher" prefixes run.sh, for
+    # a memory cap: systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0.
+    LOCAL: {
+        "label": "cette machine",
+        "arch": LOCAL,
+        "local": True,
+        "msub": "",
+        "launcher": "",
+        "mprun": "",
     },
 }
 
@@ -76,7 +91,7 @@ PROGRAMS = {
         "time_s": 5400,  # default -T (short); then remembered per program
         "script": "scripts/compile_all.sh", "cwd": "scripts",
         "interp": "bash", "scan": "help",
-        # Never on the login node: only as a batch job (ccc_msub).
+        # Never on the login node: as a batch job (ccc_msub), or on this machine.
         "msub_only": True,
         # "Choisir…" beside these fields: the configurations / executables
         # compile_all.sh can build, read on inti (see BUILD_REP).
@@ -103,6 +118,11 @@ ARCH_DEFAULTS = {
     },
     ("bench_and_test.py", "arm"): {"build_root": _BUILD_ROOT, "output_dir": _BUILD_ROOT + "/bench_results"},
     ("bench_and_test.py", "x86"): {"build_root": _BUILD_ROOT, "output_dir": _BUILD_ROOT + "/bench_results"},
+    # This machine: the builds are where scripts/site_env.sh puts them (the
+    # repository itself on a workstation), run.sh exports it as CHUNK_BUILD_ROOT.
+    ("multi_launch_stress.py", LOCAL): {
+        "min_threads": "2", "max_threads": str(os.cpu_count() or 8), "regen_ref": True, "all_exec": True,
+    },
 }
 
 # Where compile_all.sh puts its cmake-build-<name>/<arch> trees on inti
@@ -120,7 +140,12 @@ DEFAULTS = {
     "preset": "gh200-bxi",
     "program": "multi_launch_stress.py",
     "mode": "msub",
+    "machine": "",          # LOCAL: this machine; else the host field
 }
+
+# This machine's own repository and runs directory (kept apart from the
+# cluster's, under the settings keys local/repo and local/runs_dir).
+LOCAL_DEFAULTS = {"repo": "~/shrink-array", "runs_dir": "~/shrink_runs"}
 
 # The newest python3 of the remote PATH, as a shell expression. A login node's
 # system python3 can be old (3.6 on RHEL 8) while the scripts want more:
@@ -130,6 +155,10 @@ NEWEST_PY = ("$(command -v python3.13 || command -v python3.12 || command -v pyt
 
 # The ssh binary; SHRINK_GUI_SSH overrides it (tests, or a wrapper).
 SSH = os.environ.get("SHRINK_GUI_SSH", "ssh")
+
+# How the helper runs on this machine: the command line ssh would give the
+# remote shell, run by bash here -- in WSL when the window runs on Windows.
+LOCAL_SHELL = ["wsl.exe", "-e", "bash", "-c"] if os.name == "nt" else ["bash", "-c"]
 
 # Chart colours (data-viz reference palette). A scatter keeps three hues at
 # most: they pass the all-pairs colour-vision checks in both modes, a fourth

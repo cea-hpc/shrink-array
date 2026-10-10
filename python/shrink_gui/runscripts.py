@@ -1,6 +1,7 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-"""The shell scripts a run is made of: run.sh (compute node), launch.sh (detached mode)."""
+"""The shell scripts a run is made of: run.sh (compute node), launch.sh (detached
+mode: ccc_mprun from the login node, or the run itself on this machine)."""
 import re
 import shlex
 
@@ -168,3 +169,29 @@ echo "$code" > "$D/exit_code"
 echo "[gui] end $(date '+%F %T')  exit code $code"
 """
 
+
+
+def make_local_launch_sh(launcher="", time_s=0, after=None, delay_s=0):
+    """Local mode: run.sh on this machine, detached, after the wait asked
+    (wait_sh). @p time_s: the maximum duration (timeout; exit code 124 past
+    it), 0 for none. @p launcher: a prefix of run.sh, such as
+    systemd-run --user --scope -q -p MemoryMax=16G -p MemorySwapMax=0."""
+    limit = f"timeout -k 60 {int(time_s)} " if time_s else ""
+    prefix = launcher.strip() + " " if launcher.strip() else ""
+    what = f"at most {int(time_s)} s" if time_s else "no time limit"
+    return f"""#!/bin/bash
+D="$(cd "$(dirname "$0")" && pwd)"
+trap 'touch "$D/stopped"' TERM
+{wait_sh(after, delay_s)}echo "[gui] on this machine ({what}): {prefix}bash run.sh"
+{limit}{prefix}bash "$D/run.sh" &
+m=$!
+# timeout runs the command in a process group of its own, which the TERM of
+# "Arrêter" (sent to this script's group) does not reach: pass it on.
+trap 'touch "$D/stopped"; kill -TERM $m 2>/dev/null' TERM
+wait $m
+code=$?
+while kill -0 $m 2>/dev/null; do wait $m; code=$?; done
+{f'[ "$code" = 124 ] && echo "[gui] time limit reached ({int(time_s)} s)"' if time_s else ""}
+echo "$code" > "$D/exit_code"
+echo "[gui] end $(date '+%F %T')  exit code $code"
+"""
