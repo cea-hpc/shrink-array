@@ -28,6 +28,8 @@
 
 #include <sys/resource.h> // getrusage
 
+#include <type_traits> // std::is_same_v (the simd clauses)
+
 #include <vector>  // std::vector
 #include <iomanip> // std::setprecision, std::fixed
 
@@ -157,7 +159,9 @@ void calculate(double                  val,
                const V&                tab2,
                const V&                tab3)
 {
-#pragma omp for simd nowait // simd good for V vector but bad for V chunk
+    // simd for a std::vector only: the chunk proxies do not vectorise, and asking
+    // for it anyway draws clang's -Wpass-failed (multi-mat shows a way around).
+#pragma omp for simd if (simd : std::is_same_v<V, std::vector<double>>) nowait
     for (int i = start0; i < end0; ++i)
     {
         const int k = index[i - start0];
@@ -177,7 +181,9 @@ void calculate1(double                     val,
                 const V&                   tab2,
                 const V&                   tab3)
 {
-#pragma omp for simd nowait // simd good for V vector but false for V chunk (*)
+    // simd for a std::vector only: the chunk proxies do not vectorise, and asking
+    // for it anyway draws clang's -Wpass-failed (multi-mat shows a way around).
+#pragma omp for simd if (simd : std::is_same_v<V, std::vector<double>>) nowait
     for (int i = start0; i < end0; ++i)
     {
         const int k = index[i - start0];
@@ -186,7 +192,6 @@ void calculate1(double                     val,
 
         tab1[k] += tab_vec[k] + (tab2[k] * tab3[i]) - tab2[i] + val;
     }
-    // (*) one way to solve the problem is in the example multi-mat
 }
 
 int main()
