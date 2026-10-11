@@ -46,7 +46,8 @@
 // dynamic ones.
 
 #include <cstddef>     // std::size_t (func_p2.h uses size_t unqualified)
-#include <type_traits> // std::conditional_t
+#include <cstdint>     // std::uint64_t (DynamicChunkSize's divider)
+#include <type_traits> // std::conditional_t, std::make_unsigned_t
 
 #include "chunk/config.h"                     // build_config::chunk_dynamic, build_config::any_check
 #include "chunk/internal/func_p2.h"           // log2int (constexpr, also usable at run time)
@@ -268,6 +269,23 @@ struct StaticChunkSize
         return __modulo_chunk;
     }
 
+    /// @brief The chunk of element @p i (>= 0): i / size(). An unsigned
+    ///        division by the constant: a shift for a power of two, a
+    ///        multiplication by the compiler's magic number otherwise (a
+    ///        signed one would add a fix-up for negative values).
+    template <typename I>
+    [[nodiscard]] static constexpr I chunk_of(I i) noexcept
+    {
+        return static_cast<I>(static_cast<std::make_unsigned_t<I>>(i) / size());
+    }
+    /// @brief Element @p i's (>= 0) offset in its chunk: i % size() (a mask
+    ///        for a power of two).
+    template <typename I>
+    [[nodiscard]] static constexpr I offset_of(I i) noexcept
+    {
+        return static_cast<I>(static_cast<std::make_unsigned_t<I>>(i) % size());
+    }
+
     /// @brief No-op in static mode: geometry is fixed at compile time. Present
     ///        so generic code (e.g. ArrayChunkBase::set_chunk_size) compiles
     ///        under both policies.
@@ -281,6 +299,12 @@ class DynamicChunkSize
 {
   public:
     static constexpr bool is_dynamic = true;
+
+    /// @brief Starts at the process-wide active size (see size_).
+    DynamicChunkSize() noexcept
+    {
+        set_divider(size_);
+    }
 
     /// @brief Elements per chunk.
     [[nodiscard]] unsigned int size() const noexcept
@@ -296,6 +320,55 @@ class DynamicChunkSize
     [[nodiscard]] unsigned int modulo() const noexcept
     {
         return modulo_;
+    }
+
+    /// @brief The chunk of element @p i (>= 0): i / size(), without a
+    ///        division -- the run-time size's magic numbers, computed by
+    ///        set_size(). A 32-bit index: one 64x64->128 multiplication
+    ///        (Lemire, Kaser & Kurz 2019, exact for every 32-bit dividend). A
+    ///        64-bit one: Granlund & Montgomery's round-down method (as
+    ///        libdivide's branch-free path), a multiplication, two shifts, an
+    ///        add and a subtract.
+    template <typename I>
+    [[nodiscard]] I chunk_of(I i) const noexcept
+    {
+        // A power of two keeps the shift: the size of an array changes
+        // rarely, so this branch is always predicted.
+        if (pow2_) [[likely]]
+        {
+            return static_cast<I>(static_cast<std::make_unsigned_t<I>>(i) >> decalage_);
+        }
+        if constexpr (sizeof(I) <= 4)
+        {
+            const auto n = static_cast<std::uint64_t>(static_cast<std::make_unsigned_t<I>>(i));
+            return static_cast<I>((static_cast<unsigned __int128>(m32_) * n) >> 64);
+        }
+        else
+        {
+            const auto          n = static_cast<std::uint64_t>(static_cast<std::make_unsigned_t<I>>(i));
+            const std::uint64_t t = static_cast<std::uint64_t>((static_cast<unsigned __int128>(magic_) * n) >> 64);
+            return static_cast<I>((t + ((n - t) >> 1)) >> magic_shift_);
+        }
+    }
+    /// @brief Element @p i's (>= 0) offset in its chunk: i % size().
+    template <typename I>
+    [[nodiscard]] I offset_of(I i) const noexcept
+    {
+        if (pow2_) [[likely]]
+        {
+            return static_cast<I>(static_cast<std::make_unsigned_t<I>>(i) & modulo_);
+        }
+        if constexpr (sizeof(I) <= 4)
+        {
+            // Lemire's direct remainder: the fraction left by the quotient's
+            // multiplication, scaled by the divisor.
+            const std::uint64_t frac = m32_ * static_cast<std::uint64_t>(static_cast<std::make_unsigned_t<I>>(i));
+            return static_cast<I>((static_cast<unsigned __int128>(frac) * size_) >> 64);
+        }
+        else
+        {
+            return static_cast<I>(i - chunk_of(i) * static_cast<I>(size_));
+        }
     }
 
     /// @brief Set a new geometry at run time, and make it the process-wide
@@ -316,6 +389,7 @@ class DynamicChunkSize
         size_               = size;
         decalage_           = static_cast<unsigned int>(log2int(static_cast<std::size_t>(size)));
         modulo_             = size - 1u;
+        set_divider(size);
         g_active_chunk_size = size; // keep the allocator-facing runtime size in sync
     }
 
@@ -329,6 +403,28 @@ class DynamicChunkSize
     unsigned int size_     = g_active_chunk_size;
     unsigned int decalage_ = static_cast<unsigned int>(log2int(static_cast<std::size_t>(g_active_chunk_size)));
     unsigned int modulo_   = g_active_chunk_size - 1u;
+    bool          pow2_        = true; ///< size() is a power of two: chunk_of / offset_of shift and mask
+    std::uint64_t m32_         = 0; ///< chunk_of's multiplier, 32-bit index (set_divider)
+    std::uint64_t magic_       = 0; ///< chunk_of's multiplier, 64-bit index (set_divider)
+    unsigned int  magic_shift_ = 0; ///< chunk_of's final shift, 64-bit index: ceil(log2(size)) - 1
+
+    /// @brief chunk_of's magic numbers for @p size (>= 2). 32-bit index:
+    ///        m32 = floor((2^64 - 1) / size) + 1. 64-bit index: with
+    ///        l = ceil(log2(size)), magic = floor(2^64 * (2^l - size) / size) + 1
+    ///        and a final shift of l - 1.
+    void set_divider(unsigned int size) noexcept
+    {
+        pow2_ = is_valid_chunk_size(size);
+        m32_  = UINT64_MAX / size + 1u;
+        unsigned int l = 0;
+        while ((1ull << l) < size)
+        {
+            ++l;
+        }
+        magic_ = static_cast<std::uint64_t>((static_cast<unsigned __int128>((1ull << l) - size) << 64) / size) + 1u;
+        magic_shift_ = l - 1u;
+    }
+
 };
 
 

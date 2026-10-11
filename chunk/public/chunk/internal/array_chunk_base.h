@@ -430,10 +430,9 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         const_iterator(const ArrayChunkBase* owner, ind_type lin) noexcept
             : owner_(owner)
             , lin_(lin)
-            , num_chunk_(static_cast<int>(lin >> owner->size_policy_.decalage()))
-            , num_(static_cast<int>(lin & owner->size_policy_.modulo()))
+            , num_chunk_(lin < 0 ? -1 : owner->chunk_index_of(lin))
+            , num_(lin < 0 ? static_cast<int>(owner->size_policy_.modulo()) : owner->offset_in_chunk(lin))
             , modulo_(static_cast<int>(owner->size_policy_.modulo()))
-            , decalage_(owner->size_policy_.decalage())
         {
             enter_chunk();
         }
@@ -477,20 +476,22 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
 
         /**
          * @brief Move the cursor to absolute index @p lin: every jump comes here.
-         * @details Chunk and offset recomputed from @p lin (shift, mask), then
+         * @details Chunk and offset recomputed from @p lin (chunk_of, offset_of), then
          *          enter_chunk() -- ALWAYS, even when the jump stays in the same
          *          chunk: the read gate of sync_chunk takes the offset, so a jump
          *          reads exactly as the const operator[] does, never weaker.
          *          @p lin may be m_size (end) or -1 (one before begin, which --
-         *          reaches too): the arithmetic shift gives chunk -1 there, and
+         *          reaches too): that is chunk -1, its last slot, and
          *          enter_chunk() leaves chunk_ null outside the list.
          * @param lin absolute linear index
          */
         void seek(ind_type lin) noexcept
         {
+            // -1 (one before begin) is the last slot of chunk -1, as an
+            // arithmetic shift and a mask gave it; the split itself wants i >= 0.
             lin_       = lin;
-            num_chunk_ = static_cast<int>(lin >> decalage_);
-            num_       = static_cast<int>(lin & static_cast<ind_type>(modulo_));
+            num_chunk_ = lin < 0 ? -1 : owner_->chunk_index_of(lin);
+            num_       = lin < 0 ? modulo_ : owner_->offset_in_chunk(lin);
             enter_chunk();
         }
 
@@ -516,7 +517,6 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         int                   num_chunk_ = 0;       ///< Index of @ref chunk_ in the chunk list.
         int                   num_       = 0;       // intra-chunk offset
         int                   modulo_    = 0;       ///< Cached geometry mask.
-        unsigned int          decalage_  = 0;       ///< Cached geometry shift.
     };
 
     using iterator               = const_iterator;                        ///< No mutable iterator exists (proxy store).
@@ -1197,16 +1197,16 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      * every `const int c = i >> ...`.
      * @{
      */
-    /// @brief The chunk holding element @p i: `i >> chunk_decalage()`.
+    /// @brief The chunk holding element @p i (>= 0): i / chunk_size() (SizePolicy::chunk_of).
     [[nodiscard]] int chunk_index_of(ind_type i) const noexcept
     {
-        return static_cast<int>(i >> size_policy_.decalage());
+        return static_cast<int>(size_policy_.chunk_of(i));
     }
 
-    /// @brief Element @p i's offset inside its chunk: `i & chunk_modulo()`.
+    /// @brief Element @p i's (>= 0) offset inside its chunk: i % chunk_size() (SizePolicy::offset_of).
     [[nodiscard]] int offset_in_chunk(ind_type i) const noexcept
     {
-        return static_cast<int>(i & size_policy_.modulo());
+        return static_cast<int>(size_policy_.offset_of(i));
     }
 
     /// @brief Chunks allocated for @p n elements: n / chunk_size() + 1 (the last
@@ -1342,14 +1342,13 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
         {
             return;
         }
-        const unsigned int dec     = size_policy_.decalage();
-        const auto         mod     = static_cast<ind_type>(size_policy_.modulo());
-        const int          c_first = static_cast<int>(first >> dec);
-        const int          c_last  = static_cast<int>((last - 1) >> dec);
+        const int c_first = chunk_index_of(first);
+        const int c_last  = chunk_index_of(last - 1);
+        const int full    = static_cast<int>(size_policy_.size());
         for (int c = c_first; c <= c_last; ++c)
         {
-            const int         lo = c == c_first ? static_cast<int>(first & mod) : 0;
-            const int         hi = c == c_last ? static_cast<int>((last - 1) & mod) + 1 : static_cast<int>(mod) + 1;
+            const int         lo = c == c_first ? offset_in_chunk(first) : 0;
+            const int         hi = c == c_last ? offset_in_chunk(last - 1) + 1 : full;
             const chunk_type& ch = chunk_list[static_cast<std::size_t>(c)];
             sync_chunk(ch, c, lo);
             fn(ch, c, lo, hi);
