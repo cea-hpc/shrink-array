@@ -392,7 +392,9 @@ if (TARGET chunk_v2a_${CHUNK_DEFAULT_SIZE})
                                             RESOURCE_LOCK element_ref_misuse_build LABELS validation)
   endforeach()
   # 9: std::printf("%f", a[i]) passes the proxy through `...`: GCC with
-  # chunk_hardening's -Werror=conditionally-supported, clang by default.
+  # chunk_hardening's -Werror=conditionally-supported ("... is conditionally
+  # supported"), clang by default ("cannot pass non-trivial object ... to
+  # variadic function").
   if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|IntelLLVM")
     set(_tgt element_ref_misuse_9)
     add_library(${_tgt} OBJECT EXCLUDE_FROM_ALL element_ref_validation.cpp)
@@ -402,7 +404,7 @@ if (TARGET chunk_v2a_${CHUNK_DEFAULT_SIZE})
     validation_setup_target(${_tgt})
     add_test(NAME ${_tgt} COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target ${_tgt})
     set_tests_properties(${_tgt} PROPERTIES
-                         PASS_REGULAR_EXPRESSION "is conditionally supported|through variadic function"
+                         PASS_REGULAR_EXPRESSION "is conditionally supported|to variadic function"
                          RESOURCE_LOCK element_ref_misuse_build LABELS validation)
   endif()
 endif()
