@@ -18,6 +18,7 @@
 | `CHUNK_ALLOC_AFFINITY_EAGER` | selon la variante | `1` : chaque gros tableau a son jeu d'allocateurs dès sa création (défaut de Chunk, v1) ; `0` : seulement au premier rechunk (défaut de Chunk2 et Chunk2A). Voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §5 |
 | `CHUNK_RECHUNK_MAX_COARSEN` | 4 | facteur maximal d'un grossissement (1 = sans limite) |
 | `CHUNK_ADVISOR_MIN_GAIN_MB` | 8 | seuil absolu de gain côté données, en Mo (0 le supprime) |
+| `CHUNK_ADVISOR_GRID_BITS` | 2 | les tailles candidates de l'advisor entre les puissances de deux : les multiples de 64 dont C / 64 a au plus ce nombre de bits significatifs (2 : 192, 384, 768... ; 3 : aussi 320, 448, 640 ; 1 : puissances de deux seules). Voir [rechunk_adaptatif_fr.md](rechunk_adaptatif_fr.md) §2 |
 | `CHUNK_COARSEN_MIN_META_MB` | 1 | gain minimal de métadonnées d'un grossissement, en Mo |
 | `CHUNK_COARSEN_MIN_META_RATE` | 250 | gain de métadonnées minimal par seconde de reconstruction estimée, en Mo/s |
 | `CHUNK_RECHUNK_DRY_RUN` | — | `1` : le décideur analyse et journalise, mais n'applique aucun rechunk |

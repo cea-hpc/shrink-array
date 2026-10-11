@@ -18,6 +18,7 @@
 | `CHUNK_ALLOC_AFFINITY_EAGER` | depends on the variant | `1`: each large array has its own set of allocators from its creation (default for Chunk, v1); `0`: only from its first rechunk (default for Chunk2 and Chunk2A). See [adaptive_rechunk.md](adaptive_rechunk.md) §5 |
 | `CHUNK_RECHUNK_MAX_COARSEN` | 4 | maximum factor of a coarsening (1 = no limit) |
 | `CHUNK_ADVISOR_MIN_GAIN_MB` | 8 | absolute threshold for the data-side gain, in MB (0 removes it) |
+| `CHUNK_ADVISOR_GRID_BITS` | 2 | the advisor's candidate sizes between the powers of two: the multiples of 64 whose C / 64 has at most this many significant bits (2: 192, 384, 768...; 3: 320, 448, 640 too; 1: powers of two only). See [adaptive_rechunk.md](adaptive_rechunk.md) §2 |
 | `CHUNK_COARSEN_MIN_META_MB` | 1 | minimum metadata gain of a coarsening, in MB |
 | `CHUNK_COARSEN_MIN_META_RATE` | 250 | minimum metadata gain per second of estimated rebuild time, in MB/s |
 | `CHUNK_RECHUNK_DRY_RUN` | — | `1`: the decider analyses and logs, but applies no rechunk |

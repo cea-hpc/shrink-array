@@ -34,14 +34,30 @@ chooses whether to change and to which size, and `rechunk_to()` does the rebuild
 candidate size, the number of chunks, the number of materialised chunks, and the estimated
 memory (metadata + materialised data).
 
-- **Larger sizes** (4 levels, up to ×16): an **exact folding** of the actual state
-  of the chunks. A chunk of size 2S is compressible if its two sub-chunks are compressed
-  to the same constant; otherwise it is materialised.
-- **Finer sizes** (2 levels, down to ÷4): a **sampling** of the data of the
-  materialised chunks (65,536 at most), which counts the uniform sub-blocks. For Chunk and
-  Chunk2, a sub-block is only counted as compressible if it holds a representable value
-  (first or second value). For **Chunk2A**, any uniform value is, since each
-  chunk records its own second value.
+The candidates: the powers-of-two ratios (S×2 to S×16, S÷2 and S÷4), and between those
+bounds every multiple of 64 whose C / 64 has at most `Options::grid_bits` significant bits
+(`CHUNK_ADVISOR_GRID_BITS`; 2 by default: 192, 384, 768, 1536...: steps of 50% at most; 3 adds
+320, 448, 640, 896...: steps of 25%).
+Each row cuts the array into windows of C elements, read from the current chunks:
+
+- a window **inside a run of chunks compressed to the same constant** is compressed: counted
+  exactly, from the chunk states alone;
+- a window that **covers a whole materialised chunk** is materialised;
+- a window that **overlaps a materialised chunk in part** (a finer or a misaligned size) is
+  settled by reading the data, on a **sample** of the materialised chunks (65,536 at most):
+  it is compressed if it holds one value, and a representable one. For Chunk and Chunk2 that
+  is the first or the second value; for **Chunk2A** any value, since each chunk records its
+  own second value.
+
+When S divides C (S×2, S×3, S×4...) the last case never occurs: the row is an **exact
+folding** of the actual state of the chunks. `advisor_demo` checks every row against arrays
+built at those sizes, from S = 256 and S = 1024.
+
+Why 2 and not 3 (shrink_bench chunk2a_dyn, `--divisor 4`, 16 threads, memory at the end of the
+run): 1 bit (powers of two only) 2320 MB, 2 bits 2317 MB, 3 bits 2396 MB. The predictions are as
+accurate at 3 bits, but the cheapest size is then often a small step (256 -> 384) whose
+metadata gain the decider's rate gate (`coarsen_min_meta_rate`) refuses; the decider does not
+fall back to the next best size, and two arrays stayed at 256.
 
 Chunk classification is done on the fly, with no work array: until
 September 2026, each analysis allocated one byte and one pointer per chunk (140 MB for an

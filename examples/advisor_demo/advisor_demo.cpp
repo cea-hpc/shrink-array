@@ -15,9 +15,9 @@
  */
 
 // Step-0 validation harness for ChunkSizeAdvisor: build the SAME data at
-// several REAL chunk sizes, then compare the advisor's per-size predictions
-// (each set made from ONE reference size: 256, then 1024) against ground
-// truth at each size.
+// several REAL chunk sizes -- powers of two and multiples of 64 (192, 384,
+// ...) -- then compare the advisor's per-size predictions (each set made from
+// ONE reference size: 256, then 1024) against ground truth at each size.
 #include <cstdio>   // std::printf, std::snprintf
 #include <iterator> // std::size
 #include <vector>   // std::vector
@@ -99,7 +99,10 @@ int main()
     ParamChunk::init_indexes(true);
 
     // Ground truth at every real size
-    const unsigned     sizes[] = {64, 128, 256, 512, 1024};
+    // The powers of two, and the multiples of 64 the advisor's grid evaluates
+    // from 256 and 1024 (Options::grid_bits = 3): misaligned with the reference
+    // chunks, these rows are the ones that read data across chunk boundaries.
+    const unsigned     sizes[] = {64, 128, 192, 256, 320, 384, 448, 512, 640, 768, 896, 1024, 1280, 1536, 2048};
     std::vector<Truth> truths;
     double             meta = 0.;
     for (const unsigned cs : sizes)
@@ -118,15 +121,24 @@ int main()
     }
 
     // Advisor predictions against ground truth, from two reference sizes:
-    //  - the middle one (256): finer 128/64, coarser 512/1024;
-    //  - the largest (1024): finer 512/256 only. There the 256-long runs at
+    //  - 256: finer 128/64, coarser 512/1024, and the grid 192, 320, ...;
+    //  - 1024: finer 512/256, coarser 2048, and the grid 384, 640, 1280, ... There the 256-long runs at
     //    -1.5 / 7.25 are materialised, so the finer rows must recognise them
     //    as compressible -- Chunk2A compresses a uniform chunk at ANY value.
     //    Gated on first_value/second value, the S=256 row read 4608
     //    materialised chunks against 2560 real (+80%).
-    int fail = 0;
-    for (const unsigned ref_size : {256u, 1024u})
+    //  - 256 again, reading the data of 300 materialised chunks only (of
+    //    ~2560): the sampled rows are extrapolated, within the 10% tolerance.
+    struct Ref
     {
+        unsigned ref_size;
+        long     max_scans;
+    };
+    int fail      = 0;
+    int grid_rows = 0; // rows at a size that is not a power of two, checked
+    for (const Ref run : {Ref{256u, 65536}, Ref{1024u, 65536}, Ref{256u, 300}})
+    {
+        const unsigned ref_size = run.ref_size;
         set_thread_chunk_size(ref_size);
         ArrayChunk2A<double> ref(1);
         ref.set_chunk_size(ref_size);
@@ -135,9 +147,11 @@ int main()
         ChunkSizeAdvisor<double>::Options opt;
         opt.coarser_levels = 2;
         opt.finer_levels   = 2;
+        opt.max_mat_scans  = run.max_scans;
+        opt.grid_bits      = 3; // the finest grid: 320, 448, 640... too
         const auto rep     = ChunkSizeAdvisor<double>::analyze(ref, opt);
-        char       title[32];
-        std::snprintf(title, sizeof title, "ref S=%u", ref_size);
+        char       title[48];
+        std::snprintf(title, sizeof title, "ref S=%u, %ld scans at most", ref_size, run.max_scans);
         ChunkSizeAdvisor<double>::print(rep, title);
 
         std::printf("\n── prediction (from S=%u) vs ground truth ──\n", ref_size);
@@ -158,9 +172,15 @@ int main()
                     e.size, (long long)e.mat, e.exact ? "(exact)" : "(sampl)", t.mat, dm, e.mem_bytes / 1048576.,
                     t.mem / 1048576., ok ? "OK" : "FAIL");
                 fail += !ok;
+                grid_rows += (e.size & (e.size - 1)) != 0 ? 1 : 0;
             }
         }
         ref.clear();
+    }
+    if (grid_rows == 0)
+    {
+        std::printf("\nFAIL: no prediction at a size that is not a power of two\n");
+        ++fail;
     }
     std::printf("\n=== %s ===\n", fail ? "ADVISOR VALIDATION FAILED" : "ADVISOR VALIDATED");
     return fail;

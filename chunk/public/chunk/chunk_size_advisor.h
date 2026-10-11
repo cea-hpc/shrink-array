@@ -32,43 +32,54 @@
 //                (one exceptional value pollutes a whole chunk), pushes toward
 //                SMALLER chunks.
 //
-// How U_mat(S) is obtained without re-chunking:
-//   * COARSER sizes (S*2, S*4, ...): exact fold over current chunk STATES.
-//     A merged chunk is compressible iff all its children are the SAME
-//     constant. For Chunk2A the identity of a cst_val2 constant IS the
-//     values_load() pointer (a TabCstVal2Holder slot), so the rule is pure
+// The candidate sizes: S / 2, S / 4 (finer_levels), S * 2 .. S * 16
+// (coarser_levels), and between those bounds every multiple of 64 whose C / 64
+// has at most grid_bits significant bits (2: 192, 384, 768, ...; 3: 320, 448,
+// 640 too): a chunk size is a power of two or a multiple of 64
+// (chunk_size_policy.h).
+//
+// How U_mat(C) is obtained without re-chunking: the array is cut into
+// windows of C elements, each classified from the CURRENT chunks it overlaps.
+//   * Inside a run of constant chunks of one constant: compressed. Exact, from
+//     the chunk STATES alone. For Chunk2A the identity of a cst_val2 constant
+//     IS the values_load() pointer (a TabCstVal2Holder slot), so a run is a
 //     pointer comparison:
 //         cst1 + cst1           -> cst1
 //         cst2(p) + cst2(p)     -> cst2
 //         anything else         -> materialized
-//     One pass over chunk_list, all levels folded simultaneously. NOTE: this
-//     rule is deliberately CONSERVATIVE for Chunk2A's mixed dual-value
-//     patterns; the demo harness cross-checks it against ground truth.
-//   * FINER sizes (S/2, S/4): only materialized chunks can improve; their
-//     DATA is scanned (sampled, capped) to count constant sub-blocks, then
-//     extrapolated. Constant-at-finer sub-blocks are counted as compressed
-//     regardless of which constant (cst1 vs cst2 registry growth is a
-//     second-order cost, ignored here and documented).
+//   * Covering a whole materialised chunk: materialised.
+//   * Overlapping a materialised chunk in part: its data is read (sampled,
+//     capped) -- uniform at a compressible value, and matching the rest of the
+//     window, it compresses -- then extrapolated.
+//   When S divides C (S * 2, S * 3, ...) the last case never occurs: the row is
+//   EXACT, the fold of the current states. NOTE: this rule is deliberately
+//   CONSERVATIVE for Chunk2A's mixed dual-value patterns; the demo harness
+//   cross-checks it against ground truth. Constant-at-C windows read from the
+//   data are counted as compressed regardless of which constant (cst1 vs cst2
+//   registry growth is a second-order cost, ignored here and documented).
 //
 // CONCURRENCY CONTRACT: call at a QUIESCENT phase boundary only (same contract
 // as flush_pending_deferred_ops: no concurrent writers/compressors, deferred
 // ops drained). The walk reads chunk states and, for finer sizes, chunk data.
 // ============================================================================
 
-#include <cmath>   // std::lround (the extrapolated materialised count)
-#include <cstddef> // std::size_t
-#include <cstdint> // int64_t, uint32_t
-#include <cstdio>  // std::printf (print)
-#include <vector>  // std::vector
+#include <algorithm> // std::sort, std::unique, std::upper_bound
+#include <bit>       // std::bit_width, std::countr_zero
+#include <cmath>     // std::lround (the extrapolated materialised count)
+#include <cstddef>   // std::size_t
+#include <cstdint>   // int64_t, uint32_t
+#include <cstdio>    // std::printf (print)
+#include <vector>    // std::vector
 
 #include "chunk/internal/in_t.h"               // in_t<T>: the element snapshots
 #include "chunk/bit.h"                         // is_bool_like_v, is_packed_bit_v
 #include "chunk/internal/element_access.h"     // internal::as_words: Bit sub-blocks scanned by word
-#include "chunk/internal/bit_words.h"          // bits::scan_range, bits::Uniform
+#include "chunk/internal/bit_words.h"          // bits::scan_range, bits::Uniform, bits::word_t
 #include "chunk/config.h"                      // chunk_config::use_chunk2 / use_chunk2a
 #include "chunk/PMP_CHUNK.h"                   // CHUNK_PMP_NUM_THREADS (the parts per thread)
 #include "chunk/internal/rechunk_cost_model.h" // rechunk_cost_ms, rechunk_is_worth_it
 #include "chunk/internal/chunk_size_policy.h"  // shrink_array::cst_buffer_size
+#include "chunk/internal/env_parse.h"          // env_number (CHUNK_ADVISOR_GRID_BITS)
 
 namespace shrink_array
 {
@@ -111,11 +122,28 @@ struct ChunkSizeReport
 template <typename T>
 struct ChunkSizeAdvisor
 {
+    /// @brief Options::grid_bits' default: CHUNK_ADVISOR_GRID_BITS, read once, else 2.
+    /// @details Measured (shrink_bench chunk2a_dyn, --divisor 4, 16 threads,
+    ///          end of run): 1 (powers of two) 2320 MB, 2 2317 MB, 3 2396 MB.
+    ///          At 3 the cheapest size is often a small step (256 -> 384) whose
+    ///          metadata gain the decider's rate gate refuses -- and it does not
+    ///          fall back to the next best: two arrays stayed at 256.
+    [[nodiscard]] static int default_grid_bits() noexcept
+    {
+        static const int bits = env_number<int>("CHUNK_ADVISOR_GRID_BITS", 2);
+        return bits;
+    }
+
     /// @brief Which sizes analyze() evaluates, its scan cap and the per-chunk metadata cost it adds.
     struct Options
     {
         int     coarser_levels = 4;     ///< evaluate S*2 .. S*2^levels
         int     finer_levels   = 2;     ///< evaluate S/2 .. S/2^levels (data sampled)
+        int     grid_bits      = default_grid_bits(); ///< also every multiple of 64 between
+                                                      ///< S/2^finer_levels and S*2^coarser_levels whose
+                                                      ///< C/64 has at most this many significant bits
+                                                      ///< (2: 192, 384, 768...: steps of at most 50%;
+                                                      ///< 3: 320, 448, 640...: 25%); 0: none
         int64_t max_mat_scans  = 65536; ///< cap on materialized chunks whose DATA is read
         /// Per-chunk metadata beyond sizeof(chunk): tracking-list entry (~0.8 B,
         /// see the GLOBAL COMPRESSION LISTS monitoring table: List Memory /
@@ -256,11 +284,104 @@ struct ChunkSizeAdvisor
             return 2;
         };
 
-        // ── Single pass: classify current states and fold all coarser levels ──
-        // Level l aggregates blocks of 2^l consecutive chunks. A block aggregate
-        // is {kind, key}: kind CST1 / CST2(key) / MAT; folding a child into a
-        // block degrades it per the merge rule above.
-        // ── Classification, coarser fold and sampling selection ─────────────
+        // ── Candidate sizes ───────────────────────────────────────────────────
+        // The powers-of-two ratios S >> k (k <= finer_levels) and S << l
+        // (l <= coarser_levels), plus, between the same bounds, every multiple
+        // of 64 whose C / 64 has at most grid_bits significant bits (2: 64 x
+        // 1, 2, 3, 4, 6, 8, 12, 16, ... -- steps of at most 50%; 3 adds 5, 7,
+        // 10, 14, ...). Never above cst_buffer_size: rechunk_to would refuse it.
+        std::vector<uint32_t> cand;
+        {
+            const auto     cap = static_cast<uint64_t>(shrink_array::cst_buffer_size);
+            const uint32_t lo  = opt.finer_levels > 0 && opt.finer_levels < 32 ? S >> opt.finer_levels : S;
+            const uint64_t hi_wanted =
+                opt.coarser_levels > 0 && opt.coarser_levels < 32 ? uint64_t{S} << opt.coarser_levels : uint64_t{S};
+            const uint64_t hi = hi_wanted < cap ? hi_wanted : (S < cap ? cap : uint64_t{S});
+            cand.push_back(S);
+            for (int k = 1; k <= opt.finer_levels && k < 32; ++k)
+            {
+                const uint32_t sub = S >> k;
+                if (sub >= opt.min_size && is_valid_chunk_size(sub) && S % sub == 0)
+                {
+                    cand.push_back(sub);
+                }
+            }
+            for (int l = 1; l <= opt.coarser_levels && l < 32 && (uint64_t{S} << l) <= cap; ++l)
+            {
+                cand.push_back(S << l);
+            }
+            if (opt.grid_bits > 0)
+            {
+                const uint64_t lo_grid = lo > opt.min_size ? lo : opt.min_size;
+                for (uint64_t m = (lo_grid + 63) / 64; m * 64 <= hi; ++m)
+                {
+                    if (std::bit_width(m) - static_cast<unsigned>(std::countr_zero(m)) <=
+                        static_cast<unsigned>(opt.grid_bits))
+                    {
+                        cand.push_back(static_cast<uint32_t>(m * 64));
+                    }
+                }
+            }
+            std::sort(cand.begin(), cand.end());
+            cand.erase(std::unique(cand.begin(), cand.end()), cand.end());
+        }
+        const auto n_cand = static_cast<int>(cand.size());
+
+        // ── The window model ──────────────────────────────────────────────────
+        // At a candidate size C the array is cut into windows [w*C, (w+1)*C)
+        // of the current extent L = nc * S (the last one shorter). A window
+        // stays compressed iff it holds one compressible value -- read from
+        // the CURRENT chunks it overlaps:
+        //   * inside a run of constant chunks of one (kind, key): compressed.
+        //     Counted exactly, per run, without reading any data;
+        //   * covering a whole materialised chunk: materialised (the chunk
+        //     was not compressible at S, it is not at C either: the coarser
+        //     fold's rule);
+        //   * overlapping a materialised chunk only in part: the ambiguous
+        //     case -- the overlapped data may be uniform at the window's value
+        //     (a finer or a misaligned size). Settled by reading the data, on
+        //     a sample of the materialised chunks.
+        // When S divides C every window covers whole chunks: no ambiguous
+        // window, the row is exact -- the coarser fold, at any multiple. When
+        // C divides S the ambiguous windows are the sub-blocks of the
+        // materialised chunks: the former finer sampling.
+        //
+        // The ambiguous window is attributed to ONE owner, its first
+        // materialised chunk overlapped in part (only its first and last
+        // chunks can be), so that sampling the owners counts each once; the
+        // count is scaled by mat0 / scanned (picked owners).
+        const int64_t L    = nc * static_cast<int64_t>(S);
+        const auto    nwin = [&](uint32_t c) { return (L + c - 1) / c; };
+
+        // Windows of size C inside the constant run of chunks [r0, r1).
+        const auto windows_inside = [&](int64_t r0, int64_t r1, uint32_t c) -> int64_t
+        {
+            const int64_t a    = r0 * S;
+            const int64_t wmin = (a + c - 1) / c;
+            const int64_t wmax = r1 == nc ? nwin(c) - 1 : (r1 * S) / c - 1;
+            return wmax >= wmin ? wmax - wmin + 1 : 0;
+        };
+
+        struct Seg
+        {
+            int64_t     start;
+            int64_t     end;
+            int         kind; // -1: none, 0 cst1, 1 cst2, 2 mat
+            const void* key;
+        };
+        const auto count_run = [&](const Seg& seg, std::vector<int64_t>& inside)
+        {
+            if (seg.kind < 0 || seg.kind == 2)
+            {
+                return;
+            }
+            for (int ci = 0; ci < n_cand; ++ci)
+            {
+                inside[static_cast<std::size_t>(ci)] += windows_inside(seg.start, seg.end, cand[static_cast<std::size_t>(ci)]);
+            }
+        };
+
+        // ── Classification, constant runs and sampling selection ──────────────
         // No per-chunk scratch array: each pass classifies the chunks it reads
         // (classify() is pure-read -- const accessors, a pointer compare against
         // stable sentinels -- so concurrent reads are race-free; analyze() is
@@ -270,11 +391,11 @@ struct ChunkSizeAdvisor
         // 1-2 s of a 6.5 s run on the 64-thread chunk2a_dyn bench; classifying
         // twice costs a fraction of that.
         //
-        // Work unit: a PART, a contiguous run of whole super-blocks of 2^L chunks.
-        //  - the coarser fold: every level-l block (l <= L) lies inside one
-        //    super-block, so each part folds independently with its own run[],
-        //    and the per-level counts are summed -- the same integers as the
-        //    sequential fold;
+        // Work unit: a PART, a contiguous run of chunks.
+        //  - the runs: a part counts the runs that lie inside it, and leaves its
+        //    first and last ones (they may continue in the parts around it) to
+        //    a serial merge -- the same runs, so the same integers, as a
+        //    sequential walk;
         //  - each part counts its materialised chunks; the selection gives part p
         //    the running count of the parts before it, so it picks exactly the
         //    chunks the sequential walk picked (every stride-th materialised
@@ -284,35 +405,30 @@ struct ChunkSizeAdvisor
         // runs the same code in order.
         int64_t mat0 = 0;
 
-        const int coarser = opt.coarser_levels;
-        struct Agg
+        std::vector<int64_t> inside(static_cast<std::size_t>(n_cand), 0); // windows inside constant runs
+        std::vector<int64_t> found(static_cast<std::size_t>(n_cand), 0);  // compressible ambiguous windows
+        bool                 any_sampled = false;                         // a candidate that S does not divide
+        for (const uint32_t c : cand)
         {
-            int         kind;
-            const void* key;
-        }; // kind: 0 cst1, 1 cst2, 2 mat
-        std::vector<int64_t> mat_at(static_cast<std::size_t>(coarser) + 1, 0); // materialized blocks per level
-
-        const int            finer = opt.finer_levels;
-        std::vector<int64_t> fine_cst(static_cast<std::size_t>(finer) + 1, 0); // constant sub-blocks found
+            any_sampled = any_sampled || c % S != 0;
+        }
         int64_t              scanned = 0;
-        std::vector<int64_t> picks; // chunks whose data the finer sampling reads
-
-        const int64_t super   = int64_t{1} << (coarser > 0 ? coarser : 0);
-        const int64_t n_super = (nc + super - 1) / super;
+        std::vector<int64_t> picks; // chunks whose data the sampling reads
 
         int64_t                           n_parts  = 1;
         int64_t                           stride   = 1;
         bool                              sampling = false;
-        std::vector<int64_t>              part_mat;   // materialised chunks per part, then their offsets
-        std::vector<std::vector<int64_t>> part_picks; // the chunks each part selected
+        std::vector<int64_t>              part_mat;    // materialised chunks per part, then their offsets
+        std::vector<Seg>                  part_first;  // each part's first run
+        std::vector<Seg>                  part_last;   // ... and its last one
+        std::vector<char>                 part_single; // the part is one run
+        std::vector<std::vector<int64_t>> part_picks;  // the chunks each part selected
 
-        // Chunks [j0, j1) of part p (whole super-blocks).
+        // Chunks [j0, j1) of part p.
         const auto part_range = [&](int64_t p, int64_t& j0, int64_t& j1)
         {
-            const int64_t s0 = n_super * p / n_parts;
-            const int64_t s1 = n_super * (p + 1) / n_parts;
-            j0               = s0 * super;
-            j1               = (s1 * super) < nc ? (s1 * super) : nc;
+            j0 = nc * p / n_parts;
+            j1 = nc * (p + 1) / n_parts;
         };
 
 #pragma omp parallel if (nc > 16384)
@@ -320,26 +436,30 @@ struct ChunkSizeAdvisor
 #pragma omp single
             {
                 n_parts = static_cast<int64_t>(CHUNK_PMP_NUM_THREADS) * 4;
-                if (n_parts > n_super)
+                if (n_parts > nc)
                 {
-                    n_parts = n_super > 0 ? n_super : 1;
+                    n_parts = nc;
                 }
                 part_mat.assign(static_cast<std::size_t>(n_parts), 0);
+                part_first.assign(static_cast<std::size_t>(n_parts), Seg{0, 0, -1, nullptr});
+                part_last.assign(static_cast<std::size_t>(n_parts), Seg{0, 0, -1, nullptr});
+                part_single.assign(static_cast<std::size_t>(n_parts), 0);
                 part_picks.assign(static_cast<std::size_t>(n_parts), {});
             }
             // (implicit barrier: n_parts and the per-part vectors are set)
 
-            // Coarser fold + materialised count, one part per iteration.
+            // Runs + materialised count, one part per iteration.
             {
-                std::vector<Agg>     run(static_cast<std::size_t>(coarser) + 1, Agg{0, nullptr});
-                std::vector<int64_t> mat_loc(static_cast<std::size_t>(coarser) + 1, 0);
+                std::vector<int64_t> inside_loc(static_cast<std::size_t>(n_cand), 0);
 #pragma omp for schedule(dynamic, 1) nowait
                 for (int64_t p = 0; p < n_parts; ++p)
                 {
                     int64_t j0 = 0;
                     int64_t j1 = 0;
                     part_range(p, j0, j1);
-                    int64_t m = 0;
+                    int64_t m          = 0;
+                    Seg     cur        = {j0, j0, -1, nullptr};
+                    bool    first_done = false;
                     for (int64_t j = j0; j < j1; ++j)
                     {
                         const void* key  = nullptr;
@@ -348,44 +468,73 @@ struct ChunkSizeAdvisor
                         {
                             ++m;
                         }
-
-                        for (int l = 1; l <= coarser; ++l)
+                        if (kind == cur.kind && key == cur.key)
                         {
-                            Agg& agg = run[static_cast<std::size_t>(l)];
-                            if ((j & ((int64_t{1} << l) - 1)) == 0)
+                            cur.end = j + 1;
+                            continue;
+                        }
+                        if (cur.kind >= 0)
+                        {
+                            if (first_done)
                             {
-                                agg = {kind, key}; // block opens with this child
+                                count_run(cur, inside_loc);
                             }
-                            else if (agg.kind != 2 && (agg.kind != kind || agg.key != key))
+                            else
                             {
-                                agg.kind = 2; // mixed constants -> materialized
-                            }
-                            if (((j + 1) & ((int64_t{1} << l) - 1)) == 0 || j + 1 == nc)
-                            {
-                                if (agg.kind == 2)
-                                {
-                                    ++mat_loc[static_cast<std::size_t>(l)]; // commit block at boundary
-                                }
+                                part_first[static_cast<std::size_t>(p)] = cur;
+                                first_done                              = true;
                             }
                         }
+                        cur = {j, j + 1, kind, key};
+                    }
+                    if (first_done)
+                    {
+                        part_last[static_cast<std::size_t>(p)] = cur;
+                    }
+                    else
+                    {
+                        part_first[static_cast<std::size_t>(p)]  = cur;
+                        part_single[static_cast<std::size_t>(p)] = 1;
                     }
                     part_mat[static_cast<std::size_t>(p)] = m;
                 }
-                for (int l = 1; l <= coarser; ++l)
+                for (int ci = 0; ci < n_cand; ++ci)
                 {
-                    if (mat_loc[static_cast<std::size_t>(l)] != 0)
+                    if (inside_loc[static_cast<std::size_t>(ci)] != 0)
                     {
 #pragma omp atomic
-                        mat_at[static_cast<std::size_t>(l)] += mat_loc[static_cast<std::size_t>(l)];
+                        inside[static_cast<std::size_t>(ci)] += inside_loc[static_cast<std::size_t>(ci)];
                     }
                 }
             }
 #pragma omp barrier
 
-            // mat0, the sampling stride, and each part's starting rank among the
-            // materialised chunks (exclusive prefix sum, in place).
+            // The runs across part boundaries; mat0, the sampling stride, and
+            // each part's starting rank among the materialised chunks
+            // (exclusive prefix sum, in place).
 #pragma omp single
             {
+                Seg open = {0, 0, -1, nullptr};
+                for (int64_t p = 0; p < n_parts; ++p)
+                {
+                    const Seg& first = part_first[static_cast<std::size_t>(p)];
+                    if (open.kind == first.kind && open.key == first.key && open.end == first.start)
+                    {
+                        open.end = first.end;
+                    }
+                    else
+                    {
+                        count_run(open, inside);
+                        open = first;
+                    }
+                    if (part_single[static_cast<std::size_t>(p)] == 0)
+                    {
+                        count_run(open, inside);
+                        open = part_last[static_cast<std::size_t>(p)];
+                    }
+                }
+                count_run(open, inside);
+
                 int64_t run_count = 0;
                 for (int64_t p = 0; p < n_parts; ++p)
                 {
@@ -394,18 +543,18 @@ struct ChunkSizeAdvisor
                     run_count += m;
                 }
                 mat0     = run_count;
-                sampling = finer > 0 && mat0 > 0 && S >= opt.min_size * 2;
+                sampling = any_sampled && mat0 > 0;
                 if (sampling)
                 {
                     stride = mat0 > opt.max_mat_scans ? (mat0 + opt.max_mat_scans - 1) / opt.max_mat_scans : 1;
                 }
             }
-            // (implicit barrier: mat0, stride and the offsets are set)
+            // (implicit barrier: inside, mat0, stride and the offsets are set)
 
-            // ── Finer sizes: sample the DATA of materialized chunks ───────────
-            // Selection: every stride-th materialised chunk -- at most
-            // max_mat_scans, since stride = ceil(mat0 / max_mat_scans) -- the same
-            // chunks as the sequential walk, found part by part.
+            // ── Sampling: pick the materialised chunks whose DATA is read ─────
+            // Every stride-th materialised chunk -- at most max_mat_scans, since
+            // stride = ceil(mat0 / max_mat_scans) -- the same chunks as the
+            // sequential walk, found part by part.
             if (sampling)
             {
 #pragma omp for schedule(dynamic, 1)
@@ -441,128 +590,214 @@ struct ChunkSizeAdvisor
             }
             // (implicit barrier: picks is complete)
 
+            // ── The ambiguous windows of each picked chunk ────────────────────
             {
-                std::vector<int64_t> fine_loc(static_cast<std::size_t>(finer) + 1, 0);
-                const auto           n_picks = static_cast<int64_t>(picks.size());
-#pragma omp for schedule(static) nowait
+                std::vector<int64_t>  found_loc(static_cast<std::size_t>(n_cand), 0);
+                std::vector<uint32_t> seg_start; // the picked chunk's runs of equal values ...
+                std::vector<T>        seg_val;   // ... and their values
+
+                // Element i of a materialised buffer, and whether [b, e) of it
+                // is uniform (its value in `val`).
+                const auto value_of = [](const T* v, std::size_t i) -> T
+                {
+                    if constexpr (is_packed_bit_v<T>)
+                    {
+                        const auto* w = internal::as_words(v);
+                        return T{((w[i / bits::word_bits] >> (i % bits::word_bits)) & 1u) != 0};
+                    }
+                    else
+                    {
+                        return v[i];
+                    }
+                };
+                const auto uniform_range = [&](const T* v, std::size_t b, std::size_t e, T& val) -> bool
+                {
+                    if constexpr (is_packed_bit_v<T>)
+                    {
+                        const bits::Uniform u = bits::scan_range(internal::as_words(v), b, e - b);
+                        val                   = T{u == bits::Uniform::all_true};
+                        return u != bits::Uniform::mixed;
+                    }
+                    else
+                    {
+                        for (std::size_t i = b + 1; i < e; ++i)
+                        {
+                            if (!(v[i] == v[b]))
+                            {
+                                return false;
+                            }
+                        }
+                        val = v[b];
+                        return true;
+                    }
+                };
+
+                const auto n_picks = static_cast<int64_t>(picks.size());
+#pragma omp for schedule(dynamic, 64) nowait
                 for (int64_t p = 0; p < n_picks; ++p)
                 {
-                    const auto& chunk = tab.chunk_list[picks[static_cast<std::size_t>(p)]];
-                    const T*    v     = chunk.values_load();
-                    for (int k = 1; k <= finer; ++k)
+                    const int64_t j  = picks[static_cast<std::size_t>(p)];
+                    const T*      vj = tab.chunk_list[j].values_load();
+
+                    // Chunk j's runs of equal values: [b, e) of it is uniform iff
+                    // b and e - 1 fall in the same run.
+                    seg_start.clear();
+                    seg_val.clear();
+                    seg_start.push_back(0);
+                    seg_val.push_back(value_of(vj, 0));
+                    if constexpr (is_packed_bit_v<T>)
                     {
-                        const uint32_t sub = S >> k;
-                        if (sub < opt.min_size)
+                        // A word at a time: the bits that differ from the one below.
+                        const auto*       w     = internal::as_words(vj);
+                        const std::size_t nw    = (S + bits::word_bits - 1) / bits::word_bits;
+                        auto              below = static_cast<bits::word_t>(w[0] & 1u);
+                        for (std::size_t k = 0; k < nw; ++k)
                         {
-                            break;
-                        }
-                        if (!is_valid_chunk_size(sub) || S % sub != 0)
-                        {
-                            continue; // 192 / 2 = 96: not a chunk size (nor a candidate below)
-                        }
-                        for (uint32_t b = 0; b < S; b += sub)
-                        {
-                            bool cst = true;
-                            T    run{}; // the sub-block's value, when uniform
-                            if constexpr (is_packed_bit_v<T>)
+                            const bits::word_t x = w[k];
+                            bits::word_t       t = x ^ ((x << 1) | below);
+                            below                = x >> (bits::word_bits - 1);
+                            while (t != 0)
                             {
-                                // Bit: v is words of bits (bit.h), a sub-block
-                                // is a bit range -- classified word by word.
-                                const bits::Uniform u = bits::scan_range(internal::as_words(v), b, sub);
-                                cst                   = u != bits::Uniform::mixed;
-                                run                   = T{u == bits::Uniform::all_true};
-                            }
-                            else
-                            {
-                                for (uint32_t i = 1; i < sub; ++i)
+                                const std::size_t i = (k * bits::word_bits) + static_cast<std::size_t>(std::countr_zero(t));
+                                t &= t - 1;
+                                if (i == 0 || i >= S)
                                 {
-                                    if (!(v[b + i] == v[b]))
-                                    {
-                                        cst = false;
-                                        break;
-                                    }
+                                    continue;
                                 }
-                                if (cst)
-                                {
-                                    run = v[b];
-                                }
+                                seg_start.push_back(static_cast<uint32_t>(i));
+                                seg_val.push_back(value_of(vj, i));
                             }
-                            // A sub-block that is merely uniform is NOT compressible:
-                            // the runtime only ever stores a chunk as a constant when
-                            // that constant is one it can REPRESENT -- cst_val1 (the
-                            // designated first value), plus cst_val2 for chunk2/2A.
-                            // A run of 7.0 stays materialised in v1 whatever its
-                            // length. Counting every uniform run made the model
-                            // predict that almost everything would compress after a
-                            // split: on tab1 it forecast a 5743 MB gain where the
-                            // measured one was 251 MB, and the decider acted on it.
-                            // Gate on the value, not just on the uniformity.
-                            if (cst)
+                        }
+                    }
+                    else
+                    {
+                        for (uint32_t i = 1; i < S; ++i)
+                        {
+                            if (!(vj[i] == vj[i - 1]))
                             {
-                                cst = compressible_value(run);
+                                seg_start.push_back(i);
+                                seg_val.push_back(vj[i]);
                             }
-                            fine_loc[static_cast<std::size_t>(k)] += cst ? 1 : 0;
+                        }
+                    }
+                    const auto seg_of = [&](int64_t i)
+                    {
+                        return std::upper_bound(seg_start.begin(), seg_start.end(), static_cast<uint32_t>(i)) -
+                               seg_start.begin() - 1;
+                    };
+
+                    const int64_t x0 = j * S;
+                    const int64_t x1 = x0 + S;
+                    for (int ci = 0; ci < n_cand; ++ci)
+                    {
+                        const uint32_t c = cand[static_cast<std::size_t>(ci)];
+                        if (c % S == 0)
+                        {
+                            continue; // whole chunks only: no ambiguous window
+                        }
+                        for (int64_t w = x0 / c; w * c < x1; ++w)
+                        {
+                            const int64_t a0 = w * c;
+                            const int64_t a1 = a0 + c < L ? a0 + c : L;
+                            if (a0 <= x0 && x1 <= a1)
+                            {
+                                continue; // covers chunk j whole: materialised
+                            }
+                            const int64_t ca = a0 / S;
+                            const int64_t cb = (a1 - 1) / S;
+                            if (j != ca)
+                            {
+                                // j is the window's last chunk: the first one owns
+                                // the window when it is materialised in part too.
+                                const void* key = nullptr;
+                                if (a0 > ca * S && classify(tab.chunk_list[ca], key) == 2)
+                                {
+                                    continue;
+                                }
+                            }
+                            bool ok    = true;
+                            bool has_v = false;
+                            T    val{};
+                            for (int64_t cc = ca; cc <= cb && ok; ++cc)
+                            {
+                                const int64_t p0 = a0 > cc * S ? a0 : cc * S;
+                                const int64_t p1 = a1 < (cc + 1) * S ? a1 : (cc + 1) * S;
+                                const auto&   ch = tab.chunk_list[cc];
+                                const void*   key = nullptr;
+                                T             part{};
+                                if (classify(ch, key) != 2)
+                                {
+                                    part = ch.read_value_scan(0); // the constant (a scan read: no app stats)
+                                }
+                                else if (p0 == cc * S && p1 == (cc + 1) * S)
+                                {
+                                    ok = false; // a whole materialised chunk
+                                }
+                                else if (cc == j)
+                                {
+                                    const auto s = seg_of(p0 - x0);
+                                    ok           = s == seg_of(p1 - 1 - x0);
+                                    part         = seg_val[static_cast<std::size_t>(s)];
+                                }
+                                else
+                                {
+                                    ok = uniform_range(ch.values_load(), static_cast<std::size_t>(p0 - (cc * S)),
+                                                       static_cast<std::size_t>(p1 - (cc * S)), part);
+                                }
+                                if (ok && has_v)
+                                {
+                                    ok = part == val;
+                                }
+                                val   = part;
+                                has_v = true;
+                            }
+                            // Uniform is not enough: the value must be one the
+                            // variant can store as a constant (compressible_value).
+                            found_loc[static_cast<std::size_t>(ci)] += ok && compressible_value(val) ? 1 : 0;
                         }
                     }
                 }
-                for (int k = 1; k <= finer; ++k)
+                for (int ci = 0; ci < n_cand; ++ci)
                 {
-                    if (fine_loc[static_cast<std::size_t>(k)] != 0)
+                    if (found_loc[static_cast<std::size_t>(ci)] != 0)
                     {
 #pragma omp atomic
-                        fine_cst[static_cast<std::size_t>(k)] += fine_loc[static_cast<std::size_t>(k)];
+                        found[static_cast<std::size_t>(ci)] += found_loc[static_cast<std::size_t>(ci)];
                     }
                 }
             }
         }
 
         // ── Assemble the table (ascending sizes) ──────────────────────────────
-        const auto push = [&](uint32_t size, int64_t nchunks, int64_t mat, bool exact)
+        for (int ci = 0; ci < n_cand; ++ci)
         {
+            const uint32_t c     = cand[static_cast<std::size_t>(ci)];
+            const bool     exact = c % S == 0;
+            const int64_t  nch   = nwin(c);
+            int64_t        mat   = 0;
+            if (c == S)
+            {
+                rep.cur = static_cast<int>(rep.table.size());
+                mat     = mat0;
+            }
+            else
+            {
+                const double amb = scanned > 0 ? static_cast<double>(found[static_cast<std::size_t>(ci)]) *
+                                                     static_cast<double>(mat0) / static_cast<double>(scanned)
+                                               : 0.;
+                mat = nch - inside[static_cast<std::size_t>(ci)] - std::lround(amb);
+                mat = mat < 0 ? 0 : (mat > nch ? nch : mat);
+            }
             ChunkSizeEstimate est;
-            est.size      = size;
-            est.n_chunks  = nchunks;
+            est.size      = c;
+            est.n_chunks  = nch;
             est.mat       = mat;
-            est.cst       = nchunks - mat;
+            est.cst       = nch - mat;
             est.exact     = exact;
-            est.mem_bytes = (static_cast<double>(nchunks) * rep.meta_bytes) +
-                            (static_cast<double>(mat) * static_cast<double>(Arr::chunk_type::storage_units(size)) *
+            est.mem_bytes = (static_cast<double>(nch) * rep.meta_bytes) +
+                            (static_cast<double>(mat) * static_cast<double>(Arr::chunk_type::storage_units(c)) *
                              sizeof(T)); // Bit: size / 8 bytes, not size
             rep.table.push_back(est);
-        };
-
-        for (int k = finer; k >= 1; --k)
-        {
-            const uint32_t sub = S >> k;
-            if (sub < opt.min_size || !is_valid_chunk_size(sub) || S % sub != 0)
-            {
-                continue;
-            }
-            // constant fraction among SCANNED mat sub-blocks, extrapolated to all
-            const int64_t sub_per_chunk = int64_t{1} << k;
-            const int64_t scanned_subs  = scanned * sub_per_chunk;
-            const double  frac_cst = scanned_subs > 0 ? static_cast<double>(fine_cst[static_cast<std::size_t>(k)]) /
-                                                           static_cast<double>(scanned_subs)
-                                                      : 0.;
-            const int64_t nchunks  = nc * sub_per_chunk; // cst chunks split into cst children
-            const auto    mat      = static_cast<int64_t>(
-                std::lround(static_cast<double>(mat0) * static_cast<double>(sub_per_chunk) * (1. - frac_cst)));
-            push(sub, nchunks, mat, /*exact=*/false);
-        }
-
-        rep.cur = static_cast<int>(rep.table.size());
-        push(S, nc, mat0, /*exact=*/true);
-
-        for (int l = 1; l <= coarser; ++l)
-        {
-            // Never propose a size the shared cst buffers can't cover: rechunk_to
-            // would refuse it (cst_buffer_size ceiling). Stop the coarser walk here.
-            if ((S << l) > shrink_array::cst_buffer_size)
-            {
-                break;
-            }
-            const int64_t nchunks = (nc + (int64_t{1} << l) - 1) >> l;
-            push(S << l, nchunks, mat_at[static_cast<std::size_t>(l)], /*exact=*/true);
         }
 
         rep.best = 0;

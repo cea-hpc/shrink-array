@@ -61,8 +61,12 @@ the tag's checksum to the recipe.
 
 - Chunk sizes may be multiples of 64 as well as powers of two (`CHUNK_SIZE`, `CHUNK_STATIC_SIZES`,
   `set_chunk_size`, `rechunk_to`): 192, 384, 576... `ParamChunk::check_chunk_size()` tells a valid
-  size. `rechunk_to` moves between sizes that do not divide each other (256 -> 384). The advisor
-  does not propose such sizes yet.
+  size. `rechunk_to` moves between sizes that do not divide each other (256 -> 384).
+- `ChunkSizeAdvisor` evaluates multiples of 64 as well (`Options::grid_bits`, set by
+  `CHUNK_ADVISOR_GRID_BITS`, 2 by default: every C whose C / 64 has at most 2 significant bits --
+  192, 384, 768... -- between S / 4 and S * 16; 3 adds 320, 448, 640...). A multiple of the current size (S * 3) is exact, like S * 2; the others are
+  read from the sampled data across chunk boundaries. `advisor_demo` checks them against arrays
+  built at those sizes.
 
 ### Changed
 

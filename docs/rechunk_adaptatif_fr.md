@@ -34,14 +34,30 @@ choisit s'il faut changer et vers quelle taille, et `rechunk_to()` fait la recon
 taille candidate, le nombre de chunks, le nombre de chunks matérialisés, et la mémoire
 estimée (métadonnées + données matérialisées).
 
-- **Tailles plus grosses** (4 niveaux, jusqu'à ×16) : un **repliement exact** de l'état réel
-  des chunks. Un chunk de taille 2S est compressible si ses deux sous-chunks sont compressés
-  à la même constante ; sinon il est matérialisé.
-- **Tailles plus fines** (2 niveaux, jusqu'à ÷4) : un **échantillonnage** des données des
-  chunks matérialisés (65 536 au plus), qui compte les sous-blocs uniformes. Pour Chunk et
-  Chunk2, un sous-bloc n'est compté compressible que s'il est à une valeur représentable
-  (première ou seconde valeur). Pour **Chunk2A**, toute valeur uniforme l'est, puisque chaque
-  chunk enregistre sa propre seconde valeur.
+Les candidates : les rapports en puissances de deux (S×2 à S×16, S÷2 et S÷4), et entre ces
+bornes tout multiple de 64 dont C / 64 a au plus `Options::grid_bits` bits significatifs
+(`CHUNK_ADVISOR_GRID_BITS` ; 2 par défaut : 192, 384, 768, 1536... : des pas de 50 % au plus ;
+3 ajoute 320, 448, 640, 896... : des pas de 25 %). Chaque ligne découpe le tableau en fenêtres de C éléments, lues sur les chunks actuels :
+
+- une fenêtre **dans une suite de chunks compressés à la même constante** est compressée :
+  comptée exactement, à partir des seuls états des chunks ;
+- une fenêtre qui **couvre un chunk matérialisé entier** est matérialisée ;
+- une fenêtre qui **chevauche en partie un chunk matérialisé** (taille plus fine ou mal
+  alignée) est tranchée en lisant les données, sur un **échantillon** des chunks matérialisés
+  (65 536 au plus) : elle est compressée si elle ne contient qu'une valeur, et une valeur
+  représentable. Pour Chunk et Chunk2, c'est la première ou la seconde valeur ; pour
+  **Chunk2A**, toute valeur, puisque chaque chunk enregistre sa propre seconde valeur.
+
+Quand S divise C (S×2, S×3, S×4...), le dernier cas ne se présente jamais : la ligne est un
+**repliement exact** de l'état réel des chunks. `advisor_demo` vérifie chaque ligne contre des
+tableaux construits à ces tailles, depuis S = 256 et S = 1024.
+
+Pourquoi 2 et pas 3 (shrink_bench chunk2a_dyn, `--divisor 4`, 16 threads, mémoire en fin de
+run) : 1 bit (puissances de deux seules) 2320 Mo, 2 bits 2317 Mo, 3 bits 2396 Mo. Les
+prédictions sont aussi justes à 3 bits, mais la taille la moins chère est alors souvent un
+petit pas (256 -> 384) dont le gain en métadonnées est refusé par le seuil de débit du
+décideur (`coarsen_min_meta_rate`) ; le décideur ne se rabat pas sur la taille suivante, et deux
+tableaux sont restés à 256.
 
 La classification des chunks se fait à la volée, sans tableau de travail : jusqu'en
 septembre 2026, chaque analyse allouait un octet et un pointeur par chunk (140 Mo pour un
