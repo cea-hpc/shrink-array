@@ -219,7 +219,7 @@ option(USE_GPERF "Enable gperftools CPU profiling" OFF)
 
 if(USE_GPERF)
     message(STATUS "GPerftools profiling enabled")
-    # On cherche la bibliothèque 'profiler'
+    # The 'profiler' library
     find_library(GPERF_PROFILER profiler)
     if(GPERF_PROFILER)
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${GPERF_PROFILER}")
@@ -808,7 +808,7 @@ if(SHRINK_ARRAY_BUILD_TESTS AND BUILD_TESTING AND Python3_Interpreter_FOUND)
     add_test(NAME check_docs
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_docs.py ${PROJECT_SOURCE_DIR})
     set_property(TEST check_docs PROPERTY LABELS "validation;docs")
-    # cpp23 branch only: a merge of gen-dev-31 brings back no C++20 idiom the
+    # cpp23 branch only: a merge of develop brings back no C++20 idiom the
     # branch has retired -- iostream output, derived(), an unexplained CRTP
     # downcast -- nor an editor backup (scripts/check_cpp23_idioms.py).
     add_test(NAME check_cpp23_idioms

@@ -105,7 +105,7 @@ spack install shrink-array +openmp sizes=256,1024 %gcc@15
 Its variants are the options above: `+openmp` (`OMP`), `sizes=` (`CHUNK_STATIC_SIZES`), `+dyn`
 (`CHUNK_BUILD_DYN`), `~fast_alloc` (`CHUNK_STD_ALLOC`), `+stats`, `+checks` (`CHECK_OPTIM`),
 `+second_value_indexed`, `+examples`; `spack info shrink-array` lists them. The versions are the
-branches (`main`, `cpp23`, `develop` for `gen-dev-31`), fetched from GitHub with your own git
+branches (`main`, `cpp23`, `develop`), fetched from GitHub with your own git
 credentials; `spack develop` builds a local clone instead.
 
 ## Use it from CMake

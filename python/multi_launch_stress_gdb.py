@@ -79,18 +79,17 @@ exec_timeout = args.exec_timeout
 #  Executable list
 # ============================================================
 
-# Ces noms etaient FAUX bien avant la fusion check/perf : les cibles ont
-# toujours porte une declinaison de taille, il n'a jamais existe de
-# shrink_bench_chunk_check tout court. Corriges ici sur la declinaison dyn, la
-# meme que le defaut de multi_launch_stress.py -- et sans le _check,
-# qui est desormais un drapeau d'execution (MODE_ARGS plus bas).
+# These names were WRONG well before check and perf were merged: the targets
+# have always carried a size, there never was a bare shrink_bench_chunk_check.
+# Fixed here on the dyn size, multi_launch_stress.py's default -- and without
+# the _check, now a run-time flag (MODE_ARGS below).
 base_exec_list = [
     "./shrink_bench_chunk_dyn",
     "./shrink_bench_chunk2_dyn",
     "./shrink_bench_chunk2a_dyn",
 ]
 
-# check et perf sont un seul binaire depuis la fusion ; le mode se choisit ici.
+# check and perf are one binary since they were merged; the mode is chosen here.
 MODE_ARGS = ["--mode", "check"]
 
 executables = base_exec_list[:] if args.all_exec else ["./shrink_bench_chunk2_dyn"]

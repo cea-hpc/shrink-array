@@ -1,0 +1,6 @@
+# One name per author in `git log` / `git shortlog` (the commits themselves are unchanged).
+Philippe Ballereau <philippe.ballereau@cea.fr>
+Philippe Ballereau <philippe.ballereau@cea.fr> <Philippe.BALLEREAU@cea.fr>
+Philippe Ballereau <philippe.ballereau@cea.fr> <38394310+phil12692@users.noreply.github.com>
+Philippe Ballereau <philippe.ballereau@cea.fr> <ballereaup@workstation>
+Philippe Ballereau <philippe.ballereau@cea.fr> <philippe@workstation.localdomain>

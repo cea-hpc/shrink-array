@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-"""cpp23 branch: what a merge of gen-dev-31 must not bring back.
+"""cpp23 branch: what a merge of develop must not bring back.
 
-gen-dev-31 is C++20 and is merged into cpp23 regularly. Its new code arrives
+develop is C++20 and is merged into cpp23 regularly. Its new code arrives
 in the C++20 idioms the cpp23 branch has retired, and nothing failed when it
 did: a std::cout << std::fixed in bench_stats.cpp put back the number-format
 drift 14721603 had removed, and a merge committed an editor backup

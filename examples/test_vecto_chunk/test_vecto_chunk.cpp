@@ -63,7 +63,7 @@ double convert_memory(double memoryValue)
     }
     else
     {
-        std::println(stderr, "Erreur : Impossible d'ouvrir le fichier.");
+        std::println(stderr, "Error: cannot open the file.");
     }
 
     return megabytes;
