@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-// element_ref_validation: what a check build accepts and refuses through
-// operator[] (internal/element_ref.h).
+// element_ref_validation: what operator[] accepts and refuses (internal/element_ref.h).
 //
 //   - Built without ELEMENT_REF_CASE: an executable. Every use of a[i] that
 //     code written for std::vector makes -- assignment, a[i] = b[j], compound
@@ -27,7 +26,9 @@
 //   - Built with ELEMENT_REF_CASE=N (1..8): one misuse of a NAMED element proxy
 //     (`auto v = a[i];` then v used), which must NOT compile. The ctest builds
 //     the object target and passes when the compiler output carries the
-//     ElementRef message.
+//     ElementRef message. N = 9: an element passed to printf, refused by the
+//     compiler itself (chunk_hardening's -Werror=conditionally-supported for
+//     GCC, an error by default for clang).
 //
 // Run by ctest; the variant comes from the CHUNK_VARIANT_* macro of the target.
 
@@ -71,7 +72,7 @@ int usage()
 {
     static_assert(std::is_same_v<Array<double>::reference, ElementRef<Array<double>::proxy_type, double>> ||
                       !build_config::strict_element_ref,
-                  "check builds: operator[] returns an ElementRef");
+                  "operator[] returns an ElementRef (the bare proxy with -DCHUNK_LOOSE_ELEMENT_REF)");
     constexpr int n = 1000;
     Array<double> a(n);
     Array<double> b(n);
@@ -187,8 +188,10 @@ void misuse()
     auto v = a[0]; // a copy
     auto w = v;
     (void)w;
+    #elif ELEMENT_REF_CASE == 9
+    std::printf("%f\n", a[0]); // the proxy through `...`, not the value (GCC: -Werror=conditionally-supported)
     #else
-        #error "ELEMENT_REF_CASE: 1..8"
+        #error "ELEMENT_REF_CASE: 1..9"
     #endif
 }
 #endif

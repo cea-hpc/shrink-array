@@ -69,14 +69,15 @@ Absents : `data()`, les itérateurs mutables, `insert` / `erase` au milieu, un t
 | `a[i] += v;` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=` | opérations composées, pour les types qui les ont ; renvoient un proxy |
 | `++a[i]`, `--a[i]` | renvoient un proxy ; `a[i]++` renvoie l'ancienne valeur sous forme de `T` |
 | `a[i] == v`, `a[i] != v` | comparent la valeur courante ; les autres comparaisons passent par la conversion en `T` |
+| `std::printf("%f", a[i])` | refusé : `...` recevrait le proxy, pas la valeur (GCC : `-Werror=conditionally-supported`, posé par la bibliothèque ; clang : toujours). Écrire `double(a[i])` |
 
 `auto x = a[i];` garde le proxy, qui suit l'élément. Un proxy ne doit pas survivre au
-stockage du tableau : toute opération **(S)** l'invalide. Dans les builds de vérification
-(Debug, `CHECK_OPTIM`), `operator[]`, `at()`, `front()` et `back()` rendent le proxy enveloppé
+stockage du tableau : toute opération **(S)** l'invalide. Dans tous les builds,
+`operator[]`, `at()`, `front()` et `back()` rendent le proxy enveloppé
 dans un `ElementRef` (`internal/element_ref.h`) que seul un temporaire peut utiliser :
 `auto x = a[i];` puis tout usage de `x` ne compile pas, avec un message. Un proxy gardé
-volontairement : `std::move(x) = v;`, ou `a.element_proxy(i)`. `-DCHUNK_LOOSE_ELEMENT_REF`
-désactive la vérification.
+volontairement : `std::move(x) = v;`, ou `a.element_proxy(i)`. L'enveloppe ne coûte rien à
+l'exécution (inlinée de force). `-DCHUNK_LOOSE_ELEMENT_REF` désactive la vérification.
 
 ## 5. Opérations sur des plages
 

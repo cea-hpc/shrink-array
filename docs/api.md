@@ -69,13 +69,15 @@ Not there: `data()`, mutable iterators, `insert` / `erase` in the middle, an in-
 | `a[i] += v;` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=` | compound operations, for the types that have them; return a proxy |
 | `++a[i]`, `--a[i]` | return a proxy; `a[i]++` returns the old value as a `T` |
 | `a[i] == v`, `a[i] != v` | compare the current value; other comparisons go through the conversion to `T` |
+| `std::printf("%f", a[i])` | refused: `...` would get the proxy, not the value (GCC: `-Werror=conditionally-supported`, set by the library; clang: always). Write `double(a[i])` |
 
 `auto x = a[i];` keeps the proxy, which follows the element. A proxy must not outlive the
-array's storage: every **(S)** operation invalidates it. In check builds (Debug, `CHECK_OPTIM`),
+array's storage: every **(S)** operation invalidates it. In every build,
 `operator[]`, `at()`, `front()` and `back()` return the proxy wrapped in an `ElementRef`
 (`internal/element_ref.h`) that only a temporary may use: `auto x = a[i];` then any use of `x`
 does not compile, with a message. A proxy kept on purpose: `std::move(x) = v;`, or
-`a.element_proxy(i)`. `-DCHUNK_LOOSE_ELEMENT_REF` turns the check off.
+`a.element_proxy(i)`. The wrapper costs nothing at run time (force-inlined).
+`-DCHUNK_LOOSE_ELEMENT_REF` turns the check off.
 
 ## 5. Range operations
 

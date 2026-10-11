@@ -195,8 +195,10 @@ The non-const `operator[]` returns a *proxy*, not a `T&`: a handle on the elemen
 on conversion and routes every write through the compression machinery.
 
 - `T v = a[i];` takes the value; `auto v = a[i];` keeps the proxy, which then follows the
-  element. Code ported from `std::vector` wants `T`, not `auto`. In check builds (Debug,
-  `CHECK_OPTIM`) a use of such a `v` does not compile (`internal/element_ref.h`).
+  element. Code ported from `std::vector` wants `T`, not `auto`: a use of such a `v` does not
+  compile (`internal/element_ref.h`).
+- `std::printf("%f", a[i])`, `std::format("{}", a[i])`, `std::max(a[i], 2.0)` would get the
+  proxy, not the value, and do not compile: write `double(a[i])`.
 - `a[i] += x;` and the other compound operators return a proxy; discarding it, as here, lets the
   library defer the operation at no cost. `a[i]++` returns the old value as a `T`.
 - A proxy holds references into the array's chunks: anything that rebuilds them -- `resize`,

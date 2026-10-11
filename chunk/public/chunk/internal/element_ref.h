@@ -18,8 +18,8 @@
 
 /**
  * @file element_ref.h
- * @brief ElementRef: what the non-const operator[] (at, front, back) returns in
- *        check builds -- the write proxy, usable as a temporary only.
+ * @brief ElementRef: what the non-const operator[] (at, front, back) returns --
+ *        the write proxy, usable as a temporary only.
  *
  * @details `auto v = a[i];` keeps the PROXY, where std::vector's `auto` copies
  *          the value: v then follows the element, and dies with the array's
@@ -35,8 +35,10 @@
  *          with the message below. So `auto v = a[i]; T z = v;` (or `v = x`,
  *          `v + 1`, ...) does not compile, with that message. The proxy itself
  *          is unchanged: the library keeps naming proxies internally
- *          (ArrayChunkBase::element_proxy), and release builds return the proxy
- *          as before (chunk_config::strict_element_ref).
+ *          (ArrayChunkBase::element_proxy). Every operation is force-inlined:
+ *          the optimised code is the bare proxy's (without it GCC 16 kept a
+ *          complex `*=` out of line). -DCHUNK_LOOSE_ELEMENT_REF returns the
+ *          bare proxy (build_config::strict_element_ref).
  *
  *          The iterators yield values already (`for (auto x : a)` copies).
  *          A generic function that takes a[i] by value or by forwarding
@@ -53,6 +55,8 @@
 #include <ostream>     // std::basic_ostream (operator<<)
 #include <type_traits> // std::remove_cvref_t, std::is_same_v
 #include <utility>     // std::move, std::forward
+
+#include "chunk/internal/def_force_inline.h" // CHUNK_FORCE_INLINE: the wrapper must cost nothing
 
 namespace shrink_array
 {
@@ -78,7 +82,7 @@ inline constexpr bool is_element_ref<ElementRef<P, T>> = true;
 ///        when it is an ElementRef too (so proxy-to-proxy operations keep their
 ///        own semantics), the operand itself otherwise.
 template <typename U>
-constexpr decltype(auto) unwrap(U&& u) noexcept
+CHUNK_FORCE_INLINE constexpr decltype(auto) unwrap(U&& u) noexcept
 {
     if constexpr (is_element_ref<std::remove_cvref_t<U>>)
     {
@@ -116,7 +120,7 @@ class ElementRef
     using value_type = T; ///< The element type.
 
     /// @brief Wrap @p p (operator[] and the operators below).
-    explicit ElementRef(P&& p) noexcept : p_(std::move(p)) {}
+    CHUNK_FORCE_INLINE explicit ElementRef(P&& p) noexcept : p_(std::move(p)) {}
 
     /// @brief Moved (std::move(v), an operator's result).
     ElementRef(ElementRef&&) noexcept = default;
@@ -129,7 +133,7 @@ class ElementRef
 
     // ------------------------------------------------------------------ read
     /// @brief The element's value (the proxy's gated read).
-    operator T() const&& noexcept(noexcept(static_cast<T>(std::declval<const P&>())))
+    CHUNK_FORCE_INLINE operator T() const&& noexcept(noexcept(static_cast<T>(std::declval<const P&>())))
     {
         return static_cast<T>(p_);
     }
@@ -142,7 +146,7 @@ class ElementRef
 
     /// @brief ArrayChunkBits: `bool b = a[i]`, the proxy's operator bool (a
     ///        Bit converts to bool, but C++ does not chain the two conversions).
-    operator bool() const&&
+    CHUNK_FORCE_INLINE operator bool() const&&
         requires(!std::is_same_v<T, bool>) && requires(const P& p) { p.operator bool(); }
     {
         return p_.operator bool();
@@ -157,7 +161,7 @@ class ElementRef
 
     // ----------------------------------------------------------- assignment
     /// @brief `a[i] = b[j]`: the proxy-to-proxy assignment (gated read of b[j]).
-    decltype(auto) operator=(ElementRef&& from) &&
+    CHUNK_FORCE_INLINE decltype(auto) operator=(ElementRef&& from) &&
     {
         return wrap(p_ = from.p_);
     }
@@ -184,7 +188,7 @@ class ElementRef
     template <typename U>
         requires(!std::is_same_v<std::remove_cvref_t<U>, ElementRef>) &&
                 requires(P& p, U&& u) { p = element_ref_detail::unwrap(std::forward<U>(u)); }
-    decltype(auto) operator=(U&& u) &&
+    CHUNK_FORCE_INLINE decltype(auto) operator=(U&& u) &&
     {
         return wrap(p_ = element_ref_detail::unwrap(std::forward<U>(u)));
     }
@@ -202,13 +206,13 @@ class ElementRef
 #define CHUNK_ELEMENT_REF_COMPOUND(OP)                                                          \
     template <typename U>                                                                       \
         requires requires(P& p, U&& u) { p OP element_ref_detail::unwrap(std::forward<U>(u)); } \
-    decltype(auto) operator OP(U&& u)&&                                                         \
+    CHUNK_FORCE_INLINE decltype(auto) operator OP(U&& u) &&                                     \
     {                                                                                           \
         return wrap(p_ OP element_ref_detail::unwrap(std::forward<U>(u)));                      \
     }                                                                                           \
     template <typename U>                                                                       \
         requires requires(P& p, U&& u) { p OP std::forward<U>(u); }                             \
-    ElementRef& operator OP(U&& /*u*/)&                                                         \
+    ElementRef& operator OP(U&& /*u*/) &                                                        \
     {                                                                                           \
         static_assert(element_ref_detail::misuse<U>, CHUNK_ELEMENT_REF_MISUSE);                 \
         return *this;                                                                           \
@@ -228,25 +232,25 @@ class ElementRef
 
     // ------------------------------------------------- increment, decrement
     /// @brief `++a[i]`.
-    decltype(auto) operator++() &&
+    CHUNK_FORCE_INLINE decltype(auto) operator++() &&
         requires requires(P& p) { ++p; }
     {
         return wrap(++p_);
     }
     /// @brief `--a[i]`.
-    decltype(auto) operator--() &&
+    CHUNK_FORCE_INLINE decltype(auto) operator--() &&
         requires requires(P& p) { --p; }
     {
         return wrap(--p_);
     }
     /// @brief `a[i]++`.
-    decltype(auto) operator++(int) &&
+    CHUNK_FORCE_INLINE decltype(auto) operator++(int) &&
         requires requires(P& p) { p++; }
     {
         return wrap(p_++);
     }
     /// @brief `a[i]--`.
-    decltype(auto) operator--(int) &&
+    CHUNK_FORCE_INLINE decltype(auto) operator--(int) &&
         requires requires(P& p) { p--; }
     {
         return wrap(p_--);
@@ -281,7 +285,7 @@ class ElementRef
     template <typename U>
         requires(!element_ref_detail::is_element_ref<std::remove_cvref_t<U>>) &&
                 requires(const P& p, U&& u) { p == std::forward<U>(u); }
-    [[nodiscard]] friend bool operator==(ElementRef&& lhs, U&& rhs)
+    [[nodiscard]] friend CHUNK_FORCE_INLINE bool operator==(ElementRef&& lhs, U&& rhs)
     {
         return std::as_const(lhs.p_) == std::forward<U>(rhs);
     }
@@ -297,7 +301,7 @@ class ElementRef
     /// @brief `a[i] == b[j]`: the two values (two proxies compare ambiguously
     ///        with the reversed candidates of C++20).
     template <typename Q, typename T2>
-    [[nodiscard]] friend bool operator==(ElementRef&& lhs, ElementRef<Q, T2>&& rhs)
+    [[nodiscard]] friend CHUNK_FORCE_INLINE bool operator==(ElementRef&& lhs, ElementRef<Q, T2>&& rhs)
     {
         return static_cast<T>(std::move(lhs)) == static_cast<T2>(std::move(rhs));
     }
@@ -306,7 +310,7 @@ class ElementRef
 // -a[i], +a[i], ~a[i], !a[i]: the proxy's where it has them (std::complex's
 // operator- is a template, which a conversion cannot reach).
 #define CHUNK_ELEMENT_REF_UNARY(OP)                                             \
-    [[nodiscard]] decltype(auto) operator OP() const&&                          \
+    [[nodiscard]] CHUNK_FORCE_INLINE decltype(auto) operator OP() const&&       \
         requires requires(const P& p) { OP p; }                                 \
     {                                                                           \
         return wrap(OP p_);                                                     \
@@ -328,20 +332,20 @@ class ElementRef
 // The binary operators the proxy defines (ProxyOperators: scalar and composite
 // operands, both orders), forwarded. An ElementRef on both sides goes through
 // the conversions, as two proxies do.
-#define CHUNK_ELEMENT_REF_BINARY(OP)                                             \
-    template <typename U>                                                        \
-        requires(!element_ref_detail::is_element_ref<std::remove_cvref_t<U>>) && \
-                requires(const P& p, U&& u) { p OP std::forward<U>(u); }         \
-    [[nodiscard]] friend decltype(auto) operator OP(ElementRef&& lhs, U&& rhs)   \
-    {                                                                            \
-        return std::as_const(lhs.p_) OP std::forward<U>(rhs);                    \
-    }                                                                            \
-    template <typename U>                                                        \
-        requires(!element_ref_detail::is_element_ref<std::remove_cvref_t<U>>) && \
-                requires(const P& p, U&& u) { std::forward<U>(u) OP p; }         \
-    [[nodiscard]] friend decltype(auto) operator OP(U&& lhs, ElementRef&& rhs)   \
-    {                                                                            \
-        return std::forward<U>(lhs) OP std::as_const(rhs.p_);                    \
+#define CHUNK_ELEMENT_REF_BINARY(OP)                                                              \
+    template <typename U>                                                                         \
+        requires(!element_ref_detail::is_element_ref<std::remove_cvref_t<U>>) &&                  \
+                requires(const P& p, U&& u) { p OP std::forward<U>(u); }                          \
+    [[nodiscard]] friend CHUNK_FORCE_INLINE decltype(auto) operator OP(ElementRef&& lhs, U&& rhs) \
+    {                                                                                             \
+        return std::as_const(lhs.p_) OP std::forward<U>(rhs);                                     \
+    }                                                                                             \
+    template <typename U>                                                                         \
+        requires(!element_ref_detail::is_element_ref<std::remove_cvref_t<U>>) &&                  \
+                requires(const P& p, U&& u) { std::forward<U>(u) OP p; }                          \
+    [[nodiscard]] friend CHUNK_FORCE_INLINE decltype(auto) operator OP(U&& lhs, ElementRef&& rhs) \
+    {                                                                                             \
+        return std::forward<U>(lhs) OP std::as_const(rhs.p_);                                     \
     }
 
     CHUNK_ELEMENT_REF_BINARY(+)
@@ -359,7 +363,7 @@ class ElementRef
     }
 
     /// @brief The proxy, for element_ref_detail::unwrap (a temporary only).
-    [[nodiscard]] P& proxy_() && noexcept
+    [[nodiscard]] CHUNK_FORCE_INLINE P& proxy_() && noexcept
     {
         return p_;
     }
@@ -368,7 +372,7 @@ class ElementRef
     /// @brief An operator's result: a proxy comes back as an ElementRef (so
     ///        `auto v = (a[i] += x);` is refused too), anything else as is.
     template <typename R>
-    static decltype(auto) wrap(R&& r)
+    CHUNK_FORCE_INLINE static decltype(auto) wrap(R&& r)
     {
         if constexpr (std::is_same_v<std::remove_cvref_t<R>, P>)
         {
