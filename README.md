@@ -113,7 +113,7 @@ credentials; `spack develop` builds a local clone instead.
 After an install:
 
 ```cmake
-find_package(chunk 2.2 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
+find_package(chunk 0.1 REQUIRED)            # -DCMAKE_PREFIX_PATH=<install prefix>
 target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
 ```
 

@@ -732,10 +732,17 @@ include(CMakePackageConfigHelpers)
 configure_package_config_file(chunk-config.cmake.in chunk-config.cmake
         INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/chunk/cmake)
 
+# 0.x (SemVer): a MINOR release may break, so only the same 0.MINOR is
+# compatible; from 1.0, the same MAJOR (CHANGELOG.md, "Versioning policy").
+if (PROJECT_VERSION_MAJOR EQUAL 0)
+  set(_chunk_compatibility SameMinorVersion)
+else()
+  set(_chunk_compatibility SameMajorVersion)
+endif()
 write_basic_package_version_file(
         chunk-config-version.cmake
         VERSION ${CHUNK_VERSION}
-        COMPATIBILITY SameMajorVersion)
+        COMPATIBILITY ${_chunk_compatibility})
 
 install(EXPORT chunk-targets NAMESPACE chunk:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/chunk/cmake)
 

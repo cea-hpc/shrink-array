@@ -75,7 +75,7 @@ dispense le programme des appels de phase du §5.
 cmake_minimum_required(VERSION 3.20)
 project(mon_appli LANGUAGES CXX)
 
-find_package(chunk 2.2 REQUIRED)        # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
+find_package(chunk 0.1 REQUIRED)        # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
 
 add_executable(mon_appli main.cpp)
 target_link_libraries(mon_appli PRIVATE chunk::chunk_v2a)
