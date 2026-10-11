@@ -118,12 +118,14 @@ inline constexpr bool any_check = is_debug || check_optim;
 
 /// The non-const operator[], at(), front() and back() return an ElementRef
 /// (internal/element_ref.h): the write proxy, usable as a temporary only, so
-/// that a use of `auto v = a[i];` does not compile. Check builds; the proxy
-/// itself otherwise, or with -DCHUNK_LOOSE_ELEMENT_REF.
+/// that a use of `auto v = a[i];` does not compile. Every build: the wrapper is
+/// force-inlined and costs nothing (same machine code as the bare proxy, clang
+/// 23 and GCC 16 at -O3 on shrink_bench). -DCHUNK_LOOSE_ELEMENT_REF returns the
+/// bare proxy, for code not yet fixed.
 #ifdef CHUNK_LOOSE_ELEMENT_REF
 inline constexpr bool strict_element_ref = false;
 #else
-inline constexpr bool strict_element_ref = any_check;
+inline constexpr bool strict_element_ref = true;
 #endif
 
 inline constexpr bool has_ompt = CHUNK_OPT_OMPT != 0;

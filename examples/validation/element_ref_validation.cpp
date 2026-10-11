@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-// element_ref_validation: what a check build accepts and refuses through
-// operator[] (internal/element_ref.h).
+// element_ref_validation: what operator[] accepts and refuses (internal/element_ref.h).
 //
 //   - Built without ELEMENT_REF_CASE: an executable. Every use of a[i] that
 //     code written for std::vector makes -- assignment, a[i] = b[j], compound
@@ -70,7 +69,7 @@ int usage()
 {
     static_assert(std::is_same_v<Array<double>::reference, ElementRef<Array<double>::proxy_type, double>> ||
                       !build_config::strict_element_ref,
-                  "check builds: operator[] returns an ElementRef");
+                  "operator[] returns an ElementRef (the bare proxy with -DCHUNK_LOOSE_ELEMENT_REF)");
     constexpr int n = 1000;
     Array<double> a(n);
     Array<double> b(n);
