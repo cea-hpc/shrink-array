@@ -873,18 +873,14 @@ class TCSlabPool
     /// @pre @p slab is @p ptr's slab and belongs to this instance; slab mode.
     void free_elt_pow2(const ElementType* ptr, Slab* slab) noexcept
     {
-        // The element size is a power-of-two count of ElementType, so it is a
-        // power of two exactly when sizeof(ElementType) is: the shift then,
-        // the division otherwise (a 24-byte struct, say) -- folded at compile
-        // time, the pow2 path keeps its single instruction.
-        // Precondition, not checked in release: the COUNT given to init() is a
-        // power of two (chunk sizes are). A TCTypeAllocator<std::byte> sized to
-        // a 40-byte op would pick the shift (sizeof(std::byte) == 1) and free
-        // the wrong element; the deferred-op pool is such an allocator and
-        // never frees through here. The assertion catches a new caller.
-        FAST_ALLOC_DBG_ASSERT(!std::has_single_bit(sizeof(ElementType)) ||
-                              std::has_single_bit(static_cast<unsigned int>(slab->ElementSize)));
-        const int i = std::has_single_bit(sizeof(ElementType)) ? slab->num_block_pow2(ptr) : slab->num_block(ptr);
+        // The shift when this slab's element size is a power of two, the
+        // division otherwise: a chunk size that is a multiple of 64 but not a
+        // power of two (192 doubles: 1536 bytes), a 24-byte struct, a byte
+        // allocator sized to a 40-byte op. Tested on the slab, not deduced
+        // from sizeof(ElementType): the element COUNT need not be a power of
+        // two any more. One well-predicted branch on the free path.
+        const auto size = static_cast<unsigned int>(slab->ElementSize);
+        const int  i    = std::has_single_bit(size) ? slab->num_block_pow2(ptr) : slab->num_block(ptr);
 
         slab->free_block(i);
 

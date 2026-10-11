@@ -100,7 +100,7 @@ class RechunkSupport<Derived, true>
      *          - rechunk_reown_after_swap(tmp,state) — post-swap fixup (Chunk2
      *            re-owns its map_inf_array entry so it doesn't dangle when tmp dies)
      *
-     * @param new_size the new chunk size (power of two)
+     * @param new_size the new chunk size (a power of two or a multiple of 64)
      * @warning Restores the previously active geometry on exit; see
      *          rechunk_all_to for what the caller must do afterwards.
      * @warning Invalidates EVERY outstanding proxy of this array (from

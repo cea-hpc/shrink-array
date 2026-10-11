@@ -12,7 +12,7 @@
 
 shrink-array fournit des tableaux qui se comportent comme un `std::vector` et prennent moins
 de mémoire quand de grandes parties contiennent la même valeur. Un tableau est découpé en
-**chunks** de `S` éléments consécutifs (`S` une puissance de deux, 256 par défaut). Un chunk
+**chunks** de `S` éléments consécutifs (`S` une puissance de deux ou un multiple de 64, 256 par défaut). Un chunk
 dont tous les éléments valent une même constante ne garde aucun tampon à lui. Il pointe vers
 un tampon partagé de cette constante et ne coûte que quelques octets de métadonnées. Y écrire
 une autre valeur lui redonne un tampon. Pendant l'exécution, les chunks redevenus uniformes

@@ -36,7 +36,7 @@ option(CHUNK_STD_ALLOC "Use standard allocator for chunk." OFF)
 # lib chunk_v<x>_dyn per variant. Trim CHUNK_STATIC_SIZES during development to
 # cut build time (e.g. -DCHUNK_STATIC_SIZES=256).
 set(CHUNK_STATIC_SIZES "256;1024" CACHE STRING
-    "Semicolon list of compile-time chunk sizes to build (powers of two).")
+    "Semicolon list of compile-time chunk sizes to build (powers of two or multiples of 64).")
 option(CHUNK_BUILD_DYN "Also build a CHUNK_DYNAMIC (runtime size) lib per variant." ON)
 message(STATUS "CHUNK_STATIC_SIZES = ${CHUNK_STATIC_SIZES}; CHUNK_BUILD_DYN = ${CHUNK_BUILD_DYN}")
 

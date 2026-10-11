@@ -59,13 +59,13 @@ using ActiveArray = std::conditional_t<
 // Runtime chunk size for CHUNK_DYNAMIC builds. Seeded into g_active_chunk_size
 // before init_indexes (below), so every array constructed afterwards adopts this
 // geometry by default. Ignored in static builds (geometry fixed by __chunk_size).
-// Must be a power of two in [ParamChunk::size_min, ParamChunk::size_max]; 512
+// A power of two or a multiple of 64 in [ParamChunk::size_min, ParamChunk::size_max]; 512
 // differs from the usual compile-time __chunk_size (64) so a dynamic run visibly
 // exercises a new geometry.
 #ifndef DYN_CHUNK_SIZE
     // Deliberately sub-optimal starting geometry for dynamic builds: 64 is small,
     // so a run visibly exercises the re-chunk path (the advisor grows it). Override
-    // at configure time with -DDYN_CHUNK_SIZE=<pow2 in [size_min, size_max]>.
+    // at configure time with -DDYN_CHUNK_SIZE=<a valid size in [size_min, size_max]>.
     #define DYN_CHUNK_SIZE 64
 #endif
 inline constexpr unsigned int chunk_dyn_size = DYN_CHUNK_SIZE;

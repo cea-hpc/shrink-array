@@ -10,7 +10,7 @@
 
 shrink-array provides arrays that behave like a `std::vector` and take less memory when
 large parts of them hold the same value. An array is cut into **chunks** of `S` consecutive
-elements (`S` a power of two, 256 by default). A chunk whose elements all hold one constant
+elements (`S` a power of two or a multiple of 64, 256 by default). A chunk whose elements all hold one constant
 keeps no buffer of its own. It points to a shared buffer of that constant and costs only a
 few bytes of metadata. Writing another value into it gives it a buffer again. While the
 program runs, chunks that have become uniform are compressed again, and their buffers go

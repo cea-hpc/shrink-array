@@ -533,19 +533,20 @@ class ArrayChunkBase : public CRTPSupport<Derived>,
      *          also registers the value allocators for @p new_chunk_size and records @p new_chunk_size as
      *          the calling thread's active size.
      *
-     * @param new_chunk_size the new chunk size (power of two)
+     * @param new_chunk_size the new chunk size (a power of two or a multiple of 64)
      * @warning Must be called on an empty container, before any
      *          resize/allocation, since it changes how indices map to chunks.
      */
     void set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept;
 
-    /** @brief Right shift turning a global index into a chunk index: `i >> chunk_decalage()`. */
-    [[nodiscard]] unsigned int chunk_decalage() const noexcept
+    /** @brief log2(chunk_size()): the index shift of a power-of-two size, meaningless otherwise. */
+    [[deprecated("chunk sizes may be multiples of 64: use i / chunk_size()")]] [[nodiscard]] unsigned int
+    chunk_decalage() const noexcept
     {
         return size_policy_.decalage();
     }
 
-    /** @brief Mask extracting the offset inside a chunk: `i & chunk_modulo()`. */
+    /** @brief chunk_size() - 1, the last offset in a chunk (a mask only for a power of two: use i % chunk_size()). */
     [[nodiscard]] unsigned int chunk_modulo() const noexcept
     {
         return size_policy_.modulo();

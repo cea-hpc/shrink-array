@@ -19,8 +19,8 @@
 #include <type_traits> // remove_cvref_t (diagnostic printing)
 
 // NOTE (dynamic builds): every chunk-geometry computation in the diagnostic
-// paths below MUST come from the array under inspection (data_check.chunk_size()
-// / chunk_decalage() / chunk_modulo()), never from the compile-time globals
+// paths below MUST come from the array under inspection (data_check.chunk_size():
+// k / chunk_size(), k % chunk_size()), never from the compile-time globals
 // (__chunk_size, ParamChunk::get_decalage_chunk()...). In CHUNK_DYNAMIC runs the
 // effective size (chunk_dyn_size, e.g. 512) differs from the compile-time
 // default (64): the static shift over-indexes getChunkList() (libstdc++ assert
@@ -406,8 +406,8 @@ void read_check_binary_file(Int                ind,
             std::getline(trace_file, line);
             std::getline(trace_file, line);
 
-            const Int num_chunk = k >> data_check.chunk_decalage();
-            const Int num       = k & data_check.chunk_modulo();
+            const Int num_chunk = k / static_cast<Int>(data_check.chunk_size());
+            const Int num       = k % static_cast<Int>(data_check.chunk_size());
 
             bool                  is_values   = false;
             bool                  is_cst_val1 = false;
@@ -659,10 +659,10 @@ void read_check_binary_file(Int                ind,
                 // reads chunk_t, declared here, so they cannot be split.
                 if constexpr (chunk_config::is_shrink_enabled)
                 {
-                    const Int num_chunk = k >> data_check.chunk_decalage();
+                    const Int num_chunk = k / static_cast<Int>(data_check.chunk_size());
 
                     log_message("\nchunk number        : " + std::to_string(num_chunk) + "\n");
-                    const Int num = k & data_check.chunk_modulo();
+                    const Int num = k % static_cast<Int>(data_check.chunk_size());
                     log_message("number inside chunk : " + std::to_string(num) + "\n");
                     const auto& chunk_t = data_check.getChunkList()[num_chunk];
                     using ValueType     = decltype(chunk_t.values); // infer the type
@@ -832,10 +832,10 @@ void read_check_binary_file(Int                ind,
 
                 if constexpr (chunk_config::is_shrink_enabled)
                 {
-                    const Int   num_chunk = k >> data_check.chunk_decalage();
+                    const Int   num_chunk = k / static_cast<Int>(data_check.chunk_size());
                     const auto& chunk_t   = data_check.getChunkList()[num_chunk];
                     log_message("chunk number        : " + std::to_string(num_chunk) + "\n");
-                    const Int num = k & data_check.chunk_modulo();
+                    const Int num = k % static_cast<Int>(data_check.chunk_size());
                     log_message("number inside chunk : " + std::to_string(num) + "\n");
 
                     // Detect whether a type is an atomic of a pointer, regardless of the pointed-to type
@@ -891,7 +891,7 @@ void read_check_binary_file(Int                ind,
                     // above: the ratio report sitting between the two must keep
                     // running in the std::vector build, so the two cannot be merged
                     // into a single `if constexpr`.
-                    const Int num_chunk = k >> data_check.chunk_decalage();
+                    const Int num_chunk = k / static_cast<Int>(data_check.chunk_size());
 
                     if (const auto& chunk_t = data_check.chunk_list[num_chunk]; chunk_t.is_cst_val1() && value != zero)
                     {

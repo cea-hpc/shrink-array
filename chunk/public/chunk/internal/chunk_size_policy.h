@@ -21,11 +21,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //
 // A chunk's geometry is three related quantities:
-//   * size()     — number of elements per chunk (a power of two),
-//   * decalage() — log2(size), used for `flat_index >> decalage()` to get the
-//                  chunk number,
-//   * modulo()   — size - 1, used for `flat_index & modulo()` to get the offset
-//                  inside the chunk.
+//   * size()     — number of elements per chunk (a power of two or a multiple
+//                  of 64, is_valid_chunk_size),
+//   * chunk_of(i) / offset_of(i) — i / size() and i % size(), the split of an
+//                  element index (a shift and a mask for a power of two),
+//   * modulo()   — size - 1, the last offset in a chunk; decalage() is
+//                  log2(size), meaningful for a power of two only.
 //
 // Two policies provide this interface, so one container implementation can be
 // instantiated in two flavours without duplicating its logic:
@@ -52,7 +53,7 @@
 #include "chunk/config.h"                     // build_config::chunk_dynamic, build_config::any_check
 #include "chunk/internal/func_p2.h"           // log2int (constexpr, also usable at run time)
 #include "chunk/internal/chunk_size_config.h" // __chunk_size / __decalage_chunk / __modulo_chunk
-#include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED (non-power-of-two geometry)
+#include "chunk/internal/invariant_check.h"   // CHUNK_INVARIANT_FAILED (an invalid geometry)
 
 namespace shrink_array
 {
@@ -103,29 +104,31 @@ inline thread_local bool t_birth_at_active_size = false;
 void register_runtime_chunk_size(unsigned int size);
 
 /**
- * @brief Whether @p size can be a chunk geometry: a power of two, not 0.
- * @details The index split is a shift and a mask (ChunkSizePolicy::set_size):
- *          for 48, log2int gives a shift of 5 and the mask is 47 -- two
- *          elements on one slot, and a re-chunk refill that frees a buffer
- *          still in use. The public entry points (rechunk_to, set_chunk_size)
- *          refuse such a size; set_size() and set_active_chunk_size() stop
- *          on it in check builds.
+ * @brief Whether @p size can be a chunk geometry: a power of two, or a
+ *        multiple of 64; not 0.
+ * @details The index split is a division (SizePolicy::chunk_of / offset_of):
+ *          a shift and a mask for a power of two, a multiplication by a magic
+ *          number otherwise. A multiple of 64 keeps a chunk's buffer whole
+ *          64-bit words of packed bits and, for 8-byte elements, whole cache
+ *          lines. The public entry points (rechunk_to, set_chunk_size) refuse
+ *          another size; set_size() and set_active_chunk_size() stop on it in
+ *          check builds.
  */
 [[nodiscard]] constexpr bool is_valid_chunk_size(unsigned int size) noexcept
 {
-    return size != 0u && (size & (size - 1u)) == 0u;
+    return size != 0u && ((size & (size - 1u)) == 0u || size % 64u == 0u);
 }
 
 /// @brief Set the process-wide active chunk size and register it with register_runtime_chunk_size().
-/// @param size Chunk size, in elements: a power of two (stops a check build otherwise).
+/// @param size Chunk size, in elements: a power of two or a multiple of 64 (stops a check build otherwise).
 inline void set_active_chunk_size(unsigned int size) noexcept
 {
     if constexpr (build_config::any_check)
     {
         if (!is_valid_chunk_size(size)) [[unlikely]]
         {
-            CHUNK_INVARIANT_FAILED("set_active_chunk_size({}): a chunk size must be a power of two "
-                                   "(the index split is a shift and a mask)",
+            CHUNK_INVARIANT_FAILED("set_active_chunk_size({}): a chunk size must be a power of two or a "
+                                   "multiple of 64",
                                    size);
         }
     }
@@ -372,7 +375,7 @@ class DynamicChunkSize
     }
 
     /// @brief Set a new geometry at run time, and make it the process-wide
-    ///        active size. @p size must be a power of two.
+    ///        active size. @p size: a power of two or a multiple of 64.
     void set_size(unsigned int size) noexcept
     {
         // Last net: rechunk_to() and set_chunk_size() refuse such a size
@@ -381,9 +384,9 @@ class DynamicChunkSize
         {
             if (!is_valid_chunk_size(size)) [[unlikely]]
             {
-                CHUNK_INVARIANT_FAILED("ChunkSizePolicy::set_size({}): not a power of two -- shift {} with mask {} "
-                                       "would send two elements to one slot",
-                                       size, log2int(static_cast<std::size_t>(size)), size - 1u);
+                CHUNK_INVARIANT_FAILED("ChunkSizePolicy::set_size({}): a chunk size must be a power of two or a "
+                                       "multiple of 64",
+                                       size);
             }
         }
         size_               = size;
@@ -414,7 +417,7 @@ class DynamicChunkSize
     ///        and a final shift of l - 1.
     void set_divider(unsigned int size) noexcept
     {
-        pow2_ = is_valid_chunk_size(size);
+        pow2_ = (size & (size - 1u)) == 0u; // NOT is_valid_chunk_size: a multiple of 64 is valid too
         m32_  = UINT64_MAX / size + 1u;
         unsigned int l = 0;
         while ((1ull << l) < size)

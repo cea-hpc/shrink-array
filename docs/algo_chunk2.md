@@ -15,7 +15,7 @@
 
 ## 1. Goal
 
-`ArrayChunk2<T>` is an array split into **chunks** (fixed-size blocks, power of 2)
+`ArrayChunk2<T>` is an array split into **chunks** (fixed-size blocks, a power of 2 or a multiple of 64)
 that are **compressed** as soon as all their elements equal one of **two constants**:
 
 - the **first value** `first_value` (0, the initialisation value);

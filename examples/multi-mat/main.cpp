@@ -142,9 +142,9 @@ int main()
         std::cerr << "The chunk size can't be null\n";
     }
 
-    if (const bool is_pow2 = ParamChunk::check_pow2(chunk_size); !is_pow2)
+    if (!ParamChunk::check_chunk_size(chunk_size))
     {
-        std::cerr << "The chunk size must be power of two";
+        std::cerr << "The chunk size must be a power of two or a multiple of 64";
     }
 
     if constexpr (chunk_size < ParamChunk::size_min || chunk_size > ParamChunk::size_max)
