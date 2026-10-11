@@ -158,8 +158,8 @@ parser.add_argument("--only-checksum", action="store_true",
                          "locating the element: rebuild a full reference to diagnose it.")
 
 # ⭐ Selection = VARIANTS x SIZES. Binaries are named
-#   shrink_bench_<variant>[_<size>]  with size in 64/256/1024/dyn, lance
-#   avec --mode check,
+#   shrink_bench_<variant>[_<size>]  with size in 64/256/1024/dyn, run
+#   with --mode check,
 #   plus a bare 'default' declination with no suffix (compile-time default).
 # Both options accept a comma-separated list or 'all', so subsets compose:
 #   --size dyn                  -> the 3 dyn binaries (default behaviour)
@@ -167,8 +167,8 @@ parser.add_argument("--only-checksum", action="store_true",
 #   --exec chunk,chunk2a --size 64,dyn -> 4 binaries
 #   --all_exec                  -> the full matrix
 _VARIANTS = ["chunk", "chunk2", "chunk2a"]
-_SIZES         = ["64", "256", "1024", "dyn"]   # choix VALIDES (64 encore demandable via --size 64)
-_DEFAULT_SIZES = ["256", "1024", "dyn"]              # tailles construites par defaut (64 retire)
+_SIZES         = ["64", "256", "1024", "dyn"]   # VALID choices (64 can still be asked with --size 64)
+_DEFAULT_SIZES = ["256", "1024", "dyn"]              # the sizes built by default (64 dropped)
 
 def _csv_choices(name, valid):
     def parse(value):
@@ -276,10 +276,10 @@ if not no_io:
 # 🔧 Executables list: VARIANTS x SIZES, filtered by what actually exists on
 # disk (a size declination may not be built in this tree — warn, don't die,
 # unless the whole selection ends up empty).
-# Le mode check n'est plus dans le NOM du binaire : check et perf sont un seul
-# executable depuis la fusion, et le mode se choisit a l'execution par --mode
-# (voir bench_config.h). D'ou shrink_bench_<variant>[_<size>] ici, et MODE_ARGS
-# ajoute a chaque lancement plus bas.
+# The check mode is no longer in the binary's NAME: check and perf are one
+# executable since they were merged, and the mode is chosen at run time with
+# --mode (see bench_config.h). Hence shrink_bench_<variant>[_<size>] here, and
+# MODE_ARGS added to every launch below.
 MODE_ARGS = ["--mode", "check"]
 
 

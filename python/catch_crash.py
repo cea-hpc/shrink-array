@@ -2,23 +2,23 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 """
-catch_crash.py — Lance shrink_bench_chunk2 (--mode perf) en boucle sous gdb (batch) et
-capture automatiquement la stack + le contexte au PREMIER crash (SIGSEGV/SIGABRT)
-ou déclenchement de sonde. Conçu pour la traque du use-after-munmap cross-thread
-quand le bug devient rare (cf. DEBUG_SESSION_RESUME_3.md).
+catch_crash.py -- runs a shrink_bench executable (--mode perf) in a loop under
+gdb (batch) and captures the stack and the context at the FIRST crash
+(SIGSEGV/SIGABRT) or probe report. Written to hunt a rare cross-thread
+use-after-munmap.
 
-Usage :
-    python3 catch_crash.py [-n NRUNS] [-t THREADS] [--args "ARGS"] [--continue]
+Usage:
+    python3 catch_crash.py --exe EXE [-n NRUNS] [-t THREADS] [--args "ARGS"] [--continue]
 
-    -n         nombre max de runs (défaut 1000)
-    -t         OMP_NUM_THREADS fixe (défaut 64) ; "rand" = aléatoire 2..128
-    --args     arguments passés à l'exécutable (défaut "--divisor 10")
-    --exe      chemin de l'exécutable (défaut = build ledger aarch64)
-    --continue ne PAS s'arrêter au 1er crash : archiver et continuer
-    --outdir   répertoire d'archivage des crashes (défaut ./crashes)
+    --exe      the executable (default: $CATCH_CRASH_EXE)
+    -n         maximum number of runs (default 1000)
+    -t         fixed OMP_NUM_THREADS (default 64); "rand" = random in 2..128
+    --args     arguments passed to the executable (default "--divisor 10")
+    --continue do NOT stop at the first crash: archive it and go on
+    --outdir   where the crashes are archived (default ./crashes)
 
-Sortie : pour chaque crash, un fichier crashes/crash_<i>_<pid>.log contenant
-la sortie programme + le backtrace de tous les threads + le contexte allocateur.
+Output: for each crash, a file crashes/crash_<i>_<threads>thr_<stamp>.log with
+the program output, the backtrace of every thread and the allocator context.
 """
 
 import argparse
@@ -29,36 +29,35 @@ import subprocess
 import sys
 import time
 
-DEFAULT_EXE = ("$CCCWORKDIR/shrink-array/"
-               "cmake-build-omp-llvm-debug/RHEL_8.10__x86_64/examples/shrink_bench/"
-               "shrink_bench_chunk2a_dyn")  # --mode perf a passer a l'executable
+# e.g. <build>/examples/shrink_bench/shrink_bench_chunk2a_dyn (pass --mode perf in --args)
+DEFAULT_EXE = os.environ.get("CATCH_CRASH_EXE", "")
 
-# Commandes gdb exécutées en batch. On lance le programme ; s'il s'arrête sur un
-# signal, on dump. S'il finit normalement, gdb continue après `run` mais $_exitcode
-# est défini et il n'y a PAS de stack — on teste donc avant de faire `bt`.
-# `set pagination off` est indispensable en batch (sinon gdb bloque sur --More--).
+# The gdb commands run in batch. The program is started; if it stops on a
+# signal, the context is dumped. If it ends normally, gdb goes on after `run`
+# but $_exitcode is set and there is NO stack -- hence the test before `bt`.
+# `set pagination off` is required in batch (gdb would block on --More--).
 GDB_SCRIPT = r"""
 set pagination off
 set confirm off
 set print pretty on
-# Ne s'arrêter que sur les signaux fatals, laisser passer le reste.
+# Stop on the fatal signals only, let the others through.
 handle SIGSEGV stop print
 handle SIGABRT stop print
 handle SIGFPE stop print
 run
-# --- On arrive ici soit après un signal (programme arrêté), soit après une fin
-# --- normale ($_exitcode défini). On ne dumpe QUE dans le premier cas.
+# --- Reached after a signal (program stopped) or after a normal end
+# --- ($_exitcode set). Dump in the first case ONLY.
 if $_isvoid($_exitcode)
   printf "\n=========== CRASH CONTEXT (signal) ===========\n"
   printf "\n--- faulting thread backtrace ---\n"
   bt
-  printf "\n--- bench frame: k / valeurs / tab_complex vs tab1 ---\n"
+  printf "\n--- bench frame: k / values / tab_complex vs tab1 ---\n"
   frame 11
   print k
   print v_real
   print v_im
   print val_sum
-  printf "\n--- faulting address (si SIGSEGV) ---\n"
+  printf "\n--- faulting address (SIGSEGV) ---\n"
   print $_siginfo._sifields._sigfault.si_addr
   printf "\n--- all threads backtrace ---\n"
   thread apply all bt
@@ -71,13 +70,12 @@ end
 quit
 """
 
-# Variante interactive : gdb boucle LUI-MÊME sur `run` jusqu'à ce que le
-# programme s'arrête sur un signal (SIGSEGV/SIGABRT). À ce moment il imprime le
-# contexte PUIS rend le prompt (pas de `quit`) : tu gardes la main pour inspecter
-# (p, x, frame, info locals, thread apply all bt...). Si le programme finit
-# normalement, la boucle `run` recommence. C'est le mode à utiliser pour un crash
-# rare qu'on veut fouiller à la main : lance-le et laisse tourner, il s'arrêtera
-# tout seul dans gdb au crash. Sortir avec `quit`.
+# Interactive variant: gdb ITSELF loops on `run` until the program stops on a
+# signal (SIGSEGV/SIGABRT). It then prints the context and gives the prompt back
+# (no `quit`): you keep control to inspect (p, x, frame, info locals, thread
+# apply all bt...). A normal end starts the `run` loop again. The mode for a rare
+# crash to examine by hand: start it and let it run, it stops in gdb by itself
+# at the crash. Leave with `quit`.
 GDB_SCRIPT_INTERACTIVE = r"""
 set pagination off
 set confirm off
@@ -85,19 +83,19 @@ set print pretty on
 handle SIGSEGV stop print
 handle SIGABRT stop print
 handle SIGFPE stop print
-# Boucle: relance tant que le programme sort normalement ($_exitcode défini).
-# On s'arrête (et on rend le prompt) dès qu'un signal laisse $_exitcode void.
+# Loop: run again while the program exits normally ($_exitcode set). Stop (and
+# give the prompt back) as soon as a signal leaves $_exitcode void.
 python
 import gdb
 while True:
     gdb.execute("run")
     try:
         ec = gdb.parse_and_eval("$_exitcode")
-        # exit normal -> relancer
-        print("[catch_crash] exit normal, relance...")
+        # normal exit -> run again
+        print("[catch_crash] normal exit, running again...")
         continue
     except gdb.error:
-        # $_exitcode indéfini => arrêt sur signal
+        # $_exitcode undefined => stopped on a signal
         print("\n=========== CRASH CONTEXT (signal) ===========")
         gdb.execute("bt")
         for _c in ("frame 11","print k","print v_real","print v_im","print val_sum"):
@@ -108,21 +106,21 @@ while True:
         except gdb.error:
             pass
         gdb.execute("thread apply all bt")
-        print("=========== END CONTEXT — prompt gdb à toi (quit pour sortir) ===========")
+        print("=========== END CONTEXT -- the gdb prompt is yours (quit to leave) ===========")
         break
 end
 """
 
 
 def build_gdb_command(exe, args, gdb_script_path, interactive=False):
-    # -batch : exécute le script et quitte (non-surveillé, archive auto).
-    # -iex 'set auto-load safe-path /' : évite le warning auto-load de libstdc++.
+    # -batch: runs the script and quits (unattended, archived automatically).
+    # -iex 'set auto-load safe-path /': no libstdc++ auto-load warning.
     #
-    # interactive=True : au lieu de -batch (qui quitte au crash), on charge le
-    # même script SANS -batch et SANS le `quit` final. gdb exécute `run`,
-    # s'arrête sur le signal, imprime le contexte, PUIS rend le prompt : tu gardes
-    # la main pour inspecter (p, x, frame, info locals...). Utile quand un crash
-    # rare tombe enfin et qu'on veut fouiller à la main.
+    # interactive=True: instead of -batch (which quits at the crash), the same
+    # script is loaded WITHOUT -batch and WITHOUT the final `quit`. gdb runs,
+    # stops on the signal, prints the context, THEN gives the prompt back: you
+    # keep control to inspect (p, x, frame, info locals...). For when a rare
+    # crash finally happens and is to be examined by hand.
     if interactive:
         cmd = ["gdb", "-nx",
                "-iex", "set auto-load safe-path /",
@@ -136,10 +134,9 @@ def build_gdb_command(exe, args, gdb_script_path, interactive=False):
 
 
 def looks_like_crash(returncode, output):
-    # gdb -batch renvoie 0 même après un crash du programme inférieur, donc on
-    # détecte le crash dans la SORTIE. IMPORTANT : ne PAS matcher la bannière
-    # "CRASH CONTEXT" seule — en batch elle peut apparaître ; on exige un vrai
-    # signal ou une sonde. Et si le programme est sorti normalement, on ignore.
+    # gdb -batch returns 0 even after the inferior crashed, so the crash is
+    # detected in the OUTPUT. A real signal or a probe report is required; a
+    # program that exited normally is not a crash.
     if "___PROGRAM_EXITED_NORMALLY___" in output:
         return False
     markers = [
@@ -148,7 +145,7 @@ def looks_like_crash(returncode, output):
         "Program received signal SIGFPE",
         "Arithmetic exception",
         "Program terminated with signal",
-        "CRASH CONTEXT (signal)",     # n'est imprimée que dans la branche signal
+        "CRASH CONTEXT (signal)",     # printed in the signal branch only
         "ALLOC_PROBE",
         "FLUSH_PROBE",
         "POOL_LEDGER",
@@ -160,25 +157,28 @@ def looks_like_crash(returncode, output):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("-n", type=int, default=1000, help="nombre max de runs")
-    ap.add_argument("-t", default="64", help="OMP_NUM_THREADS (entier ou 'rand')")
-    ap.add_argument("--args", default="--divisor 10", help="args de l'exécutable")
-    ap.add_argument("--exe", default=DEFAULT_EXE, help="chemin de l'exécutable")
+    ap.add_argument("-n", type=int, default=1000, help="maximum number of runs")
+    ap.add_argument("-t", default="64", help="OMP_NUM_THREADS (an integer or 'rand')")
+    ap.add_argument("--args", default="--divisor 10", help="arguments of the executable")
+    ap.add_argument("--exe", default=DEFAULT_EXE, help="the executable (default: $CATCH_CRASH_EXE)")
     ap.add_argument("--continue", dest="keep_going", action="store_true",
-                    help="continuer après un crash au lieu de s'arrêter")
+                    help="go on after a crash instead of stopping")
     ap.add_argument("--interactive", action="store_true",
-                    help="au crash, garder la main dans gdb (prompt interactif) "
-                         "au lieu d'archiver et quitter")
-    ap.add_argument("--outdir", default="./crashes", help="dossier d'archivage")
+                    help="at the crash, keep control in gdb (interactive prompt) "
+                         "instead of archiving and quitting")
+    ap.add_argument("--outdir", default="./crashes", help="where the crashes are archived")
     args = ap.parse_args()
 
+    if not args.exe:
+        print("No executable: give --exe or set CATCH_CRASH_EXE")
+        sys.exit(1)
     if not (os.path.isfile(args.exe) and os.access(args.exe, os.X_OK)):
-        print(f"Exécutable introuvable ou non exécutable : {args.exe}")
+        print(f"Executable not found or not executable: {args.exe}")
         sys.exit(1)
 
     os.makedirs(args.outdir, exist_ok=True)
 
-    # écrire le script gdb dans un fichier temporaire réutilisé à chaque run
+    # the gdb script, written once and used by every run
     gdb_script_path = os.path.join(args.outdir, "_gdb_catch.txt")
     with open(gdb_script_path, "w") as f:
         f.write(GDB_SCRIPT_INTERACTIVE if args.interactive else GDB_SCRIPT)
@@ -195,15 +195,15 @@ def main():
                                 interactive=args.interactive)
 
         if args.interactive:
-            # Mode interactif : le script gdb boucle LUI-MÊME sur `run` jusqu'au
-            # crash, puis rend le prompt. On lance gdb une seule fois en
-            # avant-plan (il hérite du terminal) et on laisse la main à l'utilisateur.
-            print(f"Mode interactif : gdb va relancer en boucle "
-                  f"(threads={threads}) jusqu'au crash, puis rendre le prompt.\n"
-                  f"Laisse tourner ; au crash tu pourras inspecter, puis `quit`.\n",
+            # Interactive mode: the gdb script ITSELF loops on `run` until the
+            # crash, then gives the prompt back. gdb is started once in the
+            # foreground (it inherits the terminal); the user takes over.
+            print(f"Interactive mode: gdb runs the program again and again "
+                  f"(threads={threads}) until it crashes, then gives the prompt back.\n"
+                  f"Let it run; at the crash, inspect, then `quit`.\n",
                   flush=True)
             subprocess.run(cmd, env=env)
-            print("\ngdb terminé.")
+            print("\ngdb ended.")
             return
 
         proc = subprocess.run(cmd, env=env, stdout=subprocess.PIPE,
@@ -221,17 +221,17 @@ def main():
                 f.write(out)
             print(f"[{i}/{args.n}] CRASH (threads={threads}) -> {path}")
             if not args.keep_going:
-                print(f"\nArrêt au premier crash. {crashes} crash(es). "
-                      f"Voir {path}")
+                print(f"\nStopped at the first crash. {crashes} crash(es). "
+                      f"See {path}")
                 break
         else:
             elapsed = time.time() - start
             rate = elapsed / i
             eta = (args.n - i) * rate
-            # Infos utiles extraites de la sortie pour savoir où en est le run.
+            # What the output says about how far the run got.
             n_recycle = out.count("[RECYCLE]")
             exited_ok = "___PROGRAM_EXITED_NORMALLY___" in out
-            # dernier "k :" atteint (progression de la boucle du bench)
+            # the last "k :" reached (progress of the bench loop)
             last_k = ""
             for line in out.splitlines():
                 if line.startswith("k :") or " val_sum " in line:
@@ -243,10 +243,10 @@ def main():
                   flush=True)
 
     total = time.time() - start
-    print(f"\nTerminé : {i} runs, {crashes} crash(es), {total:.0f}s.")
+    print(f"\nDone: {i} runs, {crashes} crash(es), {total:.0f}s.")
     if crashes == 0:
-        print("Aucun crash capturé — augmenter -n, retirer --divisor "
-              "(runs plus gros), ou -t rand pour varier la charge.")
+        print("No crash caught: raise -n, drop --divisor (larger runs), "
+              "or -t rand to vary the load.")
 
 
 if __name__ == "__main__":

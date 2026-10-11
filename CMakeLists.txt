@@ -219,7 +219,7 @@ option(USE_GPERF "Enable gperftools CPU profiling" OFF)
 
 if(USE_GPERF)
     message(STATUS "GPerftools profiling enabled")
-    # On cherche la bibliothèque 'profiler'
+    # The 'profiler' library
     find_library(GPERF_PROFILER profiler)
     if(GPERF_PROFILER)
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${GPERF_PROFILER}")

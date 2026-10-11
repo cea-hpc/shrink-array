@@ -870,22 +870,21 @@ __report_job() {  # <pid> <rc> — print the status and remove the job from the 
     else
         N_FAILED=$(( N_FAILED + 1 ))
         printf '[FAIL] %-50s %4ds  rc=%d  → %s\n' "$name" "$dt" "$rc" "${JOB_LOG[$pid]}"
-        # Montrer l'ERREUR, pas la fin du fichier. `tail -n 8` etait trompeur :
-        # un seul warning gcc sur du template inline occupe dix lignes de chaine
-        # « inlined from », si bien que la queue du log affichait un warning
-        # anodin pendant que la vraie erreur, plus haut, restait invisible -- on
-        # a perdu du temps a soupconner un -Werror qui n'existe pas sur ces
-        # configs (il est conditionne a CHUNK_WERROR ET au type Debug).
-        # On cherche donc le premier bloc « FAILED: » de ninja, ou a defaut la
-        # premiere ligne « error: », et on retombe sur la queue s'il n'y a ni
-        # l'un ni l'autre (echec de configure, OOM tue par le noyau, rc=127...).
+        # Show the ERROR, not the end of the file. `tail -n 8` was misleading:
+        # one gcc warning on an inline template takes ten lines of "inlined
+        # from" chain, so the tail of the log showed a harmless warning while
+        # the real error, higher up, stayed invisible -- time was lost
+        # suspecting a -Werror these configurations do not have (it needs
+        # CHUNK_WERROR AND the Debug type). Hence: ninja's first "FAILED:"
+        # block, else the first "error:" line, and the tail when there is
+        # neither (configure failure, OOM kill, rc=127...).
         local __log=${JOB_LOG[$pid]} __ln
         __ln=$(grep -n -m1 -E '^FAILED:|(^|[ /])[Ee]rror:' "$__log" 2>/dev/null | cut -d: -f1)
         if [ -n "$__ln" ]; then
-            echo "       ── premiere erreur (ligne $__ln) ──"
+            echo "       ── first error (line $__ln) ──"
             sed -n "${__ln},$((__ln + 14))p" "$__log" | sed 's/^/       /'
         else
-            echo '       ── last lines (aucune ligne d erreur trouvee) ──'
+            echo '       ── last lines (no error line found) ──'
             tail -n 8 "$__log" | sed 's/^/       /'
         fi
     fi

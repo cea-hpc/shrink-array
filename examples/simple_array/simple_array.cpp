@@ -102,7 +102,7 @@ double convert_memory(double memoryValue)
     }
     else
     {
-        std::cerr << "Erreur : Impossible d'ouvrir le fichier.\n";
+        std::cerr << "Error: cannot open the file.\n";
     }
 
     return megabytes;

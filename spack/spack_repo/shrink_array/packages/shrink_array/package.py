@@ -22,10 +22,10 @@ class ShrinkArray(CMakePackage):
     license("Apache-2.0")
 
     # No release tarball yet: the branches. main is C++20, cpp23 needs C++23,
-    # develop follows gen-dev-31 (the branch main is fast-forwarded from).
+    # develop is the branch main is fast-forwarded from.
     version("main", branch="main", preferred=True)
     version("cpp23", branch="cpp23")
-    version("develop", branch="gen-dev-31")
+    version("develop", branch="develop")
 
     variant("openmp", default=True, description="Build the parallel (OpenMP) libraries")
     variant(

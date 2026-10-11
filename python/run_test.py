@@ -24,7 +24,7 @@ def run_program():
     
     result = subprocess.run(["????/cmake-build-optim/test/test1"], capture_output=True, text=True, env=env_variable)
     
-    # Récupérer la sortie du programme
+    # The program's output
     output = result.stdout
     
     print(output)

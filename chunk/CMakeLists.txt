@@ -209,14 +209,13 @@ if (SANITIZER AND NOT SANITIZER STREQUAL "none"
   target_compile_options(chunk_hardening INTERFACE -fno-omit-frame-pointer)
 endif()
 
-# -Wno-tsan sur les builds ThreadSanitizer (gcc). Le compilateur avertit que
-# `atomic_thread_fence` n'est pas modelise par -fsanitize=thread. C'est exact et
-# c'est une limite CONNUE de l'outil, pas un defaut du code : TSan ne sait pas
-# raisonner sur les barrieres, d'ou d'eventuels faux positifs sur les chemins
-# Dekker de la bibliotheque. L'avertissement se declenche sur chaque
-# instanciation de template concernee, soit des dizaines de blocs de dix lignes
-# qui noient les vrais diagnostics -- c'est precisement ce qui a rendu un echec
-# de build illisible (voir __report_job dans scripts/functions_for_compile.sh).
+# -Wno-tsan on the ThreadSanitizer builds (gcc). The compiler warns that
+# `atomic_thread_fence` is not modelled by -fsanitize=thread. True, and a KNOWN
+# limit of the tool, not a defect of the code: TSan cannot reason about fences,
+# hence possible false positives on the library's Dekker paths. The warning
+# fires on every template instantiation concerned -- dozens of ten-line blocks
+# that drown the real diagnostics, which is exactly what made a build failure
+# unreadable (see __report_job in scripts/functions_for_compile.sh).
 if (SANITIZER MATCHES "thread" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(chunk_hardening INTERFACE -Wno-tsan)
 endif()
@@ -589,7 +588,7 @@ endforeach()
 # the OMPT tool: the example carries its own (examples/multi-mat/manage_ompt.cpp).
 chunk_add_variant(chunk_v1v2_${CHUNK_DEFAULT_SIZE} "CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1" ${CHUNK_DEFAULT_SIZE} FALSE NO_OMPT_TOOL)
 
-# VRAIE LIBRAIRIE PAR DÉFAUT (au lieu d'un simple ALIAS) pour éviter la perte des includes dans les sous-exécutables
+# A REAL default library (not just an ALIAS), so the include directories reach the executables.
 # Default library: no variant define, default compile-time size (__chunk_size=64), static.
 chunk_add_variant(chunk "" "" FALSE)
 
