@@ -30,9 +30,13 @@ release.
 | **MINOR** | an addition, or a change with a compatibility path (the old name kept, deprecated) | new targets installed; `HAVE_AGRESSIVE_COMPRESSION` renamed with the old spelling still accepted |
 | **PATCH** | a fix that changes no interface | a race fixed; a wrong value in a trace |
 
-The installed package declares `SameMajorVersion` compatibility: `find_package(chunk 2.2)`
-accepts any 2.x at or above 2.2. A deprecated name stays for at least one MINOR release and is
+The installed package declares `SameMajorVersion` compatibility: `find_package(chunk 1.2)`
+accepts any 1.x at or above 1.2. A deprecated name stays for at least one MINOR release and is
 removed only by the next MAJOR.
+
+**Before 1.0** (0.x versions), as SemVer allows, a MINOR release plays the role of a MAJOR one
+(it may break) and PATCH covers additions and fixes; the package then declares
+`SameMinorVersion`: `find_package(chunk 0.1)` accepts 0.1.x only.
 
 **fast_allocators** follows the same rules for its own interface. The chunk library pins the
 exact fast_allocators version it was built with (`CHUNK_FAST_ALLOCATORS_VERSION` in
@@ -44,6 +48,11 @@ numbers in the two `CMakeLists.txt`, tag `vX.Y.Z` (the Spack recipe downloads ta
 the tag's checksum to the recipe.
 
 ## Unreleased
+
+## 0.1.0 -- 2026-10-11
+
+The first public release. The numbering starts again here: the earlier versions, up to 2.2.8,
+were internal.
 
 ### Added
 - A Spack recipe (Spack 1.x), in the repository: `spack/spack_repo/shrink_array`
@@ -269,7 +278,7 @@ the tag's checksum to the recipe.
 
 - The CMake option `HAVE_AGRESSIVE_COMPRESSION`: use `HAVE_AGGRESSIVE_COMPRESSION`.
 
-## 2.2.8 and earlier
+## Before 0.1.0
 
-See the history of the repository.
+Internal versions, up to 2.2.8: see the history of the repository.
 

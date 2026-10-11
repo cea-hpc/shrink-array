@@ -118,7 +118,7 @@ GitHub avec vos propres identifiants git ; `spack develop` construit plutôt un 
 Après une installation :
 
 ```cmake
-find_package(chunk 2.2 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
+find_package(chunk 0.1 REQUIRED)            # -DCMAKE_PREFIX_PATH=<préfixe d'installation>
 target_link_libraries(my_app PRIVATE chunk::chunk_v2a)
 ```
 
