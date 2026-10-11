@@ -46,6 +46,11 @@ the tag's checksum to the recipe.
 ## Unreleased
 
 ### Added
+- A Spack recipe (Spack 1.x), in the repository: `spack/spack_repo/shrink_array`
+  (`spack repo add` it, then `spack install shrink-array`). Variants `openmp`, `sizes`, `dyn`,
+  `fast_alloc`, `stats`, `checks`, `second_value_indexed`, `examples`; versions `main`,
+  `cpp23` and `develop` (`gen-dev-31`), from the branches. Checked: installed with GCC 16 and
+  with Clang 23 (OpenMP, OMPT), then used by a `find_package(chunk)` project.
 
 - `copy_range_mt(a, first, last, src_first)` and `transform_range_mt(a, first, last, src_first, op)`
   (`array_chunk_range_ops.h`, and plain-container overloads in `vector_range_ops.h`): the bulk
