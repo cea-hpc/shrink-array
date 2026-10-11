@@ -458,6 +458,10 @@ struct ChunkSizeAdvisor
                         {
                             break;
                         }
+                        if (!is_valid_chunk_size(sub) || S % sub != 0)
+                        {
+                            continue; // 192 / 2 = 96: not a chunk size (nor a candidate below)
+                        }
                         for (uint32_t b = 0; b < S; b += sub)
                         {
                             bool cst = true;
@@ -532,7 +536,7 @@ struct ChunkSizeAdvisor
         for (int k = finer; k >= 1; --k)
         {
             const uint32_t sub = S >> k;
-            if (sub < opt.min_size)
+            if (sub < opt.min_size || !is_valid_chunk_size(sub) || S % sub != 0)
             {
                 continue;
             }

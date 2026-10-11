@@ -94,8 +94,9 @@ void end_phase()
     }
 }
 
-// A multiple of every chunk size the harness is built at: a run is whole chunks.
-constexpr long kRun = 4096;
+// A multiple of every chunk size the harness is built at: a run is whole chunks
+// (4096 * 3: every power of two up to 4096, and 192, 384, 768...).
+constexpr long kRun = 12288;
 
 bool varied(long i)
 {
@@ -469,7 +470,8 @@ int advisor_and_rechunk(long N)
             }
         }
     }
-    if (!seen_half)
+    // S / 2 is a candidate only when it is a chunk size (192 / 2 = 96 is not).
+    if (!seen_half && is_valid_chunk_size(static_cast<unsigned int>(S / 2)))
     {
         std::println("[bits] FAIL advisor: no finer row at S={}", S / 2);
         ++fails;
@@ -652,7 +654,9 @@ int parallel_fill(long N)
 
 int run(int argc, char** argv)
 {
-    const long N = argc > 1 ? shrink_array::arg_number<long>(argv[1], 1L << 20, "N") : (1L << 20);
+    // 85 runs: whole runs and whole chunks at every size the harness is built at.
+    constexpr long kDefaultN = 85 * kRun;
+    const long     N         = argc > 1 ? shrink_array::arg_number<long>(argv[1], kDefaultN, "N") : kDefaultN;
     ParamChunk::init_indexes(true);
 
     std::println("=== bits_container_validation  N={}  threads={} ===", N, CHUNK_PMP_MAX_THREADS);

@@ -74,13 +74,15 @@ template <typename Derived>
 void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_chunk_size) noexcept
 {
     // Same rule as rechunk_to() (this is also its path on an empty array):
-    // the index split is a shift and a mask, a non-power-of-two size
-    // corrupts it. Refused, geometry kept.
+    // a power of two or a multiple of 64 (is_valid_chunk_size). Refused,
+    // geometry kept.
     if constexpr (build_config::chunk_dynamic)
     {
         if (!is_valid_chunk_size(new_chunk_size))
         {
-            std::fprintf(stderr, "[chunk] set_chunk_size(%u) refused: a chunk size must be a power of two\n",
+            std::fprintf(stderr,
+                         "[chunk] set_chunk_size(%u) refused: a chunk size must be a power of two or a multiple of "
+                         "64\n",
                          new_chunk_size);
             std::fflush(stderr);
             return;

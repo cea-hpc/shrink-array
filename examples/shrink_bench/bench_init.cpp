@@ -42,9 +42,9 @@ void bench_init_library()
             std::abort();
         }
 
-        if (const bool is_pow2 = ParamChunk::check_pow2(chunk_size); !is_pow2)
+        if (!ParamChunk::check_chunk_size(chunk_size))
         {
-            std::print(stderr, "The chunk size must be power of two");
+            std::print(stderr, "The chunk size must be a power of two or a multiple of 64");
             std::abort();
         }
 
@@ -61,8 +61,8 @@ void bench_init_library()
         // rules. chunk_dyn_size is constexpr, so this is free and fires at compile
         // time (also checked in static builds, where the seed is defined but
         // unused — keeping it valid costs nothing).
-        static_assert(std::has_single_bit(shrink_array::chunk_dyn_size),
-                      "chunk_dyn_size (DYN_CHUNK_SIZE) must be a power of two");
+        static_assert(shrink_array::is_valid_chunk_size(shrink_array::chunk_dyn_size),
+                      "chunk_dyn_size (DYN_CHUNK_SIZE) must be a power of two or a multiple of 64");
         static_assert(shrink_array::chunk_dyn_size >= ParamChunk::size_min &&
                           shrink_array::chunk_dyn_size <= ParamChunk::size_max,
                       "chunk_dyn_size (DYN_CHUNK_SIZE) out of [ParamChunk::size_min, size_max]");

@@ -329,7 +329,7 @@ foreach(_geom IN LISTS _rt_geometries)
         # --case fails the test, so a drift shows up at once.
         foreach(_case coexistence range-ops scale-64-to-tgt mostly-constant sin-quantized
                       shrink-to-smaller all-same all-different val2-grow val2-shrink
-                      non-pow2-refused sliced-grow sliced-shrink)
+                      invalid-size-refused multiple-of-64-chain index-split sliced-grow sliced-shrink)
           validation_add_test(${_base}_${_case} ${_exe} ${_h} "" --case ${_case})
         endforeach()
       elseif (_h STREQUAL "dyn_geometry_validation")

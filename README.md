@@ -6,7 +6,7 @@ shrink-array provides arrays that are used like a `std::vector` and take less me
 parts of them hold the same value -- zero, or a few repeated values. It is written for HPC codes:
 C++23, OpenMP, arrays of 10⁹ elements, up to a few hundred threads.
 
-An array is cut into **chunks** of `S` consecutive elements (`S` a power of two). A chunk whose
+An array is cut into **chunks** of `S` consecutive elements (`S` a power of two or a multiple of 64). A chunk whose
 elements all hold one constant keeps no buffer of its own: it points to a shared buffer of that
 constant and costs a few bytes of metadata. Writing another value into it gives it a buffer
 again, and while the program runs, the chunks that have become uniform are compressed again and

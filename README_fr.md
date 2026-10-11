@@ -7,7 +7,7 @@ mémoire quand de grandes parties d'entre eux contiennent la même valeur -- zé
 valeurs répétées. Elle est écrite pour les codes de calcul : C++20, OpenMP, tableaux de 10⁹
 éléments, jusqu'à quelques centaines de threads.
 
-Un tableau est découpé en **chunks** de `S` éléments consécutifs (`S` une puissance de deux).
+Un tableau est découpé en **chunks** de `S` éléments consécutifs (`S` une puissance de deux ou un multiple de 64).
 Un chunk dont tous les éléments valent la même constante ne garde pas de tampon à lui : il
 pointe vers un tampon partagé de cette constante et ne coûte que quelques octets de
 métadonnées. Y écrire une autre valeur lui redonne un tampon, et pendant que le programme

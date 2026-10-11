@@ -38,7 +38,6 @@ set(ALLOCATORS_INTERNAL_HEADERS
   public/fast_allocators/internal/pmp_alloc.h
   public/fast_allocators/internal/singleton.h
   public/fast_allocators/internal/static_const_array.h
-  public/fast_allocators/internal/static_const_array_define.h
   public/fast_allocators/internal/static_const_array_inline.h
   public/fast_allocators/internal/svalloc.h
   public/fast_allocators/internal/tc_allocator_inline.h

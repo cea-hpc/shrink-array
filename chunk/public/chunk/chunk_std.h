@@ -474,7 +474,7 @@ class ChunkFastCompPolicy<T, Derived, false> : public ChunkOmpPolicy<T, Derived>
     }
 };
 /**
- * @brief One chunk of a ChunkArray: a power-of-two block that collapses to zero.
+ * @brief One chunk of a ChunkArray: a block of chunk-size elements that collapses to zero.
  *
  * @details The simplest of the three variants. A chunk holds either a real
  *          buffer or, once every element is zero, the shared cst_val1 constant

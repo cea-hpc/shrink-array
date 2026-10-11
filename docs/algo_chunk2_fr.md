@@ -15,7 +15,7 @@
 
 ## 1. Objectif
 
-`ArrayChunk2<T>` est un tableau découpé en **chunks** (blocs de taille fixe, puissance de 2)
+`ArrayChunk2<T>` est un tableau découpé en **chunks** (blocs de taille fixe, une puissance de 2 ou un multiple de 64)
 qui se **compressent** dès que tous leurs éléments valent l'une de **deux constantes** :
 
 - la **première valeur** `first_value` (0, la valeur d'initialisation) ;

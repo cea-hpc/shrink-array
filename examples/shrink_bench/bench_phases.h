@@ -319,7 +319,8 @@ void bench_print_checksums(BenchArrays& bench_arr, bool check_sum);
  *
  * @details Moved VERBATIM out of main(). Aborts -- deliberately, and loudly --
  *          on a geometry the build cannot honour: a null chunk size, one that
- *          is not a power of two, or one outside [size_min, size_max]. Then
+ *          is neither a power of two nor a multiple of 64, or one outside
+ *          [size_min, size_max]. Then
  *          ParamChunk::init_indexes(), which must run BEFORE any array exists,
  *          hence the call staying exactly where it was in main().
  * @note Empty in a std::vector build: the whole body sat under #ifdef

@@ -56,6 +56,7 @@
 #include <cstdio>      // fprintf
 #include <cstring>     // std::strcmp
 #include <functional>  // std::function
+#include <limits>      // std::numeric_limits (index-split)
 #include <string>      // std::string
 #include <vector>      // std::vector
 #include <cmath>       // std::floor, std::sin
@@ -526,12 +527,11 @@ int check_range_ops(const char* label, long N)
     return bad ? 1 : 0;
 }
 
-/// @brief A size that is not a power of two is refused -- by rechunk_to() on a
-///        filled array and on an empty one, and by set_chunk_size() -- and
-///        geometry, content and the ambient size stay as they were. The
-///        index split is a shift and a mask: 48 gave a shift of 5 with a mask
-///        of 47, and the refill freed a buffer still in use. A legal
-///        re-chunk must still work afterwards.
+/// @brief A size that is neither a power of two nor a multiple of 64 (48, 96,
+///        3, S + 1) is refused -- by rechunk_to() on a filled array and on an
+///        empty one, and by set_chunk_size() -- and geometry, content and the
+///        ambient size stay as they were. A legal re-chunk must still work
+///        afterwards.
 int check_non_pow2_refused(const char* label)
 {
     const std::string lab_s = pass_label(label);
@@ -602,6 +602,124 @@ int check_non_pow2_refused(const char* label)
         std::println("[{}/{}] OK: 48/96/3/{} refused (filled and empty arrays), content and geometry kept, "
                      "{} -> {} still works",
                      variant_name(), label, old_size + 1u, old_size, old_size * 2u);
+    }
+    return bad ? 1 : 0;
+}
+
+/// @brief The index split of the run-time geometry (DynamicChunkSize::chunk_of
+///        / offset_of: a shift and a mask for a power of two, a magic-number
+///        multiplication otherwise) equals i / S and i % S, for every valid
+///        size up to 4096 and 32- and 64-bit indexes. A power of two counted
+///        as one by mistake (the flag was set from is_valid_chunk_size once it
+///        admitted multiples of 64) sent 1000 to chunk 3 at 384.
+int check_index_split(const char* label)
+{
+    const std::string lab_s = pass_label(label);
+    label                   = lab_s.c_str();
+    const unsigned ambient  = active_chunk_size();
+
+    long bad = 0;
+    long n   = 0;
+    for (unsigned d = 32; d <= 4096; d += (d < 64 ? 32 : 64))
+    {
+        if (!is_valid_chunk_size(d))
+        {
+            continue;
+        }
+        DynamicChunkSize p;
+        p.set_size(d);
+        const auto one = [&](auto i)
+        {
+            using I = decltype(i);
+            ++n;
+            if (p.chunk_of(i) != static_cast<I>(i / static_cast<I>(d)) ||
+                p.offset_of(i) != static_cast<I>(i % static_cast<I>(d)))
+            {
+                if (bad++ < 5)
+                {
+                    std::println("[{}/{}] FAIL: size {} index {}: chunk {} offset {}", variant_name(), label, d,
+                                 static_cast<long long>(i), static_cast<long long>(p.chunk_of(i)),
+                                 static_cast<long long>(p.offset_of(i)));
+                }
+            }
+        };
+        for (int i = 0; i <= 20000; ++i)
+        {
+            one(i);
+        }
+        for (long k = 1; k < 2000; ++k)
+        {
+            one(static_cast<int>((k * 1103515245L) & 0x7fffffffL));
+            one(static_cast<long>(k) * 4611686018427387L);
+        }
+        one(std::numeric_limits<int>::max());
+        one(std::numeric_limits<long>::max());
+    }
+    set_active_chunk_size(ambient); // set_size() moved the process-wide size
+    set_thread_chunk_size(ambient);
+    if (!bad)
+    {
+        std::println("[{}/{}] OK: chunk_of / offset_of == / and % for every valid size up to 4096 ({} indexes)",
+                     variant_name(), label, n);
+    }
+    return bad ? 1 : 0;
+}
+
+/// @brief Re-chunk through sizes that are multiples of 64 but do not divide
+///        each other (256 -> 384 -> 192 -> 576 -> ...): the geometry follows
+///        and the content survives every step. On v1 with OpenMP this drives
+///        the refill's early release with old chunks shared by two new ones.
+int check_multiple_of_64_chain(const char* label)
+{
+    const std::string lab_s = pass_label(label);
+    label                   = lab_s.c_str();
+
+    const long          N = 200000;
+    Array<double>       arr(N);
+    std::vector<double> ref(N);
+    maybe_set_second_value(arr, 1.0);
+    // Runs of 1000 (not a multiple of any size here): constant chunks and
+    // chunks straddling two values at every geometry.
+    for_each_index(N,
+                   [&](long i)
+                   {
+                       const double v = (i / 1000) % 4 == 3 ? double(i % 7) : double((i / 1000) % 3);
+                       arr[i]         = v;
+                       ref[i]         = v;
+                   });
+    const unsigned ambient = active_chunk_size();
+
+    int bad = 0;
+    for (const unsigned s : {384u, 192u, 576u, 320u, 1024u, 448u, 512u, 256u})
+    {
+        arr.rechunk_to(s);
+        const long mism = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
+        if (arr.chunk_size() != s || mism)
+        {
+            std::println("[{}/{}] FAIL: rechunk_to({}): geometry {}, {} mismatch(es)", variant_name(), label, s,
+                         arr.chunk_size(), mism);
+            ++bad;
+        }
+    }
+    // Writes and reads at the last geometry, across chunk boundaries.
+    for (long i = 255; i < N; i += 4093)
+    {
+        arr[i] = ref[static_cast<std::size_t>(i)] = double(i % 11);
+    }
+    const long after = count_if_index(N, [&](long i) { return arr[i] != ref[i]; });
+    if (after)
+    {
+        std::println("[{}/{}] FAIL: {} mismatch(es) after writes at {}", variant_name(), label, after,
+                     arr.chunk_size());
+        ++bad;
+    }
+    set_active_chunk_size(ambient);
+    set_thread_chunk_size(ambient);
+
+    if (!bad)
+    {
+        std::println("[{}/{}] OK: 256 -> 384 -> 192 -> 576 -> 320 -> 1024 -> 448 -> 512 -> 256, content kept",
+                     variant_name(), label);
     }
     return bad ? 1 : 0;
 }
@@ -735,8 +853,10 @@ static int run_body(int argc, char** argv)
              return check_invariance<double>(
                  "val2-grow", N, 2048, [](long i) -> double { return double((i / 5000) % 3); }, /*sv_value=*/2.0);
          }},
-        // A size that is not a power of two: refused, nothing changed.
-        {"non-pow2-refused", 512, [] { return check_non_pow2_refused("non-pow2-refused"); }},
+        // A size that is neither a power of two nor a multiple of 64: refused, nothing changed.
+        {"invalid-size-refused", 512, [] { return check_non_pow2_refused("invalid-size-refused"); }},
+        {"multiple-of-64-chain", 256, [] { return check_multiple_of_64_chain("multiple-of-64-chain"); }},
+        {"index-split", 256, [] { return check_index_split("index-split"); }},
         // Shrink with val2 (queue never read past S', must pass).
         {"val2-shrink", 512,
          [&]

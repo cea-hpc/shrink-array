@@ -212,14 +212,13 @@ void RechunkSupport<Derived, true>::rechunk_to(this Derived& self, unsigned int 
         return;
     }
 
-    // The index split is a shift and a mask: a size that is not a power of
-    // two (48: shift 5, mask 47) sends two elements to one slot, and the
-    // refill below -- which assumes one geometry tiles the other exactly --
-    // frees a buffer still in use. Refused, with a message in EVERY build:
-    // a caller bug, on a cold path.
+    // A power of two or a multiple of 64 (is_valid_chunk_size). Refused, with
+    // a message in EVERY build: a caller bug, on a cold path.
     if (!is_valid_chunk_size(new_size))
     {
-        std::fprintf(stderr, "[RECHUNK] rechunk_to(%u) refused: a chunk size must be a power of two\n", new_size);
+        std::fprintf(stderr,
+                     "[RECHUNK] rechunk_to(%u) refused: a chunk size must be a power of two or a multiple of 64\n",
+                     new_size);
         std::fflush(stderr);
         return;
     }
@@ -685,13 +684,14 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                 return 0;
             }
         }();
-        // Fining only (v1, OpenMP): how many new chunks read one old chunk,
-        // and how many have finished with each -- see the release below.
-        [[maybe_unused]] const int                     fine_ratio = old_size > new_size ? old_size / new_size : 1;
+        // v1, OpenMP: how many new chunks have finished with each old chunk --
+        // see the release below. Not needed when the new size is a multiple
+        // of the old one: every old chunk then lies inside one new chunk.
+        [[maybe_unused]] const bool aligned_coarsening = new_size % old_size == 0;
         [[maybe_unused]] std::vector<std::atomic<int>> old_done;
         if constexpr (chunk_config::use_chunk && build_config::use_openmp)
         {
-            if (old_size > new_size)
+            if (!aligned_coarsening)
             {
                 old_done = std::vector<std::atomic<int>>(static_cast<std::size_t>(self.nb_chunk));
             }
@@ -919,15 +919,16 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
             // moves.
             //
             // A source chunk is done for good once every element of it has been
-            // transcribed. Sizes are powers of two, so the boundaries align
-            // exactly. When coarsening, this span covers every chunk of
-            // [old_first, old_last] whole, and releases them. When fining,
-            // old_size / new_size new chunks read the same old one, on
-            // whichever threads the schedule gives them: the LAST to finish
-            // releases it, counted per old chunk (old_done). Never "the last
-            // new chunk BY INDEX": a schedule block boundary can fall between
-            // c and c+1, and the source is then freed while the thread holding
-            // the previous index still reads it.
+            // transcribed. When the new size is a multiple of the old one, this
+            // span covers every chunk of [old_first, old_last] whole, and
+            // releases them. Otherwise (fining, or sizes that do not divide each
+            // other: 256 -> 384) an old chunk is read by every new chunk that
+            // overlaps it, on whichever threads the schedule gives them: the
+            // LAST to finish releases it, counted per old chunk (old_done)
+            // against its number of readers. Never "the last new chunk BY
+            // INDEX": a schedule block boundary can fall between c and c+1, and
+            // the source is then freed while the thread holding the previous
+            // index still reads it.
             //
             // Released while the TLS is still old_size, deliberately:
             // free_block_to_pool() routes by the AMBIENT geometry, so freeing a
@@ -943,24 +944,26 @@ void RechunkSupport<Derived, true>::rechunk_refill(this Derived& self, Derived& 
                 const int thr = get_thr_rank_fast();
                 for (int oc = old_first; oc <= old_last; ++oc)
                 {
-                    if (old_size > new_size)
+                    const ind_type oc_base = static_cast<ind_type>(oc) * static_cast<ind_type>(old_size);
+                    const ind_type oc_end  = oc_base + static_cast<ind_type>(old_size);
+                    if (!aligned_coarsening)
                     {
-                        // Fining: old chunk oc is read by fine_ratio new chunks;
-                        // release it with the last of them to finish, whoever
-                        // that is.
+                        // Old chunk oc's readers: the new chunks overlapping its
+                        // elements [oc_base, min(oc_end, total)). Release it with
+                        // the last of them to finish, whoever that is.
+                        const ind_type last_elem = (oc_end < total ? oc_end : total) - 1;
+                        const auto     readers =
+                            static_cast<int>(last_elem / static_cast<ind_type>(new_size) -
+                                             oc_base / static_cast<ind_type>(new_size) + 1);
                         if (old_done[static_cast<std::size_t>(oc)].fetch_add(1, std::memory_order_acq_rel) + 1 !=
-                            fine_ratio)
+                            readers)
                         {
                             continue;
                         }
                     }
-                    else
+                    else if (oc_end > end)
                     {
-                        const ind_type oc_end = static_cast<ind_type>(oc + 1) * static_cast<ind_type>(old_size);
-                        if (oc_end > end)
-                        {
-                            continue; // still needed by the next new chunk
-                        }
+                        continue; // still needed by the next new chunk
                     }
                     auto& och = self.chunk_list[static_cast<std::size_t>(oc)];
                     // release_st, not clear_st: a release once copied, not a

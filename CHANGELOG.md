@@ -49,6 +49,29 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Added
+
+- Chunk sizes may be multiples of 64 as well as powers of two (`CHUNK_SIZE`, `CHUNK_STATIC_SIZES`,
+  `set_chunk_size`, `rechunk_to`): 192, 384, 576... `ParamChunk::check_chunk_size()` tells a valid
+  size. `rechunk_to` moves between sizes that do not divide each other (256 -> 384). The advisor
+  does not propose such sizes yet.
+
+### Changed
+
+- The index split is a division (`SizePolicy::chunk_of` / `offset_of`): an unsigned division by
+  the constant in static builds (a shift and a mask for a power of two, as before), a
+  magic-number multiplication in `_dyn` ones (a power of two keeps the shift; about +1% on
+  `shrink_bench_chunk2a_dyn`'s compute loop).
+- fast_allocators: `free_elt_pow2` shifts only when the slab's element size is a power of two.
+- fast_allocators: the macro `FAST_ALLOC_MAX_CONST_BLOCK_SIZE` is now `StaticConstArray::max_const_block_size`, a
+  `static constexpr int` checked against the ladder's top bucket;
+  `internal/static_const_array_define.h` is removed.
+
+### Deprecated
+
+- `ParamChunk::check_pow2()` (use `check_chunk_size()`), `ArrayChunkBase::chunk_decalage()` and
+  `ParamChunk::get_decalage_chunk()` (a shift means nothing for 384: use `i / chunk_size()`).
+
 ## 0.1.0 -- 2026-10-11
 
 The first public release. The numbering starts again here: the earlier versions, up to 2.2.8,

@@ -123,8 +123,11 @@ void ArrayChunk2<T, ind_type>::create(ind_type sz)
     // array created after this one would be born at it.
     if constexpr (build_config::chunk_dynamic && is_packed_bit_v<T>)
     {
-        const unsigned int birth =
-            std::min(this->size_policy_.size() * packed_bit_birth_factor, shrink_array::cst_buffer_size);
+        // Capped at the largest multiple of the size that the shared constant
+        // buffers cover: a multiple of a valid size is valid (768 * 8 = 6144 >
+        // 4096 gives 3840, not 4096, which 768 does not divide).
+        const unsigned int size  = this->size_policy_.size();
+        const unsigned int birth = std::min(size * packed_bit_birth_factor, shrink_array::cst_buffer_size / size * size);
         if (!t_birth_at_active_size && birth != this->size_policy_.size())
         {
             const unsigned int global = g_active_chunk_size;

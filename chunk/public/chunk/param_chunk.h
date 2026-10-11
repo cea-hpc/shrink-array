@@ -156,7 +156,7 @@ struct ParamChunkDynInterface<true, AllT>
      *          allocators, and in every build it gives the size its own slot in the
      *          per-size reuse free-lists.
      *
-     * @param size the runtime chunk size to register (power of two)
+     * @param size the runtime chunk size to register (a power of two or a multiple of 64)
      *
      * @note Idempotent per size, and to be called in a sequential context before
      *       an array of that size is used in parallel.
@@ -226,17 +226,24 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     static constexpr int size_max = 65535;
 
     /**
-     * @brief Check that a candidate chunk size is a power of two.
+     * @brief Check that a candidate chunk size is valid: a power of two or a
+     *        multiple of 64 (is_valid_chunk_size).
      *
-     * @details The whole index split relies on shift/mask rather than div/mod, so
-     *          a non-power-of-two size would silently corrupt the addressing. The
-     *          build enforces this with a static_assert; this helper is for
-     *          validating a size obtained at run time (command line, config file).
+     * @details The build checks CHUNK_SIZE with a static_assert; this helper is
+     *          for a size obtained at run time (command line, config file).
+     *          The bounds are size_min / size_max.
      *
      * @param chunk_size the candidate size
-     * @return true if it is a power of two
+     * @return true if it can be a chunk size
      */
-    static bool check_pow2(int chunk_size) noexcept
+    static bool check_chunk_size(int chunk_size) noexcept
+    {
+        return chunk_size > 0 && is_valid_chunk_size(static_cast<unsigned int>(chunk_size));
+    }
+
+    /// @brief The former power-of-two-only check: chunk sizes may now also be multiples of 64.
+    [[deprecated("chunk sizes may be multiples of 64: use check_chunk_size")]] static bool
+    check_pow2(int chunk_size) noexcept
     {
         return is_power_of_two(chunk_size);
     }
@@ -379,7 +386,7 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
      *
      * @param v the chunk size the caller wanted; only compared, never applied
      * @warning To actually change the geometry, rebuild with `-DCHUNK_SIZE=v`
-     *          (must be a power of two).
+     *          (a power of two or a multiple of 64).
      */
     static void set_chunk_size(int v)
     {
@@ -425,10 +432,11 @@ class ParamChunk : public ParamChunkParallelInterface<>, public ParamChunkDynInt
     }
 
     /**
-     * @brief Right-shift turning a global element index into a chunk index.
-     * @return log2(__chunk_size); `chunk = i >> get_decalage_chunk()`
+     * @brief log2(__chunk_size): the index shift of a power-of-two size,
+     *        meaningless otherwise (chunk = i / __chunk_size).
      */
-    static constexpr unsigned int get_decalage_chunk() noexcept
+    [[deprecated("chunk sizes may be multiples of 64: use i / __chunk_size")]] static constexpr unsigned int
+    get_decalage_chunk() noexcept
     {
         return __decalage_chunk;
     }
