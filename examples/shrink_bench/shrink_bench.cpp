@@ -1090,51 +1090,48 @@ int main(int argc, char* argv[])
         if constexpr (need_compression)
         {
             // to activate to check compression embededd
-            if constexpr (chunk_config::use_fast_block_compression && chunk_config::has_ompt)
+            // The `omp parallel` below is what needs the guard: without
+            // OpenMP the pragma is ignored and force_compression() would run
+            // once on the master instead of once per thread.
+            if constexpr (chunk_config::use_fast_block_compression && chunk_config::has_ompt &&
+                          build_config::use_openmp)
             {
-                // The `omp parallel` below is what needs the guard: without
-                // OpenMP the pragma is ignored and force_compression() would run
-                // once on the master instead of once per thread.
-                if constexpr (build_config::use_openmp)
+                const bool have_to_compress = k % freq_compress == 0;
+                if (have_to_compress)
                 {
-                    const bool have_to_compress = k % freq_compress == 0;
-                    if (have_to_compress)
-                    {
 #pragma omp parallel
-                        {
-                            // Compiled in the std::vector build too: a no-op there.
-                            ParamChunk::force_compression();
-                        }
+                    {
+                        // Compiled in the std::vector build too: a no-op there.
+                        ParamChunk::force_compression();
                     }
                 }
             }
 
+
+            // Chunk and Chunk2 always; Chunk2A only with fast block
+            // compression (normally useless for 2 and 2A, whose writes
+            // compress as they go).
+            // Periodic, plus the last iteration so no end-of-run miss escapes.
+            // A persisting miss stays visible at the next audit: a
+            // materialised constant chunk stays so until it is written.
+            const bool audit_now = (k % freq_audit == 0) || (k + 1 == iter_max);
+
+            if constexpr (chunk_config::use_chunk || chunk_config::use_chunk2 ||
+                          (chunk_config::use_chunk2a && chunk_config::use_fast_block_compression))
             {
-                // Chunk and Chunk2 always; Chunk2A only with fast block
-                // compression (normally useless for 2 and 2A, whose writes
-                // compress as they go).
-                // Periodic, plus the last iteration so no end-of-run miss escapes.
-                // A persisting miss stays visible at the next audit: a
-                // materialised constant chunk stays so until it is written.
-                const bool audit_now = (k % freq_audit == 0) || (k + 1 == iter_max);
-
-                if constexpr (chunk_config::use_chunk || chunk_config::use_chunk2 ||
-                              (chunk_config::use_chunk2a && chunk_config::use_fast_block_compression))
+                if (audit_now)
                 {
-                    if (audit_now)
-                    {
-                        std::cout << "Check compression " << "\n";
-                        bench_phase_compress_all(bench_arrays);
-                    }
+                    std::cout << "Check compression " << "\n";
+                    bench_phase_compress_all(bench_arrays);
                 }
+            }
 
-                if constexpr (print_mem) // see the note on the first site
+            if constexpr (print_mem) // see the note on the first site
+            {
+                if (audit_now) // "after compress" only means something right after one
                 {
-                    if (audit_now) // "after compress" only means something right after one
-                    {
-                        const std::string msg_iter_c = "iteration : " + std::to_string(k) + " after compress";
-                        memory_consumption(msg_iter_c);
-                    }
+                    const std::string msg_iter_c = "iteration : " + std::to_string(k) + " after compress";
+                    memory_consumption(msg_iter_c);
                 }
             }
         }
