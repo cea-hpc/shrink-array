@@ -17,6 +17,7 @@
 #pragma once
 
 #include <cstddef>          // std::size_t
+#include <cstdint>          // std::uint8_t, std::uint32_t (reclaim_second_values' mark)
 #include <cstdio>           // std::printf
 #include <iostream>         // for cout, ostream
 #include <utility>          // for move
@@ -24,13 +25,15 @@
 #include <unordered_set>    // for the cst2 GC live set
 #include <initializer_list> // the {a, b, c} constructor
 #include <iterator>         // std::forward_iterator, std::distance -- the (first, last) constructor
+#include <type_traits>      // std::is_same_v (reclaim_second_values: bool has no registry)
 
 #include "chunk/internal/array_chunk2_base.h"           // for ArrayChunk2Base
 #include "chunk/internal/array_chunk2A_parallel.h"      // ParallelSupport2A — OpenMP-only mixin
 #include "chunk/internal/array_chunk2A_rechunk_hooks.h" // RechunkHooks2A — CHUNK_DYNAMIC-only mixin
 #include "chunk/internal/array_chunk_base.h"            // for ArrayChunkBase
 #include "chunk/internal/concept_array_chunk_element.h" // for ArrayChunkElement
-#include "chunk/config.h"                               // for use_openmp
+#include "chunk/config.h"                               // for use_openmp, g_in_rechunk_rebuild
+#include "chunk/PMP_CHUNK.h"                            // CHUNK_PMP_IN_PARALLEL_REGION (reclaim_second_values)
 #include "chunk/internal/tab_cst_val2_holder.h"         // for GlobalVecHolder (cst2 GC)
 #include "chunk/internal/write_compress_sync_policy.h"  // for WriteCompressSyncPolicy
 #include "chunk/internal/array_chunk_core.h"            // the core the bases share
@@ -316,10 +319,115 @@ class ArrayChunk2A : public ArrayChunk2Base<ArrayChunk2A<T, ind_type>>,
         std::fflush(stderr);
     }
 
+    /**
+     * @brief Free the second values that no chunk of any ArrayChunk2A<T>
+     *        refers to any more, so that the registry reuses their
+     *        identifiers instead of carving new ones.
+     *
+     * @details The registry of a type (GlobalVecHolder) forgets nothing on
+     *          its own: a workload whose constants drift registers a new
+     *          value at every compression to one not seen before, until the
+     *          identifiers run out (CHUNK_CST_VAL2_MAX_IDS), which stops the
+     *          run. This marks what is still referenced, over every live
+     *          array of the type whatever its index type, and frees the rest:
+     *            - a chunk compressed to a second value: its values pointer
+     *              is the slot;
+     *            - a per-chunk second-value slot (Proxy2A's table) naming a
+     *              registered value: a materialised chunk keeps its second
+     *              value there, and init_values_cst_val() finds the slot from
+     *              it by value.
+     *          O(chunks of every ArrayChunk2A<T>) + O(registered values).
+     *
+     * @return How many identifiers were freed. 0 as well when the call is
+     *         refused: inside an active parallel region, during a re-chunk
+     *         rebuild, or with a degraded index (a registered value may
+     *         then be unfindable by value, and the mark could miss it).
+     *
+     * @warning A sequential point, like everything that rebuilds storage:
+     *          no thread may be writing to or compressing an
+     *          ArrayChunk2A<T> meanwhile.
+     */
+    static std::size_t reclaim_second_values()
+    {
+        if constexpr (std::is_same_v<T, bool>)
+        {
+            return 0; // one shared constant array, no registry (TabCstVal2Holder<bool>)
+        }
+        else
+        {
+            using gvh = GlobalVecHolder<T>;
+            if (CHUNK_PMP_IN_PARALLEL_REGION || g_in_rechunk_rebuild.load(std::memory_order_acquire) ||
+                gvh::index_degraded.load(std::memory_order_relaxed))
+            {
+                return 0;
+            }
+            const std::size_t handed_out = gvh::ids_handed_out();
+            if (handed_out == 0)
+            {
+                return 0;
+            }
+            std::vector<std::uint8_t> referenced(handed_out + 1, 0);
+
+            // Chunks compressed to a second value.
+            Proxy2A<T>::share_info_array->for_each_key(
+                [&referenced](const void* key)
+                {
+                    if (key == nullptr)
+                    {
+                        return;
+                    }
+                    // The key is the array's core, whatever its index type.
+                    const auto* arr = static_cast<const ArrayChunkCore<Chunk2A<T>>*>(key);
+                    const int   nc  = arr->chunk_count();
+                    for (int j = 0; j < nc; ++j)
+                    {
+                        const T* vals = arr->chunk_ref(static_cast<std::size_t>(j)).values_load();
+                        if (gvh::region_contains(vals))
+                        {
+                            mark_cst2_id(referenced, gvh::slot_id(vals));
+                        }
+                    }
+                });
+
+            // Every per-chunk second-value slot of every row: a released row
+            // is empty, and a stale entry only keeps a value one pass longer.
+            using spec              = typename Proxy2A<T>::BaseSpec;
+            const std::size_t nrows = spec::second_value_row_count();
+            for (std::size_t r = 0; r < nrows; ++r)
+            {
+                const auto& row = spec::get_tab_second_value(static_cast<int>(r));
+                for (const auto& slot : row)
+                {
+                    if constexpr (SecondValueTraits<T>::indexed)
+                    {
+                        mark_cst2_id(referenced, slot); // the identifier itself; 0 = none
+                    }
+                    else if (!(slot == T{}))
+                    {
+                        if (const T* hit = gvh::index_lookup(slot))
+                        {
+                            mark_cst2_id(referenced, gvh::slot_id(hit));
+                        }
+                    }
+                }
+            }
+            return gvh::reclaim_unmarked(referenced);
+        }
+    }
+
     /// @brief Compress every chunk currently queued as a candidate.
     static void make_block_compression();
 
   private:
+    /// @brief reclaim_second_values(): identifier @p id is still referenced.
+    static void mark_cst2_id(std::vector<std::uint8_t>& referenced, std::uint32_t id) noexcept
+    {
+        if (id != 0 && id < referenced.size())
+        {
+            referenced[id] = 1;
+        }
+    }
+
     static constexpr char is_val1 = 0; ///< Tag of tab_type_cst_val: chunk compressed to the first constant
 
     /**

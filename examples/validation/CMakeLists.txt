@@ -96,6 +96,12 @@
 #                           first (its reinstall took a phantom reference),
 #                           and overlapping arrays free nothing early.
 #                           Chunk2A only, default static size.
+#   cst2_reclaim_validation  ArrayChunk2A::reclaim_second_values() frees
+#                           exactly the second values nothing refers to,
+#                           every element still reads back, and the
+#                           identifiers are reused (a run past the
+#                           identifier limit reaches its end).
+#                           Chunk2A only, default static size.
 #   iterator_validation     the read-only const_iterator is random access:
 #                           jumps (it + n, it[n], it2 - it1, orderings) on
 #                           and around chunk boundaries, a ++/-- right after
@@ -278,6 +284,12 @@ foreach(_geom IN LISTS _rt_geometries)
     # Chunk2A only, at the default static size.
     if (_vname STREQUAL "chunk2a" AND NOT _geom STREQUAL "dyn")
       list(APPEND _group cst2_registry_validation)
+    endif()
+    # cst2_reclaim_validation: reclaim_second_values() frees what nothing
+    # refers to and the identifiers are reused. Chunk2A only, default
+    # static size.
+    if (_vname STREQUAL "chunk2a" AND NOT _geom STREQUAL "dyn")
+      list(APPEND _group cst2_reclaim_validation)
     endif()
     # chunk2_registry_growth_validation: Chunk2's second-value registry must
     # not move the constant arrays chunks point at when a new value is

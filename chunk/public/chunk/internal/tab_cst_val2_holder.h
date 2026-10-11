@@ -49,6 +49,14 @@
  *
  * @warning Tearing the registry down requires that NO thread is scanning it.
  *          @see GlobalVecHolder::clear_if_last for the contract.
+ *
+ * @par Reclaiming
+ * A value stays registered until the last array of the type is destroyed,
+ * unless ArrayChunk2A::reclaim_second_values() runs at a sequential point:
+ * it marks the identifiers still referenced and
+ * GlobalVecHolder::reclaim_unmarked() frees the others. alloc_chunk() hands
+ * a freed identifier out again before carving a new one, so a workload
+ * whose constants come and go stays within the identifiers it has carved.
  */
 
 #include <sys/mman.h>  // mmap, mprotect, madvise
@@ -105,7 +113,9 @@ inline bool cst2_thp_advise() noexcept
  *          single-threaded clear paths; the lock-free readers reach values
  *          through GlobalVecHolder::index_ and never touch a Segment at all.
  *
- * @note The chain is append-only between clears, so occupancy is contiguous:
+ * @note The chain is append-only between clears and reclaims
+ *       (GlobalVecHolder::reclaim_unmarked() rebuilds it packed), so
+ *       occupancy is contiguous:
  *       `slots[0 .. used)` are set and `slots[used .. SIZE)` are null. Several
  *       loops here rely on that rather than null-checking every slot.
  */
@@ -247,7 +257,9 @@ struct Sentinel
  *          serialises appends. Lives for the whole run: a slot registered here
  *          is shared by every Chunk2A compressed to that value, so the
  *          registry cannot be freed while any array of the type is alive.
- *          #ref_count tracks that.
+ *          #ref_count tracks that. A value nothing refers to any more can
+ *          go earlier, at a sequential point: reclaim_unmarked(), driven
+ *          by ArrayChunk2A::reclaim_second_values().
  */
 template <typename T>
 class GlobalVecHolder
@@ -259,10 +271,10 @@ class GlobalVecHolder
     // Its point is what it makes of "is this chunk compressed to a second
     // constant": a range test on the chunk's values pointer, and nothing
     // else -- no per-chunk cached pointer (8 bytes on every chunk header, and
-    // a store-ordering subtlety between it and `values`). The registry is
-    // append-only between clears, so a bump pointer is the whole allocator:
-    // nothing is freed per slot, and region_reset() gives the pages back at
-    // the last clear.
+    // a store-ordering subtlety between it and `values`). A bump pointer and
+    // the free list of reclaimed identifiers (reclaim_unmarked(), handed out
+    // again before the bump pointer moves) are the whole allocator, and
+    // region_reset() gives the pages back at the last clear.
     //
     // Nothing is ever STORED in the region: a slot is an identifier, not an
     // array. A chunk compressed to a second constant points at its slot,
@@ -365,6 +377,126 @@ class GlobalVecHolder
             count += static_cast<std::size_t>(s->used);
         }
         return count;
+    }
+
+    /// @brief Identifiers handed out so far: the region's high-water mark,
+    ///        freed identifiers included (they are reused before it moves).
+    [[nodiscard]] static std::size_t ids_handed_out() noexcept
+    {
+        return region_stride == 0 ? 0 : region_used.load(std::memory_order_relaxed) / region_stride;
+    }
+
+    /// @brief Identifiers freed by reclaim_unmarked() and not handed out again.
+    /// @warning Quiescent point only, like count_entries().
+    [[nodiscard]] static std::size_t free_id_count() noexcept
+    {
+        return free_ids.size();
+    }
+
+    /// @brief Identifier (1-based) of the slot @p ptr.
+    /// @pre region_contains(ptr).
+    [[nodiscard]] static std::uint32_t slot_id(const T* ptr) noexcept
+    {
+        const char* base = region_begin.load(std::memory_order_relaxed);
+        return static_cast<std::uint32_t>((reinterpret_cast<const char*>(ptr) - base) / region_stride) + 1u;
+    }
+
+    /**
+     * @brief Forget every registered value whose identifier is not marked in
+     *        @p referenced, and make those identifiers reusable.
+     *
+     * @param referenced `referenced[id] != 0` for every identifier something still refers
+     *        to. An identifier past its end counts as live.
+     * @return How many identifiers were freed.
+     *
+     * @details The surviving slots keep their addresses and identifiers: no
+     *          chunk is touched. The chain is rebuilt packed, the index
+     *          rebuilt from it (a fresh generation, the superseded ones
+     *          dropped), and the freed identifiers go to #free_ids, which
+     *          take_free_slot() drains before the region is carved again.
+     *          value_by_id[] of a freed identifier keeps its old value until
+     *          the identifier is handed out again.
+     *
+     * @warning clear_if_last()'s contract -- no thread registering, looking
+     *          up or scanning -- AND nothing may still hold a freed
+     *          identifier. That second half is the caller's mark
+     *          (ArrayChunk2A::reclaim_second_values()): an identifier it
+     *          misses goes to another value, and the chunk that kept it
+     *          reads that value instead of its own, silently.
+     */
+    static std::size_t reclaim_unmarked(const std::vector<std::uint8_t>& referenced)
+    {
+        const std::scoped_lock lk(insert_mutex); // the contract excludes appenders: uncontended
+
+        std::vector<T*> kept;
+        std::size_t     freed = 0;
+        for (const Segment<T>* s = head.load(std::memory_order_acquire); s != nullptr; s = s->next)
+        {
+            for (int i = 0; i < s->used; ++i)
+            {
+                T* const            slot = s->slots[i];
+                const std::uint32_t id   = slot_id(slot);
+                if (id < referenced.size() && referenced[id] == 0)
+                {
+                    free_ids.push_back(id);
+                    ++freed;
+                }
+                else
+                {
+                    kept.push_back(slot);
+                }
+            }
+        }
+        if (freed == 0)
+        {
+            return 0;
+        }
+
+        // The chain again, packed: occupancy stays contiguous (Segment's note).
+        auto*       first = new Segment<T>();
+        Segment<T>* last  = first;
+        for (T* slot : kept)
+        {
+            if (last->used == Segment<T>::SIZE)
+            {
+                last->next = new Segment<T>();
+                last       = last->next;
+            }
+            last->slots[last->used] = slot;
+            ++last->used;
+        }
+        const Segment<T>* old = head.exchange(first, std::memory_order_acq_rel);
+        while (old != nullptr)
+        {
+            const Segment<T>* next = old->next;
+            delete old;
+            old = next;
+        }
+
+        // The index again, from the survivors only: an entry left for a freed
+        // slot would answer a lookup of the old value with an identifier that
+        // has gone to another one.
+        index_clear(); // also drops index_degraded and the cached tail
+        for (T* slot : kept)
+        {
+            index_publish(value_of_ptr(slot), slot);
+        }
+        tail = last;
+        return freed;
+    }
+
+    /// @brief A freed identifier's slot, or null when none is free.
+    /// @pre Under #insert_mutex (alloc_chunk(), from find_or_register()).
+    [[nodiscard]] static T* take_free_slot() noexcept
+    {
+        if (free_ids.empty())
+        {
+            return nullptr;
+        }
+        const std::uint32_t id = free_ids.back();
+        free_ids.pop_back();
+        return reinterpret_cast<T*>(region_begin.load(std::memory_order_relaxed) +
+                                    (static_cast<std::size_t>(id) - 1u) * region_stride);
     }
 
     /// @brief Is @p ptr a second-value slot of this type?
@@ -779,6 +911,7 @@ class GlobalVecHolder
     /// @brief Give the carved pages back and start over. Last clear only.
     static void region_reset() noexcept
     {
+        free_ids.clear(); // the identifiers it lists go with the pages
         char* base = region_begin.load(std::memory_order_relaxed);
         if (base == nullptr)
         {
@@ -884,6 +1017,14 @@ class GlobalVecHolder
     ///        under CHUNK_CST_VAL2_ID_LIMIT (read once in region_init(); it
     ///        can only lower the bound -- the way a test reaches it).
     static inline std::size_t id_limit = kMaxIds;
+
+    /// @brief Identifiers freed by reclaim_unmarked(), handed out again by
+    ///        take_free_slot() before the region's bump pointer moves.
+    ///        Emptied with the region (region_reset()). Immortal, like
+    ///        index_generations: a global array registers values during
+    ///        static teardown too.
+    static inline constinit internal::Immortal<std::vector<std::uint32_t>> free_ids_storage_{};
+    static inline std::vector<std::uint32_t>&                              free_ids = free_ids_storage_.value;
 
     /// @brief The live table. Null until the first publish; readers that see
     ///        null miss and take the cold path, which is always correct.
@@ -1086,7 +1227,12 @@ class TabCstVal2Holder
      */
     static T* alloc_chunk(T val)
     {
-        T* buf = reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
+        // A reclaimed identifier first; the region only when none is free.
+        T* buf = global_vec_holder::take_free_slot();
+        if (buf == nullptr)
+        {
+            buf = reinterpret_cast<T*>(global_vec_holder::region_alloc(global_vec_holder::region_stride));
+        }
         // The dictionary entry, before the slot can be published: a reader
         // that obtains the identifier obtains it from a slot written after
         // this returns.

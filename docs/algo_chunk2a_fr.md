@@ -71,11 +71,15 @@ l'ancien stockage derrière lui : 3,5 Go sur le banc, avec 15 tableaux rechunké
   chunk ne l'adopte qu'en l'installant comme son pointeur `values`.
 - Pour savoir si un chunk est compressé à une seconde valeur, il suffit de tester si son
   pointeur tombe dans la **région** du registre (`region_contains`).
-- Les tableaux du registre vivent **jusqu'à la fin du run** : une valeur une fois enregistrée
-  n'est jamais retirée. Une charge qui produit un très grand nombre de valeurs distinctes fait
-  donc grossir le registre ; dans le banc, `CHUNK_BENCH_ULONG_BANDS` limite le nombre de
-  valeurs distinctes du tableau `unsigned long`, et `CHUNK_CST2_PROBE=1` affiche l'état du
-  registre.
+- Une valeur enregistrée reste jusqu'à la destruction du dernier tableau du type, **ou**
+  jusqu'à un appel à `reclaim_second_values()` en point séquentiel : il marque les valeurs
+  encore référencées (chunks compressés à elles, emplacements de seconde valeur par chunk)
+  sur tous les tableaux du type et libère les autres, dont les identifiants sont ensuite
+  réutilisés. Sans lui, une charge qui produit un très grand nombre de valeurs distinctes
+  fait grossir le registre jusqu'à épuiser ses identifiants, ce qui arrête le run. Dans le
+  banc, `CHUNK_BENCH_ULONG_BANDS` limite le nombre de valeurs distinctes du tableau
+  `unsigned long`, `CHUNK_CST2_PROBE=1` affiche l'état du registre et
+  `CHUNK_CST2_RECLAIM=N` libère toutes les N itérations.
 
 `find_or_set_ind_cst_val2(valeur, emplacement)` enregistre la valeur si besoin, l'écrit dans
 l'emplacement de seconde valeur du chunk, et rend le tableau partagé à installer.

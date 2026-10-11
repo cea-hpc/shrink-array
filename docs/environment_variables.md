@@ -18,6 +18,7 @@
 | `CHUNK_ALLOC_AFFINITY_EAGER` | depends on the variant | `1`: each large array has its own set of allocators from its creation (default for Chunk, v1); `0`: only from its first rechunk (default for Chunk2 and Chunk2A). See [adaptive_rechunk.md](adaptive_rechunk.md) §5 |
 | `CHUNK_RECHUNK_MAX_COARSEN` | 4 | maximum factor of a coarsening (1 = no limit) |
 | `CHUNK_ADVISOR_MIN_GAIN_MB` | 8 | absolute threshold for the data-side gain, in MB (0 removes it) |
+| `CHUNK_ADVISOR_GRID_BITS` | 2 | the advisor's candidate sizes between the powers of two: the multiples of 64 whose C / 64 has at most this many significant bits (2: 192, 384, 768...; 3: 320, 448, 640 too; 1: powers of two only). See [adaptive_rechunk.md](adaptive_rechunk.md) §2 |
 | `CHUNK_COARSEN_MIN_META_MB` | 1 | minimum metadata gain of a coarsening, in MB |
 | `CHUNK_COARSEN_MIN_META_RATE` | 250 | minimum metadata gain per second of estimated rebuild time, in MB/s |
 | `CHUNK_RECHUNK_DRY_RUN` | — | `1`: the decider analyses and logs, but applies no rechunk |
@@ -56,6 +57,7 @@ in section 1 and in [performance_measurement.md](performance_measurement.md) §2
 | `CHUNK_LEDGER_REPORT` (*set*) | the report of the block registry (builds with the registry) |
 | `CHUNK_OMPT_STATS` | statistics of the synchronisation regions (OMPT builds) |
 | `CHUNK_CST2_PROBE` (*set*) | Chunk2A: report of the second-value registry at each pass (benchmark) |
+| `CHUNK_CST2_RECLAIM` | Chunk2A, `N`: every N iterations, frees the second values no chunk uses any more (`reclaim_second_values()`) and prints how many (benchmark, any build) |
 | `ALLOC_TOKEN_REPORT` | `SANITIZER=token` builds always print, on exit, the allocations per token (the 40 largest); this sets how many: `0` none, `N` the N largest, `all` every token |
 | `FAST_ALLOC_TRACE` (*set*) | one `[MUNMAP]` line per emptied slab that a pool's reserve does not keep and that is freed (silent by default) |
 
