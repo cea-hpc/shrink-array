@@ -21,9 +21,11 @@ class ShrinkArray(CMakePackage):
 
     license("Apache-2.0")
 
-    # No release tarball yet: the branches. main is C++20, cpp23 needs C++23,
-    # develop is the branch main is fast-forwarded from.
-    version("main", branch="main", preferred=True)
+    # The releases (tags, from git: the repository is not public yet), then the
+    # branches: main (the last release and what follows), cpp23 (C++23),
+    # develop (the branch main is fast-forwarded from).
+    version("0.1.0", tag="v0.1.0", commit="6950e39826ce30eccb453b850660ba6d48020102")
+    version("main", branch="main")
     version("cpp23", branch="cpp23")
     version("develop", branch="develop")
 
