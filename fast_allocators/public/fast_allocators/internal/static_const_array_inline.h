@@ -28,7 +28,6 @@
 #include "fast_allocators/internal/int_alloc.h"          // int_alloc, int_free
 #include "fast_allocators/internal/alloc_config.h"       // alloc_config::use_std_alloc / use_openmp
 #include "fast_allocators/internal/pmp_alloc.h" // FAST_ALLOC_PMP_IN_PARALLEL_REGION / FAST_ALLOC_PMP_THREAD_RANK
-#include "fast_allocators/internal/static_const_array_define.h" // FAST_ALLOC_MAX_CONST_BLOCK_SIZE
 
 namespace fast_alloc
 {
@@ -76,7 +75,7 @@ inline void* StaticConstArray::getBlockAlloc(unsigned int sz)
     }
 
     // Tree: unbalanced: favor speed on small blocks
-    if (sz <= FAST_ALLOC_MAX_CONST_BLOCK_SIZE)
+    if (sz <= max_const_block_size)
     {
         void* vv = nullptr;
         if (FAST_ALLOC_PMP_IN_PARALLEL_REGION)
@@ -129,7 +128,7 @@ inline bool StaticConstArray::freeBlock(int sz, void* ptr)
     }
 
 
-    if (sz <= FAST_ALLOC_MAX_CONST_BLOCK_SIZE)
+    if (sz <= max_const_block_size)
     {
         // Batch per thread inside a region. Serially FAST_ALLOC_PMP_IN_PARALLEL_REGION is
         // a constant false and the batch was never allocated, so the branch

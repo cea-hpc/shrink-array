@@ -49,6 +49,12 @@ the tag's checksum to the recipe.
 
 ## Unreleased
 
+### Changed
+
+- fast_allocators: the macro `FAST_ALLOC_MAX_CONST_BLOCK_SIZE` is now `StaticConstArray::max_const_block_size`, a
+  `static constexpr int` checked against the ladder's top bucket;
+  `internal/static_const_array_define.h` is removed.
+
 ## 0.1.0 -- 2026-10-11
 
 The first public release. The numbering starts again here: the earlier versions, up to 2.2.8,

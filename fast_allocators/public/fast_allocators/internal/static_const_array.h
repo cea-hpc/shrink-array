@@ -51,8 +51,8 @@
  * The macros are read in alloc_config.h; the bodies branch with `if constexpr`.
  * What still has to be a directive, and why, is written at each site.
  *
- * SIZE_BLOCK is tc_allocator.h's `inline constexpr unsigned int`;
- * static_const_array_define.h only keeps FAST_ALLOC_MAX_CONST_BLOCK_SIZE.
+ * SIZE_BLOCK is tc_allocator.h's `inline constexpr unsigned int`; the ladder's
+ * ceiling is StaticConstArray::max_const_block_size.
  */
 
 #include <array>       // std::array
@@ -65,10 +65,9 @@
 #include "fast_allocators/internal/svalloc.h" // fast_alloc::alignment
 #include "fast_allocators/internal/pmp_alloc.h" // FAST_ALLOC_PMP_MAX_THREADS / FAST_ALLOC_PMP_THREAD_RANK / FAST_ALLOC_PMP_IN_PARALLEL_REGION
 
-#include "fast_allocators/internal/int_alloc.h"                 // int_alloc, int_free, int_alloc_align, int_free_align
-#include "fast_allocators/internal/alloc_config.h"              // alloc_config::use_std_alloc
-#include "fast_allocators/internal/static_const_array_define.h" // FAST_ALLOC_MAX_CONST_BLOCK_SIZE (BlkAllocator routing)
-#include "fast_allocators/tc_allocator.h"                       // TCTypeAllocatorEBC
+#include "fast_allocators/internal/int_alloc.h"    // int_alloc, int_free, int_alloc_align, int_free_align
+#include "fast_allocators/internal/alloc_config.h" // alloc_config::use_std_alloc
+#include "fast_allocators/tc_allocator.h"          // TCTypeAllocatorEBC
 
 namespace fast_alloc
 {
@@ -219,6 +218,13 @@ class StaticConstArray
     /// @brief How many buckets the ladder has.
     static constexpr std::size_t n_buckets = std::tuple_size_v<Ladder>;
 
+    /// @brief Largest size the ladder serves, in bytes: its top bucket's.
+    ///        Past it, getBlockAlloc() returns null and the caller uses malloc.
+    /// @note `int`, like the literal of the macro it replaces: freeBlock()
+    ///       compares an `int` size with it, the front ends a `size_t` one, and
+    ///       neither then mixes signedness against a variable.
+    static constexpr int max_const_block_size = 65536;
+
     /**
      * @brief The ladder: one bucket per size class, 4 bytes up to 65536.
      *
@@ -294,7 +300,7 @@ class StaticConstArray
     /**
      * @brief Take a block of at least @p sz bytes from the ladder.
      * @param sz Requested size in bytes.
-     * @return The block, or NULL when @p sz exceeds FAST_ALLOC_MAX_CONST_BLOCK_SIZE --
+     * @return The block, or NULL when @p sz exceeds max_const_block_size --
      *         which is not a failure, it means "too big for the ladder" and the
      *         caller should fall back to malloc.
      * @note Takes the critical section when called inside a parallel region.
@@ -340,6 +346,11 @@ class StaticConstArray
 
 static_assert(std::is_same_v<std::tuple_element_t<1, StaticConstArray::Ladder>, TCTypeAllocatorEBC<8, SIZE_BLOCK>>,
               "allocator8() is the ladder's bucket 1: it must stay the 8-byte one");
+static_assert(StaticConstArray::bucket_index(StaticConstArray::max_const_block_size) ==
+                      StaticConstArray::n_buckets - 1 &&
+                  StaticConstArray::bucket_index(StaticConstArray::max_const_block_size / 2) ==
+                      StaticConstArray::n_buckets - 2,
+              "max_const_block_size must be the size of the ladder's top bucket");
 
 /**
  * @brief Ladder front end that falls back to malloc, by size. PUBLIC API.
@@ -378,8 +389,7 @@ struct BlkAllocator : public StaticConstArray
             // Compared in size_t BEFORE narrowing: getBlockAlloc() takes an
             // unsigned int, and 4 GiB + 64 would reach it as 64 -- a 64-byte
             // block for a 4 GiB request.
-            void* ptr =
-                size <= FAST_ALLOC_MAX_CONST_BLOCK_SIZE ? getBlockAlloc(static_cast<unsigned int>(size)) : nullptr;
+            void* ptr = size <= max_const_block_size ? getBlockAlloc(static_cast<unsigned int>(size)) : nullptr;
 
             // getBlockAlloc() returns null for a size past the largest bucket;
             // that is not a failure, it is "too big for the ladder".
@@ -412,9 +422,9 @@ struct BlkAllocator : public StaticConstArray
             // freeBlock() returns false for a size the ladder does not serve --
             // it came from int_alloc(), so it goes back to int_free().
             // Same size_t test as alloc_block(): static_cast<int> alone made
-            // [2 GiB, 4 GiB) negative, hence "<= FAST_ALLOC_MAX_CONST_BLOCK_SIZE", and a
+            // [2 GiB, 4 GiB) negative, hence "<= max_const_block_size", and a
             // malloc'd block went to the ladder at an out-of-range bucket.
-            if (size <= FAST_ALLOC_MAX_CONST_BLOCK_SIZE && freeBlock(static_cast<int>(size), ptr))
+            if (size <= max_const_block_size && freeBlock(static_cast<int>(size), ptr))
             {
                 return;
             }
@@ -443,7 +453,7 @@ struct BlkAllocator : public StaticConstArray
         const std::size_t total = size + fast_alloc::alignment;
 
         auto* ptr = static_cast<std::size_t*>(
-            total <= FAST_ALLOC_MAX_CONST_BLOCK_SIZE ? getBlockAlloc(static_cast<unsigned int>(total)) : nullptr);
+            total <= max_const_block_size ? getBlockAlloc(static_cast<unsigned int>(total)) : nullptr);
 
         if (!ptr)
         {
@@ -468,7 +478,7 @@ struct BlkAllocator : public StaticConstArray
         const std::size_t total = m_ptr[0] + fast_alloc::alignment;
 
         // Same routing as alloc_tab(), decided in size_t.
-        if (total > FAST_ALLOC_MAX_CONST_BLOCK_SIZE || !freeBlock(static_cast<int>(total), m_ptr))
+        if (total > max_const_block_size || !freeBlock(static_cast<int>(total), m_ptr))
         {
             int_free_align(m_ptr);
         }
@@ -539,8 +549,7 @@ class FixedSizeAllocator : private StaticConstArray
             }
 
             // size_t test before narrowing, as BlkAllocator::alloc_block().
-            void* ptr =
-                size <= FAST_ALLOC_MAX_CONST_BLOCK_SIZE ? getBlockAlloc(static_cast<unsigned int>(size)) : nullptr;
+            void* ptr = size <= max_const_block_size ? getBlockAlloc(static_cast<unsigned int>(size)) : nullptr;
 
             if (!ptr)
             {
