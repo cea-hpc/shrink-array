@@ -843,6 +843,46 @@ int main(int argc, char* argv[])
             }
         }
     };
+    // CHUNK_CST2_RECLAIM=N: every N iterations, free the Chunk2A second values
+    // no chunk uses any more, for every element type of the bench
+    // (reclaim_second_values() covers all the arrays of a type, whatever their
+    // index type). Static builds too, unlike the advisor. 0 or unset: never.
+    const Int cst2_reclaim_period = []() -> Int
+    {
+        if (const char* e = std::getenv("CHUNK_CST2_RECLAIM"); e != nullptr && *e != '\0')
+        {
+            if (Int v = 0; parse_number(e, v))
+            {
+                return v;
+            }
+            warn_invalid_env("CHUNK_CST2_RECLAIM", e);
+        }
+        return 0;
+    }();
+    const auto cst2_reclaim_tick = [cst2_reclaim_period](Int k_iter)
+    {
+        if constexpr (chunk_config::use_chunk2a)
+        {
+            if (cst2_reclaim_period <= 0 || (k_iter % cst2_reclaim_period) != 0)
+            {
+                return;
+            }
+            std::size_t freed = 0;
+            freed += ArrayChunk2A<double, Int>::reclaim_second_values();
+            freed += ArrayChunk2A<float, Int>::reclaim_second_values();
+            freed += ArrayChunk2A<int, Int>::reclaim_second_values();
+            freed += ArrayChunk2A<long, Int>::reclaim_second_values();
+            freed += ArrayChunk2A<unsigned long, Int>::reclaim_second_values();
+            freed += ArrayChunk2A<short, Int>::reclaim_second_values();
+            freed += ArrayChunk2A<unsigned char, Int>::reclaim_second_values();
+            freed += ArrayChunk2A<complex_double, Int>::reclaim_second_values();
+            freed += ArrayChunk2A<Point3, Int>::reclaim_second_values();
+            freed += ArrayChunk2A<Cell, Int>::reclaim_second_values();
+            std::fprintf(stderr, "[cst2-reclaim @ iter %ld] %zu second value(s) freed\n", static_cast<long>(k_iter),
+                         freed);
+        }
+    };
+
     advisor_tick(0); // post-init snapshot before the first iteration
 
     auto last = std::chrono::steady_clock::now();
@@ -852,6 +892,7 @@ int main(int argc, char* argv[])
         if (k > 0)
         {
             advisor_tick(k);
+            cst2_reclaim_tick(k);
         }
         if (k % 100 == 0)
         {

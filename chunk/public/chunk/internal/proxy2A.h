@@ -386,6 +386,13 @@ class ProxySpec2A : public Proxy2Base<Derived, T, Chunk2A<T>>
         return tab_second_value[static_cast<std::size_t>(num_tab)];
     }
 
+    /// @brief How many rows there are: one per num_tab ever handed out. A
+    ///        released row is empty (clear()).
+    [[nodiscard]] static std::size_t second_value_row_count() noexcept
+    {
+        return tab_second_value.size();
+    }
+
     /*!
      * \brief Sets a specific second value in a tab and chunk.
      * \param num_tab Index of the tab.

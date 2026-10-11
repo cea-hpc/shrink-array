@@ -51,6 +51,14 @@ the tag's checksum to the recipe.
 
 ### Added
 
+- `ArrayChunk2A<T>::reclaim_second_values()`: at a sequential point, frees the second values
+  no chunk of any `ArrayChunk2A<T>` refers to any more; the registry reuses their identifiers
+  before carving new ones, so a workload whose constants drift no longer runs out of them
+  (`CHUNK_CST_VAL2_MAX_IDS`). The benchmark calls it every N iterations under `CHUNK_CST2_RECLAIM=N`;
+  harness `cst2_reclaim_validation`.
+
+### Added
+
 - Chunk sizes may be multiples of 64 as well as powers of two (`CHUNK_SIZE`, `CHUNK_STATIC_SIZES`,
   `set_chunk_size`, `rechunk_to`): 192, 384, 576... `ParamChunk::check_chunk_size()` tells a valid
   size. `rechunk_to` moves between sizes that do not divide each other (256 -> 384). The advisor

@@ -50,6 +50,7 @@ outside any parallel region, and it invalidates the array's proxies.
 | replace **(S)** | `assign(n, v)`, `assign(first, last)`, `swap(other)`, `operator=` | |
 | iterate | `begin()`, `end()`, `cbegin()`, `rbegin()`, `rend()` | const random-access iterators, by value |
 | compress **(S)** | `compress()` | a full compression pass now (`ArrayChunk`, `ArrayChunk2`, `ArrayChunk2A`) |
+| free second values **(S)** | `reclaim_second_values()` (static) | frees the second values no chunk of any `ArrayChunk2A<T>` uses any more, so that their identifiers are reused; returns how many (`ArrayChunk2A`) |
 | statistics | `stats()`, `get_nb_chunk_written()` | percentage and number of chunks holding a buffer (each array also prints one line when it is destroyed) |
 | geometry | `chunk_size()`, `rechunk_to(n)` **(S)** | `rechunk_to()` only in the `_dyn` libraries (a no-op in static ones) |
 

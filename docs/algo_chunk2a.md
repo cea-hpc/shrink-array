@@ -71,11 +71,14 @@ the old storage behind: 3.5 GB on the benchmark, with 15 rechunked arrays.
   chunk adopts it only by installing it as its `values` pointer.
 - To know whether a chunk is compressed to a second value, it is enough to test whether its
   pointer falls within the registry **region** (`region_contains`).
-- The registry arrays live **until the end of the run**: a value, once registered,
-  is never removed. A workload that produces a very large number of distinct values
-  therefore makes the registry grow; in the benchmark, `CHUNK_BENCH_ULONG_BANDS` limits the number of
-  distinct values of the `unsigned long` array, and `CHUNK_CST2_PROBE=1` prints the state of the
-  registry.
+- A value, once registered, stays until the last array of the type is destroyed, **or**
+  until `reclaim_second_values()` runs at a sequential point: it marks the values still
+  referenced (chunks compressed to them, per-chunk second-value slots) over every array of
+  the type and frees the others, whose identifiers are then reused. Without it, a workload
+  that produces a very large number of distinct values makes the registry grow until its
+  identifiers run out, which stops the run. In the benchmark, `CHUNK_BENCH_ULONG_BANDS`
+  limits the number of distinct values of the `unsigned long` array, `CHUNK_CST2_PROBE=1`
+  prints the state of the registry and `CHUNK_CST2_RECLAIM=N` reclaims every N iterations.
 
 `find_or_set_ind_cst_val2(value, slot)` registers the value if needed, writes it into the
 chunk's second-value slot, and returns the shared array to install.
