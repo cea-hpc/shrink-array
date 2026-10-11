@@ -60,7 +60,6 @@
 #include <cassert>     // TypeAllocator::alloc: the size its free will route by
 #include <cstddef>     // std::size_t
 #include <tuple>       // std::tuple, std::get, std::apply (the ladder)
-#include <type_traits> // std::is_same_v (allocator8() alias check)
 
 #include "fast_allocators/internal/svalloc.h" // fast_alloc::alignment
 #include "fast_allocators/internal/pmp_alloc.h" // FAST_ALLOC_PMP_MAX_THREADS / FAST_ALLOC_PMP_THREAD_RANK / FAST_ALLOC_PMP_IN_PARALLEL_REGION
@@ -263,26 +262,6 @@ class StaticConstArray
         return *ladder;
     }
 
-    /// @brief Standalone bucket for 24-byte blocks (the ladder goes 16 -> 32).
-    /// @details IMMORTAL, like the ladder and for the same reason: it backs
-    ///          TypeAllocator's 24-byte allocations, which may still be
-    ///          released during static teardown. Leaked on purpose.
-    [[nodiscard]] static TCTypeAllocatorEBC<24, SIZE_BLOCK>& allocator24()
-    {
-        static auto* const allocator = new TCTypeAllocatorEBC<24, SIZE_BLOCK>();
-        return *allocator;
-    }
-
-    /// @brief The 8-byte bucket, the most common size, by name.
-    /// @details IS the ladder's bucket 1 (sizes 5..8), not a pool of its own:
-    ///          FixedSizeAllocator reaches it directly, skipping the size
-    ///          comparisons of the ladder walk. Same lock either way
-    ///          (critical(fast_alloc_ladder)).
-    [[nodiscard]] static TCTypeAllocatorEBC<8, SIZE_BLOCK>& allocator8()
-    {
-        return std::get<1>(buckets());
-    }
-
     /// @brief The bucket getBlockAllocInt() / freeBlockWithInt() use for
     ///        @p sz bytes: the smallest that holds it, the top one past 32768.
     [[nodiscard]] static constexpr std::size_t bucket_index(unsigned int sz) noexcept
@@ -344,8 +323,6 @@ class StaticConstArray
     }
 };
 
-static_assert(std::is_same_v<std::tuple_element_t<1, StaticConstArray::Ladder>, TCTypeAllocatorEBC<8, SIZE_BLOCK>>,
-              "allocator8() is the ladder's bucket 1: it must stay the 8-byte one");
 static_assert(StaticConstArray::bucket_index(StaticConstArray::max_const_block_size) ==
                       StaticConstArray::n_buckets - 1 &&
                   StaticConstArray::bucket_index(StaticConstArray::max_const_block_size / 2) ==
@@ -491,9 +468,15 @@ struct BlkAllocator : public StaticConstArray
  * @tparam ElemT The type whose `sizeof` is the block size.
  *
  * @details Same fallback as ::BlkAllocator (a bucket, malloc past the top of
- *          the ladder), with a shortcut: 8 and 24 bytes are
- *          by far the most common sizes here, so they go straight to
- *          StaticConstArray::allocator8() / allocator24() instead of walking the ladder.
+ *          the ladder). The size is `sizeof(ElemT)`, a constant: bucket_index()
+ *          folds and getBlockAlloc() goes straight to its bucket, so no size
+ *          needs a shortcut of its own.
+ *
+ *          The library's one instantiation is TypeAllocator<TCAllocator>: the
+ *          slab headers (128 bytes, alignas(64)), serial builds only. Chunk
+ *          objects never come here -- the arrays hold them in a
+ *          std::vector<chunk_type>, one allocation per array, and their value
+ *          buffers come from the TCTypeAllocator pools.
  */
 template <typename ElemT>
 class FixedSizeAllocator : private StaticConstArray
@@ -508,16 +491,9 @@ class FixedSizeAllocator : private StaticConstArray
         }
         else
         {
-            if (sizeof(ElemT) == 8)
-            {
-                return shortcut_alloc(StaticConstArray::allocator8());
-            }
-            if (sizeof(ElemT) == 24)
-            {
-                return shortcut_alloc(StaticConstArray::allocator24());
-            }
-
-            void* ptr = getBlockAlloc(sizeof(ElemT));
+            // getBlockAlloc() returns null past the top bucket: not a failure,
+            // "too big for the ladder".
+            void* ptr = getBlockAlloc(static_cast<unsigned int>(sizeof(ElemT)));
 
             if (!ptr)
             {
@@ -528,43 +504,7 @@ class FixedSizeAllocator : private StaticConstArray
         }
     }
 
-    /// @brief One block of @p size bytes, ignoring `sizeof(ElemT)`.
-    /// @note Used by ::TypeAllocator, where the caller knows the size and the
-    ///       type parameter only selects the pool.
-    static void* alloc_block(size_t size)
-    {
-        if constexpr (alloc_config::use_std_alloc)
-        {
-            return int_alloc(size);
-        }
-        else
-        {
-            if (size == 8)
-            {
-                return shortcut_alloc(StaticConstArray::allocator8());
-            }
-            if (size == 24)
-            {
-                return shortcut_alloc(StaticConstArray::allocator24());
-            }
-
-            // size_t test before narrowing, as BlkAllocator::alloc_block().
-            void* ptr = size <= max_const_block_size ? getBlockAlloc(static_cast<unsigned int>(size)) : nullptr;
-
-            if (!ptr)
-            {
-                return int_alloc(size);
-            }
-
-            return ptr;
-        }
-    }
-
-    /// @brief Give back a block from either alloc_block() overload.
-    /// @warning Routes by `sizeof(ElemT)`, NOT by the size the block was
-    ///          actually taken with. A block from `alloc_block(size)` with
-    ///          `size != sizeof(ElemT)` goes back to the wrong bucket;
-    ///          TypeAllocator::alloc() asserts it never is.
+    /// @brief Give back a block from alloc_block().
     static void free_block(void* ptr)
     {
         if (ptr == nullptr)
@@ -578,59 +518,15 @@ class FixedSizeAllocator : private StaticConstArray
         }
         else
         {
-            if (sizeof(ElemT) == 8)
+            // freeBlock() returns false for a size the ladder does not serve:
+            // the block came from int_alloc().
+            if (freeBlock(static_cast<int>(sizeof(ElemT)), ptr))
             {
-                shortcut_free(StaticConstArray::allocator8(), ptr);
+                return;
             }
-            else if (sizeof(ElemT) == 24)
-            {
-                shortcut_free(StaticConstArray::allocator24(), ptr);
-            }
-            else
-            {
-                if (freeBlock(sizeof(ElemT), ptr))
-                {
-                    return;
-                }
 
-                int_free(ptr);
-            }
+            int_free(ptr);
         }
-    }
-
-  private:
-    /// @brief allocator8() / allocator24() are plain buckets, no more thread-safe
-    ///        than the ladder's: same guard as getBlockAlloc(). Serially
-    ///        FAST_ALLOC_PMP_IN_PARALLEL_REGION is the constant false and the branch folds
-    ///        away.
-    template <typename Bucket>
-    static void* shortcut_alloc(Bucket& bucket)
-    {
-        if (FAST_ALLOC_PMP_IN_PARALLEL_REGION)
-        {
-            void* ptr = nullptr;
-#pragma omp critical(fast_alloc_ladder)
-            {
-                ptr = bucket.alloc();
-            }
-            return ptr;
-        }
-        return bucket.alloc();
-    }
-
-    /// @brief Counterpart of shortcut_alloc(), same guard.
-    template <typename Bucket>
-    static void shortcut_free(Bucket& bucket, void* ptr)
-    {
-        if (FAST_ALLOC_PMP_IN_PARALLEL_REGION)
-        {
-#pragma omp critical(fast_alloc_ladder)
-            {
-                bucket.free_elt(ptr);
-            }
-            return;
-        }
-        bucket.free_elt(ptr);
     }
 };
 
@@ -651,10 +547,10 @@ struct TypeAllocator
     /// @pre `size == sizeof(T)`: free() routes by sizeof(T), so any other size
     ///      (an operator new reached by a larger derived class) would go back
     ///      to the wrong bucket.
-    static void* alloc(size_t size)
+    static void* alloc([[maybe_unused]] size_t size)
     {
         assert(size == sizeof(T) && "TypeAllocator: free() routes by sizeof(T)");
-        return FixedSizeAllocator<T>::alloc_block(size);
+        return FixedSizeAllocator<T>::alloc_block();
     }
     /// @brief Give it back.
     /// @warning Routes by `sizeof(T)`. @see FixedSizeAllocator::free_block

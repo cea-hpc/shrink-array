@@ -101,9 +101,6 @@ void StaticConstArray::clearInfoFreeElt()
     }
 }
 
-// StaticConstArray::allocator8() / allocator24(): in static_const_array.h
-// (allocator8() is the ladder's 8-byte bucket; both immortal).
-
 /**
  * @brief Registry of the live ::TCTypeAllocator instances, for the memory report.
  *
