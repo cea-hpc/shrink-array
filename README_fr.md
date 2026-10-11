@@ -204,6 +204,8 @@ lit quand on le convertit et fait passer toute écriture par la mécanique de co
 - `T v = a[i];` prend la valeur ; `auto v = a[i];` garde le proxy, qui suit alors l'élément.
   Un code porté depuis `std::vector` veut `T`, pas `auto` : un usage d'un tel `v` ne compile
   pas (`internal/element_ref.h`).
+- `std::printf("%f", a[i])`, `std::format("{}", a[i])`, `std::max(a[i], 2.0)` recevraient le
+  proxy, pas la valeur, et ne compilent pas : écrire `double(a[i])`.
 - `a[i] += x;` et les autres opérateurs composés renvoient un proxy ; l'ignorer, comme ici,
   permet à la bibliothèque de différer l'opération sans coût. `a[i]++` renvoie l'ancienne
   valeur sous forme de `T`.

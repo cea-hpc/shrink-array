@@ -240,8 +240,12 @@ of cores)` threads. A program that runs more threads than cores sets
 
 - **`auto` keeps a proxy.** On a non-const array, `tab[i]` returns a write proxy. `T v = tab[i];`
   takes the value; `auto v = tab[i];` keeps the proxy, which follows the element if it changes
-  later. In code ported from `std::vector`, replace `auto` with the element type. A Debug or
-  `CHECK_OPTIM` build refuses to compile a use of such a `v`, and says so.
+  later. In code ported from `std::vector`, replace `auto` with the element type. Every build
+  refuses to compile a use of such a `v`, and says so.
+- **Convert an element before handing it on.** `std::printf("%f", tab[i])` would pass the proxy,
+  not the value: refused (GCC through `-Werror=conditionally-supported`, which the library sets;
+  clang always). `std::format("{}", tab[i])`, `std::max(tab[i], 2.0)` and a generic function
+  that takes `tab[i]` by value are refused too. Write `double(tab[i])`, or `T(tab[i])`.
 - **No `T&` on an element.** `tab[i].x = 1` does not compile; read the element, change it,
   write it back. `data()`, mutable iterators and an in-place `std::sort` do not exist either:
   sort a `std::vector` copy and `assign()` it back.

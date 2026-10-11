@@ -26,7 +26,9 @@
 //   - Built with ELEMENT_REF_CASE=N (1..8): one misuse of a NAMED element proxy
 //     (`auto v = a[i];` then v used), which must NOT compile. The ctest builds
 //     the object target and passes when the compiler output carries the
-//     ElementRef message.
+//     ElementRef message. N = 9: an element passed to printf, refused by the
+//     compiler itself (chunk_hardening's -Werror=conditionally-supported for
+//     GCC, an error by default for clang).
 //
 // Run by ctest; the variant comes from the CHUNK_VARIANT_* macro of the target.
 
@@ -185,8 +187,10 @@ void misuse()
     auto v = a[0]; // a copy
     auto w = v;
     (void)w;
+#elif ELEMENT_REF_CASE == 9
+    std::printf("%f\n", a[0]); // the proxy through `...`, not the value (GCC: -Werror=conditionally-supported)
 #else
-#error "ELEMENT_REF_CASE: 1..8"
+#error "ELEMENT_REF_CASE: 1..9"
 #endif
 }
 #endif

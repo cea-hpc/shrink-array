@@ -69,6 +69,7 @@ Absents : `data()`, les itérateurs mutables, `insert` / `erase` au milieu, un t
 | `a[i] += v;` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=` | opérations composées, pour les types qui les ont ; renvoient un proxy |
 | `++a[i]`, `--a[i]` | renvoient un proxy ; `a[i]++` renvoie l'ancienne valeur sous forme de `T` |
 | `a[i] == v`, `a[i] != v` | comparent la valeur courante ; les autres comparaisons passent par la conversion en `T` |
+| `std::printf("%f", a[i])` | refusé : `...` recevrait le proxy, pas la valeur (GCC : `-Werror=conditionally-supported`, posé par la bibliothèque ; clang : toujours). Écrire `double(a[i])` |
 
 `auto x = a[i];` garde le proxy, qui suit l'élément. Un proxy ne doit pas survivre au
 stockage du tableau : toute opération **(S)** l'invalide. Dans tous les builds,

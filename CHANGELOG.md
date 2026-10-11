@@ -68,7 +68,11 @@ the tag's checksum to the recipe.
   comparison, arithmetic) does not compile, with a message pointing to `T v = a[i];`. Its
   operations are force-inlined: the optimised code is the bare proxy's (clang 23 and GCC 16 at
   -O3 on `shrink_bench`; without the forced inlining GCC kept a complex `*=` out of line).
-  `-DCHUNK_LOOSE_ELEMENT_REF` returns the bare proxy, for code not yet fixed. `ArrayChunkBase::element_proxy(i)` returns
+  `-DCHUNK_LOOSE_ELEMENT_REF` returns the bare proxy, for code not yet fixed.
+- `chunk_hardening` (linked PUBLIC by every variant, exported) adds `-Werror=conditionally-supported`
+  for GCC: `std::printf("%f", a[i])` passed the write proxy through `...` and printed garbage
+  (`9223372036854775808.000000` for 1.5) with only a `-Wformat` warning; it is now an error, as
+  clang already made it. `element_ref_misuse_9` (ctest) checks it. `ArrayChunkBase::element_proxy(i)` returns
   the proxy in every build, for code that keeps it on purpose.
 - Usable as a subproject (`add_subdirectory`, `FetchContent`): `SHRINK_ARRAY_BUILD_EXAMPLES`
   and `SHRINK_ARRAY_BUILD_TESTS`, ON at the top level and OFF otherwise, so a consuming

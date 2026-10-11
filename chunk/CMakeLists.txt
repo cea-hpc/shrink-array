@@ -221,6 +221,13 @@ if (SANITIZER MATCHES "thread" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(chunk_hardening INTERFACE -Wno-tsan)
 endif()
 
+# An element passed through `...` -- std::printf("%f", a[i]) -- is the write
+# proxy, an object, not the value: GCC accepts it ("conditionally supported",
+# a -Wformat warning at most) and printf then prints garbage; clang refuses
+# it. An error with GCC too, for the library and every consumer (installed
+# ones included): write double(a[i]).
+target_compile_options(chunk_hardening INTERFACE $<$<CXX_COMPILER_ID:GNU>:-Werror=conditionally-supported>)
+
 install(TARGETS chunk_hardening EXPORT chunk-targets)
 
 # --- WARNINGS (every build type) -----------------------------------------

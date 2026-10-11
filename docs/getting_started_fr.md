@@ -248,8 +248,12 @@ programme avec un message.
 - **`auto` garde un proxy.** Sur un tableau non constant, `tab[i]` rend un proxy d'écriture.
   `T v = tab[i];` prend la valeur ; `auto v = tab[i];` garde le proxy, qui suit l'élément s'il
   change ensuite. Dans du code venu d'un `std::vector`, remplacer `auto` par le type de
-  l'élément. Un build Debug ou `CHECK_OPTIM` refuse de compiler un usage d'un tel `v`, et le
-  dit.
+  l'élément. Tout build refuse de compiler un usage d'un tel `v`, et le dit.
+- **Convertir un élément avant de le transmettre.** `std::printf("%f", tab[i])` passerait le
+  proxy, pas la valeur : refusé (GCC par `-Werror=conditionally-supported`, que pose la
+  bibliothèque ; clang toujours). `std::format("{}", tab[i])`, `std::max(tab[i], 2.0)` et une
+  fonction générique qui prend `tab[i]` par valeur sont refusés aussi. Écrire `double(tab[i])`,
+  ou `T(tab[i])`.
 - **Pas de `T&` sur un élément.** `tab[i].x = 1` ne compile pas : lire l'élément, le modifier,
   le réécrire. `data()`, les itérateurs modifiables et un `std::sort` en place n'existent pas
   non plus : trier une copie en `std::vector`, puis la remettre par `assign()`.

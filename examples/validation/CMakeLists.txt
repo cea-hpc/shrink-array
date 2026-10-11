@@ -391,6 +391,20 @@ if (TARGET chunk_v2a_${CHUNK_DEFAULT_SIZE})
     set_tests_properties(${_tgt} PROPERTIES PASS_REGULAR_EXPRESSION "named element proxy is used"
                                             RESOURCE_LOCK element_ref_misuse_build LABELS validation)
   endforeach()
+  # 9: std::printf("%f", a[i]) passes the proxy through `...`: GCC with
+  # chunk_hardening's -Werror=conditionally-supported, clang by default.
+  if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|IntelLLVM")
+    set(_tgt element_ref_misuse_9)
+    add_library(${_tgt} OBJECT EXCLUDE_FROM_ALL element_ref_validation.cpp)
+    target_link_libraries(${_tgt} PRIVATE chunk_v2a_${CHUNK_DEFAULT_SIZE})
+    validation_variant_defs(${_tgt} CHUNK_VARIANT_V2A ${CHUNK_DEFAULT_SIZE})
+    target_compile_definitions(${_tgt} PRIVATE ELEMENT_REF_CASE=9)
+    validation_setup_target(${_tgt})
+    add_test(NAME ${_tgt} COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target ${_tgt})
+    set_tests_properties(${_tgt} PROPERTIES
+                         PASS_REGULAR_EXPRESSION "is conditionally supported|through variadic function"
+                         RESOURCE_LOCK element_ref_misuse_build LABELS validation)
+  endif()
 endif()
 
 # --- fill_range_mt_v1v2_validation: the two-variant library (CHUNK_VARIANT_V1=1;CHUNK_VARIANT_V2=1,
