@@ -319,6 +319,42 @@ def test_git_pull_conflict_is_aborted(site, tmp_path, mode):
     assert not (c / ".git" / "MERGE_HEAD").exists() and not (c / ".git" / "rebase-merge").exists()
 
 
+def test_git_branches_and_switch(site, tmp_path):
+    env, up, c = _origin_and_clone(site, tmp_path)
+    # a remote-only branch, pushed after ~/c was cloned: the fetch finds it
+    _git(env, up, "checkout", "-q", "-b", "feature")
+    _push(env, up, "g", "feat\n", "feature work")  # pushes dev: nothing new there
+    _git(env, up, "push", "-q", "origin", "feature")
+    r = site.helper("git_branches", "~/c")
+    assert r["fetch_error"] is None
+    assert r["local"] == ["dev"] and r["remote"] == ["origin/feature"]
+    # switch to the remote branch: a local tracking branch is created
+    r = site.helper("git_switch", "~/c", "origin/feature")
+    assert r["ok"], r["output"]
+    assert r["before"] == "dev" and r["git"]["branch"] == "feature" and r["git"]["upstream"] == "origin/feature"
+    assert r["git"]["commit"] == _git(env, up, "rev-parse", "feature")
+    r = site.helper("git_branches", "~/c")
+    assert sorted(r["local"]) == ["dev", "feature"] and r["remote"] == []
+    # back to a local branch
+    r = site.helper("git_switch", "~/c", "dev")
+    assert r["ok"] and r["git"]["branch"] == "dev"
+
+
+def test_git_switch_refused(site, tmp_path):
+    env, up, c = _origin_and_clone(site, tmp_path)
+    _git(env, up, "checkout", "-q", "-b", "other")
+    _git(env, up, "push", "-q", "origin", "other")
+    site.helper("git_branches", "~/c")
+    (c / "f").write_text("changed\n")  # uncommitted change: refused, nothing moves
+    r = site.helper("git_switch", "~/c", "origin/other")
+    assert not r["ok"] and "git stash" in r["output"] and r["git"]["branch"] == "dev"
+    assert (c / "f").read_text() == "changed\n"
+    _git(env, c, "checkout", "-q", "--", "f")
+    for bad in ("nope", "--orphan"):
+        r = site.helper("git_switch", "~/c", bad)
+        assert not r["ok"] and "branche inconnue" in r["output"]
+
+
 def test_git_pull_without_repository(site):
     res = subprocess.run([str(site.bin / "ssh"), "inti", "python3 - git_pull ~/nothing merge"],
                          input=HELPER.encode(), env=site.env, capture_output=True, timeout=60)

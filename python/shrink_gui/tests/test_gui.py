@@ -334,11 +334,53 @@ def test_git_row_and_pull(gui, site, tmp_path):
     w.repo.setText("~/c")
     w.check()
     assert pump(lambda: "branche <b>dev</b>" in w.git_state.text()), w.git_state.text()
-    assert w.bpull.isEnabled() and w.bpull_rebase.isEnabled()
+    # enabled once the branch list's fetch is over: one git command at a time
+    assert pump(lambda: w.bpull.isEnabled() and w.bpull_rebase.isEnabled())
     w.bpull.click()
     want = git(up, "rev-parse", "HEAD")
     assert pump(lambda: getattr(w, "inti_git", {}).get("commit") == want)
     assert pump(lambda: want[:8] in w.git_state.text())
+
+
+def test_branch_list_and_switch(gui, site, tmp_path):
+    """"Branche (inti)" lists the local and remote branches after a fetch;
+    "Changer de branche" checks the chosen one out, then git pull acts on it."""
+    import subprocess
+    w, pump = gui
+    env = dict(site.env, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+               GIT_COMMITTER_EMAIL="t@t")
+
+    def git(cwd, *args):
+        return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True,
+                              text=True).stdout.strip()
+
+    origin, up = tmp_path / "o.git", tmp_path / "up"
+    git(tmp_path, "init", "-q", "--bare", str(origin))
+    git(tmp_path, "clone", "-q", str(origin), str(up))
+    git(up, "checkout", "-q", "-b", "dev")
+    (up / "f").write_text("1\n")
+    git(up, "add", "f")
+    git(up, "commit", "-qm", "one")
+    git(up, "push", "-q", "origin", "dev")
+    git(site.home, "clone", "-q", "-b", "dev", str(origin), "c")
+    git(up, "checkout", "-q", "-b", "feature")
+    (up / "f").write_text("feature\n")
+    git(up, "commit", "-qam", "feature")
+    git(up, "push", "-q", "origin", "feature")
+
+    w.repo.setText("~/c")
+    w.check()
+    assert pump(lambda: w.branch.findData("origin/feature") >= 0), [w.branch.itemText(i) for i in range(w.branch.count())]
+    assert w.branch.currentData() == "dev" and not w.bswitch.isEnabled()
+    w.branch.setCurrentIndex(w.branch.findData("origin/feature"))
+    assert w.bswitch.isEnabled()
+    w.bswitch.click()
+    want = git(up, "rev-parse", "feature")
+    assert pump(lambda: getattr(w, "inti_git", {}).get("branch") == "feature")
+    assert w.inti_git["commit"] == want
+    assert pump(lambda: "branche <b>feature</b>" in w.git_state.text())
+    assert pump(lambda: w.branch.currentData() == "feature" and w.branch.findData("origin/feature") < 0)
+    assert w.bpull.isEnabled() and not w.bswitch.isEnabled()
 
 
 # ------------------------------------------------------------ this machine

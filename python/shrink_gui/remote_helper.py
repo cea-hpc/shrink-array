@@ -184,6 +184,62 @@ def mem_gb():
     m = re.search(r"^MemTotal:\s+(\d+) kB", read("/proc/meminfo", "") or "", re.M)
     return round(int(m.group(1)) / 1048576.0, 1) if m else None
 
+def git_branches(repo):
+    """(local, remote) branch names of the repository: refs/heads, and the
+    remote-tracking branches (origin/x) without their symbolic HEAD."""
+    def refs(prefix):
+        code, out = git_run(repo, ["for-each-ref", "--format=%(refname)", prefix], 60)
+        if code != 0:
+            return []
+        names = [l.strip()[len(prefix) + 1:] for l in out.splitlines() if l.strip().startswith(prefix + "/")]
+        return [n for n in names if n and not n.endswith("/HEAD")]
+    return refs("refs/heads"), refs("refs/remotes")
+
+def act_git_branches(a):
+    """The branches of the repository a[0], after a `git fetch --prune`: a
+    failed fetch (no network, no credential) still lists what the last fetch
+    knew, and says so. remote: the remote-tracking branches with no local
+    branch of the same name (origin/x) -- a switch creates one for them."""
+    repo = os.path.expanduser(a[0])
+    if not git_info(repo):
+        print(json.dumps({"error": "pas de dépôt git dans %s" % a[0]}))
+        return
+    code, out = git_run(repo, ["fetch", "--prune", "--quiet"], 120)
+    local, remotes = git_branches(repo)
+    remote_only = [r for r in remotes if r.split("/", 1)[-1] not in local]
+    print(json.dumps({"local": local, "remote": remote_only, "git": git_info(repo),
+                      "fetch_error": None if code == 0 else (out.strip()[-2000:] or "code %d" % code)}))
+
+def act_git_switch(a):
+    """Check out the branch a[1] in the repository a[0]: a local branch, or a
+    remote-tracking one (origin/x), for which the local branch x is taken if
+    it exists, created tracking origin/x otherwise. Refused when the working
+    tree has changes: a checkout would carry them over to the other branch,
+    or stop half-way."""
+    repo = os.path.expanduser(a[0])
+    before = git_info(repo)
+    if not before:
+        print(json.dumps({"error": "pas de dépôt git dans %s" % a[0]}))
+        return
+    target = a[1] if len(a) > 1 else ""
+    local, remotes = git_branches(repo)
+    if target.startswith("-") or (target not in local and target not in remotes):
+        print(json.dumps({"ok": False, "output": "branche inconnue : %s" % target, "before": before["branch"],
+                          "git": before}))
+        return
+    if before["dirty"]:
+        print(json.dumps({"ok": False, "before": before["branch"], "git": before,
+                          "output": "modifications non commitées dans %s : commitez-les, ou mettez-les de côté "
+                                    "(git stash), avant de changer de branche" % a[0]}))
+        return
+    if target in local:
+        args = ["checkout", target]
+    else:
+        name = target.split("/", 1)[-1]
+        args = ["checkout", name] if name in local else ["checkout", "--track", target]
+    code, out = git_run(repo, args, 120)
+    print(json.dumps({"ok": code == 0, "output": out[-8000:], "before": before["branch"], "git": git_info(repo)}))
+
 def act_check(a):
     r = {"host": socket.gethostname(), "python": sys.version.split()[0],
          "msub": cmd_out(["which", "ccc_msub"]) is not None,
@@ -800,7 +856,8 @@ def act_build_targets(a):
                      "configured": mtime is not None, "mtime": mtime, "execs": sorted(execs)})
     print(json.dumps({"configs": sorted(configs), "dirs": dirs, "build_rep": build_rep}))
 
-ACTIONS = {"build_targets": act_build_targets, "check": act_check, "git_pull": act_git_pull, "options": act_options, "launch": act_launch, "list": act_list,
+ACTIONS = {"build_targets": act_build_targets, "check": act_check, "git_pull": act_git_pull,
+           "git_branches": act_git_branches, "git_switch": act_git_switch, "options": act_options, "launch": act_launch, "list": act_list,
            "tail": act_tail, "stop": act_stop, "pack": act_pack, "summary": act_summary,
            "points": act_points, "delete": act_delete}
 if __name__ == "__main__":

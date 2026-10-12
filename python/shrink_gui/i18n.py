@@ -22,6 +22,20 @@ EN = {
     "Lanceur (job)": "Launcher (job)", "Dépôt (inti)": "Repository (inti)", "Git (inti)": "Git (inti)",
     "pas de dépôt git (ou pas encore de connexion)": "no git repository (or not connected yet)",
     "pas de dépôt git sur inti : vérifiez la connexion": "no git repository on inti: check the connection",
+    "Branche (inti)": "Branch (inti)", "Changer de branche": "Switch branch",
+    "Relire les branches": "Reload branches",
+    "Extrait dans le dépôt d'inti la branche choisie dans la liste. Une branche distante (origin/x) sans "
+    "branche locale donne une branche locale x qui la suit. Refusé si le dépôt a des modifications non "
+    "commitées. git pull agit ensuite sur cette branche.":
+        "Checks out, in inti's repository, the branch chosen in the list. A remote branch (origin/x) with "
+        "no local branch gives a local branch x tracking it. Refused when the repository has uncommitted "
+        "changes. git pull then acts on that branch.",
+    "git fetch dans le dépôt d'inti, puis relit la liste des branches.":
+        "git fetch in inti's repository, then reloads the branch list.",
+    " (actuelle)": " (current)",
+    "git fetch a échoué sur inti : la liste est celle du dernier fetch":
+        "git fetch failed on inti: the list is the one of the last fetch",
+    "changement de branche refusé ou en échec": "branch switch refused or failed",
     "git pull dans le dépôt d'inti (fusion si les branches ont divergé). "
     "Un conflit annule le pull : le dépôt reste tel qu'il était.":
         "git pull in inti's repository (a merge if the branches have diverged). "
@@ -450,6 +464,14 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^git_pull : pas de dépôt git dans (\S+)$", r"git_pull: no git repository in \1"),
     (r"local : (<b>\w+</b>) \(([^)]*)\) ≠ ", r"local: \1 (\2) ≠ "),
     (r"^branche : ", "branch: "),
+    (r"^Changer de branche dans (\S+) : (\S+) → (\S+) \?$", r"Switch branch in \1: \2 → \3?"),
+    (r"^Une branche locale (\S+) suivant (\S+) est utilisée, ou créée si elle n'existe pas\.$",
+     r"A local branch \1 tracking \2 is used, or created if it does not exist."),
+    (r"^changement de branche sur inti : (\S+)…$", r"switching branch on inti: \1…"),
+    (r"^modifications non commitées dans (\S+) : commitez-les, ou mettez-les de côté \(git stash\), avant "
+     r"de changer de branche$", r"uncommitted changes in \1: commit them, or set them aside (git stash), "
+     r"before switching branch"),
+    (r"^branche inconnue : ", "unknown branch: "),
     (r"\* modifications non commitées dans le dépôt d'inti à la soumission",
      "* uncommitted changes in inti's repository at submission"),
     (r"≠ le job a démarré sur (\w+) : le dépôt a changé entre la soumission et le démarrage",

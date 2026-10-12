@@ -155,6 +155,23 @@ class Main(QMainWindow):
         grow.addWidget(self.bpull_rebase)
         self.git_label = QLabel("Git (inti)")
         where.addRow(self.git_label, grow)
+        # The repository's branches (load_branches: after a git fetch) and the
+        # switch to the one chosen (git_switch). Created disabled: show_git_state
+        # enables them once the repository is known.
+        self.branch = QComboBox()
+        self.branch.currentIndexChanged.connect(lambda *_: self.show_git_state())
+        self.bswitch = QPushButton("Changer de branche")
+        self.bswitch.clicked.connect(self.git_switch)
+        self.bbranches = QPushButton("Relire les branches")
+        self.bbranches.clicked.connect(self.load_branches)
+        for b in (self.bswitch, self.bbranches):
+            b.setEnabled(False)
+        brow = QHBoxLayout()
+        brow.addWidget(self.branch, 1)
+        brow.addWidget(self.bswitch)
+        brow.addWidget(self.bbranches)
+        self.branch_label = QLabel("Branche (inti)")
+        where.addRow(self.branch_label, brow)
         self.runs_label = QLabel("Runs (inti)")
         where.addRow(self.runs_label, self.runs_dir)
         where.addRow("Résultats (local)", self.local_dir)
@@ -534,6 +551,11 @@ class Main(QMainWindow):
         "git pull --rebase": "git pull --rebase dans le dépôt d'inti : vos commits locaux "
                              "d'inti sont rejoués au-dessus de la branche distante. Un conflit "
                              "annule le rebase : le dépôt reste tel qu'il était.",
+        "Changer de branche": "Extrait dans le dépôt d'inti la branche choisie dans la liste. Une "
+                              "branche distante (origin/x) sans branche locale donne une branche "
+                              "locale x qui la suit. Refusé si le dépôt a des modifications non "
+                              "commitées. git pull agit ensuite sur cette branche.",
+        "Relire les branches": "git fetch dans le dépôt d'inti, puis relit la liste des branches.",
     }
 
     def set_tooltips(self):
@@ -642,6 +664,7 @@ class Main(QMainWindow):
         self.setWindowTitle(T(f"shrink-array — runs sur {name} (prototype)"))
         self.repo_label.setText(T(f"Dépôt ({name})"))
         self.git_label.setText(T(f"Git ({name})"))
+        self.branch_label.setText(T(f"Branche ({name})"))
         self.runs_label.setText(T(f"Runs ({name})"))
         local = self.is_local()
         self.host.setEnabled(not local)
@@ -1028,6 +1051,8 @@ class Main(QMainWindow):
                 self.update_qos()
             self.inti_git = r.get("git")
             self.show_git_state()
+            if self.inti_git:
+                self.load_branches()
             self.conn.setText(f"<span style='color:#1e8449'>connecté — {r['host']}, "
                               f"python {r['python']}</span>{warn}{self.git_line()}")
             self.refresh()
@@ -1117,9 +1142,16 @@ class Main(QMainWindow):
         if self.list_busy:
             return
         self.list_busy = True
+        source = (self.is_local(), self.runs_dir.text().strip())
 
         def done(r):
             self.list_busy = False
+            if source != (self.is_local(), self.runs_dir.text().strip()):
+                # The list of a machine or runs directory the window has left
+                # meanwhile (a refresh asked for the new one found this one
+                # still running, and returned): list the current one.
+                self.refresh(select)
+                return
             if r is None:
                 return
             self.runs = r["runs"]
@@ -1298,9 +1330,12 @@ class Main(QMainWindow):
         g = getattr(self, "inti_git", None)
         if not g:
             self.git_state.setText("pas de dépôt git (ou pas encore de connexion)")
-            for b in (self.bpull, self.bpull_rebase):
+            for b in (self.bpull, self.bpull_rebase, self.bswitch, self.bbranches):
                 b.setEnabled(False)
             return
+        self.bbranches.setEnabled(True)
+        chosen = self.branch.currentData()
+        self.bswitch.setEnabled(bool(chosen) and chosen != g["branch"])
         txt = f"branche <b>{html.escape(g['branch'])}</b> @ {g['commit'][:8]}"
         if g.get("dirty"):
             txt += " · <span style='color:#b9770e'>modifications locales</span>"
@@ -1319,6 +1354,11 @@ class Main(QMainWindow):
         self.git_state.setText(txt)
         for b in (self.bpull, self.bpull_rebase):
             b.setEnabled(bool(up))
+        if getattr(self, "git_busy", 0):
+            # One git command at a time in the repository: a pull or a switch
+            # started while load_branches' fetch runs would fail on git's locks.
+            for b in (self.bpull, self.bpull_rebase, self.bswitch, self.bbranches):
+                b.setEnabled(False)
 
     def git_pull(self, rebase):
         """git pull [--rebase] in inti's repository, after a confirmation."""
@@ -1334,11 +1374,14 @@ class Main(QMainWindow):
                                  f"peut lire des sources modifiées en cours de route.")
         if ask(self, "Git", text) != QMessageBox.Yes:
             return
-        for b in (self.bpull, self.bpull_rebase):
-            b.setEnabled(False)
+        if getattr(self, "git_busy", 0):
+            return
+        self.git_busy = getattr(self, "git_busy", 0) + 1
+        self.show_git_state()
         self.info(f"{what} sur {self.machine_name()}…")
 
         def done(r):
+            self.git_busy -= 1
             if r is None:  # the error is already in the status bar
                 self.show_git_state()
                 return
@@ -1358,6 +1401,80 @@ class Main(QMainWindow):
                 QMessageBox.warning(self, "Git", head + "\n\n" + r.get("output", "")[-3000:])
 
         self.remote.helper("git_pull", [self.repo.text().strip(), "rebase" if rebase else "merge"], done)
+
+    def load_branches(self):
+        """git fetch on inti, then the "Branche (inti)" list: the local branches,
+        then the remote ones without a local branch; the current one selected."""
+        if not getattr(self, "inti_git", None) or getattr(self, "git_busy", 0):
+            return
+        self.git_busy = getattr(self, "git_busy", 0) + 1
+        self.show_git_state()
+
+        def done(r):
+            self.git_busy -= 1
+            if r is None:  # the error is already in the status bar
+                self.show_git_state()
+                return
+            if r.get("git"):
+                self.inti_git = r["git"]
+            cur = self.inti_git["branch"]
+            self.branch.blockSignals(True)
+            self.branch.clear()
+            for b in r.get("local", []):
+                self.branch.addItem(b + (T(" (actuelle)") if b == cur else ""), b)
+            if r.get("remote"):
+                self.branch.insertSeparator(self.branch.count())
+                for b in r["remote"]:
+                    self.branch.addItem(b, b)
+            i = self.branch.findData(cur)
+            if i >= 0:
+                self.branch.setCurrentIndex(i)
+            self.branch.blockSignals(False)
+            self.show_git_state()
+            if r.get("fetch_error"):
+                self.info(T("git fetch a échoué sur inti : la liste est celle du dernier fetch"))
+
+        self.remote.helper("git_branches", [self.repo.text().strip()], done)
+
+    def git_switch(self):
+        """Check out, in inti's repository, the branch chosen in the list."""
+        g = getattr(self, "inti_git", None)
+        target = self.branch.currentData()
+        if not g or not target or target == g["branch"]:
+            return
+        active = [r for r in self.runs if r["status"] in self.ACTIVE]
+        text = T(f"Changer de branche dans {self.repo.text().strip()} : {g['branch']} → {target} ?")
+        if "/" in target:
+            text += "\n\n" + T(f"Une branche locale {target.split('/', 1)[1]} suivant {target} est utilisée, "
+                                 f"ou créée si elle n'existe pas.")
+        if active:
+            text += "\n\n" + T(f"{len(active)} run(s) encore actif(s) : un build ou un bench en cours "
+                                 f"peut lire des sources modifiées en cours de route.")
+        if ask(self, "Git", text) != QMessageBox.Yes:
+            return
+        if getattr(self, "git_busy", 0):
+            return
+        self.git_busy = getattr(self, "git_busy", 0) + 1
+        self.show_git_state()
+        self.info(T(f"changement de branche sur inti : {target}…"))
+
+        def done(r):
+            self.git_busy -= 1
+            if r is None:
+                self.show_git_state()
+                return
+            self.inti_git = r.get("git") or self.inti_git
+            self.show_git_state()
+            if r["ok"]:
+                self.info(T(f"branche : {r.get('before', '')} → {self.inti_git['branch']}"))
+                self.check()   # the connection line and the branch list, then the script options
+                self.scan()
+            else:
+                QMessageBox.warning(self, "Git", T("changement de branche refusé ou en échec") + "\n\n"
+                                    + T(r.get("output", ""))[-3000:])
+                self.load_branches()
+
+        self.remote.helper("git_switch", [self.repo.text().strip(), target], done)
 
     def git_line(self):
         """ — inti : 1a2b3c4d (branch) · local : … ≠, for the connection line."""
