@@ -898,8 +898,38 @@ class Main(QMainWindow):
         return " ".join(parts)
 
     def update_preview(self, *_):
+        self.apply_time_by_mode()
         if hasattr(self, "preview"):
             self.preview.setPlainText(self.command())
+
+    def time_by_mode(self):
+        """The -T the program's "time_by_mode" gives for the chosen mode and
+        this partition's architecture, or None (no such entry, this machine)."""
+        spec = PROGRAMS[self.program.currentText()].get("time_by_mode")
+        if not spec or not hasattr(self, "form") or self.is_local():
+            return None
+        mode = self.form.values().get(spec["dest"]) or spec["default"]
+        secs = spec["seconds"].get(mode)
+        if secs is None:
+            return None
+        return int(round(secs * spec.get("arch_factor", {}).get(self.arch(), 1.0)))
+
+    def apply_time_by_mode(self):
+        """Set -T from time_by_mode() when the (program, mode, partition)
+        changed since the last time: a duration typed by hand stays until then."""
+        if not hasattr(self, "time_s") or not hasattr(self, "preset"):
+            return
+        t = self.time_by_mode()
+        if t is None:
+            self._time_mode_key = None
+            return
+        prog = self.program.currentText()
+        spec = PROGRAMS[prog]["time_by_mode"]
+        key = (prog, self.form.values().get(spec["dest"]) or spec["default"], self.preset.currentData())
+        if key != getattr(self, "_time_mode_key", None):
+            self._time_mode_key = key
+            if self.time_s.value() != t:
+                self.time_s.setValue(t)
 
     # ---------------------------------------------- --target / --exec pickers
     def arch_suffix(self):

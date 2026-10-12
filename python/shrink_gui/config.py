@@ -69,6 +69,14 @@ PROGRAMS = {
     },
     "bench_and_test.py": {
         "time_s": 21600,  # default -T (a few hours); then remembered per program
+        # -T from --mode (MODE_PRESETS of bench_runner/settings.py: about 1 h /
+        # 6 h / 24 h on the aarch64 matrix) + 25%, times "arch_factor" on the
+        # partition's architecture. Set on a change of mode or partition.
+        "time_by_mode": {
+            "dest": "mode", "default": "normal",
+            "seconds": {"fast": 4500, "normal": 27000, "full": 108000},
+            "arch_factor": {"x86": 2.5},
+        },
         "script": "python/bench_and_test.py", "cwd": "python",
         "interp": "python3", "scan": "argparse",
         "out_re": r"Run outputs \S+ (\S+)",
