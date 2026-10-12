@@ -24,16 +24,14 @@
  *          where the token is a hash of the allocated TYPE (mode
  *          typehashpointersplit: the top half of the id space is for types
  *          that contain pointers, the bottom half for those that do not; a C
- *          malloc with no type hint gets token 0). The instrumentation is all
- *          Clang provides -- no compiler-rt runtime, and the packaged Scudo
- *          does not export the entry points either -- so the fourteen
- *          functions below are what makes an instrumented program link.
+ *          malloc with no type hint gets token 0). Clang provides no runtime
+ *          for it, so the fourteen functions below are what makes an
+ *          instrumented program link.
  *
- *          Each one forwards to the real allocator and counts the call and
- *          its bytes in a lock-free table keyed by token. At exit the table
- *          is printed on stderr, biggest first. Nothing is stored in the
- *          blocks themselves, so untouched free() keeps working and the
- *          census is "who allocated how much", not a live-bytes tracker.
+ *          Each forwards to the real allocator and counts the call and its
+ *          bytes in a lock-free table keyed by token, printed on stderr at
+ *          exit, biggest first. Nothing is stored in the blocks, so free()
+ *          is untouched: "who allocated how much", not live bytes.
  *
  *          Tokens are hashes: python/alloc_token_names.py turns them back
  *          into type names from the binary's symbols.

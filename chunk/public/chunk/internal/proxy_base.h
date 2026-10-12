@@ -19,8 +19,8 @@
  * @file proxy_base.h
  * @brief Common base class for Proxy2 and Proxy2A using CRTP pattern
  *
- * This refactoring extracts all common functionality into ProxyBase,
- * leaving only chunk-specific logic in derived classes.
+ * ProxyBase holds all common functionality; derived classes keep only
+ * chunk-specific logic.
  */
 
 #include <type_traits> // std::is_integral_v, std::is_same_v, std::conditional_t, std::remove_reference_t
@@ -85,12 +85,10 @@ namespace internal
 /// @details NOT raw for a Chunk2A second constant: its pointer names an
 ///          identifier in a region that is never written, so indexing it reads
 ///          a zero page; the value comes from the registry instead (arithmetic
-///          plus one table load, no sync). The question is asked of the
-///          POINTER, not of the chunk: the callers run with a write or a replay
-///          in flight, so the chunk's state and the pointer can disagree, and
-///          converting a pointer that is NOT in the region gave an arbitrary
-///          index into value_by_id[] and a SIGSEGV. One exact range test on the
-///          pointer, one conversion.
+///          plus one table load, no sync). Ask the POINTER, not the chunk: the
+///          callers run with a write or a replay in flight, so the chunk's state
+///          and the pointer can disagree, and converting a pointer outside the
+///          region indexes value_by_id[] out of bounds.
 template <typename T>
 [[nodiscard]] T element_of(const T* vals, std::size_t n) noexcept
 {
@@ -104,8 +102,8 @@ template <typename T>
             return TabCstVal2Holder<T>::value_of_ptr_checked(vals);
         }
     }
-    // elem_get, not vals[n]: for Bit that indexed BYTES, up to chunk_size of
-    // them in a chunk_size / 8 byte buffer.
+    // elem_get, not vals[n]: for Bit, vals[n] indexes BYTES past the
+    // chunk_size / 8 byte buffer.
     // raw-read: element_of -- callers hold the write session, a ReadSection, or replay after materialisation
     return elem_get(vals, n);
 }
@@ -181,14 +179,12 @@ class ProxyBaseFastCompPolicy
      */
     static void resize_tab_is_int(int num_tab, int nb_chunk)
     {
-        // Check builds: the row is REALLOCATED, so every flag goes back to 0,
-        // not only the new ones. A chunk still flagged here still sits in a
-        // candidate list: its entry outlives the caller's chunk_list realloc,
-        // and the cleared flag lets the same chunk be queued a second time.
-        // The callers' compression pass (resize, after its deferred-op drain)
-        // empties the lists first; this is what checks it did. A fresh tab's
-        // row is empty and passes trivially. Mirrors
-        // Proxy2A::resize_tab_is_int(num_tab, old, nb).
+        // Check builds: the row is REALLOCATED, so every flag goes back to 0.
+        // A chunk still flagged here still sits in a candidate list: its entry
+        // outlives the caller's chunk_list realloc, and the cleared flag lets
+        // the chunk be queued twice. The callers' compression pass (resize,
+        // after its deferred-op drain) must empty the lists first; this checks
+        // it. Mirrors Proxy2A::resize_tab_is_int(num_tab, old, nb).
         if constexpr (build_config::any_check)
         {
             if (static_cast<std::size_t>(num_tab) < tab_is_inside_chunk_list_to_compress.size())
@@ -214,12 +210,10 @@ class ProxyBaseFastCompPolicy
     /**
      * @brief Release one array's candidate flags (its teardown).
      * @details Called once the array's candidates are purged and its chunks
-     *          freed. Without it an entry is only replaced when its num_tab is
-     *          reused, and a re-chunk builds the new storage under a NEW
-     *          num_tab: one byte per old chunk leaked at every re-chunk.
-     *          Swapped with an empty row, which frees a vector's capacity as
-     *          well as a unique_ptr's array. A later resize_tab_is_int()
-     *          reallocates.
+     *          freed. Required: a re-chunk builds the new storage under a NEW
+     *          num_tab, so an old row is otherwise never replaced (one byte per
+     *          old chunk leaked per re-chunk). Swapped with an empty row to free
+     *          the capacity. A later resize_tab_is_int() reallocates.
      * @param num_tab The dying array's index.
      */
     static void release_tab_is_int(int num_tab) noexcept
@@ -242,12 +236,9 @@ class ProxyBaseFastCompPolicy
 
     /// @brief Read at the offset @p ctx recorded, on the replay path.
     /// @warning Same reload caveat as store_value_async().
-    /// @details Through internal::element_of(), like read_values(): a replay of `*=` on
-    ///          a Chunk2A chunk compressed to its second value read 0 here
-    ///          (the identifier region) instead of the constant; if another
-    ///          thread materialised the chunk before the replay tested its
-    ///          state, the replay stored 0 * x into the fresh buffer -- one
-    ///          element at 0 among the second values.
+    /// @details Through internal::element_of(), like read_values(): a raw read
+    ///          of a Chunk2A chunk compressed to its second value gives 0 (the
+    ///          identifier region), and a replayed `*=` would store 0 * x.
     [[nodiscard]] static T read_values_async(auto* ctx) noexcept
     {
         return internal::element_of(ctx->chunk.values_load(), static_cast<std::size_t>(ctx->num));
@@ -307,12 +298,11 @@ class ProxyBaseFastCompPolicy<Derived, T, ChunkType, false>
     /// @brief No candidate flags in this configuration; nothing to size.
     static void resize_tab_is_int([[maybe_unused]] int num_tab, [[maybe_unused]] int nb_chunk) noexcept {}
     /// @brief Release one array's candidate flags, as the enabled policy does.
-    /// @details NOT a no-op: Chunk2A's serial build has candidate lists and
-    ///          sizes these rows itself (Proxy2A::resize_tab_is_int). Empty
-    ///          here, a cleared array's row kept its flags -- stuck at 1 with
-    ///          no list entry behind them, and one byte per chunk leaked -- and
-    ///          the next resize_tab_is_int() on that tab stopped on its
-    ///          "still queued" check (swap_move_validation, serial chunk2a).
+    /// @details Do not make this a no-op: Chunk2A's serial build has candidate
+    ///          lists and sizes these rows itself (Proxy2A::resize_tab_is_int).
+    ///          Otherwise a cleared array's flags stay at 1 with no list entry
+    ///          behind them (one byte per chunk leaked) and the next
+    ///          resize_tab_is_int() on that tab fails its "still queued" check.
     ///          v1 and Chunk2 never fill a row here: the guard makes it free.
     static void release_tab_is_int(int num_tab) noexcept
     {
@@ -351,15 +341,13 @@ namespace internal
  *          -- so a reader needs acquire, as ChunkBase::values_load() does. NOT
  *          seq_cst (what a plain std::atomic<T*>& converts with): no ordering
  *          here needs it -- the Dekker handshake has its own fences on the
- *          writer flags -- and on AArch64 with RCpc (Grace) acquire is LDAPR
- *          instead of LDAR: it does not wait for the earlier STLR stores. NOT
- *          relaxed: nothing else orders a writer with another thread's
- *          materialisation of the buffer.
+ *          writer flags -- and on AArch64 with RCpc acquire is LDAPR, which
+ *          does not wait for earlier STLR stores. NOT relaxed: nothing else
+ *          orders a writer with another thread's materialisation of the buffer.
  *
- *          Implicitly built from the chunk's atomic, implicitly converted to
- *          T*: every existing spelling (subscript, +, ==, casts, T* arguments)
- *          compiles unchanged. A reference, like the member it replaces: the
- *          chunk may reallocate, so each use reloads.
+ *          Implicitly built from the chunk's atomic and converted to T*, so
+ *          subscript, +, ==, casts and T* arguments compile unchanged. A
+ *          reference: the chunk may reallocate, so each use reloads.
  */
 template <typename T>
 class AcquireValuesRef
@@ -421,13 +409,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     template <typename U, typename D, typename C, bool E>
     friend class ProxyBaseFastCompPolicy;
 
-    // Alias for internal usage
-
     // ========================================================================
     // Common type aliases
     // ========================================================================
     // OpenMP: every read of the chunk's pointer is load(acquire), see
-    // internal::AcquireValuesRef (it was std::atomic<T*>&, read seq_cst).
+    // internal::AcquireValuesRef.
     using atomic_ptr_ref_t = std::conditional_t<build_config::use_openmp, internal::AcquireValuesRef<T>, T*&>;
 
     using CompressionManagerType = CompressionManager<T, ChunkType>;
@@ -470,11 +456,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     ///          Never while the chunk has a deferred op pending
     ///          (pending_any()): that op is OLDER than this write in program
     ///          order and would replay after it, so the write must reach the
-    ///          engine, whose WAW guard retires the op before the store. The
-    ///          early-outs sit before the engine; this is their one hole,
-    ///          found by deferred_path_validation (chunk2/bool lost 1 500
-    ///          writes in a million). pending_any() is one acquire load of
-    ///          the chunk header, constant-false in a serial build.
+    ///          engine, whose WAW guard retires the op before the store;
+    ///          otherwise the write is silently lost. pending_any() is one
+    ///          acquire load of the chunk header, constant-false in a serial build.
     [[nodiscard]] bool is_cst_val1_and_v_equal_first_value(in_t<T> v) const noexcept
     {
         return v == static_cast<T>(ChunkType::first_value) && is_cst_val1() && !chunk.pending_any();
@@ -543,17 +527,15 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @pre As store_value().
     void store_value_at(T* const vals, in_t<T> v) const noexcept
     {
-        // The chunk must not be COMMITTED to a compressor at this point: a
-        // writer on a marked chunk is sent to the slow path by
-        // must_defer_write(), and a compressor commits its claims only once
-        // its window is shut -- no writer flagged on a marked chunk. A chunk
-        // merely marked (1) is legitimate here: the compressor may have marked
-        // it after this writer's check #2 and is waiting on the flag; that
-        // was the false positive of the first form of this guard, one run in
-        // two at 8 threads. If this fires, the compressor passed its window
-        // with this writer's flag up: the ordering of the gate's read, not the
-        // propagation of the mark -- what TSan reports as this write racing
-        // scan_constants()/read_value_scan().
+        // The chunk must not be COMMITTED to a compressor here: a writer on a
+        // marked chunk is sent to the slow path by must_defer_write(), and a
+        // compressor commits its claims only once its window is shut -- no
+        // writer flagged on a marked chunk. Do not test "merely marked" (1):
+        // the compressor may have marked it after this writer's check #2 and
+        // be waiting on the flag (false positive). If this fires, the
+        // compressor passed its window with this writer's flag up: suspect the
+        // ordering of the gate's read, not the propagation of the mark (this
+        // write then races scan_constants()/read_value_scan()).
         if constexpr (build_config::any_check && chunk_config::use_chunk_steal_mark)
         {
             if (chunk.steal_committed()) [[unlikely]]
@@ -581,14 +563,13 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     {
         // WRITE-PATH helper ONLY (v_old capture + mark_for_compression new value
         // in execute_simple_operation / arithmetic_assign). It must NOT sync:
-        // syncing here re-flushes from inside a write (begin_write held) and, when
+        // syncing re-flushes from inside a write (begin_write held) and, when
         // pending_ops_>0, wait_for_availability's replay reallocates `values`
-        // under the in-flight writer -> SIGSEGV. Same-offset visibility on the
-        // write path is handled by the WAW erase before the write body; pure
-        // reads use read_pure() below. Raw -- but not for a Chunk2A second
-        // constant, see internal::element_of(): the compression decision
-        // downstream would otherwise be taken against 0 instead of the chunk's
-        // constant. One load of the pointer.
+        // under the in-flight writer. Same-offset visibility on the write path
+        // is handled by the WAW erase before the write body; pure reads use
+        // read_pure(). Not raw for a Chunk2A second constant (see
+        // internal::element_of()): the compression decision must see the
+        // constant, not 0.
         return read_values_at(values);
     }
     /// @brief read_values() through a pointer the caller has already loaded.
@@ -604,14 +585,12 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @brief read_values() for a pre-check made BEFORE the write session
     ///        (the `0 * x` shortcut of the compound operations): inside a
     ///        read_reclaim::ReadSection.
-    /// @details Outside the session nothing stops a pass running in the region
-    ///          from compressing the chunk and releasing its buffer between the
-    ///          pointer load and the element load; the buffer goes back to the
-    ///          reuse list and the next materialisation overwrites it -- with
-    ///          zeros, for a first-constant one, and the shortcut then dropped
-    ///          the operation (read_reclaim_validation, mode `compound`). The
-    ///          section makes that pass wait for this read before it releases
-    ///          anything, exactly as for element_at.
+    /// @details Outside the session a pass in the region may compress the chunk
+    ///          and release its buffer between the pointer load and the element
+    ///          load; the next materialisation reuses and overwrites it (zeros,
+    ///          for a first constant), and the shortcut would wrongly drop the
+    ///          operation. The section makes that pass wait for this read
+    ///          before it releases anything, as for element_at.
     [[nodiscard]] T read_values_outside_session() const noexcept
     {
         const read_reclaim::ReadSection section;
@@ -634,12 +613,11 @@ class ProxyBase : public ProxyOperators<Derived, T>,
      * @note @p lbd_info runs BEFORE the body, and only when the metadata is
      *       actually needed -- it is a no-op without fast block compression.
      * @note Force-inlined, like the const operator[] (array_chunk_base.h):
-     *       GNU otherwise emitted one out-of-line copy per (proxy, type,
-     *       write lambda) and every write paid a call into it. Only this
-     *       body is forced -- the slow-path callees (wait_out_compressor,
-     *       run_slow_path, flush_deferred, ...) stay ordinary calls; do NOT
-     *       turn this into CHUNK_FLATTEN, which would copy them into every
-     *       write site.
+     *       otherwise GCC emits one out-of-line copy per (proxy, type, write
+     *       lambda) and every write pays a call. Only this body is forced --
+     *       the slow-path callees (wait_out_compressor, run_slow_path,
+     *       flush_deferred, ...) stay calls; do NOT turn this into
+     *       CHUNK_FLATTEN, which would copy them into every write site.
      */
     template <typename WriteCallable, typename LBD_INFO>
     [[nodiscard]] CHUNK_FORCE_INLINE bool write_with_optional_lock_impl(this Derived&             self,
@@ -922,11 +900,10 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /// @param num_chunk_ chunk index
     /// @param num_tab_   the array's num_tab (ArrayChunkBase::num_tab), the
     ///                   value it registered under its address
-    /// @note The registry lookup (share_info_array->get_num_tab) is a linear
-    ///       scan of the live arrays of this type, or a hash probe past a
-    ///       threshold, and it ran on EVERY write: 1.5% of the reference run.
-    ///       The array knows the answer; it is checked against the registry
-    ///       under any_check (Proxy2A::set_num_tab).
+    /// @note Avoids the registry lookup (share_info_array->get_num_tab, a
+    ///       linear scan or hash probe) on every write, a measurable cost. The
+    ///       value is checked against the registry under any_check
+    ///       (Proxy2A::set_num_tab).
     void set_this_and_num_chunk(const void* array_ptr, int num_chunk_, int num_tab_) const noexcept
     {
         ptr_on_array = array_ptr;
@@ -1018,8 +995,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /**
      * @brief Compound subtraction operator -- clean types.
      *
-     * Subtracts a value from the element referenced by the proxy in a thread-safe manner.
-     *
      * @tparam U Type of the value to subtract (must be compatible with T)
      * @param v Value to subtract
      * @return This proxy. Converting it to T reads the resulting value,
@@ -1050,13 +1025,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /**
      * @brief Compound bitwise AND operator
      *
-     * Applies a bitwise AND operation with a value to the referenced element.
-     *
      * @tparam U Type of the value (must be integral)
      * @param v Value to use for the AND operation
-     * @return This proxy. Converting it to T reads the resulting value,
-     *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.
+     * @return This proxy (see operator+=).
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
      */
@@ -1072,13 +1043,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /**
      * @brief Compound bitwise OR operator
      *
-     * Applies a bitwise OR operation with a value to the referenced element.
-     *
      * @tparam U Type of the value (must be integral)
      * @param v Value to use for the OR operation
-     * @return This proxy. Converting it to T reads the resulting value,
-     *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.
+     * @return This proxy (see operator+=).
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
      */
@@ -1094,13 +1061,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /**
      * @brief Compound bitwise XOR operator
      *
-     * Applies a bitwise XOR operation with a value to the referenced element.
-     *
      * @tparam U Type of the value (must be integral)
      * @param v Value to use for the XOR operation
-     * @return This proxy. Converting it to T reads the resulting value,
-     *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.
+     * @return This proxy (see operator+=).
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
      */
@@ -1166,13 +1129,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /**
      * @brief Compound left shift operator
      *
-     * Shifts bits to the left by a specified number of positions.
-     *
      * @tparam U Type of the shift amount (must be integral)
      * @param v Number of positions to shift
-     * @return This proxy. Converting it to T reads the resulting value,
-     *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.
+     * @return This proxy (see operator+=).
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
      */
@@ -1192,7 +1151,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     [[deprecated("HPC WARNING: Shift amount must be an integer to avoid precision issues.")]]
     Derived operator<<=(this auto&& self, const U& v) noexcept
     {
-        // Force conversion to int for the shift amount
         self.template bitwise_assign<int>(static_cast<int>(v), [](auto lhs, auto rhs) { return lhs << rhs; });
         return self;
     }
@@ -1200,13 +1158,9 @@ class ProxyBase : public ProxyOperators<Derived, T>,
     /**
      * @brief Compound right shift operator
      *
-     * Shifts bits to the right by a specified number of positions.
-     *
      * @tparam U Type of the shift amount (must be integral)
      * @param v Number of positions to shift
-     * @return This proxy. Converting it to T reads the resulting value,
-     *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.
+     * @return This proxy (see operator+=).
      * @note Requires T and U to be integral types
      * @note noexcept guaranteed
      * @note Divides by 2^v for unsigned types, implementation-defined for signed
@@ -1238,42 +1192,32 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /**
      * @brief Pre-increment operator
-     * @return This proxy. Converting it to T reads the resulting value,
-     *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.
+     * @return This proxy (see operator+=).
      * @details Implements: ++proxy
      * Returns the value after increment.
      */
     Derived operator++(this auto&& self) noexcept
         requires ElementIncrementable<T>
     {
-        // Synchronous version
         const auto inc_operation = [&self] { self.execute_inplace_operation([](T& elem) { ++elem; }); };
 
-        // Asynchronous version
         const auto inc_operation_async = [](auto* ctx, auto& proxy)
         { proxy.execute_inplace_operation_async(ctx, [](T& elem) { ++elem; }); };
 
         self.apply_inplace_operation(inc_operation, inc_operation_async);
 
-        // Return the proxy, not a value. Reading the element here would have to
-        // go through read_pure(), never `values[num]`: `values` is the ctor-time
-        // snapshot, and the call above may have materialised the chunk (snapshot
-        // now stale, possibly the cst sentinel) or DEFERRED the op (cell not yet
-        // updated, while another rank's replay may be writing it -- TSan, v1
-        // static 256, 8 threads: such a read raced the async body above). The
-        // returned proxy's operator T() IS read_pure(): it pulls the offset to
-        // applied state, then reads live through the chunk. So `y = ++a[i]`
-        // gets the right value, and the read -- with its sync -- is only paid
-        // when the value is actually used.
+        // Return the proxy, not a value. Never read `values[num]` here: `values`
+        // is the ctor-time snapshot, and the call above may have materialised
+        // the chunk (snapshot stale, possibly the cst sentinel) or DEFERRED the
+        // op (cell not yet updated, another rank's replay may be writing it).
+        // The returned proxy's operator T() is read_pure(): `y = ++a[i]` gets
+        // the right value, and the synchronised read is only paid when used.
         return self;
     }
 
     /**
      * @brief Pre-decrement operator
-     * @return This proxy. Converting it to T reads the resulting value,
-     *         synchronised (operator T() -> read_pure()); discarding it,
-     *         as `a[i] += x;` does, keeps the operation fully deferrable.
+     * @return This proxy (see operator+=).
      * @details Implements: --proxy
      * Returns the value after decrement.
      */
@@ -1287,16 +1231,7 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
         self.apply_inplace_operation(dec_operation, dec_operation_async);
 
-        // Return the proxy, not a value. Reading the element here would have to
-        // go through read_pure(), never `values[num]`: `values` is the ctor-time
-        // snapshot, and the call above may have materialised the chunk (snapshot
-        // now stale, possibly the cst sentinel) or DEFERRED the op (cell not yet
-        // updated, while another rank's replay may be writing it -- TSan, v1
-        // static 256, 8 threads: such a read raced the async body above). The
-        // returned proxy's operator T() IS read_pure(): it pulls the offset to
-        // applied state, then reads live through the chunk. So `y = ++a[i]`
-        // gets the right value, and the read -- with its sync -- is only paid
-        // when the value is actually used.
+        // Return the proxy, not a value: see operator++().
         return self;
     }
 
@@ -1379,7 +1314,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
         {
             if constexpr (chunk_config::use_fast_block_compression)
             {
-                // This code is only compiled and executed if the condition is true
                 self.set_info_on_chunk();
             }
         };
@@ -1447,8 +1381,6 @@ class ProxyBase : public ProxyOperators<Derived, T>,
 
     /**
      * @brief Engine of every bitwise compound operator (&= |= ^= <<= >>=).
-     *
-     * Executes an in-place bitwise operation, synchronously or deferred.
      *
      * @tparam U Type of the value to apply (must be integral)
      * @tparam Op Operation type (callable: T(T, T))

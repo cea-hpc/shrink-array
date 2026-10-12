@@ -1,39 +1,33 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-"""Site knowledge: partitions, programs, defaults, chart palette. Edit here."""
+"""Partitions, programs, defaults, chart palette. What depends on the site
+(host, paths, batch commands, partitions, QoS, option defaults) comes from its
+TOML file (sitecfg.py, sites/); what depends on the repository is here."""
 import os
 import re
+
+from shrink_gui import i18n, sitecfg
 
 APP = "shrink_gui"
 
 # The "host" of this machine: the helper runs here, without ssh (LOCAL_SHELL).
 LOCAL = "local"
 
-# --------------------------------------------------------------------------
-# Site knowledge -- edit here.
-# --------------------------------------------------------------------------
-# Partitions. "msub": the #MSUB lines of the batch script (-T, -r, -o and -e
-# are added from the form). "launcher": how the batch job starts the command
-# on its node -- empty runs it directly in the job's shell; gh200 goes through
-# `ccc_mprun -C ccc-rhel9` as the interactive commands do (a Slurm
-# --constraint=ccc-rhel9 is rejected: "Invalid feature specification").
-# "mprun": the ccc_mprun options of the detached mode (no -s, no -T). All three
-# are editable in the window and remembered per partition.
-PRESETS = {
-    "gh200-bxi": {
-        "label": "gh200-bxi — ARM, 288 cœurs",
-        "arch": "arm",
-        "msub": "#MSUB -q gh200-bxi\n#MSUB -N 1\n#MSUB -n 1\n#MSUB -c 288\n",
-        "launcher": "ccc_mprun -C ccc-rhel9 -n 1 -c 288",
-        "mprun": "-N1 -c 288 -p gh200-bxi -C ccc-rhel9 -Xfirst",
-    },
-    "milan-bxi": {
-        "label": "milan-bxi — x86, 64 cœurs",
-        "arch": "x86",
-        "msub": "#MSUB -q milan-bxi\n#MSUB -N 1\n#MSUB -n 1\n#MSUB -c 64\n",
-        "launcher": "",
-        "mprun": "-N1 -c 64 -p milan-bxi -Xfirst",
-    },
+# The site (sitecfg.load: $SHRINK_GUI_SITE, ~/.config/shrink_gui/site.toml,
+# else sites/cea_inti.toml). A file that cannot be used raises SiteError here:
+# app.main shows it.
+SITE = sitecfg.load()
+i18n.set_site_words(SITE.words())
+
+# Partitions: the site's, as the window uses them -- "msub": the directive
+# lines of the batch script (name, time, output, QoS... are added from the
+# form), "launcher": how the batch job starts the command on its node,
+# "mprun": the options of the detached mode. All three are editable in the
+# window and remembered per partition.
+PRESETS = {key: {"label": p["label"], "arch": p["arch"], "msub": p["directives"], "launcher": p["launcher"],
+                 "mprun": p["detached"]}
+           for key, p in SITE.partitions.items()}
+PRESETS.update({
     # This machine ("cette machine" beside the host field): no scheduler, the
     # run goes in the background here (launch.sh, mode "local"). Its own
     # defaults ("arch" local), no #MSUB lines; "launcher" prefixes run.sh, for
@@ -46,7 +40,7 @@ PRESETS = {
         "launcher": "",
         "mprun": "",
     },
-}
+})
 
 # Programs: script and working directory relative to the repository, how the
 # options are read, "builds_opt" (the options naming the builds the run uses,
@@ -105,41 +99,30 @@ PROGRAMS = {
 # Built-in defaults per (program, arch), by argparse dest. A string is the
 # option's value (shell variables such as $USER are expanded on inti), True/
 # False the state of a flag. "Enregistrer comme défauts" replaces them.
-_BUILD_ROOT = "$CCCWORKDIR/shrink-array"
-
-ARCH_DEFAULTS = {
-    ("multi_launch_stress.py", "arm"): {
-        "min_threads": "40", "max_threads": "200", "regen_ref": True, "all_exec": True,
-        "build_root": _BUILD_ROOT, "builds": "build_arm.txt",
-    },
-    ("multi_launch_stress.py", "x86"): {
-        "min_threads": "8", "max_threads": "64", "regen_ref": True, "all_exec": True,
-        "build_root": _BUILD_ROOT, "builds": "build_x86_64.txt",
-    },
-    ("bench_and_test.py", "arm"): {"build_root": _BUILD_ROOT, "output_dir": _BUILD_ROOT + "/bench_results"},
-    ("bench_and_test.py", "x86"): {"build_root": _BUILD_ROOT, "output_dir": _BUILD_ROOT + "/bench_results"},
+ARCH_DEFAULTS = dict(SITE.defaults)
+ARCH_DEFAULTS.update({
     # This machine: the builds are where scripts/site_env.sh puts them (the
     # repository itself on a workstation), run.sh exports it as CHUNK_BUILD_ROOT.
     ("multi_launch_stress.py", LOCAL): {
         "min_threads": "2", "max_threads": str(os.cpu_count() or 8), "regen_ref": True, "all_exec": True,
     },
-}
+})
 
 # Where compile_all.sh puts its cmake-build-<name>/<arch> trees on inti
 # (CHUNK_BUILD_REP, default of scripts/site_env.sh there): the "Choisir…" of
 # --exec lists the executables of the build dirs found there.
-BUILD_REP = _BUILD_ROOT
+BUILD_REP = SITE.build_root
 
 DEFAULTS = {
-    "host": "inti",
-    "repo": "~/shrink-array",
-    "runs_dir": "~/shrink_runs",
+    "host": SITE.host,
+    "repo": SITE.repo,
+    "runs_dir": SITE.runs_dir,
     "local_dir": os.path.join(os.path.expanduser("~"), "shrink_results"),
     "local_repo": "",
     "time_s": 18000,
-    "preset": "gh200-bxi",
+    "preset": SITE.partition,
     "program": "multi_launch_stress.py",
-    "mode": "msub",
+    "mode": "msub",         # the batch mode ("mprun": the detached one, "local")
     "machine": "",          # LOCAL: this machine; else the host field
 }
 
@@ -184,3 +167,8 @@ def exe_parts(exe):
     m = EXE_RE.search(exe)
     return (m.group(1), m.group(2) or "default") if m else (exe, "?")
 
+# The batch commands and the detached mode of the site, as the helper takes
+# them (remote_helper.py: act_check, act_launch, act_stop).
+BATCH = SITE.batch
+DETACHED = SITE.detached
+QOS_FALLBACK = SITE.qos_fallback

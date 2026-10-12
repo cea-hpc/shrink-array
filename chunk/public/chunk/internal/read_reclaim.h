@@ -20,17 +20,13 @@
  * @file read_reclaim.h
  * @brief Pure reads against buffer reclaim: a grace period per compression pass.
  *
- * @par The defect this closes
- * A pure read (ChunkBase::element_at) loads a chunk's `values` pointer, then
- * dereferences it. A compression pass run INSIDE a region -- a writer whose
- * candidate list crossed the threshold (perform_compression), or compress()
- * called from a region -- CASes `values` to the constant and released the old
- * buffer at once (free_block_to_pool). The write/compress handshake waits for
- * WRITERS only, so a reader between its load and its dereference read a
- * released buffer: a use-after-free under CHUNK_STD_ALLOC, and with the fast
- * allocator a block already popped from the LIFO reuse list and overwritten --
- * a value the chunk never held. Reproduced by read_reclaim_validation, with and
- * without an injected delay.
+ * @par The hazard
+ * A pure read (ChunkBase::element_at) loads a chunk's `values` pointer, then dereferences
+ * it. A compression pass run INSIDE a region (perform_compression, or compress() from a
+ * region) CASes `values` to the constant and releases the old buffer. The write/compress
+ * handshake waits for WRITERS only, so without this protocol a reader between its load and
+ * its dereference reads a released buffer (use-after-free, or a recycled block holding a
+ * value the chunk never held).
  *
  * @par The protocol
  *  - READER (ReadSection, around element_at's load + dereference): a per-thread
@@ -48,11 +44,9 @@
  *    reclaimer waits until its sequence moves. Then the buffers are released
  *    as an unscoped pass releases them -- to the reuse list, at once.
  *
- *    One membarrier per PASS, not per chunk; the reuse is as immediate as it
- *    was (deferring it to the end of the region would make every
- *    materialisation inside a long region allocate afresh). The wait is for
- *    reads already in flight -- a few nanoseconds, unless the reader was
- *    preempted in between.
+ *    One membarrier per PASS, not per chunk; reuse stays immediate (deferring it to the end
+ *    of the region would make every materialisation in a long region allocate afresh). The
+ *    wait is only for reads in flight -- nanoseconds, unless the reader was preempted.
  *
  *    Passes run between regions (the OMPT / finalize_parallel_phase drain) are
  *    not scoped: no user read runs then.

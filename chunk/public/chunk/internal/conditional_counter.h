@@ -29,12 +29,9 @@ namespace shrink_array
 ///        nb_val_eq_*_value).
 /// @details These count cells within a chunk, so they must be able to represent values
 ///          up to __chunk_size (a full chunk of zeros has nb_val_eq_zero == __chunk_size,
-///          tested by is_full_zero()). This was a raw `unsigned char`, which overflows
-///          for __chunk_size > 255: at CHUNK_SIZE=512 the count wrapped, is_full_zero()
-///          could never become true, cells were left unmaterialised and read back as
-///          garbage (subnormal doubles) — a sequential (single-thread, non-OpenMP)
-///          correctness bug that appeared past 255. `unsigned short` (up to 65535) covers
-///          every realistic chunk size while staying compact (2 bytes).
+///          tested by is_full_zero()). Do not narrow it to `unsigned char`: past 255 the
+///          count wraps, is_full_zero() never holds and cells read back as garbage, even
+///          single-threaded. `unsigned short` covers every realistic chunk size in 2 bytes.
 using counter_value_t = unsigned short;
 
 static_assert(__chunk_size <= USHRT_MAX,

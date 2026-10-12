@@ -21,17 +21,14 @@
  * @brief Numbers from environment variables and command-line arguments,
  *        checked -- in place of std::atoi / std::strtol(s, nullptr, 10).
  *
- * atoi reports nothing: "abc" is 0, "12x" is 12, an overflow is undefined
- * behaviour, and `static_cast<unsigned>(atoi("-1"))` is 4294967295. Here the
- * WHOLE text must be a number of the requested type: integers go through
- * std::from_chars (no locale, no errno, no leading space or '+', a '-' refused
- * for an unsigned type, out of range refused); floating point through strtod
- * with the end of the text and ERANGE checked (from_chars for floating point
- * is not in every standard library the project is built with).
+ * atoi reports nothing ("abc" is 0, "12x" is 12, overflow is UB). Here the WHOLE
+ * text must be a number of the requested type: integers via std::from_chars (no
+ * leading space or '+', '-' refused for unsigned, range checked); floating point via
+ * strtod with end and ERANGE checked (floating from_chars is not in every standard
+ * library the project builds with).
  *
- * In the chunk library, which every build of it has (fast_allocators is not
- * even configured in a CHUNK_STD_ALLOC build); fast_allocators' one reading
- * (CHUNK_RECLAIM_MIN_SLABS, alloc_config.h) applies the same rule in place.
+ * Lives in the chunk library, present in every build (fast_allocators is not configured
+ * in a CHUNK_STD_ALLOC build); alloc_config.h applies the same rule in place.
  */
 
 #include <cerrno>       // errno, ERANGE (strtod)

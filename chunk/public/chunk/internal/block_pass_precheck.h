@@ -24,11 +24,10 @@
  * then opens the window with compression_mgr.start(), whose first check is
  * "is any thread flushing its deferred writes?". When it is, start() declines
  * and the pass unmarks every candidate -- and the rank's next write, its list
- * still above the threshold, does it all again. On Grace at 128 threads (two
- * sockets) that was 10.4 million declined starts in one shrink_bench run, 99.99%
- * of them on that check, each costing two stores per candidate into Chunk
- * objects the other socket's writers read: 96.8% of 6 billion remote-socket
- * accesses, and a 3x slower run than at 64 threads.
+ * still above the threshold, does it all again: two stores per candidate into
+ * Chunk objects other threads read, millions of times per run. On a
+ * two-socket machine that dominated remote-socket traffic and slowed the
+ * run several-fold.
  *
  * block_pass_yields_to_flush() asks start()'s first question first: one seq_cst
  * load of the flush counter. start() still asks it too (and again after its
@@ -74,16 +73,12 @@ template <typename ProxyType, typename ChunkType>
 /**
  * @brief Check builds: trip if a flush is in progress while a compressor runs
  *        OUTSIDE CompressionManager::start().
- * @details The v1 replay bodies (proxy_inline.h, `*_async`) store through a
- *          values pointer loaded once, with no retry: they rely on no
- *          compressor changing `values` during a flush drain. start() refuses
- *          while a flush is announced; the compressors that bypass it
- *          (Chunk::compress_sweep_rank, RechunkHooks::rechunk_drop_candidates)
- *          are safe only because they run where no drain can: outside the
- *          writers' parallel region, after the flush. This turns a caller that
- *          breaks that into an CHUNK_INVARIANT_FAILED instead of a write lost in
- *          silence. A tripwire, not a lock: a flush announced after the check
- *          is not seen.
+ * @details The v1 replay bodies (proxy_inline.h, `*_async`) rely on no
+ *          compressor changing `values` during a flush drain; see "The v1
+ *          replay bodies" there. The compressors that bypass start() are safe
+ *          only where no drain can run; this turns a violation into a
+ *          CHUNK_INVARIANT_FAILED instead of a silently lost write. A
+ *          tripwire, not a lock: a flush announced after the check is not seen.
  * @tparam ProxyType the proxy whose WriteCompressSyncPolicy the drains announce on
  * @param where caller, for the message
  */

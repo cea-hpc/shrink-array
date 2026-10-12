@@ -48,18 +48,13 @@ class ManagerChunk;
 /**
  * @brief Chunked array compressing on TWO constants: first_value and one second value.
  *
- * @details A chunk collapses to a constant as soon as all its elements equal
- *          either first_value or the array's second value. Unlike ArrayChunk2A,
- *          that second value is SHARED by the whole array rather than chosen per
- *          chunk: cheaper metadata (one entry per array instead of one per
- *          chunk), but it only pays off when the data has a single dominant
- *          non-zero constant.
+ * @details Unlike ArrayChunk2A, the second value is array-wide, not per chunk:
+ *          cheaper metadata, useful when one non-zero constant dominates.
  *
- *          The second value is not stored in the array. It lives in the shared
- *          registry Proxy2<T>::share_info_array, keyed by the array's ADDRESS,
- *          alongside the num_tab indexing the per-tab metadata. That indirection
- *          is why the destructor must erase both entries, and why rechunk_to()
- *          needs the six hooks below rather than 2A's three.
+ *          The second value lives in the shared registry
+ *          Proxy2<T>::share_info_array, keyed by the array's ADDRESS, with the
+ *          num_tab: hence the destructor's two erases and rechunk_to()'s six
+ *          hooks (2A has three).
  *
  * @tparam T        stored element type
  * @tparam ind_type index type used for sizes and element positions
@@ -79,15 +74,12 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     friend Base2;                                    ///< The CRTP base reaches this class's private members.
     friend ArrayChunkBase<ArrayChunk2<T, ind_type>>; ///< For swap_identity().
 
-    // RechunkHooks2::rechunk_reown_after_swap copies ind_cst_val2, which is
-    // private below. Same reason ArrayChunkBase befriends RechunkSupport.
+    // RechunkHooks2::rechunk_reown_after_swap copies the private ind_cst_val2.
     template <typename, bool>
     friend class RechunkHooks2;
 
-    // Traits and chunk_type are re-declared here (not only inherited): the
-    // mixins above declare them too, so without a member of the same name in
-    // ArrayChunk2 an outside `Arr::chunk_type` would be ambiguous between base
-    // subobjects. ArrayChunk does the same for the same reason.
+    // Re-declared, not only inherited: the mixins declare them too, and an
+    // outside `Arr::chunk_type` would be ambiguous between base subobjects.
     using Traits       = Base2::Traits;       ///< ArrayChunkTraits<ArrayChunk2>.
     using chunk_type   = Base2::chunk_type;   ///< Chunk2<T>, the chunk type held in chunk_list.
     using manager_type = Base2::manager_type; ///< ManagerChunk<Chunk2, T>, the per-type manager.
@@ -107,12 +99,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
     using manager_chunk2 = ManagerChunk<Chunk2, T>; ///< Same type as manager_type.
 
-    // Mode-specific members, moved out of this class into the mixins above.
-    // The using-declarations are not decoration: ArrayChunkBase re-exports
-    // RechunkSupport's hook DEFAULTS under these very names, so without them a
-    // hook call through the CRTP self() would see two base subobjects and be
-    // ambiguous. Naming them here makes them members of ArrayChunk2, which hides
-    // both bases' versions.
+    // Required, not decoration: ArrayChunkBase re-exports RechunkSupport's hook
+    // DEFAULTS under these names, so a hook call through self() would be
+    // ambiguous. Naming them here hides both bases' versions.
     using FastBlock2::make_block_compression;
 
     using Hooks2::rechunk_capture_state;
@@ -141,13 +130,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
     // ── The copy family: deep, element by element ────────────────────────────
     //
-    // A copy is a copy, never an alias of the source's buffers: built on
-    // ArrayChunkBase::copy_from (sized to the source, every element read
-    // through the source's gate and written through this array's proxy);
-    // the (first, last) and initializer-list constructors are the same loop
-    // over an iterator. All sequential, like resize().
-    // chunk2's second value is array-wide: the source's is re-declared here
-    // before the elements are written, so that its runs stay what they are.
+    // Never an alias of the source's buffers: ArrayChunkBase::copy_from. The
+    // source's second value is re-declared first, so its runs stay compressible.
+    // Sequential, like resize().
     /// @brief Deep copy: @p from's second value, then from.size() elements read from @p from. Sequential context.
     /// @param from Source array.
     ArrayChunk2(const ArrayChunk2& from) : ArrayChunk2(from.size())
@@ -160,16 +145,11 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      * @brief Move-construct: an empty array at the active geometry takes
      *        @p other's chunks, geometry and identity -- the exchange of
      *        swap() -- and @p other is left empty and valid.
-     * @details O(1) in the elements. With a copy constructor and a
-     *          move-assignment declared, none was generated: `ArrayChunk2 a(std::move(b))`
-     *          and every return that is not elided ran the copy constructor,
-     *          element by element. Sequential context, as the constructors.
-     * @note noexcept, so that std::vector moves arrays when it reallocates
-     *       instead of copying them element by element. What can fail here
-     *       -- the empty array's registration, the deferred-write drain --
-     *       only fails on memory exhaustion or a corrupt registry, which the
-     *       library already treats as fatal (alloc_chunk() is noexcept too):
-     *       std::terminate.
+     * @details O(1). Must stay user-declared: with the copy constructor and
+     *          move-assignment declared, none is generated and a move would copy.
+     *          Sequential context.
+     * @note noexcept, so std::vector moves arrays on reallocation. Only memory
+     *       exhaustion or a corrupt registry can fail here: std::terminate.
      */
     ArrayChunk2(ArrayChunk2&& other) noexcept : ArrayChunk2(0)
     {
@@ -192,27 +172,19 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     /**
      * @brief Release the array's storage, then drop both registry entries.
      *
-     * @details Order matters: clear() first, then the two registry erases --
-     *          clear() still needs get_num_tab(registry_key()) and its own terminal sweep
-     *          still needs a valid inf_array pointer.
+     * @details clear() first: it still needs get_num_tab(registry_key()) and a
+     *          valid inf_array pointer.
      *
-     * @warning Neither erase is optional, and each closes a distinct
-     *          use-after-free:
-     *          - share_info_array->erase(registry_key()) drops the (address -> tuple)
-     *            entry. Without it, a later array reusing this address inherits
-     *            our stale num_tab and second value through PointerMapChunk2's
-     *            first-match lookup. rechunk_to()'s short-lived @c tmp makes
-     *            that reuse routine.
-     *          - erase_inf_array_by_ptr(&inf_array) drops any map_inf_array
-     *            entry still pointing at our inf_array MEMBER.
-     *            compress_chunk_to_compress_potentially() iterates
-     *            get_all_inf_array() and dereferences those pointers, so leaving
-     *            ours behind lets the NEXT array's terminal sweep read a
-     *            destroyed object -- ASan reports use-after-return, exposed
-     *            deterministically by @c tmp. Fast-block and non-bool only, the
-     *            modes where map_inf_array is populated; it removes only entries
-     *            we still own, since rechunk_to() re-points its value onto the
-     *            survivor first.
+     * @warning Neither erase is optional:
+     *          - share_info_array->erase(registry_key()): otherwise a later array
+     *            at this address inherits our num_tab and second value
+     *            (PointerMapChunk2's first-match lookup); rechunk_to()'s @c tmp
+     *            makes address reuse routine.
+     *          - erase_inf_array_by_ptr(&inf_array): map_inf_array entries
+     *            pointing at our inf_array MEMBER would be dereferenced by the
+     *            next array's terminal sweep (use after free). Fast-block,
+     *            non-bool only; rechunk_to() re-points its value onto the
+     *            survivor first, so only entries we still own go.
      */
     ~ArrayChunk2()
     {
@@ -229,10 +201,8 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      * @brief Move-assign: this array's own contents are released (clear()),
      *        then it takes @p other's -- chunks, geometry and identity, by the
      *        same exchange as swap(); @p other is left empty and valid.
-     * @details Not just a steal of @p other's chunk list: this array's old
-     *          chunks are released first (their candidates purged), the moved
-     *          chunks keep their metadata rows (num_tab) with them, and
-     *          @p other is left with nb_chunk 0. Sequential context, as clear().
+     * @details The old chunks are released first (candidates purged); the moved
+     *          chunks keep their metadata rows (num_tab). Sequential context.
      * @note noexcept, as the move constructor: a failure here terminates.
      */
     ArrayChunk2& operator=(ArrayChunk2&& other) noexcept
@@ -259,21 +229,15 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
     /**
      * @brief Set the array-wide second constant.
-     * @details Registers @p sec_value in the shared cst_val2 registry, reusing
-     *          the index of an identical value already registered by another
-     *          array. A reused block is re-filled to THIS array's geometry
-     *          first: it was only filled up to the registering array's size, so
-     *          a chunk of a larger array compressed to it would read stale zeros
-     *          past that point.
+     * @details Registers @p sec_value in the shared cst_val2 registry, reusing an
+     *          identical value's index. A reused block is re-filled to THIS
+     *          array's geometry first: a larger array would otherwise read stale
+     *          zeros past the registering array's size.
      * @param sec_value value chunks may now compress to
-     * @param message   print the "useless for bool" warning; ignored for every
-     *                  other T, and it gates nothing else
-     * @warning Registered cst_val2 blocks never move and are never released
-     *          while the program runs, even when replaced by a larger one: a
-     *          still-live chunk of another array may hold the address as its
-     *          `values`. The table grows by one block per DISTINCT value ever
-     *          declared (cst_buffer_size elements each), plus a candidate list
-     *          per thread -- bounded, but not reclaimed.
+     * @param message   print the "useless for bool" warning (bool only)
+     * @warning cst_val2 blocks never move and are never released: a live chunk
+     *          of another array may hold the address as its `values`. One block
+     *          per DISTINCT value ever declared, plus a candidate list per thread.
      */
     void set_second_value(T sec_value, bool message = true);
     /**
@@ -327,9 +291,8 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      * @brief Is chunk @p j materialised?
      * @param j CHUNK index (not an element index -- see written(ind_type))
      * @return false while that chunk is compressed to either constant
-     * @note Chunk2::written() needs the array's second-value index for
-     *       non-bool T, which is why ArrayChunkBase::is_written_at() routes
-     *       here rather than calling chunk_list[j].written() itself.
+     * @note Chunk2::written() needs the array's second-value index: see
+     *       has_chunk_written_v (array_chunk_base.h).
      */
     [[nodiscard]] bool chunk_written(int j) const
     {
@@ -345,10 +308,8 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
     /**
      * @brief Resize the array, preserving the elements that still fit.
-     * @details Drains the pending compression candidates and deferred ops first
-     *          — both hold `&chunk_list[j]` pointers that a reallocation would
-     *          dangle — then grows the chunk list and initialises the new
-     *          chunks.
+     * @details Drains the compression candidates and deferred ops first: both
+     *          hold `&chunk_list[j]` pointers a reallocation would dangle.
      * @param newsz new element count
      * @note Allocation is GROWTH-only: shrinking updates the sizes but releases
      *       no chunk, so the storage never gets smaller.
@@ -373,22 +334,17 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
     /**
      * @brief Audit pass: report the constant chunks the incremental compression missed.
-     * @details Drains the pending candidate list first, so that a chunk which is
-     *          constant only because its compression is still QUEUED is not
-     *          counted as a miss; then scans for chunks that are materialised
-     *          yet fully first_value or second_value. Those are compressed on
-     *          the spot (a self-heal), and only the ones that survive that are
-     *          reported on stderr as genuine misses.
-     * @note Compiled to an immediate return under `CHUNK_PERF`: this is a
-     *       check/debug-build diagnostic, not part of the compression engine.
-     *       The engine proper is driven from the write path and from the
-     *       phase transitions of manage_ompt.h.
+     * @details Drains the candidate list first (a QUEUED compression is not a
+     *          miss), then compresses materialised chunks that are fully one
+     *          constant; those that survive are reported on stderr.
+     * @note A diagnostic, not the engine (driven by the write path and
+     *       manage_ompt.h's phase transitions).
      */
     void compress_int();
 
     /**
      * @brief Public entry point for the audit pass.
-     * @see compress_int, which this forwards to — including its `CHUNK_PERF` no-op.
+     * @see compress_int, which this forwards to.
      */
     void compress();
 
@@ -409,11 +365,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
     /**
      * @brief (Re)allocate storage at the current active geometry.
-     * @details Does create()'s allocation work WITHOUT its registration side
-     *          effects (insert_only_num_tab, the nb_tab bump,
-     *          resize_tab_is_int(nb_tab)). It resolves num_tab from the
-     *          registry, so it is correct on an already-registered array
-     *          switching geometry -- which is what rechunk_to() needs.
+     * @details create()'s allocation WITHOUT its registration side effects;
+     *          num_tab comes from the registry, so it suits an already-registered
+     *          array switching geometry (rechunk_to()).
      * @param sz element count to allocate for
      */
     void rebuild_storage(ind_type sz);
@@ -428,29 +382,20 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
     /**
      * @brief Storage teardown shared by clear() and rechunk_to().
-     * @details Everything clear() does except the pre-drain compression stats,
-     *          so rechunk_to() can release this array's storage through the same
-     *          proven path instead of reproducing it.
-     * @warning Parks buffers by THIS array's geometry (size_policy_.size()), not
-     *          the ambient thread size, which may belong to another array
-     *          mid-rechunk. It also drops this array's compression candidates by
-     *          num_tab, so no Chunk2* of a dead array survives in the shared
-     *          candidate store.
+     * @details clear() without the pre-drain compression stats.
+     * @warning Parks buffers by THIS array's geometry, not the ambient thread
+     *          size (another array's mid-rechunk). Drops this array's candidates
+     *          by num_tab, so no Chunk2* of a dead array survives in the store.
      */
     void clear_core();
 
     /**
      * @brief Print this array's compression ratio and verdict.
-     * @details Classifies every chunk by RE-READING its content rather than
-     *          trusting `written()`, which only says whether the opportunistic
-     *          compression happened to catch the chunk during the run. That
-     *          re-scan is what makes the reported count reproducible across
-     *          thread counts. Also runs a cross-variant probe counting the
-     *          distinct second values present, i.e. what Chunk2A would have
-     *          captured that a single-second-value Chunk2 could not.
+     * @details Classifies chunks by RE-READING their content, not `written()`,
+     *          so the count is reproducible across thread counts. Also counts
+     *          the distinct second values (what Chunk2A would have captured).
      * @param os destination stream
-     * @note Despite being const and named "print", it also FEEDS the global
-     *       end-of-run counters when `chunk_config::stats` is on.
+     * @note Also FEEDS the global end-of-run counters when `chunk_config::stats` is on.
      */
     void print_compression_stats(std::ostream& os = std::cout) const;
 
@@ -495,11 +440,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
             if (sh_inf.find_inf_array(T{}) == nullptr)
             {
                 sh_inf.insert(T{}, &inf_array_none);
-                // The between-phase pass asks have_chunk_to_compress() per
-                // value of THIS map before draining anything: the T{} key
-                // must be in it, at the sentinel index (find_ind_tab_cst2
-                // then reports it as unregistered, which is what
-                // set_second_value(T{}) must see to build a real block).
+                // The between-phase pass drains only the values of THIS map: T{}
+                // must be in it, at the sentinel index (so set_second_value(T{})
+                // still sees it unregistered and builds a real block).
                 sh_inf.insert_map_ind_cst_val2(T{}, chunk_config::no_second_value_index);
             }
             if constexpr (build_config::use_openmp)
@@ -520,11 +463,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
      * @brief The identity step of swap(): the registry tuple (second value,
      *        its index, num_tab), which is what Chunk2 reads its identity
      *        from, then the members that mirror it.
-     * @details The num_tab member is not swapped, as in rechunk_swap_identity:
-     *          Chunk2 never reads it. map_inf_array points each second value at
-     *          the inf_array MEMBER of an array that has it; after the exchange
-     *          that member holds the other array's tuple, so both values are
-     *          re-pointed (a T{} value is the static inf_array_none's).
+     * @details num_tab is not swapped (Chunk2 never reads it). map_inf_array
+     *          points each second value at an array's inf_array MEMBER, which
+     *          now holds the other tuple: both values are re-pointed.
      */
     void swap_identity(ArrayChunk2& other)
     {
@@ -548,13 +489,11 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
     /// This array's (second value, index, num_tab) tuple: a MIRROR of its entry
     /// in Proxy2<T>::share_info_array, complete in every build mode.
-    /// @details The registry stays the source of truth. The mirror is never
-    ///          computed, only re-read from it (sync_registry_mirror()), right
-    ///          after each of the three places that write the registry:
-    ///          create(), set_second_value() and the rechunk identity swap.
-    ///          operator[] arms every write proxy with its ADDRESS
-    ///          (registry_mirror()), which is what takes the registry scan off
-    ///          the write path.
+    /// @details The registry is the source of truth; the mirror is only re-read
+    ///          from it (sync_registry_mirror()) after each registry write:
+    ///          create(), set_second_value(), the identity swaps. Write proxies
+    ///          are armed with its address, keeping the registry scan off the
+    ///          write path.
     /// @warning map_inf_array holds a POINTER to this member, so the destructor
     ///          must erase that entry -- see its documentation.
     inf_array_t inf_array;
@@ -562,13 +501,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
     /**
      * @brief The (T{}, no_second_value_index) tuple every array without a
      *        second value is drained under.
-     * @details The compression pass walks map_inf_array and drains the
-     *          candidate list keyed by each tuple's value. An array that has
-     *          declared no second value queues its chunks under T{}, so that
-     *          key needs a tuple to walk and a list per rank -- both created
-     *          by register_no_second_value_key() from create(). One static
-     *          tuple per element type, never erased: the destructor only
-     *          drops entries pointing at the dying array's own member.
+     * @details The compression pass walks map_inf_array; an array with no
+     *          second value queues under T{}, which needs this tuple and a list
+     *          per rank (register_no_second_value_key()). Never erased.
      */
     static inline inf_array_t inf_array_none{T{}, chunk_config::no_second_value_index, 0};
 
@@ -579,13 +514,9 @@ class ArrayChunk2 : public ArrayChunk2Base<ArrayChunk2<T, ind_type>>,
 
 } // namespace shrink_array
 
-// Template method bodies. Included here (after the class definition) so that
-// every translation unit using ArrayChunk2<T> sees the definitions and can
-// auto-instantiate the exact T it needs, instead of relying on a fixed list of
-// explicit instantiations in array_chunk2.cpp.
+// Template bodies, after the class, so every TU instantiates the T it needs.
 #include "chunk/internal/array_chunk2_inline.h" // the template bodies
 
-// Bodies of the two mode-specific mixins. After array_chunk2_inline.h, so their
-// CRTP self() sees a complete ArrayChunk2.
+// The mixins' bodies, after array_chunk2_inline.h: self() needs a complete ArrayChunk2.
 #include "chunk/internal/array_chunk2_parallel_inline.h"      // ParallelSupport2's bodies
 #include "chunk/internal/array_chunk2_rechunk_hooks_inline.h" // RechunkHooks2's bodies

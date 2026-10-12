@@ -106,17 +106,15 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         }
         else
         {
-            // Early-out: multiplying by 1 changes nothing, so there is nothing to
-            // write. Nothing to read either: the proxy is returned, and reading
-            // it goes through operator T() -> read_pure() and its read-side gate.
-            // base_t<U> extracts the arithmetic type (e.g., double) even if U is a Proxy.
+            // Early-out: multiplying by 1 writes nothing. Nothing to read either:
+            // reading the returned proxy goes through operator T() -> read_pure()
+            // and its read-side gate. base_t<U> is the arithmetic type even if U
+            // is a Proxy.
             if (v == static_cast<base_t<U>>(1))
             {
                 return self;
             }
 
-            // 2. Call the common math engine
-            // We use the transparent functor std::multiplies<>
             self.template apply_compound_operation<U>(std::multiplies<>{}, v);
             return self;
         }
@@ -152,7 +150,6 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
             {
                 return self;
             }
-            // 2. Execution via the common engine
             self.template apply_compound_operation<U>(std::divides<>{}, v);
             return self;
         }
@@ -175,10 +172,9 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
         if constexpr (std::is_integral_v<T> && is_not_bool)
         {
             internal::check_integer_divisor<T>(v, "%=");
-            // 2. Execution via the common engine. A non-zero slot can land on
-            // zero (4 % 2): apply_compound_operation counts a result equal to
-            // the first value, so the chunk reaches "full first value" and
-            // folds.
+            // A non-zero slot can land on zero (4 % 2): apply_compound_operation
+            // counts a result equal to the first value, so the chunk can reach
+            // "full first value" and fold.
             self.template apply_compound_operation<U>(typename Base::modulo{}, v);
             return self;
         }
@@ -253,11 +249,10 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
     void mark_for_compression_if_needed(this const Derived& self, bool new_value)
     {
         const bool isv = self.is_cst_val_new_value_is_other_cst_val(new_value, false, true);
-        // Base::read_values(), not values[num]: inherited from a dependent
-        // base, so it must be qualified. This is the write path's read
-        // entry and the only one that resolves a compressed chunk's
-        // constant (an unbacked identifier slot). Indexing here read a
-        // zero page and the decision below was taken against 0.
+        // Base::read_values() (qualified: dependent base), never values[num]:
+        // it is the write path's read entry and the only one that resolves a
+        // compressed chunk's constant (an unbacked identifier slot); indexing
+        // reads a zero page and the decision below is taken against 0.
         self.mark_for_compression_impl(self.Base::read_values(), new_value, isv, false, true);
     }
 
@@ -359,19 +354,14 @@ class Proxy2Base : public ProxyBase<Derived, T, ChunkType>
             }
             else
             {
-                // The capture exists for the branch above and for nothing
-                // else. use_fast_block_compression IS use_openmp, so a SERIAL
-                // build never instantiates that branch and clang reports the
-                // capture as unused (-Wunused-lambda-capture; 13 reports for
-                // this one lambda on a chunk2 bench TU, and the same on
-                // chunk2a). Keeping `self` explicit and discarding it here
-                // says why it is there -- switching to [&] would silence the
-                // warning by hiding the intent.
+                // The capture exists for the branch above only. A SERIAL build
+                // never instantiates it and clang reports the capture as unused
+                // (-Wunused-lambda-capture). Discarding `self` here keeps the
+                // capture explicit; do not switch to [&], which hides the intent.
                 static_cast<void>(self);
             }
         };
 
-        // wrap the call in a lambda that calls write_fn(v)
         return self.write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
     }
 

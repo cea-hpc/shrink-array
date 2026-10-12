@@ -22,23 +22,20 @@
  *        the write proxy, usable as a temporary only.
  *
  * @details `auto v = a[i];` keeps the PROXY, where std::vector's `auto` copies
- *          the value: v then follows the element, and dies with the array's
- *          storage (resize, re-chunk, ...). Code ported from std::vector wants
- *          `T v = a[i];`. Neither deleting the proxy's copy constructor nor
- *          anything else on the proxy can refuse the declaration itself: since
+ *          the value: v follows the element and dies with the array's storage
+ *          (resize, re-chunk, ...). Code ported from std::vector wants
+ *          `T v = a[i];`. The declaration itself cannot be refused: since
  *          C++17 `auto v = a[i];` constructs v in place from the prvalue.
  *
- *          What can be refused is every USE of v. Every operation of ElementRef
- *          is &&-qualified (a temporary: `a[i] = x`, `a[i] += x`,
- *          `T y = a[i]`, `a[i] + b[j]`, `os << a[i]` ...), and its &-qualified
- *          twin -- the one a NAMED ElementRef selects -- is a static_assert
- *          with the message below. So `auto v = a[i]; T z = v;` (or `v = x`,
- *          `v + 1`, ...) does not compile, with that message. The proxy itself
- *          is unchanged: the library keeps naming proxies internally
- *          (ArrayChunkBase::element_proxy). Every operation is force-inlined:
- *          the optimised code is the bare proxy's (without it GCC 16 kept a
- *          complex `*=` out of line). -DCHUNK_LOOSE_ELEMENT_REF returns the
- *          bare proxy (build_config::strict_element_ref).
+ *          Every USE of v is refused instead: each operation of ElementRef is
+ *          &&-qualified (a temporary: `a[i] = x`, `T y = a[i]`, `a[i] + b[j]`,
+ *          ...), and its &-qualified twin -- selected by a NAMED ElementRef --
+ *          is a static_assert with the message below. The library still names
+ *          proxies internally (ArrayChunkBase::element_proxy). Every operation
+ *          is force-inlined so the optimised code is the bare proxy's (GCC may
+ *          otherwise keep e.g. a complex `*=` out of line).
+ *          -DCHUNK_LOOSE_ELEMENT_REF returns the bare proxy
+ *          (build_config::strict_element_ref).
  *
  *          The iterators yield values already (`for (auto x : a)` copies).
  *          A generic function that takes a[i] by value or by forwarding

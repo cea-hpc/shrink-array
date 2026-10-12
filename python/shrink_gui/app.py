@@ -22,8 +22,8 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFormLayout, 
                                QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
 
 from shrink_gui import i18n, qos
-from shrink_gui.config import (APP, ARCH_DEFAULTS, BUILD_REP, COLOR_BY, DEFAULTS, LOCAL, LOCAL_DEFAULTS, PRESETS,
-                               PROGRAMS, VIZ, exe_parts)
+from shrink_gui.config import (APP, ARCH_DEFAULTS, BATCH, BUILD_REP, COLOR_BY, DEFAULTS, DETACHED, LOCAL,
+                               LOCAL_DEFAULTS, PRESETS, PROGRAMS, QOS_FALLBACK, SITE, VIZ, exe_parts)
 from shrink_gui.i18n import T, status_text, tip
 from shrink_gui.remote import Remote
 from shrink_gui.runscripts import make_launch_sh, make_local_launch_sh, make_run_sh
@@ -79,9 +79,11 @@ class Main(QMainWindow):
         self.fill_machine_lists()
         self.time_s = DurationBox()
         self.time_s.setValue(int(self._get("time_s")))
-        # QoS: the limits of ccc_mqinfo (read by the connection check, else
-        # those of qos.FALLBACK), "auto" picks one from the duration
-        self.qos_rows = qos.parse_mqinfo(self.settings.value("mqinfo", "")) or qos.parse_mqinfo(qos.FALLBACK)
+        # QoS: the limits of the site's qos_info (read by the connection check,
+        # kept per site, else the site's [qos] fallback), "auto" picks one from
+        # the duration
+        self.qos_rows = (qos.parse_mqinfo(self.settings.value(self.mqinfo_key(), "")) or
+                         qos.parse_mqinfo(QOS_FALLBACK))
         self.qos = QComboBox()
         self.fill_qos(self.settings.value("qos", "auto"))
         self.qos_note = TLabel("")
@@ -135,8 +137,8 @@ class Main(QMainWindow):
         where.addRow("Directives", self.directives)
         self.launcher = QLineEdit()
         self.launcher.setPlaceholderText("vide : la commande tourne directement dans le job")
-        self.launcher.setToolTip("ccc_msub : ce qui lance run.sh sur le nœud réservé, par exemple "
-                                 "« ccc_mprun -C ccc-rhel9 -n 1 -c 288 » (environnement RHEL 9 du gh200).\n"
+        self.launcher.setToolTip("ccc_msub : ce qui lance run.sh sur le nœud réservé (le lanceur de la "
+                                 "partition dans le fichier de site ; vide : directement dans le job).\n"
                                  "Mémorisé par partition.")
         self.launcher_row_label = QLabel("Lanceur (job)")
         where.addRow(self.launcher_row_label, self.launcher)
@@ -155,6 +157,23 @@ class Main(QMainWindow):
         grow.addWidget(self.bpull_rebase)
         self.git_label = QLabel("Git (inti)")
         where.addRow(self.git_label, grow)
+        # The repository's branches (load_branches: after a git fetch) and the
+        # switch to the one chosen (git_switch). Created disabled: show_git_state
+        # enables them once the repository is known.
+        self.branch = QComboBox()
+        self.branch.currentIndexChanged.connect(lambda *_: self.show_git_state())
+        self.bswitch = QPushButton("Changer de branche")
+        self.bswitch.clicked.connect(self.git_switch)
+        self.bbranches = QPushButton("Relire les branches")
+        self.bbranches.clicked.connect(self.load_branches)
+        for b in (self.bswitch, self.bbranches):
+            b.setEnabled(False)
+        brow = QHBoxLayout()
+        brow.addWidget(self.branch, 1)
+        brow.addWidget(self.bswitch)
+        brow.addWidget(self.bbranches)
+        self.branch_label = QLabel("Branche (inti)")
+        where.addRow(self.branch_label, brow)
         self.runs_label = QLabel("Runs (inti)")
         where.addRow(self.runs_label, self.runs_dir)
         where.addRow("Résultats (local)", self.local_dir)
@@ -460,11 +479,10 @@ class Main(QMainWindow):
                   "« terminé sans code ». Se tape « 1 h 30 », « 90 min », « 2 j » ou « 1-00:00:00 ».\n\n"
                   "Mémorisée par programme : compile_all.sh court, bench_and_test.py quelques heures, "
                   "multi_launch_stress.py long.",
-        "qos": "La QoS du job (-Q), dont dépend la durée maximale (ccc_mqinfo) : test (prioritaire, "
-               "court, 2 jobs soumis au plus), normal (1 jour), long (3 jours, pas sur milan-bxi), "
-               "xlong (pas sur gh200-bxi).\n\n« auto » prend la plus prioritaire qui accepte la durée, "
-               "puis la plus courte. Un -Q écrit dans les directives l'emporte.\n\nLes limites sont "
-               "relues sur inti à chaque vérification de la connexion.",
+        "qos": "La QoS du job, dont dépend la durée maximale : la liste a les QoS de la partition, "
+               "avec leurs limites (ccc_mqinfo).\n\n« auto » prend la plus prioritaire qui accepte la "
+               "durée, puis la plus courte. Une QoS écrite dans les directives l'emporte.\n\nLes limites "
+               "sont relues sur inti à chaque vérification de la connexion.",
         "after": "Démarrer après la fin d'une compilation (run compile_all.sh pas encore fini).\n\n"
                  "ccc_msub : dépendance Slurm (le job attend dans la file sans prendre de nœud). "
                  "ccc_mprun détaché : le lancement attend le code de retour de ce run.\n\n"
@@ -534,6 +552,11 @@ class Main(QMainWindow):
         "git pull --rebase": "git pull --rebase dans le dépôt d'inti : vos commits locaux "
                              "d'inti sont rejoués au-dessus de la branche distante. Un conflit "
                              "annule le rebase : le dépôt reste tel qu'il était.",
+        "Changer de branche": "Extrait dans le dépôt d'inti la branche choisie dans la liste. Une "
+                              "branche distante (origin/x) sans branche locale donne une branche "
+                              "locale x qui la suit. Refusé si le dépôt a des modifications non "
+                              "commitées. git pull agit ensuite sur cette branche.",
+        "Relire les branches": "git fetch dans le dépôt d'inti, puis relit la liste des branches.",
     }
 
     def set_tooltips(self):
@@ -583,6 +606,17 @@ class Main(QMainWindow):
             self.tabs.setTabToolTip(i, tip(t))
 
     # ---------------------------------------------------------------- utils
+    @staticmethod
+    def mqinfo_key():
+        """The settings key of the QoS table last read: the CEA site keeps the
+        historical key, another site its own."""
+        return "mqinfo" if SITE.name == "inti" else f"mqinfo/{SITE.name}"
+
+    @staticmethod
+    def batch_arg():
+        """The site's batch table, as the helper's check and stop take it."""
+        return base64.b64encode(json.dumps(BATCH).encode()).decode()
+
     def _get(self, key):
         return self.settings.value(key, DEFAULTS[key])
 
@@ -623,8 +657,9 @@ class Main(QMainWindow):
         if local:
             self.mode.addItem(T("en arrière-plan sur cette machine"), "local")
         else:
-            self.mode.addItem("ccc_msub (batch)", "msub")
-            self.mode.addItem(T("ccc_mprun détaché"), "mprun")
+            self.mode.addItem(T(BATCH["label"]), "msub")
+            if DETACHED:
+                self.mode.addItem(T(DETACHED["label"]), "mprun")
             self.preset.setCurrentIndex(max(0, self.preset.findData(self._get("preset"))))
             self.mode.setCurrentIndex(max(0, self.mode.findData(self._get("mode"))))
         for c in (self.preset, self.mode):
@@ -642,11 +677,12 @@ class Main(QMainWindow):
         self.setWindowTitle(T(f"shrink-array — runs sur {name} (prototype)"))
         self.repo_label.setText(T(f"Dépôt ({name})"))
         self.git_label.setText(T(f"Git ({name})"))
+        self.branch_label.setText(T(f"Branche ({name})"))
         self.runs_label.setText(T(f"Runs ({name})"))
         local = self.is_local()
         self.host.setEnabled(not local)
-        for w in (self.qos_row, self.directives):    # the scheduler's QoS and #MSUB lines
-            self.where.setRowVisible(w, not local)
+        for w in (self.qos_row, self.directives):    # the scheduler's QoS and directive lines
+            self.where.setRowVisible(w, not local and (w is not self.qos_row or bool(BATCH["qos"])))
 
     def machine_changed(self, *_):
         """Cluster <-> this machine: each keeps its repository, runs directory,
@@ -966,6 +1002,8 @@ class Main(QMainWindow):
         """(qos to add with -Q or None, its row, error or None). A -Q already in
         the directives wins over the list: it is only checked."""
         directives = self.directives.toPlainText()
+        if not BATCH["qos"] or not self.qos_rows:    # no QoS known: the scheduler's default
+            return None, None, None
         fixed = qos.explicit_qos(directives)
         wanted = fixed or self.qos.currentData() or "auto"
         name, row, err = qos.choose(self.qos_rows, self.preset.currentData(), qos.job_cpus(directives),
@@ -976,6 +1014,9 @@ class Main(QMainWindow):
         name, row, err = self.qos_choice()
         if err:
             self.qos_note.setText(f"<span style='color:#c0392b'>{html.escape(T(err), quote=False)}</span>")
+            return
+        if row is None:
+            self.qos_note.setText("")
             return
         name = name or qos.explicit_qos(self.directives.toPlainText())
         bits = [T(f"max {qos.fmt(row['max_time'], i18n.LANG)}")]
@@ -998,7 +1039,7 @@ class Main(QMainWindow):
                 self.conn.setText(f"<span style='color:#c0392b'>pas de connexion maître : "
                                   f"lancez <b>ssh -fNM {host}</b> dans un terminal</span>")
                 return
-            self.remote.helper("check", [self.repo.text().strip()], helper_ok)
+            self.remote.helper("check", [self.repo.text().strip(), self.batch_arg()], helper_ok)
 
         def helper_ok(r):
             if r is None:
@@ -1022,12 +1063,14 @@ class Main(QMainWindow):
             warn = "" if r.get("msub") else " — <b>ccc_msub introuvable</b>"
             rows = qos.parse_mqinfo(r.get("mqinfo") or "")
             if rows:
-                self.settings.setValue("mqinfo", r["mqinfo"])
+                self.settings.setValue(self.mqinfo_key(), r["mqinfo"])
                 self.qos_rows = rows
                 self.fill_qos(self.qos.currentData())
                 self.update_qos()
             self.inti_git = r.get("git")
             self.show_git_state()
+            if self.inti_git:
+                self.load_branches()
             self.conn.setText(f"<span style='color:#1e8449'>connecté — {r['host']}, "
                               f"python {r['python']}</span>{warn}{self.git_line()}")
             self.refresh()
@@ -1050,7 +1093,7 @@ class Main(QMainWindow):
         mode = self.mode.currentData()
         if PROGRAMS[prog].get("msub_only") and mode == "mprun":
             self.error(f"{prog} se soumet par ccc_msub seulement (il ne doit pas tourner depuis le nœud "
-                       "de login) : choisissez « ccc_msub (batch) »")
+                       f"de login) : choisissez « {BATCH['label']} »")
             return
         qname, qerr = None, None
         if mode != "local":          # no scheduler, no QoS on this machine
@@ -1078,13 +1121,14 @@ class Main(QMainWindow):
             "run.sh": make_run_sh(self.repo.text().strip(), PROGRAMS[prog]["cwd"], cmd, check),
             "msub": self.directives.toPlainText() if mode == "msub" else "",
             "launcher": self.launcher.text().strip() if mode == "msub" else "",
-            "launch.sh": make_launch_sh(f"{' '.join(self.directives.toPlainText().split())} "
-                                        f"-T{self.time_s.value()}" + (f" -Q {qname}" if qname else ""),
-                                        after, delay_s)
+            "launch.sh": make_launch_sh(SITE.detached_options(self.directives.toPlainText(),
+                                                              self.time_s.value(), qname),
+                                        after, delay_s, command=DETACHED["command"])
                          if mode == "mprun" else
                          make_local_launch_sh(self.launcher.text().strip(), self.time_s.value(), after, delay_s)
                          if mode == "local" else "",
             "qos": qname or "",
+            "batch": BATCH,
             "after": after, "delay_s": delay_s,
             "name": re.sub(r"[^A-Za-z0-9_.-]", "_", f"{prog.split('.')[0]}_{pkey}")[:40],
             "time_s": self.time_s.value(),
@@ -1117,9 +1161,16 @@ class Main(QMainWindow):
         if self.list_busy:
             return
         self.list_busy = True
+        source = (self.is_local(), self.runs_dir.text().strip())
 
         def done(r):
             self.list_busy = False
+            if source != (self.is_local(), self.runs_dir.text().strip()):
+                # The list of a machine or runs directory the window has left
+                # meanwhile (a refresh asked for the new one found this one
+                # still running, and returned): list the current one.
+                self.refresh(select)
+                return
             if r is None:
                 return
             self.runs = r["runs"]
@@ -1242,7 +1293,7 @@ class Main(QMainWindow):
                 self.info(f"{run['id']} : arrêt demandé")
             QTimer.singleShot(2000, self.refresh)
 
-        self.remote.helper("stop", [self.runs_dir.text().strip(), run["id"]], done)
+        self.remote.helper("stop", [self.runs_dir.text().strip(), run["id"], self.batch_arg()], done)
 
     @staticmethod
     def commit_text(run):
@@ -1298,9 +1349,12 @@ class Main(QMainWindow):
         g = getattr(self, "inti_git", None)
         if not g:
             self.git_state.setText("pas de dépôt git (ou pas encore de connexion)")
-            for b in (self.bpull, self.bpull_rebase):
+            for b in (self.bpull, self.bpull_rebase, self.bswitch, self.bbranches):
                 b.setEnabled(False)
             return
+        self.bbranches.setEnabled(True)
+        chosen = self.branch.currentData()
+        self.bswitch.setEnabled(bool(chosen) and chosen != g["branch"])
         txt = f"branche <b>{html.escape(g['branch'])}</b> @ {g['commit'][:8]}"
         if g.get("dirty"):
             txt += " · <span style='color:#b9770e'>modifications locales</span>"
@@ -1319,6 +1373,11 @@ class Main(QMainWindow):
         self.git_state.setText(txt)
         for b in (self.bpull, self.bpull_rebase):
             b.setEnabled(bool(up))
+        if getattr(self, "git_busy", 0):
+            # One git command at a time in the repository: a pull or a switch
+            # started while load_branches' fetch runs would fail on git's locks.
+            for b in (self.bpull, self.bpull_rebase, self.bswitch, self.bbranches):
+                b.setEnabled(False)
 
     def git_pull(self, rebase):
         """git pull [--rebase] in inti's repository, after a confirmation."""
@@ -1334,11 +1393,14 @@ class Main(QMainWindow):
                                  f"peut lire des sources modifiées en cours de route.")
         if ask(self, "Git", text) != QMessageBox.Yes:
             return
-        for b in (self.bpull, self.bpull_rebase):
-            b.setEnabled(False)
+        if getattr(self, "git_busy", 0):
+            return
+        self.git_busy = getattr(self, "git_busy", 0) + 1
+        self.show_git_state()
         self.info(f"{what} sur {self.machine_name()}…")
 
         def done(r):
+            self.git_busy -= 1
             if r is None:  # the error is already in the status bar
                 self.show_git_state()
                 return
@@ -1358,6 +1420,80 @@ class Main(QMainWindow):
                 QMessageBox.warning(self, "Git", head + "\n\n" + r.get("output", "")[-3000:])
 
         self.remote.helper("git_pull", [self.repo.text().strip(), "rebase" if rebase else "merge"], done)
+
+    def load_branches(self):
+        """git fetch on inti, then the "Branche (inti)" list: the local branches,
+        then the remote ones without a local branch; the current one selected."""
+        if not getattr(self, "inti_git", None) or getattr(self, "git_busy", 0):
+            return
+        self.git_busy = getattr(self, "git_busy", 0) + 1
+        self.show_git_state()
+
+        def done(r):
+            self.git_busy -= 1
+            if r is None:  # the error is already in the status bar
+                self.show_git_state()
+                return
+            if r.get("git"):
+                self.inti_git = r["git"]
+            cur = self.inti_git["branch"]
+            self.branch.blockSignals(True)
+            self.branch.clear()
+            for b in r.get("local", []):
+                self.branch.addItem(b + (T(" (actuelle)") if b == cur else ""), b)
+            if r.get("remote"):
+                self.branch.insertSeparator(self.branch.count())
+                for b in r["remote"]:
+                    self.branch.addItem(b, b)
+            i = self.branch.findData(cur)
+            if i >= 0:
+                self.branch.setCurrentIndex(i)
+            self.branch.blockSignals(False)
+            self.show_git_state()
+            if r.get("fetch_error"):
+                self.info(T("git fetch a échoué sur inti : la liste est celle du dernier fetch"))
+
+        self.remote.helper("git_branches", [self.repo.text().strip()], done)
+
+    def git_switch(self):
+        """Check out, in inti's repository, the branch chosen in the list."""
+        g = getattr(self, "inti_git", None)
+        target = self.branch.currentData()
+        if not g or not target or target == g["branch"]:
+            return
+        active = [r for r in self.runs if r["status"] in self.ACTIVE]
+        text = T(f"Changer de branche dans {self.repo.text().strip()} : {g['branch']} → {target} ?")
+        if "/" in target:
+            text += "\n\n" + T(f"Une branche locale {target.split('/', 1)[1]} suivant {target} est utilisée, "
+                                 f"ou créée si elle n'existe pas.")
+        if active:
+            text += "\n\n" + T(f"{len(active)} run(s) encore actif(s) : un build ou un bench en cours "
+                                 f"peut lire des sources modifiées en cours de route.")
+        if ask(self, "Git", text) != QMessageBox.Yes:
+            return
+        if getattr(self, "git_busy", 0):
+            return
+        self.git_busy = getattr(self, "git_busy", 0) + 1
+        self.show_git_state()
+        self.info(T(f"changement de branche sur inti : {target}…"))
+
+        def done(r):
+            self.git_busy -= 1
+            if r is None:
+                self.show_git_state()
+                return
+            self.inti_git = r.get("git") or self.inti_git
+            self.show_git_state()
+            if r["ok"]:
+                self.info(T(f"branche : {r.get('before', '')} → {self.inti_git['branch']}"))
+                self.check()   # the connection line and the branch list, then the script options
+                self.scan()
+            else:
+                QMessageBox.warning(self, "Git", T("changement de branche refusé ou en échec") + "\n\n"
+                                    + T(r.get("output", ""))[-3000:])
+                self.load_branches()
+
+        self.remote.helper("git_switch", [self.repo.text().strip(), target], done)
 
     def git_line(self):
         """ — inti : 1a2b3c4d (branch) · local : … ≠, for the connection line."""

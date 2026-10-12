@@ -18,23 +18,13 @@
  * @file param_chunk.cpp
  * @brief Bodies of the ParamChunk façade: startup wiring and the exit report.
  *
- * Three things live here, and they are unrelated to each other beyond sharing
- * the façade:
- *
- *  - **Startup.** init_indexes() sizes the allocation block from the thread
- *    count, publishes it, and asks AllTypeChunk to build whatever the build
- *    needs -- per-thread structures and allocators under OpenMP, a single
- *    allocator otherwise. That half is one verb with two bodies,
- *    init_thread_structures(), on ParamChunkParallelInterface rather than on
- *    ParamChunk itself: each body calls AllTypeChunk verbs the other build
- *    does not declare.
+ *  - **Startup**: init_indexes() sizes and publishes the allocation block;
+ *    init_thread_structures() lives on ParamChunkParallelInterface, one body
+ *    per thread model.
  *  - **The geometry registration hook**, for dynamic builds.
- *  - **ChunkStats()**, the instrumentation report, which is most of the file.
- *    It is a presentation routine: it reduces the per-thread counters and
- *    prints them. The counting happens elsewhere.
+ *  - **ChunkStats()**, the instrumentation report (presentation only).
  *
- * @note Everything here is sequential-context. Nothing in this file is safe to
- *       call from inside a parallel region.
+ * @note Sequential context only: nothing here may be called in a parallel region.
  */
 
 #include <algorithm> // std::max
@@ -61,14 +51,10 @@ namespace shrink_array
 
 /// @brief Allocation block (slab) size in bytes, computed once by init_indexes().
 int ParamChunk::block_size;
-// No #ifdef _OPENMP around these two bodies, and the reason is the AllT
-// parameter of ParamChunkParallelInterface (see param_chunk.h, which carries
-// the full rationale): the bodies are TEMPLATES, so only the one this build
-// selects is instantiated -- by the single explicit instantiation at the end of
-// the pair -- and the other is never compiled. Both reach the façade through
-// SingletonChk<AllT>, never SingletonChk<AllTypeChunk>: the calls MUST stay
-// dependent, or phase-1 lookup checks them against the concrete type at
-// definition time and the body of the build we are not in fails to compile.
+// No #ifdef _OPENMP: the bodies are TEMPLATES on AllT (see param_chunk.h), and
+// only the one this build instantiates below is compiled. Use
+// SingletonChk<AllT>, never SingletonChk<AllTypeChunk>: the calls must stay
+// dependent, or phase-1 lookup rejects the other build's body.
 
 /// @copydoc ParamChunkParallelInterface<true>::init_thread_structures
 template <typename AllT>
@@ -82,23 +68,18 @@ void ParamChunkParallelInterface<true, AllT>::init_thread_structures()
     }
 }
 
-// The one instantiation of the pair, and the whole point of the AllT parameter:
-// the body of the OTHER thread model is left uninstantiated rather than
-// #ifdef'd out. Mirrors all_type_chunk.cpp's
-// `template class AllTypeChunkParallelInterface<AllTypeChunk, build_config::use_openmp>;`.
+// The one instantiation: the other thread model's body stays uninstantiated
+// (as AllTypeChunkParallelInterface in all_type_chunk.cpp).
 template struct ParamChunkParallelInterface<build_config::use_openmp, AllTypeChunk>;
 
 /**
  * @copydoc ParamChunk::init_indexes
  *
- * @details The block size is a budget divided by the thread count -- 2 MiB of
- *          chunks per process, or 15 MiB with @p big_chunk_block, split across
- *          the ranks and floored at 240 KiB so a large team does not end up
- *          with blocks too small to amortise anything.
+ * @details Block size = 2 MiB (15 MiB with @p big_chunk_block) divided by the
+ *          thread count, floored at 240 KiB and at sixteen pages.
  *
- * @warning A chunk larger than one block cannot be allocated at all; that is
- *          what the warning here is about, and it is only a warning because the
- *          geometry is a compile-time constant the caller cannot fix at run time.
+ * @warning A chunk larger than one block cannot be allocated; only a warning,
+ *          as the caller cannot fix the compile-time geometry at run time.
  */
 void ParamChunk::init_indexes(bool big_chunk_block)
 {
@@ -115,13 +96,10 @@ void ParamChunk::init_indexes(bool big_chunk_block)
     sz /= CHUNK_PMP_MAX_THREADS; // taking into account the number of threads
 
     sz = std::max(sz_min, sz);
-    // Page-aware floor. An emptied slab gives back all its pages but the last
-    // (trailing back-pointer), so the retained share is one page per slab:
-    // 256 KiB slabs on 64 KiB pages keep 25% -- measured at 64 threads after
-    // four re-chunks, ~60 000 emptied slabs kept ~3.7 GB. Sixteen pages per
-    // slab caps that at ~6% (1 MiB slabs on 64 KiB pages; on 4 KiB pages the
-    // 240 KiB floor above already dominates). The cost is one partly-filled
-    // slab per (rank, array, size): 64 x 13 x 1 MiB worst case.
+    // Page-aware floor. An emptied slab keeps its last page (trailing
+    // back-pointer), so with few pages per slab the retained share is large
+    // (a quarter with 256 KiB slabs on 64 KiB pages). Sixteen pages cap it at
+    // ~6%; the cost is one partly-filled slab per (rank, array, size).
     if (const long ps = ::sysconf(_SC_PAGESIZE); ps > 0)
     {
         sz = std::max(sz, static_cast<int>(16 * ps));
@@ -134,10 +112,8 @@ void ParamChunk::init_indexes(bool big_chunk_block)
         std::println(stderr, "Caution: chunk sizes can't be larger than one page.");
     }
 
-    // The per-type structures (candidate lists, per-rank lists and
-    // allocators) are built when each type registers its manager -- at its
-    // first array, or through init_indexes<Types>() -- with the block size
-    // published here. Nothing per type is left at this point.
+    // Per-type structures are built when each type registers its manager (first
+    // array, or init_indexes<Types>()), with the block size published here.
     init_thread_structures(); // the allocator banner
 
     if constexpr (chunk_config::stats)
@@ -147,18 +123,11 @@ void ParamChunk::init_indexes(bool big_chunk_block)
 
     ens_type_chunk.mark_ready(block_size);
 
-    // Register the STARTING geometry, now that the managers exist.
-    //
-    // g_active_chunk_size is initialised statically to __chunk_size
-    // (chunk_size_policy.h), so the size every array is born with never goes
-    // through set_active_chunk_size() and would never reach the per-size
-    // free-list map: a run that never re-chunks would have an EMPTY map,
-    // get_list_block_free_thr_for_size() would fall back to the geometry-blind
-    // legacy store for every buffer, and drain_reuse_list_for_size() -- which
-    // only walks the map -- could never reach them again (v1 dyn, 64 threads:
-    // 30 GB parked there, out of a 51 GB footprint).
-    //
-    // Idempotent and sequential; the size is already in g_active_chunk_size.
+    // Register the STARTING geometry, now that the managers exist. It is set
+    // statically (chunk_size_policy.h), never through set_active_chunk_size(),
+    // so without this the per-size free-list map stays empty: every buffer goes
+    // to the geometry-blind legacy store, which drain_reuse_list_for_size()
+    // never reaches (a large share of the footprint stays parked). Idempotent.
     if constexpr (build_config::chunk_dynamic)
     {
         register_runtime_chunk_size(active_chunk_size());
@@ -168,8 +137,7 @@ void ParamChunk::init_indexes(bool big_chunk_block)
 /// @copydoc ParamChunk::force_compression
 void ParamChunk::force_compression()
 {
-    // Declared in every build so call sites need no guard; it simply has nothing
-    // to force when the build has no fast block compression.
+    // Declared in every build; a no-op without fast block compression.
     if constexpr (chunk_config::use_fast_block_compression)
     {
         const auto& ens_type_chunk = SingletonChk<AllTypeChunk>::getRef();
@@ -183,24 +151,14 @@ void ParamChunk::force_compression()
 /**
  * @copydoc ParamChunk::ChunkStats
  *
- * @details Two passes over the variants, and the first exists only to decide
- *          what the legend should say: a legend describing counters that never
- *          appear -- sync on an uncontended run, re-chunk in a static build --
- *          is noise, so the totals are reduced first and each legend line is
- *          emitted only if something will stand behind it.
+ * @details Two passes: the first reduces the totals so that each legend line
+ *          is printed only when some counter will stand behind it.
  *
- * @note Presentation only. Every number printed here is reduced from counters
- *       maintained elsewhere; nothing is measured in this function.
+ * @note Presentation only: the counters are maintained elsewhere.
  */
 void ParamChunk::ChunkStats()
 {
-    // Per-variant report: reduce each variant's per-thread counters and print a
-    // block for chunk / chunk2 / chunk2a. Variants with no activity are skipped.
-
-    // Legend: printed BEFORE the blocks, but filtered on what those blocks will
-    // actually contain -- a legend describing counters that never appear (sync on
-    // an uncontended run, rechunk in a static build) is just noise. So reduce every
-    // variant first, then emit only the lines that have something behind them.
+    // Totals first, to filter the legend; then one block per active variant.
     ChunkStatsThr all{};
     for (int v = 0; v < CHUNK_STATS_N_VARIANT; ++v)
     {
@@ -251,10 +209,8 @@ void ParamChunk::ChunkStats()
     {
         std::print("  list           blocks taken from the reuse list instead (alloc+list = create)\n");
     }
-    // Unconditional on purpose, despite sitting under the `if` above until the
-    // indentation was corrected: the per-variant block prints a `bytes` line
-    // under BOTH alloc and list, and bytes_alloc can be non-zero on a run that
-    // never reused anything.
+    // Unconditional: the per-variant block prints `bytes` under both alloc and
+    // list, and bytes_alloc can be non-zero on a run that never reused anything.
     std::print("    bytes        the same, in MB -- comparable across geometries\n"
                "                 (dyn builds), where a raw block count is not\n");
     std::print("  write          element writes (a write of the compressible value is not counted)\n"
@@ -320,8 +276,7 @@ void ParamChunk::ChunkStats()
     for (int v = 0; v < CHUNK_STATS_N_VARIANT; ++v)
     {
         const ChunkStatsThr stats = reduce_chunk_stats(v);
-        // Skip a variant that saw no activity at all (e.g. chunk2 in a chunk-only
-        // binary): printing an all-zero block would just be noise.
+        // Skip a variant with no activity at all.
         const bool any = stats.alloc != 0 || stats.write != 0 || stats.read != 0 || stats.read_cst != 0 ||
                          stats.create != 0 || stats.list != 0 || stats.teardown_clear != 0 || stats.compress != 0 ||
                          stats.compress_attempt != 0 || stats.rechunk != 0 || stats.read_sync != 0 ||
@@ -353,13 +308,8 @@ void ParamChunk::ChunkStats()
         const double pct_w     = total_rw != 0 ? pct(stats.write, total_rw) : 0.0;
         const double pct_r     = total_rw != 0 ? pct(reads_all, total_rw) : 0.0;
         std::println("  write          = {}  ({:.1f}% of r/w)", stats.write, pct_w);
-        // Write-side counterpart to the read hit-rate below: of all writes, how
-        // many landed straight in an already-materialised buffer (cheap) vs
-        // how many first had to materialise a compressed chunk (`create` --
-        // the same event already counted under `alloc`/`list` above).
-        // Materialisation is only ever write-triggered (never by a read), so
-        // this derivation needs no extra instrumentation: write_materialize
-        // is exactly `create`, and write_hit is the remainder.
+        // Writes into an existing buffer vs writes that materialised first.
+        // Only writes materialise, so write_materialize is exactly `create`.
         if (stats.write != 0)
         {
             const long   write_materialize = stats.create;
@@ -370,18 +320,14 @@ void ParamChunk::ChunkStats()
                          100.0 - pct_hit);
         }
         std::println("  read           = {}  ({:.1f}% of r/w)", reads_all, pct_r);
-        // Compression hit rate on reads: share served straight from the constant
-        // (no data touched) vs from a materialised buffer. This is what the
-        // compression actually buys on the read path.
+        // Read hit rate: share served straight from the constant.
         if (reads_all != 0)
         {
             const double hit = pct(stats.read_cst, reads_all);
             std::println("    constant     = {}  ({:.1f}% hit)", stats.read_cst, hit);
             std::println("    materialised = {}  ({:.1f}%)", stats.read, 100.0 - hit);
         }
-        // Read-side synchronisation cost: how many accesses had to enter the slow
-        // sync path at all, and how many of those needed the expensive cross-rank
-        // walk rather than settling on their own rank.
+        // Reads that entered the slow sync path, and of those the cross-rank ones.
         if (stats.read_sync != 0)
         {
             if (reads_all != 0)
@@ -402,12 +348,9 @@ void ParamChunk::ChunkStats()
                          static_cast<double>(reads_all) / static_cast<double>(stats.write));
         }
         std::println("  create         = {}", stats.create);
-        // Candidate marking: a write that finds the chunk's flag at 0 flips it and
-        // queues the chunk (mark_ok); one that finds it already at 1 does not
-        // (mark_refused). Refusals are normal while a chunk sits in the list, but a
-        // refusal rate near 100% with a flat mark_ok means the flag is never reset
-        // after the sweep -- the chunk can then never be re-queued, and compression
-        // silently stops for it.
+        // mark_ok: flag 0 -> 1, chunk queued; mark_refused: already 1. Refusals
+        // near 100% with a flat mark_ok mean the flag is never reset after the
+        // sweep, and compression silently stops for those chunks.
         if (stats.mark_ok != 0 || stats.mark_refused != 0)
         {
             const long marks = stats.mark_ok + stats.mark_refused;
@@ -416,16 +359,10 @@ void ParamChunk::ChunkStats()
             std::println("    refused      = {}  ({:.1f}% already flagged)", stats.mark_refused,
                          pct(stats.mark_refused, marks));
         }
-        // `compress (during exec)` counts REAL compressions observed WHILE the
-        // program runs: a materialised chunk (created by a write) transitioning
-        // back to the constant. It does NOT include chunks that were simply never
-        // written -- a freshly built array starts every chunk at the constant, and
-        // most stay there for the whole run without a single write touching them.
-        // `still compressed (at exit)`, below, is the unrelated number: how many
-        // chunks ARE at the constant when each array is destroyed, whatever the
-        // reason (born that way, or genuinely compressed). The two can differ by
-        // orders of magnitude on a run with few writes -- that is expected, not a
-        // counting bug.
+        // `compress (during exec)`: real compressions of a materialised chunk
+        // during the run. `still compressed (at exit)`: chunks at the constant at
+        // destruction, never-written ones included. They may differ by orders
+        // of magnitude on a run with few writes; that is not a counting bug.
         std::println("  compress (during exec) = {}", stats.compress);
         if (stats.bytes_freed != 0)
         {
@@ -435,9 +372,7 @@ void ParamChunk::ChunkStats()
         {
             std::println("  still compressed (at exit) = {}", stats.still_compressed_at_exit);
         }
-        // Scan yield: how many of the chunks examined as compression candidates
-        // actually got compressed, and what those scans cost in element reads
-        // (scan_read is kept out of `read` so the read hit-rate stays about the
+        // Scan yield and cost (scan_read is kept out of `read`, which counts the
         // application's own accesses).
         if (stats.still_compressed_at_exit != 0)
         {
@@ -449,8 +384,7 @@ void ParamChunk::ChunkStats()
                          pct(stats.compress, stats.compress_attempt));
             std::println("    scan reads   = {}", stats.scan_read);
         }
-        // teardown_clear: chunks swept by the end-of-life clear_st pass -- NOT a
-        // compression (compress counts those). Normally 0 in a perf run.
+        // teardown_clear: end-of-life clear_st sweep, NOT a compression.
         std::println("  teardown_clear = {}", stats.teardown_clear);
         std::println(
             "  released       = {}  (buffers released without a compression: re-chunk sources, teardown sweeps)",
@@ -473,8 +407,7 @@ void ParamChunk::ChunkStats()
                          stats.gate_wait, rate(stats.gate_wait), stats.gate_wait_yields, stats.gate_mark_hit);
             std::println("  gate wall time = {:.1f} s", secs);
         }
-        // Re-chunk counters exist only in a dynamic build (a static geometry
-        // never re-chunks), so the block is compiled out elsewhere.
+        // Dynamic builds only: a static geometry never re-chunks.
         if constexpr (build_config::chunk_dynamic)
         {
             if (stats.rechunk != 0)
@@ -493,12 +426,7 @@ void ParamChunk::ChunkStats()
                 std::println("    skipped      = {}", stats.rechunk_skipped);
             }
 
-            // End-of-life chunk-size distribution: how many of this variant's
-            // arrays are currently at each size, across their whole lifetime
-            // (one entry recorded per array, at its own teardown -- see
-            // record_chunk_size_at_exit). Dyn-only: a static build never
-            // re-chunks, so every array is always at the same compile-time
-            // size and this has nothing to say.
+            // Chunk size of each array at its own teardown (record_chunk_size_at_exit).
             {
                 std::lock_guard<std::mutex> lock(shrink_array::__chunk_size_dist_mutex[v]);
                 const auto&                 dist = shrink_array::__chunk_size_dist[v];
@@ -516,13 +444,9 @@ void ParamChunk::ChunkStats()
     }
 
     // ── Retention, not counted by any of the above ───────────────────────────
-    // The counters above measure EVENTS (allocations, reuses, compressions).
-    // They say nothing about what is still held when the run ends, and that is
-    // where a dyn build and its static twin diverged while every event counter
-    // matched to within 0.05%: same alloc, same create, same still-compressed,
-    // 2.8 GB apart. These two lines split that residue: buffers parked in the
-    // reuse pools, and the per-(size, rank) value arenas that only exist in a
-    // dynamic build.
+    // The counters above measure EVENTS; what is still held at the end is
+    // separate, and can differ widely between builds whose event counters
+    // match: here, the buffers parked in the reuse pools.
     {
         const auto&       etc  = SingletonChk<AllTypeChunk>::getRef();
         const std::size_t pool = etc.reuse_pool_bytes();
@@ -533,44 +457,25 @@ void ParamChunk::ChunkStats()
 
 #else
 /// @copydoc ParamChunk::ChunkStats
-/// @note Builds without CHUNK_STATS keep no counters, so there is nothing to
-///       report; the function still exists so call sites need no guard.
+/// @note No counters without CHUNK_STATS; kept so call sites need no guard.
 void ParamChunk::ChunkStats() {}
 #endif
 
-// Defined for EVERY dyn build (matching its unconditional declaration in
-// param_chunk.h), with the OMP/FAST_ALLOC specifics guarded INSIDE the body.
-// Outside _OPENMP && FAST_ALLOC there is nothing to register:
-//   - non-OMP fast-alloc: get_chunk_allocator() routes to the single
-//     allocator_data and never consults allocator_pool_;
-//   - STD_ALLOC: no slab allocators at all;
-//   - get_list_block_free_thr() falls back to the legacy single store when a
-//     size is unregistered, so skipping register_free_list_size is safe too.
-// No #ifdef CHUNK_DYNAMIC around this body either: like the two
-// init_thread_structures() above, it is a TEMPLATE (see the AllT note in
-// param_chunk.h) and a static build simply never instantiates it. Same
-// constraint too -- SingletonChk<AllT>, never SingletonChk<AllTypeChunk>, or
-// phase-1 lookup would check register_chunk_size against the concrete facade at
-// definition time and reject it in a static build, where only
-// AllTypeChunkDynInterface<Derived, false> is inherited.
+// Defined for every dynamic build; no #ifdef CHUNK_DYNAMIC: a TEMPLATE on AllT,
+// never instantiated by a static build. Same rule as init_thread_structures():
+// SingletonChk<AllT>, never SingletonChk<AllTypeChunk>, or phase-1 lookup
+// rejects it in a static build.
 /// @copydoc ParamChunkDynInterface<true>::register_chunk_size
 template <typename AllT>
 void ParamChunkDynInterface<true, AllT>::register_chunk_size([[maybe_unused]] unsigned int size)
 {
-    // Must run in BOTH OMP and non-OMP dynamic builds: without it a non-OMP
-    // dynamic build has no per-size reuse
-    // free-list slot -> SIGSEGV in drain_reuse_list_for_size at the first
-    // re-chunk. The manager's register_chunk_size is compiled for every dynamic
-    // build (guarded by if constexpr internally), so this is safe non-OMP.
+    // Must run in every dynamic build, OpenMP or not, fast-alloc or std-alloc:
+    // besides the per-thread allocators (fast-alloc), it gives the per-size
+    // reuse free-lists (list_block_free_thr_by_size_) a slot for `size`.
+    // Without it, buffers of DIFFERENT geometries share the legacy list and a
+    // smaller buffer is popped for a larger chunk (overflow in init_block), or
+    // drain_reuse_list_for_size finds no slot at the first re-chunk.
     auto& ens_type_chunk = SingletonChk<AllT>::getRef();
-    // Register this size with the per-type managers. In fast-alloc this also
-    // creates the per-thread chunk allocators; in std-alloc there are no such
-    // allocators, but we STILL must run this so the per-size reuse free-lists
-    // (list_block_free_thr_by_size_) get a slot for `size`. Without it the
-    // by-size map stays empty, every get_list_block_free_thr[_for_size] falls
-    // back to the single legacy list, and buffers of DIFFERENT geometries share
-    // one list: a size-A buffer parked there is later popped for a size-B chunk
-    // and overflows in init_block's memset (ASan heap-buffer-overflow).
     ens_type_chunk.register_chunk_size(size, ParamChunk::block_size);
 }
 
@@ -578,17 +483,12 @@ void ParamChunkDynInterface<true, AllT>::register_chunk_size([[maybe_unused]] un
 // <false, AllTypeChunk>, and the body above is never compiled.
 template struct ParamChunkDynInterface<build_config::chunk_dynamic, AllTypeChunk>;
 
-// Registration hook, defined in EVERY build so `if constexpr
-// (build_config::chunk_dynamic)` call sites link in both modes.
 /**
  * @brief Build-agnostic wrapper over ParamChunk::register_chunk_size().
  * @param size the runtime chunk size to declare; ignored in a static build.
  * @details Defined in EVERY build so an `if constexpr (chunk_dynamic)` call
- *          site links either way, and unconditional inside: in a static build
- *          ParamChunk inherits ParamChunkDynInterface<false, AllTypeChunk>,
- *          whose register_chunk_size is a no-op -- so no `#ifdef
- *          CHUNK_DYNAMIC` here, and also no compile-time rejection of the call
- *          in a static build; see the warning on that specialisation.
+ *          site links either way; in a static build the call is the no-op of
+ *          ParamChunkDynInterface<false, AllTypeChunk>.
  */
 void register_runtime_chunk_size(unsigned int size)
 {

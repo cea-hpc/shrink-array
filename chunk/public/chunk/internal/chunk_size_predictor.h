@@ -20,14 +20,12 @@
 // Chunk-size predictor (observation phase — log only, no re-chunk)
 // ============================================================================
 //
-// Goal: for a given array, estimate the memory it WOULD occupy at chunk sizes
-// larger than the current one, to see whether a bigger chunk would compress
-// better (fewer materialised buffers, fewer metadata records) — the first step
-// toward an adaptive per-array chunk size whose objective is minimum memory.
+// For a given array, estimate the memory it WOULD occupy at chunk sizes larger
+// than the current one, to see whether a bigger chunk would compress better
+// (fewer materialised buffers, fewer metadata records).
 //
-// This phase does NOT re-chunk anything. The owning array collects a per-chunk
-// summary (it has access to its own chunk_list) and calls report_size_prediction
-// with it; we predict memory at larger sizes and log current vs optimal.
+// Nothing is re-chunked. The owning array collects a per-chunk summary and
+// calls report_size_prediction with it, which logs current vs optimal.
 //
 // Method (sizes >= current only, cheap):
 //   1. The array summarises each chunk as {is_constant, value}. A chunk is

@@ -21,18 +21,12 @@
  * @brief ArrayChunk2's re-chunk hooks — a CHUNK_DYNAMIC-only concern, isolated
  *        in its own mixin so they vanish from a static-geometry build.
  *
- * @details Same split as RechunkHooks does for ArrayChunk (v1), except that
- *          Chunk2 overrides all SIX hooks where v1 needs three: it resolves
- *          num_tab from the registry rather than from a member, carries the
- *          array-level second value across the swap, and re-owns its
- *          map_inf_array entry afterwards. All six only ever run under
- *          RechunkSupport<Derived, true>::rechunk_to(), which does not exist in
- *          a static-geometry build.
- *
- *          RechunkHooks2<Derived, chunk_dynamic> splits them the same way as the
- *          algorithm they serve: the dynamic specialisation carries the real
- *          bodies, the static one keeps the signatures as no-ops so
- *          ArrayChunk2's using-declarations stay valid in both modes.
+ * @details Like RechunkHooks for v1, but Chunk2 overrides all SIX hooks: it
+ *          resolves num_tab from the registry, carries the array-level second
+ *          value across the swap, and re-owns its map_inf_array entry. They run
+ *          only under RechunkSupport<Derived, true>::rechunk_to(); the static
+ *          specialisation keeps the signatures as no-ops so ArrayChunk2's
+ *          using-declarations stay valid in both modes.
  *
  * @see array_chunk_rechunk.h for the algorithm that calls these
  * @see array_chunk_rechunk_hooks.h for v1's three
@@ -112,9 +106,7 @@ class RechunkHooks2<Derived, true>
 /**
  * @brief Static specialisation: the same six signatures, inert.
  *
- * @details Never called — RechunkSupport<Derived, false>::rechunk_to() does
- *          nothing — but kept so ArrayChunk2 can pull the names in with the same
- *          using-declarations in both modes.
+ * @details Never called; kept for ArrayChunk2's using-declarations.
  */
 template <typename Derived>
 class RechunkHooks2<Derived, false>

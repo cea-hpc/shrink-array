@@ -62,15 +62,12 @@ class ParallelSupportCommon
      *          (T, chunk type), still in order. Serial-context only (no
      *          concurrent writer or compressor).
      *
-     * @param force When true, bypass the any_pending_ops() gate and drain
-     *              every rank regardless. Required before rechunk_to() swaps
-     *              chunk_list away: an op queued on an old-geometry chunk is
-     *              keyed by that chunk's address, so once the old vector is
-     *              destroyed the op survives with a dangling key, gets a
-     *              freshly-allocated chunk of ANOTHER geometry at the recycled
-     *              address, and is replayed out of bounds. The pending-ops
-     *              counter can read 0 while such an op is still queued
-     *              (observed), so the gate is not safe to trust here.
+     * @param force Bypass the any_pending_ops() gate and drain every rank. Required at
+     *              any sequential point that reallocates or frees chunks (rechunk_to(),
+     *              resize(), swap(), clear_core()): an op is keyed by its chunk's address,
+     *              and once the old vector is gone it would be replayed, out of bounds,
+     *              on whatever chunk is allocated there. The counter can read 0 while such
+     *              an op is still queued, so the gate cannot be trusted here.
      *
      * @note Guarded on chunk_config::use_fast_block_compression inside: only
      *       that mode queues deferred ops at all.

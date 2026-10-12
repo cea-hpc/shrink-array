@@ -543,7 +543,7 @@ types without lock-free atomics, and for Chunk and Chunk2, these are plain reads
 ## 11. Useful environment variables
 
 The full list, with the macros and the CMake options, is in
-[environment_variables.md](environment_variables.md). Those most relevant to
+[developer_settings.md](developer_settings.md). Those most relevant to
 Chunk2:
 
 | variable | effect |

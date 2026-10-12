@@ -1,12 +1,14 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-"""QoS of the batch jobs (ccc_msub -Q): the limits ccc_mqinfo prints, and the
-choice of a QoS for a partition, a core count and a duration.
+"""QoS of the batch jobs (ccc_msub -Q, sbatch --qos): the limits the site's
+QoS command prints (ccc_mqinfo, sacctmgr show qos), and the choice of a QoS
+for a partition, a core count and a duration.
 
-The limits are read on inti by the connection check (remote_helper.py
-"check" runs ccc_mqinfo); FALLBACK stands in until then. No Qt here.
+The limits are read on the cluster by the connection check (remote_helper.py
+"check" runs the site's [batch] qos_info); the site's [qos] fallback stands in
+until then (config.QOS_FALLBACK). No Qt here.
 
-ccc_mqinfo prints a table: a header line (Name, Partition, Priority, MaxCPUs,
+That command prints a table: a header line (Name, Partition, Priority, MaxCPUs,
 MaxSub, MaxTime, ...), usually a line of dashes under it, then one row per
 (QoS, partition). Columns may be blank (no limit), so a row is cut at the
 column extents of the dash line -- or, without one, of the header -- not at
@@ -15,26 +17,12 @@ every partition. Times are Slurm's: [D-]HH:MM:SS, MM:SS, or minutes.
 """
 import re
 
-# Until the connection check has read ccc_mqinfo on inti. Same shape as its
-# output; the values follow the QoS tooltip (test: priority, short, 2 jobs;
-# normal: 1 day; long: 3 days, not on milan-bxi; xlong: not on gh200-bxi).
-# The real limits replace them at the first check.
-FALLBACK = """\
-Name    Partition   Priority  MaxCPUs  MaxSub     MaxTime
-------  ----------  --------  -------  ------  ----------
-test    gh200-bxi         40                2    02:00:00
-test    milan-bxi         40                2    02:00:00
-normal  gh200-bxi         20              100  1-00:00:00
-normal  milan-bxi         20              100  1-00:00:00
-long    gh200-bxi         20              100  3-00:00:00
-xlong   milan-bxi         20              100  7-00:00:00
-"""
-
 # Header name (lower case, no separators) -> row key.
 _COLS = {"name": "name", "qos": "name", "partition": "partition", "priority": "priority",
          "maxcpus": "max_cpus", "maxcpusperuser": "max_cpus", "maxcores": "max_cpus",
          "maxsub": "max_sub", "maxsubmit": "max_sub", "maxsubmitjobs": "max_sub",
-         "maxrun": "max_run", "maxjobs": "max_run", "maxtime": "max_time", "maxwall": "max_time",
+         "maxsubmitpu": "max_sub", "maxsubmitjobsperuser": "max_sub", "maxcpuspu": "max_cpus",
+         "maxrun": "max_run", "maxjobs": "max_run", "maxjobspu": "max_run", "maxtime": "max_time", "maxwall": "max_time",
          "maxwalldurationperjob": "max_time"}
 
 _TIME_RE = re.compile(r"^(?:(\d+)-)?(\d+)(?::(\d+))?(?::(\d+))?$")
@@ -154,6 +142,8 @@ def limits(rows, name, partition):
     return (own or anyp or [None])[0]
 
 
+# A directive prefix at the start of a line (#MSUB, #SBATCH, #PBS...).
+_DIRECTIVE_RE = re.compile(r"^#[A-Z]+", re.M)
 _QOS_RE = re.compile(r"(?:^|\s)(?:-Q\s*|--qos[=\s]+)(\S+)")
 
 
@@ -161,16 +151,20 @@ def explicit_qos(directives):
     """The QoS the directives set themselves ("#MSUB -Q long", "-Q long",
     "--qos=long"), or None."""
     for ln in (directives or "").splitlines():
-        m = _QOS_RE.search(ln.replace("#MSUB", " "))
+        m = _QOS_RE.search(_DIRECTIVE_RE.sub(" ", ln))
         if m:
             return m.group(1)
     return None
 
 
+_LONG = {"n": "ntasks", "c": "cpus-per-task"}
+
+
 def _opt(directives, flag):
-    """The integer value of -n / -c in the directives (#MSUB lines or ccc_mprun
-    options), or None."""
-    m = re.findall(rf"(?:^|\s)-{flag}\s*(\d+)\b", (directives or "").replace("#MSUB", " "))
+    """The integer value of -n / -c (--ntasks / --cpus-per-task) in the
+    directives (#MSUB or #SBATCH lines, or detached-mode options), or None."""
+    m = re.findall(rf"(?:^|\s)(?:-{flag}\s*|--{_LONG[flag]}[=\s]+)(\d+)\b",
+                   _DIRECTIVE_RE.sub(" ", directives or ""))
     return int(m[-1]) if m else None
 
 

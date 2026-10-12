@@ -3,6 +3,12 @@
 """shrink_gui -- prototype: submit and follow the shrink-array runs on inti
 from the laptop, or run them on the laptop itself ("cette machine").
 
+The site -- host, paths, batch commands, partitions, QoS, option defaults --
+is a TOML file (sitecfg.py): $SHRINK_GUI_SITE, else
+~/.config/shrink_gui/site.toml, else sites/cea_inti.toml (CEA's inti, the
+names used below). sites/slurm_example.toml is a plain Slurm one (sbatch,
+#SBATCH, scancel): copy one to ~/.config/shrink_gui/site.toml and edit it.
+
 Everything goes through `ssh <host>`, so through the ControlMaster you opened
 yourself (`ssh -fNM inti`): this program never handles a password. Nothing is
 installed on inti: each call sends a small Python helper (remote_helper.py)
@@ -60,7 +66,8 @@ Run (on the laptop, from python/):   python3 -m shrink_gui
 Tests (offscreen, fake ssh/ccc_msub): python3 -m pytest shrink_gui/tests -q
 
 Modules:
-  config.py         partitions, programs, per-architecture defaults -- edit here
+  sitecfg.py        the site file: reading, checks (sites/: the examples)
+  config.py         programs, and the site's partitions and defaults as the window uses them
   remote_helper.py  what runs on inti (sent on ssh's stdin; Python 3.6)
   runscripts.py     run.sh / launch.sh of a run
   remote.py         the ssh calls (QProcess)
@@ -69,4 +76,4 @@ Modules:
   app.py            the window
 """
 
-__version__ = "0.12"
+__version__ = "0.13"

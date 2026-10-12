@@ -2,7 +2,7 @@
 
 > French version: [shrink_gui_fr.md](shrink_gui_fr.md).
 
-> October 2026, `shrink_gui` 0.12 (prototype). A window on the laptop to submit
+> October 2026, `shrink_gui` 0.13 (prototype). A window on the laptop to submit
 > `compile_all.sh`, `bench_and_test.py` and `multi_launch_stress.py` on the cluster, or to
 > run them on the laptop itself (§3, "This machine"), follow
 > their log, read their summary and fetch their results. The code is described in the
@@ -33,8 +33,8 @@ A **run** is a directory on the cluster, `<runs directory>/<id>/`:
 ## 2. Requirements and start
 
 - On the laptop: Python 3.9 or later and **PySide6** (`pip install PySide6`).
-- On the cluster: Python 3.6 or later, the shrink-array repository cloned, and `ccc_msub`
-  for the batch mode.
+- On the cluster: Python 3.6 or later, the shrink-array repository cloned, and the site's
+  submit command for the batch mode (`ccc_msub` on inti; see §6).
 - An ssh master connection, opened once per session:
 
 ```sh
@@ -156,15 +156,38 @@ the last `fetch`; a `git pull` brings them up to date.
 
 ## 6. Adapting it to a site
 
-Everything site-specific is in `python/shrink_gui/config.py`:
+What depends on the site is in a TOML file, the first found of:
+
+1. the file named by the `SHRINK_GUI_SITE` environment variable;
+2. `~/.config/shrink_gui/site.toml` (`$XDG_CONFIG_HOME/shrink_gui/site.toml`);
+3. `python/shrink_gui/sites/cea_inti.toml`, CEA's inti, the default.
+
+To start one, copy an example to `~/.config/shrink_gui/site.toml` and edit it:
+`sites/cea_inti.toml` (`ccc_msub`, `#MSUB`, `ccc_mprun`; every key commented) or
+`sites/slurm_example.toml` (plain Slurm: `sbatch`, `#SBATCH`, `scancel`, no detached mode).
+
+| table | contents |
+|---|---|
+| `[site]` | the name shown in the interface, the ssh host, repository, runs directory, build root, partition at start |
+| `[batch]` | the scheduler: mode label, submit, cancel and QoS commands, the job-id pattern, the directive prefix and the templates of its lines (name, time, output, error, QoS, Slurm start conditions) |
+| `[detached]` | the detached mode's command and its time and QoS options; left out when the site has none |
+| `[qos]` | the QoS limits used until the connection check reads them |
+| `[partitions.<name>]` | label, architecture, directives, launcher, detached options |
+| `[defaults."<program>".<arch>]` | the option defaults per program and architecture (`{build_root}` is the site's) |
+
+A file that cannot be used (syntax, unknown or missing key, unknown template field) stops the
+window with a message naming the file and the key. The file is read with `tomllib`
+(Python 3.11+), `tomli` if installed, else a small built-in reader of the subset the examples use.
+
+The batch jobs are Slurm's underneath: the interface follows them with `squeue`, and the start
+conditions are Slurm options (`--dependency`, `--begin`).
+
+What depends on the repository stays in `python/shrink_gui/config.py`:
 
 | name | contents |
 |---|---|
-| `PRESETS` | the partitions: `#MSUB` directives, launcher, `ccc_mprun` options; `local` is this machine |
 | `PROGRAMS` | the programs: script, working directory, how options are read, progress and output patterns |
-| `ARCH_DEFAULTS` | the defaults per (program, architecture) |
-| `DEFAULTS` | host, repository, runs directory, local directory, partition and program at start |
-| `LOCAL_DEFAULTS` | this machine's repository and runs directory |
+| `PRESETS["local"]`, `LOCAL_DEFAULTS` | this machine: its "partition", repository and runs directory |
 | `LOCAL_SHELL` | how the helper runs on this machine (`bash -c`, or `wsl.exe -e bash -c` on Windows) |
 | `SHRINK_GUI_SSH` (environment variable) | the ssh binary to use (default `ssh`) |
 
@@ -178,14 +201,15 @@ cd python && python3 -m pytest shrink_gui/tests -q
 ```
 
 The tests run without a display (`QT_QPA_PLATFORM=offscreen`) against a fake local cluster:
-fake `ssh`, `ccc_msub`, `squeue`, `ccc_mdel`, `ccc_mprun` and `ccc_mqinfo` (`tests/fakes`).
+fake `ssh`, `ccc_msub`, `squeue`, `ccc_mdel`, `ccc_mprun` and `ccc_mqinfo` (`tests/fakes`), with
+the inti site file whatever `~/.config` holds; `test_site.py` also runs a plain Slurm site
+(fake `sbatch` and `scancel`).
 They are skipped when PySide6 is not installed.
 
 ## 8. Limits
 
-- A prototype, written for the TGCC machines and their `ccc_*` commands (`ccc_msub`,
-  `ccc_mprun`, `ccc_mqinfo`). Another site adapts `config.py` and the submission commands
-  of `runscripts.py`.
+- A prototype, written for the TGCC machines; another site writes its site file (§6). The
+  scheduler must be Slurm underneath (`squeue`, `--dependency`, `--begin`).
 - One connection at a time. The interface does not open the master connection itself.
 - This machine from Windows (`wsl.exe`) is not covered by the tests (they run on Linux).
   WSL may stop a distribution once no window of it is left open: keep one open while a

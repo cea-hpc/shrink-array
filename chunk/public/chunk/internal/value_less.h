@@ -30,10 +30,8 @@ namespace shrink_array
 /**
  * @brief The strict weak order chunk2 keys its second-value tables with.
  *
- * chunk2 (Chunk2 / Proxy2) registers each declared second value in a
- * std::map keyed by the value -- one table of candidate chunks per value --
- * so it needs an ordering the value type itself may not provide. In order of
- * preference:
+ * chunk2 keys a std::map of candidate tables by second value, so it needs an
+ * ordering the value type may not provide. In order of preference:
  *  - std::complex: ComplexLess, real then imaginary (no operator< in std);
  *  - a type with operator<: that one (arithmetic, enum, std::array, a struct
  *    with a defaulted operator<=>);
@@ -72,12 +70,9 @@ struct ValueLess
                           "chunk2 orders second values: this element type needs an operator< "
                           "(a defaulted operator<=> will do), or no padding and no floating point");
         }
-        // Unreachable: the static_assert above always fires for a type reaching
-        // this branch. Present only for nvc++ (EDG), whose flow analysis does
-        // not prune discarded `if constexpr` branches and otherwise warns
-        // "missing return statement" [implicit_return_from_non_void_function].
-        // std::unreachable() (C++23) is [[noreturn]], which ends the path for
-        // EDG and also tells the optimiser the branch is dead.
+        // Unreachable (the static_assert fires). For nvc++ (EDG), which does not prune
+        // discarded `if constexpr` branches and warns "missing return statement";
+        // std::unreachable() is [[noreturn]], which ends the path for EDG.
         std::unreachable();
     }
 };

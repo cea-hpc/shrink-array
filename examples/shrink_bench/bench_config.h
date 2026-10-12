@@ -224,17 +224,17 @@ inline long long get_size_base_data()
     return -1;
 }
 
-/// @brief floor(base * multiplier / divisor), in 64-bit: --multiply is real.
-inline long long scaled_size(long long base, double multiplier, Int divisor)
+/// @brief floor(base * multiplier / divisor), in 64-bit: --multiply and --divisor are real.
+inline long long scaled_size(long long base, double multiplier, double divisor)
 {
-    return static_cast<long long>(std::floor(static_cast<double>(base) * multiplier / static_cast<double>(divisor)));
+    return static_cast<long long>(std::floor(static_cast<double>(base) * multiplier / divisor));
 }
 
 /// @brief Interval size: the per-mode base scaled by @p multiplier / @p divisor (scaled_size()).
 /// @param multiplier --multiply factor.
 /// @param divisor --divisor value.
 /// @return The scaled size, converted to Int.
-inline Int get_size_interval(double multiplier = 1.0, Int divisor = 1)
+inline Int get_size_interval(double multiplier = 1.0, double divisor = 1.0)
 {
     return static_cast<Int>(scaled_size(get_size_base_interval(), multiplier, divisor));
 }
@@ -243,7 +243,7 @@ inline Int get_size_interval(double multiplier = 1.0, Int divisor = 1)
 /// @param multiplier --multiply factor.
 /// @param divisor --divisor value.
 /// @return The scaled size, converted to Int.
-inline Int get_size_data(double multiplier = 1.0, Int divisor = 1)
+inline Int get_size_data(double multiplier = 1.0, double divisor = 1.0)
 {
     return static_cast<Int>(scaled_size(get_size_base_data(), multiplier, divisor));
 }
@@ -270,13 +270,13 @@ inline Int get_size_data(double multiplier = 1.0, Int divisor = 1)
  *          Also refuses a factor that leaves an empty interval. Exits(1)
  *          with the largest valid --multiply for this --divisor.
  */
-inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
+inline void check_size_limits(double multiplier, double divisor, Int iter_max)
 {
     // {:.10g} on --multiply: the default stream precision printed 1.9999999 as "2".
-    if (!std::isfinite(multiplier) || multiplier <= 0.0 || divisor < 1)
+    if (!std::isfinite(multiplier) || multiplier <= 0.0 || !std::isfinite(divisor) || divisor <= 0.0)
     {
-        std::println(stderr, "error: --multiply must be a real > 0 and --divisor an integer >= 1 (got {:.10g}, {})",
-                     multiplier, divisor);
+        std::println(stderr, "error: --multiply and --divisor must be reals > 0 (got {:.10g}, {:.10g})", multiplier,
+                     divisor);
         std::exit(1);
     }
     const long long base_data = get_size_base_data();
@@ -289,7 +289,7 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
     if (scaled_size(base_itv, multiplier, divisor) < 1)
     {
         std::println(stderr,
-                     "error: --multiply {:.10g} --divisor {} leaves an empty interval (the interval base is {})",
+                     "error: --multiply {:.10g} --divisor {:.10g} leaves an empty interval (the interval base is {})",
                      multiplier, divisor, base_itv);
         std::exit(1);
     }
@@ -311,7 +311,7 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
     //   2 * sz + 65536   <= int_max  ->  m <= (int_max - 65536) * d / (2 * base_data)
     //   sz + margin      <= int_max  ->  m <= (int_max - margin) * d / base_data
     //   sz + interval    <= int_max  ->  m <= int_max * d / (base_data + base_itv)
-    const double d     = static_cast<double>(divisor);
+    const double d     = divisor;
     const double top   = static_cast<double>(int_max); // 2^63 in the int64 build: the loop below re-checks exactly
     double       m_max = std::min({(top - 65536.0) * d / (2.0 * static_cast<double>(base_data)),
                                    (top - static_cast<double>(margin)) * d / static_cast<double>(base_data),
@@ -324,17 +324,17 @@ inline void check_size_limits(double multiplier, Int divisor, Int iter_max)
 
     std::println(
         stderr,
-        "error: --multiply {:.10g} --divisor {} gives {} elements; the bench's Int arithmetic would reach {} > "
+        "error: --multiply {:.10g} --divisor {:.10g} gives {} elements; the bench's Int arithmetic would reach {} > "
         "the Int range ({}).",
         multiplier, divisor, scaled_size(base_data, multiplier, divisor), reach(multiplier), int_max);
     if (m_max > 0.0)
     {
-        std::println(stderr, "       Largest valid --multiply for --divisor {} (iter_max {}): {:.6f}", divisor,
+        std::println(stderr, "       Largest valid --multiply for --divisor {:.10g} (iter_max {}): {:.6f}", divisor,
                      iter_max, m_max);
     }
     else
     {
-        std::println(stderr, "       No --multiply fits with --divisor {}: raise --divisor.", divisor);
+        std::println(stderr, "       No --multiply fits with --divisor {:.10g}: raise --divisor.", divisor);
     }
     std::println(stderr, "       Beyond that the bench and the library (ind_type = Int) need 64-bit indices:\n"
                          "       rebuild with -DSHRINK_BENCH_INT64=ON and run the int64 executable\n"

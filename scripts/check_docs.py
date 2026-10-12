@@ -46,6 +46,7 @@ PAIRS = {
     "variants.md": "variantes_fr.md",
     "adaptive_rechunk.md": "rechunk_adaptatif_fr.md",
     "environment_variables.md": "variables_environnement_fr.md",
+    "developer_settings.md": "reglages_developpeur_fr.md",
     "performance_measurement.md": "mesures_performance_fr.md",
 }
 

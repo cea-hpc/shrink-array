@@ -22,6 +22,20 @@ EN = {
     "Lanceur (job)": "Launcher (job)", "Dépôt (inti)": "Repository (inti)", "Git (inti)": "Git (inti)",
     "pas de dépôt git (ou pas encore de connexion)": "no git repository (or not connected yet)",
     "pas de dépôt git sur inti : vérifiez la connexion": "no git repository on inti: check the connection",
+    "Branche (inti)": "Branch (inti)", "Changer de branche": "Switch branch",
+    "Relire les branches": "Reload branches",
+    "Extrait dans le dépôt d'inti la branche choisie dans la liste. Une branche distante (origin/x) sans "
+    "branche locale donne une branche locale x qui la suit. Refusé si le dépôt a des modifications non "
+    "commitées. git pull agit ensuite sur cette branche.":
+        "Checks out, in inti's repository, the branch chosen in the list. A remote branch (origin/x) with "
+        "no local branch gives a local branch x tracking it. Refused when the repository has uncommitted "
+        "changes. git pull then acts on that branch.",
+    "git fetch dans le dépôt d'inti, puis relit la liste des branches.":
+        "git fetch in inti's repository, then reloads the branch list.",
+    " (actuelle)": " (current)",
+    "git fetch a échoué sur inti : la liste est celle du dernier fetch":
+        "git fetch failed on inti: the list is the one of the last fetch",
+    "changement de branche refusé ou en échec": "branch switch refused or failed",
     "git pull dans le dépôt d'inti (fusion si les branches ont divergé). "
     "Un conflit annule le pull : le dépôt reste tel qu'il était.":
         "git pull in inti's repository (a merge if the branches have diverged). "
@@ -33,8 +47,6 @@ EN = {
         "of the remote branch. A conflict cancels the rebase: the repository stays as it was.",
     "Runs (inti)": "Runs (inti)", "Résultats (local)": "Results (local)",
     "Langue": "Language",
-    "gh200-bxi — ARM, 288 cœurs": "gh200-bxi — ARM, 288 cores",
-    "milan-bxi — x86, 64 cœurs": "milan-bxi — x86, 64 cores",
     "ccc_msub (batch)": "ccc_msub (batch)", "ccc_mprun détaché": "ccc_mprun, detached",
     "vide : la commande tourne directement dans le job": "empty: the command runs directly in the job",
     "Lire les options": "Read options", "filtrer les options (nom ou aide)…": "filter the options (name or help)…",
@@ -115,15 +127,13 @@ EN = {
         "without a code\". Type \"1 h 30\", \"90 min\", \"2 d\" or \"1-00:00:00\".\n\n"
         "Remembered per program: compile_all.sh short, bench_and_test.py a few hours, "
         "multi_launch_stress.py long.",
-    "La QoS du job (-Q), dont dépend la durée maximale (ccc_mqinfo) : test (prioritaire, "
-    "court, 2 jobs soumis au plus), normal (1 jour), long (3 jours, pas sur milan-bxi), "
-    "xlong (pas sur gh200-bxi).\n\n« auto » prend la plus prioritaire qui accepte la durée, "
-    "puis la plus courte. Un -Q écrit dans les directives l'emporte.\n\nLes limites sont "
-    "relues sur inti à chaque vérification de la connexion.":
-        "The job's QoS (-Q), which sets the maximum time (ccc_mqinfo): test (higher priority, "
-        "short, 2 submitted jobs at most), normal (1 day), long (3 days, not on milan-bxi), "
-        "xlong (not on gh200-bxi).\n\n\"auto\" takes the highest priority one that accepts the "
-        "duration, then the shortest. A -Q written in the directives wins.\n\nThe limits are "
+    "La QoS du job, dont dépend la durée maximale : la liste a les QoS de la partition, "
+    "avec leurs limites (ccc_mqinfo).\n\n« auto » prend la plus prioritaire qui accepte la "
+    "durée, puis la plus courte. Une QoS écrite dans les directives l'emporte.\n\nLes limites "
+    "sont relues sur inti à chaque vérification de la connexion.":
+        "The job's QoS, which sets the maximum time: the list holds the partition's QoS, with "
+        "their limits (ccc_mqinfo).\n\n\"auto\" takes the highest priority one that accepts the "
+        "duration, then the shortest. A QoS written in the directives wins.\n\nThe limits are "
         "read again on inti at each connection check.",
     "Choisir…": "Choose…", "filtrer…": "filter…", "En plus :": "Also:", "Tout décocher": "Clear all",
     "OK": "OK", "Annuler": "Cancel",
@@ -222,11 +232,11 @@ EN = {
     "pas de sorties propres à ce programme": "no outputs of its own for this program",
     "pas de copie locale": "no local copy",
     "Relit le fichier résumé du run sélectionné.": "Reads the selected run's summary file again.",
-    "ccc_msub : ce qui lance run.sh sur le nœud réservé, par exemple "
-    "« ccc_mprun -C ccc-rhel9 -n 1 -c 288 » (environnement RHEL 9 du gh200).\n"
+    "ccc_msub : ce qui lance run.sh sur le nœud réservé (le lanceur de la "
+    "partition dans le fichier de site ; vide : directement dans le job).\n"
     "Mémorisé par partition.":
-        "ccc_msub: what starts run.sh on the reserved node, for instance "
-        "\"ccc_mprun -C ccc-rhel9 -n 1 -c 288\" (the gh200's RHEL 9 environment).\n"
+        "ccc_msub: what starts run.sh on the reserved node (the partition's launcher in the "
+        "site file; empty: directly in the job).\n"
         "Remembered per partition.",
     "Superpose un autre run de multi_launch_stress.py : même build et même variante de "
     "part et d'autre":
@@ -424,11 +434,12 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"— (\d+) ligne\(s\)", r"— \1 row(s)"),
     (r"nom de run invalide", "invalid run name"), (r"n'est pas un run", "is not a run"),
     (r"ni ccc_mdel ni scancel n'ont pu annuler le job", "neither ccc_mdel nor scancel could cancel job"),
+    (r"(\S+(?: / \S+)*) : le job (\S+) n'a pas pu être annulé", r"\1: job \2 could not be cancelled"),
     (r"lancé depuis (\S+), ce master arrive sur (\S+)", r"started from \1, this master lands on \2"),
     (r"arrêt impossible", "cannot stop"),
     (r"^(\S+) se soumet par ccc_msub seulement \(il ne doit pas tourner depuis le nœud de login\) : "
-     r"choisissez « ccc_msub \(batch\) »$",
-     r'\1 is submitted with ccc_msub only (it must not run from the login node): choose "ccc_msub (batch)"'),
+     r"choisissez « (.+) »$",
+     r'\1 is submitted with ccc_msub only (it must not run from the login node): choose "\2"'),
     (r"pas de bloc usage\(\) \{ cat <<EOF \.\.\. EOF \} où lire les options \(le script n'est pas exécuté ici\)",
      "no usage() { cat <<EOF ... EOF } block to read the options from (the script is not run here)"),
     (r" — ([^<:]+) : <b>", r" — \1: <b>"), (r" · local : identique", " · local: same"),
@@ -450,6 +461,14 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^git_pull : pas de dépôt git dans (\S+)$", r"git_pull: no git repository in \1"),
     (r"local : (<b>\w+</b>) \(([^)]*)\) ≠ ", r"local: \1 (\2) ≠ "),
     (r"^branche : ", "branch: "),
+    (r"^Changer de branche dans (\S+) : (\S+) → (\S+) \?$", r"Switch branch in \1: \2 → \3?"),
+    (r"^Une branche locale (\S+) suivant (\S+) est utilisée, ou créée si elle n'existe pas\.$",
+     r"A local branch \1 tracking \2 is used, or created if it does not exist."),
+    (r"^changement de branche sur inti : (\S+)…$", r"switching branch on inti: \1…"),
+    (r"^modifications non commitées dans (\S+) : commitez-les, ou mettez-les de côté \(git stash\), avant "
+     r"de changer de branche$", r"uncommitted changes in \1: commit them, or set them aside (git stash), "
+     r"before switching branch"),
+    (r"^branche inconnue : ", "unknown branch: "),
     (r"\* modifications non commitées dans le dépôt d'inti à la soumission",
      "* uncommitted changes in inti's repository at submission"),
     (r"≠ le job a démarré sur (\w+) : le dépôt a changé entre la soumission et le démarrage",
@@ -462,15 +481,37 @@ EN_RE = [(re.compile(a), b) for a, b in (
     (r"^fin · ", "end · "),
 )]
 
+# The site's words: the texts are written for CEA's inti (inti, ccc_msub,
+# #MSUB, ccc_mprun, ccc_mdel, ccc_mqinfo); T() puts the site's own in their
+# place, in both languages (sitecfg.Site.words, set by config).
+SITE_WORDS = {}
+_SITE_RE = None
+
+
+def set_site_words(words):
+    """{CEA word: the site's}: identical pairs are dropped."""
+    global SITE_WORDS, _SITE_RE
+    SITE_WORDS = {k: v for k, v in words.items() if k != v}
+    _SITE_RE = (re.compile("|".join(r"(?<![\w#])" + re.escape(k) + r"(?!\w)"
+                                    for k in sorted(SITE_WORDS, key=len, reverse=True)))
+                if SITE_WORDS else None)
+
+
+def site_words(text):
+    """@p text with the site's words in place of CEA's."""
+    return _SITE_RE.sub(lambda m: SITE_WORDS[m.group()], text) if _SITE_RE and text else text
+
+
 def T(text):
-    """The text in the interface language (see EN, EN_RE)."""
+    """The text in the interface language (see EN, EN_RE), with the site's
+    words (set_site_words)."""
     if LANG != "en" or not text:
-        return text
+        return site_words(text)
     if text in EN:
-        return EN[text]
+        return site_words(EN[text])
     for rx, en in EN_RE:
         text = rx.sub(en, text)
-    return text
+    return site_words(text)
 
 def status_text(run):
     """A run's status as shown: translated, with the exit code when done."""

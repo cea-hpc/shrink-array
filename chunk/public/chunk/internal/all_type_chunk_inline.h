@@ -31,10 +31,8 @@
 #include "chunk/singleton.h"                // SingletonChk<AllTypeChunk>, for ensure_manager
 #include "chunk/chunk_traits.h"             // the Chunk / Chunk2 / Chunk2A declarations initialize<Types> names
 #include "chunk/internal/link_check.h"      // CHUNK_LINK_CHECK: the program's settings, the library's
-// Not the chunk definitions: a ManagerChunk<CHUNK_T, T> is only built at the
-// instantiation of register_manager<>, in the TU that constructs the array (and
-// so has the chunk), and including them here from the arrays' own headers
-// (create_common calls ensure_manager) would be a cycle.
+// Not the chunk definitions: register_manager<> is instantiated in the TU that
+// builds the array (which has them), and including them here would be a cycle.
 
 namespace shrink_array
 {
@@ -44,9 +42,8 @@ void AllTypeChunk::register_manager()
 {
     const std::scoped_lock lock(registry_mutex_);
 
-    // Idempotent under the lock: initialize<Types>() may name a type whose
-    // first array already registered it, or the other way round. One flag per
-    // manager type, no dynamic_cast: the library does not need RTTI.
+    // Idempotent under the lock (initialize<Types>() and a first array may both
+    // register). A flag per manager type: no RTTI needed.
     if (registered_<ManagerT>)
     {
         return;
@@ -62,9 +59,7 @@ void AllTypeChunk::register_manager()
     ManagerT::init_static_state(); // the per-rank structures, before anyone can reach them
     auto manager = std::make_unique<ManagerT>();
 
-    // The whole per-type setup, before anyone can see the manager: the
-    // compression-candidate lists, the per-rank structures and allocators
-    // (init_manager, by thread model), the runtime geometries declared so far.
+    // The whole per-type setup, before the manager is published.
     manager->resize_chunk_to_compress_potentially();
     init_manager(*manager, block_size_);
     if constexpr (build_config::chunk_dynamic)
@@ -82,9 +77,7 @@ void AllTypeChunk::register_manager()
 template <typename ManagerT>
 void AllTypeChunk::ensure_manager()
 {
-    // A magic static per manager type: the first array of the type pays the
-    // registration, every later one a guard load; concurrent first arrays of
-    // the same type wait on the initialisation, as the language requires.
+    // A magic static per manager type: concurrent first arrays wait on it.
     [[maybe_unused]] static const bool registered = []
     {
         link_check::CHUNK_LINK_CHECK(); // links only against a library built with this TU's settings
@@ -97,30 +90,18 @@ void AllTypeChunk::ensure_manager()
 template <template <typename> class CHUNK_T, typename Types>
 void AllTypeChunk::fillManagerChunk()
 {
-    // For each T listed in Types (a std::tuple), register one ManagerChunk
-    // for the (CHUNK_T, T) pair.
+    // One ManagerChunk per T of Types (a std::tuple).
     for_each_type<Types>([this]<typename T> { this->template register_manager<ManagerChunk<CHUNK_T, T>>(); });
 }
 
 template <typename Types>
 void AllTypeChunk::initialize()
 {
-    // Only the variant this build actually compiles arrays for. Registering all
-    // three cost a manager per (variant, type) that no array will ever use --
-    // and a manager is not free: init_manager primes a per-thread allocator
-    // for each entry, and register_chunk_size a set per geometry.
-    //
-    // Measured, 1e6 doubles, OpenMP, 4 threads, fast-alloc, before this change:
-    // the value arena handed out 25 slabs of 4 MB (100 MB) of which ONE held
-    // data -- 12 came from init_allocator_thr and 12 from register_chunk_size,
-    // three variants x four threads each, for a program using ArrayChunk<double>
-    // alone. A re-chunk to a second geometry primed twelve more (+48 MB), and
-    // the arena never releases (deallocs = 0).
-    //
-    // The variant is a compile-time choice (the CHUNK / CHUNK2 / CHUNK2A
-    // macros, mirrored by chunk_config::use_chunk*), so this costs nothing at
-    // run time. Written as three independent `if constexpr` rather than an
-    // else-chain: nothing forbids a build from selecting more than one.
+    // Only the variants this build compiles arrays for: a manager is not free
+    // (init_manager primes a per-thread allocator, register_chunk_size a set
+    // per geometry, and the arena never releases), so registering unused
+    // variants multiplies the primed memory. Three independent `if constexpr`:
+    // a build may select more than one (chunk_config::use_chunk*).
     if constexpr (chunk_config::use_chunk)
     {
         fillManagerChunk<Chunk, Types>();

@@ -161,7 +161,6 @@ class DirtyBitsetSupport<Derived, true>
 
     /**
      * @brief Reallocates and copies the dirty bitset during resize.
-     * Centralized logic to prevent duplication and buffer overflows.
      * @param old_nb_chunk chunk count the current bitset was sized for
      * @param new_nb_chunk chunk count to size the new bitset for
      */
@@ -198,14 +197,11 @@ class DirtyBitsetSupport<Derived, true>
 
     /**
      * @brief Zero the whole dirty bitset.
-     * @note One relaxed store per word — safe to call after an OMP barrier
-     *       (serial or single region), not while writers may still be marking.
-     *       Not a memset: the words are std::atomic, which has no trivial
-     *       copy-assignment (-Wclass-memaccess), and writing an atomic object
-     *       through a non-atomic access is undefined behaviour even at a
-     *       quiescent point. A relaxed store is the defined way to reset it and
-     *       costs the same here: each word sits on its own 128-byte line, so a
-     *       memset would touch exactly the same lines.
+     * @note One relaxed store per word — safe after an OMP barrier (serial or
+     *       single region), not while writers may still be marking. Not a
+     *       memset: writing a std::atomic through a non-atomic access is UB even
+     *       at a quiescent point (-Wclass-memaccess), and with one word per
+     *       128-byte line a memset would touch the same lines anyway.
      */
     void clear_dirty_bitset() noexcept
     {
@@ -214,11 +210,10 @@ class DirtyBitsetSupport<Derived, true>
             return;
         }
         // Nothing marked since the last clear: the words are already zero.
-        // This is the common case -- only the deferred-enqueue path marks --
-        // and it matters: clear_all_dirty_bitsets() runs at every phase end of
-        // a non-OMPT build (finalize_parallel_phase_after_flush), serially, and
-        // rewriting one 128-byte line per 64 chunks of every array took ~21 s
-        // of a ~30 s shrink_bench_chunk2a_256 run on AMD Milan (GNU, 64 threads).
+        // The common case (only the deferred-enqueue path marks), and do not
+        // drop it: clear_all_dirty_bitsets() runs serially at every phase end
+        // of a non-OMPT build, and rewriting every line of every array then
+        // dominates the run time of a benchmark.
         if (any_marked_word().exchange(0, std::memory_order_acq_rel) == 0)
         {
             return;
@@ -242,10 +237,9 @@ class DirtyBitsetSupport<Derived, true>
     }
 
   private:
-    // One bit per CHUNK, whatever the chunk size: the 64 below is the width of
-    // a word (64 chunks per word), not a chunk geometry. chunk_idx >> 6 and
-    // chunk_idx & 63 read like the decalage / modulo of a 64-element chunk,
-    // which they are not.
+    // One bit per CHUNK, whatever the chunk size: 64 is the word width (64
+    // chunks per word), not a chunk geometry -- chunk_idx >> 6 / & 63 are not
+    // the shift / modulo of a 64-element chunk.
     static constexpr int kChunksPerWord = 64;                 ///< Bits in a uint64_t word.
     static constexpr int kWordShift     = 6;                  ///< log2(kChunksPerWord).
     static constexpr int kBitInWordMask = kChunksPerWord - 1; ///< chunk_idx -> bit within its word.

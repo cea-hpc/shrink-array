@@ -21,8 +21,8 @@ time. A Debug build, `-DCHECK_OPTIM=ON` or a sanitizer also builds the validatio
 (`examples/validation`).
 
 The whole matrix (GNU, LLVM, oneAPI, AOCC, NVHPC, sanitizers, statistics, std-alloc...) is
-`scripts/compile_all.sh`. Its options are in [environment_variables.md](environment_variables.md)
-§8. The ones used every day:
+`scripts/compile_all.sh`. Its options are in [developer_settings.md](developer_settings.md)
+§7. The ones used every day:
 
 | option | use |
 |---|---|
@@ -98,4 +98,6 @@ well above the noise (10% on the 64-thread dynamic benchmarks) is a result.
   Fixed). The versioning policy at the top of that file says which number the next release
   bumps.
 - A new environment variable, macro or CMake option goes into
-  [environment_variables.md](environment_variables.md).
+  [environment_variables.md](environment_variables.md) if a user of the library has to set it,
+  into [developer_settings.md](developer_settings.md) otherwise. A switch that keeps an old
+  behaviour for an A/B gets its removal date there when it is added.

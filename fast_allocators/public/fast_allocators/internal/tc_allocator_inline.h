@@ -63,12 +63,10 @@ inline void TCSlab<Links>::alloc_block()
         tab_firstFree.resize(static_cast<std::size_t>(BlockSize));
     }
 
-    // The block comes from the slab's own arena, never from glibc. Arena
-    // addresses are never returned to the OS and the op, ctx and value arenas
-    // are disjoint, so a freed op slab's address can never be reobtained by the
-    // value pool. Recycled within that arena's own free-list in destroy().
-    // owner_rank (set by the pool before init()): a slab the rank recycled at a
-    // re-chunk's slice boundary comes back to it first (SlabArena::allocate).
+    // From the slab's own arena, never glibc: arena addresses are never returned to the OS
+    // and the op, ctx and value arenas are disjoint, so a freed op slab's address can never
+    // be reobtained by the value pool. owner_rank (set before init()): a slab the rank
+    // recycled comes back to it first (SlabArena::allocate).
     data = static_cast<char*>(fast_alloc::arena_for(arena_kind).allocate(BlockAllocator, BlockAllocator, owner_rank));
 
     if (data == nullptr) [[unlikely]]
@@ -78,15 +76,10 @@ inline void TCSlab<Links>::alloc_block()
         std::abort();
     }
 
-    // NOTE: no memset here, fresh slab or recycled. The pool makes no promise
-    // about element contents (TCSlab's @warning): every consumer initialises
-    // what it gets. A fresh arena slab is already zero (MAP_ANONYMOUS), and a
-    // recycled one must NOT be blanket-zeroed -- that wiped a block the op pool
-    // still considered live (an op read back as all-zero, vptr=0) -- and for
-    // values it only ever made the WHOLE slab resident at once: 2 MiB at the
-    // first alloc of a rank for a fresh slab, and for a recycled one right
-    // after the re-chunk or teardown that gave it back. Left alone, its pages
-    // become resident as the elements are handed out.
+    // NOTE: no memset, fresh slab or recycled. The pool makes no promise about element
+    // contents (TCSlab's @warning). Do NOT blanket-zero a recycled slab: it can wipe a block
+    // the op pool still considers live, and it makes the whole slab resident at once instead
+    // of page by page as elements are handed out.
 
     *fast_alloc::start_lifetime_as<TCSlab*>(data + BlockAllocator - sizeof(void*)) = this;
 
@@ -112,13 +105,9 @@ inline void TCSlab<Links>::init(int ElementSize_, uintptr_t BlockAllocator_)
 {
     if constexpr (!side_links)
     {
-        // The free list is threaded THROUGH the freed elements: free_block()
-        // writes the next free index, an int, into a freed element's first
-        // bytes. An element must hold that int, at an int-aligned offset --
-        // otherwise the write spills into the next element, or is misaligned.
-        // ElementSize is a run-time value (a chunk size times sizeof(T)), so
-        // this cannot be a static_assert; it runs once per slab and stays on in
-        // release.
+        // The free list is threaded THROUGH freed elements (free_block() writes the next
+        // index, an int, into the element's first bytes): an element must hold an aligned int.
+        // ElementSize is a run-time value, so this is a release check, once per slab.
         if (ElementSize_ < static_cast<int>(sizeof(int)) || ElementSize_ % static_cast<int>(alignof(int)) != 0)
             [[unlikely]]
         {
@@ -143,13 +132,10 @@ inline void* TCSlab<Links>::alloc() noexcept
 {
     if constexpr (side_links)
     {
-        // A sweep may have given this slab's pages back INCLUDING the trailing
-        // back-pointer (fast_alloc::EmptySlabSweep). Put it back before the block
-        // escapes: the pointer we are about to return is exactly what makes a
-        // free through this slab possible again, and free_elt() resolves it by
-        // reading that word. The store is idempotent -- every writer writes
-        // `this` -- and this runs on the slab's own rank, so no atomic is
-        // needed.
+        // A sweep may have given this slab's pages back INCLUDING the trailing back-pointer
+        // (fast_alloc::EmptySlabSweep). Restore it before the block escapes: free_elt()
+        // resolves the slab by reading that word. Idempotent store (always `this`), on the
+        // slab's own rank: no atomic needed.
         if (backptr_dropped) [[unlikely]]
         {
             *fast_alloc::start_lifetime_as<TCSlab*>(data + BlockAllocator - sizeof(void*)) = this;

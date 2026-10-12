@@ -23,13 +23,10 @@
  * VmRSS (/proc/self/status), /proc/self/statm and getrusage()'s ru_maxrss all
  * read the kernel's RSS counters, which are kept per thread and folded into
  * the process total only every so many events. With many threads faulting
- * pages the total trails reality: on Grace (RHEL 9.6, 64 threads,
- * shrink_bench_chunk2a_dyn) VmRSS stayed at ~11.82 GiB for the whole run
- * while smaps_rollup showed the process growing from 12.4 to 13.4 GiB, and it
- * was 2.1 GiB behind during the initialisation. smaps_rollup walks the page
- * tables when it is read: exact, but the cost grows with the resident size --
- * ~10-20 ms on a 13 GB process, so ~200 reads inside shrink_bench's timed loop
- * cost ~3 s. Fine for traces and checkpoints; never on a periodic hot path.
+ * pages the total can trail reality by gigabytes. smaps_rollup walks the page
+ * tables when it is read: exact, but the cost grows with the resident size
+ * (tens of ms on a large process). Fine for traces and checkpoints; never on a
+ * periodic hot path.
  */
 
 #include <atomic>   // std::atomic, std::memory_order

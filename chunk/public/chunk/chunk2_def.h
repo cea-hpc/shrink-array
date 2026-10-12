@@ -28,10 +28,9 @@ struct Chunk2Def
 {
     // --- Compression List Settings ---
     // Level 1: Trigger compression every 2 modified chunks (Extreme stress)
-    // Level 3: Chunk2A's floor (500, was 2000). At 64 threads the floor IS the
-    // threshold, and 2000 kept up to 64 x 2000 materialised candidates alive
-    // until a rank compressed -- 256 MiB of 2 KiB buffers, whose slabs stay
-    // resident (variant_compare, --constants 1: 584 vs 455 MiB for Chunk2A).
+    // Level 3: Chunk2A's floor. At high thread counts the floor IS the threshold: a higher
+    // one keeps threads x floor materialised candidates alive until a rank compresses, and
+    // their slabs stay resident (a few hundred MiB more RSS).
     /// Floor of the per-thread "to compress" list threshold (entries), by chunk_config::tuning_level.
     constexpr static int size_min_list_chunk_to_check_compress = (chunk_config::tuning_level == 1)   ? 2
                                                                  : (chunk_config::tuning_level == 3) ? 500
@@ -41,7 +40,7 @@ struct Chunk2Def
     /// List threshold = chunks created / (this * max threads), floored by size_min_list_chunk_to_check_compress.
     constexpr static int factor_div_nb_chunk_for_compress = (chunk_config::tuning_level == 1) ? 2000
                                                             : (chunk_config::tuning_level == 3)
-                                                                ? 50 // Chunk2A's (was 20)
+                                                                ? 50 // Chunk2A's
                                                                 : 100;
 };
 

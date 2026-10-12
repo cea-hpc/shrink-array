@@ -41,21 +41,19 @@ void ParallelSupportCommon<Derived>::flush_pending_deferred_ops(bool force)
         using CM = CompressionManager<value_type, chunk_type>;
         // force: drain every rank regardless of the pending counter. Used by
         // rechunk_to() before it swaps chunk_list out -- an op left on an
-        // old-geometry chunk would otherwise outlive its chunk and be replayed
-        // against a recycled address of the wrong size. The counter has been
-        // seen to read 0 while ops were still queued, so it cannot gate this
-        // path.
+        // old-geometry chunk would outlive its chunk and be replayed against a
+        // recycled address of the wrong size. Do not gate this path on the
+        // counter: it can read 0 while ops are still queued.
         //
-        // ONE drain per rank, not one per chunk. flush_chunk_all_ranks() pays
-        // its fixed cost -- announce_flush() (counter + seq_cst fence), the
-        // hard-compressor wait, then every rank's shard lock and a find() --
-        // BEFORE knowing whether the chunk holds anything: per chunk of the
-        // array, that was a million announces and ~64 M lock round trips on a
-        // million-chunk array at 64 threads, for chunks almost all empty (and
-        // the dirty bits are sticky). flush_deferred(r) announces once and
-        // walks rank r's chunk set, which holds exactly the chunks with ops
-        // queued. It also drains the other arrays of this (T, chunk type):
-        // their ops are applied earlier, still in order.
+        // ONE drain per rank, not one per chunk: flush_chunk_all_ranks() pays
+        // its fixed cost (announce_flush() counter + seq_cst fence, the
+        // hard-compressor wait, every rank's shard lock and a find()) BEFORE
+        // knowing whether the chunk holds anything -- per chunk, millions of
+        // lock round trips for chunks almost all empty (dirty bits are sticky).
+        // flush_deferred(r) announces once and walks rank r's chunk set, which
+        // holds exactly the chunks with ops queued. It also drains the other
+        // arrays of this (T, chunk type): their ops are applied earlier, still
+        // in order.
         if (force || CM::any_pending_ops())
         {
             const int max_thr = CHUNK_PMP_RANK_BOUND;

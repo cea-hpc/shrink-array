@@ -301,7 +301,6 @@ uint32_t get_tid()
     }
     else
     {
-        // Create a hash function object over std::thread::id
         const auto hasher = std::hash<std::thread::id>{};
         const auto raw    = hasher(std::this_thread::get_id());
         return static_cast<uint32_t>(raw & 0xFFFFFFFFu);
@@ -503,10 +502,9 @@ bool analyze_ring_sweep()
         if (!vec.empty())
         {
             const Interval& last = vec.back();
-            // if last interval has same start (or overlaps to end_ts), assume already recorded
+            // Same start, or already covered: assume already recorded.
             if (last.start == start_ts || end_ts <= last.end || start_ts >= last.end)
             {
-                // If the last interval already covers this range or has identical start, skip
                 return;
             }
         }
@@ -581,7 +579,6 @@ bool analyze_ring_sweep()
 
     // Stage 3: sort endpoints
     std::cout << "🔢 Sorting endpoints (" << endpoints.size() << " endpoints)...\n";
-    // show a simple wait spinner while sorting if endpoints large (sort is blocking but we can print once)
     std::sort(endpoints.begin(), endpoints.end(),
               [](const Endpoint& lhs, const Endpoint& rhs)
               {
@@ -722,12 +719,9 @@ bool analyze_ring_sweep()
     std::cout << "⚠️ Detected overlaps: " << overlaps.size() << "\n";
     std::cout << "Timestamps relative to min_start = " << min_start << "\n";
 
-    // Long fast-path durations are NOT a serious signal: 1-2 ms on HPC
-    // machines is dominated by cold-path costs (first-touch page faults,
-    // NUMA migration, allocator pool contention), none of them a
-    // correctness bug. The only criterion that genuinely violates an
-    // invariant is "same-thread fast-path AND compression overlap": a
-    // thread observed in two states it cannot legally be in at once.
+    // Long fast-path durations are not a correctness signal (cold-path costs: page faults,
+    // NUMA, pool contention). The only invariant violation is a same-thread fast-path AND
+    // compression overlap: one thread in two states at once.
 
     size_t n_same_thread = 0;
     for (const auto& o : overlaps)

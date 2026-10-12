@@ -21,18 +21,16 @@
  * @brief Measurement for the re-chunk model's "churn" term: how many chunks
  *        each phase materialises and releases again, per array.
  *
- * The advisor looks at an array between phases, after the compression pass:
- * it sees the data at rest. A write into a constant chunk materialises the
- * whole chunk until the phase-end compression releases it, and the pages it
- * took stay with the process: at S=512 that transient costs 8x what it costs
- * at S=64. These counters give the decider the per-phase rate to weigh it
+ * The advisor sees the data at rest, after the compression pass. A write into
+ * a constant chunk materialises the whole chunk until the phase-end
+ * compression, and its pages stay with the process: a transient proportional
+ * to the chunk size. These counters give its per-phase rate
  * (CHUNK_RECHUNK_CHURN trace; nothing decides on them yet).
  *
- * phase_ends(): process-wide count of compression phases (end of each
- * parallel phase). Materialisations<T>: per element type, per array
- * allocation key, per rank -- rank-local increments, summed by the reader at
- * a quiescent point (an advisor tick). Only dynamic builds give arrays their
- * own key; key 0 (the shared pool) is not counted.
+ * phase_ends(): process-wide count of compression phases. Materialisations<T>:
+ * per element type, allocation key and rank -- rank-local increments, summed
+ * by the reader at a quiescent point. Key 0 (the shared pool) is not counted;
+ * only dynamic builds give arrays their own key.
  */
 
 #include <array>   // std::array

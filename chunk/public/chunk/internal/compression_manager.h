@@ -98,19 +98,14 @@ struct FlushReplayState
 /**
  * @brief All of CompressionManager's OpenMP-only machinery.
  *
- * @details Everything the compression lifecycle needs to coordinate against
- *          concurrent writers and flushes -- the three inflight counters, the
- *          per-rank flush locks, the deferred-op queues and their pending
- *          counters, the dangerous-list tracking and the start()/finish()
- *          session verbs -- exists only when there are threads to coordinate.
- *          Splitting it out on the same axis the rest of the codebase uses
- *          (ChunkFastCompPolicy, ChunkDeferredOpsPolicy, Proxy2FastCompPolicy)
- *          keeps the serial build free of state it can never use, and removes
- *          the last preprocessor conditional from this header.
+ * @details The inflight counters, per-rank flush locks, deferred-op queues and
+ *          pending counters, dangerous-list tracking and the start()/finish()
+ *          session verbs exist only when there are threads to coordinate (same
+ *          split as ChunkFastCompPolicy, ChunkDeferredOpsPolicy,
+ *          Proxy2FastCompPolicy), so the serial build carries no such state.
  *
- *          The serial specialisation is empty. Every call site of a member
- *          below sits in a branch discarded by `if constexpr` in serial builds,
- *          so the names are never looked up there.
+ *          The serial specialisation is (nearly) empty: every call site of a
+ *          member below sits in a branch discarded by `if constexpr` there.
  *
  * @tparam T         Element type
  * @tparam ChunkType Chunk variant the manager coordinates
@@ -228,15 +223,12 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
             }
 
             // ── Per-op geometry pin ───────────────────────────────────────
-            // The replay may run long after the enqueue, on a thread whose
-            // ambient geometry (t_active_chunk_size) now belongs to another
-            // array. The replayed body allocates through create_value(), which
-            // sizes the buffer from that ambient value: a buffer of the wrong
-            // width, then `values[num]` runs off it (silent under the fast
-            // allocator, a crash under std-alloc). Pin the enqueue-time
-            // geometry (ctx->chunk_size_frozen, the value the proxy's
-            // chunk_size_frozen_ also uses) and alloc key for the replay, and
-            // restore both exactly, including the "unset, use global" 0.
+            // The replay may run on a thread whose ambient geometry
+            // (t_active_chunk_size) now belongs to another array, and
+            // create_value() sizes the buffer from it: `values[num]` would run
+            // off a buffer of the wrong width. Pin the enqueue-time geometry
+            // (ctx->chunk_size_frozen, as the proxy's chunk_size_frozen_) and
+            // alloc key, and restore both exactly, including the "unset" 0.
             if constexpr (build_config::chunk_dynamic)
             {
                 const unsigned int saved     = t_active_chunk_size;
@@ -271,7 +263,6 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
                 return;
             }
 
-            // Destroy the context object if present
             if (ctx)
             {
                 std::destroy_at(ctx); // poisons ctx->magic via ~BaseArithmeticContext
@@ -286,11 +277,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
                 magic = deferred_lifecycle::op_dead_magic;
             }
 
-            // Destroy this DeferredOperation object
             std::destroy_at(this);
-
-            // Recycle the raw memory of the operation
-            free_op(this);
+            free_op(this); // recycle the raw memory
         }
 
         CTX*    ctx; ///< frozen target metadata, owned until destroy()
@@ -323,8 +311,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
 
     /**
      * @brief One rank's pending-deferred-op count, padded to its own line.
-     * @details Sharded per rank rather than a single counter, to avoid one hot
-     *          cache line under 64-thread enqueue storms.
+     * @details Sharded per rank: a single counter is one hot cache line under
+     *          concurrent enqueues.
      */
     struct alignas(128) PaddedPendingCounter
     {
@@ -442,8 +430,6 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     ///       that observes the resulting sum as non-zero.
     static void inc_pending_ops(int thr_rank) noexcept
     {
-        // release: publishes prior map insert to any acquiring reader that
-        // observes the resulting sum > 0.
         pending_ops_shard[thr_rank].v.fetch_add(1, std::memory_order_release);
     }
 
@@ -466,8 +452,6 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     ///         take the rare scan path
     [[nodiscard]] static bool any_pending_ops() noexcept
     {
-        // acquire sum across shards. A non-zero result means at least one
-        // rank has an unflushed op; we then take the (rare) scan path.
         if (pending_ops_shard.empty())
         {
             return false;
@@ -490,15 +474,12 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      */
     static void record_enqueue_deferred(int thr_rank, ChunkType& chunk) noexcept
     {
-        // Insert UNDER rank thr_rank's shard lock: flush_chunk_all_ranks()
-        // erases from this same set while holding that lock, and an unlocked
-        // insert races the erase on the table's storage (TSan-confirmed). It
-        // is the lock to_be_queued() already holds for the op-map insert.
+        // Insert UNDER rank thr_rank's shard lock (the one to_be_queued()
+        // already holds): flush_chunk_all_ranks() erases from this set under
+        // it, and an unlocked insert races that erase on the table's storage.
         //
         // A flush replay applies its writes directly (FlushReplayGuard): an
-        // enqueue from inside one means a write path that ignores
-        // in_flush_replay. flush_deferred() survives it (it walks a snapshot),
-        // but the replay is meant to empty the queue, not refill it.
+        // enqueue from inside one is a write path ignoring in_flush_replay.
         if constexpr (build_config::any_check)
         {
             if (FlushReplayState<T, ChunkType>::in_flush_replay) [[unlikely]]
@@ -573,17 +554,14 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /**
      * @brief Might the calling rank hold deferred ops?
      * @return false only when it certainly holds none
-     * @warning Deliberately NOT an .empty() check on the deferred table: that
-     *          unlocked read raced its do_erase (TSan-confirmed). The lock-free
-     *          per-thread flag used instead has no false negatives -- it never
-     *          misses a real deferred op -- and may only lag a cross-thread
-     *          drain, which defers a compression rather than skipping a needed
-     *          flush. It also keeps the hot write path off the shard lock.
+     * @warning Do not replace with an .empty() check on the deferred table: an
+     *          unlocked read races its erase. The per-thread flag has no false
+     *          negatives and may only lag a cross-thread drain (which defers a
+     *          compression, never skips a needed flush), and keeps the hot
+     *          write path off the shard lock.
      */
     [[nodiscard]] static bool have_deferred_queue() noexcept
     {
-        // The calling thread asks for itself, which is what this
-        // thread-local flag describes.
         return thread_may_have_ops();
     }
 
@@ -602,8 +580,7 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      *       mark stores and its loads of the writer flags, and the writer's
      *       announce_write() precedes this load -- one side always sees the
      *       other (see announce_write()). Never seq_cst: on AArch64 that load
-     *       stalls behind the preceding barrier and dominated the write
-     *       engine's profile.
+     *       stalls behind the preceding barrier, a large cost on the write path.
      * @note "In flight" means per (variant, T): these statics are per template
      *       instantiation, so a compression on double does not gate writes on
      *       int. The rank's own "dangerous" flag is not a gate: it decides,
@@ -713,10 +690,8 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
      * list waits the longest). Without the marks it is the whole pass, scan
      * included: a few hundred microseconds to a millisecond.
      *
-     * Why wait rather than defer: a deferred write is an enqueue plus a
-     * replay, plus the op's memory until the flush. Deferring every write
-     * behind a running compression cost a few % of wall time and more peak
-     * RSS.
+     * Why wait rather than defer: a deferred write costs an enqueue, a replay
+     * and the op's memory until the flush (a few % of wall time, more peak RSS).
      *
      * @note Spin discipline of the library: CHUNK_CPU_PAUSE, a yield every 1000,
      *       CHUNK_WRITE_WAIT_MAX_YIELDS yields at most (-D tunable).
@@ -727,32 +702,25 @@ class CompressionManagerOmpPolicy : public FlushReplayState<T, ChunkType>
     /**
      * @brief Owner-recursive mutual exclusion for one rank's deferred-op map.
      *
-     * @details Cross-thread flush needs exclusion that begin_flush() does not
-     *          provide: it blocks compressors and same-rank writers, but two
-     *          readers on DIFFERENT ranks flushing the same chunk do not exclude
-     *          each other, and would both drain and destroy the same deferred op
-     *          -- a double-free.
+     * @details begin_flush() blocks compressors and same-rank writers, but not
+     *          two readers on DIFFERENT ranks flushing the same chunk: both
+     *          would drain and destroy the same deferred op (double free).
      *
-     *          The lock's only real job is protecting the per-rank op-map
-     *          arr[r], an ankerl map whose erase/insert rehashes the whole
-     *          backing vector, against concurrent structural mutation. Its
-     *          natural granularity is therefore the RANK: flushes touching
-     *          different ranks' maps run in parallel, while two flushers
-     *          draining the same arr[r][chunk] still serialize.
+     *          The lock protects the per-rank op-map arr[r] (an ankerl map whose
+     *          erase/insert rehashes the whole backing vector) against concurrent
+     *          structural mutation, so its granularity is the RANK: flushes of
+     *          different ranks' maps run in parallel.
      *
-     *          Owner-recursive because a drain executes write_body(), which may
-     *          RE-ENQUEUE onto the same rank and take this lock again. @c owner
-     *          holds the holding rank (-1 when free); @c depth counts nested
-     *          acquires and is only ever touched by the owner, so a plain int
-     *          suffices.
+     *          Owner-recursive because a drain runs write_body(), which may
+     *          RE-ENQUEUE onto the same rank. @c owner is the holding rank (-1
+     *          when free); @c depth is touched only by the owner (plain int).
      *
-     * @warning Sharding per CHUNK instead of per rank would require never
-     *          erasing from arr[r] -- erase rehashes and would race across
-     *          shards -- letting arr[r] grow to O(distinct chunks) and blowing
-     *          up memory. Per-rank keeps the erase and bounds memory.
+     * @warning Do not shard per CHUNK: it would forbid erasing from arr[r]
+     *          (erase rehashes, racing across shards), so arr[r] would grow to
+     *          O(distinct chunks). Per-rank keeps the erase and bounds memory.
      * @note Per rank, not one lock per type: flush_chunk_all_ranks() is hot on
      *       the read path, and a single lock serialises every cross-thread
-     *       flush (a scalability collapse at 128 threads).
+     *       flush and stops scaling at high thread counts.
      */
     struct alignas(128) PaddedFlushLock
     {

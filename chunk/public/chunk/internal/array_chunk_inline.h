@@ -102,29 +102,16 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
     const auto& sh_inf  = *Proxy<T>::share_info_array;
     const int   num_tab = sh_inf.get_num_tab(this->registry_key());
 
-    // Plain Chunk classification: a block that is NOT written() is stored in its
-    // compressed (constant == first_value) form; written() means it is
-    // materialised. Read here, before the clear() drain below mutates state.
+    // Read before the clear() drain mutates state. Not written() = compressed
+    // to first_value. A written() chunk is also classified by CONTENT (as in
+    // Chunk2/Chunk2A): whether the deferred compression caught it depends on
+    // the thread count, so counting by content makes still@exit a function of
+    // the data alone.
     //
-    // Content check, on top of the written() classification -- same as
-    // Chunk2/Chunk2A. written() only says whether the deferred compression
-    // happened to catch a chunk during the run, not whether its CURRENT content
-    // is compressible: a materialised block that is all first_value is one the
-    // sequential build would have collapsed eagerly, and the fraction the live
-    // drain caught before teardown depends on the thread count (measured: 649
-    // vs 1 of 4097 chunks at 1 vs 6 threads on identical final data). Counting
-    // by content makes still@exit a function of the data alone.
-    //
-    // Cross-variant probe ("would Chunk2 have helped?"): plain Chunk can only
-    // collapse a block whose constant is first_value. A block constant to some
-    // OTHER value stays materialised here, yet a Chunk2/Chunk2A would have
-    // compressed it as a second constant. The same scan counts those.
-    // This is the real "did a richer variant have headroom" measure — it walks
-    // the block contents, not a candidate list. O(materialised * chunk_size),
-    // once, at teardown -- and every chunk is classified on its own, so the
-    // walk is shared out over the team when one is available (the counts are
-    // reductions). Same guard as the other teardown loops: never nest inside a
-    // caller's region, and not worth a team for a handful of chunks.
+    // Cross-variant probe: a block constant to another value than first_value
+    // stays materialised here but a Chunk2/Chunk2A would have compressed it;
+    // the same scan counts those. O(materialised * chunk_size), once, shared
+    // over a team (never nested in a caller's region, not for a few chunks).
     const auto csz = static_cast<unsigned int>(this->size_policy_.size());
 
     int n_compressed  = 0;
@@ -155,13 +142,11 @@ void ArrayChunk<T, ind_type>::print_compression_stats(std::ostream& os) const
         }
     }
 
-    // Plain Chunk has no type-2 (n_t1 = 0). The cross probe reports how many
-    // materialised blocks a Chunk2 (or Chunk2A) would have captured.
+    // Plain Chunk has no type-2 (n_t1 = 0).
     if constexpr (chunk_config::stats)
     {
         add_chunk_still_compressed_at_exit<Chunk<T>>(n_compressed);
-        // Dyn-only: record this array's CURRENT chunk size in the end-of-life
-        // size distribution (no-op on static builds, see chunk_stats.h).
+        // Dyn-only end-of-life size distribution (see chunk_stats.h).
         record_chunk_size_at_exit<Chunk<T>>(static_cast<unsigned int>(this->size_policy_.size()));
     }
     print_formatted_chunk_stats(os, num_tab, this->debug_name(), type_name<T>(), n_compressed, nb_chunk,
@@ -185,28 +170,23 @@ void ArrayChunk<T, ind_type>::clear()
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk<T, ind_type>::clear_core()
 {
-    // Pin the ambient size to THIS array's own geometry before the sweep
-    // below: get_chunk_allocator() routes on thread_chunk_size(), not on the
-    // buffer being freed, so a size left by another array's write sent these
-    // buffers to the wrong size's allocator (sl_contains assertion in
-    // TCTypeAllocator after a re-chunk, fast-alloc only). ArrayChunk2 and
-    // ArrayChunk2A had this pin; v1 did not. See ArrayChunk2::clear_core().
+    // Pin the ambient size to THIS array's geometry before the sweep:
+    // get_chunk_allocator() routes on thread_chunk_size(), not on the buffer, so
+    // a size left by another array would send these buffers to the wrong
+    // allocator. See ArrayChunk2::clear_core().
     if constexpr (build_config::chunk_dynamic)
     {
         set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
     }
 
-    // Drain deferred writes on this array's chunks before chunk_list is freed.
-    // force: the pending-op counter has been seen to read 0 while ops were
-    // still queued (array_chunk_parallel_common_inline.h); a sequential point
-    // that reallocates or frees chunks cannot trust it -- as rechunk, swap and
-    // ArrayChunk2A::clear_core() already do.
+    // Drain deferred writes before chunk_list is freed. force: the pending-op
+    // counter can read 0 while ops are queued (array_chunk_parallel_common_inline.h),
+    // so a point that frees chunks must not trust it.
     this->flush_pending_deferred_ops(/*force=*/true);
 
-    // Remove this array's queued compression candidates by num_tab before its
-    // chunks are freed. v1's clear() runs no terminal sweep, but candidates left
-    // behind would dangle for the next make_block_compression; and rechunk_to
-    // relies on this to keep the shared list free of foreign-geometry chunks.
+    // Remove this array's queued candidates before its chunks are freed: they
+    // would dangle for the next make_block_compression, and rechunk_to relies on
+    // it to keep foreign-geometry chunks out of the shared list.
     if constexpr (chunk_config::use_fast_block_compression)
     {
         const auto& sh_inf   = *Proxy<T>::share_info_array;
@@ -221,25 +201,16 @@ void ArrayChunk<T, ind_type>::clear_core()
         return;
     }
 
-    // Give this array's chunks back to the manager's chunk count, exactly as
-    // ArrayChunk2::clear_core() and ArrayChunk2A::clear_core() do. Without it
-    // somme_chunk_create only ever grows in v1: every array constructed since
-    // program start stays counted after its destruction, so the compression
-    // threshold (somme_chunk_create / (factor_div * threads), see
-    // compute_size_max_number_of_chunk_to_check_compress) climbs linearly with
-    // the program's history instead of tracking the chunks currently alive.
-    // Measured on v1 dyn: threshold 390 at start of run, ~42 000 by the end,
-    // hence fewer and fewer compressions, hence buffers almost never returned
-    // to the reuse lists, hence 66.8 M fresh allocations for 788 k
-    // compressions. rechunk_to() goes clear_core() -> rebuild_storage(), so the
-    // decrement here keeps that path balanced too.
+    // Give this array's chunks back to the manager's count (as ArrayChunk2 /
+    // 2A do): the compression threshold (somme_chunk_create / (factor_div *
+    // threads)) must track the chunks alive, not the program's history --
+    // otherwise it climbs by orders of magnitude, compressions become rare and
+    // buffers stop returning to the reuse lists. Also balances rechunk_to()
+    // (clear_core() -> rebuild_storage()).
     manager_chunk::decrem_somme_chunk_create(nb_chunk);
-    // And recompute what derives from the total, as rebuild_storage() does
-    // after its increment: a re-chunk creates the new storage while the old
-    // one still counts, then destroys the old one here -- without this the
-    // compression threshold stays sized for the geometry it just left (v1
-    // doubles 64 -> 1024: ~3400 candidates where ~900 is right; 1.5x less
-    // throughput for the rest of the 64-thread chunk_dyn bench).
+    // And recompute what derives from the total, as rebuild_storage() does: a
+    // re-chunk would otherwise keep a threshold sized for the old geometry
+    // (several times too large, a large throughput loss).
     manager_chunk::compute_size_buffer_reuse();
     manager_chunk::compute_size_max_number_of_chunk_to_check_compress();
 
@@ -275,16 +246,12 @@ void ArrayChunk<T, ind_type>::clear_core()
                 const int thr_rank = CHUNK_PMP_THREAD_RANK;
 
                 // Park into the reuse list of THIS array's geometry, not the
-                // ambient t_active (which may be another size mid-rechunk).
-                // Falls back to the legacy single list in single-size builds.
+                // ambient one. If my_sz has no per-size list this falls back to
+                // the LEGACY list, which drain_reuse_list_for_size() never
+                // drains: those blocks then stay until teardown.
                 const unsigned int my_sz = this->size_policy_.size();
                 auto&              lbf   = Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(thr_rank, my_sz);
 
-                // Where these buffers land matters: get_list_block_free_thr_for_size()
-                // falls back to the LEGACY list when my_sz has no per-size list,
-                // and drain_reuse_list_for_size() only ever drains the by-size
-                // map -- so a fallback means the old geometry's blocks are never
-                // drained at a re-chunk and pile up until teardown.
                 for (int k = 0; k < nb; ++k)
                 {
                     T*          values_loc = ll_chunk_loc[k]->values;
@@ -295,20 +262,11 @@ void ArrayChunk<T, ind_type>::clear_core()
                     CHUNK_LEDGER_PARK(values_loc, "clear_core.teardown_park");
                     lbf.push_back(values_loc);
 
-                    // Neutralise the chunk NOW that its buffer is parked.
-                    // Otherwise the chunk stays materialised -- values still
-                    // points at the buffer that now belongs to the reuse list --
-                    // so a residual compression candidate, one that slipped the
-                    // removal above or the terminal sweep, would
-                    // free_block_to_pool the SAME buffer a second time. Under
-                    // std-alloc that frees it twice (glibc "corrupted
-                    // double-linked list" at teardown, after a re-chunk);
-                    // fast-alloc parks instead of svfreeing, which hides it.
-                    //
-                    // init_values_cst_val() only assigns values = cst_val1: it
-                    // frees nothing, and written() then reports false, so every
-                    // compress path short-circuits. Same as
-                    // ArrayChunk2::clear_core and ArrayChunk2A::clear_core.
+                    // Neutralise the chunk NOW that its buffer is parked: still
+                    // materialised, a residual candidate would free the SAME
+                    // buffer a second time (a double free under std-alloc).
+                    // init_values_cst_val() frees nothing; written() then
+                    // reports false, so every compress path short-circuits.
                     ll_chunk_loc[k]->init_values_cst_val();
                 }
             }
@@ -337,13 +295,10 @@ void ArrayChunk<T, ind_type>::clear_core()
 
     nb_chunk = 0;
 
-    // An array with its own slab affinity gives its memory back NOW: every
-    // buffer parked above (own rank) or by another rank (foreign, under this
-    // array's key) goes home to its allocator set, whose slabs hold nothing
-    // else and so empty -- and reclaim_empty_slabs madvises them away.
-    // Sequential point (destructor / rechunk_to); the drain opens its own
-    // region. Key 0 (shared pool): nothing to give back per array. Same hook
-    // as ArrayChunk2 / ArrayChunk2A.
+    // An array with its own slab affinity gives its memory back NOW: its parked
+    // buffers go home to its allocator set, whose slabs then empty (and
+    // reclaim_empty_slabs madvises them). Sequential point; the drain opens its
+    // own region. Key 0: nothing to give back per array.
     if (this->alloc_key_ != 0 && !CHUNK_PMP_IN_PARALLEL_REGION)
     {
         ManagerChunk<Chunk, T>::drain_reuse_list_for_size(this->size_policy_.size());
@@ -358,10 +313,7 @@ void ArrayChunk<T, ind_type>::clear_core()
 template <ArrayChunkElement T, typename ind_type>
 void ArrayChunk<T, ind_type>::compress_int(bool verbose)
 {
-    // Pin the ambient size to THIS array's geometry: the frees below route on
-    // thread_chunk_size(), not on the buffer (see clear_core()). Left to
-    // whichever array the thread last served, a re-chunked array's buffers
-    // went to another size's allocator (sl_remove assertion, fast-alloc only).
+    // Pin the ambient size to THIS array's geometry (see clear_core()).
     if constexpr (build_config::chunk_dynamic)
     {
         shrink_array::set_thread_chunk_size(static_cast<unsigned int>(this->size_policy_.size()));
@@ -380,10 +332,8 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
 
         if (chunk.written())
         {
-            // CHUNK_STATS: this sweep is a compression attempt per materialised
-            // chunk. It reaches clear_st() directly (see below), bypassing
-            // compress(), so without this the successes were counted but not the
-            // tries -- attempts showed 1175% success.
+            // One compression attempt per materialised chunk: this sweep
+            // bypasses compress(), which would otherwise count it.
             if constexpr (chunk_config::stats)
             {
                 increm_chunk_compress_attempt<Chunk<T>>();
@@ -399,24 +349,12 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
     const auto nb = static_cast<int>(ll.size());
 
     // ── What this reports, and what it does NOT assert ───────────────────────
-    // In embedded-compression mode compress_int() only SCANS. What it finds is
-    // the residual: chunks that are constant at zero right now and are still
-    // materialised. That is NOT an invariant violation, which is what the
-    // previous wording ("Should not have compress (0) values") claimed.
-    // Compression is incremental -- a write only QUEUES its chunk, and the
-    // queue is drained by the phase-end pass -- so between two passes a chunk
-    // that has just become constant is normally waiting for the next one.
-    // ArrayChunk2A's copy of this scan says the same at length; the two now
-    // agree.
-    //
-    // What the number IS good for is its SIZE and its TREND: a handful is the
-    // normal in-flight residual, a large or growing count means the incremental
-    // path is not keeping up -- which is exactly how the ~500 residual that led
-    // to drain_compression_backlog() in rechunk_validation.cpp was found.
-    //
-    // And it is printed only when asked. The parameter was declared and never
-    // read, so callers passing false -- rechunk_validation.cpp does, on
-    // purpose -- got the dump anyway.
+    // compress_int() only SCANS. It finds the residual: chunks constant at zero
+    // and still materialised. NOT an invariant violation: compression is
+    // incremental (a write only QUEUES its chunk), so such a chunk normally
+    // waits for the next pass. Its SIZE and TREND matter: a handful is normal,
+    // a large or growing count means the incremental path is not keeping up.
+    // Printed only when `verbose`.
     if (nb != 0 && verbose)
     {
 #pragma omp critical
@@ -427,9 +365,7 @@ void ArrayChunk<T, ind_type>::compress_int(bool verbose)
                          nb);
             std::println(stderr, "ArrayChunk type: ArrayChunk<{}, {}>", type_name<T>(), type_name<ind_type>());
 
-            // Cap at 10 ENTRIES. `k > 10` printed twelve, and the ellipsis
-            // below it fired on nb > 10, so eleven and twelve entries came out
-            // truncated with nothing saying so.
+            // At most 10 entries, then the ellipsis.
             const int shown = nb < 10 ? nb : 10;
             for (int k = 0; k < shown; ++k)
             {
@@ -505,21 +441,12 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
 {
     this->invalidate_proxies();
 
-    // Drain the deferred ops on the CURRENT chunks, before chunk_list (a
-    // std::vector) and the dirty bitset are reallocated below: a queued op
-    // holds a reference to its chunk, and replaying it after the realloc
-    // wrote into freed memory. The declaration always said "drained first";
-    // the body never did. No-op without fast-block compression.
-    //
-    // And BEFORE the compression pass, not after -- as in
-    // ArrayChunk2Base::resize_common(): a replayed write can queue its chunk
-    // again (flag 1, &chunk_list[j] pushed). The pass that follows empties
-    // the lists and clears the flags, which is what the realloc and
-    // Proxy<T>::resize_tab_is_int() below rely on.
-    // force: the pending-op counter has been seen to read 0 while ops were
-    // still queued (array_chunk_parallel_common_inline.h); a sequential point
-    // that reallocates or frees chunks cannot trust it -- as rechunk, swap and
-    // ArrayChunk2A::clear_core() already do.
+    // Drain the deferred ops on the CURRENT chunks before chunk_list and the
+    // dirty bitset are reallocated: a queued op holds a reference to its chunk.
+    // And BEFORE the compression pass (as ArrayChunk2Base::resize_common()): a
+    // replayed write can queue its chunk again, and the realloc and
+    // resize_tab_is_int() rely on the pass leaving the lists empty.
+    // force: see clear_core().
     this->flush_pending_deferred_ops(/*force=*/true);
 
     if constexpr (chunk_config::use_fast_block_compression)
@@ -539,9 +466,8 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
 
     nb_chunk = this->chunks_for(newsz);
 
-    // Shrink: chunk_list.resize() destroys the chunks past the new end, and
-    // ~Chunk() releases nothing -- their buffers leaked. Release them first,
-    // as clear_core() does; the pass above emptied the candidate lists.
+    // Shrink: ~Chunk() releases nothing, so release the dropped chunks' buffers
+    // first (the pass above emptied the candidate lists).
     if (nb_chunk < old_nb_chunk)
     {
         release_chunk_range(nb_chunk, old_nb_chunk);
@@ -562,26 +488,21 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz)
     this->assign_alloc_key();
 
     // The new chunks [old_nb_chunk, nb_chunk): a team of its own outside a
-    // region, the calling thread inside one -- never an orphaned `omp for`,
-    // which inside a region left 1/N of a thread's own array unconstructed
-    // (region_storage_validation).
+    // region, the calling thread inside one -- never an orphaned `omp for`
+    // (it would construct only 1/N of a thread's own array).
     parallel_storage_init::for_each_chunk(nb_chunk - old_nb_chunk, [this, old_nb_chunk](int k)
                                           { this->construct_chunk(old_nb_chunk + k).init_values_cst_val(); });
 
-    // std::vector semantics for the regrown range [old_size, newsz): it reads
-    // T{}. The chunks added above are fresh, but the one holding the OLD end
-    // keeps its tail -- after a shrink, the values written there before would
-    // come back on the next growth (deferred_path_validation, resize-grow-again).
-    // Reset that tail: at most one chunk, through the normal write path, after
-    // the reallocations. Serial: at most one chunk, and called inside a region
-    // an `omp for` would cover 1/N of it.
+    // std::vector semantics: the regrown range [old_size, newsz) reads T{}. The
+    // chunk holding the OLD end keeps its tail (values from before a shrink),
+    // so reset it through the normal write path. Serial: inside a region an
+    // `omp for` would cover 1/N of it.
     if (newsz > old_size)
     {
         const auto csz = static_cast<ind_type>(this->chunk_size());
-        // Up to the end of the OLD chunk count: chunks_for() keeps a chunk past
-        // the last element, so when old_size fell on a chunk boundary that
-        // spare chunk kept its stale values too (pool_accounting, grow back).
-        // In long long: old_nb_chunk * csz may pass ind_type's range near its top.
+        // Up to the end of the OLD chunk count: chunks_for() keeps a spare chunk
+        // when old_size falls on a boundary, stale too. In long long:
+        // old_nb_chunk * csz may pass ind_type's range.
         const long long cover_ll  = static_cast<long long>(old_nb_chunk) * static_cast<long long>(csz);
         const ind_type  old_cover = cover_ll < static_cast<long long>(newsz) ? static_cast<ind_type>(cover_ll) : newsz;
         const ind_type  stale_end = newsz < old_cover ? newsz : old_cover;
@@ -600,7 +521,7 @@ void ArrayChunk<T, ind_type>::resize(ind_type newsz, in_t<T> val)
     resize(newsz);
 
     // A team of its own outside a region; the calling thread inside one (an
-    // orphaned `omp for` there wrote `val` into 1/N of the new range).
+    // orphaned `omp for` would write only 1/N of the new range).
     if (!CHUNK_PMP_IN_PARALLEL_REGION && nb_chunk > 500)
     {
 #pragma omp parallel for schedule(static)

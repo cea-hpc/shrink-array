@@ -16,16 +16,12 @@
 
 #pragma once
 
-// The settings a variant library is built with and a program must repeat --
-// the variant macros (CHUNK_VARIANT_V1 / _V2 / _V2A), CHUNK_SIZE and
-// CHUNK_DYNAMIC, which its CMake target carries -- spelled into the name of one
-// function. Each variant library defines the one its own settings spell
-// (chunk/private/link_check.cpp); the first array of each element type calls
-// the one the program's settings spell (AllTypeChunk::ensure_manager). A
-// program compiled with other settings than the library it links -- which
-// would otherwise compile the library's templates differently from the library
-// itself, silently -- fails to link, and the undefined symbol names the
-// settings it was compiled with:
+// The settings a program must share with its variant library (CHUNK_VARIANT_V1 /
+// _V2 / _V2A, CHUNK_SIZE, CHUNK_DYNAMIC), spelled into one function name. The
+// library defines its own (chunk/private/link_check.cpp); the first array of
+// each element type calls the program's (AllTypeChunk::ensure_manager). A
+// mismatch, which would otherwise compile the templates differently in silence,
+// fails to link, and the undefined symbol names the program's settings:
 //
 //     undefined reference to `shrink_array::link_check::variant_v1_0_v2_0_v2a_1_size_256_dyn_0()'
 //

@@ -212,11 +212,13 @@ se limite aux reconstructions.
   passage à 1 024. Inchangé avec une seule tranche, une reconstruction en
   ordonnancement statique, sans recyclage des slabs, sans réutilisation de
   `chunk_list`, en affinité lazy ; le placement NUMA est équilibré comme celui du
-  statique. Deux parts : les analyses de l'advisor, qui continuent une fois la
-  géométrie stabilisée (environ 7 points : `CHUNK_RECHUNK_DRY_RUN=1` contre
-  `CHUNK_ADVISOR_PERIOD=0` ; d'où `max_backoff_ticks`), et environ 10 points de
-  va-et-vient de compression que le statique n'a pas (~15 000 buffers libérés par
-  itération contre aucun).
+  statique. L'essentiel venait de l'advisor : ses analyses continuaient à chaque
+  passage une fois la géométrie stabilisée, et leurs parties séquentielles
+  faisaient attendre les autres threads (`__kmp_fork_barrier`). Avec
+  `max_backoff_ticks` (même nœud, `OMP_PROC_BIND=close`, 4 000 itérations, dernier
+  rechunk à l'itération 1 700) : +22 % -> **+7 %**. Le reste est un va-et-vient de
+  compression que le statique n'a pas (~15 000 buffers libérés par itération contre
+  aucun), encore inexpliqué.
 - **Le modèle est statique.** L'advisor juge sur l'état présent des chunks, pas sur les
   écritures à venir. Sur ce banc, les matérialisations passagères mesurées ne pèsent pas
   (`CHUNK_RECHUNK_CHURN=1`), mais une charge qui écrit beaucoup dans des zones constantes

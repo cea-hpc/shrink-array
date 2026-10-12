@@ -24,8 +24,7 @@ namespace shrink_array
  * @brief Concept to detect shrink_array proxy types
  * @tparam T Type to check
  *
- * Proxy types are identified by the presence of a 'is_shrink_proxy_tag' typedef.
- * This allows distinguishing proxies from regular types in generic contexts.
+ * Proxy types are identified by an 'is_shrink_proxy_tag' typedef.
  */
 template <typename T>
 concept IsProxy = requires { typename std::remove_cvref_t<T>::is_shrink_proxy_tag; };
@@ -34,8 +33,7 @@ concept IsProxy = requires { typename std::remove_cvref_t<T>::is_shrink_proxy_ta
  * @brief Concept for scalar arithmetic types
  * @tparam U Type to check
  *
- * Matches fundamental arithmetic types: integers and floating-point.
- * These are treated differently from composite types (complex, matrices, etc.)
+ * Fundamental integer and floating-point types, as opposed to composite ones.
  */
 template <typename U>
 concept scalar_arithmetic = std::is_arithmetic_v<std::remove_cvref_t<U>>;
@@ -45,16 +43,12 @@ concept scalar_arithmetic = std::is_arithmetic_v<std::remove_cvref_t<U>>;
  * @tparam U Type to check
  * @tparam T Base type for conversion/construction
  *
- * Matches types that:
- * - Are NOT scalar arithmetic
- * - Are NOT proxies
- * - Can be constructed from or converted from type T
+ * Matches types that are neither scalar arithmetic nor proxies, and are
+ * constructible from (or convertible from) T: std::complex<T>, matrices,
+ * vectors, quaternions, tensors, etc.
  *
- * This simple approach avoids circular dependency issues while still
- * supporting std::complex<T>, matrices, vectors, quaternions, tensors, etc.
- *
- * @note We rely on the fact that composite types typically have constructors
- *       or conversion operators from their scalar type T
+ * @note Relies on composite types having a constructor or conversion from
+ *       their scalar type T (avoids circular dependencies).
  */
 template <typename U, typename T>
 concept composite_arithmetic =

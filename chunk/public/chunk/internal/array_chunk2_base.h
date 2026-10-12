@@ -59,14 +59,9 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     {
         const int num_chunk = self.chunk_index_of(i);
 
-        // Deliberately NO dirty-marking here. The dirty bit exists for the
-        // DEFERRED path only, and that path marks at enqueue with the CHUNK
-        // index (proxy_base_inline: mark_chunk_dirty(ctx->num_chunk)); the
-        // visibility protocol itself lives in DeferredReadGate (chunk_base.h).
-        // Marking here would ENABLE the read gate for freshly-allocated chunks
-        // -- a behaviour change a preallocation must not smuggle in (ArrayChunk
-        // v1's alloc_chunk does not mark either). Exercised by shrink_bench
-        // --test_prealloc.
+        // Deliberately NO dirty-marking: the dirty bit is for the DEFERRED path only, which
+        // marks at enqueue (see DeferredReadGate, chunk_base.h). Marking here would enable the
+        // read gate for preallocated chunks. Exercised by shrink_bench --test_prealloc.
         self.chunk_list[num_chunk].alloc_chunk(self.get_metadata(i));
     }
 
@@ -80,12 +75,9 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         self.chunk_list[num_chunk].alloc_chunk(self.get_metadata(i), thr_rank);
     }
 
-    // flush_pending_deferred_ops() -- the drain of the deferred writes queued
-    // on this array's chunks, due before anything frees, moves or reallocates
-    // chunk_list -- lives in ParallelSupportCommon / ...Serial
-    // (array_chunk_parallel_common.h), which the concrete arrays mix in. Reach
-    // it through `self` (deducing this): it is a sibling base of this one, so
-    // `this->` cannot see it.
+    // flush_pending_deferred_ops() lives in ParallelSupportCommon / ...Serial
+    // (array_chunk_parallel_common.h), a sibling base: reach it through `self`
+    // (deducing this), `this->` cannot see it.
 
     /// @brief Compress every compressible chunk now, by every thread of the
     ///        region compress_int() runs in (opened here when called outside one).
@@ -105,9 +97,6 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         }
     }
 
-    // mark_chunk_dirty / is_chunk_dirty are inherited from ArrayChunkBase —
-    // the single owner of the dirty-bit verbs.
-
   protected:
     /// @brief The part of resize() both chunk2 variants share: compress the
     ///        pending candidates, drain the deferred ops, then grow or shrink
@@ -115,37 +104,20 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
     ///        The variant's resize() materialises or seeds the new chunks.
     void resize_common(this Derived& self, ind_type newsz)
     {
-        // Drain pending deferred ops on the CURRENT chunks BEFORE nb_chunk,
-        // chunk_list and the dirty bitset are grown below. Called here — while
-        // nb_chunk still holds the OLD count and chunk_list / chunk_dirty_bitset
-        // are still the OLD size — so is_chunk_dirty(j) and &chunk_list[j] stay
-        // in bounds. (Called after nb_chunk grew but before the reallocs, it
-        // would read past the old bitset → heap-buffer-overflow.)
+        // Drain deferred ops on the CURRENT chunks while nb_chunk, chunk_list and the dirty
+        // bitset still have the OLD size (after nb_chunk grows, is_chunk_dirty(j) would read
+        // past the old bitset).
         //
-        // And BEFORE the compression pass below, not after: a replayed write
-        // goes through mark_for_compression -> add_to_compression_list (the
-        // replay proxy is wired to the dedup flag), so it can queue a chunk
-        // again -- flag 1, &chunk_list[j] pushed. Flushed after the pass, that
-        // entry would outlive it: chunk_list.resize() leaves it dangling, and
-        // resize_tab_is_int() clears its flag, letting the same chunk be
-        // queued a second time.
-        // force: the pending-op counter has been seen to read 0 while ops were
-        // still queued (array_chunk_parallel_common_inline.h); a sequential point
-        // that reallocates or frees chunks cannot trust it -- as rechunk, swap and
-        // ArrayChunk2A::clear_core() already do.
+        // And BEFORE the compression pass below: a replayed write can queue a chunk again
+        // (&chunk_list[j] pushed, flag 1); flushed after the pass, that entry would dangle
+        // after chunk_list.resize() and the chunk could be queued twice.
+        // force: see flush_pending_deferred_ops (array_chunk_parallel_common.h).
         self.flush_pending_deferred_ops(/*force=*/true);
 
-        // Compress the pending list BEFORE chunk_list is reallocated below.
-        // vec_to_compress_potantially holds &chunk_list[j] pointers; a growth
-        // resize reallocates the vector and would leave them dangling, so they
-        // must be consumed first. In OMP this runs under use_fast_block_
-        // compression; in non-OMP the sequential compression path (driven from
-        // the write path) can also have queued chunks, so it must run here too —
-        // otherwise the next perform_compression dereferences freed chunks
-        // (SIGSEGV in fill_list_to_compress -> values_load).
-        // Last thing to touch the lists before the reallocs: this pass runs
-        // without a proxy, sequentially, and queues nothing, so every rank's
-        // list is empty and every dedup flag is 0 from here on -- the
+        // Compress the pending list BEFORE chunk_list is reallocated: the candidate lists hold
+        // &chunk_list[j] pointers that a reallocation would leave dangling. Needed in non-OMP
+        // too, where the sequential compression path also queues chunks. This pass queues
+        // nothing, so afterwards every list is empty and every dedup flag 0 -- the
         // precondition of Proxy2A::resize_tab_is_int(num_tab, ...).
         if constexpr (chunk_config::use_fast_block_compression ||
                       (build_config::not_use_openmp && std::is_same_v<Derived, ArrayChunk2A<T, ind_type>>))
@@ -159,18 +131,14 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
 
         if (self.nb_chunk < old_nb_chunk)
         {
-            // Shrink: release the chunks past the new end NOW. Returning early
-            // here kept them, buffers included, in chunk_list: a later growth
-            // re-initialised (or the vector truncated) them without a release,
-            // and the teardown loops stop at nb_chunk -- every buffer past the
-            // end leaked. The pass above emptied the candidate lists, so none
-            // of them is still referenced. Same release as clear_core().
+            // Shrink: release the chunks past the new end NOW (same release as clear_core()).
+            // Do not return early keeping them: teardown loops stop at nb_chunk, so their
+            // buffers would leak. The pass above left none of them referenced.
             self.release_chunk_range(self.nb_chunk, old_nb_chunk);
             self.chunk_list.resize(static_cast<std::size_t>(self.nb_chunk));
             self.Base::reallocate_dirty_bitset(old_nb_chunk, self.nb_chunk);
 
-            // Chunks alive went down: so does the count the compression
-            // threshold and the reuse budget derive from (as v1's resize).
+            // Fewer chunks alive: so is the count the compression threshold and reuse budget use.
             manager_type::increm_somme_chunk_create(self.nb_chunk - old_nb_chunk);
             manager_type::compute_size_buffer_reuse();
             manager_type::compute_size_max_number_of_chunk_to_check_compress();
@@ -199,8 +167,8 @@ class ArrayChunk2Base : public ArrayChunkBase<Derived>
         const ind_type old_size = self.m_size;
         self.resize(newsz); // calls derived resize(sz)
 
-        // A team of its own outside a region; the calling thread inside one
-        // (an orphaned `omp for` there wrote `val` into 1/N of the new range).
+        // A team of its own outside a region; the calling thread inside one (an orphaned
+        // `omp for` there would write only 1/N of the range).
         if (!CHUNK_PMP_IN_PARALLEL_REGION && self.nb_chunk > 500)
         {
 #pragma omp parallel for schedule(static)

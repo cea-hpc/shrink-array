@@ -47,15 +47,36 @@ Grace avec 64 threads :
 | Chunk2A | 7,26 Go | 6,0 Go |
 | Chunk2 | 17,3 Go | 16,3 Go |
 | Chunk (v1) | 40,2 Go | 40,3 Go |
+| `std::vector` (`shrink_bench_vector_perf`) | 125,9 Go | — |
 
-Pour comparaison, les mêmes tableaux en `std::vector` contiennent environ 100 Go d'éléments
-(calculé à partir de la taille des éléments, pas mesuré). L'écart entre les variantes est la
+Pour comparaison, le même banc en `std::vector` utilise 125,9 Go, mesurés de la même façon ;
+leurs éléments seuls font environ 100 Go. L'écart entre les variantes est la
 part des données que chacune sait compresser : v1 les plages nulles seulement, Chunk2 une
 valeur de plus par tableau, Chunk2A toute plage d'une valeur répétée. Sur des données où
 chaque chunk contient des valeurs variées, il n'y a rien à compresser et les tableaux coûtent
 un peu plus qu'un `std::vector`.
 [docs/variantes_fr.md](docs/variantes_fr.md) explique ce que coûte chacune et laquelle choisir.
 `ArrayChunkBits` stocke des `bool` à un bit par élément (builds Chunk2).
+
+## Alternatives, et quand les préférer
+
+shrink-array remplace directement un `std::vector` que le programme continue de lire et
+d'écrire en place, depuis des threads OpenMP : même espace d'indices, même `[]`, sans perte, et
+toute valeur répétée est compressée chunk par chunk (Chunk2A), pas seulement zéro. D'autres
+structures économisent la mémoire sur d'autres données, et y sont le meilleur choix :
+
+| alternative | ce qu'elle fait | la préférer quand |
+|---|---|---|
+| formats creux (CSR / COO, `SparseMatrix` d'Eigen, `Mat` de PETSc) | stocke les entrées non nulles et leurs indices ; seul zéro est implicite | les données sont très creuses et le calcul est de l'algèbre linéaire creuse (SpMV, solveurs) ; la structure change rarement, car écrire hors d'elle oblige à la reconstruire |
+| tables de hachage (`std::unordered_map`, tables à adressage ouvert) | une clé et une valeur par entrée stockée, quelques dizaines d'octets chacune, dispersées en mémoire | les entrées sont extrêmement peu nombreuses, sans structure spatiale, et leur étendue n'est pas connue à l'avance ; sous threads, il faut une table concurrente |
+| compresseurs avec accès tableau : tableaux compressés de [zfp](https://github.com/LLNL/zfp), [Blosc2](https://www.blosc.org/) | compressent des blocs de données quelconques, valeurs variées comprises ; les tableaux à débit fixe de zfp sont avec perte et offrent `[]` à travers un cache de blocs ; Blosc2 est sans perte par défaut, par chunk et par bloc | les valeurs sont variées mais compressibles, ou une perte contrôlée est acceptable (zfp, SZ), ou le tableau est surtout écrit une fois puis lu, ou stocké (E/S, points de reprise) : une écriture au milieu décompresse puis recompresse un bloc |
+| grilles 3D creuses : [OpenVDB](https://www.openvdb.org/) / NanoVDB, SPGrid, bibliothèques d'AMR | une hiérarchie de tuiles sur un domaine 3D, avec une valeur de fond et des tuiles constantes | les données sont un champ 3D manipulé comme une géométrie (bandes étroites, level sets, voisinages, opérations de topologie) plutôt que comme un tableau indexé par les boucles du code |
+
+L'idée d'un chunk uniforme qui ne garde pas de buffer est proche des tuiles constantes
+d'OpenVDB ; ce qu'ajoute shrink-array, c'est de rester un tableau plat : les boucles,
+l'indexation et les écritures parallèles d'un code écrit pour `std::vector` restent telles
+quelles. Là où chaque chunk contient des valeurs variées, aucune de ces structures n'aide
+vraiment, sauf un compresseur, et shrink-array coûte un peu plus que le `std::vector`.
 
 ## Prérequis
 
@@ -73,7 +94,8 @@ un peu plus qu'un `std::vector`.
 - **OMPT** : avec Clang ou oneAPI, le runtime OpenMP a l'interface OMPT, et la bibliothèque
   repère d'elle-même le début et la fin des régions parallèles. Le `libgomp` de GCC n'en a pas :
   le programme marque alors ses régions -- `begin_parallel_phase()` par chaque thread en haut
-  d'une région, `finalize_parallel_phase()` une fois après.
+  d'une région, `finalize_parallel_phase()` une fois après -- ou les ouvre avec
+  `parallel_phase()`, qui fait les deux.
 - Python 3, pour les vérifications des sources lancées par `ctest` (facultatif).
 
 ## Compiler et installer
@@ -94,8 +116,9 @@ cmake --install build
 | `SHRINK_ARRAY_BUILD_EXAMPLES` | `ON` au premier niveau | les exemples, le banc et les harnais de validation (les harnais dans les builds Debug, `CHECK_OPTIM` ou avec sanitizer, ou avec `-DCHUNK_BUILD_VALIDATION=ON`) |
 | `SHRINK_ARRAY_BUILD_TESTS` | `ON` au premier niveau | enregistrer les tests auprès de `ctest` |
 
-Toutes les options, macros et variables d'environnement :
-[docs/variables_environnement_fr.md](docs/variables_environnement_fr.md).
+Les réglages utilisateur : [docs/variables_environnement_fr.md](docs/variables_environnement_fr.md).
+Les interrupteurs des développeurs (réglages fins, traces, banc, options de mise au point, scripts
+de compilation) : [docs/reglages_developpeur_fr.md](docs/reglages_developpeur_fr.md).
 
 ### Avec Spack
 
@@ -141,8 +164,7 @@ une autre variante.
 #include <cstdio>
 #include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // sa::build_config::has_not_ompt
-#include "chunk/manage_ompt.h"     // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
@@ -154,14 +176,11 @@ int main()
         const int                n = 1 << 24;
         sa::ArrayChunk2A<double> a(n);        // tous les éléments à 0.0, aucun tampon encore
 
-#pragma omp parallel
-        {
-            if constexpr (sa::build_config::has_not_ompt) sa::begin_parallel_phase();
+        sa::parallel_phase([&] {             // une région parallèle ; marque les phases sans OMPT
 #pragma omp for
             for (int i = 0; i < n / 2; ++i)
                 a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;   // la plage de 3.5 se compresse
-        }
-        if constexpr (sa::build_config::has_not_ompt) sa::finalize_parallel_phase();
+        });
 
         a.shrink_to_fit();                    // replier les chunks devenus constants
         std::printf("chunks holding a buffer: %.1f %%\n", a.stats());

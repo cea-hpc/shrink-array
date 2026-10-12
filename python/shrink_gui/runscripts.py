@@ -1,7 +1,8 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
 """The shell scripts a run is made of: run.sh (compute node), launch.sh (detached
-mode: ccc_mprun from the login node, or the run itself on this machine)."""
+mode: the site's detached command -- ccc_mprun on inti -- from the login node,
+or the run itself on this machine)."""
 import re
 import shlex
 
@@ -10,7 +11,7 @@ from shrink_gui.config import NEWEST_PY
 
 def shq(v):
     """Quote for bash when needed, keeping $VAR expansion (a default such as
-    /ccc/work/.../$USER/... is meant to expand on inti)."""
+    /ccc/work/.../$USER/... is meant to expand on the cluster)."""
     if re.fullmatch(r"[A-Za-z0-9_./:,+@%=-]+", str(v)):
         return str(v)
     return '"' + str(v).replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\`") + '"'
@@ -115,7 +116,7 @@ echo "[gui] cwd $PWD"
 """
 
 def wait_sh(after=None, delay_s=0):
-    """The detached mode's wait before ccc_mprun: @p delay_s seconds, then the
+    """The detached mode's wait before its command: @p delay_s seconds, then the
     end of the run @p after = {"run": id, "cond": "ok"|"any"}, a sibling in the
     runs directory (its exit_code file; a batch run that left the queue
     without one counts as failed). Not started: exit code 95. The file
@@ -154,13 +155,14 @@ fi""")
     return "\n".join(out) + "\n"
 
 
-def make_launch_sh(mprun_opts, after=None, delay_s=0):
-    """ccc_mprun mode: runs on the login node, detached; waits first if asked (wait_sh)."""
+def make_launch_sh(mprun_opts, after=None, delay_s=0, *, command):
+    """Detached mode: `<command> <mprun_opts> bash run.sh` (the site's [detached]
+    command), run on the login node, detached; waits first if asked (wait_sh)."""
     return f"""#!/bin/bash
 D="$(cd "$(dirname "$0")" && pwd)"
 trap 'touch "$D/stopped"' TERM
-{wait_sh(after, delay_s)}echo "[gui] ccc_mprun {mprun_opts}"
-ccc_mprun {mprun_opts} bash "$D/run.sh" &
+{wait_sh(after, delay_s)}echo "[gui] {command} {mprun_opts}"
+{command} {mprun_opts} bash "$D/run.sh" &
 m=$!
 wait $m
 code=$?

@@ -98,12 +98,9 @@ template <typename T, typename U>
 concept IsCleanShiftOp = std::is_integral_v<std::remove_cvref_t<T>> && std::is_integral_v<base_t<U>>;
 
 // --- 4. What the element type itself can do ---
-// The compound operators of the proxies exist for the element types that have
-// the operation: an aggregate (a struct of doubles, see the README) gets
-// assignment, reads and comparison, and `tab[i] += p` on it is refused at the
-// call ("no viable overloaded '+='") rather than three templates down, inside
-// std::plus or the atomic apply. std::complex has the four arithmetic ones and
-// no ++/--, bool has the arithmetic ones (through int) and no ++.
+// The proxies' compound operators exist only for element types that have the
+// operation, so e.g. `tab[i] += p` on an aggregate is refused at the call
+// rather than deep inside std::plus or the atomic apply.
 /// @brief T + T converts back to T.
 template <typename T>
 concept ElementAddable = requires(T lhs, T rhs) {

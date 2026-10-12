@@ -121,8 +121,7 @@ class Chunk2Base : public ChunkBase<T, Derived>
     {
         if constexpr (chunk_config::use_fast_block_compression)
         {
-            // Execute the CAS logic specific to the derived chunk type.
-            // If it returns true, the installation failed (race condition).
+            // true: the installation lost the race.
             if (std::forward<CasFunc>(cas_fn)(values_loc))
             {
                 // Publish the init before recycling the lost block (ARM).
@@ -132,15 +131,13 @@ class Chunk2Base : public ChunkBase<T, Derived>
         }
         else
         {
-            // Fallback for serial mode or non-fast compression builds.
             Base::recup_value(values_loc, 0);
         }
     }
 
-    /// @brief Check-only guard of the teardown: a chunk about to have its
-    ///        buffer freed must not be compressed to either constant (that
-    ///        buffer would be the shared cst_val1 / cst_val2 block, not its
-    ///        own). Fails the invariant otherwise.
+    /// @brief Check-only teardown guard: a chunk about to have its buffer freed
+    ///        must not be compressed to either constant (the buffer would be the
+    ///        shared cst_val1 / cst_val2 block).
     /// @param num_compress_value Index reported in the failure message.
     /// @param ind_opt Chunk2's second-value slot index; empty for Chunk2A and
     ///        bool, whose second value is not table-indexed.
@@ -244,7 +241,6 @@ class Chunk2Base : public ChunkBase<T, Derived>
                                 const T*                   target_ptr,
                                 const std::source_location loc = std::source_location::current()) noexcept
     {
-        // Skip entirely if safety checks are disabled
         if constexpr (build_config::any_check)
         {
             const auto* c1 = static_cast<const void*>(Chunk2Base::get_cst_val1());
@@ -264,14 +260,12 @@ class Chunk2Base : public ChunkBase<T, Derived>
             }
             else if constexpr (requires { self.get_cst_val2(); })
             {
-                // Special case for Chunk2 (boolean or shared table)
+                // Chunk2 bool: one shared second constant.
                 c2 = static_cast<const void*>(self.get_cst_val2());
             }
 
-            // Violation check: if target matches ANY immutable constant buffer
             if (target_ptr == c1 || (c2 != nullptr && target_ptr == c2)) [[unlikely]]
             {
-                // Use the impl version to pass the captured location
                 invariant_failed(loc,
                                  "Illegal Memory Write: Attempted to write into an immutable shared constant buffer. "
                                  "Type: {} | Chunk Addr: {} | Target Ptr: {} | Cst1: {} | Cst2: {} | Thread: {}",

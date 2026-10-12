@@ -1,0 +1,3 @@
+#!/bin/bash
+# Fake scancel <id>: SIGTERM to the job's process group.
+kill -TERM -- -"$1"

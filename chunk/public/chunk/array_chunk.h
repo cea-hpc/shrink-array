@@ -124,12 +124,10 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     using Base::size_policy_;
     using manager_chunk = ManagerChunk<Chunk, T>; ///< Same type as manager_type.
 
-    // Mode-specific members, moved out of this class into the two mixins above.
-    // The using-declarations are not decoration: ArrayChunkBase re-exports
-    // RechunkSupport's hook DEFAULTS under these very names, so without them a
-    // hook call through the CRTP self() would see two base subobjects and be
-    // ambiguous. Naming them here makes them members of ArrayChunk, which hides
-    // both bases' versions.
+    // Mode-specific members live in the two mixins above. Do not drop these
+    // using-declarations: ArrayChunkBase re-exports RechunkSupport's hook
+    // DEFAULTS under the same names, so a hook call through the CRTP self()
+    // would be ambiguous. Naming them here hides both bases' versions.
     using Parallel::flush_pending_deferred_ops;
 
     using Hooks::rechunk_drain_reuse_list;
@@ -173,16 +171,14 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
      * @brief Move-construct: an empty array at the active geometry takes
      *        @p other's chunks, geometry and identity -- the exchange of
      *        swap() -- and @p other is left empty and valid.
-     * @details O(1) in the elements. With a copy constructor and a
-     *          move-assignment declared, none was generated: `ArrayChunk a(std::move(b))`
-     *          and every return that is not elided ran the copy constructor,
-     *          element by element. Sequential context, as the constructors.
-     * @note noexcept, so that std::vector moves arrays when it reallocates
-     *       instead of copying them element by element. What can fail here
-     *       -- the empty array's registration, the deferred-write drain --
-     *       only fails on memory exhaustion or a corrupt registry, which the
-     *       library already treats as fatal (alloc_chunk() is noexcept too):
-     *       std::terminate.
+     * @details O(1) in the elements. Must be user-declared: with the copy
+     *          constructor and move-assignment declared, none is generated and
+     *          a move would run the element-by-element copy. Sequential
+     *          context, as the constructors.
+     * @note noexcept, so that std::vector moves arrays when it reallocates.
+     *       What can fail here (the empty array's registration, the drain)
+     *       fails only on memory exhaustion or a corrupt registry, already
+     *       fatal in the library: std::terminate.
      */
     ArrayChunk(ArrayChunk&& other) noexcept : ArrayChunk(0)
     {
@@ -206,10 +202,10 @@ class ArrayChunk : public ArrayChunkBase<ArrayChunk<T, ind_type>>,
     ~ArrayChunk()
     {
         clear();
-        // Drop our (this -> num_tab) registry entry so a later array reusing this
-        // address does not inherit our stale num_tab via the first-match lookup
-        // in PointerMapChunk. Required for rechunk_to's tmp; correct for every
-        // array. Must run AFTER clear() (which still needs get_num_tab(registry_key())).
+        // Drop our (this -> num_tab) registry entry so a later array at this
+        // address does not inherit our stale num_tab via PointerMapChunk's
+        // first-match lookup (required for rechunk_to's tmp). Must run AFTER
+        // clear(), which still needs get_num_tab(registry_key()).
         Proxy<T>::share_info_array->erase(this->registry_key());
     }
 

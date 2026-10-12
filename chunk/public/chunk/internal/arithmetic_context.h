@@ -98,14 +98,12 @@ struct BaseArithmeticContext
 
     /// @brief Chunk geometry resolved AT ENQUEUE, while the source array is
     ///        guaranteed alive.
-    /// @details Under DynamicChunkSize the proxy's chunk_size() dereferences
-    ///          ptr_on_array (the ArrayChunk), but a deferred op can be
-    ///          replayed (erase_own_rank_op / flush -> write_body) AFTER that
-    ///          array has been destroyed: a late chunk_size() would be a
-    ///          use-after-free (SIGSEGV under std-alloc; masked by fast-alloc's
-    ///          immortal arenas and by static builds, where the size is a
-    ///          constant). Geometry is immutable after array construction, so
-    ///          the frozen value is exactly what a live re-read would return.
+    /// @details Do not call chunk_size() at replay: under DynamicChunkSize it
+    ///          dereferences ptr_on_array, and a deferred op can be replayed
+    ///          (erase_own_rank_op / flush -> write_body) after that array is
+    ///          destroyed (use-after-free; hidden by fast-alloc's immortal arenas
+    ///          and by static builds). Geometry is immutable after construction,
+    ///          so the frozen value is what a live re-read would return.
     unsigned int chunk_size_frozen = 0;
     /// @brief The array's slab-affinity key, frozen with the geometry and for the
     ///        same reason; replayed into the thread's allocation key.
@@ -113,11 +111,9 @@ struct BaseArithmeticContext
 
     /// @brief DEFERRED_LIFECYCLE liveness sentinel, verified at the top of the
     ///        deferred write_body() before this ctx is dereferenced.
-    /// @details Kept UNCONDITIONAL (not under a macro) so the struct layout is
-    ///          identical across every TU regardless of DEBUG/CHECK_OPTIM -- no
-    ///          ODR/layout skew. Only the *checking* is gated (in
-    ///          DeferredOperation::write_body). Poisoned in the destructor so a
-    ///          use-after-recycle read no longer sees ctx_alive_magic.
+    /// @details Unconditional (not under a macro) so the layout is identical in
+    ///          every TU whatever DEBUG/CHECK_OPTIM (no ODR skew); only the check in
+    ///          DeferredOperation::write_body is gated. Poisoned in the destructor.
     std::uint64_t magic = deferred_lifecycle::ctx_alive_magic;
 };
 

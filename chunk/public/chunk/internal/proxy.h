@@ -99,15 +99,13 @@ class PointerMapChunk : public PointerMapLinear<int, std::vector<std::pair<const
     }
 
     // erase(), swap_entries(), exists(), size() and for_each_key() come from
-    // PointerMapLinear: they were the same traversals as in PointerMapChunk2.
+    // PointerMapLinear.
 
   private:
     /// What a key maps to: its table number.
     using inf_array_t = int;
 
-    // The storage (a std::vector) and the traversal operations come from
-    // PointerMapLinear. The container is a template parameter there:
-    // PointerMapChunk2's is a std::deque, for a reason documented over there.
+    // Storage: a std::vector (PointerMapChunk2 uses a std::deque, see there).
     using Linear = PointerMapLinear<inf_array_t, std::vector<std::pair<const void*, inf_array_t>>>;
     /// Brings the base's storage back into this class's scope (dependent base).
     using Linear::vec;
@@ -277,12 +275,9 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      * @param num_tab Which table the chunk belongs to.
      * @param num_chunk The chunk's index within that table.
      *
-     * @warning Deliberately NOT removed in favour of the identically named
-     *          ProxyBase one, which this hides. They differ where it matters:
-     *          the base stores with memory_order_release, this one with a plain
-     *          assignment, i.e. seq_cst. Dropping this override would weaken v1's
-     *          ordering, which is a decision about the flag's visibility, not a
-     *          deduplication.
+     * @warning Do not remove in favour of the ProxyBase one it hides: the base
+     *          stores with memory_order_release, this one seq_cst (plain
+     *          assignment). Dropping it would weaken v1's ordering of the flag.
      */
     static void reset_tab_inside_list_to_compress(int num_tab, int num_chunk) noexcept
     {
@@ -307,14 +302,10 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
     constexpr static T zero{};
 
     /**
-     * @brief Core compression-marking logic. Must run on EVERY write, not
-     *        just zero-transitions: should_mark_for_compression() is tested
-     *        internally, but this function ALSO carries the data-race check,
-     *        which needs to run regardless of whether this particular write
-     *        is itself a zero-transition.
-     * @details Adds this element to the compression candidate list if it is
-     *          a zero-transition OR if a race was detected (the in-memory
-     *          value no longer matches `expected_in_memory`).
+     * @brief Core compression-marking logic. Must run on EVERY write, not just
+     *        zero-transitions: it also carries the data-race check.
+     * @details Queues this element as a candidate on a zero-transition OR when
+     *          a race is detected (memory no longer holds `expected_in_memory`).
      * @param old_value Value before the write.
      * @param new_value Value after the write.
      * @param expected_in_memory The value this write expects to still be in
@@ -334,8 +325,6 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
                                    in_t<T>             expected_in_memory,
                                    const T*            vals);
 
-    // Wrapper for post-write check: we expect the 'new_value' to be in memory
-
     /**
      * @brief Post-write wrapper around mark_for_compression_core(), passing
      *        new_value as both the write result and the expected-in-memory
@@ -345,18 +334,12 @@ class ProxyFastCompPolicy : public ProxyBase<Derived, T, Chunk<T>>
      */
     void mark_for_compression_impl(this const Derived& self, in_t<T> old_value, in_t<T> new_value)
     {
-        // Unconditional, in every build, on EVERY write -- not only under
-        // CHUNK_STATS, nor only on zero-transitions: mark_for_compression_core
-        // carries the data-race check (read_values() != expected_in_memory) and
-        // already tests should_mark_for_compression itself.
+        // Unconditional, every build, EVERY write: see mark_for_compression_core.
         self.mark_for_compression_core(old_value, new_value, new_value);
     }
 
     /**
-     * @brief Static entry point for async callers that only have a proxy
-     *        reference in hand (not `this`). The marking logic itself needs
-     *        no async-specific context, so this simply delegates to the
-     *        instance method.
+     * @brief Static entry point for async callers holding a proxy reference.
      * @param proxy Proxy whose compression marking to trigger.
      * @param old_value Value before the write.
      * @param new_value Value after the write.
@@ -397,10 +380,8 @@ class ProxyFastCompPolicy<Derived, T, false> : public ProxyBase<Derived, T, Chun
      * @brief Counter-mode: called when the per-chunk zero-counter reaches
      *        the chunk size (every element is now zero) -- compresses the
      *        chunk.
-     * @details Counter mode is exactly the non-fast-block-compression mode
-     *          (use_compression_with_counter == !use_fast_block_compression),
-     *          so it lives on this specialisation; the call sites in Proxy
-     *          sit under `if constexpr (use_compression_with_counter)`.
+     * @details Counter mode == !use_fast_block_compression, hence this
+     *          specialisation.
      */
     void manage_full_zero() const
     {
@@ -417,12 +398,9 @@ class ProxyFastCompPolicy<Derived, T, false> : public ProxyBase<Derived, T, Chun
 /*!
  * \brief Lazy-write proxy returned by Chunk's non-const operator[].
  *
- * Lets `chunk[i] = value` avoid an unnecessary allocation when `value` is
- * the chunk's compressible constant: rather than eagerly materialising the
- * chunk on every write, the proxy defers to operator=, which can detect a
- * write of the compressible value and route it into the compression-marking
- * path instead. Debug builds additionally check that assigning that value
- * to an already-compressed chunk never triggers a wasted allocation.
+ * Lets `chunk[i] = value` skip materialising the chunk when `value` is its
+ * compressible constant: operator= detects it and routes it to the
+ * compression-marking path.
  */
 
 template <typename T>
@@ -549,7 +527,6 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
             }
         };
 
-        // wrap the call in a lambda that calls write_fn(v)
         return Base::write_with_optional_lock_impl([&]() noexcept { write_fn(); }, lbd_info);
     }
     /**
@@ -608,28 +585,22 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     }
 
     /**
-     * @brief Core implementation behind operator=(): writes `v` at this
-     *        proxy's index, with an early-out when the chunk is already
-     *        compressed to the value being assigned, and (in counter-mode
-     *        builds) maintains the per-chunk zero-element counter around
-     *        the write.
+     * @brief Core of operator=(): writes `v`, with an early-out when the chunk
+     *        is already compressed to it; maintains the zero counter in
+     *        counter-mode builds.
      * @tparam U Type of the value being assigned.
      * @param v Value to write.
      * @return The value that was written.
      */
     template <typename U>
-    // in_t<U>, not const U&: this is the write engine, the one frame the
-    // operators do NOT inline into the caller, so its parameter is what
-    // crosses a call -- a char by value stays in a register, a struct goes by
-    // reference. Non-deducible, hence the explicit assign_impl<U>(v) below.
+    // in_t<U>, not const U&: this is the one frame not inlined into the caller,
+    // so small types cross the call by value. Non-deducible: call assign_impl<U>(v).
     T assign_impl(in_t<U> v) noexcept;
 
     /**
-     * @brief Run an arbitrary write operation on this element, materialising
-     *        the chunk first if it is currently compressed, and maintaining
-     *        the counter-mode zero-tracking bookkeeping around it (non-OMP
-     *        path; see execute_simple_operation_async() on
-     *        ProxyFastCompPolicy for the async counterpart).
+     * @brief Run a write on this element, materialising the chunk if needed and
+     *        maintaining the counter-mode bookkeeping (non-OMP path; async
+     *        counterpart: ProxyFastCompPolicy::execute_simple_operation_async).
      * @tparam LAMBDA Callable performing the actual write.
      * @param operation The write to perform.
      */
@@ -639,18 +610,12 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     /**
      * @brief Shared implementation behind operator/=, operator*=, and
      *        operator%=.
-     * @details First pulls any foreign deferred write via
-     *          chunk.reader_sync(). In counter-mode builds, the operation
-     *          is skipped entirely when the current value is already zero
-     *          (multiplying, dividing, or taking the modulo of zero always
-     *          yields zero, so there is nothing to compute or compress);
-     *          otherwise it runs through
-     *          execute_arithmetic_compound_operation() and updates the
-     *          zero-element counter afterwards. In non-counter
-     *          (deferred/OMP) builds, it instead runs
-     *          Base::apply_atomic_op() directly, unless the value is zero
-     *          AND no deferred queue is active for this thread (in which
-     *          case the result is still zero and there is nothing to do).
+     * @details First pulls any foreign deferred write (chunk.reader_sync()).
+     *          Counter mode: skipped when the value is zero (the result stays
+     *          zero), else execute_arithmetic_compound_operation() then the
+     *          counter update. Deferred/OMP builds: Base::apply_atomic_op(),
+     *          unless the value is zero AND no deferred queue is active for this
+     *          thread.
      * @tparam U Type of the operand.
      * @tparam BinaryOp Binary operator to apply (divides/multiplies/modulo).
      * @param v Operand to combine with the current value.
@@ -714,22 +679,13 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
      * @brief Re-state the owning chunk's zero count after a BULK fill that did
      *        not go through this write path.
      *
-     * @details nb_val_eq_zero is maintained one write at a time by
-     *          perform_core_assignment(), and manage_full_zero() fires on the
-     *          exact equality `nb_val_eq_zero == chunk_size`. Anything that
-     *          stores into the chunk's buffer directly therefore leaves the
-     *          counter describing a buffer that no longer exists, and the drift
-     *          is silent until some later single-element write happens to land
-     *          the count on chunk_size -- at which point a chunk that is not all
-     *          zero is compressed to cst_val1 and reads back as the constant.
-     *
-     *          The counter lives in a private base of Chunk<T> whose only friend
-     *          is this proxy, which is why the repair verb belongs here rather
-     *          than at the bulk writer's call site.
-     *
-     *          The only such writer today is
-     *          RechunkSupport::rechunk_refill()'s raw-fill; a no-op when
-     *          counters are compiled out (set_nb_val_eq_zero() collapses).
+     * @details nb_val_eq_zero is maintained per write, and manage_full_zero()
+     *          fires on `nb_val_eq_zero == chunk_size` exactly. A direct store
+     *          into the buffer leaves the counter wrong, and a later write can
+     *          then compress a chunk that is not all zero. The counter is in a
+     *          private base of Chunk<T> befriending only this proxy, hence the
+     *          verb here. Caller: RechunkSupport::rechunk_refill()'s raw-fill; a
+     *          no-op when counters are compiled out.
      *
      * @param n_zeros number of zero cells over the chunk's FULL chunk_size()
      *        window -- the same window is_full_zero() is asked about, so the
@@ -830,22 +786,14 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
     /**
      * @brief Implicit read conversion: returns the element's current value.
      *
-     * @details This is one of the read entries the non-const
-     *          ArrayChunkBase::operator[] delegates visibility to: the write
-     *          entry does not flush, so a read must pull any deferred write
-     *          queued for this offset before looking at the buffer. A plain
-     *          values[num] could hand back the value a SUPERSEDED round left
-     *          there while the current round's write is still queued -- stale
-     *          reads on every `arr[i]` taken on a non-const array. Proxy2 /
-     *          Proxy2A inherit ProxyBase::operator T(), which is read_pure().
+     * @details The write entry does not flush, so a read must pull any deferred
+     *          write queued for this offset: a plain values[num] could return a
+     *          superseded value. Proxy2 / Proxy2A inherit ProxyBase::operator T()
+     *          (read_pure()).
      *
-     *          The gate is behind the SAME pre-filter as
-     *          ArrayChunkBase::sync_chunk(): the per-chunk dirty bit is set by
-     *          the deferred-enqueue path, so a clear bit means no deferred op
-     *          was ever queued for this chunk and the fast read stands. Only
-     *          chunks that actually took a deferred write pay read_pure()'s
-     *          reader_sync. The bitset folds to a constant false when it is
-     *          compiled out (serial builds), taking the whole branch with it.
+     *          Same pre-filter as ArrayChunkBase::sync_chunk(): the dirty bit is
+     *          set by the deferred-enqueue path, so a clear bit means the fast
+     *          read stands. Folds to constant false in serial builds.
      */
     operator T() const noexcept
     {
@@ -857,12 +805,9 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
 
         if constexpr (build_config::use_openmp)
         {
-            // chunk_size_frozen_ != 0 marks a proxy rebuilt from a replay
-            // context, whose ptr_on_array may already be dangling (see
-            // ProxyBase::chunk_size_frozen_): never dereference the array there.
-            // Such a proxy is only ever used from inside a flush, where the
-            // ops are being applied rather than waited on, so go straight to
-            // the gated read.
+            // chunk_size_frozen_ != 0: a replay proxy whose ptr_on_array may
+            // dangle (see ProxyBase::chunk_size_frozen_) -- never dereference it;
+            // it runs inside a flush, so go straight to the gated read.
             if (chunk_size_frozen_ == 0U && ptr_on_array != nullptr) [[likely]]
             {
                 using ArrayType = ArrayChunkFor_t<ChunkType>;
@@ -883,9 +828,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
         return values[num];
     }
 
-    // No address, and no operator T&() either: with one, `tab[nc] = val` was
-    // routed through it and created blocks for nothing. The price: foo(a[i])
-    // does not compile when foo takes a `T&`.
+    // No address, and do not add operator T&(): `tab[nc] = val` would route
+    // through it and materialise blocks for nothing. Hence foo(T&) rejects a[i].
     T*       operator&()       = delete;
     const T* operator&() const = delete;
 
@@ -919,9 +863,8 @@ class Proxy : public ProxyFastCompPolicy<Proxy<T>, T, chunk_config::use_fast_blo
 template <typename T>
 std::ostream& operator<<(std::ostream& os, const Proxy<T>& proxy)
 {
-    // Through the proxy's read entry, like operator T(): the raw values[num]
-    // snapshot is stale while a deferred op pends on this offset (forced-
-    // defer builds print 0 right after the write).
+    // Through the read entry, like operator T(): values[num] is stale while a
+    // deferred op pends on this offset.
     os << proxy.read_pure();
     return os;
 }

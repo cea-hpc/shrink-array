@@ -44,14 +44,35 @@ compute loop. Memory of the whole process at the end of the run, measured exactl
 | Chunk2A | 7.26 GB | 6.0 GB |
 | Chunk2 | 17.3 GB | 16.3 GB |
 | Chunk (v1) | 40.2 GB | 40.3 GB |
+| `std::vector` (`shrink_bench_vector_perf`) | 125.9 GB | — |
 
-For scale, the same arrays as `std::vector`s hold about 100 GB of elements (computed from the
-element sizes, not measured). The gap between the variants is the share of the data each one
+For scale, the same benchmark on `std::vector`s uses 125.9 GB, measured the same way; their
+elements alone are about 100 GB. The gap between the variants is the share of the data each one
 can compress: v1 only the zero runs, Chunk2 one more value per array, Chunk2A every run of a
 repeated value. On data where every chunk holds varied values, there is nothing to compress and
 the arrays cost a little more than a `std::vector`.
 [docs/variants.md](docs/variants.md) explains what each one costs and which one to choose.
 `ArrayChunkBits` stores `bool` one bit per element (Chunk2 builds).
+
+## Alternatives, and when to prefer them
+
+shrink-array is a drop-in replacement for a `std::vector` that the program keeps reading and
+writing in place, from OpenMP threads: same index space, same `[]`, no loss, and every repeated
+value is compressed chunk by chunk (Chunk2A), not only zero. Other structures save memory on
+other data, and are the better choice there:
+
+| alternative | what it does | prefer it when |
+|---|---|---|
+| sparse formats (CSR / COO, Eigen `SparseMatrix`, PETSc `Mat`) | stores the non-zero entries and their indices; only zero is implicit | the data is very sparse and the computation is sparse linear algebra (SpMV, solvers); the structure changes rarely, since writing outside it means rebuilding it |
+| hash tables (`std::unordered_map`, open-addressing maps) | a key and a value per stored entry, tens of bytes each, scattered in memory | the entries are extremely few, without spatial structure, and their range is not known in advance; under threads it needs a concurrent table |
+| compressors with array access: [zfp](https://github.com/LLNL/zfp) compressed arrays, [Blosc2](https://www.blosc.org/) | compress blocks of any data, varied values included; zfp's fixed-rate arrays are lossy and offer `[]` through a block cache; Blosc2 is lossless by default, by chunk and block | the values are varied but compressible, or a controlled loss is acceptable (zfp, SZ), or the array is mostly written once and read, or stored (I/O, checkpoints): a write in the middle decompresses and recompresses a block |
+| sparse 3D grids: [OpenVDB](https://www.openvdb.org/) / NanoVDB, SPGrid, AMR libraries | a hierarchy of tiles over a 3D domain, with a background value and constant tiles | the data is a 3D field handled as geometry (narrow bands, level sets, neighbourhoods, topology operations) rather than as an array indexed by the code's own loops |
+
+The idea of a uniform chunk that keeps no buffer is close to OpenVDB's constant tiles; what
+shrink-array adds is that it stays a flat array: the loops, the indexing and the parallel
+writes of a code written for `std::vector` are kept as they are. Where every chunk holds varied
+values, none of these structures helps much except a compressor, and shrink-array costs a little
+more than the `std::vector`.
 
 ## Requirements
 
@@ -69,7 +90,8 @@ the arrays cost a little more than a `std::vector`.
 - **OMPT**: with Clang or oneAPI the OpenMP runtime has the OMPT interface, and the library hooks
   the start and end of the parallel regions itself. GCC's `libgomp` has none: the program then
   marks its regions -- `begin_parallel_phase()` by every thread at the top of a region,
-  `finalize_parallel_phase()` once after it.
+  `finalize_parallel_phase()` once after it -- or opens them with `parallel_phase()`, which
+  does both.
 - Python 3, for the source checks run by `ctest` (optional).
 
 ## Build and install
@@ -90,7 +112,9 @@ cmake --install build
 | `SHRINK_ARRAY_BUILD_EXAMPLES` | `ON` at the top level | the examples, the benchmark and the validation harnesses (the harnesses in Debug, `CHECK_OPTIM` or sanitizer builds, or with `-DCHUNK_BUILD_VALIDATION=ON`) |
 | `SHRINK_ARRAY_BUILD_TESTS` | `ON` at the top level | register the tests with `ctest` |
 
-Every option, macro and environment variable: [docs/environment_variables.md](docs/environment_variables.md).
+The user settings: [docs/environment_variables.md](docs/environment_variables.md). The developers'
+switches (tuning, traces, benchmark, debugging options, build scripts):
+[docs/developer_settings.md](docs/developer_settings.md).
 
 ### With Spack
 
@@ -136,8 +160,7 @@ variant.
 #include <cstdio>
 #include "chunk/array_chunk2A.h"   // shrink_array::ArrayChunk2A
 #include "chunk/chunk_std.h"       // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"          // sa::build_config::has_not_ompt
-#include "chunk/manage_ompt.h"     // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/manage_ompt.h"     // parallel_phase
 #include "chunk/param_chunk.h"     // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
@@ -149,14 +172,11 @@ int main()
         const int                n = 1 << 24;
         sa::ArrayChunk2A<double> a(n);        // every element 0.0, no buffer yet
 
-#pragma omp parallel
-        {
-            if constexpr (sa::build_config::has_not_ompt) sa::begin_parallel_phase();
+        sa::parallel_phase([&] {             // a parallel region; marks the phases without OMPT
 #pragma omp for
             for (int i = 0; i < n / 2; ++i)
                 a[i] = (i < n / 8) ? 1.0 + i % 7 : 3.5;   // the 3.5 run compresses
-        }
-        if constexpr (sa::build_config::has_not_ompt) sa::finalize_parallel_phase();
+        });
 
         a.shrink_to_fit();                    // fold the chunks that became constant
         std::printf("chunks holding a buffer: %.1f %%\n", a.stats());

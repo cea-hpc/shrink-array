@@ -23,31 +23,10 @@
 
 #include "chunk/array_chunk2A.h" // shrink_array::ArrayChunk2A
 #include "chunk/chunk_std.h"     // release_chunk_pools, destroy_block_chunk
-#include "chunk/config.h"        // sa::build_config::has_not_ompt
-#include "chunk/manage_ompt.h"   // begin_parallel_phase, finalize_parallel_phase
+#include "chunk/manage_ompt.h"   // parallel_phase
 #include "chunk/param_chunk.h"   // ParamChunk::init_indexes
 
 namespace sa = shrink_array;
-
-// Without an OMPT-enabled OpenMP runtime (GCC's libgomp), the program marks
-// its parallel phases itself: begin_parallel_phase() by every thread at the
-// top of a region, finalize_parallel_phase() once the region is over. With
-// OMPT (Clang, oneAPI) the runtime's callbacks do it and these compile to
-// nothing; in a serial build too.
-static void begin_phase()
-{
-    if constexpr (sa::build_config::has_not_ompt)
-    {
-        sa::begin_parallel_phase();
-    }
-}
-static void end_phase()
-{
-    if constexpr (sa::build_config::has_not_ompt)
-    {
-        sa::finalize_parallel_phase();
-    }
-}
 
 // What element i holds after the write loop below.
 static double expected(int i, int n)
@@ -74,17 +53,20 @@ int main()
 
         // Write, in parallel. a[i] is a write proxy: it decides whether the
         // chunk must be materialised, and queues it for compression when it
-        // becomes uniform.
-#pragma omp parallel
-        {
-            begin_phase();
-#pragma omp for
-            for (int i = 0; i < n / 2; ++i)
+        // becomes uniform. parallel_phase() opens the region and, without an
+        // OMPT-enabled runtime (GCC's libgomp), marks the phase for the
+        // library: begin_parallel_phase() by every thread, then
+        // finalize_parallel_phase() once the region is over. With OMPT
+        // (Clang, oneAPI) the runtime's callbacks do that.
+        sa::parallel_phase(
+            [&]
             {
-                a[i] = expected(i, n);
-            }
-        }
-        end_phase();
+#pragma omp for
+                for (int i = 0; i < n / 2; ++i)
+                {
+                    a[i] = expected(i, n);
+                }
+            });
 
         // Read, through a const reference: operator[] then returns a double.
         const auto& ca = std::as_const(a);

@@ -41,14 +41,6 @@ option(CHUNK_BUILD_DYN "Also build a CHUNK_DYNAMIC (runtime size) lib per varian
 message(STATUS "CHUNK_STATIC_SIZES = ${CHUNK_STATIC_SIZES}; CHUNK_BUILD_DYN = ${CHUNK_BUILD_DYN}")
 
 # --- Aggressive vs release compression scheduling ------------------------
-# Old, misspelt name HAVE_AGRESSIVE_COMPRESSION: still accepted, so existing
-# build directories and scripts keep working; its value moves to the new name
-# and the old cache entry is dropped.
-if (DEFINED HAVE_AGRESSIVE_COMPRESSION)
-  message(DEPRECATION "HAVE_AGRESSIVE_COMPRESSION is deprecated: use HAVE_AGGRESSIVE_COMPRESSION")
-  set(HAVE_AGGRESSIVE_COMPRESSION "${HAVE_AGRESSIVE_COMPRESSION}" CACHE BOOL "Enable aggressive-compression scheduling mode." FORCE)
-  unset(HAVE_AGRESSIVE_COMPRESSION CACHE)
-endif()
 option(HAVE_AGGRESSIVE_COMPRESSION "Enable aggressive-compression scheduling mode." OFF)
 if (HAVE_AGGRESSIVE_COMPRESSION)
   message(STATUS "HAVE_AGGRESSIVE_COMPRESSION=ON → aggressive scheduling (stresses concurrent compression)")
@@ -87,9 +79,7 @@ if (CHUNK_ALIGN_CHECK)
 endif()
 
 # Diagnostic switches (they were bare -D macros: PERF, DO_CHECK, ...).
-option(CHUNK_PERF "Perf build: ArrayChunk2 skips its diagnostic scan of missed compressions" OFF)
 option(CHUNK_DO_CHECK "Check every written value for NaN (global_check_nan)" OFF)
-option(CHUNK_DEBUG_SET_SIZE "Print the compression thresholds and the lists' memory estimate" OFF)
 option(CHUNK_RECHUNK_LEDGERTRACE "Trace every pool-ledger state transition on stderr" OFF)
 option(CHUNK_RING_LOG_DEBUG "Ring-log every event, hot path included (heavy)" OFF)
 option(CHUNK_RING_LOG_OP "Ring-log the op-lifecycle events only (light)" OFF)
@@ -124,9 +114,7 @@ _chunk_opt(CHUNK_OPT_POOL_NO_REUSE CHUNK_POOL_NO_REUSE)
 _chunk_opt(CHUNK_OPT_ALIGN_CHECK CHUNK_ALIGN_CHECK)
 _chunk_opt(CHUNK_OPT_FORCE_LEDGER CHUNK_FORCE_LEDGER)
 _chunk_opt(CHUNK_OPT_TEST_HOOKS CHUNK_TEST_HOOKS)
-_chunk_opt(CHUNK_OPT_PERF CHUNK_PERF)
 _chunk_opt(CHUNK_OPT_DO_CHECK CHUNK_DO_CHECK)
-_chunk_opt(CHUNK_OPT_DEBUG_SET_SIZE CHUNK_DEBUG_SET_SIZE)
 _chunk_opt(CHUNK_OPT_RECHUNK_LEDGERTRACE CHUNK_RECHUNK_LEDGERTRACE)
 _chunk_opt(CHUNK_OPT_RING_LOG_DEBUG CHUNK_RING_LOG_DEBUG)
 _chunk_opt(CHUNK_OPT_RING_LOG_OP CHUNK_RING_LOG_OP)

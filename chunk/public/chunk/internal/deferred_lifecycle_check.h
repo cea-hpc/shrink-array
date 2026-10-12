@@ -18,15 +18,12 @@
 
 // ============================================================================
 // CHECK-BUILD INSTRUMENTATION — deferred ctx/op liveness sentinels (grep tag:
-// DEFERRED_LIFECYCLE). Born of the deferred use-after-recycle hunt; kept as a
-// permanent guard because the checking costs nothing in release (only the
-// sentinel word stays in the layout, see arithmetic_context.h).
+// DEFERRED_LIFECYCLE). Costs nothing in release (only the sentinel word stays in
+// the layout, see arithmetic_context.h).
 //
-// Detects a deferred ctx / op being read after it has been destroyed and
-// recycled by the per-thread pool (deferred_op_pool.h). The failure mode:
-// a deferred write_body() lambda captures `ctx`, but by the time it runs the
-// ctx has been free_ctx()'d and reused, so ctx->chunk references arbitrary
-// memory and chunk.values_load() returns data-shaped garbage.
+// Detects a deferred ctx / op read after it was destroyed and recycled by the
+// per-thread pool (deferred_op_pool.h): a write_body() lambda whose captured `ctx`
+// was free_ctx()'d and reused reads data-shaped garbage through ctx->chunk.
 //
 // Mechanism: a magic word stamped at construction, verified at the *top* of
 // write_body() before ctx->chunk is touched, and poisoned at destruction.

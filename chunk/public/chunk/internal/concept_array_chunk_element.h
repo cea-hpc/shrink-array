@@ -27,28 +27,23 @@ namespace shrink_array
  *
  * The contract, and why each clause:
  *  - **trivially copyable**: a chunk is raw memory -- its buffer is copied,
- *    handed to a pool, replaced by a shared constant buffer and taken back,
- *    without ever running a constructor or a destructor of T. Anything that
- *    owns a resource (std::string, a type with a destructor that matters) is
- *    out; that is the one thing a std::vector holds that these arrays do not.
+ *    pooled, replaced by a shared constant buffer and taken back without ever
+ *    running a constructor or destructor of T. Resource owners (std::string)
+ *    are out.
  *  - **equality comparable**: compression is "every element == the constant",
- *    scanned block-wise with the type's own operator== (member-wise for a
- *    defaulted one, so padding bytes are not part of the value; never a
- *    memcmp).
+ *    scanned with the type's own operator== (padding is not part of the value;
+ *    never a memcmp).
  *  - **default constructible**: T{} is the first constant, the value a fresh
  *    array reads everywhere and the one a run compresses to.
  *
- * That admits every arithmetic type, bool, std::complex, enums, std::array of
- * those, and any aggregate of them with a defaulted operator== -- a struct
- * {double x, y, z} is an element type. The arithmetic and bitwise operators of
- * the proxies (+=, |=, ++ ...) are constrained separately, per operator, on
- * what the type supports; a struct gets assignment, reads and comparison.
- * chunk2 keys its second-value tables by value and asks a little more of a
- * floating-point aggregate (an operator<): see ValueLess in value_less.h.
+ * That admits arithmetic types, bool, std::complex, enums, std::array of those,
+ * and aggregates of them with a defaulted operator==. The proxies' arithmetic
+ * and bitwise operators are constrained separately, per operator. chunk2 also
+ * needs an ordering (operator< for a floating-point aggregate): see ValueLess
+ * in value_less.h.
  *
- * Checked at the array declarations (chunk_traits.h) and asserted where the
- * chunk is defined, so a type that does not qualify is refused at the first
- * use, with this text in the error.
+ * Checked at the array declarations (chunk_traits.h) and where the chunk is
+ * defined, so a type that does not qualify is refused at first use.
  */
 template <typename T>
 concept ArrayChunkElement =

@@ -189,7 +189,7 @@ void compute_sum_allocated_size_TCAlloc(size_t& sum_UsedSize, size_t& sum_nn_ref
                    StaticConstArray::buckets());
     }
 
-    // Not part of StaticConstArray, but it's now or never to count them!
+    // Not part of StaticConstArray, but counted in the same total.
     Singleton<ManageTCTypeAllocator>::getRef().addAllocatedSize(sum_UsedSize, sum_nn_ref, alloc_sz);
 }
 

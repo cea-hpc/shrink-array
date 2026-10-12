@@ -68,7 +68,6 @@ class GlobalStatsChunkList
         const std::string rule_eq(total_width, '=');
         const std::string rule_dash(total_width, '-');
 
-        // Header Cyan
         std::println("\n{}{}{}", tc.CYAN, rule_eq, tc.RESET);
         std::println("{}{}{:{}}GLOBAL COMPRESSION LISTS MONITORING{}", tc.BOLD, tc.CYAN, "", (total_width - 35) / 2,
                      tc.RESET);
@@ -76,7 +75,6 @@ class GlobalStatsChunkList
                      tc.RESET);
         std::println("{}{}{}", tc.CYAN, rule_eq, tc.RESET);
 
-        // Titles Bold White
         std::println("{}{:<{}}{:>{}}{:>{}}{:>{}}{}", tc.BOLD, "Chunk Type Instance", col_type, "Allocated Chunks",
                      col_data, "Op-List Capacity", col_list, "List Memory", col_mem, tc.RESET);
 

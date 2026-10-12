@@ -81,11 +81,9 @@ static_assert(ANKERL_UNORDERED_DENSE_VERSION_MAJOR == 5,
               "chunk needs ankerl::unordered_dense 5.x: another major version of "
               "ankerl/unordered_dense.h was included before chunk's headers");
 
-// deferred_ops_storage.h has no internal dependency on _OPENMP (just
-// <memory>/<mutex>/<atomic>/PMP_CHUNK.h), so it is always included: nothing
-// in it costs anything when DeferredOpsStorage<...> is never instantiated
-// (serial builds), and doing so lets ChunkDeferredOpsPolicy below reference
-// it unconditionally.
+// deferred_ops_storage.h does not depend on _OPENMP and costs nothing when
+// never instantiated (serial builds): always included, so ChunkDeferredOpsPolicy
+// below can name it unconditionally.
 #include "chunk/internal/deferred_ops_storage.h" // DeferredOpsStorage
 #include "chunk/internal/immortal.h"             // Immortal / LazyImmortal: statics safe for global arrays
 namespace shrink_array
@@ -111,20 +109,15 @@ struct ProxyTypeTrait<Chunk<T>>
     using Type = Proxy<T>;
 };
 
-// STAYS a directive, and it is not the redundant twin of the declaration at the
-// top of this file: that one is at GLOBAL scope, this one is inside
-// `namespace shrink_array` (opened just above), so they name two different
-// entities -- ::TCTypeCAllocator and shrink_array::TCTypeCAllocator.
+// STAYS a directive. Not a twin of the declaration at the top of this file:
+// that one is in fast_alloc, this one is inside `namespace shrink_array`.
 //
-// It is load-bearing. The real ::TCTypeCAllocator (fast_allocators/tc_allocator.h)
-// is the OpenMP per-rank allocator; in a SERIAL build this incomplete
-// declaration deliberately SHADOWS it for the rest of the namespace, so the
-// OpenMP-only allocator pool below (allocator_pool_, alloc_chunk_allocator_thr)
-// parses against a type that is never completed and never instantiated there.
-// Deleting the guard would resolve those uses to the real type in a serial
-// build; deleting the declaration would resolve them to the real type too.
-// Neither is wanted, and no `if constexpr` can express "declare a different
-// type", so this is one of the cases the preprocessor is actually for.
+// Load-bearing: in a SERIAL build this incomplete declaration deliberately
+// SHADOWS the real (OpenMP per-rank) fast_alloc::TCTypeCAllocator for the rest
+// of the namespace, so the OpenMP-only allocator pool below (allocator_pool_,
+// alloc_chunk_allocator_thr) parses against a type that is never completed nor
+// instantiated. Removing the guard or the declaration would bind those uses to
+// the real type; no `if constexpr` can "declare a different type".
 #ifndef _OPENMP
 template <typename T>
 class TCTypeCAllocator;
@@ -139,12 +132,10 @@ using fast_alloc::TCTypeAllocator;
 // DeferredReadGate: read-side visibility gate, selected by compile-time mode
 // ----------------------------------------------------------------------------
 // The read gate (reader_sync + ArrayChunkBase::sync_chunk) as a CRTP policy, in
-// the same style as Chunk2CounterPolicy / Proxy2CounterPolicy. `if constexpr`
-// alone cannot express this: pending_ops_ / wait_for_availability /
-// is_not_available exist in some builds only, so a discarded `if constexpr`
-// branch would still phase-1-look-up a missing member and fail. Three template
-// specializations — one per config — each name ONLY the members that exist in
-// that config, and only the selected specialization is ever instantiated.
+// the same style as Chunk2CounterPolicy / Proxy2CounterPolicy. Not `if
+// constexpr`: pending_ops_ / wait_for_availability / is_not_available exist in
+// some builds only, and a discarded branch would still phase-1-look-up a
+// missing member. Each specialization names ONLY the members of its config.
 //
 //   None    (serial, !use_openmp)            : nothing can be pending -> no-op
 //   Coarse  (OpenMP + SHRINK_SMALL_CHUNK)     : no counter -> is_not_available()
@@ -171,7 +162,7 @@ class DeferredReadGate; // primary left undefined: only the 3 specializations ex
 //
 //   pending_publish()   enqueue side. +1 RELEASE, called BEFORE the map insert
 //                       (to_be_queued), so pending_any()>0 spans a pending op's
-//                       ENTIRE lifetime — closes the reader stale-read window.
+//                       ENTIRE lifetime: no window for a reader's stale read.
 //                       The op itself is published to flushers via the Dekker
 //                       write flag (begin_write/end_write), not this counter.
 //   pending_retire(n)   drain side. -n RELEASE, called AFTER the ops' write
@@ -183,15 +174,13 @@ class DeferredReadGate; // primary left undefined: only the 3 specializations ex
 //   read_gate_should_wait(i) / reader_sync(i)
 //                       read-side gates built on the above (or on the coarse
 //                       is_not_available() when the counter doesn't exist).
-//   precise             constexpr: true iff the per-chunk counter exists —
-//                       lets algorithmic stages that only make sense with the
-//                       counter (e.g. wait_for_availability's own-rank fast
-//                       stage) be `if constexpr`-selected.
+//   precise             constexpr: true iff the per-chunk counter exists, for
+//                       `if constexpr`-selecting counter-only stages (e.g.
+//                       wait_for_availability's own-rank fast stage).
 //
-// Storage: the counter member itself stays declared in ChunkBase (under the
-// same #if as its readers), so the object layout -- the cache-line placement
-// of `values` -- does not depend on this policy. The policy owns the ACCESS,
-// not the storage.
+// Storage: the counter stays declared in ChunkBase, so the object layout (the
+// cache-line placement of `values`) does not depend on this policy. The policy
+// owns the ACCESS, not the storage.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Serial build: the deferred-op machinery does not exist, nothing is ever
@@ -248,9 +237,8 @@ class DeferredReadGate<Derived, DeferReadGate::Coarse>
   public:
     static constexpr bool precise = false;
 
-    // No counter in this build: publish/retire are no-ops and pending_any() is
-    // constant false -- call sites that gate counter-only logic on it fold to
-    // nothing.
+    // No counter: publish/retire are no-ops and pending_any() is constant false,
+    // so counter-only logic gated on it folds away.
     /// @brief No-op: this build has no per-chunk pending counter.
     /// @param thr Calling thread's rank; unused.
     void pending_publish([[maybe_unused]] int thr) noexcept {}
@@ -363,12 +351,11 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
                 if (pending.compare_exchange_weak(expected, static_cast<int32_t>(nw), std::memory_order_acq_rel,
                                                   std::memory_order_acquire))
                 {
-                    // Check builds stop on an over-retire. Negative, pending_any()
+                    // Check builds stop on an over-retire: negative, pending_any()
                     // is false, and a publish from -1 leaves 0 with an op queued
-                    // -- the "counter at 0 while ops were queued" the force
-                    // flushes work around. publish runs BEFORE the insert, so
-                    // this is a double count, not a race. Release builds keep
-                    // the self-healing semantics above.
+                    // (what the force flushes work around). publish runs BEFORE
+                    // the insert, so this is a double count, not a race. Release
+                    // builds keep the self-healing semantics above.
                     if constexpr (build_config::any_check)
                     {
                         if (ncnt < 0) [[unlikely]]
@@ -452,14 +439,12 @@ class DeferredReadGate<Derived, DeferReadGate::Precise>
 
 // ============================================================================
 // ChunkAllocPolicy: OpenMP vs serial chunk allocation, selected by
-// build_config::use_openmp. Unlike DeferredReadGate/the deferred-ops machinery/CAS,
-// this is a genuine two-implementation split: BOTH modes allocate a chunk,
-// initialize it, and keep stats/ledger/leak-tracking in sync -- only the
-// OpenMP version additionally tries the per-thread free list first.
-// static_cast<Derived&>(*this) inline. Not an explicit object parameter
-// as in DeferredReadGate: allocate_chunk_internal is called as
-// Base::allocate_chunk_internal(...) from sibling policies (Chunk2OmpPolicy,
-// ...), whose *this is not a Derived and would not bind to `this Derived&`.
+// build_config::use_openmp. A genuine two-implementation split: BOTH modes
+// allocate, initialise and keep stats/ledger in sync; only OpenMP tries the
+// per-thread free list first. static_cast<Derived&>(*this), not an explicit
+// object parameter: allocate_chunk_internal is called as
+// Base::allocate_chunk_internal(...) from sibling policies (Chunk2OmpPolicy...),
+// whose *this is not a Derived and would not bind to `this Derived&`.
 // ----------------------------------------------------------------------------
 template <typename T, typename Derived, bool UseOpenMP = build_config::use_openmp>
 struct ChunkAllocPolicy; // primary left undefined: only the 2 specializations exist
@@ -481,24 +466,20 @@ struct ChunkAllocPolicy<T, Derived, true>
     /// @note The two-functor form is what lets v1 share this path. A v1 chunk is
     ///       compressed only when it is all-zero, so a buffer coming back from
     ///       the reuse pool is already zero and re-filling it would memset the
-    ///       hot path (~97% of materialisations) for nothing. v2/v2A compress to
-    ///       an arbitrary constant and must initialise both branches alike, so
-    ///       they call the single-functor overload below, which passes the same
-    ///       callable twice.
+    ///       hot path (most materialisations) for nothing. v2/v2A compress to
+    ///       an arbitrary constant and must initialise both branches alike: they
+    ///       call the single-functor overload below.
     template <typename InitReused, typename InitFresh>
     T* allocate_chunk_internal(int thr_rank, InitReused init_reused, InitFresh init_fresh)
     {
         const auto& self       = static_cast<const Derived&>(*this);
         T*          values_loc = nullptr;
 
-        // The per-thread reuse list is not always sized here: fast-alloc
-        // builds never park buffers in the legacy store, and a geometry born
-        // from a re-chunk has no per-size list at all. Indexing it anyway is
-        // UB (an abort under _GLIBCXX_ASSERTIONS), so the lookup below,
-        // find_list_block_free_thr(), is bounds-checked at the source and
-        // answers nullptr for a slot never sized -- static and dynamic alike.
+        // The per-thread reuse list is not always sized here (fast-alloc builds
+        // never park in the legacy store; a geometry born from a re-chunk has no
+        // per-size list): find_list_block_free_thr() is bounds-checked and
+        // answers nullptr for a slot never sized. Do not index the list directly.
         //
-        // Try to reuse from thread-local free list.
         // The reuse list of THIS array on this rank (thread_alloc_key(), primed by
         // the proxy next to the geometry): a block taken here comes from the
         // array's own slabs, so affinity survives recycling.
@@ -642,22 +623,15 @@ struct ChunkAllocPolicy<T, Derived, false>
 // ============================================================================
 // ChunkDeferredOpsPolicy: the whole OpenMP-only deferred-write subsystem --
 // type aliases, CAS, thread-local free-list plumbing, and the deferred-op
-// enqueue/flush/read-gate methods -- combined into ONE policy rather than
-// four separate ones, because they are tightly coupled (per_thread_map is
-// used unqualified across all of them, and to_be_queued_for_deferred_
-// processing/wait_for_availability/is_not_available are declared here with
-// their bodies out-of-line in chunk_base_inline.h).
-// Every name they use (DeferredOpsStorage, WriteCompressSyncPolicy,
-// DeferredOpPtr, CompressionManager<T,Derived>) is unconditionally declared
-// elsewhere, and the true specialization is simply never instantiated in a
+// enqueue/flush/read-gate methods -- in ONE policy, because they are tightly
+// coupled (bodies out-of-line in chunk_base_inline.h). Every name they use is
+// declared in every build; the true specialization is never instantiated in a
 // serial build.
-// Storage note: `values` (ChunkBase's own atomic pointer) and `pending_ops_`
-// stay declared on ChunkBase itself for object-layout stability (same
-// principle as DeferredReadGate above); this policy only owns the access,
-// reaching back via static_cast<Derived&>(*this) -- and not through an
-// explicit object parameter, for the reason given at ChunkAllocPolicy:
-// compare_and_swap_gen / recup_value are called as Base::... from sibling
-// policies whose *this is not a Derived.
+// Storage: `values` and `pending_ops_` stay on ChunkBase for layout stability
+// (as for DeferredReadGate); the policy owns the access, through
+// static_cast<Derived&>(*this), not an explicit object parameter: as at
+// ChunkAllocPolicy, compare_and_swap_gen / recup_value are called as Base::...
+// from sibling policies whose *this is not a Derived.
 // ----------------------------------------------------------------------------
 template <typename T, typename Derived, bool UseOpenMP = build_config::use_openmp>
 class ChunkDeferredOpsPolicy; // primary left undefined: only the 2 specializations exist
@@ -850,12 +824,9 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
     }
 
     // ── Routing ──
-    // Lives here so get_chunk_allocator() can select between dynamic/static
-    // routing with if constexpr: allocator_pool_ only needs to exist in THIS
-    // specialization, where it always does -- a branch inside
-    // get_chunk_allocator's own body would still phase-1-look-up
-    // allocator_pool_ even when discarded, if it were referenced unqualified
-    // there (see DeferredReadGate's own comment on this exact trap, above).
+    // Lives here, not in get_chunk_allocator()'s body: allocator_pool_ exists
+    // only in THIS specialization, and a discarded `if constexpr` branch naming
+    // it there would still be phase-1-looked-up (same trap as DeferredReadGate).
 
     /// @brief Route to the allocator for this thread's active chunk size. The
     ///        size must have been registered (set_chunk_size) beforehand.
@@ -881,9 +852,9 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
                 return it0->second[thr_rank];
             }
         }
-        // Fallback: not registered (shouldn't happen on the alloc path
-        // once set_chunk_size ran) — use the legacy single pool so the
-        // free path and single-size use keep working.
+        // Fallback: not registered (not expected on the alloc path once
+        // set_chunk_size ran): the legacy single pool, so the free path and
+        // single-size use keep working.
         return (*Derived::allocator_data)[thr_rank];
     }
 
@@ -907,18 +878,15 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
 
   private:
     // ---------------------------------------------------------------------
-    // Multi-size support (dynamic builds): a pool of per-thread allocator
-    // arrays, keyed by chunk size. register_chunk_size() (called from the
-    // sequential ArrayChunkBase::set_chunk_size, before any parallel alloc)
-    // is the ONLY writer; get_chunk_allocator() only ever reads, so parallel
-    // regions do lookups on a map that is not being mutated. std::map gives
-    // reference/pointer stability across inserts, which matters because a new
-    // size may be registered between two arrays' lifetimes while old entries
-    // are still in use.
+    // Multi-size support (dynamic builds): per-thread allocator arrays, keyed by
+    // chunk size. register_chunk_size() (from the sequential
+    // ArrayChunkBase::set_chunk_size, before any parallel alloc) is the ONLY
+    // writer; get_chunk_allocator() only reads, so parallel regions never look
+    // up a map being mutated. std::map: references stay valid across inserts,
+    // as a new size may be registered while old entries are in use.
     // ---------------------------------------------------------------------
     /// @brief Registry key: (affinity key, chunk size). Key 0 is the rank's
-    ///        shared pool -- what every array used before per-array affinity;
-    ///        a non-zero key is one array's own allocator set, so that its
+    ///        shared pool; a non-zero key is one array's own allocator set, so that its
     ///        blocks sit in slabs holding nothing else and a re-chunk or a
     ///        destruction of that array empties whole slabs.
     static constexpr std::uint64_t pool_key(unsigned int key, unsigned int size) noexcept
@@ -929,15 +897,12 @@ class ChunkDynamicAllocPolicy<T, Derived, true>
     static inline constinit internal::LazyImmortal<std::map<std::uint64_t, std::vector<TCTypeCAllocator<T>>>>
         allocator_pool_;
 
-    // Serial (non-OMP) counterpart of allocator_pool_ above: one allocator per
-    // chunk size, WITHOUT the per-thread dimension (serial builds have a single
-    // rank). TCTypeAllocator is polymorphic and non-movable (raw slab pointers +
-    // a user destructor), so it is held by unique_ptr, not by value. Populated by
-    // register_chunk_size_serial() from the sequential set_chunk_size path and
-    // read by route_serial_dynamic_alloc(). It is what allows a runtime re-chunk
-    // in non-OMP fast-alloc builds: old and new sizes coexist during
-    // rechunk_refill (read *this at old, write tmp at new), so a per-size pool
-    // is required rather than a re-init of the single allocator_data.
+    // Serial counterpart of allocator_pool_: one allocator per chunk size, no
+    // per-thread dimension. Held by unique_ptr: TCTypeAllocator is polymorphic
+    // and non-movable. Written by register_chunk_size_serial() (sequential
+    // set_chunk_size path), read by route_serial_dynamic_alloc(). Required for a
+    // re-chunk in serial fast-alloc builds: old and new sizes coexist during
+    // rechunk_refill, so re-initialising the single allocator_data would not do.
     static inline constinit internal::LazyImmortal<std::map<unsigned int, std::unique_ptr<TCTypeAllocator<T>>>>
         allocator_pool_serial_;
 };
@@ -990,13 +955,10 @@ class ChunkBase : public DeferredReadGate<Derived>,
 
     using ProxyType = ProxyTypeTrait<Derived>::Type;
 
-    // std-alloc placeholder for `allocator_data`. It satisfies the fast
-    // allocator's call interface with no-op stubs so that manager code shared
-    // by both modes (init/destroy/alloc/free paths) compiles unchanged in std
-    // builds. It never does real work: std-alloc routes allocation through
-    // svalloc, and every site that would call these stubs is guarded by
-    // `if constexpr (build_config::use_fast_alloc)` — discarded at compile time
-    // in std builds, so those guards are plain shared code.
+    // std-alloc placeholder for `allocator_data`: no-op stubs of the fast
+    // allocator's interface, so manager code shared by both modes compiles in
+    // std builds. Never does real work: std-alloc allocates through svalloc, and
+    // every call site is behind `if constexpr (build_config::use_fast_alloc)`.
     struct NullValueAllocator
     {
         /// @brief No pool to set up.
@@ -1265,13 +1227,11 @@ class ChunkBase : public DeferredReadGate<Derived>,
     {
         if constexpr (chunk_config::stats)
         {
-            // Split the read by what actually served it: a materialised chunk
-            // (real memory access) vs a compressed one (values points at the
-            // constant marker, so the indexing returns it with no data touched).
-            // read_cst / (read + read_cst) is the compression hit rate on reads.
-            // is_cst_val1() is used rather than written(): it is index-agnostic,
-            // whereas Chunk2::written() (no arg) deliberately aborts on non-bool
-            // types -- it needs the second-value index, which a read does not have.
+            // Split the read by what served it: a materialised chunk vs a
+            // compressed one (values points at the constant marker). read_cst /
+            // (read + read_cst) is the compression hit rate on reads.
+            // is_cst_val1(), not written(): Chunk2::written() (no arg) aborts on
+            // non-bool types -- it needs the second-value index a read lacks.
             if (self.is_cst_val1())
             {
                 increm_chunk_read_cst<Derived>();
@@ -1299,13 +1259,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
     {
         if constexpr (chunk_config::stats)
         {
-            // Split the read by what actually served it: a materialised chunk
-            // (real memory access) vs a compressed one (values points at the
-            // constant marker, so the indexing returns it with no data touched).
-            // read_cst / (read + read_cst) is the compression hit rate on reads.
-            // is_cst_val1() is used rather than written(): it is index-agnostic,
-            // whereas Chunk2::written() (no arg) deliberately aborts on non-bool
-            // types -- it needs the second-value index, which a read does not have.
+            // Same split as read_value().
             if (self.is_cst_val1())
             {
                 increm_chunk_read_cst<Derived>();
@@ -1424,13 +1378,11 @@ class ChunkBase : public DeferredReadGate<Derived>,
         {
             increm_chunk_read<Derived>();
         }
-        // Contract: this hands out a mutable reference into
-        // the buffer and is documented as "bypasses the write proxy: valid
-        // only where the chunk is known to be materialised". On a compressed
-        // chunk the reference points into a shared constant (Chunk/Chunk2) or
-        // into an unbacked identifier slot (Chunk2A), so a write through it
-        // corrupts the constant for every chunk holding it, or faults.
-        // Checked builds say so; release is unchanged.
+        // Contract: a mutable reference that bypasses the write proxy, valid only
+        // on a materialised chunk. On a compressed one it points into a shared
+        // constant (Chunk/Chunk2) or an unbacked identifier slot (Chunk2A): a
+        // write through it corrupts the constant for every chunk, or faults.
+        // Checked builds stop on it.
         if constexpr (build_config::any_check && requires { self.written(); })
         {
             if (!self.written()) [[unlikely]]
@@ -1512,11 +1464,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
     {
         if constexpr (build_config::use_fast_alloc)
         {
-            // Dynamic-vs-static routing lives on ChunkDynamicAllocPolicy (both
-            // specializations declare route_omp_dynamic_alloc/
-            // route_serial_dynamic_alloc -- the true specialization consults
-            // allocator_pool_/allocator_pool_serial_, the false one always falls
-            // through to allocator_data).
+            // Dynamic-vs-static routing lives on ChunkDynamicAllocPolicy.
             if constexpr (build_config::use_openmp)
             {
                 return Derived::route_omp_dynamic_alloc(thr_rank, key);
@@ -1596,12 +1544,10 @@ class ChunkBase : public DeferredReadGate<Derived>,
         const std::size_t units = Derived::storage_units(alloc_chunk_count());
         if constexpr ((std::is_arithmetic_v<T> && std::is_trivially_constructible_v<T>) || is_packed)
         {
-            // For trivially constructible scalar types: use memset (fastest option)
             std::memset(static_cast<void*>(values_loc), 0, units * sizeof(T)); // Bit: raw words, not Bit objects
         }
         else
         {
-            // For all other cases (composite_arithmetic, non-trivial types, etc.)
             std::fill_n(values_loc, units, T{});
         }
     }
@@ -1721,9 +1667,8 @@ class ChunkBase : public DeferredReadGate<Derived>,
     /// drained), plus its owner tag: see DeferredReadGate<Derived, Precise>.
     /// Present only where the deferred-op machinery exists: OpenMP builds, and
     /// not under -DSHRINK_SMALL_CHUNK (which trades it, and steal_mark_, away
-    /// for 8-byte chunks). Published (release) BEFORE the map insert, so a pending op is
-    /// visible for its whole lifetime; retired (release) after the drain; the
-    /// read gates acquire-load it.
+    /// for 8-byte chunks). Protocol: see DeferredReadGate (publish before the
+    /// map insert, retire after the drain, acquire-loaded by the read gates).
     ///
     /// A `#if`, not `if constexpr`: gcc still phase-1-looks-up a member named in
     /// a discarded branch. Its readers live in DeferredReadGate<Precise>, which
@@ -1744,10 +1689,9 @@ class ChunkBase : public DeferredReadGate<Derived>,
     /// other writer goes on writing while the compressor scans, instead of the
     /// whole team paying a global exclusion window per pass.
     ///
-    /// Lives in the 4 bytes of padding after pending_ops_ (ChunkBase is
-    /// 8-byte aligned on `values`), so it costs nothing: 8 + 4 + 4, every
-    /// chunk of an OpenMP build stays at 16 bytes. Same \#if as pending_ops_, for the same gcc phase-1 lookup
-    /// reason; SHRINK_SMALL_CHUNK builds keep the global gate
+    /// Lives in the 4 bytes of padding after pending_ops_ (8 + 4 + 4: an OpenMP
+    /// chunk stays at 16 bytes). Same \#if as pending_ops_, for the same gcc
+    /// phase-1 lookup reason; SHRINK_SMALL_CHUNK builds keep the global gate
     /// (chunk_config::use_chunk_steal_mark).
     std::atomic<uint32_t> steal_mark_{0};
 
@@ -1759,7 +1703,7 @@ class ChunkBase : public DeferredReadGate<Derived>,
     ///          compressor's own mark store into a writer already in flight.
     ///          The mark travels compressor -> writer and needs its own
     ///          release/acquire pair, or a writer can read it clear after it
-    ///          was set and write while the scan reads (TSan-confirmed).
+    ///          was set and write while the scan reads.
     ///
     ///          Read once per write: an ldar in place of an ldr on AArch64.
     [[nodiscard]] bool steal_marked() const noexcept
@@ -1838,12 +1782,10 @@ class ChunkBase : public DeferredReadGate<Derived>,
     {
         if constexpr (requires { self.written(j); })
         {
-            // Use specialized logic from Derived (e.g., ArrayChunk2)
             return self.written(j);
         }
         else
         {
-            // Default fallback for ArrayChunk and ArrayChunk2A
             return self.written();
         }
     }
@@ -1891,20 +1833,17 @@ class ChunkBase : public DeferredReadGate<Derived>,
         // constant comes from the value table instead. A pointer range test,
         // very well predicted (most reads go to materialised chunks).
         //
-        // ONE load of `values`, tested through the CRTP hooks so chunk_base
-        // knows nothing of the registry. Testing self.is_cst_val2() and
-        // then dereferencing values_load() loads the pointer twice: a
-        // compressor claiming the chunk in between swaps it for a region
-        // identifier, and the second load indexes an unmapped page. Same rule
-        // as read_values().
+        // ONE load of `values`, tested through the CRTP hooks (chunk_base knows
+        // nothing of the registry). Do not test self.is_cst_val2() and then
+        // dereference values_load(): a compressor claiming the chunk between the
+        // two loads swaps in a region identifier, and the second load indexes an
+        // unmapped page. Same rule as read_values().
         //
-        // Gated on the variant with std::is_same_v, NOT on a `requires` probe
-        // for the hooks: a probe fails OPEN (where it evaluates false, the read
-        // falls through to values_load()[i] and returns 0 from the unwritten
+        // Gated on std::is_same_v, NOT on a `requires` probe for the hooks: a
+        // probe fails OPEN (where false, the read returns 0 from the unwritten
         // region -- a wrong number, not a build error), and nvhpc evaluates it
-        // differently on the still-incomplete CRTP Derived. A plain type
-        // comparison against the forward-declared Chunk2A (chunk_traits.h)
-        // cannot be decided differently by any compiler.
+        // differently on the still-incomplete CRTP Derived. A type comparison
+        // against the forward-declared Chunk2A (chunk_traits.h) cannot differ.
         if constexpr (std::is_same_v<Derived, Chunk2A<T>>)
         {
             static_assert(

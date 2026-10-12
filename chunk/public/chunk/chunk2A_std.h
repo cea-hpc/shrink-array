@@ -60,12 +60,9 @@ class ManagerChunk;
  */
 
 // ─── Concurrent (OMP) chunk operations extracted from Chunk2A ───────────────
-// CRTP policy base holding the lock-free CAS operations that exist only in
-// OpenMP builds. Chunk2A inherits it through the OpenMP specialisation of
-// Chunk2AOmpPolicy below, so the preprocessor guard around these two methods is
-// replaced by a typed base: in a serial build the methods do not exist,
-// exactly as before. Reaches Chunk2A's bases via self(): Base = Chunk2Base,
-// Holder = TabCstVal2Holder. All accessed members are public (no friend needed).
+// CRTP policy base with the lock-free CAS operations of OpenMP builds only: Chunk2A inherits it
+// through the OpenMP specialisation of Chunk2AOmpPolicy, so in a serial build the methods do not
+// exist. Reaches Chunk2A's bases via self() (Base = Chunk2Base, Holder = TabCstVal2Holder).
 /// @brief Chunk2A's lock-free CAS operations on `values` (OpenMP builds only).
 template <typename T, typename Derived>
 class Chunk2AConcurrentOps
@@ -133,16 +130,12 @@ class Chunk2AConcurrentOps
     ///         ChunkBase::compare_and_swap_gen().
     [[nodiscard]] bool compare_and_swap(this Derived& self, T* values_loc, bool expected_is_cst_val2) noexcept
     {
-        // The array a chunk compressed to a second constant reads from IS its
-        // values pointer (there is no per-chunk copy of it any more). The CAS
-        // must still expect a CONSTANT, never "whatever values holds now": if
-        // another thread materialised the chunk between the caller's look and
-        // this point, values is its buffer, and a CAS that expected it would
-        // succeed and replace that buffer -- with the value it just wrote --
-        // by ours. Seen as a lost write in check mode. So: load, and if the
-        // pointer is not in the second-value region, report the CAS as failed
-        // without attempting it; the caller recycles our buffer, as it does
-        // when the CAS itself fails.
+        // A chunk's second constant IS its values pointer (no per-chunk copy). The CAS must
+        // still expect a CONSTANT, never "whatever values holds now": if another thread
+        // materialised the chunk since the caller looked, values is its buffer, and a CAS
+        // expecting it would replace that buffer -- and its write -- by ours (a lost write).
+        // So if the loaded pointer is not in the second-value region, report failure without
+        // attempting the CAS; the caller recycles our buffer.
         T* expected = nullptr;
         if constexpr (is_not_bool)
         {
@@ -198,19 +191,16 @@ class Chunk2AConcurrentOps
 
     /// @brief Compact identity of this chunk for the ring log: its address past
     ///        the alignment bits. Callers mask it to 24 bits and pack a tag into
-    ///        the top byte. Was written out identically at three sites.
+    ///        the top byte.
     [[nodiscard]] uint32_t ring_chunk_id(this const auto& obj) noexcept
     {
         return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(&obj) >> 4U);
     }
 };
 
-// Read-side cst-state queries: lock-free classification of the atomic `values`
-// pointer (cst_val1 / cst_val2 / written). The read counterpart to
-// Chunk2AConcurrentOps' CAS writes, but BUILD-AGNOSTIC: these are needed in both
-// serial and OMP builds, so this base is mixed into Chunk2A UNCONDITIONALLY (not
-// gated on use_openmp like Chunk2AConcurrentOps). Same deducing-this pattern,
-// const-qualified since every query is a pure read.
+// Read-side counterpart of Chunk2AConcurrentOps: lock-free classification of `values`. Needed in
+// every build, so mixed into Chunk2A UNCONDITIONALLY (not gated on use_openmp). Same
+// deducing-this pattern, const-qualified: every query is a pure read.
 /// @brief Chunk2A's lock-free reads of its constant state (cst_val1 / cst_val2 / written), every build.
 template <typename T, typename Derived>
 class Chunk2AStateQueries
@@ -256,11 +246,9 @@ class Chunk2AStateQueries
      *        read from the registry, for a pointer the caller already loaded.
      *
      * @pre @p ptr satisfies is_cst_val2_ptr_of().
-     * @details Used by ChunkBase::element_at(): a second constant has no
-     *          buffer, its values pointer names an identifier. Deliberately does NOT dereference that pointer:
-     *          id_of_ptr() is arithmetic on the region base and stride, and
-     *          value_of_id() is one load of the value table -- the same table
-     *          a write of a wide type already reads.
+     * @details Used by ChunkBase::element_at(). Must NOT dereference @p ptr (it names
+     *          an identifier, not a buffer): id_of_ptr() is arithmetic, value_of_id()
+     *          one load of the value table.
      */
     [[nodiscard]] static T second_value_from_ptr(const T* ptr) noexcept
     {
@@ -354,12 +342,9 @@ class Chunk2AOmpPolicy : public Chunk2Base<T, Derived>, public Chunk2AConcurrent
 
     /// @brief Array-new for chunks: allocates and points every chunk at the
     ///        first constant (init_chunks_cst_val).
-    /// @warning `new Chunk2A<T>[n]` runs the DEFAULT CONSTRUCTORS after this,
-    ///          so that initialisation is immediately overwritten; the operator
-    ///          pays off for a placement-new array, where the caller does not
-    ///          construct. Nothing in the library array-news a chunk --
-    ///          ArrayChunk* hold a std::vector<chunk_type>, initialised by
-    ///          their own loops.
+    /// @warning `new Chunk2A<T>[n]` runs the DEFAULT CONSTRUCTORS after this, overwriting
+    ///          that initialisation; it pays off only for a placement-new array. Nothing in
+    ///          the library array-news a chunk (ArrayChunk* hold a std::vector).
     void* operator new[](std::size_t sz);
     /// @brief Matching array-delete.
     void operator delete[](void* ptr);
@@ -633,12 +618,9 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
     ///
     static auto& get_manager() noexcept
     {
-        // was a function-local `static manager_chunk2A s_manager;` (lazy Meyers
-        // singleton). Chunk2A<T> is a class template; the lazy guard's first
-        // init happened from compress() inside an OpenMP region, deadlocking
-        // threads on __cxa_guard_acquire. An `inline static` member has one
-        // definition across TUs (C++17), built during static init before main()
-        // and before any thread — no guard, no race. Manager ctor is trivial.
+        // Do not use a function-local static (lazy Meyers singleton): its first init can
+        // happen from compress() inside an OpenMP region and deadlock threads on
+        // __cxa_guard_acquire. The inline static member is built before any thread.
         return *s_manager_;
     }
 
@@ -752,16 +734,10 @@ class Chunk2A : public Chunk2AOmpPolicy<T, Chunk2A<T>>,
 
     static void compress_chunk_to_compress_in_par(int thr, bool apply);
 
-    // Chunk geometry is PER ENTRY in dynamic builds: every tuple queued into
-    // chunk2A_to_compress_potentially carries the owning array's chunk size
-    // (push_to_compress_list stores this->chunk_size() as field <3>). The scan
-    // bounds below therefore come from that field — NEVER from a
-    // `= __chunk_size` default. Such a default silently scanned only the first
-    // 64 values of a 512-wide chunk in CHUNK_DYNAMIC runs: a chunk whose first
-    // 64 elements happened to equal second_value was declared fully-constant
-    // (compact2), block-cleared to the cst_val2 sentinel, and the remaining
-    // 448 live values were destroyed. The defaults are gone on purpose: a new
-    // call site must state its size explicitly or fail to compile.
+    // Chunk geometry is PER ENTRY in dynamic builds: every queued tuple carries the owning
+    // array's chunk size (field <3>, from push_to_compress_list). The scan bounds come from
+    // that field. Do not add a `= __chunk_size` default: it would scan only the first
+    // __chunk_size values of a wider chunk, declare it constant and destroy the rest.
     static void fill_list_chunk_to_compress_in_par(int                       thr,
                                                    vec_tuple_chunkA2p_int2&  ll_compt1,
                                                    vec_tuple_chunkA2p_Tint2& ll_compt2,

@@ -23,11 +23,8 @@ namespace shrink_array
 
 /// @brief ANSI colour codes, or empty strings when stdout is not a terminal.
 ///
-/// const char*, not std::string: the members hold string literals either way, and
-/// eight std::string assignments in a constructor that runs at STATIC INIT time
-/// can throw std::bad_alloc where nothing can catch it -- std::terminate, before
-/// main (bugprone-throwing-static-initialization). Literals cannot throw and cost
-/// no allocation.
+/// const char*, not std::string: the instance is built at static-init time, where an
+/// allocation that throws terminates before main (bugprone-throwing-static-initialization).
 struct TermColor
 {
     const char* RESET;   ///< Reset all attributes (SGR 0).
@@ -42,9 +39,7 @@ struct TermColor
 
 /// @brief The one shared instance.
 ///
-/// `inline`, not `static`: at namespace scope in a header every translation unit
-/// got its own copy, each calling isatty() and, before the change above,
-/// allocating eight strings. One object now, initialised once.
+/// `inline`, not `static`: one object for the program, not one per translation unit.
 inline const TermColor tc = []() noexcept
 {
     const bool i = isatty(STDOUT_FILENO) != 0;

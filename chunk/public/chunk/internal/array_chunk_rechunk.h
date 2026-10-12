@@ -74,18 +74,16 @@ class RechunkSupport<Derived, true>
     /**
      * @brief Re-chunk this array to a new geometry S' (sequential, quiescent point).
      *
-     * @details Single implementation shared by ArrayChunk / ArrayChunk2 /
-     *          ArrayChunk2A via CRTP; the per-variant differences live in the
-     *          rechunk_* hooks the derived classes provide. The delicate
-     *          invariants are documented ONCE, in the body.
+     * @details Shared by ArrayChunk / ArrayChunk2 / ArrayChunk2A via CRTP; the
+     *          per-variant differences live in the rechunk_* hooks. The delicate
+     *          invariants are documented once, in the body.
      *
-     *          Approach: build a FRESH array at S', refill it through the normal
-     *          write path, then SWAP storage + identity with *this. The library
-     *          assumes geometry is immutable post-construction (frozen size,
-     *          cached proxy pointers, deferred-compression state...); a fresh S'
-     *          array never violates that. After the swap *this carries S' storage
-     *          under tmp's num_tab, and tmp carries the old identity+geometry,
-     *          which it destroys coherently on scope exit.
+     *          Build a FRESH array at S', refill it through the normal write path,
+     *          then SWAP storage + identity with *this. Do not resize in place: the
+     *          library assumes geometry is immutable after construction (frozen
+     *          size, cached proxy pointers, deferred-compression state). After the
+     *          swap *this carries the S' storage under tmp's num_tab, and tmp
+     *          destroys the old identity+geometry on scope exit.
      *
      *          Hooks (see each ArrayChunk*):
      *          - rechunk_drop_candidates() — remove this array's queued
@@ -135,11 +133,10 @@ class RechunkSupport<Derived, true>
      *
      * @note A new chunk that gets a buffer must be ARMED by a real proxy write
      *       (the lazy per-chunk pointers: ptr_second_value, compression
-     *       bookkeeping), which copy_range() does: unarmed chunks double-freed in
-     *       the later compression/clear at scale (seen on the 2A perf run;
-     *       rechunk_validation is too small to trip it). The skipped cst1 spans
-     *       need no arming, and the 2A install commits what a type-2 compression
-     *       does, with no buffer to arm.
+     *       bookkeeping), which copy_range() does; an unarmed chunk is double-freed
+     *       by the later compression/clear (only at scale: rechunk_validation is
+     *       too small to show it). The skipped cst1 spans need no arming, and the
+     *       2A install commits what a type-2 compression does, with no buffer.
      */
     void rechunk_refill(this Derived& self, Derived& tmp, int old_size, int new_size);
 
@@ -176,13 +173,11 @@ class RechunkSupport<Derived, true>
     /**
      * @brief Re-chunk EVERY live array of this variant to @p new_size (quiescent point only).
      *
-     * @details Mirrors DirtyBitsetSupport::clear_all_dirty_bitsets: iterate the
-     *          per-type registry and act on each typed array. Intended for a
-     *          GLOBAL adaptive re-chunk where all arrays must share one geometry
-     *          (e.g. a bench that writes several arrays interleaved under a
-     *          single active_chunk_size): the allocation path reads the
-     *          process-wide t_active, so mixed per-array geometries would misfit
-     *          a materialising write.
+     * @details Iterates the per-type registry (like
+     *          DirtyBitsetSupport::clear_all_dirty_bitsets). For a GLOBAL re-chunk
+     *          where all arrays must share one geometry: the allocation path reads
+     *          the process-wide t_active, so mixed per-array geometries would
+     *          misfit a materialising write.
      *
      * @param new_size the geometry every array should end up with
      * @warning Each rechunk_to() restores the OLD active geometry on exit, so the

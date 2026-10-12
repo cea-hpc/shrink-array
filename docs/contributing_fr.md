@@ -21,8 +21,8 @@ de build. Un build Debug, `-DCHECK_OPTIM=ON` ou un sanitizer construit aussi les
 (`examples/validation`).
 
 La matrice complète (GNU, LLVM, oneAPI, AOCC, NVHPC, sanitizers, statistiques, std-alloc...) est
-`scripts/compile_all.sh`. Ses options sont dans [variables_environnement_fr.md](variables_environnement_fr.md)
-§8. Celles qu'on utilise tous les jours :
+`scripts/compile_all.sh`. Ses options sont dans [reglages_developpeur_fr.md](reglages_developpeur_fr.md)
+§7. Celles qu'on utilise tous les jours :
 
 | option | usage |
 |---|---|
@@ -98,4 +98,7 @@ bien au-dessus du bruit (10 % sur les bancs dynamiques à 64 threads) constitue 
   Fixed). La politique de versionnage en tête de ce fichier dit quel numéro la prochaine version
   incrémente.
 - Une nouvelle variable d'environnement, macro ou option CMake va dans
-  [variables_environnement_fr.md](variables_environnement_fr.md).
+  [variables_environnement_fr.md](variables_environnement_fr.md) si un utilisateur de la
+  bibliothèque doit la régler, dans [reglages_developpeur_fr.md](reglages_developpeur_fr.md)
+  sinon. Un interrupteur qui garde un ancien comportement pour une comparaison y reçoit sa date de
+  retrait dès son ajout.

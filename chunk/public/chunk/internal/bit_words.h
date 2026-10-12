@@ -24,18 +24,15 @@
  * @details Plain functions over a word pointer, no chunk, no array: the chunk
  *          and the proxy of the packed container are built on them.
  *
- *          Concurrency. Two elements of one word are two bits of the SAME
- *          memory location: a plain read-modify-write of one would erase a
- *          concurrent write of the other. Every write that may run
- *          concurrently with another goes through set_bit_atomic() -- a
- *          fetch_or / fetch_and on a std::atomic_ref of the word -- and every
- *          such read through get_bit_relaxed(). Writing distinct elements from
- *          distinct threads is then race-free, as it is for ArrayChunk2<bool>
- *          (one byte per bool). This is the difference with std::vector<bool>,
- *          where writing two elements of one word from two threads is a race.
- *          The plain versions (get_bit, set_bit, fill_bits) are for a buffer
- *          no other thread can reach: a fresh chunk before publication, a
- *          scan at a quiescent point.
+ *          Concurrency. Two elements of one word are bits of the SAME memory
+ *          location: a plain read-modify-write of one would erase a concurrent
+ *          write of the other. Every write that may run concurrently goes
+ *          through set_bit_atomic() (fetch_or / fetch_and on a std::atomic_ref
+ *          of the word), every such read through get_bit_relaxed(), so writing
+ *          distinct elements from distinct threads is race-free (unlike
+ *          std::vector<bool>). The plain versions (get_bit, set_bit,
+ *          fill_bits) are for a buffer no other thread can reach: a fresh
+ *          chunk before publication, a scan at a quiescent point.
  *
  *          Tail. The bits past n in the last word are kept at 0 by fill_bits()
  *          and never written by set_bit*(); scan_words() masks them anyway, so

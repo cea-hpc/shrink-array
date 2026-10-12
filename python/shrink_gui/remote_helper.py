@@ -1,8 +1,12 @@
 # Copyright 2026 CEA (www.cea.fr)
 # SPDX-License-Identifier: Apache-2.0
-"""Run on inti by shrink_gui: `python3 - <action> <args...>`, this file on stdin.
+"""Run on the cluster by shrink_gui: `python3 - <action> <args...>`, this file on stdin.
 
-Nothing is installed on inti: every ssh call sends this file again, so it is
+Nothing about the site is written here: the batch commands (submit, cancel,
+QoS table, directive lines) come with each call, from the site's TOML file
+(sitecfg.py) -- only Slurm's squeue and its start conditions are assumed.
+
+Nothing is installed on the cluster: every ssh call sends this file again, so it is
 always the laptop's version. It must stay Python 3.6 compatible (the system
 python3 of a RHEL 8 login node) and import nothing outside the standard
 library. Imported by the tests, it runs nothing (see the end).
@@ -158,7 +162,7 @@ def git_run(repo, args, timeout):
 def act_git_pull(a):
     """git pull (a[1] == "merge") or git pull --rebase (a[1] == "rebase") in
     the repository a[0]. A pull that stops half-way (conflict) is aborted:
-    the repository is never left mid-merge or mid-rebase on inti."""
+    the repository is never left mid-merge or mid-rebase on the cluster."""
     repo = os.path.expanduser(a[0])
     before = git_info(repo)
     if not before:
@@ -184,13 +188,77 @@ def mem_gb():
     m = re.search(r"^MemTotal:\s+(\d+) kB", read("/proc/meminfo", "") or "", re.M)
     return round(int(m.group(1)) / 1048576.0, 1) if m else None
 
+def git_branches(repo):
+    """(local, remote) branch names of the repository: refs/heads, and the
+    remote-tracking branches (origin/x) without their symbolic HEAD."""
+    def refs(prefix):
+        code, out = git_run(repo, ["for-each-ref", "--format=%(refname)", prefix], 60)
+        if code != 0:
+            return []
+        names = [l.strip()[len(prefix) + 1:] for l in out.splitlines() if l.strip().startswith(prefix + "/")]
+        return [n for n in names if n and not n.endswith("/HEAD")]
+    return refs("refs/heads"), refs("refs/remotes")
+
+def act_git_branches(a):
+    """The branches of the repository a[0], after a `git fetch --prune`: a
+    failed fetch (no network, no credential) still lists what the last fetch
+    knew, and says so. remote: the remote-tracking branches with no local
+    branch of the same name (origin/x) -- a switch creates one for them."""
+    repo = os.path.expanduser(a[0])
+    if not git_info(repo):
+        print(json.dumps({"error": "pas de dépôt git dans %s" % a[0]}))
+        return
+    code, out = git_run(repo, ["fetch", "--prune", "--quiet"], 120)
+    local, remotes = git_branches(repo)
+    remote_only = [r for r in remotes if r.split("/", 1)[-1] not in local]
+    print(json.dumps({"local": local, "remote": remote_only, "git": git_info(repo),
+                      "fetch_error": None if code == 0 else (out.strip()[-2000:] or "code %d" % code)}))
+
+def act_git_switch(a):
+    """Check out the branch a[1] in the repository a[0]: a local branch, or a
+    remote-tracking one (origin/x), for which the local branch x is taken if
+    it exists, created tracking origin/x otherwise. Refused when the working
+    tree has changes: a checkout would carry them over to the other branch,
+    or stop half-way."""
+    repo = os.path.expanduser(a[0])
+    before = git_info(repo)
+    if not before:
+        print(json.dumps({"error": "pas de dépôt git dans %s" % a[0]}))
+        return
+    target = a[1] if len(a) > 1 else ""
+    local, remotes = git_branches(repo)
+    if target.startswith("-") or (target not in local and target not in remotes):
+        print(json.dumps({"ok": False, "output": "branche inconnue : %s" % target, "before": before["branch"],
+                          "git": before}))
+        return
+    if before["dirty"]:
+        print(json.dumps({"ok": False, "before": before["branch"], "git": before,
+                          "output": "modifications non commitées dans %s : commitez-les, ou mettez-les de côté "
+                                    "(git stash), avant de changer de branche" % a[0]}))
+        return
+    if target in local:
+        args = ["checkout", target]
+    else:
+        name = target.split("/", 1)[-1]
+        args = ["checkout", name] if name in local else ["checkout", "--track", target]
+    code, out = git_run(repo, args, 120)
+    print(json.dumps({"ok": code == 0, "output": out[-8000:], "before": before["branch"], "git": git_info(repo)}))
+
+def site_arg(a, i):
+    """The site's batch table, base64 JSON argument @p i (sitecfg.Site.batch),
+    or {} when not given."""
+    return json.loads(base64.b64decode(a[i]).decode()) if len(a) > i and a[i] else {}
+
 def act_check(a):
+    batch = site_arg(a, 1)
+    submit = shlex.split(batch.get("submit", ""))[:1]
     r = {"host": socket.gethostname(), "python": sys.version.split()[0],
-         "msub": cmd_out(["which", "ccc_msub"]) is not None,
-         "mqinfo": cmd_out(["ccc_mqinfo"]),       # the QoS limits (parsed by the GUI)
+         "msub": bool(submit) and cmd_out(["which", submit[0]]) is not None,
+         # the QoS limits (parsed by the GUI)
+         "mqinfo": cmd_out(shlex.split(batch["qos_info"])) if batch.get("qos_info") else None,
          # what this machine is, for the local mode's "partition"
          "machine": os.uname()[4], "cpus": os.cpu_count(), "mem_gb": mem_gb()}
-    if a:
+    if a and a[0]:
         r["git"] = git_info(a[0])
     print(json.dumps(r))
 
@@ -301,7 +369,7 @@ def act_options(a):
     print(json.dumps({"error": "%s ne lit pas ses options avec argparse (%s)" % (a[1], pyv)}))
 
 def after_extra(base, spec):
-    """(Slurm options for ccc_msub -E, error): the start conditions of a batch
+    """(Slurm options, error): the start conditions of a batch
     run -- after the run spec["after"] = {"run", "cond": "ok"|"any"}
     (--dependency=afterok|afterany on its job), not before spec["delay_s"]
     seconds (--begin=now+N). A run already finished is decided here: Slurm
@@ -327,6 +395,30 @@ def after_extra(base, spec):
         extra.append("--begin=now+%d" % int(spec["delay_s"]))
     return extra, None
 
+def hms(seconds):
+    """Slurm's [D-]HH:MM:SS."""
+    days, r = divmod(int(seconds), 86400)
+    return ("%d-" % days if days else "") + "%02d:%02d:%02d" % (r // 3600, r % 3600 // 60, r % 60)
+
+def job_header(batch, name, seconds, log, qos, slurm):
+    """The directive lines of the batch script from the site's templates
+    (sitecfg: [batch] name, time, output, error, qos, slurm); an empty
+    template, or no value, leaves its line out."""
+    def line(key, **fields):
+        tpl = batch.get(key) or ""
+        return "%s %s\n" % (batch["directive"], tpl.format(**fields)) if tpl else ""
+    out = (line("name", name=name)
+           + line("time", seconds=int(seconds), minutes=(int(seconds) + 59) // 60, hms=hms(seconds))
+           + line("output", log=log) + line("error", log=log)
+           + (line("qos", qos=qos) if qos else ""))
+    if slurm:
+        tpl = batch.get("slurm") or ""
+        if "{option}" in tpl:
+            out += "".join(line("slurm", option=o) for o in slurm)
+        else:
+            out += line("slurm", options=" ".join(slurm))
+    return out
+
 def act_launch(a):
     base, rid, spec = a[0], a[1], json.loads(base64.b64decode(a[2]).decode())
     d = rdir(base, rid)
@@ -343,29 +435,28 @@ def act_launch(a):
     spec["meta"]["git"] = git_info(spec["meta"].get("repo", "~"))
     write(os.path.join(d, "meta.json"), json.dumps(spec["meta"], indent=1))
     if spec["mode"] == "msub":
+        batch = spec["batch"]
         log = os.path.join(d, "out.log")
         job = ("#!/bin/bash\n" + spec["msub"].rstrip("\n") + "\n"
-               + "#MSUB -r %s\n#MSUB -T %d\n#MSUB -o %s\n#MSUB -e %s\n"
-               % (spec["name"], spec["time_s"], log, log)
-               + ("#MSUB -Q %s\n" % spec["qos"] if spec.get("qos") else "")
-               + ('#MSUB -E "%s"\n' % " ".join(extra) if extra else "")
+               + job_header(batch, spec["name"], spec["time_s"], log, spec.get("qos"), extra)
                + 'D=%s\n' % shlex.quote(d)
                + ('echo "[gui] launcher: %s"\n' % spec["launcher"] if spec.get("launcher") else "")
                + '%sbash "$D/run.sh"\ncode=$?\necho "$code" > "$D/exit_code"\n'
                % (spec["launcher"] + " " if spec.get("launcher") else "")
                + 'echo "[gui] end $(date \'+%F %T\')  exit code $code"\n')
         write(os.path.join(d, "job.sh"), job)
+        submit = shlex.split(batch["submit"])
         try:
-            p = subprocess.Popen(["ccc_msub", "job.sh"], cwd=d, stdout=subprocess.PIPE,
+            p = subprocess.Popen(submit + ["job.sh"], cwd=d, stdout=subprocess.PIPE,
                                  stderr=subprocess.STDOUT, universal_newlines=True)
             out = p.communicate()[0]
         except OSError as e:
-            print(json.dumps({"error": "ccc_msub : %s" % e}))
+            print(json.dumps({"error": "%s : %s" % (submit[0], e)}))
             return
         write(os.path.join(d, "submit.log"), out)
-        ids = re.findall(r"\b(\d{2,})\b", out)
+        ids = re.findall(batch.get("jobid_re") or r"\b(\d{2,})\b", out)
         if p.returncode != 0 or not ids:
-            print(json.dumps({"error": "ccc_msub (code %s) : %s" % (p.returncode, out.strip()[-1500:])}))
+            print(json.dumps({"error": "%s (code %s) : %s" % (submit[0], p.returncode, out.strip()[-1500:])}))
             return
         write(os.path.join(d, "jobid"), ids[-1])
         print(json.dumps({"run_dir": d, "jobid": ids[-1]}))
@@ -506,11 +597,14 @@ def act_stop(a):
     jobid = (read(os.path.join(d, "jobid")) or "").strip()
     if jobid:
         write(os.path.join(d, "stopped"), "")
-        out = cmd_out(["ccc_mdel", jobid])
+        cancel = site_arg(a, 2).get("cancel") or ["scancel"]
+        out = None
+        for c in cancel:
+            out = cmd_out(shlex.split(c) + [jobid])
+            if out is not None:
+                break
         if out is None:
-            out = cmd_out(["scancel", jobid])
-        if out is None:
-            print(json.dumps({"error": "ni ccc_mdel ni scancel n'ont pu annuler le job %s" % jobid}))
+            print(json.dumps({"error": "%s : le job %s n'a pas pu être annulé" % (" / ".join(cancel), jobid)}))
         else:
             print(json.dumps({"ok": True}))
         return
@@ -800,7 +894,8 @@ def act_build_targets(a):
                      "configured": mtime is not None, "mtime": mtime, "execs": sorted(execs)})
     print(json.dumps({"configs": sorted(configs), "dirs": dirs, "build_rep": build_rep}))
 
-ACTIONS = {"build_targets": act_build_targets, "check": act_check, "git_pull": act_git_pull, "options": act_options, "launch": act_launch, "list": act_list,
+ACTIONS = {"build_targets": act_build_targets, "check": act_check, "git_pull": act_git_pull,
+           "git_branches": act_git_branches, "git_switch": act_git_switch, "options": act_options, "launch": act_launch, "list": act_list,
            "tail": act_tail, "stop": act_stop, "pack": act_pack, "summary": act_summary,
            "points": act_points, "delete": act_delete}
 if __name__ == "__main__":

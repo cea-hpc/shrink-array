@@ -21,16 +21,13 @@
 #include "chunk/PMP_CHUNK.h" // CHUNK_PMP_RANK_BOUND
 #include "chunk/chunk_std.h" // self-contained: needs Chunk<T>::manager_chunk
 
-// Function templates over the per-thread reuse lists. Only the OpenMP manager
-// (ManagerChunkParallelImpl<..., true>) instantiates them, and a serial build
-// never does: no preprocessor guard is needed around templates whose every
-// list access is a dependent name.
+// Function templates over the per-thread reuse lists, instantiated only by the
+// OpenMP manager (ManagerChunkParallelImpl<..., true>); every list access is a
+// dependent name, so no preprocessor guard is needed.
 //
-// They are defined `inline` HERE, and that is what every caller instantiates
-// from -- no explicit instantiation list. If a caller ever sees only the
-// forward declaration in manager_chunk_inline.h and not this definition, the
-// fix is to make this header visible there -- not to add an instantiation list
-// that has to be kept in step with the element types by hand.
+// Callers instantiate from these definitions. If one sees only the forward
+// declaration in manager_chunk_inline.h, include this header there -- do not
+// add a hand-maintained explicit instantiation list.
 
 namespace shrink_array
 {

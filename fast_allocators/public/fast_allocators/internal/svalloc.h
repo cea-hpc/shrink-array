@@ -23,18 +23,14 @@
  * headers on chunk's include path for this one and singleton.h (see
  * chunk/CMakeLists.txt).
  *
- * Functions, not macros (`var = svalloc<type>(n)`). Each allocation asserts a
- * non-zero count (debug builds). An allocation that fails -- or whose byte
- * count would overflow size_t -- prints what was asked and aborts, in EVERY
- * build: the policy of the rest of the library (SlabArena, the mmap of
- * tc_allocator.h, TCAllocatorEB, TCSlab::alloc_block). Callers never see
- * null, and none of them tests for it.
+ * Each allocation asserts a non-zero count (debug builds). An allocation that
+ * fails -- or whose byte count would overflow size_t -- prints what was asked
+ * and aborts, in EVERY build (the library's policy). Callers never see null,
+ * and none of them tests for it.
  *
- * posix_memalign writes into a real `void*` here. Passing it `(void**)&var`
- * with `var` a `type*` would store a `void*` into an object of type `type*`,
- * which breaks strict aliasing: under -O2 gcc may then use a stale `var`
- * ("corrupted double-linked list" at teardown, gone with -fno-strict-aliasing
- * or -Og, invisible to ASan/TSan).
+ * posix_memalign writes into a real `void*` here. Do not pass it
+ * `(void**)&var` with `var` a `type*`: that breaks strict aliasing, and under
+ * -O2 gcc may then use a stale `var` (heap corruption invisible to ASan/TSan).
  */
 #pragma once
 

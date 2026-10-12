@@ -20,31 +20,19 @@
 // PointerMapChunk2 — per-array registry of Chunk2's SECOND constant
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Chunk2 compresses a chunk to one of TWO constants. first_value is fixed for
-// the type; the second is chosen per array at run time, and every chunk that
-// folds to it stores only an index. This header holds the lookup that makes
-// that indirection work, keyed by the array's identity (a void* handle) and by
-// the value itself:
+// Chunk2 compresses a chunk to one of TWO constants: first_value is fixed for the
+// type, the second is chosen per array at run time and a chunk folded to it stores
+// only an index. This header holds that lookup, keyed by the array's identity
+// (a void* handle) and by the value:
 //
-//   PointerMapChunk2<T>                  the map itself -- insert_only_num_tab /
-//                                        replace / get_second_value / get_num_tab
-//                                        / get_info_second_value /
-//                                        find_ind_tab_cst2, plus
-//                                        report_key_not_found() for the
-//                                        diagnostic path.
-//   PointerMapChunk2InfArrayPolicy<T,B>   the inf_array side, as a policy so the
-//                                        builds that do not register inf_array
-//                                        tuples pay nothing: the <T,false>
-//                                        specialisation is all no-ops.
-//   ValueToInfTupleMapHelper<T>          names the std::map type of the
-//                                        value -> inf_array side, ordered by
-//                                        ValueLess (value_less.h: complex has
-//                                        no operator<).
+//   PointerMapChunk2<T>                  the map itself (key -> SecondValueInfo).
+//   PointerMapChunk2InfArrayPolicy<T,B>  the value -> inf_array side, as a policy:
+//                                        the <T,false> specialisation is all no-ops.
+//   ValueToInfTupleMapHelper<T>          its std::map type, ordered by ValueLess
+//                                        (value_less.h: complex has no operator<).
 //
-// Two different lookups, on purpose. The key -> value store is a LINEAR scan:
-// PointerMapChunk2 derives from PointerMapLinear over a std::deque (deque, not
-// vector, so growth never invalidates a held entry). Only the value -> inf_array
-// side is an ordered std::map.
+// The key -> value store is a LINEAR scan over a std::deque (PointerMapLinear; see
+// the storage note in PointerMapChunk2). Only the value -> inf_array side is a std::map.
 
 #include <cstdio>      // fprintf / fflush in report_key_not_found
 #include <deque>       // std::deque: share_info storage, no realloc invalidation
@@ -124,14 +112,11 @@ class PointerMapChunk2InfArrayPolicy
      * @brief Drop every entry still pointing at @p self_ptr.
      *
      * @details Called from ArrayChunk2::clear_core so a destroyed array's
-     *          inf_array MEMBER cannot dangle here: otherwise
-     *          compress_chunk_to_compress_potentially() iterates
-     *          get_all_inf_array() and dereferences the stale pointer (ASan:
-     *          stack/heap-use-after-return). Only entries this array currently
-     *          OWNS are removed -- if a later array re-registered the same
-     *          value, that entry points elsewhere and is left intact (its
-     *          content is value-identical anyway). O(n) over the map,
-     *          teardown-only.
+     *          inf_array MEMBER cannot dangle here, where
+     *          compress_chunk_to_compress_potentially() would dereference it via
+     *          get_all_inf_array(). Only entries this array currently OWNS are
+     *          removed: one re-registered by a later array points elsewhere and
+     *          stays. O(n), teardown-only.
      *
      * @param self_ptr Address of the departing array's inf_array member.
      */
@@ -214,40 +199,26 @@ class PointerMapChunk2
 
     using Linear = PointerMapLinear<inf_array_t, std::deque<std::pair<const void*, inf_array_t>>>;
     /// @brief Bring the base's storage into this class's scope.
-    /// @details The storage lives in PointerMapLinear; this `using` puts it back
-    ///          in scope here so the lookups specific to this class stay
-    ///          readable -- without it, a dependent base would force `this->vec`
-    ///          on every one of them.
+    /// @details Avoids `this->vec` everywhere (dependent base).
     using Linear::vec;
 
     /// @brief Policy carrying the fast-block-compression-only inf_array map.
     using InfArrayPolicy = PointerMapChunk2InfArrayPolicy<T, chunk_config::use_fast_block_compression>;
 
-    // The storage (a std::deque, NOT a std::vector) and the traversal operations
-    // live in PointerMapLinear; the container is a template parameter there
-    // precisely to preserve what follows.
-    //
-    // A vector's emplace_back REALLOCATES as it grows, freeing the old buffer
-    // under a reader walking the container in parallel (get_info_second_value,
-    // reached from a deferred compression's write_body on another thread):
-    // reads of freed memory ("Key not found", corrupted vptrs). std::deque's
-    // emplace_back never relocates existing elements and never invalidates
-    // references, so a concurrent reader keeps seeing valid data. (Only
-    // ITERATORS can be invalidated -- the traversals below capture size()
-    // first, then index stable slots.)
+    // The storage must be a std::deque, NOT a std::vector: a vector's emplace_back
+    // reallocates and frees the old buffer under a reader walking it in parallel
+    // (get_info_second_value, from a deferred compression's write_body on another
+    // thread). A deque's emplace_back never relocates elements nor invalidates
+    // references; only iterators are invalidated, so the traversals below capture
+    // size() first, then index stable slots.
     using MapType = ValueToIntMapHelper<T>::type;
 
     static constexpr bool is_bool     = is_bool_like_v<T>; // bool and Bit (bit.h)
     static constexpr bool is_not_bool = !is_bool;
 
-    // Check-build diagnostic: dump the full context at a failed key lookup.
-    // The key is an array's `this`, inserted once at setup (before any parallel
-    // region), so a miss means either (a) a GARBAGE key was passed — the same
-    // corruption that SEGVs in release, now a clean CHUNK_INVARIANT_FAILED — or (b) a
-    // VALID key genuinely vanished — the container itself was raced/corrupted.
-    // Printing the searched key alongside every stored (key, num_tab) lets us
-    // tell (a) from (b) at a glance: is the bad key a near-miss / freed-block
-    // pattern, or a plausible-but-absent array pointer?
+    // Keys are inserted once at setup, before any parallel region, so a miss is
+    // either a GARBAGE key or a VALID key that vanished (container raced). Printing
+    // the searched key beside every stored one tells the two apart.
     /// @brief Check-only: dump the searched @p key and every stored
     ///        (key, num_tab) on stderr before a lookup from @p site fails.
     void report_key_not_found(const void* key, const char* site) const noexcept
@@ -301,13 +272,10 @@ class PointerMapChunk2
     /**
      * @brief Entries get_info_second_value() scans, and the high-water mark.
      *
-     * @details One entry per live array of this element type, so a handful is
-     *          expected and anything more means entries outlive their arrays.
-     *          The distinction matters: perf puts 34% of a 64-thread run in
-     *          get_info_second_value() under libomp (0.37% under libgomp, same
-     *          workload), and a scan of five cannot do that -- so it is either
-     *          a hot path calling it far too often, which caching fixes, or a
-     *          list that grew, which erasing fixes.
+     * @details One entry per live array of this element type: a handful is
+     *          expected, more means entries outlive their arrays. Tells a hot
+     *          caller of get_info_second_value() (fix: caching) from a grown list
+     *          (fix: erasing), since the scan can dominate a profile at high thread counts.
      */
     [[nodiscard]] std::size_t share_info_entries() const noexcept
     {
@@ -437,11 +405,8 @@ class PointerMapChunk2
         {
             if constexpr (build_config::any_check)
             {
-                // Snapshot size() ONCE and index into stable deque slots. With a
-                // deque, emplace_back never relocates existing elements, so a
-                // concurrent append cannot free the slots we read here (a
-                // vector's realloc would free the whole buffer mid-scan). We
-                // still snapshot count so a concurrent append can't move the loop bound.
+                // Snapshot size() ONCE and index stable deque slots (see the storage
+                // note above): a concurrent append cannot move the loop bound.
                 const size_t count = vec.size();
 
                 if (count > (1U << 30U))
@@ -480,13 +445,11 @@ class PointerMapChunk2
         }
         else
         {
-            // bool: second_value is always `true`, but num_tab is PER-ARRAY. We
-            // must look the key up like the non-bool path, otherwise every bool
-            // array (including rechunk_to's fresh tmp) resolves to vec[0] — the
-            // first bool array's num_tab — and its compression-flag write indexes
-            // the wrong array's tab_is_inside_chunk_list_to_compress (heap
-            // overflow during bool re-chunk). Same "first match shadows tmp"
-            // hazard PointerMapLinear::erase() describes for the non-bool path.
+            // bool: second_value is always `true`, but num_tab is PER-ARRAY, so look
+            // the key up. Do not return vec[0]: every bool array (rechunk_to's tmp
+            // included) would get the first one's num_tab and its compression-flag
+            // write would index the wrong array's tab_is_inside_chunk_list_to_compress
+            // (heap overflow). Same hazard as PointerMapLinear::erase().
             const size_t count = vec.size();
             for (size_t i = 0; i < count; ++i)
             {
@@ -500,7 +463,7 @@ class PointerMapChunk2
     }
 
     // erase(), swap_entries(), exists(), size() and for_each_key() come from
-    // PointerMapLinear: they were the same traversals as in PointerMapChunk.
+    // PointerMapLinear (shared with PointerMapChunk).
 };
 
 } // namespace shrink_array

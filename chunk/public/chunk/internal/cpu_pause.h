@@ -18,12 +18,10 @@
 
 #include <thread> // std::this_thread::yield (the ARM and fallback CHUNK_CPU_PAUSE)
 
-// CHUNK_CPU_PAUSE(): the spin-wait hint of the library's wait loops (rank flush
-// locks, start()'s writer wait, the flush drains), which yield to the OS only
-// after 1000 of them. The std::this_thread::yield() fallback is a
-// sched_yield() SYSCALL per spin -- it cost 1-7% of the perf bench at 8
-// threads on x86 when gcc / clang builds fell back to it (MSVC's _M_IX86 /
-// _M_X64 tested instead of __x86_64__ / __i386__).
+// CHUNK_CPU_PAUSE(): the spin-wait hint of the library's wait loops, which yield to the OS
+// only after 1000 of them. The std::this_thread::yield() fallback is a sched_yield() SYSCALL
+// per spin, a measurable cost: gcc / clang on x86 must test __x86_64__ / __i386__ (not only
+// MSVC's _M_IX86 / _M_X64) to get the pause instruction.
 #ifdef __ARM_ARCH
     #if defined(__GNUC__) || defined(__clang__)
         #define CHUNK_CPU_PAUSE() asm volatile("yield" ::: "memory")

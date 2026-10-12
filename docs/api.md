@@ -106,6 +106,11 @@ otherwise, and in serial builds.
 | `finalize_parallel_phase()` | after the region, once |
 | `finalize_parallel_phase_only_flush()` + `finalize_parallel_phase_after_flush()` | the same, split: the first inside the region (it emits a barrier), the second after it |
 | `finalize_barrier_phase()` | inside a region, after an explicit `omp barrier`: makes the writes before it visible after it |
+| `parallel_phase([n,] body)` | instead of the first two: a parallel region (`n` threads, or the runtime's) running `body` on every thread, with `begin_parallel_phase()` before it and `finalize_parallel_phase()` after the region; the worksharing (`omp for`) goes in `body` |
+
+A `begin_parallel_phase()` with no `finalize_parallel_phase()` since the previous region stops
+the program, in every build. Check builds (Debug, `CHECK_OPTIM`) also stop on a deferred write
+in a region by a thread that did not call `begin_parallel_phase()`.
 
 ## 7. Adaptive chunk size (`_dyn` libraries)
 

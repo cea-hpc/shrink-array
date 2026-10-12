@@ -40,8 +40,15 @@
  * chunk_config::is_shrink_enabled`, so they can be called unconditionally from
  * serial or vector-mode builds.
  *
+ * parallel_phase() (at the end) places begin_parallel_phase() and
+ * finalize_parallel_phase() itself: nothing left to forget.
+ *
  * @see all_type_chunk.cpp for the definitions.
  */
+
+#include <utility> // std::forward
+
+#include "chunk/config.h" // build_config::has_not_ompt
 
 namespace shrink_array
 {
@@ -60,25 +67,22 @@ extern void begin_parallel_phase();
 /**
  * @brief End of a parallel phase, called from **outside** the parallel region.
  *
- * Flushes the deferred write queues of all threads (parallel flush, no
- * enclosing barrier needed since the region is already joined), resets the
- * deferred-op pools, then drains the deferred-compression backlog. That drain
- * is skipped in aggressive mode (`chunk_config::have_aggressive_compression`),
- * where compression is left entirely to the opportunistic in-loop path.
+ * Flushes every thread's deferred write queue, resets the deferred-op pools,
+ * then drains the deferred-compression backlog (skipped in aggressive mode,
+ * `chunk_config::have_aggressive_compression`, which compresses in-loop only).
  *
- * This is the "all-in-one" variant; use the
- * finalize_parallel_phase_only_flush() / finalize_parallel_phase_after_flush()
- * pair instead when the flush must happen while the region is still open.
+ * All-in-one; use finalize_parallel_phase_only_flush() /
+ * finalize_parallel_phase_after_flush() when the flush must happen while the
+ * region is still open.
  */
 extern void finalize_parallel_phase();
 
 /**
  * @brief First half of the split phase-end, called from **inside** the parallel region.
  *
- * Emits an `omp barrier` — the surrounding `omp for` loops are typically
- * `nowait`, so this is what guarantees every thread has finished enqueueing —
- * then each thread drains its **own** deferred queue, using the rank that is
- * only stable while the region is open.
+ * Emits an `omp barrier` (the `omp for` loops are typically `nowait`: this
+ * guarantees every thread has finished enqueueing), then each thread drains its
+ * **own** queue, by the rank that is only stable while the region is open.
  *
  * Must be paired with finalize_parallel_phase_after_flush(), called once the
  * region is closed.
@@ -101,10 +105,9 @@ extern void finalize_parallel_phase_after_flush();
 /**
  * @brief Phase transition on a plain barrier, called from **inside** the parallel region.
  *
- * Lighter than finalize_parallel_phase(): it only flushes the deferred write
- * queues (per-thread, using the in-region rank) so that the values written
- * before the barrier are visible after it. No pool reset, no compression
- * drain — the region is not over.
+ * Only flushes the deferred write queues (per thread, in-region rank) so values
+ * written before the barrier are visible after it. No pool reset, no
+ * compression drain.
  *
  * @note The barrier itself is the caller's responsibility (the OMPT path gets
  *       it from the runtime's sync-region callback, the manual path emits an
@@ -118,21 +121,76 @@ extern bool finalize_barrier_phase();
  * @brief Once per process: warn if this build relies on the OMPT tool and the
  *        OpenMP runtime did not load it.
  *
- * In an OMPT build (CHUNK_OPT_OMPT) the phase boundaries (deferred-write flush, compression
- * between parallel regions) are run by the OMPT callbacks only. If the runtime
- * did not load the tool -- OMP_TOOL=disabled, another tool found first through
- * OMP_TOOL_LIBRARIES, ompt_start_tool not found in the executable -- they never
- * happen, and nothing else says so. This forces the runtime's initialisation
- * (the tool is loaded during it), then prints one line to stderr if the tool
- * is not active; with CHUNK_REQUIRE_OMPT=1 in the environment it aborts.
+ * In an OMPT build (CHUNK_OPT_OMPT) the phase boundaries run from the OMPT
+ * callbacks only; if the runtime did not load the tool (OMP_TOOL=disabled,
+ * another tool first in OMP_TOOL_LIBRARIES, ompt_start_tool not found) they
+ * silently never happen. This forces the runtime's initialisation, then prints
+ * one line to stderr if the tool is not active (aborts with CHUNK_REQUIRE_OMPT=1).
  *
- * Called by the AllTypeChunk constructor (first array, or init_indexes). A
- * no-op in every build without the OMPT tool.
+ * Called by the AllTypeChunk constructor. A no-op without the OMPT tool.
  *
  * Weak: a library built NO_OMPT_TOOL (the program ships its own tool, e.g.
- * examples/multi-mat/manage_ompt.cpp) has no definition, and the constructor
- * then skips the call -- nothing more for such a program to define.
+ * examples/multi-mat/manage_ompt.cpp) has no definition, and the call is skipped.
  */
 __attribute__((weak)) extern void check_ompt_tool_loaded();
+
+/**
+ * @brief A parallel region with the phase protocol already in place:
+ *        begin_parallel_phase() by every thread before @p body,
+ *        finalize_parallel_phase() once the region is over.
+ * @details The same as
+ *          @code
+ *          #pragma omp parallel num_threads(num_threads)
+ *          {
+ *              begin_parallel_phase();
+ *              body();
+ *          }
+ *          finalize_parallel_phase();
+ *          @endcode
+ *          with both calls left out under OMPT, where the runtime makes them.
+ *          The worksharing goes inside @p body, orphaned: `#pragma omp for`
+ *          with its schedule, `nowait`, a reduction on a variable declared
+ *          outside... Compiled without OpenMP, @p body runs once.
+ * @param num_threads team size (the num_threads clause); 0: the runtime's.
+ * @param body        what every thread of the team runs.
+ */
+template <typename Body>
+void parallel_phase(int num_threads, Body&& body)
+{
+    auto team_body = [&body]
+    {
+        if constexpr (build_config::has_not_ompt)
+        {
+            begin_parallel_phase();
+        }
+        body();
+    };
+#ifdef _OPENMP
+    if (num_threads > 0)
+    {
+    #pragma omp parallel num_threads(num_threads)
+        team_body();
+    }
+    else
+    {
+    #pragma omp parallel
+        team_body();
+    }
+#else
+    (void)num_threads;
+    team_body();
+#endif
+    if constexpr (build_config::has_not_ompt)
+    {
+        finalize_parallel_phase();
+    }
+}
+
+/// @brief parallel_phase() with the runtime's team size.
+template <typename Body>
+void parallel_phase(Body&& body)
+{
+    parallel_phase(0, std::forward<Body>(body));
+}
 
 } // namespace shrink_array

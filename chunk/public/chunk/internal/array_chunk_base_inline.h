@@ -41,17 +41,9 @@ void ArrayChunkBase<Derived>::create_common(this Derived& self)
 
     self.pre_create_hook();
 
-    // resize_tab_is_int(nb_tab) must be called in ALL modes, not only when
-    // use_fast_block_compression is on:
-    //   - Proxy<T> / Proxy2<T> : real implementation in OpenMP mode, no-op
-    //                            stub in non-OpenMP mode — safe to call.
-    //   - Proxy2A<T>           : real implementation in BOTH modes. Proxy2A
-    //                            needs its tab_* containers (tab_second_value,
-    //                            tab_type_cst_val, ...) populated even without
-    //                            OpenMP — there is no counter-mode fallback.
-    // Gating this on use_fast_block_compression (false in non-OMP builds)
-    // left Proxy2A's tab_second_value empty, so a later tab_second_value[0]
-    // aborted with "__n < this->size()" at ArrayChunk2A creation.
+    // In ALL modes, do not gate on use_fast_block_compression: Proxy2A needs
+    // its tab_* containers (tab_second_value, ...) even without OpenMP; for
+    // Proxy / Proxy2 it is a no-op stub outside OpenMP.
     proxy_type::resize_tab_is_int(self.nb_tab);
 }
 
@@ -91,9 +83,8 @@ void ArrayChunkBase<Derived>::set_chunk_size([[maybe_unused]] unsigned int new_c
     size_policy_.set_size(new_chunk_size); // no-op under StaticChunkSize
     if constexpr (build_config::chunk_dynamic)
     {
-        // Multi-size support: make sure the value allocators for size new_chunk_size exist
-        // (sequential, idempotent), and record new_chunk_size as this thread's active
-        // size so later allocations on this thread route to the right pool.
+        // Ensure the allocators for this size exist (sequential, idempotent) and
+        // make it this thread's active size, so its allocations route there.
         register_runtime_chunk_size(new_chunk_size);
         set_thread_chunk_size(new_chunk_size);
     }
@@ -106,9 +97,8 @@ int ArrayChunkBase<Derived>::get_nb_chunk_written(this const Derived& self)
     const int  nb_chunk   = self.nb_chunk;
     const auto lbd        = [&](int j) { return static_cast<int>(self.is_written_at(j)); };
 
-    // Inside a region: the calling thread counts them all. An orphaned
-    // `omp for` summed 1/N of the chunks into a per-thread total (no
-    // reduction): every caller got a partial count.
+    // Inside a region: the calling thread counts them all (an orphaned
+    // `omp for` would give each caller a partial count).
     if (CHUNK_PMP_IN_PARALLEL_REGION)
     {
         for (int j = 0; j < nb_chunk; ++j)
@@ -178,9 +168,7 @@ void ArrayChunkBase<Derived>::reserve(this Derived& self, ind_type new_capacity)
     {
         return;
     }
-    // resize() builds the storage of new_capacity elements and sets the size to it; the
-    // size is what reserve() leaves alone. resize() to new_capacity allocates
-    // new_capacity / chunk_size + 1 chunks, so the capacity covers it afterwards.
+    // resize() builds the storage; reserve() then restores the size.
     const ind_type keep = self.m_size;
     self.resize(new_capacity);
     self.m_size = keep;

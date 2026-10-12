@@ -58,19 +58,13 @@ namespace shrink_array
 {
 /**
  * @brief How many thread ranks the per-thread structures are sized for.
- * @details Every per-rank structure of the library -- the chunk allocators,
- *          the compression-candidate lists, the deferred-op maps, the writer
- *          and flush flags -- is indexed by the OpenMP thread rank and sized
- *          ONCE, when it is first built -- so sizing by
- *          omp_get_max_threads() at that moment would let an
- *          omp_set_num_threads() raising the team later index past the end,
- *          silently. The capacity is fixed at the first call:
- *          max(omp_get_max_threads(), omp_get_num_procs()), raised by
- *          CHUNK_THREAD_CAPACITY if set. A rank at or past it stops the program
- *          with an invariant failure (chunk_pmp_checked_rank) instead of an
- *          out-of-bounds access. OpenMP gives no real upper bound
- *          (omp_get_thread_limit() is usually INT_MAX), hence the cores as the
- *          default ceiling and the variable for oversubscription.
+ * @details Every per-rank structure (allocators, candidate lists, deferred-op maps,
+ *          writer and flush flags) is sized ONCE when first built; sizing by
+ *          omp_get_max_threads() would let a later omp_set_num_threads() index past
+ *          the end, silently. Fixed at the first call: max(omp_get_max_threads(),
+ *          omp_get_num_procs()), raised by CHUNK_THREAD_CAPACITY. A rank at or past it
+ *          is an invariant failure (chunk_pmp_checked_rank). OpenMP gives no real upper
+ *          bound (omp_get_thread_limit() is usually INT_MAX), hence the cores as default.
  */
 [[nodiscard]] inline int chunk_thread_capacity() noexcept
 {
@@ -118,15 +112,11 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
 /**
  * @brief The rank the library indexes its per-thread structures with: the
  *        thread's rank in the one ACTIVE team.
- * @details omp_get_thread_num() is the rank in the INNERMOST team. Outside any
- *          nesting that is the same thing. In a nested region that is
- *          serialised (a team of one: the default, max-active-levels 1) it is
- *          0 for every thread, so thread k of the outer team would share rank
- *          0's candidate list and deferred-op queue with the real rank 0 --
- *          unprotected, those are per-rank by design. The active team's rank
- *          is found with omp_get_ancestor_thread_num. Two ACTIVE levels (inner
- *          teams of several threads) are not supported: ranks of different
- *          inner teams collide, so it is an invariant failure.
+ * @details omp_get_thread_num() is the rank in the INNERMOST team: in a serialised
+ *          nested region it is 0 for every thread, which would make outer threads share
+ *          rank 0's (unprotected, per-rank) structures. So the active team's rank comes
+ *          from omp_get_ancestor_thread_num. Two ACTIVE levels are not supported (ranks of
+ *          different inner teams collide): invariant failure.
  */
 [[nodiscard]] inline int chunk_pmp_library_rank() noexcept
 {
@@ -156,11 +146,9 @@ inline int chunk_pmp_checked_rank(int rank) noexcept
 /**
  * @brief Upper bound of a loop over thread ranks that looks for work
  *        (candidate lists, deferred ops, writer flags).
- * @details omp_get_max_threads(), as these loops always used, but never below
- *          one past the highest rank seen (a team that shrank still has state
- *          in its upper ranks) and never above the capacity the structures
- *          were sized for. Without a team change it is exactly the former
- *          bound. Loops that SET an entry for every rank use the capacity.
+ * @details omp_get_max_threads(), but never below one past the highest rank seen
+ *          (a team that shrank still has state in its upper ranks) and never above
+ *          the capacity. Loops that SET an entry for every rank use the capacity.
  */
 [[nodiscard]] inline int chunk_rank_bound() noexcept
 {
@@ -221,9 +209,8 @@ inline int get_thr_rank_fast() noexcept
     }
     if constexpr (build_config::any_check)
     {
-        // A stale cache (a rank left over from another region) is exactly
-        // what the per-rank queues cannot survive: fail in release check
-        // builds too, where an assert is compiled out.
+        // A stale cache (a rank left over from another region) breaks the per-rank
+        // queues: fail in release check builds too.
         if (rank != ::shrink_array::chunk_pmp_library_rank()) [[unlikely]]
         {
             CHUNK_INVARIANT_FAILED("stale thread-rank cache: {} but this thread is rank {} of the active team", rank,
@@ -263,15 +250,19 @@ inline int chunk_pmp_thread_rank() noexcept
     #endif
 
     /// Size of the team CURRENTLY running, as opposed to the maximum available.
-    /// Needed by code that strides over buckets by thread rank inside a parallel
-    /// region; calling omp_get_num_threads() directly breaks the serial build,
-    /// which is what this header exists to prevent.
+    /// Use it rather than omp_get_num_threads(), which breaks the serial build.
     #ifndef CHUNK_PMP_NUM_THREADS
         #define CHUNK_PMP_NUM_THREADS omp_get_num_threads()
     #endif
 
     #ifndef CHUNK_PMP_IN_PARALLEL_REGION
         #define CHUNK_PMP_IN_PARALLEL_REGION omp_in_parallel()
+    #endif
+
+    /// Nesting level of the calling thread (omp_get_level): 0 outside any
+    /// region, 1 in a region, 2 in a region nested in it (serialised or not).
+    #ifndef CHUNK_PMP_LEVEL
+        #define CHUNK_PMP_LEVEL omp_get_level()
     #endif
 
 #else
@@ -326,6 +317,11 @@ inline int get_thr_rank_fast() noexcept
 
     #ifndef CHUNK_PMP_IN_PARALLEL_REGION
         #define CHUNK_PMP_IN_PARALLEL_REGION false
+    #endif
+
+    /// @copydoc CHUNK_PMP_LEVEL
+    #ifndef CHUNK_PMP_LEVEL
+        #define CHUNK_PMP_LEVEL 0
     #endif
 
 #endif

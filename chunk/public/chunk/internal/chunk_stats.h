@@ -22,7 +22,7 @@
  *        by default: every increment/query below compiles to nothing, so
  *        there is no cost in a normal build.
  *
- * Design (see the redesign notes):
+ * Design:
  *   - PER VARIANT: counters are kept separately for chunk / chunk2 / chunk2a
  *     (indexed by \<ChunkType\>\::stat_variant == 0 / 1 / 2), so the
  *     end-of-run report shows one block per variant.
@@ -31,9 +31,7 @@
  *     sharing (each slot is cache-line aligned). A reduction over threads is
  *     done once, at display time.
  *   - Increments are TEMPLATED on the chunk type: increm_chunk_read<C>()
- *     routes to __chunk_stats[C::stat_variant][rank]. Every call site
- *     already has the chunk type to hand (Derived / ChunkType), so this is
- *     a drop-in.
+ *     routes to __chunk_stats[C::stat_variant][rank].
  */
 
 // All of these serve the CHUNK_STATS half of the file only.
@@ -101,11 +99,10 @@ struct alignas(64) ChunkStatsThr
     long rechunk                  = 0; ///< rechunk_to() operations (geometry changes)
     long rechunk_rebuilt          = 0; ///< new chunks actually rebuilt by those rechunks
     long rechunk_skipped          = 0; ///< new chunks left compressed (nothing to rebuild)
-    /// Write/compress handshake, the rare side: how often the code that pays
-    /// the heavy barrier of an asymmetric Dekker would run. Each gate_start,
-    /// gate_flush and gate_driver is ONE membarrier() in that design, so their
-    /// rate against the run's wall time is what decides whether the design
-    /// pays. Counted in every build mode; the asymmetric protocol is not there yet.
+    /// Write/compress handshake, the rare side: how often the code that would pay
+    /// the heavy barrier of an asymmetric Dekker runs. Each gate_start, gate_flush
+    /// and gate_driver would be ONE membarrier(), so their rate against the wall
+    /// time decides whether that design pays (it is not implemented).
     long gate_start             = 0; ///< CompressionManager::start() entered
     long gate_start_flush_yield = 0; ///< ... of which yielded to a flush (either check)
     long gate_start_yield_late =
@@ -132,11 +129,10 @@ extern std::array<std::array<ChunkStatsThr, CHUNK_STATS_MAX_THR>, CHUNK_STATS_N_
  * @return Reference to this thread's slot. Bounds-guarded: a rank past the
  *         table falls back to slot 0 rather than corrupting memory.
  *
- * The rank is the cached one (get_thr_rank_fast), as on the write path: an
- * increment runs on every read and write, and the raw CHUNK_PMP_THREAD_RANK
- * is an omp_get_thread_num() call through the PLT plus a __tls_get_addr in
- * libomp -- 10% of a stats-build profile at 8 threads, charged to whatever
- * the counters were meant to measure.
+ * Use the cached rank (get_thr_rank_fast), as on the write path, not the raw
+ * CHUNK_PMP_THREAD_RANK (an omp_get_thread_num() call through the PLT plus a
+ * TLS lookup): an increment runs on every read and write, and the raw call
+ * costs a noticeable share of a stats build, skewing what is measured.
  */
 inline ChunkStatsThr& __chunk_stats_slot(int variant) noexcept
 {
@@ -429,13 +425,9 @@ inline void init_all_stats() noexcept
 /**
  * @brief Dyn-only, end-of-life state: how many arrays are currently at each
  *        chunk size, per variant ([chunk size] -> [array count]).
- * @details Unlike the event counters above (per-thread, lock-free), this is
- *          read/written only when an array is destroyed (rare: at most a
- *          handful of times per run for this bench), so a mutex-protected
- *          map is fine -- no hot-path contention. Static builds
- *          (chunk_dynamic == false) never touch this: every array has the
- *          same, fixed, compile-time size, so a distribution has nothing to
- *          say.
+ * @details Written only when an array is destroyed (rare), so a mutex-protected
+ *          map is fine. Static builds (chunk_dynamic == false) never touch it:
+ *          every array has the same compile-time size.
  */
 inline std::array<std::mutex, CHUNK_STATS_N_VARIANT> __chunk_size_dist_mutex;
 /// @brief See __chunk_size_dist_mutex.
@@ -509,13 +501,11 @@ inline ChunkStatsThr reduce_chunk_stats(int variant) noexcept
     return acc;
 }
 
-// record_chunk_size_at_exit() and reduce_chunk_stats() have no no-op mirror
-// below on purpose, not by omission: every call to the former is already
-// wrapped in `if constexpr (chunk_config::stats)` at its 3 call sites (see
-// array_chunk*_inline.h), so it is simply never instantiated when stats are
-// off; and the latter returns ChunkStatsThr by value, a type that itself
-// only exists in this #ifdef branch, so its only caller (param_chunk.cpp) is
-// necessarily already gated behind its own `#if CHUNK_OPT_STATS`.
+// record_chunk_size_at_exit() and reduce_chunk_stats() have no no-op mirror on
+// purpose: every call to the former is wrapped in `if constexpr
+// (chunk_config::stats)` (array_chunk*_inline.h), and the latter returns
+// ChunkStatsThr, which exists only in this branch, so its caller
+// (param_chunk.cpp) is gated behind `#if CHUNK_OPT_STATS` anyway.
 
 #else // !CHUNK_STATS
 
