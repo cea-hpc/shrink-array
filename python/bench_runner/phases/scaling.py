@@ -37,8 +37,9 @@ def run_scaling_phase(args, extra_ldpath, errors):
     seven knobs for a guard that either says "still scales" or names the point
     where it stopped would be seven ways to make its verdict unreadable.
     --skip-scaling turns it off, and it runs in EVERY mode -- most of all in
-    --mode fast, which cuts the perf sweep down to 64/128 and would otherwise
-    see no scalability regression at all.
+    --mode fast, whose perf sweep is the 64-thread point alone. The mode sets
+    its configs, threads and sizes (MODE_PRESETS "scaling"): fast keeps a short
+    curve (llvm, dyn, 16/64/128 threads).
 
     Why these two configs: LLVM is the fastest of the matrix, hence the one
     whose curves are worth believing; GNU is the one without OMPT, whose
@@ -61,8 +62,9 @@ def run_scaling_phase(args, extra_ldpath, errors):
     # Oversubscription measures the scheduler, not the library: drop the
     # points the machine cannot run one thread per CPU.
     ncpu = args.max_threads
-    threads = [t for t in SCALING_THREADS if t <= ncpu]
-    dropped = [t for t in SCALING_THREADS if t > ncpu]
+    wanted  = getattr(args, "scaling_threads", None) or SCALING_THREADS
+    threads = [t for t in wanted if t <= ncpu]
+    dropped = [t for t in wanted if t > ncpu]
     if dropped:
         print(dim(f"   {ncpu} CPUs: thread count(s) {dropped} dropped (would oversubscribe)"))
     if len(threads) < 2:
@@ -76,14 +78,17 @@ def run_scaling_phase(args, extra_ldpath, errors):
                   "--divisor", str(SCALING_FALLBACK_DIVISOR),
                   "--iter_max", str(SCALING_FALLBACK_ITER_MAX)]
 
-    # vector first: the reference every other curve is read against.
-    scaling_vars = [SCALING_REFERENCE_VARIANT] + [v for v in args.variants
-                                                  if v != SCALING_REFERENCE_VARIANT]
+    # vector first: the reference every other curve is read against. The
+    # mode may keep only some sizes (args.scaling_sizes, None = all).
+    sizes = getattr(args, "scaling_sizes", None)
+    scaling_vars = [SCALING_REFERENCE_VARIANT] + [
+        v for v in args.variants
+        if v != SCALING_REFERENCE_VARIANT and (sizes is None or v.rsplit("@", 1)[-1] in sizes)]
 
     n_pass = n_total = 0
     n_curves = 0
     failed_vars = []
-    for config in SCALING_CONFIGS:
+    for config in getattr(args, "scaling_configs", None) or SCALING_CONFIGS:
         label = short_config_label(config)
         if config not in args.configs:
             print(dim(f"   ({label} not in --configs -- skipped)"))

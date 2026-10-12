@@ -226,46 +226,71 @@ INT64_CHECK_VARIANTS = ["chunk@1024", "chunk2@1024", "chunk2a@dyn"]
 # runs in every mode, on its own thread list, because a mode that trims the
 # perf sweep is exactly the one that would otherwise miss a scaling
 # regression. --skip-scaling is the way out.
-#   fast   : compromise — 64/128 only, few reps on 64, no PERF on the serial
-#            configs. About 1h30 on the full aarch64 matrix (1129 runs over 8
-#            configs), not ten minutes.
-#   normal : the standard defaults above.
-#   full   : the complete thread distribution with many reps on 64 and 128.
+#   fast   : about 1 h on the full aarch64 matrix. Is anything broken? The
+#            release builds (gnu, llvm, oneAPI/AOCC on x86) at 64 threads, 2
+#            runs each; 4 check runs per variant; no sanitizers; a short
+#            scalability guard (llvm, dyn, 16/64/128 threads).
+#   normal : about 6 h. The matrix: 16/64/128/288 threads, 3 runs at 64,
+#            16 check runs, the sanitizers, the guard on gnu and llvm from 16
+#            threads.
+#   full   : about 24 h. Every thread count, 10 runs at 64 and 128, 32 check
+#            runs, the guard from 4 threads.
+# The durations are targets, set from the run counts; the per-phase times of
+# the summary (Summary tab of shrink_gui, events.jsonl) are what to adjust them
+# with.
+#
+# Keys besides the perf/check ones (an option given on the command line wins):
+#   skip           phases the mode leaves out ("sanitizers")
+#   perf_drop      config name markers whose PERF phase the mode drops (kept
+#                  in CHECK), on top of PERF_EXCLUDED_CONFIGS
+#   scaling        the scalability guard: configs, threads, sizes (None = all)
+#   seq_omp        the seq-vs-omp compare: threads, sizes
 MODE_PRESETS = {
     "fast": {
-        # 64 and 128 only. The 16-thread point was the most expensive run of the
-        # sweep -- on aarch64, chunk2a@dyn took 100.3 s at 16 threads against a
-        # 70.3 s average at 64 -- for the one end of the curve this mode is least
-        # asked about. --mode normal/full still sweeps it.
-        "threads":           [64, 128],
-        # 3 reps instead of 10: on this workload the run-to-run spread at 64
-        # threads is well under the differences the mode is meant to surface,
-        # and the repetitions at 64 were the single biggest item left in the
-        # perf phase (about 26 min of the 42 min gnu block at 5 reps). Use
-        # --mode normal/full for numbers you intend to publish.
-        "reps_perf":         3,
+        # One point, the reference: the curve is normal's and full's job, and
+        # the 16-thread point was the most expensive run of the sweep (on
+        # aarch64, chunk2a@dyn 100.3 s at 16 threads against 70.3 s at 64).
+        "threads":           [64],
+        # 2 runs: enough to see a run that crashed or doubled, not to publish.
+        "reps_perf":         2,
         "full_reps_threads": [64],
-        "reps_check":        16,
+        "reps_check":        4,
         # Variants run as a single smoke test (one thread count, one run) just
         # to confirm they are not broken — they don't need the full sweep.
         "light_variants":    ["std_alloc"],
         "light_threads":     64,
+        "skip":              ["sanitizers"],
+        # The allocator moves the numbers (see reduce_matrix), but timing it
+        # is a normal-mode question; fast still checks the std-alloc builds.
+        "perf_drop":         ["-std-alloc"],
+        "scaling": {"configs": ["cmake-build-omp-llvm"], "threads": [16, 64, 128], "sizes": ["dyn"]},
+        "seq_omp": {"threads": [8, 64], "sizes": ["dyn"]},
     },
     "normal": {
-        "threads":           DEFAULT_THREADS_PERF,
-        "reps_perf":         DEFAULT_REPS_PERF,
+        "threads":           [16, 64, 128, 288],
+        "reps_perf":         3,
         "full_reps_threads": DEFAULT_FULL_REPS_THREADS,
-        "reps_check":        DEFAULT_REPS_CHECK,
+        "reps_check":        16,
         "light_variants":    [],
         "light_threads":     64,
+        "skip":              [],
+        "perf_drop":         [],
+        # From 16 threads: the low points of int64 --multiply 2 are the
+        # longest runs of the guard (minutes each); full keeps them.
+        "scaling": {"configs": SCALING_CONFIGS, "threads": [16, 32, 64, 128], "sizes": None},
+        "seq_omp": {"threads": DEFAULT_SEQ_OMP_THREADS, "sizes": DEFAULT_SEQ_OMP_SIZES},
     },
     "full": {
         "threads":           [1, 2, 4, 8, 16, 32, 64, 128, 192, 288],
-        "reps_perf":         100,
+        "reps_perf":         10,
         "full_reps_threads": [64, 128],
-        "reps_check":        128,
+        "reps_check":        32,
         "light_variants":    [],
         "light_threads":     64,
+        "skip":              [],
+        "perf_drop":         [],
+        "scaling": {"configs": SCALING_CONFIGS, "threads": SCALING_THREADS, "sizes": None},
+        "seq_omp": {"threads": DEFAULT_SEQ_OMP_THREADS, "sizes": DEFAULT_SEQ_OMP_SIZES},
     },
 }
 

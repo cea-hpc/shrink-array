@@ -81,11 +81,12 @@ def build_parser():
                         help="FAIL if a chunk variant's peak memory exceeds the baseline "
                              "variant's by more than this ratio (default: off).")
     parser.add_argument("--mode", choices=list(MODE_PRESETS.keys()), default="normal",
-                        help="Preset controlling thread distribution AND repetitions: "
-                             "'fast' (~1h30 on the full matrix), 'normal' (standard), "
-                             "'full' (complete sweep, many reps). Any of --threads, "
-                             "--reps_perf, --reps_check, --full-reps-threads passed "
-                             "explicitly overrides the preset.")
+                        help="Preset for every phase: perf threads and repetitions, "
+                             "check repetitions, sanitizers, scalability guard, seq-vs-omp "
+                             "compare. Targets on the full aarch64 matrix: 'fast' ~1 h "
+                             "(is anything broken?), 'normal' ~6 h, 'full' ~24 h. An option "
+                             "given explicitly (--threads, --reps_perf, --reps_check, "
+                             "--full-reps-threads, --seq-omp-*) overrides the preset.")
     parser.add_argument("--threads", nargs="+", type=int, default=None,
                         help="OMP_NUM_THREADS values for the perf loop. "
                              "Overrides the --mode preset.")
@@ -187,10 +188,10 @@ def build_parser():
                         help="OMP thread counts for the seq-vs-omp compare "
                              f"phase (default: {DEFAULT_SEQ_OMP_THREADS}, fitted "
                              "to the machine).")
-    parser.add_argument("--seq-omp-sizes", nargs="+",
-                        default=list(DEFAULT_SEQ_OMP_SIZES),
+    parser.add_argument("--seq-omp-sizes", nargs="+", default=None,
                         help="Chunk size declinations for the seq-vs-omp "
-                             "compare phase.")
+                             f"compare phase (default: the --mode preset's; "
+                             f"normal and full: {DEFAULT_SEQ_OMP_SIZES}).")
     parser.add_argument("--seq-omp-variants", nargs="+",
                         default=list(DEFAULT_SEQ_OMP_VARIANTS),
                         help="Chunk-family variant bases for the seq-vs-omp "

@@ -58,7 +58,17 @@ def resolve_run_parameters(args):
     if args.check_threads is None:
         args.check_threads = min(DEFAULT_THREADS_CHECK, cap)
     if args.seq_omp_threads is None:
-        args.seq_omp_threads = fit_threads(DEFAULT_SEQ_OMP_THREADS, cap, machine_points)
+        args.seq_omp_threads = fit_threads(preset["seq_omp"]["threads"], cap, machine_points)
+    if args.seq_omp_sizes is None:
+        args.seq_omp_sizes = list(preset["seq_omp"]["sizes"])
+    # The phases the mode leaves out (an explicit --skip-* stays as given).
+    if "sanitizers" in preset["skip"] and not args.skip_sanitizers:
+        args.skip_sanitizers = True
+        print(dim(f"   {args.mode}: no sanitizer phase (--mode normal or full runs it)"))
+    # The scalability guard of the mode (see run_scaling_phase).
+    args.scaling_configs = list(preset["scaling"]["configs"])
+    args.scaling_threads = list(preset["scaling"]["threads"])
+    args.scaling_sizes   = preset["scaling"]["sizes"]
     args.fuzz_threads      = fit_threads(FUZZ_THREADS, cap, machine_points)
     args.sanitizer_threads = min(SANITIZER_THREADS, cap)
     over = sorted({t for t in [*args.threads, args.check_threads, *args.seq_omp_threads] if t > cap})
@@ -136,6 +146,14 @@ def reduce_matrix(args):
             print(dim(f"   fast: skipping the PERF phase of the serial configs "
                       f"({', '.join(short_config_label(c) for c in _serial)}) "
                       f"— kept in CHECK and validation"))
+    # 3. The configs the preset leaves out of the timing (perf_drop markers).
+    _drop = [c for c in args.configs
+             if any(m in c for m in MODE_PRESETS[args.mode].get("perf_drop", []))
+             and c not in perf_excluded]
+    if _drop:
+        perf_excluded |= set(_drop)
+        print(dim(f"   {args.mode}: skipping the PERF phase of "
+                  f"{', '.join(short_config_label(c) for c in _drop)} — kept in CHECK"))
     return perf_excluded
 
 
