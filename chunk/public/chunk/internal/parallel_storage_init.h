@@ -40,7 +40,9 @@
  *          thread of a team would get 1/N of its chunks initialised, and one
  *          built under `omp single` would block on a barrier. use_own_team() is
  *          the library's only threshold rule; chunk_array_new::init_chunks
- *          wraps for_each_chunk(). Do not pass local literals instead.
+ *          wraps for_each_chunk(), and for_each_chunk_in() is its form with a
+ *          per-thread state (the release of a shrinking resize). Do not pass
+ *          local literals instead.
  */
 
 #include <cstddef>     // std::size_t
@@ -151,6 +153,48 @@ void for_each_chunk(int n, Init&& init)
     for (int i = 0; i < n; ++i)
     {
         init(i);
+    }
+}
+
+/**
+ * @brief Run @p body(j, ctx) for every chunk index j in [@p first, @p last), with
+ *        ctx = @p make_ctx() taken once per thread: on a team of its own when
+ *        use_own_team(last - first), on the calling thread otherwise.
+ * @details For the loops whose threads each need their own state -- the
+ *          release of a shrink parks every buffer into the reuse list of the
+ *          rank that releases it, as clear_core()'s team does.
+ * @param first    first chunk index
+ * @param last     one past the last chunk index
+ * @param make_ctx callable `Ctx&()` (or returning a value), called once per thread
+ * @param body     callable `void(int, Ctx&)`; iterations must be independent
+ */
+template <typename MakeCtx, typename Body>
+void for_each_chunk_in(int first, int last, MakeCtx&& make_ctx, Body&& body)
+{
+    if (first >= last)
+    {
+        return;
+    }
+    if constexpr (build_config::use_openmp)
+    {
+        if (use_own_team(static_cast<long>(last) - first))
+        {
+#pragma omp parallel
+            {
+                decltype(auto) ctx = make_ctx();
+#pragma omp for schedule(static)
+                for (int j = first; j < last; ++j)
+                {
+                    body(j, ctx);
+                }
+            }
+            return;
+        }
+    }
+    decltype(auto) ctx = make_ctx();
+    for (int j = first; j < last; ++j)
+    {
+        body(j, ctx);
     }
 }
 

@@ -395,27 +395,34 @@ void ArrayChunk<T, ind_type>::release_chunk_range(int first, int last)
 
     if constexpr (build_config::use_openmp)
     {
-        const int          thr_rank = CHUNK_PMP_THREAD_RANK;
-        const unsigned int my_sz    = this->size_policy_.size();
-        auto&              lbf      = Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(thr_rank, my_sz);
-        for (int j = first; j < last; ++j)
-        {
-            if (chunk_list[j].written())
+        // A large shrink takes a team of its own, as clear_core()'s release
+        // does: each thread zeroes and parks into ITS rank's reuse list of this
+        // array's geometry. Inside a region, or for a few chunks, the calling
+        // thread.
+        const unsigned int my_sz = this->size_policy_.size();
+        parallel_storage_init::for_each_chunk_in(
+            first, last,
+            [my_sz]() -> auto& {
+                return Chunk<T>::manager_chunk::get_list_block_free_thr_for_size(CHUNK_PMP_THREAD_RANK, my_sz);
+            },
+            [this, my_sz](int j, auto& lbf)
             {
-                if constexpr (chunk_config::stats)
+                if (chunk_list[j].written())
                 {
-                    increm_chunk_teardown_clear<Chunk<T>>();
-                    add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
+                    if constexpr (chunk_config::stats)
+                    {
+                        increm_chunk_teardown_clear<Chunk<T>>();
+                        add_chunk_released<Chunk<T>>(1, static_cast<long>(sizeof(T)) * static_cast<long>(my_sz));
+                    }
+                    // As clear_core(): v1's reuse lists hold zeroed buffers.
+                    T*          values_loc = chunk_list[j].values;
+                    constexpr T zero{};
+                    std::uninitialized_fill_n(values_loc, my_sz, zero);
+                    CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
+                    lbf.push_back(values_loc);
+                    chunk_list[j].init_values_cst_val();
                 }
-                // As clear_core(): v1's reuse lists hold zeroed buffers.
-                T*          values_loc = chunk_list[j].values;
-                constexpr T zero{};
-                std::uninitialized_fill_n(values_loc, my_sz, zero);
-                CHUNK_LEDGER_PARK(values_loc, "resize.shrink_park");
-                lbf.push_back(values_loc);
-                chunk_list[j].init_values_cst_val();
-            }
-        }
+            });
     }
     else
     {
