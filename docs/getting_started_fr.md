@@ -223,11 +223,27 @@ la fin des régions. Sans OMPT (libgomp de GCC), c'est le programme qui le fait 
 shrink_array::finalize_parallel_phase();      // une fois, après la région
 ```
 
-Si on les oublie, rien n'échoue tout de suite, mais les écritures différées ne sont appliquées
-qu'à la lecture suivante de l'élément, et les passes de compression entre régions n'ont pas
-lieu : la mémoire reste plus haute qu'elle ne devrait. Les écrire derrière
+Si on les oublie, rien n'échoue tout de suite. Avec la même équipe d'une région à l'autre, les
+valeurs restent justes, mais les passes de compression entre régions n'ont pas lieu : la
+mémoire reste plus haute qu'elle ne devrait. Quand la taille de l'équipe change d'une région à
+l'autre, un `finalize_parallel_phase()` oublié rejoue une écriture différée déjà libérée, et
+si les deux appels sont oubliés, des valeurs sont fausses, sans message. Les builds de contrôle
+(Debug, `CHECK_OPTIM`) s'arrêtent sur un `begin_parallel_phase()` sans
+`finalize_parallel_phase()` depuis la région précédente, et sur une écriture différée par un
+thread qui n'a pas appelé `begin_parallel_phase()`. Les écrire derrière
 `if constexpr (sa::build_config::has_not_ompt)`, comme ci-dessus, garde un seul source pour les deux
 runtimes.
+
+`shrink_array::parallel_phase()` écrit la région et les deux appels à votre place, et les omet
+sous OMPT :
+
+```cpp
+shrink_array::parallel_phase([&] {            // ou parallel_phase(n_threads, [&] { ... })
+#pragma omp for
+    for (int i = 0; i < n; ++i)
+        a[i] = f(i);
+});
+```
 
 Avec OMPT, si le runtime n'a pas chargé l'outil de la bibliothèque (`OMP_TOOL=disabled`, un
 autre outil trouvé d'abord), les phases n'ont jamais lieu. La bibliothèque l'écrit sur stderr ;

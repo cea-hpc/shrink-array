@@ -274,6 +274,12 @@ inline int chunk_pmp_thread_rank() noexcept
         #define CHUNK_PMP_IN_PARALLEL_REGION omp_in_parallel()
     #endif
 
+    /// Nesting level of the calling thread (omp_get_level): 0 outside any
+    /// region, 1 in a region, 2 in a region nested in it (serialised or not).
+    #ifndef CHUNK_PMP_LEVEL
+        #define CHUNK_PMP_LEVEL omp_get_level()
+    #endif
+
 #else
 
 namespace shrink_array
@@ -326,6 +332,11 @@ inline int get_thr_rank_fast() noexcept
 
     #ifndef CHUNK_PMP_IN_PARALLEL_REGION
         #define CHUNK_PMP_IN_PARALLEL_REGION false
+    #endif
+
+    /// @copydoc CHUNK_PMP_LEVEL
+    #ifndef CHUNK_PMP_LEVEL
+        #define CHUNK_PMP_LEVEL 0
     #endif
 
 #endif

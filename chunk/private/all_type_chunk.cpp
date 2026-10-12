@@ -141,10 +141,7 @@ void begin_parallel_phase()
     {
         g_fast_omp_rank = CHUNK_PMP_THREAD_RANK;
     }
-    if constexpr (phase_guard::active)
-    {
-        phase_guard::arm();
-    }
+    phase_guard::check_begin(); // check builds: finalize forgotten before this region
 }
 
 void finalize_parallel_phase_only_flush()

@@ -21,9 +21,11 @@
 #include "chunk/chunk_std.h"              // the declarations defined here (ChunkPoolParallelInterface)
 #include "chunk/config.h"                 // build_config::use_openmp, use_fast_alloc
 #include "chunk/internal/chunk_stats.h"   // ChunkStatsThr (CHUNK_STATS only)
+#include "chunk/internal/invariant_check.h" // CHUNK_INVARIANT_FAILED (teardown_outside_region)
 #include "chunk/internal/live_arrays.h"   // live_array_count: the teardown waits for the last array
 #include "chunk/internal/process_verbs.h" // compress_now_and_trim_pools, defined here
 #include "chunk/singleton.h"              // SingletonChk
+#include "chunk/PMP_CHUNK.h"              // CHUNK_PMP_IN_PARALLEL_REGION
 
 namespace shrink_array
 {
@@ -151,9 +153,27 @@ void delete_chunk_allocator()
     chunk_pools::delete_chunk_allocator();
 }
 
+namespace
+{
+/// @brief Check builds: the teardown verbs are sequential points; called from
+///        a parallel region, every thread of the team would empty the same
+///        pools at once.
+void teardown_outside_region(const char* verb)
+{
+    if constexpr (build_config::any_check)
+    {
+        if (CHUNK_PMP_IN_PARALLEL_REGION) [[unlikely]]
+        {
+            CHUNK_INVARIANT_FAILED("{}() called inside a parallel region: call it once, after the last region", verb);
+        }
+    }
+}
+} // namespace
+
 /// @copydoc shrink_array::release_chunk_pools
 void release_chunk_pools()
 {
+    teardown_outside_region("release_chunk_pools");
     if (internal::live_array_count() > 0)
     {
         chunk_pools::clear_all_list_block_free_thr(); // the parked buffers only
@@ -175,6 +195,7 @@ std::size_t compress_now_and_trim_pools()
 
 void destroy_block_chunk()
 {
+    teardown_outside_region("destroy_block_chunk");
     // Not part of the thread-model split: destroy_block_chunk() is a verb of
     // ManagerChunkInt, present in every build, so it stays a plain function.
     if constexpr (build_config::use_fast_alloc)

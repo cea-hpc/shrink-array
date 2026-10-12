@@ -40,8 +40,15 @@
  * chunk_config::is_shrink_enabled`, so they can be called unconditionally from
  * serial or vector-mode builds.
  *
+ * parallel_phase() (at the end) places begin_parallel_phase() and
+ * finalize_parallel_phase() itself: nothing left to forget.
+ *
  * @see all_type_chunk.cpp for the definitions.
  */
+
+#include <utility> // std::forward
+
+#include "chunk/config.h" // build_config::has_not_ompt
 
 namespace shrink_array
 {
@@ -134,5 +141,64 @@ extern bool finalize_barrier_phase();
  * then skips the call -- nothing more for such a program to define.
  */
 __attribute__((weak)) extern void check_ompt_tool_loaded();
+
+/**
+ * @brief A parallel region with the phase protocol already in place:
+ *        begin_parallel_phase() by every thread before @p body,
+ *        finalize_parallel_phase() once the region is over.
+ * @details The same as
+ *          @code
+ *          #pragma omp parallel num_threads(num_threads)
+ *          {
+ *              begin_parallel_phase();
+ *              body();
+ *          }
+ *          finalize_parallel_phase();
+ *          @endcode
+ *          with both calls left out under OMPT, where the runtime makes them.
+ *          The worksharing goes inside @p body, orphaned: `#pragma omp for`
+ *          with its schedule, `nowait`, a reduction on a variable declared
+ *          outside... Compiled without OpenMP, @p body runs once.
+ * @param num_threads team size (the num_threads clause); 0: the runtime's.
+ * @param body        what every thread of the team runs.
+ */
+template <typename Body>
+void parallel_phase(int num_threads, Body&& body)
+{
+    auto team_body = [&body]
+    {
+        if constexpr (build_config::has_not_ompt)
+        {
+            begin_parallel_phase();
+        }
+        body();
+    };
+#ifdef _OPENMP
+    if (num_threads > 0)
+    {
+    #pragma omp parallel num_threads(num_threads)
+        team_body();
+    }
+    else
+    {
+    #pragma omp parallel
+        team_body();
+    }
+#else
+    (void)num_threads;
+    team_body();
+#endif
+    if constexpr (build_config::has_not_ompt)
+    {
+        finalize_parallel_phase();
+    }
+}
+
+/// @brief parallel_phase() with the runtime's team size.
+template <typename Body>
+void parallel_phase(Body&& body)
+{
+    parallel_phase(0, std::forward<Body>(body));
+}
 
 } // namespace shrink_array

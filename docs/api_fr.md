@@ -106,6 +106,11 @@ effet sinon, et dans les builds séquentiels.
 | `finalize_parallel_phase()` | après la région, une fois |
 | `finalize_parallel_phase_only_flush()` + `finalize_parallel_phase_after_flush()` | la même chose, en deux : la première dans la région (elle émet une barrière), la seconde après |
 | `finalize_barrier_phase()` | dans une région, après un `omp barrier` explicite : rend les écritures d'avant visibles après |
+| `parallel_phase([n,] body)` | à la place des deux premiers : une région parallèle (`n` threads, ou ceux du runtime) qui exécute `body` sur chaque thread, avec `begin_parallel_phase()` avant et `finalize_parallel_phase()` après la région ; le partage du travail (`omp for`) va dans `body` |
+
+Les builds de contrôle (Debug, `CHECK_OPTIM`) s'arrêtent sur un `begin_parallel_phase()` sans
+`finalize_parallel_phase()` depuis la région précédente, et sur une écriture différée dans une
+région par un thread qui n'a pas appelé `begin_parallel_phase()`.
 
 ## 7. Taille de chunk adaptative (bibliothèques `_dyn`)
 

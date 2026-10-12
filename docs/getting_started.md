@@ -218,10 +218,26 @@ end. Without it (GCC's libgomp), your program does:
 shrink_array::finalize_parallel_phase();      // once, after the region
 ```
 
-Forget them and nothing fails at once, but deferred writes are only applied when the element
-is next read, and the compression passes between regions do not run: memory stays higher than
-it should. Writing them behind `if constexpr (sa::build_config::has_not_ompt)`, as above, keeps
-one source for both runtimes.
+Forget them and nothing fails at once. With the same team from region to region the values
+still come out right, but the compression passes between regions do not run: memory stays
+higher than it should. When the team size changes from one region to the next, a forgotten
+`finalize_parallel_phase()` replays a deferred write that was already freed, and with both
+calls forgotten values come out wrong, silently. Check builds (Debug, `CHECK_OPTIM`) stop on
+a `begin_parallel_phase()` with no `finalize_parallel_phase()` since the previous region, and
+on a deferred write by a thread that skipped `begin_parallel_phase()`.
+Writing them behind `if constexpr (sa::build_config::has_not_ompt)`, as above, keeps one
+source for both runtimes.
+
+`shrink_array::parallel_phase()` writes the region and both calls for you, and leaves them out
+under OMPT:
+
+```cpp
+shrink_array::parallel_phase([&] {            // or parallel_phase(n_threads, [&] { ... })
+#pragma omp for
+    for (int i = 0; i < n; ++i)
+        a[i] = f(i);
+});
+```
 
 With OMPT, if the runtime did not load the library's tool (`OMP_TOOL=disabled`, another tool
 found first), the phases never happen. The library prints a warning on stderr;

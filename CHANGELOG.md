@@ -57,6 +57,14 @@ the tag's checksum to the recipe.
   before carving new ones, so a workload whose constants drift no longer runs out of them
   (`CHUNK_CST_VAL2_MAX_IDS`). The benchmark calls it every N iterations under `CHUNK_CST2_RECLAIM=N`;
   harness `cst2_reclaim_validation`.
+- `shrink_array::parallel_phase([n,] body)` (`chunk/manage_ompt.h`): a parallel region with
+  `begin_parallel_phase()` on every thread and `finalize_parallel_phase()` after it, both left
+  out under OMPT. Without OMPT, nothing left for the program to forget.
+- Check builds (Debug, `CHECK_OPTIM`) without OMPT stop on a `begin_parallel_phase()` with no
+  `finalize_parallel_phase()` since the previous region. It was not caught before (the message
+  of the deferred-write check claimed it was); with a team size changing between regions it
+  replays a freed deferred op. `release_chunk_pools()` and `destroy_block_chunk()` called inside
+  a parallel region stop too.
 
 ### Added
 

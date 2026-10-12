@@ -911,18 +911,7 @@ void ProxyBase<Derived, T, ChunkType>::enqueue_deferred_write(CtxType* ctx, Lamb
 
     // The moment the protocol matters: this write is about to be parked in a
     // per-thread queue that only the phase end drains. See phase_guard.h.
-    if constexpr (phase_guard::active)
-    {
-        if (CHUNK_PMP_IN_PARALLEL_REGION && !phase_guard::armed()) [[unlikely]]
-        {
-            CHUNK_INVARIANT_FAILED("[PHASE PROTOCOL] deferred write from a parallel region that did not call "
-                                   "begin_parallel_phase() (or whose previous phase was never finalized): without "
-                                   "OMPT every region must be bracketed by begin_parallel_phase() on each thread "
-                                   "and finalize_parallel_phase() after the region, or this write replays after "
-                                   "a later region's writes. chunk={} num={} rank={}",
-                                   static_cast<const void*>(&chunk), ctx->num, get_thr_rank_fast());
-        }
-    }
+    phase_guard::check_write(&chunk, static_cast<long>(ctx->num));
 
     const int thr_rank = get_thr_rank_fast();
 
